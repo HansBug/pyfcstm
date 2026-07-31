@@ -528,3 +528,82 @@ def test_a_binding_that_runs_out_of_time_is_reported_as_a_timeout() -> None:
 
     assert held is False
     assert record.status == "timeout", record.reason
+
+
+@pytest.mark.unittest
+def test_a_query_with_no_bindable_fact_degrades_instead_of_raising() -> None:
+    """Nothing bound means nothing may rest on a binding, and that is not an error.
+
+    Two positive state assumptions at one frame make a complete formal artifact and
+    no proof premise at all, so the binding phase has nothing to establish.
+    Reporting that as a completed phase was wrong twice: a consumer reading
+    ``complete`` would believe equivalences were established, and the published
+    ledger refuses a completed check carrying a reason -- so this query raised out
+    of the solve chain rather than degrading.
+    """
+    machine = load_state_machine_from_text(
+        "state Root { state A; state B; [*] -> A; }", "machine.fcstm"
+    )
+    context = BmcEngine(machine).prepare(
+        'init state("Root.A");\n'
+        'assume at 1: active("Root.A");\n'
+        'assume at 1: active("Root.B");\n'
+        'check reach <= 1: active("Root.A");\n',
+        query_source_path="query.fbmcq",
+    )
+
+    result = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="proof",
+    )
+
+    explanation = result.feasibility.explanation
+    assert explanation.achieved_mode == "formal"
+    assert explanation.proof is None
+    assert explanation.core is not None, "the formal evidence survives"
+    binding = next(
+        check
+        for check in result.feasibility.refinement_checks
+        if check.name == "core_binding"
+    )
+    assert binding.status == "unknown"
+    assert binding.reason
+
+
+@pytest.mark.unittest
+def test_the_whole_published_envelope_validates_at_proof_depth() -> None:
+    """The schema applies to the payload a consumer receives, not to a fragment.
+
+    An earlier test validated the explanation object alone and passed while the
+    envelope around it did not: the ledger names this tier adds were registered in
+    the runtime vocabulary and not in the published enum, so every real
+    ``--json --explain-infeasibility proof`` run was rejected by the schema shipped
+    beside it.
+    """
+    import json
+
+    from jsonschema import Draft202012Validator
+
+    machine = load_state_machine_from_text(_MODEL, "machine.fcstm")
+    context = BmcEngine(machine).prepare(
+        'assume at 0: var("x") == 1;\n'
+        'assume at 0: var("x") == 2;\n'
+        'check reach <= 1: active("Root.B");\n',
+        query_source_path="query.fbmcq",
+    )
+    result = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="proof",
+    )
+    assert result.feasibility.explanation.proof is not None, "the run must reach proof"
+
+    schema = json.load(
+        open("docs/source/reference/bmc_results/bmc_cli.schema.json", encoding="utf-8")
+    )
+    validator = Draft202012Validator(
+        {"$ref": "#/$defs/currentResult", "$defs": schema["$defs"]}
+    )
+
+    errors = [error.message for error in validator.iter_errors(result.to_canonical())]
+
+    assert errors == []

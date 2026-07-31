@@ -1392,7 +1392,7 @@ def check_core_bindings(
         >>> from pyfcstm.bmc.solver import _SolveBudget
         >>> held, record = check_core_bindings(None, (), _SolveBudget(None))
         >>> held, record.status
-        (True, 'complete')
+        (False, 'unknown')
     """
     started_at = time.perf_counter()
 
@@ -1400,12 +1400,15 @@ def check_core_bindings(
         return (time.perf_counter() - started_at) * 1000.0
 
     if not facts:
-        # Vacuously true, and a consumer must be able to tell that apart from a run
-        # that established something: the phase reports one equivalence per input,
-        # and there were none.
-        return True, ProbeRecord(
+        # Nothing was bound, so nothing may rest on a binding.  Reporting this as a
+        # completed phase was the previous shape and it was wrong twice over: a
+        # consumer reading ``complete`` would believe equivalences were established,
+        # and the published ledger refuses a completed check that carries a reason,
+        # so a query reaching here raised out of the solve chain instead of
+        # degrading.  An unestablished binding is what this is.
+        return False, ProbeRecord(
             "core_binding",
-            "complete",
+            "unknown",
             True,
             elapsed(),
             "no core member states a fact this check can encode",
@@ -1450,17 +1453,31 @@ def check_core_bindings(
             solver.add(claim)
             status, _, reason, _, _ = _check_with_budget(solver, budget)
             if status != "unsat":
+                # Three outcomes share one status word and must not share one
+                # sentence.  A timeout says raise the budget; an undecidable shape
+                # says the solver cannot answer this and retrying will not help; a
+                # refutation says the fact and its group genuinely differ, which is
+                # a defect on the building side rather than a limit on this one.
+                # The frozen phase vocabulary has no word for the last, so the
+                # reason carries it.
+                explanation = {
+                    "sat": "was refuted: the fact is not equivalent to its group",
+                    "unknown": "could not be decided by the solver",
+                }.get(status, "ran out of budget")
                 return False, ProbeRecord(
                     "core_binding",
-                    # The solver's own word, not its negation.  A real timeout tells
-                    # a consumer to raise the budget and retry; an ``unknown`` tells
-                    # it the shape is one z3 cannot decide and retrying is pointless.
-                    # These were swapped, so each payload advised the opposite.
+                    # The solver's own word, not its negation.  These were swapped
+                    # once, so each payload advised the opposite of what it meant.
                     "timeout" if status == "timeout" else "unknown",
                     True,
                     elapsed(),
-                    "%s could not be established for %s%s"
-                    % (direction, stable_id, ": %s" % reason if reason else ""),
+                    "%s %s for %s%s"
+                    % (
+                        direction,
+                        explanation,
+                        stable_id,
+                        ": %s" % reason if reason else "",
+                    ),
                 )
     return True, ProbeRecord("core_binding", "complete", True, elapsed(), None)
 

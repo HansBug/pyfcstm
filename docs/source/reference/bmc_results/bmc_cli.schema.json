@@ -2818,7 +2818,9 @@
             "domain_assumptions",
             "unsat_core",
             "unsat_core_minimization",
-            "value_propagation"
+            "value_propagation",
+            "core_binding",
+            "proof_construction"
           ]
         },
         "status": {
@@ -2880,7 +2882,9 @@
                 "enum": [
                   "unsat_core",
                   "unsat_core_minimization",
-                  "value_propagation"
+                  "value_propagation",
+                  "core_binding",
+                  "proof_construction"
                 ]
               },
               "reason": {
@@ -2888,7 +2892,7 @@
               }
             }
           },
-          "$comment": "status=complete reports a finished phase rather than one solver verdict, so it is reserved for phase-level checks. value_propagation aggregates a prefix solve and a uniqueness check, so it belongs here; it deliberately does not join the core-proof family, which the published-core rule reads."
+          "$comment": "Phases may report status=complete; a single solver verdict may not.  Core binding and proof construction join the phase family for the reason value propagation did: each aggregates several checks and supports a deeper tier rather than proving the core."
         },
         {
           "if": {

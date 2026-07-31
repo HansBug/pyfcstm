@@ -757,9 +757,21 @@ def _state_domain_fact(group: Any) -> Optional[Dict[str, Any]]:
         atom = expression.arg(index)
         if not z3.is_app(atom) or atom.decl().kind() != z3.Z3_OP_EQ:
             return None
-        value = _numeric_value(atom.arg(0))
-        if value is None:
-            value = _numeric_value(atom.arg(1))
+        left, right = atom.arg(0), atom.arg(1)
+        # Check which side is this frame's state slot, the way the membership
+        # recognizer beside this one does.  Reading a value off either side without
+        # looking would accept a disjunction over *another* frame's slot, and the
+        # fact would then claim a domain for a frame it never described.
+        #
+        # No reachable input produces that shape -- the builder emits single-frame
+        # disjunctions -- so there is no test for it, and reaching it would need a
+        # stand-in for the group this reads.  The two recognizers answer the same
+        # question and disagreeing about it is worth closing on its own.
+        value = None
+        for slot, code in ((left, right), (right, left)):
+            if _frame_state_slot(slot, frame):
+                value = _numeric_value(code)
+                break
         if value is None:
             return None
         states.append(value)

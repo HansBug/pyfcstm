@@ -36,6 +36,15 @@ ENTRY_PATH = ROOT / "tools" / "diagram_assets" / "python-renderer-entry.ts"
 VIEWER_BUILD_PATH = ROOT / "tools" / "diagram_assets" / "build_viewer.js"
 BRIDGE_PATH = ROOT / "tools" / "diagram_assets" / "resvg-bridge.js"
 HOST_SHIM_PATH = ROOT / "tools" / "diagram_assets" / "host-shim.js"
+#: Packages compiled into the PDF writer, as ``(asset-lock key, npm name)``.
+#: Each is redistributed inside a published asset, so each needs the same
+#: provenance trail; a package missing from this tuple is one nothing checks.
+PDF_DEPENDENCIES = (
+    ("svg2pdf", "svg2pdf.js"),
+    ("jspdf", "jspdf"),
+    ("xmldom", "@xmldom/xmldom"),
+)
+
 PDF_ENTRY_PATH = ROOT / "tools" / "diagram_assets" / "python-pdf-entry.ts"
 PDF_HOST_SHIM_PATH = ROOT / "tools" / "diagram_assets" / "pdf-host-shim.js"
 JSFCSTM_DIR = ROOT / "editors" / "jsfcstm"
@@ -345,44 +354,16 @@ def validate_esbuild_provenance(lock: Dict[str, object]) -> None:
 
 
 def validate_viewer_provenance(lock: Dict[str, object]) -> None:
-    """Require the locked viewer PDF exporter and esbuild metadata."""
+    """Require every locked PDF dependency and the esbuild metadata."""
     viewer = lock.get("viewer")
     if not isinstance(viewer, dict):
         raise ValueError("diagram asset lock lacks viewer provenance")
-    exporter = viewer.get("svg2pdf")
-    if not isinstance(exporter, dict):
-        raise ValueError("viewer lock lacks svg2pdf provenance")
-    expected_version = exporter.get("version")
-    if not isinstance(expected_version, str) or not expected_version:
-        raise ValueError("viewer lock lacks svg2pdf version")
-    try:
-        package_lock = json.loads(JSFCSTM_LOCK_PATH.read_text(encoding="utf-8"))
-        root_package = package_lock["packages"][""]
-        package = package_lock["packages"]["node_modules/svg2pdf.js"]
-    except (KeyError, OSError, TypeError, ValueError) as err:
-        # KeyError/TypeError/ValueError: the tracked viewer lock has no valid
-        # exporter entry; OSError: the lock file cannot be read.
-        raise ValueError("jsfcstm package-lock lacks a valid svg2pdf.js entry") from err
-    dev_dependencies = root_package.get("devDependencies")
-    if (
-        not isinstance(dev_dependencies, dict)
-        or dev_dependencies.get("svg2pdf.js") != expected_version
-    ):
-        raise ValueError("jsfcstm svg2pdf.js devDependency differs from asset lock")
-    if package.get("version") != expected_version:
-        raise ValueError("installed svg2pdf.js version differs from asset lock")
-    if package.get("resolved") != exporter.get("resolved") or package.get(
-        "integrity"
-    ) != exporter.get("integrity"):
-        raise ValueError("svg2pdf.js lock provenance differs from package-lock")
-    if package.get("license") != exporter.get("license"):
-        raise ValueError("svg2pdf.js license differs from asset lock")
-    installed = JSFCSTM_DIR / "node_modules" / "svg2pdf.js" / "package.json"
-    if not installed.is_file():
-        raise FileNotFoundError("installed svg2pdf.js package is missing")
-    installed_package = json.loads(installed.read_text(encoding="utf-8"))
-    if installed_package.get("version") != expected_version:
-        raise ValueError("installed svg2pdf.js package version differs from asset lock")
+    # All three packages are compiled into the same published bundles, so all three
+    # get the same checks. Validating one strictly and the others loosely was an
+    # asymmetry with no reason behind it: a wrong `jspdf` reaches the public
+    # ``Diagram.to_pdf()`` exactly as easily as a wrong `xmldom` would.
+    for key, package in PDF_DEPENDENCIES:
+        _validate_pdf_dependency_provenance(viewer, key, package)
     public_entry = JSFCSTM_DIR / "dist" / "diagram" / "index.js"
     if not public_entry.is_file():
         raise FileNotFoundError("jsfcstm public diagram entry is missing")
@@ -392,7 +373,44 @@ def validate_viewer_provenance(lock: Dict[str, object]) -> None:
             "PDF build dependencies leaked into the jsfcstm public diagram entry via %s"
             % ", ".join(leaking)
         )
-    _validate_pdf_dependency_provenance(viewer, "xmldom", "@xmldom/xmldom")
+
+
+def _declared_licenses(installed: Dict[str, object]) -> List[str]:
+    """
+    Collect every licence an installed package manifest declares.
+
+    npm has two spellings: the modern ``license`` string and the legacy
+    ``licenses`` array of objects.  A manifest may use either, and one that drops
+    the first to state something different in the second is still making a
+    declaration.
+
+    :param installed: Parsed ``package.json`` of an installed package.
+    :type installed: dict
+    :return: Every declared licence identifier, in the order found.
+    :rtype: list[str]
+
+    Example::
+
+        >>> _declared_licenses({"license": "MIT"})
+        ['MIT']
+        >>> _declared_licenses({"licenses": [{"type": "Proprietary"}]})
+        ['Proprietary']
+    """
+    declared = []
+    single = installed.get("license")
+    if isinstance(single, str):
+        declared.append(single)
+    elif isinstance(single, dict) and isinstance(single.get("type"), str):
+        # Another historical spelling: a single object rather than a string.
+        declared.append(single["type"])
+    plural = installed.get("licenses")
+    if isinstance(plural, list):
+        for item in plural:
+            if isinstance(item, str):
+                declared.append(item)
+            elif isinstance(item, dict) and isinstance(item.get("type"), str):
+                declared.append(item["type"])
+    return declared
 
 
 def _validate_pdf_dependency_provenance(
@@ -470,14 +488,17 @@ def _validate_pdf_dependency_provenance(
             % (package, installed.get("version"), expected_version)
         )
     recorded_license = recorded.get("license")
-    installed_license = installed.get("license")
-    if installed_license is not None and installed_license != recorded_license:
+    for declared in _declared_licenses(installed):
         # A package may omit the field; it may not contradict what is being
-        # redistributed on its behalf.
-        raise ValueError(
-            "installed %s license %r differs from the asset lock's %r"
-            % (package, installed_license, recorded_license)
-        )
+        # redistributed on its behalf. Both the modern ``license`` string and the
+        # legacy ``licenses`` array count as a declaration -- reading only the
+        # first let a tree drop ``license`` and declare something else in
+        # ``licenses`` instead, and the build accepted it.
+        if declared != recorded_license:
+            raise ValueError(
+                "installed %s declares license %r, which differs from the asset "
+                "lock's %r" % (package, declared, recorded_license)
+            )
 
 
 def _pdf_dependency_importers(entry: Path) -> List[str]:

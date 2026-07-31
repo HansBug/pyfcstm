@@ -155,6 +155,13 @@
   "viewer": {
     "esbuildVersion": "0.28.1",
     "format": "iife",
+    "jspdf": {
+      "integrity": "sha512-YyAXyvnmjTbR4bHQRLzex3CuINCDlQnBqoSYyjJwTP2x9jDLuKDzy7aKUl0hgx3uhcl7xzg32agn5vlie6HIlQ==",
+      "license": "MIT",
+      "name": "jspdf",
+      "resolved": "https://registry.npmmirror.com/jspdf/-/jspdf-4.2.1.tgz",
+      "version": "4.2.1"
+    },
     "svg2pdf": {
       "integrity": "sha512-nXK4Wx28H0KtOktanm5nsphl1KMEoLNMelAT/776qxPAj9DshwYcqgdpKuBnY1nrcYOriQFHVQLE4tIag+aDJA==",
       "license": "MIT",

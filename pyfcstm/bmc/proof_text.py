@@ -135,6 +135,22 @@ def _frame_of(node) -> Any:
     return frame if isinstance(frame, int) else -1
 
 
+def _sets_the_scene(node) -> int:
+    """Sort the facts that say what is possible ahead of the ones that narrow it.
+
+    Reading four exclusions before learning which states there were to exclude from
+    makes the reader hold the list in their head until the answer arrives.  What the
+    model allows at a frame is the scene; what the query rules out at it is the
+    narrowing, so the scene is set first.
+
+    :param node: A proof node.
+    :type node: pyfcstm.bmc.explanation.BmcProofNode
+    :return: ``0`` for a fact that states the possibilities, ``1`` otherwise.
+    :rtype: int
+    """
+    return 0 if node.conclusion.get("kind") == "state_domain" else 1
+
+
 def linearize_proof(
     proof: BmcConflictProof, state_names: Optional[Mapping[int, str]] = None
 ) -> Tuple[BmcReasoningStep, ...]:
@@ -183,9 +199,9 @@ def linearize_proof(
     ordered = sorted(
         enumerate(proof.nodes),
         key=lambda pair: (
-            (0, _frame_of(pair[1]), pair[0])
+            (0, _frame_of(pair[1]), _sets_the_scene(pair[1]), pair[0])
             if pair[1].kind == "input"
-            else (1, 0, pair[0])
+            else (1, 0, 0, pair[0])
         ),
     )
     steps: List[BmcReasoningStep] = []

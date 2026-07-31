@@ -211,6 +211,7 @@ _DERIVED_FROZEN_NAMES = {
     "_PROOF_INPUT_MINIMALITIES": "transcribed by test_proof.py",
     "_PROOF_GRAPH_MINIMALITIES": "transcribed by test_proof.py",
     "_PROOF_VERIFICATION_STATUSES": "transcribed by test_proof.py",
+    "_SENTINEL_STATE_PHRASES": "transcribed by test_the_sentinel_states_read_as_query_tokens",
 }
 
 
@@ -2913,7 +2914,7 @@ def test_stepping_aside_never_turns_into_speaking_up(
     [
         (1, {1: "Root.A"}, "state Root.A"),
         (5, {5: "Root.Outer.Inner"}, "state Root.Outer.Inner"),
-        (-1, {-1: "$STATE_TERMINATE"}, "state $STATE_TERMINATE"),
+        (-1, {-1: "$STATE_TERMINATE"}, "state terminated()"),
         (9, {1: "Root.A"}, "state 9"),
         (1, None, "state 1"),
         (1, {}, "state 1"),
@@ -2936,6 +2937,11 @@ def test_a_state_falls_back_to_its_code_rather_than_inventing_a_name(
     table does not carry has no name to print.  Falling back to the code keeps
     the sentence true and still traceable through ``normalized_fact``; inventing
     one would put a state in the report that the model does not contain.
+
+    The sentinel row is a hit rather than a miss, and it is deliberately not its
+    path: the query binder refuses ``active("$STATE_TERMINATE")`` as reserved, so
+    printing that path hands the reader a name they are forbidden to type.  It is
+    read as the token the query language does give them.
     """
     from pyfcstm.bmc.explanation import _state_label
 
@@ -3795,3 +3801,24 @@ def test_a_partial_comparison_leaves_an_interval_core_unexplained() -> None:
         )
     )
     assert partial.derivation_status != "complete"
+
+
+@pytest.mark.unittest
+def test_the_sentinel_states_read_as_query_tokens() -> None:
+    """The two states the author did not write are read as things they can write.
+
+    The query binder refuses both by name -- ``active("$STATE_TERMINATE")`` comes
+    back as a reserved path -- so a report that prints those paths is handing the
+    reader a name they are forbidden to type.  Each is read as the token the query
+    language does give them, and each carries parentheses, which no state path can:
+    a model declaring its own state called ``terminated`` stays distinct.
+
+    Transcribed rather than derived from the module, so a change to either spelling
+    fails here instead of quietly changing what every report says.
+    """
+    from pyfcstm.bmc.explanation import _SENTINEL_STATE_PHRASES
+
+    assert _SENTINEL_STATE_PHRASES == {
+        "$STATE_TERMINATE": "terminated()",
+        "$STATE_INIT": "before(start)",
+    }

@@ -401,6 +401,23 @@ def require_published_text(value: Any, where: str) -> str:
 _STATE_SLOT_SUBJECT = "$state"
 
 
+#: How the encoding's own two states are read to someone who wrote the model.
+#:
+#: They are not states the author declared, and the query binder refuses them by
+#: name -- ``active("$STATE_TERMINATE")`` comes back as a reserved path.  A reader
+#: told that name has been handed something they cannot use, so each is read as the
+#: thing the query language already lets them talk about: ``terminated()`` for one,
+#: the ``init`` clause for the other.
+#:
+#: Each spelling carries parentheses, which no state path can, so a model that
+#: happens to declare a state called ``terminated`` is still spelled apart from
+#: this one -- and the reader is looking at the very token they would type.
+_SENTINEL_STATE_PHRASES = {
+    "$STATE_TERMINATE": "terminated()",
+    "$STATE_INIT": "before(start)",
+}
+
+
 def _state_display(code: Any, state_paths: Optional[Mapping]) -> str:
     """Spell one state for a reader, from the model's table when there is one.
 
@@ -420,7 +437,18 @@ def _state_display(code: Any, state_paths: Optional[Mapping]) -> str:
     :type code: object
     :param state_paths: State code to authored path, or ``None``.
     :type state_paths: Optional[Mapping[int, str]]
-    :return: The state's authored path, or its code.
+    Two of the encoding's states are not the author's at all, and the query binder
+    refuses them by name: writing ``active("$STATE_TERMINATE")`` is rejected as a
+    reserved path.  Telling a reader a name they are forbidden to type is worse than
+    unhelpful, so each is read as the thing the query language does let them write.
+    Those spellings carry parentheses, which no state path can, so a model that
+    declares a state of its own called ``terminated`` stays distinct from this one.
+
+    :param code: The published state code.
+    :type code: object
+    :param state_paths: State code to authored path, or ``None``.
+    :type state_paths: Optional[Mapping[int, str]]
+    :return: The state's authored path, its reader-facing phrase, or its code.
     :rtype: str
 
     Example::
@@ -431,11 +459,13 @@ def _state_display(code: Any, state_paths: Optional[Mapping]) -> str:
         '1'
         >>> _state_display(1, {2: "Root.B"})
         '1'
+        >>> _state_display(-1, {-1: "$STATE_TERMINATE"})
+        'terminated()'
     """
     if state_paths:
         path = state_paths.get(code)
         if path is not None:
-            return "%s" % path
+            return _SENTINEL_STATE_PHRASES.get(path, "%s" % path)
     return "%s" % code
 
 

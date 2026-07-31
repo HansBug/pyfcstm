@@ -444,9 +444,40 @@ def _validate_pdf_dependency_provenance(
             raise ValueError(
                 "%s %s differs between package-lock and asset lock" % (package, field)
             )
-    installed_package = JSFCSTM_DIR / "node_modules" / package / "package.json"
-    if not installed_package.is_file():
+    manifest_path = JSFCSTM_DIR / "node_modules" / package / "package.json"
+    if not manifest_path.is_file():
         raise FileNotFoundError("installed %s package is missing" % package)
+    # Existence is not identity. The lockfile says what should be installed and the
+    # asset lock says what is being redistributed, but it is the installed tree
+    # that gets compiled into the published bundle -- so it has to be the thing
+    # that is checked. Without this, a tree holding a different version, or a
+    # different package under the same directory name, ships inside the public
+    # ``to_pdf()`` path while the manifest still advertises the locked provenance.
+    try:
+        installed = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as err:
+        # OSError: the manifest cannot be read. ValueError: it is not JSON, which
+        # means the installed tree is not a usable npm package.
+        raise ValueError("installed %s package manifest is unreadable" % package) from err
+    if installed.get("name") != package:
+        raise ValueError(
+            "installed %s directory holds %r instead"
+            % (package, installed.get("name"))
+        )
+    if installed.get("version") != expected_version:
+        raise ValueError(
+            "installed %s version %r differs from the asset lock's %r"
+            % (package, installed.get("version"), expected_version)
+        )
+    recorded_license = recorded.get("license")
+    installed_license = installed.get("license")
+    if installed_license is not None and installed_license != recorded_license:
+        # A package may omit the field; it may not contradict what is being
+        # redistributed on its behalf.
+        raise ValueError(
+            "installed %s license %r differs from the asset lock's %r"
+            % (package, installed_license, recorded_license)
+        )
 
 
 def _pdf_dependency_importers(entry: Path) -> List[str]:

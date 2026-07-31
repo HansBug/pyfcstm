@@ -16,3 +16,9 @@ build\_domain\_proof
 -----------------------------------------------------
 
 .. autofunction:: build_domain_proof
+
+
+proof\_facts\_for\_core
+-----------------------------------------------------
+
+.. autofunction:: proof_facts_for_core

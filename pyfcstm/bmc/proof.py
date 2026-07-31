@@ -45,7 +45,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 from .explanation import BmcConflictProof, BmcProofNode
 from .proof_rules import PROOF_RULES, RuleApplication, check_rule
 
-__all__ = ["build_domain_proof"]
+__all__ = ["build_domain_proof", "proof_facts_for_core"]
 
 #: What the ledger calls this phase.
 _PHASE_NAME = "proof_construction"
@@ -474,3 +474,100 @@ def _conclusion_for(
             "value": result,
         }
     return None
+
+
+#: How a published comparison operator reads as a proof fact.
+#:
+#: The core states one tag for every comparison and carries the operator beside it;
+#: the rules read an equality and a bound as different things, because an equality
+#: pins a value and a bound restricts a range.  Splitting here rather than widening
+#: the rules keeps each rule's premise shape exactly what its side condition needs.
+_COMPARISON_FACTS = {
+    "eq": "variable_equality",
+    "ge": "variable_bound",
+    "gt": "variable_bound",
+    "le": "variable_bound",
+    "lt": "variable_bound",
+}
+
+
+def proof_facts_for_core(items) -> Tuple[Tuple[str, Mapping[str, Any]], ...]:
+    """Translate published core members into the facts the rules read.
+
+    The published vocabulary describes a core for a reader; the rule vocabulary
+    describes premises for a checker.  They overlap without matching, so this is
+    where one becomes the other -- and a member the rules have no reading for is
+    dropped rather than guessed at, which makes the core incompletely covered and
+    the proof unpublishable.  That is the intended outcome: a proof resting on a
+    fact nobody could check is what the tier exists to refuse.
+
+    :param items: Published core members.
+    :type items: Iterable[BmcCoreItem]
+    :return: Member ids paired with the fact each states, for readable members.
+    :rtype: Tuple[Tuple[str, Mapping[str, object]], ...]
+
+    Example::
+
+        >>> proof_facts_for_core(())
+        ()
+    """
+    translated = []
+    for item in items:
+        fact = item.normalized_fact
+        stable_id = item.constraint.stable_id
+        kind = fact.get("kind")
+        if kind == "variable_comparison":
+            operator = fact.get("operator")
+            target = _COMPARISON_FACTS.get(operator)
+            if target is None:
+                # ``ne`` restricts nothing the rules can intersect, so there is no
+                # premise shape for it and the member stays untranslated.
+                continue
+            if target == "variable_equality":
+                translated.append(
+                    (
+                        stable_id,
+                        {
+                            "kind": target,
+                            "variable": fact.get("variable"),
+                            "frame": fact.get("frame"),
+                            "value": fact.get("value"),
+                        },
+                    )
+                )
+            else:
+                translated.append(
+                    (
+                        stable_id,
+                        {
+                            "kind": target,
+                            "variable": fact.get("variable"),
+                            "frame": fact.get("frame"),
+                            "operator": operator,
+                            "value": fact.get("value"),
+                        },
+                    )
+                )
+        elif kind == "state_domain":
+            translated.append(
+                (
+                    stable_id,
+                    {
+                        "kind": "state_domain",
+                        "frame": fact.get("frame"),
+                        "states": list(fact.get("states") or ()),
+                    },
+                )
+            )
+        elif kind == "state_membership" and fact.get("excluded"):
+            translated.append(
+                (
+                    stable_id,
+                    {
+                        "kind": "state_exclusion",
+                        "frame": fact.get("frame"),
+                        "state": fact.get("state"),
+                    },
+                )
+            )
+    return tuple(translated)

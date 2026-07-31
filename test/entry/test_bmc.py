@@ -1888,7 +1888,7 @@ def test_build_bmc_output_rejects_unknown_explanation_modes(explain_files, mode)
 
 
 @pytest.mark.unittest
-def test_bmc_cli_can_request_each_explanation_depth(explain_files) -> None:
+def test_bmc_cli_can_request_each_explanation_depth(explain_files, tmp_path) -> None:
     """The three frozen depths are reachable from the command line.
 
     The helper behind the command has accepted a depth for several rounds, but
@@ -1925,11 +1925,8 @@ def test_bmc_cli_can_request_each_explanation_depth(explain_files) -> None:
     assert explicit_result.exit_code == default_result.exit_code
     assert explicit_payload["result"]["feasibility"]["explanation"] is None
 
-    # The deepest mode is reachable too, and reports the depth it actually
-    # achieved rather than the one that was asked for.  This scenario cannot be
-    # proven subset-minimal, so ``proof`` degrades to ``formal`` -- and the JSON
-    # has to say so, since a caller that asked for a proof and silently received
-    # something weaker would draw a stronger conclusion than the run supports.
+    # The deepest mode is reachable too, and this scenario closes at it: the
+    # incompatible equalities are exactly what the rule catalog covers.
     proof_result, proof_payload = _json_result(
         Path(model), Path(query), "--explain-infeasibility", "proof"
     )
@@ -1937,20 +1934,32 @@ def test_bmc_cli_can_request_each_explanation_depth(explain_files) -> None:
 
     assert proof_result.exit_code == 3
     assert proof_explanation["requested_mode"] == "proof"
-    assert proof_explanation["achieved_mode"] == "formal"
+    assert proof_explanation["achieved_mode"] == "proof"
+    assert proof_explanation["proof"]["verification_status"] == "verified"
     assert proof_explanation["classification"] == "assumptions_self_conflict"
     assert proof_explanation["core"]["scope"] == "assumptions_component"
 
-    # The human report names both depths on one line; the equal-depth runs above
-    # must not carry that line at all.
-    proof_human = _run(
-        "-i", str(model), "-q", str(query), "--explain-infeasibility", "proof"
+    # A run reaching the depth it asked for carries no depth line, whichever depth
+    # that was: the line exists to report a shortfall.
+    for depth in ("formal", "proof"):
+        equal_depth = _run(
+            "-i", str(model), "-q", str(query), "--explain-infeasibility", depth
+        )
+        assert "Explanation depth:" not in equal_depth.output, depth
+
+    # A shape the rules do not cover still degrades, and the line says so.  The
+    # bounds below are conjoined into one source group, which leaves the reading no
+    # separate members to intersect.
+    degrading = tmp_path / "degrading.fbmcq"
+    degrading.write_text(
+        'assume at 0: var("x") > 5 && var("x") < 3;\n'
+        'check reach <= 2: active("Root.B");\n',
+        encoding="utf-8",
     )
-    assert "Explanation depth: requested proof, achieved formal" in proof_human.output
-    formal_human = _run(
-        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    degraded = _run(
+        "-i", str(model), "-q", str(degrading), "--explain-infeasibility", "proof"
     )
-    assert "Explanation depth:" not in formal_human.output
+    assert "Explanation depth: requested proof, achieved formal" in degraded.output
 
     # An unknown depth is refused by the option, before any solving happens.
     rejected = _run(

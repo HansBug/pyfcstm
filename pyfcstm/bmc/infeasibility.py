@@ -53,6 +53,7 @@ import z3
 
 from .errors import BmcBuildError
 from .explanation import (
+    BmcConflictNarrative,
     # Private because the frozen public surface must not grow to expose it, and
     # cross-module because the fact vocabulary is owned in one place: a second
     # copy of "which keys does this tag imply" is how the two sides drift apart.
@@ -1545,10 +1546,45 @@ def explain_infeasibility(
             checks,
         )
     if formal_is_complete:
-        # A complete formal artifact still falls short of a requested proof, and
-        # the frozen table reserves 'complete' for the depth that was asked for.
-        # The reason has to name why the proof did not close rather than describe
-        # the formal artifact, which is not what fell short.
+        # A complete formal artifact is what a proof is built on top of, so this is
+        # where the deeper tier is attempted.  Either it closes and the run reaches
+        # the depth that was asked for, or it does not and the formal artifact is
+        # published unchanged with a reason naming what fell short.
+        from .proof import build_domain_proof, proof_facts_for_core
+        from .proof_text import linearize_proof
+
+        proof, proof_record = build_domain_proof(
+            published.scope, proof_facts_for_core(published.items), budget
+        )
+        checks = checks + (proof_record,)
+        if proof is not None:
+            # The narrative is rebuilt from the graph rather than kept from the
+            # formal tier: at proof depth every sentence has to cite the node behind
+            # it, which a narrative written without a graph cannot do.
+            steps = linearize_proof(proof)
+            proof_narrative = BmcConflictNarrative(
+                "complete",
+                steps[-1].text,
+                narrative.summary,
+                steps,
+                narrative.review_surfaces,
+            )
+            return ExplanationOutcome(
+                BmcInfeasibilityExplanation(
+                    requested_mode=requested_mode,
+                    achieved_mode="proof",
+                    status="complete",
+                    classification=outcome.classification,
+                    core=published,
+                    proof=proof,
+                    narrative=proof_narrative,
+                    elapsed_ms=elapsed_ms,
+                ),
+                checks,
+            )
+        # The frozen table reserves 'complete' for the depth that was asked for, and
+        # the reason has to name why the proof did not close rather than describe the
+        # formal artifact, which is not what fell short.
         return ExplanationOutcome(
             BmcInfeasibilityExplanation(
                 requested_mode=requested_mode,
@@ -1558,8 +1594,8 @@ def explain_infeasibility(
                 core=published,
                 narrative=narrative,
                 reason=(
-                    "the formal explanation is complete, but no verifiable proof "
-                    "DAG is produced at this stage"
+                    "the formal explanation is complete, but %s"
+                    % (proof_record.reason or "no verifiable proof DAG was produced")
                 ),
                 elapsed_ms=elapsed_ms,
             ),

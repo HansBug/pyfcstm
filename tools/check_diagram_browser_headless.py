@@ -44,11 +44,6 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from tools.diagram_contract_support import (  # noqa: E402
-    sample_diagram,
-    write_sample_html,
-)
-
 VIEWER_CHECK = ROOT / "tools" / "diagram_assets" / "check_viewer_browser.js"
 
 #: Scale the viewer's PNG download uses.  It is fixed in the browser component
@@ -56,13 +51,24 @@ VIEWER_CHECK = ROOT / "tools" / "diagram_assets" / "check_viewer_browser.js"
 #: compare like with like.
 BROWSER_PNG_SCALE = 2
 
-#: Locale and direction combinations compared on top of the corpus.  A locale
-#: reaching one path and not the other is the divergence this command was written
-#: for, and the corpus fixtures do not vary the locale.
-LOCALE_CASES = (
-    ("locale-sc", "sc", "TB"),
-    ("locale-jp", "jp", "LR"),
-    ("locale-kr", "kr", "TB"),
+#: Presentation cases compared on top of the corpus, each varying exactly one
+#: option from the same baseline.
+#:
+#: The corpus cannot serve this purpose: its 28 comparable layouts use
+#: ``(default, light)`` 26 times and ``(nord, dark)`` twice, so palette and mode
+#: only ever move together and ``cjkLocale`` never moves at all.  A path that
+#: honoured ``mode`` and ignored ``palette`` would look identical to one that did
+#: both.  Varying one field at a time is the only way the comparison can say which
+#: field reached the renderer -- the same reason the unit tests for these options
+#: vary one field at a time.
+PRESENTATION_CASES = (
+    ("baseline", {}),
+    ("palette-only", {"palette": "nord"}),
+    ("palette-only-solarized", {"palette": "solarized"}),
+    ("mode-only", {"mode": "dark"}),
+    ("locale-only-jp", {"cjk_locale": "jp"}),
+    ("locale-only-kr", {"cjk_locale": "kr"}),
+    ("direction-only", {"direction": "LR"}),
 )
 
 #: The canonical corpus, which is what the frozen acceptance names.  The two files
@@ -121,6 +127,40 @@ def load_corpus() -> List[Dict[str, Any]]:
                 }
             )
     return records
+
+
+def presentation_diagram(
+    palette: str = "default",
+    mode: str = "light",
+    cjk_locale: str = "sc",
+    direction: str = "TB",
+):
+    """
+    Build the shared sample with one presentation option changed.
+
+    ``sample_diagram`` takes only the locale and the direction, so the palette and
+    the mode are set here through the same public option object a caller would
+    use.  Both export paths are given this one object, so a difference between
+    them cannot come from the inputs differing.
+
+    :param palette: Renderer palette, defaults to ``"default"``.
+    :type palette: str, optional
+    :param mode: Colour mode, defaults to ``"light"``.
+    :type mode: str, optional
+    :param cjk_locale: CJK locale, defaults to ``"sc"``.
+    :type cjk_locale: str, optional
+    :param direction: Layout direction, defaults to ``"TB"``.
+    :type direction: str, optional
+    :return: An immutable diagram snapshot.
+    :rtype: pyfcstm.diagram.api.Diagram
+    """
+    from pyfcstm.model import load_state_machine_from_text
+
+    from tools.diagram_contract_support import SAMPLE_SOURCE
+
+    return load_state_machine_from_text(SAMPLE_SOURCE).diagram(
+        palette=palette, mode=mode, cjk_locale=cjk_locale, direction=direction
+    )
 
 
 def run_browser(html: Path, formats: Tuple[str, ...]) -> Dict[str, Any]:
@@ -511,12 +551,10 @@ def main(argv=None) -> int:
             arrows += record["arrows"]
             compared += 1
         if arguments.all_cases:
-            # The corpus fixtures never vary the locale, and a locale reaching one
-            # path and not the other is exactly what this command exists to catch.
-            for label, locale, direction in LOCALE_CASES:
+            for label, changes in PRESENTATION_CASES:
+                view = presentation_diagram(**changes)
                 html = Path(directory) / (label + ".html")
-                write_sample_html(html, cjk_locale=locale, direction=direction)
-                view = sample_diagram(cjk_locale=locale, direction=direction)
+                html.write_text(view.to_html(), encoding="utf-8")
                 browser = run_browser(html, formats)
                 problems.extend(compare(browser, headless_facts(view, formats), label))
                 compared += 1

@@ -26,7 +26,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path, PurePosixPath
-from typing import Dict, Iterable, List, Set, Tuple
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -392,6 +392,61 @@ def validate_viewer_provenance(lock: Dict[str, object]) -> None:
             "PDF build dependencies leaked into the jsfcstm public diagram entry via %s"
             % ", ".join(leaking)
         )
+    _validate_pdf_dependency_provenance(viewer, "xmldom", "@xmldom/xmldom")
+
+
+def _validate_pdf_dependency_provenance(
+    viewer: Dict[str, object], key: str, package: str
+) -> None:
+    """
+    Require one PDF dependency to match the asset lock exactly.
+
+    The embedded PDF writer ships the same three packages the browser bundle
+    does, so each needs the same provenance trail: an exact version, the resolved
+    URL and integrity the lockfile recorded, and a license naming what is being
+    redistributed.  A dependency compiled into a published asset with none of that
+    is untraceable.
+
+    :param viewer: Viewer section of the asset lock.
+    :type viewer: dict
+    :param key: Key the asset lock stores this dependency under.
+    :type key: str
+    :param package: npm package name.
+    :type package: str
+    :return: ``None``.
+    :rtype: None
+    :raises ValueError: If the lock lacks the entry, or the installed tree and the
+        lockfile disagree with it.
+    :raises FileNotFoundError: If the package is not installed.
+    """
+    recorded = viewer.get(key)
+    if not isinstance(recorded, dict):
+        raise ValueError("viewer lock lacks %s provenance" % package)
+    expected_version = recorded.get("version")
+    if not isinstance(expected_version, str) or not expected_version:
+        raise ValueError("viewer lock lacks a %s version" % package)
+    try:
+        package_lock = json.loads(JSFCSTM_LOCK_PATH.read_text(encoding="utf-8"))
+        root_package = package_lock["packages"][""]
+        entry = package_lock["packages"]["node_modules/%s" % package]
+    except (KeyError, OSError, TypeError, ValueError) as err:
+        # KeyError/TypeError: the lockfile has no entry for this package.
+        # OSError/ValueError: the lockfile cannot be read.
+        raise ValueError("jsfcstm package-lock lacks a valid %s entry" % package) from err
+    dev_dependencies = root_package.get("devDependencies")
+    if (
+        not isinstance(dev_dependencies, dict)
+        or dev_dependencies.get(package) != expected_version
+    ):
+        raise ValueError("jsfcstm %s devDependency differs from asset lock" % package)
+    for field in ("version", "resolved", "integrity", "license"):
+        if entry.get(field) != recorded.get(field):
+            raise ValueError(
+                "%s %s differs between package-lock and asset lock" % (package, field)
+            )
+    installed_package = JSFCSTM_DIR / "node_modules" / package / "package.json"
+    if not installed_package.is_file():
+        raise FileNotFoundError("installed %s package is missing" % package)
 
 
 def _pdf_dependency_importers(entry: Path) -> List[str]:
@@ -936,6 +991,7 @@ def build_manifest(
     files: Iterable[Tuple[str, bytes]],
     metafile: Dict[str, object],
     esbuild_version: str,
+    pdf_metafile: Optional[Dict[str, object]] = None,
 ) -> bytes:
     """Return deterministic manifest metadata for all generated resources."""
     entries = []
@@ -959,6 +1015,17 @@ def build_manifest(
             ),
         },
     }
+    if pdf_metafile is not None:
+        # The PDF writer is built by a second esbuild invocation, so its input
+        # inventory is a separate document. Recording its digest is what makes the
+        # bundle's dependency closure auditable after the fact -- the zero-image
+        # gate looks at the output and cannot see a package that was compiled in
+        # and never called.
+        manifest["esbuild"]["pdfWriterMetafileSha256"] = sha256_bytes(
+            json.dumps(pdf_metafile, sort_keys=True, separators=(",", ":")).encode(
+                "utf-8"
+            )
+        )
     return (json.dumps(manifest, ensure_ascii=True, indent=2) + "\n").encode("utf-8")
 
 
@@ -1153,7 +1220,7 @@ def build_assets() -> None:
         bridge = BRIDGE_PATH.read_bytes()
         host_shim = HOST_SHIM_PATH.read_bytes()
         combined = renderer + b"\n" + bundle + b"\n" + bridge
-        pdf_bundle, _ = build_pdf_writer(
+        pdf_bundle, pdf_metafile = build_pdf_writer(
             temporary_root / "pdf-writer.js", esbuild_version
         )
         # The shim goes first and in the same file: jsPDF reads ``navigator``
@@ -1171,7 +1238,9 @@ def build_assets() -> None:
             ("viewer.css", viewer_css),
             *fonts,
         ]
-        manifest = build_manifest(lock, files, metafile, esbuild_version)
+        manifest = build_manifest(
+            lock, files, metafile, esbuild_version, pdf_metafile=pdf_metafile
+        )
         files.append(("manifest.json", manifest))
         staging = temporary_root / "staged"
         for relative, data in files:

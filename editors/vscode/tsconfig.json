@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "module": "commonjs",
+    "module": "node16",
     "target": "ES2015",
     "outDir": "out",
     "lib": ["ES2015"],
@@ -12,7 +12,7 @@
     "types": ["node", "vscode"],
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "moduleResolution": "node"
+    "moduleResolution": "node16"
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "out", "parser", "src/preview-webview"]

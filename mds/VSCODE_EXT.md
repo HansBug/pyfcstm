@@ -21,6 +21,7 @@
 | 0.7.1 | 2026-04-09 | 重构 Phase 8 预览目标：预览不再停留在文本式摘要，而是按 `pyfcstm` PlantUML 语义输出层级状态图，明确展示 hierarchy、`[*]` 起止节点、transition from/to、trigger、guard、effect note 与共享 event 颜色图例 | Codex |
 | 0.8.0 | 2026-04-09 | 将 Phase 8 标记为已废弃的过渡原型，新增基于 `ELK.js` 的正式可视化 Phase 9，明确替换旧布局、提供快速右侧打开体验，并以 `pyfcstm` PlantUML 语义密度与视觉质量为对标基线 | Codex |
 | 0.8.1 | 2026-04-10 | 新增 Phase 10：先收敛预览 transition 语义、effect 展示与顶部选项系统，对齐 `pyfcstm` 的成熟可视化配置模型；原发布加固阶段顺延为 Phase 11 | Codex |
+| 0.8.2 | 2026-07-27 | 将 `engines.vscode` 下限从 `^1.60.0` 提升到 `^1.91.0`，以匹配 `vscode-languageclient` 10 所要求的 VSCode API 版本，并把 `@types/vscode` 钉到同一下限使类型面与声明的兼容边界一致 | Claude |
 
 ---
 
@@ -71,7 +72,7 @@
 
 | 维度 | 当前状态 |
 |------|----------|
-| Manifest | `editors/vscode/package.json`，扩展名 `fcstm-language-support`，`engines.vscode` 为 `^1.60.0` |
+| Manifest | `editors/vscode/package.json`，扩展名 `fcstm-language-support`，`engines.vscode` 为 `^1.91.0` |
 | 入口 | `main` 指向 `./dist/extension.js` |
 | 源码语言 | TypeScript |
 | Bundle 方式 | `esbuild`，当前双入口 `src/extension.ts -> dist/extension.js` 与 `src/server.ts -> dist/server.js` |
@@ -418,7 +419,7 @@ editors/
 - server 通过标准 LSP 提供 editor intelligence，其可复用核心实现应位于 `editors/jsfcstm`
 - `editors/vscode` 侧只保留最薄的 VSCode transport / bootstrap 代码
 - preview 不依赖 Python / Java / PlantUML / 网络服务
-- 保持与当前 `engines.vscode = ^1.60.0`、`CommonJS`、`ES2015` 的兼容思路
+- 保持与当前 `engines.vscode = ^1.91.0`、`CommonJS`、`ES2015` 的兼容思路
 
 ---
 
@@ -595,7 +596,7 @@ language server 方案应延续这组标准，而不是引入 ESM-only、Node ve
 - 不要求原生编译扩展
 - 不要求额外系统级 runtime
 - 不要求仅支持 ESM
-- 与 VSCode `^1.60.0` 对应的 Node/Electron 能力兼容
+- 与 VSCode `^1.91.0` 对应的 Node/Electron 能力兼容
 
 这意味着：
 

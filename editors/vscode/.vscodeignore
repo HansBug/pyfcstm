@@ -13,7 +13,7 @@ test/**
 src/**
 parser/**
 tsconfig.json
-.eslintrc.json
+eslint.config.js
 esbuild.config.js
 Makefile
 

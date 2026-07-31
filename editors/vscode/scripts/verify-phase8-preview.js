@@ -101,7 +101,24 @@ const vscode = {
     },
     window: {
         activeTextEditor: null,
-        createOutputChannel() { return createDisposable(); },
+        // Honour the options argument the way the real API does: only
+        // ``{log: true}`` yields a LogOutputChannel. The language client needs
+        // that shape -- it reads ``logLevel`` in its constructor and logs
+        // through ``info``/``warn``/``error``/``debug``.
+        createOutputChannel(name, options) {
+            const channel = Object.assign(createDisposable(), {
+                name,
+                append() {}, appendLine() {}, replace() {}, clear() {}, show() {}, hide() {},
+            });
+            if (!options || !options.log) {
+                return channel;
+            }
+            return Object.assign(channel, {
+                logLevel: 3, // vscode.LogLevel.Info
+                onDidChangeLogLevel() { return createDisposable(); },
+                trace() {}, debug() {}, info() {}, warn() {}, error() {},
+            });
+        },
         createWebviewPanel(viewType, title, showOptions) {
             const disposeListeners = [];
             const panel = {
@@ -146,7 +163,9 @@ const vscode = {
 };
 
 class MockLanguageClient {
-    start() { return createDisposable(); }
+    // ``BaseLanguageClient.start()`` resolves to ``void`` since language client
+    // 8; it is no longer a disposable.
+    start() { return Promise.resolve(); }
     stop() { return Promise.resolve(); }
 }
 

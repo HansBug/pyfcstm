@@ -368,3 +368,333 @@ def test_interval_intersection_refuses_bounds_it_cannot_intersect(premises) -> N
         check_rule(RuleApplication("interval_intersection", premises, _fact("false")))
         is False
     )
+
+
+def _domain(frame: int = 1, states=(1, 2)) -> dict:
+    """The legal states one frame may hold."""
+    return _fact("state_domain", frame=frame, states=list(states))
+
+
+def _excluded(state: int, frame: int = 1) -> dict:
+    """One state ruled out at one frame."""
+    return _fact("state_exclusion", frame=frame, state=state)
+
+
+@pytest.mark.unittest
+def test_state_domain_exhaustion_closes_when_every_legal_state_is_ruled_out() -> None:
+    """A frame with no state left to be is a contradiction about that frame."""
+    application = RuleApplication(
+        "state_domain_exhaustion",
+        (_domain(), _excluded(1), _excluded(2)),
+        _fact("false"),
+    )
+
+    assert check_rule(application) is True
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "premises",
+    [
+        (_domain(), _excluded(1)),
+        (_domain(), _excluded(1), _excluded(2), _excluded(9)),
+        (_domain(), _excluded(1, frame=2), _excluded(2, frame=2)),
+        (_domain(frame=1), _domain(frame=2), _excluded(1), _excluded(2)),
+    ],
+    ids=[
+        "a-state-still-remains",
+        "an-exclusion-outside-the-domain",
+        "exclusions-about-another-frame",
+        "two-domains-leave-the-subject-ambiguous",
+    ],
+)
+def test_state_domain_exhaustion_refuses_what_does_not_empty_the_frame(
+    premises,
+) -> None:
+    """Coverage has to be exact: every legal state ruled out, and nothing else.
+
+    The second case is the one worth naming.  Ruling out a state the frame could
+    not hold anyway contributes nothing, and counting it would let the rule close
+    on a frame that still has somewhere to be.
+    """
+    assert (
+        check_rule(RuleApplication("state_domain_exhaustion", premises, _fact("false")))
+        is False
+    )
+
+
+@pytest.mark.unittest
+def test_definedness_failure_closes_when_the_guard_excludes_the_required_value() -> (
+    None
+):
+    """A division whose divisor is pinned to the one value it forbids."""
+    application = RuleApplication(
+        "definedness_failure",
+        (
+            _fact(
+                "definedness_guard",
+                variable="x",
+                frame=0,
+                operation="division",
+                forbidden=0,
+            ),
+            _equality(value=0),
+        ),
+        _fact("false"),
+    )
+
+    assert check_rule(application) is True
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "premises",
+    [
+        (
+            _fact(
+                "definedness_guard",
+                variable="x",
+                frame=0,
+                operation="division",
+                forbidden=0,
+            ),
+        ),
+        (
+            _fact(
+                "definedness_guard",
+                variable="x",
+                frame=0,
+                operation="division",
+                forbidden=0,
+            ),
+            _equality(value=1),
+        ),
+        (
+            _fact(
+                "definedness_guard",
+                variable="x",
+                frame=0,
+                operation="division",
+                forbidden=0,
+            ),
+            _equality(frame=1, value=0),
+        ),
+        (
+            _fact(
+                "definedness_guard",
+                variable="x",
+                frame=0,
+                operation="division",
+                forbidden=0,
+            ),
+            _equality(variable="y", value=0),
+        ),
+    ],
+    ids=[
+        "a-premise-the-rule-does-not-take",
+        "the-value-is-not-the-forbidden-one",
+        "the-value-is-at-another-frame",
+        "the-value-is-of-another-subject",
+    ],
+)
+def test_definedness_failure_refuses_a_value_the_guard_permits(premises) -> None:
+    """The guard forbids one value at one slot, and only that pairing closes."""
+    assert (
+        check_rule(RuleApplication("definedness_failure", premises, _fact("false")))
+        is False
+    )
+
+
+@pytest.mark.unittest
+def test_boolean_complement_closes_on_a_proposition_and_its_negation() -> None:
+    """The same requirement asserted and denied cannot both hold."""
+    application = RuleApplication(
+        "boolean_complement",
+        (
+            _fact("proposition", identity="active(Root.A)@1", holds=True),
+            _fact("proposition", identity="active(Root.A)@1", holds=False),
+        ),
+        _fact("false"),
+    )
+
+    assert check_rule(application) is True
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "premises",
+    [
+        ((_fact("proposition", identity="active(Root.A)@1", holds=True),)),
+        (
+            _fact("proposition", identity="active(Root.A)@1", holds=True),
+            _fact("proposition", identity="active(Root.A)@1", holds=True),
+        ),
+        (
+            _fact("proposition", identity="active(Root.A)@1", holds=True),
+            _fact("proposition", identity="active(Root.A)@2", holds=False),
+        ),
+        (
+            _fact("proposition", identity="active(Root.A)@1", holds=True),
+            _fact("proposition", identity="active(Root.B)@1", holds=False),
+        ),
+    ],
+    ids=[
+        "a-premise-the-rule-does-not-take",
+        "the-same-polarity-twice",
+        "propositions-about-another-frame",
+        "propositions-about-another-subject",
+    ],
+)
+def test_boolean_complement_needs_one_identity_and_two_polarities(premises) -> None:
+    """Identity is compared as a whole string, so a different frame is a different
+    proposition and no contradiction at all."""
+    assert (
+        check_rule(RuleApplication("boolean_complement", premises, _fact("false")))
+        is False
+    )
+
+
+@pytest.mark.unittest
+def test_transition_assignment_carries_a_value_across_one_step() -> None:
+    """A selected transition case relating one frame's value to the next."""
+    application = RuleApplication(
+        "transition_assignment",
+        (
+            _fact(
+                "transition_case",
+                variable="x",
+                frame=0,
+                target_frame=1,
+                operator="add",
+                operand=1,
+            ),
+            _equality(value=0),
+        ),
+        _fact(
+            "arithmetic_expression",
+            variable="x",
+            frame=0,
+            operator="add",
+            operand=1,
+            target_frame=1,
+        ),
+    )
+
+    assert check_rule(application) is True
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "case_frame, case_target, value_frame, ok",
+    [
+        (0, 1, 0, True),
+        (0, 2, 0, False),
+        (0, 1, 1, False),
+    ],
+    ids=[
+        "adjacent-frames",
+        "a-step-that-skips-a-frame",
+        "a-value-from-the-wrong-side-of-the-step",
+    ],
+)
+def test_transition_assignment_relates_adjacent_frames_only(
+    case_frame, case_target, value_frame, ok
+) -> None:
+    """A macro-step goes to the next frame; a case spanning two is not one step."""
+    application = RuleApplication(
+        "transition_assignment",
+        (
+            _fact(
+                "transition_case",
+                variable="x",
+                frame=case_frame,
+                target_frame=case_target,
+                operator="add",
+                operand=1,
+            ),
+            _equality(frame=value_frame, value=0),
+        ),
+        _fact(
+            "arithmetic_expression",
+            variable="x",
+            frame=case_frame,
+            operator="add",
+            operand=1,
+            target_frame=case_target,
+        ),
+    )
+
+    assert check_rule(application) is ok
+
+
+@pytest.mark.unittest
+def test_equality_substitution_rewrites_an_expression_with_a_known_value() -> None:
+    """Replacing a subject by its value keeps the expression equivalent."""
+    application = RuleApplication(
+        "equality_substitution",
+        (
+            _equality(variable="y", value=3),
+            _fact(
+                "arithmetic_expression",
+                variable="x",
+                frame=0,
+                operator="add",
+                operand_variable="y",
+                target_frame=1,
+            ),
+        ),
+        _fact(
+            "arithmetic_expression",
+            variable="x",
+            frame=0,
+            operator="add",
+            operand=3,
+            target_frame=1,
+        ),
+    )
+
+    assert check_rule(application) is True
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "value_fact, conclusion_operand",
+    [
+        (_equality(variable="y", value=3), 4),
+        (_equality(variable="y", frame=1, value=3), 3),
+        (_equality(variable="z", value=3), 3),
+    ],
+    ids=[
+        "a-conclusion-that-does-not-follow",
+        "the-value-is-at-another-frame",
+        "the-value-is-of-another-subject",
+    ],
+)
+def test_equality_substitution_refuses_a_value_that_is_not_the_operand(
+    value_fact, conclusion_operand
+) -> None:
+    """Sort and frame have to agree, or the substitution changes the meaning."""
+    application = RuleApplication(
+        "equality_substitution",
+        (
+            value_fact,
+            _fact(
+                "arithmetic_expression",
+                variable="x",
+                frame=0,
+                operator="add",
+                operand_variable="y",
+                target_frame=1,
+            ),
+        ),
+        _fact(
+            "arithmetic_expression",
+            variable="x",
+            frame=0,
+            operator="add",
+            operand=conclusion_operand,
+            target_frame=1,
+        ),
+    )
+
+    assert check_rule(application) is False

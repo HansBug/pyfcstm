@@ -286,6 +286,136 @@ def _source_fact(application: RuleApplication) -> bool:
     return not application.premises and bool(application.conclusion.get("kind"))
 
 
+def _state_domain_exhaustion(application: RuleApplication) -> bool:
+    """A frame whose every legal state has been ruled out has nowhere to be.
+
+    Coverage is exact in both directions.  A state still standing leaves the frame
+    somewhere to go, and an exclusion naming a state the frame could not hold anyway
+    contributes nothing -- counting it would close the rule on a frame that still has
+    an option.
+    """
+    premises = application.premises
+    if application.conclusion.get("kind") != "false":
+        return False
+    domains = [item for item in premises if item.get("kind") == "state_domain"]
+    exclusions = [item for item in premises if item.get("kind") == "state_exclusion"]
+    if len(domains) != 1 or not exclusions:
+        return False
+    if len(domains) + len(exclusions) != len(premises):
+        return False
+    legal = domains[0]
+    frame = legal.get("frame")
+    if frame is None:
+        return False
+    if any(item.get("frame") != frame for item in exclusions):
+        return False
+    states = legal.get("states")
+    if not isinstance(states, (list, tuple)) or not states:
+        return False
+    ruled_out = {item.get("state") for item in exclusions}
+    return ruled_out == set(states)
+
+
+def _definedness_failure(application: RuleApplication) -> bool:
+    """An operation's domain condition against the value its subject is pinned to.
+
+    The guard names one value it forbids at one slot; the contradiction needs the
+    subject pinned to exactly that value at exactly that slot.
+    """
+    premises = application.premises
+    if len(premises) != 2 or application.conclusion.get("kind") != "false":
+        return False
+    guards = [item for item in premises if item.get("kind") == "definedness_guard"]
+    values = [item for item in premises if item.get("kind") == "variable_equality"]
+    if len(guards) != 1 or len(values) != 1:
+        return False
+    guard, value = guards[0], values[0]
+    if _slot(guard) != _slot(value) or _slot(guard) == (None, None):
+        return False
+    if not guard.get("operation"):
+        return False
+    return value.get("value") == guard.get("forbidden")
+
+
+def _boolean_complement(application: RuleApplication) -> bool:
+    """One proposition asserted and denied.
+
+    Identity is compared whole rather than by parts: it already encodes the subject
+    and the frame, so a differing frame is a different proposition and no
+    contradiction at all.
+    """
+    premises = application.premises
+    if len(premises) != 2 or application.conclusion.get("kind") != "false":
+        return False
+    if set(_kinds(premises)) != {"proposition"}:
+        return False
+    identities = {item.get("identity") for item in premises}
+    if len(identities) != 1 or None in identities:
+        return False
+    return {item.get("holds") for item in premises} == {True, False}
+
+
+def _transition_assignment(application: RuleApplication) -> bool:
+    """A selected transition case relating one frame's value to the next.
+
+    A macro-step advances one frame, so a case spanning two is not one step and the
+    value it reads has to be the one on the step's own side.
+    """
+    premises = application.premises
+    if len(premises) != 2:
+        return False
+    cases = [item for item in premises if item.get("kind") == "transition_case"]
+    values = [item for item in premises if item.get("kind") == "variable_equality"]
+    if len(cases) != 1 or len(values) != 1:
+        return False
+    case, value = cases[0], values[0]
+    frame, target = case.get("frame"), case.get("target_frame")
+    if not isinstance(frame, int) or target != frame + 1:
+        return False
+    if _slot(value) != (case.get("variable"), frame):
+        return False
+    conclusion = application.conclusion
+    if conclusion.get("kind") != "arithmetic_expression":
+        return False
+    return all(
+        conclusion.get(key) == case.get(key)
+        for key in ("variable", "frame", "target_frame", "operator", "operand")
+    )
+
+
+def _equality_substitution(application: RuleApplication) -> bool:
+    """An expression's symbolic operand replaced by the value that operand holds.
+
+    The value has to be the operand's own, at the expression's own frame; taking one
+    from elsewhere would rewrite the expression into a different statement.
+    """
+    premises = application.premises
+    if len(premises) != 2:
+        return False
+    kinds = _kinds(premises)
+    if kinds != ("variable_equality", "arithmetic_expression"):
+        return False
+    value, expression = premises
+    operand_variable = expression.get("operand_variable")
+    if not operand_variable:
+        return False
+    if value.get("variable") != operand_variable:
+        return False
+    if value.get("frame") != expression.get("frame"):
+        return False
+    conclusion = application.conclusion
+    if conclusion.get("kind") != "arithmetic_expression":
+        return False
+    if conclusion.get("operand") != value.get("value"):
+        return False
+    if conclusion.get("operand_variable") is not None:
+        return False
+    return all(
+        conclusion.get(key) == expression.get(key)
+        for key in ("variable", "frame", "target_frame", "operator")
+    )
+
+
 PROOF_RULES = {
     rule.rule_id: rule
     for rule in (
@@ -307,6 +437,36 @@ PROOF_RULES = {
             ("variable_equality", "variable_equality"),
             "false",
             _incompatible_equalities,
+        ),
+        ProofRule(
+            "state_domain_exhaustion",
+            ("state_domain", "state_exclusion"),
+            "false",
+            _state_domain_exhaustion,
+        ),
+        ProofRule(
+            "definedness_failure",
+            ("definedness_guard", "variable_equality"),
+            "false",
+            _definedness_failure,
+        ),
+        ProofRule(
+            "boolean_complement",
+            ("proposition", "proposition"),
+            "false",
+            _boolean_complement,
+        ),
+        ProofRule(
+            "transition_assignment",
+            ("transition_case", "variable_equality"),
+            "arithmetic_expression",
+            _transition_assignment,
+        ),
+        ProofRule(
+            "equality_substitution",
+            ("variable_equality", "arithmetic_expression"),
+            "arithmetic_expression",
+            _equality_substitution,
         ),
     )
 }

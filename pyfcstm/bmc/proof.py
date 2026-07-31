@@ -168,15 +168,47 @@ def _candidates(nodes: Sequence[_Node]) -> List[Tuple[str, Tuple[int, ...]]]:
     """
     proposals = []
     for rule_id in sorted(PROOF_RULES):
-        rule = PROOF_RULES[rule_id]
-        arity = len(rule.premise_kinds)
-        if rule_id == "source_fact" or arity == 0:
+        if rule_id == "source_fact":
             # Inputs are seeded rather than derived; nothing proposes them.
+            continue
+        if rule_id in _VARIADIC_RULES:
+            # One rule reads as many exclusions as the frame has states, so its
+            # arity is a property of the input rather than of the rule.  Offering
+            # every subset would be exponential; offering the facts that share a
+            # frame is what the rule can actually use.
+            for combination in _frame_groups(nodes):
+                proposals.append((rule_id, combination))
+            continue
+        arity = len(PROOF_RULES[rule_id].premise_kinds)
+        if arity == 0:
             continue
         for combination in itertools.permutations(range(len(nodes)), arity):
             proposals.append((rule_id, combination))
     proposals.sort()
     return proposals
+
+
+#: Rules whose premise count follows the input rather than the rule.
+_VARIADIC_RULES = frozenset({"state_domain_exhaustion"})
+
+
+def _frame_groups(nodes: Sequence[_Node]) -> List[Tuple[int, ...]]:
+    """Group node indices by the frame their fact is about.
+
+    A variadic rule reads every fact at one frame, so the groups are the candidate
+    premise sets.  Sorted by frame and then by index, so the enumeration is total.
+
+    :param nodes: The closure so far.
+    :type nodes: Sequence[_Node]
+    :return: One index tuple per frame, in frame order.
+    :rtype: List[Tuple[int, ...]]
+    """
+    grouped: Dict[Any, List[int]] = {}
+    for index, node in enumerate(nodes):
+        frame = node.fact.get("frame")
+        if frame is not None:
+            grouped.setdefault(frame, []).append(index)
+    return [tuple(sorted(grouped[frame])) for frame in sorted(grouped, key=repr)]
 
 
 def build_domain_proof(
@@ -377,8 +409,47 @@ def _conclusion_for(
     :rtype: Optional[Mapping[str, object]]
     """
     facts = [node.fact for node in premises]
-    if rule_id in ("incompatible_equalities", "interval_intersection"):
+    if rule_id in (
+        "incompatible_equalities",
+        "interval_intersection",
+        "state_domain_exhaustion",
+        "definedness_failure",
+        "boolean_complement",
+    ):
         return {"kind": "false"}
+    if rule_id == "transition_assignment":
+        if len(facts) != 2:
+            return None
+        cases = [fact for fact in facts if fact.get("kind") == "transition_case"]
+        if len(cases) != 1:
+            return None
+        case = cases[0]
+        return {
+            "kind": "arithmetic_expression",
+            "variable": case.get("variable"),
+            "frame": case.get("frame"),
+            "operator": case.get("operator"),
+            "operand": case.get("operand"),
+            "target_frame": case.get("target_frame"),
+        }
+    if rule_id == "equality_substitution":
+        if len(facts) != 2:
+            return None
+        value_fact, expression = facts
+        if value_fact.get("kind") != "variable_equality":
+            return None
+        if expression.get("kind") != "arithmetic_expression":
+            return None
+        if not expression.get("operand_variable"):
+            return None
+        return {
+            "kind": "arithmetic_expression",
+            "variable": expression.get("variable"),
+            "frame": expression.get("frame"),
+            "operator": expression.get("operator"),
+            "operand": value_fact.get("value"),
+            "target_frame": expression.get("target_frame"),
+        }
     if rule_id == "arithmetic_evaluation":
         if len(facts) != 2:
             return None

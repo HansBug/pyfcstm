@@ -19,15 +19,26 @@ The module contains:
    the failure this is written to catch.
 
 .. note::
-   Two properties the builder implements are **not** observable through it yet, and
-   are deliberately left untested rather than reached for artificially.  Removing
-   the backwards prune, or the sort over candidate applications, leaves every test
-   here green.  Both follow from the coverage rule: a proof is published only when
-   the contradiction rests on every core member, so a step that leads nowhere makes
-   its own member uncovered and the whole core unpublishable before pruning has
-   anything to remove.  A 210-input sweep over the current catalog produced twelve
-   publishable proofs and no pruned node.  The rules that create several routes to
-   one conclusion arrive with the rest of the catalog; the cases belong with them.
+   Two properties the builder implements are **not** observable through it, and are
+   deliberately left untested rather than reached for artificially.  Removing the
+   backwards prune, or reversing the order candidates are enumerated in, leaves
+   every test here green -- with the full rule catalog, not only the first few.
+
+   The reason is structural rather than a weak suite.  A proof is published only
+   when the contradiction rests on every core member.  A dead step is one whose
+   conclusion the root does not use, so publishing requires its premises to be
+   covered by *other* steps -- that is, a branch.  Every rule that concludes
+   something other than ``false`` is single-valued: one transition case yields one
+   expression, one expression and one value yield one value.  No branch can form, so
+   no dead node survives to be pruned, and the coverage rule subsumes pruning for
+   this catalog.  Ordering follows the same argument: the search stops at the first
+   contradiction, and an order finding a different one would fail coverage instead
+   of publishing a different graph.
+
+   Both are kept because the contract requires them and because a later rule with
+   two conclusions would make them load-bearing overnight.  A 210-input sweep
+   produced twelve publishable proofs and no pruned node; the sweep is worth
+   repeating whenever a rule is added.
 """
 
 import pytest
@@ -355,3 +366,129 @@ def test_an_exhausted_budget_stops_the_search_without_publishing() -> None:
 
     assert proof is None
     assert record.status == "timeout"
+
+
+_CONFLICT_SHAPES = {
+    "incompatible-equalities": (
+        (
+            ("assumption.0000", _equality(value=0)),
+            ("assumption.0001", _equality(value=1)),
+        ),
+        "incompatible_equalities",
+    ),
+    "an-empty-interval": (
+        (
+            ("assumption.0000", _bound("ge", 5)),
+            ("assumption.0001", _bound("le", 3)),
+        ),
+        "interval_intersection",
+    ),
+    "an-exhausted-state-domain": (
+        (
+            ("domain.frame.0001", _fact("state_domain", frame=1, states=[1, 2])),
+            ("assumption.0000", _fact("state_exclusion", frame=1, state=1)),
+            ("assumption.0001", _fact("state_exclusion", frame=1, state=2)),
+        ),
+        "state_domain_exhaustion",
+    ),
+    "a-definedness-guard-its-subject-violates": (
+        (
+            (
+                "definedness.0000",
+                _fact(
+                    "definedness_guard",
+                    variable="x",
+                    frame=0,
+                    operation="division",
+                    forbidden=0,
+                ),
+            ),
+            ("initial.variable.x", _equality(value=0)),
+        ),
+        "definedness_failure",
+    ),
+    "a-proposition-and-its-negation": (
+        (
+            (
+                "assumption.0000",
+                _fact("proposition", identity="active(Root.A)@1", holds=True),
+            ),
+            (
+                "assumption.0001",
+                _fact("proposition", identity="active(Root.A)@1", holds=False),
+            ),
+        ),
+        "boolean_complement",
+    ),
+    "a-value-carried-across-a-transition": (
+        (
+            ("initial.variable.x", _equality(value=0)),
+            (
+                "transition.step.0000",
+                _fact(
+                    "transition_case",
+                    variable="x",
+                    frame=0,
+                    target_frame=1,
+                    operator="add",
+                    operand=1,
+                ),
+            ),
+            ("assumption.0000", _equality(frame=1, value=9)),
+        ),
+        "incompatible_equalities",
+    ),
+}
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "shape", sorted(_CONFLICT_SHAPES), ids=sorted(_CONFLICT_SHAPES)
+)
+def test_every_conflict_shape_the_catalog_covers_reaches_a_proof(shape) -> None:
+    """One case per way a scenario can be empty, end to end through the builder.
+
+    Rule tests check a step in isolation; this checks that the search can reach the
+    step at all.  The two are not the same: five rules passed their own tests while
+    no input could produce them, because the builder had no proposal for their
+    shapes and never offered one to the checker.
+    """
+    inputs, closing_rule = _CONFLICT_SHAPES[shape]
+
+    proof, record = _build(inputs)
+
+    assert proof is not None, record.reason
+    assert record.status == "complete"
+    assert proof.nodes[-1].rule_id == closing_rule
+    assert proof.nodes[-1].conclusion == {"kind": "false"}
+    # Every member is a reason, which is what makes the core fully used.
+    assert set(proof.nodes[-1].item_ids) == {stable_id for stable_id, _ in inputs}
+
+
+@pytest.mark.unittest
+def test_a_transition_chain_is_more_than_one_hop_deep() -> None:
+    """The shape that proves the graph machinery, not just one rule.
+
+    A transition case becomes an expression, the expression evaluates to a value,
+    and the value contradicts an assumption -- three derived steps, each reading the
+    one before it.  A builder that only ever fanned inputs into a root would pass
+    every other case here.
+    """
+    inputs, _ = _CONFLICT_SHAPES["a-value-carried-across-a-transition"]
+
+    proof, _ = _build(inputs)
+
+    derived = [node for node in proof.nodes if node.kind == "derived"]
+    assert len(derived) >= 2, [node.rule_id for node in proof.nodes]
+    # Chase the premise edges back from the root; the depth is the chain length.
+    by_id = {node.stable_id: node for node in proof.nodes}
+    depth, frontier = 0, [proof.root_id]
+    while frontier:
+        depth += 1
+        frontier = [
+            premise
+            for name in frontier
+            for premise in by_id[name].premise_ids
+            if by_id[premise].kind != "input"
+        ]
+    assert depth >= 3, depth

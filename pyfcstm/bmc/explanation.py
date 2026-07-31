@@ -380,21 +380,24 @@ def require_published_text(value: Any, where: str) -> str:
     return text
 
 
-#: The subject name a frame's state slot carries in proof facts.
+#: What a frame's state slot is called where a subject has to be printed.
 #:
-#: A frame's state is not a declared variable, but every rule compares subjects
-#: before values, so the slot needs a name to be compared by.  It may not be a name
-#: a model can declare, or a requirement on a variable of that name would be read as
-#: a requirement on the slot.
+#: The rules compare subjects before values, so the slot needs one to be compared
+#: by.  The name is only a label: what tells the slot apart from a variable is the
+#: fact's own ``state_slot`` flag, which the slot comparison, the binding and the
+#: reading all consult.  Nothing decides identity by reading this string.
 #:
-#: ``$`` is what makes that hold, and it is the character class rather than a keyword
-#: that decides it.  Every identifier rule in the lexer -- ``ID`` and the four
-#: ``IMPORT_*_ID`` rules its import modes substitute for it -- matches
-#: ``[a-zA-Z_][a-zA-Z0-9_]*``, so no declared name can contain ``$``.  Relying on
-#: ``state`` being a keyword instead would not hold: ``STATE`` is a keyword in the
-#: default mode only, and an import mapping such as ``def counter -> state;`` renames
-#: through ``IMPORT_DEF_TARGET_MODE``, where no keyword applies.  The sentinel state
-#: paths spell themselves the same way.
+#: That was the third attempt.  Twice the slot was told apart by its name, and twice
+#: an argument for why a model could not declare that name turned out to be wrong --
+#: ``state`` is a keyword only in the lexer's default mode, so an import mapping
+#: renames past it; and ``$state`` is reachable too, because the target *template*
+#: rule admits ``$`` and ``def x_* -> *$state;`` with an empty capture renders it
+#: exactly.  A name a model can also write cannot carry identity, however it is
+#: spelled, so identity moved off the name entirely.
+#:
+#: The spelling is kept for the reader's sake -- it matches how the sentinel state
+#: paths spell themselves -- and a model that declares the same name is now simply a
+#: model with a variable of that name.
 _STATE_SLOT_SUBJECT = "$state"
 
 
@@ -484,7 +487,7 @@ def _fact_sentence(
     """
     kind = fact.get("kind")
     if kind == "variable_equality":
-        if fact.get("variable") == _STATE_SLOT_SUBJECT:
+        if fact.get("state_slot"):
             # A frame's state slot is compared like a variable so the rules can
             # reach it, but it is read like a state: rendering the equality verbatim
             # would tell the author their state "must equal 2", which names neither

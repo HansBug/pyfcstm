@@ -465,6 +465,7 @@ def test_every_published_node_states_its_own_fact() -> None:
     what they produce rather than the part they share: merging them once dropped the
     contradiction's own sentence, because only the node side had ever needed it.
     """
+    from pyfcstm.bmc.explanation import _STATE_SLOT_SUBJECT
     from pyfcstm.bmc.proof import build_domain_proof
     from pyfcstm.bmc.solver import _SolveBudget
 
@@ -510,6 +511,80 @@ def test_every_published_node_states_its_own_fact() -> None:
                 ),
             ),
         ),
+        (
+            "assumptions_component",
+            (
+                (
+                    "assumption.0000",
+                    {
+                        "kind": "variable_bound",
+                        "variable": "x",
+                        "frame": 0,
+                        "operator": "ge",
+                        "value": 5,
+                    },
+                ),
+                (
+                    "assumption.0001",
+                    {
+                        "kind": "variable_bound",
+                        "variable": "x",
+                        "frame": 0,
+                        "operator": "le",
+                        "value": 3,
+                    },
+                ),
+            ),
+        ),
+        (
+            "assumptions_component",
+            (
+                (
+                    "assumption.0000",
+                    {
+                        "kind": "definedness_guard",
+                        "operation": "division",
+                        "variable": "x",
+                        "frame": 0,
+                        "forbidden": 0,
+                    },
+                ),
+                (
+                    "assumption.0001",
+                    {
+                        "kind": "variable_equality",
+                        "variable": "x",
+                        "frame": 0,
+                        "value": 0,
+                    },
+                ),
+            ),
+        ),
+        (
+            "assumptions_component",
+            (
+                (
+                    "assumption.0000",
+                    {
+                        "kind": "variable_equality",
+                        "variable": _STATE_SLOT_SUBJECT,
+                        "state_slot": True,
+                        "frame": 1,
+                        "value": 1,
+                    },
+                ),
+                (
+                    "assumption.0001",
+                    {
+                        "kind": "variable_equality",
+                        "variable": _STATE_SLOT_SUBJECT,
+                        "state_slot": True,
+                        "frame": 1,
+                        "value": 2,
+                    },
+                ),
+            ),
+        ),
     )
 
     for scope, inputs in scenarios:
@@ -517,3 +592,51 @@ def test_every_published_node_states_its_own_fact() -> None:
         assert proof is not None, record.reason
         for node in proof.nodes:
             assert node.human_text != generic, (scope, node.stable_id, node.conclusion)
+
+
+@pytest.mark.unittest
+def test_a_variable_and_a_state_sharing_a_subject_are_not_one_slot() -> None:
+    """Two things spelled alike at one frame are still two things.
+
+    A state requirement is normalized onto a named subject so the rule that refuses
+    two values for one slot can reach it, and a model may declare a variable spelled
+    the same way -- an import mapping renames past the keyword, and the target
+    template rule even admits ``$``.  If the name alone decided which slot a fact is
+    about, that rule would see "1 and 2 at frame 0" and conclude no execution
+    exists, for a variable and a state that have nothing to do with each other.
+
+    Being at frame 0 with the variable at 1 and the state at 2 is ordinary, so the
+    right answer is no proof at all.  Identity is the flag, not the spelling.
+    """
+    from pyfcstm.bmc.explanation import _STATE_SLOT_SUBJECT
+    from pyfcstm.bmc.proof import build_domain_proof
+    from pyfcstm.bmc.solver import _SolveBudget
+
+    proof, record = build_domain_proof(
+        "assumptions_component",
+        (
+            (
+                "assumption.0000",
+                {
+                    "kind": "variable_equality",
+                    "variable": _STATE_SLOT_SUBJECT,
+                    "frame": 0,
+                    "value": 1,
+                },
+            ),
+            (
+                "assumption.0001",
+                {
+                    "kind": "variable_equality",
+                    "variable": _STATE_SLOT_SUBJECT,
+                    "state_slot": True,
+                    "frame": 0,
+                    "value": 2,
+                },
+            ),
+        ),
+        _SolveBudget(None),
+    )
+
+    assert proof is None, [node.human_text for node in proof.nodes]
+    assert record.reason

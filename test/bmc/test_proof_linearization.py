@@ -255,18 +255,14 @@ def test_a_required_state_is_read_as_a_state_and_not_as_a_number() -> None:
     """
     from pyfcstm.bmc.explanation import _STATE_SLOT_SUBJECT
 
-    proof = _proof_of(
-        (
-            (
-                "assumption.0000",
-                _equality(variable=_STATE_SLOT_SUBJECT, frame=1, value=1),
-            ),
-            (
-                "assumption.0001",
-                _equality(variable=_STATE_SLOT_SUBJECT, frame=1, value=2),
-            ),
-        )
-    )
+    def slot(value):
+        fact = _equality(variable=_STATE_SLOT_SUBJECT, frame=1, value=value)
+        # The subject is a label; the flag is what says this is a frame's state
+        # rather than a variable a model happened to spell the same way.
+        fact["state_slot"] = True
+        return fact
+
+    proof = _proof_of((("assumption.0000", slot(1)), ("assumption.0001", slot(2))))
 
     text = " ".join(
         step.text

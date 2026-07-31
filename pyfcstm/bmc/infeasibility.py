@@ -70,7 +70,6 @@ from .explanation import (
     BmcInfeasibilityExplanation,
     build_conflict_narrative,
     human_text_for_fact,
-    _STATE_SLOT_SUBJECT,
 )
 from .provenance import (
     # Private: the binding check has to name a frame symbol the same way the
@@ -1522,15 +1521,21 @@ def _binding_symbol(expression, fact: Mapping[str, object], declared=None):
         return None
     symbols = sorted(z3.z3util.get_vars(expression), key=lambda item: str(item))
     variable = fact.get("variable")
-    if variable is None or variable == _STATE_SLOT_SUBJECT:
+    if variable is None or fact.get("state_slot"):
         # A state fact speaks about the frame's own state slot rather than about a
         # declared variable, so it is matched by position in the encoding rather
         # than by a name the query wrote.  A positive requirement carries the slot's
         # subject name so the rules can compare it; an exclusion carries none.  Both
-        # mean the same symbol.  A model *can* declare a variable named ``state``,
-        # through an import mapping's target name, and its own requirement must keep
-        # reaching the declared branch below -- which is why the slot's subject is
-        # spelled with a character no declared name can contain.
+        # mean the same symbol.
+        #
+        # The subject is checked against the names this model actually declares
+        # rather than argued to be undeclarable.  Two arguments for why it could not
+        # collide have already turned out to be wrong -- ``state`` is a keyword only
+        # in the lexer's default mode, and the target-template rule admits ``$`` --
+        # and the declarations are right here, so the question is answered by
+        # looking rather than by reading the grammar again.  A model that does
+        # declare this name keeps its own variable's reading; what it loses is the
+        # proof tier, which the translation side declines to enter for that core.
         for symbol in symbols:
             if str(symbol) == "F_%d_state" % frame:
                 return symbol
@@ -1779,7 +1784,9 @@ def explain_infeasibility(
         from .proof import build_domain_proof, proof_facts_for_core
         from .proof_text import linearize_proof
 
-        proof_facts = proof_facts_for_core(published.items)
+        proof_facts = proof_facts_for_core(
+            published.items, declared_names=_declared_variable_names(core)
+        )
         # The binding check comes first: a graph built on facts that were never
         # shown equivalent to their members would carry ``core_binding`` as a trust
         # label, which the contract forbids outright.

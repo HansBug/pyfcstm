@@ -41,7 +41,6 @@ from typing import Any, List, Mapping, Optional, Tuple
 from .explanation import (
     BmcConflictProof,
     BmcReasoningStep,
-    _STATE_SLOT_SUBJECT,
     _fact_sentence,
     _state_display,
 )
@@ -79,7 +78,7 @@ def _clause(fact: Mapping[str, Any], names: Optional[Mapping[int, str]] = None) 
     """
     kind = fact.get("kind")
     if kind == "variable_equality":
-        if fact.get("variable") == _STATE_SLOT_SUBJECT:
+        if fact.get("state_slot"):
             return "the state at frame %s to be %s" % (
                 fact.get("frame"),
                 _state_display(fact.get("value"), names),

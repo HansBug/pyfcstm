@@ -104,7 +104,7 @@ class ProofRule:
     side_condition: Callable[[RuleApplication], bool]
 
 
-def _slot(fact: Mapping[str, Any]) -> Tuple[Any, Any]:
+def _slot(fact: Mapping[str, Any]) -> Tuple[Any, Any, bool]:
     """Return the variable and frame a fact is about.
 
     Every side condition below starts here.  Two facts on different slots say
@@ -113,15 +113,18 @@ def _slot(fact: Mapping[str, Any]) -> Tuple[Any, Any]:
 
     :param fact: A domain fact.
     :type fact: Mapping[str, object]
-    :return: The variable and frame, either of which may be absent.
-    :rtype: Tuple[object, object]
+    :return: The subject, the frame, and whether the subject is a frame's state
+        slot rather than a declared variable.  The flag is part of the identity:
+        a model may declare a variable spelled like the slot, and the two are
+        different things at the same frame.
+    :rtype: Tuple[object, object, bool]
 
     Example::
 
         >>> _slot({"kind": "variable_equality", "variable": "x", "frame": 0})
-        ('x', 0)
+        ('x', 0, False)
     """
-    return fact.get("variable"), fact.get("frame")
+    return fact.get("variable"), fact.get("frame"), bool(fact.get("state_slot"))
 
 
 def _same_slot(facts) -> bool:
@@ -140,7 +143,7 @@ def _same_slot(facts) -> bool:
     slots = {_slot(fact) for fact in facts}
     if len(slots) != 1:
         return False
-    variable, frame = slots.pop()
+    variable, frame, _ = slots.pop()
     return variable is not None and frame is not None
 
 
@@ -217,10 +220,7 @@ def _arithmetic_evaluation(application: RuleApplication) -> bool:
     if kinds != ("variable_equality", "arithmetic_expression"):
         return False
     value_fact, expression = premises
-    if _slot(value_fact) != (
-        expression.get("variable"),
-        expression.get("frame"),
-    ):
+    if _slot(value_fact) != _slot(expression):
         return False
     conclusion = application.conclusion
     if conclusion.get("kind") != "variable_equality":
@@ -330,7 +330,7 @@ def _definedness_failure(application: RuleApplication) -> bool:
     if len(guards) != 1 or len(values) != 1:
         return False
     guard, value = guards[0], values[0]
-    if _slot(guard) != _slot(value) or _slot(guard) == (None, None):
+    if _slot(guard) != _slot(value) or _slot(guard)[:2] == (None, None):
         return False
     if not guard.get("operation"):
         return False
@@ -372,7 +372,7 @@ def _transition_assignment(application: RuleApplication) -> bool:
     frame, target = case.get("frame"), case.get("target_frame")
     if not isinstance(frame, int) or target != frame + 1:
         return False
-    if _slot(value) != (case.get("variable"), frame):
+    if _slot(value) != _slot(case):
         return False
     conclusion = application.conclusion
     if conclusion.get("kind") != "arithmetic_expression":

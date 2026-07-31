@@ -475,7 +475,9 @@ _COMPARISON_FACTS = {
 }
 
 
-def proof_facts_for_core(items) -> Tuple[Tuple[str, Mapping[str, Any]], ...]:
+def proof_facts_for_core(
+    items, declared_names=()
+) -> Tuple[Tuple[str, Mapping[str, Any]], ...]:
     """Translate published core members into the facts the rules read.
 
     The published vocabulary describes a core for a reader; the rule vocabulary
@@ -487,6 +489,16 @@ def proof_facts_for_core(items) -> Tuple[Tuple[str, Mapping[str, Any]], ...]:
 
     :param items: Published core members.
     :type items: Iterable[BmcCoreItem]
+    :param declared_names: The variable names this model declares.  A state
+        requirement is normalized onto a named slot subject, and the rules tell two
+        subjects apart by name alone, so a model that declares that same name would
+        make one slot out of two different things -- and the rule that refuses two
+        values for a slot would then refuse a variable and a state that have nothing
+        to do with each other.  Rather than argue the name is undeclarable, which
+        has been wrong twice, the collision is looked for: when it is there, state
+        requirements go untranslated and the core simply does not reach the proof
+        tier.  Defaults to ``()``, which asserts no collision.
+    :type declared_names: Iterable[str], optional
     :return: Member ids paired with the fact each states, for readable members.
     :rtype: Tuple[Tuple[str, Mapping[str, object]], ...]
 
@@ -596,6 +608,7 @@ def proof_facts_for_core(items) -> Tuple[Tuple[str, Mapping[str, Any]], ...]:
                         {
                             "kind": "variable_equality",
                             "variable": _STATE_SLOT_SUBJECT,
+                            "state_slot": True,
                             "frame": fact.get("frame"),
                             "value": fact.get("state"),
                         },

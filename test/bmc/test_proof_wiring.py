@@ -841,3 +841,71 @@ def test_a_model_variable_named_like_the_state_slot_keeps_its_own_reading(
     text = " ".join(step.text for step in explanation.narrative.reasoning_steps)
     assert "state must equal 1" in text, text
     assert "the state must be" not in text, text
+
+
+@pytest.mark.unittest
+def test_a_variable_spelled_like_the_slot_and_a_state_read_as_themselves(
+    tmp_path,
+) -> None:
+    """One model, both subjects, each read as what it is.
+
+    A model can declare a variable named exactly what the slot calls itself.  Two
+    arguments for why it could not were both wrong -- ``state`` is a keyword only in
+    the lexer's default mode, so an import mapping renames past it, and ``$state``
+    is reachable too because the target template rule admits ``$`` and
+    ``def x_* -> *$state;`` with an empty capture renders it exactly.
+
+    Rather than defend the name, identity moved off it: the fact carries a flag, and
+    the slot comparison, the binding and the reading all consult that instead.  So
+    this model needs no special handling -- its variable's requirements read as a
+    variable, its state requirements read as states, and both reach the proof tier.
+    """
+    imported = tmp_path / "worker.fcstm"
+    imported.write_text(
+        "def int x_ = 0;\n"
+        "state WorkerRoot {\n"
+        "    state Idle;\n"
+        "    state Done;\n"
+        "    [*] -> Idle;\n"
+        "    Idle -> Done;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    main = tmp_path / "main.fcstm"
+    main.write_text(
+        "state Root {\n"
+        "    state Host {\n"
+        '        import "./worker.fcstm" as Worker { def x_* -> *$state; };\n'
+        "        [*] -> Worker;\n"
+        "    }\n"
+        "    [*] -> Host;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    model = load_state_machine_from_file(main)
+
+    def read(query: str) -> str:
+        context = BmcEngine(model).prepare(query, query_source_path="query.fbmcq")
+        result = solve_bmc_property(
+            compile_bmc_property(build_bmc_core_formula(context)),
+            infeasibility_explanation="proof",
+        )
+        explanation = result.feasibility.explanation
+        assert explanation.achieved_mode == "proof", explanation.reason
+        return " ".join(step.text for step in explanation.narrative.reasoning_steps)
+
+    as_variable = read(
+        'assume at 0: var("$state") == 1;\n'
+        'assume at 0: var("$state") == 2;\n'
+        'check reach <= 1: active("Root.Host.Worker.Done");\n'
+    )
+    assert "$state must equal 1" in as_variable, as_variable
+    assert "the state must be" not in as_variable, as_variable
+
+    as_state = read(
+        'assume at 1: active("Root.Host.Worker.Idle");\n'
+        'assume at 1: active("Root.Host.Worker.Done");\n'
+        'check reach <= 1: active("Root.Host.Worker.Done");\n'
+    )
+    assert "the state must be Root.Host.Worker.Idle" in as_state, as_state
+    assert "must equal" not in as_state, as_state

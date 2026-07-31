@@ -824,3 +824,113 @@ def test_a_state_may_not_stand_in_for_an_expression_operand() -> None:
     )
 
     assert check_rule(application) is False
+
+
+@pytest.mark.unittest
+def test_a_conclusion_may_not_carry_a_field_its_premises_never_mentioned() -> None:
+    """A conclusion is what the premises determine, no more and no less.
+
+    Naming the fields to compare means a field left off the list is a field nobody
+    recomputes.  That gap has been found twice: first ``state_slot``, letting a
+    derivation change what it talked about, then ``operand_variable``, letting one
+    invent a symbol its premises never mentioned -- and an invented symbol is what
+    the substitution step reads next, so a chain of four accepted applications can
+    manufacture a contradiction out of premises that agree.
+
+    Comparing the whole mapping is what closes the class rather than the instance.
+    """
+    case = {
+        "kind": "transition_case",
+        "variable": "x",
+        "frame": 0,
+        "target_frame": 1,
+        "operator": "add",
+        "operand": 1,
+    }
+    value = {"kind": "variable_equality", "variable": "x", "frame": 0, "value": 0}
+    determined = {
+        "kind": "arithmetic_expression",
+        "variable": "x",
+        "frame": 0,
+        "target_frame": 1,
+        "operator": "add",
+        "operand": 1,
+    }
+
+    assert check_rule(
+        RuleApplication("transition_assignment", (case, value), determined)
+    )
+
+    invented = dict(determined, operand_variable="y")
+    assert (
+        check_rule(RuleApplication("transition_assignment", (case, value), invented))
+        is False
+    )
+
+
+@pytest.mark.unittest
+def test_an_operand_still_symbolic_is_refused_rather_than_evaluated() -> None:
+    """A symbol has no value, so the step that reads one has to run first.
+
+    Evaluating it anyway means adding ``None`` to a number, which raises out of a
+    predicate whose whole contract is to answer yes or no.  Refusing is both the
+    right answer and the one the caller can act on.
+    """
+    application = RuleApplication(
+        "arithmetic_evaluation",
+        (
+            {"kind": "variable_equality", "variable": "x", "frame": 0, "value": 0},
+            {
+                "kind": "arithmetic_expression",
+                "variable": "x",
+                "frame": 0,
+                "target_frame": 1,
+                "operator": "add",
+                "operand_variable": "n",
+            },
+        ),
+        {"kind": "variable_equality", "variable": "x", "frame": 1, "value": 0},
+    )
+
+    assert check_rule(application) is False
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "guard, value",
+    [
+        (
+            {
+                "kind": "definedness_guard",
+                "operation": "division",
+                "variable": "x",
+                "forbidden": 0,
+            },
+            {"kind": "variable_equality", "variable": "x", "value": 0},
+        ),
+        (
+            {
+                "kind": "definedness_guard",
+                "operation": "division",
+                "frame": 0,
+                "forbidden": 0,
+            },
+            {"kind": "variable_equality", "frame": 0, "value": 0},
+        ),
+    ],
+    ids=["no-frame", "no-variable"],
+)
+def test_a_half_named_slot_closes_nothing(guard, value) -> None:
+    """Two gates on the same question have to answer it the same way.
+
+    ``incompatible_equalities`` refuses a slot that is not fully named; this rule
+    used to accept one, refusing only when both halves were missing.  A contradiction
+    that rests on "some value somewhere" names nothing the reader can act on, and the
+    looser of two gates is the one that decides.
+    """
+    assert (
+        check_rule(
+            RuleApplication("definedness_failure", (guard, value), {"kind": "false"})
+        )
+        is False
+    )

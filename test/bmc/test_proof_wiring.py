@@ -744,9 +744,11 @@ def test_a_variable_whose_name_starts_like_the_state_slot_stays_its_own_slot() -
 
     Variable symbols are spelled ``F_<frame>_<name>_<digest>`` and the state slot is
     spelled ``F_<frame>_state``, so a model variable named ``state_x`` produces a
-    symbol the state slot's name is a prefix of.  A model may not declare ``state``
-    itself -- the grammar reserves it -- so a name that merely begins that way is the
-    closest a real model can come to the slot, and this pins that it still proves.
+    symbol the state slot's name is a prefix of, and this pins that such a model
+    still proves.  Which fact is about the slot is settled by its ``state_slot``
+    flag rather than by any spelling, so a lookalike name is not what separates
+    them -- but a prefix-matching resolver would still bind the wrong symbol, which
+    is what this case would catch.
 
     What keeps the two apart is not only the identity comparison in the resolver: the
     candidate symbols are sorted first, and the exact name is the shortest of its
@@ -797,8 +799,9 @@ def test_a_model_variable_named_like_the_state_slot_keeps_its_own_reading(
     routed to the slot's symbol, failed to bind, and lost a proof this query used to
     get.
 
-    The subject is now spelled with a character no identifier rule admits, which is
-    what makes the two readings separable at all.
+    The subject's spelling is not what makes the two readings separable -- a model
+    can declare that name too, through the target-template rule.  The ``state_slot``
+    flag is, and this case holds the variable's reading to itself.
     """
     imported = tmp_path / "worker.fcstm"
     imported.write_text(

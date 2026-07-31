@@ -41,7 +41,7 @@ Example::
 """
 
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping, Tuple
+from typing import Any, Callable, Dict, Mapping, Tuple
 
 __all__ = [
     "PROOF_RULES",
@@ -147,31 +147,75 @@ def _same_slot(facts) -> bool:
     return variable is not None and frame is not None
 
 
-def _same_subject(left: Mapping[str, Any], right: Mapping[str, Any]) -> bool:
-    """Report whether two facts speak about the same kind of subject.
+def _carry_subject(
+    conclusion: Dict[str, Any], source: Mapping[str, Any]
+) -> Dict[str, Any]:
+    """Carry the subject's kind from the fact a conclusion is derived from.
 
     A frame's state and a variable can wear the same name -- a model may declare one
-    spelled like the slot -- so the subject's kind is carried by a flag rather than
-    read off the spelling.  A derivation that keeps the name but drops the flag has
-    changed what it is talking about halfway through, and the rule that refuses two
-    values for one slot would then close a contradiction between a state and a
-    variable that never disagreed.
+    spelled like the slot -- so the subject's kind rides on a flag.  A variable omits
+    the field rather than writing ``False``, so there is one spelling of "not a
+    state slot" for every consumer instead of two.
 
-    :param left: One fact.
-    :type left: Mapping[str, object]
-    :param right: The other.
-    :type right: Mapping[str, object]
-    :return: ``True`` when both are about a state slot or both are not.
+    :param conclusion: The conclusion being built.
+    :type conclusion: Dict[str, object]
+    :param source: The fact whose subject it inherits.
+    :type source: Mapping[str, object]
+    :return: The same mapping, with the flag set when the source carries it.
+    :rtype: Dict[str, object]
+
+    Example::
+
+        >>> _carry_subject({"variable": "x"}, {"state_slot": True})
+        {'variable': 'x', 'state_slot': True}
+    """
+    if source.get("state_slot"):
+        conclusion["state_slot"] = True
+    return conclusion
+
+
+def _exactly(conclusion: Mapping[str, Any], expected: Mapping[str, Any]) -> bool:
+    """Report whether a conclusion is exactly what its premises determine.
+
+    Comparing the whole mapping rather than a list of keys is the point.  Each rule
+    used to name the fields it cared about, and a field left off that list was a
+    field the checker did not recompute: first ``state_slot``, which let a
+    derivation change what it was talking about, then ``operand_variable``, which
+    let one invent a symbol its premises never mentioned.  Both were the same
+    defect, and patching the list twice would have invited a third.
+
+    A conclusion is what the premises say it is, no more and no less, so anything
+    extra is as wrong as anything missing.
+
+    :param conclusion: What the application claims.
+    :type conclusion: Mapping[str, object]
+    :param expected: What the premises determine.
+    :type expected: Mapping[str, object]
+    :return: ``True`` when the two are the same mapping.
     :rtype: bool
 
     Example::
 
-        >>> _same_subject({"state_slot": True}, {"state_slot": True})
+        >>> _exactly({"kind": "false"}, {"kind": "false"})
         True
-        >>> _same_subject({"state_slot": True}, {})
+        >>> _exactly({"kind": "false", "extra": 1}, {"kind": "false"})
+        False
+        >>> _exactly({"state_slot": 1}, {"state_slot": True})
         False
     """
-    return bool(left.get("state_slot")) == bool(right.get("state_slot"))
+    left, right = dict(conclusion), dict(expected)
+    if left.keys() != right.keys():
+        return False
+    for key, value in left.items():
+        other = right[key]
+        # ``1 == True`` in Python, so plain equality would accept ``"state_slot": 1``
+        # where the published schema pins ``true``.  The two gates have to agree on
+        # what the field holds, and the looser one is the one that decides.
+        if isinstance(value, bool) != isinstance(other, bool):
+            return False
+        if value != other:
+            return False
+    return True
 
 
 def _kinds(facts) -> Tuple[str, ...]:
@@ -249,21 +293,27 @@ def _arithmetic_evaluation(application: RuleApplication) -> bool:
     value_fact, expression = premises
     if _slot(value_fact) != _slot(expression):
         return False
-    conclusion = application.conclusion
-    if conclusion.get("kind") != "variable_equality":
-        return False
-    if conclusion.get("variable") != expression.get("variable"):
-        return False
-    if conclusion.get("frame") != expression.get("target_frame"):
-        return False
-    if not _same_subject(conclusion, expression):
+    if expression.get("operand_variable"):
+        # An operand still standing as a symbol has no value to evaluate; the
+        # substitution step has to run first.  Reaching ``_evaluate`` with it would
+        # add ``None`` to a number and raise out of a predicate that answers yes or
+        # no.
         return False
     result = _evaluate(
         expression.get("operator"), value_fact.get("value"), expression.get("operand")
     )
     if result is None:
         return False
-    return conclusion.get("value") == result
+    expected = _carry_subject(
+        {
+            "kind": "variable_equality",
+            "variable": expression.get("variable"),
+            "frame": expression.get("target_frame"),
+            "value": result,
+        },
+        expression,
+    )
+    return _exactly(application.conclusion, expected)
 
 
 #: Bounds that admit values at or beyond their limit.
@@ -359,7 +409,10 @@ def _definedness_failure(application: RuleApplication) -> bool:
     if len(guards) != 1 or len(values) != 1:
         return False
     guard, value = guards[0], values[0]
-    if _slot(guard) != _slot(value) or _slot(guard)[:2] == (None, None):
+    if not _same_slot((guard, value)):
+        # The same predicate the other rules use.  Accepting a half-named slot here
+        # while ``incompatible_equalities`` refuses one is two gates answering the
+        # same question differently, and the looser one decides.
         return False
     if not guard.get("operation"):
         return False
@@ -403,15 +456,18 @@ def _transition_assignment(application: RuleApplication) -> bool:
         return False
     if _slot(value) != _slot(case):
         return False
-    conclusion = application.conclusion
-    if conclusion.get("kind") != "arithmetic_expression":
-        return False
-    if not _same_subject(conclusion, case):
-        return False
-    return all(
-        conclusion.get(key) == case.get(key)
-        for key in ("variable", "frame", "target_frame", "operator", "operand")
+    expected = _carry_subject(
+        {
+            "kind": "arithmetic_expression",
+            "variable": case.get("variable"),
+            "frame": case.get("frame"),
+            "target_frame": case.get("target_frame"),
+            "operator": case.get("operator"),
+            "operand": case.get("operand"),
+        },
+        case,
     )
+    return _exactly(application.conclusion, expected)
 
 
 def _equality_substitution(application: RuleApplication) -> bool:
@@ -439,19 +495,18 @@ def _equality_substitution(application: RuleApplication) -> bool:
         # value an expression can be written over, so a slot standing in for one is
         # a substitution into a statement the model never made.
         return False
-    conclusion = application.conclusion
-    if conclusion.get("kind") != "arithmetic_expression":
-        return False
-    if not _same_subject(conclusion, expression):
-        return False
-    if conclusion.get("operand") != value.get("value"):
-        return False
-    if conclusion.get("operand_variable") is not None:
-        return False
-    return all(
-        conclusion.get(key) == expression.get(key)
-        for key in ("variable", "frame", "target_frame", "operator")
+    expected = _carry_subject(
+        {
+            "kind": "arithmetic_expression",
+            "variable": expression.get("variable"),
+            "frame": expression.get("frame"),
+            "target_frame": expression.get("target_frame"),
+            "operator": expression.get("operator"),
+            "operand": value.get("value"),
+        },
+        expression,
     )
+    return _exactly(application.conclusion, expected)
 
 
 #: The domain rules a proof step may cite, keyed by published rule id.

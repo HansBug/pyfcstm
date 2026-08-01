@@ -40,8 +40,10 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import (
     TYPE_CHECKING,
+    Any,
     Callable,
     Dict,
+    List,
     Mapping,
     Optional,
     Sequence,
@@ -51,7 +53,7 @@ from typing import (
 
 import z3
 
-from .errors import BmcBuildError
+from .errors import BmcBuildError, InvalidBmcDomain
 from .explanation import (
     BmcConflictNarrative,
     # Private because the frozen public surface must not grow to expose it, and
@@ -1344,28 +1346,209 @@ def build_core_item(
 #: proved equivalent to anything, so its member fails the binding check and the
 #: proof is not published -- which is the contract's answer for a source group that
 #: does not normalize losslessly.
+def _encode_transition_case(fact, symbol, core):
+    """Encode what a step does to a variable, which relates two frames.
+
+    Every other tag speaks about one frame's symbol, so the resolver hands one over
+    and the encoder is done.  This one says the value at the next frame is the value
+    at this one plus a constant, so it needs both and resolves them by name -- the
+    same way the reading that produced it did.
+    """
+    del symbol
+    before = core.symbols.frame_var(fact["frame"], fact["variable"])
+    after = core.symbols.frame_var(fact["target_frame"], fact["variable"])
+    return after == before + fact["operand"]
+
+
+#: How each fact tag is re-encoded for the binding check.
+#:
+#: Each entry takes the fact, the frame symbol the resolver found for it, and the
+#: core -- the last because one tag relates two frames rather than restricting one.
 _BINDING_ENCODERS = {
-    "variable_equality": lambda fact, symbol: symbol == fact["value"],
-    "variable_bound": lambda fact, symbol: {
+    "variable_equality": lambda fact, symbol, core: symbol == fact["value"],
+    "variable_bound": lambda fact, symbol, core: {
         "ge": symbol >= fact["value"],
         "gt": symbol > fact["value"],
         "le": symbol <= fact["value"],
         "lt": symbol < fact["value"],
     }[fact["operator"]],
-    "definedness_guard": lambda fact, symbol: symbol != fact["forbidden"],
-    "state_domain": lambda fact, symbol: z3.Or(
+    "definedness_guard": lambda fact, symbol, core: symbol != fact["forbidden"],
+    "state_domain": lambda fact, symbol, core: z3.Or(
         *[symbol == state for state in fact["states"]]
     ),
-    "state_exclusion": lambda fact, symbol: symbol != fact["state"],
+    "state_exclusion": lambda fact, symbol, core: symbol != fact["state"],
+    "transition_case": _encode_transition_case,
 }
+
+
+def _transition_effect_facts(core, published, budget):
+    """Read what a transition step does to the variables the core argues about.
+
+    A transition member publishes ``structural_constraint`` -- it says a rule applies
+    without saying what the rule does -- so nothing downstream could read it, and the
+    proof tier degraded whenever a core rested on one.  The content is there to be
+    had: the step's constraint is a disjunction over the cases available from a state,
+    and if every one of them moves a variable by the same constant, then that
+    constant is what the step does to it.
+
+    The reading is conditional.  "``retries`` is unchanged" does not follow from the
+    step alone, because the step does not say which state it starts from; it follows
+    from the step *together with* the frame's state.  Nor is the state always enough:
+    a step that adds ``stride`` moves the counter by a constant only once the core
+    fixes what ``stride`` is.  So the reading is taken under everything the core
+    already says about the frame it leaves, and every member that makes it true is
+    named in the attribution -- the binding then establishes it as a consequence of
+    their conjunction rather than as a restatement of any one of them.
+
+    A step whose branches disagree about a variable yields no fact for it.  That is
+    the honest outcome: the structural member stays unread, coverage stays
+    incomplete, and the tier degrades exactly as it did before.
+
+    :param core: The core formula, for the tracked groups and the frame symbols.
+    :type core: BmcCoreFormula
+    :param published: The published core whose members are being read.
+    :type published: pyfcstm.bmc.explanation.BmcConflictCore
+    :param budget: The shared solve budget.
+    :type budget: pyfcstm.bmc.solver._SolveBudget
+    :return: Attribution and fact for each reading that held.
+    :rtype: Tuple[Tuple[Tuple[str, ...], Mapping[str, object]], ...]
+    """
+    groups = {group.stable_id: group for group in core._tracked_groups}
+    # Only the variables the rest of the core argues about.  Every other variable in
+    # the model would cost two solver calls to learn something no rule will read.
+    wanted = sorted(
+        {
+            item.normalized_fact.get("variable")
+            for item in published.items
+            if isinstance(item.normalized_fact.get("variable"), str)
+        }
+    )
+    # What the core already says about each frame: which state it holds, and any
+    # variable it pins to a value.  Both can be what makes a step's reading true --
+    # the state decides which cases are available, a pinned variable decides what an
+    # effect written over it comes to -- so both travel into the attribution.
+    known: Dict[Any, List[Tuple[str, Callable[[int], Any]]]] = {}
+
+    def remember(frame, held_id, build) -> None:
+        known.setdefault(frame, []).append((held_id, build))
+
+    for item in published.items:
+        fact = item.normalized_fact
+        frame = fact.get("frame")
+        held_id = item.constraint.stable_id
+        if fact.get("kind") == "state_membership" and not fact.get("excluded"):
+            state = fact.get("state")
+            remember(
+                frame, held_id, lambda at, s=state: core.symbols.frame_state(at) == s
+            )
+        elif fact.get("kind") == "variable_comparison" and fact.get("operator") == "eq":
+            name, value = fact.get("variable"), fact.get("value")
+            remember(
+                frame,
+                held_id,
+                lambda at, n=name, v=value: core.symbols.frame_var(at, n) == v,
+            )
+    readings = []
+    for item in published.items:
+        if item.semantic_role != "transition_rule":
+            continue
+        stable_id = item.constraint.stable_id
+        group = groups.get(stable_id)
+        if group is None or not group.expressions:
+            continue
+        step = (getattr(group, "refs", None) or {}).get("step")
+        if not isinstance(step, int):
+            continue
+        conjunction = z3.And(*group.expressions)
+        conditions, condition_ids = [], []
+        for held_id, build in known.get(step, ()):
+            try:
+                conditions.append(build(step))
+            except (KeyError, InvalidBmcDomain) as err:
+                # KeyError: the fact names something that is not a declared variable.
+                # InvalidBmcDomain: its frame is outside the encoded bound.  Either
+                # way this member cannot condition the reading, and leaving it out
+                # only makes the reading harder to establish.
+                del err
+                continue
+            condition_ids.append(held_id)
+        for name in wanted:
+            delta = _constant_delta(core, conjunction, conditions, step, name, budget)
+            if delta is None:
+                continue
+            readings.append(
+                (
+                    tuple(sorted({stable_id, *condition_ids})),
+                    {
+                        "kind": "transition_case",
+                        "variable": name,
+                        "frame": step,
+                        "target_frame": step + 1,
+                        "operator": "add",
+                        "operand": delta,
+                    },
+                )
+            )
+    return tuple(readings)
+
+
+def _constant_delta(core, conjunction, conditions, step, name, budget):
+    """Return the constant a step adds to one variable, or ``None``.
+
+    Two solver calls: one to read a candidate off a model, one to establish that no
+    execution disagrees with it.  The second is what makes the answer a fact rather
+    than a guess -- a step whose branches move the variable differently satisfies the
+    first and fails the second, and then this returns nothing.
+
+    :param core: The core formula, for the frame symbols.
+    :type core: BmcCoreFormula
+    :param conjunction: The step's own constraint.
+    :type conjunction: z3.ExprRef
+    :param conditions: What the core says about the frame's state.
+    :type conditions: Sequence[z3.ExprRef]
+    :param step: The frame the step leaves.
+    :type step: int
+    :param name: The variable to read.
+    :type name: str
+    :param budget: The shared solve budget.
+    :type budget: pyfcstm.bmc.solver._SolveBudget
+    :return: The constant, or ``None`` when there is not one.
+    :rtype: Optional[int]
+    """
+    try:
+        before = core.symbols.frame_var(step, name)
+        after = core.symbols.frame_var(step + 1, name)
+    except (KeyError, InvalidBmcDomain) as err:
+        # KeyError: the name is not a declared variable -- a state fact's subject
+        # reaches here.  InvalidBmcDomain: the frame is outside the encoded bound.
+        del err
+        return None
+    solver = z3.Solver()
+    solver.add(conjunction, *conditions)
+    status, model, _, _, _ = _check_with_budget(solver, budget)
+    if status != "sat" or model is None:
+        return None
+    # ``evaluate`` is z3's own name for reading a term off a model; it has nothing to
+    # do with executing code.
+    candidate = model.evaluate(after - before, model_completion=True)
+    if not z3.is_int_value(candidate):
+        # A non-integer delta is not something ``transition_case`` can state, and
+        # rounding to one would publish a fact no execution satisfies.
+        return None
+    witness = z3.Solver()
+    witness.add(conjunction, *conditions, z3.Not(after == before + candidate))
+    status, _, _, _, _ = _check_with_budget(witness, budget)
+    if status != "unsat":
+        return None
+    return candidate.as_long()
 
 
 def check_core_bindings(
     core: "BmcCoreFormula",
-    facts: Sequence[Tuple[str, Mapping[str, object]]],
+    facts: Sequence[Tuple[Any, Mapping[str, object]]],
     budget: _SolveBudget,
-) -> Tuple[bool, ProbeRecord]:
-    """Prove each proof fact equivalent to the source group it restates.
+) -> Tuple[bool, ProbeRecord, Dict[Tuple[str, ...], str]]:
+    """Establish what each proof fact owes to the members it is attributed to.
 
     ``core_binding`` is a claim that an input node says exactly what its member
     says, and the contract is explicit that it is not a trust label: the fact is
@@ -1374,25 +1557,36 @@ def check_core_bindings(
     A fact implied by its group but not implying it would let a proof rest on less
     than the model requires; the reverse would let it rest on more.
 
-    Anything short of both directions failing to be refuted -- an unknown, a
+    A reading attributed to *several* members cannot be equivalent to their
+    conjunction -- the conjunction says a great deal more than any readable fact --
+    but it can be a consequence of it, which is all a sound derivation needs.  What
+    a step does to a variable is such a reading: it follows from the step together
+    with the state the frame holds, and from neither alone.  Those are established
+    in the consequence direction only and reported as ``solver_entailment``, the
+    third word the frozen vocabulary keeps for exactly this and which nothing used
+    until transition readings arrived.
+
+    Anything short of the required directions failing to be refuted -- an unknown, a
     timeout, a tag with no encoding, a group whose symbol cannot be located --
     means the binding is not established and the proof is not published.
 
     :param core: The core formula whose tracked groups the facts came from.
     :type core: BmcCoreFormula
-    :param facts: Member ids paired with the fact each restates.
-    :type facts: Sequence[Tuple[str, Mapping[str, object]]]
+    :param facts: The members a fact is attributed to, paired with the fact.  A
+        single member may be given as its id; several are given as a sequence.
+    :type facts: Sequence[Tuple[object, Mapping[str, object]]]
     :param budget: The shared solve budget.
     :type budget: pyfcstm.bmc.solver._SolveBudget
-    :return: Whether every binding held, and the ledger entry for the phase.
-    :rtype: Tuple[bool, ProbeRecord]
+    :return: Whether every binding held, the ledger entry, and which word was
+        established for each attribution.
+    :rtype: Tuple[bool, ProbeRecord, Dict[Tuple[str, ...], str]]
 
     Example::
 
         >>> from pyfcstm.bmc.solver import _SolveBudget
-        >>> held, record = check_core_bindings(None, (), _SolveBudget(None))
-        >>> held, record.status
-        (False, 'unknown')
+        >>> held, record, methods = check_core_bindings(None, (), _SolveBudget(None))
+        >>> held, record.status, methods
+        (False, 'unknown', {})
     """
     started_at = time.perf_counter()
 
@@ -1406,12 +1600,16 @@ def check_core_bindings(
         # and the published ledger refuses a completed check that carries a reason,
         # so a query reaching here raised out of the solve chain instead of
         # degrading.  An unestablished binding is what this is.
-        return False, ProbeRecord(
-            "core_binding",
-            "unknown",
-            True,
-            elapsed(),
-            "no core member states a fact this check can encode",
+        return (
+            False,
+            ProbeRecord(
+                "core_binding",
+                "unknown",
+                True,
+                elapsed(),
+                "no core member states a fact this check can encode",
+            ),
+            {},
         )
 
     groups = {group.stable_id: group for group in core._tracked_groups}
@@ -1420,35 +1618,49 @@ def check_core_bindings(
     # declared names are what the published facts were resolved against, and the
     # binding has to resolve the same way or a long name stops matching itself.
     declared = _declared_variable_names(core)
-    for stable_id, fact in facts:
-        group = groups.get(stable_id)
-        encoder = _BINDING_ENCODERS.get(fact.get("kind"))
-        if group is None or encoder is None:
-            return False, ProbeRecord(
-                "core_binding",
-                "unknown",
-                True,
-                elapsed(),
-                "no equivalence check exists for %s" % stable_id,
-            )
-        conjunction = (
-            z3.And(*group.expressions) if group.expressions else z3.BoolVal(True)
+    methods: Dict[Tuple[str, ...], str] = {}
+
+    def refused(reason: str, status: str = "unknown"):
+        """The binding is not established, so nothing may rest on it."""
+        return (
+            False,
+            ProbeRecord("core_binding", status, True, elapsed(), reason),
+            methods,
         )
+
+    for attribution, fact in facts:
+        held_ids = (
+            (attribution,) if isinstance(attribution, str) else tuple(attribution)
+        )
+        named = ", ".join(held_ids)
+        held = [groups.get(name) for name in held_ids]
+        encoder = _BINDING_ENCODERS.get(fact.get("kind"))
+        if encoder is None or any(group is None for group in held):
+            return refused("no equivalence check exists for %s" % named)
+        expressions = [expression for group in held for expression in group.expressions]
+        conjunction = z3.And(*expressions) if expressions else z3.BoolVal(True)
         symbol = _binding_symbol(conjunction, fact, declared)
         if symbol is None:
-            return False, ProbeRecord(
-                "core_binding",
-                "unknown",
-                True,
-                elapsed(),
-                "the group behind %s names no symbol this fact could restate"
-                % stable_id,
+            return refused(
+                "the group behind %s names no symbol this fact could restate" % named
             )
-        encoded = encoder(fact, symbol)
-        for direction, claim in (
-            ("group implies fact", z3.And(conjunction, z3.Not(encoded))),
-            ("fact implies group", z3.And(encoded, z3.Not(conjunction))),
-        ):
+        encoded = encoder(fact, symbol, core)
+
+        # A reading resting on one member is required to *be* that member: the
+        # consequence direction alone would let a proof rest on less than the model
+        # requires, and the reverse on more.  A reading resting on several is a
+        # consequence of their conjunction and cannot be equivalent to it -- the
+        # conjunction says a great deal more -- so only the consequence direction is
+        # available, and the node says ``solver_entailment`` rather than claiming the
+        # stronger word.  Which of the two is being established is decided by the
+        # attribution, never by which check happens to pass.
+        restates = len(held_ids) == 1
+        directions = [("group implies fact", z3.And(conjunction, z3.Not(encoded)))]
+        if restates:
+            directions.append(
+                ("fact implies group", z3.And(encoded, z3.Not(conjunction)))
+            )
+        for direction, claim in directions:
             solver = z3.Solver()
             solver.add(claim)
             status, _, reason, _, _ = _check_with_budget(solver, budget)
@@ -1461,25 +1673,29 @@ def check_core_bindings(
                 # The frozen phase vocabulary has no word for the last, so the
                 # reason carries it.
                 explanation = {
-                    "sat": "was refuted: the fact is not equivalent to its group",
+                    "sat": "was refuted: the fact does not follow from its group"
+                    if not restates
+                    else "was refuted: the fact is not equivalent to its group",
                     "unknown": "could not be decided by the solver",
                 }.get(status, "ran out of budget")
-                return False, ProbeRecord(
-                    "core_binding",
-                    # The solver's own word, not its negation.  These were swapped
-                    # once, so each payload advised the opposite of what it meant.
-                    "timeout" if status == "timeout" else "unknown",
-                    True,
-                    elapsed(),
+                return refused(
                     "%s %s for %s%s"
                     % (
                         direction,
                         explanation,
-                        stable_id,
+                        named,
                         ": %s" % reason if reason else "",
                     ),
+                    # The solver's own word, not its negation.  These were swapped
+                    # once, so each payload advised the opposite of what it meant.
+                    "timeout" if status == "timeout" else "unknown",
                 )
-    return True, ProbeRecord("core_binding", "complete", True, elapsed(), None)
+        methods[held_ids] = "core_binding" if restates else "solver_entailment"
+    return (
+        True,
+        ProbeRecord("core_binding", "complete", True, elapsed(), None),
+        methods,
+    )
 
 
 def _declared_variable_names(core: "BmcCoreFormula"):
@@ -1782,11 +1998,18 @@ def explain_infeasibility(
         from .proof import build_domain_proof, proof_facts_for_core
         from .proof_text import linearize_proof
 
-        proof_facts = proof_facts_for_core(published.items)
+        # Members whose published fact carries a domain reading, plus the readings
+        # that have to be worked out: a transition member says only that a rule
+        # applies, and what it does to a variable follows from it together with the
+        # state the frame holds.  Without those, a core resting on a transition was
+        # never covered and the tier always degraded.
+        proof_facts = proof_facts_for_core(published.items) + _transition_effect_facts(
+            core, published, budget
+        )
         # The binding check comes first: a graph built on facts that were never
-        # shown equivalent to their members would carry ``core_binding`` as a trust
+        # shown to follow from their members would carry ``core_binding`` as a trust
         # label, which the contract forbids outright.
-        bound, binding_record = check_core_bindings(core, proof_facts, budget)
+        bound, binding_record, methods = check_core_bindings(core, proof_facts, budget)
         checks = checks + (binding_record,)
         if bound:
             # One table for both artifacts: a node's own sentence and the reading
@@ -1798,6 +2021,7 @@ def explain_infeasibility(
                 budget,
                 member_ids=[item.constraint.stable_id for item in published.items],
                 state_names=state_names,
+                verification_methods=methods,
             )
             checks = checks + (proof_record,)
         else:

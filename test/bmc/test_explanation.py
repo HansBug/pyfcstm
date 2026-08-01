@@ -344,16 +344,21 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
             ("kernel", "transition.step"),
         }
     )
-    # Which fact tags can be shown equivalent to their source group.  A tag absent
-    # here has no encoding, so its member fails the binding check and no proof is
-    # published over it -- which is the contract's answer for a group that does not
-    # normalize losslessly, and therefore a published boundary rather than a detail.
+    # Which fact tags can be re-encoded for the binding check.  A tag absent here has
+    # no encoding, so its member fails the check and no proof is published over it --
+    # which is the contract's answer for a group that does not normalize losslessly,
+    # and therefore a published boundary rather than a detail.
+    #
+    # ``transition_case`` is the one that relates two frames rather than restricting
+    # one, and the one whose reading is established as a consequence of several
+    # members rather than as a restatement of a single one.
     assert set(infeasibility._BINDING_ENCODERS) == {
         "variable_equality",
         "variable_bound",
         "definedness_guard",
         "state_domain",
         "state_exclusion",
+        "transition_case",
     }
     assert infeasibility._INDEX_REF_KEYS == ("frame", "frames", "step", "steps")
     assert dict(infeasibility._STAGE_FALLBACK_BY_STAGE) == {

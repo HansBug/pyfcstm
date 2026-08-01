@@ -546,7 +546,7 @@ def test_a_binding_that_runs_out_of_time_is_reported_as_a_timeout() -> None:
     spent = _SolveBudget(1)
     spent.deadline = time.monotonic() - 1.0
 
-    held, record = check_core_bindings(core, facts, spent)
+    held, record, _ = check_core_bindings(core, facts, spent)
 
     assert held is False
     assert record.status == "timeout", record.reason
@@ -578,7 +578,7 @@ def test_nothing_to_bind_is_reported_as_unestablished_rather_than_complete() -> 
     )
     core = build_bmc_core_formula(context)
 
-    held, record = check_core_bindings(core, (), _SolveBudget(None))
+    held, record, methods = check_core_bindings(core, (), _SolveBudget(None))
 
     assert held is False, "an empty binding establishes nothing"
     assert record.status == "unknown"
@@ -661,19 +661,19 @@ def test_two_states_required_at_one_frame_reach_the_proof_tier() -> None:
 
 
 @pytest.mark.unittest
-def test_a_core_holding_a_structural_member_cannot_reach_the_proof_tier() -> None:
-    """Some cores are unreachable at proof depth by contract, not by omission.
+def test_a_structural_member_is_read_by_what_the_step_does() -> None:
+    """A transition member carries no content, but what it does can be worked out.
 
-    A ``structural_constraint`` fact carries an identity and a category and no
-    content -- that is what the tag is for.  An input node's conclusion must *be* its
-    member's fact, and ``core_binding`` must prove that fact equivalent to the source
-    group in both directions.  A contentless fact cannot be equivalent to a macro-step
-    relation, so a core holding one degrades however many recognizers are added.
+    ``structural_constraint`` says a rule applies and nothing about what the rule
+    does -- that is what the tag is for -- and for three review rounds that was taken
+    to mean a core resting on a transition could never reach proof depth.  It does not
+    mean that.  The step's constraint is a disjunction over the cases available from a
+    state, and if every one of them moves a variable by the same constant, that
+    constant is a fact the solver can establish.
 
-    The transition chain below is the shape this matters for, and it is worth pinning
-    rather than leaving as an apparent gap: the ``formal`` tier answers the question
-    the query asks -- the prefix forces the counter to one -- and the proof tier says
-    honestly that it cannot certify each step of it.
+    The reading follows from the step *together with* the state the frame holds, from
+    neither alone, so both members are named in the attribution and the node reports
+    ``solver_entailment`` rather than claiming to restate either one.
     """
     machine = load_state_machine_from_text(
         "def int retries = 0;\n"
@@ -694,19 +694,25 @@ def test_a_core_holding_a_structural_member_cannot_reach_the_proof_tier() -> Non
     )
     explanation = result.feasibility.explanation
 
-    assert explanation.achieved_mode == "formal"
-    assert explanation.proof is None
-    assert explanation.reason
-    # The formal answer is the one the engineer asked for, so it must survive.
-    assert explanation.narrative.derivation_status == "complete"
-    assert any(
-        "retries to equal 1" in step.text
-        for step in explanation.narrative.reasoning_steps
-    ), [step.text for step in explanation.narrative.reasoning_steps]
     assert any(
         item.normalized_fact.get("kind") == "structural_constraint"
         for item in explanation.core.items
     ), "the shape this pins needs a structural member"
+    assert explanation.achieved_mode == "proof", explanation.reason
+    assert explanation.proof is not None
+
+    entailed = [
+        node
+        for node in explanation.proof.nodes
+        if node.verification_method == "solver_entailment"
+    ]
+    assert entailed, [node.verification_method for node in explanation.proof.nodes]
+    reading = entailed[0]
+    assert len(reading.item_ids) > 1, reading.item_ids
+    assert reading.conclusion.get("kind") == "transition_case"
+    # Every member is accounted for, which is what lets the proof be published.
+    covered = {name for node in explanation.proof.nodes for name in node.item_ids}
+    assert covered == {item.constraint.stable_id for item in explanation.core.items}
 
 
 @pytest.mark.unittest
@@ -912,3 +918,98 @@ def test_a_variable_spelled_like_the_slot_and_a_state_read_as_themselves(
     )
     assert "the state must be Root.Host.Worker.Idle" in as_state, as_state
     assert "must equal" not in as_state, as_state
+
+
+@pytest.mark.unittest
+def test_a_step_whose_branches_disagree_yields_no_reading() -> None:
+    """A guess is not a fact, so a step that does different things says nothing.
+
+    The reading is worked out by taking a candidate off one model and then
+    establishing that no execution disagrees with it.  The second half is what makes
+    it a fact: here two branches move the counter by different amounts, so the
+    candidate survives the first and fails the second, and the tier degrades exactly
+    as it did before any of this existed.
+
+    What this pins is the outcome.  Two gates produce it -- the recognizer declines
+    to offer a reading it has not established, and the binding refuses one that does
+    not follow from its members -- and no query distinguishes them, because both end
+    in the same published artifact.  The recognizer keeps its check anyway: the fact
+    it returns is the one an input node will carry, not a proposal for someone else
+    to vet, so a producer that knowingly emits guesses has the roles backwards.
+    """
+    machine = load_state_machine_from_text(
+        "def int n = 0;\n"
+        "def int gate = 0;\n"
+        "state Root {\n"
+        "    state A;\n"
+        "    state B { enter { n = n + 1; } }\n"
+        "    state C { enter { n = n + 5; } }\n"
+        "    [*] -> A;\n"
+        "    A -> B : if [gate >= 1];\n"
+        "    A -> C : if [gate <= 0];\n"
+        "}\n",
+        "machine.fcstm",
+    )
+    context = BmcEngine(machine).prepare(
+        'init state("Root.A") where n == 0;\n'
+        'assume at 1: var("n") == 99;\n'
+        'check reach <= 1: active("Root.B");\n',
+        query_source_path="query.fbmcq",
+    )
+
+    result = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="proof",
+    )
+    explanation = result.feasibility.explanation
+
+    assert explanation.achieved_mode == "formal"
+    assert explanation.proof is None
+    assert explanation.reason
+    assert explanation.core is not None, "the formal evidence still stands"
+
+
+@pytest.mark.unittest
+def test_a_reading_that_does_not_follow_from_its_members_is_refused() -> None:
+    """The consequence check is a gate, not a formality.
+
+    A reading is attributed to the members it rests on and has to follow from their
+    conjunction.  Handing the check a fact that does not -- the counter moving by one
+    where the step leaves it alone -- has to come back refused, or the binding is a
+    label again, which is the defect this whole check exists to prevent.
+    """
+    from pyfcstm.bmc.infeasibility import check_core_bindings
+    from pyfcstm.bmc.solver import _SolveBudget
+
+    machine = load_state_machine_from_text(
+        "def int retries = 0;\n"
+        "state Root { state Igniting; state Purge; [*] -> Igniting;\n"
+        "    Igniting -> Purge effect { retries = retries + 1; }; }",
+        "machine.fcstm",
+    )
+    context = BmcEngine(machine).prepare(
+        'init state("Root.Igniting") where retries == 0;\n'
+        'assume at 1: var("retries") == 0;\n'
+        'check reach <= 1: active("Root.Purge");\n',
+        query_source_path="query.fbmcq",
+    )
+    core = build_bmc_core_formula(context)
+    wrong = (
+        (
+            ("initial.target", "transition.step.0000"),
+            {
+                "kind": "transition_case",
+                "variable": "retries",
+                "frame": 0,
+                "target_frame": 1,
+                "operator": "add",
+                "operand": 7,
+            },
+        ),
+    )
+
+    held, record, methods = check_core_bindings(core, wrong, _SolveBudget(None))
+
+    assert held is False
+    assert "does not follow from its group" in (record.reason or ""), record.reason
+    assert methods == {}

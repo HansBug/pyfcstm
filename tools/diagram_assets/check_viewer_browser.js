@@ -72,13 +72,30 @@ function streamDictionary(raw, markerStart) {
   const window = raw.subarray(Math.max(0, markerStart - 4096), markerStart).toString('latin1');
   const end = window.lastIndexOf('>>');
   if (end < 0 || window.slice(end + 2).trim() !== '') return null;
-  let depth = 0;
-  for (let i = end; i >= 0; i--) {
-    if (window.startsWith('>>', i)) { depth += 1; i -= 1; continue; }
-    if (window.startsWith('<<', i)) {
-      depth -= 1;
-      if (depth === 0) return window.slice(i, end + 2);
-      i -= 1;
+  // Scan forward from a plausible start rather than backward, so a `<<` or `>>`
+  // inside a literal string can be stepped over. Read backward, `(a << b)` looked
+  // like a nested dictionary opening, the balance came out at the wrong place,
+  // the filter went unseen and a compressed stream carrying a halo was scanned
+  // as raw operators.
+  for (let start = 0; start <= end; start++) {
+    if (!window.startsWith('<<', start)) continue;
+    let depth = 0;
+    let literal = 0;
+    for (let i = start; i <= end + 1; i++) {
+      const ch = window[i];
+      if (literal > 0) {
+        if (ch === '\\') { i += 1; continue; }
+        if (ch === '(') literal += 1;
+        else if (ch === ')') literal -= 1;
+        continue;
+      }
+      if (ch === '(') { literal = 1; continue; }
+      if (window.startsWith('<<', i)) { depth += 1; i += 1; continue; }
+      if (window.startsWith('>>', i)) {
+        depth -= 1;
+        if (depth === 0) return i === end ? window.slice(start, end + 2) : null;
+        i += 1;
+      }
     }
   }
   return null;
@@ -210,6 +227,13 @@ function selfCheckStreamTally() {
       zlib.deflateSync(halo), Buffer.from('\nendstream\n')]), false],
     ['a filter declared after nested parameters', Buffer.concat([
       Buffer.from('%PDF-1.3\n1 0 obj\n<< /DecodeParms << /X 1 >> /Filter /FlateDecode >>\nstream\n'),
+      zlib.deflateSync(halo), Buffer.from('\nendstream\n')]), false],
+    // A literal string may hold either bracket. Balancing without stepping over
+    // one read `(a << b)` as a nested dictionary, landed on the wrong span, and
+    // the filter went unseen -- so a compressed stream carrying a halo was
+    // scanned as raw operators and passed.
+    ['a filter beside a string holding brackets', Buffer.concat([
+      Buffer.from('%PDF-1.3\n1 0 obj\n<< /Filter /FlateDecode /Note (a << b) >>\nstream\n'),
       zlib.deflateSync(halo), Buffer.from('\nendstream\n')]), false],
   ];
   for (const [label, buf, shouldAccept] of cases) {

@@ -337,7 +337,7 @@ def expand_svg_command(input_svg_file: str, output: Optional[str]) -> None:
         _check_canonical_svg(canonical)
     except DiagramAssetError as err:
         raise ClickErrorException(
-            "Failed to read input SVG file %s: %s" % (input_svg_file, err)
+            "Cannot expand input SVG file %s: %s" % (input_svg_file, err)
         )
     try:
         expanded = DiagramAssetEngine().expand_svg(canonical)

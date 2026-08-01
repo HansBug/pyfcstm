@@ -874,6 +874,9 @@ class TestTheExpandCommandKeepsWhatItWasGiven:
                 '<!DOCTYPE svg [<!ENTITY x "y">]><svg xmlns="http://www.w3.org/2000/svg"/>',
             ),
             ("a truncated document", "<svg this is not valid xml at all"),
+            # Valid XML with an `svg` root, but not in the SVG namespace: a plain
+            # parse accepts it and the renderer does not.
+            ("a missing namespace", '<svg><path d="M0 0"/></svg>'),
         ],
     )
     def test_a_document_the_renderer_refuses_is_reported(
@@ -890,7 +893,7 @@ class TestTheExpandCommandKeepsWhatItWasGiven:
 
         assert result.exit_code != 0, label
         assert "Traceback" not in result.output + str(result.exception or "")
-        assert "Failed to read input SVG file" in result.output
+        assert "Cannot expand input SVG file" in result.output
         assert "input.svg" in result.output
 
     def test_a_renderer_failure_is_not_blamed_on_the_input(self, tmp_path):

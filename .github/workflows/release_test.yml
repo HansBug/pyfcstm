@@ -669,6 +669,52 @@ jobs:
             ${{ runner.temp }}/java-version.txt
             ${{ runner.temp }}/plantuml-version.txt
 
+  fresh_wheel_export:
+    # Separate from the two self-check jobs above because those deliberately have
+    # no checkout: they exist to prove the artifact works with nothing else
+    # present. This one needs the harness from the tree, so it keeps the isolation
+    # that matters a different way -- the harness never imports ``pyfcstm``, it only
+    # runs the installed command line, and it runs from outside the repository so
+    # the source tree cannot shadow the installed package.
+    name: Export every format from the installed wheel
+    runs-on: ubuntu-22.04
+    needs: source_release
+    steps:
+      - name: Checkout the export harness
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download only the built wheel artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts-source-pack
+          path: ${{ runner.temp }}/pyfcstm-package-artifact
+      - name: Install the wheel with its optional runtime and export
+        shell: bash
+        env:
+          PYTHONPATH: ''
+          PYTHONNOUSERSITE: '1'
+        run: |
+          set -euo pipefail
+          wheel=$(find "$RUNNER_TEMP/pyfcstm-package-artifact" -maxdepth 1 -type f -name '*.whl' -print -quit)
+          test -n "$wheel"
+          harness="$PWD/tools/check_diagram_installed_export.py"
+          test -f "$harness"
+          venv="$RUNNER_TEMP/pyfcstm-export-venv"
+          rm -rf "$venv"
+          python -m venv "$venv"
+          "$venv/bin/python" -m pip install --upgrade pip
+          "$venv/bin/python" -m pip install "${wheel}[viz]"
+          # Run from outside the checkout: an installed console script does not put
+          # the working directory on ``sys.path``, but keeping the tree out of the
+          # way removes the question entirely.
+          cd "$RUNNER_TEMP"
+          python "$harness" --command "$venv/bin/pyfcstm" --repeat 2
+
   release_docs_pdf:
     name: Bilingual Docs PDF
     runs-on: ubuntu-24.04
@@ -1217,6 +1263,7 @@ jobs:
       - source_release
       - fresh_wheel_selfcheck_linux
       - fresh_wheel_selfcheck
+      - fresh_wheel_export
       - fresh_sdist_selfcheck
       - release_cli
       - fresh_release_cli_selfcheck
@@ -1227,6 +1274,7 @@ jobs:
           SOURCE_RESULT: ${{ needs.source_release.result }}
           WHEEL_LINUX_RESULT: ${{ needs.fresh_wheel_selfcheck_linux.result }}
           WHEEL_NONLINUX_RESULT: ${{ needs.fresh_wheel_selfcheck.result }}
+          WHEEL_EXPORT_RESULT: ${{ needs.fresh_wheel_export.result }}
           SDIST_RESULT: ${{ needs.fresh_sdist_selfcheck.result }}
           CLI_BUILD_RESULT: ${{ needs.release_cli.result }}
           CLI_FRESH_RESULT: ${{ needs.fresh_release_cli_selfcheck.result }}
@@ -1242,6 +1290,7 @@ jobs:
             "source=$SOURCE_RESULT" \
             "wheel_linux=$WHEEL_LINUX_RESULT" \
             "wheel_nonlinux=$WHEEL_NONLINUX_RESULT" \
+            "wheel_export=$WHEEL_EXPORT_RESULT" \
             "sdist=$SDIST_RESULT"; do
             echo "$pair"
             test "${pair#*=}" = success

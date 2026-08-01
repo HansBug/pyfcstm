@@ -1,5 +1,6 @@
 """CLI tests for the standalone diagram command."""
 
+import json
 import os
 import stat
 from pathlib import Path
@@ -97,7 +98,8 @@ def test_diagram_cli_help_is_english_and_does_not_leak_rst():
     result = CliRunner().invoke(cli, ["diagram", "--help"])
     assert result.exit_code == 0, result.output
     assert (
-        "Generate portable JSON or a standalone HTML diagram viewer." in result.output
+        "Generate portable JSON, a standalone HTML viewer, or an SVG/PNG/PDF "
+        "export." in result.output
     )
     assert "Input FCSTM file." in result.output
     assert ":param" not in result.output
@@ -218,3 +220,158 @@ def test_diagram_cli_open_failure_names_only_a_document_that_survives(tmp_path):
                 raise AssertionError(
                     "named a temporary viewer that is removed at exit: %s" % token
                 )
+
+
+@pytest.mark.unittest
+class TestDiagramCommandExports:
+    """
+    Cover the export formats the command gained alongside JSON and HTML.
+
+    The optional rendering runtime may be absent, and both outcomes are part of
+    the contract: a file appears, or the failure names the dependency. Asserting
+    only "exit code 0" would pass in an environment where nothing was rendered.
+    """
+
+    @pytest.mark.parametrize("suffix", ["svg", "png", "pdf"])
+    def test_an_export_lands_on_disk_or_names_its_missing_dependency(
+        self, tmp_path, suffix
+    ):
+        source = tmp_path / "machine.fcstm"
+        source.write_text("state Root { state A; [*] -> A; }", encoding="utf-8")
+        target = tmp_path / ("machine." + suffix)
+        result = CliRunner().invoke(
+            cli, ["diagram", "-i", str(source), "-o", str(target)]
+        )
+        if result.exit_code == 0:
+            assert target.stat().st_size > 0
+            assert str(target) in result.output
+        else:
+            assert "pyfcstm[viz]" in result.output
+
+    def test_a_scale_is_refused_for_a_format_that_has_none(self, tmp_path):
+        source = tmp_path / "machine.fcstm"
+        source.write_text("state Root { state A; [*] -> A; }", encoding="utf-8")
+        result = CliRunner().invoke(
+            cli,
+            [
+                "diagram",
+                "-i",
+                str(source),
+                "-o",
+                str(tmp_path / "machine.svg"),
+                "--scale",
+                "2",
+            ],
+        )
+        assert result.exit_code != 0
+        assert "--scale is only supported for PNG output" in result.output
+
+    def test_a_scale_above_the_ceiling_is_a_usage_error(self, tmp_path):
+        source = tmp_path / "machine.fcstm"
+        source.write_text("state Root { state A; [*] -> A; }", encoding="utf-8")
+        result = CliRunner().invoke(
+            cli,
+            [
+                "diagram",
+                "-i",
+                str(source),
+                "-o",
+                str(tmp_path / "machine.png"),
+                "--scale",
+                "5",
+            ],
+        )
+        # A caller mistake, so it must be reported as one rather than as a
+        # rendering failure or a traceback.
+        assert result.exit_code != 0
+        assert "4" in result.output
+        assert "Traceback" not in result.output
+
+    def test_an_unknown_suffix_lists_every_format_the_command_writes(self, tmp_path):
+        source = tmp_path / "machine.fcstm"
+        source.write_text("state Root { state A; [*] -> A; }", encoding="utf-8")
+        result = CliRunner().invoke(
+            cli, ["diagram", "-i", str(source), "-o", str(tmp_path / "machine.tiff")]
+        )
+        assert result.exit_code != 0
+        for name in (".json", ".html", ".svg", ".png", ".pdf"):
+            assert name in result.output
+
+
+def test_diagram_cli_writes_json_to_standard_output(tmp_path):
+    """Without ``-o`` the document goes to standard output.
+
+    This is the first form the command's help documents and the one a caller
+    pipes into something else, and it had no test: a change that started writing
+    a file instead, or printing a summary line alongside the document, would have
+    broken every such pipeline without failing anything here.
+    """
+    runner = CliRunner()
+    source = tmp_path / "machine.fcstm"
+    source.write_text(
+        "state Root { state A; state B; [*] -> A; A -> B; }", encoding="utf-8"
+    )
+
+    result = runner.invoke(cli, ["diagram", "-i", str(source)])
+
+    assert result.exit_code == 0, result.output
+    # The whole of standard output has to be the document, with nothing around
+    # it, or `pyfcstm diagram -i x.fcstm | jq` stops working.
+    document = json.loads(result.output)
+    assert document["kind"] == "diagram"
+    assert document["machineName"] == "Root"
+    assert document["summary"]["states"] == 3
+    assert [child["id"] for child in document["rootState"]["children"]] == [
+        "Root.A",
+        "Root.B",
+    ]
+
+
+def test_diagram_cli_refuses_a_non_json_format_with_nowhere_to_write_it(tmp_path):
+    """Only JSON can go to standard output, and asking otherwise is a usage error.
+
+    A PNG on a terminal is not what the flag combination asks for. What this
+    pins is the outcome, not the order: exit 2 rather than merely non-zero,
+    because Click gives a usage error 2 and a failed operation 1, and a shell
+    branches on which one it got. Whether the export ran first is not observable
+    from here without reaching into the command, so it is not claimed.
+    """
+    runner = CliRunner()
+    source = tmp_path / "machine.fcstm"
+    source.write_text("state Root { state A; [*] -> A; }", encoding="utf-8")
+
+    for format_name in ("svg", "png", "pdf", "html"):
+        result = runner.invoke(
+            cli, ["diagram", "-i", str(source), "--format", format_name]
+        )
+        # Exit 2, not merely non-zero: a usage error and a failed export are
+        # different outcomes, and a shell branches on which one it got.
+        assert result.exit_code == 2, (format_name, result.output)
+        assert "Traceback" not in result.output
+        assert "JSON is the only format" in result.output
+
+
+def test_diagram_cli_reports_a_binary_input_without_a_traceback(tmp_path):
+    """Pointing ``-i`` at the wrong file is an ordinary mistake.
+
+    The bytes of a compiled artefact fit no text encoding, and ``auto_decode``
+    raising through the command buried a message about encodings under a Python
+    stack about the DSL.
+    """
+    runner = CliRunner()
+    source = tmp_path / "not-a-machine.fcstm"
+    # These bytes reach the decode failure because `chardet` declines to commit
+    # to an encoding for them. `chardet` is not pinned, and an encoding that
+    # accepts every byte would instead make this a parse failure -- so if this
+    # test starts failing after a dependency bump, the message will say "Failed
+    # to parse" and the premise, not the command, is what moved.
+    source.write_bytes(bytes(range(256)) * 8)
+
+    result = runner.invoke(
+        cli, ["diagram", "-i", str(source), "-o", str(tmp_path / "out.json")]
+    )
+
+    assert result.exit_code == 1
+    assert "Traceback" not in result.output
+    assert "Failed to decode input DSL file" in result.output
+    assert "not-a-machine.fcstm" in result.output

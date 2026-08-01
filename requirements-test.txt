@@ -22,3 +22,10 @@ ruff<0.16
 # skipping when the optional MiniRacer distribution is absent.
 py-mini-racer>=0.6.0,<0.7; python_version < "3.8"
 mini-racer>=0.7.0; python_version >= "3.8"
+# The notebook representation gate executes a real kernel and round-trips the
+# document, because a repr stored only in the running kernel looks correct until
+# the file is reopened. Without these the gate fails loudly rather than skipping,
+# so they belong here and not only in the documentation requirements.
+nbformat>=5.1
+nbclient>=0.5
+ipykernel>=6.0

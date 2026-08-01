@@ -19,6 +19,7 @@ SOURCE_MANIFEST_PATH = ROOT / "pyfcstm" / "diagram" / "assets" / "manifest.json"
 
 GENERATED_REQUIRED = {
     "pyfcstm/diagram/assets/renderer.js",
+    "pyfcstm/diagram/assets/pdf-writer.js",
     "pyfcstm/diagram/assets/resvg-binding.js",
     "pyfcstm/diagram/assets/resvg-bridge.js",
     "pyfcstm/diagram/assets/host-shim.js",

@@ -91,6 +91,44 @@ class DiagramRenderError(DiagramAssetError):
     """
 
 
+class DiagramRenderLimitError(DiagramError):
+    """
+    Report an export whose size exceeds a documented output limit.
+
+    This is deliberately a sibling of :class:`DiagramRenderError` rather than a
+    subclass of it.  The two describe different situations and have different
+    remedies: a render failure means the renderer was asked to do something and
+    could not, while a limit failure means it was never asked, because the
+    requested size was refused by a checked multiplication first.  A caller
+    writing ``except DiagramRenderError`` is handling the former, and should not
+    silently absorb the latter -- lowering ``scale`` fixes a limit failure and
+    fixes nothing else.
+
+    :ivar limit_name: Identifier of the limit that fired.
+    :vartype limit_name: str
+
+    Example::
+
+        >>> raise DiagramRenderLimitError("scaled width 32768px exceeds 16384px")
+        Traceback (most recent call last):
+        ...
+        DiagramRenderLimitError: scaled width 32768px exceeds 16384px
+    """
+
+    def __init__(self, message, limit_name=None):
+        """
+        Record the message and, when known, which limit fired.
+
+        :param message: Human-readable explanation naming the sizes involved.
+        :type message: str
+        :param limit_name: Identifier of the limit that fired, defaults to
+            ``None``.
+        :type limit_name: str, optional
+        """
+        super().__init__(message)
+        self.limit_name = limit_name
+
+
 class DiagramEngineMetadataError(DiagramAssetError):
     """
     Report that installed MiniRacer distribution metadata is unavailable.
@@ -460,6 +498,169 @@ def _valid_opentype(data: bytes) -> bool:
     return total_checksum == 0xB1B0AFBA
 
 
+#: Largest accepted raster scale.  Above this the caller has almost certainly
+#: mistaken a scale for a pixel width, so it is an argument error rather than a
+#: size outcome.
+MAX_EXPORT_SCALE = 4
+#: Largest accepted scaled edge, matching the widest dimension mainstream image
+#: decoders and PDF viewers handle without special configuration.
+MAX_EXPORT_EDGE_PX = 16384
+#: Largest accepted scaled pixel count, which bounds the rasteriser's working
+#: set independently of how the pixels are distributed between the two edges.
+MAX_EXPORT_PIXELS = 16777216
+#: Largest uncompressed RGBA buffer the pixel cap implies, at four bytes per
+#: pixel.  This is a derived figure rather than a separate limit: it is exactly
+#: :data:`MAX_EXPORT_PIXELS` times four, so a request that would exceed it has
+#: already exceeded the pixel cap and been refused there.  It is recorded because
+#: the documented limit set names a buffer size, and because deriving it keeps the
+#: two numbers from drifting into a state where one is reachable and the other is
+#: not.
+MAX_EXPORT_RAW_RGBA_BYTES = MAX_EXPORT_PIXELS * 4
+#: Largest accepted encoded PNG.
+MAX_EXPORT_PNG_BYTES = 33554432
+#: Largest accepted encoded text or PDF export.
+MAX_EXPORT_TEXT_BYTES = 67108864
+
+
+def check_export_scale(scale: Any) -> float:
+    """
+    Validate a raster scale against the documented accepted range.
+
+    :param scale: Requested output scale.
+    :type scale: float
+    :return: The scale as a float.
+    :rtype: float
+    :raises ValueError: If ``scale`` is not finite and positive, or exceeds
+        :data:`MAX_EXPORT_SCALE`.
+
+    Example::
+
+        >>> check_export_scale(2)
+        2.0
+        >>> check_export_scale(5)
+        Traceback (most recent call last):
+        ...
+        ValueError: scale must be at most 4; got 5
+    """
+    if isinstance(scale, bool):
+        # ``float(True)`` is 1.0, so a bool would otherwise be accepted as a
+        # scale of one. A caller passing a flag here has made a mistake that
+        # silently producing unscaled output would hide.
+        raise ValueError("scale must be a finite positive number; got %r" % (scale,))
+    try:
+        numeric = float(scale)
+    except (TypeError, ValueError) as err:
+        # TypeError: a non-numeric object such as a string or None.
+        # ValueError: a string that does not parse as a number.
+        raise ValueError("scale must be a finite positive number") from err
+    if numeric != numeric or numeric in (float("inf"), float("-inf")):
+        raise ValueError("scale must be a finite positive number; got %r" % (scale,))
+    if numeric <= 0:
+        raise ValueError("scale must be positive; got %r" % (scale,))
+    if numeric > MAX_EXPORT_SCALE:
+        raise ValueError("scale must be at most %d; got %s" % (MAX_EXPORT_SCALE, scale))
+    return numeric
+
+
+def check_export_size(width: float, height: float, scale: float) -> Tuple[int, int]:
+    """
+    Refuse an oversized export before any pixels are allocated.
+
+    The multiplications happen here, in Python, so an impossible request is
+    named and rejected rather than being handed to the rasteriser to fail on --
+    running out of memory is not input validation, and it cannot tell the caller
+    which scale would have fitted.
+
+    :param width: Unscaled canvas width in user units.
+    :type width: float
+    :param height: Unscaled canvas height in user units.
+    :type height: float
+    :param scale: Validated output scale.
+    :type scale: float
+    :return: The scaled integer width and height.
+    :rtype: tuple[int, int]
+    :raises ValueError: If either unscaled dimension is not finite and positive.
+    :raises DiagramRenderLimitError: If the scaled edges, pixel count, or raw
+        RGBA buffer would exceed their documented limits.
+
+    Example::
+
+        >>> check_export_size(100, 50, 2)
+        (200, 100)
+        >>> check_export_size(10000, 10000, 4)
+        Traceback (most recent call last):
+        ...
+        pyfcstm.diagram.engine.DiagramRenderLimitError: ...
+    """
+    for name, value in (("width", width), ("height", height)):
+        numeric = float(value)
+        if numeric != numeric or numeric in (float("inf"), float("-inf")):
+            raise ValueError("canvas %s must be finite; got %r" % (name, value))
+        if numeric <= 0:
+            raise ValueError("canvas %s must be positive; got %r" % (name, value))
+    scaled_width = int(math.ceil(float(width) * scale))
+    scaled_height = int(math.ceil(float(height) * scale))
+    origin = "%gx%g at scale %g gives %dx%d" % (
+        width,
+        height,
+        scale,
+        scaled_width,
+        scaled_height,
+    )
+    advice = "lower scale and retry"
+    for name, value in (("width", scaled_width), ("height", scaled_height)):
+        if value > MAX_EXPORT_EDGE_PX:
+            raise DiagramRenderLimitError(
+                "%s, whose %s exceeds the %dpx limit; %s"
+                % (origin, name, MAX_EXPORT_EDGE_PX, advice),
+                limit_name="edge",
+            )
+    pixels = scaled_width * scaled_height
+    if pixels > MAX_EXPORT_PIXELS:
+        raise DiagramRenderLimitError(
+            "%s, which is %d pixels and exceeds the %d limit; %s"
+            % (origin, pixels, MAX_EXPORT_PIXELS, advice),
+            limit_name="pixels",
+        )
+    # No separate raw-buffer branch: the buffer is four bytes per pixel and the
+    # cap is the pixel cap times four, so the condition is the same one the check
+    # above already made. A second branch here could never run, and a reader who
+    # saw it -- or a caller who wrote ``except`` for a ``raw_rgba`` limit name --
+    # would be relying on something that cannot happen.
+    return scaled_width, scaled_height
+
+
+def check_export_bytes(data: bytes, kind: str, limit: int) -> bytes:
+    """
+    Refuse an encoded export that exceeds its documented size limit.
+
+    The check happens before the bytes reach a cache, a decoder, or a file, so an
+    oversized export cannot be written out and then rejected.
+
+    :param data: Encoded export payload.
+    :type data: bytes
+    :param kind: Short name of the payload, used in the message.
+    :type kind: str
+    :param limit: Maximum accepted length in bytes.
+    :type limit: int
+    :return: The payload unchanged.
+    :rtype: bytes
+    :raises DiagramRenderLimitError: If ``data`` is longer than ``limit``.
+
+    Example::
+
+        >>> check_export_bytes(b"ab", "PNG", 4)
+        b'ab'
+    """
+    if len(data) > limit:
+        raise DiagramRenderLimitError(
+            "encoded %s output is %d bytes and exceeds the %d limit; "
+            "lower scale or reduce the diagram and retry" % (kind, len(data), limit),
+            limit_name=kind.lower(),
+        )
+    return data
+
+
 def _png_dimensions(data: bytes) -> Tuple[int, int]:
     """Check the PNG envelope and return its declared RGBA dimensions."""
     signature = b"\x89PNG\r\n\x1a\n"
@@ -503,6 +704,10 @@ class DiagramAssetEngine:
         operation. ``None`` leaves the operation uncapped, defaults to
         ``None``.
     :type timeout: float, optional
+    :param include_pdf: Whether to also evaluate the vector-PDF writer, defaults
+        to ``False``.  It is only needed for PDF export and costs about a
+        megabyte of JavaScript to parse.
+    :type include_pdf: bool, optional
     :param max_memory: Optional V8 heap limit in bytes applied to each
         JavaScript evaluation, defaults to ``None``.
     :type max_memory: int, optional
@@ -518,7 +723,10 @@ class DiagramAssetEngine:
     """
 
     def __init__(
-        self, timeout: Optional[float] = None, max_memory: Optional[int] = None
+        self,
+        timeout: Optional[float] = None,
+        max_memory: Optional[int] = None,
+        include_pdf: bool = False,
     ) -> None:
         numeric_timeout = None if timeout is None else float(timeout)
         if numeric_timeout is not None and (
@@ -532,6 +740,11 @@ class DiagramAssetEngine:
                 raise ValueError("max_memory must be a finite positive integer or None")
         self.timeout = numeric_timeout
         self.max_memory = max_memory
+        # The PDF writer is close to a megabyte of JavaScript that only the PDF
+        # export needs, and it can only be evaluated in one narrow window during
+        # context setup, so whether to carry it is decided here rather than on
+        # first use.
+        self._include_pdf = bool(include_pdf)
         self._context = None
         self._active_context_count = 0
         self._context_token = None
@@ -731,6 +944,20 @@ class DiagramAssetEngine:
             "globalThis.__pyfcstm_embedded_host = true;",
         )
         self._load_javascript_asset("renderer.js", renderer)
+        if self._include_pdf:
+            # This is the only window in which the writer can be evaluated:
+            # ``host-shim.js`` has already made ``eval`` unavailable, and the
+            # loader that works around that is deleted immediately below. Loading
+            # it later fails with ``evaluate is not a function``, which is the
+            # security boundary doing its job rather than a bug to route around.
+            writer = _asset_bytes("pdf-writer.js").decode("utf-8")
+            if "__pyfcstm_pdf_start" not in writer:
+                self._discard_context()
+                raise _asset_failure(
+                    "pdf-writer.js",
+                    "the bundle does not expose the required PDF entrypoint",
+                )
+            self._load_javascript_asset("pdf-writer.js", writer)
         self._eval_asset(
             "asset-loader",
             "delete globalThis.__pyfcstm_load_asset;",
@@ -1074,6 +1301,138 @@ class DiagramAssetEngine:
                 "resvg.wasm", "the renderer returned invalid PNG data", err
             ) from err
         return result
+
+    def render_pdf(self, svg: str, width: float, height: float) -> bytes:
+        """
+        Render one single-page vector PDF from canonical SVG.
+
+        The writer is the same ``renderVectorPdf`` the standalone viewer calls;
+        this method supplies the DOM contract that code assumes and nothing else.
+
+        :param svg: Canonical SVG text, as returned by :meth:`render_svg`.  Not
+            the expanded form: the writer removes the browser-only text halo and
+            only then expands, and that removal matches on ``<text>`` elements --
+            handing it pre-expanded input leaves the halo baked into a path drawn
+            over the glyphs.
+        :type svg: str
+        :param width: Page width in SVG user units.
+        :type width: float
+        :param height: Page height in SVG user units.
+        :type height: float
+        :return: PDF bytes.
+        :rtype: bytes
+        :raises ValueError: If ``svg`` is not text.
+        :raises DiagramAssetError: If the packaged writer is unusable, the job
+            reports an error, or the deadline passes.
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('state Root { state A; [*] -> A; }')
+            >>> view = model.diagram()
+            >>> engine = DiagramAssetEngine()                       # doctest: +SKIP
+            >>> canonical = engine.render_svg({"diagram": view.to_dict()})  # doctest: +SKIP
+            >>> engine.render_pdf(canonical, 100, 100)[:5]          # doctest: +SKIP
+            b'%PDF-'
+        """
+        if not isinstance(svg, str):
+            raise ValueError("svg must be text")
+        # The writer expands the document itself, through the callback the entry
+        # hands it, and it must do so *after* removing the browser-only text halo:
+        # that removal matches on ``<text>`` elements, which expansion has already
+        # turned into paths. So resvg has to be ready before the job starts, rather
+        # than being initialised as a side effect of expanding in Python first.
+        self._ensure_resvg(self._locale_from_svg(svg))
+        request_id = "pyfcstm-pdf-%d" % time.monotonic_ns()
+        deadline = None if self.timeout is None else time.monotonic() + self.timeout
+        payload = json.dumps(
+            {"svg": svg, "width": float(width), "height": float(height)},
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+        self._eval_asset(
+            "pdf-writer.js",
+            "__pyfcstm_pdf_start(%s, %s)"
+            % (json.dumps(payload), json.dumps(request_id)),
+            timeout=self.timeout,
+            request=True,
+        )
+        while deadline is None or time.monotonic() < deadline:
+            remaining = (
+                None if deadline is None else max(0.001, deadline - time.monotonic())
+            )
+            raw = self._eval_asset(
+                "pdf-writer.js",
+                "__pyfcstm_pdf_poll(%s)" % json.dumps(request_id),
+                timeout=remaining,
+                request=True,
+            )
+            try:
+                status = json.loads(str(raw))
+            except (TypeError, ValueError) as err:
+                # TypeError/ValueError: a corrupted writer returned non-JSON
+                # polling data instead of its documented status envelope.
+                self._discard_context()
+                raise _render_failure(
+                    "pdf-writer.js",
+                    "the PDF writer returned invalid job status data",
+                    err,
+                    request_error=True,
+                ) from err
+            if not isinstance(status, dict):
+                self._discard_context()
+                raise _render_failure(
+                    "pdf-writer.js",
+                    "the PDF writer returned a non-object job status",
+                    request_error=True,
+                )
+            if status.get("status") == "done":
+                self._eval_asset(
+                    "pdf-writer.js",
+                    "__pyfcstm_pdf_drop(%s)" % json.dumps(request_id),
+                    timeout=remaining,
+                    request=True,
+                )
+                try:
+                    data = base64.b64decode(str(status["pdf"]), validate=True)
+                except (KeyError, binascii.Error, ValueError) as err:
+                    # KeyError: the completed job omitted its payload.
+                    # binascii.Error/ValueError: the payload is not valid base64.
+                    self._discard_context()
+                    raise _render_failure(
+                        "pdf-writer.js",
+                        "the completed job returned no usable PDF payload",
+                        err,
+                        request_error=True,
+                    ) from err
+                if not data.startswith(b"%PDF-"):
+                    self._discard_context()
+                    raise _render_failure(
+                        "pdf-writer.js", "the PDF writer returned malformed output"
+                    )
+                return data
+            if status.get("status") == "error":
+                self._eval_asset(
+                    "pdf-writer.js",
+                    "__pyfcstm_pdf_drop(%s)" % json.dumps(request_id),
+                    timeout=remaining,
+                    request=True,
+                )
+                error = str(status.get("error", "unknown PDF writer error"))
+                self._discard_context()
+                raise _render_failure(
+                    "pdf-writer.js",
+                    "the PDF writer job failed",
+                    ValueError(error),
+                    request_error=True,
+                )
+            time.sleep(0.001)
+        self._discard_context()
+        raise _render_failure(
+            "pdf-writer.js",
+            "the PDF writer job exceeded its deadline",
+            request_error=True,
+        )
 
     def expand_svg(self, request: Union[str, Dict[str, Any]]) -> str:
         """

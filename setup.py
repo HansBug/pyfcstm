@@ -89,6 +89,7 @@ def _require_diagram_assets_for_distribution() -> None:
         return
     generated_assets = {
         "renderer.js",
+        "pdf-writer.js",
         "resvg-binding.js",
         "resvg-bridge.js",
         "host-shim.js",

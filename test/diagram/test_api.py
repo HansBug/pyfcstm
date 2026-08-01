@@ -467,13 +467,19 @@ def test_no_line_of_the_launch_leaks_a_browser_profile(monkeypatch, tmp_path):
                 raise KeyboardInterrupt
             return tracer
 
+        # Restore whatever was tracing before rather than clearing the slot:
+        # ``sys.settrace(None)`` removes coverage's own tracer too, and
+        # everything that runs after this test in the same process then goes
+        # unmeasured. The symptom is a coverage report that shrinks when this
+        # file happens to run first.
+        previous_tracer = sys.gettrace()
         sys.settrace(tracer)
         try:
             diagram_api._open_standalone_window(document, (800, 600))
         except BaseException:  # noqa: BLE001 - the directory's state is what matters
             pass
         finally:
-            sys.settrace(None)
+            sys.settrace(previous_tracer)
         left = sorted(
             item.name for item in tmp_path.iterdir() if item.name.startswith("pyfcstm-")
         )
@@ -747,22 +753,28 @@ def test_diagram_mapping_inputs_fail_closed_on_unknown_or_ambiguous_fields():
         model.diagram(view_state={"mode": "compare", "typo": True})
 
 
-def test_headless_exports_are_typed_unavailable_until_delivery_stage():
+def test_the_scale_argument_is_validated_before_any_capability_is_needed():
+    # These are argument errors, so they are raised whether or not the optional
+    # rendering runtime is installed -- a caller mistake should be named for what
+    # it is rather than reported as a missing dependency.
     diagram = _model("state Root;").diagram()
-    with pytest.raises(DiagramUnavailableError, match="headless SVG"):
-        diagram.to_svg()
-    with pytest.raises(DiagramUnavailableError, match="headless PNG"):
-        diagram.to_png()
-    with pytest.raises(DiagramUnavailableError, match="headless PDF"):
-        diagram.to_pdf()
-    with pytest.raises(ValueError, match="finite positive"):
-        diagram.to_png(scale=0)
-    with pytest.raises(ValueError, match="finite positive"):
-        diagram.to_png(scale=None)
-    with pytest.raises(ValueError, match="finite positive"):
-        diagram.to_png(scale=True)
-    with pytest.raises(DiagramUnavailableError, match="headless PNG"):
-        diagram.save("diagram.png", scale=2)
+    # A numeric string is accepted here, consistently with every other numeric
+    # option in this module, so it is deliberately not in this list.
+    for bad in (0, None, True, -1, float("nan")):
+        with pytest.raises(ValueError):
+            diagram.to_png(scale=bad)
+
+
+def test_save_routes_every_documented_format_to_a_writer():
+    # ``save`` is a router, and the property under test here is that it has a
+    # branch for each documented suffix rather than what any branch produces.
+    # The export behaviour itself, and the difference between the optional
+    # runtime being present and absent, are pinned in ``test_headless.py``.
+    diagram = _model("state Root;").diagram()
+    with pytest.raises(ValueError, match="unsupported diagram format"):
+        diagram.save("diagram.tiff")
+    with pytest.raises(ValueError, match="scale is only supported"):
+        diagram.save("diagram.pdf", scale=2)
 
 
 def test_diagram_data_rejects_non_mapping_snapshots():
@@ -2662,13 +2674,19 @@ def test_an_interrupted_overwrite_leaves_the_earlier_file_whole(writer_name, tmp
                 raise KeyboardInterrupt
             return tracer
 
+        # Restore whatever was tracing before rather than clearing the slot:
+        # ``sys.settrace(None)`` removes coverage's own tracer too, and
+        # everything that runs after this test in the same process then goes
+        # unmeasured. The symptom is a coverage report that shrinks when this
+        # file happens to run first.
+        previous_tracer = sys.gettrace()
         sys.settrace(tracer)
         try:
             writer(target, payload)
         except BaseException:  # noqa: BLE001 - the file's state is what matters
             pass
         finally:
-            sys.settrace(None)
+            sys.settrace(previous_tracer)
         if not fired:
             continue
         found = target.read_bytes() if target.exists() else None
@@ -2739,13 +2757,19 @@ def test_no_line_of_the_write_leaks_on_an_interrupt(writer_name, tmp_path, monke
                 raise KeyboardInterrupt
             return tracer
 
+        # Restore whatever was tracing before rather than clearing the slot:
+        # ``sys.settrace(None)`` removes coverage's own tracer too, and
+        # everything that runs after this test in the same process then goes
+        # unmeasured. The symptom is a coverage report that shrinks when this
+        # file happens to run first.
+        previous_tracer = sys.gettrace()
         sys.settrace(tracer)
         try:
             writer(directory / "diagram.out", payload)
         except BaseException:  # noqa: BLE001 - any outcome is fine, the state is what matters
             pass
         finally:
-            sys.settrace(None)
+            sys.settrace(previous_tracer)
         left = [item.name for item in directory.iterdir() if item.name.startswith(".")]
         unclosed = [stream for stream in opened if not stream.closed]
         if fired and (_next_free_descriptor() != before or left or unclosed):

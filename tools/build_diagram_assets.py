@@ -26,7 +26,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path, PurePosixPath
-from typing import Dict, Iterable, List, Set, Tuple
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -36,6 +36,24 @@ ENTRY_PATH = ROOT / "tools" / "diagram_assets" / "python-renderer-entry.ts"
 VIEWER_BUILD_PATH = ROOT / "tools" / "diagram_assets" / "build_viewer.js"
 BRIDGE_PATH = ROOT / "tools" / "diagram_assets" / "resvg-bridge.js"
 HOST_SHIM_PATH = ROOT / "tools" / "diagram_assets" / "host-shim.js"
+#: Packages compiled into the PDF writer, as ``(asset-lock key, npm name)``.
+#: Each is redistributed inside a published asset, so each needs the same
+#: provenance trail; a package missing from this tuple is one nothing checks.
+PDF_DEPENDENCIES = (
+    ("svg2pdf", "svg2pdf.js"),
+    ("jspdf", "jspdf"),
+    ("xmldom", "@xmldom/xmldom"),
+    # Reached transitively rather than declared at the root, but compiled into the
+    # published bundle exactly the same, so held to the same provenance. Listing
+    # only the direct three left these two unchecked while this tuple's own
+    # docstring claimed the opposite.
+    ("babelRuntime", "@babel/runtime"),
+    ("fflate", "fflate"),
+)
+
+PDF_ENTRY_PATH = ROOT / "tools" / "diagram_assets" / "python-pdf-entry.ts"
+PDF_HOST_SHIM_PATH = ROOT / "tools" / "diagram_assets" / "pdf-host-shim.js"
+RASTER_STUB_PATH = ROOT / "tools" / "diagram_assets" / "optional-raster-stub.js"
 JSFCSTM_DIR = ROOT / "editors" / "jsfcstm"
 VSCODE_DIR = ROOT / "editors" / "vscode"
 ANTLR_JAR_PATH = ROOT / "antlr-4.9.3.jar"
@@ -343,44 +361,16 @@ def validate_esbuild_provenance(lock: Dict[str, object]) -> None:
 
 
 def validate_viewer_provenance(lock: Dict[str, object]) -> None:
-    """Require the locked viewer PDF exporter and esbuild metadata."""
+    """Require every locked PDF dependency and the esbuild metadata."""
     viewer = lock.get("viewer")
     if not isinstance(viewer, dict):
         raise ValueError("diagram asset lock lacks viewer provenance")
-    exporter = viewer.get("svg2pdf")
-    if not isinstance(exporter, dict):
-        raise ValueError("viewer lock lacks svg2pdf provenance")
-    expected_version = exporter.get("version")
-    if not isinstance(expected_version, str) or not expected_version:
-        raise ValueError("viewer lock lacks svg2pdf version")
-    try:
-        package_lock = json.loads(JSFCSTM_LOCK_PATH.read_text(encoding="utf-8"))
-        root_package = package_lock["packages"][""]
-        package = package_lock["packages"]["node_modules/svg2pdf.js"]
-    except (KeyError, OSError, TypeError, ValueError) as err:
-        # KeyError/TypeError/ValueError: the tracked viewer lock has no valid
-        # exporter entry; OSError: the lock file cannot be read.
-        raise ValueError("jsfcstm package-lock lacks a valid svg2pdf.js entry") from err
-    dev_dependencies = root_package.get("devDependencies")
-    if (
-        not isinstance(dev_dependencies, dict)
-        or dev_dependencies.get("svg2pdf.js") != expected_version
-    ):
-        raise ValueError("jsfcstm svg2pdf.js devDependency differs from asset lock")
-    if package.get("version") != expected_version:
-        raise ValueError("installed svg2pdf.js version differs from asset lock")
-    if package.get("resolved") != exporter.get("resolved") or package.get(
-        "integrity"
-    ) != exporter.get("integrity"):
-        raise ValueError("svg2pdf.js lock provenance differs from package-lock")
-    if package.get("license") != exporter.get("license"):
-        raise ValueError("svg2pdf.js license differs from asset lock")
-    installed = JSFCSTM_DIR / "node_modules" / "svg2pdf.js" / "package.json"
-    if not installed.is_file():
-        raise FileNotFoundError("installed svg2pdf.js package is missing")
-    installed_package = json.loads(installed.read_text(encoding="utf-8"))
-    if installed_package.get("version") != expected_version:
-        raise ValueError("installed svg2pdf.js package version differs from asset lock")
+    # All three packages are compiled into the same published bundles, so all three
+    # get the same checks. Validating one strictly and the others loosely was an
+    # asymmetry with no reason behind it: a wrong `jspdf` reaches the public
+    # ``Diagram.to_pdf()`` exactly as easily as a wrong `xmldom` would.
+    for key, package in PDF_DEPENDENCIES:
+        _validate_pdf_dependency_provenance(viewer, key, package)
     public_entry = JSFCSTM_DIR / "dist" / "diagram" / "index.js"
     if not public_entry.is_file():
         raise FileNotFoundError("jsfcstm public diagram entry is missing")
@@ -390,6 +380,144 @@ def validate_viewer_provenance(lock: Dict[str, object]) -> None:
             "PDF build dependencies leaked into the jsfcstm public diagram entry via %s"
             % ", ".join(leaking)
         )
+
+
+def _declared_licenses(installed: Dict[str, object]) -> List[str]:
+    """
+    Collect every licence an installed package manifest declares.
+
+    npm has two spellings: the modern ``license`` string and the legacy
+    ``licenses`` array of objects.  A manifest may use either, and one that drops
+    the first to state something different in the second is still making a
+    declaration.
+
+    :param installed: Parsed ``package.json`` of an installed package.
+    :type installed: dict
+    :return: Every declared licence identifier, in the order found.
+    :rtype: list[str]
+
+    Example::
+
+        >>> _declared_licenses({"license": "MIT"})
+        ['MIT']
+        >>> _declared_licenses({"licenses": [{"type": "Proprietary"}]})
+        ['Proprietary']
+    """
+    declared = []
+    single = installed.get("license")
+    if isinstance(single, str):
+        declared.append(single)
+    elif isinstance(single, dict) and isinstance(single.get("type"), str):
+        # Another historical spelling: a single object rather than a string.
+        declared.append(single["type"])
+    plural = installed.get("licenses")
+    if isinstance(plural, list):
+        for item in plural:
+            if isinstance(item, str):
+                declared.append(item)
+            elif isinstance(item, dict) and isinstance(item.get("type"), str):
+                declared.append(item["type"])
+    return declared
+
+
+def _validate_pdf_dependency_provenance(
+    viewer: Dict[str, object], key: str, package: str
+) -> None:
+    """
+    Require one PDF dependency to match the asset lock exactly.
+
+    The embedded PDF writer ships the same three packages the browser bundle
+    does, so each needs the same provenance trail: an exact version, the resolved
+    URL and integrity the lockfile recorded, and a license naming what is being
+    redistributed.  A dependency compiled into a published asset with none of that
+    is untraceable.
+
+    :param viewer: Viewer section of the asset lock.
+    :type viewer: dict
+    :param key: Key the asset lock stores this dependency under.
+    :type key: str
+    :param package: npm package name.
+    :type package: str
+    :return: ``None``.
+    :rtype: None
+    :raises ValueError: If the lock lacks the entry, or the installed tree and the
+        lockfile disagree with it.
+    :raises FileNotFoundError: If the package is not installed.
+    """
+    recorded = viewer.get(key)
+    if not isinstance(recorded, dict):
+        raise ValueError("viewer lock lacks %s provenance" % package)
+    expected_version = recorded.get("version")
+    if not isinstance(expected_version, str) or not expected_version:
+        raise ValueError("viewer lock lacks a %s version" % package)
+    try:
+        package_lock = json.loads(JSFCSTM_LOCK_PATH.read_text(encoding="utf-8"))
+        root_package = package_lock["packages"][""]
+        entry = package_lock["packages"]["node_modules/%s" % package]
+    except (KeyError, OSError, TypeError, ValueError) as err:
+        # KeyError/TypeError: the lockfile has no entry for this package.
+        # OSError/ValueError: the lockfile cannot be read.
+        raise ValueError("jsfcstm package-lock lacks a valid %s entry" % package) from err
+    if recorded.get("transitive"):
+        # A transitive dependency has no root entry to compare against; the
+        # lockfile entry and the installed tree are the whole trail, and both are
+        # checked below. Promoting it to a root devDependency would misrepresent
+        # why it is installed.
+        if package in (root_package.get("devDependencies") or {}):
+            raise ValueError(
+                "%s is recorded as transitive but is a root devDependency" % package
+            )
+    else:
+        dev_dependencies = root_package.get("devDependencies")
+        if (
+            not isinstance(dev_dependencies, dict)
+            or dev_dependencies.get(package) != expected_version
+        ):
+            raise ValueError(
+                "jsfcstm %s devDependency differs from asset lock" % package
+            )
+    for field in ("version", "resolved", "integrity", "license"):
+        if entry.get(field) != recorded.get(field):
+            raise ValueError(
+                "%s %s differs between package-lock and asset lock" % (package, field)
+            )
+    manifest_path = JSFCSTM_DIR / "node_modules" / package / "package.json"
+    if not manifest_path.is_file():
+        raise FileNotFoundError("installed %s package is missing" % package)
+    # Existence is not identity. The lockfile says what should be installed and the
+    # asset lock says what is being redistributed, but it is the installed tree
+    # that gets compiled into the published bundle -- so it has to be the thing
+    # that is checked. Without this, a tree holding a different version, or a
+    # different package under the same directory name, ships inside the public
+    # ``to_pdf()`` path while the manifest still advertises the locked provenance.
+    try:
+        installed = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as err:
+        # OSError: the manifest cannot be read. ValueError: it is not JSON, which
+        # means the installed tree is not a usable npm package.
+        raise ValueError("installed %s package manifest is unreadable" % package) from err
+    if installed.get("name") != package:
+        raise ValueError(
+            "installed %s directory holds %r instead"
+            % (package, installed.get("name"))
+        )
+    if installed.get("version") != expected_version:
+        raise ValueError(
+            "installed %s version %r differs from the asset lock's %r"
+            % (package, installed.get("version"), expected_version)
+        )
+    recorded_license = recorded.get("license")
+    for declared in _declared_licenses(installed):
+        # A package may omit the field; it may not contradict what is being
+        # redistributed on its behalf. Both the modern ``license`` string and the
+        # legacy ``licenses`` array count as a declaration -- reading only the
+        # first let a tree drop ``license`` and declare something else in
+        # ``licenses`` instead, and the build accepted it.
+        if declared != recorded_license:
+            raise ValueError(
+                "installed %s declares license %r, which differs from the asset "
+                "lock's %r" % (package, declared, recorded_license)
+            )
 
 
 def _pdf_dependency_importers(entry: Path) -> List[str]:
@@ -587,6 +715,121 @@ def build_renderer(
     return output.read_bytes(), _canonicalize_metafile(metadata)
 
 
+def build_pdf_writer(output: Path, esbuild_version: str) -> Tuple[bytes, Dict[str, object]]:
+    """
+    Build the embedded vector-PDF writer as a minified ES2017 IIFE.
+
+    The bundle carries the shared export core and the ``xmldom`` DOM adapter it
+    needs in a host with no browser.  It does not carry a second PDF writer:
+    ``renderVectorPdf`` is the same function the standalone viewer calls.
+
+    The two aliases are the same ones the viewer build uses.  ``fast-png`` is
+    reached only from jsPDF's optional raster route, which this path never
+    enters, and the stub keeps that import from becoming a hidden dependency.
+    ``@xmldom/xmldom`` is aliased because the entry file sits outside the jsfcstm
+    package, so bare resolution from its own directory would not find it.
+
+    :param output: Temporary output path for the JS bundle.
+    :type output: pathlib.Path
+    :param esbuild_version: Exact esbuild package version to invoke.
+    :type esbuild_version: str
+    :return: Bundle bytes and esbuild metafile data.
+    :rtype: tuple[bytes, dict]
+    :raises subprocess.CalledProcessError: If esbuild fails.
+    :raises ValueError: If the bundle carries a forbidden raster package, a
+        module whose origin cannot be established, or a third-party inventory
+        that does not match :data:`PDF_DEPENDENCIES` in either direction.
+    """
+    metafile = output.with_suffix(".meta.json")
+    xmldom_dir = JSFCSTM_DIR / "node_modules" / "@xmldom" / "xmldom"
+    command = [
+        _node_command("npx"),
+        "--no-install",
+        "esbuild",
+        str(PDF_ENTRY_PATH),
+        "--bundle",
+        "--format=iife",
+        "--platform=neutral",
+        "--target=es2017",
+        "--keep-names",
+        "--main-fields=main,module",
+        "--minify",
+        "--alias:@xmldom/xmldom=%s" % xmldom_dir,
+        "--alias:fast-png=%s" % (ROOT / "tools" / "diagram_assets" / "fast-png-stub.js"),
+        # jsPDF imports these on its optional ``html()`` route, which the vector
+        # path never enters -- but esbuild follows the import and compiles them in,
+        # and the umbrella contract forbids a raster fallback inside a published
+        # asset. Aliasing to a stub that throws keeps the import resolvable and the
+        # packages out.
+        "--alias:canvg=%s" % RASTER_STUB_PATH,
+        "--alias:html2canvas=%s" % RASTER_STUB_PATH,
+        "--alias:dompurify=%s" % RASTER_STUB_PATH,
+        "--metafile=%s" % metafile,
+        "--outfile=%s" % output,
+    ]
+    subprocess.run(command, cwd=str(JSFCSTM_DIR), check=True)
+    metadata = json.loads(metafile.read_text(encoding="utf-8"))
+    inputs = metadata.get("inputs", {})
+    if isinstance(inputs, dict):
+        # The zero-image PDF gate cannot see a raster fallback that was bundled
+        # but never called, so the bundle inventory is checked directly.
+        forbidden = ("canvg", "html2canvas", "fast-png", "dompurify")
+        # esbuild writes these paths relative to its working directory, so they
+        # begin ``node_modules/...`` with no leading separator. Requiring one --
+        # which is what the viewer build's own scan does, because it runs from the
+        # repository root -- made this scan unable to fire at all, and it was
+        # hiding three of these packages actually being bundled.
+        bundled = sorted(
+            path
+            for path in inputs
+            if any(
+                re.search(
+                    r"(?<![^/])node_modules/%s/" % re.escape(name),
+                    str(path).replace("\\", "/"),
+                )
+                for name in forbidden
+            )
+        )
+        if bundled:
+            raise ValueError(
+                "embedded PDF writer bundled forbidden raster packages: %s"
+                % ", ".join(bundled)
+            )
+        # A deny-list only catches what it was told to look for. The published
+        # bundle's third-party inventory is therefore also required to *equal* the
+        # declared closure: a new transitive dependency arriving through an
+        # upgrade would otherwise be compiled in and redistributed with no
+        # provenance at all, which is precisely how two of the current five went
+        # unchecked.
+        unrecognized = _unrecognized_bundle_inputs(inputs)
+        if unrecognized:
+            raise ValueError(
+                "embedded PDF writer bundles modules with no establishable "
+                "origin, so the closure check cannot account for them: %s"
+                % ", ".join(unrecognized)
+            )
+        observed = _bundled_packages(inputs)
+        declared = {package for _key, package in PDF_DEPENDENCIES}
+        undeclared = sorted(observed - declared)
+        if undeclared:
+            raise ValueError(
+                "embedded PDF writer bundles packages with no recorded "
+                "provenance: %s; add them to PDF_DEPENDENCIES and the asset lock"
+                % ", ".join(undeclared)
+            )
+        missing = sorted(declared - observed)
+        if missing:
+            # A declared package that is no longer bundled means the closure has
+            # drifted the other way: the lock still promises provenance for
+            # something that is not being redistributed, which makes the record
+            # misleading rather than merely stale.
+            raise ValueError(
+                "PDF_DEPENDENCIES declares packages the bundle does not contain: "
+                "%s" % ", ".join(missing)
+            )
+    return output.read_bytes(), _canonicalize_metafile(metadata)
+
+
 def build_viewer(output_dir: Path) -> Tuple[bytes, bytes, Dict[str, object]]:
     """Build the standalone Vue viewer that reuses the VSCode preview components."""
     try:
@@ -613,11 +856,18 @@ def build_viewer(output_dir: Path) -> Tuple[bytes, bytes, Dict[str, object]]:
     inputs = metadata.get("inputs", {})
     forbidden = ("canvg", "html2canvas", "fast-png", "dompurify")
     if isinstance(inputs, dict):
+        # Anchored the same way the PDF writer's scan is. This build runs from
+        # the repository root, so its paths carry a leading separator today --
+        # but that is a property of the working directory, not of the check,
+        # and relying on it is how the PDF writer's copy became unable to fire.
         bundled_forbidden = sorted(
             path
             for path in inputs
             if any(
-                "/node_modules/%s/" % name in str(path).replace("\\", "/")
+                re.search(
+                    r"(?<![^/])node_modules/%s/" % re.escape(name),
+                    str(path).replace("\\", "/"),
+                )
                 for name in forbidden
             )
         )
@@ -706,6 +956,144 @@ def _check_clean_symlink_safety() -> None:
             ASSET_DIR = original
         if victim.read_text(encoding="ascii") != "must survive":
             raise AssertionError("cleanup touched a path outside the asset root")
+
+
+def _bundled_packages(paths: Iterable[str]) -> Set[str]:
+    """
+    Name every third-party package a bundle drew a module from.
+
+    A path carries one segment per level of installation, so a package vendored
+    under another one appears as ``node_modules/a/node_modules/b/``.  Every
+    segment is collected, not the first: reading a single match per path named
+    only the outer package, and the inner one would have been redistributed with
+    no recorded provenance while the closure check reported agreement.
+
+    :param paths: Module paths from an esbuild metafile's ``inputs``.
+    :type paths: collections.abc.Iterable[str]
+    :return: The package names those paths came from.
+    :rtype: set[str]
+
+    Example::
+
+        >>> sorted(_bundled_packages(["node_modules/jspdf/dist/a.js"]))
+        ['jspdf']
+        >>> sorted(_bundled_packages(["node_modules/a/node_modules/b/i.js"]))
+        ['a', 'b']
+    """
+    found = set()
+    for path in paths:
+        for match in re.finditer(
+            r"(?<![^/])node_modules/((?:@[^/]+/)?[^/]+)/",
+            str(path).replace("\\", "/"),
+        ):
+            found.add(match.group(1))
+    return found
+
+
+#: Directories the PDF writer is allowed to draw first-party modules from.  An
+#: input under neither these nor an install directory has no provenance at all,
+#: which is the state a symlinked or linked package resolves to.
+FIRST_PARTY_BUNDLE_ROOTS = (
+    Path("tools") / "diagram_assets",
+    Path("editors") / "jsfcstm" / "src",
+)
+
+
+def _unrecognized_bundle_inputs(paths: Iterable[str]) -> List[str]:
+    """
+    Name every bundled module whose origin cannot be established.
+
+    The closure check can only compare packages it managed to name.  A module
+    that is neither first-party nor under an install directory yields no package
+    at all, so it passes both directions of that comparison silently -- which is
+    what a linked or symlinked dependency resolves to, since esbuild records the
+    real path rather than the one under ``node_modules``.
+
+    Paths are resolved against the build's working directory before being
+    classified, so the answer does not depend on where the build was started
+    from.  Relying on the recorded prefix is what previously left a scan here
+    unable to fire at all.
+
+    :param paths: Module paths from an esbuild metafile's ``inputs``.
+    :type paths: collections.abc.Iterable[str]
+    :return: The paths that belong to no recognised origin, sorted.
+    :rtype: list[str]
+    """
+    allowed = [(ROOT / root).resolve() for root in FIRST_PARTY_BUNDLE_ROOTS]
+    unrecognized = []
+    for path in paths:
+        text = str(path).replace("\\", "/")
+        if _bundled_packages([text]):
+            continue
+        resolved = (JSFCSTM_DIR / text).resolve()
+        if any(resolved == root or root in resolved.parents for root in allowed):
+            continue
+        unrecognized.append(str(path))
+    return sorted(unrecognized)
+
+
+def _check_bundle_input_origins() -> None:
+    """
+    Verify an input with no package identity is refused rather than ignored.
+
+    :return: ``None``.
+    :rtype: None
+    :raises AssertionError: If a path with no establishable origin is accepted,
+        or a legitimate one is refused.
+    """
+    cases = (
+        ("src/diagram/export/index.ts", False),
+        ("../../tools/diagram_assets/python-pdf-entry.ts", False),
+        ("node_modules/jspdf/dist/a.js", False),
+        ("node_modules/jspdf/node_modules/evil/i.js", False),
+        # A linked package: esbuild records the real path, which names no
+        # package, so the closure comparison never sees it.
+        ("linked/evil-pkg/index.js", True),
+        ("../../../outside-the-repository/evil/index.js", True),
+        ("src/../../../elsewhere/evil.js", True),
+    )
+    for path, should_refuse in cases:
+        refused = bool(_unrecognized_bundle_inputs([path]))
+        if refused != should_refuse:
+            raise AssertionError(
+                "input origin check %s %r"
+                % ("refused" if refused else "accepted", path)
+            )
+
+
+def _check_bundle_package_scan() -> None:
+    """
+    Verify the closure scan names inner packages, not just outer ones.
+
+    This is the third time the same mistake has been made here: a pattern is
+    checked in isolation with something that returns every match, then used in
+    code that asks for one.  The pattern looks right in both places, so only a
+    case with two packages in one path tells them apart.
+
+    :return: ``None``.
+    :rtype: None
+    :raises AssertionError: If the scan misses a package a path names.
+    """
+    cases = (
+        ("node_modules/jspdf/dist/a.js", {"jspdf"}),
+        ("node_modules/@babel/runtime/helpers/b.js", {"@babel/runtime"}),
+        # The bypass: an inner package is invisible to a single-match read.
+        ("node_modules/jspdf/node_modules/evil/index.js", {"jspdf", "evil"}),
+        (
+            "node_modules/@babel/runtime/node_modules/@evil/x/i.js",
+            {"@babel/runtime", "@evil/x"},
+        ),
+        ("node_modules/a/node_modules/b/node_modules/c/i.js", {"a", "b", "c"}),
+        # Not an install directory, so not a package.
+        ("src/my_node_modules/thing/i.js", set()),
+    )
+    for path, expected in cases:
+        found = _bundled_packages([path])
+        if found != expected:
+            raise AssertionError(
+                "closure scan read %r as %s, expected %s"
+                % (path, sorted(found), sorted(expected))
+            )
 
 
 def _check_pdf_leak_scanner() -> None:
@@ -870,6 +1258,7 @@ def build_manifest(
     files: Iterable[Tuple[str, bytes]],
     metafile: Dict[str, object],
     esbuild_version: str,
+    pdf_metafile: Optional[Dict[str, object]] = None,
 ) -> bytes:
     """Return deterministic manifest metadata for all generated resources."""
     entries = []
@@ -893,6 +1282,17 @@ def build_manifest(
             ),
         },
     }
+    if pdf_metafile is not None:
+        # The PDF writer is built by a second esbuild invocation, so its input
+        # inventory is a separate document. Recording its digest is what makes the
+        # bundle's dependency closure auditable after the fact -- the zero-image
+        # gate looks at the output and cannot see a package that was compiled in
+        # and never called.
+        manifest["esbuild"]["pdfWriterMetafileSha256"] = sha256_bytes(
+            json.dumps(pdf_metafile, sort_keys=True, separators=(",", ":")).encode(
+                "utf-8"
+            )
+        )
     return (json.dumps(manifest, ensure_ascii=True, indent=2) + "\n").encode("utf-8")
 
 
@@ -1087,8 +1487,16 @@ def build_assets() -> None:
         bridge = BRIDGE_PATH.read_bytes()
         host_shim = HOST_SHIM_PATH.read_bytes()
         combined = renderer + b"\n" + bundle + b"\n" + bridge
+        pdf_bundle, pdf_metafile = build_pdf_writer(
+            temporary_root / "pdf-writer.js", esbuild_version
+        )
+        # The shim goes first and in the same file: jsPDF reads ``navigator``
+        # while its module body runs, which a bundler hoists above anything the
+        # entry assigns, so installing it from inside the bundle is too late.
+        pdf_writer = PDF_HOST_SHIM_PATH.read_bytes() + b"\n" + pdf_bundle
         files = [
             ("renderer.js", combined),
+            ("pdf-writer.js", pdf_writer),
             ("resvg-binding.js", bundle),
             ("resvg.wasm", wasm),
             ("resvg-bridge.js", bridge),
@@ -1097,7 +1505,9 @@ def build_assets() -> None:
             ("viewer.css", viewer_css),
             *fonts,
         ]
-        manifest = build_manifest(lock, files, metafile, esbuild_version)
+        manifest = build_manifest(
+            lock, files, metafile, esbuild_version, pdf_metafile=pdf_metafile
+        )
         files.append(("manifest.json", manifest))
         staging = temporary_root / "staged"
         for relative, data in files:
@@ -1151,6 +1561,8 @@ def main(argv=None) -> int:
         validate_esbuild_provenance(read_lock())
         _check_clean_symlink_safety()
         _check_pdf_leak_scanner()
+        _check_bundle_package_scan()
+        _check_bundle_input_origins()
         _check_font_path_safety()
         _check_download_retry()
         print("diagram asset builder: deterministic and safety self-check passed")

@@ -1,9 +1,19 @@
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {join} from 'node:path';
+import {DOMParser as XmlDomParser} from '@xmldom/xmldom';
 
 import {
+    DiagramExportLimitError,
+    EXPORT_MAX_EDGE_PX,
+    EXPORT_MAX_PIXELS,
+    EXPORT_MAX_SCALE,
     PDF_MAX_UNITS,
     RASTER_MAX_AREA,
     RASTER_MAX_SIDE,
+    assertExportLimitsAreStricterThanHostLimits,
+    assertWithinExportLimits,
+    expandSvgForExport,
     rasterScaleWithinLimits,
 } from '../src/diagram/export';
 
@@ -132,5 +142,157 @@ describe('diagram export size limits', () => {
         for (let w = 1; w <= 60000; w += 1) check(w, 662, 2);
         for (let side = 1; side <= 40000; side += 1) check(side, side, 2);
         assert.deepEqual(offenders, [], 'rounded canvas must stay inside both caps');
+    });
+});
+
+describe('diagram export product limits', () => {
+    it('leaves an ordinary diagram alone', () => {
+        assert.deepEqual(assertWithinExportLimits(440, 642, 2), {
+            width: 880,
+            height: 1284,
+        });
+    });
+
+    it('accepts the documented scale ceiling and refuses anything above it', () => {
+        assert.doesNotThrow(() => assertWithinExportLimits(100, 100, EXPORT_MAX_SCALE));
+        assert.throws(
+            () => assertWithinExportLimits(100, 100, EXPORT_MAX_SCALE + 0.0001),
+            RangeError,
+        );
+    });
+
+    it('refuses an oversized edge rather than quietly scaling it down', () => {
+        // This is the behaviour that used to differ between the two export paths:
+        // the browser clamped and said nothing, while Python refused. A caller who
+        // picked a scale is told when it was not honoured.
+        try {
+            assertWithinExportLimits(5000, 100, 4);
+            assert.fail('an export past the edge limit has to be refused');
+        } catch (error) {
+            assert.equal((error as DiagramExportLimitError).limitName, 'edge');
+            const message = (error as Error).message;
+            assert.ok(message.includes(String(EXPORT_MAX_EDGE_PX)));
+            // The original size, the scaled size and the remedy.
+            assert.ok(message.includes('5000x100'));
+            assert.ok(message.includes('lower scale'));
+        }
+    });
+
+    it('refuses a shape no single edge would catch', () => {
+        // 4096 x 4096 is exactly the pixel limit and neither edge is near its own,
+        // so an edge-only check would wave one pixel more straight through.
+        assert.doesNotThrow(() => assertWithinExportLimits(4096, 4096, 1));
+        try {
+            assertWithinExportLimits(4097, 4096, 1);
+            assert.fail('an export past the pixel limit has to be refused');
+        } catch (error) {
+            assert.equal((error as DiagramExportLimitError).limitName, 'pixels');
+        }
+    });
+
+    it('keeps every product limit stricter than the host limit it shadows', () => {
+        // The refusal must always fire before the clamp, or the two paths start
+        // disagreeing again -- silently, because a clamped export still succeeds.
+        assert.doesNotThrow(assertExportLimitsAreStricterThanHostLimits);
+        assert.ok(EXPORT_MAX_EDGE_PX < RASTER_MAX_SIDE);
+        assert.ok(EXPORT_MAX_PIXELS < RASTER_MAX_AREA);
+    });
+});
+
+describe('diagram export product limits are actually called', () => {
+    it('is reachable from the viewer export path', () => {
+        // The refusal existed for one commit with no call site at all: the
+        // function, its tests and its documentation were in place while the
+        // browser still clamped silently. A test that only calls the function
+        // proves nothing about that, so this one reads the export component.
+        // Resolved from the package root rather than the module URL, because the
+        // suite is compiled to CommonJS and `import.meta` is unavailable there.
+        const stage = readFileSync(
+            join(
+                process.cwd(),
+                '..',
+                'vscode',
+                'src',
+                'preview-webview',
+                'components',
+                'Stage.vue',
+            ),
+            'utf8',
+        );
+        assert.ok(
+            /assertWithinExportLimits\(/.test(stage),
+            'the viewer export path must call the refusal, not only import it',
+        );
+        // Counting guards was the wrong anchor: it passed while the export
+        // command called `rasterizeSvg` directly and skipped every guard. What has
+        // to hold is that no raster call escapes one -- so count the call sites
+        // instead, and require the only one outside the helper's own definition to
+        // be the guarded one.
+        const rasterCalls = (stage.match(/rasterizeSvg\(/g) || []).length;
+        assert.equal(
+            rasterCalls,
+            2,
+            `expected one definition and one guarded call of rasterizeSvg, found ${rasterCalls}`,
+        );
+        assert.ok(
+            /assertWithinExportLimits\([^)]*\n?[^)]*EXPORT_PNG_SCALE/.test(stage)
+            || /assertWithinExportLimits\(\s*\n\s*svgBounds[\s\S]{0,120}EXPORT_PNG_SCALE/.test(stage),
+            'the raster guard must use the shared download scale',
+        );
+        assert.ok(
+            !/rasterizeSvg\(expanded, 2\)/.test(stage),
+            'no raster call may hard-code the download scale',
+        );
+        assert.ok(
+            /EXPORT_PNG_SCALE/.test(stage),
+            'the download scale must come from the shared constant',
+        );
+    });
+});
+
+describe('unexpanded exports are not presented as self-contained', () => {
+    it('returns the canonical form unchanged when no expander is given', async () => {
+        // The contract the docstring states: an absent expander is not an error,
+        // so the caller gets the canonical document back and has to say so.
+        //
+        // The helper parses what it is given, and Node has no `DOMParser`. The
+        // build dependency that supplies one to the embedded PDF host supplies it
+        // here too, rather than the assertion being skipped for want of a DOM.
+        const host = globalThis as unknown as {DOMParser?: unknown};
+        const installed = host.DOMParser === undefined;
+        if (installed) host.DOMParser = XmlDomParser;
+        try {
+            const canonical =
+                '<svg xmlns="http://www.w3.org/2000/svg"><text>a</text></svg>';
+            assert.equal(await expandSvgForExport(canonical), canonical);
+        } finally {
+            if (installed) delete host.DOMParser;
+        }
+    });
+
+    it('is reported by the export path rather than passed off silently', () => {
+        // With no expander the helper does not throw, which left the export handler
+        // shipping a font-dependent document under a variable named `expanded`.
+        // The host has to be told, because the file itself looks fine.
+        const stage = readFileSync(
+            join(
+                process.cwd(),
+                '..',
+                'vscode',
+                'src',
+                'preview-webview',
+                'components',
+                'Stage.vue',
+            ),
+            'utf8',
+        );
+        assert.ok(
+            /if \(!expander\) \{/.test(stage),
+            'the export handler must detect an absent expander',
+        );
+        assert.ok(
+            /not self-contained/.test(stage),
+            'and must say why the document cannot be treated as an export',
+        );
     });
 });

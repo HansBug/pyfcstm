@@ -14,7 +14,9 @@ import {decidePreviewPointerAction, PREVIEW_DRAG_THRESHOLD_PX} from '../interact
 import {computePreviewFit} from '../layout';
 import type {PreviewWebviewState, SelectionRef, TextRange, PreviewElkNode, PreviewPayload} from '../types';
 import {
+    assertWithinExportLimits,
     expandSvgForExport,
+    EXPORT_PNG_SCALE,
     RASTER_MAX_SIDE,
     rasterScaleWithinLimits,
     renderVectorPdf,
@@ -497,8 +499,18 @@ function getSvgExpander(): SvgExpander | undefined {
 }
 
 async function renderCurrentSvgToPng(): Promise<Blob> {
+    // Refused before anything is rasterised, and with the same limits the
+    // synchronous Python export uses. Without this call the product limits exist
+    // only in their own unit tests: the clamp inside `rasterizeSvg` would quietly
+    // reduce an oversized request instead, and a caller who asked for a scale
+    // would never learn it was not honoured.
+    assertWithinExportLimits(
+        svgBounds.value.width,
+        svgBounds.value.height,
+        EXPORT_PNG_SCALE,
+    );
     const expanded = await expandSvgForExport(svgString, getSvgExpander());
-    const {blob} = await rasterizeSvg(expanded, 2);
+    const {blob} = await rasterizeSvg(expanded, EXPORT_PNG_SCALE);
     return blob;
 }
 
@@ -522,6 +534,9 @@ function uint8ToBase64(bytes: Uint8Array): string {
 }
 
 async function renderCurrentSvgToPdf(): Promise<Uint8Array> {
+    // A vector PDF has no scale, so only the unscaled geometry is checked; the
+    // encoded-size limit is enforced where the bytes are, on the Python side.
+    assertWithinExportLimits(svgBounds.value.width, svgBounds.value.height, 1);
     return renderVectorPdf(
         svgString,
         {width: svgBounds.value.width, height: svgBounds.value.height},
@@ -551,19 +566,37 @@ async function onExportEvt() {
         const canonical = await expandSvgForExport(svgString);
         const failed: string[] = [];
         let expanded = canonical;
-        try {
-            expanded = await expandSvgForExport(svgString, getSvgExpander());
-        } catch (err) {
-            // The expander inlines fonts and re-parses its own output; both
-            // report failure as Error/DOMException, and the helper re-raises
-            // renderer defects rather than letting them read as export errors.
-            failed.push(`SVG font expansion: ${expectedErrorMessage(err)}`);
+        const expander = getSvgExpander();
+        if (!expander) {
+            // An absent expander is not an error, so `expandSvgForExport` returns
+            // the canonical form without throwing. That left this variable named
+            // `expanded` while holding a document that still carries `<text>` and a
+            // `font-family`, and the host handed it to the user as an export --
+            // which renders differently anywhere the fonts differ. The capability
+            // being absent has to be said out loud, because the file looks fine.
+            failed.push(
+                'SVG font expansion: this host provides no expander, so the SVG '
+                + 'still depends on fonts and is not self-contained',
+            );
+        } else {
+            try {
+                expanded = await expandSvgForExport(svgString, expander);
+            } catch (err) {
+                // The expander inlines fonts and re-parses its own output; both
+                // report failure as Error/DOMException, and the helper re-raises
+                // renderer defects rather than letting them read as export errors.
+                failed.push(`SVG font expansion: ${expectedErrorMessage(err)}`);
+            }
         }
         // Settled per format rather than all-or-nothing. The SVG is a string
         // that needs neither a canvas nor a PDF writer, so a raster failure
         // must not be able to withhold it.
         const [png, pdf] = await Promise.allSettled([
-            rasterizeSvg(expanded, 2).then(result => blobToBase64(result.blob)),
+            // Through the same helper the other two entry points use, so the
+            // export command cannot skip the size guard. Calling `rasterizeSvg`
+            // directly here left the one path a user actually reaches unguarded
+            // while both guarded paths were only reachable from context menus.
+            renderCurrentSvgToPng().then(blobToBase64),
             renderCurrentSvgToPdf().then(uint8ToBase64),
         ]);
         if (png.status === 'rejected') failed.push(`PNG: ${expectedErrorMessage(png.reason)}`);
@@ -623,10 +656,17 @@ function onContextMenuSelect(key: string) {
     else if (key === 'copy-svg') void copySvgToClipboard();
 }
 
-function notifyCopy(kind: 'png' | 'svg', err?: string) {
+function notifyCopy(kind: 'png' | 'svg', err?: string, caveat?: string) {
+    // A caveat is not a failure: the copy happened, but the caller needs to know
+    // something about what landed on the clipboard. Reporting it through the error
+    // channel would say the copy failed, and dropping it would say nothing at all.
     const detail = err
         ? {type: 'copyError', payload: `Copy ${kind.toUpperCase()} failed: ${err}`}
-        : {type: 'copyDone', payload: `Copied ${kind.toUpperCase()} to clipboard`};
+        : {
+            type: 'copyDone',
+            payload: `Copied ${kind.toUpperCase()} to clipboard`
+                + (caveat ? ` — ${caveat}` : ''),
+        };
     window.dispatchEvent(new CustomEvent('fcstm-emit', {detail}));
 }
 
@@ -634,11 +674,21 @@ async function copySvgToClipboard() {
     if (!svgString) return;
     try {
         if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-            // Same expanded product as Export → Save SVG, so pasting into an
-            // external tool does not depend on the viewer's own font stack.
-            const expanded = await expandSvgForExport(svgString, getSvgExpander());
+            // The same product as Export → Save SVG. Where the host provides an
+            // expander that means glyphs are already paths and pasting into an
+            // external tool does not depend on the viewer's font stack; where it
+            // does not, the copy still happens and says so, because a document
+            // that renders differently elsewhere looks identical here.
+            const expander = getSvgExpander();
+            const expanded = await expandSvgForExport(svgString, expander);
             await navigator.clipboard.writeText(expanded);
-            notifyCopy('svg');
+            notifyCopy(
+                'svg',
+                undefined,
+                expander
+                    ? undefined
+                    : 'this host cannot expand fonts, so the SVG is not self-contained',
+            );
             return;
         }
         throw new Error('clipboard API not available');

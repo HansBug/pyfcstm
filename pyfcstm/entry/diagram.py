@@ -5,7 +5,7 @@ from typing import Optional
 
 import click
 
-from ..diagram import DiagramUnavailableError
+from ..diagram import DiagramRenderLimitError, DiagramUnavailableError
 from ..dsl.error import GrammarParseError
 from ..model import load_state_machine_from_file
 from ..utils import ModelValidationError
@@ -17,6 +17,10 @@ from .base import ClickErrorException
 # rather than surfacing as an internal traceback.
 _JSON_SUFFIXES = (".json",)
 _HTML_SUFFIXES = (".html", ".htm")
+#: Formats produced by the optional rendering runtime rather than written
+#: directly.  They are listed separately because only these can report that the
+#: runtime is missing, and only ``.png`` accepts a scale.
+_EXPORT_SUFFIXES = (".svg", ".png", ".pdf")
 
 
 def _validate_output_suffix(output: str, format_name: Optional[str]) -> None:
@@ -37,11 +41,11 @@ def _validate_output_suffix(output: str, format_name: Optional[str]) -> None:
         # choice to make.
         return
     suffix = Path(output).suffix.lower()
-    if suffix in _JSON_SUFFIXES + _HTML_SUFFIXES:
+    if suffix in _JSON_SUFFIXES + _HTML_SUFFIXES + _EXPORT_SUFFIXES:
         return
     raise click.UsageError(
-        "cannot infer an output format from %s; use a .json or .html path, or "
-        "pass --format explicitly"
+        "cannot infer an output format from %s; use a .json, .html, .svg, .png "
+        "or .pdf path, or pass --format explicitly"
         % ("%r" % suffix if suffix else "a path with no suffix")
     )
 
@@ -133,14 +137,21 @@ def _write(target, write):
     # impossible. `_validate_write_target` asks about ownership instead, and
     # having one judge is what keeps the CLI and the API agreeing on a file.
     type=click.Path(dir_okay=False),
-    help="Output JSON or standalone HTML path.",
+    help="Output JSON, standalone HTML, SVG, PNG or PDF path.",
 )
 @click.option(
     "--format",
     "format_name",
-    type=click.Choice(["json", "html"]),
+    type=click.Choice(["json", "html", "svg", "png", "pdf"]),
     default=None,
     help="Explicit output format; otherwise infer it from the path.",
+)
+@click.option(
+    "--scale",
+    "scale",
+    type=float,
+    default=None,
+    help="PNG output scale; only valid for PNG output.",
 )
 @click.option(
     "--open",
@@ -152,9 +163,10 @@ def diagram_command(
     input_code_file: str,
     output: Optional[str],
     format_name: Optional[str],
+    scale: Optional[float],
     open_window: bool,
 ) -> None:
-    """Generate portable JSON or a standalone HTML diagram viewer."""
+    """Generate portable JSON, a standalone HTML viewer, or an SVG/PNG/PDF export."""
     model = _load_model(input_code_file)
     view = model.diagram()
     if open_window:
@@ -197,8 +209,47 @@ def diagram_command(
         return
     _validate_output_suffix(output, format_name)
     target = Path(output)
-    _write(target, lambda: view.save(target, format=format_name))
+    selected = format_name or target.suffix.lower().lstrip(".")
+    if scale is not None and selected != "png":
+        raise click.UsageError("--scale is only supported for PNG output")
+    _write(
+        target,
+        lambda: _export(view, target, format_name, 1.0 if scale is None else scale),
+    )
     click.echo(str(target))
+
+
+def _export(view, target, format_name, scale):
+    """
+    Save one diagram, reporting export failures as CLI errors.
+
+    An unavailable runtime, an out-of-range scale and an oversized output are all
+    things the caller can act on, so each becomes a message rather than a stack.
+
+    :param view: Diagram snapshot to save.
+    :type view: pyfcstm.diagram.api.Diagram
+    :param target: Destination path.
+    :type target: pathlib.Path
+    :param format_name: Explicit format, or ``None`` to use the suffix.
+    :type format_name: str, optional
+    :param scale: PNG scale.
+    :type scale: float
+    :return: The destination path.
+    :rtype: pathlib.Path
+    :raises pyfcstm.entry.base.ClickErrorException: If the export cannot be
+        produced.
+    :raises click.UsageError: If the requested scale is out of range.
+    """
+    try:
+        return view.save(target, format=format_name, scale=scale)
+    except ValueError as err:
+        # An out-of-range scale is a usage error, and Click prints those with the
+        # command's own help rather than as a failure of the diagram.
+        raise click.UsageError(str(err))
+    except DiagramRenderLimitError as err:
+        raise ClickErrorException(str(err))
+    except DiagramUnavailableError as err:
+        raise ClickErrorException(str(err))
 
 
 def _add_diagram_subcommand(cli):

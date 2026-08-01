@@ -25,6 +25,10 @@ Third-party runtime resources distributed in this directory:
   The Noto Project Authors, and contributors, under the SIL Open Font License
   1.1. See ``LICENSE-OFL-1.1.txt``. The locale-specific OTF files are
   distributed unmodified from the Noto CJK Sans2.004 release.
+* ``jspdf`` 4.2.1, Copyright James Hall and contributors, MIT licence.
+* ``@xmldom/xmldom`` 0.8.11, Copyright Jindong Yu and contributors, MIT licence.
+  Used only by the embedded PDF writer, to supply the DOM the shared export core
+  expects where there is no browser.
 * ``svg2pdf.js`` 2.7.0, Copyright yWorks for HTML Support Team, and its
   bundled MIT-licensed dependencies. See ``LICENSE-MIT.txt``; the exact npm
   integrity and esbuild metafile are recorded in the generated manifest.
@@ -33,6 +37,7 @@ The renderer bundle itself is built from the tracked jsfcstm sources with the
 locked esbuild version. ``manifest.json`` records the generated file hashes,
 source lock, and build metadata.
 
-The standalone browser bundle also contains ``svg2pdf.js`` 2.7.0 and its
+Both the standalone browser bundle and the embedded PDF writer contain
+``jspdf`` 4.2.1, ``svg2pdf.js`` 2.7.0 and its
 MIT-licensed dependencies. See ``LICENSE-MIT.txt`` and the viewer provenance in
 the generated ``manifest.json``.

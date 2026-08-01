@@ -872,6 +872,108 @@ positionally replaces the whole object instead. Missing or unusable packaged
 viewer/WASM/font assets raise ``DiagramAssetError`` with development recovery
 guidance (``make build_assets``) or the project issue URL for installed packages.
 
+Synchronous export and its size limits
+--------------------------------------
+
+``to_svg()``, ``to_png(scale=...)`` and ``to_pdf()`` export without a browser.
+They need the optional rendering runtime that ``pip install pyfcstm[viz]``
+provides; without it each raises ``DiagramUnavailableError`` naming that extra.
+``save()`` routes a ``.svg``, ``.png`` or ``.pdf`` suffix to them, and the CLI
+accepts the same three suffixes plus ``--scale``.
+
+.. list-table:: Synchronous export surface
+   :header-rows: 1
+
+   * - Call
+     - Returns
+     - Notes
+   * - ``Diagram.to_svg()``
+     - ``str``
+     - The expanded form: glyphs and arrow heads are already paths, so the
+       document carries no ``<text>``, ``<marker>`` or font dependency and renders
+       identically where none of this project's fonts are installed. The
+       renderer's raw canonical SVG is an internal intermediate and is not what
+       this returns.
+   * - ``Diagram.to_png(scale=1.0)``
+     - ``bytes``
+     - Rasterised through the pinned resvg backend, opaque, at ``ceil(size *
+       scale)`` pixels.
+   * - ``Diagram.to_pdf()``
+     - ``bytes``
+     - One page sized to the diagram, drawn as vectors with no image object.
+       Text is outlines, so the document is **not searchable** -- that is the cost
+       of it rendering without this project's fonts.
+   * - ``Diagram._repr_svg_()``
+     - ``str`` or ``None``
+     - Notebook representation, the same expanded SVG. Returns ``None`` when the
+       optional runtime is absent, because an exception raised from a repr hook
+       replaces the whole cell output with a traceback.
+
+.. note::
+   The viewer's own PNG download rasterises at a fixed 2x, while
+   ``to_png()`` defaults to 1x.  Comparing a downloaded file with an
+   API-produced one therefore shows a factor-of-two difference in pixels that is
+   two different requests rather than a disagreement; pass ``scale=2`` to compare
+   like with like.
+
+Every export is bounded. The limits are checked in Python before the rasteriser
+or the PDF writer is reached, so an impossible request is named rather than
+discovered by exhausting memory.
+
+.. list-table:: Export size limits
+   :header-rows: 1
+
+   * - Limit
+     - Value
+     - Raised on breach
+   * - ``scale``
+     - ``0 < scale <= 4``
+     - ``ValueError``
+   * - Scaled width and height, each
+     - ``<= 16384`` px
+     - ``DiagramRenderLimitError``
+   * - Scaled pixel count
+     - ``<= 16777216``
+     - ``DiagramRenderLimitError``
+   * - Raw RGBA buffer
+     - ``<= 67108864`` bytes, which is the pixel cap times four
+     - Reported as the pixel limit
+   * - Encoded PNG
+     - ``<= 33554432`` bytes
+     - ``DiagramRenderLimitError``
+   * - Encoded SVG or PDF
+     - ``<= 67108864`` bytes
+     - ``DiagramRenderLimitError``
+
+``DiagramRenderLimitError`` carries a ``limit_name``, and the only values it takes
+are ``edge``, ``pixels``, ``png``, ``pdf`` and ``svg``.  There is no ``raw_rgba``: the raw
+buffer is four bytes per pixel and its bound is the pixel bound times four, so any
+request large enough to reach it has already been refused as a pixel-count
+breach.  The figure is listed above because the documented limit set names a
+buffer size, not because it is a separate boundary.
+
+The encoded-size limits are enforced on the Python export path, where the bytes
+are produced.  The browser download enforces the scale, edge and pixel limits; it
+does not weigh its own output.
+
+``DiagramRenderLimitError`` is a sibling of ``DiagramRenderError``, not a
+subclass. The two describe different situations with different remedies: a render
+failure means the renderer was asked to do something and could not, while a limit
+failure means it was never asked. Lowering ``scale`` fixes the latter and nothing
+else, so ``except DiagramRenderError`` must not absorb it.
+
+The message names the original size, the scaled size, the limit that fired and
+what to change, because "too large" alone does not tell a caller which scale would
+have fitted.
+
+The browser download enforces the same product limits and refuses past them.
+Separately, it clamps at the limits a browser canvas actually has
+(``RASTER_MAX_SIDE``, ``RASTER_MAX_AREA``), which are not product policy: a tall
+diagram at 2x once produced a null blob and took the SVG and PDF download down
+with it. Every product limit is stricter than the host limit it shadows, so the
+refusal always fires first and the clamp is a defensive second layer ordinary
+input never reaches.
+
 Renderer and file options
 -------------------------
 

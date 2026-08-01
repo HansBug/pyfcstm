@@ -23,6 +23,7 @@ TRACKED_MARKERS = {
 
 GENERATED_ASSETS = {
     "renderer.js",
+    "pdf-writer.js",
     "resvg-binding.js",
     "resvg-bridge.js",
     "host-shim.js",

@@ -65,40 +65,30 @@ function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 // the counts are what the assertion needs.
 // Return the dictionary a stream declares, or null when it cannot be read.
 //
-// Walks back from the `stream` keyword over the `>>` that closes the dictionary,
-// balancing nested pairs, so a `/DecodeParms << ... >>` inside does not pass for
-// the whole of it.
+// Anchored to the object that owns the stream rather than to bracket balance.
+// Two attempts at balancing failed for the same reason: the bytes before a
+// stream are not all text. From the second stream onward the look-back window
+// holds the previous stream's compressed payload, where a stray `(` opens a
+// literal that never closes and stray brackets throw the depth off -- on a real
+// 25-stream document that made every single dictionary unreadable, and because
+// an unreadable one is treated as filtered, only the streams with no filter
+// showed it.
+//
+// A stream lives inside `N M obj << ... >> stream`, and between that `obj` and
+// the keyword there is no payload, so the span needs no parsing at all. Bytes
+// from an earlier stream sit before this object's header, which is why the
+// *last* `obj` is the right anchor.
 function streamDictionary(raw, markerStart) {
   const window = raw.subarray(Math.max(0, markerStart - 4096), markerStart).toString('latin1');
-  const end = window.lastIndexOf('>>');
-  if (end < 0 || window.slice(end + 2).trim() !== '') return null;
-  // Scan forward from a plausible start rather than backward, so a `<<` or `>>`
-  // inside a literal string can be stepped over. Read backward, `(a << b)` looked
-  // like a nested dictionary opening, the balance came out at the wrong place,
-  // the filter went unseen and a compressed stream carrying a halo was scanned
-  // as raw operators.
-  for (let start = 0; start <= end; start++) {
-    if (!window.startsWith('<<', start)) continue;
-    let depth = 0;
-    let literal = 0;
-    for (let i = start; i <= end + 1; i++) {
-      const ch = window[i];
-      if (literal > 0) {
-        if (ch === '\\') { i += 1; continue; }
-        if (ch === '(') literal += 1;
-        else if (ch === ')') literal -= 1;
-        continue;
-      }
-      if (ch === '(') { literal = 1; continue; }
-      if (window.startsWith('<<', i)) { depth += 1; i += 1; continue; }
-      if (window.startsWith('>>', i)) {
-        depth -= 1;
-        if (depth === 0) return i === end ? window.slice(start, end + 2) : null;
-        i += 1;
-      }
-    }
-  }
-  return null;
+  const header = window.lastIndexOf('obj');
+  if (header < 0) return null;
+  const span = window.slice(header + 3);
+  // The dictionary has to be the whole of what follows the header, or this is
+  // not the shape assumed here and guessing would be worse than declining.
+  const open = span.indexOf('<<');
+  const close = span.lastIndexOf('>>');
+  if (open < 0 || close < open || span.slice(close + 2).trim() !== '') return null;
+  return span.slice(open, close + 2);
 }
 
 function inflatePdfStreams(base64) {
@@ -128,9 +118,20 @@ function inflatePdfStreams(base64) {
     const dataEnd = raw.indexOf(endMarker, dataStart);
     if (dataEnd < 0) break;
     total += 1;
-    let compressed = raw.subarray(dataStart, dataEnd);
-    while (compressed.length && (compressed[compressed.length - 1] === 10 || compressed[compressed.length - 1] === 13)) {
-      compressed = compressed.subarray(0, compressed.length - 1);
+    // `/Length` when the dictionary states it directly, because the payload is
+    // binary and its last byte is as likely to be 0x0A as anything else. Peeling
+    // every trailing newline took a byte off such a stream and zlib then reported
+    // `Z_BUF_ERROR` for a document that was perfectly well formed. Failing that,
+    // peel one EOL: the spec puts one before `endstream` and it is not data.
+    const declared = /\/Length\s+(\d+)/.exec(streamDictionary(raw, markerStart) || '');
+    let compressed;
+    if (declared && dataStart + Number(declared[1]) <= dataEnd) {
+      compressed = raw.subarray(dataStart, dataStart + Number(declared[1]));
+    } else {
+      let stop = dataEnd;
+      if (stop > dataStart && raw[stop - 1] === 10) stop -= 1;
+      if (stop > dataStart && raw[stop - 1] === 13) stop -= 1;
+      compressed = raw.subarray(dataStart, stop);
     }
     // A stream that declares no filter is stored as-is, and reading it needs no
     // decoder. Handing it to zlib anyway made a legal uncompressed document look
@@ -235,6 +236,31 @@ function selfCheckStreamTally() {
     ['a filter beside a string holding brackets', Buffer.concat([
       Buffer.from('%PDF-1.3\n1 0 obj\n<< /Filter /FlateDecode /Note (a << b) >>\nstream\n'),
       zlib.deflateSync(halo), Buffer.from('\nendstream\n')]), false],
+    // An earlier object's dictionary sits in the look-back window of every
+    // stream but the first. Two attempts at bracket balancing were defeated by
+    // it, and on a real document that made every dictionary unreadable at once.
+    ['a stream preceded by another object', Buffer.concat([
+      Buffer.from('%PDF-1.3\n1 0 obj\n<< /Type /Catalog >>\nendobj\n'),
+      Buffer.from('2 0 obj\n<< /Length 5 >>\nstream\nBT ET\nendstream\nendobj\n')]), true],
+    ['a preceded stream carrying a halo', Buffer.concat([
+      Buffer.from('%PDF-1.3\n1 0 obj\n<< /Type /Catalog >>\nendobj\n2 0 obj\n<< /Length 40 >>\nstream\n'),
+      halo, Buffer.from('\nendstream\nendobj\n')]), false],
+    // The payload's last byte is as likely to be 0x0A as anything else; peeling
+    // every trailing newline took one off and zlib called a sound document
+    // corrupt. `/Length` says how much there is.
+    ['a payload ending in a newline byte', (() => {
+      // Deflating 3852 x's happens to end in 0x0A. Peeling every trailing
+      // newline took that byte off and zlib called a sound document corrupt;
+      // `/Length` says how much data there is, so nothing has to be guessed.
+      const body = zlib.deflateSync(Buffer.from('x'.repeat(3852)));
+      if (body[body.length - 1] !== 10) {
+        console.error('the payload chosen for the newline case no longer ends in 0x0A');
+        process.exit(1);
+      }
+      return Buffer.concat([
+        Buffer.from('%PDF-1.3\n1 0 obj\n<< /Filter /FlateDecode /Length ' + body.length + ' >>\nstream\n'),
+        body, Buffer.from('\nendstream\n')]);
+    })(), true],
   ];
   for (const [label, buf, shouldAccept] of cases) {
     if (accepted(buf) !== shouldAccept) {

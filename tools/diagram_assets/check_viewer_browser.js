@@ -80,9 +80,17 @@ function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 // *last* `obj` is the right anchor.
 function streamDictionary(raw, markerStart) {
   const window = raw.subarray(Math.max(0, markerStart - 4096), markerStart).toString('latin1');
-  const header = window.lastIndexOf('obj');
+  // The header shape, not the bare word: `(obj)` inside a string literal was
+  // taken for one, and the span it produced started inside the dictionary --
+  // returning an inner `<< ... >>` with the `/Filter` in front of it cut off, so
+  // a compressed document carrying a halo went through.
+  let header = -1;
+  const anchor = /(^|[^0-9A-Za-z])\d+\s+\d+\s+obj\b/g;
+  for (let m = anchor.exec(window); m !== null; m = anchor.exec(window)) {
+    header = m.index + m[0].length;
+  }
   if (header < 0) return null;
-  const span = window.slice(header + 3);
+  const span = window.slice(header);
   // The dictionary has to be the whole of what follows the header, or this is
   // not the shape assumed here and guessing would be worse than declining.
   const open = span.indexOf('<<');
@@ -123,7 +131,10 @@ function inflatePdfStreams(base64) {
     // every trailing newline took a byte off such a stream and zlib then reported
     // `Z_BUF_ERROR` for a document that was perfectly well formed. Failing that,
     // peel one EOL: the spec puts one before `endstream` and it is not data.
-    const declared = /\/Length\s+(\d+)/.exec(streamDictionary(raw, markerStart) || '');
+    // `(?!\s+\d+\s+R)` because `/Length 5 0 R` is an indirect reference whose
+    // value lives in another object; reading `5` from it took five bytes of a
+    // forty-byte stream, and the truncation counted as a successful decode.
+    const declared = /\/Length\s+(\d+)(?!\s+\d+\s+R)/.exec(streamDictionary(raw, markerStart) || '');
     let compressed;
     if (declared && dataStart + Number(declared[1]) <= dataEnd) {
       compressed = raw.subarray(dataStart, dataStart + Number(declared[1]));
@@ -139,12 +150,8 @@ function inflatePdfStreams(base64) {
     // bytes as decoded -- two gates claiming a shared invariant and disagreeing
     // on the same file.
     //
-    // The dictionary has to be found by balancing, not by the last `<<`: with
-    // `<< /Filter /FlateDecode /DecodeParms << /X 1 >> >>` the last one opens the
-    // *inner* dictionary, which mentions no filter, and the compressed bytes were
-    // then scanned as operators -- a document carrying a halo went through. When
-    // the shape cannot be read the stream is treated as filtered, so an
-    // unrecognised declaration becomes a loud skip rather than a silent pass.
+    // When the declaration cannot be read the stream is treated as filtered, so
+    // an unfamiliar shape becomes a loud skip rather than a silent pass.
     const dictionary = streamDictionary(raw, markerStart);
     if (dictionary !== null && !dictionary.includes('/Filter')) {
       chunks.push(Buffer.from(compressed));
@@ -261,6 +268,38 @@ function selfCheckStreamTally() {
         Buffer.from('%PDF-1.3\n1 0 obj\n<< /Filter /FlateDecode /Length ' + body.length + ' >>\nstream\n'),
         body, Buffer.from('\nendstream\n')]);
     })(), true],
+    // The case above passes if *either* mechanism works, so on its own it lets
+    // one of them be deleted in silence. This one holds the end that matters:
+    // with no `/Length` to fall back on, only peeling a single EOL saves it.
+    //
+    // There is no companion case pinning `/Length` alone, and that is not an
+    // omission. No legal document was found where it decides the answer: zlib
+    // tolerates trailing bytes, and for an unfiltered stream peeling one EOL
+    // already lands on the right length. `/Length` is the stricter reading, kept
+    // because it states the size rather than inferring it, but the peel is what
+    // actually fixes the defect. Claiming otherwise with a case that passes
+    // either way would be the shape this comment exists to warn about.
+    ['a newline-ending payload with no declared length', (() => {
+      const body = zlib.deflateSync(Buffer.from('x'.repeat(3852)));
+      if (body[body.length - 1] !== 10) {
+        console.error('the payload chosen for the newline case no longer ends in 0x0A');
+        process.exit(1);
+      }
+      return Buffer.concat([
+        Buffer.from('%PDF-1.3\n1 0 obj\n<< /Filter /FlateDecode >>\nstream\n'),
+        body, Buffer.from('\nendstream\n')]);
+    })(), true],
+    // Both fail-open shapes the review found: an `obj` inside a string literal
+    // moved the anchor into the dictionary and cut the `/Filter` off in front of
+    // it, and `/Length 5 0 R` names another object rather than stating a size,
+    // so reading `5` from it truncated a forty-byte stream and called that a
+    // successful decode. Each let a document carrying a halo through.
+    ['a string literal holding the word obj', Buffer.concat([
+      Buffer.from('%PDF-1.3\n1 0 obj\n<< /Filter /FlateDecode /Note (obj) /DecodeParms << /X 1 >> >>\nstream\n'),
+      zlib.deflateSync(halo), Buffer.from('\nendstream\n')]), false],
+    ['a length given as an indirect reference', Buffer.concat([
+      Buffer.from('%PDF-1.3\n1 0 obj\n<< /Length 5 0 R >>\nstream\n'),
+      halo, Buffer.from('\nendstream\n')]), false],
   ];
   for (const [label, buf, shouldAccept] of cases) {
     if (accepted(buf) !== shouldAccept) {

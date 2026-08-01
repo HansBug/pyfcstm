@@ -1,7 +1,6 @@
 """Expose the standalone Python diagram viewer through the CLI."""
 
 from pathlib import Path
-from xml.etree import ElementTree
 from typing import Optional
 
 import click
@@ -289,8 +288,8 @@ def expand_svg_command(input_svg_file: str, output: Optional[str]) -> None:
     :rtype: None
     :raises click.UsageError: If the input does not look like an SVG document.
     :raises pyfcstm.entry.base.ClickErrorException: If the input cannot be read
-        or does not parse as XML, the optional rendering runtime is unavailable,
-        or the result exceeds the documented size limit.  A failure of the
+        or is not a document the renderer accepts, the optional rendering runtime
+        is unavailable, or the result exceeds the documented size limit.  A failure of the
         renderer itself is left to surface, because that is a defect here rather
         than anything about the caller's file.
 
@@ -303,6 +302,8 @@ def expand_svg_command(input_svg_file: str, output: Optional[str]) -> None:
     from ..diagram.engine import (
         MAX_EXPORT_TEXT_BYTES,
         DiagramAssetEngine,
+        DiagramAssetError,
+        _check_canonical_svg,
         check_export_bytes,
     )
 
@@ -327,13 +328,16 @@ def expand_svg_command(input_svg_file: str, output: Optional[str]) -> None:
     # resource and two interpreters fighting over the runtime; reporting all of
     # them as a problem with the caller's file would tell a user with two
     # MiniRacers installed that their perfectly good SVG was broken.
+    #
+    # Reusing the engine's own check rather than restating it: a plain XML parse
+    # accepts a DOCTYPE, an entity declaration and a non-SVG root, all of which
+    # the engine refuses -- so each of those arrived as a traceback instead of a
+    # sentence, and any future tightening would drift apart again.
     try:
-        ElementTree.fromstring(canonical)
-    except ElementTree.ParseError as err:
-        # ParseError: the `<svg` test above only says the file mentions one, and
-        # this is what a document malformed past that point looks like.
+        _check_canonical_svg(canonical)
+    except DiagramAssetError as err:
         raise ClickErrorException(
-            "Failed to parse input SVG file %s: %s" % (input_svg_file, err)
+            "Failed to read input SVG file %s: %s" % (input_svg_file, err)
         )
     try:
         expanded = DiagramAssetEngine().expand_svg(canonical)

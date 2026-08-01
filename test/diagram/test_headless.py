@@ -865,20 +865,33 @@ class TestTheExpandCommandKeepsWhatItWasGiven:
         assert "Traceback" not in result.output
         assert "does not look like an SVG document" in result.output
 
-    def test_a_malformed_svg_is_reported_rather_than_raised(self, tmp_path):
-        # The not-an-SVG guard only asks whether the file mentions one. A document
-        # that is broken past the opening tag gets all the way to the renderer,
-        # and letting its parser error out put an XML traceback in front of
-        # someone who had simply pointed the command at the wrong file.
-        source = tmp_path / "truncated.svg"
-        source.write_text("<svg this is not valid xml at all", encoding="utf-8")
+    @pytest.mark.parametrize(
+        "label,document",
+        [
+            ("a doctype", '<!DOCTYPE svg><svg xmlns="http://www.w3.org/2000/svg"/>'),
+            (
+                "an entity declaration",
+                '<!DOCTYPE svg [<!ENTITY x "y">]><svg xmlns="http://www.w3.org/2000/svg"/>',
+            ),
+            ("a truncated document", "<svg this is not valid xml at all"),
+        ],
+    )
+    def test_a_document_the_renderer_refuses_is_reported(
+        self, label, document, tmp_path
+    ):
+        # The check here is the engine's own, not a restatement of it. A plain
+        # XML parse accepts the first two of these while the renderer refuses
+        # them, so each arrived as a traceback in front of someone who had simply
+        # pointed the command at a file from somewhere else.
+        source = tmp_path / "input.svg"
+        source.write_text(document, encoding="utf-8")
 
         result = self._run("-i", str(source), "-o", str(tmp_path / "out.svg"))
 
-        assert result.exit_code != 0
-        assert "Traceback" not in result.output
-        assert "Failed to parse input SVG file" in result.output
-        assert "truncated.svg" in result.output
+        assert result.exit_code != 0, label
+        assert "Traceback" not in result.output + str(result.exception or "")
+        assert "Failed to read input SVG file" in result.output
+        assert "input.svg" in result.output
 
     def test_a_renderer_failure_is_not_blamed_on_the_input(self, tmp_path):
         """A defect here must not be reported as a problem with the caller's file.

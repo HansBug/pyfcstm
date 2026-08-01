@@ -163,7 +163,10 @@ export function expandSvg(svg: string): Promise<string> {
     // interpreter yet, a renderer that ran out of memory -- and a caller retrying
     // after fixing it would otherwise get the old error back.
     promise.catch(() => {
-        if (lastExpansion && lastExpansion.key === svg) lastExpansion = undefined;
+        // Identity, not the key: after a reset a new promise can be in the cache
+        // under the same document, and clearing by key would drop that one when
+        // this older attempt finally fails -- costing a re-run for no reason.
+        if (lastExpansion && lastExpansion.promise === promise) lastExpansion = undefined;
     });
     return promise;
 }

@@ -242,11 +242,20 @@ def build_domain_proof(
     for stable_id, fact in ordered:
         key = _canonical(fact)
         if key in seen:
-            # Two members stating the same fact share one node; the attribution
-            # keeps both ids so neither is dropped from the reasons.
-            existing = nodes[seen[key]]
-            existing.item_ids = tuple(sorted(set(existing.item_ids) | {stable_id}))
-            continue
+            # An input node stands for one core member, so two members stating the
+            # same fact have nowhere to go: merging them would give one node two
+            # attributions, and dropping one would leave a member unread.  The
+            # contract answers this directly -- a duplicate input fails closed -- and
+            # a subset-minimal core should not contain one in the first place, since
+            # either member alone would do.  Refusing says so instead of quietly
+            # producing a shape the published invariants forbid.
+            return None, _record(
+                "unknown",
+                True,
+                elapsed(),
+                "two core members state the same fact: %s and %s"
+                % (nodes[seen[key]].item_ids[0], stable_id),
+            )
         seen[key] = len(nodes)
         nodes.append(_Node(len(nodes), "input", "source_fact", (), fact, (stable_id,)))
 

@@ -227,14 +227,20 @@ def test_a_step_that_reaches_no_contradiction_is_pruned_away() -> None:
 
 
 @pytest.mark.unittest
-def test_two_members_stating_one_fact_share_a_node_and_both_stay_named() -> None:
-    """Equal conclusions collapse, and the collapse must not lose an attribution.
+def test_two_members_stating_one_fact_are_refused_rather_than_merged() -> None:
+    """An input node stands for one member, so two members with one fact have nowhere to go.
 
-    Deduplication is what makes the graph a DAG rather than a tree, but a node that
-    kept only the first member's id would drop the other from the reasons while it
-    genuinely took part.  Both ids ride on the surviving node.
+    Merging them puts two attributions on a node the published invariants say binds
+    to one item; keeping only the first leaves the other member in the core and in no
+    reason at all.  Neither is publishable, and the contract names the third answer
+    directly: a duplicate input fails closed.
+
+    A subset-minimal core should not contain such a pair anyway -- either member alone
+    would carry the contradiction, so minimization drops one before the builder is
+    reached.  Refusing is what makes that an assumption the code states rather than
+    one it relies on silently.
     """
-    proof, _ = _build(
+    proof, record = _build(
         _inputs(
             ("assumption.0000", _equality(value=0)),
             ("assumption.0001", _equality(value=0)),
@@ -242,11 +248,8 @@ def test_two_members_stating_one_fact_share_a_node_and_both_stay_named() -> None
         )
     )
 
-    assert proof is not None
-    inputs = [node for node in proof.nodes if node.kind == "input"]
-    assert len(inputs) == 2, "the repeated fact is one node"
-    shared = next(node for node in inputs if node.conclusion["value"] == 0)
-    assert set(shared.item_ids) == {"assumption.0000", "assumption.0001"}
+    assert proof is None
+    assert "state the same fact" in (record.reason or ""), record.reason
 
 
 @pytest.mark.unittest

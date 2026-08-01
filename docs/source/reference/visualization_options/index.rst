@@ -1066,6 +1066,49 @@ Behavior boundaries
    * - ``rendered-image-visualize``
      - ``visualize`` always goes through PlantUML source first, then renders the requested artifact type.
 
+Outlining a drawing you already have
+------------------------------------
+
+``Diagram.to_svg()`` covers the case where you hold a model.  ``pyfcstm
+expand-svg`` covers the opposite one: you hold a canonical SVG -- rendered
+somewhere else, with a palette and colour mode already chosen -- and want its
+text turned into paths.
+
+.. code-block:: shell-session
+
+    $ pyfcstm expand-svg -i canonical.svg -o self-contained.svg
+    self-contained.svg
+    $ pyfcstm expand-svg -i canonical.svg > self-contained.svg
+
+The document handed in is the document expanded.  Re-rendering from the
+``.fcstm`` source instead would return a valid file in the *default* palette,
+discarding whatever presentation choices produced the input -- a wrong-colour
+export that every structural check accepts.  The CJK face is read from the
+input's own ``font-family``, so there is no locale flag.
+
+.. list-table::
+    :header-rows: 1
+    :widths: 30 70
+
+    * - Condition
+      - Result
+    * - The optional runtime is missing
+      - Names the extra to install; nothing is written.
+    * - The input is not an SVG document
+      - A usage error, before the renderer starts.
+    * - The result exceeds ``MAX_EXPORT_TEXT_BYTES``
+      - :class:`~pyfcstm.diagram.engine.DiagramRenderLimitError` with
+        ``limit_name`` ``svg``, the same ceiling ``to_svg()`` enforces.
+
+The editor preview is the caller this was added for.  A webview has the diagram
+on screen but no fonts and no rasteriser, and bundling those would add 17.7 MB
+to the extension for one CJK locale or 59.4 MB for all of them.  It therefore
+asks an installed ``pyfcstm[viz]``: set ``fcstm.diagram.pyfcstmPath`` to name a
+specific interpreter, or leave it empty to try ``pyfcstm``, then ``python3 -m
+pyfcstm``, then ``python -m pyfcstm``.  With nothing usable installed the export
+says so, rather than handing over a document whose text depends on fonts the
+reader may not have.
+
 Why these boundaries exist
 --------------------------
 

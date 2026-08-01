@@ -1365,6 +1365,18 @@ jobs:
           make vscode
           ls -lh editors/vscode/build/
 
+      - name: Require the preview to outline its own drawing
+        # The extension asks an installed ``pyfcstm[viz]`` to expand, rather than
+        # shipping resvg and the CJK faces. Two things have to hold and neither is
+        # visible from one side: the document the webview produced is what gets
+        # expanded, not a re-render that would silently lose the user's palette;
+        # and a host with nothing installed says so instead of handing over an
+        # unexpanded file. This job is where both halves exist at once -- it has
+        # the built extension already, and only needs the optional runtime.
+        run: |
+          pip install -r requirements-viz.txt
+          make diagram_webview_expander_check
+
       - name: Find and verify extension file
         id: find_vsix
         run: |

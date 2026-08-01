@@ -207,7 +207,8 @@ export type WebviewInboundMessage =
     | {type: 'revealSource'; range: TextRange}
     | {type: 'setLayoutMode'; mode: PreviewLayoutMode}
     | {type: 'exportDiagram'; svg: string; pngBase64: string; pdfBase64: string; failed?: string[]}
-    | {type: 'exportError'; message: string};
+    | {type: 'exportError'; message: string}
+    | {type: 'expandSvg'; requestId: string; svg: string};
 
 /**
  * Host → webview messages that carry editor-driven cues rather than a full
@@ -215,4 +216,5 @@ export type WebviewInboundMessage =
  * discriminant ``type`` field, which state payloads do not set.
  */
 export type HostOutboundCue =
-    | {type: 'setActiveRange'; range: TextRange | null};
+    | {type: 'setActiveRange'; range: TextRange | null}
+    | {type: 'expandSvgResult'; requestId: string; svg?: string; error?: string};

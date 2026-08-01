@@ -1024,6 +1024,42 @@ scale、边长与像素三条限额，不衡量自身输出。
    * - ``rendered-image-visualize``
      - ``visualize`` 总是先生成 PlantUML 源码，再渲染请求的产物类型。
 
+为已有的图形轮廓化文字
+----------------------
+
+``Diagram.to_svg()`` 面向"手上有模型"的场景；``pyfcstm expand-svg`` 面向相反的场景：
+手上是一份 canonical SVG——在别处渲染、调色板与配色模式都已选定——需要把其中的文字转成路径。
+
+.. code-block:: shell-session
+
+    $ pyfcstm expand-svg -i canonical.svg -o self-contained.svg
+    self-contained.svg
+    $ pyfcstm expand-svg -i canonical.svg > self-contained.svg
+
+交进去的是哪份文档，展开的就是哪份。改为从 ``.fcstm`` 源重新渲染会得到一份**默认调色板**下
+的合法文件，把产生该输入的呈现选择全部丢弃——那是一份颜色错误的导出，而所有结构性检查都会放行。
+CJK 字体从输入自身的 ``font-family`` 读取，因此不需要地区参数。
+
+.. list-table::
+    :header-rows: 1
+    :widths: 30 70
+
+    * - 条件
+      - 结果
+    * - 缺少可选渲染运行时
+      - 报出需要安装的 extra；不写出任何文件。
+    * - 输入不是 SVG 文档
+      - 用法错误，在渲染器启动之前给出。
+    * - 结果超过 ``MAX_EXPORT_TEXT_BYTES``
+      - :class:`~pyfcstm.diagram.engine.DiagramRenderLimitError`\ ，``limit_name`` 为
+        ``svg``\ ，与 ``to_svg()`` 用的是同一上限。
+
+这个命令是为编辑器预览加的。webview 里有图但没有字体、也没有栅格化器，而把这些打进扩展
+需要为单个 CJK 地区增加 17.7 MB、全部地区增加 59.4 MB。因此它转而询问一个已安装的
+``pyfcstm[viz]``\ ：把 ``fcstm.diagram.pyfcstmPath`` 设为具体的解释器，或者留空以依次尝试
+``pyfcstm``\ 、``python3 -m pyfcstm``\ 、``python -m pyfcstm``\ 。若没有可用的安装，导出会
+明确报告，而不是交出一份文字依赖读者机器字体的文档。
+
 这些边界为什么存在
 ------------------
 

@@ -72,4 +72,41 @@ window.addEventListener('fcstm-emit', (ev: Event) => {
     }
 });
 
+// Give this host the ability to outline text, by asking the extension host to
+// ask an installed `pyfcstm[viz]`.
+//
+// `expandSvgForExport` looks for `window.__FCSTM_EXPAND_SVG__`; the standalone
+// Python viewer injects one, and until now the editor webview had none, so its
+// SVG download silently depended on fonts the reader might not have. The
+// webview cannot do the work itself -- no fonts, no rasteriser -- and bundling
+// those would add 17.7 MB for one locale or 59.4 MB for all of them.
+//
+// The canonical document is sent as-is rather than the host re-rendering from
+// the `.fcstm` source, so the palette and colour mode on screen are the ones in
+// the exported file.
+const pendingExpansions = new Map<string, {
+    resolve: (svg: string) => void;
+    reject: (error: Error) => void;
+}>();
+let expansionSequence = 0;
+
+window.addEventListener('message', (event: MessageEvent) => {
+    const data = event.data as {type?: string; requestId?: string; svg?: string; error?: string};
+    if (!data || data.type !== 'expandSvgResult' || typeof data.requestId !== 'string') return;
+    const pending = pendingExpansions.get(data.requestId);
+    if (!pending) return;
+    pendingExpansions.delete(data.requestId);
+    if (typeof data.svg === 'string') pending.resolve(data.svg);
+    // A reply with neither an SVG nor a reason is still a reply, and rejecting
+    // it is what turns it into the export's error instead of a hung download.
+    else pending.reject(new Error(data.error || 'the extension host could not expand this diagram'));
+});
+
+(window as unknown as {__FCSTM_EXPAND_SVG__?: (svg: string) => Promise<string>}).__FCSTM_EXPAND_SVG__ =
+    (svg: string) => new Promise<string>((resolve, reject) => {
+        const requestId = `expand-${++expansionSequence}`;
+        pendingExpansions.set(requestId, {resolve, reject});
+        bridge().postMessage({type: 'expandSvg', requestId, svg} as never);
+    });
+
 createApp(App).mount('#app');

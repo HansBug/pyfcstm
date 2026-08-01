@@ -217,6 +217,11 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "Move multi-line `/* ... */` block comments (typically `abstract` action `raw_doc` payloads) onto their own indented lines and align continuation `*` markers under the opening `/*`."
+        },
+        "fcstm.diagram.pyfcstmPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Command used to outline diagram text when exporting SVG or PNG from the preview.\n\nThe preview has the drawing on screen but no fonts to outline it with, so it asks an installed `pyfcstm[viz]`. Leave this empty to try `pyfcstm`, then `python3 -m pyfcstm`, then `python -m pyfcstm`. Set it to name a specific interpreter or wrapper; an explicit value is used or reported, never replaced by a guess.\n\nWith nothing usable installed, the export says so rather than handing over a document whose text depends on fonts the reader may not have."
         }
       }
     }

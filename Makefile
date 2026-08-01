@@ -341,7 +341,10 @@ diagram_assets_verify: diagram_assets_check diagram_docstring_check diagram_rend
 diagram_viewer_gate_check:
 	node tools/diagram_assets/check_viewer_browser.js --check
 
-diagram_webview_expander_check:
+# Depends on build_assets like the other diagram gates: the renderer's assets are
+# build products rather than tracked sources, and both halves of this check need
+# them -- one to produce the canonical document, the other to expand it.
+diagram_webview_expander_check: build_assets
 	$(PYTHON) tools/check_diagram_webview_expander.py --check
 	cd editors/vscode && npm run compile:tsc
 	$(PYTHON) tools/check_diagram_webview_expander.py

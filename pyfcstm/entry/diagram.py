@@ -302,6 +302,7 @@ def expand_svg_command(input_svg_file: str, output: Optional[str]) -> None:
         MAX_EXPORT_TEXT_BYTES,
         DiagramAssetEngine,
         DiagramAssetError,
+        DiagramRenderError,
         check_export_bytes,
     )
 
@@ -331,10 +332,16 @@ def expand_svg_command(input_svg_file: str, output: Optional[str]) -> None:
     except DiagramUnavailableError as err:
         raise ClickErrorException(str(err))
     except DiagramAssetError as err:
-        # The `<svg` test above only says the file mentions one. A document that
-        # is malformed past that point fails inside the renderer, and letting it
-        # out put an XML parser's traceback in front of someone who pointed the
-        # command at the wrong file.
+        if isinstance(err, DiagramRenderError):
+            # The renderer itself failed, which is a defect here rather than
+            # anything about the caller's file. `diagram -o` lets that surface as
+            # a traceback too; reporting it as a problem with the input would
+            # send the reader to look at a document that is fine.
+            raise
+        # What is left is the input: the `<svg` test above only says the file
+        # mentions one, and a document malformed past that point fails when the
+        # renderer parses it. Letting that out put an XML parser's traceback in
+        # front of someone who had pointed the command at the wrong file.
         raise ClickErrorException(
             "Failed to expand input SVG file %s: %s" % (input_svg_file, err)
         )

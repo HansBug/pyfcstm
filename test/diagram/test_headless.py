@@ -877,8 +877,37 @@ class TestTheExpandCommandKeepsWhatItWasGiven:
 
         assert result.exit_code != 0
         assert "Traceback" not in result.output
-        assert "Failed to expand input SVG file" in result.output
+        assert "Failed to parse input SVG file" in result.output
         assert "truncated.svg" in result.output
+
+    def test_a_renderer_failure_is_not_blamed_on_the_input(self, tmp_path):
+        """A defect here must not be reported as a problem with the caller's file.
+
+        `DiagramAssetError` covers a malformed document, a missing packaged
+        resource and two interpreters fighting over the runtime.  Converting the
+        lot of them into "your SVG is bad" sends a user with a working file to
+        look for a fault in it.  The input is judged before the engine is asked,
+        so whatever the engine raises is left to surface.
+
+        The failure is injected because no input can cause it -- that is the
+        point of the property.  What is pinned is publicly observable: the
+        message a user sees for a document that is fine.
+        """
+        from pyfcstm.diagram.engine import DiagramAssetError
+
+        source = self._canonical(tmp_path)
+        with mock.patch.object(
+            DiagramAssetEngine,
+            "expand_svg",
+            side_effect=DiagramAssetError("two runtimes are installed"),
+        ):
+            result = self._run("-i", str(source), "-o", str(tmp_path / "out.svg"))
+
+        assert result.exit_code != 0
+        # Not "Failed to parse input SVG file": the document parsed, and saying
+        # otherwise would be the defect this pins.
+        assert "input SVG file" not in result.output
+        assert "two runtimes are installed" in str(result.exception or result.output)
 
     def test_a_missing_destination_directory_names_the_path(self, tmp_path):
         target = tmp_path / "absent" / "out.svg"

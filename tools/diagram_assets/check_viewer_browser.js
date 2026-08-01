@@ -63,6 +63,27 @@ function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 //
 // Returns {text, total, decoded, skipped} rather than just the text, because
 // the counts are what the assertion needs.
+// Return the dictionary a stream declares, or null when it cannot be read.
+//
+// Walks back from the `stream` keyword over the `>>` that closes the dictionary,
+// balancing nested pairs, so a `/DecodeParms << ... >>` inside does not pass for
+// the whole of it.
+function streamDictionary(raw, markerStart) {
+  const window = raw.subarray(Math.max(0, markerStart - 4096), markerStart).toString('latin1');
+  const end = window.lastIndexOf('>>');
+  if (end < 0 || window.slice(end + 2).trim() !== '') return null;
+  let depth = 0;
+  for (let i = end; i >= 0; i--) {
+    if (window.startsWith('>>', i)) { depth += 1; i -= 1; continue; }
+    if (window.startsWith('<<', i)) {
+      depth -= 1;
+      if (depth === 0) return window.slice(i, end + 2);
+      i -= 1;
+    }
+  }
+  return null;
+}
+
 function inflatePdfStreams(base64) {
   const raw = Buffer.from(String(base64 || ''), 'base64');
   const endMarker = Buffer.from('endstream');
@@ -99,9 +120,15 @@ function inflatePdfStreams(base64) {
     // like one this side could not read, while the Python check counted the same
     // bytes as decoded -- two gates claiming a shared invariant and disagreeing
     // on the same file.
-    const declaration = raw.subarray(Math.max(0, markerStart - 512), markerStart).toString('latin1');
-    const dictionary = declaration.slice(declaration.lastIndexOf('<<'));
-    if (!dictionary.includes('/Filter')) {
+    //
+    // The dictionary has to be found by balancing, not by the last `<<`: with
+    // `<< /Filter /FlateDecode /DecodeParms << /X 1 >> >>` the last one opens the
+    // *inner* dictionary, which mentions no filter, and the compressed bytes were
+    // then scanned as operators -- a document carrying a halo went through. When
+    // the shape cannot be read the stream is treated as filtered, so an
+    // unrecognised declaration becomes a loud skip rather than a silent pass.
+    const dictionary = streamDictionary(raw, markerStart);
+    if (dictionary !== null && !dictionary.includes('/Filter')) {
       chunks.push(Buffer.from(compressed));
       decoded += 1;
       offset = dataEnd + endMarker.length;
@@ -174,6 +201,16 @@ function selfCheckStreamTally() {
     ['an uncompressed stream carrying a halo', Buffer.concat([
       Buffer.from('%PDF-1.3\n1 0 obj\n<< /Length 40 >>\nstream\n'),
       halo, Buffer.from('\nendstream\n')]), false],
+    // Both orderings, because taking the *last* `<<` found the inner dictionary
+    // when `/DecodeParms` came second: the filter went unnoticed, the compressed
+    // bytes were scanned as operators, and a document carrying a halo passed.
+    // Only one of these two catches that, so both are here.
+    ['a filter declared before nested parameters', Buffer.concat([
+      Buffer.from('%PDF-1.3\n1 0 obj\n<< /Filter /FlateDecode /DecodeParms << /X 1 >> >>\nstream\n'),
+      zlib.deflateSync(halo), Buffer.from('\nendstream\n')]), false],
+    ['a filter declared after nested parameters', Buffer.concat([
+      Buffer.from('%PDF-1.3\n1 0 obj\n<< /DecodeParms << /X 1 >> /Filter /FlateDecode >>\nstream\n'),
+      zlib.deflateSync(halo), Buffer.from('\nendstream\n')]), false],
   ];
   for (const [label, buf, shouldAccept] of cases) {
     if (accepted(buf) !== shouldAccept) {

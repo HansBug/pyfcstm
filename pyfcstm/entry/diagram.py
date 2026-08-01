@@ -1,6 +1,7 @@
 """Expose the standalone Python diagram viewer through the CLI."""
 
 from pathlib import Path
+from xml.etree import ElementTree
 from typing import Optional
 
 import click
@@ -287,10 +288,11 @@ def expand_svg_command(input_svg_file: str, output: Optional[str]) -> None:
     :return: ``None``.
     :rtype: None
     :raises click.UsageError: If the input does not look like an SVG document.
-    :raises pyfcstm.entry.base.ClickErrorException: If the optional rendering
-        runtime is unavailable, the input cannot be read or is malformed past the
-        opening tag, the renderer fails, or the result exceeds the documented
-        size limit.
+    :raises pyfcstm.entry.base.ClickErrorException: If the input cannot be read
+        or does not parse as XML, the optional rendering runtime is unavailable,
+        or the result exceeds the documented size limit.  A failure of the
+        renderer itself is left to surface, because that is a defect here rather
+        than anything about the caller's file.
 
     Example::
 
@@ -301,8 +303,6 @@ def expand_svg_command(input_svg_file: str, output: Optional[str]) -> None:
     from ..diagram.engine import (
         MAX_EXPORT_TEXT_BYTES,
         DiagramAssetEngine,
-        DiagramAssetError,
-        DiagramRenderError,
         check_export_bytes,
     )
 
@@ -322,6 +322,19 @@ def expand_svg_command(input_svg_file: str, output: Optional[str]) -> None:
         )
     if "<svg" not in canonical:
         raise click.UsageError("%s does not look like an SVG document" % input_svg_file)
+    # Judge the input here rather than inferring blame from whatever the engine
+    # raises. `DiagramAssetError` covers a malformed document, a missing packaged
+    # resource and two interpreters fighting over the runtime; reporting all of
+    # them as a problem with the caller's file would tell a user with two
+    # MiniRacers installed that their perfectly good SVG was broken.
+    try:
+        ElementTree.fromstring(canonical)
+    except ElementTree.ParseError as err:
+        # ParseError: the `<svg` test above only says the file mentions one, and
+        # this is what a document malformed past that point looks like.
+        raise ClickErrorException(
+            "Failed to parse input SVG file %s: %s" % (input_svg_file, err)
+        )
     try:
         expanded = DiagramAssetEngine().expand_svg(canonical)
         expanded = check_export_bytes(
@@ -331,20 +344,6 @@ def expand_svg_command(input_svg_file: str, output: Optional[str]) -> None:
         raise ClickErrorException(str(err))
     except DiagramUnavailableError as err:
         raise ClickErrorException(str(err))
-    except DiagramAssetError as err:
-        if isinstance(err, DiagramRenderError):
-            # The renderer itself failed, which is a defect here rather than
-            # anything about the caller's file. `diagram -o` lets that surface as
-            # a traceback too; reporting it as a problem with the input would
-            # send the reader to look at a document that is fine.
-            raise
-        # What is left is the input: the `<svg` test above only says the file
-        # mentions one, and a document malformed past that point fails when the
-        # renderer parses it. Letting that out put an XML parser's traceback in
-        # front of someone who had pointed the command at the wrong file.
-        raise ClickErrorException(
-            "Failed to expand input SVG file %s: %s" % (input_svg_file, err)
-        )
     if output is None:
         click.echo(expanded)
         return

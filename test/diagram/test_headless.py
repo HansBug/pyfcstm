@@ -13,6 +13,7 @@ before the renderer is reached.
 """
 
 import json
+import os
 import re
 import struct
 import subprocess
@@ -888,6 +889,10 @@ class TestTheExpandCommandKeepsWhatItWasGiven:
         assert "Traceback" not in result.output
         assert "Failed to write" in result.output
 
+    @pytest.mark.skipif(
+        os.name == "nt",
+        reason="POSIX modes; a read-only directory still accepts new files on Windows",
+    )
     def test_a_destination_it_cannot_write_leaves_the_existing_file_alone(
         self, tmp_path
     ):

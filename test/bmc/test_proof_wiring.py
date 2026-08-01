@@ -1013,3 +1013,107 @@ def test_a_reading_that_does_not_follow_from_its_members_is_refused() -> None:
     assert held is False
     assert "does not follow from its group" in (record.reason or ""), record.reason
     assert methods == {}
+
+
+@pytest.mark.unittest
+def test_a_reading_is_refused_when_it_does_not_follow_however_it_is_named() -> None:
+    """Naming more members does not make a reading true.
+
+    The attribution lists everything the core says about the frame a step leaves, not
+    the subset that turns out to be necessary -- finding that subset would cost a
+    solver call per member.  What keeps the looseness harmless is that the binding
+    re-derives the reading from the members' own encoded expressions: a delta that
+    does not follow is refused no matter how many members are named beside it.
+
+    So this hands the check a wrong delta under the widest attribution available.
+    """
+    from pyfcstm.bmc.infeasibility import check_core_bindings
+    from pyfcstm.bmc.solver import _SolveBudget
+
+    machine = load_state_machine_from_text(
+        "def int retries = 0;\n"
+        "state Root { state Igniting; state Purge; [*] -> Igniting;\n"
+        "    Igniting -> Purge effect { retries = retries + 1; }; }",
+        "machine.fcstm",
+    )
+    context = BmcEngine(machine).prepare(
+        'init state("Root.Igniting") where retries == 0;\n'
+        'assume at 1: var("retries") == 0;\n'
+        'check reach <= 1: active("Root.Purge");\n',
+        query_source_path="query.fbmcq",
+    )
+    core = build_bmc_core_formula(context)
+    widest = (
+        "initial.target",
+        "initial.variable.retries",
+        "transition.step.0000",
+    )
+
+    held, record, methods = check_core_bindings(
+        core,
+        (
+            (
+                widest,
+                {
+                    "kind": "transition_case",
+                    "variable": "retries",
+                    "frame": 0,
+                    "target_frame": 1,
+                    "operator": "add",
+                    "operand": 4,
+                },
+            ),
+        ),
+        _SolveBudget(None),
+    )
+
+    assert held is False
+    assert "does not follow from its group" in (record.reason or ""), record.reason
+    assert methods == {}
+
+
+@pytest.mark.unittest
+def test_a_step_that_added_nothing_reads_that_way_everywhere() -> None:
+    """One outcome, three places it is written, and all three have to agree.
+
+    A step that adds zero left the variable alone.  "Changes by 0" describes the
+    arithmetic instead, and it was written in three places -- the input node's
+    sentence, the derived node's sentence, and the clause the reading uses -- so
+    fixing two of them left a published node saying the arithmetic while the reading
+    beside it said the outcome.  Checking the union rather than the instance is what
+    catches that; this asserts the phrase is absent from every published sentence.
+    """
+    machine = load_state_machine_from_text(
+        "def int retries = 0;\n"
+        "def int purge_ticks = 0;\n"
+        "state Controller {\n"
+        "    state Idle;\n"
+        "    state Purge;\n"
+        "    state Igniting;\n"
+        "    [*] -> Idle;\n"
+        "    Idle -> Purge;\n"
+        "    Purge -> Igniting : if [purge_ticks >= 2];\n"
+        "    Igniting -> Purge effect { retries = retries + 1; };\n"
+        "}\n",
+        "machine.fcstm",
+    )
+    context = BmcEngine(machine).prepare(
+        'init state("Controller.Purge") where retries == 0;\n'
+        'assume at 1: var("retries") == 3;\n'
+        'check reach <= 2: active("Controller.Igniting");\n',
+        query_source_path="query.fbmcq",
+    )
+
+    result = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="proof",
+    )
+    explanation = result.feasibility.explanation
+    assert explanation.achieved_mode == "proof", explanation.reason
+
+    written = [node.human_text for node in explanation.proof.nodes]
+    written += [step.text for step in explanation.narrative.reasoning_steps]
+    written += [item.human_text for item in explanation.core.items]
+    assert any("unchanged" in text for text in written), written
+    for text in written:
+        assert "by 0" not in text, text

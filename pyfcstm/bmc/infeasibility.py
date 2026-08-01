@@ -1396,13 +1396,26 @@ def _transition_effect_facts(core, published, budget):
     from the step *together with* the frame's state.  Nor is the state always enough:
     a step that adds ``stride`` moves the counter by a constant only once the core
     fixes what ``stride`` is.  So the reading is taken under everything the core
-    already says about the frame it leaves, and every member that makes it true is
-    named in the attribution -- the binding then establishes it as a consequence of
-    their conjunction rather than as a restatement of any one of them.
+    already says about the frame it leaves, and *all* of those members are named in
+    the attribution -- not the subset that turns out to be necessary, which would cost
+    a solver call per member to find.
+
+    A redundant name in the attribution does not buy coverage that is not there.
+    Coverage is judged against a core whose ``subset_minimality`` is ``proven``: if
+    some member were reachable only through a redundant naming, every fact in the
+    published graph would follow from the core without it, and the core would not have
+    been minimal.  So the looseness costs a reason that reads wider than it needs to,
+    not a proof resting on nothing.
 
     A step whose branches disagree about a variable yields no fact for it.  That is
     the honest outcome: the structural member stays unread, coverage stays
     incomplete, and the tier degrades exactly as it did before.
+
+    Nothing here is trusted.  The binding re-derives every reading from the members'
+    own encoded expressions rather than from what this function returned, so a wrong
+    delta can only be refused -- never published.  That is what lets the search above
+    read a candidate off a single model and then check it, instead of having to be
+    right the first time.
 
     :param core: The core formula, for the tracked groups and the frame symbols.
     :type core: BmcCoreFormula

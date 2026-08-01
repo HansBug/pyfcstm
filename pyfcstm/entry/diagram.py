@@ -286,6 +286,7 @@ def expand_svg_command(input_svg_file: str, output: Optional[str]) -> None:
     :type output: str, optional
     :return: ``None``.
     :rtype: None
+    :raises click.UsageError: If the input is not an SVG document.
     :raises pyfcstm.entry.base.ClickErrorException: If the optional rendering
         runtime is unavailable, the input cannot be read, the renderer fails, or
         the result exceeds the documented size limit.
@@ -295,6 +296,7 @@ def expand_svg_command(input_svg_file: str, output: Optional[str]) -> None:
         $ pyfcstm expand-svg -i canonical.svg -o self-contained.svg
         $ pyfcstm expand-svg -i canonical.svg > self-contained.svg
     """
+    from ..diagram.api import _atomic_write_text
     from ..diagram.engine import (
         MAX_EXPORT_TEXT_BYTES,
         DiagramAssetEngine,
@@ -330,7 +332,12 @@ def expand_svg_command(input_svg_file: str, output: Optional[str]) -> None:
         click.echo(expanded)
         return
     target = Path(output)
-    _write(target, lambda: target.write_text(expanded, encoding="utf-8"))
+    # The same writer every other diagram output goes through: it asks whether the
+    # destination can be written before touching it, then replaces it atomically.
+    # `write_text` truncates first, so an interrupt or a full disk would destroy an
+    # existing file -- and a directory this command cannot write to would still be
+    # overwritten, which is the one difference `diagram -o` does not have.
+    _write(target, lambda: _atomic_write_text(target, expanded))
     click.echo(str(target))
 
 

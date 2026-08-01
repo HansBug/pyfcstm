@@ -127,9 +127,25 @@ export async function resolveExpander(force = false): Promise<ExpanderResolution
     return cached;
 }
 
-/** Forget the resolution, so the next request probes again. */
+/**
+ * The most recent expansion, so one export does not pay for three.
+ *
+ * A single download expands the same document up to three times -- once for the
+ * SVG, once for the raster the PNG comes from, and once inside the PDF writer.
+ * Until this host had an expander those calls returned their input unchanged and
+ * cost nothing; now each one is a subprocess, a resvg start-up and a temporary
+ * directory. Keyed by the document itself, because that is exactly what decides
+ * the answer.
+ *
+ * One entry: the three calls in an export carry the same string, and holding
+ * more would keep whole documents alive for a hit that does not happen.
+ */
+let lastExpansion: {key: string; promise: Promise<string>} | undefined;
+
+/** Forget the resolution and the cached expansion, so the next request redoes both. */
 export function resetExpander(): void {
     cached = undefined;
+    lastExpansion = undefined;
 }
 
 /**
@@ -139,7 +155,20 @@ export function resetExpander(): void {
  * an SVG on a command line would meet the platform's argument limit long before
  * that, in a way that depends on the diagram.
  */
-export async function expandSvg(svg: string): Promise<string> {
+export function expandSvg(svg: string): Promise<string> {
+    if (lastExpansion && lastExpansion.key === svg) return lastExpansion.promise;
+    const promise = runExpansion(svg);
+    lastExpansion = {key: svg, promise};
+    // A failure is not cached: the reason is usually about the environment -- no
+    // interpreter yet, a renderer that ran out of memory -- and a caller retrying
+    // after fixing it would otherwise get the old error back.
+    promise.catch(() => {
+        if (lastExpansion && lastExpansion.key === svg) lastExpansion = undefined;
+    });
+    return promise;
+}
+
+async function runExpansion(svg: string): Promise<string> {
     const resolution = await resolveExpander();
     if (!resolution.command) {
         throw new Error(resolution.detail);

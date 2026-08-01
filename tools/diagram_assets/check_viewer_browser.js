@@ -77,6 +77,12 @@ function inflatePdfStreams(base64) {
     // at all in a CRLF document and reported a total of zero.
     const markerStart = raw.indexOf(keyword, offset);
     if (markerStart < 0) break;
+    // `endstream` ends in `stream`, and after the skip below the scan can land on
+    // that tail and count the bytes following it as a fourth stream. Require the
+    // keyword to start a word, so only a real `stream` marker matches.
+    const previous = markerStart > 0 ? raw[markerStart - 1] : 0x20;
+    const isLetter = (previous >= 0x41 && previous <= 0x5a) || (previous >= 0x61 && previous <= 0x7a);
+    if (isLetter) { offset = markerStart + keyword.length; continue; }
     let dataStart = markerStart + keyword.length;
     if (raw[dataStart] === 13) dataStart += 1;
     if (raw[dataStart] !== 10) { offset = markerStart + keyword.length; continue; }
@@ -138,6 +144,13 @@ function selfCheckStreamTally() {
     ['a document whose second stream could not be read', Buffer.concat([
       Buffer.from('%PDF-1.3\n'), flate(Buffer.from('BT ET\n')), unreadable]), false],
     ['a document with no readable stream at all', Buffer.concat([Buffer.from('%PDF-1.3\n'), unreadable]), false],
+    // `endstream` ends in `stream`. A scan that skipped a non-marker occurrence
+    // could land on that tail and count what follows as another stream, which
+    // now decides the verdict rather than just a statistic.
+    ['a document with `stream` inside a word', Buffer.concat([
+      Buffer.from('%PDF-1.3\n1 0 obj\n<< /Type /Downstream >>\n'),
+      flate(Buffer.from('BT ET\n')),
+      Buffer.from('% upstream\nendstream trailing\n')]), true],
   ];
   for (const [label, buf, shouldAccept] of cases) {
     if (accepted(buf) !== shouldAccept) {

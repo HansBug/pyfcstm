@@ -872,3 +872,29 @@ class TestTheExpandCommandKeepsWhatItWasGiven:
         assert result.exit_code != 0
         assert "Traceback" not in result.output
         assert "Failed to write" in result.output
+
+    def test_a_destination_it_cannot_write_leaves_the_existing_file_alone(
+        self, tmp_path
+    ):
+        # Writing with `write_text` truncates before it discovers it cannot write,
+        # so the file the user already had is destroyed by a command that then
+        # reports failure. Every other diagram output goes through the package's
+        # atomic writer, which asks first and replaces afterwards; this pins that
+        # this command does too. A read-only directory is an ordinary condition,
+        # and the assertion is about the *old* file, not the error text -- the
+        # message reads the same either way.
+        directory = tmp_path / "read-only"
+        directory.mkdir()
+        target = directory / "out.svg"
+        target.write_text("PRECIOUS ORIGINAL CONTENT", encoding="utf-8")
+        source = self._canonical(tmp_path)
+        directory.chmod(0o555)
+        try:
+            result = self._run("-i", str(source), "-o", str(target))
+        finally:
+            # Restore before the fixture cleans up, or the teardown fails instead.
+            directory.chmod(0o755)
+
+        assert result.exit_code != 0
+        assert "Traceback" not in result.output
+        assert target.read_text(encoding="utf-8") == "PRECIOUS ORIGINAL CONTENT"

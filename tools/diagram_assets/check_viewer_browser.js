@@ -94,6 +94,19 @@ function inflatePdfStreams(base64) {
     while (compressed.length && (compressed[compressed.length - 1] === 10 || compressed[compressed.length - 1] === 13)) {
       compressed = compressed.subarray(0, compressed.length - 1);
     }
+    // A stream that declares no filter is stored as-is, and reading it needs no
+    // decoder. Handing it to zlib anyway made a legal uncompressed document look
+    // like one this side could not read, while the Python check counted the same
+    // bytes as decoded -- two gates claiming a shared invariant and disagreeing
+    // on the same file.
+    const declaration = raw.subarray(Math.max(0, markerStart - 512), markerStart).toString('latin1');
+    const dictionary = declaration.slice(declaration.lastIndexOf('<<'));
+    if (!dictionary.includes('/Filter')) {
+      chunks.push(Buffer.from(compressed));
+      decoded += 1;
+      offset = dataEnd + endMarker.length;
+      continue;
+    }
     try {
       chunks.push(zlib.inflateSync(compressed));
       decoded += 1;
@@ -151,6 +164,16 @@ function selfCheckStreamTally() {
       Buffer.from('%PDF-1.3\n1 0 obj\n<< /Type /Downstream >>\n'),
       flate(Buffer.from('BT ET\n')),
       Buffer.from('% upstream\nendstream trailing\n')]), true],
+    // A stream with no filter is stored as-is. Reading it through zlib made a
+    // legal document look unreadable here while the Python check counted the
+    // same bytes as decoded -- the two gates claim one invariant and have to
+    // agree on what satisfies it.
+    ['an uncompressed stream', Buffer.from(
+      '%PDF-1.3\n1 0 obj\n<< /Length 6 >>\nstream\nBT ET\nendstream\n'), true],
+    // And it still has to be scanned: skipping the decode must not skip the halo.
+    ['an uncompressed stream carrying a halo', Buffer.concat([
+      Buffer.from('%PDF-1.3\n1 0 obj\n<< /Length 40 >>\nstream\n'),
+      halo, Buffer.from('\nendstream\n')]), false],
   ];
   for (const [label, buf, shouldAccept] of cases) {
     if (accepted(buf) !== shouldAccept) {

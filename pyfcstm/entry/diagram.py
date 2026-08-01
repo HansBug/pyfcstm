@@ -286,10 +286,11 @@ def expand_svg_command(input_svg_file: str, output: Optional[str]) -> None:
     :type output: str, optional
     :return: ``None``.
     :rtype: None
-    :raises click.UsageError: If the input is not an SVG document.
+    :raises click.UsageError: If the input does not look like an SVG document.
     :raises pyfcstm.entry.base.ClickErrorException: If the optional rendering
-        runtime is unavailable, the input cannot be read, the renderer fails, or
-        the result exceeds the documented size limit.
+        runtime is unavailable, the input cannot be read or is malformed past the
+        opening tag, the renderer fails, or the result exceeds the documented
+        size limit.
 
     Example::
 
@@ -300,6 +301,7 @@ def expand_svg_command(input_svg_file: str, output: Optional[str]) -> None:
     from ..diagram.engine import (
         MAX_EXPORT_TEXT_BYTES,
         DiagramAssetEngine,
+        DiagramAssetError,
         check_export_bytes,
     )
 
@@ -328,6 +330,14 @@ def expand_svg_command(input_svg_file: str, output: Optional[str]) -> None:
         raise ClickErrorException(str(err))
     except DiagramUnavailableError as err:
         raise ClickErrorException(str(err))
+    except DiagramAssetError as err:
+        # The `<svg` test above only says the file mentions one. A document that
+        # is malformed past that point fails inside the renderer, and letting it
+        # out put an XML parser's traceback in front of someone who pointed the
+        # command at the wrong file.
+        raise ClickErrorException(
+            "Failed to expand input SVG file %s: %s" % (input_svg_file, err)
+        )
     if output is None:
         click.echo(expanded)
         return

@@ -864,6 +864,21 @@ class TestTheExpandCommandKeepsWhatItWasGiven:
         assert "Traceback" not in result.output
         assert "does not look like an SVG document" in result.output
 
+    def test_a_malformed_svg_is_reported_rather_than_raised(self, tmp_path):
+        # The not-an-SVG guard only asks whether the file mentions one. A document
+        # that is broken past the opening tag gets all the way to the renderer,
+        # and letting its parser error out put an XML traceback in front of
+        # someone who had simply pointed the command at the wrong file.
+        source = tmp_path / "truncated.svg"
+        source.write_text("<svg this is not valid xml at all", encoding="utf-8")
+
+        result = self._run("-i", str(source), "-o", str(tmp_path / "out.svg"))
+
+        assert result.exit_code != 0
+        assert "Traceback" not in result.output
+        assert "Failed to expand input SVG file" in result.output
+        assert "truncated.svg" in result.output
+
     def test_a_missing_destination_directory_names_the_path(self, tmp_path):
         target = tmp_path / "absent" / "out.svg"
 

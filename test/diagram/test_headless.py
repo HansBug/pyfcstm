@@ -763,3 +763,112 @@ class TestTheCommandLineTranslatesExportFailures:
         )
         assert result.exit_code != 0
         assert "pyfcstm[viz]" in result.output
+
+
+@needs_runtime
+@pytest.mark.unittest
+class TestTheExpandCommandKeepsWhatItWasGiven:
+    """
+    ``pyfcstm expand-svg`` outlines a canonical SVG without re-rendering it.
+
+    The editor preview is why this exists: a webview has the diagram on screen
+    with the palette and colour mode the user chose, but no fonts to outline it
+    with.  Re-rendering from the ``.fcstm`` source would produce a valid file in
+    the *default* palette, which is a wrong-colour export that every structural
+    assertion waves through.  So the property that matters is not "an SVG came
+    out" but "the same drawing came out, with its text turned into paths".
+    """
+
+    def _canonical(self, tmp_path, palette="nord", mode="dark"):
+        from pyfcstm.diagram.engine import DiagramAssetEngine
+
+        view = _diagram("state Root { state A; state B; [*] -> A; A -> B :: Go; }")
+        request = {
+            "diagram": view.to_dict(),
+            "options": view.options.to_dict(),
+            "palette": palette,
+            "mode": mode,
+            "cjkLocale": None,
+        }
+        tmp_path.mkdir(parents=True, exist_ok=True)
+        path = tmp_path / "canonical.svg"
+        path.write_text(DiagramAssetEngine().render_svg(request), encoding="utf-8")
+        return path
+
+    def _run(self, *arguments):
+        from click.testing import CliRunner
+
+        from pyfcstm.entry.cli import pyfcstmcli
+
+        return CliRunner().invoke(pyfcstmcli, ["expand-svg"] + list(arguments))
+
+    @staticmethod
+    def _fills(text):
+        return set(re.findall(r'fill="([^"]+)"', text))
+
+    def test_the_drawing_survives_and_its_text_becomes_paths(self, tmp_path):
+        source = self._canonical(tmp_path)
+        target = tmp_path / "expanded.svg"
+
+        result = self._run("-i", str(source), "-o", str(target))
+
+        assert result.exit_code == 0, result.output
+        assert result.output.strip() == str(target)
+        canonical = source.read_text(encoding="utf-8")
+        expanded = target.read_text(encoding="utf-8")
+        # The point of expanding: no text elements and no font dependency left.
+        assert re.findall(r"<text\b", canonical)
+        assert not re.findall(r"<text\b", expanded)
+        assert not re.findall(r"font-family[=:]", expanded)
+        assert re.findall(r"<path\b", expanded)
+        # And the point of expanding *this* document rather than re-rendering:
+        # the colours the caller chose are still the ones in the file.
+        assert self._fills(canonical) & self._fills(expanded)
+
+    def test_a_different_palette_produces_a_different_file(self, tmp_path):
+        # A command that quietly re-rendered with defaults would return the same
+        # bytes for both, and every other assertion here would still pass.
+        first = self._canonical(tmp_path / "a", palette="default", mode="light")
+        second = self._canonical(tmp_path / "b", palette="nord", mode="dark")
+
+        for source in (first, second):
+            assert (
+                self._run(
+                    "-i", str(source), "-o", str(source.parent / "e.svg")
+                ).exit_code
+                == 0
+            )
+
+        one = (first.parent / "e.svg").read_text(encoding="utf-8")
+        two = (second.parent / "e.svg").read_text(encoding="utf-8")
+        assert one != two
+        assert self._fills(one) - self._fills(two)
+        assert self._fills(two) - self._fills(one)
+
+    def test_without_an_output_path_the_document_goes_to_standard_output(
+        self, tmp_path
+    ):
+        result = self._run("-i", str(self._canonical(tmp_path)))
+
+        assert result.exit_code == 0, result.output
+        assert "<svg" in result.output
+        assert not re.findall(r"<text\b", result.output)
+
+    def test_a_file_that_is_not_an_svg_is_a_usage_error(self, tmp_path):
+        source = tmp_path / "notes.txt"
+        source.write_text("this is not a drawing", encoding="utf-8")
+
+        result = self._run("-i", str(source), "-o", str(tmp_path / "out.svg"))
+
+        assert result.exit_code == 2
+        assert "Traceback" not in result.output
+        assert "does not look like an SVG document" in result.output
+
+    def test_a_missing_destination_directory_names_the_path(self, tmp_path):
+        target = tmp_path / "absent" / "out.svg"
+
+        result = self._run("-i", str(self._canonical(tmp_path)), "-o", str(target))
+
+        assert result.exit_code != 0
+        assert "Traceback" not in result.output
+        assert "Failed to write" in result.output

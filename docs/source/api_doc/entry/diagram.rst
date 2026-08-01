@@ -16,3 +16,9 @@ diagram\_command
 -----------------------------------------------------
 
 .. autofunction:: diagram_command
+
+
+expand\_svg\_command
+-----------------------------------------------------
+
+.. autofunction:: expand_svg_command

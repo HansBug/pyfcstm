@@ -252,10 +252,93 @@ def _export(view, target, format_name, scale):
         raise ClickErrorException(str(err))
 
 
+@click.command("expand-svg")
+@click.option(
+    "-i",
+    "input_svg_file",
+    required=True,
+    type=click.Path(exists=True, dir_okay=False, readable=True),
+    help="Canonical diagram SVG to expand.",
+)
+@click.option(
+    "-o",
+    "output",
+    type=click.Path(dir_okay=False),
+    help="Destination path; without it the expanded SVG goes to standard output.",
+)
+def expand_svg_command(input_svg_file: str, output: Optional[str]) -> None:
+    """Convert a canonical diagram SVG into a self-contained one.
+
+    A canonical SVG draws its labels as ``<text>`` and names the fonts it wants,
+    so it renders correctly only where those fonts are installed.  Expanding
+    replaces the glyphs and markers with paths, which makes the document
+    self-contained at the cost of being no longer editable as text.
+
+    ``Diagram.to_svg()`` already returns the expanded form.  This command exists
+    for a caller that holds a canonical SVG it produced elsewhere -- the editor
+    preview is the case it was added for, since a webview has the diagram on
+    screen but no fonts to outline it with, and re-rendering from the source
+    would silently discard the palette and colour mode the user chose.
+
+    :param input_svg_file: Path to the canonical SVG.
+    :type input_svg_file: str
+    :param output: Destination path, or ``None`` for standard output.
+    :type output: str, optional
+    :return: ``None``.
+    :rtype: None
+    :raises pyfcstm.entry.base.ClickErrorException: If the optional rendering
+        runtime is unavailable, the input cannot be read, the renderer fails, or
+        the result exceeds the documented size limit.
+
+    Example::
+
+        $ pyfcstm expand-svg -i canonical.svg -o self-contained.svg
+        $ pyfcstm expand-svg -i canonical.svg > self-contained.svg
+    """
+    from ..diagram.engine import (
+        MAX_EXPORT_TEXT_BYTES,
+        DiagramAssetEngine,
+        check_export_bytes,
+    )
+
+    try:
+        canonical = Path(input_svg_file).read_text(encoding="utf-8")
+    except UnicodeDecodeError as err:
+        # auto-decoding is deliberately not used here: an SVG this command can
+        # expand is one the renderer produced, and that is always UTF-8.
+        raise ClickErrorException(
+            "Failed to decode input SVG file %s: %s" % (input_svg_file, err)
+        )
+    except OSError as err:
+        # Path.read_text raises OSError subclasses for permission problems and
+        # for a path that turns out to be unreadable after Click checked it.
+        raise ClickErrorException(
+            "Failed to read input SVG file %s: %s" % (input_svg_file, err)
+        )
+    if "<svg" not in canonical:
+        raise click.UsageError("%s does not look like an SVG document" % input_svg_file)
+    try:
+        expanded = DiagramAssetEngine().expand_svg(canonical)
+        expanded = check_export_bytes(
+            expanded.encode("utf-8"), "SVG", MAX_EXPORT_TEXT_BYTES
+        ).decode("utf-8")
+    except DiagramRenderLimitError as err:
+        raise ClickErrorException(str(err))
+    except DiagramUnavailableError as err:
+        raise ClickErrorException(str(err))
+    if output is None:
+        click.echo(expanded)
+        return
+    target = Path(output)
+    _write(target, lambda: target.write_text(expanded, encoding="utf-8"))
+    click.echo(str(target))
+
+
 def _add_diagram_subcommand(cli):
-    """Register the ``diagram`` command on the top-level Click group."""
+    """Register the ``diagram`` and ``expand-svg`` commands on the CLI group."""
     cli.add_command(diagram_command)
+    cli.add_command(expand_svg_command)
     return cli
 
 
-__all__ = ["diagram_command", "_add_diagram_subcommand"]
+__all__ = ["diagram_command", "expand_svg_command", "_add_diagram_subcommand"]

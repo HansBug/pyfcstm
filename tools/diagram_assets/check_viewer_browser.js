@@ -41,37 +41,111 @@ if (!Number.isInteger(expectDocuments) || expectDocuments < 0) {
   console.error(`VIEWER_EXPECT_DOCUMENTS must be a non-negative integer, got ${JSON.stringify(expectDocumentsRaw)}`);
   process.exit(2);
 }
+if (htmlPath === '--check') {
+  selfCheckStreamTally();
+  process.exit(0);
+}
 if (!htmlPath) {
   console.error('usage: node check_viewer_browser.js VIEWER.html [SCREENSHOT.png]');
+  console.error('       node check_viewer_browser.js --check');
   process.exit(2);
 }
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
+// Decode a PDF's content streams so the halo scan has something to read.
+//
+// Every stream in the file has to be accounted for. Reading only the ones that
+// happened to inflate leaves a non-empty result, so a "did anything decode"
+// guard stays quiet while the stream that carried the halo was skipped -- and a
+// zero halo count then means "not read" while looking exactly like "no halos".
+// The caller compares `decoded` against `total` instead.
+//
+// Returns {text, total, decoded, skipped} rather than just the text, because
+// the counts are what the assertion needs.
 function inflatePdfStreams(base64) {
   const raw = Buffer.from(String(base64 || ''), 'base64');
-  const streamMarker = Buffer.from('stream\n');
   const endMarker = Buffer.from('endstream');
+  const keyword = Buffer.from('stream');
   const chunks = [];
+  const skipped = [];
+  let total = 0;
+  let decoded = 0;
   let offset = 0;
   while (true) {
-    const markerStart = raw.indexOf(streamMarker, offset);
+    // `stream` may be followed by LF or CRLF; keying on LF alone found nothing
+    // at all in a CRLF document and reported a total of zero.
+    const markerStart = raw.indexOf(keyword, offset);
     if (markerStart < 0) break;
-    const dataStart = markerStart + streamMarker.length;
+    let dataStart = markerStart + keyword.length;
+    if (raw[dataStart] === 13) dataStart += 1;
+    if (raw[dataStart] !== 10) { offset = markerStart + keyword.length; continue; }
+    dataStart += 1;
     const dataEnd = raw.indexOf(endMarker, dataStart);
     if (dataEnd < 0) break;
+    total += 1;
     let compressed = raw.subarray(dataStart, dataEnd);
     while (compressed.length && (compressed[compressed.length - 1] === 10 || compressed[compressed.length - 1] === 13)) {
       compressed = compressed.subarray(0, compressed.length - 1);
     }
     try {
       chunks.push(zlib.inflateSync(compressed));
-    } catch (_) {
-      // Non-Flate streams are irrelevant to the content-color assertion.
+      decoded += 1;
+    } catch (error) {
+      // zlib rejects a payload that is not deflate data, which is what a stream
+      // using another filter looks like from here. Every other class -- a bad
+      // argument, an allocation failure -- is a defect in this checker rather
+      // than a property of the document, and must not be recorded as a skip.
+      if (!(error instanceof Error) || typeof error.code !== 'string' || !error.code.startsWith('Z_')) {
+        throw error;
+      }
+      skipped.push({offset: markerStart, bytes: compressed.length, code: error.code});
     }
     offset = dataEnd + endMarker.length;
   }
-  return Buffer.concat(chunks).toString('latin1');
+  return {text: Buffer.concat(chunks).toString('latin1'), total, decoded, skipped};
+}
+
+// Prove the stream tally reports what it exists to catch.
+//
+// The halo count alone cannot: it is a zero-count, so a stream that was never
+// read looks exactly like a stream with no halos. This ran green for weeks
+// against a document whose second stream was silently skipped, which is why it
+// is now a checked invariant with a case that fails without it.
+function selfCheckStreamTally() {
+  const HALO = /[0-9.]+ [0-9.]+ [0-9.]+ rg\n3\. w\n1\. G/g;
+  const halo = Buffer.from('1.0 1.0 1.0 rg\n3. w\n1. G\n0 0 m 10 10 l f\n');
+  const flate = (payload) => Buffer.concat([
+    Buffer.from('1 0 obj\n<< /Filter /FlateDecode >>\nstream\n'),
+    zlib.deflateSync(payload), Buffer.from('\nendstream\n'),
+  ]);
+  const unreadable = Buffer.from('2 0 obj\n<< /Filter /LZWDecode >>\nstream\n\x80not-deflate\nendstream\n');
+  const accepted = (buf) => {
+    const r = inflatePdfStreams(buf.toString('base64'));
+    const halos = (r.text.match(HALO) || []).length;
+    return r.text.length > 0 && r.total > 0 && r.decoded === r.total && halos === 0;
+  };
+  const cases = [
+    ['a single readable stream with no halo', Buffer.concat([Buffer.from('%PDF-1.3\n'), flate(Buffer.from('BT ET\n'))]), true],
+    // CRLF: keying the marker on LF alone found nothing and reported total 0,
+    // which the old "did anything decode" guard would have passed as a zero.
+    ['a CRLF document', Buffer.concat([
+      Buffer.from('%PDF-1.3\r\n1 0 obj\r\n<< /Filter /FlateDecode >>\r\nstream\r\n'),
+      zlib.deflateSync(Buffer.from('BT ET\n')), Buffer.from('\r\nendstream\r\n')]), true],
+    ['a stream carrying a halo', Buffer.concat([Buffer.from('%PDF-1.3\n'), flate(halo)]), false],
+    // The bypass this invariant exists for: one readable stream keeps the result
+    // non-empty while the stream that carried the halo was skipped.
+    ['a document whose second stream could not be read', Buffer.concat([
+      Buffer.from('%PDF-1.3\n'), flate(Buffer.from('BT ET\n')), unreadable]), false],
+    ['a document with no readable stream at all', Buffer.concat([Buffer.from('%PDF-1.3\n'), unreadable]), false],
+  ];
+  for (const [label, buf, shouldAccept] of cases) {
+    if (accepted(buf) !== shouldAccept) {
+      console.error(`stream tally ${shouldAccept ? 'rejected' : 'accepted'} ${label}`);
+      process.exit(1);
+    }
+  }
+  console.log('viewer browser gate: stream tally self-check passed');
 }
 // Same candidate set as the VSCode preview verification scripts, so one
 // CHROME_BIN works for every browser-backed maintenance gate in the repo.
@@ -722,11 +796,16 @@ async function evaluate(cdp, expression) {
       exportError = error.message;
       pdf = {fatal: '', menu: false, signature: {}, base64: ''};
     }
-    const pdfStreamText = inflatePdfStreams(pdf.base64);
+    const pdfStreams = inflatePdfStreams(pdf.base64);
+    const pdfStreamText = pdfStreams.text;
     // The halo check is a zero-count, so it passes trivially when no stream
     // inflates — a filter change or an object-stream layout would retire the
-    // check without a word. Record the scanned size and assert it below.
+    // check without a word. Record the scanned size and the per-stream tally,
+    // and assert below that every stream was read, not merely that one was.
     pdf.inflatedStreamBytes = pdfStreamText.length;
+    pdf.pdfStreamsTotal = pdfStreams.total;
+    pdf.pdfStreamsDecoded = pdfStreams.decoded;
+    pdf.pdfStreamsSkipped = pdfStreams.skipped;
     pdf.whiteHaloOperators = (pdfStreamText.match(/[0-9.]+ [0-9.]+ [0-9.]+ rg\n3\. w\n1\. G/g) || []).length;
     if (pdfOutputPath && pdf.base64) fs.writeFileSync(pdfOutputPath, Buffer.from(pdf.base64, 'base64'));
     delete pdf.base64;
@@ -890,7 +969,8 @@ async function evaluate(cdp, expression) {
         expectedPdfPage !== null &&
         Math.abs(pdf.pdfWidth - expectedPdfPage.width) < 0.01 &&
         Math.abs(pdf.pdfHeight - expectedPdfPage.height) < 0.01)) &&
-      pdf.inflatedStreamBytes > 0 && pdf.whiteHaloOperators === 0 &&
+      pdf.inflatedStreamBytes > 0 && pdf.pdfStreamsTotal > 0 &&
+      pdf.pdfStreamsDecoded === pdf.pdfStreamsTotal && pdf.whiteHaloOperators === 0 &&
       (!requirePdfRerender || pdf.rerenderSame === true)
     ));
     const pngChecks = !requestedFormats.has('png') || (

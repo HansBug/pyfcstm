@@ -183,7 +183,6 @@ def build_domain_proof(
     budget,
     member_ids: Optional[Sequence[str]] = None,
     state_names: Optional[Mapping[int, str]] = None,
-    verification_methods: Optional[Mapping[Tuple[str, ...], str]] = None,
 ) -> Tuple[Optional[BmcConflictProof], Any]:
     """Search for a checked proof that these facts admit no execution.
 
@@ -215,11 +214,6 @@ def build_domain_proof(
         states through the same table; without one, both fall back to the index.
         Defaults to ``None``.
     :type state_names: Optional[Mapping[int, str]], optional
-    :param verification_methods: What the binding established for each attribution.
-        An input node says how it was checked, and a reading that only *follows from*
-        the members it rests on may not claim to restate them.  Defaults to ``None``,
-        which reads every input as a restatement.
-    :type verification_methods: Optional[Mapping[Tuple[str, ...], str]], optional
     :return: The proof and the ledger entry, or ``None`` and the entry.
     :rtype: Tuple[Optional[BmcConflictProof], pyfcstm.bmc.infeasibility.ProbeRecord]
 
@@ -240,42 +234,21 @@ def build_domain_proof(
         # deadline has passed.  The two are different answers and stay apart.
         return budget.deadline is not None and time.monotonic() >= budget.deadline
 
-    def attribution_of(entry) -> Tuple[str, ...]:
-        """The members a reading is attributed to, one or several.
-
-        A reading of what a step does rests on the step and on the state the frame
-        holds; naming only one of them would leave the other uncovered, and coverage
-        is what decides whether the proof may be published at all.
-        """
-        held = entry[0]
-        return (held,) if isinstance(held, str) else tuple(held)
-
     # Sorted by core stable id, so the graph does not inherit the order a caller
     # happened to collect the members in.
-    ordered = sorted(inputs, key=lambda entry: attribution_of(entry))
+    ordered = sorted(inputs, key=lambda pair: pair[0])
     nodes: List[_Node] = []
     seen: Dict[str, int] = {}
-    established: Dict[int, str] = {}
-    for entry in ordered:
-        held_ids, fact = attribution_of(entry), entry[1]
-        word = (verification_methods or {}).get(held_ids, "core_binding")
+    for stable_id, fact in ordered:
         key = _canonical(fact)
         if key in seen:
             # Two members stating the same fact share one node; the attribution
-            # keeps every id so none is dropped from the reasons.  The weaker of the
-            # two words wins: a node that only follows from one of its attributions
-            # cannot claim to restate the other.
-            index = seen[key]
-            existing = nodes[index]
-            existing.item_ids = tuple(sorted(set(existing.item_ids) | set(held_ids)))
-            if word == "solver_entailment":
-                established[index] = word
+            # keeps both ids so neither is dropped from the reasons.
+            existing = nodes[seen[key]]
+            existing.item_ids = tuple(sorted(set(existing.item_ids) | {stable_id}))
             continue
         seen[key] = len(nodes)
-        established[len(nodes)] = word
-        nodes.append(
-            _Node(len(nodes), "input", "source_fact", (), fact, tuple(sorted(held_ids)))
-        )
+        nodes.append(_Node(len(nodes), "input", "source_fact", (), fact, (stable_id,)))
 
     if not nodes:
         return None, _record(
@@ -379,9 +352,7 @@ def build_domain_proof(
                 node.fact,
                 node.item_ids,
                 _fact_sentence(node.fact, state_names),
-                established.get(old, "core_binding")
-                if node.kind == "input"
-                else "rule_checker",
+                "core_binding" if node.kind == "input" else "rule_checker",
             )
         )
     proof = BmcConflictProof(

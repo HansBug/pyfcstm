@@ -567,18 +567,6 @@ def _fact_sentence(
             "hold" if fact.get("holds") else "not hold",
         )
     if kind == "transition_case":
-        if fact.get("operand") == 0:
-            # "changes it by 0" describes an addition that happened to add nothing,
-            # which is not what the reader needs to know.  What the step did to this
-            # variable is nothing at all.
-            return (
-                "Between frame %s and frame %s, the transition leaves %s unchanged."
-                % (
-                    fact.get("frame"),
-                    fact.get("target_frame"),
-                    fact.get("variable"),
-                )
-            )
         return "Between frame %s and frame %s, the transition changes %s by %s." % (
             fact.get("frame"),
             fact.get("target_frame"),
@@ -586,15 +574,6 @@ def _fact_sentence(
             fact.get("operand"),
         )
     if kind == "arithmetic_expression":
-        if fact.get("operand") == 0:
-            # The third place this reads.  A step that added nothing left the variable
-            # alone; "changes by 0" describes the arithmetic rather than the outcome,
-            # and a derived node is read on its own as often as in the chain.
-            return "Between frame %s and frame %s, the step leaves %s unchanged." % (
-                fact.get("frame"),
-                fact.get("target_frame"),
-                fact.get("variable"),
-            )
         return "Between frame %s and frame %s, %s changes by %s." % (
             fact.get("frame"),
             fact.get("target_frame"),

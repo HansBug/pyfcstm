@@ -89,14 +89,6 @@ def _clause(fact: Mapping[str, Any], names: Optional[Mapping[int, str]] = None) 
             fact.get("frame"),
         )
     if kind == "arithmetic_expression":
-        if fact.get("operand") == 0:
-            # A step that added nothing left the variable alone, which is what the
-            # reader needs; "changed by 0" describes the arithmetic instead.
-            return "%s is unchanged between frame %s and frame %s" % (
-                fact.get("variable"),
-                fact.get("frame"),
-                fact.get("target_frame"),
-            )
         return "%s changed by %s between frame %s and frame %s" % (
             fact.get("variable"),
             fact.get("operand"),

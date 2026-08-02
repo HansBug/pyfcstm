@@ -1890,12 +1890,17 @@ class DiagramOptions:
     Immutable renderer options shared by Python and browser diagram views.
 
     :param detail_level: Detail preset, one of ``minimal``, ``normal`` or
-        ``full``.  Recorded in the generated document and validated here, but
-        the bundled viewer draws the same diagram for all three: the four
-        settings the presets disagree on are state event labels, state action
-        labels, transition-effect placement and event placement, and none of
-        them reaches the standalone drawing path yet.  Treat it as a stored
-        preference rather than a way to change what a viewer shows.
+        ``full``.  Each draws a different picture.  ``minimal`` shows state
+        titles and transitions only, and leaves transition effects inline and
+        edges in the neutral stroke; ``normal`` adds each state's events under
+        its title, puts effects in a note and tints edges by event; ``full``
+        adds each state's lifecycle actions as well.  A state gains rows at the
+        bottom as the level rises, so raising it never rearranges what was
+        already on screen.
+
+        The preset governs how a diagram is *drawn*, not what it contains:
+        :meth:`Diagram.to_dict` and :meth:`Diagram.to_json` return the same
+        data at every level.
     :type detail_level: str
     :param direction: Layout direction, either ``TB`` or ``LR``.
     :type direction: str

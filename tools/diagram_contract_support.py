@@ -57,6 +57,59 @@ def sample_diagram(
     )
 
 
+# A machine whose leaf states carry both events and lifecycle actions, so the
+# three detail presets have something to disagree about. The ordinary sample has
+# events but no actions, which makes ``normal`` and ``full`` draw the same
+# picture and hides half of what the presets are for.
+DETAIL_LEVEL_SOURCE = """
+def int counter = 0;
+
+state Board {
+    event Ping;
+    state PowerOn {
+        enter { counter = 0; }
+        during { counter = counter + 1; }
+    }
+    state Idle;
+    state Halt;
+    [*] -> PowerOn;
+    PowerOn -> Idle :: Boot effect { counter = counter + 1; }
+    Idle -> Halt : Ping effect { counter = 0; }
+    Halt -> PowerOn : Ping effect { counter = counter * 2; }
+}
+"""
+
+# What the viewer should draw at each level: event rows and action rows inside
+# state bodies, and whether a transition effect gets a note pad of its own.
+#
+# ``minimal`` shows titles only and writes effects inline; ``normal`` adds the
+# one state event (``PowerOn::Boot``) and moves effects into notes; ``full``
+# adds that state's two lifecycle actions as well. Three settings of the four
+# the presets disagree on are visible here; the fourth, edge tinting, is held
+# by the jsfcstm suite, which can read a stroke colour without a browser.
+DETAIL_LEVEL_EXPECTATIONS = {
+    "minimal": {"eventRows": 0, "actionRows": 0, "notes": False},
+    "normal": {"eventRows": 1, "actionRows": 0, "notes": True},
+    "full": {"eventRows": 1, "actionRows": 2, "notes": True},
+}
+
+
+def write_detail_level_sample_html(
+    path: Path, *, cjk_locale: str = "sc", direction: str = "TB", level: str = "normal"
+) -> None:
+    """Write a standalone viewer fixture at one detail level."""
+    model = load_state_machine_from_text(DETAIL_LEVEL_SOURCE)
+    path.write_text(
+        model.diagram(
+            options=DiagramOptions(
+                cjk_locale=cjk_locale, direction=direction, detail_level=level
+            ),
+            view_state=DiagramViewState(mode="compare"),
+        ).to_html(),
+        encoding="utf-8",
+    )
+
+
 def write_sample_html(
     path: Path, *, cjk_locale: str = "sc", direction: str = "TB"
 ) -> None:

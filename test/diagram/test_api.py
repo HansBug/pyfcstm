@@ -2166,15 +2166,14 @@ def test_diagram_data_rejects_numbers_json_cannot_represent():
 
 
 def test_detail_level_is_recorded_and_leaves_the_diagram_data_alone():
-    # The DiagramOptions docstring says the preset is stored rather than acted
-    # on. Measured in Chrome across the three levels for a machine carrying a
-    # state action and a transition effect: all render the same seven labels
-    # ["Root", "A", "B", "\u25cf Go", "\u25b8 c = c + 1;", "c = c * 2;",
-    # "\u25cf Back"], because the four settings the presets disagree on --
-    # state event labels, state action labels, transition-effect placement and
-    # event placement -- do not reach the standalone drawing path. What a unit
-    # test can hold is the half that needs no browser: the value is carried
-    # into the document, and the portable data does not vary with it.
+    # The preset decides how a diagram is drawn, not what it holds. A viewer
+    # given the portable data draws its own picture from it, so the data has to
+    # be the same at every level -- otherwise a document saved at one level
+    # could not be reopened at another, and `to_json` would stop being a
+    # description of the machine and start being a description of a view of it.
+    #
+    # That the three levels do draw differently is held by
+    # `test_detail_level_changes_what_is_drawn` below.
     model = load_state_machine_from_text(
         "def int c = 0;\n"
         "state Root {\n"
@@ -2190,9 +2189,39 @@ def test_detail_level_is_recorded_and_leaves_the_diagram_data_alone():
         assert view.options.to_dict()["detailLevel"] == level
         snapshots.add(view.to_json())
     assert len(snapshots) == 1, (
-        "detail_level now changes the diagram data; the DiagramOptions "
-        "docstring says it does not and has to be updated"
+        "detail_level changed the portable data; it is meant to change only "
+        "what a viewer draws from that data"
     )
+
+
+def test_detail_level_changes_what_is_drawn():
+    # The other half, and the one that was missing: the preset reaching the
+    # document is worth nothing if nothing acts on it. Every setting the three
+    # levels disagree on used to stop at the renderer's door -- state events and
+    # actions were computed onto each node and never drawn, and the event mode
+    # never reached an edge -- so all three produced the same picture.
+    #
+    # Rendered rather than inspected, because that is the question: not whether
+    # an option was carried, but whether a reader sees a different diagram.
+    model = load_state_machine_from_text(
+        "def int c = 0;\n"
+        "state Root {\n"
+        "    [*] -> A;\n"
+        "    state A { enter { c = 1; } }\n"
+        "    state B;\n"
+        "    A -> B :: Go effect { c = c + 1; }\n"
+        "}\n"
+    )
+    drawings = {
+        level: model.diagram(detail_level=level).to_svg()
+        for level in ("minimal", "normal", "full")
+    }
+    assert len(set(drawings.values())) == 3, {
+        level: len(drawing) for level, drawing in drawings.items()
+    }
+    # And they differ by growing, not by rearranging: A gains its event under
+    # the title at `normal` and its `enter` action at `full`.
+    assert len(drawings["minimal"]) < len(drawings["normal"]) < len(drawings["full"])
 
 
 def test_atomic_writes_remove_their_temporary_when_interrupted(tmp_path, monkeypatch):

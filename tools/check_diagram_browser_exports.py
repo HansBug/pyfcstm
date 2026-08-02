@@ -1,6 +1,7 @@
 """Run the normal standalone browser export smoke for representative cases."""
 
 import argparse
+import functools
 import os
 import shutil
 import subprocess
@@ -16,6 +17,8 @@ if str(ROOT) not in sys.path:
 from diagram_contract_support import (  # noqa: E402
     write_multi_document_sample_html,
     write_sample_html,
+    DETAIL_LEVEL_EXPECTATIONS,
+    write_detail_level_sample_html,
 )
 
 
@@ -37,22 +40,39 @@ def main() -> None:
     # The multi-document case is the only one that renders the source-document
     # picker, so without it the gate's imported-source and native-select
     # assertions never run at all.
-    cases = [("default", "sc", "TB", write_sample_html, 1)]
+    # (name, locale, direction, writer, documents, expected state rows)
+    # ``None`` rows leave the assertion off, which is right for every case that
+    # is not about the detail preset.
+    cases = [("default", "sc", "TB", write_sample_html, 1, None)]
     if args.all_cases:
         cases.extend(
             [
-                ("cjk-tc", "tc", "TB", write_sample_html, 1),
-                ("cjk-hk", "hk", "LR", write_sample_html, 1),
-                ("cjk-jp", "jp", "LR", write_sample_html, 1),
-                ("cjk-kr", "kr", "TB", write_sample_html, 1),
-                ("imports", "sc", "TB", write_multi_document_sample_html, 2),
+                ("cjk-tc", "tc", "TB", write_sample_html, 1, None),
+                ("cjk-hk", "hk", "LR", write_sample_html, 1, None),
+                ("cjk-jp", "jp", "LR", write_sample_html, 1, None),
+                ("cjk-kr", "kr", "TB", write_sample_html, 1, None),
+                ("imports", "sc", "TB", write_multi_document_sample_html, 2, None),
             ]
+        )
+        # One case per detail level, on a machine that has something to show at
+        # each. The three used to draw the same picture; the counts below are
+        # what makes that a failure rather than a thing nobody measured.
+        cases.extend(
+            (
+                "detail-" + level,
+                "sc",
+                "TB",
+                functools.partial(write_detail_level_sample_html, level=level),
+                1,
+                rows,
+            )
+            for level, rows in sorted(DETAIL_LEVEL_EXPECTATIONS.items())
         )
     viewports = ["800x600"]
     if args.all_cases:
         viewports = ["800x600", "320x480", "750x900", "1365x768"]
     with tempfile.TemporaryDirectory(prefix="pyfcstm-diagram-browser-") as directory:
-        for name, locale, direction, write_fixture, documents in cases:
+        for name, locale, direction, write_fixture, documents, rows in cases:
             html_path = Path(directory) / (name + ".html")
             write_fixture(html_path, cjk_locale=locale, direction=direction)
             for viewport in viewports:
@@ -61,6 +81,10 @@ def main() -> None:
                 # The driver knows how many source documents it wrote; the page
                 # cannot be trusted to report that about itself.
                 env["VIEWER_EXPECT_DOCUMENTS"] = str(documents)
+                if rows is not None:
+                    env["VIEWER_EXPECT_STATE_EVENT_ROWS"] = str(rows["eventRows"])
+                    env["VIEWER_EXPECT_STATE_ACTION_ROWS"] = str(rows["actionRows"])
+                    env["VIEWER_EXPECT_TRANSITION_NOTES"] = "1" if rows["notes"] else "0"
                 env["VIEWER_VIEWPORT"] = viewport
                 env["VIEWER_FORMATS"] = ",".join(sorted(formats))
                 env["VIEWER_REQUIRE_PDF_ZERO_IMAGES"] = (

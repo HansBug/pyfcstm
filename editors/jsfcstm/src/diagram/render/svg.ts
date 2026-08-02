@@ -20,6 +20,13 @@ import {
     type CrossingIndex,
 } from './crossings';
 import {resolvePalette, type PaletteId, type PaletteMode, type SvgPalette} from './palette';
+import {
+    LEAF_DETAIL_FONT_SIZE,
+    LEAF_DETAIL_INSET_X,
+    LEAF_DETAIL_LINE_HEIGHT,
+    LEAF_DETAIL_TOP_GAP,
+    leafDetailBandHeight,
+} from '../leaf-detail';
 
 const CONSTANTS = {
     canvasPadding: 28,
@@ -234,10 +241,57 @@ function drawNode(
             `stroke="${P.compositeStroke}" stroke-opacity="0.35" stroke-width="1"/>`
         );
     } else {
+        // The event and action rows the detail level asked for. `minimal` turns
+        // both off and the state keeps the single centred title it has always
+        // had; `normal` adds its events and `full` its actions, in that order,
+        // so raising the level appends rows rather than reordering them.
+        const eventRows = meta.eventLabels || [];
+        const actionRows = meta.actionLabels || [];
+        const detailRows = eventRows.length + actionRows.length;
+        // Measured back from the height ELK assigned rather than forward from
+        // the title. The two sides compute the band from the same row count, so
+        // they agree -- and if they ever stop agreeing this moves the separator
+        // instead of pushing rows through the bottom of the box.
+        const bandTop = y + h - leafDetailBandHeight(detailRows);
+        const titleCentre = detailRows > 0 ? (y + bandTop) / 2 : y + h / 2;
         out.push(
-            `<text x="${x + w / 2}" y="${y + h / 2 + 5}" fill="${P.titleColor}" ` +
+            `<text x="${x + w / 2}" y="${titleCentre + 5}" fill="${P.titleColor}" ` +
             `font-weight="600" text-anchor="middle">${escapeXml(labelText)}</text>`
         );
+        if (detailRows > 0) {
+            out.push(
+                `<line x1="${x}" y1="${bandTop}" x2="${x + w}" y2="${bandTop}" ` +
+                `stroke="${P.leafStroke}" stroke-opacity="0.35" stroke-width="1"/>`
+            );
+            const rowY = (index: number) =>
+                bandTop + LEAF_DETAIL_TOP_GAP + index * LEAF_DETAIL_LINE_HEIGHT + LEAF_DETAIL_FONT_SIZE;
+            // Events in the title colour, actions in the one transition effects
+            // already use. A reader meeting `enter abstract Setup` under `● Go`
+            // should not have to work out which of the two the state reacts to.
+            // Marked the way every other part of this drawing is marked, and
+            // on a group rather than the text: a row is otherwise
+            // indistinguishable from the event label on a nearby transition,
+            // which carries the same glyph and the same words, so neither a
+            // test nor the browser gate could tell whether the detail level
+            // had reached the state body or only the edge. The closed SVG
+            // dialect the rendering gate enforces allows this attribute on a
+            // group and no data attribute at all on text, which is the right
+            // way round -- a marker is structure, not presentation.
+            // Colour alone tells the two kinds apart, because the dialect has no
+            // opacity on text and a second stroke would only add noise at 11px.
+            const row = (kind: string, index: number, text: string, fill: string) =>
+                `<g data-fcstm-kind="${kind}">` +
+                `<text x="${x + LEAF_DETAIL_INSET_X}" y="${rowY(index)}" fill="${fill}" ` +
+                `font-size="${LEAF_DETAIL_FONT_SIZE}">${escapeXml(text)}</text>` +
+                `</g>`;
+            eventRows.forEach((text, index) => {
+                out.push(row('state-event', index, text, P.titleColor));
+            });
+            actionRows.forEach((text, index) => {
+                out.push(row('state-action', eventRows.length + index, text,
+                    P.edgeLabelEffectColor));
+            });
+        }
         if (isPseudo) {
             out.push(
                 `<text x="${x + 10}" y="${y + 14}" fill="${P.leafStroke}" ` +

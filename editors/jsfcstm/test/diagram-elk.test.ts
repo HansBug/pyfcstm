@@ -112,6 +112,90 @@ describe('jsfcstm ELK-based diagram pipeline', () => {
         assert.equal((running.children || []).length, 0, 'collapsed composite should be treated as leaf');
     });
 
+    it('draws the rows a detail level asks for, and tints edges only when told to', async () => {
+        // `:: Boot` is local to PowerOn, which is what puts an event row in its
+        // body. `: Ping` belongs to Board and drives two transitions, which is
+        // what earns an event a colour -- one used once is left in the neutral
+        // stroke whatever the mode says.
+        const richSource = [
+            'def int counter = 0;',
+            'state Board {',
+            '    event Ping;',
+            '    state PowerOn {',
+            '        enter { counter = 0; }',
+            '    }',
+            '    state Idle;',
+            '    state Halt;',
+            '    [*] -> PowerOn;',
+            '    PowerOn -> Idle :: Boot;',
+            '    Idle -> Halt : Ping;',
+            '    Halt -> PowerOn : Ping;',
+            '}',
+        ].join('\n');
+        const doc = createDocument(richSource, '/tmp/elk-detail-svg.fcstm');
+        const diagram = await buildFcstmDiagramFromDocument(doc);
+        assert.ok(diagram);
+
+        const drawAt = (level: 'minimal' | 'normal' | 'full') => {
+            const options = resolveFcstmDiagramPreviewOptions(level);
+            const graph = buildFcstmElkGraph(diagram!, options);
+            // A deterministic layout, so this measures the emitter rather than
+            // elkjs. Sizes come from the graph the builder produced, which is
+            // where the room for the rows was reserved.
+            const place = (node: any, ox = 0, oy = 0) => {
+                node.x = ox;
+                node.y = oy;
+                node.width = node.width || 160;
+                node.height = node.height || 80;
+                let cy = 36;
+                for (const child of node.children || []) {
+                    place(child, 20, cy);
+                    cy += (child.height || 0) + 12;
+                    node.width = Math.max(node.width, 20 + (child.width || 160) + 20);
+                    node.height = Math.max(node.height, cy + 20);
+                }
+                for (const edge of node.edges || []) {
+                    edge.sections = [{startPoint: {x: 10, y: 10}, endPoint: {x: 50, y: 50}}];
+                }
+            };
+            place(graph);
+            return renderFcstmDiagramSvg(graph, options);
+        };
+
+        const minimal = drawAt('minimal');
+        const normal = drawAt('normal');
+        const full = drawAt('full');
+
+        // The rows reach the drawing, not just the meta bag. Counted by their
+        // own marker: a transition label carries the same glyph and the same
+        // event name a few pixels away, so plain text matching cannot say
+        // whether the level reached the state body or only the edge.
+        const rowsIn = (svg: string, kind: string) =>
+            (svg.match(new RegExp(`data-fcstm-kind="${kind}"`, 'g')) || []).length;
+        assert.equal(rowsIn(minimal, 'state-event'), 0, 'minimal should draw no state events');
+        assert.ok(rowsIn(normal, 'state-event') >= 1, 'normal should draw state events');
+        assert.equal(rowsIn(normal, 'state-action'), 0, 'normal should draw no state actions');
+        assert.ok(rowsIn(full, 'state-action') >= 1, 'full should draw state actions');
+        assert.equal(rowsIn(full, 'state-event'), rowsIn(normal, 'state-event'),
+            'full should keep the event rows normal already had');
+
+        // `legend` puts the events in the side panel and leaves the edges in
+        // the neutral stroke; `both` tints them. Boot drives two transitions,
+        // which is what earns it a colour in the first place.
+        const eventColours = (state: any): string[] => [
+            ...state.transitions.map((transition: any) => transition.eventColor).filter(Boolean),
+            ...state.children.flatMap(eventColours),
+        ];
+        const tint = eventColours(diagram!.rootState)[0];
+        assert.ok(tint, 'Ping should have earned an event colour');
+        assert.ok(!minimal.includes(`stroke="${tint}"`), 'minimal should leave edges untinted');
+        assert.ok(normal.includes(`stroke="${tint}"`), 'normal should tint edges by event');
+
+        // Three levels, three pictures -- the whole point of the preset.
+        assert.notEqual(minimal, normal);
+        assert.notEqual(normal, full);
+    });
+
     it('renders a valid self-contained SVG from a laid-out ELK graph', async () => {
         const doc = createDocument(sampleSource, '/tmp/elk-sample-svg.fcstm');
         const diagram = await buildFcstmDiagramFromDocument(doc);
@@ -263,7 +347,7 @@ describe('jsfcstm ELK-based diagram pipeline', () => {
             `event lines should carry the event glyph — got ${JSON.stringify(labelTexts)}`);
     });
 
-    it('leaf state meta keeps event / action labels for the Details panel but no longer forces them into the SVG box', async () => {
+    it('grows a leaf state to hold the rows each detail level asks for', async () => {
         const richSource = [
             'def int counter = 0;',
             'state Board {',
@@ -281,17 +365,50 @@ describe('jsfcstm ELK-based diagram pipeline', () => {
         const doc = createDocument(richSource, '/tmp/elk-leaf-box.fcstm');
         const diagram = await buildFcstmDiagramFromDocument(doc);
         assert.ok(diagram);
-        const options = resolveFcstmDiagramPreviewOptions('full');
-        const graph = buildFcstmElkGraph(diagram!, options, {collapsedStateIds: new Set<string>()});
-        const board = graph.children.find(c => c.fcstm?.qualifiedName === 'Board')!;
-        const powerOn = (board.children || []).find(c => c.fcstm?.qualifiedName === 'Board.PowerOn')!;
-        assert.ok(powerOn, 'PowerOn leaf should be present');
-        // meta keeps the summary (for the Details panel) ...
-        assert.ok(powerOn.fcstm?.actionLabels && powerOn.fcstm!.actionLabels!.length >= 1);
-        // ... but the leaf box is now sized without packing detail lines
-        // into it: height stays close to the minimum leaf height.
-        assert.ok((powerOn.height || 0) <= 80,
-            `leaf state should no longer expand for enter/during/exit rows; got height ${powerOn.height}`);
+
+        const leafAt = (level: 'minimal' | 'normal' | 'full') => {
+            const options = resolveFcstmDiagramPreviewOptions(level);
+            const graph = buildFcstmElkGraph(diagram!, options, {collapsedStateIds: new Set<string>()});
+            const board = graph.children.find(c => c.fcstm?.qualifiedName === 'Board')!;
+            const powerOn = (board.children || []).find(c => c.fcstm?.qualifiedName === 'Board.PowerOn')!;
+            assert.ok(powerOn, `PowerOn leaf should be present at ${level}`);
+            return powerOn;
+        };
+
+        const minimal = leafAt('minimal');
+        const normal = leafAt('normal');
+        const full = leafAt('full');
+
+        // `minimal` draws the title alone, so the box keeps the plain leaf size.
+        assert.deepEqual(minimal.fcstm?.eventLabels, []);
+        assert.deepEqual(minimal.fcstm?.actionLabels, []);
+        assert.ok((minimal.height || 0) <= 80,
+            `minimal should keep the plain leaf box; got height ${minimal.height}`);
+
+        // `normal` adds the state's events, `full` adds its actions on top.
+        assert.ok((normal.fcstm?.eventLabels || []).length >= 1,
+            'normal should list the state events');
+        assert.deepEqual(normal.fcstm?.actionLabels, [],
+            'normal should not list state actions');
+        assert.ok((full.fcstm?.actionLabels || []).length >= 3,
+            'full should list enter / during / exit');
+
+        // The rows have to be reserved in the layout, not only drawn: ELK packs
+        // neighbours against the height it is given, so a box that grows at
+        // draw time alone is overlapped by the state beside it.
+        assert.ok((normal.height || 0) > (minimal.height || 0),
+            `normal should reserve room for its event rows; got ${minimal.height} -> ${normal.height}`);
+        assert.ok((full.height || 0) > (normal.height || 0),
+            `full should reserve room for its action rows; got ${normal.height} -> ${full.height}`);
+
+        // Exactly one row's worth per row, because the emitter measures the
+        // band back from this height: reserve less and the last row is drawn
+        // through the bottom border, reserve more and the box has a gap the
+        // renderer never fills. The two sides share the metric that decides it.
+        const addedRows = (full.fcstm?.actionLabels || []).length;
+        assert.equal((full.height || 0) - (normal.height || 0), addedRows * 15,
+            `full adds ${addedRows} action rows and should grow by exactly that much; `
+            + `got ${normal.height} -> ${full.height}`);
     });
 
     it('event-label color tracks the path color (shared-event hue flows to the label)', async () => {

@@ -41,6 +41,34 @@ if (!Number.isInteger(expectDocuments) || expectDocuments < 0) {
   console.error(`VIEWER_EXPECT_DOCUMENTS must be a non-negative integer, got ${JSON.stringify(expectDocumentsRaw)}`);
   process.exit(2);
 }
+// How many event / action rows the fixture's detail level should have put
+// inside state bodies. The driver knows, because it chose the level and wrote
+// the machine; the page saying "I drew what I meant to" would prove nothing.
+// Absent means unchecked, so every existing case is unaffected.
+const expectedStateRows = {
+  'state-event': parseExpectedRows('VIEWER_EXPECT_STATE_EVENT_ROWS'),
+  'state-action': parseExpectedRows('VIEWER_EXPECT_STATE_ACTION_ROWS'),
+};
+
+// Whether a transition effect should be drawn in a note pad of its own. Not a
+// universal truth about a diagram: one detail preset writes effects inline
+// instead, and requiring the pad everywhere made that preset unrenderable
+// rather than different. Default on, so every existing case is unaffected.
+const expectTransitionNotes = process.env.VIEWER_EXPECT_TRANSITION_NOTES !== '0';
+
+function parseExpectedRows(name) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return null;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 0) {
+    // NaN loses every comparison, so a typo would retire the assertion in
+    // silence -- the failure mode this whole gate exists to avoid.
+    console.error(`${name} must be a non-negative integer, got ${JSON.stringify(raw)}`);
+    process.exit(2);
+  }
+  return value;
+}
+
 if (htmlPath === '--check') {
   selfCheckStreamTally();
   process.exit(0);
@@ -1002,6 +1030,16 @@ async function evaluate(cdp, expression) {
     await cdp.call('Page.navigate', {url: `file://${path.resolve(htmlPath)}`});
     await sleep(startupWait);
 
+    // Counted in the page the reader actually looks at, and counted here --
+    // before the run collapses a composite and its leaf states leave the DOM
+    // with their rows. Every setting the detail presets disagree on used to
+    // stop before the drawing, so the three levels produced one picture
+    // between them, and nothing here noticed because nothing here looked.
+    const stateRows = await evaluate(cdp, `(() => ({
+      'state-event': document.querySelectorAll('[data-fcstm-kind="state-event"]').length,
+      'state-action': document.querySelectorAll('[data-fcstm-kind="state-action"]').length,
+    }))()`);
+
     const initial = await evaluate(cdp, `({
       source: Boolean(document.querySelector('.fcstm-source-panel')),
       stage: Boolean(document.querySelector('.fcstm-stage svg')),
@@ -1458,7 +1496,15 @@ async function evaluate(cdp, expression) {
     const consoleDetails = consoleErrors.map(event => event.method === 'Runtime.exceptionThrown'
       ? event.params.exceptionDetails?.text || event.params.exceptionDetails?.exception?.description || 'exception'
       : event.params.args?.map(arg => arg.value || arg.description || '').join(' '));
-    const verticalOverflow = layout.main && layout.mainScrollHeight > layout.mainClientHeight + 1;
+    // Content the reader cannot get to, which is what a clipped container
+    // produces. Where the view scrolls by design -- the stacked comparison in a
+    // narrow window, whose whole point is to scroll rather than squeeze both
+    // panes into strips -- a scrollbar is that design working, and a denser
+    // diagram is allowed to need one.
+    const mainClips = (layout.mainStyle?.overflow || 'visible') !== 'auto'
+      && (layout.mainStyle?.overflow || 'visible') !== 'scroll';
+    const verticalOverflow = layout.main && mainClips
+      && layout.mainScrollHeight > layout.mainClientHeight + 1;
     // The bottom panels are a sibling of .fcstm-main-view, so a card row that
     // pushes past its container sat entirely outside the probed subtree. It is
     // not visible at document level either: measured at a 320px viewport, a
@@ -1485,6 +1531,11 @@ async function evaluate(cdp, expression) {
     const comparisonStageHeight = layout.stage?.height || 0;
     const comparisonTooShort = Boolean(compare.source && compare.stage &&
       (comparisonSourceHeight < minimumPanelHeight || comparisonStageHeight < minimumPanelHeight));
+    const stateRowChecks = Object.entries(expectedStateRows)
+      .filter(([, expected]) => expected !== null)
+      .map(([kind, expected]) => ({kind, expected, actual: (stateRows || {})[kind]}))
+      .filter(entry => entry.actual !== entry.expected);
+
     const oversizedUiIcons = (layout.svgRects || []).filter(item => /n-(?:base-icon|icon|checkbox-icon)/.test(item.className))
       .some(item => item.rect.width > 64 || item.rect.height > 64);
     const sourceLayoutChecks = !initial.sourceAvailable || (
@@ -1542,7 +1593,7 @@ async function evaluate(cdp, expression) {
       // absence as a pass: an unlabelled target made the halo clauses vacuous,
       // which is the behaviour the transition-hover work was about.
       transitionHover.hasLabel === true && transitionHover.labelFilter === 'none' &&
-      transitionHover.noteCount >= 1 &&
+      (expectTransitionNotes ? transitionHover.noteCount >= 1 : transitionHover.noteCount === 0) &&
       transitionHover.noteParts.every(item => item.filter === 'none') &&
       transitionHover.transitionStroke === 'rgb(45, 106, 168)'
     );
@@ -1589,7 +1640,7 @@ async function evaluate(cdp, expression) {
     );
     const modeButtonsFound = states.buttonFound === true && compare.buttonFound === true
       && fcstmOnly.buttonFound === true && backToCompare.buttonFound === true;
-    const report = {initial, sourceLayout, sourceLayoutChecks, selectMenu, selectMenuChecks, sourceUnavailableChecks, sourceChecks, fontChecks, revealTarget, transitionChecks, pdfChecks, pngChecks, svgChecks, diagramOnly: states, fcstmOnly, compare, backToCompare, importedSource, selection, revealSource, hover, sourceHover, transitionHover, sourceSelection, sourceCycle, zoom, pdf, collapse, layout, minimumPanelHeight, comparisonTooShort, drawerChecks, modeButtonsFound, exportError, expectedPdfPage, oversizedUiIcons, externalRequests: network, cspViolations, consoleErrors: consoleErrors.length, consoleDetails};
+    const report = {initial, sourceLayout, sourceLayoutChecks, selectMenu, selectMenuChecks, sourceUnavailableChecks, sourceChecks, fontChecks, revealTarget, transitionChecks, pdfChecks, pngChecks, svgChecks, diagramOnly: states, fcstmOnly, compare, backToCompare, importedSource, selection, revealSource, hover, sourceHover, transitionHover, sourceSelection, sourceCycle, zoom, pdf, collapse, layout, minimumPanelHeight, comparisonTooShort, drawerChecks, modeButtonsFound, exportError, expectedPdfPage, oversizedUiIcons, stateRows, stateRowChecks, externalRequests: network, cspViolations, consoleErrors: consoleErrors.length, consoleDetails};
     console.log(JSON.stringify(report, null, 2));
     // The interaction and panel assertions below describe this file's own
     // fixture: a machine with labelled transitions, composite children and more
@@ -1617,6 +1668,7 @@ async function evaluate(cdp, expression) {
           (collapse.before > 1 && collapse.after >= collapse.before) ||
           verticalOverflow || horizontalOverflow || comparisonTooShort ||
           !drawerChecks || oversizedUiIcons ||
+          stateRowChecks.length ||
           (expectDocuments > 0 && importedSource.published.length !== expectDocuments) ||
           (Math.max(importedSource.published.length, expectDocuments) > 1 && (
             !importedSource.pickerFound

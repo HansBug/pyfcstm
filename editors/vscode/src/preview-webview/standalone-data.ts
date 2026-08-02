@@ -1,4 +1,5 @@
 import {buildFcstmElkGraph} from '../../../jsfcstm/src/diagram/elk-graph';
+import {collectFcstmDiagramEffectNotes} from '../../../jsfcstm/src/diagram/render';
 import {resolveFcstmDiagramPreviewOptions} from '../../../jsfcstm/src/diagram/options';
 import type {
     FcstmDiagram, FcstmDiagramState, FcstmDiagramTransition,
@@ -71,6 +72,8 @@ export function buildStandaloneState(
         collapsedStateIds: new Set(collapsedStateIds),
     });
     const details = collectDetails(diagram);
+    const showsEventLegend =
+        options.eventVisualizationMode === 'legend' || options.eventVisualizationMode === 'both';
     const payload: PreviewPayload = {
         filePath: '',
         machineName: diagram.machineName,
@@ -78,7 +81,11 @@ export function buildStandaloneState(
         variables: diagram.variables,
         eventLegend: diagram.eventLegend,
         graph,
-        effectNotes: [],
+        // The host path has collected these since it was written
+        // (`webview-payload.ts`); the standalone builder shipped an empty array,
+        // so `transitionEffectMode: note` had nowhere to put an effect and the
+        // side panel stayed blank whatever the detail level said.
+        effectNotes: collectFcstmDiagramEffectNotes(diagram, options),
         options,
         states: details.states,
         transitions: details.transitions,
@@ -90,12 +97,18 @@ export function buildStandaloneState(
         payload,
         summary: Object.entries(diagram.summary).map(([label, value]) => ({label, value})),
         variables: diagram.variables.map(item => `${item.name}: ${item.initializer}`),
-        sharedEvents: diagram.eventLegend.map(item => ({
-            label: item.label,
-            qualifiedName: item.qualifiedName,
-            transitionCount: item.transitionCount,
-            color: item.color,
-        })),
+        // `none` and `color` put events on the edges and nowhere else, so the
+        // legend is not always wanted. The host path gates this the same way
+        // (`preview.ts`, `buildSharedEvents`); the standalone builder listed
+        // every event whatever the mode asked for.
+        sharedEvents: showsEventLegend
+            ? diagram.eventLegend.map(item => ({
+                label: item.label,
+                qualifiedName: item.qualifiedName,
+                transitionCount: item.transitionCount,
+                color: item.color,
+            }))
+            : [],
     };
 }
 

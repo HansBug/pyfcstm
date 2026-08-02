@@ -13,17 +13,33 @@
  * release. This is a maintenance gate rather than a unit test: it drives the
  * real builder through the sequence a reader performs.
  */
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const {createRequire} = require('module');
 
 const ROOT = path.resolve(__dirname, '..');
-// ts-node is a jsfcstm devDependency; the extension does not carry one.
-require(path.join(ROOT, 'editors/jsfcstm/node_modules/ts-node')).register({
-    transpileOnly: true,
-    compilerOptions: {module: 'commonjs', target: 'es2019', esModuleInterop: true, skipLibCheck: true},
-});
+// esbuild from the extension, the same one `build_viewer.js` uses to produce
+// the bundled viewer. ts-node would be the obvious choice and is the wrong one:
+// it lives in the jsfcstm devDependencies, and the job that runs this gate
+// installs the extension's packages and not those -- a difference this gate
+// went red on the first time it reached CI.
+const requireFromVscode = createRequire(
+    path.join(ROOT, 'editors/vscode', 'package.json'));
+const esbuild = requireFromVscode('esbuild');
 
-const {buildStandaloneState} = require(
-    path.join(ROOT, 'editors/vscode/src/preview-webview/standalone-data.ts'));
+const bundleDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pyfcstm-option-flow-'));
+const bundlePath = path.join(bundleDir, 'standalone-data.cjs');
+esbuild.buildSync({
+    entryPoints: [path.join(ROOT, 'editors/vscode/src/preview-webview/standalone-data.ts')],
+    outfile: bundlePath,
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    target: 'es2019',
+    logLevel: 'silent',
+});
+const {buildStandaloneState} = require(bundlePath);
 
 const failures = [];
 const check = (label, actual, expected) => {
@@ -70,6 +86,8 @@ state = buildStandaloneState({...state, collapsedStateIds: ['R']}, undefined, ['
 check('detail level after collapse', state.previewOptions.detailLevel, 'full');
 check('effect mode after collapse', state.previewOptions.transitionEffectMode, 'note');
 check('guards after collapse', state.previewOptions.showTransitionGuards, false);
+
+fs.rmSync(bundleDir, {recursive: true, force: true});
 
 if (failures.length > 0) {
     for (const failure of failures) console.error(`viewer option flow: ${failure}`);

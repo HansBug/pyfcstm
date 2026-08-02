@@ -523,8 +523,14 @@ the conflict at all.
 Proof block
 ~~~~~~~~~~~
 
-The headline is built from two facts rather than chosen from a list, and the rule
-covers every case:
+The block appears at all only when there is something to explain: the scenario
+must be infeasible and a depth above ``none`` must have been requested.  A
+feasible scenario has no conflict, and ``none`` asked for no explanation, so
+neither prints a headline -- looking for one there and finding nothing is the
+expected result rather than a missing field.
+
+When the block does appear, its headline is built from two facts rather than
+chosen from a list, and the rule covers every case:
 
 **When something was produced**, the headline names the depth that was *achieved*
 and how complete it is -- ``COMPLETE`` or ``PARTIAL``, then ``FORMAL DOMAIN
@@ -816,20 +822,24 @@ produced.  ``status`` says how complete the achieved depth is:
    * - ``timeout``
      - The explanation budget ran out before the depth was reached.
 
-Not every pairing of depth and status exists.  Two rules govern which do, and
-the public constructor enforces both, so a consumer can rely on them:
+Not every pairing of depth, status and payload exists.  The full set is a
+fourteen-row matrix that the public constructor enforces, and rather than restate
+it here -- an earlier revision of this page tried and got it wrong -- the two
+facts a reader needs are these:
 
-* ``complete`` means the depth delivered what it promises, so ``achieved_mode``
-  of ``none`` is never ``complete`` -- nothing was delivered.  Constructing that
-  pairing raises ``achieved_mode 'none' cannot be complete; it is partial,
-  unknown or timeout``.
-* A ``partial`` result got far enough to classify the conflict, so it carries a
-  ``classification``; ``unknown`` and ``timeout`` did not, so they carry none.
-  Supplying the wrong one is refused as an unknown delivery signature.
+* ``complete`` means the depth delivered what it promises, so an
+  ``achieved_mode`` of ``none`` is never ``complete``.  Constructing that pairing
+  raises ``achieved_mode 'none' cannot be complete; it is partial, unknown or
+  timeout``.
+* Which payload fields accompany a status is not something to infer.  Read
+  ``classification``, ``core``, ``narrative`` and ``proof`` for presence rather
+  than predicting it from ``status``; each is documented above and each is
+  nullable.
 
-Rather than reading those as a table to memorize: ``classification`` is present
-exactly when the run got far enough to have one, and ``status`` says how far that
-was.
+:class:`~pyfcstm.bmc.BmcInfeasibilityExplanation` refuses a combination outside
+the matrix with a message naming what is wrong, so a consumer that builds one
+learns immediately, and a consumer that only reads results never needs the matrix
+at all.
 
 A request for ``proof`` that degrades therefore reports ``achieved_mode`` as
 ``formal``, and ``reason`` names the cause.  Against the same model and a query

@@ -796,6 +796,21 @@ def _rendered_text(html_root: Path, relative: str) -> str:
     markup = page.read_text(encoding="utf-8", errors="replace")
     # Script and style content is in the file and not on the page.
     markup = re.sub(r"(?is)<(script|style)\b.*?</\1>", " ", markup)
+    # Narrow to the article body before stripping tags.  The theme renders the
+    # global toctree into every page's sidebar and puts page titles in the
+    # next/previous links, so a value named anywhere in the project counts as
+    # shown on every page -- which is the same "present but not where a reader
+    # is looking" failure this function exists to catch, one layer out.
+    # Cut from the body's opening tag to the footer rather than trying to match
+    # its closing tag: the body contains nested divs, so a non-greedy match to
+    # </div> stops at the first inner one and a greedy one runs past the footer.
+    start = re.search(r'(?is)<div[^>]+\bitemprop=["\']articleBody["\']', markup)
+    if start is None:
+        start = re.search(r"(?is)<main\b", markup)
+    if start is not None:
+        rest = markup[start.end() :]
+        end = re.search(r"(?is)<footer\b|</main\b", rest)
+        markup = rest[: end.start()] if end else rest
     return _collapse(re.sub(r"(?s)<[^>]+>", " ", markup))
 
 

@@ -25,6 +25,7 @@ from pyfcstm.bmc.explanation import (
     BmcConstraintRef,
     BmcCoreItem,
     BmcInfeasibilityExplanation,
+    BmcReasoningStep,
 )
 from pyfcstm.bmc.provenance import BmcSourceRef
 
@@ -3840,3 +3841,79 @@ def test_the_sentinel_states_read_as_query_tokens() -> None:
         "$STATE_TERMINATE": "terminated()",
         "$STATE_INIT": "before(start)",
     }
+
+
+def _valid_proof_node_args() -> tuple:
+    """The positional arguments of a proof node a caller can legitimately build."""
+    return (
+        "proof.false",
+        "contradiction",
+        "incompatible_equalities",
+        (),
+        {"kind": "false"},
+        ("initial.target",),
+        "The initial state cannot hold two values at once.",
+        "rule_checker",
+    )
+
+
+def test_proof_node_accepts_the_valid_baseline() -> None:
+    """The baseline the refusal cases below mutate is itself constructible.
+
+    Without this, a refusal case could pass because the baseline was already
+    invalid for an unrelated reason, and the test would prove nothing about the
+    field it names.
+    """
+    node = BmcProofNode(*_valid_proof_node_args())
+
+    assert node.stable_id == "proof.false"
+    assert node.conclusion["kind"] == "false"
+
+
+@pytest.mark.parametrize(
+    "index, value, match",
+    [
+        # A repeated premise id. The graph is addressed by id, so a duplicate makes
+        # one of the two unreachable through the edge that names it.
+        (3, ("premise.a", "premise.a"), "must not repeat an id"),
+        # Same for the core members a node rests on.
+        (5, ("initial.target", "initial.target"), "must not repeat an id"),
+        # A conclusion with no kind cannot be dispatched on, and the root node is
+        # recognized by its kind being "false".
+        (4, {"text": "no tag"}, "must carry a kind"),
+        # ``1 == True`` in Python, so a caller passing the integer would satisfy a
+        # naive truth check while the published schema pins the value to ``true``.
+        (4, {"kind": "conflict", "state_slot": 1}, "state_slot must be true"),
+    ],
+)
+def test_proof_node_refuses_what_the_schema_refuses(index, value, match) -> None:
+    """Each positional field is broken on its own, from a baseline that works.
+
+    These are ordinary mistakes for a caller assembling a proof by hand: a premise
+    listed twice, a conclusion missing its tag, an integer where the schema wants
+    ``true``. The constructor has to refuse them, because the canonical JSON it
+    produces would otherwise fail a conforming validator downstream.
+    """
+    args = list(_valid_proof_node_args())
+    args[index] = value
+
+    with pytest.raises(ValueError, match=match):
+        BmcProofNode(*args)
+
+
+def test_reasoning_step_refuses_a_repeated_member_id() -> None:
+    """A step's member list addresses the core, so a repeat has no reading."""
+    with pytest.raises(ValueError, match="must not repeat an id"):
+        BmcReasoningStep("fact", ("g0", "g0"), (), "text")
+
+
+def test_narrative_refuses_a_repeated_review_surface() -> None:
+    """Review surfaces name editable members, and the same name twice is one name."""
+    with pytest.raises(ValueError, match="review_surfaces must not repeat an id"):
+        BmcConflictNarrative(
+            "structural_only",
+            "headline",
+            "summary",
+            (BmcReasoningStep("fact", ("g0",), (), "text"),),
+            ("surface.a", "surface.a"),
+        )

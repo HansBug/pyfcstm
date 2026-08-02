@@ -476,10 +476,12 @@ scope 上面那句话。粒度、成员数、带标签的最小性行以及解�
    * - ``proof``
      - ``partial``
      - ``PARTIAL VERIFIED DOMAIN PROOF``
-   * - ``none``
-     - 任意
-     - ``FORMAL EXPLANATION NOT ACHIEVED`` 或
-       ``PROOF EXPLANATION NOT ACHIEVED``
+   * - ``none``\ （请求 ``formal``）
+     - ``partial``、``unknown`` 或 ``timeout``
+     - ``FORMAL EXPLANATION NOT ACHIEVED``
+   * - ``none``\ （请求 ``proof``）
+     - ``partial``、``unknown`` 或 ``timeout``
+     - ``PROOF EXPLANATION NOT ACHIEVED``
 
 ``formal`` 深度上的 ``COMPLETE`` 意思是该档承诺的内容都产出了——一个分类与一个源组
 冲突核——而不是"找到了证明"。把它读成"工具已经做完了"，正是这张表要防的误解。

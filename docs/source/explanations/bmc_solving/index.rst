@@ -607,11 +607,13 @@ reproduces the whole ledger.
     inputs with ``verification_method`` as ``core_binding``.
 
 :eq:`bmc-proof-input-bijection` -- one node per member
-    Enforced by ``build_domain_proof`` in ``pyfcstm/bmc/proof.py``; covered by
-    ``test_an_input_node_restates_one_member_and_says_so`` and
-    ``test_two_members_stating_one_fact_are_refused_rather_than_merged``.  The
-    query publishes two input nodes for a two-member core, each with one entry
-    in ``item_ids``.
+    Enforced by ``build_domain_proof`` in ``pyfcstm/bmc/proof.py``.  The query
+    publishes two input nodes for a two-member core, each with one entry in
+    ``item_ids``.  Its two tests take a line each, so that a long identifier is
+    not clipped in a narrow column:
+
+    - ``test_an_input_node_restates_one_member_and_says_so``
+    - ``test_two_members_stating_one_fact_are_refused_rather_than_merged``
 
 The ledger is worth reading against the boundary above: these four claims are
 about the constraints as encoded.  None of them says the encoding matches what

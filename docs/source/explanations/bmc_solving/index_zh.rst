@@ -491,10 +491,12 @@ delta、gamma 两个符号，并为每个步/分支对创建一个选择变量�
     ``verification_method`` 均为 ``core_binding``。
 
 :eq:`bmc-proof-input-bijection` —— 一个成员一个节点
-    由 ``pyfcstm/bmc/proof.py`` 中的 ``build_domain_proof`` 强制；由
-    ``test_an_input_node_restates_one_member_and_says_so`` 与
-    ``test_two_members_stating_one_fact_are_refused_rather_than_merged`` 覆盖。
-    该查询为两成员冲突核发布两个 ``input`` 节点，各自的 ``item_ids`` 只有一项。
+    由 ``pyfcstm/bmc/proof.py`` 中的 ``build_domain_proof`` 强制。该查询为两成员
+    冲突核发布两个 ``input`` 节点，各自的 ``item_ids`` 只有一项。覆盖它的两个测试
+    各占一行，以免长标识符在窄栏里被裁断：
+
+    - ``test_an_input_node_restates_one_member_and_says_so``
+    - ``test_two_members_stating_one_fact_are_refused_rather_than_merged``
 
 这份台账值得对照上文的边界来读：这四条断言谈论的都是编码之后的约束。没有一条说编码
 符合作者的本意，这也正是信任边界要单独陈述的原因。

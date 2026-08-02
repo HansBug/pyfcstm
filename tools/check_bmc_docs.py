@@ -263,12 +263,16 @@ _UNREACHABLE_RULES = (
 #: not answer what a reader is looking up.
 _REQUIRED_TABLE_ROWS: Dict[str, Tuple[str, ...]] = {
     "reference/bmc_results/index.rst": (
-        "     - ``FORMAL EXPLANATION NOT ACHIEVED`` or\n"
-        "       ``PROOF EXPLANATION NOT ACHIEVED``\n",
+        "     - ``partial``, ``unknown`` or ``timeout``\n"
+        "     - ``FORMAL EXPLANATION NOT ACHIEVED``\n",
+        "     - ``partial``, ``unknown`` or ``timeout``\n"
+        "     - ``PROOF EXPLANATION NOT ACHIEVED``\n",
     ),
     "reference/bmc_results/index_zh.rst": (
-        "     - ``FORMAL EXPLANATION NOT ACHIEVED`` 或\n"
-        "       ``PROOF EXPLANATION NOT ACHIEVED``\n",
+        "     - ``partial``、``unknown`` 或 ``timeout``\n"
+        "     - ``FORMAL EXPLANATION NOT ACHIEVED``\n",
+        "     - ``partial``、``unknown`` 或 ``timeout``\n"
+        "     - ``PROOF EXPLANATION NOT ACHIEVED``\n",
     ),
 }
 
@@ -782,6 +786,83 @@ def _check_required_rows(errors: List[str]) -> None:
             )
 
 
+def _rendered_text(html_root: Path, relative: str) -> str:
+    """Return the visible text of one built page.
+
+    Reading the source can only approximate what reaches a reader.  Sphinx
+    resolves ``only``, ``include``, substitutions and metadata long after the
+    text a source-level check sees, so a table inside a false ``only`` block --
+    or an anchor sitting in a ``meta`` directive -- is present in the file and
+    absent from the page.  Both are ordinary directives, so no amount of regex
+    on the source settles it; the built page does.
+
+    :param html_root: Directory a Sphinx HTML build wrote to.
+    :type html_root: pathlib.Path
+    :param relative: Page path without the ``.rst`` suffix.
+    :type relative: str
+    :return: The page's text with tags removed.
+    :rtype: str
+    :raises CheckFailure: If the page is missing from the build.
+    """
+    page = html_root / (relative + ".html")
+    if not page.exists():
+        raise CheckFailure("%s is not in the build at %s." % (relative, html_root))
+    markup = page.read_text(encoding="utf-8", errors="replace")
+    # Script and style content is in the file and not on the page.
+    markup = re.sub(r"(?is)<(script|style)\b.*?</\1>", " ", markup)
+    return _collapse(re.sub(r"(?s)<[^>]+>", " ", markup))
+
+
+def _collapse(text: str) -> str:
+    """Collapse whitespace runs so both sides of a comparison agree.
+
+    Sphinx renders an inline literal as one ``<span class="pre">`` per word, so
+    stripping tags leaves the words separated by several spaces.  Comparing a
+    single-spaced needle against that finds nothing, which reads exactly like the
+    value being absent.  Both the page and the value it is searched for go
+    through this function, because two sides normalizing differently is how a
+    check ends up covering neither.
+
+    :param text: Text to normalize.
+    :type text: str
+    :return: The text with every whitespace run reduced to one space.
+    :rtype: str
+    """
+    return re.sub(r"\s+", " ", text)
+
+
+def check_rendered(html_roots: Dict[str, Path]) -> None:
+    """Re-check the vocabulary anchors against built pages.
+
+    The source-level checks stay as the fast gate.  This one is the honest one:
+    it asks whether a reader can find the value, not whether the file contains
+    it.
+
+    :param html_roots: ``{"en": path, "zh": path}`` for two language builds.
+    :type html_roots: Dict[str, pathlib.Path]
+    :return: ``None``.
+    :rtype: None
+    :raises CheckFailure: If a required value is absent from a built page.
+    """
+    errors: List[str] = []
+    for relative, required in sorted(_EXPLANATION_VOCABULARY.items()):
+        for language, suffix in (("en", ""), ("zh", "_zh")):
+            root = html_roots.get(language)
+            if root is None:
+                continue
+            text = _rendered_text(root, relative + suffix)
+            missing = [value for value in required if _collapse(value) not in text]
+            if missing:
+                errors.append(
+                    "%s.html in the %s build does not show %s."
+                    % (relative + suffix, language, ", ".join(sorted(set(missing))))
+                )
+    if errors:
+        raise CheckFailure(
+            "BMC rendered documentation check failed:\n" + "\n".join(errors)
+        )
+
+
 def check() -> None:
     """Run every deterministic BMC documentation contract check."""
     errors: List[str] = []
@@ -804,16 +885,27 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     """Run the tools-only command-line checker."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
+    parser.add_argument("--html-root-en", type=Path)
+    parser.add_argument("--html-root-zh", type=Path)
     args = parser.parse_args(argv)
     if not args.check:
         parser.error("Only --check mode is supported.")
     try:
         check()
+        roots = {
+            language: root
+            for language, root in (("en", args.html_root_en), ("zh", args.html_root_zh))
+            if root is not None
+        }
+        if roots:
+            check_rendered(roots)
     except CheckFailure as err:
         # CheckFailure: one or more deterministic documentation contracts failed.
         print(str(err))
         return 1
     print("BMC documentation structure, diagrams, and equation ledger are up to date.")
+    if args.html_root_en or args.html_root_zh:
+        print("Required values are present in the built pages, not only the source.")
     return 0
 
 

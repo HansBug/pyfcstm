@@ -547,10 +547,12 @@ achieved:
    * - ``proof``
      - ``partial``
      - ``PARTIAL VERIFIED DOMAIN PROOF``
-   * - ``none``
-     - any
-     - ``FORMAL EXPLANATION NOT ACHIEVED`` or
-       ``PROOF EXPLANATION NOT ACHIEVED``
+   * - ``none`` (requested ``formal``)
+     - ``partial``, ``unknown`` or ``timeout``
+     - ``FORMAL EXPLANATION NOT ACHIEVED``
+   * - ``none`` (requested ``proof``)
+     - ``partial``, ``unknown`` or ``timeout``
+     - ``PROOF EXPLANATION NOT ACHIEVED``
 
 ``COMPLETE`` at ``formal`` depth means the formal explanation produced everything
 it promises -- a classification and a source core -- not that a proof was found.

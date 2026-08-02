@@ -661,8 +661,10 @@ reasons are structural and are set out in
        derived fact to condition on, for the same reason.
    * - ``arithmetic_evaluation``
      - no
-     - The value an arithmetic step leaves in a variable.  The recognizer
-       resolves constants before a step of this shape is needed.
+     - The value an arithmetic step leaves in a variable.  It consumes an
+       ``arithmetic_expression`` fact, and the only thing that produces one is
+       ``transition_assignment`` -- so the chain has no starting point while that
+       row reads ``no``.
    * - ``interval_intersection``
      - yes
      - That no value satisfies every bound required at one slot.

@@ -399,6 +399,15 @@ built without the intermediate facts would lose.  A reader chasing a cross-step
 conflict is better served by ``formal`` today, and the report says so in its
 ``reason`` line rather than leaving them to wonder.
 
+Two further rules are out of reach for the same reason, one step removed.
+``equality_substitution`` needs a derived fact to substitute into, and
+``arithmetic_evaluation`` needs an ``arithmetic_expression`` fact -- which only
+``transition_assignment`` produces.  The translation from core members to proof
+facts emits four kinds, and that is not one of them, so both chains are missing
+their first link rather than their last.  This is why the catalog can be closed
+and complete while four of its nine rules never fire: they are the ones whose
+premises no core member can state.
+
 A second boundary is narrower.  An event assumption is published as a
 ``structural_constraint`` fact: the core member is known and located, but its
 content is not read, so no rule applies to it.  The narrative then reports

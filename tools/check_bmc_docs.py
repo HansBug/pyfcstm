@@ -146,10 +146,16 @@ _EXPLANATION_STATUSES = ("complete", "partial", "unknown", "timeout")
 #: claimed a closed vocabulary the renderer did not honour, and because the page
 #: was written from the same reading, the gate agreed with it by construction.
 #:
-#: Still transcribed rather than imported.  Importing would make a renamed value
-#: agree with a stale page; transcribing means a rename fails the transcription
-#: guard in test/bmc/test_explanation.py, which compares this vocabulary against
-#: the mapping itself.
+#: Still transcribed rather than imported, and what protects the transcription is
+#: this checker itself: a value edited here no longer appears on the page, so
+#: ``--check`` reports it as undocumented on the next run.  Editing the code's
+#: mapping instead fails the transcription guard in test/bmc/test_explanation.py.
+#: Renaming a headline therefore has to touch three places -- the mapping, that
+#: guard, and this tuple -- and skipping any one of them is caught.
+#:
+#: That guard does *not* cover this tuple, though an earlier version of this
+#: comment claimed it did: it compares the code's mapping against a literal in
+#: the test file, and the pytest boundary rules forbid a test importing tools/.
 _EXPLANATION_HEADLINES = (
     "COMPLETE FORMAL DOMAIN EXPLANATION",
     "PARTIAL FORMAL DOMAIN EXPLANATION",

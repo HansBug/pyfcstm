@@ -170,6 +170,48 @@ def test_every_scope_has_a_frozen_target() -> None:
             "assumptions",
             "assumptions_domain_conflict",
         ),
+        # The three rows below pin why ``initialization_domain_conflict`` has no
+        # producing path, which the branch states in prose.  The domain shape needs
+        # the exclusion to land on a frame the prefix already pinned, so moving the
+        # exclusion onto the pinned frame itself, or loosening the pin, degrades it
+        # to a prefix conflict.  An ``init`` clause can only reach frame 0 -- the
+        # frame it pins -- so it can never separate the two roles.
+        (
+            'init state("Root.A"); '
+            'assume at 0: !active("Root.A"); '
+            'assume at 0: !active("Root.B"); '
+            "assume at 0: !terminated(); "
+            'check reach <= 2: active("Root.B");',
+            "assumptions",
+            "assumptions_prefix_conflict",
+        ),
+        (
+            "init cold; "
+            'assume at 1: !active("Root.A"); '
+            'assume at 1: !active("Root.B"); '
+            "assume at 1: !terminated(); "
+            'check reach <= 2: active("Root.B");',
+            "assumptions",
+            "assumptions_prefix_conflict",
+        ),
+        # The initializer grammar does admit the exclusion -- ``init_clause`` carries
+        # an optional ``WHERE`` over the full condition language -- so this parses and
+        # runs.  ``cold`` pins nothing, so the component probe passes and the domain
+        # probe stays satisfiable.
+        (
+            'init cold where !active("Root.A") && !active("Root.B") && !terminated(); '
+            'check reach <= 2: active("Root.B");',
+            "initialization",
+            "initialization_kernel_conflict",
+        ),
+        # ``state(...)`` pins frame 0, so the same exclusion collides with the pin and
+        # the component probe returns unsat before the domain probe runs.
+        (
+            'init state("Root.A") where !active("Root.A"); '
+            'check reach <= 2: active("Root.B");',
+            "initialization",
+            "initialization_self_conflict",
+        ),
     ],
 )
 def test_classification_on_real_queries(query, stage, expected) -> None:

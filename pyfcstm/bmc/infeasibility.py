@@ -627,14 +627,29 @@ def classify_infeasibility(
         # ``assumptions_domain`` scope.
         #
         # ``initialization_domain_conflict`` is the same shape on the other stage
-        # and has no observed producing path.  Reaching it would need an ``init``
-        # clause that contradicts the frame domain by itself, and the initializer
-        # grammar constrains a state and variables rather than excluding states.
-        # Whether it is reachable at all, reserved for a later delivery, or should
-        # leave the frozen vocabulary is a contract decision recorded on the
-        # tracking issue, not one this branch settles.  An earlier attempt to
-        # reach it forged the aggregate formula, which the test boundary rules
-        # out.
+        # and has no producing path, because that shape needs two frames playing
+        # different parts.  The exclusion has to land on a frame the prefix has
+        # already pinned: with ``init state("Root.A")`` an exclusion at frame 1 or
+        # later lands here, while the same exclusion at frame 0, or any frame under
+        # ``init cold`` or no initializer at all, leaves the prefix loose enough to
+        # land in ``prefix_conflict`` instead.  An ``init`` clause can only
+        # constrain frame 0 -- the very frame it pins -- so the pin and the
+        # exclusion collide, the component probe above returns unsat first, and the
+        # classification is ``initialization_self_conflict``.  That covers all three
+        # ``init_target`` forms: ``state(...)`` and ``terminated`` pin frame 0, and
+        # ``cold`` pins nothing.
+        #
+        # The initializer grammar does admit the exclusion itself -- ``init_clause``
+        # carries an optional ``WHERE`` over the full condition language, so
+        # ``init cold where !active("Root.A") && !terminated();`` parses and runs.
+        # An earlier version of this comment claimed the grammar was what ruled the
+        # classification out; that was wrong, and the frame argument above is the
+        # actual reason.
+        #
+        # Whether it should stay in the frozen vocabulary is a contract decision
+        # recorded on the tracking issue, not one this branch settles.  An earlier
+        # attempt to reach it forged the aggregate formula, which the test boundary
+        # rules out.
         classification = (
             "initialization_domain_conflict"
             if stage == "initialization"

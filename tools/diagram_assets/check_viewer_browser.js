@@ -93,6 +93,13 @@ function streamDictionary(raw, markerStart) {
   const span = window.slice(header);
   // The dictionary has to be the whole of what follows the header, or this is
   // not the shape assumed here and guessing would be worse than declining.
+  //
+  // Both ends, not just the tail. Checking only the tail let `(1 0 obj)` inside a
+  // string literal act as a header: the span then began in the middle of the real
+  // dictionary, `indexOf('<<')` found a nested one, and the `/Filter` in front of
+  // it was cut off -- so a compressed stream carrying a halo was read as raw
+  // operators and passed.
+  if (!span.trimStart().startsWith('<<')) return null;
   const open = span.indexOf('<<');
   const close = span.lastIndexOf('>>');
   if (open < 0 || close < open || span.slice(close + 2).trim() !== '') return null;
@@ -123,7 +130,7 @@ function inflatePdfStreams(base64) {
     if (raw[dataStart] === 13) dataStart += 1;
     if (raw[dataStart] !== 10) { offset = markerStart + keyword.length; continue; }
     dataStart += 1;
-    const dataEnd = raw.indexOf(endMarker, dataStart);
+    let dataEnd = raw.indexOf(endMarker, dataStart);
     if (dataEnd < 0) break;
     total += 1;
     // `/Length` when the dictionary states it directly, because the payload is
@@ -134,7 +141,23 @@ function inflatePdfStreams(base64) {
     // `(?!\s+\d+\s+R)` because `/Length 5 0 R` is an indirect reference whose
     // value lives in another object; reading `5` from it took five bytes of a
     // forty-byte stream, and the truncation counted as a successful decode.
-    const declared = /\/Length\s+(\d+)(?!\s+\d+\s+R)/.exec(streamDictionary(raw, markerStart) || '');
+    // Comments are whitespace to a PDF reader, so they are removed before the
+    // reference shape is looked for -- `/Length 5%c\n0 R` is an indirect
+    // reference that the lookahead alone did not recognise.
+    const declaration = (streamDictionary(raw, markerStart) || '').replace(/%[^\r\n]*/g, ' ');
+    const declared = /\/Length\s+(\d+)(?!\s+\d+\s+R)/.exec(declaration);
+    // `endstream` is nine ordinary bytes, and an uncompressed payload may contain
+    // them -- a state named `endstream` is enough. Taking the first match then
+    // cut the stream in half and threw away the rest, halo and all, while the
+    // tally still balanced. Where the length is stated, it says where the data
+    // ends; the keyword is only expected to follow it.
+    if (declared) {
+      const stated = dataStart + Number(declared[1]);
+      const after = raw.subarray(stated, Math.min(raw.length, stated + 20)).toString('latin1');
+      if (/^[\r\n\s]*endstream/.test(after)) {
+        dataEnd = raw.indexOf(endMarker, stated);
+      }
+    }
     let compressed;
     if (declared && dataStart + Number(declared[1]) <= dataEnd) {
       compressed = raw.subarray(dataStart, dataStart + Number(declared[1]));
@@ -272,13 +295,10 @@ function selfCheckStreamTally() {
     // one of them be deleted in silence. This one holds the end that matters:
     // with no `/Length` to fall back on, only peeling a single EOL saves it.
     //
-    // There is no companion case pinning `/Length` alone, and that is not an
-    // omission. No legal document was found where it decides the answer: zlib
-    // tolerates trailing bytes, and for an unfiltered stream peeling one EOL
-    // already lands on the right length. `/Length` is the stricter reading, kept
-    // because it states the size rather than inferring it, but the peel is what
-    // actually fixes the defect. Claiming otherwise with a case that passes
-    // either way would be the shape this comment exists to warn about.
+    // A companion case pinning `/Length` alone follows below. It did not exist
+    // while the end of a stream was found by searching for the keyword: nothing
+    // legal then turned on the declared size. Locating the end by that size is
+    // what made one possible.
     ['a newline-ending payload with no declared length', (() => {
       const body = zlib.deflateSync(Buffer.from('x'.repeat(3852)));
       if (body[body.length - 1] !== 10) {
@@ -300,6 +320,28 @@ function selfCheckStreamTally() {
     ['a length given as an indirect reference', Buffer.concat([
       Buffer.from('%PDF-1.3\n1 0 obj\n<< /Length 5 0 R >>\nstream\n'),
       halo, Buffer.from('\nendstream\n')]), false],
+    // The same reference wearing a comment. Comments are whitespace to a reader,
+    // so the lookahead alone did not see this one and read `5` as the size.
+    ['an indirect reference behind a comment', Buffer.concat([
+      Buffer.from('%PDF-1.3\n1 0 obj\n<< /Length 5%c\n0 R >>\nstream\n'),
+      halo, Buffer.from('\nendstream\n')]), false],
+    // `(1 0 obj)` reads as an object header to anything matching the shape
+    // loosely: the span then starts mid-dictionary and the `/Filter` in front of
+    // the nested one is cut off. Requiring the span to *begin* with `<<` is what
+    // the surrounding comment always claimed and the code did not check.
+    ['a string literal shaped like a header', Buffer.concat([
+      Buffer.from('%PDF-1.3\n1 0 obj\n<< /Filter /FlateDecode /Note (1 0 obj) /DecodeParms << /X 1 >> >>\nstream\n'),
+      zlib.deflateSync(halo), Buffer.from('\nendstream\n')]), false],
+    // `endstream` is nine ordinary bytes and an uncompressed payload may hold
+    // them. Searching for the keyword cut the stream in half and dropped the
+    // halo in its tail while the tally still balanced. This is the case that
+    // pins `/Length`: without it there is nothing else to find the end with.
+    ['a payload containing the end keyword', (() => {
+      const body = Buffer.concat([Buffer.from('BT (endstream) Tj ET\n'), halo]);
+      return Buffer.concat([
+        Buffer.from('%PDF-1.3\n1 0 obj\n<< /Length ' + body.length + ' >>\nstream\n'),
+        body, Buffer.from('\nendstream\n')]);
+    })(), false],
   ];
   for (const [label, buf, shouldAccept] of cases) {
     if (accepted(buf) !== shouldAccept) {

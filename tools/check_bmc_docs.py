@@ -54,6 +54,10 @@ _EQUATION_LABELS = (
     "bmc-witness-projection",
     "bmc-replay-agreement",
     "bmc-symbol-growth",
+    "bmc-core-soundness",
+    "bmc-core-subset-minimality",
+    "bmc-proof-input-binding",
+    "bmc-proof-input-bijection",
 )
 
 _PAGE_PAIRS = (
@@ -290,11 +294,11 @@ def _check_equations(errors: List[str]) -> None:
     chinese_labels = tuple(label for label, _latex in chinese)
     if english_labels != _EQUATION_LABELS:
         errors.append(
-            "English BMC equation ledger does not match the frozen 40 labels."
+            "English BMC equation ledger does not match the frozen label list."
         )
     if chinese_labels != _EQUATION_LABELS:
         errors.append(
-            "Chinese BMC equation ledger does not match the frozen 40 labels."
+            "Chinese BMC equation ledger does not match the frozen label list."
         )
     if english != chinese:
         errors.append("English and Chinese BMC equation labels/LaTeX differ.")

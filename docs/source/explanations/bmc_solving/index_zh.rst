@@ -411,3 +411,95 @@ delta、gamma 两个符号，并为每个步/分支对创建一个选择变量�
 
 语义夹具回放测试组尤其重要：它对登记为必须通过的场景检查完整运行时轨迹，而不只是检查见证对象能否序列化。
 篡改测试提供反方向证据：改变一个公开观测后，必须得到路径精确的不匹配项。
+
+
+解释在形式上断言了什么
+----------------------
+
+下面四条陈述是可选解释对它自己的输出所作的断言。它们与上文的求解方程是分开的，因为
+它们约束的是一份\ *报告*\ 而不是一次搜索：每一条都是发布对象要么具备、要么因缺失而
+被拒绝发布的性质。
+
+设 :math:`C = \{c_1, \dots, c_n\}` 为发布出来的源组冲突核，每个 :math:`c_i` 是一条
+作者写下的子句或一个生成支撑组的编码，并以 :math:`\Phi` 表示合取。
+
+可靠性是最弱的断言，每个冲突核都作出它。冲突核可靠，是指仅凭它的成员就已经不容许
+任何赋值：
+
+.. math::
+   :label: bmc-core-soundness
+
+   \mathrm{UNSAT}\bigl(\Phi(C)\bigr)
+
+这正是求解器自己给出的核所提供的，它并没有说明每个成员是否都必需。子集极小性是更强
+的断言，只有在每个成员都经过"删掉它再重新求解"的检验之后才作出：
+
+.. math::
+   :label: bmc-core-subset-minimality
+
+   \forall c \in C:\ \mathrm{SAT}\bigl(\Phi(C \setminus \{c\})\bigr)
+
+满足 :eq:`bmc-core-subset-minimality` 的冲突核报告 ``subset_minimal``，且
+``subset_minimality`` 为 ``proven``。只满足 :eq:`bmc-core-soundness` 的报告
+``raw``，检验被中途截断的报告 ``partial_minimized``。这个区分正是告诉读者"列出的
+每一行是否都值得改"的依据。
+
+在 ``proof`` 深度，每个 ``input`` 节点把一个冲突核成员重述为归一化事实 :math:`f`。
+重述比双向的任一单向蕴含都强，而两个方向都是必需的：
+
+.. math::
+   :label: bmc-proof-input-binding
+
+   \mathrm{UNSAT}\bigl(\Phi(c) \wedge \neg f\bigr)
+   \ \wedge\
+   \mathrm{UNSAT}\bigl(f \wedge \neg \Phi(c)\bigr)
+
+左侧合取项说的是成员强制该事实；右侧说的是该事实强制该成员。只检查左侧会容许一个
+比 :math:`c` 更弱的 :math:`f`——那是摘要，而摘要可能已经丢掉了读者需要的细节。这些
+检查中任何一个返回可满足、unknown 或超时，都会让该证明到不了 ``complete``。
+
+最后，输入与冲突核之间是双射，从而每个成员恰好被读一次，且没有节点替两个成员说话：
+
+.. math::
+   :label: bmc-proof-input-bijection
+
+   \bigl|\{\,v : \mathrm{kind}(v) = \texttt{input}\,\}\bigr| = |C|
+   \ \wedge\
+   \forall v:\ \bigl|\mathrm{items}(v)\bigr| = 1
+
+缺失、多余或重复的输入都违反 :eq:`bmc-proof-input-bijection`，会被拒绝而不是发布
+——包括两个不同成员陈述同一事实的情形，那种情形无处安放：合并它们会让一个节点带上
+两份归属，丢掉一个又会让某个成员没人读。
+
+.. list-table:: 解释断言台账
+   :header-rows: 1
+   :widths: 26 22 26 26
+
+   * - 断言
+     - 实现
+     - 测试
+     - 可运行查询与轨迹
+   * - :eq:`bmc-core-soundness`：仅冲突核本身不可满足
+     - ``pyfcstm/bmc/infeasibility.py`` 中的 ``extract_source_core``
+     - ``test/bmc/test_infeasibility.py``
+     - ``assume at 1: var("x") == 1; assume at 1: var("x") == 2;`` 在场景 UNSAT
+       的同时报告 ``Core size: 2``
+   * - :eq:`bmc-core-subset-minimality`：每个成员都承重
+     - ``extract_source_core`` 中的最小化循环
+     - ``test/bmc/test_explanation.py`` 中的
+       ``test_reduction_and_minimality_stay_coupled``
+     - 同一查询报告 ``Reduction: subset_minimal`` 与
+       ``Subset minimality: proven``
+   * - :eq:`bmc-proof-input-binding`：两个方向都被驳倒
+     - ``pyfcstm/bmc/infeasibility.py`` 中的 ``check_core_bindings``
+     - ``test/bmc/test_proof_wiring.py``
+     - 同一查询发布两个输入，``verification_method`` 均为 ``core_binding``
+   * - :eq:`bmc-proof-input-bijection`：一个成员一个节点
+     - ``pyfcstm/bmc/proof.py`` 中的 ``build_domain_proof``
+     - ``test_an_input_node_restates_one_member_and_says_so`` 与
+       ``test_two_members_stating_one_fact_are_refused_rather_than_merged``
+     - 同一查询为两成员冲突核发布两个 ``input`` 节点，各自的 ``item_ids`` 只有
+       一项
+
+这份台账值得对照上文的边界来读：这四条断言谈论的都是编码之后的约束。没有一条说编码
+符合作者的本意，这也正是信任边界要单独陈述的原因。

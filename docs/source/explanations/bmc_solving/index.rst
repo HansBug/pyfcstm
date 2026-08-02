@@ -515,3 +515,107 @@ The semantic-fixture replay suite is especially important: it checks complete
 runtime traces for the registered hard-pass scenarios, not merely that a
 witness object can be serialized.  The tampering tests provide the opposite
 evidence by changing a public observation and requiring a precise mismatch.
+
+
+What the explanation claims, formally
+-------------------------------------
+
+The four statements below are what the optional explanation asserts about its own
+output.  They are separate from the solve equations above because they constrain
+a *report*, not a search: each one is a property the published object either has
+or is refused for lacking.
+
+Let :math:`C = \{c_1, \dots, c_n\}` be the published conflict core, each
+:math:`c_i` the encoding of one authored clause or generated support group, and
+let :math:`\Phi` denote conjunction.
+
+Soundness is the weakest claim, and every core makes it.  A core is sound when
+its members alone already admit no assignment:
+
+.. math::
+   :label: bmc-core-soundness
+
+   \mathrm{UNSAT}\bigl(\Phi(C)\bigr)
+
+This is what the solver's own core gives, and it says nothing about whether every
+member is needed.  Subset-minimality is the stronger claim, and it is made only
+when every member was tested by removing it and re-solving:
+
+.. math::
+   :label: bmc-core-subset-minimality
+
+   \forall c \in C:\ \mathrm{SAT}\bigl(\Phi(C \setminus \{c\})\bigr)
+
+A core satisfying :eq:`bmc-core-subset-minimality` reports ``subset_minimal``
+with ``subset_minimality`` as ``proven``.  One satisfying only
+:eq:`bmc-core-soundness` reports ``raw``, and one whose testing was cut short
+reports ``partial_minimized``.  The distinction is what tells a reader whether
+every listed line is worth editing.
+
+At proof depth each input node restates one core member as a normalized fact
+:math:`f`.  Restatement is stronger than implication in both directions, and both
+are required:
+
+.. math::
+   :label: bmc-proof-input-binding
+
+   \mathrm{UNSAT}\bigl(\Phi(c) \wedge \neg f\bigr)
+   \ \wedge\
+   \mathrm{UNSAT}\bigl(f \wedge \neg \Phi(c)\bigr)
+
+The left conjunct says the member forces the fact; the right says the fact forces
+the member.  Checking only the left would admit an :math:`f` weaker than
+:math:`c` -- a summary, which may have dropped the detail the reader needed.  Any
+of these checks returning satisfiable, unknown, or timing out keeps the proof out
+of ``complete``.
+
+Finally the inputs and the core stand in bijection, so that every member is read
+exactly once and no node speaks for two:
+
+.. math::
+   :label: bmc-proof-input-bijection
+
+   \bigl|\{\,v : \mathrm{kind}(v) = \texttt{input}\,\}\bigr| = |C|
+   \ \wedge\
+   \forall v:\ \bigl|\mathrm{items}(v)\bigr| = 1
+
+A missing, extra, or duplicated input violates
+:eq:`bmc-proof-input-bijection` and is refused rather than published --
+including the case of two distinct members stating the same fact, which has no
+place to go: merging them would give one node two attributions and dropping one
+would leave a member unread.
+
+.. list-table:: Explanation-claim ledger
+   :header-rows: 1
+   :widths: 26 22 26 26
+
+   * - Claim
+     - Implementation
+     - Test
+     - Working query and trace
+   * - :eq:`bmc-core-soundness`: the core alone is unsatisfiable
+     - ``extract_source_core`` in ``pyfcstm/bmc/infeasibility.py``
+     - ``test/bmc/test_infeasibility.py``
+     - ``assume at 1: var("x") == 1; assume at 1: var("x") == 2;`` reports
+       ``Core size: 2`` with the scenario UNSAT
+   * - :eq:`bmc-core-subset-minimality`: every member is load bearing
+     - the minimization loop in ``extract_source_core``
+     - ``test_reduction_and_minimality_stay_coupled`` in
+       ``test/bmc/test_explanation.py``
+     - the same query reports ``Reduction: subset_minimal`` and
+       ``Subset minimality: proven``
+   * - :eq:`bmc-proof-input-binding`: both directions are refuted
+     - ``check_core_bindings`` in ``pyfcstm/bmc/infeasibility.py``
+     - ``test/bmc/test_proof_wiring.py``
+     - the same query publishes both inputs with
+       ``verification_method`` as ``core_binding``
+   * - :eq:`bmc-proof-input-bijection`: one node per member
+     - ``build_domain_proof`` in ``pyfcstm/bmc/proof.py``
+     - ``test_an_input_node_restates_one_member_and_says_so`` and
+       ``test_two_members_stating_one_fact_are_refused_rather_than_merged``
+     - the same query publishes two input nodes for a two-member core, each with
+       one entry in ``item_ids``
+
+The ledger is worth reading against the boundary above: these four claims are
+about the constraints as encoded.  None of them says the encoding matches what
+the author meant, which is why the trust boundary is stated separately.

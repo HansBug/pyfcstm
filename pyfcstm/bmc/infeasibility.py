@@ -1832,7 +1832,11 @@ def explain_infeasibility(
             # The narrative is rebuilt from the graph rather than kept from the
             # formal tier: at proof depth every sentence has to cite the node behind
             # it, which a narrative written without a graph cannot do.
-            steps = linearize_proof(proof, state_names=state_names)
+            steps = linearize_proof(
+                proof,
+                state_names=state_names,
+                core_categories=[item.constraint.category for item in published.items],
+            )
             proof_narrative = BmcConflictNarrative(
                 "complete",
                 steps[-1].text,

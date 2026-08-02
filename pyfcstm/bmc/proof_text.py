@@ -36,7 +36,7 @@ Example::
     'conflict'
 """
 
-from typing import Any, List, Mapping, Optional, Tuple
+from typing import Any, List, Mapping, Optional, Sequence, Tuple
 
 from .explanation import (
     BmcConflictProof,
@@ -112,49 +112,73 @@ def _derived_sentence(
     return "%s %s." % (opening, _clause(fact, names))
 
 
-#: What the closing sentence calls the requirements, by the scope it closed on.
+#: What the closing sentence calls each kind of requirement a core can hold.
 #:
-#: Naming a stage the core does not contain tells the reader to go look at a file
-#: that had nothing to do with the conflict.  ``two_values`` is the case that
-#: showed it: its query carries no ``init`` clause at all, yet the sentence used
-#: to say "these initialization and query requirements".
-#:
-#: Only the scopes a proof currently closes on are listed.  Every initialization
-#: conflict tried so far degrades to a formal explanation before a proof is built,
-#: so an entry for ``initialization_*`` would describe prose nothing emits, and a
-#: test for it would have no public path to drive.  The fallback covers them
-#: without naming a stage; the day a proof closes on that side, this table is where
-#: the wording goes.
-_CLOSING_SUBJECTS = {
-    "assumptions_component": "these query requirements",
-    "assumptions_domain": "these query requirements",
-    "assumptions_prefix": "these initialization and query requirements",
-}
+#: Keyed by the ``category`` prefix a published core item carries, so the sentence
+#: names what the core actually contains rather than what its scope suggests.  An
+#: earlier version keyed on the scope, which was right for the cores that exist
+#: today and would go wrong the moment a scope's cores widened: an
+#: ``assumptions_prefix`` core can hold a transition constraint, and the contract's
+#: own transcript names that as a third thing -- "this initialization, transition
+#: behavior, and query assumption".  Deriving from the items means that sentence
+#: appears on its own the first time such a core is published, instead of the
+#: reader being told to look at two files when three took part.
+#: Each phrase completes "No execution satisfies these ..." on its own and reads
+#: as a list member beside the others, so no entry may carry its own article.
+_CLOSING_ROLE_PHRASES = (
+    ("initial.", "initialization requirements"),
+    ("transition.", "transition requirements"),
+    ("domain.", "frame domain requirements"),
+    ("definedness", "definedness requirements"),
+    ("assumption.", "query requirements"),
+)
 
 
-def _closing_sentence(rule_id: str, scope: str) -> str:
+def _closing_subject(categories: Sequence[str]) -> str:
+    """Name the kinds of requirement a core holds, in the contract's order.
+
+    :param categories: ``constraint.category`` of every published core item.
+    :type categories: Sequence[str]
+    :return: The sentence subject, or a stageless fallback when nothing matched.
+    :rtype: str
+    """
+    named = [
+        phrase
+        for prefix, phrase in _CLOSING_ROLE_PHRASES
+        if any(category.startswith(prefix) for category in categories)
+    ]
+    if not named:
+        return "these requirements"
+    if len(named) == 1:
+        return "these %s" % named[0]
+    if len(named) == 2:
+        return "these %s and %s" % (named[0], named[1])
+    return "these %s, and %s" % (", ".join(named[:-1]), named[-1])
+
+
+def _closing_sentence(rule_id: str, categories: Sequence[str]) -> str:
     """Return the sentence that closes the chain.
 
     It states the scenario is empty and that the property was therefore not
     evaluated -- never that a property failed, which is a different finding entirely.
 
-    The subject is taken from the scope, because that is what decides which stages
-    the core can hold.  A prefix conflict is the one that genuinely spans both: the
-    assumptions are consistent among themselves and with the frame domain, and only
-    the initialized transition prefix rules them out.
+    The subject lists what the published core actually holds.  Naming a stage the
+    core does not contain sends the reader to a file that had no part in the
+    conflict, and omitting one it does contain hides a participant: an
+    ``assumptions_prefix`` core can rest on a transition constraint, which is a third
+    thing beside initialization and the assumptions.
 
     :param rule_id: The rule the contradiction node applied.
     :type rule_id: str
-    :param scope: The published core scope the proof closed on.
-    :type scope: str
+    :param categories: ``constraint.category`` of every published core item.
+    :type categories: Sequence[str]
     :return: The closing sentence.
     :rtype: str
     """
     reason = _CLOSING_PHRASES.get(rule_id, "these requirements cannot all hold")
-    subject = _CLOSING_SUBJECTS.get(scope, "these requirements")
     return (
         "Therefore %s. No execution satisfies %s, and the property was not "
-        "evaluated." % (reason, subject)
+        "evaluated." % (reason, _closing_subject(categories))
     )
 
 
@@ -185,7 +209,9 @@ def _sets_the_scene(node) -> int:
 
 
 def linearize_proof(
-    proof: BmcConflictProof, state_names: Optional[Mapping[int, str]] = None
+    proof: BmcConflictProof,
+    state_names: Optional[Mapping[int, str]] = None,
+    core_categories: Sequence[str] = (),
 ) -> Tuple[BmcReasoningStep, ...]:
     """Read a proof graph as an ordered chain of reasoning steps.
 
@@ -247,6 +273,6 @@ def linearize_proof(
                 _derived_sentence(node.rule_id, node.conclusion, state_names),
             )
         else:
-            kind, text = "conflict", _closing_sentence(node.rule_id, proof.scope)
+            kind, text = "conflict", _closing_sentence(node.rule_id, core_categories)
         steps.append(BmcReasoningStep(kind, node.item_ids, (node.stable_id,), text))
     return tuple(steps)

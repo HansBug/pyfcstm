@@ -358,9 +358,10 @@ def test_a_state_opposition_still_cannot_reach_boolean_complement() -> None:
             "assumptions",
             "these query requirements",
         ),
-        # An ``init`` clause exists here, but the published core holds only frame
-        # assumptions and the domain aggregate, so the subject follows the core
-        # rather than the query text.
+        # An ``init`` clause exists here, but the published core holds frame
+        # assumptions and the domain aggregate and nothing from initialization -- so
+        # the subject names those two and not the initializer the query happens to
+        # carry.
         (
             'init state("Root.A"); '
             'assume at 1: !active("Root.A"); '
@@ -368,7 +369,7 @@ def test_a_state_opposition_still_cannot_reach_boolean_complement() -> None:
             "assume at 1: !terminated(); "
             'check reach <= 2: active("Root.B");',
             "assumptions",
-            "these query requirements",
+            "these frame domain requirements and query requirements",
         ),
         # A prefix conflict is the one scope that genuinely spans both stages: the
         # assumptions agree with each other and with the frame domain, and only the
@@ -378,23 +379,28 @@ def test_a_state_opposition_still_cannot_reach_boolean_complement() -> None:
             'assume at 0: var("x") == 7; '
             'check reach <= 2: active("Root.B");',
             "assumptions",
-            "these initialization and query requirements",
+            "these initialization requirements and query requirements",
         ),
     ],
 )
 def test_the_closing_sentence_names_only_the_stages_the_core_holds(
     query, stage, subject
 ) -> None:
-    """The proof's last sentence must not blame a stage that is not in the core.
+    """The proof's last sentence must name what the core holds, no more and no less.
 
     It used to say "these initialization and query requirements" for every scope,
     including cores whose query carries no ``init`` clause. A reader acting on that
     opens the wrong file.
 
-    The subject follows the scope rather than the query text, which is why the
-    middle case reads as a query conflict despite having an initializer: the core
-    it published holds frame assumptions and the domain aggregate, and nothing from
-    initialization.
+    The subject is derived from the published core's item categories rather than
+    from its scope. Scope was the first fix and was right for the cores that exist
+    today, but an ``assumptions_prefix`` core can also rest on a transition
+    constraint, and a scope-keyed table would keep saying two parts while three took
+    part. Deriving from the items means the third one appears on its own.
+
+    The middle case is why the query text is not the input either: it has an
+    initializer, but the core it published holds frame assumptions and the domain
+    aggregate and nothing from initialization.
     """
     core = _core_formula(query)
     outcome = explain_infeasibility(
@@ -406,6 +412,44 @@ def test_the_closing_sentence_names_only_the_stages_the_core_holds(
     closing = explanation.narrative.reasoning_steps[-1]
     assert closing.kind == "conflict"
     assert "No execution satisfies %s," % subject in closing.text, closing.text
+
+
+@pytest.mark.parametrize(
+    "categories, subject",
+    [
+        (["assumption.frame"], "these query requirements"),
+        (
+            ["initial.variable", "assumption.frame"],
+            "these initialization requirements and query requirements",
+        ),
+        # The shape the contract's own §12.1 transcript closes on, naming transition
+        # behaviour as a third participant beside initialization and the assumptions.
+        # No core published today carries all three, because a prefix core that rests
+        # on a transition constraint degrades before a proof is built -- so this is
+        # the case that has to be driven directly, and it is what makes the wording
+        # appear on its own the day such a core does get published.
+        (
+            ["initial.variable", "transition.step", "assumption.frame"],
+            "these initialization requirements, transition requirements, and query "
+            "requirements",
+        ),
+        (["domain.frame_state"], "these frame domain requirements"),
+        ([], "these requirements"),
+    ],
+)
+def test_the_closing_subject_lists_every_role_the_core_holds(
+    categories, subject
+) -> None:
+    """Each role a core can hold gets named, and the list reads as English.
+
+    Driving the subject builder directly is the only way to cover the three-part
+    shape: it is the wording the contract transcript uses, and no query available
+    today publishes a provable core that spans all three. Covering it here is what
+    stops the sentence from silently staying two-part when that changes.
+    """
+    from pyfcstm.bmc.proof_text import _closing_subject
+
+    assert _closing_subject(categories) == subject
 
 
 def test_kernel_stage_needs_no_probe() -> None:

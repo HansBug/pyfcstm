@@ -53,6 +53,185 @@ if (!htmlPath) {
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
+// Walk the document once and hand back every stream with the dictionary that
+// introduced it and the bytes it holds.
+//
+// Seven fail-opens in this gate came from one mistake: matching PDF syntax
+// against bytes that were not syntax. Each was fixed where it broke -- a string
+// holding `<<` fooled a bracket balancer, `(obj)` and then `(1 0 obj)` fooled an
+// object-header anchor, `(/Length 5)` fooled the length -- and each fix taught
+// one pattern to step over one decoy. But the *choice of where to look* was
+// still made on raw text, by searching backwards from the keyword for the last
+// object header, so a dictionary carrying `% 1 0 obj << /X 1 >>` in a comment
+// still moved it, and the sanitiser, which ran on the span only after that
+// choice was made, never saw the bytes that made it.
+//
+// There is no eighth guard here. A reader going forwards from byte zero knows
+// whether it is inside a string or a comment because it read its way in, so
+// decoy syntax is never syntax to begin with. Dictionary text is accumulated as
+// it is lexed, with string and comment bytes arriving as spaces, which leaves
+// the patterns below nothing to be fooled by.
+//
+// Payloads are stepped over rather than read: they are binary, and a stray `(`
+// in one opens a literal that never closes. On a real 25-stream document an
+// earlier balancer did exactly that and made every dictionary after the first
+// unreadable, which -- because an unreadable dictionary is treated as filtered
+// -- showed up only on the streams that had no filter.
+function scanPdfStreams(raw) {
+  const text = raw.toString('latin1');
+  const streams = [];
+  let dictionary = null;
+  let building = null;
+  let attached = false;
+  let depth = 0;
+  let i = 0;
+  while (i < text.length) {
+    const ch = text[i];
+    // A comment is whitespace to a reader. It reaches no pattern, and it does
+    // not separate a dictionary from the stream it introduces.
+    if (ch === '%') {
+      const start = i;
+      while (i < text.length && text[i] !== '\n' && text[i] !== '\r') i += 1;
+      if (building !== null) building += ' '.repeat(i - start);
+      continue;
+    }
+    // A literal string's contents are data. Parentheses nest, and a backslash
+    // escapes whatever byte follows it.
+    if (ch === '(') {
+      const start = i;
+      let nesting = 0;
+      while (i < text.length) {
+        const c = text[i];
+        if (c === '\\') { i += 2; continue; }
+        if (c === '(') nesting += 1;
+        else if (c === ')' && --nesting === 0) { i += 1; break; }
+        i += 1;
+      }
+      i = Math.min(i, text.length);
+      if (building !== null) building += ' '.repeat(i - start);
+      attached = false;
+      continue;
+    }
+    // A hex string cannot spell `/Length` or `obj` in ASCII, but it holds `>`
+    // and would otherwise close a dictionary early.
+    if (ch === '<' && text[i + 1] !== '<') {
+      const start = i;
+      const stop = text.indexOf('>', i);
+      i = stop < 0 ? text.length : stop + 1;
+      if (building !== null) building += ' '.repeat(i - start);
+      attached = false;
+      continue;
+    }
+    if (ch === '<' && text[i + 1] === '<') {
+      if (depth === 0) building = '';
+      depth += 1;
+      building += '<<';
+      i += 2;
+      continue;
+    }
+    if (ch === '>' && text[i + 1] === '>' && depth > 0) {
+      depth -= 1;
+      building += '>>';
+      i += 2;
+      if (depth === 0) { dictionary = building; building = null; attached = true; }
+      continue;
+    }
+    // The keyword only where it is one. `endstream` ends in the same six
+    // letters, and a name such as `/streamish` starts with them.
+    if (ch === 's' && text.startsWith('stream', i)
+        && !isRegularChar(text[i - 1]) && !isRegularChar(text[i + 6])) {
+      let dataStart = i + 6;
+      // `stream` may be followed by LF or CRLF; keying on LF alone found nothing
+      // at all in a CRLF document and reported a total of zero.
+      if (text[dataStart] === '\r') dataStart += 1;
+      if (text[dataStart] !== '\n') { i += 6; attached = false; continue; }
+      dataStart += 1;
+      // Only the dictionary that directly precedes the keyword introduces it.
+      // Taking the last one seen regardless would read a `/Filter` off some
+      // earlier object that this stream never declared.
+      const own = attached ? dictionary : null;
+      const stated = declaredLength(own);
+      const end = resolveStreamEnd(text, dataStart, stated);
+      streams.push({keyword: i, dataStart, dictionary: own, stated, ...end});
+      i = end.resume;
+      attached = false;
+      continue;
+    }
+    // Anything else is an ordinary byte: dictionary syntax when one is open, and
+    // otherwise the object headers and keywords between them. A non-blank byte
+    // also means another token has come between a dictionary and any stream that
+    // follows it.
+    if (building !== null) building += ch;
+    if (ch !== ' ' && ch !== '\n' && ch !== '\r' && ch !== '\t' && ch !== '\f' && ch !== '\0') {
+      attached = false;
+    }
+    i += 1;
+  }
+  return streams;
+}
+
+function isRegularChar(ch) {
+  return ch !== undefined && /[0-9A-Za-z]/.test(ch);
+}
+
+/**
+ * The byte count a dictionary states directly, or null when it states none.
+ *
+ * `/Length 5 0 R` is an indirect reference whose value lives in another object;
+ * reading `5` from it took five bytes of a forty-byte stream and the truncation
+ * counted as a successful decode. The reference is matched as an optional
+ * trailing group rather than excluded with a lookahead, because `(?!\s+\d+\s+R)`
+ * let the engine backtrack `\d+` from `99` to `9` and then satisfy itself that
+ * what remained was not a reference -- so `/Length 99 0 R` was read as nine.
+ */
+function declaredLength(dictionary) {
+  const match = /\/Length\s+(\d+)(\s+\d+\s+R\b)?/.exec(dictionary || '');
+  if (!match || match[2]) return null;
+  return Number(match[1]);
+}
+
+/**
+ * Where one stream's payload stops, and where scanning picks up after it.
+ *
+ * `endstream` is nine ordinary bytes and an uncompressed payload may hold them
+ * -- a state named `endstream` is enough. Taking the first match cut such a
+ * stream in half and threw the rest away, halo and all, while the tally stayed
+ * balanced.
+ */
+function resolveStreamEnd(text, dataStart, stated) {
+  const first = text.indexOf('endstream', dataStart);
+  if (first < 0) {
+    // A stream with no terminator is still a stream. Reporting nothing here let
+    // a truncated document end with one that nobody had to account for.
+    return {dataEnd: text.length, resume: text.length, code: 'UNTERMINATED'};
+  }
+  if (stated !== null) {
+    const end = dataStart + stated;
+    if (/^[\r\n\s]*endstream/.test(text.slice(end, end + 20))) {
+      const next = text.indexOf('endstream', end);
+      return {dataEnd: end, resume: next + 'endstream'.length, code: null};
+    }
+    // A stated length that does not land on the keyword is not one this side can
+    // act on. Recording the stream as unread is the honest answer; using the
+    // number anyway sliced 5 bytes out of 41 and called the fragment a decode.
+    return {dataEnd: first, resume: first + 'endstream'.length, code: 'LENGTH_MISMATCH'};
+  }
+  // With no size to go by the first `endstream` is a guess. A real one is
+  // followed by the end of its object, so look for one that is; the length may
+  // well be stated in another object, which is not resolved here.
+  let candidate = first;
+  while (candidate >= 0) {
+    const after = text.slice(candidate + 'endstream'.length, candidate + 'endstream'.length + 24);
+    if (/^[\r\n\s]*(endobj|\d+\s+\d+\s+obj|xref|trailer)/.test(after)) {
+      return {dataEnd: candidate, resume: candidate + 'endstream'.length, code: null};
+    }
+    candidate = text.indexOf('endstream', candidate + 'endstream'.length);
+  }
+  // Nothing here says where the data stops. `decoded === total` then fails
+  // loudly instead of scanning a fragment and reporting no halos.
+  return {dataEnd: first, resume: first + 'endstream'.length, code: 'UNVERIFIED_END'};
+}
+
 // Decode a PDF's content streams so the halo scan has something to read.
 //
 // Every stream in the file has to be accounted for. Reading only the ones that
@@ -63,194 +242,45 @@ function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 //
 // Returns {text, total, decoded, skipped} rather than just the text, because
 // the counts are what the assertion needs.
-// Return the dictionary a stream declares, or null when it cannot be read.
-//
-// Anchored to the object that owns the stream rather than to bracket balance.
-// Two attempts at balancing failed for the same reason: the bytes before a
-// stream are not all text. From the second stream onward the look-back window
-// holds the previous stream's compressed payload, where a stray `(` opens a
-// literal that never closes and stray brackets throw the depth off -- on a real
-// 25-stream document that made every single dictionary unreadable, and because
-// an unreadable one is treated as filtered, only the streams with no filter
-// showed it.
-//
-// A stream lives inside `N M obj << ... >> stream`, and between that `obj` and
-// the keyword there is no payload, so the span needs no parsing at all. Bytes
-// from an earlier stream sit before this object's header, which is why the
-// *last* `obj` is the right anchor.
-function streamDictionary(raw, markerStart) {
-  const window = raw.subarray(Math.max(0, markerStart - 4096), markerStart).toString('latin1');
-  // The header shape, not the bare word: `(obj)` inside a string literal was
-  // taken for one, and the span it produced started inside the dictionary --
-  // returning an inner `<< ... >>` with the `/Filter` in front of it cut off, so
-  // a compressed document carrying a halo went through.
-  let header = -1;
-  const anchor = /(^|[^0-9A-Za-z])\d+\s+\d+\s+obj\b/g;
-  for (let m = anchor.exec(window); m !== null; m = anchor.exec(window)) {
-    header = m.index + m[0].length;
-  }
-  if (header < 0) return null;
-  const span = window.slice(header);
-  // The dictionary has to be the whole of what follows the header, or this is
-  // not the shape assumed here and guessing would be worse than declining.
-  //
-  // Both ends, not just the tail. Checking only the tail let `(1 0 obj)` inside a
-  // string literal act as a header: the span then began in the middle of the real
-  // dictionary, `indexOf('<<')` found a nested one, and the `/Filter` in front of
-  // it was cut off -- so a compressed stream carrying a halo was read as raw
-  // operators and passed.
-  if (!span.trimStart().startsWith('<<')) return null;
-  const open = span.indexOf('<<');
-  const close = span.lastIndexOf('>>');
-  if (open < 0 || close < open || span.slice(close + 2).trim() !== '') return null;
-  return sanitizeDictionary(span.slice(open, close + 2));
-}
-
-// Blank out what a pattern must not see inside a dictionary.
-//
-// Comments are whitespace to a PDF reader, and the contents of a string are
-// data rather than syntax. Four separate patterns here have been fooled by one
-// or the other -- `(a << b)`, `(obj)`, `(1 0 obj)` and `(/Length 5)` each broke a
-// different one, each was patched where it broke, and the next pattern was still
-// reading raw text. Sanitising once removes the family rather than its members.
-//
-// Lengths are preserved so an offset into the result still means what it did.
-function sanitizeDictionary(text) {
-  let out = '';
-  let depth = 0;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (depth > 0) {
-      if (ch === '\\') { out += '  '; i += 1; continue; }
-      if (ch === '(') depth += 1;
-      else if (ch === ')') depth -= 1;
-      out += ' ';
-      continue;
-    }
-    if (ch === '(') { depth = 1; out += ' '; continue; }
-    if (ch === '%') {
-      while (i < text.length && text[i] !== '\n' && text[i] !== '\r') { out += ' '; i += 1; }
-      if (i < text.length) out += text[i];
-      continue;
-    }
-    out += ch;
-  }
-  return out;
-}
-
 function inflatePdfStreams(base64) {
   const raw = Buffer.from(String(base64 || ''), 'base64');
-  const endMarker = Buffer.from('endstream');
-  const keyword = Buffer.from('stream');
+  const streams = scanPdfStreams(raw);
   const chunks = [];
   const skipped = [];
-  let total = 0;
   let decoded = 0;
-  let offset = 0;
-  while (true) {
-    // `stream` may be followed by LF or CRLF; keying on LF alone found nothing
-    // at all in a CRLF document and reported a total of zero.
-    const markerStart = raw.indexOf(keyword, offset);
-    if (markerStart < 0) break;
-    // `endstream` ends in `stream`, and after the skip below the scan can land on
-    // that tail and count the bytes following it as a fourth stream. Require the
-    // keyword to start a word, so only a real `stream` marker matches.
-    const previous = markerStart > 0 ? raw[markerStart - 1] : 0x20;
-    const isLetter = (previous >= 0x41 && previous <= 0x5a) || (previous >= 0x61 && previous <= 0x7a);
-    if (isLetter) { offset = markerStart + keyword.length; continue; }
-    let dataStart = markerStart + keyword.length;
-    if (raw[dataStart] === 13) dataStart += 1;
-    if (raw[dataStart] !== 10) { offset = markerStart + keyword.length; continue; }
-    dataStart += 1;
-    let dataEnd = raw.indexOf(endMarker, dataStart);
-    if (dataEnd < 0) {
-      // A stream with no terminator is still a stream. Breaking before counting
-      // it let a truncated document end with one nobody had to account for.
-      total += 1;
-      skipped.push({offset: markerStart, bytes: raw.length - dataStart, code: 'UNTERMINATED'});
-      break;
+  for (const stream of streams) {
+    if (stream.code !== null) {
+      skipped.push({
+        offset: stream.keyword,
+        bytes: Math.max(0, stream.dataEnd - stream.dataStart),
+        code: stream.code,
+      });
+      continue;
     }
-    total += 1;
-    // `/Length` when the dictionary states it directly, because the payload is
-    // binary and its last byte is as likely to be 0x0A as anything else. Peeling
-    // every trailing newline took a byte off such a stream and zlib then reported
-    // `Z_BUF_ERROR` for a document that was perfectly well formed. Failing that,
-    // peel one EOL: the spec puts one before `endstream` and it is not data.
-    // `(?!\s+\d+\s+R)` because `/Length 5 0 R` is an indirect reference whose
-    // value lives in another object; reading `5` from it took five bytes of a
-    // forty-byte stream, and the truncation counted as a successful decode.
-    // The dictionary arrives sanitised, so `/Length` inside a string or behind a
-    // comment is no longer visible to this pattern.
-    const declared = /\/Length\s+(\d+)(?!\s+\d+\s+R)/.exec(streamDictionary(raw, markerStart) || '');
-    // `endstream` is nine ordinary bytes, and an uncompressed payload may contain
-    // them -- a state named `endstream` is enough. Taking the first match then
-    // cut the stream in half and threw away the rest, halo and all, while the
-    // tally still balanced. Where the length is stated, it says where the data
-    // ends; the keyword is only expected to follow it.
-    if (declared) {
-      // A stated length that does not land on the keyword is not a length this
-      // side can act on -- it may be from a string the sanitiser missed, or the
-      // document may simply be wrong. Recording the stream as unread is the
-      // honest answer; using the number anyway sliced 5 bytes out of 41 and
-      // called the fragment a clean decode.
-      const stated = dataStart + Number(declared[1]);
-      const after = raw.subarray(stated, Math.min(raw.length, stated + 20)).toString('latin1');
-      if (!/^[\r\n\s]*endstream/.test(after)) {
-        skipped.push({offset: markerStart, bytes: dataEnd - dataStart, code: 'LENGTH_MISMATCH'});
-        offset = dataEnd + endMarker.length;
-        continue;
-      }
-      dataEnd = raw.indexOf(endMarker, stated);
-    } else {
-      // With no size to go by, the first `endstream` is a guess, and a payload
-      // holding those nine bytes makes it the wrong one -- the tail, halo and
-      // all, then disappears while the tally still balances. A real end is
-      // followed by the end of its object, so look for one that is; the length
-      // may well be stated in another object, which is not resolved here.
-      let candidate = dataEnd;
-      let verified = -1;
-      while (candidate >= 0) {
-        const after = raw.subarray(candidate + endMarker.length,
-          Math.min(raw.length, candidate + endMarker.length + 24)).toString('latin1');
-        if (/^[\r\n\s]*(endobj|\d+\s+\d+\s+obj|xref|trailer)/.test(after)) { verified = candidate; break; }
-        candidate = raw.indexOf(endMarker, candidate + endMarker.length);
-      }
-      if (verified < 0) {
-        // Nothing here says where the data stops. Recording it as unread is the
-        // honest answer; the caller's `decoded === total` then fails loudly
-        // instead of scanning a fragment and reporting no halos.
-        skipped.push({offset: markerStart, bytes: dataEnd - dataStart, code: 'UNVERIFIED_END'});
-        offset = dataEnd + endMarker.length;
-        continue;
-      }
-      dataEnd = verified;
+    let stop = stream.dataEnd;
+    if (stream.stated === null) {
+      // A stated length is exact, and the payload's last byte is as likely to be
+      // 0x0A as anything else -- peeling one took a byte off a well-formed
+      // stream and zlib then reported `Z_BUF_ERROR` for it. Without one, peel a
+      // single EOL: the spec puts one before `endstream` and it is not data.
+      if (stop > stream.dataStart && raw[stop - 1] === 10) stop -= 1;
+      if (stop > stream.dataStart && raw[stop - 1] === 13) stop -= 1;
     }
-    let compressed;
-    if (declared && dataStart + Number(declared[1]) <= dataEnd) {
-      compressed = raw.subarray(dataStart, dataStart + Number(declared[1]));
-    } else {
-      let stop = dataEnd;
-      if (stop > dataStart && raw[stop - 1] === 10) stop -= 1;
-      if (stop > dataStart && raw[stop - 1] === 13) stop -= 1;
-      compressed = raw.subarray(dataStart, stop);
-    }
-    // A stream that declares no filter is stored as-is, and reading it needs no
+    const payload = raw.subarray(stream.dataStart, stop);
+    // A stream that declares no filter is stored as-is and reading it needs no
     // decoder. Handing it to zlib anyway made a legal uncompressed document look
-    // like one this side could not read, while the Python check counted the same
-    // bytes as decoded -- two gates claiming a shared invariant and disagreeing
-    // on the same file.
+    // unreadable here while the Python check counted the same bytes as decoded
+    // -- two gates claiming a shared invariant and disagreeing on one file.
     //
-    // When the declaration cannot be read the stream is treated as filtered, so
+    // When the dictionary cannot be read the stream is treated as filtered, so
     // an unfamiliar shape becomes a loud skip rather than a silent pass.
-    const dictionary = streamDictionary(raw, markerStart);
-    if (dictionary !== null && !dictionary.includes('/Filter')) {
-      chunks.push(Buffer.from(compressed));
+    if (stream.dictionary !== null && !stream.dictionary.includes('/Filter')) {
+      chunks.push(Buffer.from(payload));
       decoded += 1;
-      offset = dataEnd + endMarker.length;
       continue;
     }
     try {
-      chunks.push(zlib.inflateSync(compressed));
+      chunks.push(zlib.inflateSync(payload));
       decoded += 1;
     } catch (error) {
       // zlib rejects a payload that is not deflate data, which is what a stream
@@ -260,11 +290,15 @@ function inflatePdfStreams(base64) {
       if (!(error instanceof Error) || typeof error.code !== 'string' || !error.code.startsWith('Z_')) {
         throw error;
       }
-      skipped.push({offset: markerStart, bytes: compressed.length, code: error.code});
+      skipped.push({offset: stream.keyword, bytes: payload.length, code: error.code});
     }
-    offset = dataEnd + endMarker.length;
   }
-  return {text: Buffer.concat(chunks).toString('latin1'), total, decoded, skipped};
+  return {
+    text: Buffer.concat(chunks).toString('latin1'),
+    total: streams.length,
+    decoded,
+    skipped,
+  };
 }
 
 // Prove the stream tally reports what it exists to catch.
@@ -399,15 +433,6 @@ function selfCheckStreamTally() {
     ['a string literal shaped like a header', Buffer.concat([
       Buffer.from('%PDF-1.3\n1 0 obj\n<< /Filter /FlateDecode /Note (1 0 obj) /DecodeParms << /X 1 >> >>\nstream\n'),
       zlib.deflateSync(halo), Buffer.from('\nendstream\nendobj\n')]), false],
-    // `endstream` is nine ordinary bytes and an uncompressed payload may hold
-    // them. Searching for the keyword cut the stream in half and dropped the
-    // halo in its tail while the tally still balanced. This is the case that
-    // pins `/Length`: without it there is nothing else to find the end with.
-    // The same payload with the length in another object, which is legal and
-    // which this side does not resolve. With no size to go by the first
-    // `endstream` was taken on faith, the tail went missing, and the halo with
-    // it. A real end is followed by the end of its object; when none is, the
-    // stream is recorded as unread rather than scanned in part.
     // `/Length` inside a string value. The pattern read the decoy, took 5 bytes
     // of 41, and reported a clean fragment. This is the branch a real document
     // takes -- every viewer PDF states its length directly -- so a guard that
@@ -421,14 +446,14 @@ function selfCheckStreamTally() {
       halo, Buffer.from('\nendstream\nendobj\n')]), false],
     // A stream with no terminator is still a stream; breaking before counting it
     // let a truncated document end with one nobody had to account for.
-    //
-    // Removing either the count or the sanitiser leaves this suite green, and
-    // that is defence in depth rather than coverage: a decoy length is also
-    // stopped by the mismatch guard, and an uncounted stream also fails the
-    // `total > 0` test. Neither has a case that pins it alone. Saying so here
-    // beats a case that passes for a reason it does not name.
     ['an unterminated final stream', Buffer.concat([
       Buffer.from('%PDF-1.3\n1 0 obj\n<< /Length 5 >>\nstream\n'), halo]), false],
+    // The case above also fails the `total > 0` test, so on its own it lets the
+    // count be deleted in silence. Here a readable stream supplies the total and
+    // only counting the truncated one keeps its halo in the reckoning.
+    ['an unterminated stream after a readable one', Buffer.concat([
+      Buffer.from('%PDF-1.3\n'), flate(Buffer.from('BT ET\n')),
+      Buffer.from('2 0 obj\n<< /Length 5 >>\nstream\n'), halo]), false],
     ['an indirect length beside an embedded end keyword', (() => {
       const body = Buffer.concat([Buffer.from('BT (endstream) Tj ET\n'), halo]);
       return Buffer.concat([
@@ -442,6 +467,75 @@ function selfCheckStreamTally() {
         Buffer.from('%PDF-1.3\n1 0 obj\n<< /Length ' + body.length + ' >>\nstream\n'),
         body, Buffer.from('\nendstream\nendobj\n')]);
     })(), false],
+    // Where the dictionary is found, not just what is read out of it. Both of
+    // these carry a whole fake object header -- one in a comment, one in a
+    // string -- and both moved a backwards search for the last `N M obj`
+    // forwards into the dictionary, so the span began after the `/Filter` and a
+    // compressed halo was scanned as raw operators. Blanking the decoy could not
+    // help: the choice of where to blank was made from the raw bytes that held
+    // it. A reader going forwards is never inside either one by accident.
+    ['a comment holding a whole object header', Buffer.concat([
+      Buffer.from('%PDF-1.4\n1 0 obj\n<< /Filter /FlateDecode\n% 1 0 obj << /X 1 >>\n>>\nstream\n'),
+      zlib.deflateSync(halo), Buffer.from('\nendstream\nendobj\n')]), false],
+    ['a string holding a whole object header', Buffer.concat([
+      Buffer.from('%PDF-1.4\n1 0 obj\n<< /Filter /FlateDecode /Note (1 0 obj << /X 1 >>) >>\nstream\n'),
+      zlib.deflateSync(halo), Buffer.from('\nendstream\nendobj\n')]), false],
+    // Neither case above needs comments to be stepped over -- read as syntax
+    // they still leave the `/Filter` where the scan can see it. Comments are
+    // stepped over for the opposite reason, and this is the case that says so:
+    // a `>>` inside one closes the dictionary early, and the stream is then left
+    // with no dictionary it can call its own. That direction is safe -- an
+    // unreadable dictionary counts as filtered, so this legal document is
+    // reported unreadable rather than passed -- which is why it takes a document
+    // that *should* be accepted to notice at all.
+    ['a comment holding a closing bracket', Buffer.from(
+      '%PDF-1.4\n1 0 obj\n<< /Length 6\n% a note >> here\n>>\nstream\nBT ET\nendstream\nendobj\n'), true],
+    // A hex string is stepped over for the same reason and shows it the same
+    // way: `<A1B2>` sits flush against the brackets that close the dictionary,
+    // and read as ordinary bytes its own `>` pairs with one of them.
+    ['a hex string flush against the closing brackets', Buffer.from(
+      '%PDF-1.4\n1 0 obj\n<< /Length 6 /ID <A1B2>>>\nstream\nBT ET\nendstream\nendobj\n'), true],
+    // `Downstream` ends in the keyword and a newline may follow it, which is all
+    // the marker itself requires. Without a boundary the scan starts a stream
+    // inside the dictionary and swallows the object that really has one.
+    ['a name ending in the keyword before a newline', Buffer.from(
+      '%PDF-1.4\n1 0 obj\n<< /Type /Downstream\n>>\nendobj\n'
+      + '2 0 obj\n<< /Length 6 >>\nstream\nBT ET\nendstream\nendobj\n'), true],
+    // Payloads are stepped over, not read. This one shows a text operator with
+    // an unbalanced `(` -- ordinary content for a drawing -- opening a literal
+    // that runs to the end of the file and takes the next object's `stream`
+    // keyword with it. That stream is then never found, never counted and never
+    // searched, and the halo it carries goes with it while the tally balances.
+    ['an unbalanced bracket in a payload before another stream', Buffer.concat([
+      Buffer.from('%PDF-1.4\n1 0 obj\n<< /Length 19 >>\nstream\nBT (unclosed Tj ET\nendstream\nendobj\n'),
+      Buffer.from('2 0 obj\n<< /Length ' + halo.length + ' >>\nstream\n'),
+      halo, Buffer.from('\nendstream\nendobj\n')]), false],
+    // A reference whose object number has more than one digit. Excluding
+    // `N M R` with a negative lookahead let the engine backtrack the length from
+    // `99` to `9`, decide `9 0 R` was not a reference after all, and read nine
+    // bytes of the stream -- stopping just before the halo.
+    ['a multi-digit indirect length', (() => {
+      const body = Buffer.concat([Buffer.from('123456789endstream\n'), halo]);
+      return Buffer.concat([
+        Buffer.from('%PDF-1.4\n1 0 obj\n<< /Length 99 0 R >>\nstream\n'), body,
+        Buffer.from('\nendstream\nendobj\n99 0 obj\n' + body.length + '\nendobj\n')]);
+    })(), false],
+    // The decoy-length case above is also caught by the mismatch guard, so it
+    // does not pin string handling on its own. Here the decoy lands exactly on
+    // an `endstream` the payload carries, so reading it looks entirely sound --
+    // and the halo behind it disappears.
+    ['a decoy length that lands on an embedded end keyword', (() => {
+      const body = Buffer.concat([Buffer.from('123456789endstream\n'), halo]);
+      return Buffer.concat([
+        Buffer.from('%PDF-1.4\n1 0 obj\n<< /Note (/Length 9) /Length ' + body.length + ' >>\nstream\n'),
+        body, Buffer.from('\nendstream\nendobj\n')]);
+    })(), false],
+    // A dictionary introduces the stream that directly follows it and no other.
+    // Reaching back for the last one seen would read this catalogue's absent
+    // `/Filter` and hand a deflate payload to the scanner as raw operators.
+    ['a stream whose own object states no dictionary', Buffer.concat([
+      Buffer.from('%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n2 0 obj\nstream\n'),
+      zlib.deflateSync(halo), Buffer.from('\nendstream\nendobj\n')]), false],
   ];
   for (const [label, buf, shouldAccept] of cases) {
     if (accepted(buf) !== shouldAccept) {

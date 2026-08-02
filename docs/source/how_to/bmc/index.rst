@@ -553,3 +553,234 @@ bug rather than rewritten until it becomes UNSAT.
 
 **Reference.** See :doc:`../../reference/bmc_query/index` for legal and illegal
 forms and :doc:`../../reference/bmc_results/index` for error streams.
+
+12. Choose an explanation depth
+-------------------------------
+
+**CLI.**
+
+.. code-block:: bash
+
+   python -m pyfcstm bmc \
+       -i bmc_tasks.fcstm \
+       -q infeasible_two_values.fbmcq \
+       --explain-infeasibility formal --color never
+
+**FBMCQ.**
+
+.. literalinclude:: infeasible_two_values.fbmcq
+   :language: text
+
+**What it does.** ``--explain-infeasibility`` asks why an infeasible scenario is
+infeasible.  ``none`` (the default) does no extra solver work.  ``formal`` adds a
+classification and a source core.  ``proof`` additionally builds a checked
+step-by-step derivation.  The depth never changes the verdict, so raising it
+cannot turn an inconclusive run into a conclusive one -- it only adds diagnosis.
+
+**Expected output.** ``formal`` reports ``PARTIAL FORMAL DOMAIN EXPLANATION``
+with the classification, the core members and their source positions.  Re-running
+the same query with ``--explain-infeasibility proof`` reports
+``COMPLETE VERIFIED DOMAIN PROOF`` and a numbered derivation.  Both exit ``3``.
+
+**File side effect.** None without ``-o``.
+
+**Failure boundary.** ``proof`` costs extra solver checks: each input node is
+verified in both directions and each derived step is re-derived independently.
+On this fixture the explanation took roughly 10 ms, but a large core with many
+members will cost more.  Use ``none`` in a CI gate that only needs the verdict,
+``formal`` when a human will read the failure, and ``proof`` when the reasoning
+itself has to be auditable.
+
+**Next diagnostic step.** If ``proof`` returns ``achieved_mode`` as ``formal``,
+go to task 15.
+
+**Reference.** See :doc:`../../reference/bmc_results/index` for the option
+contract and the block layouts.
+
+
+13. Read a conflict core and act on it
+--------------------------------------
+
+**CLI.**
+
+.. code-block:: bash
+
+   python -m pyfcstm bmc \
+       -i bmc_tasks.fcstm \
+       -q infeasible_cross_step.fbmcq \
+       --explain-infeasibility formal --color never
+
+**FBMCQ.**
+
+.. literalinclude:: infeasible_cross_step.fbmcq
+   :language: text
+
+**What it does.** The core is the set of clauses that together make the scenario
+infeasible, each with the position it was written at.
+
+**Expected output.** On the verified run:
+
+.. code-block:: text
+
+   Classification: assumptions conflict with the feasible prefix
+
+   Conflict constraints:
+     1. infeasible_cross_step.fbmcq:2:1-2:28
+        assume at 1: var("x") == 3;
+     2. infeasible_cross_step.fbmcq:1:1-1:38
+        init state("Root.Idle") where x == 0;
+     3. bmc_tasks.fcstm:1:1-1:15
+        def int x = 0;
+
+Read it as: the classification says which file to open, and the members say which
+lines.  Here the assumption at frame 1 disagrees with what the initializer and
+the declaration force, so either the ``assume`` value or the initial value has to
+change.
+
+**File side effect.** None without ``-o``.
+
+**Failure boundary.** A core is only guaranteed *sufficient* unless the report
+says otherwise.  Check the ``Reduction:`` line: ``raw`` may include members that
+are not part of the conflict, ``partial_minimized`` was cut short, and only
+``subset_minimal`` guarantees every listed member is load bearing.  Editing a
+member of a ``raw`` core may change nothing.
+
+**Next diagnostic step.** For the reasoning that links the members, raise the
+depth to ``proof`` and read task 14.
+
+**Reference.** See :doc:`../../explanations/bmc_solving/index` for why sufficient
+is not minimal.
+
+
+14. Read a proof and trace a sentence to a clause
+-------------------------------------------------
+
+**CLI.**
+
+.. code-block:: bash
+
+   python -m pyfcstm bmc \
+       -i bmc_tasks.fcstm \
+       -q infeasible_two_values.fbmcq \
+       --explain-infeasibility proof --json -o /tmp/bmc-proof.json
+
+**What it does.** At ``proof`` depth the narrative is the proof read in
+dependency order, and every sentence names the node behind it.  The JSON keeps
+both, so a sentence and its checked step can be reached from each other.
+
+**Expected output.** stdout carries the numbered derivation; the JSON at
+``result.feasibility.explanation.proof`` carries the graph:
+
+.. code-block:: text
+
+   proof.input.0000   input          source_fact               core_binding
+   proof.input.0001   input          source_fact               core_binding
+   proof.step.0002    contradiction  incompatible_equalities   rule_checker
+
+Two inputs, one per core member, each verified against the member it restates;
+one root, re-derived by an independent checker.  ``root_id`` is
+``proof.step.0002``, ``input_minimality`` is ``subset_minimal``,
+``graph_minimality`` is ``dependency_pruned``, and ``verification_status`` is
+``verified``.
+
+**File side effect.** ``/tmp/bmc-proof.json`` contains the whole result.
+
+**Failure boundary.** A verified proof says each step follows from the clauses
+named beside it.  It does not say the encoding matches what you meant -- that is
+the same boundary replay draws for a witness.  And the closing sentence reports
+that the property was *not evaluated*; it is not a counterexample.
+
+**Next diagnostic step.** If ``proof`` was requested but the block says
+``achieved formal``, read task 15.
+
+**Reference.** See :doc:`../../reference/bmc_results/index` for the node
+vocabulary and what each verification method checks.
+
+
+15. Handle a degraded or timed-out explanation
+----------------------------------------------
+
+**CLI.**
+
+.. code-block:: bash
+
+   python -m pyfcstm bmc \
+       -i bmc_tasks.fcstm \
+       -q infeasible_cross_step.fbmcq \
+       --explain-infeasibility proof --color never
+
+**What it does.** The explanation reports the depth it reached, not the depth
+that was asked for.  This query's conflict only appears after accumulating
+across a step, so no rule in the catalog closes it.
+
+**Expected output.** On the verified run:
+
+.. code-block:: text
+
+   Explanation: PARTIAL FORMAL DOMAIN EXPLANATION
+   Explanation depth: requested proof, achieved formal
+   Classification: assumptions conflict with the feasible prefix
+   ...
+   Reason: the formal explanation is complete, but no rule in the catalog closes
+   this core.
+
+In JSON, ``requested_mode`` is ``proof``, ``achieved_mode`` is ``formal``,
+``status`` is ``partial``, and ``proof`` is ``null``.
+
+**File side effect.** None without ``-o``.
+
+**Failure boundary.** Degradation is not an error and does not change the exit
+status, so a consumer must compare ``requested_mode`` with ``achieved_mode``
+rather than assume ``proof`` is present.  A missing ``proof`` key means the depth
+was not reached, not that the run failed.  Note also that the formal narrative
+here names the initial state and both conflicting values -- for cross-step
+conflicts it says more than a proof built without the intermediate facts could.
+
+**Next diagnostic step.** Read ``reason``.  ``no rule in the catalog closes this
+core`` is a capability boundary and will not change by retrying.  ``timeout`` or
+``unknown`` in ``status`` is a budget problem: retry with a larger
+``--timeout-ms``, or drop to ``formal``.
+
+**Reference.** See :doc:`../../explanations/bmc_solving/index` for why some
+conflicts have no proof.
+
+
+16. Gate CI on an explanation without scraping text
+---------------------------------------------------
+
+**CLI.**
+
+.. code-block:: bash
+
+   python -m pyfcstm bmc \
+       -i bmc_tasks.fcstm \
+       -q infeasible_two_values.fbmcq \
+       --explain-infeasibility proof --color never \
+       --json -o /tmp/bmc-gate.json
+   python - <<'PY'
+   import json
+   report = json.load(open("/tmp/bmc-gate.json"))
+   explanation = report["result"]["feasibility"]["explanation"]
+   print(explanation["requested_mode"], explanation["achieved_mode"])
+   print(explanation["status"], explanation["classification"])
+   PY
+
+**What it does.** Reads the explanation through the versioned JSON contract
+instead of the human report, which is what a gate should depend on.
+
+**Expected output.** ``proof proof`` then ``complete
+assumptions_self_conflict``.
+
+**File side effect.** ``/tmp/bmc-gate.json`` is written atomically.
+
+**Failure boundary.** ``explanation`` is ``null`` at ``none`` depth, so a gate
+must handle that rather than index into it.  Human wording and ``elapsed_ms`` are
+not contracts and must not be asserted on; the enumerated fields are.  ANSI
+decoration never reaches JSON or ``--output`` files regardless of ``--color``.
+
+**Next diagnostic step.** To fail a build only on a specific conflict family,
+compare ``classification`` against the closed list rather than matching the
+printed phrase.
+
+**Reference.** See :doc:`../../reference/bmc_results/index` for JSON nullability
+and the schema.

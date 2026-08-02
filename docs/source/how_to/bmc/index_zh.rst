@@ -512,3 +512,212 @@ BMC 哨兵文本的回溯是实现失败，应作为缺陷报告，不能改写�
 
 **参考。** 合法与非法形式见 :doc:`../../reference/bmc_query/index_zh`，错误流见
 :doc:`../../reference/bmc_results/index_zh`。
+
+12. 选择解释深度
+----------------
+
+**CLI。**
+
+.. code-block:: bash
+
+   python -m pyfcstm bmc \
+       -i bmc_tasks.fcstm \
+       -q infeasible_two_values.fbmcq \
+       --explain-infeasibility formal --color never
+
+**FBMCQ。**
+
+.. literalinclude:: infeasible_two_values.fbmcq
+   :language: text
+
+**它做什么。** ``--explain-infeasibility`` 询问"为什么这个不可行场景不可行"。
+``none``\ （默认）不增加求解工作；``formal`` 增加分类与源组冲突核；``proof`` 再额外
+构造一份逐步核验过的推导。该深度从不改变判定，所以提高它无法把不确定的运行变成
+确定的——它只增加诊断信息。
+
+**预期输出。** ``formal`` 报告 ``PARTIAL FORMAL DOMAIN EXPLANATION``，含分类、
+冲突核成员及其源位置。同一查询改用 ``--explain-infeasibility proof`` 则报告
+``COMPLETE VERIFIED DOMAIN PROOF`` 与编号推导。两者都退出 ``3``。
+
+**文件副作用。** 不带 ``-o`` 时没有。
+
+**失败边界。** ``proof`` 有额外求解开销：每个 ``input`` 节点做双向核验，每个
+``derived`` 步骤独立重新推导。在本 fixture 上解释耗时约 10 ms，但成员众多的大冲突核
+会更贵。只需要判定的 CI 门用 ``none``，有人要读失败原因时用 ``formal``，推理本身需要
+可审计时用 ``proof``。
+
+**下一步诊断。** 若 ``proof`` 返回的 ``achieved_mode`` 是 ``formal``，转任务 15。
+
+**参考。** 选项契约与区块布局见 :doc:`../../reference/bmc_results/index_zh`。
+
+
+13. 读冲突核并据此行动
+----------------------
+
+**CLI。**
+
+.. code-block:: bash
+
+   python -m pyfcstm bmc \
+       -i bmc_tasks.fcstm \
+       -q infeasible_cross_step.fbmcq \
+       --explain-infeasibility formal --color never
+
+**FBMCQ。**
+
+.. literalinclude:: infeasible_cross_step.fbmcq
+   :language: text
+
+**它做什么。** 冲突核是那些合在一起让场景不可行的子句，每个都带有它被写下的位置。
+
+**预期输出。** 实测运行给出：
+
+.. code-block:: text
+
+   Classification: assumptions conflict with the feasible prefix
+
+   Conflict constraints:
+     1. infeasible_cross_step.fbmcq:2:1-2:28
+        assume at 1: var("x") == 3;
+     2. infeasible_cross_step.fbmcq:1:1-1:38
+        init state("Root.Idle") where x == 0;
+     3. bmc_tasks.fcstm:1:1-1:15
+        def int x = 0;
+
+读法是：分类告诉你该打开哪个文件，成员告诉你该看哪几行。这里帧 1 的假设与初始化器
+和声明所强制的值不一致，所以要么改 ``assume`` 的取值，要么改初始值。
+
+**文件副作用。** 不带 ``-o`` 时没有。
+
+**失败边界。** 除报告另有说明，冲突核只保证\ *可靠*\ 。要看 ``Reduction:`` 行：
+``raw`` 可能包含不属于该冲突的成员，``partial_minimized`` 是中途停下的，只有
+``subset_minimal`` 保证列出的每个成员都承重。改动 ``raw`` 核里的某个成员可能毫无
+效果。
+
+**下一步诊断。** 想看串起这些成员的推理，把深度提到 ``proof`` 并读任务 14。
+
+**参考。** 为什么可靠不等于极小，见
+:doc:`../../explanations/bmc_solving/index_zh`。
+
+
+14. 读证明并把一句话追回到子句
+------------------------------
+
+**CLI。**
+
+.. code-block:: bash
+
+   python -m pyfcstm bmc \
+       -i bmc_tasks.fcstm \
+       -q infeasible_two_values.fbmcq \
+       --explain-infeasibility proof --json -o /tmp/bmc-proof.json
+
+**它做什么。** 在 ``proof`` 深度，叙述就是按依赖顺序读出的证明，每句话都点名它背后
+的节点。JSON 同时保留两者，因此一句话与它对应的已核验步骤可以互相到达。
+
+**预期输出。** 标准输出给出编号推导；JSON 的
+``result.feasibility.explanation.proof`` 给出图：
+
+.. code-block:: text
+
+   proof.input.0000   input          source_fact               core_binding
+   proof.input.0001   input          source_fact               core_binding
+   proof.step.0002    contradiction  incompatible_equalities   rule_checker
+
+两个 ``input``，一个冲突核成员一个，各自与它所重述的成员做过核验；一个根，由独立
+检查器重新推导。``root_id`` 为 ``proof.step.0002``，``input_minimality`` 为
+``subset_minimal``，``graph_minimality`` 为 ``dependency_pruned``，
+``verification_status`` 为 ``verified``。
+
+**文件副作用。** ``/tmp/bmc-proof.json`` 包含完整结果。
+
+**失败边界。** 已核验的证明说的是每一步都从旁边点名的子句推出。它没有说编码符合你
+的本意——这与重放为见证划出的边界是同一条。另外，收尾那句话报告的是属性\ *未被求值*\ ；
+它不是反例。
+
+**下一步诊断。** 若请求了 ``proof`` 而区块显示 ``achieved formal``，读任务 15。
+
+**参考。** 节点词表与各核验方法检查了什么，见
+:doc:`../../reference/bmc_results/index_zh`。
+
+
+15. 处理降级或超时的解释
+------------------------
+
+**CLI。**
+
+.. code-block:: bash
+
+   python -m pyfcstm bmc \
+       -i bmc_tasks.fcstm \
+       -q infeasible_cross_step.fbmcq \
+       --explain-infeasibility proof --color never
+
+**它做什么。** 解释报告的是它实际达到的深度，而不是被请求的深度。这个查询的冲突只在
+跨一步累加之后才出现，所以规则目录中没有规则能闭合它。
+
+**预期输出。** 实测运行给出：
+
+.. code-block:: text
+
+   Explanation: PARTIAL FORMAL DOMAIN EXPLANATION
+   Explanation depth: requested proof, achieved formal
+   Classification: assumptions conflict with the feasible prefix
+   ...
+   Reason: the formal explanation is complete, but no rule in the catalog closes
+   this core.
+
+在 JSON 中，``requested_mode`` 为 ``proof``，``achieved_mode`` 为 ``formal``，
+``status`` 为 ``partial``，``proof`` 为 ``null``。
+
+**文件副作用。** 不带 ``-o`` 时没有。
+
+**失败边界。** 降级不是错误，也不改变退出状态，所以消费方必须比较
+``requested_mode`` 与 ``achieved_mode``，而不能假定 ``proof`` 一定存在。缺失
+``proof`` 键意味着没有达到该深度，不意味着运行失败。另外注意，这里的 ``formal``
+叙述点名了初始状态和两个冲突取值——对跨步冲突，它说得比缺少中间事实的证明更多。
+
+**下一步诊断。** 读 ``reason``。``no rule in the catalog closes this core`` 是能力
+边界，重试不会改变它。``status`` 里的 ``timeout`` 或 ``unknown`` 是预算问题：用更大
+的 ``--timeout-ms`` 重试，或降到 ``formal``。
+
+**参考。** 为什么有些冲突没有证明，见
+:doc:`../../explanations/bmc_solving/index_zh`。
+
+
+16. 在 CI 中基于解释设门而不抓取文本
+------------------------------------
+
+**CLI。**
+
+.. code-block:: bash
+
+   python -m pyfcstm bmc \
+       -i bmc_tasks.fcstm \
+       -q infeasible_two_values.fbmcq \
+       --explain-infeasibility proof --color never \
+       --json -o /tmp/bmc-gate.json
+   python - <<'PY'
+   import json
+   report = json.load(open("/tmp/bmc-gate.json"))
+   explanation = report["result"]["feasibility"]["explanation"]
+   print(explanation["requested_mode"], explanation["achieved_mode"])
+   print(explanation["status"], explanation["classification"])
+   PY
+
+**它做什么。** 通过带版本的 JSON 契约读解释，而不是读人类报告——门应该依赖前者。
+
+**预期输出。** 先是 ``proof proof``，然后是 ``complete
+assumptions_self_conflict``。
+
+**文件副作用。** ``/tmp/bmc-gate.json`` 被原子写入。
+
+**失败边界。** 在 ``none`` 深度下 ``explanation`` 为 ``null``，所以门必须处理这种
+情况而不是直接索引进去。人类措辞与 ``elapsed_ms`` 不是契约，不能对它们断言；枚举
+字段才是。无论 ``--color`` 如何设置，ANSI 装饰都不会进入 JSON 或 ``--output``
+文件。
+
+**下一步诊断。** 若只想对某一类冲突失败构建，请把 ``classification`` 与封闭词表
+比较，而不是匹配打印出来的短语。
+
+**参考。** JSON 可空性与 schema 见 :doc:`../../reference/bmc_results/index_zh`。

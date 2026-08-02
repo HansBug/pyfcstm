@@ -299,6 +299,116 @@ does not prove that unselected cases are encoded correctly, that all SAT models
 decode, that the query is true beyond :math:`N`, or that BMC and the runtime do
 not share the same modeling mistake.
 
+Where a conflict lies, and why the answer is exclusive
+------------------------------------------------------
+
+When the scenario is infeasible, the first useful question is not *which clause*
+but *which part*.  The staged solve already answers it: the kernel, the
+initialization, and the assumptions enter the solver in that order, so the stage
+at which satisfiability is lost identifies the family.  A kernel that is already
+unsatisfiable is a ``kernel_conflict`` and implicates the model rather than the
+query.  A kernel that holds until ``init`` arrives gives an
+``initialization_*`` family; one that holds until ``assume`` arrives gives an
+``assumptions_*`` family.
+
+Within a family the three members are distinguished by *what the new clauses
+disagree with*.  ``*_self_conflict`` means the new clauses contradict each other
+and would fail with nothing else present.  ``*_domain_conflict`` means each is
+individually consistent but together they leave a frame with no legal value --
+they exceed what the frame domain allows.  ``assumptions_prefix_conflict`` (and
+its initialization counterpart) means the clauses are consistent with the domain
+too, and only the transition relation rules them out: nothing the machine can do
+reaches the required combination.
+
+The seven values are exclusive because each is decided by the first stage or
+sub-check that fails, and the checks are ordered.  That is why the report prints
+one classification rather than a set, and why a reader can act on it: the
+classification names the file they should open.
+
+
+Sufficient is not minimal
+-------------------------
+
+The solver's own unsat core is *sufficient*: removing all of it makes the
+formula satisfiable.  It is not *minimal*: it may contain clauses that play no
+part in the conflict, because the solver stops as soon as it has enough.  A
+reader handed a sufficient core has to guess which members matter.
+
+Minimization removes the guesswork by testing each member: drop it, re-solve,
+and keep the drop only if the remainder is still unsatisfiable.  A core that
+survives this for every member is ``subset_minimal`` -- every member is load
+bearing, so every member is worth reading.  The published claim distinguishes
+the two states honestly: ``raw`` when no member was tested,
+``partial_minimized`` when the budget ran out mid-way, ``subset_minimal`` when
+all of them were.
+
+This matters because minimality is what makes the next stage possible at all.  A
+proof step has to say which core member it restates, and a sufficient-only core
+has members that restate nothing.
+
+
+What the proof is trusted on
+-----------------------------
+
+A published proof is a claim that each step was checked.  The interesting design
+question is *by whom*, because a checker that shares code with the constructor
+agrees with it by construction and proves nothing.
+
+Two methods divide the work.  Input nodes use ``core_binding``: the normalized
+fact is re-encoded from scratch and the solver is asked to refute both
+``group => fact`` and ``fact => group``.  Both directions are required.  One
+direction alone would allow a fact that is merely *implied by* the core member,
+which is a summary rather than a restatement -- and a summary can drop exactly
+the detail a reader needed.  If either direction comes back satisfiable, unknown,
+or times out, the proof does not reach ``complete``.
+
+Derived and root nodes use ``rule_checker``: an independent checker takes the
+premises and the claimed conclusion and re-derives it, without calling the code
+that produced it.  It compares whole conclusion mappings rather than selected
+fields, and refuses a conclusion carrying a field it does not recognize, so a
+constructor that quietly adds information cannot slip it past.
+
+``solver_entailment`` is reserved for derived and root steps discharged by the
+solver instead.  The current catalog does not use it; naming it here is what
+keeps a future node carrying it readable rather than surprising.
+
+The boundary is therefore: **a reader may trust that each sentence follows from
+the core members named beside it, and may not trust that the encoding faithfully
+models their intent.** The proof is about the constraints as encoded.  That is
+the same boundary replay draws for a witness, for the same reason.
+
+
+Why some conflicts have no proof
+---------------------------------
+
+The proof depth degrades rather than fabricating, and the reason is structural
+rather than incidental.
+
+An input node stands for one core member, and the core is the set of *authored*
+clauses plus generated support groups.  A fact about an intermediate frame -- what
+a variable holds after two steps, for instance -- is not authored anywhere; it is
+*derived* from a transition rule.  So a conflict that only becomes visible after
+accumulating across steps has no core member to attribute its key facts to, and
+the closure has nowhere to start.  Such a query reports ``achieved_mode`` as
+``formal``.
+
+For those conflicts the formal explanation is not a lesser answer.  It names the
+classification, the subset-minimal core and every source location, and its
+narrative can name the initial state and the conflicting values -- which a proof
+built without the intermediate facts would lose.  A reader chasing a cross-step
+conflict is better served by ``formal`` today, and the report says so in its
+``reason`` line rather than leaving them to wonder.
+
+A second boundary is narrower.  An event assumption is published as a
+``structural_constraint`` fact: the core member is known and located, but its
+content is not read, so no rule applies to it.  The narrative then reports
+``structural_only`` and says only that the constraints cannot hold together --
+true, and unhelpfully thin for a reader who wanted to know *which* two event
+requirements collided.  Both boundaries are consequences of decisions recorded
+in the contract, not defects in the checker, and both are visible to the caller
+through ``achieved_mode`` and ``derivation_status`` rather than silent.
+
+
 Why the bounded structure grows
 --------------------------------
 

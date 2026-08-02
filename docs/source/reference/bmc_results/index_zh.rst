@@ -91,7 +91,9 @@ JSON 类型和必需键以模式为准；执行顺序、标准输出/标准错�
      - 按给定深度请求可选的场景不可行解释。``none``\ 不增加任何求解工作，
        ``explanation`` 保持为空且 ``refinement_status`` 为 ``not_requested``；
        ``formal`` 发布分类与可靠源组冲突核（sound source core）；``proof``\ 额外
-       请求可核验证明，本阶段将其如实报告为未闭合而不伪造。该深度不改变强制判定。
+       构造逐步证明，在每一步都被核验过时发布它，在规则目录中没有规则能闭合该
+       冲突核时降级为 ``formal``。实际达成的深度总会被报告，因此调用方能区分
+       两者。该深度不改变强制判定。
    * - ``--color``
      - ``auto``、``always`` 或 ``never``
      - ``auto``
@@ -396,6 +398,263 @@ frame 或 step。生成组占一行，若它还带有位置之外的构造元数
 每个 core 都会报告自己的 scope 与 reduction，无论最小性是否已证明；区分两者的是
 scope 上面那句话。粒度、成员数、带标签的最小性行以及解释耗时属于更完整的发布区块，
 而那个区块还带有本深度不构造的叙述与因果链，所以这里不出现它们。
+
+
+分类与冲突核归约
+~~~~~~~~~~~~~~~~
+
+``classification`` 指出冲突落在场景的哪一部分。该词表是封闭的，报告打印的是面向
+读者的短语而非机器取值：
+
+.. list-table::
+   :header-rows: 1
+   :widths: 38 62
+
+   * - ``classification``
+     - 打印的短语
+   * - ``kernel_conflict``
+     - the model's own domain and transition rules conflict
+   * - ``initialization_self_conflict``
+     - initialization is internally inconsistent
+   * - ``initialization_domain_conflict``
+     - initialization conflicts with the frame domain
+   * - ``initialization_kernel_conflict``
+     - initialization conflicts with the transition relation
+   * - ``assumptions_self_conflict``
+     - the assumptions are internally inconsistent
+   * - ``assumptions_domain_conflict``
+     - the assumptions conflict with the frame domain
+   * - ``assumptions_prefix_conflict``
+     - assumptions conflict with the feasible prefix
+
+两个族的区别在于读者应该改什么。``initialization_*``\ 类冲突意味着 ``init`` 子句
+根本无法满足，或者能满足却无法继续；``assumptions_*``\ 类冲突意味着是 ``assume``
+子句让可行执行不复存在。``kernel_conflict`` 不牵涉这两者，它指向模型本身。
+
+``reduction`` 说明冲突核发布前最小化推进到了哪一步：
+
+.. list-table::
+   :header-rows: 1
+   :widths: 26 74
+
+   * - ``reduction``
+     - 含义
+   * - ``raw``
+     - 求解器自己给出的核，对 UNSAT 可靠但未收缩。
+   * - ``partial_minimized``
+     - 已证明可删的成员被删掉了，但预算在检验完每个剩余成员之前耗尽。
+   * - ``subset_minimal``
+     - 每个剩余成员都被检验过，一个也删不掉。
+
+``subset_minimality`` 是这个断言本身，取 ``proven`` 或 ``not_proven``，且只有
+``subset_minimal`` 携带 ``proven``。这个区分对决定改哪里的读者很重要：``raw``
+核可能包含根本不属于该冲突的成员。
+
+
+证明区块
+~~~~~~~~
+
+``--explain-infeasibility proof`` 会构造证明，并在每一步都被核验过时发布它。区块
+开头是 ``COMPLETE VERIFIED DOMAIN PROOF`` 而不是
+``PARTIAL FORMAL DOMAIN EXPLANATION``，推理是编号的而非概括的。针对
+``latch.fcstm`` 和一个把同一变量在同一帧钉成两个值的查询：
+
+.. code-block:: text
+
+   Explanation: COMPLETE VERIFIED DOMAIN PROOF
+   Classification: the assumptions are internally inconsistent
+
+   Why no execution exists:
+     1. At frame 1, retries must equal 1.
+     2. At frame 1, retries must equal 2.
+     3. Therefore one value cannot be two things at once. No execution satisfies
+        these initialization and query requirements, and the property was not
+        evaluated.
+
+   Conflict constraints:
+     1. two_values.fbmcq:1:1-1:34
+        assume at 1: var("retries") == 1;
+     2. two_values.fbmcq:2:1-2:34
+        assume at 1: var("retries") == 2;
+
+   The displayed core is sufficient for UNSAT and proven subset-minimal.
+   Core scope: assumptions_component
+   Core granularity: source_group
+   Core size: 2
+   Reduction: subset_minimal
+   Subset minimality: proven
+
+与 ``formal`` 区块的三处差异属于契约而非外观。标题写的是\ **已核验**\ 的证明，
+所以那些句子背后的每一步都经过下文某种方法的检查。``Why no execution exists``
+是按依赖顺序读出的证明，一步一句，以矛盾收尾。而 ``Reason:`` 行不存在：完整证明
+没有"为何提前停止"可解释，而 ``formal`` 区块总要说明它做不到什么。
+
+收尾那句话报告的是"不存在任何执行，因此属性未被求值"。空场景与属性被违反是两个
+不同的结论；读者不能把这个区块当作反例。
+
+
+证明词表
+~~~~~~~~
+
+证明的每一步是一个节点。``kind`` 说明节点的用途：
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 80
+
+   * - ``kind``
+     - 含义
+   * - ``input``
+     - 把一个冲突核成员重述为归一化事实。恰好一个成员，且每个子集极小
+       （subset minimal）成员恰好有一个 ``input`` 节点。
+   * - ``derived``
+     - 从已建立的事实产出一个新事实。
+   * - ``contradiction``
+     - 唯一的根，表明已建立的事实无法同时成立。
+
+``rule_id`` 指出是哪条规则产出了该节点的结论。目录是封闭的；需要目录之外读法的
+查询会降级为 ``formal``，而不是临时发明一条：
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - ``rule_id``
+     - 它得出什么结论
+   * - ``source_fact``
+     - ``input`` 节点自身的事实，取自它重述的那个冲突核成员。
+   * - ``transition_assignment``
+     - 一次转换的 effect 在下一帧赋给某变量的值。
+   * - ``equality_substitution``
+     - 把已知值代入另一个事实后的结果。
+   * - ``arithmetic_evaluation``
+     - 一个算术步骤留在变量里的值。
+   * - ``interval_intersection``
+     - 不存在同时满足此处全部界限的值。
+   * - ``state_domain_exhaustion``
+     - 某一帧已经没有可处于的状态。
+   * - ``definedness_failure``
+     - 某个运算在此处要求的取值上无法保持有定义。
+   * - ``incompatible_equalities``
+     - 同一个槽位被要求持有两个不同的值。
+   * - ``boolean_complement``
+     - 同一个要求同时被要求成立又被排除。
+
+``verification_method`` 说明是谁认可了这一步；这个划分是证明的信任边界，不是标签：
+
+.. list-table::
+   :header-rows: 1
+   :widths: 26 74
+
+   * - ``verification_method``
+     - 检查了什么
+   * - ``core_binding``
+     - 归一化事实被重新编码，并与冲突核成员做双向检查：``group => fact`` 与
+       ``fact => group`` 都必须被驳倒。任一方向返回 unknown、超时或不成立，都会
+       让该证明无法进入 ``complete``。仅 ``input`` 节点使用。
+   * - ``rule_checker``
+     - 一个独立检查器不复用构造它的代码，从前提重新推导出该结论。``derived``
+       与根节点使用。
+   * - ``solver_entailment``
+     - 预留给规则与边条件由求解器判定的 ``derived`` 与根步骤。当前目录不使用它；
+       某节点若携带它，意味着那条规则改由这种方式核验。
+
+证明还会陈述它对自身形状的断言。``input_minimality`` 为 ``subset_minimal``：输入
+恰好是子集极小的冲突核，一个成员一个节点；缺失、多余或重复的输入会被拒绝而不是
+发布。``graph_minimality`` 为 ``dependency_pruned``：发布的每个节点都可从根到达。
+``verification_status`` 为 ``verified``，且这是它唯一的取值——未核验的图根本不会
+被发布。
+
+
+解释类型
+~~~~~~~~
+
+Python 调用方通过冻结的 dataclass 读取同样的内容，而不是去解析报告文本：
+
+.. list-table::
+   :header-rows: 1
+   :widths: 34 66
+
+   * - 类型
+     - 它携带什么
+   * - :class:`~pyfcstm.bmc.BmcInfeasibilityExplanation`
+     - ``requested_mode``、``achieved_mode``、``status``、``reason``、
+       ``classification``、``elapsed_ms``，以及 core、narrative 与 proof。
+   * - :class:`~pyfcstm.bmc.BmcConflictCore`
+     - ``scope``、``granularity``、``items``、``reduction`` 与
+       ``subset_minimality``。
+   * - :class:`~pyfcstm.bmc.BmcCoreItem`
+     - 一个冲突核成员：稳定 id、语义角色、约束引用与归一化事实。
+   * - :class:`~pyfcstm.bmc.BmcConstraintRef`
+     - 该成员来自哪个阶段的哪个公式。
+   * - :class:`~pyfcstm.bmc.BmcSourceRef`
+     - 该成员写在哪个文档的什么位置。
+   * - :class:`~pyfcstm.bmc.BmcConflictNarrative`
+     - ``derivation_status``、``headline`` 与 ``reasoning_steps``。
+   * - :class:`~pyfcstm.bmc.BmcReasoningStep`
+     - 一句话，附带它所读的冲突核成员与证明节点。
+   * - :class:`~pyfcstm.bmc.BmcConflictProof`
+     - ``scope``、``root_id``、``nodes``、``input_minimality``、
+       ``graph_minimality`` 与 ``verification_status``。
+   * - :class:`~pyfcstm.bmc.BmcProofNode`
+     - ``stable_id``、``kind``、``rule_id``、``premise_ids``、``conclusion``、
+       ``item_ids``、``human_text`` 与 ``verification_method``。
+
+.. code-block:: python
+
+    from pyfcstm.bmc import BmcConflictProof, BmcProofNode, solve_bmc_property
+
+    result = solve_bmc_property(
+        model, query_text, infeasibility_explanation="proof"
+    )
+    explanation = result.feasibility.explanation
+    if explanation is not None and explanation.proof is not None:
+        proof: BmcConflictProof = explanation.proof
+        for node in proof.nodes:
+            assert isinstance(node, BmcProofNode)
+            print(node.stable_id, node.rule_id, node.verification_method)
+
+同一个对象在 JSON 中位于 ``result.feasibility.explanation``；它的 ``proof`` 键在
+低于 ``proof`` 的任何深度下为 ``null``，在 ``proof`` 深度但发生降级时同样为
+``null``。
+
+
+解释状态与降级
+~~~~~~~~~~~~~~
+
+``requested_mode`` 是调用方请求的深度，``achieved_mode`` 是实际产出的深度。
+``status`` 说明已达成深度的完整程度：
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 78
+
+   * - ``status``
+     - 含义
+   * - ``complete``
+     - 已达成深度产出了它承诺的全部内容。
+   * - ``partial``
+     - 只产出了一部分。``reason`` 说明是什么让它停在那里。
+   * - ``unknown``
+     - 该深度依赖的某个检查返回了不确定结果。
+   * - ``timeout``
+     - 解释预算在达到该深度之前耗尽。
+
+因此，请求 ``proof`` 而发生降级时，``achieved_mode`` 报告为 ``formal``，并由
+``reason`` 指明原因。针对同一模型、但冲突需要转换读法的查询：
+
+.. code-block:: text
+
+   Explanation: PARTIAL FORMAL DOMAIN EXPLANATION
+   Explanation depth: requested proof, achieved formal
+   ...
+   Reason: the formal explanation is complete, but no rule in the catalog closes
+   this core.
+
+降级不等于失败：``formal`` 区块仍然给出分类、子集极小的冲突核以及每个源位置。
+对某些冲突，它给出的信息甚至\ **多于**\ 证明——参见
+:doc:`/explanations/bmc_solving/index_zh` 中的边界说明。
+
 
 直接打印 Python 结果对象
 ------------------------

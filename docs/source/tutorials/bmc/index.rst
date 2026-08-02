@@ -322,6 +322,113 @@ Only ``response`` has the separate horizon formula that can produce
 ``incomplete``.  The exact library-level ``unchecked`` state and exit-priority
 matrix are listed in :doc:`../../reference/bmc_results/index`.
 
+8. Ask why an impossible scenario is impossible
+-----------------------------------------------
+
+A ``SCENARIO INFEASIBLE`` report says no execution exists, which means the
+property was never evaluated.  That is easy to cause by accident -- two
+assumptions that cannot both hold, an initializer the machine cannot continue
+from -- and by itself the report does not say which clause is at fault.
+
+Write a query that asks for the latch to hold two values at the same frame:
+
+.. literalinclude:: impossible_latch.fbmcq
+   :language: text
+
+Run it at the default depth first:
+
+.. code-block:: bash
+
+   python -m pyfcstm bmc \
+       -i first_check_fixed.fcstm \
+       -q impossible_latch.fbmcq --color never
+
+The verdict arrives, and nothing explains it:
+
+.. code-block:: text
+
+   BMC reach <= 2: SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED
+   Scenario: INFEASIBLE
+   Property verdict: NOT EVALUATED (SCENARIO INFEASIBLE)
+   Evidence:
+     Failure boundary: ASSUMPTIONS
+
+``Failure boundary: ASSUMPTIONS`` narrows it to the ``assume`` clauses, which is
+already useful and still not a line number.  Ask for the explanation:
+
+.. code-block:: bash
+
+   python -m pyfcstm bmc \
+       -i first_check_fixed.fcstm \
+       -q impossible_latch.fbmcq \
+       --explain-infeasibility proof --color never
+
+.. code-block:: text
+
+   Explanation: COMPLETE VERIFIED DOMAIN PROOF
+   Classification: the assumptions are internally inconsistent
+
+   Why no execution exists:
+     1. At frame 1, latch_engaged must equal 0.
+     2. At frame 1, latch_engaged must equal 1.
+     3. Therefore one value cannot be two things at once. No execution satisfies
+        these initialization and query requirements, and the property was not
+        evaluated.
+
+   Conflict constraints:
+     1. impossible_latch.fbmcq:1:1-1:40
+        assume at 1: var("latch_engaged") == 0;
+     2. impossible_latch.fbmcq:2:1-2:40
+        assume at 1: var("latch_engaged") == 1;
+
+   The displayed core is sufficient for UNSAT and proven subset-minimal.
+   Core scope: assumptions_component
+   Reduction: subset_minimal
+   Subset minimality: proven
+
+Three things in that block are worth reading carefully.
+
+``COMPLETE VERIFIED DOMAIN PROOF`` means every step behind those sentences was
+checked -- not that the tool is confident, but that a check ran.  The JSON says
+which:
+
+.. code-block:: bash
+
+   python -m pyfcstm bmc \
+       -i first_check_fixed.fcstm \
+       -q impossible_latch.fbmcq \
+       --explain-infeasibility proof --json -o /tmp/latch-proof.json
+   python -c "
+   import json
+   proof = json.load(open('/tmp/latch-proof.json'))['result']['feasibility']['explanation']['proof']
+   for node in proof['nodes']:
+       print(node['stable_id'], node['kind'], node['verification_method'])
+   "
+
+.. code-block:: text
+
+   proof.input.0000 input core_binding
+   proof.input.0001 input core_binding
+   proof.step.0002 contradiction rule_checker
+
+Each input was verified against the clause it restates; the conclusion was
+re-derived by a checker that does not share code with the constructor.  The
+``verification_method`` field is where that division is published.
+
+``proven subset-minimal`` means every listed clause is load bearing.  Remove
+either one and the scenario becomes feasible again -- so both lines are worth
+your attention, and neither is noise.
+
+And the closing sentence says the property was **not evaluated**.  This is not a
+counterexample to ``reach``.  The exit status is ``3``, not ``2``: nothing was
+proven about the door.  Fix the assumptions, re-run, and only then read the
+verdict.
+
+If you ask for ``proof`` and the block says ``achieved formal``, that is a
+capability boundary rather than an error -- the formal explanation is still
+complete, and it tells you why it stopped there.  The how-to guide covers what to
+do next.
+
 Vocabulary checkpoint
 ---------------------
 

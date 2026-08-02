@@ -101,9 +101,11 @@ Both installed entry forms have the same behavior:
        depth.  ``none`` performs no additional solver work and leaves
        ``explanation`` null with ``refinement_status`` as ``not_requested``.
        ``formal`` publishes the classification and a sound source core;
-       ``proof`` additionally requests a verified proof, which this stage
-       reports as unclosed rather than fabricating.  The depth never changes the
-       mandatory verdict.
+       ``proof`` additionally builds a step-by-step proof and publishes it when
+       every step was checked, and degrades to ``formal`` when no rule in the
+       catalog closes the core.  The achieved depth is always reported, so a
+       caller can tell the two apart.  The depth never changes the mandatory
+       verdict.
    * - ``--color``
      - ``auto``, ``always``, or ``never``
      - ``auto``
@@ -460,6 +462,280 @@ proven; the sentence above the scope is what distinguishes the two.  Granularity
 member count, a labelled minimality line and the elapsed explanation time belong
 to the fuller published block, which also carries a narrative and a causal chain
 this depth does not build, so they do not appear here.
+
+
+Classification and core reduction
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``classification`` names which part of the scenario the conflict lies in.  The
+list is closed, and the report prints the reader-facing phrase rather than the
+machine value:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 38 62
+
+   * - ``classification``
+     - Printed phrase
+   * - ``kernel_conflict``
+     - the model's own domain and transition rules conflict
+   * - ``initialization_self_conflict``
+     - initialization is internally inconsistent
+   * - ``initialization_domain_conflict``
+     - initialization conflicts with the frame domain
+   * - ``initialization_kernel_conflict``
+     - initialization conflicts with the transition relation
+   * - ``assumptions_self_conflict``
+     - the assumptions are internally inconsistent
+   * - ``assumptions_domain_conflict``
+     - the assumptions conflict with the frame domain
+   * - ``assumptions_prefix_conflict``
+     - assumptions conflict with the feasible prefix
+
+The two families differ in what the reader should change.  An
+``initialization_*`` conflict means the ``init`` clause cannot be satisfied at
+all, or cannot be satisfied and then continued; an ``assumptions_*`` conflict
+means the ``assume`` clauses are the ones that leave nothing admissible.  A
+``kernel_conflict`` implicates neither, and points at the model itself.
+
+``reduction`` says how far minimization got before the core was published:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 26 74
+
+   * - ``reduction``
+     - Meaning
+   * - ``raw``
+     - The solver's own core, sound for UNSAT but not shrunk.
+   * - ``partial_minimized``
+     - Some members were proven removable and dropped, but the budget ran out
+       before every remaining member had been tested.
+   * - ``subset_minimal``
+     - Every remaining member was tested and none can be dropped.
+
+``subset_minimality`` is the claim itself, ``proven`` or ``not_proven``, and only
+``subset_minimal`` carries ``proven``.  The distinction matters to a reader
+deciding what to edit: a ``raw`` core may contain members that are not part of
+the conflict at all.
+
+
+Proof block
+~~~~~~~~~~~
+
+``--explain-infeasibility proof`` builds a proof and publishes it when every step
+was checked.  The block opens on ``COMPLETE VERIFIED DOMAIN PROOF`` rather than
+``PARTIAL FORMAL DOMAIN EXPLANATION``, and the reasoning is numbered rather than
+summarized.  Against ``latch.fcstm`` and a query that pins one variable to two
+values at the same frame:
+
+.. code-block:: text
+
+   Explanation: COMPLETE VERIFIED DOMAIN PROOF
+   Classification: the assumptions are internally inconsistent
+
+   Why no execution exists:
+     1. At frame 1, retries must equal 1.
+     2. At frame 1, retries must equal 2.
+     3. Therefore one value cannot be two things at once. No execution satisfies
+        these initialization and query requirements, and the property was not
+        evaluated.
+
+   Conflict constraints:
+     1. two_values.fbmcq:1:1-1:34
+        assume at 1: var("retries") == 1;
+     2. two_values.fbmcq:2:1-2:34
+        assume at 1: var("retries") == 2;
+
+   The displayed core is sufficient for UNSAT and proven subset-minimal.
+   Core scope: assumptions_component
+   Core granularity: source_group
+   Core size: 2
+   Reduction: subset_minimal
+   Subset minimality: proven
+
+Three differences from the formal block are contractual rather than cosmetic.
+The heading names a *verified* proof, so every step behind those sentences was
+checked by one of the methods below.  ``Why no execution exists`` is the proof
+read in dependency order, one sentence per step, ending on the contradiction.
+And the ``Reason:`` line is absent: a complete proof has nothing to explain about
+why it stopped early, whereas the formal block always says what it could not do.
+
+The closing sentence reports that no execution exists and that the property was
+therefore *not evaluated*.  An empty scenario and a violated property are
+different findings; a reader must not take this block as a counterexample.
+
+
+Proof vocabulary
+~~~~~~~~~~~~~~~~
+
+Each proof step is a node.  ``kind`` says what the node is for:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 80
+
+   * - ``kind``
+     - Meaning
+   * - ``input``
+     - Restates one core member as a normalized fact.  Exactly one member, and
+       every subset-minimal member has exactly one input node.
+   * - ``derived``
+     - Produces a new fact from facts already established.
+   * - ``contradiction``
+     - The single root, showing that the established facts cannot hold together.
+
+``rule_id`` names which rule produced the node's conclusion.  The catalog is
+closed; a query that needs a reading outside it degrades to ``formal`` rather
+than inventing one:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - ``rule_id``
+     - What it concludes
+   * - ``source_fact``
+     - An input node's own fact, taken from the core member it restates.
+   * - ``transition_assignment``
+     - What a transition's effect assigns to a variable at the next frame.
+   * - ``equality_substitution``
+     - The result of substituting a known value into another fact.
+   * - ``arithmetic_evaluation``
+     - The value an arithmetic step leaves in a variable.
+   * - ``interval_intersection``
+     - That no value satisfies every bound required at one slot.
+   * - ``state_domain_exhaustion``
+     - That a frame has no state left it could be in.
+   * - ``definedness_failure``
+     - That an operation cannot stay defined on the value required of it.
+   * - ``incompatible_equalities``
+     - That one slot is required to hold two different values.
+   * - ``boolean_complement``
+     - That the same requirement is both demanded and ruled out.
+
+``verification_method`` says who agreed with the step, and the division is the
+proof's trust boundary rather than a label:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 26 74
+
+   * - ``verification_method``
+     - What was checked
+   * - ``core_binding``
+     - The normalized fact was re-encoded and checked against the core member in
+       both directions: ``group => fact`` and ``fact => group`` must each be
+       refuted.  Either direction coming back unknown, timing out, or failing to
+       hold keeps the proof out of ``complete``.  Used by input nodes only.
+   * - ``rule_checker``
+     - An independent checker re-derived the conclusion from the premises without
+       reusing the code that constructed it.  Used by derived and root nodes.
+   * - ``solver_entailment``
+     - Reserved for derived and root steps whose rule and side conditions are
+       discharged by the solver.  The current catalog does not use it; a node
+       carrying it would mean a rule was checked this way instead.
+
+A proof also states what it claims about its own shape.  ``input_minimality`` is
+``subset_minimal``: the inputs are exactly the subset-minimal core, one node per
+member, and a missing, extra, or duplicated input is refused rather than
+published.  ``graph_minimality`` is ``dependency_pruned``: every node published
+is reachable from the root.  ``verification_status`` is ``verified``, which is
+the only value it takes -- an unverified graph is not published at all.
+
+
+Explanation types
+~~~~~~~~~~~~~~~~~
+
+A Python caller reads the same content through frozen dataclasses rather than by
+parsing the report:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 34 66
+
+   * - Type
+     - What it carries
+   * - :class:`~pyfcstm.bmc.BmcInfeasibilityExplanation`
+     - ``requested_mode``, ``achieved_mode``, ``status``, ``reason``,
+       ``classification``, ``elapsed_ms``, and the core, narrative and proof.
+   * - :class:`~pyfcstm.bmc.BmcConflictCore`
+     - ``scope``, ``granularity``, ``items``, ``reduction`` and
+       ``subset_minimality``.
+   * - :class:`~pyfcstm.bmc.BmcCoreItem`
+     - One core member: its stable id, semantic role, constraint reference and
+       normalized fact.
+   * - :class:`~pyfcstm.bmc.BmcConstraintRef`
+     - Which stage and formula a member came from.
+   * - :class:`~pyfcstm.bmc.BmcSourceRef`
+     - Where in which document a member was written.
+   * - :class:`~pyfcstm.bmc.BmcConflictNarrative`
+     - ``derivation_status``, ``headline`` and ``reasoning_steps``.
+   * - :class:`~pyfcstm.bmc.BmcReasoningStep`
+     - One sentence, with the core items and proof nodes it reads.
+   * - :class:`~pyfcstm.bmc.BmcConflictProof`
+     - ``scope``, ``root_id``, ``nodes``, ``input_minimality``,
+       ``graph_minimality`` and ``verification_status``.
+   * - :class:`~pyfcstm.bmc.BmcProofNode`
+     - ``stable_id``, ``kind``, ``rule_id``, ``premise_ids``, ``conclusion``,
+       ``item_ids``, ``human_text`` and ``verification_method``.
+
+.. code-block:: python
+
+    from pyfcstm.bmc import BmcConflictProof, BmcProofNode, solve_bmc_property
+
+    result = solve_bmc_property(
+        model, query_text, infeasibility_explanation="proof"
+    )
+    explanation = result.feasibility.explanation
+    if explanation is not None and explanation.proof is not None:
+        proof: BmcConflictProof = explanation.proof
+        for node in proof.nodes:
+            assert isinstance(node, BmcProofNode)
+            print(node.stable_id, node.rule_id, node.verification_method)
+
+The same object is reachable in JSON at
+``result.feasibility.explanation``, whose ``proof`` key is ``null`` at any depth
+below ``proof`` and at ``proof`` depth whenever the attempt degraded.
+
+
+Explanation status and degradation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``requested_mode`` is what the caller asked for and ``achieved_mode`` is what was
+produced.  ``status`` says how complete the achieved depth is:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 78
+
+   * - ``status``
+     - Meaning
+   * - ``complete``
+     - The achieved depth produced everything it promises.
+   * - ``partial``
+     - Some of it was produced.  ``reason`` says what stopped there.
+   * - ``unknown``
+     - A check the depth depends on came back neither way.
+   * - ``timeout``
+     - The explanation budget ran out before the depth was reached.
+
+A request for ``proof`` that degrades therefore reports ``achieved_mode`` as
+``formal``, and ``reason`` names the cause.  Against the same model and a query
+whose conflict needs a transition reading:
+
+.. code-block:: text
+
+   Explanation: PARTIAL FORMAL DOMAIN EXPLANATION
+   Explanation depth: requested proof, achieved formal
+   ...
+   Reason: the formal explanation is complete, but no rule in the catalog closes
+   this core.
+
+Degradation is not failure: the formal block still names the classification, the
+subset-minimal core and every source location.  For some conflicts it says *more*
+than a proof would -- see the boundary notes in
+:doc:`/explanations/bmc_solving/index`.
 
 
 Direct Python result text

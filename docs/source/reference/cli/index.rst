@@ -1013,6 +1013,22 @@ counterexample, and the evidence that should be inspected after the run.
      - Unknown keys, malformed ``key=value``, or invalid typed values fail before source is accepted.
      - The output source should reflect the intended option, for example hidden events or collapsed depth.
 
+.. list-table:: ``bmc`` option decisions
+   :header-rows: 1
+
+   * - Option
+     - Legal forms
+     - Boundary or counterexample
+     - Evidence to inspect
+   * - ``--explain-infeasibility``
+     - ``none`` for the mandatory verdict alone; ``formal`` for the classification and a source core; ``proof`` for a checked step-by-step proof.
+     - The depth never changes the verdict, so it cannot turn an inconclusive run into a conclusive one. ``proof`` degrades to ``formal`` when no catalog rule closes the core; a caller that treats a missing ``proof`` key as an error will misread that.
+     - ``Explanation:`` names the achieved depth; an ``Explanation depth: requested proof, achieved formal`` line appears whenever the request was not met. In JSON, compare ``requested_mode`` with ``achieved_mode`` under ``result.feasibility.explanation``.
+   * - ``--color``
+     - ``auto`` for terminals; ``never`` in logs and CI; ``always`` to keep color through a pipe, as when paging.
+     - ``auto`` produces no color through a pipe, and ``NO_COLOR`` in the environment disables it even on a TTY. JSON and ``--output`` files are never decorated, whatever this option says.
+     - Piping ``--color never`` yields no escape bytes; ``--color always`` keeps them; ``NO_COLOR=1`` with ``--color auto`` yields none.
+
 .. list-table:: ``visualize`` option decisions
    :header-rows: 1
 

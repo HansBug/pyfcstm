@@ -86,9 +86,11 @@ state Board {
 #
 # ``minimal`` shows titles only and writes effects inline; ``normal`` keeps the
 # titles and moves effects into notes; ``full`` adds the state's own event and
-# its two lifecycle actions. Two of the four settings the presets disagree on
-# are visible here; the other two -- edge tinting and the legend -- are held by
-# the jsfcstm suite, which can read a stroke colour without a browser.
+# its two lifecycle actions. Three of the four settings the presets disagree on
+# are visible here -- the note pad, the event rows and the action rows. The
+# fourth, ``eventVisualizationMode``, governs both the edge tint and the legend
+# and is held by the jsfcstm suite, which reads a stroke colour without a
+# browser.
 DETAIL_LEVEL_EXPECTATIONS = {
     "minimal": {"eventRows": 0, "actionRows": 0, "notes": False},
     "normal": {"eventRows": 0, "actionRows": 0, "notes": True},

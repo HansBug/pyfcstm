@@ -785,12 +785,14 @@ self-contained HTML file.
      - Behavior
    * - ``DiagramOptions.detail_level``
      - ``minimal``, ``normal`` (default), ``full``
-     - Selects the renderer's detail preset. ``minimal`` renders transition effects
-       inline and moves events to a legend; ``normal`` uses effect notes and shows
-       events on both. ``full`` currently renders the same diagram as ``normal``:
-       the two differ only in ``showStateActions``, and the browser renderer
-       deliberately keeps leaf-state detail out of the diagram in favour of the
-       details panel, which lists actions regardless of the preset.
+     - Selects the renderer's detail preset, and each draws a different diagram.
+       ``minimal`` writes transition effects inline and leaves edges in the
+       neutral stroke, listing events in the legend only; ``normal``, the
+       default, puts effects in a note beside the transition and tints edges by
+       event; ``full`` adds each state's own events and lifecycle actions as
+       rows under its title. The details panel lists a state's actions whatever
+       the preset, so the level chooses what the drawing carries rather than
+       what is available to read.
    * - ``DiagramOptions.direction``
      - ``TB`` (default) or ``LR``
      - Chooses top-to-bottom or left-to-right layout.

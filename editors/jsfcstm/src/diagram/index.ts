@@ -1,3 +1,5 @@
+export {leafDetailBandHeight} from './leaf-detail';
+
 export {
     buildFcstmDiagramFromDocument,
     buildFcstmDiagramFromStateMachine,

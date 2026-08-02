@@ -20,6 +20,7 @@ import {
     smoothGraphEdges,
     terminalApproach,
     measureFcstmElkLabel,
+    leafDetailBandHeight,
 } from '@pyfcstm/jsfcstm/diagram';
 
 describe('jsfcstm ELK-based diagram pipeline', () => {
@@ -345,6 +346,23 @@ describe('jsfcstm ELK-based diagram pipeline', () => {
         const labelTexts = edgesWithLabels.flatMap(e => (e.labels || []).map(l => l.text));
         assert.ok(labelTexts.some(text => text.startsWith('●') || text.includes('\n●') || text.includes('● ')),
             `event lines should carry the event glyph — got ${JSON.stringify(labelTexts)}`);
+    });
+
+    it('gives a state with no rows no band at all', () => {
+        // Every corpus case renders at `normal`, where no state draws a row, and
+        // the frozen reference the parity gate compares against was made before
+        // any of this existed. So a leaf with nothing to list has to keep the
+        // exact box it always had -- a band of even one pixel here moves all 35
+        // of them at once, and the two levels would still agree with each other
+        // while disagreeing with every diagram anyone has already made.
+        assert.equal(leafDetailBandHeight(0), 0);
+        assert.equal(leafDetailBandHeight(-1), 0, 'a negative count is no rows, not a negative band');
+        assert.ok(leafDetailBandHeight(1) > 0, 'one row needs room');
+        assert.equal(
+            leafDetailBandHeight(3) - leafDetailBandHeight(2),
+            leafDetailBandHeight(2) - leafDetailBandHeight(1),
+            'each row past the first costs the same',
+        );
     });
 
     it('grows a leaf state to hold the rows each detail level asks for', async () => {

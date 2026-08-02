@@ -496,10 +496,11 @@ trace exercises it.
     query above gives UNSAT on the main objective and SAT on the tail.
 
 :eq:`bmc-verdict-map` -- polarity-aware three-valued verdict
-    ``BmcSolveResult.property_satisfied`` and ``outcome``.  Covered by
-    ``test_solve_result_public_verdict_truth_table`` and
-    ``test_response_violation_verdict_stays_decisive_with_suffix``.  The response
-    query gives ``incomplete``; the reach query gives ``witness_found``.
+    ``BmcSolveResult.property_satisfied`` and ``outcome``.  The response query
+    gives ``incomplete``; the reach query gives ``witness_found``.  Covered by:
+
+    - ``test_solve_result_public_verdict_truth_table``
+    - ``test_response_violation_verdict_stays_decisive_with_suffix``
 
 :eq:`bmc-witness-projection` -- SAT model to sparse public trace
     ``decode_bmc_witness``, ``_decode_step`` and ``_event_inputs_for_step``.

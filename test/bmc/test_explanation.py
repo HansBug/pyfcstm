@@ -189,6 +189,7 @@ _TRANSCRIBED_FROZEN_NAMES = frozenset(
         "_REDUCTIONS",
         "CLASSIFICATION_PHRASES",
         "EXPLANATION_HEADLINES",
+        "_ALL_EXPLANATION_HEADLINES",
         "_SEMANTIC_ROLES",
         "_STAGES",
         "_STATUSES",
@@ -2072,6 +2073,7 @@ def test_human_vocabularies_are_transcribed_from_the_frozen_transcripts() -> Non
     and that choice is recorded here rather than left implicit.
     """
     from pyfcstm.bmc.explanation import (
+        _ALL_EXPLANATION_HEADLINES,
         CLASSIFICATION_PHRASES,
         CLASSIFICATION_SCOPES,
         EXPLANATION_HEADLINES,
@@ -2081,16 +2083,23 @@ def test_human_vocabularies_are_transcribed_from_the_frozen_transcripts() -> Non
     # proof row is not; it follows the same two-word substitution the sampled
     # proof row uses.
     #
-    # The two "not achieved" rows are keyed by the requested depth rather than an
-    # achieved one, because nothing was achieved to name.  They were a fallback
-    # branch in the renderer until this mapping was made complete, which meant
-    # this guard -- whose subject is every headline a reader can see -- did not
-    # cover a third of them.  `--timeout-ms 1` reaches both in one command.
+    # The published mapping documents itself as covering achieved depths only, and
+    # the API reference renders its value, so it is transcribed at that shape.
     assert EXPLANATION_HEADLINES == {
         ("formal", "complete"): "COMPLETE FORMAL DOMAIN EXPLANATION",
         ("formal", "partial"): "PARTIAL FORMAL DOMAIN EXPLANATION",
         ("proof", "complete"): "COMPLETE VERIFIED DOMAIN PROOF",
         ("proof", "partial"): "PARTIAL VERIFIED DOMAIN PROOF",
+    }
+
+    # The two "not achieved" rows are keyed by the requested depth rather than an
+    # achieved one, because nothing was achieved to name.  They were a fallback
+    # branch in the renderer until the private mapping below collected all six,
+    # which meant this guard -- whose subject is every headline a reader can see
+    # -- did not cover a third of them.  `--timeout-ms 1` reaches both in one
+    # command.
+    assert _ALL_EXPLANATION_HEADLINES == {
+        **EXPLANATION_HEADLINES,
         ("none", "formal"): "FORMAL EXPLANATION NOT ACHIEVED",
         ("none", "proof"): "PROOF EXPLANATION NOT ACHIEVED",
     }

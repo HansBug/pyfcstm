@@ -140,11 +140,14 @@ _EXPLANATION_STATUSES = ("complete", "partial", "unknown", "timeout")
 #: Every headline the reference page must show a real example of.
 #:
 #: This one *is* the complete set, and it is the only constant here that can say
-#: so honestly: ``EXPLANATION_HEADLINES`` now enumerates all six rather than four
-#: plus a fallback branch, so "all of them" is a fact about one mapping instead of
-#: a reading of scattered code.  Twice before that refactor a constant here
-#: claimed a closed vocabulary the renderer did not honour, and because the page
-#: was written from the same reading, the gate agreed with it by construction.
+#: so honestly: ``_ALL_EXPLANATION_HEADLINES`` collects all six in one mapping
+#: rather than leaving two of them in a renderer fallback, so "all of them" is a
+#: fact about one mapping instead of a reading of scattered code.  Twice before
+#: that refactor a constant here claimed a closed vocabulary the renderer did not
+#: honour, and because the page was written from the same reading, the gate agreed
+#: with it by construction.  Transcribe from that private mapping, not from the
+#: published ``EXPLANATION_HEADLINES``, which documents itself as covering the
+#: achieved depths only.
 #:
 #: Still transcribed rather than imported, and what protects the transcription is
 #: this checker itself: a value edited here no longer appears on the page, so

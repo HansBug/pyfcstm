@@ -390,10 +390,11 @@ delta、gamma 两个符号，并为每个步/分支对创建一个选择变量�
     ``response`` 查询在主目标上给出 UNSAT，在尾部给出 SAT。
 
 :eq:`bmc-verdict-map` —— 极性感知的三值判定
-    ``BmcSolveResult.property_satisfied`` 与 ``outcome``。由
-    ``test_solve_result_public_verdict_truth_table`` 与
-    ``test_response_violation_verdict_stays_decisive_with_suffix`` 覆盖。
-    ``response`` 查询给出 ``incomplete``，``reach`` 查询给出 ``witness_found``。
+    ``BmcSolveResult.property_satisfied`` 与 ``outcome``。``response`` 查询给出
+    ``incomplete``，``reach`` 查询给出 ``witness_found``。由以下测试覆盖：
+
+    - ``test_solve_result_public_verdict_truth_table``
+    - ``test_response_violation_verdict_stays_decisive_with_suffix``
 
 :eq:`bmc-witness-projection` —— 从 SAT 模型到稀疏的公开轨迹
     ``decode_bmc_witness``、``_decode_step`` 与 ``_event_inputs_for_step``。由

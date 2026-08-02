@@ -64,9 +64,10 @@ export const PREVIEW_DRAG_THRESHOLD_PX = 4;
  * :returns: The kind, or ``null`` for a mark outside this contract.
  */
 export function asPointerKind(value: string | null | undefined): PointerKind {
-    return (POINTER_KINDS as readonly string[]).includes(value || '')
-        ? (value as PointerKind)
-        : null;
+    // `some` rather than `includes`: the extension declares `lib: ["ES2015"]`
+    // and array `includes` arrives in ES2016. It compiles today only because a
+    // dependency's types raise the floor, which is not a thing to rely on.
+    return POINTER_KINDS.some(kind => kind === value) ? (value as PointerKind) : null;
 }
 
 /** Set of kinds that the Details side panel knows how to display. */

@@ -1055,7 +1055,15 @@ async function evaluate(cdp, expression) {
       // about the hit-test this is here to measure.
       point.onScreen = point.x >= 0 && point.y >= 0
         && point.x < innerWidth && point.y < innerHeight;
-      point.owner = row.closest('[data-fcstm-kind="state"]')?.getAttribute('data-fcstm-id') || '';
+      // A window tall enough to show the diagram has no excuse for putting a
+      // row out of reach; only a short one scrolls the page by design. Without
+      // this the probe could come to decline everywhere and read as silence.
+      point.mustReach = innerHeight >= 700;
+      // Either kind of state can own a row. Only leaves draw them today, and
+      // hard-coding that here would be the same shape of mistake as the one
+      // this probe exists to catch.
+      point.owner = row.closest('[data-fcstm-kind="state"], [data-fcstm-kind="composite-state"]')
+        ?.getAttribute('data-fcstm-id') || '';
       return point;
     })()`);
     let rowClickSelects = null;
@@ -1701,7 +1709,10 @@ async function evaluate(cdp, expression) {
           // And declining has to stay the exception it is. A probe that opts
           // out on every run is indistinguishable from one that was deleted,
           // so a page that drew rows must have offered one to press.
-          (stateRows['state-event'] + stateRows['state-action'] > 0 && rowClick === null) ||
+          ((stateRows || {})['state-event'] + (stateRows || {})['state-action'] > 0
+            && rowClick === null) ||
+          // Declining is for a short window, not for a row nobody can reach.
+          (rowClick !== null && rowClick.mustReach && !rowClick.onScreen) ||
           (expectDocuments > 0 && importedSource.published.length !== expectDocuments) ||
           (Math.max(importedSource.published.length, expectDocuments) > 1 && (
             !importedSource.pickerFound

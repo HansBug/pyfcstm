@@ -10,7 +10,7 @@ import {renderSvg, type RenderedSvg} from '../render/svg';
 import {smoothGraphEdges} from '../../../../jsfcstm/src/diagram/render/edge-smoother';
 import type {PaletteId, PaletteMode} from '../../../../jsfcstm/src/diagram/render/palette';
 import {getElk} from '../composables/useElk';
-import {decidePreviewPointerAction, PREVIEW_DRAG_THRESHOLD_PX} from '../interaction';
+import {asPointerKind, decidePreviewPointerAction, PREVIEW_DRAG_THRESHOLD_PX} from '../interaction';
 import {computePreviewFit} from '../layout';
 import type {PreviewWebviewState, SelectionRef, TextRange, PreviewElkNode, PreviewPayload} from '../types';
 import {
@@ -374,8 +374,14 @@ function onMouseUpWindow() {
 function onClick(ev: MouseEvent) {
     const moved = dragMovedPx;
     dragMovedPx = 0;
-    const target = (ev.target as HTMLElement)?.closest?.('[data-fcstm-kind]');
-    const kind = target?.getAttribute('data-fcstm-kind') as never;
+    // `[data-fcstm-id]` beside the kind, as the four other hit-tests in this
+    // file already require. Without it this one stopped at whatever carried a
+    // mark, and the detail rows inside a state body carry one: a click landed
+    // on a label, `closest` went no further, and the state under the cursor --
+    // which had highlighted on hover, because hover does ask for the id --
+    // did nothing.
+    const target = (ev.target as HTMLElement)?.closest?.('[data-fcstm-kind][data-fcstm-id]');
+    const kind = asPointerKind(target?.getAttribute('data-fcstm-kind'));
     const range = target ? readRange(target) : null;
     const modifier = Boolean(ev.ctrlKey || ev.metaKey);
     const action = decidePreviewPointerAction({
@@ -893,16 +899,6 @@ void _t;
 .fcstm-stage__inner [data-fcstm-kind="pseudo-init"],
 .fcstm-stage__inner [data-fcstm-kind="pseudo-exit"] {
     cursor: pointer;
-}
-/* The event / action rows inside a state body are marked so a test can count
-   them, and `data-fcstm-kind` is also what the click handler walks up to. It is
-   the one hit-test that does not require `[data-fcstm-id]` beside it, so a row
-   caught the click and `closest` stopped there: the state under the cursor
-   highlighted on hover, which does require the id, and then did nothing when
-   pressed. The rows are labels; let the click reach the state they describe. */
-.fcstm-stage__inner [data-fcstm-kind="state-event"],
-.fcstm-stage__inner [data-fcstm-kind="state-action"] {
-    pointer-events: none;
 }
 body.modifier-held .fcstm-stage__inner [data-fcstm-kind][data-fcstm-range-start-line] {
     cursor: alias;

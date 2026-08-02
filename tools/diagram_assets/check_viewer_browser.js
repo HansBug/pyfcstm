@@ -1698,6 +1698,10 @@ async function evaluate(cdp, expression) {
           // Only where a row was drawn and reachable; `null` means the probe
           // declined, which is not the same as the click having failed.
           (rowClickSelects !== null && rowClickSelects !== true) ||
+          // And declining has to stay the exception it is. A probe that opts
+          // out on every run is indistinguishable from one that was deleted,
+          // so a page that drew rows must have offered one to press.
+          (stateRows['state-event'] + stateRows['state-action'] > 0 && rowClick === null) ||
           (expectDocuments > 0 && importedSource.published.length !== expectDocuments) ||
           (Math.max(importedSource.published.length, expectDocuments) > 1 && (
             !importedSource.pickerFound

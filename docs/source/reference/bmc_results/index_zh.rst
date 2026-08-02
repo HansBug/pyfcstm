@@ -454,6 +454,36 @@ scope 上面那句话。粒度、成员数、带标签的最小性行以及解�
 证明区块
 ~~~~~~~~
 
+标题行说明达成的深度与它的完整程度，共四种组合：
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 18 60
+
+   * - 达成深度
+     - ``status``
+     - 标题行
+   * - ``formal``
+     - ``complete``
+     - ``COMPLETE FORMAL DOMAIN EXPLANATION``
+   * - ``formal``
+     - ``partial``
+     - ``PARTIAL FORMAL DOMAIN EXPLANATION``
+   * - ``proof``
+     - ``complete``
+     - ``COMPLETE VERIFIED DOMAIN PROOF``
+   * - ``proof``
+     - ``partial``
+     - ``PARTIAL VERIFIED DOMAIN PROOF``
+
+``formal`` 深度上的 ``COMPLETE`` 意思是该档承诺的内容都产出了——一个分类与一个源组
+冲突核——而不是"找到了证明"。把它读成"工具已经做完了"，正是这张表要防的误解。
+
+被请求而未达成的深度没有自己的标题行：由实际达成的深度命名，差异由
+``Explanation depth:`` 行报告。因此请求 ``proof`` 而降级时显示的是 ``FORMAL``
+标题，绝不会是 ``PROOF`` 标题。
+
+
 ``--explain-infeasibility proof`` 会构造证明，并在每一步都被核验过时发布它。区块
 开头是 ``COMPLETE VERIFIED DOMAIN PROOF`` 而不是
 ``PARTIAL FORMAL DOMAIN EXPLANATION``，推理是编号的而非概括的。针对

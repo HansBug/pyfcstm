@@ -137,6 +137,19 @@ _CLASSIFICATIONS = (
 _EXPLANATION_MODES = ("none", "formal", "proof")
 _EXPLANATION_STATUSES = ("complete", "partial", "unknown", "timeout")
 
+#: Every headline a report can open its explanation block with.
+#:
+#: All four, not the two that happen to appear in the examples.  A reader at
+#: ``formal`` depth most often sees ``COMPLETE FORMAL DOMAIN EXPLANATION``, and
+#: that string was documented nowhere while the required anchors named the
+#: ``PARTIAL`` one -- so the gate was endorsing the headline a reader sees least.
+_EXPLANATION_HEADLINES = (
+    "COMPLETE FORMAL DOMAIN EXPLANATION",
+    "PARTIAL FORMAL DOMAIN EXPLANATION",
+    "COMPLETE VERIFIED DOMAIN PROOF",
+    "PARTIAL VERIFIED DOMAIN PROOF",
+)
+
 #: How far minimization got, and what the proof's own minimality claims are.
 _CORE_REDUCTIONS = ("raw", "partial_minimized", "subset_minimal")
 _PROOF_MINIMALITY = ("subset_minimal", "dependency_pruned", "verified")
@@ -170,10 +183,9 @@ _EXPLANATION_VOCABULARY: Dict[str, Tuple[str, ...]] = {
         + _PROOF_MINIMALITY
         + _EXPLANATION_STATUSES
         + _EXPLANATION_TYPES
+        + _EXPLANATION_HEADLINES
         + (
             "--explain-infeasibility",
-            "COMPLETE VERIFIED DOMAIN PROOF",
-            "PARTIAL FORMAL DOMAIN EXPLANATION",
             "result.feasibility.explanation",
         )
     ),
@@ -214,6 +226,7 @@ _TABULATED_VOCABULARY: Dict[str, Tuple[Tuple[str, ...], ...]] = {
         _PROOF_RULE_IDS,
         _PROOF_VERIFICATION_METHODS,
         _PROOF_NODE_KINDS,
+        _EXPLANATION_HEADLINES,
     ),
 }
 
@@ -468,6 +481,59 @@ def _check_schema(errors: List[str]) -> None:
             errors.append("%s still describes the removed package resource." % relative)
 
 
+def _visible_text(path: Path) -> str:
+    """Return a page's text with reST comment blocks removed.
+
+    A vocabulary anchor is meant to prove a reader can look the value up, and a
+    comment proves the opposite: the words are in the file and not on the page.
+    Reading the raw character stream cannot tell those apart -- prefixing one
+    ``..`` line turned this page's whole proof-vocabulary section into a comment
+    while every anchor still matched, and the rendered HTML lost the content.
+
+    A comment is a line that starts with ``..`` and is neither a directive
+    (``.. name::``) nor a target (``.. _label:``), together with the indented
+    block that follows it.  Directives and targets are kept, since their content
+    does render.
+
+    :param path: Page to read.
+    :type path: pathlib.Path
+    :return: The page text with comment blocks blanked out.
+    :rtype: str
+    """
+    lines = _read(path).replace("\r\n", "\n").split("\n")
+    kept: List[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        stripped = line.strip()
+        is_comment_marker = stripped == ".." or (
+            stripped.startswith(".. ")
+            and not re.match(r"^\.\.\s+[^\s]+::", stripped)
+            and not re.match(r"^\.\.\s+_", stripped)
+        )
+        if not is_comment_marker:
+            kept.append(line)
+            index += 1
+            continue
+        indent = len(line) - len(line.lstrip())
+        kept.append("")
+        index += 1
+        # The comment body is every following line that is blank or indented
+        # deeper than the marker.  Blank lines alone do not end it.
+        while index < len(lines):
+            following = lines[index]
+            if not following.strip():
+                kept.append("")
+                index += 1
+                continue
+            if len(following) - len(following.lstrip()) > indent:
+                kept.append("")
+                index += 1
+                continue
+            break
+    return "\n".join(kept)
+
+
 def _prose_pages(relative: str) -> List[Tuple[str, Path]]:
     """Return the English and Chinese prose pages of one page pair.
 
@@ -493,7 +559,7 @@ def _check_explanation_vocabulary(errors: List[str]) -> None:
     """
     for relative, required in sorted(_EXPLANATION_VOCABULARY.items()):
         for label, path in _prose_pages(relative):
-            text = _read(path)
+            text = _visible_text(path)
             missing = [value for value in required if value not in text]
             if missing:
                 errors.append(
@@ -534,7 +600,7 @@ def _check_tabulated_vocabulary(errors: List[str]) -> None:
     """
     for relative, groups in sorted(_TABULATED_VOCABULARY.items()):
         for label, path in _prose_pages(relative):
-            blocks = _contiguous_blocks(_read(path))
+            blocks = _contiguous_blocks(_visible_text(path))
             for group in groups:
                 if any(all(value in block for value in group) for block in blocks):
                     continue
@@ -664,7 +730,7 @@ def _check_rule_reachability(errors: List[str]) -> None:
         "reference/bmc_results/index_zh.rst": "\u5426",
     }
     for label, path in _prose_pages("reference/bmc_results/index"):
-        text = _read(path)
+        text = _visible_text(path)
         for rule in _UNREACHABLE_RULES:
             row = "   * - ``%s``\n     - %s\n" % (rule, markers[label])
             if row in text:

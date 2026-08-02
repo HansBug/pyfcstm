@@ -35,6 +35,7 @@ import json
 import platform
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -50,6 +51,14 @@ _BENCH_ROOT = Path("benchmarks/bmc/infeasibility")
 #: months later.
 _BASELINE_LABEL = "baseline-901f30e9"
 _BASELINE_COMMIT = "901f30e981c29eb8e304b33d61985652d2e85b2e"
+
+#: How often the child's resident set size is sampled, in seconds.
+#:
+#: Small enough to see the shape of a solve that runs for tens of milliseconds,
+#: large enough that the sampler is not a second CPU-bound process beside the one
+#: being measured.  A flat-out loop was what the first version did, and it
+#: competed for CPU with the very run whose timings it publishes.
+_RSS_SAMPLE_SECONDS = 0.002
 
 #: The four arms of the contrast, in the order a reader should compare them.
 _ARMS = (_BASELINE_LABEL, "none", "formal", "proof")
@@ -101,8 +110,10 @@ _MEASUREMENT_MAP: Tuple[Tuple[str, str, str], ...] = (
     ),
     (
         "peak_child_rss_bytes",
-        "psutil high-water mark of the child process",
-        "absent rather than zero when psutil is unavailable",
+        "maximum of sampled psutil RSS readings of the child process",
+        "a sampled maximum, not a kernel high-water mark: a spike shorter than "
+        "the %g s interval can be missed.  Absent rather than zero when psutil "
+        "is unavailable" % _RSS_SAMPLE_SECONDS,
     ),
     (
         "solver_checks",
@@ -320,6 +331,11 @@ def _spawn_and_watch(command: Sequence[str]) -> Dict[str, Any]:
         try:
             handle = psutil.Process(process.pid)
             while process.poll() is None:
+                # Sampled rather than polled flat out.  A tight loop competes
+                # with the child for CPU and perturbs the very timings this run
+                # publishes; the interval keeps the sampler out of the way at the
+                # cost of possibly missing a spike shorter than it.
+                time.sleep(_RSS_SAMPLE_SECONDS)
                 try:
                     rss = handle.memory_info().rss
                 except (psutil.NoSuchProcess, psutil.AccessDenied):

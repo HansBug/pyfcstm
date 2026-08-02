@@ -577,10 +577,15 @@ classification and a source core.  ``proof`` additionally builds a checked
 step-by-step derivation.  The depth never changes the verdict, so raising it
 cannot turn an inconclusive run into a conclusive one -- it only adds diagnosis.
 
-**Expected output.** ``formal`` reports ``PARTIAL FORMAL DOMAIN EXPLANATION``
+**Expected output.** ``formal`` reports ``COMPLETE FORMAL DOMAIN EXPLANATION``
 with the classification, the core members and their source positions.  Re-running
 the same query with ``--explain-infeasibility proof`` reports
 ``COMPLETE VERIFIED DOMAIN PROOF`` and a numbered derivation.  Both exit ``3``.
+
+The headline names the depth *and* how complete it is, so ``COMPLETE`` at
+``formal`` depth means the formal explanation produced everything it promises --
+not that a proof was found.  The four headlines are listed in
+:doc:`../../reference/bmc_results/index`.
 
 **File side effect.** None without ``-o``.
 
@@ -631,10 +636,17 @@ infeasible, each with the position it was written at.
         init state("Root.Idle") where x == 0;
      3. bmc_tasks.fcstm:1:1-1:15
         def int x = 0;
+     4. generated transition constraint at step 0
 
 Read it as: the classification says which file to open, and the members say which
 lines.  Here the assumption at frame 1 disagrees with what the initializer and
 the declaration force, so either the ``assume`` value or the initial value has to
+change.
+
+Member 4 has no source position because nobody wrote it: the builder generates
+the transition constraint that carries frame 0's values forward.  A generated
+member names its category and the step it constrains, and is not something you
+can edit -- it tells you *why* the authored members conflict, not what to
 change.
 
 **File side effect.** None without ``-o``.
@@ -752,18 +764,23 @@ conflicts have no proof.
 
 .. code-block:: bash
 
+   # An infeasible scenario exits 3, which is a report and not a failure.  Under
+   # set -e -- which GitHub Actions uses for every run: step -- an unguarded
+   # invocation would abort the step here and never reach the inspection below.
    python -m pyfcstm bmc \
        -i bmc_tasks.fcstm \
        -q infeasible_two_values.fbmcq \
        --explain-infeasibility proof --color never \
-       --json -o /tmp/bmc-gate.json
-   python - <<'PY'
+       --json -o /tmp/bmc-gate.json && status=0 || status=$?
+   test "$status" -eq 3
+
+   python - <<'INSPECT'
    import json
    report = json.load(open("/tmp/bmc-gate.json"))
    explanation = report["result"]["feasibility"]["explanation"]
    print(explanation["requested_mode"], explanation["achieved_mode"])
    print(explanation["status"], explanation["classification"])
-   PY
+   INSPECT
 
 **What it does.** Reads the explanation through the versioned JSON contract
 instead of the human report, which is what a gate should depend on.
@@ -773,7 +790,12 @@ assumptions_self_conflict``.
 
 **File side effect.** ``/tmp/bmc-gate.json`` is written atomically.
 
-**Failure boundary.** ``explanation`` is ``null`` at ``none`` depth, so a gate
+**Failure boundary.** The exit status is part of the contract a gate has to
+handle: ``3`` means the scenario was infeasible and the property was not
+evaluated, which for this query is the expected result rather than an error.  A
+step that lets ``set -e`` abort on it never reads the explanation it asked for.
+
+``explanation`` is ``null`` at ``none`` depth, so a gate
 must handle that rather than index into it.  Human wording and ``elapsed_ms`` are
 not contracts and must not be asserted on; the enumerated fields are.  ANSI
 decoration never reaches JSON or ``--output`` files regardless of ``--color``.

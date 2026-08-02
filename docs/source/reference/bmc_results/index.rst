@@ -523,6 +523,39 @@ the conflict at all.
 Proof block
 ~~~~~~~~~~~
 
+The headline names the achieved depth and how complete it is, in four
+combinations:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 18 60
+
+   * - Achieved depth
+     - ``status``
+     - Headline
+   * - ``formal``
+     - ``complete``
+     - ``COMPLETE FORMAL DOMAIN EXPLANATION``
+   * - ``formal``
+     - ``partial``
+     - ``PARTIAL FORMAL DOMAIN EXPLANATION``
+   * - ``proof``
+     - ``complete``
+     - ``COMPLETE VERIFIED DOMAIN PROOF``
+   * - ``proof``
+     - ``partial``
+     - ``PARTIAL VERIFIED DOMAIN PROOF``
+
+``COMPLETE`` at ``formal`` depth means the formal explanation produced everything
+it promises -- a classification and a source core -- not that a proof was found.
+Reading it as "the tool is done" is the mistake this table exists to prevent.
+
+A depth that was requested but not achieved has no headline of its own: the
+achieved depth names it, and the ``Explanation depth:`` line reports the
+difference.  So a request for ``proof`` that degrades shows a ``FORMAL`` headline,
+never a ``PROOF`` one.
+
+
 ``--explain-infeasibility proof`` builds a proof and publishes it when every step
 was checked.  The block opens on ``COMPLETE VERIFIED DOMAIN PROOF`` rather than
 ``PARTIAL FORMAL DOMAIN EXPLANATION``, and the reasoning is numbered rather than

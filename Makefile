@@ -272,12 +272,16 @@ ${RST_DOC_DIR}/%.rst: ${PYTHON_CODE_DIR}/%.py auto_rst.py Makefile
 	python auto_rst.py -i $< -o $@
 
 # A package index carries the toctree that auto_rst.py builds by listing the
-# package directory, so it goes stale whenever a module or subpackage appears
-# or disappears beside it -- not only when __init__.py itself is edited.  The
-# wildcards need the stem, which is why they are deferred to the second
-# expansion; without them a new module gets its own generated page while the
-# toctree keeps the shape it had before, and Sphinx reports the page as
-# included in no toctree.
+# package directory, so it goes stale when a module or subpackage appears or is
+# edited beside it -- not only when __init__.py itself changes.  The wildcards
+# need the stem, which is why they are deferred to the second expansion; without
+# them a new module gets its own generated page while the toctree keeps the shape
+# it had before, and Sphinx reports the page as included in no toctree.
+#
+# A *deleted* module is outside what prerequisites can express: a file that no
+# longer exists cannot make anything out of date.  That half of the invariant is
+# checked instead of built -- make api_doc_toctree_check compares each toctree
+# against the directory and reports an entry with no module behind it.
 .SECONDEXPANSION:
 
 ${RST_DOC_DIR}/%/index.rst: ${PYTHON_CODE_DIR}/%/__init__.py $$(wildcard ${PYTHON_CODE_DIR}/$$*/*.py) $$(wildcard ${PYTHON_CODE_DIR}/$$*/*/__init__.py) auto_rst.py Makefile

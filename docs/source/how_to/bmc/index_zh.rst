@@ -535,9 +535,13 @@ BMC 哨兵文本的回溯是实现失败，应作为缺陷报告，不能改写�
 构造一份逐步核验过的推导。该深度从不改变判定，所以提高它无法把不确定的运行变成
 确定的——它只增加诊断信息。
 
-**预期输出。** ``formal`` 报告 ``PARTIAL FORMAL DOMAIN EXPLANATION``，含分类、
+**预期输出。** ``formal`` 报告 ``COMPLETE FORMAL DOMAIN EXPLANATION``，含分类、
 冲突核成员及其源位置。同一查询改用 ``--explain-infeasibility proof`` 则报告
 ``COMPLETE VERIFIED DOMAIN PROOF`` 与编号推导。两者都退出 ``3``。
+
+标题行同时说明深度\ **与**\ 完整程度，所以 ``formal`` 深度上的 ``COMPLETE``
+意思是"该档承诺的内容都产出了"，而不是"找到了证明"。四种标题行列在
+:doc:`../../reference/bmc_results/index_zh`。
 
 **文件副作用。** 不带 ``-o`` 时没有。
 
@@ -583,9 +587,14 @@ BMC 哨兵文本的回溯是实现失败，应作为缺陷报告，不能改写�
         init state("Root.Idle") where x == 0;
      3. bmc_tasks.fcstm:1:1-1:15
         def int x = 0;
+     4. generated transition constraint at step 0
 
 读法是：分类告诉你该打开哪个文件，成员告诉你该看哪几行。这里帧 1 的假设与初始化器
 和声明所强制的值不一致，所以要么改 ``assume`` 的取值，要么改初始值。
+
+第 4 条没有源位置，因为它不是任何人写的：构造器生成了把帧 0 的取值向前传递的转换
+约束。生成成员会给出它的类别与它约束的步骤，你无法编辑它——它告诉你作者写下的那些
+成员\ *为什么*\ 冲突，而不是该改什么。
 
 **文件副作用。** 不带 ``-o`` 时没有。
 
@@ -692,18 +701,22 @@ BMC 哨兵文本的回溯是实现失败，应作为缺陷报告，不能改写�
 
 .. code-block:: bash
 
+   # 不可行场景退出 3，那是一份报告而不是失败。在 set -e 下——GitHub Actions 的
+   # 每个 run: 步骤都是——不加保护的调用会在此中断，永远走不到下面的读取。
    python -m pyfcstm bmc \
        -i bmc_tasks.fcstm \
        -q infeasible_two_values.fbmcq \
        --explain-infeasibility proof --color never \
-       --json -o /tmp/bmc-gate.json
-   python - <<'PY'
+       --json -o /tmp/bmc-gate.json && status=0 || status=$?
+   test "$status" -eq 3
+
+   python - <<'INSPECT'
    import json
    report = json.load(open("/tmp/bmc-gate.json"))
    explanation = report["result"]["feasibility"]["explanation"]
    print(explanation["requested_mode"], explanation["achieved_mode"])
    print(explanation["status"], explanation["classification"])
-   PY
+   INSPECT
 
 **它做什么。** 通过带版本的 JSON 契约读解释，而不是读人类报告——门应该依赖前者。
 
@@ -712,7 +725,11 @@ assumptions_self_conflict``。
 
 **文件副作用。** ``/tmp/bmc-gate.json`` 被原子写入。
 
-**失败边界。** 在 ``none`` 深度下 ``explanation`` 为 ``null``，所以门必须处理这种
+**失败边界。** 退出状态是门必须处理的契约的一部分：``3`` 意味着场景不可行、属性
+未被求值，对这个查询而言这是预期结果而非错误。让 ``set -e`` 在此中断的步骤，永远
+读不到它自己请求的解释。
+
+在 ``none`` 深度下 ``explanation`` 为 ``null``，所以门必须处理这种
 情况而不是直接索引进去。人类措辞与 ``elapsed_ms`` 不是契约，不能对它们断言；枚举
 字段才是。无论 ``--color`` 如何设置，ANSI 装饰都不会进入 JSON 或 ``--output``
 文件。

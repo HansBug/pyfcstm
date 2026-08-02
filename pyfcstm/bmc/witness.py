@@ -4031,6 +4031,18 @@ class BmcWitnessTrace(_PrettyPrintableMixin):
         >>> trace = BmcWitnessTrace({'kind': 'reach'}, {'status': 'sat'}, {'mode': 'cold'}, (), ())
         >>> sorted(trace.to_canonical())
         ['diagnostics', 'frames', 'initial', 'property', 'solver', 'steps']
+
+    .. note::
+       The sections above are placeholders that show the shape of the envelope,
+       not a publishable witness.  ``to_canonical()`` gives JSON-stable output
+       for whatever it is handed; it does not check that each section carries
+       the fields the published schema requires -- the example's ``property``
+       has none of ``polarity``, ``bound`` or ``case_label``, and validating it
+       against ``$defs/legacyWitness`` reports nine missing properties.
+
+       A trace that is meant to be published comes from
+       :func:`decode_bmc_witness` or from a solve result, which fill every
+       section from the model.  Build one by hand only to exercise the envelope.
     """
 
     property: Mapping[str, Any]

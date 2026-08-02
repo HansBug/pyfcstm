@@ -619,18 +619,22 @@ def classify_infeasibility(
             _probe_outcome_reason("domain probe", record),
             tuple(checks),
         )
-    if status == "unsat":  # pragma: no cover - see the note below.
-        # The two ``*_domain_conflict`` classifications have no observed producing
-        # path, and what would produce one is an open question rather than
-        # something this comment can assert.  The probe above checks the domain
-        # aggregate against one component literal only -- no transition literal is
-        # involved -- and the domain aggregate as built today carries just
-        # ``domain.frame_state`` enumerations, which are satisfiable on their own.
-        # So no authored FCSTM/FBMCQ text in this suite reaches it, and an earlier
-        # attempt to reach it forged the aggregate formula, which the test boundary
-        # rules out.  Whether these two values are reachable at all, reserved for a
-        # later delivery, or should leave the frozen vocabulary is a contract
-        # decision recorded on the tracking issue, not one this branch settles.
+    if status == "unsat":
+        # ``assumptions_domain_conflict`` is reached by excluding every state a
+        # frame could hold: the domain aggregate enumerates them, so ruling all of
+        # them out at one frame contradicts it.  The benchmark corpus case
+        # ``state_domain`` does exactly that and lands here with an
+        # ``assumptions_domain`` scope.
+        #
+        # ``initialization_domain_conflict`` is the same shape on the other stage
+        # and has no observed producing path.  Reaching it would need an ``init``
+        # clause that contradicts the frame domain by itself, and the initializer
+        # grammar constrains a state and variables rather than excluding states.
+        # Whether it is reachable at all, reserved for a later delivery, or should
+        # leave the frozen vocabulary is a contract decision recorded on the
+        # tracking issue, not one this branch settles.  An earlier attempt to
+        # reach it forged the aggregate formula, which the test boundary rules
+        # out.
         classification = (
             "initialization_domain_conflict"
             if stage == "initialization"

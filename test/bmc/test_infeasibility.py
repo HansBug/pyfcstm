@@ -156,6 +156,20 @@ def test_every_scope_has_a_frozen_target() -> None:
             "assumptions",
             "assumptions_prefix_conflict",
         ),
+        # Excluding every state a frame could hold contradicts the domain
+        # aggregate, which enumerates them.  This is the producing path for
+        # ``assumptions_domain_conflict`` -- the branch carried a comment saying
+        # neither ``*_domain_conflict`` had one, which stopped being true once a
+        # query of this shape existed.
+        (
+            'init state("Root.A"); '
+            'assume at 1: !active("Root.A"); '
+            'assume at 1: !active("Root.B"); '
+            "assume at 1: !terminated(); "
+            'check reach <= 2: active("Root.B");',
+            "assumptions",
+            "assumptions_domain_conflict",
+        ),
     ],
 )
 def test_classification_on_real_queries(query, stage, expected) -> None:

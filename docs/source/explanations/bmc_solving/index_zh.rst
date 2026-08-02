@@ -381,39 +381,36 @@ delta、gamma 两个符号，并为每个步/分支对创建一个选择变量�
 
 下表是本页带标签公式的前向审计图。字面 LaTeX 就是每个带标签公式目标处的块；中英文文件使用完全相同的块。
 
-.. list-table:: 求解公式台账
-   :header-rows: 1
-   :widths: 21 27 28 24
+下面每个方程都点名它的实现、它的测试，以及能行使它的查询轨迹。
 
-   * - 公式与主张
-     - 实现锚点
-     - 测试锚点
-     - 可运行查询与轨迹
-   * - :eq:`bmc-solve-formulas`：可行性分阶段检查与响应尾部
-     - ``compile_bmc_property``；``solve_bmc_property``；``_SolveBudget``
-     - ``test_compile_response_strict_successor_and_incomplete_suffix``；
-       ``test_solver_unknown_and_timeout_paths_are_structured``
-     - 上面的 ``response`` 查询：主公式 UNSAT、尾部 SAT
-   * - :eq:`bmc-verdict-map`：解释极性的三值结论
-     - ``BmcSolveResult.property_satisfied`` 与 ``outcome``
-     - ``test_solve_result_public_verdict_truth_table``；
-       ``test_response_violation_verdict_stays_decisive_with_suffix``
-     - ``response`` 得到 ``incomplete``；``reach`` 得到 ``witness_found``
-   * - :eq:`bmc-witness-projection`：SAT 模型到稀疏公开轨迹
-     - ``decode_bmc_witness``；``_decode_step``；
-       ``_event_inputs_for_step``
-     - ``test/bmc/test_witness.py`` 中的见证解码器与事件策略测试
-     - ``reach`` 查询：两个帧和一个宏步
-   * - :eq:`bmc-replay-agreement`：公开观测相等
-     - ``replay_bmc_witness``；``_compare_frame``；``_compare_step``
-     - ``test_replay_reports_structured_var_mismatch``；
-       ``test_bmc_witness_replay_matches_full_semantic_fixture_trace``
-     - ``reach`` 查询：``replay.ok=true``；篡改 ``x`` 的轨迹失败
-   * - :eq:`bmc-symbol-growth`：已分配轨迹符号的精确计数
-     - ``BmcTraceSymbols.allocate``
-     - ``test/bmc/test_domain.py`` 与 ``test/bmc/test_relation_public_api.py`` 中的
-       形状断言
-     - ``reach`` 查询：:math:`N=1,V=0,E=0,K_0=2`，因此共有六个符号
+:eq:`bmc-solve-formulas` —— 可行性分阶段检查与响应尾部
+    ``compile_bmc_property``、``solve_bmc_property`` 与 ``_SolveBudget``。由
+    ``test_compile_response_strict_successor_and_incomplete_suffix`` 与
+    ``test_solver_unknown_and_timeout_paths_are_structured`` 覆盖。上文的
+    ``response`` 查询在主目标上给出 UNSAT，在尾部给出 SAT。
+
+:eq:`bmc-verdict-map` —— 极性感知的三值判定
+    ``BmcSolveResult.property_satisfied`` 与 ``outcome``。由
+    ``test_solve_result_public_verdict_truth_table`` 与
+    ``test_response_violation_verdict_stays_decisive_with_suffix`` 覆盖。
+    ``response`` 查询给出 ``incomplete``，``reach`` 查询给出 ``witness_found``。
+
+:eq:`bmc-witness-projection` —— 从 SAT 模型到稀疏的公开轨迹
+    ``decode_bmc_witness``、``_decode_step`` 与 ``_event_inputs_for_step``。由
+    ``test/bmc/test_witness.py`` 中的见证解码与事件策略测试覆盖。``reach``
+    查询解码出两帧一步。
+
+:eq:`bmc-replay-agreement` —— 公开观测相等
+    ``replay_bmc_witness``、``_compare_frame`` 与 ``_compare_step``。``reach``
+    查询报告 ``replay.ok=true``，而篡改过 ``x`` 的轨迹会失败。覆盖它的测试是：
+
+    - ``test_replay_reports_structured_var_mismatch``
+    - ``test_bmc_witness_replay_matches_full_semantic_fixture_trace``
+
+:eq:`bmc-symbol-growth` —— 精确的轨迹符号分配数
+    ``BmcTraceSymbols.allocate``。由 ``test/bmc/test_domain.py`` 与
+    ``test/bmc/test_relation_public_api.py`` 中的形状断言覆盖。``reach`` 查询有
+    :math:`N=1,V=0,E=0,K_0=2`，因此共六个符号。
 
 语义夹具回放测试组尤其重要：它对登记为必须通过的场景检查完整运行时轨迹，而不只是检查见证对象能否序列化。
 篡改测试提供反方向证据：改变一个公开观测后，必须得到路径精确的不匹配项。

@@ -61,21 +61,23 @@ def sample_diagram(
 # three detail presets have something to disagree about. The ordinary sample has
 # events but no actions, which makes ``normal`` and ``full`` draw the same
 # picture and hides half of what the presets are for.
+# Kept small on purpose. An earlier version carried a third leaf and a shared
+# event so the gate could watch edge tinting too, and its Details drawer grew
+# tall enough to leave the stacked comparison four pixels short at 750x900 --
+# at every level, including the one whose drawing this change does not touch.
+# Edge tinting needs no browser, so it is held by the jsfcstm suite instead and
+# the fixture stays inside the layout it is rendered in.
 DETAIL_LEVEL_SOURCE = """
 def int counter = 0;
 
 state Board {
-    event Ping;
     state PowerOn {
         enter { counter = 0; }
         during { counter = counter + 1; }
     }
     state Idle;
-    state Halt;
     [*] -> PowerOn;
     PowerOn -> Idle :: Boot effect { counter = counter + 1; }
-    Idle -> Halt : Ping effect { counter = 0; }
-    Halt -> PowerOn : Ping effect { counter = counter * 2; }
 }
 """
 

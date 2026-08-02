@@ -1496,15 +1496,7 @@ async function evaluate(cdp, expression) {
     const consoleDetails = consoleErrors.map(event => event.method === 'Runtime.exceptionThrown'
       ? event.params.exceptionDetails?.text || event.params.exceptionDetails?.exception?.description || 'exception'
       : event.params.args?.map(arg => arg.value || arg.description || '').join(' '));
-    // Content the reader cannot get to, which is what a clipped container
-    // produces. Where the view scrolls by design -- the stacked comparison in a
-    // narrow window, whose whole point is to scroll rather than squeeze both
-    // panes into strips -- a scrollbar is that design working, and a denser
-    // diagram is allowed to need one.
-    const mainClips = (layout.mainStyle?.overflow || 'visible') !== 'auto'
-      && (layout.mainStyle?.overflow || 'visible') !== 'scroll';
-    const verticalOverflow = layout.main && mainClips
-      && layout.mainScrollHeight > layout.mainClientHeight + 1;
+    const verticalOverflow = layout.main && layout.mainScrollHeight > layout.mainClientHeight + 1;
     // The bottom panels are a sibling of .fcstm-main-view, so a card row that
     // pushes past its container sat entirely outside the probed subtree. It is
     // not visible at document level either: measured at a 320px viewport, a

@@ -569,11 +569,18 @@ Four runs against the benchmark corpus, covering both halves of the rule:
    Reason: component probe did not start: budget exhausted before the probe
    started; ...
 
-Applying the rule to the pairings not shown: a proof that was built but reported
-``partial`` opens on ``PARTIAL VERIFIED DOMAIN PROOF``, since ``proof`` is what
-was achieved and ``partial`` is how complete it is.  The corpus has no case that
-produces it, which is why there is no run for it here -- the rule tells you what
-it would say.
+Applying the rule to the pairing not shown: a proof that was built but reported
+``partial`` would open on ``PARTIAL VERIFIED DOMAIN PROOF``, since ``proof`` is
+what was achieved and ``partial`` is how complete it is.
+
+No run is shown for it because the current implementation does not produce it,
+and that is a stronger statement than the corpus lacking a case.  Of the nine
+places that build a ``BmcInfeasibilityExplanation``, exactly one sets
+``achieved_mode="proof"``, and it sets ``status="complete"`` alongside: a proof
+either closes or the result degrades to ``formal``.  So the pairing is admitted
+by the frozen delivery table and named by the rule, but nothing emits it today.
+Read the row as the rule's answer for a shape the depth ladder reserves, not as
+an output you should expect to see.
 
 The middle case is the one that surprises: a request for ``proof`` that degrades
 shows a ``FORMAL`` headline, because ``formal`` is what was achieved.  The last
@@ -713,9 +720,17 @@ reasons are structural and are set out in
      - That one slot is required to hold two different values.
    * - ``boolean_complement``
      - no
-     - That the same requirement is both demanded and ruled out.  Needs a fact
-       carrying a proposition's content; an event assumption publishes
-       ``structural_constraint``, whose content no rule reads.
+     - That the same requirement is both demanded and ruled out.  It reads
+       premises of kind ``proposition``, and nothing in the package produces a fact
+       of that kind -- every occurrence of the string is a reader.  Three gates hold
+       it shut: the closure filters candidates against the rule's premise kinds
+       before proposing it, the checker asserts those kinds again, and the checker
+       then reads ``identity`` and ``holds``, which no published fact carries.  So
+       the rule is out of reach however the opposition is written, not only for
+       events: ``assume at 1: active("Root.A")`` together with
+       ``assume at 1: !active("Root.A")`` publishes two ``state_membership`` facts
+       that carry their full content, agree on frame and state, and differ only in
+       ``excluded`` -- and the result still degrades to a formal explanation.
 
 The five reachable rules are exercised by the checked-in benchmark corpus under
 ``benchmarks/bmc/infeasibility/cases/handwritten/``, and its report records which

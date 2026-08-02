@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import re
 import textwrap
@@ -137,16 +138,32 @@ _CLASSIFICATIONS = (
 _EXPLANATION_MODES = ("none", "formal", "proof")
 _EXPLANATION_STATUSES = ("complete", "partial", "unknown", "timeout")
 
-#: Headlines the reference page must show at least one real example of.
+#: Every headline the reference page must show a real example of.
 #:
-#: Deliberately *not* a claim to be the complete set.  Twice in this slice a
-#: constant here asserted a closed vocabulary the renderer does not honour:
-#: EXPLANATION_HEADLINES is keyed by achieved depth while a fallback builds two
-#: more from the requested depth, so no single place enumerates them.  A gate that
-#: restates the author's reading of scattered code agrees with the page by
-#: construction and proves nothing.  Existence is what a gate can check on its
-#: own -- each string here is one a user demonstrably sees, so a page that never
-#: mentions it has a gap whatever else it says.
+#: This one *is* the complete set, and it is the only constant here that can say
+#: so honestly: ``_ALL_EXPLANATION_HEADLINES`` collects all six in one mapping
+#: rather than leaving two of them in a renderer fallback, so "all of them" is a
+#: fact about one mapping instead of a reading of scattered code.  Twice before
+#: that refactor a constant here claimed a closed vocabulary the renderer did not
+#: honour, and because the page was written from the same reading, the gate agreed
+#: with it by construction.  Transcribe from that private mapping, not from the
+#: published ``EXPLANATION_HEADLINES``, which documents itself as covering the
+#: achieved depths only.
+#:
+#: Still transcribed rather than imported, and three separate edges keep the
+#: transcription honest.  A value edited here stops appearing on the page, so
+#: ``--check`` reports it as undocumented.  A value edited in the code's mapping
+#: fails the transcription guard in test/bmc/test_explanation.py.  And
+#: ``_check_headline_transcription`` compares this tuple against that mapping
+#: directly.
+#:
+#: The third edge was missing until a reviewer found the hole: editing the code's
+#: mapping *and* the pytest guard together left both gates green while the CLI
+#: published a string neither this tuple nor either page carried.  Two edges
+#: sharing an endpoint are not a cycle, and only a cycle catches every single
+#: omission.  The pytest guard cannot supply the missing edge itself -- it
+#: compares the mapping against a literal in the test file, and the pytest
+#: boundary rules forbid a test importing tools/.
 _EXPLANATION_HEADLINES = (
     "COMPLETE FORMAL DOMAIN EXPLANATION",
     "PARTIAL FORMAL DOMAIN EXPLANATION",
@@ -314,6 +331,129 @@ def _extract_equations(path: Path) -> List[Tuple[str, str]]:
             raise CheckFailure("%s equation %s is empty." % (path, label))
         equations.append((label, latex))
     return equations
+
+
+def _equation_references(path: Path) -> List[str]:
+    """Return every ``:eq:`label``` reference in one page, in order.
+
+    :param path: Page to scan.
+    :type path: pathlib.Path
+    :return: The referenced labels, duplicates kept.
+    :rtype: List[str]
+    """
+    return re.findall(r":eq:`([^`]+)`", path.read_text(encoding="utf-8"))
+
+
+def _check_headline_transcription(errors: List[str]) -> None:
+    """Compare the transcribed headline tuple against the mapping in the code.
+
+    This is the edge the interlock was missing.  Editing the tuple alone is caught
+    -- the value stops appearing on the page.  Editing the code's mapping and the
+    pytest guard together was not: the guard compares the mapping to a literal in
+    the test file and cannot see this module, so both gates stayed green while the
+    CLI published a string neither the tuple nor either page carried.
+
+    Read with ``ast`` rather than imported, so running the checker needs no
+    importable ``pyfcstm`` and a syntax error in the module is reported here
+    instead of crashing the run.
+
+    :param errors: Collected problems, appended to.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    source = _REPO_ROOT / "pyfcstm/bmc/explanation.py"
+    try:
+        module = ast.parse(source.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError) as err:
+        # OSError: the module is missing or unreadable.
+        # SyntaxError: it is mid-edit, so the mapping cannot be trusted either way.
+        errors.append("cannot read the headline mapping from %s: %s" % (source, err))
+        return
+    # ``_ALL_EXPLANATION_HEADLINES`` is ``{**EXPLANATION_HEADLINES, ...}``, so the
+    # strings live in two dict displays and reading only the merged one loses the
+    # four it inherits.  Both names are read, and both must be present: if either
+    # is renamed away the transcription below is unchecked, which is the state this
+    # function exists to prevent.
+    wanted = ("EXPLANATION_HEADLINES", "_ALL_EXPLANATION_HEADLINES")
+    found: Dict[str, set] = {}
+    for node in module.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        names = {getattr(target, "id", None) for target in node.targets}
+        for name in wanted:
+            if name in names:
+                # Values only.  The keys are ``(mode, status)`` tuples whose parts
+                # are strings too, and walking the whole node would collect those
+                # as headlines.
+                found[name] = {
+                    value.value
+                    for display in ast.walk(node.value)
+                    if isinstance(display, ast.Dict)
+                    for value in display.values
+                    if isinstance(value, ast.Constant) and isinstance(value.value, str)
+                }
+    missing_names = [name for name in wanted if name not in found]
+    if missing_names:
+        errors.append(
+            "%s no longer defines %s, so the transcribed headline list here is "
+            "unchecked." % (source, ", ".join(missing_names))
+        )
+        return
+    published = set().union(*found.values())
+    transcribed = set(_EXPLANATION_HEADLINES)
+    for headline in sorted(published - transcribed):
+        errors.append(
+            "the code publishes headline %r, which _EXPLANATION_HEADLINES here "
+            "does not transcribe." % headline
+        )
+    for headline in sorted(transcribed - published):
+        errors.append(
+            "_EXPLANATION_HEADLINES here transcribes %r, which the code no longer "
+            "publishes." % headline
+        )
+
+
+def _check_equation_references(errors: List[str]) -> None:
+    """Check that every equation reference resolves and every equation is cited.
+
+    The ledger's whole job is that each labelled equation can be traced to its
+    implementation, its tests, and a query that exercises it.  A typo in a
+    reference points that row at an equation which does not exist, and Sphinx
+    answers with a warning among the dozens a full build already emits.  So the
+    label list alone is not enough to check: what the reader follows is the
+    reference.
+
+    The reverse direction matters too.  An equation nobody cites has dropped out
+    of the ledger even though its ``:label:`` is still there, which the frozen
+    list cannot see either.
+
+    :param errors: Collected problems, appended to.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    known = set(_EQUATION_LABELS)
+    source = _REPO_ROOT / "docs/source"
+    for language, suffix in (("English", ".rst"), ("Chinese", "_zh.rst")):
+        cited: set = set()
+        for relative in _EQUATION_PAIRS:
+            page = source / (relative + suffix)
+            for label in _equation_references(page):
+                cited.add(label)
+                if label not in known:
+                    errors.append(
+                        "%s references equation %r, which no labelled block "
+                        "defines." % (page.relative_to(_REPO_ROOT), label)
+                    )
+        # Counted across the pages together, because the labels are spread over
+        # them and no single page carries the whole list.
+        missing = [label for label in _EQUATION_LABELS if label not in cited]
+        if missing:
+            errors.append(
+                "The %s pages never reference %s, so those equations are outside "
+                "the ledger." % (language, ", ".join(missing))
+            )
 
 
 def _check_equations(errors: List[str]) -> None:
@@ -850,6 +990,8 @@ def check() -> None:
     """Run every deterministic BMC documentation contract check."""
     errors: List[str] = []
     _check_equations(errors)
+    _check_equation_references(errors)
+    _check_headline_transcription(errors)
     _check_pages(errors)
     _check_readme(errors)
     _check_localized_diagrams(errors)

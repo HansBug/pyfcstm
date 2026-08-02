@@ -496,9 +496,14 @@ scope 上面那句话。粒度、成员数、带标签的最小性行以及解�
    Reason: component probe did not start: budget exhausted before the probe
    started; ...
 
-把规则套用到未展示的组合上：一个已构造但报告为 ``partial`` 的证明，标题是
+把规则套用到未展示的那个组合上：一个已构造但报告为 ``partial`` 的证明，标题会是
 ``PARTIAL VERIFIED DOMAIN PROOF``——因为达成的是 ``proof``，完整程度是 ``partial``。
-语料里没有能产出它的用例，所以这里没有对应的运行；规则本身已经告诉你它会写什么。
+
+这里没有对应的运行，原因不是语料缺用例，而是\ **当前实现产不出它**\ ，后者是更强的
+说法。构造 ``BmcInfeasibilityExplanation`` 的九处代码里，只有一处设置
+``achieved_mode="proof"``，而它同时把 ``status`` 硬编码为 ``complete``：证明要么闭合，
+要么整体降级为 ``formal``。所以这个组合被冻结交付表允许、也被规则命名，但今天没有任何
+代码发出它。请把这一行读作规则对深度阶梯预留形状给出的答案，而不是你应当期待看到的输出。
 
 中间那种最容易意外：请求 ``proof`` 而降级时显示的是 ``FORMAL`` 标题，因为实际达成的
 是 ``formal``。最后那种在没有任何证明的情况下标题里出现 ``PROOF``，因为什么都没达成，
@@ -621,8 +626,13 @@ scope 上面那句话。粒度、成员数、带标签的最小性行以及解�
      - 同一个槽位被要求持有两个不同的值。
    * - ``boolean_complement``
      - 否
-     - 同一个要求同时被要求成立又被排除。它需要携带命题内容的事实；而事件假设发布的
-       是 ``structural_constraint``，其内容没有规则会读。
+     - 同一个要求同时被要求成立又被排除。它读取 ``proposition`` 类别的前提，而本包里
+       没有任何代码产出该类别的事实——这个字符串的每处出现都是读取方。有三道关卡把它
+       关着：闭包在提议之前就按规则的前提类别过滤候选；检查器再次断言这些类别；检查器
+       随后读取 ``identity`` 与 ``holds``，而已发布的事实都不带这两个字段。因此无论
+       对立式怎么写，这条规则都不可达，不只是事件的情形：``assume at 1: active("Root.A")``
+       配上 ``assume at 1: !active("Root.A")`` 会发布两个 ``state_membership`` 事实，
+       内容齐全、帧与状态一致、只有 ``excluded`` 相反——结果照样降级为形式化解释。
 
 五条可达规则由入库的 benchmark 语料
 ``benchmarks/bmc/infeasibility/cases/handwritten/`` 行使，其报告记录了哪个用例产出了

@@ -112,16 +112,49 @@ def _derived_sentence(
     return "%s %s." % (opening, _clause(fact, names))
 
 
-def _closing_sentence(rule_id: str) -> str:
+#: What the closing sentence calls the requirements, by the scope it closed on.
+#:
+#: Naming a stage the core does not contain tells the reader to go look at a file
+#: that had nothing to do with the conflict.  ``two_values`` is the case that
+#: showed it: its query carries no ``init`` clause at all, yet the sentence used
+#: to say "these initialization and query requirements".
+#:
+#: Only the scopes a proof currently closes on are listed.  Every initialization
+#: conflict tried so far degrades to a formal explanation before a proof is built,
+#: so an entry for ``initialization_*`` would describe prose nothing emits, and a
+#: test for it would have no public path to drive.  The fallback covers them
+#: without naming a stage; the day a proof closes on that side, this table is where
+#: the wording goes.
+_CLOSING_SUBJECTS = {
+    "assumptions_component": "these query requirements",
+    "assumptions_domain": "these query requirements",
+    "assumptions_prefix": "these initialization and query requirements",
+}
+
+
+def _closing_sentence(rule_id: str, scope: str) -> str:
     """Return the sentence that closes the chain.
 
     It states the scenario is empty and that the property was therefore not
     evaluated -- never that a property failed, which is a different finding entirely.
+
+    The subject is taken from the scope, because that is what decides which stages
+    the core can hold.  A prefix conflict is the one that genuinely spans both: the
+    assumptions are consistent among themselves and with the frame domain, and only
+    the initialized transition prefix rules them out.
+
+    :param rule_id: The rule the contradiction node applied.
+    :type rule_id: str
+    :param scope: The published core scope the proof closed on.
+    :type scope: str
+    :return: The closing sentence.
+    :rtype: str
     """
     reason = _CLOSING_PHRASES.get(rule_id, "these requirements cannot all hold")
+    subject = _CLOSING_SUBJECTS.get(scope, "these requirements")
     return (
-        "Therefore %s. No execution satisfies these initialization and query "
-        "requirements, and the property was not evaluated." % reason
+        "Therefore %s. No execution satisfies %s, and the property was not "
+        "evaluated." % (reason, subject)
     )
 
 
@@ -214,6 +247,6 @@ def linearize_proof(
                 _derived_sentence(node.rule_id, node.conclusion, state_names),
             )
         else:
-            kind, text = "conflict", _closing_sentence(node.rule_id)
+            kind, text = "conflict", _closing_sentence(node.rule_id, proof.scope)
         steps.append(BmcReasoningStep(kind, node.item_ids, (node.stable_id,), text))
     return tuple(steps)

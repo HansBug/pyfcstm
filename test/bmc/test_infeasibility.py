@@ -156,6 +156,61 @@ def test_every_scope_has_a_frozen_target() -> None:
             "assumptions",
             "assumptions_prefix_conflict",
         ),
+        # Excluding every state a frame could hold contradicts the domain
+        # aggregate, which enumerates them.  This is the producing path for
+        # ``assumptions_domain_conflict`` -- the branch carried a comment saying
+        # neither ``*_domain_conflict`` had one, which stopped being true once a
+        # query of this shape existed.
+        (
+            'init state("Root.A"); '
+            'assume at 1: !active("Root.A"); '
+            'assume at 1: !active("Root.B"); '
+            "assume at 1: !terminated(); "
+            'check reach <= 2: active("Root.B");',
+            "assumptions",
+            "assumptions_domain_conflict",
+        ),
+        # The rows below pin why ``initialization_domain_conflict`` has no producing
+        # path, which the branch states in prose.  The assumptions side reaches the
+        # shape by constraining a frame the initializer did not pin; moving the
+        # exclusion onto frame 0, or loosening the pin to ``init cold``, degrades it
+        # to a prefix conflict instead.
+        (
+            'init state("Root.A"); '
+            'assume at 0: !active("Root.A"); '
+            'assume at 0: !active("Root.B"); '
+            "assume at 0: !terminated(); "
+            'check reach <= 2: active("Root.B");',
+            "assumptions",
+            "assumptions_prefix_conflict",
+        ),
+        (
+            "init cold; "
+            'assume at 1: !active("Root.A"); '
+            'assume at 1: !active("Root.B"); '
+            "assume at 1: !terminated(); "
+            'check reach <= 2: active("Root.B");',
+            "assumptions",
+            "assumptions_prefix_conflict",
+        ),
+        # The initializer grammar does admit the exclusion -- ``init_clause`` carries
+        # an optional ``WHERE`` over the full condition language -- so this parses and
+        # runs.  ``cold`` pins nothing, so the component probe passes and the domain
+        # probe stays satisfiable.
+        (
+            'init cold where !active("Root.A") && !active("Root.B") && !terminated(); '
+            'check reach <= 2: active("Root.B");',
+            "initialization",
+            "initialization_kernel_conflict",
+        ),
+        # ``state(...)`` pins frame 0, so the same exclusion collides with the pin and
+        # the component probe returns unsat before the domain probe runs.
+        (
+            'init state("Root.A") where !active("Root.A"); '
+            'check reach <= 2: active("Root.B");',
+            "initialization",
+            "initialization_self_conflict",
+        ),
     ],
 )
 def test_classification_on_real_queries(query, stage, expected) -> None:
@@ -165,6 +220,192 @@ def test_classification_on_real_queries(query, stage, expected) -> None:
 
     assert outcome.classification == expected
     assert outcome.scope == CLASSIFICATION_SCOPES[expected]
+
+
+@pytest.mark.parametrize(
+    "init_clause, pinned",
+    [
+        ("init cold;", -3),
+        ("init terminated;", -1),
+        ('init state("Root.A");', 1),
+    ],
+)
+def test_every_initializer_pins_frame_zero_inside_the_frame_domain(
+    init_clause, pinned
+) -> None:
+    """Why no initializer can put frame 0 outside the domain it is checked against.
+
+    Each ``init_target`` pins ``F_0_state`` to one literal, and the frame-0 domain
+    aggregate is the disjunction over exactly the values that can be pinned, the two
+    sentinels included.  So an assignment satisfying the initial component already
+    satisfies the domain, which is what makes ``initialization_domain_conflict``
+    unreachable -- the branch says so in prose, and this is the fact it rests on.
+
+    Pinned as literals rather than read from the encoder, so a renumbering that moved
+    a sentinel out of the domain enumeration fails here instead of quietly making the
+    prose wrong.
+    """
+    core = _core_formula(init_clause + ' check reach <= 2: active("Root.B");')
+    partition = partition_tracked_groups(core)
+
+    pins = [
+        str(expression)
+        for group in partition.initial
+        for expression in group.expressions
+        if "F_0_state" in str(expression)
+    ]
+    assert pins == ["%d == F_0_state" % pinned]
+
+    domains = [
+        str(expression).replace("\n", " ")
+        for group in partition.domain
+        for expression in group.expressions
+        if "F_0_state" in str(expression)
+    ]
+    assert len(domains) == 1
+    for value in (-3, -1, 0, 1, 2):
+        assert "%d == F_0_state" % value in domains[0]
+
+
+def test_an_achieved_proof_is_always_reported_complete() -> None:
+    """Why ``PARTIAL VERIFIED DOMAIN PROOF`` has no producing run.
+
+    The frozen delivery table admits ``achieved_mode="proof"`` with a ``partial``
+    status, and the reference page names the headline it would open on.  Nothing
+    emits it: a proof either closes and is reported ``complete``, or the whole
+    result degrades to ``formal``.  The reference page says so, and this is the
+    behaviour it rests on.
+
+    Driven through the public CLI over a timeout sweep rather than by reading the
+    branch, because the claim is about what a user can observe.  The sweep is wide
+    enough to cross every degradation tier on any host -- which tier a given budget
+    lands in is host-timed, so the assertion is over the set of headlines seen, not
+    over which budget produced which.
+    """
+    core = _core_formula(
+        'init state("Root.A"); '
+        'assume at 1: !active("Root.A"); '
+        'assume at 1: !active("Root.B"); '
+        "assume at 1: !terminated(); "
+        'check reach <= 2: active("Root.B");'
+    )
+
+    seen = set()
+    for budget_ms in (1, 2, 4, 8, 16, 32, 64, 128, 256, 512, None):
+        outcome = explain_infeasibility(
+            core, "assumptions", _SolveBudget(budget_ms), requested_mode="proof"
+        )
+        explanation = outcome.explanation
+        seen.add((explanation.achieved_mode, explanation.status))
+
+    assert ("proof", "complete") in seen, seen
+    assert ("proof", "partial") not in seen, seen
+
+
+def test_a_state_opposition_still_cannot_reach_boolean_complement() -> None:
+    """Why ``boolean_complement`` is unreachable however the opposition is written.
+
+    The reference page used to blame event assumptions publishing a fact whose
+    content no rule reads.  That is true of events but is not the reason: the
+    checker accepts premises of kind ``proposition`` only, and nothing produces a
+    fact of that kind, so the rule stays out of reach even when the premises are
+    complete.
+
+    ``active(X)`` and ``!active(X)`` at one frame are the cleanest opposition the
+    query language can state.  They publish two facts that carry their content,
+    agree on frame and state, and differ only in ``excluded`` -- and the result is
+    still a formal explanation.  A later change that starts producing
+    ``proposition`` facts should fail here, which is the signal that the page needs
+    rewriting.
+
+    Three independent gates hold this shut, which is worth knowing before trying to
+    open it: the closure filters candidates against ``premise_kinds`` before ever
+    proposing the rule, the checker asserts the premise kinds again, and the checker
+    then reads ``identity`` and ``holds`` -- fields a ``state_membership`` fact does
+    not have, carrying ``frame``, ``state`` and ``excluded`` instead.  Relaxing any
+    one or two of them leaves this test passing, so it is not pinned by a
+    single-point mutation.
+    """
+    core = _core_formula(
+        'assume at 1: active("Root.A"); '
+        'assume at 1: !active("Root.A"); '
+        'check reach <= 2: active("Root.B");'
+    )
+    outcome = explain_infeasibility(
+        core, "assumptions", _SolveBudget(None), requested_mode="proof"
+    )
+    explanation = outcome.explanation
+
+    facts = [item.normalized_fact for item in explanation.core.items]
+    kinds = {fact["kind"] for fact in facts}
+    assert kinds == {"state_membership"}
+    assert {fact["excluded"] for fact in facts} == {True, False}
+    assert len({fact["frame"] for fact in facts}) == 1
+    assert len({fact["state"] for fact in facts}) == 1
+
+    assert explanation.achieved_mode == "formal"
+    assert explanation.proof is None
+
+
+@pytest.mark.parametrize(
+    "query, stage, subject",
+    [
+        # No ``init`` clause at all, so naming initialization would send the reader
+        # to a file that has nothing to do with the conflict.
+        (
+            'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+            'check reach <= 2: active("Root.B");',
+            "assumptions",
+            "these query requirements",
+        ),
+        # An ``init`` clause exists here, but the published core holds only frame
+        # assumptions and the domain aggregate, so the subject follows the core
+        # rather than the query text.
+        (
+            'init state("Root.A"); '
+            'assume at 1: !active("Root.A"); '
+            'assume at 1: !active("Root.B"); '
+            "assume at 1: !terminated(); "
+            'check reach <= 2: active("Root.B");',
+            "assumptions",
+            "these query requirements",
+        ),
+        # A prefix conflict is the one scope that genuinely spans both stages: the
+        # assumptions agree with each other and with the frame domain, and only the
+        # initialized transition prefix rules them out.
+        (
+            'init state("Root.A") where x == 0; '
+            'assume at 0: var("x") == 7; '
+            'check reach <= 2: active("Root.B");',
+            "assumptions",
+            "these initialization and query requirements",
+        ),
+    ],
+)
+def test_the_closing_sentence_names_only_the_stages_the_core_holds(
+    query, stage, subject
+) -> None:
+    """The proof's last sentence must not blame a stage that is not in the core.
+
+    It used to say "these initialization and query requirements" for every scope,
+    including cores whose query carries no ``init`` clause. A reader acting on that
+    opens the wrong file.
+
+    The subject follows the scope rather than the query text, which is why the
+    middle case reads as a query conflict despite having an initializer: the core
+    it published holds frame assumptions and the domain aggregate, and nothing from
+    initialization.
+    """
+    core = _core_formula(query)
+    outcome = explain_infeasibility(
+        core, stage, _SolveBudget(None), requested_mode="proof"
+    )
+    explanation = outcome.explanation
+    assert explanation.achieved_mode == "proof", explanation.reason
+
+    closing = explanation.narrative.reasoning_steps[-1]
+    assert closing.kind == "conflict"
+    assert "No execution satisfies %s," % subject in closing.text, closing.text
 
 
 def test_kernel_stage_needs_no_probe() -> None:

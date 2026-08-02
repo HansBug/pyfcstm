@@ -61,7 +61,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Dict, List, Mapping, NamedTuple, Optional, Tuple
 
 from .provenance import (
     BmcSourceRef,
@@ -143,6 +143,7 @@ _MINIMALITIES = ("proven", "not_proven")
 #: Explanation depths ordered from weakest to strongest.
 _MODE_ORDER = {"none": 0, "formal": 1, "proof": 2}
 
+
 #: The frozen delivery truth table, one entry per authored row.
 #:
 #: The frozen contract is an exhaustive table, not a conjunction of independent
@@ -158,21 +159,64 @@ _MODE_ORDER = {"none": 0, "formal": 1, "proof": 2}
 #: ``False`` for forbidden and ``None`` for "either".  Rows that differ only in
 #: something an explanation object cannot show — a subset-minimal core versus a
 #: stage-fallback one — share a single entry.
+class _DeliveryRow(NamedTuple):
+    """One authored row of the frozen delivery table.
+
+    The row used to be a bare seven-tuple whose last four positions were
+    booleans, so reading it -- or documenting it -- meant counting positions and
+    remembering that ``None`` is "either" while ``False`` is "forbidden".  Three
+    of this series' documentation defects came out of getting that decoding
+    wrong, in a page whose whole job was to state which combinations are legal.
+    Naming the fields does not change a single accepted combination; it removes
+    the step where the reader has to decode before they can be right.
+
+    :param requested_modes: Requested depths this row covers.
+    :type requested_modes: Tuple[str, ...]
+    :param achieved_mode: The depth actually delivered.
+    :type achieved_mode: str
+    :param status: How complete the delivered depth is.
+    :type status: str
+    :param classification: ``True`` required, ``False`` forbidden, ``None``
+        either.
+    :type classification: bool, optional
+    :param core: Same three-valued convention.
+    :type core: bool, optional
+    :param proof: Same three-valued convention.
+    :type proof: bool, optional
+    :param reason: Same three-valued convention.
+    :type reason: bool, optional
+
+    Example::
+
+        >>> row = _DeliveryRow(("formal",), "none", "timeout", False, False, False, True)
+        >>> row.reason
+        True
+    """
+
+    requested_modes: Tuple[str, ...]
+    achieved_mode: str
+    status: str
+    classification: Optional[bool]
+    core: Optional[bool]
+    proof: Optional[bool]
+    reason: Optional[bool]
+
+
 _DELIVERY_MATRIX_ROWS = (
     # Row 1: the first optional probe returned unknown, so there is neither a
     # classification nor a publishable sound core.
-    (("formal", "proof"), "none", "unknown", False, False, False, True),
+    _DeliveryRow(("formal", "proof"), "none", "unknown", False, False, False, True),
     # Row 2: the same shape after the budget expired instead.
-    (("formal", "proof"), "none", "timeout", False, False, False, True),
+    _DeliveryRow(("formal", "proof"), "none", "timeout", False, False, False, True),
     # Row 3: classification finished, the raw core did not.  The classification
     # metadata is kept, but it must not pose as a formal artifact.
-    (("formal", "proof"), "none", "partial", True, False, False, True),
+    _DeliveryRow(("formal", "proof"), "none", "partial", True, False, False, True),
     # Rows 4, 6 and 7: a sound core whose minimality, scope or proof is still
     # open.  All three are indistinguishable from the published fields.
-    (("formal", "proof"), "formal", "partial", None, True, False, True),
+    _DeliveryRow(("formal", "proof"), "formal", "partial", None, True, False, True),
     # Row 5: a diagnostic subset-minimal core with complete semantic facts.
     # Requesting 'proof' cannot land here: an unclosed proof forces row 7.
-    (("formal",), "formal", "complete", True, True, False, False),
+    _DeliveryRow(("formal",), "formal", "complete", True, True, False, False),
     # Row 9: a verified proof over a stage-fallback artifact.  A stage-fallback
     # scope means the classification did not finish, so this row carries none.
     # The frozen timeout boundary spells the same row out as "proof 完整，但
@@ -185,16 +229,16 @@ _DELIVERY_MATRIX_ROWS = (
     # status=partial with a narrative of structural_only, and at proof depth that
     # combination has no row yet.  Widening this row to "either" would hide that
     # gap instead of recording it.
-    (("proof",), "proof", "partial", False, True, True, True),
+    _DeliveryRow(("proof",), "proof", "partial", False, True, True, True),
     # Row 8: a verified proof over a diagnostic artifact.
-    (("proof",), "proof", "complete", True, True, True, False),
+    _DeliveryRow(("proof",), "proof", "complete", True, True, True, False),
     # The row the previous stage recorded as missing.  A diagnostic classification
     # did finish and a proof was verified, but the narrative degraded: a semantic
     # fact with no dedicated recognizer forces structural_only, and the artifact is
     # then partial rather than complete.  Row 9 is the same status over a
     # stage-fallback artifact, where no classification exists at all; this is its
     # counterpart with one.
-    (("proof",), "proof", "partial", True, True, True, True),
+    _DeliveryRow(("proof",), "proof", "partial", True, True, True, True),
 )
 
 
@@ -2448,12 +2492,56 @@ __all__ = [
 #: A depth that was requested but not achieved has no entry: it is named by
 #: the requested mode instead, so the reader is told what they asked for
 #: rather than being shown a headline for a result that does not exist.
+#:
+#: The module-private ``_ALL_EXPLANATION_HEADLINES`` holds both families in one
+#: mapping for the renderer and for anything that has to enumerate every headline
+#: a user can see.  This one stays as documented above: it is rendered by
+#: ``autodata`` on the API reference page, so its keys and values are published.
 EXPLANATION_HEADLINES = MappingProxyType(
     {
         ("formal", "partial"): "PARTIAL FORMAL DOMAIN EXPLANATION",
         ("formal", "complete"): "COMPLETE FORMAL DOMAIN EXPLANATION",
         ("proof", "partial"): "PARTIAL VERIFIED DOMAIN PROOF",
         ("proof", "complete"): "COMPLETE VERIFIED DOMAIN PROOF",
+    }
+)
+
+#: Every headline the explanation block can open with, achieved or not.
+#:
+#: Keyed by the pair that decides it.  When a depth was achieved that is
+#: ``(achieved_mode, status)`` and the entry is the one
+#: :data:`EXPLANATION_HEADLINES` publishes.  When nothing was achieved there is
+#: no achieved depth to name, so the key is ``("none", requested_mode)`` and the
+#: headline names what was asked for.
+#:
+#: The second family used to be a fallback branch in the renderer, so nothing
+#: enumerated all six in one place and both the reference page and its checker
+#: were written from the four-entry mapping.  Reading this one instead is what
+#: keeps them honest.  It stays private because the published mapping documents
+#: itself as covering achieved depths only, and widening that in place would
+#: change a value the API reference renders.
+_ALL_EXPLANATION_HEADLINES = MappingProxyType(
+    {
+        **EXPLANATION_HEADLINES,
+        ("none", "formal"): "FORMAL EXPLANATION NOT ACHIEVED",
+        ("none", "proof"): "PROOF EXPLANATION NOT ACHIEVED",
+    }
+)
+
+#: How the ``Proof strength`` block words each published strength value.
+#:
+#: Transcribed from the contract's §12.1 transcript rather than derived from the
+#: enum spellings, because the block is frozen text: ``subset_minimal`` prints as
+#: "subset-minimal" and ``verified`` as a whole clause, neither of which a
+#: mechanical transformation of the value would produce.  A value added to one of
+#: the enums without a phrase here raises instead of printing a label nobody wrote.
+_PROOF_STRENGTH_PHRASES = MappingProxyType(
+    {
+        "input": MappingProxyType({"subset_minimal": "subset-minimal"}),
+        "graph": MappingProxyType({"dependency_pruned": "dependency-pruned"}),
+        "verification": MappingProxyType(
+            {"verified": "checked against the encoded model semantics"}
+        ),
     }
 )
 
@@ -3339,14 +3427,14 @@ def explanation_text_lines(explanation) -> List[str]:
     if explanation is None:
         return []
     lines = []
-    headline = EXPLANATION_HEADLINES.get(
-        (explanation.achieved_mode, explanation.status)
+    # An achieved depth is named with its status; achieving nothing is named with
+    # the request instead, and the key says which of the two this is.
+    key = (
+        ("none", explanation.requested_mode)
+        if explanation.achieved_mode == "none"
+        else (explanation.achieved_mode, explanation.status)
     )
-    if headline is None:
-        # achieved_mode 'none' means the requested depth was not reached; the
-        # frozen transcript names that explicitly instead of omitting the line.
-        headline = "%s EXPLANATION NOT ACHIEVED" % explanation.requested_mode.upper()
-    lines.append("Explanation: %s" % headline)
+    lines.append("Explanation: %s" % _ALL_EXPLANATION_HEADLINES[key])
     if depth_line_is_needed(explanation.requested_mode, explanation.achieved_mode):
         lines.append(
             "Explanation depth: requested %s, achieved %s"
@@ -3419,6 +3507,29 @@ def explanation_text_lines(explanation) -> List[str]:
         lines.append("Reduction: %s" % core.reduction)
         if closed:
             lines.append("Subset minimality: %s" % core.subset_minimality)
+        if closed and explanation.proof is not None:
+            # Frozen by the contract at §12.1, wording included.  The three facts
+            # were reaching JSON only, so a reader of the human report was told the
+            # proof is complete without being told what "complete" was checked
+            # against.  Transcribed rather than derived from the values: each field
+            # admits one value today, and spelling them out is what makes a widened
+            # enum fail here instead of printing a label nobody wrote.
+            lines.append("")
+            lines.append("Proof strength:")
+            lines.append(
+                "  Input constraints: %s"
+                % _PROOF_STRENGTH_PHRASES["input"][explanation.proof.input_minimality]
+            )
+            lines.append(
+                "  Reasoning graph: %s"
+                % _PROOF_STRENGTH_PHRASES["graph"][explanation.proof.graph_minimality]
+            )
+            lines.append(
+                "  Every reasoning step: %s"
+                % _PROOF_STRENGTH_PHRASES["verification"][
+                    explanation.proof.verification_status
+                ]
+            )
         if closed and narrative.review_surfaces:
             lines.append("")
             lines.append("Review surfaces:")

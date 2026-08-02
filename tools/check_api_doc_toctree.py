@@ -271,8 +271,13 @@ def _check_rebuild_rule() -> List[str]:
         if package_index in baseline:
             problems.append(
                 "%s is already out of date before the pretend edit, so the "
-                "rebuild rule cannot be proved either way.  Run make rst_auto "
-                "and commit any regenerated pages, then check again." % package_index
+                "rebuild rule cannot be proved either way.  Run make rst_auto and "
+                "commit any regenerated pages, then check again.  In a fresh "
+                "checkout or worktree this says nothing about the content: git "
+                "writes files in no particular order, so a generated page can land "
+                "with an older timestamp than its source and make calls it stale.  "
+                "There, make rst_auto refreshes the timestamps and reports no diff."
+                % package_index
             )
             continue
         if package_index in _make_targets(probe):

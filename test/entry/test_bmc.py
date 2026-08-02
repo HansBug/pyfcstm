@@ -2684,6 +2684,54 @@ def test_bmc_json_reason_does_not_claim_a_probe_that_never_ran(explain_files) ->
 
 
 @pytest.mark.unittest
+def test_a_proof_transcript_states_what_complete_was_checked_against(
+    explain_files,
+) -> None:
+    """A published proof has to say how strong it is, in the human report too.
+
+    The contract freezes a ``Proof strength`` block naming three facts: how minimal
+    the inputs are, whether the graph was pruned, and what every step was checked
+    against.  They were reaching JSON only, so a reader of the report was told the
+    proof is complete without being told what "complete" was measured by.
+
+    The wording is asserted verbatim because the block is frozen text, and the
+    headline is asserted alongside it so a report that drops the block while still
+    claiming a verified proof fails here.
+    """
+    model, query = explain_files
+
+    output = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "proof"
+    ).output
+
+    assert "COMPLETE VERIFIED DOMAIN PROOF" in output
+    assert "Proof strength:" in output
+    assert "  Input constraints: subset-minimal" in output
+    assert "  Reasoning graph: dependency-pruned" in output
+    assert (
+        "  Every reasoning step: checked against the encoded model semantics"
+    ) in output
+
+
+@pytest.mark.unittest
+def test_a_formal_transcript_claims_no_proof_strength(explain_files) -> None:
+    """Without a proof there is no strength to report, and none is printed.
+
+    The block describes a proof graph.  Printing it at ``formal`` depth, where no
+    graph was built, would attribute step-level checking to an explanation that
+    never did any.
+    """
+    model, query = explain_files
+
+    output = _run(
+        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    ).output
+
+    assert "COMPLETE FORMAL DOMAIN EXPLANATION" in output
+    assert "Proof strength:" not in output
+
+
+@pytest.mark.unittest
 def test_the_complete_transcript_answers_the_five_reader_questions(
     explain_files,
 ) -> None:

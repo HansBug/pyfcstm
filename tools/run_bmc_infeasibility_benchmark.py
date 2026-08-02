@@ -169,6 +169,68 @@ def _digest(path: Path) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+#: Case counts the README spells out, so the checker can read the number back.
+#:
+#: Only the counts the corpus itself decides are listed.  A number the README
+#: derives from something else -- how many rules a case lights up, say -- belongs
+#: to whatever owns that fact, not here.
+_COUNT_WORDS = {
+    1: "One",
+    2: "Two",
+    3: "Three",
+    4: "Four",
+    5: "Five",
+    6: "Six",
+    7: "Seven",
+    8: "Eight",
+    9: "Nine",
+    10: "Ten",
+}
+
+
+def _readme_count_problems() -> List[str]:
+    """Check that the README's case count still matches the corpus.
+
+    The README opens by counting its handwritten cases in words.  Adding or
+    removing one used to leave that sentence behind, and a reader has no way to
+    tell a stale count from a real one -- this repository shipped a README
+    claiming six cases while the directory held eight.
+
+    Spelled as a word rather than a digit, so this reads the word back rather
+    than looking for any number that happens to appear in the prose.
+
+    :return: One problem string if the count is wrong or unreadable, else empty.
+    :rtype: List[str]
+    """
+    readme = _REPO_ROOT / _BENCH_ROOT / "README.md"
+    if not readme.exists():
+        return []
+    expected = _COUNT_WORDS.get(len(_CASES))
+    if expected is None:
+        return [
+            "The corpus holds %d cases, which _COUNT_WORDS cannot spell, so the "
+            "README sentence cannot be checked." % len(_CASES)
+        ]
+    text = readme.read_text(encoding="utf-8")
+    wanted = "%s handwritten cases." % expected
+    if wanted in text:
+        return []
+    found = [
+        "%s handwritten cases." % word
+        for word in _COUNT_WORDS.values()
+        if "%s handwritten cases." % word in text
+    ]
+    if found:
+        return [
+            "%s says %r but the corpus holds %d."
+            % (_BENCH_ROOT / "README.md", found[0], len(_CASES))
+        ]
+    return [
+        "%s no longer opens with a spelled-out handwritten case count, so the "
+        "corpus size is unchecked there." % (_BENCH_ROOT / "README.md")
+    ]
+
+
 def _check() -> None:
     """Confirm the corpus and layout match what the runner and contract expect.
 
@@ -198,6 +260,7 @@ def _check() -> None:
     names = [name for name, _source, _note in _MEASUREMENT_MAP]
     if len(names) != len(set(names)):
         problems.append("The measurement map has a duplicate metric name.")
+    problems.extend(_readme_count_problems())
     if problems:
         raise BenchmarkFailure("\n".join("- %s" % item for item in problems))
 

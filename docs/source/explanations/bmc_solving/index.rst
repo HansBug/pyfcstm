@@ -482,43 +482,45 @@ Equation :eq:`bmc-symbol-growth` therefore gives
 :math:`|X_1|=2+2+2=6`: two frame-state symbols, delta and gamma, and two case
 selectors.
 
-The table is the forward audit map for the labelled equations in this page.
+The list below is the forward audit map for the labelled equations in this
+page.
 Literal LaTeX is the labelled block at each labelled equation target; the
 English and Chinese files carry identical blocks.
 
-.. list-table:: Solving-equation ledger
-   :header-rows: 1
-   :widths: 21 27 28 24
+Each equation below names its implementation, its tests, and the query whose
+trace exercises it.
 
-   * - Equation and claim
-     - Implementation anchor
-     - Test anchor
-     - Working query and trace
-   * - :eq:`bmc-solve-formulas`: staged feasibility and response suffix
-     - ``compile_bmc_property``; ``solve_bmc_property``; ``_SolveBudget``
-     - ``test_compile_response_strict_successor_and_incomplete_suffix``;
-       ``test_solver_unknown_and_timeout_paths_are_structured``
-     - Response query above: UNSAT main, SAT tail
-   * - :eq:`bmc-verdict-map`: polarity-aware three-valued verdict
-     - ``BmcSolveResult.property_satisfied`` and ``outcome``
-     - ``test_solve_result_public_verdict_truth_table``;
-       ``test_response_violation_verdict_stays_decisive_with_suffix``
-     - Response gives ``incomplete``; reach gives ``witness_found``
-   * - :eq:`bmc-witness-projection`: SAT model to sparse public trace
-     - ``decode_bmc_witness``; ``_decode_step``;
-       ``_event_inputs_for_step``
-     - witness decoder and event-policy tests in ``test/bmc/test_witness.py``
-     - Reach query: two frames and one step
-   * - :eq:`bmc-replay-agreement`: public observation equality
-     - ``replay_bmc_witness``; ``_compare_frame``; ``_compare_step``
-     - ``test_replay_reports_structured_var_mismatch``;
-       ``test_bmc_witness_replay_matches_full_semantic_fixture_trace``
-     - Reach query: ``replay.ok=true``; tampered ``x`` trace fails
-   * - :eq:`bmc-symbol-growth`: exact allocated trace-symbol count
-     - ``BmcTraceSymbols.allocate``
-     - shape assertions in ``test/bmc/test_domain.py`` and
-       ``test/bmc/test_relation_public_api.py``
-     - Reach query: :math:`N=1,V=0,E=0,K_0=2`, hence six symbols
+:eq:`bmc-solve-formulas` -- staged feasibility and response suffix
+    ``compile_bmc_property``, ``solve_bmc_property`` and ``_SolveBudget``.
+    Covered by ``test_compile_response_strict_successor_and_incomplete_suffix``
+    and ``test_solver_unknown_and_timeout_paths_are_structured``.  The response
+    query above gives UNSAT on the main objective and SAT on the tail.
+
+:eq:`bmc-verdict-map` -- polarity-aware three-valued verdict
+    ``BmcSolveResult.property_satisfied`` and ``outcome``.  The response query
+    gives ``incomplete``; the reach query gives ``witness_found``.  Covered by:
+
+    - ``test_solve_result_public_verdict_truth_table``
+    - ``test_response_violation_verdict_stays_decisive_with_suffix``
+
+:eq:`bmc-witness-projection` -- SAT model to sparse public trace
+    ``decode_bmc_witness``, ``_decode_step`` and ``_event_inputs_for_step``.
+    Covered by the witness decoder and event-policy tests in
+    ``test/bmc/test_witness.py``.  The reach query decodes two frames and one
+    step.
+
+:eq:`bmc-replay-agreement` -- public observation equality
+    ``replay_bmc_witness``, ``_compare_frame`` and ``_compare_step``.  The reach
+    query reports ``replay.ok=true``, and a trace with a tampered ``x`` fails.
+    Covered by:
+
+    - ``test_replay_reports_structured_var_mismatch``
+    - ``test_bmc_witness_replay_matches_full_semantic_fixture_trace``
+
+:eq:`bmc-symbol-growth` -- exact allocated trace-symbol count
+    ``BmcTraceSymbols.allocate``.  Covered by shape assertions in
+    ``test/bmc/test_domain.py`` and ``test/bmc/test_relation_public_api.py``.
+    The reach query has :math:`N=1,V=0,E=0,K_0=2`, hence six symbols.
 
 The semantic-fixture replay suite is especially important: it checks complete
 runtime traces for the registered hard-pass scenarios, not merely that a

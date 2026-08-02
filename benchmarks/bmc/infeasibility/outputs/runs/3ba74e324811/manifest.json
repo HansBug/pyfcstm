@@ -1,0 +1,85 @@
+{
+  "arms": [
+    "baseline-901f30e9",
+    "none",
+    "formal",
+    "proof"
+  ],
+  "baseline": {
+    "commit": "901f30e981c29eb8e304b33d61985652d2e85b2e",
+    "label": "baseline-901f30e9"
+  },
+  "candidate": {
+    "commit": "3ba74e324811ec62fe6a23f004249d2c74243957",
+    "dirty": false,
+    "porcelain": []
+  },
+  "environment": {
+    "machine": "x86_64",
+    "platform": "Linux-5.15.0-139-generic-x86_64-with-glibc2.31",
+    "processor": "x86_64",
+    "python": "3.11.5",
+    "python_implementation": "CPython",
+    "z3": "4.15.4"
+  },
+  "inputs": {
+    "cross_step.fbmcq": "83a5d492ed5165439bf07630d9590849512596e2a6912c6c67ff73681250cd7c",
+    "empty_interval.fbmcq": "06001377e4bdf768ec841bc99f798a88b4daf53eb02d8b727ad053d4da8fff88",
+    "event_conflict.fbmcq": "1d0cc11360b122ece3f8b23a60aeb0b090af5e656ce32dda3457a5201e8823d8",
+    "feasible.fbmcq": "be1ae17e049314c8d4c34207aa099d6af45a7bc91211440b7d2947b0edd40c64",
+    "latch.fcstm": "9109290b7d0b2812fea81f20bce17ee2a8dfc1aedcb5df0b9e90e500fcbe2b09",
+    "two_states.fbmcq": "13ebc1f6882211df444e9dfb8b229d7846807ece8e0af008f2720b566622e043",
+    "two_values.fbmcq": "fcbbad35c8865a5c1aac199b376f69e263986e4a868a2af098bf925218bc3b3f"
+  },
+  "measurement_map": [
+    {
+      "metric": "classification",
+      "note": "production ledger; the staged feasibility probe that fixes the family",
+      "source": "refinement_checks[component_*].elapsed_ms"
+    },
+    {
+      "metric": "core_extraction",
+      "note": "production ledger",
+      "source": "refinement_checks[unsat_core].elapsed_ms"
+    },
+    {
+      "metric": "core_minimization",
+      "note": "production ledger",
+      "source": "refinement_checks[unsat_core_minimization].elapsed_ms"
+    },
+    {
+      "metric": "proof_input_verification",
+      "note": "production ledger; the two-directional check of every input node",
+      "source": "refinement_checks[core_binding].elapsed_ms"
+    },
+    {
+      "metric": "proof_construction",
+      "note": "production ledger; covers closure construction AND derived-side rule_checker verification, which are not separable here",
+      "source": "refinement_checks[proof_construction].elapsed_ms"
+    },
+    {
+      "metric": "proof_linearization",
+      "note": "not in the production ledger; timed in the child process around a documented module function, and reported as instrumentation",
+      "source": "benchmark-only: direct timing of pyfcstm.bmc.proof_text.linearize_proof"
+    },
+    {
+      "metric": "total_elapsed_ms",
+      "note": "production ledger; whole solve including the mandatory verdict",
+      "source": "result.total_elapsed_ms"
+    },
+    {
+      "metric": "peak_child_rss_bytes",
+      "note": "absent rather than zero when psutil is unavailable",
+      "source": "psutil high-water mark of the child process"
+    },
+    {
+      "metric": "solver_checks",
+      "note": "production ledger; how many extra checks the depth cost",
+      "source": "len(result.feasibility.refinement_checks)"
+    }
+  ],
+  "repetitions": 5,
+  "run_id": "3ba74e324811",
+  "schema": "bmc-infeasibility-benchmark/v1",
+  "warmups": 1
+}

@@ -172,12 +172,12 @@ describe('jsfcstm ELK-based diagram pipeline', () => {
         // whether the level reached the state body or only the edge.
         const rowsIn = (svg: string, kind: string) =>
             (svg.match(new RegExp(`data-fcstm-kind="${kind}"`, 'g')) || []).length;
-        assert.equal(rowsIn(minimal, 'state-event'), 0, 'minimal should draw no state events');
-        assert.ok(rowsIn(normal, 'state-event') >= 1, 'normal should draw state events');
-        assert.equal(rowsIn(normal, 'state-action'), 0, 'normal should draw no state actions');
+        for (const [level, svg] of [['minimal', minimal], ['normal', normal]] as const) {
+            assert.equal(rowsIn(svg, 'state-event'), 0, `${level} should draw no state events`);
+            assert.equal(rowsIn(svg, 'state-action'), 0, `${level} should draw no state actions`);
+        }
+        assert.ok(rowsIn(full, 'state-event') >= 1, 'full should draw state events');
         assert.ok(rowsIn(full, 'state-action') >= 1, 'full should draw state actions');
-        assert.equal(rowsIn(full, 'state-event'), rowsIn(normal, 'state-event'),
-            'full should keep the event rows normal already had');
 
         // `legend` puts the events in the side panel and leaves the edges in
         // the neutral stroke; `both` tints them. Boot drives two transitions,
@@ -404,27 +404,28 @@ describe('jsfcstm ELK-based diagram pipeline', () => {
         const normal = leafAt('normal');
         const full = leafAt('full');
 
-        // `minimal` draws the title alone, so the box keeps the plain leaf size.
-        assert.deepEqual(minimal.fcstm?.eventLabels, []);
-        assert.deepEqual(minimal.fcstm?.actionLabels, []);
-        assert.ok((minimal.height || 0) <= 80,
-            `minimal should keep the plain leaf box; got height ${minimal.height}`);
+        // A state's own events and actions belong to `full`. `normal` is the
+        // default, and keeping its boxes the size they have always been is what
+        // lets this land without redrawing every diagram already made; the two
+        // levels still differ elsewhere, in the note pad and the edge tint.
+        for (const [level, node] of [['minimal', minimal], ['normal', normal]] as const) {
+            assert.deepEqual(node.fcstm?.eventLabels, [], `${level} should list no state events`);
+            assert.deepEqual(node.fcstm?.actionLabels, [], `${level} should list no state actions`);
+            assert.ok((node.height || 0) <= 80,
+                `${level} should keep the plain leaf box; got height ${node.height}`);
+        }
+        assert.equal(minimal.height, normal.height,
+            'minimal and normal should size a leaf the same way');
 
-        // `normal` adds the state's events, `full` adds its actions on top.
-        assert.ok((normal.fcstm?.eventLabels || []).length >= 1,
-            'normal should list the state events');
-        assert.deepEqual(normal.fcstm?.actionLabels, [],
-            'normal should not list state actions');
+        assert.ok((full.fcstm?.eventLabels || []).length >= 1, 'full should list the state events');
         assert.ok((full.fcstm?.actionLabels || []).length >= 3,
             'full should list enter / during / exit');
 
         // The rows have to be reserved in the layout, not only drawn: ELK packs
         // neighbours against the height it is given, so a box that grows at
         // draw time alone is overlapped by the state beside it.
-        assert.ok((normal.height || 0) > (minimal.height || 0),
-            `normal should reserve room for its event rows; got ${minimal.height} -> ${normal.height}`);
         assert.ok((full.height || 0) > (normal.height || 0),
-            `full should reserve room for its action rows; got ${normal.height} -> ${full.height}`);
+            `full should reserve room for its rows; got ${normal.height} -> ${full.height}`);
 
         // Reserved enough for the rows to be drawn inside the box. Comparing the
         // two heights against the row metric only restates the arithmetic the

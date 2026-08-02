@@ -1891,12 +1891,12 @@ class DiagramOptions:
 
     :param detail_level: Detail preset, one of ``minimal``, ``normal`` or
         ``full``.  Each draws a different picture.  ``minimal`` shows state
-        titles and transitions only, and leaves transition effects inline and
-        edges in the neutral stroke; ``normal`` adds each state's events under
-        its title, puts effects in a note and tints edges by event; ``full``
-        adds each state's lifecycle actions as well.  A state gains rows at the
-        bottom as the level rises, so raising it never rearranges what was
-        already on screen.
+        titles and transitions only, writes transition effects inline and leaves
+        edges in the neutral stroke; ``normal``, the default, puts effects in a
+        note beside the transition and tints edges by event; ``full`` adds each
+        state's own events and lifecycle actions under its title.  A state gains
+        rows at the bottom as the level rises, so raising it never rearranges
+        what was already on screen.
 
         The preset governs how a diagram is *drawn*, not what it contains:
         :meth:`Diagram.to_dict` and :meth:`Diagram.to_json` return the same

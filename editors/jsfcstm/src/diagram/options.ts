@@ -21,6 +21,11 @@ const DETAIL_LEVEL_DEFAULTS: Record<FcstmDiagramDetailLevel, Omit<
         showStateEvents: false,
         showStateActions: false,
     },
+    // `normal` is the default, and a state's own events stay out of its body
+    // here so that turning the presets on did not silently redraw every diagram
+    // anyone had already made. The level still differs from `minimal` -- it puts
+    // transition effects in a note and tints edges by event -- and `full` is
+    // where a state's events and actions appear.
     normal: {
         showVariableDefinitions: true,
         showEvents: true,
@@ -28,7 +33,7 @@ const DETAIL_LEVEL_DEFAULTS: Record<FcstmDiagramDetailLevel, Omit<
         showTransitionEffects: true,
         transitionEffectMode: 'note',
         eventVisualizationMode: 'both',
-        showStateEvents: true,
+        showStateEvents: false,
         showStateActions: false,
     },
     full: {

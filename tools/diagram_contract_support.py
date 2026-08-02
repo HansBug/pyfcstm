@@ -84,14 +84,14 @@ state Board {
 # What the viewer should draw at each level: event rows and action rows inside
 # state bodies, and whether a transition effect gets a note pad of its own.
 #
-# ``minimal`` shows titles only and writes effects inline; ``normal`` adds the
-# one state event (``PowerOn::Boot``) and moves effects into notes; ``full``
-# adds that state's two lifecycle actions as well. Three settings of the four
-# the presets disagree on are visible here; the fourth, edge tinting, is held
-# by the jsfcstm suite, which can read a stroke colour without a browser.
+# ``minimal`` shows titles only and writes effects inline; ``normal`` keeps the
+# titles and moves effects into notes; ``full`` adds the state's own event and
+# its two lifecycle actions. Two of the four settings the presets disagree on
+# are visible here; the other two -- edge tinting and the legend -- are held by
+# the jsfcstm suite, which can read a stroke colour without a browser.
 DETAIL_LEVEL_EXPECTATIONS = {
     "minimal": {"eventRows": 0, "actionRows": 0, "notes": False},
-    "normal": {"eventRows": 1, "actionRows": 0, "notes": True},
+    "normal": {"eventRows": 0, "actionRows": 0, "notes": True},
     "full": {"eventRows": 1, "actionRows": 2, "notes": True},
 }
 

@@ -298,7 +298,11 @@ def test_renderer_request_errors_are_bounded_and_actionable():
     import copy
 
     request = copy.deepcopy(_request())
-    del request["diagram"]["rootState"]["children"][0]["events"]
+    # `children`, because every level reads it -- the walk asks whether a state
+    # is a leaf before it asks anything else. Removing `events` used to serve
+    # here, until the default level stopped reading them and a malformed request
+    # started rendering happily: the case was testing the preset, not the shape.
+    del request["diagram"]["rootState"]["children"][0]["children"]
     with pytest.raises(
         DiagramRenderError,
         match=r"DiagramData shape and renderer options",

@@ -185,17 +185,31 @@ def _require_text_rendering(page) -> None:
     :rtype: None
     :raises VisualCheckFailure: If a known string measures zero wide.
     """
-    width = page.evaluate(
+    measured = page.evaluate(
         """() => {
           const c = document.createElement('canvas').getContext('2d');
           c.font = '32px sans-serif';
-          return c.measureText('HELLO 12345').width;
+          return {latin: c.measureText('HELLO 12345').width,
+                  cjk: c.measureText('\u6c42\u89e3\u4e0e\u56de\u653e').width,
+                  cjkRef: c.measureText('MMMMM').width};
         }"""
     )
-    if not width:
+    if not measured["latin"]:
         raise VisualCheckFailure(
             "the browser measures text at zero width, so no visual check here "
             "means anything; set FONTCONFIG_FILE to a config with a loadable font"
+        )
+    # A missing CJK font does not give zero width -- Chromium draws tofu boxes,
+    # which are narrower than real glyphs.  Measured at 95px against 160px here,
+    # a 40% error, while the overflow this check exists to catch had 10px of
+    # margin.  Five ideographs at 32px are about as wide as five 'M's; well under
+    # that means the boxes, not the characters.
+    if measured["cjk"] < 0.8 * measured["cjkRef"]:
+        raise VisualCheckFailure(
+            "the browser has no CJK font -- five ideographs measure %.0fpx "
+            "against %.0fpx for five 'M's, so the Chinese pages would be laid "
+            "out from tofu-box widths; add a CJK family to FONTCONFIG_FILE"
+            % (measured["cjk"], measured["cjkRef"])
         )
 
 

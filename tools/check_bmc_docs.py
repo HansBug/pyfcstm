@@ -139,15 +139,20 @@ _EXPLANATION_STATUSES = ("complete", "partial", "unknown", "timeout")
 
 #: Every headline a report can open its explanation block with.
 #:
-#: All four, not the two that happen to appear in the examples.  A reader at
-#: ``formal`` depth most often sees ``COMPLETE FORMAL DOMAIN EXPLANATION``, and
-#: that string was documented nowhere while the required anchors named the
-#: ``PARTIAL`` one -- so the gate was endorsing the headline a reader sees least.
+#: Five, not the four in ``EXPLANATION_HEADLINES``.  That mapping is keyed by
+#: achieved depth, and a report whose achieved depth is ``none`` falls through to
+#: a headline built from the *requested* depth instead -- a signature the delivery
+#: matrix allows for both ``formal`` and ``proof``.  Listing only the mapping's
+#: four is how the first version of this constant claimed a closed set that the
+#: renderer does not honour, in a fix whose whole subject was an undocumented
+#: headline.
 _EXPLANATION_HEADLINES = (
     "COMPLETE FORMAL DOMAIN EXPLANATION",
     "PARTIAL FORMAL DOMAIN EXPLANATION",
     "COMPLETE VERIFIED DOMAIN PROOF",
     "PARTIAL VERIFIED DOMAIN PROOF",
+    "FORMAL EXPLANATION NOT ACHIEVED",
+    "PROOF EXPLANATION NOT ACHIEVED",
 )
 
 #: How far minimization got, and what the proof's own minimality claims are.
@@ -250,6 +255,23 @@ _UNREACHABLE_RULES = (
 #: The proof tier landed after this page described it as never closing, so the
 #: page tells a reader the feature does not work.  A stale claim is worse than a
 #: missing one, and nothing else in this checker would notice it.
+#: Table rows the reference page must carry verbatim.
+#:
+#: An existence anchor cannot tell "the value is named somewhere on the page" from
+#: "the table lists it".  The fifth headline is only useful in the table row that
+#: pairs it with ``achieved_mode`` of ``none``; mentioned in prose alone it does
+#: not answer what a reader is looking up.
+_REQUIRED_TABLE_ROWS: Dict[str, Tuple[str, ...]] = {
+    "reference/bmc_results/index.rst": (
+        "     - ``FORMAL EXPLANATION NOT ACHIEVED`` or\n"
+        "       ``PROOF EXPLANATION NOT ACHIEVED``\n",
+    ),
+    "reference/bmc_results/index_zh.rst": (
+        "     - ``FORMAL EXPLANATION NOT ACHIEVED`` 或\n"
+        "       ``PROOF EXPLANATION NOT ACHIEVED``\n",
+    ),
+}
+
 _FORBIDDEN_CLAIMS: Dict[str, Tuple[Tuple[str, str], ...]] = {
     "reference/bmc_results/index": (
         (
@@ -741,6 +763,25 @@ def _check_rule_reachability(errors: List[str]) -> None:
             )
 
 
+def _check_required_rows(errors: List[str]) -> None:
+    """Confirm the page carries the exact table rows a reader looks values up in.
+
+    :param errors: Accumulator the caller raises from.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    source = _REPO_ROOT / "docs/source"
+    for relative, rows in sorted(_REQUIRED_TABLE_ROWS.items()):
+        text = _visible_text(source / relative)
+        for row in rows:
+            if row in text:
+                continue
+            errors.append(
+                "%s no longer carries the table row %r." % (relative, row.strip())
+            )
+
+
 def check() -> None:
     """Run every deterministic BMC documentation contract check."""
     errors: List[str] = []
@@ -754,6 +795,7 @@ def check() -> None:
     _check_forbidden_claims(errors)
     _check_schema_vocabularies(errors)
     _check_rule_reachability(errors)
+    _check_required_rows(errors)
     if errors:
         raise CheckFailure("BMC documentation check failed:\n" + "\n".join(errors))
 

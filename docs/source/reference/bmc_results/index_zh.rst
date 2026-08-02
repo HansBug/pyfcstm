@@ -454,7 +454,8 @@ scope 上面那句话。粒度、成员数、带标签的最小性行以及解�
 证明区块
 ~~~~~~~~
 
-标题行说明达成的深度与它的完整程度，共四种组合：
+标题行说明达成的深度与它的完整程度。冻结表给出四种组合；当请求的深度根本没有达成
+时还会产生第五种，而它是按\ *请求*\ 的深度命名，不是按达成的深度：
 
 .. list-table::
    :header-rows: 1
@@ -475,13 +476,19 @@ scope 上面那句话。粒度、成员数、带标签的最小性行以及解�
    * - ``proof``
      - ``partial``
      - ``PARTIAL VERIFIED DOMAIN PROOF``
+   * - ``none``
+     - 任意
+     - ``FORMAL EXPLANATION NOT ACHIEVED`` 或
+       ``PROOF EXPLANATION NOT ACHIEVED``
 
 ``formal`` 深度上的 ``COMPLETE`` 意思是该档承诺的内容都产出了——一个分类与一个源组
 冲突核——而不是"找到了证明"。把它读成"工具已经做完了"，正是这张表要防的误解。
 
-被请求而未达成的深度没有自己的标题行：由实际达成的深度命名，差异由
-``Explanation depth:`` 行报告。因此请求 ``proof`` 而降级时显示的是 ``FORMAL``
-标题，绝不会是 ``PROOF`` 标题。
+最后一行需要仔细读。当 ``achieved_mode`` 为 ``none`` 时没有任何产出可供命名，于是
+标题报告的是\ *请求*\ 的深度加上 ``NOT ACHIEVED``——也就是说，请求 ``proof`` 却什么
+都没到达时，显示的是 ``PROOF EXPLANATION NOT ACHIEVED``，尽管并不存在证明。而降级到
+``formal`` 是另一种情形：确实有产出，所以由达成的深度命名，显示 ``FORMAL`` 标题。
+两种情形下差异都由 ``Explanation depth:`` 行报告，那才是可靠的分支依据。
 
 
 ``--explain-infeasibility proof`` 会构造证明，并在每一步都被核验过时发布它。区块

@@ -523,8 +523,10 @@ the conflict at all.
 Proof block
 ~~~~~~~~~~~
 
-The headline names the achieved depth and how complete it is, in four
-combinations:
+The headline names the achieved depth and how complete it is.  Four combinations
+come from the frozen table; a fifth is produced when the requested depth was not
+reached at all, and it is named after what was *asked for* rather than what was
+achieved:
 
 .. list-table::
    :header-rows: 1
@@ -545,15 +547,23 @@ combinations:
    * - ``proof``
      - ``partial``
      - ``PARTIAL VERIFIED DOMAIN PROOF``
+   * - ``none``
+     - any
+     - ``FORMAL EXPLANATION NOT ACHIEVED`` or
+       ``PROOF EXPLANATION NOT ACHIEVED``
 
 ``COMPLETE`` at ``formal`` depth means the formal explanation produced everything
 it promises -- a classification and a source core -- not that a proof was found.
 Reading it as "the tool is done" is the mistake this table exists to prevent.
 
-A depth that was requested but not achieved has no headline of its own: the
-achieved depth names it, and the ``Explanation depth:`` line reports the
-difference.  So a request for ``proof`` that degrades shows a ``FORMAL`` headline,
-never a ``PROOF`` one.
+The last row is the one to read carefully.  When ``achieved_mode`` is ``none``
+nothing was produced to name, so the headline reports the *requested* depth with
+``NOT ACHIEVED`` -- meaning a request for ``proof`` that reaches nothing shows
+``PROOF EXPLANATION NOT ACHIEVED``, even though no proof exists.  A request that
+degrades to ``formal`` is the other case: something was produced, so the achieved
+depth names it and a ``FORMAL`` headline appears.  Either way the
+``Explanation depth:`` line reports the difference, and it is the reliable field
+to branch on.
 
 
 ``--explain-infeasibility proof`` builds a proof and publishes it when every step

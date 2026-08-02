@@ -47,11 +47,21 @@ mjx-container:not([display="true"]) {
  * CJK paragraphs have no spaces for the browser to break at, so a line can only
  * end where a break opportunity exists.  Allowing one anywhere lets the line end
  * before an inline formula instead of carrying it past the content box.
+ *
+ * Scoped to Chinese pages by :lang, since the motivation is CJK-specific and
+ * English prose already has spaces to break at -- an unscoped rule would change
+ * wrapping on pages that never had the problem.  Inline literals opt back out:
+ * overflow-wrap is inherited, and breaking a short identifier mid-word costs
+ * more readability than the line it saves.
  */
 @media (max-width: 480px) {
-  .rst-content p,
-  .rst-content dd,
-  .rst-content li {
+  html[lang|="zh"] .rst-content p,
+  html[lang|="zh"] .rst-content dd,
+  html[lang|="zh"] .rst-content li {
     overflow-wrap: anywhere;
+  }
+
+  html[lang|="zh"] .rst-content code.literal {
+    overflow-wrap: break-word;
   }
 }

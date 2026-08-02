@@ -1035,6 +1035,40 @@ async function evaluate(cdp, expression) {
     // with their rows. Every setting the detail presets disagree on used to
     // stop before the drawing, so the three levels produced one picture
     // between them, and nothing here noticed because nothing here looked.
+    // Clicked where a reader would click, on the glyphs of a row rather than on
+    // the state's empty space. A row carries `data-fcstm-kind` so a test can
+    // count it, and the click hit-test walks up to that attribute: for one
+    // release it stopped at the row and the state did nothing, while hover --
+    // which also asks for `data-fcstm-id` -- kept working, so the diagram
+    // highlighted under the cursor and ignored the press.
+    //
+    // Through the browser's own hit-testing. A dispatched MouseEvent is
+    // delivered to the element the test names and never consults `closest`,
+    // pointer-events or what is painted on top, so it cannot see this at all.
+    const rowClick = await evaluate(cdp, `(() => {
+      const row = document.querySelector('[data-fcstm-kind="state-event"] text, [data-fcstm-kind="state-action"] text');
+      if (!row) return null;
+      const box = row.getBoundingClientRect();
+      const point = {x: Math.round(box.left + box.width / 2), y: Math.round(box.top + box.height / 2)};
+      // A short window scrolls the page, so a row can sit past the bottom of
+      // the viewport. A coordinate out there hits nothing, which says nothing
+      // about the hit-test this is here to measure.
+      point.onScreen = point.x >= 0 && point.y >= 0
+        && point.x < innerWidth && point.y < innerHeight;
+      point.owner = row.closest('[data-fcstm-kind="state"]')?.getAttribute('data-fcstm-id') || '';
+      return point;
+    })()`);
+    let rowClickSelects = null;
+    if (rowClick && rowClick.onScreen && rowClick.owner) {
+      await realClick(cdp, rowClick.x, rowClick.y);
+      await sleep(200);
+      // The state that owns the row, not merely something. Any selection at all
+      // would also be satisfied by the click landing on the state's background.
+      rowClickSelects = await evaluate(cdp,
+        `[...document.querySelectorAll('.fcstm-selected')]`
+        + `.some(el => el.getAttribute('data-fcstm-id') === ${JSON.stringify(rowClick.owner)})`);
+    }
+
     const stateRows = await evaluate(cdp, `(() => ({
       'state-event': document.querySelectorAll('[data-fcstm-kind="state-event"]').length,
       'state-action': document.querySelectorAll('[data-fcstm-kind="state-action"]').length,
@@ -1632,7 +1666,7 @@ async function evaluate(cdp, expression) {
     );
     const modeButtonsFound = states.buttonFound === true && compare.buttonFound === true
       && fcstmOnly.buttonFound === true && backToCompare.buttonFound === true;
-    const report = {initial, sourceLayout, sourceLayoutChecks, selectMenu, selectMenuChecks, sourceUnavailableChecks, sourceChecks, fontChecks, revealTarget, transitionChecks, pdfChecks, pngChecks, svgChecks, diagramOnly: states, fcstmOnly, compare, backToCompare, importedSource, selection, revealSource, hover, sourceHover, transitionHover, sourceSelection, sourceCycle, zoom, pdf, collapse, layout, minimumPanelHeight, comparisonTooShort, drawerChecks, modeButtonsFound, exportError, expectedPdfPage, oversizedUiIcons, stateRows, stateRowChecks, externalRequests: network, cspViolations, consoleErrors: consoleErrors.length, consoleDetails};
+    const report = {initial, sourceLayout, sourceLayoutChecks, selectMenu, selectMenuChecks, sourceUnavailableChecks, sourceChecks, fontChecks, revealTarget, transitionChecks, pdfChecks, pngChecks, svgChecks, diagramOnly: states, fcstmOnly, compare, backToCompare, importedSource, selection, revealSource, hover, sourceHover, transitionHover, sourceSelection, sourceCycle, zoom, pdf, collapse, layout, minimumPanelHeight, comparisonTooShort, drawerChecks, modeButtonsFound, exportError, expectedPdfPage, oversizedUiIcons, stateRows, stateRowChecks, rowClick, rowClickSelects, externalRequests: network, cspViolations, consoleErrors: consoleErrors.length, consoleDetails};
     console.log(JSON.stringify(report, null, 2));
     // The interaction and panel assertions below describe this file's own
     // fixture: a machine with labelled transitions, composite children and more
@@ -1661,6 +1695,9 @@ async function evaluate(cdp, expression) {
           verticalOverflow || horizontalOverflow || comparisonTooShort ||
           !drawerChecks || oversizedUiIcons ||
           stateRowChecks.length ||
+          // Only where a row was drawn and reachable; `null` means the probe
+          // declined, which is not the same as the click having failed.
+          (rowClickSelects !== null && rowClickSelects !== true) ||
           (expectDocuments > 0 && importedSource.published.length !== expectDocuments) ||
           (Math.max(importedSource.published.length, expectDocuments) > 1 && (
             !importedSource.pickerFound

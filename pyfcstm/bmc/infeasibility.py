@@ -627,24 +627,31 @@ def classify_infeasibility(
         # ``assumptions_domain`` scope.
         #
         # ``initialization_domain_conflict`` is the same shape on the other stage
-        # and has no producing path, because that shape needs two frames playing
-        # different parts.  The exclusion has to land on a frame the prefix has
-        # already pinned: with ``init state("Root.A")`` an exclusion at frame 1 or
-        # later lands here, while the same exclusion at frame 0, or any frame under
-        # ``init cold`` or no initializer at all, leaves the prefix loose enough to
-        # land in ``prefix_conflict`` instead.  An ``init`` clause can only
-        # constrain frame 0 -- the very frame it pins -- so the pin and the
-        # exclusion collide, the component probe above returns unsat first, and the
-        # classification is ``initialization_self_conflict``.  That covers all three
-        # ``init_target`` forms: ``state(...)`` and ``terminated`` pin frame 0, and
-        # ``cold`` pins nothing.
+        # and has no producing path, because the initializer cannot put frame 0
+        # outside the domain it is checked against.  Every ``init_target`` pins
+        # ``F_0_state`` to one literal -- ``cold`` to -3, ``terminated`` to -1, a
+        # named state to its id -- and the domain aggregate for that frame is the
+        # disjunction over exactly those values, sentinels included.  So any
+        # assignment satisfying the initial component already satisfies the frame-0
+        # domain, which makes the domain probe satisfiable whenever the component
+        # probe above was, and the unsat branch unreachable from this stage.  An
+        # optional ``WHERE`` cannot change that: it constrains the same frame, so it
+        # either leaves the component satisfiable, in which case the reasoning holds,
+        # or contradicts the pin and is reported as ``initialization_self_conflict``
+        # before the domain probe runs.
         #
-        # The initializer grammar does admit the exclusion itself -- ``init_clause``
-        # carries an optional ``WHERE`` over the full condition language, so
-        # ``init cold where !active("Root.A") && !terminated();`` parses and runs.
-        # An earlier version of this comment claimed the grammar was what ruled the
-        # classification out; that was wrong, and the frame argument above is the
-        # actual reason.
+        # The assumptions side reaches the shape because it can constrain a frame the
+        # initializer did not pin, which is what ``assume at 1: !active(...)`` on
+        # every state does.
+        #
+        # Two earlier versions of this comment gave reasons that do not hold.  The
+        # grammar does admit the exclusion -- ``init_clause`` carries an optional
+        # ``WHERE`` over the full condition language -- and ``cold`` does pin frame 0
+        # rather than leaving it free, so the argument cannot rest on the component
+        # probe refusing every ``WHERE``.  ``init cold where !active("Root.A") &&
+        # !active("Root.B") && !terminated();`` leaves the component probe satisfiable
+        # and lands in ``initialization_kernel_conflict``; that query is a case in
+        # ``test_classification_on_real_queries``.
         #
         # Whether it should stay in the frozen vocabulary is a contract decision
         # recorded on the tracking issue, not one this branch settles.  An earlier

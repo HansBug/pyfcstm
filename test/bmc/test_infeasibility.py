@@ -170,12 +170,11 @@ def test_every_scope_has_a_frozen_target() -> None:
             "assumptions",
             "assumptions_domain_conflict",
         ),
-        # The three rows below pin why ``initialization_domain_conflict`` has no
-        # producing path, which the branch states in prose.  The domain shape needs
-        # the exclusion to land on a frame the prefix already pinned, so moving the
-        # exclusion onto the pinned frame itself, or loosening the pin, degrades it
-        # to a prefix conflict.  An ``init`` clause can only reach frame 0 -- the
-        # frame it pins -- so it can never separate the two roles.
+        # The rows below pin why ``initialization_domain_conflict`` has no producing
+        # path, which the branch states in prose.  The assumptions side reaches the
+        # shape by constraining a frame the initializer did not pin; moving the
+        # exclusion onto frame 0, or loosening the pin to ``init cold``, degrades it
+        # to a prefix conflict instead.
         (
             'init state("Root.A"); '
             'assume at 0: !active("Root.A"); '
@@ -221,6 +220,51 @@ def test_classification_on_real_queries(query, stage, expected) -> None:
 
     assert outcome.classification == expected
     assert outcome.scope == CLASSIFICATION_SCOPES[expected]
+
+
+@pytest.mark.parametrize(
+    "init_clause, pinned",
+    [
+        ("init cold;", -3),
+        ("init terminated;", -1),
+        ('init state("Root.A");', 1),
+    ],
+)
+def test_every_initializer_pins_frame_zero_inside_the_frame_domain(
+    init_clause, pinned
+) -> None:
+    """Why no initializer can put frame 0 outside the domain it is checked against.
+
+    Each ``init_target`` pins ``F_0_state`` to one literal, and the frame-0 domain
+    aggregate is the disjunction over exactly the values that can be pinned, the two
+    sentinels included.  So an assignment satisfying the initial component already
+    satisfies the domain, which is what makes ``initialization_domain_conflict``
+    unreachable -- the branch says so in prose, and this is the fact it rests on.
+
+    Pinned as literals rather than read from the encoder, so a renumbering that moved
+    a sentinel out of the domain enumeration fails here instead of quietly making the
+    prose wrong.
+    """
+    core = _core_formula(init_clause + ' check reach <= 2: active("Root.B");')
+    partition = partition_tracked_groups(core)
+
+    pins = [
+        str(expression)
+        for group in partition.initial
+        for expression in group.expressions
+        if "F_0_state" in str(expression)
+    ]
+    assert pins == ["%d == F_0_state" % pinned]
+
+    domains = [
+        str(expression).replace("\n", " ")
+        for group in partition.domain
+        for expression in group.expressions
+        if "F_0_state" in str(expression)
+    ]
+    assert len(domains) == 1
+    for value in (-3, -1, 0, 1, 2):
+        assert "%d == F_0_state" % value in domains[0]
 
 
 def test_kernel_stage_needs_no_probe() -> None:

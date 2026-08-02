@@ -366,6 +366,31 @@ describe('jsfcstm ELK-based diagram pipeline', () => {
         const diagram = await buildFcstmDiagramFromDocument(doc);
         assert.ok(diagram);
 
+        // A deterministic placement, so the emitter is measured rather than elkjs.
+        // Sizes come from the graph the builder produced, which is where room
+        // for the rows was reserved.
+        const place = (node: any, ox = 0, oy = 0) => {
+            node.x = ox;
+            node.y = oy;
+            node.width = node.width || 160;
+            node.height = node.height || 80;
+            let cy = 36;
+            for (const child of node.children || []) {
+                place(child, 20, cy);
+                cy += (child.height || 0) + 12;
+                node.width = Math.max(node.width, 20 + (child.width || 160) + 20);
+                node.height = Math.max(node.height, cy + 20);
+            }
+            for (const edge of node.edges || []) {
+                edge.sections = [{startPoint: {x: 10, y: 10}, endPoint: {x: 50, y: 50}}];
+            }
+        };
+        const placed = (level: 'minimal' | 'normal' | 'full') => {
+            const graph = buildFcstmElkGraph(diagram!, resolveFcstmDiagramPreviewOptions(level),
+                {collapsedStateIds: new Set<string>()});
+            place(graph);
+            return graph;
+        };
         const leafAt = (level: 'minimal' | 'normal' | 'full') => {
             const options = resolveFcstmDiagramPreviewOptions(level);
             const graph = buildFcstmElkGraph(diagram!, options, {collapsedStateIds: new Set<string>()});
@@ -401,14 +426,25 @@ describe('jsfcstm ELK-based diagram pipeline', () => {
         assert.ok((full.height || 0) > (normal.height || 0),
             `full should reserve room for its action rows; got ${normal.height} -> ${full.height}`);
 
-        // Exactly one row's worth per row, because the emitter measures the
-        // band back from this height: reserve less and the last row is drawn
-        // through the bottom border, reserve more and the box has a gap the
-        // renderer never fills. The two sides share the metric that decides it.
-        const addedRows = (full.fcstm?.actionLabels || []).length;
-        assert.equal((full.height || 0) - (normal.height || 0), addedRows * 15,
-            `full adds ${addedRows} action rows and should grow by exactly that much; `
-            + `got ${normal.height} -> ${full.height}`);
+        // Reserved enough for the rows to be drawn inside the box. Comparing the
+        // two heights against the row metric only restates the arithmetic the
+        // sizing already did -- both levels use the same title band, so the
+        // difference cannot be anything but the rows. What has to hold is that
+        // the emitter, which measures the band back from whatever height it is
+        // given, puts every row above the bottom edge.
+        const drawn = renderFcstmDiagramSvg(placed('full'), resolveFcstmDiagramPreviewOptions('full'));
+        const box = /<g data-fcstm-kind="state" data-fcstm-id="Board\.PowerOn"[^>]*>.*?<rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)"/s.exec(drawn);
+        assert.ok(box, 'PowerOn should be drawn with a body rect');
+        const bottom = Number(box![2]) + Number(box![4]);
+        const rowYs = [...drawn.matchAll(/<g data-fcstm-kind="state-(?:event|action)"><text x="[\d.]+" y="([\d.]+)"/g)]
+            .map(match => Number(match[1]));
+        const expectedRows = (full.fcstm?.eventLabels || []).length
+            + (full.fcstm?.actionLabels || []).length;
+        assert.equal(rowYs.length, expectedRows,
+            `every row the graph reserved should be drawn; reserved ${expectedRows}, drew ${rowYs.length}`);
+        for (const y of rowYs) {
+            assert.ok(y <= bottom, `a row baseline at ${y} falls below the box bottom at ${bottom}`);
+        }
     });
 
     it('event-label color tracks the path color (shared-event hue flows to the label)', async () => {

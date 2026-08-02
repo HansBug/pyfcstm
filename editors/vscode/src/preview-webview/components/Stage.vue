@@ -894,6 +894,16 @@ void _t;
 .fcstm-stage__inner [data-fcstm-kind="pseudo-exit"] {
     cursor: pointer;
 }
+/* The event / action rows inside a state body are marked so a test can count
+   them, and `data-fcstm-kind` is also what the click handler walks up to. It is
+   the one hit-test that does not require `[data-fcstm-id]` beside it, so a row
+   caught the click and `closest` stopped there: the state under the cursor
+   highlighted on hover, which does require the id, and then did nothing when
+   pressed. The rows are labels; let the click reach the state they describe. */
+.fcstm-stage__inner [data-fcstm-kind="state-event"],
+.fcstm-stage__inner [data-fcstm-kind="state-action"] {
+    pointer-events: none;
+}
 body.modifier-held .fcstm-stage__inner [data-fcstm-kind][data-fcstm-range-start-line] {
     cursor: alias;
 }

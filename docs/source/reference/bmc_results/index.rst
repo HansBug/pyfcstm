@@ -523,36 +523,58 @@ the conflict at all.
 Proof block
 ~~~~~~~~~~~
 
-The headline names the achieved depth and how complete it is.  Four combinations
-come from the frozen table; a fifth is produced when the requested depth was not
-reached at all, and it is named after what was *asked for* rather than what was
-achieved:
+The headline is built from two facts rather than chosen from a list, and the rule
+covers every case:
 
-.. list-table::
-   :header-rows: 1
-   :widths: 22 18 60
+**When something was produced**, the headline names the depth that was *achieved*
+and how complete it is -- ``COMPLETE`` or ``PARTIAL``, then ``FORMAL DOMAIN
+EXPLANATION`` or ``VERIFIED DOMAIN PROOF``.
 
-   * - Achieved depth
-     - ``status``
-     - Headline
-   * - ``formal``
-     - ``complete``
-     - ``COMPLETE FORMAL DOMAIN EXPLANATION``
-   * - ``formal``
-     - ``partial``
-     - ``PARTIAL FORMAL DOMAIN EXPLANATION``
-   * - ``proof``
-     - ``complete``
-     - ``COMPLETE VERIFIED DOMAIN PROOF``
-   * - ``proof``
-     - ``partial``
-     - ``PARTIAL VERIFIED DOMAIN PROOF``
-   * - ``none`` (requested ``formal``)
-     - ``partial``, ``unknown`` or ``timeout``
-     - ``FORMAL EXPLANATION NOT ACHIEVED``
-   * - ``none`` (requested ``proof``)
-     - ``partial``, ``unknown`` or ``timeout``
-     - ``PROOF EXPLANATION NOT ACHIEVED``
+**When nothing was produced** -- ``achieved_mode`` of ``none`` -- there is no
+achieved depth to name, so the headline names the depth that was *requested*,
+followed by ``NOT ACHIEVED``.
+
+Four runs against the benchmark corpus, covering both halves of the rule:
+
+.. code-block:: console
+
+   $ pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
+       --explain-infeasibility proof --color never
+   Explanation: COMPLETE VERIFIED DOMAIN PROOF
+
+   $ pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
+       --explain-infeasibility formal --color never
+   Explanation: COMPLETE FORMAL DOMAIN EXPLANATION
+
+   $ pyfcstm bmc -i latch.fcstm -q cross_step.fbmcq \
+       --explain-infeasibility proof --color never
+   Explanation: PARTIAL FORMAL DOMAIN EXPLANATION
+   Explanation depth: requested proof, achieved formal
+   Reason: the formal explanation is complete, but no rule in the catalog closes
+   this core.
+
+   $ pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
+       --explain-infeasibility proof --color never --timeout-ms 1
+   Explanation: PROOF EXPLANATION NOT ACHIEVED
+
+   $ pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
+       --explain-infeasibility formal --color never --timeout-ms 1
+   Explanation: FORMAL EXPLANATION NOT ACHIEVED
+   Reason: component probe did not start: budget exhausted before the probe
+   started; ...
+
+Applying the rule to the pairings not shown: a proof that was built but reported
+``partial`` opens on ``PARTIAL VERIFIED DOMAIN PROOF``, since ``proof`` is what
+was achieved and ``partial`` is how complete it is.  The corpus has no case that
+produces it, which is why there is no run for it here -- the rule tells you what
+it would say.
+
+The middle case is the one that surprises: a request for ``proof`` that degrades
+shows a ``FORMAL`` headline, because ``formal`` is what was achieved.  The last
+case shows ``PROOF`` in the headline while no proof exists, because nothing was
+achieved and the request is all there is to name.  Read the headline for what
+happened and the ``Explanation depth:`` line for the gap; that line is the field
+to branch on.
 
 ``COMPLETE`` at ``formal`` depth means the formal explanation produced everything
 it promises -- a classification and a source core -- not that a proof was found.
@@ -793,6 +815,21 @@ produced.  ``status`` says how complete the achieved depth is:
      - A check the depth depends on came back neither way.
    * - ``timeout``
      - The explanation budget ran out before the depth was reached.
+
+Not every pairing of depth and status exists.  Two rules govern which do, and
+the public constructor enforces both, so a consumer can rely on them:
+
+* ``complete`` means the depth delivered what it promises, so ``achieved_mode``
+  of ``none`` is never ``complete`` -- nothing was delivered.  Constructing that
+  pairing raises ``achieved_mode 'none' cannot be complete; it is partial,
+  unknown or timeout``.
+* A ``partial`` result got far enough to classify the conflict, so it carries a
+  ``classification``; ``unknown`` and ``timeout`` did not, so they carry none.
+  Supplying the wrong one is refused as an unknown delivery signature.
+
+Rather than reading those as a table to memorize: ``classification`` is present
+exactly when the run got far enough to have one, and ``status`` says how far that
+was.
 
 A request for ``proof`` that degrades therefore reports ``achieved_mode`` as
 ``formal``, and ``reason`` names the cause.  Against the same model and a query

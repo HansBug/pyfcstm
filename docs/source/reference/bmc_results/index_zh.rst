@@ -454,34 +454,52 @@ scope 上面那句话。粒度、成员数、带标签的最小性行以及解�
 证明区块
 ~~~~~~~~
 
-标题行说明达成的深度与它的完整程度。冻结表给出四种组合；当请求的深度根本没有达成
-时还会产生第五种，而它是按\ *请求*\ 的深度命名，不是按达成的深度：
+标题行是由两个事实\ **拼出来**\ 的，不是从一张清单里挑出来的，而这条规则覆盖全部
+情形：
 
-.. list-table::
-   :header-rows: 1
-   :widths: 22 18 60
+**产出了东西时**\ ，标题命名\ *实际达成*\ 的深度与它的完整程度——``COMPLETE`` 或
+``PARTIAL``，接 ``FORMAL DOMAIN EXPLANATION`` 或 ``VERIFIED DOMAIN PROOF``。
 
-   * - 达成深度
-     - ``status``
-     - 标题行
-   * - ``formal``
-     - ``complete``
-     - ``COMPLETE FORMAL DOMAIN EXPLANATION``
-   * - ``formal``
-     - ``partial``
-     - ``PARTIAL FORMAL DOMAIN EXPLANATION``
-   * - ``proof``
-     - ``complete``
-     - ``COMPLETE VERIFIED DOMAIN PROOF``
-   * - ``proof``
-     - ``partial``
-     - ``PARTIAL VERIFIED DOMAIN PROOF``
-   * - ``none``\ （请求 ``formal``）
-     - ``partial``、``unknown`` 或 ``timeout``
-     - ``FORMAL EXPLANATION NOT ACHIEVED``
-   * - ``none``\ （请求 ``proof``）
-     - ``partial``、``unknown`` 或 ``timeout``
-     - ``PROOF EXPLANATION NOT ACHIEVED``
+**什么都没产出时**\ ——``achieved_mode`` 为 ``none``——没有已达成的深度可命名，于是
+标题命名\ *被请求*\ 的深度，后接 ``NOT ACHIEVED``。
+
+针对 benchmark 语料的四次真实运行，覆盖规则的两半：
+
+.. code-block:: console
+
+   $ pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
+       --explain-infeasibility proof --color never
+   Explanation: COMPLETE VERIFIED DOMAIN PROOF
+
+   $ pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
+       --explain-infeasibility formal --color never
+   Explanation: COMPLETE FORMAL DOMAIN EXPLANATION
+
+   $ pyfcstm bmc -i latch.fcstm -q cross_step.fbmcq \
+       --explain-infeasibility proof --color never
+   Explanation: PARTIAL FORMAL DOMAIN EXPLANATION
+   Explanation depth: requested proof, achieved formal
+   Reason: the formal explanation is complete, but no rule in the catalog closes
+   this core.
+
+   $ pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
+       --explain-infeasibility proof --color never --timeout-ms 1
+   Explanation: PROOF EXPLANATION NOT ACHIEVED
+
+   $ pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
+       --explain-infeasibility formal --color never --timeout-ms 1
+   Explanation: FORMAL EXPLANATION NOT ACHIEVED
+   Reason: component probe did not start: budget exhausted before the probe
+   started; ...
+
+把规则套用到未展示的组合上：一个已构造但报告为 ``partial`` 的证明，标题是
+``PARTIAL VERIFIED DOMAIN PROOF``——因为达成的是 ``proof``，完整程度是 ``partial``。
+语料里没有能产出它的用例，所以这里没有对应的运行；规则本身已经告诉你它会写什么。
+
+中间那种最容易意外：请求 ``proof`` 而降级时显示的是 ``FORMAL`` 标题，因为实际达成的
+是 ``formal``。最后那种在没有任何证明的情况下标题里出现 ``PROOF``，因为什么都没达成，
+可命名的只剩请求本身。标题读的是\ *发生了什么*\ ，差距读 ``Explanation depth:`` 行——
+那一行才是可用来分支的字段。
 
 ``formal`` 深度上的 ``COMPLETE`` 意思是该档承诺的内容都产出了——一个分类与一个源组
 冲突核——而不是"找到了证明"。把它读成"工具已经做完了"，正是这张表要防的误解。
@@ -702,6 +720,18 @@ Python 调用方通过冻结的 dataclass 读取同样的内容，而不是去�
      - 该深度依赖的某个检查返回了不确定结果。
    * - ``timeout``
      - 解释预算在达到该深度之前耗尽。
+
+并非每种深度与 status 的组合都存在。有两条规则决定哪些存在，公开构造器会强制它们，
+消费方可以依赖：
+
+* ``complete`` 意味着该深度交付了它承诺的内容，所以 ``achieved_mode`` 为 ``none``
+  时永远不是 ``complete``——什么都没交付。构造这种组合会抛出
+  ``achieved_mode 'none' cannot be complete; it is partial, unknown or timeout``。
+* ``partial`` 的结果走到了能对冲突分类的程度，所以它带 ``classification``；
+  ``unknown`` 与 ``timeout`` 没走到，所以不带。给错会被当作未知的交付签名拒绝。
+
+与其把它们当一张要背的表：``classification`` 恰好在"这次运行走到了能有分类的程度"
+时出现，而 ``status`` 说明走到了多远。
 
 因此，请求 ``proof`` 而发生降级时，``achieved_mode`` 报告为 ``formal``，并由
 ``reason`` 指明原因。针对同一模型、但冲突需要转换读法的查询：

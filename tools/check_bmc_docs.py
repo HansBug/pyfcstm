@@ -137,15 +137,16 @@ _CLASSIFICATIONS = (
 _EXPLANATION_MODES = ("none", "formal", "proof")
 _EXPLANATION_STATUSES = ("complete", "partial", "unknown", "timeout")
 
-#: Every headline a report can open its explanation block with.
+#: Headlines the reference page must show at least one real example of.
 #:
-#: Five, not the four in ``EXPLANATION_HEADLINES``.  That mapping is keyed by
-#: achieved depth, and a report whose achieved depth is ``none`` falls through to
-#: a headline built from the *requested* depth instead -- a signature the delivery
-#: matrix allows for both ``formal`` and ``proof``.  Listing only the mapping's
-#: four is how the first version of this constant claimed a closed set that the
-#: renderer does not honour, in a fix whose whole subject was an undocumented
-#: headline.
+#: Deliberately *not* a claim to be the complete set.  Twice in this slice a
+#: constant here asserted a closed vocabulary the renderer does not honour:
+#: EXPLANATION_HEADLINES is keyed by achieved depth while a fallback builds two
+#: more from the requested depth, so no single place enumerates them.  A gate that
+#: restates the author's reading of scattered code agrees with the page by
+#: construction and proves nothing.  Existence is what a gate can check on its
+#: own -- each string here is one a user demonstrably sees, so a page that never
+#: mentions it has a gap whatever else it says.
 _EXPLANATION_HEADLINES = (
     "COMPLETE FORMAL DOMAIN EXPLANATION",
     "PARTIAL FORMAL DOMAIN EXPLANATION",
@@ -231,7 +232,6 @@ _TABULATED_VOCABULARY: Dict[str, Tuple[Tuple[str, ...], ...]] = {
         _PROOF_RULE_IDS,
         _PROOF_VERIFICATION_METHODS,
         _PROOF_NODE_KINDS,
-        _EXPLANATION_HEADLINES,
     ),
 }
 
@@ -250,6 +250,11 @@ _UNREACHABLE_RULES = (
     "boolean_complement",
 )
 
+#: Sentences that were true when written and are now misleading.
+#:
+#: The proof tier landed after this page described it as never closing, so the
+#: page tells a reader the feature does not work.  A stale claim is worse than a
+#: missing one, and nothing else in this checker would notice it.
 #: Sentences that were true when written and are now misleading.
 #:
 #: The proof tier landed after this page described it as never closing, so the
@@ -767,25 +772,6 @@ def _check_rule_reachability(errors: List[str]) -> None:
             )
 
 
-def _check_required_rows(errors: List[str]) -> None:
-    """Confirm the page carries the exact table rows a reader looks values up in.
-
-    :param errors: Accumulator the caller raises from.
-    :type errors: List[str]
-    :return: ``None``.
-    :rtype: None
-    """
-    source = _REPO_ROOT / "docs/source"
-    for relative, rows in sorted(_REQUIRED_TABLE_ROWS.items()):
-        text = _visible_text(source / relative)
-        for row in rows:
-            if row in text:
-                continue
-            errors.append(
-                "%s no longer carries the table row %r." % (relative, row.strip())
-            )
-
-
 def _rendered_text(html_root: Path, relative: str) -> str:
     """Return the visible text of one built page.
 
@@ -876,7 +862,6 @@ def check() -> None:
     _check_forbidden_claims(errors)
     _check_schema_vocabularies(errors)
     _check_rule_reachability(errors)
-    _check_required_rows(errors)
     if errors:
         raise CheckFailure("BMC documentation check failed:\n" + "\n".join(errors))
 

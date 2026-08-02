@@ -253,34 +253,8 @@ _UNREACHABLE_RULES = (
 #: Sentences that were true when written and are now misleading.
 #:
 #: The proof tier landed after this page described it as never closing, so the
-#: page tells a reader the feature does not work.  A stale claim is worse than a
+#: page told a reader the feature does not work.  A stale claim is worse than a
 #: missing one, and nothing else in this checker would notice it.
-#: Sentences that were true when written and are now misleading.
-#:
-#: The proof tier landed after this page described it as never closing, so the
-#: page tells a reader the feature does not work.  A stale claim is worse than a
-#: missing one, and nothing else in this checker would notice it.
-#: Table rows the reference page must carry verbatim.
-#:
-#: An existence anchor cannot tell "the value is named somewhere on the page" from
-#: "the table lists it".  The fifth headline is only useful in the table row that
-#: pairs it with ``achieved_mode`` of ``none``; mentioned in prose alone it does
-#: not answer what a reader is looking up.
-_REQUIRED_TABLE_ROWS: Dict[str, Tuple[str, ...]] = {
-    "reference/bmc_results/index.rst": (
-        "     - ``partial``, ``unknown`` or ``timeout``\n"
-        "     - ``FORMAL EXPLANATION NOT ACHIEVED``\n",
-        "     - ``partial``, ``unknown`` or ``timeout``\n"
-        "     - ``PROOF EXPLANATION NOT ACHIEVED``\n",
-    ),
-    "reference/bmc_results/index_zh.rst": (
-        "     - ``partial``、``unknown`` 或 ``timeout``\n"
-        "     - ``FORMAL EXPLANATION NOT ACHIEVED``\n",
-        "     - ``partial``、``unknown`` 或 ``timeout``\n"
-        "     - ``PROOF EXPLANATION NOT ACHIEVED``\n",
-    ),
-}
-
 _FORBIDDEN_CLAIMS: Dict[str, Tuple[Tuple[str, str], ...]] = {
     "reference/bmc_results/index": (
         (

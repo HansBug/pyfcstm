@@ -2528,6 +2528,23 @@ _ALL_EXPLANATION_HEADLINES = MappingProxyType(
     }
 )
 
+#: How the ``Proof strength`` block words each published strength value.
+#:
+#: Transcribed from the contract's §12.1 transcript rather than derived from the
+#: enum spellings, because the block is frozen text: ``subset_minimal`` prints as
+#: "subset-minimal" and ``verified`` as a whole clause, neither of which a
+#: mechanical transformation of the value would produce.  A value added to one of
+#: the enums without a phrase here raises instead of printing a label nobody wrote.
+_PROOF_STRENGTH_PHRASES = MappingProxyType(
+    {
+        "input": MappingProxyType({"subset_minimal": "subset-minimal"}),
+        "graph": MappingProxyType({"dependency_pruned": "dependency-pruned"}),
+        "verification": MappingProxyType(
+            {"verified": "checked against the encoded model semantics"}
+        ),
+    }
+)
+
 #: Each classification in the words a reader can act on.
 CLASSIFICATION_PHRASES = MappingProxyType(
     {
@@ -3490,6 +3507,29 @@ def explanation_text_lines(explanation) -> List[str]:
         lines.append("Reduction: %s" % core.reduction)
         if closed:
             lines.append("Subset minimality: %s" % core.subset_minimality)
+        if closed and explanation.proof is not None:
+            # Frozen by the contract at §12.1, wording included.  The three facts
+            # were reaching JSON only, so a reader of the human report was told the
+            # proof is complete without being told what "complete" was checked
+            # against.  Transcribed rather than derived from the values: each field
+            # admits one value today, and spelling them out is what makes a widened
+            # enum fail here instead of printing a label nobody wrote.
+            lines.append("")
+            lines.append("Proof strength:")
+            lines.append(
+                "  Input constraints: %s"
+                % _PROOF_STRENGTH_PHRASES["input"][explanation.proof.input_minimality]
+            )
+            lines.append(
+                "  Reasoning graph: %s"
+                % _PROOF_STRENGTH_PHRASES["graph"][explanation.proof.graph_minimality]
+            )
+            lines.append(
+                "  Every reasoning step: %s"
+                % _PROOF_STRENGTH_PHRASES["verification"][
+                    explanation.proof.verification_status
+                ]
+            )
         if closed and narrative.review_surfaces:
             lines.append("")
             lines.append("Review surfaces:")

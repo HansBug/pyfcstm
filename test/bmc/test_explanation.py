@@ -191,6 +191,7 @@ _TRANSCRIBED_FROZEN_NAMES = frozenset(
         "CLASSIFICATION_PHRASES",
         "EXPLANATION_HEADLINES",
         "_ALL_EXPLANATION_HEADLINES",
+        "_PROOF_STRENGTH_PHRASES",
         "_SEMANTIC_ROLES",
         "_STAGES",
         "_STATUSES",
@@ -2105,6 +2106,17 @@ def test_human_vocabularies_are_transcribed_from_the_frozen_transcripts() -> Non
         **EXPLANATION_HEADLINES,
         ("none", "formal"): "FORMAL EXPLANATION NOT ACHIEVED",
         ("none", "proof"): "PROOF EXPLANATION NOT ACHIEVED",
+    }
+
+    # The ``Proof strength`` block is frozen text, so its wording is transcribed
+    # from the contract transcript rather than derived from the enum spellings:
+    # ``subset_minimal`` prints hyphenated and ``verified`` expands to a clause.
+    from pyfcstm.bmc.explanation import _PROOF_STRENGTH_PHRASES
+
+    assert _PROOF_STRENGTH_PHRASES == {
+        "input": {"subset_minimal": "subset-minimal"},
+        "graph": {"dependency_pruned": "dependency-pruned"},
+        "verification": {"verified": "checked against the encoded model semantics"},
     }
 
     # The two frozen phrasings for assumptions_prefix_conflict, transcribed.

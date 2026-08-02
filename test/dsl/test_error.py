@@ -26,6 +26,9 @@ from pyfcstm.dsl.grammar.GrammarLexer import GrammarLexer
 from pyfcstm.dsl.grammar.GrammarParser import GrammarParser
 
 
+pytestmark = pytest.mark.unittest
+
+
 class TestSyntaxFailErrorEnhancement:
     """Test enhanced error messages for SyntaxFailError"""
 

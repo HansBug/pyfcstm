@@ -18,6 +18,9 @@ from pyfcstm.entry import visualize as visualize_module
 from pyfcstm.model.plantuml import PlantUMLOptions
 
 
+pytestmark = pytest.mark.unittest
+
+
 @pytest.fixture()
 def input_code_file(tmp_path):
     code_file = tmp_path / 'code.fcstm'

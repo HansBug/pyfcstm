@@ -1,4 +1,4 @@
-.PHONY: docs docs_en docs_zh docs_pdf docs_pdf_en docs_pdf_zh test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build build_info build_info_cli package clean docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check test_boundary_check api_doc_toctree_check
+.PHONY: docs docs_en docs_zh docs_pdf docs_pdf_en docs_pdf_zh test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build build_info build_info_cli package clean docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check test_boundary_check api_doc_toctree_check bmc_benchmark_check bmc_benchmark
 
 PYTHON := $(shell which python)
 
@@ -24,6 +24,10 @@ RANGE_SRC_DIR  := ${SRC_DIR}/${RANGE_DIR}
 RANGE_SRC_DIR_TEST := ${TEST_DIR}/${RANGE_DIR}
 
 COV_TYPES ?= xml term-missing
+
+# BMC infeasibility benchmark: measured repetitions and discarded warmups.
+BMC_BENCHMARK_REPETITIONS ?= 5
+BMC_BENCHMARK_WARMUPS     ?= 1
 
 # LLM-based documentation generation options
 AUTO_OPTIONS ?= --param max_tokens=400000 --no-ignore-module pyfcstm --no-ignore-module hbutils --model-name gpt-5.2-codex
@@ -129,6 +133,8 @@ help:
 	@echo "  make template_source_install_check - Validate source-install template extraction"
 	@echo "  make test_boundary_check - Validate pytest test-boundary rules"
 	@echo "  make api_doc_toctree_check - Validate generated API documentation toctrees"
+	@echo "  make bmc_benchmark_check - Validate the BMC infeasibility benchmark corpus"
+	@echo "  make bmc_benchmark - Measure explanation cost across baseline/none/formal/proof"
 	@echo ""
 	@echo "Sample Tests:"
 	@echo "  make sample       - Generate test files from sample DSL files"
@@ -235,6 +241,13 @@ test_boundary_check:
 api_doc_toctree_check:
 	$(PYTHON) tools/check_api_doc_toctree.py --self-check
 	$(PYTHON) tools/check_api_doc_toctree.py --check
+
+bmc_benchmark_check:
+	$(PYTHON) tools/run_bmc_infeasibility_benchmark.py --check
+
+bmc_benchmark: bmc_benchmark_check
+	$(PYTHON) tools/run_bmc_infeasibility_benchmark.py --run \
+		--repetitions ${BMC_BENCHMARK_REPETITIONS} --warmups ${BMC_BENCHMARK_WARMUPS}
 
 
 # LLM-based documentation generation targets

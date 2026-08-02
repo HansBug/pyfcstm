@@ -347,6 +347,67 @@ def test_a_state_opposition_still_cannot_reach_boolean_complement() -> None:
     assert explanation.proof is None
 
 
+@pytest.mark.parametrize(
+    "query, stage, subject",
+    [
+        # No ``init`` clause at all, so naming initialization would send the reader
+        # to a file that has nothing to do with the conflict.
+        (
+            'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+            'check reach <= 2: active("Root.B");',
+            "assumptions",
+            "these query requirements",
+        ),
+        # An ``init`` clause exists here, but the published core holds only frame
+        # assumptions and the domain aggregate, so the subject follows the core
+        # rather than the query text.
+        (
+            'init state("Root.A"); '
+            'assume at 1: !active("Root.A"); '
+            'assume at 1: !active("Root.B"); '
+            "assume at 1: !terminated(); "
+            'check reach <= 2: active("Root.B");',
+            "assumptions",
+            "these query requirements",
+        ),
+        # A prefix conflict is the one scope that genuinely spans both stages: the
+        # assumptions agree with each other and with the frame domain, and only the
+        # initialized transition prefix rules them out.
+        (
+            'init state("Root.A") where x == 0; '
+            'assume at 0: var("x") == 7; '
+            'check reach <= 2: active("Root.B");',
+            "assumptions",
+            "these initialization and query requirements",
+        ),
+    ],
+)
+def test_the_closing_sentence_names_only_the_stages_the_core_holds(
+    query, stage, subject
+) -> None:
+    """The proof's last sentence must not blame a stage that is not in the core.
+
+    It used to say "these initialization and query requirements" for every scope,
+    including cores whose query carries no ``init`` clause. A reader acting on that
+    opens the wrong file.
+
+    The subject follows the scope rather than the query text, which is why the
+    middle case reads as a query conflict despite having an initializer: the core
+    it published holds frame assumptions and the domain aggregate, and nothing from
+    initialization.
+    """
+    core = _core_formula(query)
+    outcome = explain_infeasibility(
+        core, stage, _SolveBudget(None), requested_mode="proof"
+    )
+    explanation = outcome.explanation
+    assert explanation.achieved_mode == "proof", explanation.reason
+
+    closing = explanation.narrative.reasoning_steps[-1]
+    assert closing.kind == "conflict"
+    assert "No execution satisfies %s," % subject in closing.text, closing.text
+
+
 def test_kernel_stage_needs_no_probe() -> None:
     """The kernel stage is classified without spending a solver check."""
     core = _core_formula(

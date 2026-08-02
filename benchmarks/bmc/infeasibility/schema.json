@@ -170,13 +170,27 @@
         },
         "peak_child_rss_bytes": {
           "type": ["integer", "null"],
-          "description": "High-water mark of the child process. null when psutil was unavailable; never 0, which would read as a measurement."
+          "description": "Maximum of RSS readings sampled from the child every 2 ms. A sampled maximum, not a kernel high-water mark: a shorter spike can be missed. null when psutil was unavailable; never 0, which would read as a measurement."
         },
         "peak_child_rss_note": {"type": "string"},
         "stages_p50_ms": {
           "type": "object",
           "additionalProperties": {"type": ["number", "null"]},
           "description": "Per-stage medians. proof_linearization is benchmark-only instrumentation, not a ledger entry."
+        },
+        "proof_rule_ids": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Every rule_id the proof nodes carried, so a reader can see which rules the corpus reaches."
+        },
+        "proof_edges": {
+          "type": ["integer", "null"],
+          "description": "Total premise references across the proof's nodes."
+        },
+        "proof_verification_methods": {
+          "type": "object",
+          "additionalProperties": {"type": "integer"},
+          "description": "How many nodes each verification method checked."
         },
         "unstable_fields": {
           "type": "array",

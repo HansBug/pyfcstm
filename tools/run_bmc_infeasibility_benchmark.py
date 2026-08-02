@@ -256,6 +256,15 @@ if explanation is not None:
     proof = explanation.proof
     if proof is not None:
         record["proof_nodes"] = len(proof.nodes)
+        # The contract asks for the rule distribution and per-method counts, not
+        # just a node total: a six-node proof that used one rule and a six-node
+        # proof that used four are different results.
+        record["proof_rule_ids"] = sorted({n.rule_id for n in proof.nodes})
+        record["proof_edges"] = sum(len(n.premise_ids) for n in proof.nodes)
+        methods = {}
+        for n in proof.nodes:
+            methods[n.verification_method] = methods.get(n.verification_method, 0) + 1
+        record["proof_verification_methods"] = methods
         # Timed here because the production ledger has no entry for it.  The
         # proof is already built, so this measures reading it and nothing else.
         from pyfcstm.bmc.proof_text import linearize_proof
@@ -470,6 +479,7 @@ def _summarize(samples: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         "subset_minimality",
         "derivation_status",
         "proof_nodes",
+        "proof_edges",
         "solver_checks",
     ):
         observed = {item.get(key) for item in good if key in item}
@@ -479,6 +489,15 @@ def _summarize(samples: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
             # Instability in a published field is a finding, not noise to hide.
             summary[key] = sorted(str(value) for value in observed)
             summary.setdefault("unstable_fields", []).append(key)
+    rules = sorted({r for item in good for r in item.get("proof_rule_ids", ())})
+    if rules:
+        summary["proof_rule_ids"] = rules
+    methods = {}
+    for item in good:
+        for name, count in (item.get("proof_verification_methods") or {}).items():
+            methods[name] = max(methods.get(name, 0), count)
+    if methods:
+        summary["proof_verification_methods"] = methods
     if good and any(item.get("error") for item in samples):
         summary["first_error"] = next(
             item["error"] for item in samples if item.get("error")
@@ -622,6 +641,42 @@ def _report(manifest: Dict[str, Any], summary: Dict[str, Any]) -> str:
                     arm_summary.get("proof_nodes", "-"),
                 )
             )
+    lines += [
+        "",
+        "## Rules and verification methods per case",
+        "",
+        "| Case | rules used | nodes | edges | verification methods |",
+        "|---|---|---|---|---|",
+    ]
+    for name, case in sorted(summary.items()):
+        arm = case["arms"]["proof"]
+        rules = arm.get("proof_rule_ids")
+        methods = arm.get("proof_verification_methods")
+        lines.append(
+            "| `%s` | %s | %s | %s | %s |"
+            % (
+                name,
+                ", ".join("`%s`" % r for r in rules) if rules else "-",
+                arm.get("proof_nodes", "-"),
+                arm.get("proof_edges", "-"),
+                ", ".join("`%s`x%d" % (k, v) for k, v in sorted(methods.items()))
+                if methods
+                else "-",
+            )
+        )
+    covered = sorted(
+        {
+            r
+            for case in summary.values()
+            for r in (case["arms"]["proof"].get("proof_rule_ids") or ())
+        }
+    )
+    lines.append("")
+    lines.append(
+        "Rules the corpus reaches: %s."
+        % (", ".join("`%s`" % r for r in covered) if covered else "none")
+    )
+
     failures = [
         (name, arm)
         for name, case in sorted(summary.items())

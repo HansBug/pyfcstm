@@ -36,8 +36,9 @@ invisible. Without `none`, that overhead would be charged to the explanation.
 
 ## The corpus
 
-Six handwritten cases. Three close at `proof` depth, two degrade to `formal`, and
-one is feasible so the explanation does no work at all. The degrading and feasible
+Eight handwritten cases. Five close at `proof` depth — between them reaching every
+rule the reference page marks reachable — two degrade to `formal`, and one is
+feasible so the explanation does no work at all. The degrading and feasible
 cases are part of the corpus rather than exceptions to it: a benchmark that only
 measures cases which succeed reports a cost the user will not see.
 
@@ -46,6 +47,8 @@ measures cases which succeed reports a cost the user will not see.
 | `two_values` | `proof` | One variable pinned to two values at one frame. |
 | `empty_interval` | `proof` | Bounds no value satisfies. |
 | `two_states` | `proof` | Two states required of one frame. |
+| `state_domain` | `proof` | Every state at a frame excluded at once. |
+| `definedness` | `proof` | An operation that cannot stay defined. |
 | `cross_step` | `formal` | A conflict visible only after accumulating across a step, which has no core member to attribute its key facts to. |
 | `event_conflict` | `formal` | An event assumption published as `structural_constraint`, whose content no rule reads. |
 | `feasible` | `none` | A feasible scenario; nothing to explain. |
@@ -59,9 +62,15 @@ the child's high-water mark rather than the runner's.
 
 Warmups run first and are discarded, and their count is recorded separately.
 
-Peak RSS uses `psutil` from the existing development/documentation environment. No
+RSS uses `psutil` from the existing development/documentation environment. No
 runtime dependency is added. When `psutil` is unavailable the metric is reported
 absent, never as zero — a zero would read as a measurement.
+
+The number is a **sampled maximum, not a kernel high-water mark**: the child is
+polled every 2 ms, so a spike shorter than that can be missed. Polling flat out
+would catch more of them and would also compete for CPU with the run whose
+timings the same report publishes, which is the worse trade. The manifest records
+the interval so a reader knows what the number is.
 
 The manifest binds the input digests, the baseline and candidate commits, the
 dirty-state evidence, and the machine and dependency facts. A saved run is never
@@ -92,8 +101,9 @@ runs, so the choice is frozen in `_MEASUREMENT_MAP` and repeated in every report
 ## Reading a run
 
 `report.md` leads with wall time per arm so the amplification is visible, then
-records what each arm actually achieved, then failures, degradation, and any
-published field that varied across repetitions. Instability in a published field
+records what each arm actually achieved, then which rules each case reached with
+its node and edge counts and per-method verification totals, then failures,
+degradation, and any published field that varied across repetitions. Instability in a published field
 is a finding and is surfaced rather than collapsed into an average.
 
 No hard millisecond thresholds are asserted. Distributions and amplification

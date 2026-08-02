@@ -1,0 +1,14 @@
+def int retries = 0;
+def int pressure = 0;
+
+state Controller {
+    event Purge;
+
+    state Idle;
+    state Purging;
+    state Vented;
+
+    [*] -> Idle;
+    Idle -> Purging :: Purge;
+    Purging -> Vented;
+}

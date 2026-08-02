@@ -983,6 +983,7 @@ pyfcstm is designed for a wide range of applications where state machines are es
 - **BMC Solving and Replay**: [Solver, Witness, and Replay](https://pyfcstm.readthedocs.io/en/latest/explanations/bmc_solving/index.html)
 - **FBMCQ Reference**: [Query Language](https://pyfcstm.readthedocs.io/en/latest/reference/bmc_query/index.html)
 - **BMC Result Protocol**: [CLI, JSON, and Exit Status](https://pyfcstm.readthedocs.io/en/latest/reference/bmc_results/index.html)
+- **CLI Reference**: [Every command and per-option decision card](https://pyfcstm.readthedocs.io/en/latest/reference/cli/index.html)
 - **Syntax Highlighting Guide**: [Grammar and Editor Support](https://pyfcstm.readthedocs.io/en/latest/tutorials/grammar/index.html)
 - **API Documentation**: [API Reference](https://pyfcstm.readthedocs.io/en/latest/api_doc/index.html)
 

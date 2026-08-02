@@ -1,0 +1,3 @@
+assume at 1: active("Controller.Idle");
+assume at 1: active("Controller.Vented");
+check reach <= 2: active("Controller.Vented");

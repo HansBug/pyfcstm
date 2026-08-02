@@ -114,6 +114,17 @@ Public module structure:
      - Share staged solver-budget mechanics and preserve source documents /
        tracked constraint groups for later explanation layers; these modules
        are intentionally not root-package public exports.
+   * - Internal proof support
+     - :mod:`pyfcstm.bmc.proof`, :mod:`pyfcstm.bmc.proof_rules`,
+       :mod:`pyfcstm.bmc.proof_text`
+     - Build the closure from core facts to ``false``, check each step against
+       the rule catalog with a checker that shares no code with the constructor,
+       and read the finished graph as ordered prose.  Split three ways because
+       the checker must be able to disagree with the builder: a checker calling
+       the construction helpers would agree by construction and prove nothing.
+       Like the row above, these are not root-package public exports -- the
+       results they produce are, as :class:`BmcConflictProof` and
+       :class:`BmcProofNode`.
    * - Scenario infeasibility explanation
      - :class:`BmcInfeasibilityExplanation`, :class:`BmcConflictCore`,
        :class:`BmcCoreItem`, :class:`BmcConstraintRef`

@@ -172,14 +172,23 @@ export interface PreviewWebviewState {
     payload?: PreviewPayload;
     previewOptions: PreviewResolvedOptions;
     /**
-     * What the reader has chosen, and only that.
+     * What the document asked for, and only that.
+     *
+     * The Python side writes a deliberately sparse mapping -- the eight keys a
+     * detail preset governs are left out so the preset still decides them --
+     * and it carries the author's `detailLevel` and `direction`. Those two have
+     * no control in the options bar, so losing them cannot be undone by hand.
+     */
+    documentOptions?: Partial<PreviewResolvedOptions>;
+    /**
+     * What the reader has chosen since, and only that.
      *
      * `previewOptions` above is the resolved result, every key filled in from
      * the detail preset. Feeding that back through the resolver turns a
      * defaulted value into an explicit one, and `resolveFcstmDiagramPreviewOptions`
      * lets an explicit value win -- so a preset stops applying the moment its
-     * own output is handed back to it. The standalone viewer patches this
-     * sparse record instead.
+     * own output is handed back to it. Both sparse records are merged and
+     * resolved instead; neither is ever the resolved set.
      */
     optionOverrides?: Partial<PreviewResolvedOptions>;
     collapsedStateIds: string[];

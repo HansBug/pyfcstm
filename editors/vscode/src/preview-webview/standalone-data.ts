@@ -62,14 +62,26 @@ function collectDetails(diagram: FcstmDiagram): {
 
 export function buildStandaloneState(
     state: PreviewWebviewState,
-    // The reader's own choices when there are any, and the document's options
-    // otherwise. Never the resolved result: see `optionOverrides` in `types.ts`.
-    optionsInput: FcstmDiagramPreviewOptionsInput = state.optionOverrides || state.previewOptions,
+    optionsInput?: FcstmDiagramPreviewOptionsInput,
     collapsedStateIds: ReadonlyArray<string> = state.collapsedStateIds || [],
 ): PreviewWebviewState {
     const diagram = state.standaloneDiagram;
     if (!state.standalone || !diagram) return state;
-    const options = resolveFcstmDiagramPreviewOptions(optionsInput);
+    // On the first build `previewOptions` still holds what the document wrote,
+    // which is sparse by design; afterwards it holds the resolved set and
+    // `documentOptions` holds that original. Keeping it is what stops a reader's
+    // first click from dropping the author's `detailLevel` and `direction`,
+    // neither of which the options bar can put back.
+    const documentOptions = state.documentOptions
+        || (state.previewOptions as Partial<PreviewResolvedOptions>)
+        || {};
+    // Two sparse records, merged. Never the resolved set: an explicit value
+    // beats the preset, so resolving one and feeding it back makes every
+    // default permanent -- which is how choosing `hide` once used to leave the
+    // effect mode stuck there.
+    const options = resolveFcstmDiagramPreviewOptions(
+        optionsInput ?? {...documentOptions, ...(state.optionOverrides || {})},
+    );
     const graph = buildFcstmElkGraph(diagram, options, {
         collapsedStateIds: new Set(collapsedStateIds),
     });
@@ -95,6 +107,7 @@ export function buildStandaloneState(
     return {
         ...state,
         previewOptions: options,
+        documentOptions,
         optionOverrides: state.optionOverrides,
         collapsedStateIds: [...collapsedStateIds],
         payload,

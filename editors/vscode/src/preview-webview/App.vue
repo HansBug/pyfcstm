@@ -47,6 +47,20 @@ function writeStorage(key: string, value: string) {
     }
 }
 
+// What a document with no injected state asks for. Only the keys no preset
+// governs: an explicit value beats the preset in the resolver, so naming the
+// eight it owns -- with what happen to be the `normal` values -- would make
+// `detailLevel` inert. The Python side omits the same eight for the same reason.
+const FALLBACK_DOCUMENT_OPTIONS = {
+    detailLevel: 'normal',
+    direction: 'TB',
+    eventNameFormat: ['extra_name', 'relpath'],
+    maxStateEvents: 4,
+    maxStateActions: 4,
+    maxTransitionEffectLines: 8,
+    maxLabelLength: 160,
+} as const;
+
 // Initial state is serialised into window by the HTML shell.
 declare const __FCSTM_INITIAL_STATE__: PreviewWebviewState;
 const initialState: PreviewWebviewState = (window as unknown as {
@@ -61,18 +75,13 @@ const initialState: PreviewWebviewState = (window as unknown as {
     // any document that fell back to this. The Python side omits the same eight
     // for the same reason.
     //
-    // Resolved rather than spelled out, so the object is complete -- the state
-    // declares it so -- while every value the preset owns still comes from the
-    // preset.
-    previewOptions: resolveFcstmDiagramPreviewOptions({
-        detailLevel: 'normal',
-        direction: 'TB',
-        eventNameFormat: ['extra_name', 'relpath'],
-        maxStateEvents: 4,
-        maxStateActions: 4,
-        maxTransitionEffectLines: 8,
-        maxLabelLength: 160,
-    }) as PreviewResolvedOptions,
+    // Given twice on purpose: sparse as `documentOptions`, which is what the
+    // builder merges and resolves, and resolved as `previewOptions`, which the
+    // state declares complete and components read directly.
+    documentOptions: FALLBACK_DOCUMENT_OPTIONS,
+    previewOptions: resolveFcstmDiagramPreviewOptions(
+        FALLBACK_DOCUMENT_OPTIONS,
+    ) as PreviewResolvedOptions,
     collapsedStateIds: [],
     emptyTitle: 'FCSTM Preview',
     emptyMessage: 'Preparing preview...',
@@ -395,7 +404,10 @@ function patchOptions(options: Partial<PreviewResolvedOptions>) {
         // `showTransitionEffects` to false, and handing that back made the
         // clamp reassert `hide` however many times `note` was chosen after it.
         const overrides = {...(state.value.optionOverrides || {}), ...options};
-        state.value = buildStandaloneState({...state.value, optionOverrides: overrides}, overrides);
+        // No explicit input: the builder merges the document's record with this
+        // one. Passing `overrides` alone would drop what the document asked for
+        // -- its `detailLevel` and `direction` have no control to restore them.
+        state.value = buildStandaloneState({...state.value, optionOverrides: overrides});
         return;
     }
     vscode.postMessage({type: 'patchOptions', options});
@@ -407,7 +419,9 @@ function toggleCollapse(id: string) {
     else set.add(id);
     const collapsed = Array.from(set);
     if (state.value.standalone) {
-        state.value = buildStandaloneState({...state.value, collapsedStateIds: collapsed}, state.value.previewOptions, collapsed);
+        // Options untouched here, so none are passed: handing back the resolved
+        // set would freeze every preset-owned value at its current default.
+        state.value = buildStandaloneState({...state.value, collapsedStateIds: collapsed}, undefined, collapsed);
         return;
     }
     vscode.postMessage({type: 'setCollapsed', collapsed});

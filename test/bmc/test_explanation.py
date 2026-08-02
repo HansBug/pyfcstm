@@ -2097,8 +2097,10 @@ def test_human_vocabularies_are_transcribed_from_the_frozen_transcripts() -> Non
     # achieved one, because nothing was achieved to name.  They were a fallback
     # branch in the renderer until the private mapping below collected all six,
     # which meant this guard -- whose subject is every headline a reader can see
-    # -- did not cover a third of them.  `--timeout-ms 1` reaches both in one
-    # command.
+    # -- did not cover a third of them.  `--timeout-ms 1` reaches both across two
+    # invocations, one per `--explain-infeasibility` mode: the flag takes a single
+    # value, and which depth was requested is exactly what these two rows differ
+    # on.
     assert _ALL_EXPLANATION_HEADLINES == {
         **EXPLANATION_HEADLINES,
         ("none", "formal"): "FORMAL EXPLANATION NOT ACHIEVED",

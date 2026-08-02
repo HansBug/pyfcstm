@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import re
 import textwrap
@@ -149,16 +150,20 @@ _EXPLANATION_STATUSES = ("complete", "partial", "unknown", "timeout")
 #: published ``EXPLANATION_HEADLINES``, which documents itself as covering the
 #: achieved depths only.
 #:
-#: Still transcribed rather than imported, and what protects the transcription is
-#: this checker itself: a value edited here no longer appears on the page, so
-#: ``--check`` reports it as undocumented on the next run.  Editing the code's
-#: mapping instead fails the transcription guard in test/bmc/test_explanation.py.
-#: Renaming a headline therefore has to touch three places -- the mapping, that
-#: guard, and this tuple -- and skipping any one of them is caught.
+#: Still transcribed rather than imported, and three separate edges keep the
+#: transcription honest.  A value edited here stops appearing on the page, so
+#: ``--check`` reports it as undocumented.  A value edited in the code's mapping
+#: fails the transcription guard in test/bmc/test_explanation.py.  And
+#: ``_check_headline_transcription`` compares this tuple against that mapping
+#: directly.
 #:
-#: That guard does *not* cover this tuple, though an earlier version of this
-#: comment claimed it did: it compares the code's mapping against a literal in
-#: the test file, and the pytest boundary rules forbid a test importing tools/.
+#: The third edge was missing until a reviewer found the hole: editing the code's
+#: mapping *and* the pytest guard together left both gates green while the CLI
+#: published a string neither this tuple nor either page carried.  Two edges
+#: sharing an endpoint are not a cycle, and only a cycle catches every single
+#: omission.  The pytest guard cannot supply the missing edge itself -- it
+#: compares the mapping against a literal in the test file, and the pytest
+#: boundary rules forbid a test importing tools/.
 _EXPLANATION_HEADLINES = (
     "COMPLETE FORMAL DOMAIN EXPLANATION",
     "PARTIAL FORMAL DOMAIN EXPLANATION",
@@ -337,6 +342,76 @@ def _equation_references(path: Path) -> List[str]:
     :rtype: List[str]
     """
     return re.findall(r":eq:`([^`]+)`", path.read_text(encoding="utf-8"))
+
+
+def _check_headline_transcription(errors: List[str]) -> None:
+    """Compare the transcribed headline tuple against the mapping in the code.
+
+    This is the edge the interlock was missing.  Editing the tuple alone is caught
+    -- the value stops appearing on the page.  Editing the code's mapping and the
+    pytest guard together was not: the guard compares the mapping to a literal in
+    the test file and cannot see this module, so both gates stayed green while the
+    CLI published a string neither the tuple nor either page carried.
+
+    Read with ``ast`` rather than imported, so running the checker needs no
+    importable ``pyfcstm`` and a syntax error in the module is reported here
+    instead of crashing the run.
+
+    :param errors: Collected problems, appended to.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    source = _REPO_ROOT / "pyfcstm/bmc/explanation.py"
+    try:
+        module = ast.parse(source.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError) as err:
+        # OSError: the module is missing or unreadable.
+        # SyntaxError: it is mid-edit, so the mapping cannot be trusted either way.
+        errors.append("cannot read the headline mapping from %s: %s" % (source, err))
+        return
+    # ``_ALL_EXPLANATION_HEADLINES`` is ``{**EXPLANATION_HEADLINES, ...}``, so the
+    # strings live in two dict displays and reading only the merged one loses the
+    # four it inherits.  Both names are read, and both must be present: if either
+    # is renamed away the transcription below is unchecked, which is the state this
+    # function exists to prevent.
+    wanted = ("EXPLANATION_HEADLINES", "_ALL_EXPLANATION_HEADLINES")
+    found: Dict[str, set] = {}
+    for node in module.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        names = {getattr(target, "id", None) for target in node.targets}
+        for name in wanted:
+            if name in names:
+                # Values only.  The keys are ``(mode, status)`` tuples whose parts
+                # are strings too, and walking the whole node would collect those
+                # as headlines.
+                found[name] = {
+                    value.value
+                    for display in ast.walk(node.value)
+                    if isinstance(display, ast.Dict)
+                    for value in display.values
+                    if isinstance(value, ast.Constant) and isinstance(value.value, str)
+                }
+    missing_names = [name for name in wanted if name not in found]
+    if missing_names:
+        errors.append(
+            "%s no longer defines %s, so the transcribed headline list here is "
+            "unchecked." % (source, ", ".join(missing_names))
+        )
+        return
+    published = set().union(*found.values())
+    transcribed = set(_EXPLANATION_HEADLINES)
+    for headline in sorted(published - transcribed):
+        errors.append(
+            "the code publishes headline %r, which _EXPLANATION_HEADLINES here "
+            "does not transcribe." % headline
+        )
+    for headline in sorted(transcribed - published):
+        errors.append(
+            "_EXPLANATION_HEADLINES here transcribes %r, which the code no longer "
+            "publishes." % headline
+        )
 
 
 def _check_equation_references(errors: List[str]) -> None:
@@ -916,6 +991,7 @@ def check() -> None:
     errors: List[str] = []
     _check_equations(errors)
     _check_equation_references(errors)
+    _check_headline_transcription(errors)
     _check_pages(errors)
     _check_readme(errors)
     _check_localized_diagrams(errors)

@@ -482,7 +482,8 @@ Equation :eq:`bmc-symbol-growth` therefore gives
 :math:`|X_1|=2+2+2=6`: two frame-state symbols, delta and gamma, and two case
 selectors.
 
-The table is the forward audit map for the labelled equations in this page.
+The list below is the forward audit map for the labelled equations in this
+page.
 Literal LaTeX is the labelled block at each labelled equation target; the
 English and Chinese files carry identical blocks.
 

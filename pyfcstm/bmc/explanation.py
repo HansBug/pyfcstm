@@ -61,7 +61,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Dict, List, Mapping, NamedTuple, Optional, Tuple
 
 from .provenance import (
     BmcSourceRef,
@@ -143,6 +143,7 @@ _MINIMALITIES = ("proven", "not_proven")
 #: Explanation depths ordered from weakest to strongest.
 _MODE_ORDER = {"none": 0, "formal": 1, "proof": 2}
 
+
 #: The frozen delivery truth table, one entry per authored row.
 #:
 #: The frozen contract is an exhaustive table, not a conjunction of independent
@@ -158,21 +159,64 @@ _MODE_ORDER = {"none": 0, "formal": 1, "proof": 2}
 #: ``False`` for forbidden and ``None`` for "either".  Rows that differ only in
 #: something an explanation object cannot show — a subset-minimal core versus a
 #: stage-fallback one — share a single entry.
+class _DeliveryRow(NamedTuple):
+    """One authored row of the frozen delivery table.
+
+    The row used to be a bare seven-tuple whose last four positions were
+    booleans, so reading it -- or documenting it -- meant counting positions and
+    remembering that ``None`` is "either" while ``False`` is "forbidden".  Three
+    of this series' documentation defects came out of getting that decoding
+    wrong, in a page whose whole job was to state which combinations are legal.
+    Naming the fields does not change a single accepted combination; it removes
+    the step where the reader has to decode before they can be right.
+
+    :param requested_modes: Requested depths this row covers.
+    :type requested_modes: Tuple[str, ...]
+    :param achieved_mode: The depth actually delivered.
+    :type achieved_mode: str
+    :param status: How complete the delivered depth is.
+    :type status: str
+    :param classification: ``True`` required, ``False`` forbidden, ``None``
+        either.
+    :type classification: bool, optional
+    :param core: Same three-valued convention.
+    :type core: bool, optional
+    :param proof: Same three-valued convention.
+    :type proof: bool, optional
+    :param reason: Same three-valued convention.
+    :type reason: bool, optional
+
+    Example::
+
+        >>> row = _DeliveryRow(("formal",), "none", "timeout", False, False, False, True)
+        >>> row.reason
+        True
+    """
+
+    requested_modes: Tuple[str, ...]
+    achieved_mode: str
+    status: str
+    classification: Optional[bool]
+    core: Optional[bool]
+    proof: Optional[bool]
+    reason: Optional[bool]
+
+
 _DELIVERY_MATRIX_ROWS = (
     # Row 1: the first optional probe returned unknown, so there is neither a
     # classification nor a publishable sound core.
-    (("formal", "proof"), "none", "unknown", False, False, False, True),
+    _DeliveryRow(("formal", "proof"), "none", "unknown", False, False, False, True),
     # Row 2: the same shape after the budget expired instead.
-    (("formal", "proof"), "none", "timeout", False, False, False, True),
+    _DeliveryRow(("formal", "proof"), "none", "timeout", False, False, False, True),
     # Row 3: classification finished, the raw core did not.  The classification
     # metadata is kept, but it must not pose as a formal artifact.
-    (("formal", "proof"), "none", "partial", True, False, False, True),
+    _DeliveryRow(("formal", "proof"), "none", "partial", True, False, False, True),
     # Rows 4, 6 and 7: a sound core whose minimality, scope or proof is still
     # open.  All three are indistinguishable from the published fields.
-    (("formal", "proof"), "formal", "partial", None, True, False, True),
+    _DeliveryRow(("formal", "proof"), "formal", "partial", None, True, False, True),
     # Row 5: a diagnostic subset-minimal core with complete semantic facts.
     # Requesting 'proof' cannot land here: an unclosed proof forces row 7.
-    (("formal",), "formal", "complete", True, True, False, False),
+    _DeliveryRow(("formal",), "formal", "complete", True, True, False, False),
     # Row 9: a verified proof over a stage-fallback artifact.  A stage-fallback
     # scope means the classification did not finish, so this row carries none.
     # The frozen timeout boundary spells the same row out as "proof 完整，但
@@ -185,16 +229,16 @@ _DELIVERY_MATRIX_ROWS = (
     # status=partial with a narrative of structural_only, and at proof depth that
     # combination has no row yet.  Widening this row to "either" would hide that
     # gap instead of recording it.
-    (("proof",), "proof", "partial", False, True, True, True),
+    _DeliveryRow(("proof",), "proof", "partial", False, True, True, True),
     # Row 8: a verified proof over a diagnostic artifact.
-    (("proof",), "proof", "complete", True, True, True, False),
+    _DeliveryRow(("proof",), "proof", "complete", True, True, True, False),
     # The row the previous stage recorded as missing.  A diagnostic classification
     # did finish and a proof was verified, but the narrative degraded: a semantic
     # fact with no dedicated recognizer forces structural_only, and the artifact is
     # then partial rather than complete.  Row 9 is the same status over a
     # stage-fallback artifact, where no classification exists at all; this is its
     # counterpart with one.
-    (("proof",), "proof", "partial", True, True, True, True),
+    _DeliveryRow(("proof",), "proof", "partial", True, True, True, True),
 )
 
 

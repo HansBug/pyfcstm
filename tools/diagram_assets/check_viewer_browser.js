@@ -180,16 +180,20 @@ function scanPdfStreams(raw) {
       // Taking the last one seen regardless would read a `/Filter` off some
       // earlier object that this stream never declared.
       const own = attached ? dictionary : null;
-      // An indirect length is worth following: without one, the end of the
-      // stream is a guess, and a payload that carries its own
-      // `endstream endobj` makes it the wrong guess -- the tail goes missing
-      // and the tally still balances. Following it is safe even when the
-      // object cannot be trusted, because a length that does not land on the
-      // keyword is rejected below rather than acted on.
-      const stated = declaredLength(own);
-      const size = stated === null ? indirectLength(text, own) : stated;
+      // A size the dictionary states outright, and failing that the object an
+      // indirect reference points at. Nothing is guessed: a stream with neither
+      // is recorded unread, because where its data stops could only be
+      // estimated and both estimates were wrong the same way.
+      //
+      // The two are not equally trustworthy, which is why `indirectLength` is
+      // strict where `declaredLength` need not be. A direct size comes from the
+      // stream's own dictionary, so following it agrees with every reader --
+      // if it is wrong, the document is wrong. An indirect one is a number this
+      // side went looking for in the whole file, and a search that finds the
+      // wrong object parts company with the reader over a file both can read.
+      const size = declaredLength(own) ?? indirectLength(text, own);
       const end = resolveStreamEnd(text, dataStart, size);
-      streams.push({keyword: i, dataStart, dictionary: own, stated: size, ...end});
+      streams.push({keyword: i, dataStart, dictionary: own, ...end});
       i = end.resume;
       attached = false;
       continue;
@@ -216,11 +220,11 @@ function isRegularChar(ch) {
 }
 
 // A span of the file that could not be read, reported in the same currency as
-// a stream so that `decoded === total` accounts for it. `stated` and
-// `dictionary` are never looked at -- a non-null `code` returns before either
-// is reached -- and are present only so every entry has one shape.
+// a stream so that `decoded === total` accounts for it. `dictionary` is never
+// looked at -- a non-null `code` returns before it is reached -- and is here
+// only so every entry has one shape.
 function unreadableRegion(start, end, code) {
-  return {keyword: start, dataStart: start, dataEnd: end, stated: null, dictionary: null, code};
+  return {keyword: start, dataStart: start, dataEnd: end, dictionary: null, code};
 }
 
 /**
@@ -383,8 +387,9 @@ function inflatePdfStreams(base64) {
     // Empty ones dropped first: a separator is a byte like any other, and two
     // streams that decoded to nothing at all still produced a one-byte result,
     // which satisfied the caller's `text.length > 0` -- the only part of the
-    // verdict that says anything was read. The guard went from asking whether
-    // there was content to asking whether there were chunks.
+    // verdict that says anything was read. Adding the separator had turned that
+    // question from "was there content" into "were there chunks", and one empty
+    // stream was rejected where two were not.
     text: chunks.filter((chunk) => chunk.length > 0).map((chunk) => chunk.toString('latin1')).join('\0'),
     total: streams.length,
     decoded,

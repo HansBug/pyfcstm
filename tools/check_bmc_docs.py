@@ -546,6 +546,89 @@ def _check_forbidden_claims(errors: List[str]) -> None:
                     errors.append("%s still claims %r; %s." % (label, phrase, guidance))
 
 
+def _schema_field_vocabularies(field: str) -> List[Tuple[str, ...]]:
+    """Return every closed value list the schema gives one property name.
+
+    A name can appear in several places with different subsets -- ``status``
+    means one thing for a solver check and another for an explanation, and
+    ``classification`` is narrowed per conflict scope.  Returning all of them
+    lets the caller decide whether it wants an exact match somewhere or a union.
+
+    :param field: Property name to collect.
+    :type field: str
+    :return: One tuple per occurrence that closes its values.
+    :rtype: List[Tuple[str, ...]]
+    """
+    schema = json.loads(_read(_REPO_ROOT / "docs/source" / _SCHEMA_RELATIVE_PATH))
+    found: List[Tuple[str, ...]] = []
+
+    def walk(node: object) -> None:
+        if isinstance(node, dict):
+            properties = node.get("properties")
+            if isinstance(properties, dict):
+                spec = properties.get(field)
+                if isinstance(spec, dict) and isinstance(spec.get("enum"), list):
+                    found.append(
+                        tuple(value for value in spec["enum"] if value is not None)
+                    )
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    walk(schema)
+    return found
+
+
+def _check_schema_vocabularies(errors: List[str]) -> None:
+    """Confirm the schema's closed lists still match the published vocabularies.
+
+    The reference tables written above are transcribed from the code, and the
+    schema is what a machine consumer validates against.  If those two drift, a
+    consumer that trusts the schema and a reader who trusts the table disagree
+    about which values exist, and nothing else here would notice.
+
+    :param errors: Accumulator the caller raises from.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    exact = {
+        "rule_id": _PROOF_RULE_IDS,
+        "verification_method": _PROOF_VERIFICATION_METHODS,
+        "kind": _PROOF_NODE_KINDS,
+        "reduction": _CORE_REDUCTIONS,
+        "requested_mode": _EXPLANATION_MODES,
+        "achieved_mode": _EXPLANATION_MODES,
+        "status": _EXPLANATION_STATUSES,
+    }
+    for field, expected in sorted(exact.items()):
+        occurrences = _schema_field_vocabularies(field)
+        if not any(set(values) == set(expected) for values in occurrences):
+            errors.append(
+                "bmc_cli.schema.json has no %s enum matching the documented "
+                "%d values." % (field, len(expected))
+            )
+    # classification is narrowed per conflict scope, which is stricter than the
+    # flat vocabulary rather than inconsistent with it -- so the union is what has
+    # to agree, and a value reachable in no scope would be a real gap.
+    union = {
+        value
+        for values in _schema_field_vocabularies("classification")
+        for value in values
+    }
+    if union != set(_CLASSIFICATIONS):
+        errors.append(
+            "The union of the schema's classification enums does not match the "
+            "documented list; schema-only %s, documented-only %s."
+            % (
+                sorted(union - set(_CLASSIFICATIONS)),
+                sorted(set(_CLASSIFICATIONS) - union),
+            )
+        )
+
+
 def check() -> None:
     """Run every deterministic BMC documentation contract check."""
     errors: List[str] = []
@@ -557,6 +640,7 @@ def check() -> None:
     _check_explanation_vocabulary(errors)
     _check_tabulated_vocabulary(errors)
     _check_forbidden_claims(errors)
+    _check_schema_vocabularies(errors)
     if errors:
         raise CheckFailure("BMC documentation check failed:\n" + "\n".join(errors))
 

@@ -151,7 +151,7 @@ function scanPdfStreams(raw) {
       continue;
     }
     if (ch === '>' && text[i + 1] === '>' && depth > 0) {
-      emit(depth === 1 ? '>>' : '  ');
+      emit('>>');
       depth -= 1;
       i += 2;
       if (depth === 0) { dictionary = building; building = null; attached = true; }
@@ -165,15 +165,31 @@ function scanPdfStreams(raw) {
       // `stream` may be followed by LF or CRLF; keying on LF alone found nothing
       // at all in a CRLF document and reported a total of zero.
       if (text[dataStart] === '\r') dataStart += 1;
-      if (text[dataStart] !== '\n') { i += 6; attached = false; continue; }
+      if (text[dataStart] !== '\n') {
+        // The spec requires LF or CRLF here and forbids a lone CR, so this is
+        // not a stream. Skipping it in silence is what the rest of this scan
+        // stopped doing: with one sound stream elsewhere the tally balances
+        // over a file that had something here nobody read.
+        streams.push(unreadableRegion(i, dataStart, 'STREAM_KEYWORD_WITHOUT_EOL'));
+        i += 6;
+        attached = false;
+        continue;
+      }
       dataStart += 1;
       // Only the dictionary that directly precedes the keyword introduces it.
       // Taking the last one seen regardless would read a `/Filter` off some
       // earlier object that this stream never declared.
       const own = attached ? dictionary : null;
+      // An indirect length is worth following: without one, the end of the
+      // stream is a guess, and a payload that carries its own
+      // `endstream endobj` makes it the wrong guess -- the tail goes missing
+      // and the tally still balances. Following it is safe even when the
+      // object cannot be trusted, because a length that does not land on the
+      // keyword is rejected below rather than acted on.
       const stated = declaredLength(own);
-      const end = resolveStreamEnd(text, dataStart, stated);
-      streams.push({keyword: i, dataStart, dictionary: own, stated, ...end});
+      const size = stated === null ? indirectLength(text, own) : stated;
+      const end = resolveStreamEnd(text, dataStart, size);
+      streams.push({keyword: i, dataStart, dictionary: own, stated: size, ...end});
       i = end.resume;
       attached = false;
       continue;
@@ -200,7 +216,9 @@ function isRegularChar(ch) {
 }
 
 // A span of the file that could not be read, reported in the same currency as
-// a stream so that `decoded === total` accounts for it.
+// a stream so that `decoded === total` accounts for it. `stated` and
+// `dictionary` are never looked at -- a non-null `code` returns before either
+// is reached -- and are present only so every entry has one shape.
 function unreadableRegion(start, end, code) {
   return {keyword: start, dataStart: start, dataEnd: end, stated: null, dictionary: null, code};
 }
@@ -219,6 +237,23 @@ function declaredLength(dictionary) {
   const match = /\/Length\s+(\d+)(\s+\d+\s+R\b)?/.exec(dictionary || '');
   if (!match || match[2]) return null;
   return Number(match[1]);
+}
+
+/**
+ * The size an indirect `/Length N M R` points at, or null when none is found.
+ *
+ * The object holding it may sit anywhere in the file, including after the
+ * stream that names it, so it is looked up by shape rather than by position.
+ * A wrong answer is harmless: `resolveStreamEnd` requires a size to land on
+ * `endstream` and records a mismatch when it does not.
+ */
+function indirectLength(text, dictionary) {
+  const reference = /\/Length\s+(\d+)\s+(\d+)\s+R\b/.exec(dictionary || '');
+  if (!reference) return null;
+  const object = new RegExp(
+    '(^|[^0-9A-Za-z])' + reference[1] + '\\s+' + reference[2] + '\\s+obj\\s+(\\d+)\\s*endobj');
+  const found = object.exec(text);
+  return found ? Number(found[2]) : null;
 }
 
 /**
@@ -340,7 +375,11 @@ function inflatePdfStreams(base64) {
     }
   }
   return {
-    text: Buffer.concat(chunks).toString('latin1'),
+    // Separated, because two payloads laid end to end can spell an operator
+    // across the join that neither of them contains -- one ending in
+    // `1.0 1.0 1.0 rg\n3. w\n1. ` and the next starting `G` reads as a halo
+    // and fails a document that has none.
+    text: chunks.map((chunk) => chunk.toString('latin1')).join('\0'),
     total: streams.length,
     decoded,
     skipped,
@@ -573,6 +612,42 @@ function selfCheckStreamTally() {
     ['an unclosed hex string between two objects', Buffer.concat([
       Buffer.from('%PDF-1.4\n1 0 obj\n<< /Length 6 >>\nstream\nBT ET\nendstream\nendobj\n'),
       Buffer.from('2 0 obj <A1B2\nstream\n'), halo, Buffer.from('\nendstream\nendobj\n')]), false],
+    // No length at all, and a payload holding the keyword. Nothing says where
+    // this stream stops, so the end has to be recognised by what follows it --
+    // taking the first one found drops the tail and the halo in it. The
+    // indirect cases below no longer reach this branch now that the reference
+    // is followed, so it needs a document that states no length anywhere.
+    ['no declared length beside an embedded end keyword', Buffer.concat([
+      Buffer.from('%PDF-1.4\n1 0 obj\n<< /Type /X >>\nstream\nBT (endstream) Tj ET\n'),
+      halo, Buffer.from('\nendstream\nendobj\n')]), false],
+    // An indirect length whose payload carries its own `endstream endobj`.
+    // Guessing the end stops at the decoy, the tail goes missing with the halo
+    // in it, and nothing about the tally looks wrong. Following the reference
+    // to the object that states the size is what gets past it.
+    ['an indirect length beside a decoy end keyword', (() => {
+      const body = Buffer.concat([Buffer.from('BT ET\nendstream\nendobj\n'), halo]);
+      return Buffer.concat([
+        Buffer.from('%PDF-1.4\n1 0 obj\n<< /Length 9 0 R >>\nstream\n'), body,
+        Buffer.from('\nendstream\nendobj\n9 0 obj\n' + body.length + '\nendobj\n')]);
+    })(), false],
+    // A lone CR after the keyword is forbidden, so this is not a stream -- but
+    // passing over it without a word is how a file gets read half way and
+    // reported whole. One sound stream elsewhere is all it takes to balance.
+    ['a keyword followed by a lone carriage return', Buffer.concat([
+      Buffer.from('%PDF-1.4\n1 0 obj\n<< /Length 6 >>\nstream\nBT ET\nendstream\nendobj\n'),
+      Buffer.from('2 0 obj\n<< /Length ' + halo.length + ' >>\nstream\r'), halo,
+      Buffer.from('\nendstream\nendobj\n')]), false],
+    // Two payloads laid end to end spell an operator across the join that
+    // neither of them contains. This document has no halo in it anywhere and
+    // has to pass; a scan over the payloads run together fails it.
+    ['two payloads whose join spells an operator', (() => {
+      const first = Buffer.from('BT ET\n1.0 1.0 1.0 rg\n3. w\n1. ');
+      const second = Buffer.from('G\nBT ET\n');
+      return Buffer.concat([
+        Buffer.from('%PDF-1.4\n1 0 obj\n<< /Length ' + first.length + ' >>\nstream\n'), first,
+        Buffer.from('\nendstream\nendobj\n2 0 obj\n<< /Length ' + second.length + ' >>\nstream\n'),
+        second, Buffer.from('\nendstream\nendobj\n')]);
+    })(), true],
     // A filter names itself with an escape. `/#46ilter` is `/Filter` to a
     // reader and nothing at all to a substring match, so the deflate payload
     // would be scanned for operators as though it were stored -- and compressed
@@ -630,11 +705,15 @@ function selfCheckStreamTally() {
         Buffer.from('2 0 obj\nstream\n'), body, Buffer.from('\nendstream\nendobj\n')]);
     })(), false],
   ];
-  for (const [label, buf, shouldAccept] of cases) {
-    if (accepted(buf) !== shouldAccept) {
-      console.error(`stream tally ${shouldAccept ? 'rejected' : 'accepted'} ${label}`);
-      process.exit(1);
-    }
+  // Every failure, not the first. Which cases fail together is what says
+  // whether a case still fails for its own reason or has quietly come to lean
+  // on a guard added later for something else.
+  const failures = cases
+    .filter(([, buf, shouldAccept]) => accepted(buf) !== shouldAccept)
+    .map(([label, , shouldAccept]) => `stream tally ${shouldAccept ? 'rejected' : 'accepted'} ${label}`);
+  if (failures.length > 0) {
+    for (const failure of failures) console.error(failure);
+    process.exit(1);
   }
   console.log('viewer browser gate: stream tally self-check passed');
 }

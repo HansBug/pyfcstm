@@ -496,9 +496,14 @@ scope 上面那句话。粒度、成员数、带标签的最小性行以及解�
    Reason: component probe did not start: budget exhausted before the probe
    started; ...
 
-把规则套用到未展示的组合上：一个已构造但报告为 ``partial`` 的证明，标题是
+把规则套用到未展示的那个组合上：一个已构造但报告为 ``partial`` 的证明，标题会是
 ``PARTIAL VERIFIED DOMAIN PROOF``——因为达成的是 ``proof``，完整程度是 ``partial``。
-语料里没有能产出它的用例，所以这里没有对应的运行；规则本身已经告诉你它会写什么。
+
+这里没有对应的运行，原因不是语料缺用例，而是\ **当前实现产不出它**\ ，后者是更强的
+说法。构造 ``BmcInfeasibilityExplanation`` 的九处代码里，只有一处设置
+``achieved_mode="proof"``，而它同时把 ``status`` 硬编码为 ``complete``：证明要么闭合，
+要么整体降级为 ``formal``。所以这个组合被冻结交付表允许、也被规则命名，但今天没有任何
+代码发出它。请把这一行读作规则对深度阶梯预留形状给出的答案，而不是你应当期待看到的输出。
 
 中间那种最容易意外：请求 ``proof`` 而降级时显示的是 ``FORMAL`` 标题，因为实际达成的
 是 ``formal``。最后那种在没有任何证明的情况下标题里出现 ``PROOF``，因为什么都没达成，

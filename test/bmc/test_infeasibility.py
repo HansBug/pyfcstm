@@ -267,6 +267,41 @@ def test_every_initializer_pins_frame_zero_inside_the_frame_domain(
         assert "%d == F_0_state" % value in domains[0]
 
 
+def test_an_achieved_proof_is_always_reported_complete() -> None:
+    """Why ``PARTIAL VERIFIED DOMAIN PROOF`` has no producing run.
+
+    The frozen delivery table admits ``achieved_mode="proof"`` with a ``partial``
+    status, and the reference page names the headline it would open on.  Nothing
+    emits it: a proof either closes and is reported ``complete``, or the whole
+    result degrades to ``formal``.  The reference page says so, and this is the
+    behaviour it rests on.
+
+    Driven through the public CLI over a timeout sweep rather than by reading the
+    branch, because the claim is about what a user can observe.  The sweep is wide
+    enough to cross every degradation tier on any host -- which tier a given budget
+    lands in is host-timed, so the assertion is over the set of headlines seen, not
+    over which budget produced which.
+    """
+    core = _core_formula(
+        'init state("Root.A"); '
+        'assume at 1: !active("Root.A"); '
+        'assume at 1: !active("Root.B"); '
+        "assume at 1: !terminated(); "
+        'check reach <= 2: active("Root.B");'
+    )
+
+    seen = set()
+    for budget_ms in (1, 2, 4, 8, 16, 32, 64, 128, 256, 512, None):
+        outcome = explain_infeasibility(
+            core, "assumptions", _SolveBudget(budget_ms), requested_mode="proof"
+        )
+        explanation = outcome.explanation
+        seen.add((explanation.achieved_mode, explanation.status))
+
+    assert ("proof", "complete") in seen, seen
+    assert ("proof", "partial") not in seen, seen
+
+
 def test_kernel_stage_needs_no_probe() -> None:
     """The kernel stage is classified without spending a solver check."""
     core = _core_formula(

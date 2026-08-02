@@ -569,11 +569,18 @@ Four runs against the benchmark corpus, covering both halves of the rule:
    Reason: component probe did not start: budget exhausted before the probe
    started; ...
 
-Applying the rule to the pairings not shown: a proof that was built but reported
-``partial`` opens on ``PARTIAL VERIFIED DOMAIN PROOF``, since ``proof`` is what
-was achieved and ``partial`` is how complete it is.  The corpus has no case that
-produces it, which is why there is no run for it here -- the rule tells you what
-it would say.
+Applying the rule to the pairing not shown: a proof that was built but reported
+``partial`` would open on ``PARTIAL VERIFIED DOMAIN PROOF``, since ``proof`` is
+what was achieved and ``partial`` is how complete it is.
+
+No run is shown for it because the current implementation does not produce it,
+and that is a stronger statement than the corpus lacking a case.  Of the nine
+places that build a ``BmcInfeasibilityExplanation``, exactly one sets
+``achieved_mode="proof"``, and it sets ``status="complete"`` alongside: a proof
+either closes or the result degrades to ``formal``.  So the pairing is admitted
+by the frozen delivery table and named by the rule, but nothing emits it today.
+Read the row as the rule's answer for a shape the depth ladder reserves, not as
+an output you should expect to see.
 
 The middle case is the one that surprises: a request for ``proof`` that degrades
 shows a ``FORMAL`` headline, because ``formal`` is what was achieved.  The last

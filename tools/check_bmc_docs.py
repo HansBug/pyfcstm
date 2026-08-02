@@ -328,6 +328,59 @@ def _extract_equations(path: Path) -> List[Tuple[str, str]]:
     return equations
 
 
+def _equation_references(path: Path) -> List[str]:
+    """Return every ``:eq:`label``` reference in one page, in order.
+
+    :param path: Page to scan.
+    :type path: pathlib.Path
+    :return: The referenced labels, duplicates kept.
+    :rtype: List[str]
+    """
+    return re.findall(r":eq:`([^`]+)`", path.read_text(encoding="utf-8"))
+
+
+def _check_equation_references(errors: List[str]) -> None:
+    """Check that every equation reference resolves and every equation is cited.
+
+    The ledger's whole job is that each labelled equation can be traced to its
+    implementation, its tests, and a query that exercises it.  A typo in a
+    reference points that row at an equation which does not exist, and Sphinx
+    answers with a warning among the dozens a full build already emits.  So the
+    label list alone is not enough to check: what the reader follows is the
+    reference.
+
+    The reverse direction matters too.  An equation nobody cites has dropped out
+    of the ledger even though its ``:label:`` is still there, which the frozen
+    list cannot see either.
+
+    :param errors: Collected problems, appended to.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    known = set(_EQUATION_LABELS)
+    source = _REPO_ROOT / "docs/source"
+    for language, suffix in (("English", ".rst"), ("Chinese", "_zh.rst")):
+        cited: set = set()
+        for relative in _EQUATION_PAIRS:
+            page = source / (relative + suffix)
+            for label in _equation_references(page):
+                cited.add(label)
+                if label not in known:
+                    errors.append(
+                        "%s references equation %r, which no labelled block "
+                        "defines." % (page.relative_to(_REPO_ROOT), label)
+                    )
+        # Counted across the pages together, because the labels are spread over
+        # them and no single page carries the whole list.
+        missing = [label for label in _EQUATION_LABELS if label not in cited]
+        if missing:
+            errors.append(
+                "The %s pages never reference %s, so those equations are outside "
+                "the ledger." % (language, ", ".join(missing))
+            )
+
+
 def _check_equations(errors: List[str]) -> None:
     english: List[Tuple[str, str]] = []
     chinese: List[Tuple[str, str]] = []
@@ -862,6 +915,7 @@ def check() -> None:
     """Run every deterministic BMC documentation contract check."""
     errors: List[str] = []
     _check_equations(errors)
+    _check_equation_references(errors)
     _check_pages(errors)
     _check_readme(errors)
     _check_localized_diagrams(errors)

@@ -62,7 +62,9 @@ function collectDetails(diagram: FcstmDiagram): {
 
 export function buildStandaloneState(
     state: PreviewWebviewState,
-    optionsInput: FcstmDiagramPreviewOptionsInput = state.previewOptions,
+    // The reader's own choices when there are any, and the document's options
+    // otherwise. Never the resolved result: see `optionOverrides` in `types.ts`.
+    optionsInput: FcstmDiagramPreviewOptionsInput = state.optionOverrides || state.previewOptions,
     collapsedStateIds: ReadonlyArray<string> = state.collapsedStateIds || [],
 ): PreviewWebviewState {
     const diagram = state.standaloneDiagram;
@@ -93,6 +95,7 @@ export function buildStandaloneState(
     return {
         ...state,
         previewOptions: options,
+        optionOverrides: state.optionOverrides,
         collapsedStateIds: [...collapsedStateIds],
         payload,
         summary: Object.entries(diagram.summary).map(([label, value]) => ({label, value})),

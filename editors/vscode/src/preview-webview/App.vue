@@ -11,6 +11,7 @@ import BottomPanels from './components/BottomPanels.vue';
 import StandaloneModeBar from './components/StandaloneModeBar.vue';
 import StandaloneSourcePanel from './components/StandaloneSourcePanel.vue';
 import {bridge} from './composables/useBridge';
+import {resolveFcstmDiagramPreviewOptions} from '../../../jsfcstm/src/diagram/options';
 import {buildStandaloneState} from './standalone-data';
 import type {
     PreviewWebviewState, SelectionRef, PreviewResolvedOptions,
@@ -59,7 +60,11 @@ const initialState: PreviewWebviewState = (window as unknown as {
     // happened to be the `normal` values -- would make `detailLevel` inert in
     // any document that fell back to this. The Python side omits the same eight
     // for the same reason.
-    previewOptions: {
+    //
+    // Resolved rather than spelled out, so the object is complete -- the state
+    // declares it so -- while every value the preset owns still comes from the
+    // preset.
+    previewOptions: resolveFcstmDiagramPreviewOptions({
         detailLevel: 'normal',
         direction: 'TB',
         eventNameFormat: ['extra_name', 'relpath'],
@@ -67,7 +72,7 @@ const initialState: PreviewWebviewState = (window as unknown as {
         maxStateActions: 4,
         maxTransitionEffectLines: 8,
         maxLabelLength: 160,
-    },
+    }) as PreviewResolvedOptions,
     collapsedStateIds: [],
     emptyTitle: 'FCSTM Preview',
     emptyMessage: 'Preparing preview...',
@@ -384,10 +389,13 @@ provide('state', state);
 
 function patchOptions(options: Partial<PreviewResolvedOptions>) {
     if (state.value.standalone) {
-        state.value = buildStandaloneState({
-            ...state.value,
-            previewOptions: {...state.value.previewOptions, ...options},
-        });
+        // Merged into the reader's own choices, not into the resolved options.
+        // Resolving turns every default into an explicit value, and an explicit
+        // value beats the preset next time round: choosing `hide` clamps
+        // `showTransitionEffects` to false, and handing that back made the
+        // clamp reassert `hide` however many times `note` was chosen after it.
+        const overrides = {...(state.value.optionOverrides || {}), ...options};
+        state.value = buildStandaloneState({...state.value, optionOverrides: overrides}, overrides);
         return;
     }
     vscode.postMessage({type: 'patchOptions', options});

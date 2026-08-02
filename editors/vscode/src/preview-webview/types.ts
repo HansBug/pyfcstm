@@ -171,6 +171,17 @@ export interface PreviewWebviewState {
     rootStateName?: string;
     payload?: PreviewPayload;
     previewOptions: PreviewResolvedOptions;
+    /**
+     * What the reader has chosen, and only that.
+     *
+     * `previewOptions` above is the resolved result, every key filled in from
+     * the detail preset. Feeding that back through the resolver turns a
+     * defaulted value into an explicit one, and `resolveFcstmDiagramPreviewOptions`
+     * lets an explicit value win -- so a preset stops applying the moment its
+     * own output is handed back to it. The standalone viewer patches this
+     * sparse record instead.
+     */
+    optionOverrides?: Partial<PreviewResolvedOptions>;
     collapsedStateIds: string[];
     emptyTitle: string;
     emptyMessage: string;

@@ -157,6 +157,29 @@ function inflatePdfStreams(base64) {
       if (/^[\r\n\s]*endstream/.test(after)) {
         dataEnd = raw.indexOf(endMarker, stated);
       }
+    } else {
+      // With no size to go by, the first `endstream` is a guess, and a payload
+      // holding those nine bytes makes it the wrong one -- the tail, halo and
+      // all, then disappears while the tally still balances. A real end is
+      // followed by the end of its object, so look for one that is; the length
+      // may well be stated in another object, which is not resolved here.
+      let candidate = dataEnd;
+      let verified = -1;
+      while (candidate >= 0) {
+        const after = raw.subarray(candidate + endMarker.length,
+          Math.min(raw.length, candidate + endMarker.length + 24)).toString('latin1');
+        if (/^[\r\n\s]*(endobj|\d+\s+\d+\s+obj|xref|trailer)/.test(after)) { verified = candidate; break; }
+        candidate = raw.indexOf(endMarker, candidate + endMarker.length);
+      }
+      if (verified < 0) {
+        // Nothing here says where the data stops. Recording it as unread is the
+        // honest answer; the caller's `decoded === total` then fails loudly
+        // instead of scanning a fragment and reporting no halos.
+        skipped.push({offset: markerStart, bytes: dataEnd - dataStart, code: 'UNVERIFIED_END'});
+        offset = dataEnd + endMarker.length;
+        continue;
+      }
+      dataEnd = verified;
     }
     let compressed;
     if (declared && dataStart + Number(declared[1]) <= dataEnd) {
@@ -211,9 +234,9 @@ function selfCheckStreamTally() {
   const halo = Buffer.from('1.0 1.0 1.0 rg\n3. w\n1. G\n0 0 m 10 10 l f\n');
   const flate = (payload) => Buffer.concat([
     Buffer.from('1 0 obj\n<< /Filter /FlateDecode >>\nstream\n'),
-    zlib.deflateSync(payload), Buffer.from('\nendstream\n'),
+    zlib.deflateSync(payload), Buffer.from('\nendstream\nendobj\n'),
   ]);
-  const unreadable = Buffer.from('2 0 obj\n<< /Filter /LZWDecode >>\nstream\n\x80not-deflate\nendstream\n');
+  const unreadable = Buffer.from('2 0 obj\n<< /Filter /LZWDecode >>\nstream\n\x80not-deflate\nendstream\nendobj\n');
   const accepted = (buf) => {
     const r = inflatePdfStreams(buf.toString('base64'));
     const halos = (r.text.match(HALO) || []).length;
@@ -225,7 +248,7 @@ function selfCheckStreamTally() {
     // which the old "did anything decode" guard would have passed as a zero.
     ['a CRLF document', Buffer.concat([
       Buffer.from('%PDF-1.3\r\n1 0 obj\r\n<< /Filter /FlateDecode >>\r\nstream\r\n'),
-      zlib.deflateSync(Buffer.from('BT ET\n')), Buffer.from('\r\nendstream\r\n')]), true],
+      zlib.deflateSync(Buffer.from('BT ET\n')), Buffer.from('\r\nendstream\r\nendobj\r\n')]), true],
     ['a stream carrying a halo', Buffer.concat([Buffer.from('%PDF-1.3\n'), flate(halo)]), false],
     // The bypass this invariant exists for: one readable stream keeps the result
     // non-empty while the stream that carried the halo was skipped.
@@ -244,28 +267,28 @@ function selfCheckStreamTally() {
     // same bytes as decoded -- the two gates claim one invariant and have to
     // agree on what satisfies it.
     ['an uncompressed stream', Buffer.from(
-      '%PDF-1.3\n1 0 obj\n<< /Length 6 >>\nstream\nBT ET\nendstream\n'), true],
+      '%PDF-1.3\n1 0 obj\n<< /Length 6 >>\nstream\nBT ET\nendstream\nendobj\n'), true],
     // And it still has to be scanned: skipping the decode must not skip the halo.
     ['an uncompressed stream carrying a halo', Buffer.concat([
       Buffer.from('%PDF-1.3\n1 0 obj\n<< /Length 40 >>\nstream\n'),
-      halo, Buffer.from('\nendstream\n')]), false],
+      halo, Buffer.from('\nendstream\nendobj\n')]), false],
     // Both orderings, because taking the *last* `<<` found the inner dictionary
     // when `/DecodeParms` came second: the filter went unnoticed, the compressed
     // bytes were scanned as operators, and a document carrying a halo passed.
     // Only one of these two catches that, so both are here.
     ['a filter declared before nested parameters', Buffer.concat([
       Buffer.from('%PDF-1.3\n1 0 obj\n<< /Filter /FlateDecode /DecodeParms << /X 1 >> >>\nstream\n'),
-      zlib.deflateSync(halo), Buffer.from('\nendstream\n')]), false],
+      zlib.deflateSync(halo), Buffer.from('\nendstream\nendobj\n')]), false],
     ['a filter declared after nested parameters', Buffer.concat([
       Buffer.from('%PDF-1.3\n1 0 obj\n<< /DecodeParms << /X 1 >> /Filter /FlateDecode >>\nstream\n'),
-      zlib.deflateSync(halo), Buffer.from('\nendstream\n')]), false],
+      zlib.deflateSync(halo), Buffer.from('\nendstream\nendobj\n')]), false],
     // A literal string may hold either bracket. Balancing without stepping over
     // one read `(a << b)` as a nested dictionary, landed on the wrong span, and
     // the filter went unseen -- so a compressed stream carrying a halo was
     // scanned as raw operators and passed.
     ['a filter beside a string holding brackets', Buffer.concat([
       Buffer.from('%PDF-1.3\n1 0 obj\n<< /Filter /FlateDecode /Note (a << b) >>\nstream\n'),
-      zlib.deflateSync(halo), Buffer.from('\nendstream\n')]), false],
+      zlib.deflateSync(halo), Buffer.from('\nendstream\nendobj\n')]), false],
     // An earlier object's dictionary sits in the look-back window of every
     // stream but the first. Two attempts at bracket balancing were defeated by
     // it, and on a real document that made every dictionary unreadable at once.
@@ -289,7 +312,7 @@ function selfCheckStreamTally() {
       }
       return Buffer.concat([
         Buffer.from('%PDF-1.3\n1 0 obj\n<< /Filter /FlateDecode /Length ' + body.length + ' >>\nstream\n'),
-        body, Buffer.from('\nendstream\n')]);
+        body, Buffer.from('\nendstream\nendobj\n')]);
     })(), true],
     // The case above passes if *either* mechanism works, so on its own it lets
     // one of them be deleted in silence. This one holds the end that matters:
@@ -307,7 +330,7 @@ function selfCheckStreamTally() {
       }
       return Buffer.concat([
         Buffer.from('%PDF-1.3\n1 0 obj\n<< /Filter /FlateDecode >>\nstream\n'),
-        body, Buffer.from('\nendstream\n')]);
+        body, Buffer.from('\nendstream\nendobj\n')]);
     })(), true],
     // Both fail-open shapes the review found: an `obj` inside a string literal
     // moved the anchor into the dictionary and cut the `/Filter` off in front of
@@ -316,31 +339,43 @@ function selfCheckStreamTally() {
     // successful decode. Each let a document carrying a halo through.
     ['a string literal holding the word obj', Buffer.concat([
       Buffer.from('%PDF-1.3\n1 0 obj\n<< /Filter /FlateDecode /Note (obj) /DecodeParms << /X 1 >> >>\nstream\n'),
-      zlib.deflateSync(halo), Buffer.from('\nendstream\n')]), false],
+      zlib.deflateSync(halo), Buffer.from('\nendstream\nendobj\n')]), false],
     ['a length given as an indirect reference', Buffer.concat([
       Buffer.from('%PDF-1.3\n1 0 obj\n<< /Length 5 0 R >>\nstream\n'),
-      halo, Buffer.from('\nendstream\n')]), false],
+      halo, Buffer.from('\nendstream\nendobj\n')]), false],
     // The same reference wearing a comment. Comments are whitespace to a reader,
     // so the lookahead alone did not see this one and read `5` as the size.
     ['an indirect reference behind a comment', Buffer.concat([
       Buffer.from('%PDF-1.3\n1 0 obj\n<< /Length 5%c\n0 R >>\nstream\n'),
-      halo, Buffer.from('\nendstream\n')]), false],
+      halo, Buffer.from('\nendstream\nendobj\n')]), false],
     // `(1 0 obj)` reads as an object header to anything matching the shape
     // loosely: the span then starts mid-dictionary and the `/Filter` in front of
     // the nested one is cut off. Requiring the span to *begin* with `<<` is what
     // the surrounding comment always claimed and the code did not check.
     ['a string literal shaped like a header', Buffer.concat([
       Buffer.from('%PDF-1.3\n1 0 obj\n<< /Filter /FlateDecode /Note (1 0 obj) /DecodeParms << /X 1 >> >>\nstream\n'),
-      zlib.deflateSync(halo), Buffer.from('\nendstream\n')]), false],
+      zlib.deflateSync(halo), Buffer.from('\nendstream\nendobj\n')]), false],
     // `endstream` is nine ordinary bytes and an uncompressed payload may hold
     // them. Searching for the keyword cut the stream in half and dropped the
     // halo in its tail while the tally still balanced. This is the case that
     // pins `/Length`: without it there is nothing else to find the end with.
+    // The same payload with the length in another object, which is legal and
+    // which this side does not resolve. With no size to go by the first
+    // `endstream` was taken on faith, the tail went missing, and the halo with
+    // it. A real end is followed by the end of its object; when none is, the
+    // stream is recorded as unread rather than scanned in part.
+    ['an indirect length beside an embedded end keyword', (() => {
+      const body = Buffer.concat([Buffer.from('BT (endstream) Tj ET\n'), halo]);
+      return Buffer.concat([
+        Buffer.from('%PDF-1.4\n4 0 obj\n<< /Length 5 0 R >>\nstream\n'),
+        body,
+        Buffer.from('\nendstream\nendobj\n5 0 obj\n' + body.length + '\nendobj\n')]);
+    })(), false],
     ['a payload containing the end keyword', (() => {
       const body = Buffer.concat([Buffer.from('BT (endstream) Tj ET\n'), halo]);
       return Buffer.concat([
         Buffer.from('%PDF-1.3\n1 0 obj\n<< /Length ' + body.length + ' >>\nstream\n'),
-        body, Buffer.from('\nendstream\n')]);
+        body, Buffer.from('\nendstream\nendobj\n')]);
     })(), false],
   ];
   for (const [label, buf, shouldAccept] of cases) {

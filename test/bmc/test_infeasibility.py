@@ -302,6 +302,51 @@ def test_an_achieved_proof_is_always_reported_complete() -> None:
     assert ("proof", "partial") not in seen, seen
 
 
+def test_a_state_opposition_still_cannot_reach_boolean_complement() -> None:
+    """Why ``boolean_complement`` is unreachable however the opposition is written.
+
+    The reference page used to blame event assumptions publishing a fact whose
+    content no rule reads.  That is true of events but is not the reason: the
+    checker accepts premises of kind ``proposition`` only, and nothing produces a
+    fact of that kind, so the rule stays out of reach even when the premises are
+    complete.
+
+    ``active(X)`` and ``!active(X)`` at one frame are the cleanest opposition the
+    query language can state.  They publish two facts that carry their content,
+    agree on frame and state, and differ only in ``excluded`` -- and the result is
+    still a formal explanation.  A later change that starts producing
+    ``proposition`` facts should fail here, which is the signal that the page needs
+    rewriting.
+
+    Three independent gates hold this shut, which is worth knowing before trying to
+    open it: the closure filters candidates against ``premise_kinds`` before ever
+    proposing the rule, the checker asserts the premise kinds again, and the checker
+    then reads ``identity`` and ``holds`` -- fields a ``state_membership`` fact does
+    not have, carrying ``frame``, ``state`` and ``excluded`` instead.  Relaxing any
+    one or two of them leaves this test passing, so it is not pinned by a
+    single-point mutation.
+    """
+    core = _core_formula(
+        'assume at 1: active("Root.A"); '
+        'assume at 1: !active("Root.A"); '
+        'check reach <= 2: active("Root.B");'
+    )
+    outcome = explain_infeasibility(
+        core, "assumptions", _SolveBudget(None), requested_mode="proof"
+    )
+    explanation = outcome.explanation
+
+    facts = [item.normalized_fact for item in explanation.core.items]
+    kinds = {fact["kind"] for fact in facts}
+    assert kinds == {"state_membership"}
+    assert {fact["excluded"] for fact in facts} == {True, False}
+    assert len({fact["frame"] for fact in facts}) == 1
+    assert len({fact["state"] for fact in facts}) == 1
+
+    assert explanation.achieved_mode == "formal"
+    assert explanation.proof is None
+
+
 def test_kernel_stage_needs_no_probe() -> None:
     """The kernel stage is classified without spending a solver check."""
     core = _core_formula(

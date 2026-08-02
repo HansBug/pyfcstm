@@ -720,9 +720,17 @@ reasons are structural and are set out in
      - That one slot is required to hold two different values.
    * - ``boolean_complement``
      - no
-     - That the same requirement is both demanded and ruled out.  Needs a fact
-       carrying a proposition's content; an event assumption publishes
-       ``structural_constraint``, whose content no rule reads.
+     - That the same requirement is both demanded and ruled out.  It reads
+       premises of kind ``proposition``, and nothing in the package produces a fact
+       of that kind -- every occurrence of the string is a reader.  Three gates hold
+       it shut: the closure filters candidates against the rule's premise kinds
+       before proposing it, the checker asserts those kinds again, and the checker
+       then reads ``identity`` and ``holds``, which no published fact carries.  So
+       the rule is out of reach however the opposition is written, not only for
+       events: ``assume at 1: active("Root.A")`` together with
+       ``assume at 1: !active("Root.A")`` publishes two ``state_membership`` facts
+       that carry their full content, agree on frame and state, and differ only in
+       ``excluded`` -- and the result still degrades to a formal explanation.
 
 The five reachable rules are exercised by the checked-in benchmark corpus under
 ``benchmarks/bmc/infeasibility/cases/handwritten/``, and its report records which

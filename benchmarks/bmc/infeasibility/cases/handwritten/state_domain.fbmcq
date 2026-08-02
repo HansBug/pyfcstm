@@ -1,0 +1,6 @@
+init state("Controller.Idle");
+assume at 1: !active("Controller.Idle");
+assume at 1: !active("Controller.Purging");
+assume at 1: !active("Controller.Vented");
+assume at 1: !terminated();
+check reach <= 1: active("Controller.Idle");

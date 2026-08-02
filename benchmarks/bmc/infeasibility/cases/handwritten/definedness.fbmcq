@@ -1,0 +1,3 @@
+assume at 0: var("pressure") == 0;
+assume at 0: 10 / var("pressure") > 1;
+check reach <= 1: active("Controller.Vented");

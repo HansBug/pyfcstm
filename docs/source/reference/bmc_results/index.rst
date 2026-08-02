@@ -587,32 +587,59 @@ Each proof step is a node.  ``kind`` says what the node is for:
 
 ``rule_id`` names which rule produced the node's conclusion.  The catalog is
 closed; a query that needs a reading outside it degrades to ``formal`` rather
-than inventing one:
+than inventing one.
+
+The ``Reachable`` column records whether any query is currently known to produce
+a node carrying that rule.  Four rules are not: they are part of the closed
+vocabulary a consumer must accept, but no query reaches them today, so a reader
+who picks ``proof`` depth for such a conflict receives ``formal`` instead.  The
+reasons are structural and are set out in
+:doc:`/explanations/bmc_solving/index`.
 
 .. list-table::
    :header-rows: 1
-   :widths: 30 70
+   :widths: 26 14 60
 
    * - ``rule_id``
+     - Reachable
      - What it concludes
    * - ``source_fact``
+     - yes
      - An input node's own fact, taken from the core member it restates.
    * - ``transition_assignment``
-     - What a transition's effect assigns to a variable at the next frame.
+     - no
+     - What a transition's effect assigns to a variable at the next frame.  Needs
+       a fact about an intermediate frame, which no core member states.
    * - ``equality_substitution``
-     - The result of substituting a known value into another fact.
+     - no
+     - The result of substituting a known value into another fact.  Needs a
+       derived fact to condition on, for the same reason.
    * - ``arithmetic_evaluation``
-     - The value an arithmetic step leaves in a variable.
+     - no
+     - The value an arithmetic step leaves in a variable.  The recognizer
+       resolves constants before a step of this shape is needed.
    * - ``interval_intersection``
+     - yes
      - That no value satisfies every bound required at one slot.
    * - ``state_domain_exhaustion``
+     - yes
      - That a frame has no state left it could be in.
    * - ``definedness_failure``
+     - yes
      - That an operation cannot stay defined on the value required of it.
    * - ``incompatible_equalities``
+     - yes
      - That one slot is required to hold two different values.
    * - ``boolean_complement``
-     - That the same requirement is both demanded and ruled out.
+     - no
+     - That the same requirement is both demanded and ruled out.  Needs a fact
+       carrying a proposition's content; an event assumption publishes
+       ``structural_constraint``, whose content no rule reads.
+
+The five reachable rules are exercised by the checked-in benchmark corpus under
+``benchmarks/bmc/infeasibility/cases/handwritten/``, and its report records which
+case produced which rule.  Read the measured ratio there rather than from this
+page: it is a property of that corpus at a given revision, not of the tool.
 
 ``verification_method`` says who agreed with the step, and the division is the
 proof's trust boundary rather than a label:

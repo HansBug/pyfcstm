@@ -217,6 +217,21 @@ _TABULATED_VOCABULARY: Dict[str, Tuple[Tuple[str, ...], ...]] = {
     ),
 }
 
+#: Rules the reference page must mark as currently unreachable.
+#:
+#: Four of the nine are part of the closed vocabulary a consumer has to accept
+#: while no query reaches them.  Listing all nine without saying which is which
+#: reads as nine available readings, so a reader who picks ``proof`` depth for one
+#: of these four is surprised by a degraded result.  The measured ratio belongs to
+#: the benchmark corpus rather than to a reference page, but *which* rules are
+#: unreachable is a user-facing fact, and it is the kind that goes stale quietly.
+_UNREACHABLE_RULES = (
+    "transition_assignment",
+    "equality_substitution",
+    "arithmetic_evaluation",
+    "boolean_complement",
+)
+
 #: Sentences that were true when written and are now misleading.
 #:
 #: The proof tier landed after this page described it as never closing, so the
@@ -629,6 +644,37 @@ def _check_schema_vocabularies(errors: List[str]) -> None:
         )
 
 
+def _check_rule_reachability(errors: List[str]) -> None:
+    """Confirm the reference page still says which rules no query reaches.
+
+    Matched against the table row's exact shape rather than against the marker
+    appearing anywhere nearby.  The looser reading passed while the English
+    column was missing entirely: ``"no" in block`` is satisfied by ``no value``,
+    ``nodes``, or ``not``, so the check agreed with a two-column table.  Both
+    languages are checked with the same predicate against their own marker word,
+    because writing one check per language is how the two drift apart.
+
+    :param errors: Accumulator the caller raises from.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    markers = {
+        "reference/bmc_results/index.rst": "no",
+        "reference/bmc_results/index_zh.rst": "\u5426",
+    }
+    for label, path in _prose_pages("reference/bmc_results/index"):
+        text = _read(path)
+        for rule in _UNREACHABLE_RULES:
+            row = "   * - ``%s``\n     - %s\n" % (rule, markers[label])
+            if row in text:
+                continue
+            errors.append(
+                "%s does not mark %s unreachable in its own table row, so the "
+                "catalog reads as nine available readings." % (label, rule)
+            )
+
+
 def check() -> None:
     """Run every deterministic BMC documentation contract check."""
     errors: List[str] = []
@@ -641,6 +687,7 @@ def check() -> None:
     _check_tabulated_vocabulary(errors)
     _check_forbidden_claims(errors)
     _check_schema_vocabularies(errors)
+    _check_rule_reachability(errors)
     if errors:
         raise CheckFailure("BMC documentation check failed:\n" + "\n".join(errors))
 

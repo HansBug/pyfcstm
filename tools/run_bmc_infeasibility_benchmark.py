@@ -120,6 +120,8 @@ _CASES: Tuple[Tuple[str, str, str], ...] = (
     ("two_values", "proof", "one variable pinned to two values at one frame"),
     ("empty_interval", "proof", "bounds that no value satisfies"),
     ("two_states", "proof", "two states required of one frame"),
+    ("state_domain", "proof", "every state at a frame excluded at once"),
+    ("definedness", "proof", "an operation that cannot stay defined"),
     ("cross_step", "formal", "conflict visible only after accumulating a step"),
     ("event_conflict", "formal", "event assumption published without content"),
     ("feasible", "none", "feasible scenario; the explanation does no work"),

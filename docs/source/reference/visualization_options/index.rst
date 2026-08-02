@@ -789,10 +789,11 @@ self-contained HTML file.
        ``minimal`` writes transition effects inline and leaves edges in the
        neutral stroke, listing events in the legend only; ``normal``, the
        default, puts effects in a note beside the transition and tints edges by
-       event; ``full`` adds each state's own events and lifecycle actions as
-       rows under its title. The details panel lists a state's actions whatever
-       the preset, so the level chooses what the drawing carries rather than
-       what is available to read.
+       event; ``full`` adds a leaf state's own events and lifecycle actions as
+       rows under its title, while a composite state shows its children instead
+       and gains no rows at any level. The details panel lists a state's actions
+       whatever the preset, so the level chooses what the drawing carries rather
+       than what is available to read.
    * - ``DiagramOptions.direction``
      - ``TB`` (default) or ``LR``
      - Chooses top-to-bottom or left-to-right layout.

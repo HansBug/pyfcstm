@@ -20,8 +20,11 @@ import {
     smoothGraphEdges,
     terminalApproach,
     measureFcstmElkLabel,
-    leafDetailBandHeight,
 } from '@pyfcstm/jsfcstm/diagram';
+// Reached through the source path, as the export-limits suite does: this is
+// an internal geometry helper and the public surface is not the place to
+// widen so a test can see it.
+import {leafDetailBandHeight} from '../src/diagram/leaf-detail';
 
 describe('jsfcstm ELK-based diagram pipeline', () => {
     const sampleSource = [

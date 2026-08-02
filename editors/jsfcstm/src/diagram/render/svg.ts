@@ -241,10 +241,12 @@ function drawNode(
             `stroke="${P.compositeStroke}" stroke-opacity="0.35" stroke-width="1"/>`
         );
     } else {
-        // The event and action rows the detail level asked for. `minimal` turns
-        // both off and the state keeps the single centred title it has always
-        // had; `normal` adds its events and `full` its actions, in that order,
-        // so raising the level appends rows rather than reordering them.
+        // The event and action rows the detail level asked for. `minimal` and
+        // `normal` turn both off and the state keeps the single centred title it
+        // has always had; `full` adds its events and then its actions, in that
+        // order, so raising the level appends rows rather than reordering them.
+        // Only a leaf ever has any -- `leafDetailLines` gives a state with
+        // children none, and a composite shows its children instead.
         const eventRows = meta.eventLabels || [];
         const actionRows = meta.actionLabels || [];
         const detailRows = eventRows.length + actionRows.length;

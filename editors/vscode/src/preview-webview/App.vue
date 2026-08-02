@@ -53,17 +53,15 @@ const initialState: PreviewWebviewState = (window as unknown as {
 }).__FCSTM_INITIAL_STATE__ || (typeof __FCSTM_INITIAL_STATE__ !== 'undefined' ? __FCSTM_INITIAL_STATE__ : {
     title: 'FCSTM Preview',
     filePath: '',
+    // Only the keys no preset governs. The eight the detail level decides are
+    // left out on purpose: an explicit value beats the preset in
+    // `resolveFcstmDiagramPreviewOptions`, so spelling them here -- with what
+    // happened to be the `normal` values -- would make `detailLevel` inert in
+    // any document that fell back to this. The Python side omits the same eight
+    // for the same reason.
     previewOptions: {
         detailLevel: 'normal',
         direction: 'TB',
-        showVariableDefinitions: true,
-        showEvents: true,
-        showTransitionGuards: true,
-        showTransitionEffects: true,
-        transitionEffectMode: 'note',
-        eventVisualizationMode: 'both',
-        showStateEvents: true,
-        showStateActions: false,
         eventNameFormat: ['extra_name', 'relpath'],
         maxStateEvents: 4,
         maxStateActions: 4,

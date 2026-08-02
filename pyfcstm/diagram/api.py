@@ -1893,10 +1893,11 @@ class DiagramOptions:
         ``full``.  Each draws a different picture.  ``minimal`` shows state
         titles and transitions only, writes transition effects inline and leaves
         edges in the neutral stroke; ``normal``, the default, puts effects in a
-        note beside the transition and tints edges by event; ``full`` adds each
-        state's own events and lifecycle actions under its title.  A state gains
-        rows at the bottom as the level rises, so raising it never rearranges
-        what was already on screen.
+        note beside the transition and tints edges by event; ``full`` adds a
+        leaf state's own events and lifecycle actions under its title.  A
+        composite state shows its children instead and gains no rows at any
+        level.  Rows are appended at the bottom as the level rises, so raising
+        it never rearranges what was already on screen.
 
         The preset governs how a diagram is *drawn*, not what it contains:
         :meth:`Diagram.to_dict` and :meth:`Diagram.to_json` return the same

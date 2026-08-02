@@ -3,11 +3,10 @@ import {collectFcstmDiagramEffectNotes} from '../../../jsfcstm/src/diagram/rende
 import {resolveFcstmDiagramPreviewOptions} from '../../../jsfcstm/src/diagram/options';
 import type {
     FcstmDiagram, FcstmDiagramState, FcstmDiagramTransition,
-    FcstmDiagramPreviewOptionsInput,
 } from '../../../jsfcstm/src/diagram/model';
 import type {
-    PreviewPayload, PreviewStateDetail, PreviewTransitionDetail,
-    PreviewWebviewState, SelectionRef,
+    PreviewPayload, PreviewResolvedOptions, PreviewStateDetail,
+    PreviewTransitionDetail, PreviewWebviewState, SelectionRef,
 } from './types';
 
 function collectDetails(diagram: FcstmDiagram): {
@@ -62,7 +61,6 @@ function collectDetails(diagram: FcstmDiagram): {
 
 export function buildStandaloneState(
     state: PreviewWebviewState,
-    optionsInput?: FcstmDiagramPreviewOptionsInput,
     collapsedStateIds: ReadonlyArray<string> = state.collapsedStateIds || [],
 ): PreviewWebviewState {
     const diagram = state.standaloneDiagram;
@@ -79,9 +77,15 @@ export function buildStandaloneState(
     // beats the preset, so resolving one and feeding it back makes every
     // default permanent -- which is how choosing `hide` once used to leave the
     // effect mode stuck there.
-    const options = resolveFcstmDiagramPreviewOptions(
-        optionsInput ?? {...documentOptions, ...(state.optionOverrides || {})},
-    );
+    // No way in but the merge. There used to be a parameter for an explicit
+    // input, and every defect this file has had came through it: a caller
+    // handing back the resolved set froze each default as a choice, and a
+    // caller handing back only the reader's record dropped the document's.
+    // Both are now unsayable rather than merely discouraged.
+    const options = resolveFcstmDiagramPreviewOptions({
+        ...documentOptions,
+        ...(state.optionOverrides || {}),
+    });
     const graph = buildFcstmElkGraph(diagram, options, {
         collapsedStateIds: new Set(collapsedStateIds),
     });

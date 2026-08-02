@@ -42,7 +42,9 @@ esbuild.buildSync({
 const {buildStandaloneState} = require(bundlePath);
 
 const failures = [];
+let checks = 0;
 const check = (label, actual, expected) => {
+    checks += 1;
     if (actual !== expected) failures.push(`${label}: expected ${expected}, got ${actual}`);
 };
 
@@ -82,7 +84,7 @@ state = buildStandaloneState({
 check('effect mode back to note', state.previewOptions.transitionEffectMode, 'note');
 
 // Collapsing a state touches no option.
-state = buildStandaloneState({...state, collapsedStateIds: ['R']}, undefined, ['R']);
+state = buildStandaloneState({...state, collapsedStateIds: ['R']}, ['R']);
 check('detail level after collapse', state.previewOptions.detailLevel, 'full');
 check('effect mode after collapse', state.previewOptions.transitionEffectMode, 'note');
 check('guards after collapse', state.previewOptions.showTransitionGuards, false);
@@ -93,4 +95,4 @@ if (failures.length > 0) {
     for (const failure of failures) console.error(`viewer option flow: ${failure}`);
     process.exit(1);
 }
-console.log(`viewer option flow: ${9} checks passed`);
+console.log(`viewer option flow: ${checks} checks passed`);

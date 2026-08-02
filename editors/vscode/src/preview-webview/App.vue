@@ -51,7 +51,7 @@ function writeStorage(key: string, value: string) {
 // governs: an explicit value beats the preset in the resolver, so naming the
 // eight it owns -- with what happen to be the `normal` values -- would make
 // `detailLevel` inert. The Python side omits the same eight for the same reason.
-const FALLBACK_DOCUMENT_OPTIONS = {
+const FALLBACK_DOCUMENT_OPTIONS: Partial<PreviewResolvedOptions> = {
     detailLevel: 'normal',
     direction: 'TB',
     eventNameFormat: ['extra_name', 'relpath'],
@@ -59,7 +59,7 @@ const FALLBACK_DOCUMENT_OPTIONS = {
     maxStateActions: 4,
     maxTransitionEffectLines: 8,
     maxLabelLength: 160,
-} as const;
+};
 
 // Initial state is serialised into window by the HTML shell.
 declare const __FCSTM_INITIAL_STATE__: PreviewWebviewState;
@@ -419,9 +419,7 @@ function toggleCollapse(id: string) {
     else set.add(id);
     const collapsed = Array.from(set);
     if (state.value.standalone) {
-        // Options untouched here, so none are passed: handing back the resolved
-        // set would freeze every preset-owned value at its current default.
-        state.value = buildStandaloneState({...state.value, collapsedStateIds: collapsed}, undefined, collapsed);
+        state.value = buildStandaloneState({...state.value, collapsedStateIds: collapsed}, collapsed);
         return;
     }
     vscode.postMessage({type: 'setCollapsed', collapsed});

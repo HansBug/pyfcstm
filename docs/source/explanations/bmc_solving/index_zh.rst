@@ -471,35 +471,30 @@ delta、gamma 两个符号，并为每个步/分支对创建一个选择变量�
 ——包括两个不同成员陈述同一事实的情形，那种情形无处安放：合并它们会让一个节点带上
 两份归属，丢掉一个又会让某个成员没人读。
 
-.. list-table:: 解释断言台账
-   :header-rows: 1
-   :widths: 26 22 26 26
+下面每条断言都点名它的实现、它的测试，以及一个能产出它的查询。四条共用同一个两行
+查询 ``assume at 1: var("x") == 1; assume at 1: var("x") == 2;``，所以跑一次就能
+重现整份台账。
 
-   * - 断言
-     - 实现
-     - 测试
-     - 可运行查询与轨迹
-   * - :eq:`bmc-core-soundness`：仅冲突核本身不可满足
-     - ``pyfcstm/bmc/infeasibility.py`` 中的 ``extract_source_core``
-     - ``test/bmc/test_infeasibility.py``
-     - ``assume at 1: var("x") == 1; assume at 1: var("x") == 2;`` 在场景 UNSAT
-       的同时报告 ``Core size: 2``
-   * - :eq:`bmc-core-subset-minimality`：每个成员都承重
-     - ``extract_source_core`` 中的最小化循环
-     - ``test/bmc/test_explanation.py`` 中的
-       ``test_reduction_and_minimality_stay_coupled``
-     - 同一查询报告 ``Reduction: subset_minimal`` 与
-       ``Subset minimality: proven``
-   * - :eq:`bmc-proof-input-binding`：两个方向都被驳倒
-     - ``pyfcstm/bmc/infeasibility.py`` 中的 ``check_core_bindings``
-     - ``test/bmc/test_proof_wiring.py``
-     - 同一查询发布两个输入，``verification_method`` 均为 ``core_binding``
-   * - :eq:`bmc-proof-input-bijection`：一个成员一个节点
-     - ``pyfcstm/bmc/proof.py`` 中的 ``build_domain_proof``
-     - ``test_an_input_node_restates_one_member_and_says_so`` 与
-       ``test_two_members_stating_one_fact_are_refused_rather_than_merged``
-     - 同一查询为两成员冲突核发布两个 ``input`` 节点，各自的 ``item_ids`` 只有
-       一项
+:eq:`bmc-core-soundness` —— 仅冲突核本身不可满足
+    由 ``pyfcstm/bmc/infeasibility.py`` 中的 ``extract_source_core`` 构造；由
+    ``test/bmc/test_infeasibility.py`` 覆盖。该查询在场景 UNSAT 的同时报告
+    ``Core size: 2``。
+
+:eq:`bmc-core-subset-minimality` —— 每个成员都承重
+    由同一函数中的最小化循环构造；由 ``test/bmc/test_explanation.py`` 中的
+    ``test_reduction_and_minimality_stay_coupled`` 覆盖。该查询报告
+    ``Reduction: subset_minimal`` 与 ``Subset minimality: proven``。
+
+:eq:`bmc-proof-input-binding` —— 两个方向都被驳倒
+    由 ``pyfcstm/bmc/infeasibility.py`` 中的 ``check_core_bindings`` 检查；由
+    ``test/bmc/test_proof_wiring.py`` 覆盖。该查询发布两个输入，
+    ``verification_method`` 均为 ``core_binding``。
+
+:eq:`bmc-proof-input-bijection` —— 一个成员一个节点
+    由 ``pyfcstm/bmc/proof.py`` 中的 ``build_domain_proof`` 强制；由
+    ``test_an_input_node_restates_one_member_and_says_so`` 与
+    ``test_two_members_stating_one_fact_are_refused_rather_than_merged`` 覆盖。
+    该查询为两成员冲突核发布两个 ``input`` 节点，各自的 ``item_ids`` 只有一项。
 
 这份台账值得对照上文的边界来读：这四条断言谈论的都是编码之后的约束。没有一条说编码
 符合作者的本意，这也正是信任边界要单独陈述的原因。

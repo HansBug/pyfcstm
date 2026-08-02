@@ -585,36 +585,33 @@ including the case of two distinct members stating the same fact, which has no
 place to go: merging them would give one node two attributions and dropping one
 would leave a member unread.
 
-.. list-table:: Explanation-claim ledger
-   :header-rows: 1
-   :widths: 26 22 26 26
+Each claim below names its implementation, its test, and a query that produces
+it.  All four share the two-line query
+``assume at 1: var("x") == 1; assume at 1: var("x") == 2;``, so one run
+reproduces the whole ledger.
 
-   * - Claim
-     - Implementation
-     - Test
-     - Working query and trace
-   * - :eq:`bmc-core-soundness`: the core alone is unsatisfiable
-     - ``extract_source_core`` in ``pyfcstm/bmc/infeasibility.py``
-     - ``test/bmc/test_infeasibility.py``
-     - ``assume at 1: var("x") == 1; assume at 1: var("x") == 2;`` reports
-       ``Core size: 2`` with the scenario UNSAT
-   * - :eq:`bmc-core-subset-minimality`: every member is load bearing
-     - the minimization loop in ``extract_source_core``
-     - ``test_reduction_and_minimality_stay_coupled`` in
-       ``test/bmc/test_explanation.py``
-     - the same query reports ``Reduction: subset_minimal`` and
-       ``Subset minimality: proven``
-   * - :eq:`bmc-proof-input-binding`: both directions are refuted
-     - ``check_core_bindings`` in ``pyfcstm/bmc/infeasibility.py``
-     - ``test/bmc/test_proof_wiring.py``
-     - the same query publishes both inputs with
-       ``verification_method`` as ``core_binding``
-   * - :eq:`bmc-proof-input-bijection`: one node per member
-     - ``build_domain_proof`` in ``pyfcstm/bmc/proof.py``
-     - ``test_an_input_node_restates_one_member_and_says_so`` and
-       ``test_two_members_stating_one_fact_are_refused_rather_than_merged``
-     - the same query publishes two input nodes for a two-member core, each with
-       one entry in ``item_ids``
+:eq:`bmc-core-soundness` -- the core alone is unsatisfiable
+    Built by ``extract_source_core`` in ``pyfcstm/bmc/infeasibility.py``; covered
+    by ``test/bmc/test_infeasibility.py``.  The query reports ``Core size: 2``
+    with the scenario UNSAT.
+
+:eq:`bmc-core-subset-minimality` -- every member is load bearing
+    Built by the minimization loop in the same function; covered by
+    ``test_reduction_and_minimality_stay_coupled`` in
+    ``test/bmc/test_explanation.py``.  The query reports
+    ``Reduction: subset_minimal`` and ``Subset minimality: proven``.
+
+:eq:`bmc-proof-input-binding` -- both directions are refuted
+    Checked by ``check_core_bindings`` in ``pyfcstm/bmc/infeasibility.py``;
+    covered by ``test/bmc/test_proof_wiring.py``.  The query publishes both
+    inputs with ``verification_method`` as ``core_binding``.
+
+:eq:`bmc-proof-input-bijection` -- one node per member
+    Enforced by ``build_domain_proof`` in ``pyfcstm/bmc/proof.py``; covered by
+    ``test_an_input_node_restates_one_member_and_says_so`` and
+    ``test_two_members_stating_one_fact_are_refused_rather_than_merged``.  The
+    query publishes two input nodes for a two-member core, each with one entry
+    in ``item_ids``.
 
 The ledger is worth reading against the boundary above: these four claims are
 about the constraints as encoded.  None of them says the encoding matches what

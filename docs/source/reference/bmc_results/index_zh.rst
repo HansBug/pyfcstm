@@ -502,8 +502,12 @@ scope 上面那句话。粒度、成员数、带标签的最小性行以及解�
 
 中间那种最容易意外：请求 ``proof`` 而降级时显示的是 ``FORMAL`` 标题，因为实际达成的
 是 ``formal``。最后那种在没有任何证明的情况下标题里出现 ``PROOF``，因为什么都没达成，
-可命名的只剩请求本身。标题读的是\ *发生了什么*\ ，差距读 ``Explanation depth:`` 行——
-那一行才是可用来分支的字段。
+可命名的只剩请求本身。
+
+``Explanation depth:`` 只在标题本身让这一对变得有歧义时出现，也就是降级那种情形——
+标题命名达成的深度，该行补上被请求的深度。它在 ``NOT ACHIEVED`` 形状里不出现，因为
+标题已经命名了请求；请求被满足时也不出现。因此消费方应当在 JSON 里比较
+``requested_mode`` 与 ``achieved_mode``，而不是去找那一行——它只在三种形状之一里存在。
 
 ``formal`` 深度上的 ``COMPLETE`` 意思是该档承诺的内容都产出了——一个分类与一个源组
 冲突核——而不是"找到了证明"。把它读成"工具已经做完了"，正是这张表要防的误解。
@@ -731,9 +735,11 @@ Python 调用方通过冻结的 dataclass 读取同样的内容，而不是去�
 * ``complete`` 意味着该深度交付了它承诺的内容，所以 ``achieved_mode`` 为 ``none``
   时永远不是 ``complete``。构造这种组合会抛出
   ``achieved_mode 'none' cannot be complete; it is partial, unknown or timeout``。
-* 哪些载荷字段伴随哪个 status，不要去推断。``classification``、``core``、
-  ``narrative`` 与 ``proof`` 请按"是否存在"来读，而不是从 ``status`` 预测；上文
-  逐个记录了它们，且每个都可为空。
+* ``reason`` 是例外，且值得知道，因为降级的结果正是通过它解释自己的：``complete``
+  从不携带它——没有什么要解释的——而 ``partial``、``unknown``、``timeout`` 一定携带。
+  这一条在全部十四条签名、三种达成深度上都成立。
+* 其余载荷字段不要去推断。``classification``、``core``、``narrative`` 与 ``proof``
+  请按"是否存在"来读，而不是从 ``status`` 预测；上文逐个记录了它们，且每个都可为空。
 
 :class:`~pyfcstm.bmc.BmcInfeasibilityExplanation` 会拒绝矩阵之外的组合并给出指明问题
 的消息，所以构造它的消费方立刻就会知道，而只读取结果的消费方根本不需要这张矩阵。

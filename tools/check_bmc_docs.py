@@ -809,9 +809,17 @@ def _collapse(text: str) -> str:
 def check_rendered(html_roots: Dict[str, Path]) -> None:
     """Re-check the vocabulary anchors against built pages.
 
-    The source-level checks stay as the fast gate.  This one is the honest one:
-    it asks whether a reader can find the value, not whether the file contains
-    it.
+    The source-level checks stay as the fast gate.  This one asks a narrower but
+    stronger question: is the value in the article body of the built page, rather
+    than merely in the source that produced it.
+
+    It does *not* establish visibility.  Stripping tags cannot resolve CSS, so an
+    element the browser hides -- ``<span hidden>`` from a ``raw`` directive, or
+    anything a stylesheet sets to ``display: none`` -- still counts here.  What
+    computed style hides is the visual gate's question, and
+    ``tools/check_bmc_math_visual.py`` is the one holding a browser.  Saying so
+    is the point: a check that claimed to answer visibility while measuring DOM
+    presence would be the same overclaim this slice keeps finding in prose.
 
     :param html_roots: ``{"en": path, "zh": path}`` for two language builds.
     :type html_roots: Dict[str, pathlib.Path]

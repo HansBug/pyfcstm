@@ -578,9 +578,15 @@ it would say.
 The middle case is the one that surprises: a request for ``proof`` that degrades
 shows a ``FORMAL`` headline, because ``formal`` is what was achieved.  The last
 case shows ``PROOF`` in the headline while no proof exists, because nothing was
-achieved and the request is all there is to name.  Read the headline for what
-happened and the ``Explanation depth:`` line for the gap; that line is the field
-to branch on.
+achieved and the request is all there is to name.
+
+``Explanation depth:`` appears only when the headline leaves the pair ambiguous,
+which is exactly the degrading case -- the headline names the achieved depth and
+the line supplies the requested one.  It is absent from the ``NOT ACHIEVED``
+shape, where the headline already names the request, and absent when the request
+was met.  A consumer should therefore compare ``requested_mode`` with
+``achieved_mode`` in JSON rather than looking for that line, which is present
+only in one of the three shapes.
 
 ``COMPLETE`` at ``formal`` depth means the formal explanation produced everything
 it promises -- a classification and a source core -- not that a proof was found.
@@ -831,10 +837,14 @@ facts a reader needs are these:
   ``achieved_mode`` of ``none`` is never ``complete``.  Constructing that pairing
   raises ``achieved_mode 'none' cannot be complete; it is partial, unknown or
   timeout``.
-* Which payload fields accompany a status is not something to infer.  Read
-  ``classification``, ``core``, ``narrative`` and ``proof`` for presence rather
-  than predicting it from ``status``; each is documented above and each is
-  nullable.
+* ``reason`` is the exception, and it is worth knowing because it is the field a
+  degraded result explains itself through: ``complete`` never carries one --
+  there is nothing to explain -- and ``partial``, ``unknown`` and ``timeout``
+  always do.  This holds across all fourteen signatures and all three achieved
+  depths.
+* Every other payload field is not something to infer.  Read ``classification``,
+  ``core``, ``narrative`` and ``proof`` for presence rather than predicting it
+  from ``status``; each is documented above and each is nullable.
 
 :class:`~pyfcstm.bmc.BmcInfeasibilityExplanation` refuses a combination outside
 the matrix with a message naming what is wrong, so a consumer that builds one

@@ -10,7 +10,7 @@
     "label": "baseline-901f30e9"
   },
   "candidate": {
-    "commit": "3ba74e324811ec62fe6a23f004249d2c74243957",
+    "commit": "e36e45a807b582b779c35c3476348b5cf84d6380",
     "dirty": false,
     "porcelain": []
   },
@@ -24,10 +24,12 @@
   },
   "inputs": {
     "cross_step.fbmcq": "83a5d492ed5165439bf07630d9590849512596e2a6912c6c67ff73681250cd7c",
+    "definedness.fbmcq": "ab03d3a6c64cdab11ef887da2ea0dd968b340b3e50236c3b8df4947dfd8a7fc6",
     "empty_interval.fbmcq": "06001377e4bdf768ec841bc99f798a88b4daf53eb02d8b727ad053d4da8fff88",
     "event_conflict.fbmcq": "1d0cc11360b122ece3f8b23a60aeb0b090af5e656ce32dda3457a5201e8823d8",
     "feasible.fbmcq": "be1ae17e049314c8d4c34207aa099d6af45a7bc91211440b7d2947b0edd40c64",
     "latch.fcstm": "9109290b7d0b2812fea81f20bce17ee2a8dfc1aedcb5df0b9e90e500fcbe2b09",
+    "state_domain.fbmcq": "18f6b5c8eb0cfb1a352ececa39f9f5c3a73f0e64cdabb8dc2b2f574e990eb788",
     "two_states.fbmcq": "13ebc1f6882211df444e9dfb8b229d7846807ece8e0af008f2720b566622e043",
     "two_values.fbmcq": "fcbbad35c8865a5c1aac199b376f69e263986e4a868a2af098bf925218bc3b3f"
   },
@@ -79,7 +81,7 @@
     }
   ],
   "repetitions": 5,
-  "run_id": "3ba74e324811",
+  "run_id": "e36e45a807b5",
   "schema": "bmc-infeasibility-benchmark/v1",
   "warmups": 1
 }

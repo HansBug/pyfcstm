@@ -1,6 +1,6 @@
 # BMC infeasibility explanation benchmark
 
-Run `3ba74e324811`, candidate `3ba74e324811`.
+Run `e36e45a807b5`, candidate `e36e45a807b5`.
 Baseline `baseline-901f30e9` = `901f30e981c29eb8e304b33d61985652d2e85b2e`.
 
 5 measured repetitions per sample after 1 discarded warmups, each sample in its own interpreter.
@@ -9,12 +9,14 @@ Baseline `baseline-901f30e9` = `901f30e981c29eb8e304b33d61985652d2e85b2e`.
 
 | Case | expected | baseline-901f30e9 | none | formal | proof |
 |---|---|---|---|---|---|
-| `cross_step` | `formal` | 1.8 | 1.8 | 23.8 | 30.1 |
-| `empty_interval` | `proof` | 1.8 | 1.9 | 16.7 | 22.5 |
-| `event_conflict` | `formal` | 1.7 | 1.8 | 13.1 | 13.1 |
-| `feasible` | `none` | 1.8 | 1.8 | 1.8 | 1.8 |
-| `two_states` | `proof` | 1.8 | 1.8 | 16.7 | 20.9 |
-| `two_values` | `proof` | 1.7 | 1.7 | 16.0 | 21.1 |
+| `cross_step` | `formal` | 1.8 | 1.8 | 23.0 | 30.0 |
+| `definedness` | `proof` | 1.5 | 1.6 | 13.2 | 18.0 |
+| `empty_interval` | `proof` | 1.8 | 1.8 | 16.9 | 22.0 |
+| `event_conflict` | `formal` | 1.7 | 1.7 | 13.2 | 13.3 |
+| `feasible` | `none` | 1.8 | 1.8 | 1.8 | 1.7 |
+| `state_domain` | `proof` | 1.6 | 1.6 | 21.3 | 32.1 |
+| `two_states` | `proof` | 1.8 | 1.8 | 16.3 | 21.7 |
+| `two_values` | `proof` | 1.7 | 1.7 | 16.1 | 21.3 |
 
 ## What each arm achieved
 
@@ -24,6 +26,10 @@ Baseline `baseline-901f30e9` = `901f30e981c29eb8e304b33d61985652d2e85b2e`.
 | `cross_step` | `none` | `-` | `-` | - | - |
 | `cross_step` | `formal` | `formal` | `complete` | 4 | - |
 | `cross_step` | `proof` | `formal` | `partial` | 4 | - |
+| `definedness` | `baseline-901f30e9` | `-` | `-` | - | - |
+| `definedness` | `none` | `-` | `-` | - | - |
+| `definedness` | `formal` | `formal` | `complete` | 2 | - |
+| `definedness` | `proof` | `proof` | `complete` | 2 | 3 |
 | `empty_interval` | `baseline-901f30e9` | `-` | `-` | - | - |
 | `empty_interval` | `none` | `-` | `-` | - | - |
 | `empty_interval` | `formal` | `formal` | `complete` | 2 | - |
@@ -36,6 +42,10 @@ Baseline `baseline-901f30e9` = `901f30e981c29eb8e304b33d61985652d2e85b2e`.
 | `feasible` | `none` | `-` | `-` | - | - |
 | `feasible` | `formal` | `-` | `-` | - | - |
 | `feasible` | `proof` | `-` | `-` | - | - |
+| `state_domain` | `baseline-901f30e9` | `-` | `-` | - | - |
+| `state_domain` | `none` | `-` | `-` | - | - |
+| `state_domain` | `formal` | `formal` | `complete` | 5 | - |
+| `state_domain` | `proof` | `proof` | `complete` | 5 | 6 |
 | `two_states` | `baseline-901f30e9` | `-` | `-` | - | - |
 | `two_states` | `none` | `-` | `-` | - | - |
 | `two_states` | `formal` | `formal` | `complete` | 2 | - |
@@ -68,5 +78,5 @@ Degraded at `proof` depth: `cross_step`, `event_conflict`.
 Reconstruct this report from the raw records with:
 
 ```bash
-python tools/run_bmc_infeasibility_benchmark.py --rebuild 3ba74e324811
+python tools/run_bmc_infeasibility_benchmark.py --rebuild e36e45a807b5
 ```

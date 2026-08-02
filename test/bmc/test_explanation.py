@@ -2077,13 +2077,22 @@ def test_human_vocabularies_are_transcribed_from_the_frozen_transcripts() -> Non
         EXPLANATION_HEADLINES,
     )
 
-    # Three of the four are sampled by a transcript.  The partial proof row is
-    # not; it follows the same two-word substitution the sampled proof row uses.
+    # Three of the achieved-depth rows are sampled by a transcript.  The partial
+    # proof row is not; it follows the same two-word substitution the sampled
+    # proof row uses.
+    #
+    # The two "not achieved" rows are keyed by the requested depth rather than an
+    # achieved one, because nothing was achieved to name.  They were a fallback
+    # branch in the renderer until this mapping was made complete, which meant
+    # this guard -- whose subject is every headline a reader can see -- did not
+    # cover a third of them.  `--timeout-ms 1` reaches both in one command.
     assert EXPLANATION_HEADLINES == {
         ("formal", "complete"): "COMPLETE FORMAL DOMAIN EXPLANATION",
         ("formal", "partial"): "PARTIAL FORMAL DOMAIN EXPLANATION",
         ("proof", "complete"): "COMPLETE VERIFIED DOMAIN PROOF",
         ("proof", "partial"): "PARTIAL VERIFIED DOMAIN PROOF",
+        ("none", "formal"): "FORMAL EXPLANATION NOT ACHIEVED",
+        ("none", "proof"): "PROOF EXPLANATION NOT ACHIEVED",
     }
 
     # The two frozen phrasings for assumptions_prefix_conflict, transcribed.

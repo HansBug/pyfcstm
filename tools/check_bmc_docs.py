@@ -137,16 +137,19 @@ _CLASSIFICATIONS = (
 _EXPLANATION_MODES = ("none", "formal", "proof")
 _EXPLANATION_STATUSES = ("complete", "partial", "unknown", "timeout")
 
-#: Headlines the reference page must show at least one real example of.
+#: Every headline the reference page must show a real example of.
 #:
-#: Deliberately *not* a claim to be the complete set.  Twice in this slice a
-#: constant here asserted a closed vocabulary the renderer does not honour:
-#: EXPLANATION_HEADLINES is keyed by achieved depth while a fallback builds two
-#: more from the requested depth, so no single place enumerates them.  A gate that
-#: restates the author's reading of scattered code agrees with the page by
-#: construction and proves nothing.  Existence is what a gate can check on its
-#: own -- each string here is one a user demonstrably sees, so a page that never
-#: mentions it has a gap whatever else it says.
+#: This one *is* the complete set, and it is the only constant here that can say
+#: so honestly: ``EXPLANATION_HEADLINES`` now enumerates all six rather than four
+#: plus a fallback branch, so "all of them" is a fact about one mapping instead of
+#: a reading of scattered code.  Twice before that refactor a constant here
+#: claimed a closed vocabulary the renderer did not honour, and because the page
+#: was written from the same reading, the gate agreed with it by construction.
+#:
+#: Still transcribed rather than imported.  Importing would make a renamed value
+#: agree with a stale page; transcribing means a rename fails the transcription
+#: guard in test/bmc/test_explanation.py, which compares this vocabulary against
+#: the mapping itself.
 _EXPLANATION_HEADLINES = (
     "COMPLETE FORMAL DOMAIN EXPLANATION",
     "PARTIAL FORMAL DOMAIN EXPLANATION",

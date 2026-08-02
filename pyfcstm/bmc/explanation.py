@@ -2444,16 +2444,28 @@ __all__ = [
 ]
 
 
-#: Headline for each achieved depth and status, keyed by ``(mode, status)``.
-#: A depth that was requested but not achieved has no entry: it is named by
-#: the requested mode instead, so the reader is told what they asked for
-#: rather than being shown a headline for a result that does not exist.
+#: Every headline the explanation block can open with.
+#:
+#: Keyed by the pair that decides it.  When a depth was achieved that is
+#: ``(achieved_mode, status)``, and the headline names what was produced.  When
+#: nothing was achieved there is no achieved depth to name, so the key is
+#: ``("none", requested_mode)`` and the headline names what was asked for --
+#: telling the reader their request went unmet rather than showing them a
+#: headline for a result that does not exist.
+#:
+#: The second family used to be a fallback branch in the renderer, which made
+#: this mapping's name a lie: it held four of the six strings a user can see, and
+#: both the reference page and its checker were written from it and were wrong
+#: for the same reason.  Anything that has to enumerate the headlines can now do
+#: it by reading this.
 EXPLANATION_HEADLINES = MappingProxyType(
     {
         ("formal", "partial"): "PARTIAL FORMAL DOMAIN EXPLANATION",
         ("formal", "complete"): "COMPLETE FORMAL DOMAIN EXPLANATION",
         ("proof", "partial"): "PARTIAL VERIFIED DOMAIN PROOF",
         ("proof", "complete"): "COMPLETE VERIFIED DOMAIN PROOF",
+        ("none", "formal"): "FORMAL EXPLANATION NOT ACHIEVED",
+        ("none", "proof"): "PROOF EXPLANATION NOT ACHIEVED",
     }
 )
 
@@ -3339,14 +3351,14 @@ def explanation_text_lines(explanation) -> List[str]:
     if explanation is None:
         return []
     lines = []
-    headline = EXPLANATION_HEADLINES.get(
-        (explanation.achieved_mode, explanation.status)
+    # An achieved depth is named with its status; achieving nothing is named with
+    # the request instead, and the key says which of the two this is.
+    key = (
+        ("none", explanation.requested_mode)
+        if explanation.achieved_mode == "none"
+        else (explanation.achieved_mode, explanation.status)
     )
-    if headline is None:
-        # achieved_mode 'none' means the requested depth was not reached; the
-        # frozen transcript names that explicitly instead of omitting the line.
-        headline = "%s EXPLANATION NOT ACHIEVED" % explanation.requested_mode.upper()
-    lines.append("Explanation: %s" % headline)
+    lines.append("Explanation: %s" % EXPLANATION_HEADLINES[key])
     if depth_line_is_needed(explanation.requested_mode, explanation.achieved_mode):
         lines.append(
             "Explanation depth: requested %s, achieved %s"

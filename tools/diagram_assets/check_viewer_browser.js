@@ -462,9 +462,9 @@ function selfCheckStreamTally() {
     ['a preceded stream carrying a halo', Buffer.concat([
       Buffer.from('%PDF-1.3\n1 0 obj\n<< /Type /Catalog >>\nendobj\n2 0 obj\n<< /Length 40 >>\nstream\n'),
       halo, Buffer.from('\nendstream\nendobj\n')]), false],
-    // The payload's last byte is as likely to be 0x0A as anything else; peeling
-    // every trailing newline took one off and zlib called a sound document
-    // corrupt. `/Length` says how much there is.
+    // The payload's last byte is as likely to be 0x0A as anything else, and a
+    // peel that runs where `/Length` already said where the data ends takes one
+    // off -- zlib then called a sound document corrupt.
     ['a payload ending in a newline byte', (() => {
       // Deflating 3852 x's happens to end in 0x0A. Peeling every trailing
       // newline took that byte off and zlib called a sound document corrupt;
@@ -478,14 +478,15 @@ function selfCheckStreamTally() {
         Buffer.from('%PDF-1.3\n1 0 obj\n<< /Filter /FlateDecode /Length ' + body.length + ' >>\nstream\n'),
         body, Buffer.from('\nendstream\nendobj\n')]);
     })(), true],
-    // The case above passes if *either* mechanism works, so on its own it lets
-    // one of them be deleted in silence. This one holds the end that matters:
-    // with no `/Length` to fall back on, only peeling a single EOL saves it.
+    // The pair pins the two halves of one rule: peel at most one EOL, and only
+    // where no size was declared. The case above fails if the peel runs where a
+    // length already said where the data ends; this one fails if it peels every
+    // trailing newline it finds, which takes a byte of deflate data with it.
     //
-    // A companion case pinning `/Length` alone follows below. It did not exist
-    // while the end of a stream was found by searching for the keyword: nothing
-    // legal then turned on the declared size. Locating the end by that size is
-    // what made one possible.
+    // Neither fails if the peel is dropped altogether -- zlib reads a payload
+    // with a byte too many and stops at the end of the stream -- so nothing in
+    // the verdict turns on peeling as such. It is here because the spec says
+    // that EOL is not data, and the bytes this reports should be the payload.
     ['a newline-ending payload with no declared length', (() => {
       const body = zlib.deflateSync(Buffer.from('x'.repeat(3852)));
       if (body[body.length - 1] !== 10) {

@@ -103,7 +103,39 @@ function streamDictionary(raw, markerStart) {
   const open = span.indexOf('<<');
   const close = span.lastIndexOf('>>');
   if (open < 0 || close < open || span.slice(close + 2).trim() !== '') return null;
-  return span.slice(open, close + 2);
+  return sanitizeDictionary(span.slice(open, close + 2));
+}
+
+// Blank out what a pattern must not see inside a dictionary.
+//
+// Comments are whitespace to a PDF reader, and the contents of a string are
+// data rather than syntax. Four separate patterns here have been fooled by one
+// or the other -- `(a << b)`, `(obj)`, `(1 0 obj)` and `(/Length 5)` each broke a
+// different one, each was patched where it broke, and the next pattern was still
+// reading raw text. Sanitising once removes the family rather than its members.
+//
+// Lengths are preserved so an offset into the result still means what it did.
+function sanitizeDictionary(text) {
+  let out = '';
+  let depth = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (depth > 0) {
+      if (ch === '\\') { out += '  '; i += 1; continue; }
+      if (ch === '(') depth += 1;
+      else if (ch === ')') depth -= 1;
+      out += ' ';
+      continue;
+    }
+    if (ch === '(') { depth = 1; out += ' '; continue; }
+    if (ch === '%') {
+      while (i < text.length && text[i] !== '\n' && text[i] !== '\r') { out += ' '; i += 1; }
+      if (i < text.length) out += text[i];
+      continue;
+    }
+    out += ch;
+  }
+  return out;
 }
 
 function inflatePdfStreams(base64) {
@@ -131,7 +163,13 @@ function inflatePdfStreams(base64) {
     if (raw[dataStart] !== 10) { offset = markerStart + keyword.length; continue; }
     dataStart += 1;
     let dataEnd = raw.indexOf(endMarker, dataStart);
-    if (dataEnd < 0) break;
+    if (dataEnd < 0) {
+      // A stream with no terminator is still a stream. Breaking before counting
+      // it let a truncated document end with one nobody had to account for.
+      total += 1;
+      skipped.push({offset: markerStart, bytes: raw.length - dataStart, code: 'UNTERMINATED'});
+      break;
+    }
     total += 1;
     // `/Length` when the dictionary states it directly, because the payload is
     // binary and its last byte is as likely to be 0x0A as anything else. Peeling
@@ -141,22 +179,28 @@ function inflatePdfStreams(base64) {
     // `(?!\s+\d+\s+R)` because `/Length 5 0 R` is an indirect reference whose
     // value lives in another object; reading `5` from it took five bytes of a
     // forty-byte stream, and the truncation counted as a successful decode.
-    // Comments are whitespace to a PDF reader, so they are removed before the
-    // reference shape is looked for -- `/Length 5%c\n0 R` is an indirect
-    // reference that the lookahead alone did not recognise.
-    const declaration = (streamDictionary(raw, markerStart) || '').replace(/%[^\r\n]*/g, ' ');
-    const declared = /\/Length\s+(\d+)(?!\s+\d+\s+R)/.exec(declaration);
+    // The dictionary arrives sanitised, so `/Length` inside a string or behind a
+    // comment is no longer visible to this pattern.
+    const declared = /\/Length\s+(\d+)(?!\s+\d+\s+R)/.exec(streamDictionary(raw, markerStart) || '');
     // `endstream` is nine ordinary bytes, and an uncompressed payload may contain
     // them -- a state named `endstream` is enough. Taking the first match then
     // cut the stream in half and threw away the rest, halo and all, while the
     // tally still balanced. Where the length is stated, it says where the data
     // ends; the keyword is only expected to follow it.
     if (declared) {
+      // A stated length that does not land on the keyword is not a length this
+      // side can act on -- it may be from a string the sanitiser missed, or the
+      // document may simply be wrong. Recording the stream as unread is the
+      // honest answer; using the number anyway sliced 5 bytes out of 41 and
+      // called the fragment a clean decode.
       const stated = dataStart + Number(declared[1]);
       const after = raw.subarray(stated, Math.min(raw.length, stated + 20)).toString('latin1');
-      if (/^[\r\n\s]*endstream/.test(after)) {
-        dataEnd = raw.indexOf(endMarker, stated);
+      if (!/^[\r\n\s]*endstream/.test(after)) {
+        skipped.push({offset: markerStart, bytes: dataEnd - dataStart, code: 'LENGTH_MISMATCH'});
+        offset = dataEnd + endMarker.length;
+        continue;
       }
+      dataEnd = raw.indexOf(endMarker, stated);
     } else {
       // With no size to go by, the first `endstream` is a guess, and a payload
       // holding those nine bytes makes it the wrong one -- the tail, halo and
@@ -364,6 +408,27 @@ function selfCheckStreamTally() {
     // `endstream` was taken on faith, the tail went missing, and the halo with
     // it. A real end is followed by the end of its object; when none is, the
     // stream is recorded as unread rather than scanned in part.
+    // `/Length` inside a string value. The pattern read the decoy, took 5 bytes
+    // of 41, and reported a clean fragment. This is the branch a real document
+    // takes -- every viewer PDF states its length directly -- so a guard that
+    // lives only on the other side never runs where it matters.
+    ['a decoy length inside a string value', Buffer.concat([
+      Buffer.from('%PDF-1.3\n1 0 obj\n<< /Note (/Length 5) /Length ' + halo.length + ' >>\nstream\n'),
+      halo, Buffer.from('\nendstream\nendobj\n')]), false],
+    // A stated length that lands nowhere near the keyword is not one to act on.
+    ['a stated length that does not reach the end', Buffer.concat([
+      Buffer.from('%PDF-1.3\n1 0 obj\n<< /Length 5 >>\nstream\n'),
+      halo, Buffer.from('\nendstream\nendobj\n')]), false],
+    // A stream with no terminator is still a stream; breaking before counting it
+    // let a truncated document end with one nobody had to account for.
+    //
+    // Removing either the count or the sanitiser leaves this suite green, and
+    // that is defence in depth rather than coverage: a decoy length is also
+    // stopped by the mismatch guard, and an uncounted stream also fails the
+    // `total > 0` test. Neither has a case that pins it alone. Saying so here
+    // beats a case that passes for a reason it does not name.
+    ['an unterminated final stream', Buffer.concat([
+      Buffer.from('%PDF-1.3\n1 0 obj\n<< /Length 5 >>\nstream\n'), halo]), false],
     ['an indirect length beside an embedded end keyword', (() => {
       const body = Buffer.concat([Buffer.from('BT (endstream) Tj ET\n'), halo]);
       return Buffer.concat([

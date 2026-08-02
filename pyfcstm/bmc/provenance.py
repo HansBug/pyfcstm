@@ -757,9 +757,21 @@ def _state_domain_fact(group: Any) -> Optional[Dict[str, Any]]:
         atom = expression.arg(index)
         if not z3.is_app(atom) or atom.decl().kind() != z3.Z3_OP_EQ:
             return None
-        value = _numeric_value(atom.arg(0))
-        if value is None:
-            value = _numeric_value(atom.arg(1))
+        left, right = atom.arg(0), atom.arg(1)
+        # Which side is this frame's state slot, read the way the membership
+        # recognizer beside this one reads it.  The point is the agreement rather
+        # than a defence: both answer "is the compared symbol the slot I am about",
+        # and two recognizers giving that question different answers is a thing the
+        # next reader has to stop and work out.
+        #
+        # There is no test because there is nothing to reach: the builder emits
+        # single-frame disjunctions, so a cross-frame one has no source, and
+        # constructing one would mean standing in for the group this reads.
+        value = None
+        for slot, code in ((left, right), (right, left)):
+            if _frame_state_slot(slot, frame):
+                value = _numeric_value(code)
+                break
         if value is None:
             return None
         states.append(value)

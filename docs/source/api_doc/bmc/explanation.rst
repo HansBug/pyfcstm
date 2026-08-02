@@ -66,6 +66,42 @@ BmcReasoningStepKind
 .. autodata:: BmcReasoningStepKind
 
 
+BmcProofNodeKind
+-----------------------------------------------------
+
+.. autodata:: BmcProofNodeKind
+
+
+BmcProofRuleId
+-----------------------------------------------------
+
+.. autodata:: BmcProofRuleId
+
+
+BmcProofVerificationMethod
+-----------------------------------------------------
+
+.. autodata:: BmcProofVerificationMethod
+
+
+BmcProofInputMinimality
+-----------------------------------------------------
+
+.. autodata:: BmcProofInputMinimality
+
+
+BmcProofGraphMinimality
+-----------------------------------------------------
+
+.. autodata:: BmcProofGraphMinimality
+
+
+BmcProofVerificationStatus
+-----------------------------------------------------
+
+.. autodata:: BmcProofVerificationStatus
+
+
 BmcSemanticRole
 -----------------------------------------------------
 
@@ -167,11 +203,18 @@ BmcConflictNarrative
     :members: __post_init__,to_canonical,derivation_status,headline,summary,reasoning_steps,review_surfaces
 
 
+BmcProofNode
+-----------------------------------------------------
+
+.. autoclass:: BmcProofNode
+    :members: __post_init__,to_canonical,stable_id,kind,rule_id,premise_ids,conclusion,item_ids,human_text,verification_method
+
+
 BmcConflictProof
 -----------------------------------------------------
 
 .. autoclass:: BmcConflictProof
-    :members: scope,root_id
+    :members: __post_init__,to_canonical,scope,root_id,nodes,input_minimality,graph_minimality,verification_status
 
 
 BmcInfeasibilityExplanation

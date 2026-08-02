@@ -53,6 +53,7 @@ import z3
 
 from .errors import BmcBuildError
 from .explanation import (
+    BmcConflictNarrative,
     # Private because the frozen public surface must not grow to expose it, and
     # cross-module because the fact vocabulary is owned in one place: a second
     # copy of "which keys does this tag imply" is how the two sides drift apart.
@@ -71,11 +72,15 @@ from .explanation import (
     human_text_for_fact,
 )
 from .provenance import (
+    # Private: the binding check has to name a frame symbol the same way the
+    # published facts were named from it, and a second reading of the encoding
+    # would be a second place to keep in step.
+    _frame_variable_name,
     BmcTrackedConstraint,
     SourceDocumentRegistry,
     normalized_fact_for,
 )
-from .solver import _SolveBudget
+from .solver import _SolveBudget, _check_with_budget
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle guard for annotations only
     from .relation import BmcCoreFormula
@@ -1333,6 +1338,231 @@ def build_core_item(
     )
 
 
+#: How a proof fact re-encodes as a z3 constraint, per fact tag.
+#:
+#: Only the tags a rule can read appear here.  A tag with no encoding cannot be
+#: proved equivalent to anything, so its member fails the binding check and the
+#: proof is not published -- which is the contract's answer for a source group that
+#: does not normalize losslessly.
+_BINDING_ENCODERS = {
+    "variable_equality": lambda fact, symbol: symbol == fact["value"],
+    "variable_bound": lambda fact, symbol: {
+        "ge": symbol >= fact["value"],
+        "gt": symbol > fact["value"],
+        "le": symbol <= fact["value"],
+        "lt": symbol < fact["value"],
+    }[fact["operator"]],
+    "definedness_guard": lambda fact, symbol: symbol != fact["forbidden"],
+    "state_domain": lambda fact, symbol: z3.Or(
+        *[symbol == state for state in fact["states"]]
+    ),
+    "state_exclusion": lambda fact, symbol: symbol != fact["state"],
+}
+
+
+def check_core_bindings(
+    core: "BmcCoreFormula",
+    facts: Sequence[Tuple[str, Mapping[str, object]]],
+    budget: _SolveBudget,
+) -> Tuple[bool, ProbeRecord]:
+    """Prove each proof fact equivalent to the source group it restates.
+
+    ``core_binding`` is a claim that an input node says exactly what its member
+    says, and the contract is explicit that it is not a trust label: the fact is
+    re-encoded and both directions are refuted separately, because one direction
+    alone permits a fact that is weaker or stronger than the group it stands for.
+    A fact implied by its group but not implying it would let a proof rest on less
+    than the model requires; the reverse would let it rest on more.
+
+    Anything short of both directions failing to be refuted -- an unknown, a
+    timeout, a tag with no encoding, a group whose symbol cannot be located --
+    means the binding is not established and the proof is not published.
+
+    :param core: The core formula whose tracked groups the facts came from.
+    :type core: BmcCoreFormula
+    :param facts: Member ids paired with the fact each restates.
+    :type facts: Sequence[Tuple[str, Mapping[str, object]]]
+    :param budget: The shared solve budget.
+    :type budget: pyfcstm.bmc.solver._SolveBudget
+    :return: Whether every binding held, and the ledger entry for the phase.
+    :rtype: Tuple[bool, ProbeRecord]
+
+    Example::
+
+        >>> from pyfcstm.bmc.solver import _SolveBudget
+        >>> held, record = check_core_bindings(None, (), _SolveBudget(None))
+        >>> held, record.status
+        (False, 'unknown')
+    """
+    started_at = time.perf_counter()
+
+    def elapsed() -> float:
+        return (time.perf_counter() - started_at) * 1000.0
+
+    if not facts:
+        # Nothing was bound, so nothing may rest on a binding.  Reporting this as a
+        # completed phase was the previous shape and it was wrong twice over: a
+        # consumer reading ``complete`` would believe equivalences were established,
+        # and the published ledger refuses a completed check that carries a reason,
+        # so a query reaching here raised out of the solve chain instead of
+        # degrading.  An unestablished binding is what this is.
+        return False, ProbeRecord(
+            "core_binding",
+            "unknown",
+            True,
+            elapsed(),
+            "no core member states a fact this check can encode",
+        )
+
+    groups = {group.stable_id: group for group in core._tracked_groups}
+    # The encoder truncates a symbol's body at a fixed width and appends a digest,
+    # so reading a name back from the symbol alone recovers the truncation.  The
+    # declared names are what the published facts were resolved against, and the
+    # binding has to resolve the same way or a long name stops matching itself.
+    declared = _declared_variable_names(core)
+    for stable_id, fact in facts:
+        group = groups.get(stable_id)
+        encoder = _BINDING_ENCODERS.get(fact.get("kind"))
+        if group is None or encoder is None:
+            return False, ProbeRecord(
+                "core_binding",
+                "unknown",
+                True,
+                elapsed(),
+                "no equivalence check exists for %s" % stable_id,
+            )
+        conjunction = (
+            z3.And(*group.expressions) if group.expressions else z3.BoolVal(True)
+        )
+        symbol = _binding_symbol(conjunction, fact, declared)
+        if symbol is None:
+            return False, ProbeRecord(
+                "core_binding",
+                "unknown",
+                True,
+                elapsed(),
+                "the group behind %s names no symbol this fact could restate"
+                % stable_id,
+            )
+        encoded = encoder(fact, symbol)
+        for direction, claim in (
+            ("group implies fact", z3.And(conjunction, z3.Not(encoded))),
+            ("fact implies group", z3.And(encoded, z3.Not(conjunction))),
+        ):
+            solver = z3.Solver()
+            solver.add(claim)
+            status, _, reason, _, _ = _check_with_budget(solver, budget)
+            if status != "unsat":
+                # Three outcomes share one status word and must not share one
+                # sentence.  A timeout says raise the budget; an undecidable shape
+                # says the solver cannot answer this and retrying will not help; a
+                # refutation says the fact and its group genuinely differ, which is
+                # a defect on the building side rather than a limit on this one.
+                # The frozen phase vocabulary has no word for the last, so the
+                # reason carries it.
+                explanation = {
+                    "sat": "was refuted: the fact is not equivalent to its group",
+                    "unknown": "could not be decided by the solver",
+                }.get(status, "ran out of budget")
+                return False, ProbeRecord(
+                    "core_binding",
+                    # The solver's own word, not its negation.  These were swapped
+                    # once, so each payload advised the opposite of what it meant.
+                    "timeout" if status == "timeout" else "unknown",
+                    True,
+                    elapsed(),
+                    "%s %s for %s%s"
+                    % (
+                        direction,
+                        explanation,
+                        stable_id,
+                        ": %s" % reason if reason else "",
+                    ),
+                )
+    return True, ProbeRecord("core_binding", "complete", True, elapsed(), None)
+
+
+def _declared_variable_names(core: "BmcCoreFormula"):
+    """Return the variable names the model declares, for symbol resolution.
+
+    Recovering a name from a symbol alone reads back the encoder's truncation; the
+    declarations are the full names the published facts were resolved against, so
+    the binding resolves the same way.
+    """
+    domain = getattr(getattr(core, "context", None), "domain", None)
+    entries = getattr(domain, "variables", None) or ()
+    return tuple(sorted(entry.name for entry in entries))
+
+
+def _state_names(core: "BmcCoreFormula"):
+    """Return what the model calls each state, for the reader-facing prose.
+
+    Facts carry states as the encoding numbers them, which is what the rules compare
+    but not what the author wrote.  The path is what the reader-facing surfaces
+    already spell a state as -- the core items' human text says ``state Root.A`` --
+    so the proof reading uses the same spelling rather than inventing a second one.
+    The published facts keep the index: ``normalized_fact`` is the machine's half of
+    the contract and is compared, not read.
+    """
+    domain = getattr(getattr(core, "context", None), "domain", None)
+    entries = getattr(domain, "states", None) or ()
+    return {entry.id: entry.path for entry in entries}
+
+
+def _binding_symbol(expression, fact: Mapping[str, object], declared=None):
+    """Return the frame symbol a fact is about, taken from its own group.
+
+    Matching by name would depend on how symbols are spelled; taking the symbol out
+    of the very expressions being compared means the two sides of the equivalence
+    talk about the same object by construction.
+    """
+    frame = fact.get("frame")
+    if frame is None:
+        return None
+    symbols = sorted(z3.z3util.get_vars(expression), key=lambda item: str(item))
+    variable = fact.get("variable")
+    if variable is None or fact.get("state_slot"):
+        # A state fact speaks about the frame's own state slot rather than about a
+        # declared variable, so it is matched by position in the encoding rather
+        # than by a name the query wrote.  A positive requirement carries the slot's
+        # subject name so the rules can compare it; an exclusion carries none.  Both
+        # mean the same symbol.
+        #
+        # Which branch a fact takes is decided by its ``state_slot`` flag, never by
+        # its subject's spelling.  Two arguments for why that spelling could not
+        # also be a declared name were both wrong -- ``state`` is a keyword only in
+        # the lexer's default mode, and the target-template rule admits ``$`` -- so
+        # a model may well declare a variable named the same.  Its requirements
+        # carry no flag and reach the declared branch below, as they should.
+        for symbol in symbols:
+            if str(symbol) == "F_%d_state" % frame:
+                return symbol
+        return None
+    for symbol in symbols:
+        if _symbol_frame(symbol) != frame:
+            continue
+        if _frame_variable_name(symbol, declared) == variable:
+            return symbol
+    return None
+
+
+def _symbol_frame(symbol) -> Optional[int]:
+    """Return the frame a ``F_<frame>_...`` symbol belongs to.
+
+    The frame is the only part of the name that survives the encoding intact -- the
+    body is truncated and the digest is a hash -- so it is read positionally rather
+    than by parsing the whole name.
+    """
+    parts = str(symbol).split("_")
+    if len(parts) < 2 or parts[0] != "F":
+        return None
+    try:
+        return int(parts[1])
+    except ValueError:
+        # A symbol whose second segment is not a frame index is not a frame symbol.
+        return None
+
+
 def explain_infeasibility(
     core: "BmcCoreFormula",
     stage: str,
@@ -1545,10 +1775,61 @@ def explain_infeasibility(
             checks,
         )
     if formal_is_complete:
-        # A complete formal artifact still falls short of a requested proof, and
-        # the frozen table reserves 'complete' for the depth that was asked for.
-        # The reason has to name why the proof did not close rather than describe
-        # the formal artifact, which is not what fell short.
+        # A complete formal artifact is what a proof is built on top of, so this is
+        # where the deeper tier is attempted.  Either it closes and the run reaches
+        # the depth that was asked for, or it does not and the formal artifact is
+        # published unchanged with a reason naming what fell short.
+        from .proof import build_domain_proof, proof_facts_for_core
+        from .proof_text import linearize_proof
+
+        proof_facts = proof_facts_for_core(published.items)
+        # The binding check comes first: a graph built on facts that were never
+        # shown equivalent to their members would carry ``core_binding`` as a trust
+        # label, which the contract forbids outright.
+        bound, binding_record = check_core_bindings(core, proof_facts, budget)
+        checks = checks + (binding_record,)
+        if bound:
+            # One table for both artifacts: a node's own sentence and the reading
+            # built from it are two spellings of the same state to the same reader.
+            state_names = _state_names(core)
+            proof, proof_record = build_domain_proof(
+                published.scope,
+                proof_facts,
+                budget,
+                member_ids=[item.constraint.stable_id for item in published.items],
+                state_names=state_names,
+            )
+            checks = checks + (proof_record,)
+        else:
+            proof, proof_record = None, binding_record
+        if proof is not None:
+            # The narrative is rebuilt from the graph rather than kept from the
+            # formal tier: at proof depth every sentence has to cite the node behind
+            # it, which a narrative written without a graph cannot do.
+            steps = linearize_proof(proof, state_names=state_names)
+            proof_narrative = BmcConflictNarrative(
+                "complete",
+                steps[-1].text,
+                narrative.summary,
+                steps,
+                narrative.review_surfaces,
+            )
+            return ExplanationOutcome(
+                BmcInfeasibilityExplanation(
+                    requested_mode=requested_mode,
+                    achieved_mode="proof",
+                    status="complete",
+                    classification=outcome.classification,
+                    core=published,
+                    proof=proof,
+                    narrative=proof_narrative,
+                    elapsed_ms=elapsed_ms,
+                ),
+                checks,
+            )
+        # The frozen table reserves 'complete' for the depth that was asked for, and
+        # the reason has to name why the proof did not close rather than describe the
+        # formal artifact, which is not what fell short.
         return ExplanationOutcome(
             BmcInfeasibilityExplanation(
                 requested_mode=requested_mode,
@@ -1558,8 +1839,8 @@ def explain_infeasibility(
                 core=published,
                 narrative=narrative,
                 reason=(
-                    "the formal explanation is complete, but no verifiable proof "
-                    "DAG is produced at this stage"
+                    "the formal explanation is complete, but %s"
+                    % (proof_record.reason or "no verifiable proof DAG was produced")
                 ),
                 elapsed_ms=elapsed_ms,
             ),
@@ -1603,16 +1884,17 @@ def explain_infeasibility(
 
 __all__ = [
     "AGGREGATE_SELECTORS",
-    "SCOPE_TARGETS",
     "ClassificationOutcome",
     "CoreExtraction",
     "ExplanationOutcome",
-    "ProbeRecord",
-    "TrackedGroupPartition",
     "ForcedValue",
+    "ProbeRecord",
+    "SCOPE_TARGETS",
+    "TrackedGroupPartition",
     "build_core_item",
-    "derive_forced_values",
+    "check_core_bindings",
     "classify_infeasibility",
+    "derive_forced_values",
     "explain_infeasibility",
     "extract_source_core",
     "partition_tracked_groups",

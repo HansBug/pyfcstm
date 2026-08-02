@@ -1888,7 +1888,7 @@ def test_build_bmc_output_rejects_unknown_explanation_modes(explain_files, mode)
 
 
 @pytest.mark.unittest
-def test_bmc_cli_can_request_each_explanation_depth(explain_files) -> None:
+def test_bmc_cli_can_request_each_explanation_depth(explain_files, tmp_path) -> None:
     """The three frozen depths are reachable from the command line.
 
     The helper behind the command has accepted a depth for several rounds, but
@@ -1925,11 +1925,8 @@ def test_bmc_cli_can_request_each_explanation_depth(explain_files) -> None:
     assert explicit_result.exit_code == default_result.exit_code
     assert explicit_payload["result"]["feasibility"]["explanation"] is None
 
-    # The deepest mode is reachable too, and reports the depth it actually
-    # achieved rather than the one that was asked for.  This scenario cannot be
-    # proven subset-minimal, so ``proof`` degrades to ``formal`` -- and the JSON
-    # has to say so, since a caller that asked for a proof and silently received
-    # something weaker would draw a stronger conclusion than the run supports.
+    # The deepest mode is reachable too, and this scenario closes at it: the
+    # incompatible equalities are exactly what the rule catalog covers.
     proof_result, proof_payload = _json_result(
         Path(model), Path(query), "--explain-infeasibility", "proof"
     )
@@ -1937,20 +1934,32 @@ def test_bmc_cli_can_request_each_explanation_depth(explain_files) -> None:
 
     assert proof_result.exit_code == 3
     assert proof_explanation["requested_mode"] == "proof"
-    assert proof_explanation["achieved_mode"] == "formal"
+    assert proof_explanation["achieved_mode"] == "proof"
+    assert proof_explanation["proof"]["verification_status"] == "verified"
     assert proof_explanation["classification"] == "assumptions_self_conflict"
     assert proof_explanation["core"]["scope"] == "assumptions_component"
 
-    # The human report names both depths on one line; the equal-depth runs above
-    # must not carry that line at all.
-    proof_human = _run(
-        "-i", str(model), "-q", str(query), "--explain-infeasibility", "proof"
+    # A run reaching the depth it asked for carries no depth line, whichever depth
+    # that was: the line exists to report a shortfall.
+    for depth in ("formal", "proof"):
+        equal_depth = _run(
+            "-i", str(model), "-q", str(query), "--explain-infeasibility", depth
+        )
+        assert "Explanation depth:" not in equal_depth.output, depth
+
+    # A shape the rules do not cover still degrades, and the line says so.  The
+    # bounds below are conjoined into one source group, which leaves the reading no
+    # separate members to intersect.
+    degrading = tmp_path / "degrading.fbmcq"
+    degrading.write_text(
+        'assume at 0: var("x") > 5 && var("x") < 3;\n'
+        'check reach <= 2: active("Root.B");\n',
+        encoding="utf-8",
     )
-    assert "Explanation depth: requested proof, achieved formal" in proof_human.output
-    formal_human = _run(
-        "-i", str(model), "-q", str(query), "--explain-infeasibility", "formal"
+    degraded = _run(
+        "-i", str(model), "-q", str(degrading), "--explain-infeasibility", "proof"
     )
-    assert "Explanation depth:" not in formal_human.output
+    assert "Explanation depth: requested proof, achieved formal" in degraded.output
 
     # An unknown depth is refused by the option, before any solving happens.
     rejected = _run(
@@ -2522,6 +2531,9 @@ def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
     from pyfcstm.bmc.explanation import (
         _DELIVERY_SIGNATURES,
         UNBUILT_SLOTS,
+        BmcConflictNarrative,
+        BmcConflictProof,
+        BmcProofNode,
         depth_line_is_needed,
     )
 
@@ -2542,16 +2554,17 @@ def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
         ("proof", "proof"): False,
     }
 
-    # Every matrix row reaching an achieved "proof" also needs a proof slot, and
-    # that slot is named as not yet built, so that pair has no object here.
-    assert "proof" in UNBUILT_SLOTS
-    needs_unbuilt_slot = {("proof", "proof")}
-    assert needs_unbuilt_slot <= set(legal_pairs)
-    buildable = [pair for pair in legal_pairs if pair not in needs_unbuilt_slot]
+    # Every pair is buildable now.  While the proof slot was named as not yet
+    # built, ("proof", "proof") had no object and was excluded here -- and the
+    # comment above records what that cost: a widening touching only the excluded
+    # pair passed the whole suite.  Nothing is excluded now, so assert that.
+    assert UNBUILT_SLOTS == (), UNBUILT_SLOTS
+    buildable = legal_pairs
 
     def render_pair(requested, achieved):
         # Each pair needs a payload the matrix accepts for it: a core when a
-        # depth was achieved, a bare reason when none was.
+        # depth was achieved, a bare reason when none was, and a proof and a
+        # narrative once the achieved depth claims one.
         if achieved == "none":
             extra = dict(reason="the component probe returned unknown")
         else:
@@ -2576,6 +2589,36 @@ def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
                 ),
                 reason="sound source core published without a minimality proof",
             )
+        if achieved == "proof":
+            # A published proof comes with the narrative that cites it: the
+            # contract couples the two, so the row cannot be rendered without both.
+            node = BmcProofNode(
+                "proof.false",
+                "contradiction",
+                "incompatible_equalities",
+                (),
+                {"kind": "false"},
+                ("initial.variable",),
+                "x cannot start at two values at once.",
+                "rule_checker",
+            )
+            extra.update(
+                proof=BmcConflictProof(
+                    "initialization_component",
+                    "proof.false",
+                    (node,),
+                    "subset_minimal",
+                    "dependency_pruned",
+                    "verified",
+                ),
+                narrative=BmcConflictNarrative(
+                    "structural_only",
+                    "The initialization constraints cannot hold together.",
+                    "No execution satisfies the initializer.",
+                    (),
+                    (),
+                ),
+            )
         return render(
             BmcInfeasibilityExplanation(
                 requested,
@@ -2593,10 +2636,8 @@ def test_human_explanation_matches_the_frozen_transcript_line_shapes() -> None:
             if line.startswith("Explanation depth:")
         ]
 
-    # The rendered output matches the predicate for every buildable pair.  The
-    # ("proof", "proof") render path is not pinned here because no object can
-    # carry that pair yet; the predicate's value for it is pinned in the table
-    # above.  That the command line really consults this predicate rather than
+    # The rendered output matches the predicate for every pair, the proof one
+    # included.  That the command line really consults this predicate rather than
     # deciding for itself is pinned where a user can see it, by
     # test_bmc_cli_can_request_each_explanation_depth: a real ``proof`` run
     # degrades to ``formal`` and prints the line, and a ``formal`` run does not.

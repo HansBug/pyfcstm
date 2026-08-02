@@ -17,6 +17,7 @@ import sys
 import pytest
 
 from pyfcstm.bmc.explanation import (
+    BmcProofNode,
     MAX_SOURCE_EXCERPT_CHARS,
     BmcConflictCore,
     BmcConflictNarrative,
@@ -94,6 +95,29 @@ def _core(
         reduction=reduction,
         subset_minimality=subset_minimality,
         items=(_item(stage=stage),),
+    )
+
+
+def _proof(scope: str = "initialization_component") -> "BmcConflictProof":
+    """A published proof in the shape the contract freezes.
+
+    The two-field placeholder this replaced could be built with a scope and a root
+    id alone; the real shape carries its graph, so the tests that only need *a*
+    proof build the smallest verifiable one -- a single false node resting on one
+    core member.
+    """
+    node = BmcProofNode(
+        "proof.false",
+        "contradiction",
+        "incompatible_equalities",
+        (),
+        {"kind": "false"},
+        ("initial.target",),
+        "The initial state cannot hold two values at once.",
+        "rule_checker",
+    )
+    return BmcConflictProof(
+        scope, "proof.false", (node,), "subset_minimal", "dependency_pruned", "verified"
     )
 
 
@@ -178,6 +202,16 @@ _DERIVED_FROZEN_NAMES = {
     "_DELIVERY_SIGNATURES": "expanded from _DELIVERY_MATRIX_ROWS",
     "_MODE_ORDER": "an ordering over _MODES, pinned by the delivery matrix",
     "_REDUCTION_MINIMALITY": "pinned by the reduction/minimality coupling tests",
+    # The proof vocabularies live beside the proof types they gate, so they are
+    # transcribed in test_proof.py rather than twice.  Listed here so this guard
+    # still fails when a *seventh* one appears with no home.
+    "_PROOF_NODE_KINDS": "transcribed by test_proof.py",
+    "_PROOF_RULE_IDS": "transcribed by test_proof.py",
+    "_PROOF_VERIFICATION_METHODS": "transcribed by test_proof.py",
+    "_PROOF_INPUT_MINIMALITIES": "transcribed by test_proof.py",
+    "_PROOF_GRAPH_MINIMALITIES": "transcribed by test_proof.py",
+    "_PROOF_VERIFICATION_STATUSES": "transcribed by test_proof.py",
+    "_SENTINEL_STATE_PHRASES": "transcribed by test_the_sentinel_states_read_as_query_tokens",
 }
 
 
@@ -247,6 +281,7 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
         "provenance._VALUE_FACT_CATEGORIES",
         "provenance.TRACKED_GROUP_PAIRINGS",
         "infeasibility.AGGREGATE_SELECTORS",
+        "infeasibility._BINDING_ENCODERS",
         "infeasibility._INDEX_REF_KEYS",
         "infeasibility._STAGE_FALLBACK_BY_STAGE",
     }
@@ -309,6 +344,17 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
             ("kernel", "transition.step"),
         }
     )
+    # Which fact tags can be shown equivalent to their source group.  A tag absent
+    # here has no encoding, so its member fails the binding check and no proof is
+    # published over it -- which is the contract's answer for a group that does not
+    # normalize losslessly, and therefore a published boundary rather than a detail.
+    assert set(infeasibility._BINDING_ENCODERS) == {
+        "variable_equality",
+        "variable_bound",
+        "definedness_guard",
+        "state_domain",
+        "state_exclusion",
+    }
     assert infeasibility._INDEX_REF_KEYS == ("frame", "frames", "step", "steps")
     assert dict(infeasibility._STAGE_FALLBACK_BY_STAGE) == {
         "initialization": "initialization_stage_fallback",
@@ -378,7 +424,7 @@ def test_every_frozen_vocabulary_matches_the_authored_list() -> None:
         "state_domain",
         "definedness_condition",
     )
-    assert module.UNBUILT_SLOTS == ("proof",)
+    assert module.UNBUILT_SLOTS == ()
     assert module.INDEX_REF_KEYS == ("frame", "frames", "step", "steps")
     assert dict(module.SCOPE_AGGREGATES) == {
         "kernel": ("domain", "transition"),
@@ -548,6 +594,10 @@ _AUTHORED_DELIVERY_ROWS = frozenset(
         ("formal", "formal", "complete", True, True, False),
         # Row 8: a verified proof DAG over a diagnostic artifact.
         ("proof", "proof", "complete", True, True, False),
+        # The row the formal stage recorded as missing: the classification did
+        # finish and the proof is verified, but a fact with no dedicated
+        # recognizer degraded the narrative, so the artifact is partial.
+        ("proof", "proof", "partial", True, True, True),
         # Row 9: a verified proof DAG over a stage-fallback artifact.  A
         # stage-fallback scope means the classification did not finish, which
         # the frozen boundary states as "proof 完整，但 classification 未完成",
@@ -1556,20 +1606,26 @@ def test_a_proof_is_only_published_when_proof_was_requested() -> None:
             "partial",
             "initialization_self_conflict",
             _core(),
-            proof=BmcConflictProof("initialization_component", "root"),
+            proof=_proof(),
             reason="r",
         )
 
 
-def test_a_reserved_slot_is_rejected_rather_than_silently_dropped() -> None:
-    """A filled ``proof`` fails loudly instead of vanishing from the payload.
+def test_a_proof_below_the_depth_that_produced_it_is_still_refused() -> None:
+    """The refusal moved gates when proof was built; it did not go away.
 
-    The slot belongs to a later delivery stage, and serializing it to ``null``
-    would let a caller believe a proof had been published.  ``narrative`` was
-    reserved the same way until it gained a builder and a schema; it is now
-    accepted, which the delivery tests cover directly.
+    While the slot was reserved, an ``UNBUILT_SLOTS`` guard rejected any proof at
+    all, and this asserted that a filled one failed loudly rather than serializing
+    to ``null`` -- a caller reading ``null`` cannot tell "not produced" from
+    "produced and empty".  The tier is built now, so that guard no longer applies
+    and the same payload has to be refused by the delivery table instead: a proof
+    beside ``achieved_mode='formal'`` claims a depth the run did not reach.
+
+    Asserting on the message is the point rather than incidental.  Both gates raise
+    ``ValueError``, so matching only the type would have kept passing while nothing
+    checked the combination at all.
     """
-    with pytest.raises(ValueError, match="not produced at this stage"):
+    with pytest.raises(ValueError, match="outside the frozen truth table"):
         BmcInfeasibilityExplanation(
             "proof",
             "formal",
@@ -1577,7 +1633,7 @@ def test_a_reserved_slot_is_rejected_rather_than_silently_dropped() -> None:
             "initialization_self_conflict",
             _core(),
             reason="r",
-            proof=BmcConflictProof("initialization_component", "root"),
+            proof=_proof(),
         )
 
 
@@ -2065,11 +2121,15 @@ def test_reserved_placeholder_fields_are_pinned() -> None:
     from pyfcstm.bmc.explanation import (
         UNBUILT_SLOTS,
         BmcConflictNarrative,
-        BmcConflictProof,
         BmcReasoningStep,
     )
 
-    assert set(UNBUILT_SLOTS) == {"proof"}
+    # Empty now that the proof tier is built.  The guard stays wired: a slot added
+    # later must fail loudly rather than serialize as null.
+    assert set(UNBUILT_SLOTS) == set()
+    # ``BmcConflictProof`` is no longer a placeholder: its field list is the frozen
+    # contract shape and is transcribed beside the proof types in test_proof.py, so
+    # it is not restated here.
     assert [f.name for f in dataclasses.fields(BmcConflictNarrative)] == [
         "derivation_status",
         "headline",
@@ -2082,10 +2142,6 @@ def test_reserved_placeholder_fields_are_pinned() -> None:
         "item_ids",
         "proof_node_ids",
         "text",
-    ]
-    assert [f.name for f in dataclasses.fields(BmcConflictProof)] == [
-        "scope",
-        "root_id",
     ]
     # Both remain refused on a published explanation, which is what makes the
     # sweep's skip correct rather than merely convenient.  The two are refused for
@@ -2125,7 +2181,7 @@ def test_reserved_placeholder_fields_are_pinned() -> None:
             "initialization_self_conflict",
             core=core,
             reason="sound source core published without a minimality proof",
-            proof=BmcConflictProof("initialization_component", "root"),
+            proof=_proof(),
         )
     # The narrative slot is published now, so a degraded artifact may carry the
     # honest structural reading beside its unproven core.
@@ -2858,7 +2914,7 @@ def test_stepping_aside_never_turns_into_speaking_up(
     [
         (1, {1: "Root.A"}, "state Root.A"),
         (5, {5: "Root.Outer.Inner"}, "state Root.Outer.Inner"),
-        (-1, {-1: "$STATE_TERMINATE"}, "state $STATE_TERMINATE"),
+        (-1, {-1: "$STATE_TERMINATE"}, "state terminated()"),
         (9, {1: "Root.A"}, "state 9"),
         (1, None, "state 1"),
         (1, {}, "state 1"),
@@ -2881,6 +2937,11 @@ def test_a_state_falls_back_to_its_code_rather_than_inventing_a_name(
     table does not carry has no name to print.  Falling back to the code keeps
     the sentence true and still traceable through ``normalized_fact``; inventing
     one would put a state in the report that the model does not contain.
+
+    The sentinel row is a hit rather than a miss, and it is deliberately not its
+    path: the query binder refuses ``active("$STATE_TERMINATE")`` as reserved, so
+    printing that path hands the reader a name they are forbidden to type.  It is
+    read as the token the query language does give them.
     """
     from pyfcstm.bmc.explanation import _state_label
 
@@ -3740,3 +3801,24 @@ def test_a_partial_comparison_leaves_an_interval_core_unexplained() -> None:
         )
     )
     assert partial.derivation_status != "complete"
+
+
+@pytest.mark.unittest
+def test_the_sentinel_states_read_as_query_tokens() -> None:
+    """The two states the author did not write are read as things they can write.
+
+    The query binder refuses both by name -- ``active("$STATE_TERMINATE")`` comes
+    back as a reserved path -- so a report that prints those paths is handing the
+    reader a name they are forbidden to type.  Each is read as the token the query
+    language does give them, and each carries parentheses, which no state path can:
+    a model declaring its own state called ``terminated`` stays distinct.
+
+    Transcribed rather than derived from the module, so a change to either spelling
+    fails here instead of quietly changing what every report says.
+    """
+    from pyfcstm.bmc.explanation import _SENTINEL_STATE_PHRASES
+
+    assert _SENTINEL_STATE_PHRASES == {
+        "$STATE_TERMINATE": "terminated()",
+        "$STATE_INIT": "before(start)",
+    }

@@ -22,6 +22,9 @@ pyfcstm.bmc
     macro
     parse
     pipeline
+    proof
+    proof_rules
+    proof_text
     properties
     provenance
     query

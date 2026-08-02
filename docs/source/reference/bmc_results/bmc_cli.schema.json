@@ -2818,7 +2818,9 @@
             "domain_assumptions",
             "unsat_core",
             "unsat_core_minimization",
-            "value_propagation"
+            "value_propagation",
+            "core_binding",
+            "proof_construction"
           ]
         },
         "status": {
@@ -2864,7 +2866,7 @@
               }
             }
           },
-          "$comment": "status=complete reports a whole phase rather than one solver verdict, so only phase-level checks may use it: unsat_core, unsat_core_minimization and value_propagation. The others report a single check."
+          "$comment": "status=complete reports a whole phase rather than one solver verdict, so only phase-level checks may use it.  The branch below carries the list; naming them here as well would be a second place to keep in step, which is how this comment came to disagree with it."
         },
         {
           "if": {
@@ -2880,7 +2882,9 @@
                 "enum": [
                   "unsat_core",
                   "unsat_core_minimization",
-                  "value_propagation"
+                  "value_propagation",
+                  "core_binding",
+                  "proof_construction"
                 ]
               },
               "reason": {
@@ -2888,7 +2892,7 @@
               }
             }
           },
-          "$comment": "status=complete reports a finished phase rather than one solver verdict, so it is reserved for phase-level checks. value_propagation aggregates a prefix solve and a uniqueness check, so it belongs here; it deliberately does not join the core-proof family, which the published-core rule reads."
+          "$comment": "Phases may report status=complete; a single solver verdict may not.  Core binding and proof construction join the phase family for the reason value propagation did: each aggregates several checks and supports a deeper tier rather than proving the core."
         },
         {
           "if": {
@@ -6067,7 +6071,15 @@
           ]
         },
         "proof": {
-          "type": "null"
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/conflictProof"
+            }
+          ],
+          "$comment": "Null until the proof tier produces one.  The depth conditionals below decide which of the two applies."
         },
         "narrative": {
           "oneOf": [
@@ -6989,6 +7001,140 @@
           }
         }
       ]
+    },
+    "proofNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stable_id",
+        "kind",
+        "rule_id",
+        "premise_ids",
+        "conclusion",
+        "item_ids",
+        "human_text",
+        "verification_method"
+      ],
+      "properties": {
+        "stable_id": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "kind": {
+          "enum": [
+            "input",
+            "derived",
+            "contradiction"
+          ]
+        },
+        "rule_id": {
+          "enum": [
+            "source_fact",
+            "transition_assignment",
+            "equality_substitution",
+            "arithmetic_evaluation",
+            "interval_intersection",
+            "state_domain_exhaustion",
+            "definedness_failure",
+            "incompatible_equalities",
+            "boolean_complement"
+          ]
+        },
+        "premise_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "\\S"
+          },
+          "$comment": "Whether an id here names a node, and whether that node comes earlier, are relations between array members.  Draft 2020-12 cannot follow a string to the member it names, so the constructor enforces both."
+        },
+        "conclusion": {
+          "type": "object",
+          "$comment": "Fields beyond \"kind\" depend on the tag and are left open.  One is worth naming: a conclusion about the state a frame holds carries \"state_slot\": true beside its subject.  A model may declare a variable spelled like that subject -- an import mapping renames past the keyword, and the target-template rule admits \"$\" -- so the flag, not the spelling, is what tells a consumer whether the conclusion is about a state or about a variable.",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "pattern": "\\S"
+            },
+            "state_slot": {
+              "const": true
+            }
+          }
+        },
+        "item_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "\\S"
+          }
+        },
+        "human_text": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "verification_method": {
+          "enum": [
+            "core_binding",
+            "rule_checker",
+            "solver_entailment"
+          ],
+          "$comment": "No value for an unchecked step: a published proof carries no hole, trust or opaque solver step, so the absence is the contract rather than an omission."
+        }
+      }
+    },
+    "conflictProof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "root_id",
+        "nodes",
+        "input_minimality",
+        "graph_minimality",
+        "verification_status"
+      ],
+      "$comment": "Graph shape is a semantic-gate exception: node id uniqueness across a nested key, premises naming earlier nodes, a single false root that root_id names, every node reaching that root, input nodes binding one-to-one to core items, and proof.scope equalling core.scope are all relations this schema language cannot express.  The constructor refuses them; validation passing here does not mean the graph is sound.",
+      "properties": {
+        "scope": {
+          "enum": [
+            "kernel",
+            "initialization_component",
+            "initialization_domain",
+            "initialization_prefix",
+            "assumptions_component",
+            "assumptions_domain",
+            "assumptions_prefix",
+            "initialization_stage_fallback",
+            "assumptions_stage_fallback"
+          ]
+        },
+        "root_id": {
+          "type": "string",
+          "pattern": "\\S"
+        },
+        "nodes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/proofNode"
+          },
+          "$comment": "Canonical topological order.  There is no second ordering array; position in this list is the order."
+        },
+        "input_minimality": {
+          "const": "subset_minimal"
+        },
+        "graph_minimality": {
+          "const": "dependency_pruned"
+        },
+        "verification_status": {
+          "const": "verified"
+        }
+      }
     }
   }
 }

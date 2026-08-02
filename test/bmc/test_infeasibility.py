@@ -740,7 +740,14 @@ def test_explain_reports_kernel_without_spending_a_classification_probe() -> Non
 
 
 def test_explain_records_the_requested_mode_it_was_asked_for() -> None:
-    """``proof`` degrades to the formal artifact but keeps the request honest."""
+    """The request is reported alongside what the run reached, whichever that is.
+
+    This asserted a degradation while the proof tier had no builder.  Now the same
+    query closes, so the two modes agree -- and the property worth keeping is not
+    which value appears but that ``requested_mode`` reports the request rather than
+    the outcome.  The degrading direction is covered where a shape no rule reaches
+    keeps its formal artifact.
+    """
     core = _core_formula(
         'init state("Root.A") where x == 0; '
         'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
@@ -751,7 +758,8 @@ def test_explain_records_the_requested_mode_it_was_asked_for() -> None:
     )
 
     assert outcome.explanation.requested_mode == "proof"
-    assert outcome.explanation.achieved_mode == "formal"
+    assert outcome.explanation.achieved_mode == "proof"
+    assert outcome.explanation.proof is not None
 
 
 def _frame_symbol(core, name: str = "F_0_state"):

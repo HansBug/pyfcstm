@@ -168,6 +168,37 @@ def _check_page(page, url: str) -> Dict[str, object]:
     )
 
 
+def _require_text_rendering(page) -> None:
+    """Refuse to report a pass when the browser cannot render text.
+
+    A browser with no usable font lays every string out at zero width.  Nothing
+    can then overflow, no formula container can be too wide, and every geometric
+    check passes while the screenshots contain no glyphs at all -- which is how
+    this checker once reported twelve passing pages whose images were blank.
+
+    Point ``FONTCONFIG_FILE`` at a configuration naming a font the browser can
+    load if this fires.
+
+    :param page: The page to measure on.
+    :type page: playwright.sync_api.Page
+    :return: ``None``.
+    :rtype: None
+    :raises VisualCheckFailure: If a known string measures zero wide.
+    """
+    width = page.evaluate(
+        """() => {
+          const c = document.createElement('canvas').getContext('2d');
+          c.font = '32px sans-serif';
+          return c.measureText('HELLO 12345').width;
+        }"""
+    )
+    if not width:
+        raise VisualCheckFailure(
+            "the browser measures text at zero width, so no visual check here "
+            "means anything; set FONTCONFIG_FILE to a config with a loadable font"
+        )
+
+
 def check(
     html_roots: Dict[str, Path],
     output_root: Path,
@@ -193,6 +224,7 @@ def check(
             for viewport_name, viewport in _VIEWPORTS.items():
                 context = browser.new_context(viewport=viewport)
                 page = context.new_page()
+                _require_text_rendering(page)
                 for _page_language, directory, html_path in _rendered_pages(
                     {language: html_root}
                 ):

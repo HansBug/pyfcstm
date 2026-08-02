@@ -30,3 +30,28 @@ code.literal {
     padding-right: 1px;
   }
 }
+
+/*
+ * Inline mathematics gets the same treatment as display mathematics.  A long
+ * inline formula in a Chinese paragraph cannot break -- CJK text has no spaces
+ * for the browser to break at before it -- so the glyphs run past the content
+ * box on a narrow viewport even though the container itself is constrained.
+ * Letting the container scroll keeps the formula readable without giving the
+ * document a horizontal scrollbar.
+ */
+mjx-container:not([display="true"]) {
+  max-width: 100%;
+}
+
+/*
+ * CJK paragraphs have no spaces for the browser to break at, so a line can only
+ * end where a break opportunity exists.  Allowing one anywhere lets the line end
+ * before an inline formula instead of carrying it past the content box.
+ */
+@media (max-width: 480px) {
+  .rst-content p,
+  .rst-content dd,
+  .rst-content li {
+    overflow-wrap: anywhere;
+  }
+}

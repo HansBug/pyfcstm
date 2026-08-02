@@ -64,6 +64,11 @@ _PAGE_PAIRS = (
     "explanations/bmc_solving/index",
     "reference/bmc_query/index",
     "reference/bmc_results/index",
+    # The CLI reference documents ``pyfcstm bmc`` alongside the other commands,
+    # so it carries BMC option contracts and belongs under the same structural
+    # checks.  It was outside them while the only BMC option surface lived on
+    # the result-protocol page.
+    "reference/cli/index",
 )
 
 _EQUATION_PAIRS = (
@@ -82,6 +87,146 @@ _TUTORIAL_DIAGRAMS = (
     ("bmc_pipeline.puml", "bmc_pipeline_zh.puml"),
     ("first_check_en.puml", "first_check_zh.puml"),
 )
+
+# The optional scenario-infeasibility explanation is published on three surfaces
+# at once -- a human report block, a JSON object, and a set of public dataclasses
+# -- and the vocabularies below are closed enums in the code.  Every value a
+# reader can be handed therefore needs somewhere to look it up, which is why
+# these are checked as whole sets rather than as a few representative names.
+#
+# The values are transcribed from pyfcstm/bmc/explanation.py.  They are copied
+# rather than imported because this checker guards documentation against the
+# code, and importing the code would make a renamed value silently agree with a
+# stale page instead of failing.
+
+#: Every ``rule_id`` a proof node can carry.
+_PROOF_RULE_IDS = (
+    "source_fact",
+    "transition_assignment",
+    "equality_substitution",
+    "arithmetic_evaluation",
+    "interval_intersection",
+    "state_domain_exhaustion",
+    "definedness_failure",
+    "incompatible_equalities",
+    "boolean_complement",
+)
+
+#: Every way a proof step can be checked before it is published.
+_PROOF_VERIFICATION_METHODS = ("core_binding", "rule_checker", "solver_entailment")
+
+#: Every kind of node a proof graph contains.
+_PROOF_NODE_KINDS = ("input", "derived", "contradiction")
+
+#: Every classification the explanation can reach.
+_CLASSIFICATIONS = (
+    "kernel_conflict",
+    "initialization_self_conflict",
+    "initialization_domain_conflict",
+    "initialization_kernel_conflict",
+    "assumptions_self_conflict",
+    "assumptions_domain_conflict",
+    "assumptions_prefix_conflict",
+)
+
+#: The depths a caller can request, and the states the attempt can end in.
+_EXPLANATION_MODES = ("none", "formal", "proof")
+_EXPLANATION_STATUSES = ("complete", "partial", "unknown", "timeout")
+
+#: How far minimization got, and what the proof's own minimality claims are.
+_CORE_REDUCTIONS = ("raw", "partial_minimized", "subset_minimal")
+_PROOF_MINIMALITY = ("subset_minimal", "dependency_pruned", "verified")
+
+#: The published dataclasses a Python caller reads the explanation through.
+_EXPLANATION_TYPES = (
+    "BmcInfeasibilityExplanation",
+    "BmcConflictCore",
+    "BmcCoreItem",
+    "BmcConflictNarrative",
+    "BmcReasoningStep",
+    "BmcConflictProof",
+    "BmcProofNode",
+    "BmcConstraintRef",
+    "BmcSourceRef",
+)
+
+#: Which prose page owns which part of the vocabulary.
+#:
+#: Keyed by page pair, so each requirement is checked in the English page and its
+#: Chinese counterpart.  Only the ``index.rst`` / ``index_zh.rst`` prose is read:
+#: the same names also appear in ``bmc_cli.schema.json`` and in the generated
+#: ``api_doc`` pages, and an anchor that those files could satisfy would report
+#: success while the prose stayed empty.
+_EXPLANATION_VOCABULARY: Dict[str, Tuple[str, ...]] = {
+    "reference/bmc_results/index": (
+        _PROOF_RULE_IDS
+        + _PROOF_VERIFICATION_METHODS
+        + _CLASSIFICATIONS
+        + _CORE_REDUCTIONS
+        + _PROOF_MINIMALITY
+        + _EXPLANATION_STATUSES
+        + _EXPLANATION_TYPES
+        + (
+            "--explain-infeasibility",
+            "COMPLETE VERIFIED DOMAIN PROOF",
+            "PARTIAL FORMAL DOMAIN EXPLANATION",
+            "result.feasibility.explanation",
+        )
+    ),
+    "reference/cli/index": (
+        _EXPLANATION_MODES
+        + (
+            "--explain-infeasibility",
+            "NO_COLOR",
+        )
+    ),
+    "tutorials/bmc/index": (
+        "--explain-infeasibility",
+        "COMPLETE VERIFIED DOMAIN PROOF",
+        "verification_method",
+    ),
+    "how_to/bmc/index": (
+        "--explain-infeasibility",
+        "achieved_mode",
+        "requested_mode",
+    ),
+    "explanations/bmc_solving/index": (
+        _PROOF_VERIFICATION_METHODS
+        + (
+            "subset_minimal",
+            "structural_only",
+        )
+    ),
+}
+
+#: Vocabularies that must be tabulated together rather than mentioned apart.
+#:
+#: A reader looking up one ``rule_id`` needs to see the others to know the list
+#: is closed; nine names scattered over nine sections do not answer that.  The
+#: window is a single contiguous run of non-blank lines, which is what a reST
+#: table or definition list is.
+_TABULATED_VOCABULARY: Dict[str, Tuple[Tuple[str, ...], ...]] = {
+    "reference/bmc_results/index": (
+        _PROOF_RULE_IDS,
+        _PROOF_VERIFICATION_METHODS,
+        _PROOF_NODE_KINDS,
+    ),
+}
+
+#: Sentences that were true when written and are now misleading.
+#:
+#: The proof tier landed after this page described it as never closing, so the
+#: page tells a reader the feature does not work.  A stale claim is worse than a
+#: missing one, and nothing else in this checker would notice it.
+_FORBIDDEN_CLAIMS: Dict[str, Tuple[Tuple[str, str], ...]] = {
+    "reference/bmc_results/index": (
+        (
+            "reports as unclosed rather than fabricating",
+            "the proof tier does close for reachable cases; describe both the "
+            "closing and the degrading outcome instead",
+        ),
+    ),
+}
 
 
 class CheckFailure(Exception):
@@ -304,6 +449,99 @@ def _check_schema(errors: List[str]) -> None:
             errors.append("%s still describes the removed package resource." % relative)
 
 
+def _prose_pages(relative: str) -> List[Tuple[str, Path]]:
+    """Return the English and Chinese prose pages of one page pair.
+
+    :param relative: Page pair path without the ``.rst`` suffix.
+    :type relative: str
+    :return: ``(label, path)`` for each page of the pair.
+    :rtype: List[Tuple[str, pathlib.Path]]
+    """
+    source = _REPO_ROOT / "docs/source"
+    return [
+        (relative + ".rst", source / (relative + ".rst")),
+        (relative + "_zh.rst", source / (relative + "_zh.rst")),
+    ]
+
+
+def _check_explanation_vocabulary(errors: List[str]) -> None:
+    """Confirm each prose page documents the vocabulary it owns.
+
+    :param errors: Accumulator the caller raises from.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    for relative, required in sorted(_EXPLANATION_VOCABULARY.items()):
+        for label, path in _prose_pages(relative):
+            text = _read(path)
+            missing = [value for value in required if value not in text]
+            if missing:
+                errors.append(
+                    "%s does not document %s."
+                    % (label, ", ".join(sorted(set(missing))))
+                )
+
+
+def _contiguous_blocks(text: str) -> List[str]:
+    """Split page text into runs of consecutive non-blank lines.
+
+    :param text: Page contents.
+    :type text: str
+    :return: One string per run, blank-line separated in the source.
+    :rtype: List[str]
+    """
+    blocks: List[str] = []
+    current: List[str] = []
+    for line in text.splitlines():
+        if line.strip():
+            current.append(line)
+            continue
+        if current:
+            blocks.append("\n".join(current))
+            current = []
+    if current:
+        blocks.append("\n".join(current))
+    return blocks
+
+
+def _check_tabulated_vocabulary(errors: List[str]) -> None:
+    """Confirm closed vocabularies appear together rather than scattered.
+
+    :param errors: Accumulator the caller raises from.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    for relative, groups in sorted(_TABULATED_VOCABULARY.items()):
+        for label, path in _prose_pages(relative):
+            blocks = _contiguous_blocks(_read(path))
+            for group in groups:
+                if any(all(value in block for value in group) for block in blocks):
+                    continue
+                errors.append(
+                    "%s mentions %s apart rather than in one table, so a reader "
+                    "cannot see that the list is closed."
+                    % (label, " / ".join(group[:3]) + ("..." if len(group) > 3 else ""))
+                )
+
+
+def _check_forbidden_claims(errors: List[str]) -> None:
+    """Confirm no page still carries a claim the implementation outgrew.
+
+    :param errors: Accumulator the caller raises from.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    for relative, claims in sorted(_FORBIDDEN_CLAIMS.items()):
+        for label, path in _prose_pages(relative):
+            text = _read(path)
+            for phrase, guidance in claims:
+                if phrase in text:
+                    errors.append("%s still claims %r; %s." % (label, phrase, guidance))
+
+
 def check() -> None:
     """Run every deterministic BMC documentation contract check."""
     errors: List[str] = []
@@ -312,6 +550,9 @@ def check() -> None:
     _check_readme(errors)
     _check_localized_diagrams(errors)
     _check_schema(errors)
+    _check_explanation_vocabulary(errors)
+    _check_tabulated_vocabulary(errors)
+    _check_forbidden_claims(errors)
     if errors:
         raise CheckFailure("BMC documentation check failed:\n" + "\n".join(errors))
 

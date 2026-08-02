@@ -15,3 +15,18 @@ code.literal {
   overflow-wrap: anywhere;
   white-space: normal;
 }
+
+/*
+ * An inline literal that lands at the end of a line carries its horizontal
+ * padding past the content box, which is enough to give the document a
+ * horizontal scrollbar on a narrow viewport even though the text itself fits.
+ * Dropping the padding below the mobile breakpoint keeps the literal readable
+ * without letting it widen the page.  Applied by class rather than to the few
+ * pages that happen to trip it today, since any literal can land there.
+ */
+@media (max-width: 480px) {
+  code.literal {
+    padding-left: 1px;
+    padding-right: 1px;
+  }
+}

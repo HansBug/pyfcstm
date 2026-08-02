@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import tempfile
 from importlib.metadata import PackageNotFoundError, version
@@ -11,6 +12,8 @@ from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Sequence, Tuple
 
 from playwright.sync_api import sync_playwright
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 _PLAYWRIGHT_VERSION = "1.55.0"
@@ -49,6 +52,43 @@ def _rendered_pages(
                 directory,
                 html_root / _rendered_page_relative(language, directory),
             )
+
+
+def _expected_anchor_count() -> int:
+    """Return how many labelled equations the ledger currently declares.
+
+    Read from ``tools/check_bmc_docs.py`` rather than hardcoded here.  The two
+    checkers disagreed the first time an equation was added: one enforced the
+    label list and the other still expected the previous count, so a correct
+    addition failed the visual pass for a reason that had nothing to do with
+    rendering.  Deriving the number keeps one place to update.
+
+    :return: The number of frozen equation labels.
+    :rtype: int
+    :raises VisualCheckFailure: If the label list cannot be read.
+    """
+    source = _REPO_ROOT / "tools/check_bmc_docs.py"
+    try:
+        module = ast.parse(source.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError) as err:
+        # OSError: the sibling checker is missing or unreadable.
+        # SyntaxError: it is mid-edit; either way the count cannot be trusted.
+        raise VisualCheckFailure(
+            "cannot read the equation label list from %s: %s" % (source.name, err)
+        )
+    for node in module.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(
+            isinstance(target, ast.Name) and target.id == "_EQUATION_LABELS"
+            for target in node.targets
+        ):
+            continue
+        if isinstance(node.value, ast.Tuple):
+            return len(node.value.elts)
+    raise VisualCheckFailure(
+        "%s no longer defines _EQUATION_LABELS as a tuple literal." % source.name
+    )
 
 
 def _check_page_path_contract() -> None:
@@ -186,10 +226,11 @@ def check(
                     )
                 context.close()
         browser.close()
-    if len(all_anchors) != 40:
+    expected_anchors = _expected_anchor_count()
+    if len(all_anchors) != expected_anchors:
         errors.append(
-            "expected 40 distinct equation anchors across rendered pages, found %d"
-            % len(all_anchors)
+            "expected %d distinct equation anchors across rendered pages, found %d"
+            % (expected_anchors, len(all_anchors))
         )
     report["equation_anchor_count"] = len(all_anchors)
     report["errors"] = errors

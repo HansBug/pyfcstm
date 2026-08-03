@@ -629,7 +629,7 @@ scope 上面那句话。粒度、成员数、带标签的最小性行以及解�
      - 同一个要求同时被要求成立又被排除。经事件断言可达：``assume event("Root.A.Go", 0) == true``
        与 ``assume event("Root.A.Go", 0) == false`` 会发布两个 ``proposition`` 事实，
        ``identity`` 相同而 ``holds`` 相反。步号是 ``identity`` 的一部分，所以同一事件
-       在两个步上是两个主体而非一个。写在状态上的对立式**不**触发它，而且这是有意的：
+       在两个步上是两个主体而非一个。写在状态上的对立式\ **不**\ 触发它，而且这是有意的：
        ``assume at 1: active("Root.A")`` 配 ``assume at 1: !active("Root.A")`` 发布的是两个
        只在 ``excluded`` 上相反的 ``state_membership`` 事实——因为穷尽帧状态域的那条规则
        正是读这些排除，若状态断言改走 ``proposition``，它会失去唯一的前提来源。

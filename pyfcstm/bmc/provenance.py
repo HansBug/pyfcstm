@@ -1255,12 +1255,33 @@ def _assignment_in_unit(
     consequent = unit.arg(1)
     if not z3.is_eq(consequent) or consequent.num_args() != 2:
         return None
+    # Operand order is not fixed.  An arithmetic update encodes as
+    # ``F_next_x == F_step_x + 1`` and a constant assignment as ``1 == F_next_x``, so
+    # reading position 0 as the target alone finds one shape and misses the other --
+    # which is how a plain ``x = 1`` went unpublished.  The mirrored reading is what
+    # the value-comparison recognizer has always done, and the omission here was the
+    # asymmetry.
     target, source = consequent.arg(0), consequent.arg(1)
     variable = _frame_variable_name(target, declared)
+    if variable is None or _frame_of_symbol(target) != step + 1:
+        target, source = consequent.arg(1), consequent.arg(0)
+        variable = _frame_variable_name(target, declared)
     if variable is None or _frame_of_symbol(target) != step + 1:
         return None
     if not z3.is_app(source):
         return None
+    value = _numeric_value(source)
+    if value is not None:
+        # ``x = 1``: the next frame's value does not depend on this one, so the
+        # published operation is a replacement rather than an arithmetic update.  The
+        # rules read ``set`` and decline it -- "x becomes 1" is not a step a value can
+        # be carried across -- but the reader is still owed what the transition wrote.
+        return {
+            "variable": variable,
+            "operation": "set",
+            "operand": value,
+            "condition_expression": unit.arg(0),
+        }
     operation = _arithmetic_operations(z3).get(source.decl().kind())
     if operation is None or source.num_args() != 2:
         return None

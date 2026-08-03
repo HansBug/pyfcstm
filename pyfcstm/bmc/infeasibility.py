@@ -1802,6 +1802,10 @@ def _encode_assignment(fact: Mapping[str, Any], symbols) -> Optional[Any]:
         "sub": lambda: source - operand,
         "mul": lambda: source * operand,
         "div": lambda: source / operand,
+        # ``set`` ignores the source: the requirement it restates is the plain
+        # equality the encoder wrote, so re-encoding it any other way would compare
+        # the fact against something the group never said.
+        "set": lambda: operand,
     }.get(fact.get("operator"))
     if combine is None:
         return None

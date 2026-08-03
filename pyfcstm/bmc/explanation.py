@@ -386,6 +386,9 @@ _ASSIGNMENT_PHRASES = {
     "sub": "subtracts {operand} from {variable}",
     "mul": "multiplies {variable} by {operand}",
     "div": "divides {variable} by {operand}",
+    # Not an arithmetic update: the next frame's value does not depend on this one,
+    # so the sentence says what the variable becomes rather than how it changes.
+    "set": "sets {variable} to {operand}",
 }
 
 #: Which authority a role speaks for, in the voice the sentence needs.
@@ -824,15 +827,18 @@ def human_text_for_fact(
             operand = fact.get("operand_variable")
         if phrase is None or operand is None:
             return _unreduced_sentence(role, fact)
-        # The sentence says the assignment is conditional without reproducing the
-        # condition: the published ``condition`` is the encoder's own text, which
-        # names frames and digests rather than states a reader wrote.  Claiming
-        # the assignment unconditionally would be the one wrong thing to say.
-        return "Between frame %s and frame %s, %s %s where its case applies." % (
+        # The condition is read out rather than alluded to.  An earlier version said
+        # "where its case applies" and justified it by the condition being the
+        # encoder's own text -- true of the first shape this fact had, and false once
+        # it became a list of normalized facts.  The reader is owed the requirement
+        # itself: the step after this one says "therefore", and its only warrant is
+        # that this condition holds.
+        return "Between frame %s and frame %s, %s %s%s." % (
             fact["frame"],
             fact["target_frame"],
             voice,
             phrase.format(operand=operand, variable=fact["variable"]),
+            _condition_clause(fact["condition"], state_paths),
         )
     if kind == "definedness_condition" and {"frame", "operation"} <= set(fact):
         variable = fact.get("variable")

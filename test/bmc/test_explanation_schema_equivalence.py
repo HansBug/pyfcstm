@@ -109,6 +109,13 @@ _INEXPRESSIBLE = {
         "uniqueness over a nested key (items[*].constraint.stable_id) has no "
         "Draft 2020-12 keyword; uniqueItems only catches identical members"
     ),
+    "unit_index at or past its sibling unit_count": (
+        "Draft 2020-12 bounds each number on its own; comparing two sibling "
+        "integers of the same object is not something it can say.  The pairing of "
+        "the two fields with verification_method is *not* part of this exception -- "
+        "that is a condition on which keys are present, if/then/else expresses it, "
+        "and the schema now does"
+    ),
     "aggregate reason drift": (
         "Draft 2020-12 has no way to compare two arbitrary strings, so it "
         "cannot check that refinement_reason equals explanation.reason; the "
@@ -1201,6 +1208,13 @@ def test_the_constructor_still_enforces_every_named_asymmetry() -> None:
         "duration past the float range",
         "non-finite number anywhere in a published mapping",
         "non-JSON value anywhere in a published mapping",
+        # Pinned by ``test_the_unit_pairing_is_a_structural_gate_and_the_ordering_is
+        # _not`` rather than by a drift case: the drift harness mutates a feasibility
+        # payload, and this asymmetry lives inside one proof node.  That test also
+        # bounds the exception on the other side -- the two conditions the language
+        # *can* express are asserted to be rejected by the schema, so widening the
+        # exception to cover them would turn it red.
+        "unit_index at or past its sibling unit_count",
     }
 
 
@@ -1339,3 +1353,110 @@ def test_every_republished_vocabulary_is_neither_wider_nor_narrower_at_its_decla
         if published != vocabulary:
             mismatched[pointer] = (published, vocabulary)
     assert not mismatched, "schema and package disagree: %r" % mismatched
+
+
+@pytest.mark.unittest
+def test_the_unit_pairing_is_a_structural_gate_and_the_ordering_is_not() -> None:
+    """§11.2 exception 8, pinned in both directions and bounded on both sides.
+
+    Three payloads sat between the two gates when the fields were first published.
+    Two of them -- fields on a whole-group binding, and a unit binding missing one of
+    them -- are conditions on which keys are present, which Draft 2020-12 states with
+    ``if/then/else``; leaving them to the constructor was a gap in the structural
+    gate rather than a limit of the language, and calling all three inexpressible
+    would have hidden that.  The third compares two sibling integers, which the
+    language cannot say, so it is the exception.
+
+    Positive payloads are checked too: a schema that rejected every shape would pass
+    a test that only fed it bad ones.
+    """
+    import json
+
+    jsonschema = pytest.importorskip("jsonschema")
+
+    from pyfcstm.bmc.explanation import BmcProofNode
+
+    schema = json.load(
+        open("docs/source/reference/bmc_results/bmc_cli.schema.json", encoding="utf-8")
+    )
+    validator = jsonschema.Draft202012Validator(
+        {"$ref": "#/$defs/proofNode", "$defs": schema["$defs"]}
+    )
+    base = {
+        "stable_id": "proof.input.0000",
+        "kind": "input",
+        "rule_id": "source_fact",
+        "premise_ids": [],
+        "conclusion": {"kind": "variable_equality"},
+        "item_ids": ["g0"],
+        "human_text": "t",
+    }
+
+    def constructed(payload):
+        try:
+            BmcProofNode(
+                payload["stable_id"],
+                payload["kind"],
+                payload["rule_id"],
+                tuple(payload["premise_ids"]),
+                payload["conclusion"],
+                tuple(payload["item_ids"]),
+                payload["human_text"],
+                payload["verification_method"],
+                payload.get("unit_index"),
+                payload.get("unit_count"),
+            )
+        except ValueError:
+            return False
+        return True
+
+    def accepted(payload):
+        return not list(validator.iter_errors(payload))
+
+    cases = (
+        # (label, payload, schema accepts, constructor accepts)
+        (
+            "fields on a whole-group binding",
+            dict(base, verification_method="core_binding", unit_index=0, unit_count=3),
+            False,
+            False,
+        ),
+        (
+            "unit binding missing unit_count",
+            dict(base, verification_method="core_binding_unit", unit_index=0),
+            False,
+            False,
+        ),
+        (
+            "index at its sibling count",
+            dict(
+                base,
+                verification_method="core_binding_unit",
+                unit_index=3,
+                unit_count=3,
+            ),
+            True,  # §11.2 exception 8: the language cannot compare the two
+            False,
+        ),
+        (
+            "a well-formed unit binding",
+            dict(
+                base,
+                verification_method="core_binding_unit",
+                unit_index=1,
+                unit_count=3,
+            ),
+            True,
+            True,
+        ),
+        (
+            "a whole-group binding carrying neither",
+            dict(base, verification_method="core_binding"),
+            True,
+            True,
+        ),
+    )
+
+    for label, payload, schema_ok, ctor_ok in cases:
+        assert accepted(payload) is schema_ok, label
+        assert constructed(payload) is ctor_ok, label

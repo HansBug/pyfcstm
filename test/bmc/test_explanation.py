@@ -318,6 +318,7 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
         "sub": "subtracts {operand} from {variable}",
         "mul": "multiplies {variable} by {operand}",
         "div": "divides {variable} by {operand}",
+        "set": "sets {variable} to {operand}",
     }
     # Transcribed because it decides which members a reader may index directly:
     # a tag whose keys are dropped from here silently becomes indexable without
@@ -4070,7 +4071,11 @@ def test_the_two_operation_vocabularies_stay_disjoint() -> None:
     # fail, or the reverse.
     definedness = {"division", "sqrt"}
 
-    assert assignment == {"add", "sub", "mul", "div"}
+    # ``set`` joined when a constant assignment turned out to be an ordinary effect
+    # the recognizer was not shaped for.  It is a replacement rather than an
+    # arithmetic update, which is why the rules decline it -- and why it still has to
+    # stay clear of the definedness vocabulary.
+    assert assignment == {"add", "sub", "mul", "div", "set"}
     assert assignment & definedness == set()
 
 
@@ -4197,3 +4202,80 @@ def test_a_conditional_case_says_what_it_is_conditional_on() -> None:
         key: value for key, value in conditional.items() if key != "condition"
     }
     assert "where" not in _fact_sentence(unconditional)
+
+
+@pytest.mark.unittest
+def test_both_renderers_read_a_condition_out_rather_than_alluding_to_it() -> None:
+    """The two renderers have to agree, and only one of them had a gate.
+
+    A conditional assignment read as "where its case applies" is not false, and that
+    is what made it survive: the machine fact carries the requirement, the sentence
+    alludes to it, and the step after says "therefore" on the strength of a condition
+    the reader was never shown.  The asymmetry was in the gates rather than in the
+    code -- one renderer was pinned to name the condition and the state, the other
+    only for kinds that have no condition at all, and an allusion is not the fallback
+    sentence so it passed.
+    """
+    from pyfcstm.bmc.explanation import _fact_sentence, human_text_for_fact
+
+    published = {
+        "kind": "transition_case",
+        "variable": "x",
+        "frame": 1,
+        "target_frame": 2,
+        "operation": "add",
+        "operand_variable": "y",
+        "condition": [{"kind": "state_membership", "frame": 1, "state": 1}],
+    }
+    rule_side = dict(published)
+    rule_side["operator"] = rule_side.pop("operation")
+
+    readings = (
+        human_text_for_fact("transition_rule", published, {1: "Root.A"}),
+        _fact_sentence(rule_side, {1: "Root.A"}),
+    )
+
+    for reading in readings:
+        assert "where" in reading, reading
+        assert "Root.A" in reading, reading
+        assert "its case applies" not in reading, (
+            "the condition is named, not alluded to: %s" % reading
+        )
+
+
+@pytest.mark.unittest
+def test_a_constant_assignment_is_published_as_the_replacement_it_is() -> None:
+    """``x = 1`` is an ordinary effect and was reaching the core with no reading.
+
+    Every fixture this branch was built on wrote ``x = x + 1``, so the recognizer was
+    shaped for an arithmetic update and a constant assignment fell to the structural
+    fallback.  Two things had to change: the operation vocabulary needed a value for
+    "becomes" as opposed to "changes by", and the equality had to be read in both
+    operand orders -- the encoder writes an update as ``F_next_x == F_step_x + 1`` and
+    a constant as ``1 == F_next_x``, so reading position 0 as the target finds one and
+    misses the other.
+    """
+    from pyfcstm.bmc import BmcEngine, build_bmc_core_formula
+    from pyfcstm.bmc.explanation import human_text_for_fact
+    from pyfcstm.bmc.provenance import normalized_fact_for
+    from pyfcstm.model import load_state_machine_from_text
+
+    machine = (
+        "def int x = 0;\n"
+        "state Root { state A; state B; [*]->A; A->B effect { x = 1; } B->[*]; }"
+    )
+    context = BmcEngine(load_state_machine_from_text(machine)).prepare(
+        'assume at 2: var("x") == 5; check reach <= 2: active("Root.B");'
+    )
+    core = build_bmc_core_formula(context)
+    facts = [
+        normalized_fact_for(group, ("x",))
+        for group in core._tracked_groups
+        if group.refs.get("step") == 1 and group.category == "transition.step"
+    ]
+
+    assert len(facts) == 1, facts
+    fact = facts[0]
+    assert fact["kind"] == "transition_case", fact
+    assert (fact["operation"], fact["operand"]) == ("set", 1), fact
+    assert "sets x to 1" in human_text_for_fact("transition_rule", fact), fact

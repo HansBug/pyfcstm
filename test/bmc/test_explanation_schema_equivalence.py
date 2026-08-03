@@ -1247,7 +1247,20 @@ _FIELD_VOCABULARIES = {
     "infeasible_stage": _STAGES,
     "scope": _SCOPES,
     "stage": _STAGES,
-    # Only names that mean one vocabulary everywhere they appear.  ``kind`` is
+    "semantic_role": _SEMANTIC_ROLES,
+    "granularity": _GRANULARITIES,
+    "reduction": _REDUCTIONS,
+    "subset_minimality": _MINIMALITIES,
+    "requested_mode": _MODES,
+    "achieved_mode": _MODES,
+    "derivation_status": _DERIVATION_STATUSES,
+    "rule_id": _PROOF_RULE_IDS,
+    "verification_method": _PROOF_VERIFICATION_METHODS,
+    # Only names that mean one vocabulary everywhere they appear.  Which names
+    # those are was computed rather than chosen: for each field name, take the
+    # union of every enum the schema gives it and ask which vocabularies contain
+    # it.  The split is clean, with nothing in between -- all twelve names here
+    # land inside exactly one, and the five left out land inside none.  ``kind`` is
     # four different things in this document -- a fact tag, a proof node, a
     # reasoning step and a property type -- and ``status`` is two; checking those
     # against the union of their candidates would accept a proof node called
@@ -1262,15 +1275,6 @@ _FIELD_VOCABULARIES = {
     # why the map is written by hand: a scan pairs a name with whatever
     # vocabulary happens to contain its values at one site, and the pairing it
     # infers is wrong wherever the same name means something else.
-    "semantic_role": _SEMANTIC_ROLES,
-    "granularity": _GRANULARITIES,
-    "reduction": _REDUCTIONS,
-    "subset_minimality": _MINIMALITIES,
-    "requested_mode": _MODES,
-    "achieved_mode": _MODES,
-    "derivation_status": _DERIVATION_STATUSES,
-    "rule_id": _PROOF_RULE_IDS,
-    "verification_method": _PROOF_VERIFICATION_METHODS,
 }
 
 

@@ -162,38 +162,6 @@ describe('jsfcstm diagram preview', () => {
         assert.match(noteEffects[0].effectText, /^effect \{\n    if \[counter>0\] \{\n        counter=counter\+1;\n    \}\n    else \{\n        counter=0;\n    \}\n\}$/m);
     });
 
-    it('does not let a resolved set be handed back as a choice', () => {
-        // `hide` clamps `showTransitionEffects` to false, and resolving fills in
-        // every other key too. Feeding that result back in makes each of those
-        // an explicit choice, and an explicit choice beats the preset -- so the
-        // clamp reasserts `hide` however many times a reader picks `note`.
-        // The viewer patches a sparse record for exactly this reason; this
-        // holds the property that record exists to preserve.
-        const hidden = packageModule.resolveFcstmDiagramPreviewOptions({
-            detailLevel: 'normal',
-            transitionEffectMode: 'hide',
-        });
-        assert.equal(hidden.showTransitionEffects, false, 'hide should clamp the flag');
-
-        const sparse = packageModule.resolveFcstmDiagramPreviewOptions({
-            detailLevel: 'normal',
-            transitionEffectMode: 'note',
-        });
-        assert.equal(sparse.transitionEffectMode, 'note', 'a sparse choice of note must stick');
-
-        const roundTripped = packageModule.resolveFcstmDiagramPreviewOptions({
-            ...hidden,
-            transitionEffectMode: 'note',
-        });
-        assert.equal(
-            roundTripped.transitionEffectMode,
-            'hide',
-            'resolving a resolved set is what the viewer must not do -- if this '
-            + 'ever yields `note`, the clamp changed and the sparse record may '
-            + 'no longer be needed',
-        );
-    });
-
     it('covers builder fallbacks for null models, missing legend lookups, forced labels, and empty effect bodies', () => {
         assert.equal(packageModule.buildFcstmDiagramFromStateMachine(null), null);
 

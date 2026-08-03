@@ -332,7 +332,11 @@ def _clone_ast_node(node):
             for field in fields(node)
         }
         cloned = node.__class__(**values)
-        for attribute in ("_source_path", "_source_documents"):
+        # All three travel with the clone.  ``_source_documents`` is the map BMC
+        # provenance slices spans out of, and the scalar pair is what inspect and
+        # the diagram viewer read; a clone that kept only one set would leave one
+        # of those readers looking at a node with no source.
+        for attribute in ("_source_path", "_source_text", "_source_documents"):
             if hasattr(node, attribute):
                 value = getattr(node, attribute)
                 if attribute == "_source_documents":
@@ -362,39 +366,52 @@ def _mark_ast_source_metadata(
     and canonical DSL representation. The importer nevertheless needs to carry
     the originating file through cloning and recursive import assembly.
 
+    Three attributes are set, because two independent readers need different
+    shapes. ``_source_path`` and ``_source_text`` are scalars naming the one file
+    a node came from, which is what inspect and the diagram viewer read.
+    ``_source_documents`` is a path-keyed map on the program root, which is what
+    BMC provenance slices spans out of -- an imported model has several files and
+    a constraint can come from any of them, so a scalar cannot answer it.
+
+    Two functions used to walk this tree, one per mechanism. They are one function
+    now: walking twice cost a second traversal and left room for a change to one
+    walker that the other never got.
+
     :param node: AST object or nested AST container.
     :type node: object
     :param source_path: Absolute originating file path, or ``None``.
     :type source_path: Optional[str]
-    :param source_text: Complete source snapshot for the root program, or
-        ``None`` when only a path is known.
+    :param source_text: Complete source snapshot for this file, or ``None`` when
+        only a path is known.
     :type source_text: Optional[str], optional
     :return: ``None``.
     :rtype: None
     """
     if isinstance(node, list):
         for item in node:
-            _mark_ast_source_metadata(item, source_path)
+            _mark_ast_source_metadata(item, source_path, source_text)
         return
     if isinstance(node, tuple):
         for item in node:
-            _mark_ast_source_metadata(item, source_path)
+            _mark_ast_source_metadata(item, source_path, source_text)
         return
     if isinstance(node, dict):
         for key, value in node.items():
-            _mark_ast_source_metadata(key, source_path)
-            _mark_ast_source_metadata(value, source_path)
+            _mark_ast_source_metadata(key, source_path, source_text)
+            _mark_ast_source_metadata(value, source_path, source_text)
         return
     if not isinstance(node, dsl_nodes.ASTNode):
         return
     if source_path is not None:
         setattr(node, "_source_path", source_path)
+    if source_text is not None:
+        setattr(node, "_source_text", source_text)
     if isinstance(node, dsl_nodes.StateMachineDSLProgram) and source_text is not None:
         documents = dict(getattr(node, "_source_documents", {}))
         documents[source_path] = source_text
         setattr(node, "_source_documents", documents)
     for item in fields(node):
-        _mark_ast_source_metadata(getattr(node, item.name), source_path)
+        _mark_ast_source_metadata(getattr(node, item.name), source_path, source_text)
 
 
 def _assemble_program(

@@ -46,13 +46,14 @@ import io
 import json
 import os
 import weakref
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, is_dataclass
 from textwrap import indent
-from typing import Optional, Union, List, Dict, Tuple, Iterator, Set
+from typing import Any, Optional, Union, List, Dict, Tuple, Iterator, Set
 
 from .base import AstExportable, PlantUMLExportable
 from .expr import Expr, parse_expr_node_to_expr
 from .imports import (
+    _mark_ast_source_metadata,
     assemble_state_machine_imports,
     _get_trusted_generated_combo_transition_metadata,
     _is_trusted_generated_combo_pseudo_node,
@@ -99,94 +100,116 @@ def _node_span(node) -> Optional[Span]:
     return getattr(node, "_span", None)
 
 
-def _set_model_source_path(model_object: object, ast_object: object) -> None:
-    """Copy private AST source ownership onto a mutable model object."""
-    source_path = getattr(ast_object, "_source_path", None)
-    if source_path is not None:
-        setattr(model_object, "_source_path", source_path)
+# Two implementations of source-ownership propagation met here when the BMC and
+# diagram umbrellas merged.  This is the span-table one from the diagram work,
+# because it also collects the document map and covers ``defines``; the two things
+# the other one did and this one did not -- recursing into conditional branches and
+# recording ``_source_root`` -- are folded in below rather than kept as a second
+# walk, since two walkers over the same tree drift.
+def _span_key(
+    span: Optional[Span],
+) -> Optional[Tuple[int, int, Optional[int], Optional[int]]]:
+    if span is None:
+        return None
+    return (span.line, span.column, span.end_line, span.end_column)
 
 
-def _annotate_model_operations(model_items, ast_items) -> None:
-    """Propagate source paths through operation statements by source span."""
-    ast_items = list(ast_items or ())
-    used = set()
-    for model_item in model_items or ():
-        model_span = getattr(model_item, "_span", None)
-        match = None
-        for index, ast_item in enumerate(ast_items):
-            if index in used:
-                continue
-            if (
-                model_span is not None
-                and getattr(ast_item, "_span", None) == model_span
-            ):
-                match = ast_item
-                used.add(index)
-                break
-        if match is None:
-            continue
-        _set_model_source_path(model_item, match)
-        if hasattr(model_item, "operations"):
-            _annotate_model_operations(
-                model_item.operations, getattr(match, "operations", ())
-            )
-        if hasattr(model_item, "branches"):
-            ast_branches = getattr(match, "branches", ())
-            for model_branch, ast_branch in zip(model_item.branches, ast_branches):
-                _set_model_source_path(model_branch, ast_branch)
-                _annotate_model_operations(
-                    model_branch.statements, getattr(ast_branch, "statements", ())
-                )
-
-
-def _annotate_model_source_paths(
-    ast_state: dsl_nodes.StateDefinition, model_state: "State"
+def _collect_ast_source_metadata(
+    node: Any, spans: Dict[Any, str], documents: Dict[str, str]
 ) -> None:
-    """Copy source ownership from an assembled AST state into its model tree."""
-    _set_model_source_path(model_state, ast_state)
+    if is_dataclass(node):
+        source_path = getattr(node, "_source_path", None)
+        source_text = getattr(node, "_source_text", None)
+        if isinstance(source_path, str):
+            span = _span_key(getattr(node, "_span", None))
+            if span is not None:
+                spans.setdefault(span, source_path)
+            if isinstance(source_text, str):
+                documents[source_path] = source_text
+        for item in fields(node):
+            _collect_ast_source_metadata(getattr(node, item.name), spans, documents)
+    elif isinstance(node, (list, tuple)):
+        for item in node:
+            _collect_ast_source_metadata(item, spans, documents)
+    elif isinstance(node, dict):
+        for item in node.values():
+            _collect_ast_source_metadata(item, spans, documents)
 
-    ast_events = {item.name: item for item in getattr(ast_state, "events", ())}
-    for name, event in model_state.events.items():
-        ast_event = ast_events.get(name)
-        if ast_event is not None:
-            _set_model_source_path(event, ast_event)
 
-    ast_transition_items = [
-        (item, False) for item in getattr(ast_state, "transitions", ())
-    ] + [(item, True) for item in getattr(ast_state, "force_transitions", ())]
-    used = set()
-    for transition in model_state.transitions:
-        transition_span = getattr(transition, "_span", None)
-        for index, (ast_transition, reusable) in enumerate(ast_transition_items):
-            if index in used and not reusable:
-                continue
-            if (
-                transition_span is not None
-                and getattr(ast_transition, "_span", None) == transition_span
-            ):
-                _set_model_source_path(transition, ast_transition)
-                _annotate_model_operations(
-                    transition.effects,
-                    getattr(ast_transition, "post_operations", ()),
-                )
-                if not reusable:
-                    used.add(index)
-                break
+def _attach_model_source_metadata(
+    machine: "StateMachine", dnode: dsl_nodes.StateMachineDSLProgram
+) -> None:
+    documents: Dict[str, str] = {}
+    all_spans: Dict[Any, str] = {}
+    _collect_ast_source_metadata(dnode, all_spans, documents)
 
-    action_pairs = (
-        (model_state.on_enters, getattr(ast_state, "enters", ())),
-        (model_state.on_durings, getattr(ast_state, "durings", ())),
-        (model_state.on_exits, getattr(ast_state, "exits", ())),
-        (model_state.on_during_aspects, getattr(ast_state, "during_aspects", ())),
-    )
-    for model_actions, ast_actions in action_pairs:
-        _annotate_model_operations(model_actions, ast_actions)
+    def attach(value: Any, source_path: Optional[str] = None) -> None:
+        source_path = source_path or all_spans.get(
+            _span_key(getattr(value, "_span", None))
+        )
+        if source_path is not None:
+            setattr(value, "_source_path", source_path)
 
-    ast_substates = {item.name: item for item in getattr(ast_state, "substates", ())}
-    for name, substate in model_state.substates.items():
-        ast_substate = ast_substates.get(name)
-        if ast_substate is not None:
-            _annotate_model_source_paths(ast_substate, substate)
+    for definition in machine.defines.values():
+        attach(definition)
+
+    def pair_states(ast_state: Any, model_state: "State") -> None:
+        state_source = getattr(ast_state, "_source_path", None)
+        attach(model_state, state_source)
+        transition_sources = {
+            _span_key(getattr(item, "_span", None)): getattr(
+                item, "_source_path", state_source
+            )
+            for item in [
+                *getattr(ast_state, "transitions", ()),
+                *getattr(ast_state, "force_transitions", ()),
+            ]
+        }
+        for transition in model_state.transitions:
+            attach(
+                transition,
+                transition_sources.get(
+                    _span_key(getattr(transition, "_span", None)), state_source
+                ),
+            )
+            for effect in transition.effects:
+                attach(effect, state_source)
+        for event in model_state.events.values():
+            attach(event, state_source)
+        for action in [
+            *model_state.on_enters,
+            *model_state.on_durings,
+            *model_state.on_exits,
+            *model_state.on_during_aspects,
+        ]:
+            attach(action, state_source)
+            for operation in getattr(action, "operations", ()):
+                attach(operation, state_source)
+                # A conditional operation carries its arms in ``branches`` and each
+                # arm has its own statements.  They are model objects a reader can
+                # click through to, so they need an owner too; the flat walk above
+                # stops at the operation and never reaches them.
+                for branch in getattr(operation, "branches", ()):
+                    attach(branch, state_source)
+                    for statement in getattr(branch, "statements", ()):
+                        attach(statement, state_source)
+        ast_children = {
+            child.name: child for child in getattr(ast_state, "substates", ())
+        }
+        for child in model_state.substates.values():
+            ast_child = ast_children.get(child.name)
+            if ast_child is not None:
+                pair_states(ast_child, child)
+
+    pair_states(dnode.root_state, machine.root_state)
+    machine._source_documents = documents
+    # BMC reports paths relative to the model's own directory, so it needs the
+    # root as well as the documents; ``engine.py`` reads ``_source_root`` when it
+    # shortens a span's path for display.
+    root_source_path = getattr(dnode.root_state, "_source_path", None)
+    if root_source_path is not None:
+        setattr(machine, "_source_path", root_source_path)
+        setattr(machine, "_source_root", os.path.dirname(root_source_path))
 
 
 def _event_origin_from_id(
@@ -674,7 +697,14 @@ class Transition(AstExportable):
         default=None, compare=False
     )
     combo_priority_run_index: Optional[int] = field(default=None, compare=False)
-    parent_ref: Optional[weakref.ReferenceType] = None
+    # Excluded from comparison: a weakref compares by referent, so a parent
+    # and child pointing at each other recurse without bound and `==` on any
+    # model with substates raises RecursionError. The parent is not
+    # independent information -- `substates` already carries the hierarchy
+    # from the other direction.
+    parent_ref: Optional[weakref.ReferenceType] = field(
+        default=None, repr=False, compare=False
+    )
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     @property
@@ -764,7 +794,14 @@ class OnStage(AstExportable):
     state_path: Tuple[Optional[str], ...]
     ref: Union["OnStage", "OnAspect", None] = None
     ref_state_path: Optional[Tuple[str, ...]] = None
-    parent_ref: Optional[weakref.ReferenceType] = None
+    # Excluded from comparison: a weakref compares by referent, so a parent
+    # and child pointing at each other recurse without bound and `==` on any
+    # model with substates raises RecursionError. The parent is not
+    # independent information -- `substates` already carries the hierarchy
+    # from the other direction.
+    parent_ref: Optional[weakref.ReferenceType] = field(
+        default=None, repr=False, compare=False
+    )
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     @property
@@ -981,7 +1018,14 @@ class OnAspect(AstExportable):
     state_path: Tuple[Optional[str], ...]
     ref: Union["OnStage", "OnAspect", None] = None
     ref_state_path: Optional[Tuple[str, ...]] = None
-    parent_ref: Optional[weakref.ReferenceType] = None
+    # Excluded from comparison: a weakref compares by referent, so a parent
+    # and child pointing at each other recurse without bound and `==` on any
+    # model with substates raises RecursionError. The parent is not
+    # independent information -- `substates` already carries the hierarchy
+    # from the other direction.
+    parent_ref: Optional[weakref.ReferenceType] = field(
+        default=None, repr=False, compare=False
+    )
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     @property
@@ -1134,6 +1178,10 @@ class State(AstExportable, PlantUMLExportable):
     :type extra_name: Optional[str]
     :param is_pseudo: Whether this is a pseudo state
     :type is_pseudo: bool
+    :param is_combo_relay: Whether this pseudo state was generated as a combo
+        relay. This is semantic model data and must not be inferred from the
+        reserved state-name prefix by renderers.
+    :type is_combo_relay: bool
 
     Example::
 
@@ -1156,11 +1204,19 @@ class State(AstExportable, PlantUMLExportable):
     on_durings: List[OnStage] = None
     on_exits: List[OnStage] = None
     on_during_aspects: List[OnAspect] = None
-    parent_ref: Optional[weakref.ReferenceType] = None
+    # Excluded from comparison: a weakref compares by referent, so a parent
+    # and child pointing at each other recurse without bound and `==` on any
+    # model with substates raises RecursionError. The parent is not
+    # independent information -- `substates` already carries the hierarchy
+    # from the other direction.
+    parent_ref: Optional[weakref.ReferenceType] = field(
+        default=None, repr=False, compare=False
+    )
     substate_name_to_id: Dict[str, int] = None
     extra_name: Optional[str] = None
     is_pseudo: bool = False
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
+    is_combo_relay: bool = False
 
     def __post_init__(self) -> None:
         """
@@ -1781,11 +1837,7 @@ class State(AstExportable, PlantUMLExportable):
             is_pseudo=bool(self.is_pseudo),
         )
         for substate, substate_node in zip(self.substates.values(), substate_nodes):
-            if (
-                substate.is_pseudo
-                and substate.name.startswith(_COMBO_STATE_PREFIX)
-                and getattr(substate, "_generated_combo_pseudo", False)
-            ):
+            if substate.is_pseudo and substate.is_combo_relay:
                 _mark_generated_combo_pseudo_node(substate_node, node)
         return node
 
@@ -2339,6 +2391,11 @@ class StateMachine(AstExportable, PlantUMLExportable):
     defines: Dict[str, VarDefine]
     root_state: State
     forced_transitions: Tuple[Dict[str, object], ...] = field(default_factory=tuple)
+    source_text: Optional[str] = field(default=None, compare=False, repr=False)
+    source_path: Optional[str] = field(default=None, compare=False, repr=False)
+    _source_documents: Dict[str, str] = field(
+        default_factory=dict, compare=False, repr=False
+    )
 
     def to_ast_node(self) -> dsl_nodes.StateMachineDSLProgram:
         """
@@ -2462,6 +2519,93 @@ class StateMachine(AstExportable, PlantUMLExportable):
         :rtype: Iterator[State]
         """
         yield from self.root_state.walk_states()
+
+    def diagram(self, options=None, view_state=None, source_text=None, **option_fields):
+        """
+        Create the public Python diagram facade for this state machine.
+
+        :param options: Optional :class:`pyfcstm.diagram.api.DiagramOptions` value.
+        :type options: object, optional
+        :param view_state: Optional browser view state.
+        :type view_state: object, optional
+        :param source_text: Optional FCSTM source for the browser pane. Models
+            parsed from text or a file already carry it; supplying a different
+            text is rejected because the model's source ranges would no longer
+            match. A model built through the AST pipeline carries ranges but no
+            text, so an override is accepted only when the ranges still address
+            lines it has. A model with no ranges accepts any source.
+        :type source_text: str, optional
+        :param option_fields: Renderer option fields such as ``direction`` or
+            ``cjk_locale``. These are equivalent to passing ``options``.
+        :return: Diagram facade.
+        :rtype: pyfcstm.diagram.api.Diagram
+
+        Example::
+
+            >>> model.diagram().to_dict()['kind']
+            'diagram'
+        """
+        from ..diagram.api import Diagram
+
+        if options is not None and option_fields:
+            raise TypeError("provide options or keyword option fields, not both")
+        if option_fields:
+            options = option_fields
+        return Diagram(
+            self, options=options, view_state=view_state, source_text=source_text
+        )
+
+    def show(
+        self,
+        output=None,
+        *,
+        open_window=True,
+        window_size=(1200, 900),
+        options=None,
+        view_state=None,
+        source_text=None,
+        **option_fields,
+    ):
+        """
+        Open this state machine in the standalone browser viewer.
+
+        :param output: Optional HTML output path.  When omitted the viewer goes to a
+            temporary path chosen by :meth:`pyfcstm.diagram.api.Diagram.show`, whose
+            documentation describes what that path is, when it is removed, and the
+            one platform where its privacy rests on ``%TEMP%`` rather than on a mode
+            this can check.  Pass a path for a document that must not be somewhere
+            shared.
+        :type output: str or os.PathLike, optional
+        :param open_window: Whether to launch a standalone diagram app window.
+        :type open_window: bool
+        :param window_size: Initial standalone window width and height in pixels.
+        :type window_size: tuple[int, int]
+        :param options: Optional diagram renderer options.
+        :type options: object, optional
+        :param view_state: Optional browser view state.
+        :type view_state: object, optional
+        :param source_text: Optional FCSTM source for the source pane. Models
+            parsed from text or a file already carry it; supplying a different
+            text is rejected because the model's source ranges would no longer
+            match. A model built through the AST pipeline carries ranges but no
+            text, so an override is accepted only when the ranges still address
+            lines it has. A model with no ranges accepts any source.
+        :type source_text: str, optional
+        :param option_fields: Renderer option fields equivalent to ``options``.
+        :return: Path to the generated HTML file.
+        :rtype: pathlib.Path
+
+        Example::
+
+            >>> model.show(open_window=False).suffix
+            '.html'
+        """
+        return self.diagram(
+            options=options,
+            view_state=view_state,
+            source_text=source_text,
+            **option_fields,
+        ).show(output, open_window=open_window, window_size=window_size)
 
     def resolve_event(
         self,
@@ -2664,6 +2808,10 @@ def parse_dsl_node_to_state_machine(
     """
 
     sink = DiagnosticSink(collect=collect)
+    entry_source = None
+    if path is not None and not os.path.isdir(os.fspath(path)):
+        entry_source = os.path.abspath(os.fspath(path))
+    _mark_ast_source_metadata(dnode, entry_source)
     dnode = assemble_state_machine_imports(dnode, path=path, collect_into=sink)
 
     d_defines: Dict[str, VarDefine] = {}
@@ -2896,8 +3044,8 @@ def parse_dsl_node_to_state_machine(
         owner_node: Optional[dsl_nodes.StateDefinition] = None,
     ) -> State:
         current_path = tuple((*current_path, node.name))
-        is_exported_combo_pseudo = _is_exported_combo_pseudo_node(node, owner_node)
-        is_combo_relay_pseudo = (
+        is_combo_relay_pseudo = _is_exported_combo_pseudo_node(node, owner_node)
+        is_reserved_combo_pseudo = (
             node.name.startswith(_COMBO_STATE_PREFIX) and node.is_pseudo
         )
         if node.name.startswith(_COMBO_STATE_PREFIX) and not node.is_pseudo:
@@ -3049,7 +3197,7 @@ def parse_dsl_node_to_state_machine(
             if (
                 not d_substates
                 and during_item.aspect is not None
-                and not is_combo_relay_pseudo
+                and not is_reserved_combo_pseudo
             ):
                 sink.emit(
                     ModelDiagnostic(
@@ -3250,7 +3398,7 @@ def parse_dsl_node_to_state_machine(
             # only meaningful on a composite state (it fans out to every
             # descendant leaf). On a leaf state there is nothing to fan
             # into, so the aspect is invalid.
-            if not d_substates and not is_combo_relay_pseudo:
+            if not d_substates and not is_reserved_combo_pseudo:
                 sink.emit(
                     ModelDiagnostic(
                         code="E_DURING_ASPECT_INVALID",
@@ -3365,6 +3513,7 @@ def parse_dsl_node_to_state_machine(
             path=current_path,
             substates=d_substates,
             is_pseudo=bool(node.is_pseudo),
+            is_combo_relay=is_combo_relay_pseudo,
             on_enters=on_enters,
             on_durings=on_durings,
             on_exits=on_exits,
@@ -3372,9 +3521,7 @@ def parse_dsl_node_to_state_machine(
             named_functions=named_functions,
             _span=_node_span(node),
         )
-        if is_exported_combo_pseudo:
-            my_state._generated_combo_pseudo = True
-        if is_combo_relay_pseudo:
+        if is_reserved_combo_pseudo:
             action_kinds = _ast_action_kinds(node)
             if action_kinds:
                 sink.emit(
@@ -4092,8 +4239,8 @@ def parse_dsl_node_to_state_machine(
                 path=(*current_state.path, name),
                 substates={},
                 is_pseudo=True,
+                is_combo_relay=True,
             )
-            state._generated_combo_pseudo = True
             state.parent = current_state
             current_state.substates[name] = state
             current_state.substate_name_to_id[name] = len(
@@ -4658,18 +4805,7 @@ def parse_dsl_node_to_state_machine(
         root_state=root_state,
         forced_transitions=tuple(forced_transition_declarations),
     )
-    source_documents = dict(getattr(dnode, "_source_documents", {}))
-    setattr(machine, "_source_documents", source_documents)
-    root_source_path = getattr(dnode.root_state, "_source_path", None)
-    if root_source_path is not None:
-        setattr(machine, "_source_path", root_source_path)
-        setattr(machine, "_source_root", os.path.dirname(root_source_path))
-    for name, define in machine.defines.items():
-        for def_item in dnode.definitions:
-            if def_item.name == name:
-                _set_model_source_path(define, def_item)
-                break
-    _annotate_model_source_paths(dnode.root_state, machine.root_state)
+    _attach_model_source_metadata(machine, dnode)
 
     if collect:
         # In collect mode we always return the tuple. ``machine`` is the

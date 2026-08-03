@@ -349,6 +349,28 @@ def format_version_info() -> str:
     return "\n".join(lines)
 
 
+def _configure_stdio_encoding() -> None:
+    """Prefer UTF-8 for CLI text so localized help works on Windows."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            is_pipe = not bool(getattr(stream, "isatty", lambda: False)())
+            original_encoding = getattr(stream, "encoding", None)
+            if os.name == "nt" and is_pipe and original_encoding:
+                # Windows subprocess callers may still decode text pipes with
+                # the legacy console code page. Keep those pipes lossless and
+                # ASCII-decodable while interactive terminals use UTF-8.
+                reconfigure(encoding=original_encoding, errors="backslashreplace")
+            else:
+                reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            # AttributeError: a third-party stream exposed no reconfigure
+            # implementation; ValueError: the stream was already closed.
+            continue
+
+
 def main(arguments: Optional[Sequence[str]] = None) -> int:
     """
     Run the root command bootstrap or lazily dispatch to the Click CLI.
@@ -364,6 +386,7 @@ def main(arguments: Optional[Sequence[str]] = None) -> int:
         >>> main(("--version", "unexpected"))
         2
     """
+    _configure_stdio_encoding()
     command_arguments = tuple(sys.argv[1:] if arguments is None else arguments)
     if is_version_request(command_arguments):
         sys.stdout.write(format_version_info() + "\n")

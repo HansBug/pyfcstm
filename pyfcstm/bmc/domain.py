@@ -1312,9 +1312,7 @@ def _model_state_entries(model: StateMachine) -> Tuple[StateDomainEntry, ...]:
             is_root=state.is_root_state,
             is_stoppable=state.is_stoppable,
             is_sentinel=False,
-            is_generated_combo_pseudo=bool(
-                getattr(state, "_generated_combo_pseudo", False)
-            ),
+            is_generated_combo_pseudo=bool(state.is_combo_relay),
         )
         for index, state in enumerate(states)
     )

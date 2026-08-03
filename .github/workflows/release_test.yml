@@ -40,6 +40,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 20
+      - name: Set up Node.js for diagram assets
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
       - name: Set up python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
         with:
@@ -665,6 +669,52 @@ jobs:
             ${{ runner.temp }}/java-version.txt
             ${{ runner.temp }}/plantuml-version.txt
 
+  fresh_wheel_export:
+    # Separate from the two self-check jobs above because those deliberately have
+    # no checkout: they exist to prove the artifact works with nothing else
+    # present. This one needs the harness from the tree, so it keeps the isolation
+    # that matters a different way -- the harness never imports ``pyfcstm``, it only
+    # runs the installed command line, and it runs from outside the repository so
+    # the source tree cannot shadow the installed package.
+    name: Export every format from the installed wheel
+    runs-on: ubuntu-22.04
+    needs: source_release
+    steps:
+      - name: Checkout the export harness
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download only the built wheel artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts-source-pack
+          path: ${{ runner.temp }}/pyfcstm-package-artifact
+      - name: Install the wheel with its optional runtime and export
+        shell: bash
+        env:
+          PYTHONPATH: ''
+          PYTHONNOUSERSITE: '1'
+        run: |
+          set -euo pipefail
+          wheel=$(find "$RUNNER_TEMP/pyfcstm-package-artifact" -maxdepth 1 -type f -name '*.whl' -print -quit)
+          test -n "$wheel"
+          harness="$PWD/tools/check_diagram_installed_export.py"
+          test -f "$harness"
+          venv="$RUNNER_TEMP/pyfcstm-export-venv"
+          rm -rf "$venv"
+          python -m venv "$venv"
+          "$venv/bin/python" -m pip install --upgrade pip
+          "$venv/bin/python" -m pip install "${wheel}[viz]"
+          # Run from outside the checkout: an installed console script does not put
+          # the working directory on ``sys.path``, but keeping the tree out of the
+          # way removes the question entirely.
+          cd "$RUNNER_TEMP"
+          python "$harness" --command "$venv/bin/pyfcstm" --repeat 2
+
   release_docs_pdf:
     name: Bilingual Docs PDF
     runs-on: ubuntu-24.04
@@ -679,6 +729,10 @@ jobs:
         with:
           fetch-depth: 20
           submodules: 'recursive'
+      - name: Set up Node.js for diagram assets
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
       - name: Set up python 3.11
         uses: actions/setup-python@v6
         with:
@@ -705,6 +759,7 @@ jobs:
             texlive-xetex
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt -r requirements-doc.txt
+          make build_assets
           python -m pip install -e . --no-deps
       - name: Verify XeLaTeX and PDF toolchain
         shell: bash
@@ -825,6 +880,10 @@ jobs:
         with:
           fetch-depth: 20
           submodules: 'recursive'
+      - name: Set up Node.js for diagram assets
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
       - name: Set up system dependencies on Linux
         if: ${{ env.OS_NAME == 'Linux' }}
         shell: bash
@@ -898,7 +957,9 @@ jobs:
           python -V
           pip --version
           pip list
-          tree .
+          # Chocolatey's tree.exe is not guaranteed to be visible to the
+          # Git Bash shell on Windows; keep this diagnostic dependency-free.
+          python -c 'import os; [print(os.path.join(root, name)) for root, dirs, files in os.walk(".") for name in sorted(dirs + files) if ".git" not in root.split(os.sep)]'
       - name: Get package version
         shell: bash
         run: |
@@ -1202,6 +1263,7 @@ jobs:
       - source_release
       - fresh_wheel_selfcheck_linux
       - fresh_wheel_selfcheck
+      - fresh_wheel_export
       - fresh_sdist_selfcheck
       - release_cli
       - fresh_release_cli_selfcheck
@@ -1212,6 +1274,7 @@ jobs:
           SOURCE_RESULT: ${{ needs.source_release.result }}
           WHEEL_LINUX_RESULT: ${{ needs.fresh_wheel_selfcheck_linux.result }}
           WHEEL_NONLINUX_RESULT: ${{ needs.fresh_wheel_selfcheck.result }}
+          WHEEL_EXPORT_RESULT: ${{ needs.fresh_wheel_export.result }}
           SDIST_RESULT: ${{ needs.fresh_sdist_selfcheck.result }}
           CLI_BUILD_RESULT: ${{ needs.release_cli.result }}
           CLI_FRESH_RESULT: ${{ needs.fresh_release_cli_selfcheck.result }}
@@ -1227,6 +1290,7 @@ jobs:
             "source=$SOURCE_RESULT" \
             "wheel_linux=$WHEEL_LINUX_RESULT" \
             "wheel_nonlinux=$WHEEL_NONLINUX_RESULT" \
+            "wheel_export=$WHEEL_EXPORT_RESULT" \
             "sdist=$SDIST_RESULT"; do
             echo "$pair"
             test "${pair#*=}" = success
@@ -1300,6 +1364,18 @@ jobs:
         run: |
           make vscode
           ls -lh editors/vscode/build/
+
+      - name: Require the preview to outline its own drawing
+        # The extension asks an installed ``pyfcstm[viz]`` to expand, rather than
+        # shipping resvg and the CJK faces. Two things have to hold and neither is
+        # visible from one side: the document the webview produced is what gets
+        # expanded, not a re-render that would silently lose the user's palette;
+        # and a host with nothing installed says so instead of handing over an
+        # unexpanded file. This job is where both halves exist at once -- it has
+        # the built extension already, and only needs the optional runtime.
+        run: |
+          pip install -r requirements-viz.txt
+          make diagram_webview_expander_check
 
       - name: Find and verify extension file
         id: find_vsix

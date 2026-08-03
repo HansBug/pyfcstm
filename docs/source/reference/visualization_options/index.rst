@@ -770,6 +770,213 @@ Python API examples:
        custom_colors={'System.Start': '#00AA00'},
    )
 
+Python Diagram API and browser viewer
+--------------------------------------
+
+The browser viewer is a separate public path from the PlantUML options above.
+It consumes the parsed model directly and writes portable JSON or a
+self-contained HTML file.
+
+.. list-table:: Python Diagram public values
+   :header-rows: 1
+
+   * - Value
+     - Accepted values or default
+     - Behavior
+   * - ``DiagramOptions.detail_level``
+     - ``minimal``, ``normal`` (default), ``full``
+     - Selects the renderer's detail preset, and each draws a different diagram.
+       ``minimal`` writes transition effects inline and leaves edges in the
+       neutral stroke, listing events in the legend only; ``normal``, the
+       default, puts effects in a note beside the transition and tints edges by
+       event; ``full`` adds a leaf state's own events and lifecycle actions as
+       rows under its title, while a composite state shows its children instead
+       and gains no rows at any level. The details panel lists a state's actions
+       whatever the preset, so the level chooses what the drawing carries rather
+       than what is available to read.
+   * - ``DiagramOptions.direction``
+     - ``TB`` (default) or ``LR``
+     - Chooses top-to-bottom or left-to-right layout.
+   * - ``DiagramOptions.palette``
+     - ``default``, ``nord``, ``solarized``, ``darcula``, or ``None``
+     - Selects the viewer palette.
+   * - ``DiagramOptions.mode``
+     - ``light``, ``dark``, ``auto``, or ``None``
+     - Selects the initial color mode.
+   * - ``DiagramOptions.cjk_locale``
+     - ``sc``, ``tc``, ``hk``, ``jp``, or ``kr`` (default ``sc``)
+     - Embeds the matching CJK font pair in the HTML file.
+   * - ``DiagramViewState.mode``
+     - ``compare`` (default), ``fcstm``, or ``diagram``
+     - Selects the source-only, diagram-only, or linked split view.
+   * - ``DiagramViewState.zoom``
+     - Finite positive number or ``None`` (default ``None``)
+     - Sets the initial diagram zoom; boolean, zero, negative, NaN, and infinity values fail.
+       ``None`` leaves the framing to the viewer, which fits the whole diagram to the viewport.
+   * - ``DiagramViewState.pan_x`` / ``pan_y``
+     - Finite numbers or ``None`` (default ``None``)
+     - Sets the initial diagram translation. ``None`` defers to the fitted framing; when any one
+       of ``zoom`` / ``pan_x`` / ``pan_y`` is set, the remaining ``None`` fields fall back to
+       ``1.0`` and ``0.0`` so an explicit request is honoured exactly.
+
+``model.diagram(...)`` returns an immutable ``Diagram`` snapshot. Its
+``to_dict()`` and ``to_json()`` results omit absolute paths, source ranges, and
+editor selection state. ``to_html()`` returns one complete HTML string;
+``save("name.json")`` and ``save("name.html")`` use atomic replacement: an
+interrupted save leaves the file that was already there, with its content and
+permissions intact. A file being replaced keeps the permissions it had, and a new
+one gets what your umask gives any other new file in that directory — so a umask
+that clears the write bit produces a read-only result which ``save()`` can still
+replace, because it is yours. A file belonging to another user that you cannot
+write is refused instead, and on Windows so is one marked read-only. The
+HTML path is also returned by ``Diagram.show()`` and ``StateMachine.show()``.
+With a window and no explicit path, ``show()`` blocks until the window is closed
+and then removes the document it wrote, so the returned path no longer exists —
+pass an explicit path for a viewer you want to keep. Without a window and without
+a path, nothing removes it. Either way the file is written 0600 inside a directory
+of your own that no other local user may look into, because a viewer carries the
+model's source: a name derived from the document, and the exact size of a ~29 MB
+document, each identify which diagram it is to anyone able to list them. Asking
+again for the same diagram returns the same file rather than another copy. That
+reuse follows the directory rather than the process: another process of yours that
+resolves the same one is handed the same path, and a forked child inherits it — so
+the file is shared for removal too, and a peer's cleanup of what it was handed
+removes yours. Where that directory turns out to belong to somebody else or to be
+open to them, each resolution makes its own instead and says so in a warning, which
+two independent processes do separately and a forked child does not. Pass an
+explicit path for a document only you may remove. On Windows this rests on
+``%TEMP%`` being per account, which is the default; a ``TEMP`` shared between
+users is not detectable, and with an installer from python.org the directory's mode
+is applied only from 3.12.4 onwards — pass a path of your own for a document that
+must not be somewhere shared.
+
+The HTML viewer can download SVG, PNG, and vector PDF in a browser. The Python
+methods ``to_svg()``, ``to_png()``, and ``to_pdf()`` intentionally raise
+``DiagramUnavailableError`` until the later headless delivery stage. Calling
+``show()`` without a Chromium-family browser raises the same typed capability
+error after the HTML file has been written; ``show(open_window=False)`` avoids
+the browser requirement.
+
+The HTML viewer needs nothing beyond a browser. ``DiagramAssetEngine``'s
+headless rendering does need the optional MiniRacer runtime, which
+``pip install pyfcstm[viz]`` provides; without it the engine raises
+``DiagramUnavailableError`` naming that command. Installing the extra does not
+enable ``to_svg()`` / ``to_png()`` / ``to_pdf()`` — those wait for the headless
+delivery stage regardless.
+
+Unknown option fields, duplicate snake/camel aliases, invalid enum values, and
+invalid numeric values raise ``ValueError``; a ``collapsed_state_ids`` that is
+not a sequence of ID strings raises ``TypeError``, including the common mistake
+of passing one ID as a bare string.
+
+``with_options`` and ``with_view_state`` treat their keyword form as a partial
+update: fields that are not named keep their current value. Passing a value
+positionally replaces the whole object instead. Missing or unusable packaged
+viewer/WASM/font assets raise ``DiagramAssetError`` with development recovery
+guidance (``make build_assets``) or the project issue URL for installed packages.
+
+Synchronous export and its size limits
+--------------------------------------
+
+``to_svg()``, ``to_png(scale=...)`` and ``to_pdf()`` export without a browser.
+They need the optional rendering runtime that ``pip install pyfcstm[viz]``
+provides; without it each raises ``DiagramUnavailableError`` naming that extra.
+``save()`` routes a ``.svg``, ``.png`` or ``.pdf`` suffix to them, and the CLI
+accepts the same three suffixes plus ``--scale``.
+
+.. list-table:: Synchronous export surface
+   :header-rows: 1
+
+   * - Call
+     - Returns
+     - Notes
+   * - ``Diagram.to_svg()``
+     - ``str``
+     - The expanded form: glyphs and arrow heads are already paths, so the
+       document carries no ``<text>``, ``<marker>`` or font dependency and renders
+       identically where none of this project's fonts are installed. The
+       renderer's raw canonical SVG is an internal intermediate and is not what
+       this returns.
+   * - ``Diagram.to_png(scale=1.0)``
+     - ``bytes``
+     - Rasterised through the pinned resvg backend, opaque, at ``ceil(size *
+       scale)`` pixels.
+   * - ``Diagram.to_pdf()``
+     - ``bytes``
+     - One page sized to the diagram, drawn as vectors with no image object.
+       Text is outlines, so the document is **not searchable** -- that is the cost
+       of it rendering without this project's fonts.
+   * - ``Diagram._repr_svg_()``
+     - ``str`` or ``None``
+     - Notebook representation, the same expanded SVG. Returns ``None`` when the
+       optional runtime is absent, because an exception raised from a repr hook
+       replaces the whole cell output with a traceback.
+
+.. note::
+   The viewer's own PNG download rasterises at a fixed 2x, while
+   ``to_png()`` defaults to 1x.  Comparing a downloaded file with an
+   API-produced one therefore shows a factor-of-two difference in pixels that is
+   two different requests rather than a disagreement; pass ``scale=2`` to compare
+   like with like.
+
+Every export is bounded. The limits are checked in Python before the rasteriser
+or the PDF writer is reached, so an impossible request is named rather than
+discovered by exhausting memory.
+
+.. list-table:: Export size limits
+   :header-rows: 1
+
+   * - Limit
+     - Value
+     - Raised on breach
+   * - ``scale``
+     - ``0 < scale <= 4``
+     - ``ValueError``
+   * - Scaled width and height, each
+     - ``<= 16384`` px
+     - ``DiagramRenderLimitError``
+   * - Scaled pixel count
+     - ``<= 16777216``
+     - ``DiagramRenderLimitError``
+   * - Raw RGBA buffer
+     - ``<= 67108864`` bytes, which is the pixel cap times four
+     - Reported as the pixel limit
+   * - Encoded PNG
+     - ``<= 33554432`` bytes
+     - ``DiagramRenderLimitError``
+   * - Encoded SVG or PDF
+     - ``<= 67108864`` bytes
+     - ``DiagramRenderLimitError``
+
+``DiagramRenderLimitError`` carries a ``limit_name``, and the only values it takes
+are ``edge``, ``pixels``, ``png``, ``pdf`` and ``svg``.  There is no ``raw_rgba``: the raw
+buffer is four bytes per pixel and its bound is the pixel bound times four, so any
+request large enough to reach it has already been refused as a pixel-count
+breach.  The figure is listed above because the documented limit set names a
+buffer size, not because it is a separate boundary.
+
+The encoded-size limits are enforced on the Python export path, where the bytes
+are produced.  The browser download enforces the scale, edge and pixel limits; it
+does not weigh its own output.
+
+``DiagramRenderLimitError`` is a sibling of ``DiagramRenderError``, not a
+subclass. The two describe different situations with different remedies: a render
+failure means the renderer was asked to do something and could not, while a limit
+failure means it was never asked. Lowering ``scale`` fixes the latter and nothing
+else, so ``except DiagramRenderError`` must not absorb it.
+
+The message names the original size, the scaled size, the limit that fired and
+what to change, because "too large" alone does not tell a caller which scale would
+have fitted.
+
+The browser download enforces the same product limits and refuses past them.
+Separately, it clamps at the limits a browser canvas actually has
+(``RASTER_MAX_SIDE``, ``RASTER_MAX_AREA``), which are not product policy: a tall
+diagram at 2x once produced a null blob and took the SVG and PDF download down
+with it. Every product limit is stricter than the host limit it shadows, so the
+refusal always fires first and the clamp is a defensive second layer ordinary
+input never reaches.
+
 Renderer and file options
 -------------------------
 
@@ -861,3 +1068,53 @@ Behavior boundaries
      - ``plantuml`` never renders an image and never checks renderer availability.
    * - ``rendered-image-visualize``
      - ``visualize`` always goes through PlantUML source first, then renders the requested artifact type.
+
+Outlining a drawing you already have
+------------------------------------
+
+``Diagram.to_svg()`` covers the case where you hold a model.  ``pyfcstm
+expand-svg`` covers the opposite one: you hold a canonical SVG -- rendered
+somewhere else, with a palette and colour mode already chosen -- and want its
+text turned into paths.
+
+.. code-block:: shell-session
+
+    $ pyfcstm expand-svg -i canonical.svg -o self-contained.svg
+    self-contained.svg
+    $ pyfcstm expand-svg -i canonical.svg > self-contained.svg
+
+The document handed in is the document expanded.  Re-rendering from the
+``.fcstm`` source instead would return a valid file in the *default* palette,
+discarding whatever presentation choices produced the input -- a wrong-colour
+export that every structural check accepts.  The CJK face is read from the
+input's own ``font-family``, so there is no locale flag.
+
+.. list-table::
+    :header-rows: 1
+    :widths: 30 70
+
+    * - Condition
+      - Result
+    * - The optional runtime is missing
+      - Names the extra to install; nothing is written.
+    * - The input is not an SVG document
+      - A usage error, before the renderer starts.
+    * - The result exceeds ``MAX_EXPORT_TEXT_BYTES``
+      - :class:`~pyfcstm.diagram.engine.DiagramRenderLimitError` with
+        ``limit_name`` ``svg``, the same ceiling ``to_svg()`` enforces.
+
+The editor preview is the caller this was added for.  A webview has the diagram
+on screen but no fonts and no rasteriser, and bundling those would add 17.7 MB
+to the extension for one CJK locale or 59.4 MB for all of them.  It therefore
+asks an installed ``pyfcstm[viz]``: set ``fcstm.diagram.pyfcstmPath`` to name a
+specific interpreter, or leave it empty to try ``pyfcstm``, then ``python3 -m
+pyfcstm``, then ``python -m pyfcstm``.  With nothing usable installed the export
+says so, rather than handing over a document whose text depends on fonts the
+reader may not have.
+
+Why these boundaries exist
+--------------------------
+
+This page states the facts; :doc:`/explanations/visualization/index` explains the
+reasoning behind the viewer ones -- the self-contained document, the blocking window,
+the directory-level privacy boundary, and the reclaim at exit.

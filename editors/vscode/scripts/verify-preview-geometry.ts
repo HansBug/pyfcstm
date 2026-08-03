@@ -11,14 +11,15 @@ import ELK from 'elkjs/lib/elk.bundled.js';
 
 import {
     buildFcstmDiagramWebviewPayload,
+    buildCrossingIndex,
+    collectSegments,
     collectElkLayoutGeometry,
     MIN_TERMINAL_SEGMENT,
     MIN_SELF_LOOP_SEGMENT,
     resolveFcstmDiagramPreviewOptions,
+    smoothGraphEdges,
     terminalApproach,
 } from '../../jsfcstm/dist/diagram';
-import {smoothGraphEdges} from '../src/preview-webview/render/edge-smoother';
-import {buildCrossingIndex, collectSegments} from '../src/preview-webview/render/crossings';
 import {renderSvg} from '../src/preview-webview/render/svg';
 import {computePreviewFit, PREVIEW_FIT_MARGIN_PX} from '../src/preview-webview/layout';
 import type {PreviewResolvedOptions, PreviewWebviewState} from '../src/preview-webview/types';
@@ -987,10 +988,14 @@ async function main(): Promise<void> {
         path.resolve(process.cwd(), '../../artifacts/preview-geometry'));
     fs.rmSync(outputDir, {recursive: true, force: true});
     fs.mkdirSync(outputDir, {recursive: true});
-    const fixtureNames = fs.readdirSync(fixtureDir).filter(name => name.endsWith('.fcstm')).sort();
-    if (fixtureNames.length < 10) {
-        throw new Error(`expected at least 10 visual fixtures, found ${fixtureNames.length}`);
+    const allFixtureNames = fs.readdirSync(fixtureDir).filter(name => name.endsWith('.fcstm')).sort();
+    if (allFixtureNames.length < 10) {
+        throw new Error(`expected at least 10 visual fixtures, found ${allFixtureNames.length}`);
     }
+    const requestedFixtureCount = Number(process.env.PYFCSTM_GEOMETRY_FIXTURE_LIMIT || 0);
+    const fixtureNames = Number.isInteger(requestedFixtureCount) && requestedFixtureCount > 0
+        ? allFixtureNames.slice(0, requestedFixtureCount)
+        : allFixtureNames;
 
     const elk = new ELK();
     const reports: FixtureReport[] = [];

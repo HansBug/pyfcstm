@@ -8,12 +8,15 @@ import OptionsBar from './components/OptionsBar.vue';
 import Stage from './components/Stage.vue';
 import DetailsPanel from './components/DetailsPanel.vue';
 import BottomPanels from './components/BottomPanels.vue';
+import StandaloneModeBar from './components/StandaloneModeBar.vue';
+import StandaloneSourcePanel from './components/StandaloneSourcePanel.vue';
 import {bridge} from './composables/useBridge';
+import {buildStandaloneState} from './standalone-data';
 import type {
     PreviewWebviewState, SelectionRef, PreviewResolvedOptions,
     TextRange, PreviewStateDetail, PreviewTransitionDetail,
 } from './types';
-import type {PaletteId, PaletteMode} from './render/palette';
+import type {PaletteId, PaletteMode} from '../../../jsfcstm/src/diagram/render/palette';
 
 type ColorMode = 'light' | 'dark' | 'auto';
 const STORAGE_KEY_PALETTE = 'fcstm.preview.palette';
@@ -24,10 +27,23 @@ const DRAWER_MIN_HEIGHT = 80;
 const DRAWER_MAX_HEIGHT_RATIO = 0.7;     // cap at 70% of shell height
 const DRAWER_DEFAULT_HEIGHT = 220;
 function readStorage(key: string): string | null {
-    try { return typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null; } catch { return null; }
+    try {
+        return typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null;
+    } catch (error) {
+        // DOMException: sandboxed or privacy-restricted browsers can reject
+        // localStorage access; all unexpected failures remain visible.
+        if (!(error instanceof DOMException)) throw error;
+        return null;
+    }
 }
 function writeStorage(key: string, value: string) {
-    try { if (typeof localStorage !== 'undefined') localStorage.setItem(key, value); } catch { /* no-op */ }
+    try {
+        if (typeof localStorage !== 'undefined') localStorage.setItem(key, value);
+    } catch (error) {
+        // DOMException: quota/security failures only affect persisted browser
+        // preferences; all unexpected failures remain visible.
+        if (!(error instanceof DOMException)) throw error;
+    }
 }
 
 // Initial state is serialised into window by the HTML shell.
@@ -37,17 +53,15 @@ const initialState: PreviewWebviewState = (window as unknown as {
 }).__FCSTM_INITIAL_STATE__ || (typeof __FCSTM_INITIAL_STATE__ !== 'undefined' ? __FCSTM_INITIAL_STATE__ : {
     title: 'FCSTM Preview',
     filePath: '',
+    // Only the keys no preset governs. The eight the detail level decides are
+    // left out on purpose: an explicit value beats the preset in
+    // `resolveFcstmDiagramPreviewOptions`, so spelling them here -- with what
+    // happened to be the `normal` values -- would make `detailLevel` inert in
+    // any document that fell back to this. The Python side omits the same eight
+    // for the same reason.
     previewOptions: {
         detailLevel: 'normal',
         direction: 'TB',
-        showVariableDefinitions: true,
-        showEvents: true,
-        showTransitionGuards: true,
-        showTransitionEffects: true,
-        transitionEffectMode: 'note',
-        eventVisualizationMode: 'both',
-        showStateEvents: true,
-        showStateActions: false,
         eventNameFormat: ['extra_name', 'relpath'],
         maxStateEvents: 4,
         maxStateActions: 4,
@@ -62,23 +76,36 @@ const initialState: PreviewWebviewState = (window as unknown as {
     sharedEvents: [],
 });
 
-const state = ref<PreviewWebviewState>(initialState);
+const state = ref<PreviewWebviewState>(buildStandaloneState(initialState));
 const selection = ref<SelectionRef>(null);
+const hoverSelection = ref<SelectionRef>(null);
 const vscode = bridge();
 
 // Bottom drawer (DetailsPanel + BottomPanels) — bounded height with
 // internal scroll, user-adjustable via drag handle, collapsible. The
 // Stage grabs the remaining flex space above so clicking a state does
 // not resize the canvas every time the Details content changes.
-const drawerCollapsed = ref<boolean>(readStorage(STORAGE_KEY_DRAWER_COLLAPSED) === '1');
-function readInitialDrawerHeight(): number {
+const drawerCollapsed = ref<boolean>(
+    readStorage(STORAGE_KEY_DRAWER_COLLAPSED) === '1'
+    || (typeof window !== 'undefined' && window.innerWidth <= 760 && window.innerHeight < 900),
+);
+// Until the drawer is resized by hand it sizes to its own content, so the
+// space Details does not need stays with the diagram instead of showing as a
+// blank band above the bottom panels. A stored height means the user chose one.
+function readInitialDrawerHeight(): number | null {
     const raw = readStorage(STORAGE_KEY_DRAWER_HEIGHT);
-    if (!raw) return DRAWER_DEFAULT_HEIGHT;
+    if (!raw) return null;
     const n = Number(raw);
-    if (!Number.isFinite(n)) return DRAWER_DEFAULT_HEIGHT;
-    return Math.max(DRAWER_MIN_HEIGHT, Math.round(n));
+    // Number(' ') is 0, so a blank entry has to be rejected here rather than by
+    // the !raw guard above.
+    if (!Number.isFinite(n) || n <= 0) return null;
+    // Clamped against this window, not just the floor: a height stored on a tall
+    // monitor would otherwise stay above the painted max-height, and the first
+    // drag in a short window would jump straight to the clamp.
+    return clampDrawerHeight(n);
 }
-const drawerHeight = ref<number>(readInitialDrawerHeight());
+const drawerHeight = ref<number | null>(readInitialDrawerHeight());
+const drawerElement = ref<HTMLElement | null>(null);
 
 let drawerDragStartY = 0;
 let drawerDragStartHeight = 0;
@@ -97,13 +124,15 @@ function onDrawerHandleMouseUp() {
     window.removeEventListener('mousemove', onDrawerHandleMouseMove);
     window.removeEventListener('mouseup', onDrawerHandleMouseUp);
     document.body.classList.remove('fcstm-drawer-resizing');
-    writeStorage(STORAGE_KEY_DRAWER_HEIGHT, String(drawerHeight.value));
+    if (drawerHeight.value !== null) writeStorage(STORAGE_KEY_DRAWER_HEIGHT, String(drawerHeight.value));
 }
 function onDrawerHandleMouseDown(ev: MouseEvent) {
     if (drawerCollapsed.value) return;
     ev.preventDefault();
     drawerDragStartY = ev.clientY;
-    drawerDragStartHeight = drawerHeight.value;
+    // Content-sized until now, so the drag starts from the painted height.
+    drawerDragStartHeight = drawerHeight.value
+        ?? Math.round(drawerElement.value?.getBoundingClientRect().height ?? DRAWER_DEFAULT_HEIGHT);
     document.body.classList.add('fcstm-drawer-resizing');
     window.addEventListener('mousemove', onDrawerHandleMouseMove);
     window.addEventListener('mouseup', onDrawerHandleMouseUp);
@@ -116,8 +145,12 @@ function toggleDrawer() {
 // Palette + colour-mode state. Mode can be 'auto' (follow VSCode), or
 // user-overridden to a fixed 'light' / 'dark'. Palette picks the named
 // skin (default / nord / solarized / darcula).
-const palette = ref<PaletteId>(((readStorage(STORAGE_KEY_PALETTE) as PaletteId) || 'default'));
-const colorMode = ref<ColorMode>(((readStorage(STORAGE_KEY_MODE) as ColorMode) || 'auto'));
+const palette = ref<PaletteId>(
+    initialState.palette || (readStorage(STORAGE_KEY_PALETTE) as PaletteId) || 'default',
+);
+const colorMode = ref<ColorMode>(
+    initialState.colorMode || (readStorage(STORAGE_KEY_MODE) as ColorMode) || 'auto',
+);
 
 function applyMode(value: ColorMode) {
     colorMode.value = value;
@@ -159,8 +192,8 @@ const effectiveMode = computed<PaletteMode>(() => {
 });
 
 function setState(next: PreviewWebviewState) {
-    state.value = next;
-    vscode.setState(next);
+    state.value = buildStandaloneState(next);
+    vscode.setState(state.value);
 }
 
 function rangeLength(range: TextRange): number {
@@ -308,7 +341,7 @@ onMounted(() => {
     window.addEventListener('keydown', onKeyDown);
     const stored = vscode.getState();
     if (stored) {
-        state.value = stored;
+        state.value = buildStandaloneState(stored);
     }
     syncBodyClasses();
     if (typeof MutationObserver !== 'undefined') {
@@ -350,6 +383,13 @@ provide('selection', selection);
 provide('state', state);
 
 function patchOptions(options: Partial<PreviewResolvedOptions>) {
+    if (state.value.standalone) {
+        state.value = buildStandaloneState({
+            ...state.value,
+            previewOptions: {...state.value.previewOptions, ...options},
+        });
+        return;
+    }
     vscode.postMessage({type: 'patchOptions', options});
 }
 
@@ -357,15 +397,39 @@ function toggleCollapse(id: string) {
     const set = new Set(state.value.collapsedStateIds || []);
     if (set.has(id)) set.delete(id);
     else set.add(id);
-    vscode.postMessage({type: 'setCollapsed', collapsed: Array.from(set)});
+    const collapsed = Array.from(set);
+    if (state.value.standalone) {
+        state.value = buildStandaloneState({...state.value, collapsedStateIds: collapsed}, state.value.previewOptions, collapsed);
+        return;
+    }
+    vscode.postMessage({type: 'setCollapsed', collapsed});
 }
 
-function revealSource(range: {start: {line: number; character: number}; end: {line: number; character: number}}) {
+function revealSource(range: TextRange, target?: SelectionRef) {
+    if (state.value.standalone) {
+        // The standalone host has no VSCode editor to reveal, so the action
+        // becomes "show me this in the source panel". The caller says which
+        // element it means; only a cue that arrives without one has to be
+        // resolved from the range, and that lookup cannot tell two documents
+        // apart when both have an element on the same line.
+        if (target) {
+            selection.value = target;
+        } else {
+            applyActiveRange(range);
+        }
+        return;
+    }
     vscode.postMessage({type: 'revealSource', range});
 }
 
 function setLayoutMode(mode: 'side' | 'alone') {
+    if (state.value.standalone) return;
     vscode.postMessage({type: 'setLayoutMode', mode});
+}
+
+function setStandaloneMode(mode: 'fcstm' | 'diagram' | 'compare') {
+    if (!state.value.standalone) return;
+    state.value = {...state.value, standaloneMode: mode};
 }
 
 function exportError(message: string) {
@@ -385,6 +449,11 @@ const naiveTheme = computed(() => effectiveMode.value === 'dark' ? darkTheme : n
                     @set-layout-mode="setLayoutMode"
                     @export-error="exportError"
                 />
+                <StandaloneModeBar
+                    v-if="state.standalone"
+                    :mode="state.standaloneMode || 'compare'"
+                    @change="setStandaloneMode"
+                />
                 <OptionsBar
                     :options="state.previewOptions"
                     :palette="palette"
@@ -393,19 +462,43 @@ const naiveTheme = computed(() => effectiveMode.value === 'dark' ? darkTheme : n
                     @palette="applyPalette"
                     @color-mode="applyMode"
                 />
-                <Stage
-                    :state="state"
-                    :selection="selection"
-                    :palette="palette"
-                    :mode="effectiveMode"
-                    @select="(sel: SelectionRef) => (selection = sel)"
-                    @toggle-collapse="toggleCollapse"
-                    @reveal-source="revealSource"
-                />
                 <div
+                    class="fcstm-main-view"
+                    :class="{'fcstm-main-view--compare': state.standalone && (state.standaloneMode || 'compare') === 'compare'}"
+                >
+                    <StandaloneSourcePanel
+                        v-if="state.standalone && (state.standaloneMode || 'compare') !== 'diagram'"
+                        :source-html="state.sourceHtml || ''"
+                        :source-available="state.sourceAvailable"
+                        :source-unavailable-reason="state.sourceUnavailableReason"
+                        :source-map="state.sourceMap"
+                        :source-line-map="state.sourceLineMap"
+                        :source-documents="state.sourceDocuments"
+                        :source-document-id="state.sourceDocumentId"
+                        :selection="selection"
+                        :hover="hoverSelection"
+                        @select="(sel: SelectionRef) => (selection = sel)"
+                        @hover="(sel: SelectionRef) => (hoverSelection = sel)"
+                    />
+                    <div v-if="!state.standalone || (state.standaloneMode || 'compare') !== 'fcstm'" class="fcstm-diagram-view">
+                        <Stage
+                            :state="state"
+                            :selection="selection"
+                            :hover="hoverSelection"
+                            :palette="palette"
+                            :mode="effectiveMode"
+                            @select="(sel: SelectionRef) => (selection = sel)"
+                            @hover="(sel: SelectionRef) => (hoverSelection = sel)"
+                            @toggle-collapse="toggleCollapse"
+                            @reveal-source="revealSource"
+                        />
+                    </div>
+                </div>
+                <div
+                    ref="drawerElement"
                     class="fcstm-bottom-drawer"
                     :class="{'fcstm-bottom-drawer--collapsed': drawerCollapsed}"
-                    :style="drawerCollapsed ? undefined : {height: drawerHeight + 'px'}"
+                    :style="drawerCollapsed || drawerHeight === null ? undefined : {height: drawerHeight + 'px'}"
                 >
                     <div
                         class="fcstm-bottom-drawer__handle"
@@ -418,6 +511,7 @@ const naiveTheme = computed(() => effectiveMode.value === 'dark' ? darkTheme : n
                         <button
                             type="button"
                             class="fcstm-bottom-drawer__toggle"
+                            data-fcstm-action="toggle-details"
                             :aria-pressed="!drawerCollapsed"
                             :title="drawerCollapsed ? 'Expand details' : 'Collapse details'"
                             @click.stop="toggleDrawer"
@@ -455,6 +549,9 @@ const naiveTheme = computed(() => effectiveMode.value === 'dark' ? darkTheme : n
     --fcstm-accent: #2d6aa8;
     --fcstm-warning: #b7791f;
     --fcstm-error: #b33a3a;
+    --fcstm-control-bg: #ffffff;
+    --fcstm-control-menu-bg: #ffffff;
+    --fcstm-line-number: #8a94a5;
     --fcstm-mono: "JetBrains Mono", "Fira Code", Consolas, monospace;
 }
 
@@ -468,6 +565,9 @@ body.fcstm-mode-dark {
     --fcstm-accent: #6ba4d8;
     --fcstm-fg: var(--vscode-editor-foreground, #dfe1e5);
     --fcstm-muted: var(--vscode-descriptionForeground, #9aa5b4);
+    --fcstm-control-bg: #263646;
+    --fcstm-control-menu-bg: #263646;
+    --fcstm-line-number: #8796a8;
 }
 /* User may force light mode regardless of VSCode's theme. */
 body.fcstm-mode-light {
@@ -478,6 +578,9 @@ body.fcstm-mode-light {
     --fcstm-accent: #2d6aa8;
     --fcstm-fg: var(--vscode-editor-foreground, #1f2937);
     --fcstm-muted: var(--vscode-descriptionForeground, #6a7280);
+    --fcstm-control-bg: #ffffff;
+    --fcstm-control-menu-bg: #ffffff;
+    --fcstm-line-number: #8a94a5;
 }
 
 html, body, #app {
@@ -502,6 +605,64 @@ body {
     min-height: 100%;
 }
 
+/* Naive UI injects these dimensions from its host stylesheet in the VSCode
+   webview. The standalone bundle is loaded from a file URL, so keep the
+   small icon contract local to the reused components as well. Without it a
+   select/collapse arrow can expand to its parent's full width or height. */
+.n-base-icon,
+.n-icon {
+    display: inline-flex;
+    flex: 0 0 auto;
+    width: 1em;
+    height: 1em;
+    align-items: center;
+    justify-content: center;
+}
+.n-base-icon > svg,
+.n-icon > svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+.n-checkbox-icon {
+    width: 16px;
+    height: 16px;
+}
+
+/* Naive UI menus are teleported to <body>. The standalone bundle does not
+   inherit the VSCode webview theme stylesheet, so define an opaque control
+   surface and option contrast locally instead of relying on host variables. */
+.n-base-selection {
+    min-height: 28px;
+    border: 1px solid var(--fcstm-border) !important;
+    border-radius: 5px !important;
+    background-color: var(--fcstm-control-bg) !important;
+    color: var(--fcstm-fg) !important;
+}
+.n-base-selection:hover,
+.n-base-selection--active {
+    border-color: var(--fcstm-accent) !important;
+}
+.n-base-selection-label,
+.n-base-selection-overlay,
+.n-base-selection-input {
+    background-color: var(--fcstm-control-bg) !important;
+    color: var(--fcstm-fg) !important;
+}
+.n-base-select-menu,
+.n-base-select-menu__empty,
+.n-base-select-option {
+    background-color: var(--fcstm-control-menu-bg) !important;
+    color: var(--fcstm-fg) !important;
+}
+.n-base-select-option--pending,
+.n-base-select-option:hover {
+    background-color: color-mix(in srgb, var(--fcstm-accent) 16%, var(--fcstm-control-menu-bg)) !important;
+}
+.n-base-select-option--selected {
+    color: var(--fcstm-accent) !important;
+}
+
 .fcstm-preview-shell {
     display: flex;
     flex-direction: column;
@@ -512,6 +673,27 @@ body {
     flex: 1;
     min-height: 0;
     container: fcstm-preview / size;
+}
+
+.fcstm-main-view {
+    display: flex;
+    flex: 1 1 0;
+    min-height: 0;
+    gap: 10px;
+    overflow: hidden;
+}
+.fcstm-main-view--compare > * { min-width: 0; }
+.fcstm-diagram-view {
+    display: flex;
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 0;
+}
+.fcstm-diagram-view > .fcstm-stage { flex: 1 1 auto; }
+@media (max-width: 760px) {
+    .fcstm-main-view--compare { flex-direction: column; overflow: auto; }
+    .fcstm-main-view--compare .fcstm-source-panel,
+    .fcstm-main-view--compare .fcstm-diagram-view { min-height: 280px; }
 }
 
 /* A side-by-side VSCode editor group is much shorter than a standalone
@@ -525,8 +707,39 @@ body {
    by the extension's ``^1.60.0`` engine range. The webview viewport itself
    is the editor-group height, so this media-query fallback preserves the
    compact right-pane contract there as well. */
-@media (max-height: 760px) {
-    .fcstm-stage { min-height: 240px; }
+@media (max-height: 900px) {
+    .fcstm-main-view { min-height: 164px; }
+    .fcstm-stage,
+    .fcstm-main-view--compare .fcstm-source-panel,
+    .fcstm-main-view--compare .fcstm-diagram-view { min-height: 160px; }
+}
+
+/* Short browser windows must scroll the page rather than compressing both
+   comparison panes into unusable strips below the fixed toolbar. */
+@media (max-height: 700px) {
+    html, body, #app { height: auto; min-height: 100%; overflow: auto; }
+    .fcstm-preview-shell { min-height: 720px; height: auto; }
+    .fcstm-main-view { flex: 0 0 280px; min-height: 280px; }
+    .fcstm-stage,
+    .fcstm-main-view--compare .fcstm-source-panel,
+    .fcstm-main-view--compare .fcstm-diagram-view { min-height: 200px; }
+    .fcstm-main-view--compare { overflow: hidden; }
+}
+
+@media (max-width: 760px) {
+    .fcstm-main-view { min-height: 160px; }
+    .fcstm-main-view--compare .fcstm-source-panel,
+    .fcstm-main-view--compare .fcstm-diagram-view,
+    .fcstm-main-view--compare .fcstm-stage { min-height: 160px; }
+}
+
+@media (max-width: 760px) and (max-height: 700px) {
+    .fcstm-preview-shell { min-height: 920px; }
+    .fcstm-main-view { flex: 0 0 420px; min-height: 420px; }
+    .fcstm-main-view--compare { overflow: visible; }
+    .fcstm-main-view--compare .fcstm-source-panel,
+    .fcstm-main-view--compare .fcstm-diagram-view,
+    .fcstm-main-view--compare .fcstm-stage { min-height: 200px; }
 }
 
 /* Bottom drawer: bounded-height container holding DetailsPanel. The
@@ -537,6 +750,7 @@ body {
     display: flex;
     flex-direction: column;
     min-height: 0;
+    max-height: 70vh;
     gap: 8px;
 }
 .fcstm-bottom-drawer--collapsed {

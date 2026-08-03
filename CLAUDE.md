@@ -74,6 +74,59 @@ Applies to all code in [pyfcstm/](pyfcstm/), [editors/jsfcstm/src/](editors/jsfc
 [editors/jsfcstm/src/dsl/grammar/](editors/jsfcstm/src/dsl/grammar/))
 are exempt — they are produced by ANTLR.
 
+## Code Review Scope (findings must be reachable through the public surface)
+
+A code-review finding about this repository's behaviour must describe a failure a
+real user can reach through a documented entry point, used the way the
+documentation says to use it. Anything else is not a finding, however true it is
+about the internals.
+
+**In scope.** The public Python API and the CLI, called normally:
+
+- `StateMachine.diagram()`, `Diagram.to_dict` / `to_json` / `to_html` / `save` /
+  `show` / `with_options` / `with_view_state`, and the equivalents on other
+  modules' public surfaces.
+- `pyfcstm generate` / `simulate` / `bmc` / `plantuml` / `inspect` / `diagram`
+  with the argument combinations their `--help` documents.
+- Ordinary environmental failures a user actually meets on those paths: Ctrl-C
+  part-way through, a destination directory that does not exist or is not
+  writable, a full disk, a missing optional dependency, a common umask, a shared
+  temporary directory, a second user on the same machine, a supported Python
+  version, a supported platform.
+
+**Out of scope.** A defect that exists only in a path constructed for the purpose
+is not reported:
+
+- Calling a private helper directly to reach a state the public API cannot
+  produce.
+- Patching production internals to create a state the public API cannot produce.
+- Injecting a failure into an internal call site — a `logging.Handler` that
+  raises, a broken `sys.stderr`, an argument whose `__str__` raises, a forced
+  `os.fstat` / `os.fchmod` / `unlink` error, a synthesised `EDQUOT`.
+- Faking a platform constant, or forcing a branch that does not exist on the
+  platform under test.
+- Races that need preemption between adjacent bytecodes, or a hard link or
+  symlink swapped in at a freshly generated random name.
+- Branches that need two or more independent failures at once.
+
+**Instruments are not findings.** The exclusions above are about what may be
+*reported*, not about how a property may be *tested*. A test may drive a private
+helper, inject an interrupt at every line, or fake an identity, provided the
+property it pins is one the public surface exposes: `save()` being interrupted is
+an ordinary user event, so a line-granularity probe over the private writer is a
+legitimate way to gate it.
+
+**The question to answer before reporting.** "A user who only reads the public
+documentation and runs the documented commands — how do they arrive here?" If that
+has no answer, the finding is not one. Reporting "nothing found on normal paths,
+and here is what I checked" is the correct outcome in that case, and is more useful
+than a list of unreachable branches.
+
+This section governs correctness reviews of this repository's own code. It does
+not narrow security review of untrusted *input* — a malicious `.fcstm` source, a
+hostile template, or a crafted `.fbmcq` query arrives through a public entry point
+and is therefore in scope by the rule above, not excluded by it.
+
 ## Conversation Language
 
 Reply in whatever language the user wrote their most recent message in. Do not default to English on your own. If the user writes in Chinese, reply in Chinese; if the user writes in English, reply in English; if the user mixes languages, mirror their dominant language and keep technical terms in their original form. When the user switches languages mid-conversation, switch with them on the very next turn — do not keep using the previous language.
@@ -303,6 +356,9 @@ pyfcstm simulate -i input.fcstm -e "cycle; cycle Start; current"     # Batch mod
 pyfcstm simulate -i input.fcstm -e "init System.Active counter=10; cycle 5"  # Hot start batch
 pyfcstm bmc -i input.fcstm -q property.fbmcq                       # Human BMC report
 pyfcstm bmc -i input.fcstm -q property.fbmcq --json -o result.json # Stable JSON result
+pyfcstm diagram -i input.fcstm                                     # Portable JSON on stdout
+pyfcstm diagram -i input.fcstm -o viewer.html                      # Self-contained HTML viewer
+pyfcstm diagram -i input.fcstm --open                              # Viewer in an app window
 
 # Interactive hot start:
 # > init System.Active counter=10 flag=1
@@ -493,10 +549,29 @@ Mandatory completion rule for built-in template work:
 - Requires every SAT model to decode into a public macro-step trace and pass `SimulationRuntime` replay before the CLI reports a trusted verdict
 - Keeps bounded conclusions explicit: SAT/UNSAT describe the solver objective, while `property_satisfied` / `outcome` describe whether the user property holds within the requested bound
 
+**Diagram Views** ([pyfcstm/diagram/](pyfcstm/diagram/))
+
+- `StateMachine.diagram()` returns a `Diagram`: an immutable snapshot detached from the model, so later edits to the
+  model cannot change what a saved view shows
+- `to_dict()` / `to_json()` give portable data; `to_html()` gives a self-contained ~29 MB viewer with the jsfcstm
+  renderer, ELK layout, resvg WASM rasteriser and CJK fonts embedded, under a strict inline CSP and no network access
+- `with_options()` / `with_view_state()` return new snapshots rather than mutating; `show()` opens the viewer in a
+  Chromium-family app window
+- Runtime assets under [pyfcstm/diagram/assets/](pyfcstm/diagram/assets/) are build products, not tracked sources.
+  `make build_assets` produces them and `make unittest` depends on it, in the same way `make tpl` produces the packaged
+  template assets
+- The gates are `make diagram_assets_check`, `diagram_csp_check`, `diagram_contract_check`, `diagram_browser_check`
+  and `diagram_docstring_check`; each one must be able to fail, so mutation-test a gate before trusting it
+- A reST cross-reference must name the module that `docs/source/api_doc` documents the object under, which is the
+  implementation module: `pyfcstm.diagram.api.Diagram`, not `pyfcstm.diagram.Diagram`. A wrong one renders as plain
+  text without any complaint from an ordinary Sphinx build. There is no automated gate for this; a build with `-n`
+  reports it, along with some 1700 pre-existing warnings elsewhere in the tree
+
 **Entry Points** ([pyfcstm/entry/](pyfcstm/entry/))
 
 - [cli.py](pyfcstm/entry/cli.py): Click-based CLI; `pyfcstmcli()` registered as console script
 - [plantuml.py](pyfcstm/entry/plantuml.py): PlantUML diagram generation from state machine models
+- [diagram.py](pyfcstm/entry/diagram.py): `pyfcstm diagram` — portable JSON or a self-contained HTML viewer
 - [generate.py](pyfcstm/entry/generate.py): Orchestrates parsing DSL, building model, and rendering with either `--template-dir` or built-in `--template`
 - [dispatch.py](pyfcstm/entry/dispatch.py): Command dispatching logic for CLI subcommands
 - [simulate/](pyfcstm/entry/simulate/): Interactive simulation REPL (sub-package) with

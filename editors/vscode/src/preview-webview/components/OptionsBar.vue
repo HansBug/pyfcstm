@@ -3,7 +3,11 @@ import {h} from 'vue';
 import {NSelect, NCheckbox, NSpace, NButton, NButtonGroup, NTooltip, NIcon} from 'naive-ui';
 import {DownloadOutline} from '@vicons/ionicons5';
 import type {PreviewResolvedOptions} from '../types';
-import {PALETTE_IDS, PALETTE_LABEL, type PaletteId} from '../render/palette';
+import {
+    PALETTE_IDS,
+    PALETTE_LABEL,
+    type PaletteId,
+} from '../../../../jsfcstm/src/diagram/render/palette';
 
 type ColorMode = 'light' | 'dark' | 'auto';
 
@@ -103,10 +107,11 @@ function requestExport() {
                         quaternary round size="small"
                         :focusable="false"
                         :render-icon="withIcon(DownloadOutline)"
+                        data-fcstm-action="export"
                         @click="requestExport"
                     >Export</n-button>
                 </template>
-                Export diagram (Ctrl/Cmd+S) — choose SVG or PNG in save dialog
+                Export diagram (Ctrl/Cmd+S) — choose SVG, PNG, or PDF
             </n-tooltip>
         </div>
     </div>

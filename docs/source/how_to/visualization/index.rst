@@ -379,6 +379,47 @@ the source command. Use this short acceptance rubric:
 5. The page links to :doc:`/reference/visualization_options/index` for every
    option that is not self-evident.
 
+Use the Python Diagram viewer
+-----------------------------
+
+Use this path when the requested artifact is an offline HTML viewer rather than
+PlantUML source or a PlantUML-rendered file.
+
+.. list-table:: Python Diagram task cards
+   :header-rows: 1
+
+   * - Task
+     - Start from
+     - Command or code
+     - Expected signal and side effect
+     - First repair if it fails
+   * - Write portable JSON
+     - A parsed ``StateMachine``.
+     - ``model.diagram().save("machine.json")`` or ``pyfcstm diagram -i machine.fcstm -o machine.json``.
+     - The file is deterministic JSON and contains no local source paths or ranges.
+     - Run ``pyfcstm inspect -i machine.fcstm`` to separate DSL/model errors from serialization errors.
+   * - Write a self-contained viewer
+     - A parsed ``StateMachine`` or an FCSTM file.
+     - ``model.diagram().save("machine.html")`` or ``pyfcstm diagram -i machine.fcstm -o machine.html``.
+     - The file contains the viewer, renderer, WASM, and the selected locale fonts; no network request is needed.
+     - Check the packaged assets with ``make diagram_assets_check`` in a development checkout.
+   * - Open a desktop viewer
+     - A generated HTML path and a Chromium-family browser.
+     - ``model.show()`` or ``pyfcstm diagram -i machine.fcstm --open``.
+     - A browser app window opens and the method returns the generated HTML path.
+     - Use ``open_window=False`` or omit ``--open`` on machines without a browser.
+   * - Download SVG/PNG/PDF
+     - A generated HTML viewer opened in a browser.
+     - Use the viewer's export menu.
+     - SVG, PNG, and vector PDF are downloaded from the same rendered diagram; the PDF contains no image object.
+     - If an export fails, keep the browser error message and inspect the asset/runtime error before changing the model.
+
+The ``show`` method writes the HTML file before attempting to open a window.
+Missing Chromium is a typed capability error, not a model or asset error. The
+Python synchronous ``to_svg()``, ``to_png()``, and ``to_pdf()`` methods remain
+unavailable until the headless delivery stage; do not use those methods as a
+browser export fallback.
+
 Troubleshoot visualization
 --------------------------
 
@@ -406,3 +447,11 @@ Troubleshoot visualization
    * - Diagram is too dense
      - Detail level and visibility options
      - Start with ``minimal`` or ``normal``, then add only the facts needed for the current audience.
+
+Why the viewer behaves this way
+-------------------------------
+
+:doc:`/explanations/visualization/index` covers the reasoning behind the tasks above:
+what the snapshot is detached from, why one document carries everything, why ``--open``
+blocks until its window closes, why the privacy boundary is a directory rather than a
+file, and when a temporary directory is reclaimed.

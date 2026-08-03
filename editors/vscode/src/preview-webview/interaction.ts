@@ -10,6 +10,7 @@
  *   - Ctrl/Cmd + click on an element with a range → reveal source.
  */
 export {
+    asPointerKind,
     decidePreviewPointerAction,
     PREVIEW_DRAG_THRESHOLD_PX,
     type PointerAction,

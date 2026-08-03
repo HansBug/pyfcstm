@@ -67,6 +67,11 @@ class TestComboModelExpansion:
         combo_states = [s for s in model.root_state.substates.values() if s.is_pseudo]
         assert len(combo_states) == 2
         assert all(state.name.startswith("__combo_") for state in combo_states)
+        assert all(state.is_combo_relay for state in combo_states)
+        assert all(
+            not getattr(state, "_generated_combo_pseudo", False)
+            for state in combo_states
+        )
         assert all(re.search(r"_h[0-9a-f]{12}$", state.name) for state in combo_states)
         assert [state.extra_name for state in combo_states] == [
             "combo after E1",
@@ -1189,3 +1194,56 @@ class TestComboModelExpansion:
         runtime.cycle(["Root.S1.E1", "Root.S1.E2"])
         assert runtime.current_state.path == ("Root", "S2")
         assert runtime.vars["x"] == 20
+
+
+@pytest.mark.unittest
+def test_combo_relay_flag_takes_part_in_state_equality():
+    # `is_combo_relay` is semantic model data -- its own docstring says so, and
+    # says renderers must not re-derive it from the reserved name prefix. It
+    # was declared `compare=False`, next to the source span where excluding it
+    # is right, so two states that differ only in whether they are a generated
+    # relay compared equal and a round trip that dropped the flag looked clean.
+    from pyfcstm.model import State
+
+    relay = State(
+        name="R", path=("R",), substates={}, is_pseudo=True, is_combo_relay=True
+    )
+    plain = State(
+        name="R", path=("R",), substates={}, is_pseudo=True, is_combo_relay=False
+    )
+    assert relay != plain
+    assert relay == State(
+        name="R", path=("R",), substates={}, is_pseudo=True, is_combo_relay=True
+    )
+
+
+@pytest.mark.unittest
+def test_model_equality_works_on_parsed_models():
+    # `parent_ref` was compared, and a weakref compares by referent, so a
+    # parent and child pointing at each other recursed without bound: `==` on
+    # any model with substates raised RecursionError. That made
+    # `State.__eq__` unusable for every model the parser produces, including
+    # the round trip `is_combo_relay` was brought into comparison to protect.
+    # Every dataclass carrying `parent_ref` has to be instantiated, or a
+    # single-point revert stays green: `Transition`, `OnStage` (enter/during/
+    # exit), `OnAspect` (`>> during`) and `State`. A model of bare states and
+    # one transition exercises only two of the four.
+    source = (
+        "def int c = 0;\n"
+        "state Root {\n"
+        "    >> during before {\n"
+        "        c = 0;\n"
+        "    }\n"
+        "    [*] -> A;\n"
+        "    state A {\n"
+        "        enter { c = 1; }\n"
+        "        during { c = c + 1; }\n"
+        "        exit { c = 2; }\n"
+        "    }\n"
+        "    state B;\n"
+        "    A -> B :: Go;\n"
+        "}\n"
+    )
+    assert _build_model(source) == _build_model(source)
+    other = _build_model(source.replace("state B;", "state C;").replace("-> B", "-> C"))
+    assert _build_model(source) != other

@@ -58,11 +58,12 @@ defineProps<{
 <style>
 .fcstm-bottom {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    /* Two cards sit side by side; a lone card spans the row instead of
+       leaving the other half of the shell empty. The min() keeps the track
+       from flooring at 320px in a narrower shell, which would push the cards
+       past the right edge and add a horizontal scrollbar. */
+    grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
     gap: 10px;
-}
-@media (max-width: 720px) {
-    .fcstm-bottom { grid-template-columns: 1fr; }
 }
 .fcstm-bottom__card {
     border: 1px solid var(--fcstm-border-soft);

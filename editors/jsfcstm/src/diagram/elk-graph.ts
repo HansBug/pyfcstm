@@ -5,6 +5,8 @@
  * host and the webview bundle can import this module and reproduce the
  * same input graph bit-for-bit.
  */
+import stringWidth from 'string-width';
+
 import type {
     FcstmDiagram,
     FcstmDiagramAction,
@@ -16,9 +18,17 @@ import type {
     FcstmElkNode,
     ResolvedFcstmDiagramPreviewOptions,
 } from './model';
+import {
+    LEAF_DETAIL_FONT_SIZE,
+    LEAF_DETAIL_INSET_X,
+    leafDetailBandHeight,
+} from './leaf-detail';
 
-// Character metrics for a monospaced 14px font, used to pre-measure label
-// boxes so ELK can pack them without our SVG labels overflowing later.
+// Character metrics for the shared 14px font stack. ``string-width`` gives us
+// deterministic Unicode display columns without depending on DOM/canvas
+// measurement, while this scale keeps the Latin JetBrains Mono advance used by
+// the SVG emitter. A wide CJK/emoji column therefore reserves two Latin
+// advances, which is deliberately conservative for the embedded fallback font.
 const CHAR_WIDTH = 8.2;
 const LINE_HEIGHT = 18;
 const STATE_TITLE_HEIGHT = 30;
@@ -142,15 +152,20 @@ export const TRANSITION_LABEL_GLYPHS = {
     effect: '▸',
 };
 
+function measuredLineWidth(line: string, fontSize: number): number {
+    return stringWidth(line) * CHAR_WIDTH * (fontSize / 14);
+}
+
 /** Measure a (possibly multi-line) label rectangle for ELK. */
 export function measureLabel(
     text: string,
     padX = 16,
-    padY = 8
+    padY = 8,
+    fontSize = 14
 ): { width: number; height: number } {
     const lines = String(text).split('\n');
-    const longest = Math.max(1, ...lines.map(line => line.length));
-    const width = Math.ceil(longest * CHAR_WIDTH + padX * 2);
+    const longest = Math.max(1, ...lines.map(line => measuredLineWidth(line, fontSize)));
+    const width = Math.ceil(longest + padX * 2);
     const height = Math.ceil(lines.length * LINE_HEIGHT + padY * 2);
     return { width, height };
 }
@@ -312,8 +327,14 @@ function leafDetailLines(
     }
     const eventLabels: string[] = [];
     const actionLabels: string[] = [];
+    // The same mark an event carries on a transition label. Without it a row
+    // reading `Go` sits beside one reading `enter abstract Setup` with nothing
+    // to say which kind of thing it is; the action summaries name their own
+    // stage, so only the events need marking.
     if (options.showStateEvents && state.events.length > 0) {
-        const visible = state.events.slice(0, options.maxStateEvents).map(formatEventSummary);
+        const visible = state.events
+            .slice(0, options.maxStateEvents)
+            .map(event => `${TRANSITION_LABEL_GLYPHS.event} ${formatEventSummary(event)}`);
         const suffix = state.events.length > visible.length ? `+${state.events.length - visible.length}` : '';
         if (suffix) visible.push(suffix);
         eventLabels.push(...visible);
@@ -342,6 +363,8 @@ export function buildFcstmElkGraph(
     extras: { collapsedStateIds?: ReadonlySet<string> } = {}
 ): FcstmElkGraph {
     const collapsed = extras.collapsedStateIds || new Set<string>();
+    const tintsEdgesByEvent =
+        options.eventVisualizationMode === 'color' || options.eventVisualizationMode === 'both';
 
     const buildStateNode = (state: FcstmDiagramState): FcstmElkNode => {
         const isCollapsed = collapsed.has(state.qualifiedName);
@@ -349,14 +372,28 @@ export function buildFcstmElkGraph(
         const { width: titleW, height: titleH } = measureLabel(title, 18, 6);
         const leafDetails = leafDetailLines(state, options);
 
-        // Leaf states (and collapsed composites) now show only their title
-        // in the diagram; the detail summary lives in the Details side panel
-        // so the diagram stays uncluttered. We still keep eventLabels /
-        // actionLabels on the meta so the Details panel can read them
-        // without re-traversing the source model.
+        // A leaf shows its title, and under it the event and action rows the
+        // detail level asked for. The rows have to be measured here as well as
+        // drawn: ELK packs neighbours against whatever height it is given, so a
+        // node that grows only at draw time is overlapped by the one beside it.
         if (state.children.length === 0 || isCollapsed) {
-            const width = Math.max(LEAF_MIN_WIDTH, titleW + 24);
-            const height = Math.max(LEAF_MIN_HEIGHT, titleH + 14);
+            const detailRows = [...leafDetails.eventLabels, ...leafDetails.actionLabels];
+            const detailBand = leafDetailBandHeight(detailRows.length);
+            const detailW = detailRows.length
+                ? Math.max(...detailRows.map(row => measuredLineWidth(row, LEAF_DETAIL_FONT_SIZE)))
+                : 0;
+            const width = Math.max(
+                LEAF_MIN_WIDTH,
+                titleW + 24,
+                Math.ceil(detailW + LEAF_DETAIL_INSET_X * 2)
+            );
+            // The title keeps a full-size box to itself when it is alone. With
+            // rows under it the box shrinks to a title bar, so a state with one
+            // event is not half empty space.
+            const titleBand = detailRows.length
+                ? Math.max(STATE_TITLE_HEIGHT, titleH + 8)
+                : Math.max(LEAF_MIN_HEIGHT, titleH + 14);
+            const height = titleBand + detailBand;
             return {
                 id: state.qualifiedName,
                 width,
@@ -422,7 +459,12 @@ export function buildFcstmElkGraph(
                 fcstm: {
                     kind: 'transition',
                     transitionId: transition.id,
-                    eventColor: transition.eventColor,
+                    // `legend` puts events in the side panel and leaves the
+                    // edges in the neutral stroke; `color` and `both` tint them.
+                    // The Mermaid emitter has drawn this distinction since it
+                    // was written (`shouldColorTransition`), and the SVG one
+                    // tinted every edge whatever the mode said.
+                    eventColor: tintsEdgesByEvent ? transition.eventColor : undefined,
                     forced: transition.forced,
                     transitionKind: transition.forced
                         ? 'normalAll'
@@ -435,7 +477,7 @@ export function buildFcstmElkGraph(
                 },
             };
             if (labelText) {
-                const { width, height } = measureLabel(labelText, 10, 4);
+                const { width, height } = measureLabel(labelText, 10, 4, 12);
                 edge.labels = [{ text: labelText, width, height }];
             }
             edges.push(edge);

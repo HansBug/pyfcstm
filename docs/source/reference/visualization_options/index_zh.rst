@@ -763,6 +763,178 @@ Python API（应用程序接口）例子：
        custom_colors={'System.Start': '#00AA00'},
    )
 
+Python Diagram 接口和浏览器查看器
+----------------------------------
+
+浏览器查看器是独立于上文 PlantUML 选项的公开路径，直接消费已解析模型，
+并写出可移植 JSON 或自包含 HTML 文件。
+
+.. list-table:: Python Diagram 公开取值
+   :header-rows: 1
+
+   * - 取值
+     - 可接受取值或默认值
+     - 行为
+   * - ``DiagramOptions.detail_level``
+     - ``minimal``、``normal``\ （默认）、``full``
+     - 选择渲染器的细节预设，三档各自画出不同的图。``minimal`` 把转换 effect 内联显示、
+       边保持中性描边，事件只出现在图例中；``normal``\ （默认）把 effect 放进便签，
+       并按事件给边染色；``full`` 在\ **叶子状态**\ 的标题下方追加该状态自身的事件与
+       生命周期动作；复合状态改为显示其子状态，任何档位下都不会获得这些行。
+       详情面板无论哪个预设都会列出状态的动作，所以档位决定的是\ **图上画什么**\ ，
+       而不是有哪些信息可读。
+   * - ``DiagramOptions.direction``
+     - ``TB``\ （默认）或 ``LR``
+     - 选择从上到下或从左到右的布局。
+   * - ``DiagramOptions.palette``
+     - ``default``、``nord``、``solarized``、``darcula`` 或 ``None``
+     - 选择查看器配色。
+   * - ``DiagramOptions.mode``
+     - ``light``、``dark``、``auto`` 或 ``None``
+     - 选择初始颜色模式。
+   * - ``DiagramOptions.cjk_locale``
+     - ``sc``、``tc``、``hk``、``jp`` 或 ``kr``\ （默认 ``sc``）
+     - 在 HTML 中嵌入对应地区的 CJK 字体对。
+   * - ``DiagramViewState.mode``
+     - ``compare``\ （默认）、``fcstm`` 或 ``diagram``
+     - 选择源码、图形或联动对比视图。
+   * - ``DiagramViewState.zoom``
+     - 有限正数或 ``None``\ （默认 ``None``\ ）
+     - 设置初始缩放；布尔值、零、负数、NaN 和无穷值会失败。``None`` 表示不指定，
+       由查看器把整幅图形适配到视口。
+   * - ``DiagramViewState.pan_x`` / ``pan_y``
+     - 有限数或 ``None``\ （默认 ``None``\ ）
+     - 设置初始平移量。``None`` 表示沿用适配后的取景；一旦 ``zoom`` / ``pan_x`` /
+       ``pan_y`` 中任意一项被指定，其余为 ``None`` 的字段回退到 ``1.0`` 与 ``0.0``\ ，
+       使显式请求被精确遵循。
+
+``model.diagram(...)`` 返回不可变的 ``Diagram`` 快照。``to_dict()`` 和
+``to_json()`` 不包含绝对路径、源码范围或编辑器选择状态。``to_html()``
+返回一份完整 HTML 字符串；``save("name.json")`` 和 ``save("name.html")``
+使用原子替换：保存被中断时，原有文件的内容与权限原样保留。被覆盖的文件保持它
+原来的权限，新建的文件则按你的 umask 取值，与该目录下任何新文件一致——因此去掉
+写位的 umask 会产出只读结果，而 ``save()`` 仍能替换它，因为它属于你。属于其他
+用户且你无法写入的文件会被拒绝；在 Windows 上，被标记为只读的文件同样被拒绝。
+``Diagram.show()`` 和 ``StateMachine.show()`` 同样返回 HTML 路径。
+带窗口且未指定路径时，``show()`` 会阻塞到窗口关闭，随后删除它写出的文档，因此
+返回的路径届时已不存在——想保留查看器请显式指定输出路径。不带窗口且未指定路径时
+没有任何代码删除它。两种情况下文件都以 0600 写在一个只有你能进入的目录里，因为
+查看器内嵌模型源码：由文档派生的名字、以及约 29 MB 文档的精确大小，对任何能列出
+它们的人来说都足以识别是哪幅图。再次展示同一幅图会返回同一个文件。这种复用跟随的是
+目录而不是进程：你的另一个进程只要解析到同一个目录，拿到的就是同一个路径，fork 出来的
+子进程则直接继承它——因此这个文件在删除上也是共享的，同伴进程清理自己拿到的返回值时
+删掉的就是你的文件。当那个目录被发现属于他人或对他人开放时，每次解析各建一个自己的
+目录并给出一条警告，此时两个互不相干的进程各用一份，而 fork 出来的子进程仍然共享。
+需要一个只有你能删除的文档时，请显式指定输出路径。在 Windows 上这依赖 ``%TEMP%``
+按账户隔离（默认如此）：多用户共享的 ``TEMP`` 在这里无法检测，且用 python.org 的安装包时
+目录权限只从 3.12.4 起才被应用——这种场景请自己指定输出路径。
+
+HTML 查看器可以在浏览器中下载 SVG、PNG 和矢量 PDF。Python 的
+``to_svg()``、``to_png()`` 和 ``to_pdf()`` 在后续无头交付阶段之前会主动抛出
+``DiagramUnavailableError``。没有 Chromium 系浏览器时，``show()`` 会先写出
+HTML，再抛出同一类型的能力错误；使用 ``show(open_window=False)`` 可避免浏览器依赖。
+
+生成 HTML 查看器只需要浏览器，不需要额外依赖；\ ``DiagramAssetEngine``\ 的无头
+渲染需要可选的 MiniRacer 运行时，由 ``pip install pyfcstm[viz]`` 提供，缺少时
+引擎抛出的 ``DiagramUnavailableError`` 会直接给出该命令。安装这个 extra
+**不会**\ 启用 ``to_svg()`` / ``to_png()`` / ``to_pdf()``\ ——它们无论如何都要
+等无头交付阶段。
+
+未知字段、重复蛇形/驼峰别名、无效枚举值和无效数字会抛出 ``ValueError``\ ；
+``collapsed_state_ids`` 不是 ID 字符串序列时抛出 ``TypeError``\ ，包括把单个 ID
+直接写成字符串这一常见错误。
+
+``with_options`` 与 ``with_view_state`` 的关键字形式是部分更新：未指名的字段保持
+原值；以位置参数传入的值则整体替换。
+缺失或不可用的查看器/WASM/字体资源会抛出 ``DiagramAssetError``，并给出开发
+环境的 ``make build_assets`` 修复指引，或给出已安装包应使用的 issue URL。
+
+同步导出与尺寸限额
+------------------
+
+``to_svg()``\ 、\ ``to_png(scale=...)``\ 和 ``to_pdf()`` 不需要浏览器即可导出。
+它们依赖 ``pip install pyfcstm[viz]`` 提供的可选渲染运行时；缺少该运行时时各自抛出
+``DiagramUnavailableError``\ ，并在消息中点名该 extra。\ ``save()`` 会把 ``.svg``\ 、
+``.png``\ 、\ ``.pdf`` 后缀路由到它们，命令行同样接受这三种后缀以及 ``--scale``\ 。
+
+.. list-table:: 同步导出接口
+   :header-rows: 1
+
+   * - 调用
+     - 返回
+     - 说明
+   * - ``Diagram.to_svg()``
+     - ``str``
+     - 展开形态（expanded form）：字形与箭头已转为路径，因此文档不含 ``<text>``\ 、
+       ``<marker>`` 或字体依赖，在没有安装本项目字体的机器上也渲染一致。渲染器的
+       原始规范 SVG 是内部中间产物，不是这里的返回值。
+   * - ``Diagram.to_png(scale=1.0)``
+     - ``bytes``
+     - 经固定版本的 resvg 后端栅格化，不透明，尺寸为 ``ceil(size * scale)`` 像素。
+   * - ``Diagram.to_pdf()``
+     - ``bytes``
+     - 单页，页面尺寸与图一致，以矢量绘制且不含任何位图对象。文字为轮廓，
+       所以文档\ **不可搜索**\ ——这是它无需本项目字体即可渲染的代价。
+   * - ``Diagram._repr_svg_()``
+     - ``str`` 或 ``None``
+     - Notebook 表示形式，与上面同为展开形态的 SVG。缺少可选运行时时返回 ``None``\ ，
+       因为在 repr 钩子里抛异常会把整个单元格输出替换成回溯信息。
+
+.. note::
+   查看器自带的 PNG 下载按固定 2x 栅格化，而 ``to_png()`` 默认为 1x。
+   因此把下载得到的文件与 API 产出的文件相比，会看到像素数相差一倍——那是两个不同的请求，
+   而非两侧不一致；传入 ``scale=2`` 即可同尺度比较。
+
+每个导出都有上限。限额在 Python 侧、进入栅格化器或 PDF 写入器\ **之前**\ 检查，
+因此不可能的请求会被明确指出，而不是靠耗尽内存被发现。
+
+.. list-table:: 导出尺寸限额
+   :header-rows: 1
+
+   * - 限额
+     - 取值
+     - 超限时抛出
+   * - ``scale``
+     - ``0 < scale <= 4``
+     - ``ValueError``
+   * - 缩放后宽、高各自
+     - ``<= 16384`` 像素
+     - ``DiagramRenderLimitError``
+   * - 缩放后像素总数
+     - ``<= 16777216``
+     - ``DiagramRenderLimitError``
+   * - 原始 RGBA 缓冲区
+     - ``<= 67108864`` 字节，即像素上限的四倍
+     - 按像素上限报告
+   * - 编码后 PNG
+     - ``<= 33554432`` 字节
+     - ``DiagramRenderLimitError``
+   * - 编码后 SVG 或 PDF
+     - ``<= 67108864`` 字节
+     - ``DiagramRenderLimitError``
+
+``DiagramRenderLimitError`` 带有 ``limit_name``\ ，它的取值只有 ``edge``\ 、
+``pixels``\ 、\ ``png``\ 、\ ``pdf`` 和 ``svg``\ 。**没有** ``raw_rgba``\ ：原始缓冲区是每像素四字节，
+其上界就是像素上界的四倍，所以任何大到能触及它的请求都已经先以"像素超限"被拒。
+上表列出该数字，是因为文档化的限额集合里包含一个缓冲区尺寸，而不是因为它是一条独立边界。
+
+编码后尺寸的限额在 Python 导出路径上执行，因为字节是在那里产生的。浏览器下载路径执行
+scale、边长与像素三条限额，不衡量自身输出。
+
+``DiagramRenderLimitError`` 是 ``DiagramRenderError`` 的\ **同级类**\ 而非子类。
+两者描述不同情形、对应不同处置：渲染失败意味着渲染器被要求做某事却做不到，
+限额失败意味着它根本没有被要求。降低 ``scale`` 只能修好后者，
+所以 ``except DiagramRenderError`` 不应把它一并吞掉。
+
+错误消息会写明原始尺寸、缩放后尺寸、触发的限额以及应当改什么，
+因为仅说"太大"并不能告诉调用者哪个 ``scale`` 才装得下。
+
+浏览器下载路径执行同一组产品限额，超限同样拒绝。此外它还会在浏览器画布真实存在的
+能力上限（\ ``RASTER_MAX_SIDE``\ 、\ ``RASTER_MAX_AREA``\ ）处\ **夹紧**\ ——
+那不是产品政策：一张高图在 2x 下曾产出空 blob，把 SVG 与 PDF 下载一起带崩。
+每个产品限额都严于它所遮蔽的能力上限，因此拒绝总是先触发，夹紧只是普通输入永远
+到不了的第二层防御。
+
 渲染器和文件选项
 ----------------
 
@@ -853,3 +1025,45 @@ Python API（应用程序接口）例子：
      - ``plantuml`` 永远不渲染图片，也不检查渲染器可用性。
    * - ``rendered-image-visualize``
      - ``visualize`` 总是先生成 PlantUML 源码，再渲染请求的产物类型。
+
+为已有的图形轮廓化文字
+----------------------
+
+``Diagram.to_svg()`` 面向"手上有模型"的场景；``pyfcstm expand-svg`` 面向相反的场景：
+手上是一份 canonical SVG——在别处渲染、调色板与配色模式都已选定——需要把其中的文字转成路径。
+
+.. code-block:: shell-session
+
+    $ pyfcstm expand-svg -i canonical.svg -o self-contained.svg
+    self-contained.svg
+    $ pyfcstm expand-svg -i canonical.svg > self-contained.svg
+
+交进去的是哪份文档，展开的就是哪份。改为从 ``.fcstm`` 源重新渲染会得到一份\ **默认调色板**\ 下
+的合法文件，把产生该输入的呈现选择全部丢弃——那是一份颜色错误的导出，而所有结构性检查都会放行。
+CJK 字体从输入自身的 ``font-family`` 读取，因此不需要地区参数。
+
+.. list-table::
+    :header-rows: 1
+    :widths: 30 70
+
+    * - 条件
+      - 结果
+    * - 缺少可选渲染运行时
+      - 报出需要安装的 extra；不写出任何文件。
+    * - 输入不是 SVG 文档
+      - 用法错误，在渲染器启动之前给出。
+    * - 结果超过 ``MAX_EXPORT_TEXT_BYTES``
+      - :class:`~pyfcstm.diagram.engine.DiagramRenderLimitError`\ ，``limit_name`` 为
+        ``svg``\ ，与 ``to_svg()`` 用的是同一上限。
+
+这个命令是为编辑器预览加的。webview 里有图但没有字体、也没有栅格化器，而把这些打进扩展
+需要为单个 CJK 地区增加 17.7 MB、全部地区增加 59.4 MB。因此它转而询问一个已安装的
+``pyfcstm[viz]``\ ：把 ``fcstm.diagram.pyfcstmPath`` 设为具体的解释器，或者留空以依次尝试
+``pyfcstm``\ 、``python3 -m pyfcstm``\ 、``python -m pyfcstm``\ 。若没有可用的安装，导出会
+明确报告，而不是交出一份文字依赖读者机器字体的文档。
+
+这些边界为什么存在
+------------------
+
+本页给出事实；:doc:`/explanations/visualization/index_zh` 解释查看器那部分边界背后的道理——
+自包含文档、阻塞的窗口、目录级隐私边界，以及退出时的回收。

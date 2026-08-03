@@ -1,0 +1,42 @@
+@startuml
+title Where a viewer directory is reclaimed, and why not earlier
+
+participant "caller" as C
+participant "atexit" as A
+participant "multiprocessing.util\n_exit_function" as U
+participant "worker" as W
+
+C -> C: show(open_window=False)
+note right of C
+  Registers the reclaim twice:
+  an atexit hook, and a finalizer
+  at priority -1 when a worker
+  may exist.
+end note
+
+C -> A: interpreter exits
+A -> A: run hooks, last registered first
+A -> A: reclaim: rmdir refused,\nthe worker still holds the viewer
+A -> U: _exit_function
+
+group phase 1 -- finalizers at priority >= 0
+  U -> U: nothing of ours here\n(that is the point)
+end
+
+group phase 2 -- terminate daemons, join every active child
+  U -> W: join
+  W -> W: unlink the viewer it was handed
+  W --> U: exited
+end
+
+group phase 3 -- remaining finalizers
+  U -> U: reclaim at priority -1:\nthe directory is empty, rmdir succeeds
+end
+
+note over U
+  A reclaim in phase 1 spends its one
+  chance on a directory that is about
+  to empty. Negative priority is what
+  puts it after the join.
+end note
+@enduml

@@ -26,7 +26,32 @@ export {
 export type {FcstmElkLayoutGeometry, FcstmElkNodeBox, FcstmElkPoint} from './elk-graph';
 export {
     renderFcstmDiagramSvg,
+    renderSvg,
 } from './svg-renderer';
+export {
+    smoothGraphEdges,
+    DEFAULT_MIN_STUB_LEN,
+} from './render/edge-smoother';
+export {
+    buildCrossingIndex,
+    collectSegments,
+    crossingsFor,
+} from './render/crossings';
+export {
+    resolvePalette,
+    PALETTE_IDS,
+    PALETTE_LABEL,
+} from './render/palette';
+export type {
+    CrossingIndex,
+    ResolvedSegment,
+} from './render/crossings';
+export type {
+    PaletteId,
+    PaletteMode,
+    SvgPalette,
+} from './render/palette';
+export type {RenderOptions, RenderedSvg} from './svg-renderer';
 export {
     buildFcstmDiagramWebviewPayload,
 } from './webview-payload';

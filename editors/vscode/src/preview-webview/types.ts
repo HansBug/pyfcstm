@@ -3,6 +3,8 @@
  * Vue-powered webview. Imported by both sides.
  */
 
+import type {FcstmDiagram} from '../../../jsfcstm/src/diagram/model';
+
 export type PreviewLayoutMode = 'side' | 'alone';
 
 export interface PreviewSummaryEntry {
@@ -175,6 +177,23 @@ export interface PreviewWebviewState {
     summary: PreviewSummaryEntry[];
     variables: string[];
     sharedEvents: PreviewSharedEventView[];
+    /** Initial standalone colour preferences supplied by the Python API. */
+    palette?: 'default' | 'nord' | 'solarized' | 'darcula';
+    colorMode?: 'light' | 'dark' | 'auto';
+    /** Browser-only data and source sidecar used by the standalone host. */
+    standalone?: boolean;
+    standaloneMode?: 'fcstm' | 'diagram' | 'compare';
+    // null means the producer expressed no preference and the viewer picks the
+    // framing; a number is an explicit request, including a literal 1 / 0.
+    standaloneViewState?: {zoom: number | null; panX: number | null; panY: number | null};
+    standaloneDiagram?: FcstmDiagram;
+    sourceHtml?: string;
+    sourceAvailable?: boolean;
+    sourceUnavailableReason?: string;
+    sourceMap?: Record<string, {kind: 'state' | 'transition'; documentId?: string; range: TextRange}>;
+    sourceLineMap?: Record<string, string | string[]>;
+    sourceDocuments?: Record<string, {html: string; label: string}>;
+    sourceDocumentId?: string;
 }
 
 export type SelectionRef =
@@ -187,8 +206,9 @@ export type WebviewInboundMessage =
     | {type: 'setCollapsed'; collapsed: string[]}
     | {type: 'revealSource'; range: TextRange}
     | {type: 'setLayoutMode'; mode: PreviewLayoutMode}
-    | {type: 'exportDiagram'; svg: string; pngBase64: string; pdfBase64: string}
-    | {type: 'exportError'; message: string};
+    | {type: 'exportDiagram'; svg: string; pngBase64: string; pdfBase64: string; failed?: string[]}
+    | {type: 'exportError'; message: string}
+    | {type: 'expandSvg'; requestId: string; svg: string};
 
 /**
  * Host → webview messages that carry editor-driven cues rather than a full
@@ -196,4 +216,5 @@ export type WebviewInboundMessage =
  * discriminant ``type`` field, which state payloads do not set.
  */
 export type HostOutboundCue =
-    | {type: 'setActiveRange'; range: TextRange | null};
+    | {type: 'setActiveRange'; range: TextRange | null}
+    | {type: 'expandSvgResult'; requestId: string; svg?: string; error?: string};

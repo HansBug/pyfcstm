@@ -4,11 +4,16 @@ const path = require('path');
 
 const packageDir = path.resolve(__dirname, '..');
 const localTarball = path.join(packageDir, 'jsfcstm.tgz');
+const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 function main() {
-    const output = execFileSync('npm', ['pack', '--json', '--ignore-scripts'], {
+    const output = execFileSync(npmCommand, ['pack', '--json', '--ignore-scripts'], {
         cwd: packageDir,
         encoding: 'utf8',
+        // Windows exposes npm through a cmd shim; Node cannot exec that shim
+        // directly on all runner images and reports EINVAL. The shell path is
+        // limited to this platform, while POSIX keeps direct argv execution.
+        shell: process.platform === 'win32',
     });
     const result = JSON.parse(output);
     if (!Array.isArray(result) || !result[0] || !result[0].filename) {

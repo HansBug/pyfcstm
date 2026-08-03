@@ -11,7 +11,7 @@ const props = defineProps<{
     selection: SelectionRef;
 }>();
 const emit = defineEmits<{
-    (e: 'revealSource', range: TextRange): void;
+    (e: 'revealSource', range: TextRange, target: SelectionRef): void;
     (e: 'select', sel: SelectionRef): void;
 }>();
 
@@ -57,7 +57,9 @@ function displayTitle() {
 function revealCurrent() {
     const d = detail.value;
     if (d && d.sourceRange) {
-        emit('revealSource', d.sourceRange);
+        // The panel is already showing one element; reveal that one rather than
+        // whatever a line lookup happens to land on.
+        emit('revealSource', d.sourceRange, props.selection);
     }
 }
 

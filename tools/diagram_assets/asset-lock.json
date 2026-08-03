@@ -1,0 +1,197 @@
+{
+  "fonts": {
+    "defaultCjkLocale": "sc",
+    "defaultFamily": "JetBrains Mono",
+    "faces": [
+      {
+        "family": "JetBrains Mono",
+        "maxBytes": 300000,
+        "path": "fonts/JetBrainsMono-Regular.ttf",
+        "sha256": "a0bf60ef0f83c5ed4d7a75d45838548b1f6873372dfac88f71804491898d138f",
+        "style": "Regular",
+        "url": "https://github.com/JetBrains/JetBrainsMono/raw/v2.304/fonts/ttf/JetBrainsMono-Regular.ttf"
+      },
+      {
+        "family": "JetBrains Mono",
+        "maxBytes": 300000,
+        "path": "fonts/JetBrainsMono-Medium.ttf",
+        "sha256": "31c92d01a8a08528b718a43addf0ad3df0af2ca4b7b3290a452f70f358e14d3d",
+        "style": "Medium",
+        "url": "https://github.com/JetBrains/JetBrainsMono/raw/v2.304/fonts/ttf/JetBrainsMono-Medium.ttf"
+      },
+      {
+        "family": "JetBrains Mono",
+        "maxBytes": 300000,
+        "path": "fonts/JetBrainsMono-Bold.ttf",
+        "sha256": "5590990c82e097397517f275f430af4546e1c45cff408bde4255dad142479dcb",
+        "style": "Bold",
+        "url": "https://github.com/JetBrains/JetBrainsMono/raw/v2.304/fonts/ttf/JetBrainsMono-Bold.ttf"
+      },
+      {
+        "family": "Noto Sans SC",
+        "maxBytes": 8500000,
+        "path": "fonts/NotoSansSC-Regular.otf",
+        "sha256": "faa6c9df652116dde789d351359f3d7e5d2285a2b2a1f04a2d7244df706d5ea9",
+        "style": "Regular",
+        "url": "https://github.com/notofonts/noto-cjk/raw/Sans2.004/Sans/SubsetOTF/SC/NotoSansSC-Regular.otf"
+      },
+      {
+        "family": "Noto Sans SC",
+        "maxBytes": 8700000,
+        "path": "fonts/NotoSansSC-Bold.otf",
+        "sha256": "c6cb5a93abaa9edc8ee7463b7ebb7f42d618d40e6ed2f7a5371c97b0b64767c0",
+        "style": "Bold",
+        "url": "https://github.com/notofonts/noto-cjk/raw/Sans2.004/Sans/SubsetOTF/SC/NotoSansSC-Bold.otf"
+      },
+      {
+        "family": "Noto Sans TC",
+        "maxBytes": 5800000,
+        "path": "fonts/NotoSansTC-Regular.otf",
+        "sha256": "5bab0cb3c1cf89dde07c4a95a4054b195afbcfe784d69d75c340780712237537",
+        "style": "Regular",
+        "url": "https://github.com/notofonts/noto-cjk/raw/Sans2.004/Sans/SubsetOTF/TC/NotoSansTC-Regular.otf"
+      },
+      {
+        "family": "Noto Sans TC",
+        "maxBytes": 6000000,
+        "path": "fonts/NotoSansTC-Bold.otf",
+        "sha256": "55420b259eb119bf5f2a0aadba10cf9d736c12d64ab93e78546d69ef5f43558b",
+        "style": "Bold",
+        "url": "https://github.com/notofonts/noto-cjk/raw/Sans2.004/Sans/SubsetOTF/TC/NotoSansTC-Bold.otf"
+      },
+      {
+        "family": "Noto Sans HK",
+        "maxBytes": 5800000,
+        "path": "fonts/NotoSansHK-Regular.otf",
+        "sha256": "8a43afea92bb58dfd9027bd7ac6f5b0b2662e2ffb3e7c1edc02c62b2b21924f1",
+        "style": "Regular",
+        "url": "https://github.com/notofonts/noto-cjk/raw/Sans2.004/Sans/SubsetOTF/HK/NotoSansHK-Regular.otf"
+      },
+      {
+        "family": "Noto Sans HK",
+        "maxBytes": 6000000,
+        "path": "fonts/NotoSansHK-Bold.otf",
+        "sha256": "4bce16fbed09278cbdfb4d57749500038cdda70737925a846e3f6c59327ab46e",
+        "style": "Bold",
+        "url": "https://github.com/notofonts/noto-cjk/raw/Sans2.004/Sans/SubsetOTF/HK/NotoSansHK-Bold.otf"
+      },
+      {
+        "family": "Noto Sans JP",
+        "maxBytes": 4700000,
+        "path": "fonts/NotoSansJP-Regular.otf",
+        "sha256": "dff723ba59d57d136764a04b9b2d03205544f7cd785a711442d6d2d085ac5073",
+        "style": "Regular",
+        "url": "https://github.com/notofonts/noto-cjk/raw/Sans2.004/Sans/SubsetOTF/JP/NotoSansJP-Regular.otf"
+      },
+      {
+        "family": "Noto Sans JP",
+        "maxBytes": 4800000,
+        "path": "fonts/NotoSansJP-Bold.otf",
+        "sha256": "1b0edfb500b73a4fa8a4fcaae1bbbd403994e08e73e3e0da37e70d3853f42c5f",
+        "style": "Bold",
+        "url": "https://github.com/notofonts/noto-cjk/raw/Sans2.004/Sans/SubsetOTF/JP/NotoSansJP-Bold.otf"
+      },
+      {
+        "family": "Noto Sans KR",
+        "maxBytes": 4800000,
+        "path": "fonts/NotoSansKR-Regular.otf",
+        "sha256": "69975a0ac8472717870aefeab0a4d52739308d90856b9955313b2ad5e0148d68",
+        "style": "Regular",
+        "url": "https://github.com/notofonts/noto-cjk/raw/Sans2.004/Sans/SubsetOTF/KR/NotoSansKR-Regular.otf"
+      },
+      {
+        "family": "Noto Sans KR",
+        "maxBytes": 5000000,
+        "path": "fonts/NotoSansKR-Bold.otf",
+        "sha256": "5a6ceb287ed2fc6cfc6213144ebea68cbd94b20fc9eb873d8486493bf02d9bda",
+        "style": "Bold",
+        "url": "https://github.com/notofonts/noto-cjk/raw/Sans2.004/Sans/SubsetOTF/KR/NotoSansKR-Bold.otf"
+      }
+    ],
+    "maxTotalBytes": 65000000
+  },
+  "renderer": {
+    "elkjs": {
+      "integrity": "sha512-zxxR9k+rx5ktMwT/FwyLdPCrq7xN6e4VGGHH8hA01vVYKjTFik7nHOxBnAYtrgYUB1RpAiLvA1/U2YraWxyKKg==",
+      "license": "EPL-2.0",
+      "name": "elkjs",
+      "repository": "https://github.com/kieler/elkjs",
+      "resolved": "https://registry.npmmirror.com/elkjs/-/elkjs-0.11.1.tgz",
+      "sourceUrl": "https://github.com/kieler/elkjs/tree/v0.11.1",
+      "treeSha256": "feec04077159fd1c2cee9ba09d51b687d3b011c2886f2e61b761a8f8a930fc77",
+      "version": "0.11.1"
+    },
+    "esbuildVersion": "0.28.1",
+    "format": "iife",
+    "resvgPackage": {
+      "bindingPath": "index.min.js",
+      "bindingSha256": "590115ae25dead0d688da192f2d31586cdf1f8c70fe294919419c168e03e5c42",
+      "integrity": "sha512-FqALmHI8D4o6lk/LRWDnhw95z5eO+eAa6ORjVg09YRR7BkcM6oPHU9uyC0gtQG5vpFLvgpeU4+zEAz2H8APHNw==",
+      "license": "MPL-2.0",
+      "name": "@resvg/resvg-wasm",
+      "patchedSourceArchiveSha256": "08d15a07f930ee4dfb7971b792697c32059b25a5c10aa283ee672488a2417713",
+      "patchedSourceArchiveUrl": "https://codeload.github.com/zimond/resvg/tar.gz/3495d8705b302d6d266748516973606ca9657906",
+      "patchedSourceCommit": "3495d8705b302d6d266748516973606ca9657906",
+      "patchedSourceRepository": "https://github.com/zimond/resvg",
+      "resolved": "https://registry.npmjs.org/@resvg/resvg-wasm/-/resvg-wasm-2.6.2.tgz",
+      "sourceArchiveSha256": "7ce8697451237577d473361aa688917a48cba00c4a8f3302a833455c9c2013fa",
+      "sourceArchiveUrl": "https://codeload.github.com/thx/resvg-js/tar.gz/9ca058462ac529120c8cc84ddcd6fef644cc5406",
+      "sourceCommit": "9ca058462ac529120c8cc84ddcd6fef644cc5406",
+      "sourceFiles": {
+        "Cargo.toml": "72880b4d3e64bd62caf033579a21057c97ed069002bdef67a0029b7fc6e340a9",
+        "LICENSE": "4b89d4518bd135ab4ee154a7bce722246b57a98c3d7efc1a09409898160c2bd1",
+        "patched-resvg/LICENSE.txt": "fab3dd6bdab226f1c08630b1dd917e11fcb4ec5e1e020e2c16f83a0a13863e85"
+      },
+      "sourceRepository": "https://github.com/thx/resvg-js",
+      "tarballSha256": "ff51acbb5ee0074601b75c3bea9226a18d346752af787f6d2d3adcdd98493d71",
+      "version": "2.6.2",
+      "wasmPath": "index_bg.wasm",
+      "wasmSha256": "22bf6e9f9a100d972da0411a69c5ba504367fc1fa87b3b64e3f35e53926d2d70"
+    },
+    "resvgWasmMaxBytes": 2600000,
+    "target": "es2017"
+  },
+  "schema": "pyfcstm-diagram-assets/1",
+  "viewer": {
+    "babelRuntime": {
+      "integrity": "sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw==",
+      "license": "MIT",
+      "name": "@babel/runtime",
+      "resolved": "https://registry.npmmirror.com/@babel/runtime/-/runtime-7.29.7.tgz",
+      "transitive": true,
+      "version": "7.29.7"
+    },
+    "esbuildVersion": "0.28.1",
+    "fflate": {
+      "integrity": "sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==",
+      "license": "MIT",
+      "name": "fflate",
+      "resolved": "https://registry.npmmirror.com/fflate/-/fflate-0.8.3.tgz",
+      "transitive": true,
+      "version": "0.8.3"
+    },
+    "format": "iife",
+    "jspdf": {
+      "integrity": "sha512-YyAXyvnmjTbR4bHQRLzex3CuINCDlQnBqoSYyjJwTP2x9jDLuKDzy7aKUl0hgx3uhcl7xzg32agn5vlie6HIlQ==",
+      "license": "MIT",
+      "name": "jspdf",
+      "resolved": "https://registry.npmmirror.com/jspdf/-/jspdf-4.2.1.tgz",
+      "version": "4.2.1"
+    },
+    "svg2pdf": {
+      "integrity": "sha512-nXK4Wx28H0KtOktanm5nsphl1KMEoLNMelAT/776qxPAj9DshwYcqgdpKuBnY1nrcYOriQFHVQLE4tIag+aDJA==",
+      "license": "MIT",
+      "name": "svg2pdf.js",
+      "resolved": "https://registry.npmmirror.com/svg2pdf.js/-/svg2pdf.js-2.7.0.tgz",
+      "version": "2.7.0"
+    },
+    "target": "es2019",
+    "xmldom": {
+      "integrity": "sha512-cQzWCtO6C8TQiYl1ruKNn2U6Ao4o4WBBcbL61yJl84x+j5sOWWFU9X7DpND8XZG3daDppSsigMdfAIl2upQBRw==",
+      "license": "MIT",
+      "name": "@xmldom/xmldom",
+      "resolved": "https://registry.npmmirror.com/@xmldom/xmldom/-/xmldom-0.8.11.tgz",
+      "version": "0.8.11"
+    }
+  }
+}

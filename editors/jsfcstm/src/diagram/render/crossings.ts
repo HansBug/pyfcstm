@@ -6,7 +6,7 @@
  * segments stay straight. This keeps exactly one side responsible for
  * the hop so two crossing edges produce one visible arc, not two.
  */
-import type {PreviewElkEdge, PreviewElkNode} from '../types';
+import type {FcstmElkEdge as PreviewElkEdge, FcstmElkNode as PreviewElkNode} from '../model';
 
 export interface ResolvedSegment {
     edgeId: string;

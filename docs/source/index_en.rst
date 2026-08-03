@@ -166,6 +166,7 @@ in the global navigation.
     explanations/bmc_properties/index
     explanations/bmc_solving/index
     explanations/diagnostics/index
+    explanations/visualization/index
     explanations/template_rendering/index
     explanations/grammar_tooling/index
 
@@ -177,6 +178,7 @@ in the global navigation.
 * :doc:`explanations/bmc_properties/index`
 * :doc:`explanations/bmc_solving/index`
 * :doc:`explanations/diagnostics/index`
+* :doc:`explanations/visualization/index`
 * :doc:`explanations/template_rendering/index`
 * :doc:`explanations/grammar_tooling/index`
 

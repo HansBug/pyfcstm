@@ -1245,6 +1245,23 @@ _MIRRORED_ENUMS = (
 #: refused is a value the package cannot emit.
 _FIELD_VOCABULARIES = {
     "infeasible_stage": _STAGES,
+    "scope": _SCOPES,
+    "stage": _STAGES,
+    # Only names that mean one vocabulary everywhere they appear.  ``kind`` is
+    # four different things in this document -- a fact tag, a proof node, a
+    # reasoning step and a property type -- and ``status`` is two; checking those
+    # against the union of their candidates would accept a proof node called
+    # ``reach``, which is a guard wide enough to stop being one.  Their exact
+    # values are pinned per site by the pair list instead.  ``localization_status`` and
+    # ``incomplete_status`` are left out for the same reason -- the first carries
+    # ``not_checked`` and ``not_requested``, the second carries ``sat``, and none
+    # of those belongs to a vocabulary declared here.
+    #
+    # Four names survived that filter out of the eight the scan proposed.  The
+    # ones that did not are exactly the ones whose spelling is reused, which is
+    # why the map is written by hand: a scan pairs a name with whatever
+    # vocabulary happens to contain its values at one site, and the pairing it
+    # infers is wrong wherever the same name means something else.
     "semantic_role": _SEMANTIC_ROLES,
     "granularity": _GRANULARITIES,
     "reduction": _REDUCTIONS,

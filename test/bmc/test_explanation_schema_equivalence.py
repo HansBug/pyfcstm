@@ -24,6 +24,7 @@ from pathlib import Path
 import pytest
 
 from pyfcstm.bmc.explanation import (
+    _FACT_KINDS,
     CLASSIFICATION_SCOPES,
     STAGE_FALLBACK_SCOPES,
     BmcConflictCore,
@@ -1188,3 +1189,30 @@ def test_the_constructor_still_enforces_every_named_asymmetry() -> None:
         "non-finite number anywhere in a published mapping",
         "non-JSON value anywhere in a published mapping",
     }
+
+
+def test_the_schema_fact_kind_enum_is_neither_wider_nor_narrower() -> None:
+    """The published ``kind`` enum has to be exactly what the package can emit.
+
+    The corpus tests prove one direction -- every kind the package produces is
+    accepted -- but they draw their values from ``_FACT_KINDS`` itself, so a schema
+    listing a kind the code cannot emit passes all of them.  A consumer reading the
+    published schema would write a branch for a case that never arrives.  Measured:
+    adding a member to ``_FACT_KINDS`` alone fails the transcription guard, while
+    adding the same member to the schema alone failed nothing before this test.
+
+    Only this one enum is pinned.  A general "no schema enum may exceed its
+    vocabulary" check needs a known-set assembled from every published vocabulary,
+    and those live in several modules as a mix of tuples, ``Literal`` aliases and
+    field annotations; a set gathered by scanning is a set that can silently
+    over-collect, and a guard whose known-set is too wide passes everything.  The
+    schema also narrows deliberately -- a conditional branch pins ``status`` to
+    ``unknown``/``timeout`` where only those two occur -- so equality is not the
+    right shape elsewhere either.  This is the site the gap was measured at, and
+    the vocabulary a new fact kind extends.
+    """
+    schema = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
+    published = schema["$defs"]["coreItem"]["properties"]["normalized_fact"][
+        "properties"
+    ]["kind"]["enum"]
+    assert tuple(published) == _FACT_KINDS

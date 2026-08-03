@@ -372,6 +372,16 @@ constructor that quietly adds information cannot slip it past.
 solver instead.  The current catalog does not use it; naming it here is what
 keeps a future node carrying it readable rather than surprising.
 
+A group that holds one requirement per case is a conjunction, and no single fact
+can imply the whole of it -- so an input restating one of those requirements uses
+``core_binding_unit`` instead.  The same two directions are refuted, against that
+one requirement rather than against the group, and the node names which one it was
+through ``unit_index`` beside ``unit_count``.  The pair is what lets a reader see
+the proportion covered: "requirement 5 of 12" says something that "the transition
+relation" does not.  A fact equivalent to two requirements identifies neither, so
+the binding is refused rather than resolved -- an index a reader cannot rely on is
+worse than no index.
+
 The boundary is therefore: **a reader may trust that each sentence follows from
 the core members named beside it, and may not trust that the encoding faithfully
 models their intent.** The proof is about the constraints as encoded.  That is

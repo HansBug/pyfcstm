@@ -81,6 +81,12 @@ exact\_optional\_index
 .. autofunction:: exact_optional_index
 
 
+conjunctive\_units
+-----------------------------------------------------
+
+.. autofunction:: conjunctive_units
+
+
 normalized\_fact\_for
 -----------------------------------------------------
 

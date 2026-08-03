@@ -263,6 +263,51 @@ def test_a_definedness_conflict_reaches_the_proof_tier() -> None:
 
 
 @pytest.mark.unittest
+def test_an_assignment_a_transition_makes_binds_to_the_requirement_it_states() -> None:
+    """A step relation's assignment is now bindable, one requirement at a time.
+
+    Two of the catalog's rules speak about a transition, and both were unreachable
+    while the step relation published no content: a premise no query can produce is
+    a rule that passes its own tests and never runs.  The member now publishes the
+    assignment it makes, and the binding proves that reading equivalent to exactly
+    one requirement of the group -- which is what ``core_binding`` reaching
+    ``complete`` here reports.  Before, the member was ``structural_constraint``,
+    no encoder existed for it, and this phase ended ``unknown``.
+
+    The proof tier still declines, and the reason is precise about why: the facts
+    are bound, and no rule closes them.  A published case is conditional -- the
+    assignment holds where its case applies -- and the rule that evaluates an
+    expression refuses one carrying a condition, so the chain waits on the condition
+    being discharged from the members that establish it.  That discharge is its own
+    mechanism with its own soundness argument, so it is not folded in here; when it
+    lands, ``proof_construction`` becomes ``complete`` and this test's last two
+    assertions are what change.
+    """
+    machine = load_state_machine_from_text(_MODEL, "machine.fcstm")
+    context = BmcEngine(machine).prepare(
+        'init state("Root.A") where x == 0;\n'
+        'assume at 1: var("x") == 5;\n'
+        'check reach <= 1: active("Root.B");\n',
+        query_source_path="query.fbmcq",
+    )
+    result = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="proof",
+    )
+
+    ledger = {check.name: check for check in result.feasibility.refinement_checks}
+    assert ledger["core_binding"].status == "complete"
+    assert ledger["core_binding"].reason is None
+    explanation = result.feasibility.explanation
+    assert any(
+        item.normalized_fact.get("kind") == "transition_case"
+        for item in explanation.core.items
+    ), [item.normalized_fact.get("kind") for item in explanation.core.items]
+    assert explanation.achieved_mode == "formal"
+    assert "no rule in the catalog closes this core" in explanation.reason
+
+
+@pytest.mark.unittest
 def test_a_member_no_fact_was_read_from_blocks_publication() -> None:
     """Coverage is judged against the core, not against what could be translated.
 
@@ -546,7 +591,7 @@ def test_a_binding_that_runs_out_of_time_is_reported_as_a_timeout() -> None:
     spent = _SolveBudget(1)
     spent.deadline = time.monotonic() - 1.0
 
-    held, record = check_core_bindings(core, facts, spent)
+    held, record, _ = check_core_bindings(core, facts, spent)
 
     assert held is False
     assert record.status == "timeout", record.reason
@@ -578,7 +623,7 @@ def test_nothing_to_bind_is_reported_as_unestablished_rather_than_complete() -> 
     )
     core = build_bmc_core_formula(context)
 
-    held, record = check_core_bindings(core, (), _SolveBudget(None))
+    held, record, _ = check_core_bindings(core, (), _SolveBudget(None))
 
     assert held is False, "an empty binding establishes nothing"
     assert record.status == "unknown"
@@ -670,6 +715,13 @@ def test_a_core_holding_a_structural_member_cannot_reach_the_proof_tier() -> Non
     group in both directions.  A contentless fact cannot be equivalent to a macro-step
     relation, so a core holding one degrades however many recognizers are added.
 
+    The effect below assigns *two* variables, which is what makes its step keep the
+    structural tag: the reading a step publishes is one assignment, and a step that
+    makes two has no single one to name.  Declining is the honest answer there --
+    publishing either assignment as though it were the step's reading would hide the
+    other.  A step that makes exactly one assignment does get a content reading, so
+    that shape is pinned in ``test_provenance`` instead of here.
+
     The transition chain below is the shape this matters for, and it is worth pinning
     rather than leaving as an apparent gap: the ``formal`` tier answers the question
     the query asks -- the prefix forces the counter to one -- and the proof tier says
@@ -677,8 +729,9 @@ def test_a_core_holding_a_structural_member_cannot_reach_the_proof_tier() -> Non
     """
     machine = load_state_machine_from_text(
         "def int retries = 0;\n"
+        "def int spare = 0;\n"
         "state Root { state Igniting; state Purge; [*] -> Igniting;\n"
-        "    Igniting -> Purge effect { retries = retries + 1; }; }",
+        "    Igniting -> Purge effect { retries = retries + 1; spare = spare + 2; }; }",
         "machine.fcstm",
     )
     context = BmcEngine(machine).prepare(

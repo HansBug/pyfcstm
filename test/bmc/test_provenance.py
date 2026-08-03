@@ -2345,6 +2345,34 @@ def _fact_groups(query: str, machine: str = None):
     return groups
 
 
+def _fact_group_at_step(query: str, category: str, step: int, machine: str = None):
+    """Return the tracked group of one category for one macro-step.
+
+    ``_fact_groups`` keeps the first group per category, which is the right
+    reading for the categories that occur once.  A step relation occurs once per
+    macro-step, so a test about the step that carries an effect has to say which
+    one it means rather than take whichever came first.
+    """
+    from pyfcstm.bmc import BmcEngine, build_bmc_core_formula
+
+    core = build_bmc_core_formula(
+        BmcEngine(
+            load_state_machine_from_text(_FACT_MODEL if machine is None else machine)
+        ).prepare(query)
+    )
+    for group in core._tracked_groups:
+        if group.category == category and group.refs.get("step") == step:
+            return group
+    raise AssertionError(
+        "no %s group for step %d; saw %r"
+        % (
+            category,
+            step,
+            [(g.category, g.refs.get("step")) for g in core._tracked_groups],
+        )
+    )
+
+
 @pytest.mark.unittest
 def test_a_variable_comparison_reads_as_a_domain_fact_not_a_structural_one() -> None:
     """An assumption pinning a variable publishes the variable, frame and value.
@@ -2430,6 +2458,70 @@ def test_an_unreduced_group_says_so_instead_of_guessing() -> None:
         'init state("Root.A") where x == 0; check reach <= 2: active("Root.B");'
     )
     fact = normalized_fact_for(groups["transition.step"])
+
+    assert fact["kind"] == "structural_constraint"
+    assert fact["category"] == "transition.step"
+
+
+_EFFECT_MODEL = """def int x = 0;
+def int y = 3;
+state Root {
+    state A;
+    state B;
+    [*] -> A;
+    A -> B effect { x = x + y; }
+    B -> [*];
+}"""
+
+
+@pytest.mark.unittest
+def test_a_step_that_carries_an_effect_publishes_the_assignment_it_makes() -> None:
+    """A step relation whose case assigns a variable reads as that assignment.
+
+    Without this the member arrives as ``structural_constraint`` with no content,
+    and the two rules that speak about a transition have no premise to read: a
+    core resting on one cannot reach the proof tier however many other rules
+    apply.  The operand is a variable here rather than a literal, so the fact
+    names it under ``operand_variable`` and leaves ``operand`` absent -- that is
+    what lets the substitution step run before the evaluation step.
+    """
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    group = _fact_group_at_step(
+        'assume at 1: var("x") == 7; check reach <= 2: active("Root.B");',
+        "transition.step",
+        1,
+        machine=_EFFECT_MODEL,
+    )
+    fact = normalized_fact_for(group, ("x", "y"))
+
+    assert fact["kind"] == "transition_case"
+    assert fact["variable"] == "x"
+    assert fact["frame"] == 1
+    assert fact["target_frame"] == 2
+    assert fact["operation"] == "add"
+    assert fact["operand_variable"] == "y"
+    assert "operand" not in fact
+    assert fact["condition"]
+
+
+@pytest.mark.unittest
+def test_a_step_with_no_assignment_keeps_its_structural_identity() -> None:
+    """A step whose cases only carry values forward has no assignment to state.
+
+    The recognizer answers a question about the step's content, not about its
+    category, so a model with no effect at all must still degrade rather than
+    invent an assignment of a variable to itself.
+    """
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    group = _fact_group_at_step(
+        'assume at 1: var("x") == 7; check reach <= 2: active("Root.B");',
+        "transition.step",
+        0,
+        machine=_EFFECT_MODEL,
+    )
+    fact = normalized_fact_for(group, ("x", "y"))
 
     assert fact["kind"] == "structural_constraint"
     assert fact["category"] == "transition.step"

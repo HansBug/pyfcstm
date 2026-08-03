@@ -588,6 +588,34 @@ def proof_facts_for_core(items) -> Tuple[Tuple[str, Mapping[str, Any]], ...]:
                     },
                 )
             )
+        elif kind == "transition_case":
+            # ``operation`` is the published name and ``operator`` the rule's own;
+            # the boundary is the contract's, so this is where one becomes the other.
+            # Everything else travels unchanged, including the condition: a rule
+            # reading a case without it would treat a conditional assignment as
+            # unconditional, which is the one claim the group does not make.
+            translated.append(
+                (
+                    stable_id,
+                    dict(
+                        {
+                            key: value
+                            for key, value in fact.items()
+                            if key
+                            in (
+                                "variable",
+                                "frame",
+                                "target_frame",
+                                "operand",
+                                "operand_variable",
+                                "condition",
+                            )
+                        },
+                        kind="transition_case",
+                        operator=fact.get("operation"),
+                    ),
+                )
+            )
         elif kind == "state_membership":
             if fact.get("excluded"):
                 translated.append(

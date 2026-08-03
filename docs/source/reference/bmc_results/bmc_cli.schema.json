@@ -5229,9 +5229,10 @@
                 "variable_comparison",
                 "state_membership",
                 "state_domain",
-                "definedness_condition"
+                "definedness_condition",
+                "transition_case"
               ],
-              "$comment": "A fact describes one source group. variable_comparison carries the relation in its operator field instead of splitting into a tag per relation. Cross-group patterns -- incompatible equalities, an empty interval, an exhausted state domain, a value carried across a step, a definedness failure -- are derivations over several facts and are named by the narrative's rule vocabulary, never here. structural_constraint is the honest fallback for a shape no recognizer reads."
+              "$comment": "A fact describes one source group. variable_comparison carries the relation in its operator field instead of splitting into a tag per relation. transition_case gives the assignment one step's selected case makes, under the condition that selects it; exactly one of operand and operand_variable is present, decided by whether the model wrote a literal or a variable. Cross-group patterns -- incompatible equalities, an empty interval, an exhausted state domain, a value carried across a step, a definedness failure -- are derivations over several facts and are named by the narrative's rule vocabulary, never here. structural_constraint is the honest fallback for a shape no recognizer reads."
             }
           },
           "$comment": "Machine consumers dispatch on kind rather than on human text, so the tag is required.  Later stages extend the enum as recognizers land. Draft 2020-12 has no depth keyword, no way to bound an integer's digit count, and no way to see a non-finite number, a value with no JSON counterpart or a non-string object key -- a payload reaching a validator was already parsed from JSON text. The constructor refuses all of those at every nesting depth."
@@ -7080,10 +7081,21 @@
         "verification_method": {
           "enum": [
             "core_binding",
+            "core_binding_unit",
             "rule_checker",
             "solver_entailment"
           ],
           "$comment": "No value for an unchecked step: a published proof carries no hole, trust or opaque solver step, so the absence is the contract rather than an omission."
+        },
+        "unit_index": {
+          "type": "integer",
+          "minimum": 0,
+          "$comment": "Which requirement of the member's group a core_binding_unit input restates, counting from zero in the group's own decomposition order. Only a core_binding_unit input carries it, and it must be below unit_count."
+        },
+        "unit_count": {
+          "type": "integer",
+          "minimum": 1,
+          "$comment": "How many requirements that decomposition has, so a reader sees what proportion of the group one fact covers. Travels with unit_index in both directions: neither may appear without the other, and neither may appear on a whole-group core_binding."
         }
       }
     },

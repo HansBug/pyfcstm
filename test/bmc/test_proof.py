@@ -127,6 +127,7 @@ def test_the_proof_vocabularies_are_transcribed_from_the_contract() -> None:
     )
     assert module._PROOF_VERIFICATION_METHODS == (
         "core_binding",
+        "core_binding_unit",
         "rule_checker",
         "solver_entailment",
     )
@@ -153,6 +154,10 @@ def test_the_proof_dataclasses_carry_the_frozen_field_order() -> None:
         "item_ids",
         "human_text",
         "verification_method",
+        # Last because they are optional: the eight required arguments keep their
+        # positions, and a unit binding names the two it adds.
+        "unit_index",
+        "unit_count",
     ]
     assert [field.name for field in dataclasses.fields(BmcConflictProof)] == [
         "scope",
@@ -221,6 +226,37 @@ def test_a_node_publishes_its_canonical_mapping_in_field_order() -> None:
         "frame": 0,
         "value": 0,
     }
+
+
+@pytest.mark.unittest
+def test_only_a_unit_binding_publishes_the_two_unit_fields() -> None:
+    """The pair travels with the method that admits it, in the output as well.
+
+    The fields exist on the dataclass, so a constructor check alone would pass while
+    the mapping a consumer actually reads never carried them.  Publishing them on a
+    whole-group binding would be the opposite error: two keys that mean nothing
+    there, and a claim to a decomposition that binding never made.
+    """
+    unit = BmcProofNode(
+        "proof.input.0000",
+        "input",
+        "source_fact",
+        (),
+        {"kind": "transition_case", "variable": "x", "frame": 0, "target_frame": 1},
+        ("transition.step.0000",),
+        "Between frame 0 and frame 1, the transition adds 1 to x.",
+        "core_binding_unit",
+        5,
+        12,
+    )
+
+    canonical = unit.to_canonical()
+
+    assert list(canonical)[-2:] == ["unit_index", "unit_count"]
+    assert (canonical["unit_index"], canonical["unit_count"]) == (5, 12)
+    whole = _input_node("proof.input.0001", "assumption.0000", 0)
+    assert "unit_index" not in whole.to_canonical()
+    assert "unit_count" not in whole.to_canonical()
 
 
 @pytest.mark.unittest

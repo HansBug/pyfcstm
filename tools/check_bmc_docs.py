@@ -118,7 +118,12 @@ _PROOF_RULE_IDS = (
 )
 
 #: Every way a proof step can be checked before it is published.
-_PROOF_VERIFICATION_METHODS = ("core_binding", "rule_checker", "solver_entailment")
+_PROOF_VERIFICATION_METHODS = (
+    "core_binding",
+    "core_binding_unit",
+    "rule_checker",
+    "solver_entailment",
+)
 
 #: Every kind of node a proof graph contains.
 _PROOF_NODE_KINDS = ("input", "derived", "contradiction")

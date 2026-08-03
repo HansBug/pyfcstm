@@ -751,6 +751,13 @@ proof's trust boundary rather than a label:
        both directions: ``group => fact`` and ``fact => group`` must each be
        refuted.  Either direction coming back unknown, timing out, or failing to
        hold keeps the proof out of ``complete``.  Used by input nodes only.
+   * - ``core_binding_unit``
+     - The member's group holds one requirement per case, so it is a conjunction and
+       no single fact can imply the whole of it.  The fact was re-encoded and checked
+       against **one** requirement of that conjunction in both directions, and the
+       node names which one through ``unit_index`` beside ``unit_count``.  A fact
+       equivalent to two requirements identifies neither, so the binding is refused
+       rather than resolved.  Used by input nodes only.
    * - ``rule_checker``
      - An independent checker re-derived the conclusion from the premises without
        reusing the code that constructed it.  Used by derived and root nodes.

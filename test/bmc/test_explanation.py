@@ -172,6 +172,7 @@ def test_a_category_outside_every_family_is_refused() -> None:
 #: Frozen structures the transcription test above pins by value.
 _TRANSCRIBED_FROZEN_NAMES = frozenset(
     {
+        "_ASSIGNMENT_PHRASES",
         "_DERIVATION_STATUSES",
         "_FACT_REQUIRED_KEYS",
         "_REASONING_STEP_KINDS",
@@ -285,6 +286,7 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
         "provenance.TRACKED_GROUP_PAIRINGS",
         "infeasibility.AGGREGATE_SELECTORS",
         "infeasibility._BINDING_ENCODERS",
+        "infeasibility._UNIT_BOUND_ENCODERS",
         "infeasibility._INDEX_REF_KEYS",
         "infeasibility._STAGE_FALLBACK_BY_STAGE",
     }
@@ -297,6 +299,12 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
     # Transcribed because they are published dispatch vocabularies: a kind or
     # status added without a schema enum entry would pass Python and fail
     # validation, and one removed would silently narrow what can be published.
+    assert module._ASSIGNMENT_PHRASES == {
+        "add": "adds {operand} to {variable}",
+        "sub": "subtracts {operand} from {variable}",
+        "mul": "multiplies {variable} by {operand}",
+        "div": "divides {variable} by {operand}",
+    }
     # Transcribed because it decides which members a reader may index directly:
     # a tag whose keys are dropped from here silently becomes indexable without
     # them, which is the KeyError this table exists to prevent.
@@ -306,6 +314,13 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
         "state_membership": ("frame", "state"),
         "state_domain": ("frame", "states"),
         "definedness_condition": ("frame", "operation"),
+        "transition_case": (
+            "variable",
+            "frame",
+            "target_frame",
+            "operation",
+            "condition",
+        ),
     }
     # Every published tag needs an entry, or it becomes readable by omission.
     assert set(module._FACT_REQUIRED_KEYS) == set(module._FACT_KINDS)
@@ -351,6 +366,11 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
     # here has no encoding, so its member fails the binding check and no proof is
     # published over it -- which is the contract's answer for a group that does not
     # normalize losslessly, and therefore a published boundary rather than a detail.
+    # A group holding one requirement per case binds against the requirement, so
+    # its encoder lives in a second table.  Transcribed for the same reason as the
+    # first: a kind dropped from here silently stops being bindable, and the proof
+    # then goes unpublished with no gate pointing at the cause.
+    assert set(infeasibility._UNIT_BOUND_ENCODERS) == {"transition_case"}
     assert set(infeasibility._BINDING_ENCODERS) == {
         "variable_equality",
         "variable_bound",
@@ -426,6 +446,7 @@ def test_every_frozen_vocabulary_matches_the_authored_list() -> None:
         "state_membership",
         "state_domain",
         "definedness_condition",
+        "transition_case",
     )
     assert module.UNBUILT_SLOTS == ()
     assert module.INDEX_REF_KEYS == ("frame", "frames", "step", "steps")
@@ -3325,6 +3346,8 @@ def test_a_partly_complete_fact_is_declined_by_every_consumer() -> None:
         "state": 1,
         "states": [1, 2],
         "operation": "division",
+        "target_frame": 1,
+        "condition": "Implies(0 == F_0_state, True)",
     }
 
     def core_of(fact):

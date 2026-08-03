@@ -121,7 +121,7 @@ BmcProofRuleId = Literal[
     "boolean_complement",
 ]
 BmcProofVerificationMethod = Literal[
-    "core_binding", "rule_checker", "solver_entailment"
+    "core_binding", "core_binding_unit", "rule_checker", "solver_entailment"
 ]
 BmcProofInputMinimality = Literal["subset_minimal"]
 BmcProofGraphMinimality = Literal["dependency_pruned"]
@@ -371,6 +371,21 @@ _RELATION_PHRASES = {
     "lt": "to be less than %s",
     "ge": "to be at least %s",
     "gt": "to be greater than %s",
+}
+
+#: How an assignment reads, keyed by the operation a published fact names.
+#:
+#: Each phrase names both the operand and the variable, because the natural word
+#: order differs between them: an addition reads "adds 1 to x" and a multiplication
+#: reads "multiplies x by 1".  Formatting by name rather than by position is what
+#: lets each operation put them where its own English wants them.  An operation
+#: absent here has no reading, which is why the recognizer only names the four the
+#: evaluation rule can apply.
+_ASSIGNMENT_PHRASES = {
+    "add": "adds {operand} to {variable}",
+    "sub": "subtracts {operand} from {variable}",
+    "mul": "multiplies {variable} by {operand}",
+    "div": "divides {variable} by {operand}",
 }
 
 #: Which authority a role speaks for, in the voice the sentence needs.
@@ -715,6 +730,29 @@ def human_text_for_fact(
             count,
             "" if count == 1 else "s",
         )
+    if kind == "transition_case" and {
+        "variable",
+        "frame",
+        "target_frame",
+        "operation",
+        "condition",
+    } <= set(fact):
+        phrase = _ASSIGNMENT_PHRASES.get(fact["operation"])
+        operand = fact.get("operand")
+        if operand is None:
+            operand = fact.get("operand_variable")
+        if phrase is None or operand is None:
+            return _unreduced_sentence(role, fact)
+        # The sentence says the assignment is conditional without reproducing the
+        # condition: the published ``condition`` is the encoder's own text, which
+        # names frames and digests rather than states a reader wrote.  Claiming
+        # the assignment unconditionally would be the one wrong thing to say.
+        return "Between frame %s and frame %s, %s %s where its case applies." % (
+            fact["frame"],
+            fact["target_frame"],
+            voice,
+            phrase.format(operand=operand, variable=fact["variable"]),
+        )
     if kind == "definedness_condition" and {"frame", "operation"} <= set(fact):
         variable = fact.get("variable")
         if variable is None:
@@ -868,6 +906,8 @@ SCOPE_AGGREGATES = MappingProxyType(
 #: which is what an initial target and an ``active(...)`` assumption both lower to.
 #: ``state_domain`` gives the legal states of a frame
 #: and ``definedness_condition`` the operation a group keeps well defined.
+#: ``transition_case`` gives the assignment one step's selected case makes, under
+#: the condition that selects it.
 #: ``structural_constraint`` is the honest fallback for a shape no recognizer
 #: reads.
 #:
@@ -882,6 +922,7 @@ _FACT_KINDS = (
     "state_membership",
     "state_domain",
     "definedness_condition",
+    "transition_case",
 )
 
 #: Frozen upper bound on a published excerpt, in Unicode code points.  A long
@@ -1829,8 +1870,17 @@ class BmcProofNode:
     :type human_text: str
     :param verification_method: How the step was checked.
     :type verification_method: BmcProofVerificationMethod
+    :param unit_index: Which requirement of the member's group this input restates,
+        counting from zero in the group's own decomposition order.  Only a
+        ``core_binding_unit`` input carries it, defaults to ``None``.
+    :type unit_index: Optional[int], optional
+    :param unit_count: How many requirements that decomposition has, so a reader
+        can see what proportion of the group this one fact covers.  Only a
+        ``core_binding_unit`` input carries it, defaults to ``None``.
+    :type unit_count: Optional[int], optional
     :raises ValueError: If a vocabulary value is unknown, a published text is
-        blank, or a sequence repeats an id.
+        blank, a sequence repeats an id, or the two unit fields disagree with the
+        verification method or with each other.
 
     Example::
 
@@ -1852,6 +1902,8 @@ class BmcProofNode:
     item_ids: Tuple[str, ...]
     human_text: str
     verification_method: BmcProofVerificationMethod
+    unit_index: Optional[int] = None
+    unit_count: Optional[int] = None
 
     def __post_init__(self) -> None:
         # Copied before the invariants read them, so a caller's list cannot be
@@ -1867,6 +1919,29 @@ class BmcProofNode:
             _PROOF_VERIFICATION_METHODS,
             "proof node verification_method",
         )
+        # The two unit fields and the method that admits them travel together in
+        # both directions.  Either alone says something a reader cannot use: an
+        # index without a count gives no proportion, a count without an index names
+        # no requirement, and either on a whole-group binding claims a decomposition
+        # that binding never made.
+        unit_fields = (self.unit_index, self.unit_count)
+        if self.verification_method == "core_binding_unit":
+            if any(value is None for value in unit_fields):
+                raise ValueError(
+                    "a core_binding_unit proof node must carry unit_index and "
+                    "unit_count."
+                )
+            index = exact_int(self.unit_index, "proof node unit_index")
+            count = exact_int(self.unit_count, "proof node unit_count")
+            if count < 1:
+                raise ValueError("proof node unit_count must be at least 1.")
+            if not 0 <= index < count:
+                raise ValueError("proof node unit_index must be within its unit_count.")
+        elif any(value is not None for value in unit_fields):
+            raise ValueError(
+                "only a core_binding_unit proof node may carry unit_index or "
+                "unit_count."
+            )
         for name, ids in (
             ("premise_ids", self.premise_ids),
             ("item_ids", self.item_ids),
@@ -1910,7 +1985,7 @@ class BmcProofNode:
             >>> node.to_canonical()["conclusion"]
             {'kind': 'false'}
         """
-        return {
+        mapping = {
             "stable_id": self.stable_id,
             "kind": self.kind,
             "rule_id": self.rule_id,
@@ -1920,6 +1995,14 @@ class BmcProofNode:
             "human_text": self.human_text,
             "verification_method": self.verification_method,
         }
+        if self.verification_method == "core_binding_unit":
+            # Present only where the method admits them, matching the constructor's
+            # own rule in both directions.  Emitting nulls on a whole-group binding
+            # would put two keys in front of every reader that mean nothing there,
+            # and the published schema lists them as optional for the same reason.
+            mapping["unit_index"] = exact_int(self.unit_index, "proof node unit_index")
+            mapping["unit_count"] = exact_int(self.unit_count, "proof node unit_count")
+        return mapping
 
 
 @dataclass(frozen=True)
@@ -2790,6 +2873,12 @@ _FACT_REQUIRED_KEYS = {
     "state_membership": ("frame", "state"),
     "state_domain": ("frame", "states"),
     "definedness_condition": ("frame", "operation"),
+    # ``operand`` and ``operand_variable`` are deliberately absent: exactly one of
+    # them is present, decided by whether the model wrote a literal or a variable
+    # on the right of the assignment.  Requiring either would make the other shape
+    # unpublishable, and requiring neither is what lets a reader dispatch on which
+    # one arrived.
+    "transition_case": ("variable", "frame", "target_frame", "operation", "condition"),
 }
 
 

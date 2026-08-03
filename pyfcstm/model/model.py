@@ -2859,9 +2859,17 @@ def parse_dsl_node_to_state_machine(
     sink = DiagnosticSink(collect=collect)
     # The entry AST is annotated inside ``assemble_state_machine_imports``, which
     # has to do it for its own standalone callers anyway.  Annotating here as well
-    # walked the whole entry tree a second time to write the same values: both
-    # sites derive the entry path the same way and agree on a file, a directory
-    # and ``None`` alike.
+    # walked the whole entry tree a second time to write nearly the same values.
+    #
+    # The two sites derived the entry path independently and agree on a file path,
+    # a directory path, ``None``, a trailing slash, a relative path, a path that
+    # does not exist, and a path through a symlinked directory.  They disagree on
+    # one input: ``path=""``.  ``isdir("")`` is false, so the removed site treated
+    # the empty string as a file and annotated the whole tree with the working
+    # directory; ``isdir(abspath(""))`` is true, so the surviving site reads it as
+    # "no named file" and annotates nothing.  The surviving reading is the right
+    # one -- an empty path names no document -- so the disagreement is a small
+    # correction rather than a loss.
     dnode = assemble_state_machine_imports(dnode, path=path, collect_into=sink)
 
     d_defines: Dict[str, VarDefine] = {}

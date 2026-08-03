@@ -24,7 +24,20 @@ from pathlib import Path
 import pytest
 
 from pyfcstm.bmc.explanation import (
+    _DERIVATION_STATUSES,
     _FACT_KINDS,
+    _GRANULARITIES,
+    _MINIMALITIES,
+    _MODES,
+    _PROOF_NODE_KINDS,
+    _PROOF_RULE_IDS,
+    _PROOF_VERIFICATION_METHODS,
+    _REASONING_STEP_KINDS,
+    _REDUCTIONS,
+    _SCOPES,
+    _SEMANTIC_ROLES,
+    _STAGES,
+    _STATUSES,
     CLASSIFICATION_SCOPES,
     STAGE_FALLBACK_SCOPES,
     BmcConflictCore,
@@ -1191,28 +1204,62 @@ def test_the_constructor_still_enforces_every_named_asymmetry() -> None:
     }
 
 
-def test_the_schema_fact_kind_enum_is_neither_wider_nor_narrower() -> None:
-    """The published ``kind`` enum has to be exactly what the package can emit.
+#: Where the schema republishes a package vocabulary verbatim.
+#:
+#: Transcribed by hand from the schema, not walked out of it: a list derived from
+#: the document it is checking would agree with any document.  Conditional
+#: branches are deliberately absent -- the schema narrows ``status`` to
+#: ``unknown``/``timeout`` where only those can occur, and equality is the wrong
+#: shape there.
+_MIRRORED_ENUMS = (
+    ("$defs/constraintRef/properties/stage", _STAGES),
+    ("$defs/coreItem/properties/semantic_role", _SEMANTIC_ROLES),
+    ("$defs/coreItem/properties/normalized_fact/properties/kind", _FACT_KINDS),
+    ("$defs/conflictCore/properties/scope", _SCOPES),
+    ("$defs/conflictCore/properties/granularity", _GRANULARITIES),
+    ("$defs/conflictCore/properties/reduction", _REDUCTIONS),
+    ("$defs/conflictCore/properties/subset_minimality", _MINIMALITIES),
+    ("$defs/infeasibilityExplanation/properties/requested_mode", _MODES),
+    ("$defs/infeasibilityExplanation/properties/achieved_mode", _MODES),
+    ("$defs/infeasibilityExplanation/properties/status", _STATUSES),
+    ("$defs/reasoningStep/properties/kind", _REASONING_STEP_KINDS),
+    ("$defs/conflictNarrative/properties/derivation_status", _DERIVATION_STATUSES),
+    ("$defs/proofNode/properties/kind", _PROOF_NODE_KINDS),
+    ("$defs/proofNode/properties/rule_id", _PROOF_RULE_IDS),
+    (
+        "$defs/proofNode/properties/verification_method",
+        _PROOF_VERIFICATION_METHODS,
+    ),
+    ("$defs/conflictProof/properties/scope", _SCOPES),
+)
 
-    The corpus tests prove one direction -- every kind the package produces is
-    accepted -- but they draw their values from ``_FACT_KINDS`` itself, so a schema
-    listing a kind the code cannot emit passes all of them.  A consumer reading the
-    published schema would write a branch for a case that never arrives.  Measured:
-    adding a member to ``_FACT_KINDS`` alone fails the transcription guard, while
-    adding the same member to the schema alone failed nothing before this test.
 
-    Only this one enum is pinned.  A general "no schema enum may exceed its
-    vocabulary" check needs a known-set assembled from every published vocabulary,
-    and those live in several modules as a mix of tuples, ``Literal`` aliases and
-    field annotations; a set gathered by scanning is a set that can silently
-    over-collect, and a guard whose known-set is too wide passes everything.  The
-    schema also narrows deliberately -- a conditional branch pins ``status`` to
-    ``unknown``/``timeout`` where only those two occur -- so equality is not the
-    right shape elsewhere either.  This is the site the gap was measured at, and
-    the vocabulary a new fact kind extends.
+def test_every_republished_vocabulary_is_neither_wider_nor_narrower() -> None:
+    """A schema enum that mirrors a vocabulary has to mirror all of it.
+
+    The corpus tests prove one direction -- every value the package produces is
+    accepted -- but they build their payloads out of the vocabularies themselves,
+    so a schema listing a value the code cannot emit satisfies all of them.
+    Measured on ``kind``: adding a member to ``_FACT_KINDS`` alone fails the
+    transcription guard, while adding the same member to the schema alone failed
+    nothing before this test.  A consumer reading the published schema would write
+    a branch for a case that never arrives.
+
+    Sixteen sites are pinned rather than one.  A general "no enum exceeds its
+    vocabulary" sweep would need a known-set gathered from every published
+    vocabulary, and those live across several modules as tuples, ``Literal``
+    aliases and field annotations; a set assembled by scanning can silently
+    over-collect into a guard that passes everything.  The pairs above are
+    transcribed instead, which is the same reason the sibling transcription guard
+    is written out by hand.
     """
     schema = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
-    published = schema["$defs"]["coreItem"]["properties"]["normalized_fact"][
-        "properties"
-    ]["kind"]["enum"]
-    assert tuple(published) == _FACT_KINDS
+    mismatched = {}
+    for pointer, vocabulary in _MIRRORED_ENUMS:
+        node = schema
+        for step in pointer.split("/"):
+            node = node[step]
+        published = tuple(node["enum"])
+        if published != vocabulary:
+            mismatched[pointer] = (published, vocabulary)
+    assert not mismatched, "schema and package disagree: %r" % mismatched

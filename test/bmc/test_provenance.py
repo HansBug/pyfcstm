@@ -438,7 +438,9 @@ def test_source_reference_drops_span_without_document_snapshot() -> None:
     assert registry.excerpt(reference) is None
 
 
-def test_file_and_import_source_paths_are_not_collapsed(tmp_path: Path) -> None:
+def test_file_and_import_source_paths_are_not_collapsed(
+    tmp_path: Path, text_aligner
+) -> None:
     """Imported model spans must retain the imported document path."""
     imported = tmp_path / "worker.fcstm"
     imported.write_text("state Worker;", encoding="utf-8")
@@ -452,11 +454,18 @@ def test_file_and_import_source_paths_are_not_collapsed(tmp_path: Path) -> None:
     worker = model.root_state.substates["Worker"]
 
     assert worker._source_path == str(imported.resolve())
-    assert model._source_documents[str(main.resolve())] == main.read_text(
-        encoding="utf-8"
+    # Through the aligner rather than ``==``: the loader keeps a file's own line
+    # endings, while ``read_text`` applies universal newlines and turns CRLF into
+    # LF.  On Linux both readings agree and a byte comparison passes; on Windows
+    # they never agree, and the failure would be about newline handling rather
+    # than about which document a path maps to, which is what this test is for.
+    text_aligner.assert_equal(
+        main.read_text(encoding="utf-8"),
+        model._source_documents[str(main.resolve())],
     )
-    assert model._source_documents[str(imported.resolve())] == imported.read_text(
-        encoding="utf-8"
+    text_aligner.assert_equal(
+        imported.read_text(encoding="utf-8"),
+        model._source_documents[str(imported.resolve())],
     )
 
 

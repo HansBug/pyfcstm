@@ -1,4 +1,4 @@
-.PHONY: docs docs_en docs_zh docs_pdf docs_pdf_en docs_pdf_zh test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build build_info build_info_cli package clean build_assets build_assets_clean diagram_assets_check diagram_rendering_check diagram_browser_check diagram_contract_check diagram_data_check diagram_options_check diagram_csp_check diagram_parity_check diagram_reference_check diagram_export_limits_check diagram_headless_check diagram_notebooks_check diagram_browser_headless_check diagram_engine_floor diagram_provenance_check diagram_viewer_gate_check diagram_webview_expander_check diagram_assets_verify diagram_package_check diagram_corpus docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check test_boundary_check
+.PHONY: docs docs_en docs_zh docs_pdf docs_pdf_en docs_pdf_zh test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build build_info build_info_cli package clean build_assets build_assets_clean diagram_assets_check diagram_rendering_check diagram_browser_check diagram_contract_check diagram_data_check diagram_options_check diagram_csp_check diagram_parity_check diagram_reference_check diagram_export_limits_check diagram_headless_check diagram_notebooks_check diagram_browser_headless_check diagram_engine_floor diagram_provenance_check diagram_viewer_gate_check diagram_viewer_option_flow_check diagram_webview_expander_check diagram_assets_verify diagram_package_check diagram_corpus docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check test_boundary_check
 
 PYTHON := $(shell which python)
 
@@ -336,10 +336,19 @@ diagram_export_limits_check:
 diagram_reference_check:
 	$(PYTHON) tools/fetch_diagram_reference.py --check
 
-diagram_assets_verify: diagram_assets_check diagram_docstring_check diagram_rendering_check diagram_contract_check diagram_data_check diagram_options_check diagram_csp_check diagram_export_limits_check diagram_parity_check diagram_engine_floor diagram_provenance_check diagram_reference_check diagram_viewer_gate_check
+diagram_assets_verify: diagram_assets_check diagram_docstring_check diagram_rendering_check diagram_contract_check diagram_data_check diagram_options_check diagram_csp_check diagram_export_limits_check diagram_parity_check diagram_engine_floor diagram_provenance_check diagram_reference_check diagram_viewer_gate_check diagram_viewer_option_flow_check
 
 diagram_viewer_gate_check:
 	node tools/diagram_assets/check_viewer_browser.js --check
+
+# Needs build_assets for the same reason the gates above it do, though for a
+# narrower part of it: the check bundles the webview's own source with esbuild,
+# and esbuild arrives through the `npm ci` that `build_assets` runs. Declaring
+# it matters because make walks prerequisites left to right -- listed without
+# this line the check ran before anything had installed, and a clean checkout
+# failed on `Cannot find module 'esbuild'` rather than on anything it tests.
+diagram_viewer_option_flow_check: build_assets
+	node tools/check_viewer_option_flow.js
 
 # Depends on build_assets like the other diagram gates: the renderer's assets are
 # build products rather than tracked sources, and both halves of this check need

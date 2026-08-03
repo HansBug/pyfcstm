@@ -3114,3 +3114,73 @@ def test_an_ambiguous_span_key_publishes_nothing_rather_than_a_wrong_file(
     assert any(
         getattr(transition, "_source_path", None) is None for transition in expansions
     ), "an ambiguous key must not resolve to some file"
+
+
+def test_a_branch_inside_a_branch_still_has_an_excerpt(tmp_path: Path) -> None:
+    """The descent into conditional arms reaches the bottom, not one level down.
+
+    A conditional operation holds its arms in ``branches`` and each arm holds
+    statements that may be conditional in turn, so the walk that gives model
+    objects their file has to recurse.  Stopping one level down leaves every
+    statement inside a nested arm without a source, and ``model_reference`` then
+    answers with no path and no excerpt for a line the author wrote.  The same
+    descent has to reach transition effects, which are conditional as often as
+    lifecycle actions are.
+
+    A flattened walk is exactly what a merge produced here once, and it passed
+    every test in the suite, so the shape is pinned rather than trusted.
+    """
+    source = tmp_path / "machine.fcstm"
+    source.write_text(
+        "def int x = 0;\n"
+        "state Root {\n"
+        "    event Go;\n"
+        "    state A {\n"
+        "        enter {\n"
+        "            if [x > 0] {\n"
+        "                if [x > 5] { x = x + 1; } else { x = x + 2; }\n"
+        "            } else { x = x + 3; }\n"
+        "        }\n"
+        "    }\n"
+        "    state B;\n"
+        "    [*] -> A;\n"
+        "    A -> B :: Go effect {\n"
+        "        if [x > 0] {\n"
+        "            if [x > 3] { x = x * 2; } else { x = x * 3; }\n"
+        "        }\n"
+        "    };\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    model = load_state_machine_from_file(source)
+    registry = SourceDocumentRegistry(
+        model._source_documents, display_root=model._source_root
+    )
+
+    def excerpts(operation):
+        """Every statement reachable under a conditional, read the public way."""
+        found = []
+        for branch in getattr(operation, "branches", ()):
+            for statement in getattr(branch, "statements", ()):
+                found.append(registry.excerpt(registry.model_reference(statement)))
+                found.extend(excerpts(statement))
+        return found
+
+    root = model.root_state
+    enter_if = root.substates["A"].on_enters[0].operations[0]
+    assert excerpts(enter_if) == [
+        "if [x > 5] { x = x + 1; } else { x = x + 2; }",
+        "x = x + 1;",
+        "x = x + 2;",
+        "x = x + 3;",
+    ]
+
+    effect_if = [transition for transition in root.transitions if transition.effects][
+        0
+    ].effects[0]
+    assert excerpts(effect_if) == [
+        "if [x > 3] { x = x * 2; } else { x = x * 3; }",
+        "x = x * 2;",
+        "x = x * 3;",
+    ]

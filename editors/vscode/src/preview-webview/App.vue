@@ -11,6 +11,7 @@ import BottomPanels from './components/BottomPanels.vue';
 import StandaloneModeBar from './components/StandaloneModeBar.vue';
 import StandaloneSourcePanel from './components/StandaloneSourcePanel.vue';
 import {bridge} from './composables/useBridge';
+import {resolveFcstmDiagramPreviewOptions} from '../../../jsfcstm/src/diagram/options';
 import {buildStandaloneState} from './standalone-data';
 import type {
     PreviewWebviewState, SelectionRef, PreviewResolvedOptions,
@@ -46,6 +47,20 @@ function writeStorage(key: string, value: string) {
     }
 }
 
+// What a document with no injected state asks for. Only the keys no preset
+// governs: an explicit value beats the preset in the resolver, so naming the
+// eight it owns -- with what happen to be the `normal` values -- would make
+// `detailLevel` inert. The Python side omits the same eight for the same reason.
+const FALLBACK_DOCUMENT_OPTIONS: Partial<PreviewResolvedOptions> = {
+    detailLevel: 'normal',
+    direction: 'TB',
+    eventNameFormat: ['extra_name', 'relpath'],
+    maxStateEvents: 4,
+    maxStateActions: 4,
+    maxTransitionEffectLines: 8,
+    maxLabelLength: 160,
+};
+
 // Initial state is serialised into window by the HTML shell.
 declare const __FCSTM_INITIAL_STATE__: PreviewWebviewState;
 const initialState: PreviewWebviewState = (window as unknown as {
@@ -59,15 +74,14 @@ const initialState: PreviewWebviewState = (window as unknown as {
     // happened to be the `normal` values -- would make `detailLevel` inert in
     // any document that fell back to this. The Python side omits the same eight
     // for the same reason.
-    previewOptions: {
-        detailLevel: 'normal',
-        direction: 'TB',
-        eventNameFormat: ['extra_name', 'relpath'],
-        maxStateEvents: 4,
-        maxStateActions: 4,
-        maxTransitionEffectLines: 8,
-        maxLabelLength: 160,
-    },
+    //
+    // Given twice on purpose: sparse as `documentOptions`, which is what the
+    // builder merges and resolves, and resolved as `previewOptions`, which the
+    // state declares complete and components read directly.
+    documentOptions: FALLBACK_DOCUMENT_OPTIONS,
+    previewOptions: resolveFcstmDiagramPreviewOptions(
+        FALLBACK_DOCUMENT_OPTIONS,
+    ) as PreviewResolvedOptions,
     collapsedStateIds: [],
     emptyTitle: 'FCSTM Preview',
     emptyMessage: 'Preparing preview...',
@@ -384,10 +398,16 @@ provide('state', state);
 
 function patchOptions(options: Partial<PreviewResolvedOptions>) {
     if (state.value.standalone) {
-        state.value = buildStandaloneState({
-            ...state.value,
-            previewOptions: {...state.value.previewOptions, ...options},
-        });
+        // Merged into the reader's own choices, not into the resolved options.
+        // Resolving turns every default into an explicit value, and an explicit
+        // value beats the preset next time round: choosing `hide` clamps
+        // `showTransitionEffects` to false, and handing that back made the
+        // clamp reassert `hide` however many times `note` was chosen after it.
+        const overrides = {...(state.value.optionOverrides || {}), ...options};
+        // No explicit input: the builder merges the document's record with this
+        // one. Passing `overrides` alone would drop what the document asked for
+        // -- its `detailLevel` and `direction` have no control to restore them.
+        state.value = buildStandaloneState({...state.value, optionOverrides: overrides});
         return;
     }
     vscode.postMessage({type: 'patchOptions', options});
@@ -399,7 +419,7 @@ function toggleCollapse(id: string) {
     else set.add(id);
     const collapsed = Array.from(set);
     if (state.value.standalone) {
-        state.value = buildStandaloneState({...state.value, collapsedStateIds: collapsed}, state.value.previewOptions, collapsed);
+        state.value = buildStandaloneState({...state.value, collapsedStateIds: collapsed}, collapsed);
         return;
     }
     vscode.postMessage({type: 'setCollapsed', collapsed});

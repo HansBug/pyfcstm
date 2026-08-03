@@ -3,11 +3,10 @@ import {collectFcstmDiagramEffectNotes} from '../../../jsfcstm/src/diagram/rende
 import {resolveFcstmDiagramPreviewOptions} from '../../../jsfcstm/src/diagram/options';
 import type {
     FcstmDiagram, FcstmDiagramState, FcstmDiagramTransition,
-    FcstmDiagramPreviewOptionsInput,
 } from '../../../jsfcstm/src/diagram/model';
 import type {
-    PreviewPayload, PreviewStateDetail, PreviewTransitionDetail,
-    PreviewWebviewState, SelectionRef,
+    PreviewPayload, PreviewResolvedOptions, PreviewStateDetail,
+    PreviewTransitionDetail, PreviewWebviewState, SelectionRef,
 } from './types';
 
 function collectDetails(diagram: FcstmDiagram): {
@@ -62,12 +61,31 @@ function collectDetails(diagram: FcstmDiagram): {
 
 export function buildStandaloneState(
     state: PreviewWebviewState,
-    optionsInput: FcstmDiagramPreviewOptionsInput = state.previewOptions,
     collapsedStateIds: ReadonlyArray<string> = state.collapsedStateIds || [],
 ): PreviewWebviewState {
     const diagram = state.standaloneDiagram;
     if (!state.standalone || !diagram) return state;
-    const options = resolveFcstmDiagramPreviewOptions(optionsInput);
+    // On the first build `previewOptions` still holds what the document wrote,
+    // which is sparse by design; afterwards it holds the resolved set and
+    // `documentOptions` holds that original. Keeping it is what stops a reader's
+    // first click from dropping the author's `detailLevel` and `direction`,
+    // neither of which the options bar can put back.
+    const documentOptions = state.documentOptions
+        || (state.previewOptions as Partial<PreviewResolvedOptions>)
+        || {};
+    // Two sparse records, merged. Never the resolved set: an explicit value
+    // beats the preset, so resolving one and feeding it back makes every
+    // default permanent -- which is how choosing `hide` once used to leave the
+    // effect mode stuck there.
+    // No way in but the merge. There used to be a parameter for an explicit
+    // input, and every defect this file has had came through it: a caller
+    // handing back the resolved set froze each default as a choice, and a
+    // caller handing back only the reader's record dropped the document's.
+    // Both are now unsayable rather than merely discouraged.
+    const options = resolveFcstmDiagramPreviewOptions({
+        ...documentOptions,
+        ...(state.optionOverrides || {}),
+    });
     const graph = buildFcstmElkGraph(diagram, options, {
         collapsedStateIds: new Set(collapsedStateIds),
     });
@@ -93,6 +111,8 @@ export function buildStandaloneState(
     return {
         ...state,
         previewOptions: options,
+        documentOptions,
+        optionOverrides: state.optionOverrides,
         collapsedStateIds: [...collapsedStateIds],
         payload,
         summary: Object.entries(diagram.summary).map(([label, value]) => ({label, value})),

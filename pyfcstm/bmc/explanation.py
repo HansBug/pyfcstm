@@ -553,6 +553,76 @@ def _state_phrase(states, names: Optional[Mapping[int, str]] = None) -> str:
     return ", ".join(_state_display(state, names) for state in states)
 
 
+#: How a relation reads inside a condition clause.
+#:
+#: Separate from :data:`_RELATION_PHRASES` because that table completes "requires
+#: x", so its phrases are infinitives.  A clause needs the indicative: "where y is
+#: at least 3", not "where y to be at least 3".
+_CONDITION_RELATIONS = {
+    "eq": "is %s",
+    "ne": "is not %s",
+    "le": "is at most %s",
+    "lt": "is less than %s",
+    "ge": "is at least %s",
+    "gt": "is greater than %s",
+}
+
+
+def _condition_clause(members, names=None) -> str:
+    """Read the condition a case is selected under, as a clause that can be inserted.
+
+    Empty when there is no condition, so a fact that carries none reads exactly as it
+    did before this existed.  A member with no reading is named by its tag rather than
+    dropped: a clause that quietly listed fewer requirements than the fact carries
+    would understate what the step depends on.
+
+    :param members: The published condition facts, or ``None``.
+    :type members: Optional[Sequence[Mapping[str, Any]]]
+    :param names: What the model calls each state, keyed by encoded index, defaults to
+        ``None``.
+    :type names: Optional[Mapping[int, str]], optional
+    :return: A leading-space clause, or the empty string.
+    :rtype: str
+
+    Example::
+
+        >>> _condition_clause(None)
+        ''
+        >>> _condition_clause([{"kind": "state_membership", "frame": 0, "state": 1}])
+        ' where frame 0 holds state 1'
+    """
+    if not members:
+        return ""
+    phrases = []
+    for member in members:
+        kind = member.get("kind")
+        if kind == "state_membership":
+            phrases.append(
+                "frame %s %s %s"
+                % (
+                    member.get("frame"),
+                    "does not hold" if member.get("excluded") else "holds",
+                    _state_display(member.get("state"), names),
+                )
+            )
+        elif kind == "variable_comparison":
+            # A relation reads differently as a condition than as a requirement:
+            # ``_RELATION_PHRASES`` is written to follow "requires x", which gives
+            # "y to be at least 3" where a clause needs "y is at least 3".
+            phrase = _CONDITION_RELATIONS.get(member.get("operator"))
+            phrases.append(
+                "%s %s at frame %s"
+                % (
+                    member.get("variable"),
+                    (phrase % member.get("value")) if phrase else "is constrained",
+                    member.get("frame"),
+                )
+            )
+        else:
+            phrases.append("a %s requirement" % (kind or "further"))
+    return " where %s" % " and ".join(phrases)
+
+
 def _fact_sentence(
     fact: Mapping[str, Any], names: Optional[Mapping[int, str]] = None
 ) -> str:
@@ -626,11 +696,16 @@ def _fact_sentence(
             "hold" if fact.get("holds") else "not hold",
         )
     if kind == "transition_case":
-        return "Between frame %s and frame %s, the transition changes %s by %s." % (
+        # The condition is part of what the fact states, so it is part of the reading.
+        # Without it the sentence asserts the assignment unconditionally while the
+        # fact carries a condition -- the human account and the machine fact would
+        # then disagree, which is the one thing this tier exists to prevent.
+        return "Between frame %s and frame %s, the transition changes %s by %s%s." % (
             fact.get("frame"),
             fact.get("target_frame"),
             fact.get("variable"),
-            fact.get("operand"),
+            fact.get("operand", fact.get("operand_variable")),
+            _condition_clause(fact.get("condition"), names),
         )
     if kind == "arithmetic_expression":
         return "Between frame %s and frame %s, %s changes by %s." % (

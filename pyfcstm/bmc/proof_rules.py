@@ -45,6 +45,8 @@ from typing import Any, Callable, Dict, Mapping, Tuple
 
 __all__ = [
     "PROOF_RULES",
+    "UNREACHABLE_RULE_IDS",
+    "reachable_rule_ids",
     "ProofRule",
     "RuleApplication",
     "check_rule",
@@ -568,6 +570,82 @@ def _equality_substitution(application: RuleApplication) -> bool:
         expression, operand=value.get("value"), operand_variable=None
     )
     return _exactly(application.conclusion, expected)
+
+
+#: Rules no query can reach today, and why each one waits.
+#:
+#: A closed catalog a consumer has to accept includes rules nothing produces a
+#: premise for.  Which ones is a user-facing fact and the kind that goes stale
+#: quietly, so it is declared here and checked against the closure below rather than
+#: left for a reader to work out.  Membership is not a judgement about the rule: each
+#: of these is implemented and tested from its own premises, and waits only on a
+#: premise no published fact carries yet.
+#:
+#: The three that remain share one cause rather than three.  A transition case
+#: publishes its assignment, but the assignment holds only where its case applies,
+#: and nothing discharges that condition from the members that establish it -- so the
+#: evaluation rule refuses an expression carrying one and the chain has no starting
+#: point.  They will leave this list together or not at all.
+UNREACHABLE_RULE_IDS = (
+    "arithmetic_evaluation",
+    "equality_substitution",
+    "transition_assignment",
+)
+
+#: The one rule that seeds a graph rather than deriving within it.
+#:
+#: ``source_fact`` states a core member's own fact, so it has no ``kind`` premise to
+#: wait for and takes no part in the closure below.  It is excluded by name rather
+#: than by a property of its premise tuple: a rule that happened to declare no
+#: premises would then be silently excluded too, and the closure would report a
+#: reachability it never established.
+CLOSURE_EXCLUDED_RULE_IDS = ("source_fact",)
+
+
+def reachable_rule_ids(available_kinds) -> Tuple[str, ...]:
+    """Return the rules a graph can reach from the fact kinds it can read.
+
+    The fixpoint is the honest question to ask of a rule catalog: a rule runs when
+    every premise kind it declares is available, and running it makes its conclusion
+    available in turn.  Asking only "is each premise kind published" would call a rule
+    reachable whose premise no rule and no translation ever produces.
+
+    The seed is what the caller can actually read, not what the vocabulary lists.
+    Passing the whole vocabulary answers a different question -- what the catalog
+    could do -- and the difference is the point: three rules of this catalog are
+    reachable in that weaker sense and unreachable in this one.
+
+    :param available_kinds: Fact kinds a graph can read as input.
+    :type available_kinds: Iterable[str]
+    :return: Reachable rule ids, sorted, excluding the input-node rule.
+    :rtype: Tuple[str, ...]
+
+    Example::
+
+        >>> reachable_rule_ids(("variable_equality",))
+        ('incompatible_equalities',)
+        >>> reachable_rule_ids(())
+        ()
+    """
+    candidates = {
+        rule_id: rule
+        for rule_id, rule in PROOF_RULES.items()
+        if rule_id not in CLOSURE_EXCLUDED_RULE_IDS
+    }
+    available = set(available_kinds)
+    reached: Dict[str, bool] = {}
+    while True:
+        fired = [
+            rule_id
+            for rule_id, rule in sorted(candidates.items())
+            if rule_id not in reached
+            and all(kind in available for kind in rule.premise_kinds if kind)
+        ]
+        if not fired:
+            return tuple(sorted(reached))
+        for rule_id in fired:
+            reached[rule_id] = True
+            available.add(candidates[rule_id].conclusion_kind)
 
 
 #: The domain rules a proof step may cite, keyed by published rule id.

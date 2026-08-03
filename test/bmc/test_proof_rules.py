@@ -1042,3 +1042,107 @@ def test_evaluation_refuses_an_expression_it_does_not_fully_understand() -> None
     )
 
     assert check_rule(application) is False
+
+
+#: The fact kinds a published proof can actually read as an input node's own fact.
+#:
+#: Three conditions at once, and the third is the one that took a measurement to
+#: find: the kind has to be publishable, its fact has to be re-encodable so the
+#: binding can hold, and it has to be consumable without a condition standing in the
+#: way.  ``transition_case`` meets the first two and fails the third -- it always
+#: carries the condition its case is selected under, and the rule that evaluates an
+#: arithmetic expression refuses one carrying a field it does not recognize.  Seeding
+#: the closure with it answers a different question (what the catalog could do) and
+#: reports 8 of 8 where 5 of 8 is the truth.
+def _seed_kinds():
+    """Return the kinds a closure over the catalog may start from."""
+    from pyfcstm.bmc.infeasibility import _BINDING_ENCODERS
+
+    return frozenset(_BINDING_ENCODERS)
+
+
+@pytest.mark.unittest
+def test_the_closure_and_the_unreachable_registry_agree() -> None:
+    """The self-check the contract asks for, in the direction that is automatable.
+
+    A closed catalog a consumer has to accept includes rules nothing reaches, and
+    which ones is a user-facing fact.  Computing it from the rules' own premise kinds
+    and comparing against the declared list is what stops the list going stale in
+    either direction: a rule that becomes reachable and stays listed, or one that
+    goes dark and is not.
+    """
+    from pyfcstm.bmc.proof_rules import (
+        CLOSURE_EXCLUDED_RULE_IDS,
+        PROOF_RULES,
+        UNREACHABLE_RULE_IDS,
+        reachable_rule_ids,
+    )
+
+    counted = set(PROOF_RULES) - set(CLOSURE_EXCLUDED_RULE_IDS)
+    reached = set(reachable_rule_ids(_seed_kinds()))
+
+    assert counted - reached == set(UNREACHABLE_RULE_IDS)
+    assert reached & set(UNREACHABLE_RULE_IDS) == set()
+
+
+@pytest.mark.unittest
+def test_the_closure_excludes_the_input_rule_by_name_and_nothing_else() -> None:
+    """The exclusion set is pinned, because a wider one would hide a real gap.
+
+    ``source_fact`` seeds a graph rather than deriving within it, so it has no
+    premise kind to wait for.  Excluding it by a property of its premise tuple would
+    also exclude any rule that came to declare none, and the closure would then
+    report a reachability it never established.  Pinning the set literally is what
+    makes a new member of it a deliberate act.
+    """
+    from pyfcstm.bmc.proof_rules import CLOSURE_EXCLUDED_RULE_IDS
+
+    assert CLOSURE_EXCLUDED_RULE_IDS == ("source_fact",)
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("dropped", sorted(_seed_kinds()))
+def test_removing_any_fact_source_changes_what_the_closure_reaches(
+    dropped: str,
+) -> None:
+    """Every seed kind is load-bearing, so the self-check can fail.
+
+    A self-check that cannot fail reports nothing.  The contract asks for this
+    direction by name: deleting any fact source has to turn it red.  A seed whose
+    removal changed nothing would mean the closure never depended on it, and the
+    agreement above would hold for a reason other than the one it claims.
+    """
+    from pyfcstm.bmc.proof_rules import reachable_rule_ids
+
+    full = set(reachable_rule_ids(_seed_kinds()))
+    without = set(reachable_rule_ids(_seed_kinds() - {dropped}))
+
+    assert without < full, "%s reaches nothing the others do not" % dropped
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "dropped",
+    sorted(("arithmetic_evaluation", "equality_substitution", "transition_assignment")),
+)
+def test_removing_any_registry_entry_breaks_the_agreement(dropped: str) -> None:
+    """The other direction the contract names, and the reason it is separate.
+
+    A registry that lost an entry would leave a rule unreachable and undeclared,
+    which is exactly the stale state this pair of checks exists to prevent.  The
+    parametrization is written out rather than read from the registry so that
+    emptying the registry cannot empty this test with it.
+    """
+    from pyfcstm.bmc.proof_rules import (
+        CLOSURE_EXCLUDED_RULE_IDS,
+        PROOF_RULES,
+        UNREACHABLE_RULE_IDS,
+        reachable_rule_ids,
+    )
+
+    assert dropped in UNREACHABLE_RULE_IDS, "the witness names a rule not declared"
+    counted = set(PROOF_RULES) - set(CLOSURE_EXCLUDED_RULE_IDS)
+    reached = set(reachable_rule_ids(_seed_kinds()))
+    shortened = set(UNREACHABLE_RULE_IDS) - {dropped}
+
+    assert counted - reached != shortened

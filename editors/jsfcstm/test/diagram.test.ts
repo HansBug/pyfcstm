@@ -162,6 +162,48 @@ describe('jsfcstm diagram preview', () => {
         assert.match(noteEffects[0].effectText, /^effect \{\n    if \[counter>0\] \{\n        counter=counter\+1;\n    \}\n    else \{\n        counter=0;\n    \}\n\}$/m);
     });
 
+    it('lets a named effect mode escape hide, however the options were built', () => {
+        // The standalone viewer resolves its options and then hands the result
+        // back the next time the reader touches the control, from two places:
+        // `patchOptions` through a default parameter and `toggleCollapse`
+        // explicitly. That turns every filled-in default into a stated choice.
+        //
+        // `hide` sets `showTransitionEffects` false. Once that false is a
+        // choice rather than a default, the old clamp read it back and pulled
+        // the mode to `hide` again, so the control died after one use and no
+        // other control could revive it. See issue #421.
+        const resolve = packageModule.resolveFcstmDiagramPreviewOptions;
+
+        let options = resolve({detailLevel: 'normal', direction: 'TB'});
+        assert.equal(options.transitionEffectMode, 'note');
+
+        options = resolve({...options, transitionEffectMode: 'hide'});
+        assert.equal(options.transitionEffectMode, 'hide');
+        assert.equal(options.showTransitionEffects, false, 'hide should still hide');
+
+        options = resolve({...options, transitionEffectMode: 'note'});
+        assert.equal(options.transitionEffectMode, 'note', 'note must survive a resolved set');
+        assert.equal(options.showTransitionEffects, true,
+            'the three readers downstream gate on this, so a named mode has to set it');
+
+        options = resolve({...options, transitionEffectMode: 'inline'});
+        assert.equal(options.transitionEffectMode, 'inline');
+
+        options = resolve({...options, transitionEffectMode: 'hide'});
+        assert.equal(options.transitionEffectMode, 'hide', 'hide must still be reachable');
+
+        // The flag keeps its own say where no mode was named -- a caller that
+        // only turns effects off still gets `hide`, which is what the presets
+        // and the VS Code host rely on.
+        const flagOnly = resolve({detailLevel: 'normal', showTransitionEffects: false});
+        assert.equal(flagOnly.transitionEffectMode, 'hide');
+
+        // And the host's own shape, which was never affected, is unchanged.
+        const host = {detailLevel: 'full', eventVisualizationMode: 'both', transitionEffectMode: 'hide'};
+        assert.equal(resolve(host).transitionEffectMode, 'hide');
+        assert.equal(resolve({...host, transitionEffectMode: 'note'}).transitionEffectMode, 'note');
+    });
+
     it('covers builder fallbacks for null models, missing legend lookups, forced labels, and empty effect bodies', () => {
         assert.equal(packageModule.buildFcstmDiagramFromStateMachine(null), null);
 

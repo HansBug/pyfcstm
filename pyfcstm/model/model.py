@@ -122,7 +122,15 @@ def _collect_ast_source_metadata(
         if isinstance(source_path, str):
             span = _span_key(getattr(node, "_span", None))
             if span is not None:
-                spans.setdefault(span, source_path)
+                # A key is coordinates only, so two files agreeing on a line and a
+                # length share one.  Letting the first walked entry answer for both
+                # publishes a reference to a line nobody wrote: an expansion
+                # declared at line 5 of the outer file lands on a state from an
+                # inner one whose line 5 is an unrelated transition.  An ambiguous
+                # key therefore answers with nothing at all -- a member with no
+                # reference is honest, a member pointing at the wrong file is not.
+                if spans.setdefault(span, source_path) != source_path:
+                    spans[span] = None
             if isinstance(source_text, str):
                 documents[source_path] = source_text
         for item in fields(node):
@@ -207,12 +215,20 @@ def _attach_model_source_metadata(
             # then the host state; the middle step is what finds the file a
             # cross-boundary expansion was actually written in.
             transition_key = _span_key(getattr(transition, "_span", None))
-            attach(
-                transition,
-                transition_sources.get(transition_key)
-                or all_spans.get(transition_key)
-                or state_source,
-            )
+            own = transition_sources.get(transition_key)
+            if own is not None:
+                attach(transition, own)
+            else:
+                # The span matched none of the host state's own transitions, so this
+                # is an expansion: a combo or forced declaration living in some other
+                # state, possibly some other file.  The host's file is wrong for it by
+                # construction, so it is not used as a fallback here -- the whole-program
+                # table answers, and when its key is ambiguous it answers with nothing.
+                # A member with no reference is honest; one pointing at a file whose
+                # line at that span belongs to an unrelated statement is not.
+                declared = all_spans.get(transition_key)
+                if declared is not None:
+                    attach(transition, declared)
             for effect in transition.effects:
                 attach_operation(effect, state_source)
         for event in model_state.events.values():

@@ -3044,30 +3044,28 @@ def test_a_forced_expansion_names_the_file_it_was_written_in(tmp_path: Path) -> 
         assert "!* -> M1 :: Panic;" in line
 
 
-def test_a_hosts_own_transition_outranks_a_namesake_span_elsewhere(
+def test_an_ambiguous_span_key_publishes_nothing_rather_than_a_wrong_file(
     tmp_path: Path,
 ) -> None:
-    """A transition declared three files deep still names the file it is in.
+    """When two files share a span key, an expansion claims neither of them.
 
-    The whole-program span table is what lets a cross-boundary expansion find its
-    declaration, and it is keyed on coordinates with no document in them, so it
-    can answer with a line from another file.  Here the key really does collide:
-    ``!* -> D2 :: Ev;`` in the middle module and ``M1 -> M2 :: Ev;`` in the root
-    are both fifteen characters at line 6, column 5.  The expansion lands on a
-    state from the innermost module, which is a third file again, so the host's
-    own transitions cannot answer and the table is what decides.
+    A key is (line, column, end_line, end_column) with no document in it, so two
+    files that put a statement of the same length at the same place share one.
+    An expansion has to be resolved through that table -- it lives in a state it
+    was not written beside -- and the table cannot say which file the key belongs
+    to.  Answering anyway sends a reader to a line somebody else wrote: here
+    ``!* -> M1 :: Ev;`` at line 5 of the root and ``D1 -> D2 :: Ev;`` at line 5 of
+    the middle module are both fifteen characters at column 5, and the expansion
+    that reaches the innermost state used to be published as the middle module,
+    whose line 5 is an unrelated transition.
 
-    Measured, not assumed: dropping the table from the chain sends the expansion
-    to the innermost module -- the host state's file -- instead of the middle one
-    that declared it.
+    Falling back to the host state is no better: the host is by construction not
+    where an expansion was written, and its line at that span is whatever happens
+    to be there -- a closing brace, in this fixture.  So an ambiguous key resolves
+    to nothing, and the member is published without a reference.
 
-    One thing this does not prove.  Which entry wins a colliding key is
-    ``setdefault`` over the assembled AST walk, so it is settled by traversal
-    order rather than by anything structural.  It resolves correctly here, and no
-    arrangement was found that makes it resolve wrongly, but "no counterexample
-    found" is weaker than "cannot happen" and the difference is worth keeping in
-    view: a future change to the walk order could move this without touching the
-    resolution code.
+    A reader losing a link is a smaller harm than a reader following one into the
+    wrong file, and it is the harm they can see.
     """
     (tmp_path / "deep.fcstm").write_text(
         "state Deep {\n    state X1;\n    state X2;\n    [*] -> X1;\n}\n",
@@ -3076,10 +3074,10 @@ def test_a_hosts_own_transition_outranks_a_namesake_span_elsewhere(
     (tmp_path / "mid.fcstm").write_text(
         "state Mid {\n"
         '    import "./deep.fcstm" as Deep;\n'
-        "    event Ev;\n"
+        "    state D1;\n"
         "    state D2;\n"
-        "    [*] -> D2;\n"
-        "    !* -> D2 :: Ev;\n"
+        "    D1 -> D2 :: Ev;\n"
+        "    [*] -> D1;\n"
         "}\n",
         encoding="utf-8",
     )
@@ -3089,8 +3087,7 @@ def test_a_hosts_own_transition_outranks_a_namesake_span_elsewhere(
         '    import "./mid.fcstm" as Mid;\n'
         "    event Ev;\n"
         "    state M1;\n"
-        "    state M2;\n"
-        "    M1 -> M2 :: Ev;\n"
+        "    !* -> M1 :: Ev;\n"
         "    [*] -> M1;\n"
         "}\n",
         encoding="utf-8",
@@ -3098,22 +3095,22 @@ def test_a_hosts_own_transition_outranks_a_namesake_span_elsewhere(
 
     machine = load_state_machine_from_file(main)
     documents = machine._source_documents
-
-    def line_six(transition):
-        return documents[transition._source_path].split("\n")[5]
-
-    def at_the_shared_key(state):
-        return [
-            transition
-            for transition in state.transitions
-            if getattr(transition, "_span", None) is not None
-            and (transition._span.line, transition._span.column) == (6, 5)
-            and transition._span.end_column == 20
-        ]
-
-    host = at_the_shared_key(machine.root_state)
-    assert host and all("M1 -> M2 :: Ev;" in line_six(item) for item in host)
-
     deep = machine.root_state.substates["Mid"].substates["Deep"]
-    expanded = at_the_shared_key(deep)
-    assert expanded and all("!* -> D2 :: Ev;" in line_six(item) for item in expanded)
+    expansions = [
+        transition
+        for transition in deep.transitions
+        if getattr(transition, "_span", None) is not None
+        and (transition._span.line, transition._span.column) == (5, 5)
+        and transition._span.end_column == 20
+    ]
+
+    assert expansions, "the forced declaration should reach the innermost state"
+    for transition in expansions:
+        path = getattr(transition, "_source_path", None)
+        if path is None:
+            continue
+        # If a path is published at all it has to be the file that wrote the line.
+        assert "!* -> M1 :: Ev;" in documents[path].split("\n")[4]
+    assert any(
+        getattr(transition, "_source_path", None) is None for transition in expansions
+    ), "an ambiguous key must not resolve to some file"

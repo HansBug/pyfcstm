@@ -3560,3 +3560,113 @@ def test_a_branch_inside_a_branch_still_has_an_excerpt(tmp_path: Path) -> None:
         "{ x = x * 3; }",
         "x = x * 3;",
     ]
+
+
+_GUARDED_MODEL = """def int x = 0;
+def int y = 3;
+state Root {
+    state A;
+    state B;
+    [*] -> A;
+    A -> B : if [y > 1] effect { x = x + y; }
+    B -> [*];
+}"""
+
+
+@pytest.mark.unittest
+def test_a_guarded_transition_carries_its_guard_in_the_condition() -> None:
+    """A guard is the second thing a case is selected under, and it was untested.
+
+    Every fixture this branch was built on used an unguarded transition, so every
+    condition had exactly one member and the reader for a comparison inside a
+    condition never ran.  A guard is the most ordinary way to write a conditional
+    transition, which makes this the shape the feature is *for*.
+
+    The pair of members is also the measured basis for a design conclusion drawn
+    earlier from reasoning alone: a condition carries one member without a guard and
+    two with one, so a fixed-arity premise tuple cannot take them as extra premises.
+    """
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    group = _fact_group_at_step(
+        'assume at 2: var("x") == 7; check reach <= 2: active("Root.B");',
+        "transition.step",
+        1,
+        machine=_GUARDED_MODEL,
+    )
+    fact = normalized_fact_for(group, ("x", "y"))
+
+    assert fact["kind"] == "transition_case"
+    condition = fact["condition"]
+    assert [member["kind"] for member in condition] == [
+        "state_membership",
+        "variable_comparison",
+    ], condition
+    guard = condition[1]
+    assert (guard["variable"], guard["operator"], guard["value"]) == ("y", "gt", 1)
+    # The order is the encoding's own, which is what makes a published index stable.
+    assert condition[0]["frame"] == condition[1]["frame"] == 1
+
+
+@pytest.mark.unittest
+def test_a_guarded_case_binds_and_reads_with_its_guard_named() -> None:
+    """The guard has to survive re-encoding and reach the reader.
+
+    Two things fail quietly otherwise: a condition member with no encoder makes the
+    binding fail with a message about symbols rather than about the member, and a
+    guard missing from the sentence leaves the reader believing the assignment is
+    less conditional than it is.
+    """
+    from pyfcstm.bmc import (
+        BmcEngine,
+        build_bmc_core_formula,
+        compile_bmc_property,
+        solve_bmc_property,
+    )
+    from pyfcstm.bmc.explanation import human_text_for_fact
+
+    context = BmcEngine(load_state_machine_from_text(_GUARDED_MODEL)).prepare(
+        'assume at 2: var("x") == 7; check reach <= 2: active("Root.B");',
+        query_source_path="query.fbmcq",
+    )
+    result = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="proof",
+    )
+
+    ledger = {check.name: check for check in result.feasibility.refinement_checks}
+    assert ledger["core_binding"].status == "complete", ledger["core_binding"].reason
+    cases = [
+        item.normalized_fact
+        for item in result.feasibility.explanation.core.items
+        if item.normalized_fact.get("kind") == "transition_case"
+    ]
+    assert len(cases) == 1, cases
+    reading = human_text_for_fact("transition_rule", cases[0])
+    assert "y is greater than 1" in reading, reading
+
+
+@pytest.mark.unittest
+def test_without_the_event_paths_the_identity_falls_back_to_the_symbol_body() -> None:
+    """The documented default, and what it costs.
+
+    ``event_paths`` is optional, so a caller who omits it gets the reading the symbol
+    itself supports.  That reading is lossy -- the encoder replaces the path's dots --
+    so the identity spells ``Root_A_Go`` where the author wrote ``Root.A.Go``.  Pinning
+    it says the fallback exists and is honest about being second best, rather than
+    leaving a caller to discover the difference in published output.
+    """
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    groups, domain = _event_fact_groups(
+        'assume event("Root.A.Go", 0) == true; check reach <= 2: active("Root.B");',
+        _EVENT_MODEL,
+    )
+    assert len(groups) == 1
+
+    resolved = normalized_fact_for(groups[0], ("a",), [e.path for e in domain.events])
+    fallback = normalized_fact_for(groups[0], ("a",))
+
+    assert resolved["identity"] == "Root.A.Go@0"
+    assert fallback["identity"] == "Root_A_Go@0"
+    assert resolved["holds"] == fallback["holds"] is True

@@ -676,3 +676,28 @@ def test_a_variable_and_a_state_sharing_a_subject_are_not_one_slot() -> None:
 
     assert proof is None, [node.human_text for node in proof.nodes]
     assert record.reason
+
+
+@pytest.mark.unittest
+def test_a_unit_count_below_one_is_refused() -> None:
+    """A decomposition has at least one requirement, so zero is not a count.
+
+    ``unit_index`` and ``unit_count`` are ordinary public constructor arguments, and
+    this is the combination a caller reaches by computing the count from an empty
+    sequence: the index then passes its own lower bound and the pair still describes
+    no decomposition.  Refusing it here is what keeps ``0 of 0`` out of a published
+    proof, where it would read as a group nothing covers.
+    """
+    with pytest.raises(ValueError, match="unit_count must be at least 1"):
+        BmcProofNode(
+            "proof.input.0000",
+            "input",
+            "source_fact",
+            (),
+            {"kind": "variable_equality", "variable": "x", "frame": 0, "value": 0},
+            ("assumption.0000",),
+            "t",
+            "core_binding_unit",
+            0,
+            0,
+        )

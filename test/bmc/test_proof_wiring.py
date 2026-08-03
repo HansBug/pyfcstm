@@ -308,6 +308,52 @@ def test_an_assignment_a_transition_makes_binds_to_the_requirement_it_states() -
 
 
 @pytest.mark.unittest
+def test_an_event_opposition_reaches_the_proof_tier() -> None:
+    """The rule that closes over a proposition and its complement, end to end.
+
+    This was verified on the command line before it was verified by a test, which is
+    the same gap in the other direction from the usual one: a suite can be green while
+    production is wrong, and production can be right along a path no test walks.  The
+    binding branch a proposition takes -- its subject is the group's own boolean, not a
+    frame symbol -- ran only under the CLI until this existed, so a regression in it
+    would have gone unreported.
+
+    Form one rather than form two: an event assumption encodes to a single boolean, so
+    the fact and its group are equivalent in both directions and none of the
+    conjunctive-unit machinery is involved.
+    """
+    machine = load_state_machine_from_text(
+        "def int a = 0;\nstate Root { state A; state B; [*]->A; A->B :: Go; B->[*]; }",
+        "machine.fcstm",
+    )
+    context = BmcEngine(machine).prepare(
+        'assume event("Root.A.Go", 0) == true;\n'
+        'assume event("Root.A.Go", 0) == false;\n'
+        'check reach <= 2: active("Root.B");\n',
+        query_source_path="query.fbmcq",
+    )
+    result = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="proof",
+    )
+    explanation = result.feasibility.explanation
+
+    assert explanation.achieved_mode == "proof"
+    assert explanation.proof.nodes[-1].rule_id == "boolean_complement"
+    assert [node.verification_method for node in explanation.proof.nodes] == [
+        "core_binding",
+        "core_binding",
+        "rule_checker",
+    ], [node.verification_method for node in explanation.proof.nodes]
+    identities = {
+        node.conclusion.get("identity")
+        for node in explanation.proof.nodes
+        if node.kind == "input"
+    }
+    assert identities == {"Root.A.Go@0"}, identities
+
+
+@pytest.mark.unittest
 def test_a_member_no_fact_was_read_from_blocks_publication() -> None:
     """Coverage is judged against the core, not against what could be translated.
 

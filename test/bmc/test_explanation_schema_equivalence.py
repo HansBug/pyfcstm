@@ -1264,8 +1264,15 @@ _FIELD_VOCABULARIES = {
     # four different things in this document -- a fact tag, a proof node, a
     # reasoning step and a property type -- and ``status`` is two; checking those
     # against the union of their candidates would accept a proof node called
-    # ``reach``, which is a guard wide enough to stop being one.  Their exact
-    # values are pinned per site by the pair list instead.  ``localization_status`` and
+    # ``reach``, which is a guard wide enough to stop being one.
+    #
+    # Saying they are "pinned per site by the pair list instead" would be false and
+    # was: the pair list names three of the five and misses the other two entirely,
+    # so of the 51 enum sites these names occupy, most are guarded by nothing here.
+    # They are excluded, not covered elsewhere, and the gap is recorded rather than
+    # papered over.  Sites per name: ``kind`` 10, ``status`` 29, ``refinement_status`` 6, ``localization_status`` 3, ``incomplete_status`` 3.
+    #
+    # ``localization_status`` and
     # ``incomplete_status`` are left out for the same reason -- the first carries
     # ``not_checked`` and ``not_requested``, the second carries ``sat``, and none
     # of those belongs to a vocabulary declared here.

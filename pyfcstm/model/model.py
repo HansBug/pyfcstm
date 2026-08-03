@@ -53,7 +53,6 @@ from typing import Any, Optional, Union, List, Dict, Tuple, Iterator, Set
 from .base import AstExportable, PlantUMLExportable
 from .expr import Expr, parse_expr_node_to_expr
 from .imports import (
-    _mark_ast_source_metadata,
     assemble_state_machine_imports,
     _get_trusted_generated_combo_transition_metadata,
     _is_trusted_generated_combo_pseudo_node,
@@ -2842,10 +2841,11 @@ def parse_dsl_node_to_state_machine(
     """
 
     sink = DiagnosticSink(collect=collect)
-    entry_source = None
-    if path is not None and not os.path.isdir(os.fspath(path)):
-        entry_source = os.path.abspath(os.fspath(path))
-    _mark_ast_source_metadata(dnode, entry_source)
+    # The entry AST is annotated inside ``assemble_state_machine_imports``, which
+    # has to do it for its own standalone callers anyway.  Annotating here as well
+    # walked the whole entry tree a second time to write the same values: both
+    # sites derive the entry path the same way and agree on a file, a directory
+    # and ``None`` alike.
     dnode = assemble_state_machine_imports(dnode, path=path, collect_into=sink)
 
     d_defines: Dict[str, VarDefine] = {}

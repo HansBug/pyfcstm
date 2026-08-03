@@ -730,6 +730,12 @@ def human_text_for_fact(
             count,
             "" if count == 1 else "s",
         )
+    if kind == "proposition" and {"identity", "holds"} <= set(fact):
+        return "At the step it names, %s requires %s to %s." % (
+            voice,
+            fact["identity"],
+            "occur" if fact["holds"] else "not occur",
+        )
     if kind == "transition_case" and {
         "variable",
         "frame",
@@ -907,7 +913,11 @@ SCOPE_AGGREGATES = MappingProxyType(
 #: ``state_domain`` gives the legal states of a frame
 #: and ``definedness_condition`` the operation a group keeps well defined.
 #: ``transition_case`` gives the assignment one step's selected case makes, under
-#: the condition that selects it.
+#: the condition that selects it.  ``proposition`` gives one requirement about one
+#: event at one step, with the polarity the query asked for; a state assertion is
+#: *not* one of these -- it stays ``state_membership``, because the rule that
+#: exhausts a frame's domain reads state exclusions and would go dark if state
+#: assertions moved here.
 #: ``structural_constraint`` is the honest fallback for a shape no recognizer
 #: reads.
 #:
@@ -923,6 +933,7 @@ _FACT_KINDS = (
     "state_domain",
     "definedness_condition",
     "transition_case",
+    "proposition",
 )
 
 #: Frozen upper bound on a published excerpt, in Unicode code points.  A long
@@ -2879,6 +2890,11 @@ _FACT_REQUIRED_KEYS = {
     # unpublishable, and requiring neither is what lets a reader dispatch on which
     # one arrived.
     "transition_case": ("variable", "frame", "target_frame", "operation", "condition"),
+    # No ``frame``: a proposition's step is inside its identity, because the rule
+    # that closes over a proposition and its complement compares subjects and
+    # nothing else.  Publishing the step separately as well would give a reader two
+    # places to look for the same thing.
+    "proposition": ("identity", "holds"),
 }
 
 
@@ -3045,6 +3061,22 @@ def _conflict_pattern(
         >>> _conflict_pattern(()) is None
         True
     """
+    propositions = _members(items, "proposition")
+    if len(propositions) == 2 and _explains_every_member(propositions, items):
+        first, second = (item.normalized_fact for item in propositions)
+        if (
+            first["identity"] == second["identity"]
+            and first["holds"] != second["holds"]
+        ):
+            # The same subject demanded and ruled out.  Naming it is the whole value:
+            # "jointly unsatisfiable" would leave the reader to notice that the two
+            # lines are about one event at one step, which is exactly what the
+            # identity was built to make visible.
+            return (
+                "boolean_complement",
+                "%s is required to occur and required not to occur."
+                % first["identity"],
+            )
     definedness = _members(items, "definedness_condition")
     if len(definedness) == 1 and len(items) > 1 and minimality == "proven":
         # One domain condition beside facts about the very variable it guards.

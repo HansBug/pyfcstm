@@ -5230,9 +5230,10 @@
                 "state_membership",
                 "state_domain",
                 "definedness_condition",
-                "transition_case"
+                "transition_case",
+                "proposition"
               ],
-              "$comment": "A fact describes one source group. variable_comparison carries the relation in its operator field instead of splitting into a tag per relation. transition_case gives the assignment one step's selected case makes, under the condition that selects it; exactly one of operand and operand_variable is present, decided by whether the model wrote a literal or a variable. Cross-group patterns -- incompatible equalities, an empty interval, an exhausted state domain, a value carried across a step, a definedness failure -- are derivations over several facts and are named by the narrative's rule vocabulary, never here. structural_constraint is the honest fallback for a shape no recognizer reads."
+              "$comment": "A fact describes one source group. variable_comparison carries the relation in its operator field instead of splitting into a tag per relation. transition_case gives the assignment one step's selected case makes, under the condition that selects it; exactly one of operand and operand_variable is present, decided by whether the model wrote a literal or a variable. proposition gives one requirement about one event at one step, carrying the identity the rule compares and the polarity the query asked for; a state assertion is not one of these and stays state_membership. Cross-group patterns -- incompatible equalities, an empty interval, an exhausted state domain, a value carried across a step, a definedness failure -- are derivations over several facts and are named by the narrative's rule vocabulary, never here. structural_constraint is the honest fallback for a shape no recognizer reads."
             }
           },
           "$comment": "Machine consumers dispatch on kind rather than on human text, so the tag is required.  Later stages extend the enum as recognizers land. Draft 2020-12 has no depth keyword, no way to bound an integer's digit count, and no way to see a non-finite number, a value with no JSON counterpart or a non-string object key -- a payload reaching a validator was already parsed from JSON text. The constructor refuses all of those at every nesting depth."

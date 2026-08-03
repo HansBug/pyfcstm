@@ -625,16 +625,16 @@ scope 上面那句话。粒度、成员数、带标签的最小性行以及解�
      - 是
      - 同一个槽位被要求持有两个不同的值。
    * - ``boolean_complement``
-     - 否
-     - 同一个要求同时被要求成立又被排除。它读取 ``proposition`` 类别的前提，而本包里
-       没有任何代码产出该类别的事实——这个字符串的每处出现都是读取方。有三道关卡把它
-       关着：闭包在提议之前就按规则的前提类别过滤候选；检查器再次断言这些类别；检查器
-       随后读取 ``identity`` 与 ``holds``，而已发布的事实都不带这两个字段。因此无论
-       对立式怎么写，这条规则都不可达，不只是事件的情形：``assume at 1: active("Root.A")``
-       配上 ``assume at 1: !active("Root.A")`` 会发布两个 ``state_membership`` 事实，
-       内容齐全、帧与状态一致、只有 ``excluded`` 相反——结果照样降级为形式化解释。
+     - 是
+     - 同一个要求同时被要求成立又被排除。经事件断言可达：``assume event("Root.A.Go", 0) == true``
+       与 ``assume event("Root.A.Go", 0) == false`` 会发布两个 ``proposition`` 事实，
+       ``identity`` 相同而 ``holds`` 相反。步号是 ``identity`` 的一部分，所以同一事件
+       在两个步上是两个主体而非一个。写在状态上的对立式**不**触发它，而且这是有意的：
+       ``assume at 1: active("Root.A")`` 配 ``assume at 1: !active("Root.A")`` 发布的是两个
+       只在 ``excluded`` 上相反的 ``state_membership`` 事实——因为穷尽帧状态域的那条规则
+       正是读这些排除，若状态断言改走 ``proposition``，它会失去唯一的前提来源。
 
-五条可达规则由入库的 benchmark 语料
+六条可达规则由入库的 benchmark 语料
 ``benchmarks/bmc/infeasibility/cases/handwritten/`` 行使，其报告记录了哪个用例产出了
 哪条规则。实测比值请从那里读，而不要从本页读：它是那份语料在某个版本上的性质，不是
 工具的性质。

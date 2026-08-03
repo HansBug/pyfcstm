@@ -588,6 +588,20 @@ def proof_facts_for_core(items) -> Tuple[Tuple[str, Mapping[str, Any]], ...]:
                     },
                 )
             )
+        elif kind == "proposition":
+            # The published name and the rule's name coincide here: a proposition is
+            # already stated in the terms a rule reads -- one subject, one polarity --
+            # so there is nothing to translate beyond carrying it across.
+            translated.append(
+                (
+                    stable_id,
+                    {
+                        "kind": "proposition",
+                        "identity": fact.get("identity"),
+                        "holds": fact.get("holds"),
+                    },
+                )
+            )
         elif kind == "transition_case":
             # ``operation`` is the published name and ``operator`` the rule's own;
             # the boundary is the contract's, so this is where one becomes the other.

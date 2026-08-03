@@ -321,6 +321,7 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
             "operation",
             "condition",
         ),
+        "proposition": ("identity", "holds"),
     }
     # Every published tag needs an entry, or it becomes readable by omission.
     assert set(module._FACT_REQUIRED_KEYS) == set(module._FACT_KINDS)
@@ -377,6 +378,7 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
         "definedness_guard",
         "state_domain",
         "state_exclusion",
+        "proposition",
     }
     assert infeasibility._INDEX_REF_KEYS == ("frame", "frames", "step", "steps")
     assert dict(infeasibility._STAGE_FALLBACK_BY_STAGE) == {
@@ -447,6 +449,7 @@ def test_every_frozen_vocabulary_matches_the_authored_list() -> None:
         "state_domain",
         "definedness_condition",
         "transition_case",
+        "proposition",
     )
     assert module.UNBUILT_SLOTS == ()
     assert module.INDEX_REF_KEYS == ("frame", "frames", "step", "steps")
@@ -3348,6 +3351,8 @@ def test_a_partly_complete_fact_is_declined_by_every_consumer() -> None:
         "operation": "division",
         "target_frame": 1,
         "condition": "Implies(0 == F_0_state, True)",
+        "identity": "Root.A.Go@0",
+        "holds": True,
     }
 
     def core_of(fact):

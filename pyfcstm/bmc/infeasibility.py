@@ -1283,6 +1283,7 @@ def build_core_item(
     registry: Optional[SourceDocumentRegistry] = None,
     declared: Optional[Sequence[str]] = None,
     state_paths: Optional[Mapping[int, str]] = None,
+    event_paths: Optional[Sequence[str]] = None,
 ) -> BmcCoreItem:
     """Turn one tracked source group into a publishable core member.
 
@@ -1353,7 +1354,7 @@ def build_core_item(
     # instead of inviting a guess.  Frames, steps and refs stay in the constraint
     # reference above: publishing them here as well would give a reader two
     # copies of the same values and blur which keys are the fact itself.
-    fact = normalized_fact_for(group, declared)
+    fact = normalized_fact_for(group, declared, event_paths)
     return BmcCoreItem(
         constraint=reference,
         semantic_role=role,
@@ -1384,6 +1385,10 @@ _BINDING_ENCODERS = {
         *[symbol == state for state in fact["states"]]
     ),
     "state_exclusion": lambda fact, symbol: symbol != fact["state"],
+    # The polarity is the whole content: the group is one boolean, required or ruled
+    # out.  Encoding it as the boolean itself under a positive requirement keeps the
+    # two sides of the equivalence literally the same expression.
+    "proposition": lambda fact, symbol: symbol if fact["holds"] else z3.Not(symbol),
 }
 
 
@@ -1757,20 +1762,18 @@ def _encode_condition_member(member: Mapping[str, Any], symbols) -> Optional[Any
     return None
 
 
-def _encode_transition_case(fact: Mapping[str, Any], symbols) -> Optional[Any]:
-    """Re-encode a transition case as the conditional assignment it states.
+def _encode_assignment(fact: Mapping[str, Any], symbols) -> Optional[Any]:
+    """Re-encode the equality a case's assignment states, without its condition.
 
-    The shape produced is the one a decomposed step requirement has --
-    ``Implies(condition, target == source <op> operand)`` -- because that is what
-    the equivalence is checked against.  A fact whose condition or operand names
-    something the group does not mention has no re-encoding, and the binding then
-    fails rather than comparing against a constraint built from a guess.
+    Split out from :func:`_encode_transition_case` because the two callers need
+    different halves: a binding compares the whole conditional requirement, while a
+    discharge asks whether the assignment alone follows once the condition is known.
 
-    :param fact: The published transition-case fact.
+    :param fact: The transition-case fact, conditional or not.
     :type fact: Mapping[str, Any]
     :param symbols: The group's symbol table from :func:`_binding_symbols`.
     :type symbols: Mapping[Tuple[int, Any], Any]
-    :return: The constraint, or ``None`` when the fact cannot be re-encoded.
+    :return: The equality, or ``None`` when the fact cannot be re-encoded.
     :rtype: Optional[Any]
     """
     frame, target_frame = fact.get("frame"), fact.get("target_frame")
@@ -1789,8 +1792,8 @@ def _encode_transition_case(fact: Mapping[str, Any], symbols) -> Optional[Any]:
         operand = fact.get("operand")
         if operand is None:
             return None
-    # ``operator`` rather than ``operation``: this check runs on the *rule* fact, the
-    # one ``proof_facts_for_core`` produced, and the two vocabularies name this field
+    # ``operator`` rather than ``operation``: this runs on the *rule* fact, the one
+    # ``proof_facts_for_core`` produced, and the two vocabularies name this field
     # differently on purpose.  Reading the published name here found nothing and the
     # binding failed with "the fact names something its group does not mention",
     # which points at the symbols rather than at the field it was actually about.
@@ -1802,11 +1805,33 @@ def _encode_transition_case(fact: Mapping[str, Any], symbols) -> Optional[Any]:
     }.get(fact.get("operator"))
     if combine is None:
         return None
+    return target == combine()
+
+
+def _encode_transition_case(fact: Mapping[str, Any], symbols) -> Optional[Any]:
+    """Re-encode a transition case as the conditional assignment it states.
+
+    The shape produced is the one a decomposed step requirement has --
+    ``Implies(condition, target == source <op> operand)`` -- because that is what
+    the equivalence is checked against.  A fact whose condition or operand names
+    something the group does not mention has no re-encoding, and the binding then
+    fails rather than comparing against a constraint built from a guess.
+
+    :param fact: The published transition-case fact.
+    :type fact: Mapping[str, Any]
+    :param symbols: The group's symbol table from :func:`_binding_symbols`.
+    :type symbols: Mapping[Tuple[int, Any], Any]
+    :return: The constraint, or ``None`` when the fact cannot be re-encoded.
+    :rtype: Optional[Any]
+    """
+    assignment = _encode_assignment(fact, symbols)
+    if assignment is None:
+        return None
     members = fact.get("condition") or ()
     encoded_members = [_encode_condition_member(member, symbols) for member in members]
     if not encoded_members or any(part is None for part in encoded_members):
         return None
-    return z3.Implies(z3.And(*encoded_members), target == combine())
+    return z3.Implies(z3.And(*encoded_members), assignment)
 
 
 #: Registered after the encoder it names, so the table cannot reference a
@@ -1821,6 +1846,18 @@ def _binding_symbol(expression, fact: Mapping[str, object], declared=None):
     of the very expressions being compared means the two sides of the equivalence
     talk about the same object by construction.
     """
+    if fact.get("kind") == "proposition":
+        # A proposition names no frame: its step is inside its identity, because the
+        # rule that closes over it compares subjects and nothing else.  Its subject
+        # is the group's own boolean, and an event assumption encodes to exactly one
+        # -- so taking that one is both the reading and the check that the shape is
+        # what this branch assumes.
+        booleans = [
+            symbol
+            for symbol in sorted(z3.z3util.get_vars(expression), key=str)
+            if z3.is_bool(symbol)
+        ]
+        return booleans[0] if len(booleans) == 1 else None
     frame = fact.get("frame")
     if frame is None:
         return None
@@ -1928,6 +1965,12 @@ def explain_infeasibility(
     # The declared names let a published fact name the variable the author wrote
     # rather than the encoder's truncation of it.
     declared = tuple(core.context.model.defines)
+    # The event paths, for the same reason and by the same mechanism: the symbol
+    # body replaces the path's dots, so an identity built from it would spell
+    # ``Root_A_Go`` where the author wrote ``Root.A.Go``.
+    event_paths = tuple(
+        entry["path"] for entry in core.context.domain.to_canonical()["events"]
+    )
     # The domain's own table, so a sentence can name ``Root.A`` instead of the
     # number the encoding gave it.
     state_paths = {
@@ -2019,7 +2062,7 @@ def explain_infeasibility(
             reduction=minimized.reduction,
             subset_minimality=minimized.subset_minimality,
             items=tuple(
-                build_core_item(group, registry, declared, state_paths)
+                build_core_item(group, registry, declared, state_paths, event_paths)
                 for group in minimized.groups
             ),
         )

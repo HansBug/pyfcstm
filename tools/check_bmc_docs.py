@@ -259,17 +259,23 @@ _TABULATED_VOCABULARY: Dict[str, Tuple[Tuple[str, ...], ...]] = {
 
 #: Rules the reference page must mark as currently unreachable.
 #:
-#: Four of the nine are part of the closed vocabulary a consumer has to accept
+#: Three of the nine are part of the closed vocabulary a consumer has to accept
 #: while no query reaches them.  Listing all nine without saying which is which
 #: reads as nine available readings, so a reader who picks ``proof`` depth for one
-#: of these four is surprised by a degraded result.  The measured ratio belongs to
+#: of these three is surprised by a degraded result.  The measured ratio belongs to
 #: the benchmark corpus rather than to a reference page, but *which* rules are
 #: unreachable is a user-facing fact, and it is the kind that goes stale quietly.
+#:
+#: ``boolean_complement`` left this list when event assumptions began publishing
+#: ``proposition`` facts.  The three that remain share one cause rather than three:
+#: a transition case publishes its assignment now, but the assignment holds only
+#: where its case applies, and nothing discharges that condition from the members
+#: that establish it -- so the evaluation rule refuses the expression and the chain
+#: has no starting point.  They will leave together or not at all.
 _UNREACHABLE_RULES = (
     "transition_assignment",
     "equality_substitution",
     "arithmetic_evaluation",
-    "boolean_complement",
 )
 
 #: Sentences that were true when written and are now misleading.

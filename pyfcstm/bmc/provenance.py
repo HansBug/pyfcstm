@@ -897,6 +897,102 @@ def _frame_state_slot(expression: Any, frame: int) -> bool:
     return str(expression) == "F_%d_state" % frame
 
 
+def _event_path_of_symbol(expression: Any, event_paths: Optional[Any] = None):
+    """Return the event a proposition symbol stands for, and the step it names.
+
+    The encoder builds the symbol as ``E_<step>_event_<id>_<body>_<digest>``, where
+    the body is the event path with its dots replaced and the digest is a hash of
+    the path itself.  Reading the body back recovers the replacement rather than the
+    path, so two events whose names differ only in a dot would share it.  Hashing the
+    known paths and comparing instead answers with the path the author wrote, or with
+    nothing.
+
+    Without ``event_paths`` the body is the fallback, which is correct for every path
+    whose characters survive the replacement intact -- the same trade
+    :func:`_frame_variable_name` makes for a variable name.
+
+    :param expression: The candidate symbol.
+    :type expression: object
+    :param event_paths: Event paths to resolve against, defaults to ``None``.
+    :type event_paths: Optional[Iterable[str]], optional
+    :return: ``(path, step)``, or ``None`` when the operand is not one.
+    :rtype: Optional[Tuple[str, int]]
+    """
+    import z3
+
+    if not z3.is_const(expression):
+        return None
+    text = str(expression)
+    parts = text.split("_")
+    if len(parts) < 5 or parts[0] != "E" or not parts[1].isdigit():
+        return None
+    if parts[2] != "event":
+        return None
+    step = int(parts[1])
+    digest = parts[-1]
+    if event_paths:
+        matches = [
+            path
+            for path in event_paths
+            if hashlib.sha1(path.encode("utf-8")).hexdigest() == digest
+        ]
+        if len(matches) != 1:
+            # No match means the symbol is not this model's event; more than one
+            # would mean the digest failed to tell them apart, and either answer
+            # would name the wrong declaration.
+            return None
+        return matches[0], step
+    body = "_".join(parts[4:-1])
+    return (body, step) if body else None
+
+
+def _proposition_fact(
+    group: Any, event_paths: Optional[Any] = None
+) -> Optional[Dict[str, Any]]:
+    """Read an event assumption as the proposition it requires.
+
+    An event assertion is one requirement about one event at one step, and the
+    encoding says so directly: a single boolean symbol, negated when the query wrote
+    ``== false``.  The published fact keeps that shape -- one identity, one polarity
+    -- so the rule that closes a core holding both a proposition and its complement
+    can compare them without knowing how either was spelled.
+
+    The step is part of the identity.  Leaving it out would make "this event at step
+    0" and "the same event at step 1" one subject, and the rule would then report a
+    contradiction the query never stated.
+
+    :param group: The tracked group to read.
+    :type group: BmcTrackedConstraint
+    :param event_paths: Event paths to resolve the symbol against, defaults to
+        ``None``.
+    :type event_paths: Optional[Iterable[str]], optional
+    :return: The fact mapping, or ``None`` when the shape is not one event symbol.
+    :rtype: Optional[Dict[str, Any]]
+    """
+    import z3
+
+    if len(group.expressions) != 1:
+        return None
+    expression = group.expressions[0]
+    holds = True
+    if z3.is_app(expression) and expression.decl().kind() == z3.Z3_OP_NOT:
+        if expression.num_args() != 1:
+            return None
+        expression, holds = expression.arg(0), False
+    resolved = _event_path_of_symbol(expression, event_paths)
+    if resolved is None:
+        return None
+    path, step = resolved
+    return {
+        "kind": "proposition",
+        # One string rather than two fields: the rule compares subjects for equality
+        # and nothing else, so a single opaque identity is what it needs, while a
+        # reader gets the path and the step it was built from.
+        "identity": "%s@%d" % (path, step),
+        "holds": holds,
+    }
+
+
 def conjunctive_units(expression: Any) -> Tuple[Any, ...]:
     """Split one constraint into the independent requirements it makes.
 
@@ -1264,7 +1360,11 @@ def _transition_case_fact(
     return fact
 
 
-def normalized_fact_for(group: Any, declared: Optional[Any] = None) -> Dict[str, Any]:
+def normalized_fact_for(
+    group: Any,
+    declared: Optional[Any] = None,
+    event_paths: Optional[Any] = None,
+) -> Dict[str, Any]:
     """Return the published domain fact for one tracked source group.
 
     The reading is deterministic and carries no Z3 object: a machine consumer
@@ -1280,6 +1380,10 @@ def normalized_fact_for(group: Any, declared: Optional[Any] = None) -> Dict[str,
         for every name short enough to survive truncation intact.  Defaults to
         ``None``.
     :type declared: Optional[Iterable[str]], optional
+    :param event_paths: The model's event paths, resolved the same way and for the
+        same reason: the symbol body replaces the path's dots, so two events whose
+        names differ only there would share it.  Defaults to ``None``.
+    :type event_paths: Optional[Iterable[str]], optional
     :return: A tagged mapping of plain JSON-compatible values.
     :rtype: Dict[str, Any]
 
@@ -1321,6 +1425,10 @@ def normalized_fact_for(group: Any, declared: Optional[Any] = None) -> Dict[str,
             return fact
     elif group.category == "transition.step":
         fact = _transition_case_fact(group, declared)
+        if fact is not None:
+            return fact
+    elif group.category == "assumption.event":
+        fact = _proposition_fact(group, event_paths)
         if fact is not None:
             return fact
     return {

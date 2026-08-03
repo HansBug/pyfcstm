@@ -694,8 +694,12 @@ reasons are structural and are set out in
      - An input node's own fact, taken from the core member it restates.
    * - ``transition_assignment``
      - no
-     - What a transition's effect assigns to a variable at the next frame.  Needs
-       a fact about an intermediate frame, which no core member states.
+     - What a transition's effect assigns to a variable at the next frame.  A step
+       relation now publishes that assignment as ``transition_case``, and the binding
+       proves it equivalent to one requirement of the group -- so the premise exists.
+       What is missing is the condition: a case's assignment holds where its case
+       applies, and nothing in the catalog discharges that condition from the members
+       that establish it, so the evaluation rule refuses an expression carrying one.
    * - ``equality_substitution``
      - no
      - The result of substituting a known value into another fact.  Needs a
@@ -719,20 +723,20 @@ reasons are structural and are set out in
      - yes
      - That one slot is required to hold two different values.
    * - ``boolean_complement``
-     - no
-     - That the same requirement is both demanded and ruled out.  It reads
-       premises of kind ``proposition``, and nothing in the package produces a fact
-       of that kind -- every occurrence of the string is a reader.  Three gates hold
-       it shut: the closure filters candidates against the rule's premise kinds
-       before proposing it, the checker asserts those kinds again, and the checker
-       then reads ``identity`` and ``holds``, which no published fact carries.  So
-       the rule is out of reach however the opposition is written, not only for
-       events: ``assume at 1: active("Root.A")`` together with
-       ``assume at 1: !active("Root.A")`` publishes two ``state_membership`` facts
-       that carry their full content, agree on frame and state, and differ only in
-       ``excluded`` -- and the result still degrades to a formal explanation.
+     - yes
+     - That the same requirement is both demanded and ruled out.  Reached through an
+       event assumption: ``assume event("Root.A.Go", 0) == true`` beside
+       ``assume event("Root.A.Go", 0) == false`` publishes two ``proposition`` facts
+       that agree on ``identity`` and differ in ``holds``.  The step is part of the
+       identity, so the same event at two steps is two subjects rather than one.
+       An opposition written over states does **not** reach it and is not meant to:
+       ``assume at 1: active("Root.A")`` with ``assume at 1: !active("Root.A")``
+       publishes two ``state_membership`` facts differing in ``excluded``, because
+       the rule that exhausts a frame's state domain reads those exclusions and
+       would lose its only premise source if state assertions moved to
+       ``proposition``.
 
-The five reachable rules are exercised by the checked-in benchmark corpus under
+The six reachable rules are exercised by the checked-in benchmark corpus under
 ``benchmarks/bmc/infeasibility/cases/handwritten/``, and its report records which
 case produced which rule.  Read the measured ratio there rather than from this
 page: it is a property of that corpus at a given revision, not of the tool.

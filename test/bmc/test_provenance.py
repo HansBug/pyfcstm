@@ -2463,6 +2463,213 @@ def test_an_unreduced_group_says_so_instead_of_guessing() -> None:
     assert fact["category"] == "transition.step"
 
 
+#: One real query per publishable fact kind, so the vocabulary cannot grow a member
+#: nothing produces -- which the contract requires and which no test noticed until a
+#: newly published kind degraded the whole explanation on the public CLI while the
+#: suite stayed green.
+_KIND_WITNESS_QUERIES = (
+    (
+        "proposition",
+        "def int a = 0;\nstate Root { state A; state B; [*]->A; A->B :: Go; B->[*]; }",
+        'assume event("Root.A.Go", 0) == true; check reach <= 2: active("Root.B");',
+    ),
+    (
+        "variable_comparison",
+        "def int x = 0;\nstate Root { state A; state B; [*]->A; A->B; B->[*]; }",
+        'assume at 0: var("x") == 1; check reach <= 2: active("Root.B");',
+    ),
+    (
+        "state_membership",
+        "def int x = 0;\nstate Root { state A; state B; [*]->A; A->B; B->[*]; }",
+        'init state("Root.A") where x == 0; check reach <= 2: active("Root.B");',
+    ),
+    (
+        "state_domain",
+        "def int x = 0;\nstate Root { state A; state B; [*]->A; A->B; B->[*]; }",
+        'assume at 0: var("x") == 1; check reach <= 2: active("Root.B");',
+    ),
+    (
+        "definedness_condition",
+        "def int x = 0;\nstate Root { state A; state B; [*]->A; A->B; B->[*]; }",
+        'assume at 0: var("x") / var("x") > 0; check reach <= 1: active("Root.A");',
+    ),
+    (
+        "transition_case",
+        "def int x = 0;\ndef int y = 3;\n"
+        "state Root { state A; state B; [*]->A; A->B effect { x = x + y; } B->[*]; }",
+        'assume at 1: var("x") == 7; check reach <= 2: active("Root.B");',
+    ),
+    (
+        "structural_constraint",
+        "def int x = 0;\nstate Root { state A; state B; [*]->A; A->B; B->[*]; }",
+        'assume at 0: var("x") == 1; check reach <= 2: active("Root.B");',
+    ),
+)
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(("kind", "machine", "query"), _KIND_WITNESS_QUERIES)
+def test_every_publishable_kind_has_a_query_that_produces_it(
+    kind: str, machine: str, query: str
+) -> None:
+    """The contract asks for both directions, and this is the one that was missing.
+
+    Every published ``kind`` being in the closed list was already checked.  That
+    every member of the list has a path producing it was not, and the gap is not
+    academic: a recognizer added ahead of its registration published a kind the core
+    item gate refuses, the explanation degraded to nothing on the public CLI, and
+    5821 unit tests stayed green because no test built a core from that shape.
+    """
+    from pyfcstm.bmc import BmcEngine, build_bmc_core_formula
+    from pyfcstm.bmc.explanation import _FACT_KINDS
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    assert kind in _FACT_KINDS, "the witness names a kind the vocabulary does not"
+    context = BmcEngine(load_state_machine_from_text(machine)).prepare(query)
+    core = build_bmc_core_formula(context)
+    declared = tuple(sorted(entry.name for entry in context.domain.variables))
+    paths = tuple(entry.path for entry in context.domain.events)
+    produced = {
+        normalized_fact_for(group, declared, paths).get("kind")
+        for group in core._tracked_groups
+    }
+
+    assert kind in produced, sorted(produced)
+
+
+@pytest.mark.unittest
+def test_the_witness_table_covers_the_whole_publishable_vocabulary() -> None:
+    """A per-kind witness only helps if the table itself cannot fall behind."""
+    from pyfcstm.bmc.explanation import _FACT_KINDS
+
+    assert {kind for kind, _, _ in _KIND_WITNESS_QUERIES} == set(_FACT_KINDS)
+
+
+_EVENT_MODEL = """def int a = 0;
+state Root {
+    state A;
+    state B;
+    [*] -> A;
+    A -> B :: Go;
+    B -> [*];
+}"""
+
+
+def _event_fact_groups(query: str, machine: str):
+    """Return the event-assumption groups a real build produces, in order.
+
+    Keyed by nothing: a query stating the same event twice produces two groups of
+    one category, and which is which is the whole point of the test below.
+    """
+    from pyfcstm.bmc import BmcEngine, build_bmc_core_formula
+
+    context = BmcEngine(load_state_machine_from_text(machine)).prepare(query)
+    core = build_bmc_core_formula(context)
+    return (
+        [
+            group
+            for group in core._tracked_groups
+            if group.category == "assumption.event"
+        ],
+        context.domain,
+    )
+
+
+@pytest.mark.unittest
+def test_an_event_assumption_reads_as_the_proposition_it_requires() -> None:
+    """An event assertion is a proposition about one event at one step.
+
+    Without a reading it arrives as ``structural_constraint``, and the rule that
+    closes a core over one requirement demanded and ruled out has no premise any
+    query can produce.  The identity has to name the event the author wrote rather
+    than the encoder's rendering of it: the symbol body replaces the path's dots
+    with underscores, so two events whose names differ only there would share it.
+    """
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    groups, domain = _event_fact_groups(
+        'assume event("Root.A.Go", 0) == true; '
+        'assume event("Root.A.Go", 0) == false; '
+        'check reach <= 2: active("Root.B");',
+        _EVENT_MODEL,
+    )
+    paths = [entry.path for entry in domain.events]
+    facts = [normalized_fact_for(group, ("a",), paths) for group in groups]
+
+    assert [fact["kind"] for fact in facts] == ["proposition", "proposition"]
+    assert [fact["holds"] for fact in facts] == [True, False]
+    assert facts[0]["identity"] == facts[1]["identity"], (
+        "the same event at the same step is the same proposition"
+    )
+    assert "Root.A.Go" in facts[0]["identity"]
+    assert "0" in facts[0]["identity"]
+
+
+@pytest.mark.unittest
+def test_a_state_assertion_is_not_published_as_a_proposition() -> None:
+    """The other direction of the same boundary, and it is load-bearing.
+
+    A state assertion could be read as a proposition -- it is one requirement about
+    one subject at one frame, just like an event assertion.  It must not be: the rule
+    that exhausts a frame's state domain reads state exclusions, and those are turned
+    out of ``state_membership``.  Moving state assertions to ``proposition`` would
+    take that rule's only premise source away, so a rule reachable today would go
+    dark.  Closure over the rule catalog with the state reading removed drops
+    ``state_domain_exhaustion`` and nothing else, which is what makes this a
+    regression rather than a preference.
+    """
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    groups, domain = _event_fact_groups(
+        'init state("Root.A") where a == 0; '
+        'assume at 1: active("Root.B"); '
+        'check reach <= 2: active("Root.B");',
+        _EVENT_MODEL,
+    )
+    assert not groups, "this query states no event assumption"
+
+    from pyfcstm.bmc import BmcEngine, build_bmc_core_formula
+
+    context = BmcEngine(load_state_machine_from_text(_EVENT_MODEL)).prepare(
+        'init state("Root.A") where a == 0; '
+        'assume at 1: active("Root.B"); '
+        'check reach <= 2: active("Root.B");'
+    )
+    core = build_bmc_core_formula(context)
+    paths = tuple(entry.path for entry in context.domain.events)
+    kinds = {
+        normalized_fact_for(group, ("a",), paths).get("kind")
+        for group in core._tracked_groups
+    }
+
+    assert "state_membership" in kinds, sorted(kinds)
+    assert "proposition" not in kinds, sorted(kinds)
+
+
+@pytest.mark.unittest
+def test_two_steps_of_one_event_are_two_propositions() -> None:
+    """The step is part of the identity, so the same event at two steps differs.
+
+    A rule that closes over a proposition and its complement compares identities.
+    Leaving the step out would make "Go at step 0" and "Go at step 1" the same
+    subject, and the rule would then report a contradiction the query never stated.
+    """
+    from pyfcstm.bmc.provenance import normalized_fact_for
+
+    groups, domain = _event_fact_groups(
+        'assume event("Root.A.Go", 0) == true; '
+        'assume event("Root.A.Go", 1) == false; '
+        'check reach <= 2: active("Root.B");',
+        _EVENT_MODEL,
+    )
+    paths = [entry.path for entry in domain.events]
+    identities = {
+        normalized_fact_for(group, ("a",), paths)["identity"] for group in groups
+    }
+
+    assert len(identities) == 2, identities
+
+
 _EFFECT_MODEL = """def int x = 0;
 def int y = 3;
 state Root {

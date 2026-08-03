@@ -3221,9 +3221,17 @@ def test_a_branch_inside_a_branch_still_has_an_excerpt(tmp_path: Path) -> None:
     )
 
     def excerpts(operation):
-        """Every statement reachable under a conditional, read the public way."""
+        """Everything reachable under a conditional, read the public way.
+
+        The arms are collected as well as the statements inside them.  Two
+        reviewers found the same hole independently: reading only
+        ``branch.statements`` left ``attach(branch, source)`` unpinned, so
+        dropping it kept the whole suite green while ``model_reference`` stopped
+        being able to point at ``{ x = x + 1; }``.
+        """
         found = []
         for branch in getattr(operation, "branches", ()):
+            found.append(registry.excerpt(registry.model_reference(branch)))
             for statement in getattr(branch, "statements", ()):
                 found.append(registry.excerpt(registry.model_reference(statement)))
                 found.extend(excerpts(statement))
@@ -3232,9 +3240,13 @@ def test_a_branch_inside_a_branch_still_has_an_excerpt(tmp_path: Path) -> None:
     root = model.root_state
     enter_if = root.substates["A"].on_enters[0].operations[0]
     assert excerpts(enter_if) == [
+        "{\n                if [x > 5] { x = x + 1; } else { x = x + 2; }\n            }",
         "if [x > 5] { x = x + 1; } else { x = x + 2; }",
+        "{ x = x + 1; }",
         "x = x + 1;",
+        "{ x = x + 2; }",
         "x = x + 2;",
+        "{ x = x + 3; }",
         "x = x + 3;",
     ]
 
@@ -3242,7 +3254,10 @@ def test_a_branch_inside_a_branch_still_has_an_excerpt(tmp_path: Path) -> None:
         0
     ].effects[0]
     assert excerpts(effect_if) == [
+        "{\n            if [x > 3] { x = x * 2; } else { x = x * 3; }\n        }",
         "if [x > 3] { x = x * 2; } else { x = x * 3; }",
+        "{ x = x * 2; }",
         "x = x * 2;",
+        "{ x = x * 3; }",
         "x = x * 3;",
     ]

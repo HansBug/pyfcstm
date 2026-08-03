@@ -215,8 +215,16 @@ def _attach_model_source_metadata(
             # then the host state; the middle step is what finds the file a
             # cross-boundary expansion was actually written in.
             transition_key = _span_key(getattr(transition, "_span", None))
+            carried = getattr(transition, "_source_path", None)
             own = transition_sources.get(transition_key)
-            if own is not None:
+            if carried is not None:
+                # A forced expansion records the file its declaration was written
+                # in.  That beats a span match: the host state's AST carries a
+                # clone of the declaration annotated with the host's file, so
+                # matching by span answers with wherever the expansion landed
+                # rather than with where it was written.
+                attach(transition, carried)
+            elif own is not None:
                 attach(transition, own)
             else:
                 # The span matched none of the host state's own transitions, so this
@@ -3827,6 +3835,12 @@ def parse_dsl_node_to_state_machine(
                     f_transnode.event_scope,
                     getattr(f_transnode, "source_raw", None) or str(f_transnode),
                     _node_span(f_transnode),
+                    # The file the declaration was written in, carried with its
+                    # span.  An expansion lands on states from other files, and a
+                    # span alone cannot say which document it belongs to -- two
+                    # modules that put a statement of the same length at the same
+                    # place share a key.  Asking the declaration directly is exact.
+                    getattr(f_transnode, "_source_path", None),
                 )
             )
 
@@ -3843,6 +3857,7 @@ def parse_dsl_node_to_state_machine(
                 event_scope,
                 forced_origin,
                 forced_span,
+                forced_source_path,
             ) in force_transition_tuples_to_inherit:
                 if from_state is dsl_nodes.ALL or from_state == subnode.name:
                     transitions.append(
@@ -3858,17 +3873,25 @@ def parse_dsl_node_to_state_machine(
                             _span=forced_span,
                         )
                     )
-                    _inner_force_transitions.append(
-                        dsl_nodes.ForceTransitionDefinition(
-                            from_state=dsl_nodes.ALL,
-                            to_state=dsl_nodes.EXIT_STATE,
-                            event_id=my_event_id,
-                            condition_expr=condition_expr,
-                            event_scope=event_scope,
-                            source_raw=forced_origin,
-                            _span=forced_span,
-                        )
+                    if forced_source_path is not None:
+                        setattr(transitions[-1], "_source_path", forced_source_path)
+                    inherited = dsl_nodes.ForceTransitionDefinition(
+                        from_state=dsl_nodes.ALL,
+                        to_state=dsl_nodes.EXIT_STATE,
+                        event_id=my_event_id,
+                        condition_expr=condition_expr,
+                        event_scope=event_scope,
+                        source_raw=forced_origin,
+                        _span=forced_span,
                     )
+                    if forced_source_path is not None:
+                        # This node is synthesised to carry the declaration one
+                        # level deeper, and it keeps the declaration's span, so it
+                        # has to keep its file too.  Without this the descent stops
+                        # having an answer after the first level, and the span alone
+                        # cannot supply one across documents.
+                        setattr(inherited, "_source_path", forced_source_path)
+                    _inner_force_transitions.append(inherited)
 
             _recursive_finish_states(
                 node=subnode,

@@ -3044,28 +3044,94 @@ def test_a_forced_expansion_names_the_file_it_was_written_in(tmp_path: Path) -> 
         assert "!* -> M1 :: Panic;" in line
 
 
-def test_an_ambiguous_span_key_publishes_nothing_rather_than_a_wrong_file(
+def test_an_expansion_names_its_declaration_across_two_import_levels(
     tmp_path: Path,
 ) -> None:
-    """When two files share a span key, an expansion claims neither of them.
+    """A forced declaration keeps its file wherever the expansion lands.
 
-    A key is (line, column, end_line, end_column) with no document in it, so two
-    files that put a statement of the same length at the same place share one.
-    An expansion has to be resolved through that table -- it lives in a state it
-    was not written beside -- and the table cannot say which file the key belongs
-    to.  Answering anyway sends a reader to a line somebody else wrote: here
-    ``!* -> M1 :: Ev;`` at line 5 of the root and ``D1 -> D2 :: Ev;`` at line 5 of
-    the middle module are both fifteen characters at column 5, and the expansion
-    that reaches the innermost state used to be published as the middle module,
-    whose line 5 is an unrelated transition.
+    ``!* -> D2 :: Ev;`` written in the middle module reaches states from the
+    innermost one, and the host state's AST holds a clone of the declaration
+    annotated with the host's own file -- so resolving by span answers with where
+    the expansion landed rather than where it was written.  The whole-program span
+    table cannot break the tie either: this fixture makes the key collide, with
+    ``M1 -> M2 :: Ev;`` in the root at the same line, column and length.
 
-    Falling back to the host state is no better: the host is by construction not
-    where an expansion was written, and its line at that span is whatever happens
-    to be there -- a closing brace, in this fixture.  So an ambiguous key resolves
-    to nothing, and the member is published without a reference.
+    The declaration knows the answer and is asked directly.  It carries its file
+    alongside its span, through the synthesised node that hands it one level
+    deeper, so both levels name the middle module and the excerpt is the line that
+    was actually written.
+    """
+    (tmp_path / "deep.fcstm").write_text(
+        "state Deep {\n    state X1;\n    state X2;\n    [*] -> X1;\n}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "mid.fcstm").write_text(
+        "state Mid {\n"
+        '    import "./deep.fcstm" as Deep;\n'
+        "    event Ev;\n"
+        "    state D2;\n"
+        "    [*] -> D2;\n"
+        "    !* -> D2 :: Ev;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    main = tmp_path / "main.fcstm"
+    main.write_text(
+        "state Root {\n"
+        '    import "./mid.fcstm" as Mid;\n'
+        "    event Ev;\n"
+        "    state M1;\n"
+        "    state M2;\n"
+        "    M1 -> M2 :: Ev;\n"
+        "    [*] -> M1;\n"
+        "}\n",
+        encoding="utf-8",
+    )
 
-    A reader losing a link is a smaller harm than a reader following one into the
-    wrong file, and it is the harm they can see.
+    machine = load_state_machine_from_file(main)
+    registry = SourceDocumentRegistry(
+        machine._source_documents, display_root=machine._source_root
+    )
+    mid = machine.root_state.substates["Mid"]
+    hosts = {"Mid": mid, "Mid.Deep": mid.substates["Deep"]}
+
+    for label, host in hosts.items():
+        expansions = [
+            transition
+            for transition in host.transitions
+            if getattr(transition, "is_forced", False)
+        ]
+        assert expansions, "the declaration should reach %s" % label
+        for transition in expansions:
+            reference = registry.model_reference(transition)
+            assert reference.path == "mid.fcstm", label
+            assert registry.excerpt(reference) == "!* -> D2 :: Ev;", label
+
+    own = [
+        transition
+        for transition in machine.root_state.transitions
+        if getattr(transition, "_span", None) is not None and transition._span.line == 6
+    ]
+    assert own and all(
+        registry.excerpt(registry.model_reference(item)) == "M1 -> M2 :: Ev;"
+        for item in own
+    )
+
+
+def test_an_expansion_outranks_the_clone_its_host_state_holds(
+    tmp_path: Path,
+) -> None:
+    """Where the declaration is asked beats where the expansion landed.
+
+    Import assembly gives every host state a clone of the declaration and
+    annotates it with the host's own file, so the host's transition table answers
+    a span match with the wrong document.  Here ``!* -> M1 :: Ev;`` is written in
+    the root and reaches states from two imported modules, and the table would
+    name those modules.  The declaration's own file is asked first.
+
+    Kept separate from the sibling test because that fixture does not reach this
+    branch: there the table misses, the carried value simply survives, and
+    disabling the branch changes nothing.  This one makes the table hit.
     """
     (tmp_path / "deep.fcstm").write_text(
         "state Deep {\n    state X1;\n    state X2;\n    [*] -> X1;\n}\n",
@@ -3094,26 +3160,22 @@ def test_an_ambiguous_span_key_publishes_nothing_rather_than_a_wrong_file(
     )
 
     machine = load_state_machine_from_file(main)
-    documents = machine._source_documents
-    deep = machine.root_state.substates["Mid"].substates["Deep"]
-    expansions = [
-        transition
-        for transition in deep.transitions
-        if getattr(transition, "_span", None) is not None
-        and (transition._span.line, transition._span.column) == (5, 5)
-        and transition._span.end_column == 20
-    ]
+    registry = SourceDocumentRegistry(
+        machine._source_documents, display_root=machine._source_root
+    )
+    mid = machine.root_state.substates["Mid"]
 
-    assert expansions, "the forced declaration should reach the innermost state"
-    for transition in expansions:
-        path = getattr(transition, "_source_path", None)
-        if path is None:
-            continue
-        # If a path is published at all it has to be the file that wrote the line.
-        assert "!* -> M1 :: Ev;" in documents[path].split("\n")[4]
-    assert any(
-        getattr(transition, "_source_path", None) is None for transition in expansions
-    ), "an ambiguous key must not resolve to some file"
+    for label, host in (("Mid", mid), ("Mid.Deep", mid.substates["Deep"])):
+        expansions = [
+            transition
+            for transition in host.transitions
+            if getattr(transition, "is_forced", False)
+        ]
+        assert expansions, "the declaration should reach %s" % label
+        for transition in expansions:
+            reference = registry.model_reference(transition)
+            assert reference.path == "main.fcstm", label
+            assert registry.excerpt(reference) == "!* -> M1 :: Ev;", label
 
 
 def test_a_branch_inside_a_branch_still_has_an_excerpt(tmp_path: Path) -> None:

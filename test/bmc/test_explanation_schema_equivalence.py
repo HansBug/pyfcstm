@@ -1234,25 +1234,73 @@ _MIRRORED_ENUMS = (
 )
 
 
-def test_every_republished_vocabulary_is_neither_wider_nor_narrower() -> None:
-    """A schema enum that mirrors a vocabulary has to mirror all of it.
+#: Which vocabulary a field draws from, wherever in the schema it appears.
+#:
+#: The pairs above pin the canonical declaration of each field.  This map catches
+#: the same field somewhere else -- a conditional branch, a nested ``allOf`` --
+#: without naming a position, because ``allOf/15`` moves the moment an unrelated
+#: rule is inserted and three failures nobody caused is how a gate gets deleted.
+#: Narrowing stays legal here and equality is not required: the schema pins
+#: ``status`` to two of its four values where only those can occur.  What is
+#: refused is a value the package cannot emit.
+_FIELD_VOCABULARIES = {
+    "infeasible_stage": _STAGES,
+    "semantic_role": _SEMANTIC_ROLES,
+    "granularity": _GRANULARITIES,
+    "reduction": _REDUCTIONS,
+    "subset_minimality": _MINIMALITIES,
+    "requested_mode": _MODES,
+    "achieved_mode": _MODES,
+    "derivation_status": _DERIVATION_STATUSES,
+    "rule_id": _PROOF_RULE_IDS,
+    "verification_method": _PROOF_VERIFICATION_METHODS,
+}
 
-    The corpus tests prove one direction -- every value the package produces is
-    accepted -- but they build their payloads out of the vocabularies themselves,
-    so a schema listing a value the code cannot emit satisfies all of them.
-    Measured on ``kind``: adding a member to ``_FACT_KINDS`` alone fails the
-    transcription guard, while adding the same member to the schema alone failed
-    nothing before this test.  A consumer reading the published schema would write
-    a branch for a case that never arrives.
 
-    Sixteen sites are pinned rather than one.  A general "no enum exceeds its
-    vocabulary" sweep would need a known-set gathered from every published
-    vocabulary, and those live across several modules as tuples, ``Literal``
-    aliases and field annotations; a set assembled by scanning can silently
-    over-collect into a guard that passes everything.  The pairs above are
-    transcribed instead, which is the same reason the sibling transcription guard
-    is written out by hand.
+def _schema_enums(node, field=None):
+    """Yield ``(field, values)`` for every string enum the schema declares."""
+    if isinstance(node, dict):
+        values = node.get("enum")
+        if (
+            isinstance(values, list)
+            and values
+            and all(isinstance(item, str) for item in values)
+        ):
+            yield field, tuple(values)
+        for key, value in node.items():
+            yield from _schema_enums(value, key if key != "enum" else field)
+    elif isinstance(node, list):
+        for value in node:
+            yield from _schema_enums(value, field)
+
+
+def test_no_occurrence_of_a_known_field_admits_an_unpublishable_value() -> None:
+    """A field keeps its vocabulary everywhere it appears, not just where declared.
+
+    The pair list pins each field's canonical declaration.  The same field also
+    appears inside conditional branches, and three of those republish a whole
+    vocabulary rather than narrowing it, so widening one there would have gone
+    unnoticed.  Naming their positions would tie the test to ``allOf`` indices
+    that shift under unrelated edits, so the check is by field name instead:
+    wherever a known field appears, every value it lists has to be one the
+    package can emit.  Listing fewer is allowed and deliberate.
     """
+    schema = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
+    offenders = {}
+    for field, values in _schema_enums(schema):
+        vocabulary = _FIELD_VOCABULARIES.get(field)
+        if vocabulary is None:
+            continue
+        unpublishable = sorted(set(values) - set(vocabulary))
+        if unpublishable:
+            offenders.setdefault(field, []).append(unpublishable)
+    assert not offenders, "schema admits values the package cannot emit: %r" % offenders
+
+
+def test_every_republished_vocabulary_is_neither_wider_nor_narrower_at_its_declaration() -> (
+    None
+):
+    """See :data:`_MIRRORED_ENUMS`; the canonical declarations must match exactly."""
     schema = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
     mismatched = {}
     for pointer, vocabulary in _MIRRORED_ENUMS:

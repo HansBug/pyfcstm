@@ -2948,3 +2948,172 @@ def test_a_recognizer_publishes_every_key_its_tag_requires(
     for fact in facts:
         missing = set(_FACT_REQUIRED_KEYS[kind]) - set(fact)
         assert missing == set(), "%s omits %s" % (kind, sorted(missing))
+
+
+def test_two_modules_declaring_at_the_same_coordinates_keep_their_own_excerpts(
+    tmp_path: Path,
+) -> None:
+    """A published define names the file it was written in, not a namesake's.
+
+    Two imported modules that declare a variable at the same line and column are
+    ordinary: ``def int x = 1;`` on line 1 is what a small module looks like.  A
+    span key is (line, column, end_line, end_column) with no document in it, so
+    pairing a define with its source by span alone lets the first file walked
+    answer for both, and the published ``source_excerpt`` becomes a different
+    variable from a different file.  That is worse than publishing nothing: a
+    reader following the reference lands on a line that has no bearing on the
+    conflict.
+    """
+    left = tmp_path / "left.fcstm"
+    left.write_text("def int x = 1;\nstate LeftModule;\n", encoding="utf-8")
+    right = tmp_path / "right.fcstm"
+    right.write_text("def int y = 2;\nstate RightModule;\n", encoding="utf-8")
+    main = tmp_path / "main.fcstm"
+    main.write_text(
+        "state Root {\n"
+        '    import "./left.fcstm" as Left;\n'
+        '    import "./right.fcstm" as Right;\n'
+        "    [*] -> Left;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    machine = load_state_machine_from_file(main)
+    context = BmcEngine(machine).prepare(
+        'init state("Root.Left") where Right_y == 999; check reach <= 1: true;'
+    )
+    result = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="formal",
+    )
+    published = {
+        item.constraint.stable_id: item
+        for item in result.feasibility.explanation.core.items
+    }
+
+    define = published["initial.variable.Right_y"]
+    assert Path(define.constraint.source.path).name == "right.fcstm"
+    assert define.source_excerpt == "def int y = 2;"
+
+
+def test_a_forced_expansion_names_the_file_it_was_written_in(tmp_path: Path) -> None:
+    """An expanded transition points at its declaration, not at its host state.
+
+    ``!* -> M1 :: Panic;`` expands onto every descendant, and a descendant can
+    come from an imported module.  The expanded transition keeps the span of the
+    line that declared it, so pairing it with the host state's file yields a
+    reference whose document cannot contain that span: here the declaration sits
+    on line 10 of the host and the imported module is five lines long, and a
+    reader following the reference lands nowhere.  The whole-program span table
+    knows which file the line belongs to, and it has to be consulted before the
+    host state is used as a fallback.
+    """
+    imported = tmp_path / "worker.fcstm"
+    imported.write_text(
+        "state Worker {\n    state W1;\n    [*] -> W1;\n}\n", encoding="utf-8"
+    )
+    main = tmp_path / "main.fcstm"
+    main.write_text(
+        "// padding so the declaration sits past the imported file's last line\n"
+        "// padding\n"
+        "// padding\n"
+        "// padding\n"
+        "state Root {\n"
+        '    import "./worker.fcstm" as Worker;\n'
+        "    event Panic;\n"
+        "    state M1;\n"
+        "    [*] -> M1;\n"
+        "    !* -> M1 :: Panic;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    machine = load_state_machine_from_file(main)
+    worker = machine.root_state.substates["Worker"]
+    expanded = [
+        transition
+        for transition in worker.transitions
+        if getattr(transition, "is_forced", False)
+    ]
+
+    assert expanded, "the forced declaration should reach the imported state"
+    for transition in expanded:
+        assert transition._source_path == str(main.resolve())
+        document = machine._source_documents[transition._source_path]
+        line = document.split("\n")[transition._span.line - 1]
+        assert "!* -> M1 :: Panic;" in line
+
+
+def test_a_hosts_own_transition_outranks_a_namesake_span_elsewhere(
+    tmp_path: Path,
+) -> None:
+    """A transition declared three files deep still names the file it is in.
+
+    The whole-program span table is what lets a cross-boundary expansion find its
+    declaration, and it is keyed on coordinates with no document in them, so it
+    can answer with a line from another file.  Here the key really does collide:
+    ``!* -> D2 :: Ev;`` in the middle module and ``M1 -> M2 :: Ev;`` in the root
+    are both fifteen characters at line 6, column 5.  The expansion lands on a
+    state from the innermost module, which is a third file again, so the host's
+    own transitions cannot answer and the table is what decides.
+
+    Measured, not assumed: dropping the table from the chain sends the expansion
+    to the innermost module -- the host state's file -- instead of the middle one
+    that declared it.
+
+    One thing this does not prove.  Which entry wins a colliding key is
+    ``setdefault`` over the assembled AST walk, so it is settled by traversal
+    order rather than by anything structural.  It resolves correctly here, and no
+    arrangement was found that makes it resolve wrongly, but "no counterexample
+    found" is weaker than "cannot happen" and the difference is worth keeping in
+    view: a future change to the walk order could move this without touching the
+    resolution code.
+    """
+    (tmp_path / "deep.fcstm").write_text(
+        "state Deep {\n    state X1;\n    state X2;\n    [*] -> X1;\n}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "mid.fcstm").write_text(
+        "state Mid {\n"
+        '    import "./deep.fcstm" as Deep;\n'
+        "    event Ev;\n"
+        "    state D2;\n"
+        "    [*] -> D2;\n"
+        "    !* -> D2 :: Ev;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    main = tmp_path / "main.fcstm"
+    main.write_text(
+        "state Root {\n"
+        '    import "./mid.fcstm" as Mid;\n'
+        "    event Ev;\n"
+        "    state M1;\n"
+        "    state M2;\n"
+        "    M1 -> M2 :: Ev;\n"
+        "    [*] -> M1;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    machine = load_state_machine_from_file(main)
+    documents = machine._source_documents
+
+    def line_six(transition):
+        return documents[transition._source_path].split("\n")[5]
+
+    def at_the_shared_key(state):
+        return [
+            transition
+            for transition in state.transitions
+            if getattr(transition, "_span", None) is not None
+            and (transition._span.line, transition._span.column) == (6, 5)
+            and transition._span.end_column == 20
+        ]
+
+    host = at_the_shared_key(machine.root_state)
+    assert host and all("M1 -> M2 :: Ev;" in line_six(item) for item in host)
+
+    deep = machine.root_state.substates["Mid"].substates["Deep"]
+    expanded = at_the_shared_key(deep)
+    assert expanded and all("!* -> D2 :: Ev;" in line_six(item) for item in expanded)

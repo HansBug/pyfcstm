@@ -150,8 +150,23 @@ def _attach_model_source_metadata(
         if source_path is not None:
             setattr(value, "_source_path", source_path)
 
-    for definition in machine.defines.values():
-        attach(definition)
+    # A define is paired with its AST node by name, not by span.  A span key is
+    # (line, column, end_line, end_column) with no document in it, so two files
+    # that declare something at the same coordinates collide and whichever was
+    # walked first wins -- and an imported model very often has that collision,
+    # because ``def int x = 1;`` on line 1 of two modules is enough to produce it.
+    # The published excerpt would then be a different variable from a different
+    # file, which is worse than having none.  The AST nodes already carry the
+    # right path each, and import resolution renames them to the same
+    # alias-qualified keys the model uses, so the pairing is exact.  The span
+    # table stays as the fallback for a define with no AST match.
+    ast_definitions = {
+        getattr(item, "name", None): item
+        for item in getattr(dnode, "definitions", ()) or ()
+    }
+    for name, definition in machine.defines.items():
+        matched = ast_definitions.get(name)
+        attach(definition, getattr(matched, "_source_path", None))
 
     def attach_operation(operation: Any, source: Optional[str]) -> None:
         """Give an operation and everything nested inside it the same owner.
@@ -182,11 +197,22 @@ def _attach_model_source_metadata(
             ]
         }
         for transition in model_state.transitions:
+            # A combo or forced declaration expands into transitions on states it
+            # does not live beside: ``!* -> M1 :: Panic;`` written at line 10 of the
+            # host file lands on a state that came from a five-line imported module.
+            # Handing ``attach`` a non-empty fallback short-circuits its own span
+            # lookup, so the host state's file used to win and the published path
+            # named a document that cannot contain the span -- a reference that
+            # sends a reader to the wrong file, or to no line at all.  The order is
+            # the host state's own transitions, then the whole-program span table,
+            # then the host state; the middle step is what finds the file a
+            # cross-boundary expansion was actually written in.
+            transition_key = _span_key(getattr(transition, "_span", None))
             attach(
                 transition,
-                transition_sources.get(
-                    _span_key(getattr(transition, "_span", None)), state_source
-                ),
+                transition_sources.get(transition_key)
+                or all_spans.get(transition_key)
+                or state_source,
             )
             for effect in transition.effects:
                 attach_operation(effect, state_source)

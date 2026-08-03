@@ -153,6 +153,22 @@ def _attach_model_source_metadata(
     for definition in machine.defines.values():
         attach(definition)
 
+    def attach_operation(operation: Any, source: Optional[str]) -> None:
+        """Give an operation and everything nested inside it the same owner.
+
+        A conditional operation carries its arms in ``branches``, each arm has its
+        own statements, and a statement may be conditional in turn.  The descent
+        has to reach the bottom of that tree: stopping one level down leaves a
+        branch inside a branch without an owner, and a probe over a model with a
+        nested ``if`` in both an action and a transition effect finds seven such
+        objects when the walk stops early and none when it does not.
+        """
+        attach(operation, source)
+        for branch in getattr(operation, "branches", ()):
+            attach(branch, source)
+            for statement in getattr(branch, "statements", ()):
+                attach_operation(statement, source)
+
     def pair_states(ast_state: Any, model_state: "State") -> None:
         state_source = getattr(ast_state, "_source_path", None)
         attach(model_state, state_source)
@@ -173,7 +189,7 @@ def _attach_model_source_metadata(
                 ),
             )
             for effect in transition.effects:
-                attach(effect, state_source)
+                attach_operation(effect, state_source)
         for event in model_state.events.values():
             attach(event, state_source)
         for action in [
@@ -184,23 +200,7 @@ def _attach_model_source_metadata(
         ]:
             attach(action, state_source)
             for operation in getattr(action, "operations", ()):
-                attach(operation, state_source)
-                # A conditional operation carries its arms in ``branches`` and each
-                # arm has its own statements, and the flat walk above stops at the
-                # operation without reaching them.  One level is covered here, not
-                # the whole tree: a branch nested inside a branch, and anything
-                # under ``transition.effects``, still ends up without an owner.  A
-                # probe over a model with a nested ``if`` inside a transition effect
-                # reports seven such objects, and reports the same seven on both
-                # sides of this merge -- so the gap predates it and is recorded
-                # rather than claimed fixed.  Nothing reads ``_source_path`` off
-                # these objects today; ``provenance.py`` asks only about transitions
-                # and defines, and ``diagram/api.py`` only about transitions and
-                # states.
-                for branch in getattr(operation, "branches", ()):
-                    attach(branch, state_source)
-                    for statement in getattr(branch, "statements", ()):
-                        attach(statement, state_source)
+                attach_operation(operation, state_source)
         ast_children = {
             child.name: child for child in getattr(ast_state, "substates", ())
         }

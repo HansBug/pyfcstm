@@ -332,16 +332,12 @@ def _clone_ast_node(node):
             for field in fields(node)
         }
         cloned = node.__class__(**values)
-        # All three travel with the clone.  ``_source_documents`` is the map BMC
-        # provenance slices spans out of, and the scalar pair is what inspect and
-        # the diagram viewer read; a clone that kept only one set would leave one
-        # of those readers looking at a node with no source.
-        for attribute in ("_source_path", "_source_text", "_source_documents"):
+        # The scalar pair travels with the clone: it is what inspect and the
+        # diagram viewer read, and what the document map is later collected from,
+        # so a clone without it would be a node with no source for every reader.
+        for attribute in ("_source_path", "_source_text"):
             if hasattr(node, attribute):
-                value = getattr(node, attribute)
-                if attribute == "_source_documents":
-                    value = dict(value)
-                setattr(cloned, attribute, value)
+                setattr(cloned, attribute, getattr(node, attribute))
         if isinstance(node, dsl_nodes.TransitionDefinition):
             metadata = _get_trusted_generated_combo_transition_metadata(node)
             if metadata is not None:
@@ -366,12 +362,14 @@ def _mark_ast_source_metadata(
     and canonical DSL representation. The importer nevertheless needs to carry
     the originating file through cloning and recursive import assembly.
 
-    Three attributes are set, because two independent readers need different
-    shapes. ``_source_path`` and ``_source_text`` are scalars naming the one file
-    a node came from, which is what inspect and the diagram viewer read.
-    ``_source_documents`` is a path-keyed map on the program root, which is what
-    BMC provenance slices spans out of -- an imported model has several files and
-    a constraint can come from any of them, so a scalar cannot answer it.
+    Two scalars are set: ``_source_path`` and ``_source_text``, naming the one
+    file a node came from.  Inspect and the diagram viewer read them directly, and
+    they are also the only input to the path-keyed document map BMC provenance
+    slices spans out of -- ``_attach_model_source_metadata`` walks the assembled
+    AST and collects one map entry per distinct scalar pair it finds, which is how
+    an imported model ends up with an entry for every file it drew a constraint
+    from.  Annotating a node here is therefore what puts its file into that map;
+    nothing needs to carry a map on the AST as well.
 
     Two functions used to walk this tree, one per mechanism. They are one function
     now: walking twice cost a second traversal and left room for a change to one
@@ -406,10 +404,6 @@ def _mark_ast_source_metadata(
         setattr(node, "_source_path", source_path)
     if source_text is not None:
         setattr(node, "_source_text", source_text)
-    if isinstance(node, dsl_nodes.StateMachineDSLProgram) and source_text is not None:
-        documents = dict(getattr(node, "_source_documents", {}))
-        documents[source_path] = source_text
-        setattr(node, "_source_documents", documents)
     for item in fields(node):
         _mark_ast_source_metadata(getattr(node, item.name), source_path, source_text)
 
@@ -526,10 +520,6 @@ def _assemble_state(
             import_stack=[*import_stack, resolved_file],
             sink=sink,
         )
-        host_documents = dict(getattr(host_program, "_source_documents", {}))
-        host_documents.update(getattr(imported_program, "_source_documents", {}))
-        setattr(host_program, "_source_documents", host_documents)
-
         # The mapping helpers (def / event) are sink-aware: in strict
         # mode (``DiagnosticSink(collect=False)``) the first emit raises
         # :class:`ModelValidationError`; in collect mode the diagnostics

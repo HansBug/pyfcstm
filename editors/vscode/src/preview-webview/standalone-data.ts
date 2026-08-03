@@ -111,8 +111,11 @@ export function buildStandaloneState(
     return {
         ...state,
         previewOptions: options,
+        // Restated because it may have been derived here, on the first build,
+        // from a `previewOptions` the document wrote. `optionOverrides` needs no
+        // line of its own: this function never changes it, so the spread above
+        // carries whatever the caller had.
         documentOptions,
-        optionOverrides: state.optionOverrides,
         collapsedStateIds: [...collapsedStateIds],
         payload,
         summary: Object.entries(diagram.summary).map(([label, value]) => ({label, value})),

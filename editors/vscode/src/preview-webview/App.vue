@@ -47,10 +47,12 @@ function writeStorage(key: string, value: string) {
     }
 }
 
-// What a document with no injected state asks for. Only the keys no preset
-// governs: an explicit value beats the preset in the resolver, so naming the
-// eight it owns -- with what happen to be the `normal` values -- would make
-// `detailLevel` inert. The Python side omits the same eight for the same reason.
+// What a document with no injected state asks for: the seven keys no preset
+// governs. The eight the detail level decides are left out on purpose -- an
+// explicit value beats the preset in `resolveFcstmDiagramPreviewOptions`, so
+// spelling them here, with what happened to be the `normal` values, would make
+// `detailLevel` inert in any document that fell back to this. The Python side
+// omits the same eight for the same reason.
 const FALLBACK_DOCUMENT_OPTIONS: Partial<PreviewResolvedOptions> = {
     detailLevel: 'normal',
     direction: 'TB',
@@ -68,16 +70,10 @@ const initialState: PreviewWebviewState = (window as unknown as {
 }).__FCSTM_INITIAL_STATE__ || (typeof __FCSTM_INITIAL_STATE__ !== 'undefined' ? __FCSTM_INITIAL_STATE__ : {
     title: 'FCSTM Preview',
     filePath: '',
-    // Only the keys no preset governs. The eight the detail level decides are
-    // left out on purpose: an explicit value beats the preset in
-    // `resolveFcstmDiagramPreviewOptions`, so spelling them here -- with what
-    // happened to be the `normal` values -- would make `detailLevel` inert in
-    // any document that fell back to this. The Python side omits the same eight
-    // for the same reason.
-    //
     // Given twice on purpose: sparse as `documentOptions`, which is what the
     // builder merges and resolves, and resolved as `previewOptions`, which the
-    // state declares complete and components read directly.
+    // state declares complete and components read directly. See
+    // `FALLBACK_DOCUMENT_OPTIONS` above for why it is sparse.
     documentOptions: FALLBACK_DOCUMENT_OPTIONS,
     previewOptions: resolveFcstmDiagramPreviewOptions(
         FALLBACK_DOCUMENT_OPTIONS,

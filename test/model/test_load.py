@@ -198,3 +198,63 @@ class TestImportPhase7ConvenienceLoaders:
             ).strip(),
             actual=str(state_machine.to_ast_node()),
         )
+
+
+@pytest.mark.unittest
+def test_a_loaded_model_carries_both_source_mechanisms() -> None:
+    """Two readers ask for the source in two shapes, and both must get it.
+
+    BMC provenance slices spans out of ``_source_documents``, a path-keyed map,
+    because an imported model has several files and a constraint can come from
+    any of them. The diagram viewer and inspect read the ``source_text`` and
+    ``source_path`` scalars for the one file the caller named.
+
+    The two grew up in separate umbrellas and met in a merge. Keeping only one
+    would have looked fine in whichever suite covered it, so this asserts both
+    are populated from the same load.
+    """
+    with isolated_directory():
+        source = textwrap.dedent(
+            """
+            def int x = 0;
+            state Root {
+                state A;
+                [*] -> A;
+            }
+            """
+        ).strip()
+        written = _write_text_file("machine.fcstm", source).read_text(encoding="utf-8")
+
+        machine = load_state_machine_from_file("machine.fcstm")
+
+        # Compared against what landed on disk, not against the literal above: the
+        # helper appends a line separator, and the loader is expected to hand back
+        # the file's bytes rather than a re-normalised copy of them.
+        assert machine.source_text == written
+        assert machine.source_path == "machine.fcstm"
+        documents = machine._source_documents
+        assert documents[os.path.abspath("machine.fcstm")] == written
+
+
+@pytest.mark.unittest
+def test_text_loading_files_the_source_under_the_memory_key() -> None:
+    """Loading from text still puts the source somewhere a reader can find it.
+
+    There is no file to key the document map on, so the key is ``<memory>``.
+    ``pyfcstm.diagram.api`` relies on exactly that: it distinguishes a model
+    loaded from text -- whose ``source_path`` is the working directory used for
+    import resolution -- from one loaded from a file, by asking whether the map
+    holds a ``<memory>`` entry. Without it the viewer would show the working
+    directory's basename as if it were a source file.
+
+    The entry does not come from the loader writing it directly; the loader sets
+    the scalar attributes on the AST and the model builder collects them into the
+    map. Asserting the observable end of that chain is what keeps a change to
+    either half from quietly breaking the other.
+    """
+    source = 'def int x = 0;\nstate Root {\n    state A;\n    [*] -> A;\n}'
+
+    machine = load_state_machine_from_text(source)
+
+    assert machine.source_text == source
+    assert machine._source_documents["<memory>"] == source

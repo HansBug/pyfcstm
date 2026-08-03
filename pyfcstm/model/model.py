@@ -186,9 +186,17 @@ def _attach_model_source_metadata(
             for operation in getattr(action, "operations", ()):
                 attach(operation, state_source)
                 # A conditional operation carries its arms in ``branches`` and each
-                # arm has its own statements.  They are model objects a reader can
-                # click through to, so they need an owner too; the flat walk above
-                # stops at the operation and never reaches them.
+                # arm has its own statements, and the flat walk above stops at the
+                # operation without reaching them.  One level is covered here, not
+                # the whole tree: a branch nested inside a branch, and anything
+                # under ``transition.effects``, still ends up without an owner.  A
+                # probe over a model with a nested ``if`` inside a transition effect
+                # reports seven such objects, and reports the same seven on both
+                # sides of this merge -- so the gap predates it and is recorded
+                # rather than claimed fixed.  Nothing reads ``_source_path`` off
+                # these objects today; ``provenance.py`` asks only about transitions
+                # and defines, and ``diagram/api.py`` only about transitions and
+                # states.
                 for branch in getattr(operation, "branches", ()):
                     attach(branch, state_source)
                     for statement in getattr(branch, "statements", ()):

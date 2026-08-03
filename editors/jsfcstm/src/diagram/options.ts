@@ -80,7 +80,7 @@ export function resolveFcstmDiagramPreviewOptions(
     // no longer trap the effect mode.
     if (transitionEffectMode === 'hide') {
         showTransitionEffects = false;
-    } else if (raw.transitionEffectMode !== undefined) {
+    } else if (raw.transitionEffectMode) {
         // Named a mode, so effects are wanted: the three downstream readers all
         // gate on the flag, and leaving it false would show `note` in the
         // control while drawing no notes at all.

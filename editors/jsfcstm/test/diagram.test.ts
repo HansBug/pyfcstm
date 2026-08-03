@@ -202,6 +202,19 @@ describe('jsfcstm diagram preview', () => {
         const host = {detailLevel: 'full', eventVisualizationMode: 'both', transitionEffectMode: 'hide'};
         assert.equal(resolve(host).transitionEffectMode, 'hide');
         assert.equal(resolve({...host, transitionEffectMode: 'note'}).transitionEffectMode, 'note');
+
+        // A mode that is present but empty is no mode at all, the same reading
+        // the line above it takes with `||`. Testing against `undefined` looked
+        // equivalent and is not: it would let a blank string claim to be a
+        // named mode and override the flag.
+        for (const blank of [undefined, null, '']) {
+            assert.equal(
+                resolve({detailLevel: 'normal', showTransitionEffects: false,
+                    transitionEffectMode: blank as never}).transitionEffectMode,
+                'hide',
+                `a ${JSON.stringify(blank)} mode should leave the flag in charge`,
+            );
+        }
     });
 
     it('covers builder fallbacks for null models, missing legend lookups, forced labels, and empty effect bodies', () => {

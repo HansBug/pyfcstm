@@ -217,6 +217,42 @@ describe('jsfcstm diagram preview', () => {
         }
     });
 
+    it('stops a detail level applying once its own output has been handed back', () => {
+        // Why a caller must keep a sparse record rather than resolve, store the
+        // result, and resolve that. The eight keys a preset governs come back
+        // filled in, and an explicit value beats a preset -- so a level chosen
+        // after that round trip changes `detailLevel` and nothing else, which
+        // reads as a control that responds while doing nothing.
+        //
+        // An earlier version of this test asserted the same point through the
+        // effect-mode clamp: resolve `hide`, hand it back with `note`, expect
+        // `note` to lose. Issue #421 was that clamp, and the fix makes a named
+        // mode win, so that phrasing now describes the bug rather than the
+        // property. `showStateEvents` carries it instead: no clamp touches it,
+        // and the presets disagree about it, so it reports whether a level
+        // still decides anything.
+        const resolve = packageModule.resolveFcstmDiagramPreviewOptions;
+
+        assert.equal(resolve({detailLevel: 'normal'}).showStateEvents, false);
+        assert.equal(resolve({detailLevel: 'full'}).showStateEvents, true,
+            'the two levels have to disagree or this test proves nothing');
+
+        // Sparse throughout: the level decides, which is the behaviour to keep.
+        assert.equal(
+            resolve({detailLevel: 'full', showEvents: false}).showStateEvents,
+            true,
+            'a sparse record lets a chosen level bring its own defaults',
+        );
+
+        // Resolved once, then handed back with a new level: the level moves and
+        // the keys it governs do not.
+        const resolved = resolve({detailLevel: 'normal'});
+        const handedBack = resolve({...resolved, detailLevel: 'full'});
+        assert.equal(handedBack.detailLevel, 'full', 'the level itself still moves');
+        assert.equal(handedBack.showStateEvents, false,
+            'and this is why the resolved set must not be an input');
+    });
+
     it('covers builder fallbacks for null models, missing legend lookups, forced labels, and empty effect bodies', () => {
         assert.equal(packageModule.buildFcstmDiagramFromStateMachine(null), null);
 

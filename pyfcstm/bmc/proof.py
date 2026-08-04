@@ -198,12 +198,18 @@ _VARIADIC_RULES = frozenset({"state_domain_exhaustion"})
 #: about the members' constraints that the checker never sees.  Publishing
 #: ``rule_checker`` for it would name a checker that did not do the work.
 #:
-#: This table is the one place that knows a rule needs the solver, and it drives both
-#: halves of that: which candidates need a verdict before they may fire, and what the
-#: published node records.  The first shape of this took a parameter naming the one
-#: rule's verdicts, which meant the next such rule would take a second parameter --
-#: the contract reserves ``solver_entailment`` for derived and root steps in the
+#: This table is the one place that knows *that* a rule needs the solver, and it
+#: drives both halves of that: which candidates need a verdict before they may fire,
+#: and what the published node records.  The first shape took a parameter naming the
+#: one rule's verdicts, which meant the next such rule would take a second parameter
+#: -- the contract reserves ``solver_entailment`` for derived and root steps in the
 #: plural, so there is expected to be a next one.
+#:
+#: It does not centralise everything about such a rule, and the claim here is
+#: deliberately narrow: ``_conclusion_for`` still dispatches on the rule id to build
+#: its conclusion, exactly as it does for the other nine.  How a rule's conclusion is
+#: shaped is rule-specific work that belongs there; whether a predicate can settle it
+#: is what belongs here.
 _VERIFIED_BY = {"case_condition_entailment": "solver_entailment"}
 
 
@@ -489,6 +495,15 @@ def _conclusion_for(
     ):
         return {"kind": "false"}
     if rule_id == "case_condition_entailment":
+        # Neither guard is reached by the search, and for two different reasons worth
+        # keeping apart.  The arity and the tag are settled upstream by
+        # ``_candidates``, which matches ``premise_kinds`` before proposing -- these
+        # restate that rather than trusting it, the same way each side condition
+        # re-establishes what the builder claimed.  The empty condition is blocked by
+        # something else: discharging an already-unconditional case would conclude
+        # exactly its own premise, so the canonical key is already in ``seen`` and the
+        # candidate is dropped before it arrives here.  Measured, not assumed -- a
+        # real run reaches this branch zero times.
         if len(facts) != 1:
             return None
         case = facts[0]

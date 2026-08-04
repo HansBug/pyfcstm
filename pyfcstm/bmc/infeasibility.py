@@ -1667,9 +1667,14 @@ def check_case_conditions(
             for member in fact.get("condition") or ()
         ]
         if any(item is None for item in encoded):
-            # A condition slot with no encoding is not a failure of the core: it is a
-            # shape this layer cannot read, and reading it wrong is worse than not
-            # discharging it.
+            # Unreached today, and by construction rather than by luck: publication
+            # and this layer read a condition with the same two readings, and
+            # ``_condition_facts`` returns ``None`` for a conjunct it cannot read --
+            # so a case whose condition has an unreadable slot never becomes a
+            # ``transition_case`` in the first place.  Kept because the two sides are
+            # separate functions and the guard is what makes their agreement a
+            # property rather than a coincidence: if one gains a reading the other
+            # lacks, this refuses to discharge instead of encoding a slot wrongly.
             continue
         target = z3.And(*encoded)
         if not entailed([claim for _, claim in members], target):

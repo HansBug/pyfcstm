@@ -1254,3 +1254,36 @@ def test_a_condition_the_core_does_not_force_is_not_discharged(
     )
     assert explanation.achieved_mode == "formal"
     assert explanation.proof is None
+
+
+@pytest.mark.unittest
+def test_a_published_condition_only_names_readings_the_discharge_shares() -> None:
+    """Publication and the discharge read a condition the same two ways.
+
+    The discharge refuses a condition slot it cannot encode, and that guard is never
+    reached -- not because the shape is rare but because publication already declined
+    it: a conjunct neither a state equality nor a variable comparison makes the whole
+    case fall back to ``structural_constraint``.  The agreement is what makes the
+    guard a property rather than a coincidence, so it is asserted here rather than
+    left to the two functions happening to stay in step.
+
+    Written as an assertion over what a real query publishes, because that is where
+    the two readings meet.  Forging a condition to reach the guard would prove the
+    guard runs, which was never in doubt, and not the thing that matters.
+    """
+    feasibility = _explain_case_model(
+        'assume at 2: var("x") == 1;\n'
+        'assume at 3: var("x") == 0;\n'
+        'check reach <= 3: active("Root.A");\n'
+    )
+    conditions = [
+        member
+        for item in feasibility.explanation.core.items
+        for member in ((item.normalized_fact or {}).get("condition") or ())
+    ]
+
+    assert conditions, "the fixture must publish at least one condition"
+    assert {member.get("kind") for member in conditions} <= {
+        "state_membership",
+        "variable_comparison",
+    }

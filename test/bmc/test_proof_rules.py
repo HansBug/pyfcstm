@@ -1281,3 +1281,41 @@ def test_every_rule_in_the_catalog_is_reachable() -> None:
 
     assert UNREACHABLE_RULE_IDS == ()
     assert counted - set(reachable_rule_ids(_seed_kinds())) == set()
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "premises, why",
+    [
+        ((), "no premise names a case to discharge"),
+        (
+            (_conditional_case(), _equality()),
+            "a second premise means the rule was matched to something it does not read",
+        ),
+        ((_equality(),), "a value is not a case, whatever its condition would be"),
+        (
+            (_fact("arithmetic_expression", variable="x", frame=1, operator="add"),),
+            "an expression derived from a case is not the case",
+        ),
+    ],
+)
+def test_case_condition_entailment_refuses_premises_it_does_not_read(
+    premises, why
+) -> None:
+    """The two shape guards every rule in the catalog carries, for this one.
+
+    ``premise_kinds`` is what a builder matches on, but a checker that trusted the
+    match would agree with a step the builder proposed wrongly -- and the builder is
+    the part being checked.  So the arity and the tag are both re-established here,
+    and a conclusion is never reached from premises this rule cannot read.
+
+    :param premises: The premises the checker must refuse.
+    :type premises: tuple
+    :param why: What the caller got wrong, for the failure message.
+    :type why: str
+    """
+    application = RuleApplication(
+        "case_condition_entailment", premises, _discharged_case()
+    )
+
+    assert check_rule(application) is False, why

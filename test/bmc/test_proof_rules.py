@@ -285,6 +285,13 @@ def test_division_is_checked_against_the_encoder_not_against_a_guess() -> None:
     assert check_rule(application(1.0, 3, 0.3333333333333333)) is False
     assert check_rule(application(1.0, 3, 0.0)) is False
 
+    # A quotient larger than any float is the same refusal for the same reason.  The
+    # query language accepts ``1e308`` and a model may divide by ``1e-308``, so the
+    # exact answer is a rational no published number represents -- and converting it
+    # raised ``OverflowError`` out of a search whose only failure channel is ``None``.
+    assert check_rule(application(1e308, 1e-308, 1e308)) is False
+    assert check_rule(application(1e308, 1e-308, 0.0)) is False
+
 
 @pytest.mark.unittest
 def test_interval_intersection_closes_on_bounds_that_cross() -> None:

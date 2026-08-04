@@ -384,13 +384,18 @@ def _exact_quotient(left: Any, right: Any):
     """
     try:
         exact = Fraction(str(left)) / Fraction(str(right))
-    except (ValueError, ZeroDivisionError):
+        published = float(exact)
+        if Fraction(repr(published)) != exact:
+            return None
+    except (ValueError, ZeroDivisionError, OverflowError):
         # ValueError: an operand whose text is not a number, which a fact should not
         # carry and this refuses rather than guesses at.  ZeroDivisionError: a zero
         # denominator the caller's own check did not see, such as ``0.0``.
-        return None
-    published = float(exact)
-    if Fraction(repr(published)) != exact:
+        # OverflowError: an exact quotient larger than any float, which the query
+        # language can ask for -- ``1e308`` divided by ``1e-308`` is one -- and which
+        # is "not representable as a published number" in exactly the sense the return
+        # contract already promised ``None`` for.  Raising here would put an exception
+        # into a search whose only failure channel is ``None``.
         return None
     return published
 

@@ -111,6 +111,32 @@ def _record(status: str, started: bool, elapsed: float, reason: Optional[str]):
     return ProbeRecord(_PHASE_NAME, status, started, elapsed, reason)
 
 
+def _discharge_for(
+    premises: Sequence[_Node],
+    discharges: Optional[Mapping[str, Sequence[str]]],
+) -> Optional[Tuple[str, ...]]:
+    """Return the members entailing this case's condition, or ``None``.
+
+    The verdict is keyed by the member the case restates, so a premise standing for
+    more than one member has no single verdict to read and gets none -- reading the
+    first would attribute an entailment proved for one member to another.
+
+    :param premises: The candidate's premises.
+    :type premises: Sequence[_Node]
+    :param discharges: Verdicts from the solver phase, keyed by member id.
+    :type discharges: Optional[Mapping[str, Sequence[str]]]
+    :return: The cited member ids, or ``None`` when nothing discharged this one.
+    :rtype: Optional[Tuple[str, ...]]
+    """
+    if not discharges or len(premises) != 1:
+        return None
+    owners = premises[0].item_ids
+    if len(owners) != 1:
+        return None
+    cited = discharges.get(owners[0])
+    return None if cited is None else tuple(cited)
+
+
 def _candidates(nodes: Sequence[_Node]) -> List[Tuple[str, Tuple[int, ...]]]:
     """Enumerate every rule application the current facts allow, in a total order.
 
@@ -157,6 +183,15 @@ def _candidates(nodes: Sequence[_Node]) -> List[Tuple[str, Tuple[int, ...]]]:
 #: Rules whose premise count follows the input rather than the rule.
 _VARIADIC_RULES = frozenset({"state_domain_exhaustion"})
 
+#: Rules a predicate cannot settle, and who settled them instead.
+#:
+#: Keyed by rule rather than by node kind because that is where the difference
+#: lives: every other derived step is a pure reading of its premises, so
+#: ``rule_checker`` describes it, while discharging a case's condition is a question
+#: about the members' constraints that the checker never sees.  Publishing
+#: ``rule_checker`` for it would name a checker that did not do the work.
+_VERIFIED_BY = {"case_condition_entailment": "solver_entailment"}
+
 
 def _frame_groups(nodes: Sequence[_Node]) -> List[Tuple[int, ...]]:
     """Group node indices by the frame their fact is about.
@@ -183,6 +218,7 @@ def build_domain_proof(
     budget,
     member_ids: Optional[Sequence[str]] = None,
     state_names: Optional[Mapping[int, str]] = None,
+    condition_discharges: Optional[Mapping[str, Sequence[str]]] = None,
 ) -> Tuple[Optional[BmcConflictProof], Any]:
     """Search for a checked proof that these facts admit no execution.
 
@@ -285,6 +321,15 @@ def build_domain_proof(
                     "timeout", True, elapsed(), "budget exhausted during proof search."
                 )
             premises = [nodes[index] for index in premise_indices]
+            cited: Tuple[str, ...] = ()
+            if rule_id == "case_condition_entailment":
+                # The syntax is the checker's business; whether the members entail
+                # the condition was settled by the solver before the search began,
+                # and a candidate with no verdict may not fire on shape alone.
+                verdict = _discharge_for(premises, condition_discharges)
+                if verdict is None:
+                    continue
+                cited = verdict
             conclusion = _conclusion_for(rule_id, premises)
             if conclusion is None:
                 continue
@@ -298,7 +343,9 @@ def build_domain_proof(
                 )
             ):
                 continue
-            item_ids = sorted({item for node in premises for item in node.item_ids})
+            item_ids = sorted(
+                {item for node in premises for item in node.item_ids} | set(cited)
+            )
             index = len(nodes)
             seen[key] = index
             kind = "contradiction" if conclusion.get("kind") == "false" else "derived"
@@ -361,7 +408,8 @@ def build_domain_proof(
                 node.fact,
                 node.item_ids,
                 _fact_sentence(node.fact, state_names),
-                "core_binding" if node.kind == "input" else "rule_checker",
+                _VERIFIED_BY.get(node.rule_id)
+                or ("core_binding" if node.kind == "input" else "rule_checker"),
             )
         )
     proof = BmcConflictProof(
@@ -426,6 +474,19 @@ def _conclusion_for(
         "boolean_complement",
     ):
         return {"kind": "false"}
+    if rule_id == "case_condition_entailment":
+        if len(facts) != 1:
+            return None
+        case = facts[0]
+        if case.get("kind") != "transition_case" or not case.get("condition"):
+            return None
+        # Only the condition goes, and it goes entirely: ``arithmetic_evaluation``
+        # reads keys, so an emptied ``condition`` still reaches it as a field it does
+        # not recognize and refuses.  Everything else is carried whole for the same
+        # reason the assignment rule carries its case whole.
+        proposal = dict(case)
+        proposal.pop("condition", None)
+        return proposal
     if rule_id == "transition_assignment":
         if len(facts) != 2:
             return None

@@ -2074,6 +2074,7 @@ _FEASIBILITY_REFINEMENT_NAMES = {
     "unsat_core_minimization",
     "value_propagation",
     "core_binding",
+    "case_condition",
     "proof_construction",
 }
 _FEASIBILITY_REFINEMENT_STATUSES = {
@@ -2109,6 +2110,11 @@ _FEASIBILITY_PHASE_REFINEMENT_NAMES = _FEASIBILITY_CORE_REFINEMENT_NAMES | {
     # equivalence check per input rather than a single verdict, and the contract
     # asks for it in the ledger in its own right.
     "core_binding",
+    # Discharging a case's condition is one entailment check per readable case plus
+    # the deletion pass that shrinks each citation set, so it reports a phase for the
+    # same reason core binding does.  It supports the deeper tier and proves nothing
+    # about the core, so it stays out of the core family.
+    "case_condition",
     "proof_construction",
 }
 _FEASIBILITY_TIMEOUT_BEFORE_ASSUMPTIONS = (

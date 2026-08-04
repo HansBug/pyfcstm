@@ -2820,6 +2820,7 @@
             "unsat_core_minimization",
             "value_propagation",
             "core_binding",
+            "case_condition",
             "proof_construction"
           ]
         },
@@ -2884,6 +2885,7 @@
                   "unsat_core_minimization",
                   "value_propagation",
                   "core_binding",
+                  "case_condition",
                   "proof_construction"
                 ]
               },

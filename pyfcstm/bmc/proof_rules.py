@@ -514,6 +514,43 @@ def _boolean_complement(application: RuleApplication) -> bool:
     return {item.get("holds") for item in premises} == {True, False}
 
 
+def _case_condition_entailment(application: RuleApplication) -> bool:
+    """A case whose condition the solver discharged, and nothing else changed.
+
+    This is the one rule in the catalog whose side condition a predicate cannot
+    settle.  A case's assignment holds *where the case applies*, so discharging the
+    condition means showing the core members entail it -- a question about
+    constraints the checker never sees.  The split is therefore deliberate: this
+    predicate settles the part that is syntax, and the solver settles the
+    entailment, which is why a node carrying this rule records
+    ``solver_entailment`` rather than ``rule_checker``.
+
+    Refusing an already-unconditional premise is not pedantry.  Such a step would
+    conclude what its own premise says, and the dependency pruning that keeps the
+    graph honest cannot tell that apart from a step that carried weight.
+
+    :param application: The step to check.
+    :type application: RuleApplication
+    :return: ``True`` when the conclusion is the premise with its condition
+        emptied and every other field untouched.
+    :rtype: bool
+    """
+    premises = application.premises
+    if len(premises) != 1:
+        return False
+    case = premises[0]
+    if case.get("kind") != "transition_case":
+        return False
+    condition = case.get("condition")
+    if not isinstance(condition, tuple) or not condition:
+        return False
+    # The key goes, not just its contents.  ``_only`` reads keys, so an empty tuple
+    # left behind is still a field the evaluation rule does not recognize -- and it
+    # refuses an unrecognized field rather than dropping it, which is the behaviour
+    # that keeps a fact from quietly losing part of itself.
+    return _exactly(application.conclusion, _transformed(case, condition=None))
+
+
 def _transition_assignment(application: RuleApplication) -> bool:
     """A selected transition case relating one frame's value to the next.
 
@@ -577,20 +614,24 @@ def _equality_substitution(application: RuleApplication) -> bool:
 #: A closed catalog a consumer has to accept includes rules nothing produces a
 #: premise for.  Which ones is a user-facing fact and the kind that goes stale
 #: quietly, so it is declared here and checked against the closure below rather than
-#: left for a reader to work out.  Membership is not a judgement about the rule: each
-#: of these is implemented and tested from its own premises, and waits only on a
+#: left for a reader to work out.  Membership is not a judgement about the rule: a
+#: listed rule is implemented and tested from its own premises, and waits only on a
 #: premise no published fact carries yet.
 #:
-#: The three that remain share one cause rather than three.  A transition case
-#: publishes its assignment, but the assignment holds only where its case applies,
-#: and nothing discharges that condition from the members that establish it -- so the
-#: evaluation rule refuses an expression carrying one and the chain has no starting
-#: point.  They will leave this list together or not at all.
-UNREACHABLE_RULE_IDS = (
-    "arithmetic_evaluation",
-    "equality_substitution",
-    "transition_assignment",
-)
+#: It is empty, and that is the state the closure has to keep agreeing with.  The
+#: three arithmetic rules were listed here for one shared cause -- a case publishes
+#: its assignment, but the assignment holds only where the case applies, and nothing
+#: discharged that condition from the members establishing it.
+#: ``case_condition_entailment`` discharges it, so the chain has a starting point and
+#: they left together, as the note here said they would.
+#:
+#: An empty list makes the paired self-check weaker in one direction and it must not
+#: be read as a stronger claim than it is: nothing here can be stale, but the closure
+#: it is compared against is only as wide as the fact kinds it is seeded with.  That
+#: seed is the part to keep honest -- it had already lost a whole encoder family
+#: once, and the agreement stayed green because both sides were computed from the
+#: same short reading.
+UNREACHABLE_RULE_IDS: Tuple[str, ...] = ()
 
 #: The one rule that seeds a graph rather than deriving within it.
 #:
@@ -661,6 +702,15 @@ PROOF_RULES = {
     rule.rule_id: rule
     for rule in (
         ProofRule("source_fact", ("",), "any", _source_fact),
+        # One premise, like ``source_fact`` has none: the arity a rule declares is
+        # whatever its premises are, and a case carries its own condition, so
+        # nothing else has to be matched to discharge it.
+        ProofRule(
+            "case_condition_entailment",
+            ("transition_case",),
+            "transition_case",
+            _case_condition_entailment,
+        ),
         ProofRule(
             "arithmetic_evaluation",
             ("variable_equality", "arithmetic_expression"),

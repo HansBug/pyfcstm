@@ -43,6 +43,7 @@ from typing import (
     Any,
     Callable,
     Dict,
+    List,
     Mapping,
     Optional,
     Sequence,
@@ -1562,6 +1563,128 @@ def check_core_bindings(
     )
 
 
+def check_case_conditions(
+    core: "BmcCoreFormula",
+    facts: Sequence[Tuple[str, Mapping[str, object]]],
+    member_ids: Sequence[str],
+    budget: _SolveBudget,
+) -> Tuple[Dict[str, Tuple[str, ...]], ProbeRecord]:
+    """Prove which core members entail each transition case's own condition.
+
+    A case says what it assigns *where the case applies*, and a rule that used the
+    assignment without the condition would prove something the model does not
+    promise.  Discharging the condition is therefore a claim about constraints
+    rather than about facts, and this is where it can be made: the members' real
+    expressions are here, and the solver with them.
+
+    The antecedent is the members, not their published facts.  That distinction is
+    the whole reason this cannot live in the proof builder: a condition naming
+    frame 1's state is entailed by the frame-0 initializer together with step 0's
+    relation, and step 0 publishes as ``structural_constraint`` -- content a reader
+    cannot see and an encoder cannot re-express.  **A condition entailed by the core
+    need not be entailed by the core's readable facts.**
+
+    A citation set is then shrunk by deterministic deletion, in the order the
+    members were published: whatever can be dropped while the entailment still holds
+    is dropped.  Citing every member would be sound and useless -- a node that names
+    the whole core tells a reader nothing about which part carried the condition.
+
+    Failure is silent by design: a condition that cannot be discharged simply gets
+    no entry, the rule that would consume it never fires, and the proof degrades to
+    ``formal`` with its own reason.  Nothing here refuses a proof on its own.
+
+    :param core: The core formula whose tracked groups the facts came from.
+    :type core: BmcCoreFormula
+    :param facts: Member ids paired with the fact each restates.
+    :type facts: Sequence[Tuple[str, Mapping[str, object]]]
+    :param member_ids: Every member of the published core, readable or not.  The
+        antecedent is built from these rather than from ``facts``: a member with no
+        rule reading still constrains the run, and the condition here is entailed by
+        exactly such a member -- the step relation that puts the machine in the state
+        the case names publishes as ``structural_constraint``.
+    :type member_ids: Sequence[str]
+    :param budget: The shared solve budget.
+    :type budget: pyfcstm.bmc.solver._SolveBudget
+    :return: Member ids of readable cases whose condition was discharged, each
+        mapped to the members that entail it, and the ledger entry for the phase.
+    :rtype: Tuple[Dict[str, Tuple[str, ...]], ProbeRecord]
+
+    Example::
+
+        >>> from pyfcstm.bmc.solver import _SolveBudget
+        >>> discharged, record = check_case_conditions(None, (), (), _SolveBudget(None))
+        >>> discharged, record.status
+        ({}, 'complete')
+    """
+    started_at = time.perf_counter()
+
+    def elapsed() -> float:
+        return (time.perf_counter() - started_at) * 1000.0
+
+    discharged: Dict[str, Tuple[str, ...]] = {}
+    conditional = [
+        (stable_id, fact)
+        for stable_id, fact in facts
+        if fact.get("kind") == "transition_case" and fact.get("condition")
+    ]
+    if not conditional:
+        return discharged, ProbeRecord(
+            "case_condition", "complete", False, elapsed(), None
+        )
+
+    groups = {group.stable_id: group for group in core._tracked_groups}
+    declared = _declared_variable_names(core)
+    members: List[Tuple[str, Any]] = []
+    for stable_id in member_ids:
+        group = groups.get(stable_id)
+        if group is None:
+            continue
+        members.append(
+            (
+                stable_id,
+                z3.And(*group.expressions) if group.expressions else z3.BoolVal(True),
+            )
+        )
+    if not members:
+        return discharged, ProbeRecord(
+            "case_condition", "complete", False, elapsed(), None
+        )
+
+    # One table over every member, not per group: the condition names slots its own
+    # group may never mention, and the two sides have to talk about the same symbols.
+    symbols = _binding_symbols(z3.And(*[claim for _, claim in members]), declared)
+
+    def entailed(claims: Sequence[Any], target: Any) -> bool:
+        """Report whether these claims refute the condition's negation."""
+        solver = z3.Solver()
+        solver.add(z3.And(z3.And(*claims), z3.Not(target)))
+        status, _, _, _, _ = _check_with_budget(solver, budget)
+        return status == "unsat"
+
+    for stable_id, fact in conditional:
+        encoded = [
+            _encode_condition_member(member, symbols)
+            for member in fact.get("condition") or ()
+        ]
+        if any(item is None for item in encoded):
+            # A condition slot with no encoding is not a failure of the core: it is a
+            # shape this layer cannot read, and reading it wrong is worse than not
+            # discharging it.
+            continue
+        target = z3.And(*encoded)
+        if not entailed([claim for _, claim in members], target):
+            continue
+        kept = list(members)
+        for candidate in list(members):
+            trimmed = [item for item in kept if item[0] != candidate[0]]
+            if trimmed and entailed([claim for _, claim in trimmed], target):
+                kept = trimmed
+        discharged[stable_id] = tuple(sorted(item[0] for item in kept))
+    return discharged, ProbeRecord(
+        "case_condition", "complete", bool(discharged), elapsed(), None
+    )
+
+
 def _declared_variable_names(core: "BmcCoreFormula"):
     """Return the variable names the model declares, for symbol resolution.
 
@@ -1843,6 +1966,30 @@ def _encode_transition_case(fact: Mapping[str, Any], symbols) -> Optional[Any]:
 _UNIT_BOUND_ENCODERS["transition_case"] = _encode_transition_case
 
 
+def encodable_fact_kinds() -> Tuple[str, ...]:
+    """Return every fact kind a core binding can re-encode.
+
+    This is the seed the rule catalog's reachability closure starts from: a rule
+    whose premise kind nothing here produces cannot fire, whatever its checker
+    would say.  It is computed from the encoder tables rather than written out,
+    because writing it out is how it went wrong: the seed was read off
+    ``_BINDING_ENCODERS`` alone and missed ``_UNIT_BOUND_ENCODERS`` entirely, so the
+    closure reported three rules unreachable for a reason that was not the real one,
+    and the registry it was compared against agreed -- both sides had been computed
+    from the same short reading.  A future encoder family joins the seed by being
+    registered, with nobody to remember.
+
+    :return: The fact kinds, sorted, that a binding knows how to encode.
+    :rtype: Tuple[str, ...]
+
+    Example::
+
+        >>> "transition_case" in encodable_fact_kinds()
+        True
+    """
+    return tuple(sorted(set(_BINDING_ENCODERS) | set(_UNIT_BOUND_ENCODERS)))
+
+
 def _binding_symbol(expression, fact: Mapping[str, object], declared=None):
     """Return the frame symbol a fact is about, taken from its own group.
 
@@ -2104,10 +2251,20 @@ def explain_infeasibility(
     if propagation_record is not None:
         checks = checks + (propagation_record,)
     narrative = build_conflict_narrative(published, forced_values, state_paths)
+    # Two questions, and they were one boolean until it became clear they answer to
+    # different things.  Whether this artifact is solid enough to carry a proof is
+    # about the core; whether the formal tier explained it is about the recognizers.
+    # Requiring the second to attempt the first inverted the tiers: every core that
+    # passed had a value derivation, and a core with one has a rule that closes it
+    # outright, so the deeper tier only ever ran where it added nothing and the
+    # arithmetic chain could not be reached at all.  Proof depth rebuilds the
+    # narrative from its own graph, so a ``structural_only`` reading here neither
+    # blocks a proof nor survives into one.
+    formal_is_publishable = (
+        outcome.classification is not None and minimized.subset_minimality == "proven"
+    )
     formal_is_complete = (
-        outcome.classification is not None
-        and minimized.subset_minimality == "proven"
-        and narrative.derivation_status == "complete"
+        formal_is_publishable and narrative.derivation_status == "complete"
     )
     if formal_is_complete and requested_mode == "formal":
         # Every condition the frozen table names for a complete formal artifact
@@ -2126,8 +2283,8 @@ def explain_infeasibility(
             ),
             checks,
         )
-    if formal_is_complete:
-        # A complete formal artifact is what a proof is built on top of, so this is
+    if formal_is_publishable:
+        # A publishable formal artifact is what a proof is built on top of, so this is
         # where the deeper tier is attempted.  Either it closes and the run reaches
         # the depth that was asked for, or it does not and the formal artifact is
         # published unchanged with a reason naming what fell short.
@@ -2146,12 +2303,23 @@ def explain_infeasibility(
             # One table for both artifacts: a node's own sentence and the reading
             # built from it are two spellings of the same state to the same reader.
             state_names = _state_names(core)
+            # Before the search, not inside it: a case's condition is discharged
+            # against the members' own constraints, and the builder only ever sees
+            # their published facts.  A condition the core entails need not be
+            # entailed by anything a reader can see, so this is the only layer that
+            # can answer it.
+            member_ids = [item.constraint.stable_id for item in published.items]
+            discharges, discharge_record = check_case_conditions(
+                core, proof_facts, member_ids, budget
+            )
+            checks = checks + (discharge_record,)
             proof, proof_record = build_domain_proof(
                 published.scope,
                 proof_facts,
                 budget,
-                member_ids=[item.constraint.stable_id for item in published.items],
+                member_ids=member_ids,
                 state_names=state_names,
+                condition_discharges=discharges,
             )
             checks = checks + (proof_record,)
         else:
@@ -2197,8 +2365,17 @@ def explain_infeasibility(
                 core=published,
                 narrative=narrative,
                 reason=(
-                    "the formal explanation is complete, but %s"
-                    % (proof_record.reason or "no verifiable proof DAG was produced")
+                    # Says which formal reading was published, because the two are
+                    # now both possible here.  Claiming a complete explanation over a
+                    # ``structural_only`` narrative would misdescribe the artifact the
+                    # reader is holding.
+                    "the formal explanation is %s, but %s"
+                    % (
+                        "complete"
+                        if narrative.derivation_status == "complete"
+                        else narrative.derivation_status,
+                        proof_record.reason or "no verifiable proof DAG was produced",
+                    )
                 ),
                 elapsed_ms=elapsed_ms,
             ),

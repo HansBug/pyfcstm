@@ -274,14 +274,19 @@ def test_an_assignment_a_transition_makes_binds_to_the_requirement_it_states() -
     ``complete`` here reports.  Before, the member was ``structural_constraint``,
     no encoder existed for it, and this phase ended ``unknown``.
 
-    The proof tier still declines, and the reason is precise about why: the facts
-    are bound, and no rule closes them.  A published case is conditional -- the
-    assignment holds where its case applies -- and the rule that evaluates an
-    expression refuses one carrying a condition, so the chain waits on the condition
-    being discharged from the members that establish it.  That discharge is its own
-    mechanism with its own soundness argument, so it is not folded in here; when it
-    lands, ``proof_construction`` becomes ``complete`` and this test's last two
-    assertions are what change.
+    The discharge has since landed, and this is the test that recorded the boundary
+    before it did: a published case was conditional, the rule that evaluates an
+    expression refused one carrying a condition, and the chain waited.  The note here
+    said that when the discharge arrived ``proof_construction`` would become
+    ``complete`` and the last two assertions would be what changed.  They are the two
+    below, and they now assert the reached depth rather than the refusal -- kept
+    rather than deleted, because the earlier assertions about the binding are the
+    same either way and a test that only ever passed under the old behaviour would
+    have taken them with it.
+
+    ``case_condition_entailment`` discharges the condition against the members that
+    establish it, verified by the solver rather than by the rule checker, and the
+    chain closes through ``transition_assignment`` into the arithmetic rules.
     """
     machine = load_state_machine_from_text(_MODEL, "machine.fcstm")
     context = BmcEngine(machine).prepare(
@@ -303,8 +308,10 @@ def test_an_assignment_a_transition_makes_binds_to_the_requirement_it_states() -
         item.normalized_fact.get("kind") == "transition_case"
         for item in explanation.core.items
     ), [item.normalized_fact.get("kind") for item in explanation.core.items]
-    assert explanation.achieved_mode == "formal"
-    assert "no rule in the catalog closes this core" in explanation.reason
+    assert explanation.achieved_mode == "proof"
+    assert "case_condition_entailment" in {
+        node.rule_id for node in explanation.proof.nodes
+    }
 
 
 @pytest.mark.unittest
@@ -1057,3 +1064,193 @@ def test_an_input_node_restates_one_member_and_says_so(query) -> None:
     for node in explanation.proof.nodes:
         if node.kind != "input":
             assert node.verification_method in ("rule_checker", "solver_entailment")
+
+
+#: A machine whose step relation reads as one case, so a proof can use it.
+#:
+#: Two transitions leave ``A`` and only the first assigns, which is what lets the
+#: step group publish a readable case rather than degrading to a structural
+#: constraint.  The second is unreachable in the encoding -- an unguarded transition
+#: declared first takes priority -- and that is exactly why the case's condition is
+#: the state alone: nothing else has to hold for the assignment to.
+_CASE_MODEL = """
+def int x = 0;
+
+state Root {
+    state A;
+    state B;
+
+    [*] -> A;
+    A -> A effect { x = x + 1; };
+    A -> B;
+}
+"""
+
+
+def _explain_case_model(query: str, **kwargs):
+    """Run one query against the readable-case machine and return the explanation."""
+    machine = load_state_machine_from_text(_CASE_MODEL, "machine.fcstm")
+    context = BmcEngine(machine).prepare(query, query_source_path="query.fbmcq")
+    result = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="proof",
+        **kwargs,
+    )
+    return result.feasibility
+
+
+@pytest.mark.unittest
+def test_a_discharged_case_carries_the_arithmetic_chain_to_a_contradiction() -> None:
+    """The whole chain, end to end, over a query a user can write.
+
+    Three rules waited on this one.  A case states what it assigns *where the case
+    applies*, and until the condition could be discharged the assignment was
+    unusable: the evaluation rule refuses an expression carrying a condition, so the
+    chain had no second step and ``transition_assignment``,
+    ``arithmetic_evaluation`` and ``equality_substitution`` were unreachable by any
+    query at all.  The discharge is a solver step rather than a rule check because
+    the members that establish the condition include one no reader can see -- the
+    step relation that puts the machine in the state, which publishes as a
+    structural constraint.
+    """
+    feasibility = _explain_case_model(
+        'assume at 2: var("x") == 1;\n'
+        'assume at 3: var("x") == 0;\n'
+        'check reach <= 3: active("Root.A");\n'
+    )
+    explanation = feasibility.explanation
+
+    assert explanation.achieved_mode == "proof"
+    assert explanation.status == "complete"
+    assert explanation.proof.verification_status == "verified"
+    assert [node.rule_id for node in explanation.proof.nodes] == [
+        "source_fact",
+        "source_fact",
+        "source_fact",
+        "case_condition_entailment",
+        "transition_assignment",
+        "arithmetic_evaluation",
+        "incompatible_equalities",
+    ]
+    discharge = next(
+        node
+        for node in explanation.proof.nodes
+        if node.rule_id == "case_condition_entailment"
+    )
+    assert discharge.kind == "derived"
+    assert discharge.verification_method == "solver_entailment"
+    assert "condition" not in discharge.conclusion
+
+
+@pytest.mark.unittest
+def test_a_discharge_cites_only_members_of_the_published_core() -> None:
+    """The entailment names where the condition came from, and stays inside the core.
+
+    A node citing something outside the core would break the subset-minimality the
+    proof claims for its own leaves: the reader is told these members and no others
+    carry the contradiction.  The citation is also the only place the condition's
+    origin is visible, so it has to be the members that actually establish it rather
+    than every member that happened to be present.
+    """
+    feasibility = _explain_case_model(
+        'assume at 2: var("x") == 1;\n'
+        'assume at 3: var("x") == 0;\n'
+        'check reach <= 3: active("Root.A");\n'
+    )
+    explanation = feasibility.explanation
+    members = {item.constraint.stable_id for item in explanation.core.items}
+    discharge = next(
+        node
+        for node in explanation.proof.nodes
+        if node.rule_id == "case_condition_entailment"
+    )
+
+    assert set(discharge.item_ids) <= members
+    assert "transition.step.0000" in discharge.item_ids
+    assert "initial.target" in discharge.item_ids
+
+
+@pytest.mark.unittest
+def test_the_ledger_reports_the_discharge_phase_that_ran() -> None:
+    """A phase a caller pays for is a phase they can see in the ledger."""
+    feasibility = _explain_case_model(
+        'assume at 2: var("x") == 1;\n'
+        'assume at 3: var("x") == 0;\n'
+        'check reach <= 3: active("Root.A");\n'
+    )
+    names = [check.name for check in feasibility.refinement_checks]
+
+    assert "case_condition" in names
+    assert names.index("case_condition") < names.index("proof_construction")
+
+
+#: A machine whose case applies only under a guard, so its condition is not free.
+#:
+#: The guard is what makes the second transition reachable: with ``x >= 2`` the
+#: self-loop cannot fire and the machine leaves ``A``, so neither the state at the
+#: next frame nor the guard is settled by the prefix alone.  A case here carries a
+#: two-member condition and the core does not force it.
+_GUARDED_CASE_MODEL = """
+def int x = 0;
+
+state Root {
+    state A;
+    state B;
+
+    [*] -> A;
+    A -> A : if [x < 2] effect { x = x + 1; };
+    A -> B;
+}
+"""
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "assumptions",
+    [
+        'assume at 2: var("x") == 1;\nassume at 3: var("x") == 0;\n',
+        'assume at 3: var("x") == 5;\n',
+    ],
+)
+def test_a_condition_the_core_does_not_force_is_not_discharged(
+    assumptions: str,
+) -> None:
+    """The check has to be able to say no, and this is where it does.
+
+    A guarded case assigns only where its guard holds and the machine is where the
+    case says.  Neither is settled here -- the guard leaves a way out of ``A`` -- so
+    the members do not entail the condition and the assignment stays conditional.
+    Discharging it anyway would publish "``x`` increases by one" as something the
+    model guarantees, when the model guarantees it only along one branch, and the
+    verdict would be unsound rather than merely optimistic.
+
+    The artifact stays honest instead: the formal explanation is published and the
+    reason names the proof as what fell short.
+
+    :param assumptions: The query's assumption lines.
+    :type assumptions: str
+    """
+    machine = load_state_machine_from_text(_GUARDED_CASE_MODEL, "machine.fcstm")
+    context = BmcEngine(machine).prepare(
+        assumptions + 'check reach <= 3: active("Root.A");\n',
+        query_source_path="query.fbmcq",
+    )
+    feasibility = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="proof",
+    ).feasibility
+    explanation = feasibility.explanation
+
+    published = [item.normalized_fact or {} for item in explanation.core.items]
+    conditions = [
+        len(fact.get("condition") or ())
+        for fact in published
+        if fact.get("kind") == "transition_case"
+    ]
+
+    assert conditions and all(count >= 2 for count in conditions), (
+        "the fixture must publish a case whose condition names both the state and "
+        "the guard, or it is not testing the refusal"
+    )
+    assert explanation.achieved_mode == "formal"
+    assert explanation.proof is None

@@ -1055,10 +1055,18 @@ def test_evaluation_refuses_an_expression_it_does_not_fully_understand() -> None
 #: the closure with it answers a different question (what the catalog could do) and
 #: reports 8 of 8 where 5 of 8 is the truth.
 def _seed_kinds():
-    """Return the kinds a closure over the catalog may start from."""
-    from pyfcstm.bmc.infeasibility import _BINDING_ENCODERS
+    """Return the kinds a closure over the catalog may start from.
 
-    return frozenset(_BINDING_ENCODERS)
+    Taken from production rather than transcribed.  Reading one encoder table by
+    hand is what made this seed too small: ``transition_case`` is registered in the
+    unit-bound family, the seed named only the ordinary one, and the closure then
+    reported three rules unreachable for a cause that was not theirs -- while the
+    registry it is compared against agreed, because both had been derived from the
+    same short reading.
+    """
+    from pyfcstm.bmc.infeasibility import encodable_fact_kinds
+
+    return frozenset(encodable_fact_kinds())
 
 
 @pytest.mark.unittest
@@ -1122,16 +1130,32 @@ def test_removing_any_fact_source_changes_what_the_closure_reaches(
 
 @pytest.mark.unittest
 @pytest.mark.parametrize(
-    "dropped",
-    sorted(("arithmetic_evaluation", "equality_substitution", "transition_assignment")),
+    "dropped, goes_dark",
+    [
+        ("transition_case", "case_condition_entailment"),
+        ("proposition", "boolean_complement"),
+        ("state_exclusion", "state_domain_exhaustion"),
+    ],
 )
-def test_removing_any_registry_entry_breaks_the_agreement(dropped: str) -> None:
-    """The other direction the contract names, and the reason it is separate.
+def test_a_reachability_regression_breaks_the_agreement(
+    dropped: str, goes_dark: str
+) -> None:
+    """The other direction the contract names, restated for an empty registry.
 
-    A registry that lost an entry would leave a rule unreachable and undeclared,
-    which is exactly the stale state this pair of checks exists to prevent.  The
-    parametrization is written out rather than read from the registry so that
-    emptying the registry cannot empty this test with it.
+    While the registry had entries, this direction was tested by removing one and
+    requiring the agreement to break.  An empty registry has nothing to remove, and
+    deleting the test with the entries would have retired a gate rather than
+    satisfying it -- the stale state it guards is still reachable, only from the
+    other side: a fact source disappears, a rule goes dark, and an empty registry
+    keeps saying nothing is.
+
+    The witnesses are written out rather than derived so that a change to the seed
+    cannot quietly empty this test too.
+
+    :param dropped: The fact kind removed from the closure's seed.
+    :type dropped: str
+    :param goes_dark: The rule that must lose its only premise source with it.
+    :type goes_dark: str
     """
     from pyfcstm.bmc.proof_rules import (
         CLOSURE_EXCLUDED_RULE_IDS,
@@ -1140,9 +1164,120 @@ def test_removing_any_registry_entry_breaks_the_agreement(dropped: str) -> None:
         reachable_rule_ids,
     )
 
-    assert dropped in UNREACHABLE_RULE_IDS, "the witness names a rule not declared"
+    seed = _seed_kinds()
+    assert dropped in seed, "the witness names a kind no binding encodes"
     counted = set(PROOF_RULES) - set(CLOSURE_EXCLUDED_RULE_IDS)
-    reached = set(reachable_rule_ids(_seed_kinds()))
-    shortened = set(UNREACHABLE_RULE_IDS) - {dropped}
+    reached = set(reachable_rule_ids(seed - {dropped}))
 
-    assert counted - reached != shortened
+    assert goes_dark not in reached, "%s survived without %s" % (goes_dark, dropped)
+    assert counted - reached != set(UNREACHABLE_RULE_IDS)
+
+
+def _discharged_case(**overrides) -> dict:
+    """The same case with its condition discharged: the key is gone, not emptied.
+
+    ``arithmetic_evaluation`` reads keys rather than values, and refuses a field it
+    does not recognize rather than dropping it, so a condition left behind as an
+    empty tuple still stops the chain one step later.
+    """
+    case = _conditional_case(**overrides)
+    case.pop("condition", None)
+    return case
+
+
+def _conditional_case(**overrides) -> dict:
+    """A transition case whose assignment holds only where its condition does."""
+    fields = {
+        "variable": "x",
+        "frame": 1,
+        "target_frame": 2,
+        "operator": "add",
+        "operand": 1,
+        "condition": (_fact("state_membership", frame=1, state=1, excluded=False),),
+    }
+    fields.update(overrides)
+    return _fact("transition_case", **fields)
+
+
+@pytest.mark.unittest
+def test_case_condition_entailment_empties_the_condition_and_nothing_else() -> None:
+    """The one thing this rule is allowed to change is the condition.
+
+    The rule exists because an assignment guarded by a condition is not an
+    assignment: ``x`` increases by one *where this case applies*, and a step that
+    forgets the second half proves something the model does not promise.  Its
+    conclusion is therefore the same case with the condition discharged -- every
+    other field travels unchanged, and the checker is what makes that a fact
+    rather than an intention.
+    """
+    application = RuleApplication(
+        "case_condition_entailment",
+        (_conditional_case(),),
+        _discharged_case(),
+    )
+
+    assert check_rule(application) is True
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "conclusion, why",
+    [
+        (_conditional_case(), "the condition survives, so nothing was discharged"),
+        (_discharged_case(operand=2), "the operand was rewritten"),
+        (_discharged_case(variable="y"), "the subject was rewritten"),
+        (_discharged_case(target_frame=3), "the step was widened"),
+    ],
+)
+def test_case_condition_entailment_refuses_a_rewritten_conclusion(
+    conclusion, why
+) -> None:
+    """A discharged condition is not a licence to change the assignment.
+
+    :param conclusion: The conclusion the checker must refuse.
+    :type conclusion: dict
+    :param why: What the caller got wrong, for the failure message.
+    :type why: str
+    """
+    application = RuleApplication(
+        "case_condition_entailment", (_conditional_case(),), conclusion
+    )
+
+    assert check_rule(application) is False, why
+
+
+@pytest.mark.unittest
+def test_case_condition_entailment_refuses_a_case_with_nothing_to_discharge() -> None:
+    """An unconditional case is already what the rule produces.
+
+    Accepting it would put a node in the graph that establishes what its own
+    premise says, which the dependency pruning cannot tell from a real step.
+    """
+    application = RuleApplication(
+        "case_condition_entailment",
+        (_discharged_case(),),
+        _discharged_case(),
+    )
+
+    assert check_rule(application) is False
+
+
+@pytest.mark.unittest
+def test_every_rule_in_the_catalog_is_reachable() -> None:
+    """The acceptance the contract asks for: no rule a consumer must accept is dark.
+
+    A closed catalog whose premises nothing produces is a promise the tool cannot
+    keep, and the registry of unreachable rules is where that gap was recorded
+    honestly.  With the condition discharged by ``case_condition_entailment`` the
+    registry is empty, and this test is what stops it filling up again unnoticed.
+    """
+    from pyfcstm.bmc.proof_rules import (
+        CLOSURE_EXCLUDED_RULE_IDS,
+        UNREACHABLE_RULE_IDS,
+        reachable_rule_ids,
+    )
+
+    counted = set(PROOF_RULES) - set(CLOSURE_EXCLUDED_RULE_IDS)
+
+    assert UNREACHABLE_RULE_IDS == ()
+    assert counted - set(reachable_rule_ids(_seed_kinds())) == set()

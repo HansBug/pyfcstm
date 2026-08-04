@@ -111,6 +111,7 @@ BmcReasoningStepKind = Literal["fact", "derivation", "conflict"]
 BmcProofNodeKind = Literal["input", "derived", "contradiction"]
 BmcProofRuleId = Literal[
     "source_fact",
+    "case_condition_entailment",
     "transition_assignment",
     "equality_substitution",
     "arithmetic_evaluation",

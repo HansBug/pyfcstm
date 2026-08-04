@@ -125,6 +125,16 @@ _PROOF_VERIFICATION_METHODS = (
     "solver_entailment",
 )
 
+#: Methods the explanation page names without assigning work to them.
+#:
+#: The page divides the checking between the methods that are wired to a node
+#: role, and separately names the one held for a future solver-decided step.  The
+#: count in its prose is therefore the vocabulary minus these, which is why they
+#: are listed rather than folded into the number: adding a fifth method that does
+#: carry work should move the expected count, and adding another reserved name
+#: should not.
+_RESERVED_VERIFICATION_METHODS = ("solver_entailment",)
+
 #: Every kind of node a proof graph contains.
 _PROOF_NODE_KINDS = ("input", "derived", "contradiction")
 
@@ -897,6 +907,69 @@ def _check_rule_reachability(errors: List[str]) -> None:
             )
 
 
+#: Numeral spellings, indexed by the value each names.
+#:
+#: Shared by every prose-count check so the two languages cannot disagree about
+#: how a number is written, which is how one of them ends up unchecked.
+_ENGLISH_NUMERALS = (
+    "zero",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+)
+
+#: Chinese numerals, as the spellings a page may legitimately use for each value.
+#:
+#: Two is written ``两`` before a measure word and ``二`` in a bare numeral, so a
+#: single spelling per value would make the check demand ``二条`` -- which is not
+#: what a Chinese page should say.  Both are accepted; the check is about the
+#: number, not the register.
+_CHINESE_NUMERALS: Tuple[Tuple[str, ...], ...] = (
+    ("零",),
+    ("一",),
+    ("两", "二"),
+    ("三",),
+    ("四",),
+    ("五",),
+    ("六",),
+    ("七",),
+    ("八",),
+    ("九",),
+)
+
+#: The character class matching any spelling above, for use inside a pattern.
+_CHINESE_NUMERAL_CLASS = "[%s]" % "".join(
+    spelling for forms in _CHINESE_NUMERALS for spelling in forms
+)
+
+
+def _numeral_forms(value: int, label: str) -> Tuple[str, ...]:
+    """Return every spelling a page may use for one count.
+
+    One function for both languages on purpose.  Writing the English comparison
+    as an equality and the Chinese one as a membership test is how the two halves
+    of a bilingual check end up enforcing different things, and the values where
+    they disagree are exactly the ones neither test covers.
+
+    :param value: The count the page should be naming.
+    :type value: int
+    :param label: Page filename, used to pick the language.
+    :type label: str
+    :return: Acceptable spellings, including the sentence-initial form.
+    :rtype: Tuple[str, ...]
+    """
+    if label.endswith("_zh.rst"):
+        return _CHINESE_NUMERALS[value]
+    word = _ENGLISH_NUMERALS[value]
+    return (word, word.capitalize())
+
+
 #: How each reference page spells the count of unreachable rules in prose.
 #:
 #: The reachability partition is written twice on the page: once as a ``yes`` or
@@ -905,16 +978,14 @@ def _check_rule_reachability(errors: List[str]) -> None:
 #: to six left ``Four rules are not`` standing beside a table with three -- the
 #: two halves of one nine-way split contradicting each other fifty lines apart,
 #: in both languages.
-_UNREACHABLE_COUNT_PROSE: Dict[str, Tuple[str, str, Tuple[str, ...]]] = {
+_UNREACHABLE_COUNT_PROSE: Dict[str, Tuple[str, str]] = {
     "reference/bmc_results/index.rst": (
         "no",
-        r"\b(One|Two|Three|Four|Five|Six|Seven|Eight|Nine) rules are not\b",
-        ("", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine"),
+        r"\b([A-Za-z]+) rules are not\b",
     ),
     "reference/bmc_results/index_zh.rst": (
         "否",
-        r"有([一二三四五六七八九])条不可达",
-        ("", "一", "二", "三", "四", "五", "六", "七", "八", "九"),
+        r"有(%s)条不可达" % _CHINESE_NUMERAL_CLASS,
     ),
 }
 
@@ -937,7 +1008,7 @@ def _check_unreachable_count(errors: List[str]) -> None:
     :rtype: None
     """
     for label, path in _prose_pages("reference/bmc_results/index"):
-        marker, pattern, numerals = _UNREACHABLE_COUNT_PROSE[label]
+        marker, pattern = _UNREACHABLE_COUNT_PROSE[label]
         text = _visible_text(path)
         rows = re.findall(r"\* - ``([a-z_]+)``\n\s+- (\S+)\n", text)
         counted = sum(1 for _, value in rows if value == marker)
@@ -948,6 +1019,7 @@ def _check_unreachable_count(errors: List[str]) -> None:
                 % (label, counted, len(_UNREACHABLE_RULES))
             )
             continue
+        expected = _numeral_forms(counted, label)
         found = re.search(pattern, text)
         if found is None:
             errors.append(
@@ -956,11 +1028,219 @@ def _check_unreachable_count(errors: List[str]) -> None:
                 % (label, counted, marker)
             )
             continue
-        if found.group(1) != numerals[counted]:
+        if found.group(1) not in expected:
             errors.append(
                 "%s says %s rules are unreachable while its table marks %d; "
                 "the paragraph and the rows describe one split."
                 % (label, found.group(1), counted)
+            )
+
+
+def _check_rule_partition_prose(errors: List[str]) -> None:
+    """Confirm the explanation page's rule counts match the rule catalog.
+
+    The reference page's table and the explanation page's paragraph describe the
+    same nine-way split, so both can go stale from one change to the catalog and
+    a check on either one alone proves nothing about the other.  This one reads
+    the paragraph that names both halves at once -- how many rules exist and how
+    many never fire -- and compares each numeral with the transcribed catalog.
+
+    :param errors: Accumulator the caller raises from.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    total, unreachable = len(_PROOF_RULE_IDS), len(_UNREACHABLE_RULES)
+    # Each language states the two halves in its own order, so the pattern and the
+    # values it is read against are declared together per page rather than assumed
+    # to line up.
+    patterns = {
+        "explanations/bmc_solving/index.rst": (
+            r"while ([A-Za-z]+) of its ([A-Za-z]+) rules never fire",
+            (unreachable, total),
+        ),
+        "explanations/bmc_solving/index_zh.rst": (
+            r"(%s)条规则里仍有(%s)条从不触发"
+            % (_CHINESE_NUMERAL_CLASS, _CHINESE_NUMERAL_CLASS),
+            (total, unreachable),
+        ),
+    }
+    for label, path in _prose_pages("explanations/bmc_solving/index"):
+        pattern, values = patterns[label]
+        found = re.search(pattern, _visible_text(path))
+        if found is None:
+            errors.append(
+                "%s no longer states how many of the %d rules never fire; the "
+                "reachability split is then documented on one page only."
+                % (label, total)
+            )
+            continue
+        if any(
+            spelling not in _numeral_forms(value, label)
+            for spelling, value in zip(found.groups(), values)
+        ):
+            errors.append(
+                "%s spells the rule split %s while the catalog has %d rules of "
+                "which %d never fire."
+                % (label, list(found.groups()), total, unreachable)
+            )
+
+
+def _check_verification_method_count(errors: List[str]) -> None:
+    """Confirm the explanation page counts the methods that carry work.
+
+    The sentence opening that section says how many methods divide the checking,
+    and each following paragraph assigns one to a node role.  Adding a method
+    means adding a paragraph, and adding a paragraph is exactly the edit that
+    leaves the opening numeral behind: ``core_binding_unit`` arrived with its own
+    paragraph while the sentence above it still read ``Two``.
+
+    :param errors: Accumulator the caller raises from.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    working = [
+        method
+        for method in _PROOF_VERIFICATION_METHODS
+        if method not in _RESERVED_VERIFICATION_METHODS
+    ]
+    patterns = {
+        "explanations/bmc_solving/index.rst": r"\b([A-Za-z]+) methods divide the work\b",
+        "explanations/bmc_solving/index_zh.rst": (
+            r"(%s)种方法分担" % _CHINESE_NUMERAL_CLASS
+        ),
+    }
+    for label, path in _prose_pages("explanations/bmc_solving/index"):
+        pattern = patterns[label]
+        expected = _numeral_forms(len(working), label)
+        text = _visible_text(path)
+        missing = [name for name in _PROOF_VERIFICATION_METHODS if name not in text]
+        if missing:
+            errors.append(
+                "%s does not name %s, so the count of methods that divide the "
+                "work cannot be read against the vocabulary."
+                % (label, ", ".join(missing))
+            )
+            continue
+        found = re.search(pattern, text)
+        if found is None:
+            errors.append(
+                "%s no longer says how many methods divide the checking, which "
+                "is what tells a reader the list below it is complete." % label
+            )
+            continue
+        if found.group(1) not in expected:
+            errors.append(
+                "%s says %s methods divide the work while %d do: %s."
+                % (label, found.group(1), len(working), ", ".join(working))
+            )
+
+
+def _translated_fact_kinds() -> Tuple[Optional[Sequence[str]], Optional[str]]:
+    """Return the fact kinds the core-to-proof translation can emit.
+
+    Read from the source of ``proof_facts_for_core`` rather than transcribed.  A
+    transcription would have to be updated by the same edit that adds a branch,
+    which is exactly the edit that forgot the prose count twice; deriving the set
+    means adding a branch moves the expected number on its own.
+
+    Two shapes carry a kind: a dict display with a ``"kind"`` key, and a
+    ``dict(..., kind=...)`` call.  One branch takes its kind from
+    ``_COMPARISON_FACTS`` instead of naming it, so that mapping's string values
+    are read as well.
+
+    :return: The kinds, and an error message when the source cannot be read.
+    :rtype: Tuple[Optional[Sequence[str]], Optional[str]]
+    """
+    source = _REPO_ROOT / "pyfcstm/bmc/proof.py"
+    try:
+        module = ast.parse(source.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError) as err:
+        # OSError: the module is missing or unreadable.
+        # SyntaxError: it is mid-edit, so any count read from it would be wrong.
+        return None, "cannot read the fact translation from %s: %s" % (source, err)
+    functions = [
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "proof_facts_for_core"
+    ]
+    if not functions:
+        return None, (
+            "%s no longer defines proof_facts_for_core, so the documented count "
+            "of translated fact kinds is unchecked." % source
+        )
+    kinds = set()
+    for node in ast.walk(functions[0]):
+        if isinstance(node, ast.Dict):
+            for key, value in zip(node.keys, node.values):
+                if (
+                    isinstance(key, ast.Constant)
+                    and key.value == "kind"
+                    and isinstance(value, ast.Constant)
+                ):
+                    kinds.add(value.value)
+        if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "dict":
+            for keyword in node.keywords:
+                if keyword.arg == "kind" and isinstance(keyword.value, ast.Constant):
+                    kinds.add(keyword.value.value)
+    for node in module.body:
+        if isinstance(node, ast.Assign) and any(
+            getattr(target, "id", None) == "_COMPARISON_FACTS"
+            for target in node.targets
+        ):
+            kinds.update(
+                value.value
+                for display in ast.walk(node.value)
+                if isinstance(display, ast.Dict)
+                for value in display.values
+                if isinstance(value, ast.Constant) and isinstance(value.value, str)
+            )
+    return sorted(kinds), None
+
+
+def _check_translated_kind_count(errors: List[str]) -> None:
+    """Confirm the explanation page's count of translated fact kinds is current.
+
+    The paragraph uses the count to argue that ``arithmetic_expression`` is not
+    among them, so the argument survives a change to the number while the
+    sentence does not: adding ``proposition`` and ``transition_case`` to the
+    translation left ``four kinds`` on a page describing seven.
+
+    :param errors: Accumulator the caller raises from.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    kinds, failure = _translated_fact_kinds()
+    if failure is not None:
+        errors.append(failure)
+        return
+    if "arithmetic_expression" in kinds:
+        errors.append(
+            "the fact translation now emits arithmetic_expression, so the "
+            "explanation page's account of why the arithmetic rules never fire "
+            "no longer holds."
+        )
+    patterns = {
+        "explanations/bmc_solving/index.rst": r"emits ([A-Za-z]+) kinds",
+        "explanations/bmc_solving/index_zh.rst": r"发出(%s)种 kind"
+        % _CHINESE_NUMERAL_CLASS,
+    }
+    for label, path in _prose_pages("explanations/bmc_solving/index"):
+        pattern = patterns[label]
+        expected = _numeral_forms(len(kinds), label)
+        found = re.search(pattern, _visible_text(path))
+        if found is None:
+            errors.append(
+                "%s no longer says how many fact kinds the translation emits, "
+                "which is the premise of its own argument." % label
+            )
+            continue
+        if found.group(1) not in expected:
+            errors.append(
+                "%s says the translation emits %s kinds while it emits %d: %s."
+                % (label, found.group(1), len(kinds), ", ".join(kinds))
             )
 
 
@@ -1080,6 +1360,9 @@ def check() -> None:
     _check_schema_vocabularies(errors)
     _check_rule_reachability(errors)
     _check_unreachable_count(errors)
+    _check_rule_partition_prose(errors)
+    _check_translated_kind_count(errors)
+    _check_verification_method_count(errors)
     if errors:
         raise CheckFailure("BMC documentation check failed:\n" + "\n".join(errors))
 

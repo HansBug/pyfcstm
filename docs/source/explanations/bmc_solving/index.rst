@@ -354,7 +354,7 @@ A published proof is a claim that each step was checked.  The interesting design
 question is *by whom*, because a checker that shares code with the constructor
 agrees with it by construction and proves nothing.
 
-Two methods divide the work.  Input nodes use ``core_binding``: the normalized
+Three methods divide the work.  Input nodes use ``core_binding``: the normalized
 fact is re-encoded from scratch and the solver is asked to refute both
 ``group => fact`` and ``fact => group``.  Both directions are required.  One
 direction alone would allow a fact that is merely *implied by* the core member,
@@ -381,6 +381,12 @@ the proportion covered: "requirement 5 of 12" says something that "the transitio
 relation" does not.  A fact equivalent to two requirements identifies neither, so
 the binding is refused rather than resolved -- an index a reader cannot rely on is
 worse than no index.
+
+No query reaches this method today, so the pair is defined and unpublished.  The
+only groups that decompose into separate requirements are the step relations, and
+the only rule whose premises include one of their cases is
+``transition_assignment`` -- the rule the reachability table marks unreachable.
+The next section sets out why that rule does not fire.
 
 The boundary is therefore: **a reader may trust that each sentence follows from
 the core members named beside it, and may not trust that the encoding faithfully
@@ -413,9 +419,9 @@ Two further rules are out of reach for the same reason, one step removed.
 ``equality_substitution`` needs a derived fact to substitute into, and
 ``arithmetic_evaluation`` needs an ``arithmetic_expression`` fact -- which only
 ``transition_assignment`` produces.  The translation from core members to proof
-facts emits four kinds, and that is not one of them, so both chains are missing
+facts emits seven kinds, and that is not one of them, so both chains are missing
 their first link rather than their last.  This is why the catalog can be closed
-and complete while four of its nine rules never fire: they are the ones whose
+and complete while three of its nine rules never fire: they are the ones whose
 premises no core member can state.
 
 A second boundary is narrower.  An event assumption is published as a

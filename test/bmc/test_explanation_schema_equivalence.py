@@ -1494,3 +1494,79 @@ def test_the_refinement_ledger_publishes_every_phase_name_the_package_can_emit()
             sorted(declared - set(_FEASIBILITY_REFINEMENT_NAMES)),
         )
     )
+
+
+#: Vocabularies the package emits that the published schema constrains.
+#:
+#: Pointer-free on purpose.  Three of these are declared inside conditional blocks,
+#: and this file already warns that an ``allOf`` index moves the moment an unrelated
+#: rule is inserted -- three failures nobody caused is how a gate gets deleted.  What
+#: matters for the failure this catches is not where a value is declared but whether
+#: it is declared at all: a member added to the package and to no enum makes the
+#: emitted document invalid against the schema published for it.
+_PUBLISHED_VOCABULARIES = (
+    ("refinement phase names", "witness", "_FEASIBILITY_REFINEMENT_NAMES"),
+    ("core-family phase names", "witness", "_FEASIBILITY_CORE_REFINEMENT_NAMES"),
+    ("component phase names", "witness", "_FEASIBILITY_COMPONENT_REFINEMENT_NAMES"),
+    ("deeper-tier phase names", "witness", "_FEASIBILITY_PHASE_REFINEMENT_NAMES"),
+    ("refinement statuses", "witness", "_FEASIBILITY_REFINEMENT_STATUSES"),
+    ("model roles", "witness", "_BMC_MODEL_ROLES"),
+    ("source kinds", "provenance", "_SOURCE_KINDS"),
+)
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "subject, module_name, attribute",
+    _PUBLISHED_VOCABULARIES,
+    ids=[entry[2] for entry in _PUBLISHED_VOCABULARIES],
+)
+def test_every_value_the_package_emits_is_declared_somewhere_in_the_schema(
+    subject: str, module_name: str, attribute: str
+) -> None:
+    """No value the package can emit is absent from every enum in the schema.
+
+    The narrow version of this ran for one vocabulary and the rest went uncovered,
+    which is how a phase name reached two package vocabularies and neither enum: the
+    names are not a ``Literal`` any constructor checks, and no test fed a document
+    carrying the new one to the schema.  Adding the entries one at a time is what left
+    the gap, so this reads the list.
+
+    Membership rather than equality, because the schema legitimately narrows: a
+    conditional branch may accept fewer values where only those can occur.  The
+    direction that has to hold is the other one -- a value the package emits and the
+    schema never names.
+
+    :param subject: What the vocabulary is called in prose.
+    :type subject: str
+    :param module_name: Module under ``pyfcstm.bmc`` holding it.
+    :type module_name: str
+    :param attribute: The vocabulary's attribute name.
+    :type attribute: str
+    """
+    import importlib
+
+    module = importlib.import_module("pyfcstm.bmc.%s" % module_name)
+    vocabulary = set(getattr(module, attribute))
+
+    assert vocabulary, "%s is expected to be non-empty" % subject
+    schema = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
+    declared = set()
+
+    def collect(node):
+        if isinstance(node, dict):
+            values = node.get("enum")
+            if isinstance(values, list):
+                declared.update(value for value in values if isinstance(value, str))
+            for value in node.values():
+                collect(value)
+        elif isinstance(node, list):
+            for value in node:
+                collect(value)
+
+    collect(schema)
+
+    assert vocabulary <= declared, "the schema never names %s from %s" % (
+        sorted(vocabulary - declared),
+        subject,
+    )

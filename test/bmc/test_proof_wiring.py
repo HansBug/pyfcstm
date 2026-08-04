@@ -1834,3 +1834,137 @@ def test_no_rule_in_the_catalog_is_left_without_a_query_that_reaches_it() -> Non
 
     assert UNREACHABLE_RULE_IDS == ()
     assert len(PROOF_RULES) == 12
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "query",
+    [pair[0] for pair in _CLOSING_QUERIES.values()],
+    ids=list(_CLOSING_QUERIES),
+)
+def test_a_solver_settled_step_is_re_provable_from_the_members_it_cites(
+    query: str,
+) -> None:
+    """Every solver-settled step still holds when the claim is re-proved from scratch.
+
+    The phase that settles these steps decides two things -- that the cited members
+    entail the target, and that they can hold together -- and then the artifact reports
+    ``solver_entailment`` and nothing re-asks.  A shrink that stopped one deletion too
+    late, or a target encoded against the wrong symbol, would produce a step the
+    checker cannot see and the reader has no way to doubt.  So this re-asks both
+    questions with a solver of its own, over the members named in the published
+    citation and nothing else.
+
+    Satisfiability of the citation is the half that makes the other half mean anything:
+    a set that cannot hold entails every target, its own negation included.
+
+    :param query: The query text.
+    :type query: str
+    """
+    import z3
+
+    from pyfcstm.bmc.infeasibility import (
+        _binding_symbols,
+        _declared_variable_names,
+        _event_paths_of,
+    )
+
+    machine = load_state_machine_from_text(_DURING_ACTION_MODEL, "retry.fcstm")
+    core = build_bmc_core_formula(
+        BmcEngine(machine).prepare(query, query_source_path="query.fbmcq")
+    )
+    explanation = solve_bmc_property(
+        compile_bmc_property(core), infeasibility_explanation="proof"
+    ).feasibility.explanation
+
+    assert explanation.proof is not None
+    claims = {
+        group.stable_id: (
+            z3.And(*group.expressions) if group.expressions else z3.BoolVal(True)
+        )
+        for group in core._tracked_groups
+    }
+    published = [item.constraint.stable_id for item in explanation.core.items]
+    symbols = _binding_symbols(
+        z3.And(*[claims[stable_id] for stable_id in published if stable_id in claims]),
+        _declared_variable_names(core),
+        _event_paths_of(core),
+    )
+
+    for node in explanation.proof.nodes:
+        if node.verification_method != "solver_entailment":
+            continue
+        cited = [
+            claims[stable_id] for stable_id in node.item_ids if stable_id in claims
+        ]
+
+        assert cited, "a solver-settled step has to name the members it rests on"
+        together = z3.Solver()
+        together.add(*cited)
+
+        assert together.check() == z3.sat, (
+            "%s cites members that cannot hold together, which entail anything"
+            % node.rule_id
+        )
+
+        conclusion = dict(node.conclusion or {})
+        if conclusion.get("kind") != "variable_equality" or conclusion.get(
+            "state_slot"
+        ):
+            # Only a value equality can be restated as a constraint here; a case with
+            # its condition removed is a claim about a fact's shape, which the rule
+            # checker settles rather than the solver.
+            continue
+        symbol = symbols.get((conclusion.get("frame"), conclusion.get("variable")))
+
+        assert symbol is not None, "the conclusion names a slot no member mentions"
+        refuted = z3.Solver()
+        refuted.add(*cited, symbol != conclusion.get("value"))
+
+        assert refuted.check() == z3.unsat, (
+            "%s concludes %r, which its own citation does not force"
+            % (node.rule_id, conclusion)
+        )
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "query",
+    [pair[0] for pair in _CLOSING_QUERIES.values()],
+    ids=list(_CLOSING_QUERIES),
+)
+def test_the_same_query_publishes_the_same_proof_every_time(query: str) -> None:
+    """One query, one proof, byte for byte.
+
+    The citation each solver-settled step publishes comes out of a deletion pass over
+    the members, so the answer depends on the order they are visited in.  That order is
+    the published member order rather than a set's iteration order, and this is what
+    holds it that way: a proof that varied between runs would make every artifact a
+    reader saved unreproducible, and the variation would show up as a flake somewhere
+    far from its cause.
+
+    :param query: The query text.
+    :type query: str
+    """
+    import json
+
+    shapes = set()
+    for _ in range(3):
+        machine = load_state_machine_from_text(_DURING_ACTION_MODEL, "retry.fcstm")
+        explanation = solve_bmc_property(
+            compile_bmc_property(
+                build_bmc_core_formula(
+                    BmcEngine(machine).prepare(query, query_source_path="query.fbmcq")
+                )
+            ),
+            infeasibility_explanation="proof",
+        ).feasibility.explanation
+
+        assert explanation.proof is not None
+        shapes.add(
+            json.dumps(
+                explanation.proof.to_canonical(), sort_keys=True, ensure_ascii=False
+            )
+        )
+
+    assert len(shapes) == 1, "the proof differed between runs of one query"

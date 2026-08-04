@@ -1312,84 +1312,106 @@ def test_composite_during_without_ref_falls_back_to_its_own_host() -> None:
     ]
 
 
-def test_active_leaf_matches_the_runtime_across_the_sample_corpus() -> None:
-    """Every recorded ``active_leaf`` agrees with the runtime, corpus-wide.
+def test_call_metadata_matches_the_runtime_across_the_sample_corpus() -> None:
+    """Every recorded ``active_leaf`` and ``named_ref`` agrees with the runtime.
 
-    The six cases above pin named shapes. This one pins the field's contract
-    over whatever the checked-in corpus happens to contain, so a future path
-    that writes some third value -- neither the active leaf nor the host -- is
-    caught even if no named case covers its shape.
+    The named cases above pin named shapes. This one pins both fields over
+    whatever the checked-in corpus happens to contain, so a future path that
+    writes some third value is caught even where no named case covers its shape.
+    Both fields come from the same ``ref`` recursion, so one scan checks both.
 
-    The oracle is the replay trace: ``SimulationRuntime`` computes the path from
-    the real execution stack, which is the reference semantics the repository
-    already treats as authoritative.
+    Each model is driven by several queries rather than one. A single
+    ``terminated()`` reaches only the models that can terminate within the
+    bound, and it is structurally unreachable in ``dlc6_more.fcstm`` -- which is
+    the one corpus model carrying a chain with an anonymous outermost hop
+    (``exit ref /F1x`` onto the named ``exit F1x ref F1``). Adding a few
+    ``active(...)`` goals brings that model, and its chain, into the scan.
+
+    The oracle is the replay trace: ``SimulationRuntime`` computes both fields
+    from the real execution stack, which is the reference semantics the
+    repository already treats as authoritative.
     """
     corpus = pathlib.Path(__file__).resolve().parents[1] / "testfile" / "sample_codes"
     sources = sorted(corpus.glob("*.fcstm"))
     assert sources, "the sample corpus should not be empty"
 
     # `dlc1.fcstm` shifts by a variable amount, which the core lowering does not
-    # support. A model that compiles no core carries no witness and so no
-    # recorded call to check.
+    # support. A model that compiles no core under any goal carries no witness
+    # and so no recorded call to check. Naming the set rather than catching the
+    # class keeps a future lowering regression from turning this scan into a
+    # silent skip: `dlc3.fcstm` contributes few enough calls that losing it
+    # would still clear the floors below.
     expected_skips = {"dlc1.fcstm"}
     skipped: list = []
+    checked: list = []
     compared = 0
-    checked_models = 0
     for source in sources:
-        try:
-            model = load_state_machine_from_text(source.read_text(encoding="utf-8"))
-            formula = compile_bmc_property(
-                build_bmc_core_formula(
-                    BmcEngine(model).prepare("check reach <= 3: terminated();")
+        model = load_state_machine_from_text(source.read_text(encoding="utf-8"))
+        leaves = [
+            ".".join(state.path) for state in model.walk_states() if state.is_stoppable
+        ]
+        goals = ["check reach <= 3: terminated();"] + [
+            'check reach <= 2: active("%s");' % path for path in leaves[:3]
+        ]
+        lowered = False
+        model_compared = 0
+        for goal in goals:
+            try:
+                formula = compile_bmc_property(
+                    build_bmc_core_formula(BmcEngine(model).prepare(goal))
                 )
+            except UnsupportedBmcQuery:
+                continue
+            lowered = True
+            result = solve_bmc_property(formula)
+            if result.status != "sat":
+                continue
+            trace = decode_bmc_witness(formula, result.model)
+            replay = replay_bmc_witness(model, trace)
+            assert replay.ok is True, (
+                source.name,
+                goal,
+                [item.to_canonical() for item in replay.mismatches],
             )
-        except UnsupportedBmcQuery:
-            # Only the models known to compile no core are allowed to drop out,
-            # and the set is asserted below. Catching the class alone would let
-            # any future lowering regression turn this scan into a silent skip:
-            # `dlc3.fcstm` contributes a single call, so losing it still clears
-            # both floors.
+            for witness_step, runtime_step in zip(
+                trace.steps, replay.runtime_trace.steps
+            ):
+                assert len(witness_step.abstract_calls) == len(
+                    runtime_step.abstract_calls
+                ), (source.name, goal)
+                for witness_call, runtime_call in zip(
+                    witness_step.abstract_calls, runtime_step.abstract_calls
+                ):
+                    assert witness_call.active_leaf == runtime_call.active_leaf, (
+                        source.name,
+                        goal,
+                        witness_call.action_name,
+                        witness_call.active_leaf,
+                        runtime_call.active_leaf,
+                    )
+                    assert witness_call.named_ref == runtime_call.named_ref, (
+                        source.name,
+                        goal,
+                        witness_call.action_name,
+                        witness_call.named_ref,
+                        runtime_call.named_ref,
+                    )
+                    model_compared += 1
+        if not lowered:
             skipped.append(source.name)
             continue
-        result = solve_bmc_property(formula)
-        if result.status != "sat":
-            continue
-        checked_models += 1
-        trace = decode_bmc_witness(formula, result.model)
-        replay = replay_bmc_witness(model, trace)
-        assert replay.ok is True, (
-            source.name,
-            [item.to_canonical() for item in replay.mismatches],
-        )
-        for witness_step, runtime_step in zip(trace.steps, replay.runtime_trace.steps):
-            assert len(witness_step.abstract_calls) == len(
-                runtime_step.abstract_calls
-            ), source.name
-            for witness_call, runtime_call in zip(
-                witness_step.abstract_calls, runtime_step.abstract_calls
-            ):
-                assert witness_call.active_leaf == runtime_call.active_leaf, (
-                    source.name,
-                    witness_call.action_name,
-                    witness_call.active_leaf,
-                    runtime_call.active_leaf,
-                )
-                # `named_ref` is decided by the same rule and from the same
-                # recursion, so it is checked from the same scan. The corpus
-                # carries no chain with an anonymous outermost hop, which is why
-                # the named cases above exist -- but it does carry named single
-                # hops, and this pins those against the runtime.
-                assert witness_call.named_ref == runtime_call.named_ref, (
-                    source.name,
-                    witness_call.action_name,
-                    witness_call.named_ref,
-                    runtime_call.named_ref,
-                )
-                compared += 1
+        if model_compared:
+            checked.append(source.name)
+            compared += model_compared
 
     assert set(skipped) == expected_skips, skipped
-    assert checked_models >= 4, checked_models
-    assert compared >= 10, compared
+    # Named rather than counted: `dlc6_more.fcstm` is the one corpus model with
+    # an anonymous outermost hop, and it only enters the scan because of the
+    # `active(...)` goals -- a lone `terminated()` is unsatisfiable there at
+    # every bound. A floor would let it drop out silently.
+    assert "dlc6_more.fcstm" in checked, checked
+    assert len(checked) >= 4, checked
+    assert compared >= 30, compared
 
 
 # A `ref` chain whose outermost hop is anonymous and whose second hop is a named
@@ -1603,8 +1625,8 @@ def test_named_ref_follows_the_callsite_across_ref_chain_depths(
     The named cases above pin the shapes by hand; this one sweeps the space the
     hand-written ones sample from, so a rule that happens to be right for a
     two-hop chain but wrong for a four-hop one cannot pass. Restoring the defect
-    -- letting the encoder scan the chain for the first named hop -- makes 21 of
-    the 40 shapes in this file's two sweeps disagree between the two sides.
+    -- letting the encoder scan the chain for the first named hop -- makes the
+    two sides disagree on most of the shapes generated here.
     """
     replay, witness_calls, runtime_calls = _replay_call_records(
         _ref_chain_model(depth, head_named, stage),

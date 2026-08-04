@@ -1333,9 +1333,12 @@ def test_active_leaf_matches_the_runtime_across_the_sample_corpus() -> None:
     the real execution stack, which is the reference semantics the repository
     already treats as authoritative.
     """
-    sources = sorted(
-        pathlib.Path("test/testfile/sample_codes").glob("*.fcstm")
+    corpus = (
+        pathlib.Path(__file__).resolve().parents[1]
+        / "testfile"
+        / "sample_codes"
     )
+    sources = sorted(corpus.glob("*.fcstm"))
     assert sources, "the sample corpus should not be empty"
 
     compared = 0

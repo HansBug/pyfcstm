@@ -240,8 +240,12 @@ def _verification(
         return method, None, None
     if node.kind != "input":
         return "rule_checker", None, None
-    # An input carries exactly the one member it was read from, so its attribution is
-    # a single lookup rather than a search.
+    # One lookup rather than a search, and the reason is worth stating precisely: an
+    # input carries exactly one member id because there is a single place in this module
+    # that builds an ``input`` node and it passes a one-element tuple.  Nothing checks
+    # the arity, so a second construction site would make this line read the wrong key
+    # instead of failing -- the property holds by there being one producer, which is
+    # weaker than holding by construction.
     attribution = (unit_bindings or {}).get(node.item_ids[0])
     if attribution is None:
         return "core_binding", None, None

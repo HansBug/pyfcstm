@@ -1121,7 +1121,9 @@ def _arithmetic_operations(z3: Any) -> Dict[int, str]:
 
 
 def _condition_facts(
-    expression: Any, declared: Optional[Any] = None
+    expression: Any,
+    declared: Optional[Any] = None,
+    event_paths: Optional[Any] = None,
 ) -> Optional[Tuple[Dict[str, Any], ...]]:
     """Read the condition that selects one case as the facts it requires.
 
@@ -1164,14 +1166,16 @@ def _condition_facts(
             # third.  A condition mentioning an event was therefore unreadable, and
             # the case kept its structural identity, which is what kept the whole
             # arithmetic chain from starting on any event-triggered model.
-            fact = _event_proposition_in(conjunct)
+            fact = _event_proposition_in(conjunct, event_paths)
         if fact is None:
             return None
         facts.append(fact)
     return tuple(facts)
 
 
-def _event_proposition_in(expression: Any) -> Optional[Dict[str, Any]]:
+def _event_proposition_in(
+    expression: Any, event_paths: Optional[Any] = None
+) -> Optional[Dict[str, Any]]:
     """Read a condition conjunct that requires an event, as a ``proposition`` fact.
 
     The same reading the proposition publisher performs, applied where a case's
@@ -1199,7 +1203,7 @@ def _event_proposition_in(expression: Any) -> Optional[Dict[str, Any]]:
             return None
         holds = False
         expression = expression.arg(0)
-    resolved = _event_path_of_symbol(expression)
+    resolved = _event_path_of_symbol(expression, event_paths)
     if resolved is None:
         return None
     path, step = resolved
@@ -1390,7 +1394,9 @@ def _assignment_in_unit(
 
 
 def _transition_case_fact(
-    group: Any, declared: Optional[Any] = None
+    group: Any,
+    declared: Optional[Any] = None,
+    event_paths: Optional[Any] = None,
 ) -> Optional[Dict[str, Any]]:
     """Read a step relation as the assignment its one assigning case makes.
 
@@ -1451,7 +1457,7 @@ def _transition_case_fact(
     # assignment whose condition is weaker than the encoding's would state something
     # the group does not require, which the binding check refuses in one direction
     # and a reader has no way to notice.
-    condition = _condition_facts(reading["condition_expression"], declared)
+    condition = _condition_facts(reading["condition_expression"], declared, event_paths)
     if not condition:
         return None
     fact["condition"] = list(condition)
@@ -1522,7 +1528,7 @@ def normalized_fact_for(
         if fact is not None:
             return fact
     elif group.category == "transition.step":
-        fact = _transition_case_fact(group, declared)
+        fact = _transition_case_fact(group, declared, event_paths)
         if fact is not None:
             return fact
     elif group.category == "assumption.event":

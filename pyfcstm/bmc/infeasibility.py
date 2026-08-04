@@ -1487,7 +1487,12 @@ def check_core_bindings(
             # node so a reader sees the proportion covered rather than being told
             # "the transition relation" and left to find the part that mattered.
             outcome = _bind_against_one_unit(
-                _UNIT_BOUND_ENCODERS[kind], fact, conjunction, declared, budget
+                _UNIT_BOUND_ENCODERS[kind],
+                fact,
+                conjunction,
+                declared,
+                budget,
+                _event_paths_of(core),
             )
             if outcome.attribution is None:
                 return (
@@ -1655,7 +1660,9 @@ def check_case_conditions(
 
     # One table over every member, not per group: the condition names slots its own
     # group may never mention, and the two sides have to talk about the same symbols.
-    symbols = _binding_symbols(z3.And(*[claim for _, claim in members]), declared)
+    symbols = _binding_symbols(
+        z3.And(*[claim for _, claim in members]), declared, _event_paths_of(core)
+    )
 
     # Both answers below fold three solver outcomes into one boolean: decided the way
     # this asked, decided the other way, and not decided at all.  ``check_core_bindings``
@@ -1808,7 +1815,9 @@ class _UnitBindingOutcome:
         self.reason = reason
 
 
-def _bind_against_one_unit(encoder, fact, conjunction, declared, budget):
+def _bind_against_one_unit(
+    encoder, fact, conjunction, declared, budget, event_paths=None
+):
     """Prove a fact equivalent to exactly one requirement of its group.
 
     Both directions are refuted against the requirement, exactly as the whole-group
@@ -1831,7 +1840,7 @@ def _bind_against_one_unit(encoder, fact, conjunction, declared, budget):
     """
     from .provenance import conjunctive_units
 
-    symbols = _binding_symbols(conjunction, declared)
+    symbols = _binding_symbols(conjunction, declared, event_paths)
     encoded = encoder(fact, symbols)
     if encoded is None:
         return _UnitBindingOutcome(
@@ -1873,7 +1882,30 @@ def _bind_against_one_unit(encoder, fact, conjunction, declared, budget):
     return _UnitBindingOutcome(attribution=(matched[0], len(units)))
 
 
-def _event_identity_of(symbol: Any) -> Optional[str]:
+def _event_paths_of(core: Optional["BmcCoreFormula"]) -> Tuple[str, ...]:
+    """Return the event paths of one core's domain, as the author spelled them.
+
+    The encoder's symbol body replaces a path's dots, so a name recovered from it
+    spells ``Root_A_Go`` where the author wrote ``Root.A.Go``.  Resolving against
+    this table instead recovers the authored spelling, and every layer that turns a
+    symbol into a published identity needs the same table: a published fact and the
+    key a rule looks it up under are compared for equality, so two layers reading
+    one symbol against different tables put two spellings of one event into one
+    document and make the lookup miss.
+
+    :param core: The core whose domain declares the events, or ``None``.
+    :type core: Optional[BmcCoreFormula]
+    :return: The declared event paths, empty when there is no core to ask.
+    :rtype: Tuple[str, ...]
+    """
+    if core is None:
+        return ()
+    return tuple(
+        entry["path"] for entry in core.context.domain.to_canonical()["events"]
+    )
+
+
+def _event_identity_of(symbol: Any, event_paths: Optional[Any] = None) -> Optional[str]:
     """Return the published identity of an event symbol, or ``None``.
 
     The identity has to be the one the publisher writes, character for character,
@@ -1894,13 +1926,15 @@ def _event_identity_of(symbol: Any) -> Optional[str]:
         return None
     from .provenance import _event_path_of_symbol, proposition_identity
 
-    resolved = _event_path_of_symbol(symbol)
+    resolved = _event_path_of_symbol(symbol, event_paths)
     if resolved is None:
         return None
     return proposition_identity(*resolved)
 
 
-def _binding_symbols(expression, declared=None) -> Dict[Tuple[int, Any], Any]:
+def _binding_symbols(
+    expression, declared=None, event_paths=None
+) -> Dict[Tuple[int, Any], Any]:
     """Index every frame symbol a group mentions, by frame and subject.
 
     :func:`_binding_symbol` answers "which symbol is this fact about" for a fact
@@ -1923,7 +1957,7 @@ def _binding_symbols(expression, declared=None) -> Dict[Tuple[int, Any], Any]:
     """
     indexed: Dict[Tuple[int, Any], Any] = {}
     for symbol in z3.z3util.get_vars(expression):
-        event = _event_identity_of(symbol)
+        event = _event_identity_of(symbol, event_paths)
         if event is not None:
             # A third kind of key.  An event symbol carries its own step inside its
             # name, and a case condition naming the event needs to find it the same
@@ -2228,9 +2262,7 @@ def explain_infeasibility(
     # The event paths, for the same reason and by the same mechanism: the symbol
     # body replaces the path's dots, so an identity built from it would spell
     # ``Root_A_Go`` where the author wrote ``Root.A.Go``.
-    event_paths = tuple(
-        entry["path"] for entry in core.context.domain.to_canonical()["events"]
-    )
+    event_paths = _event_paths_of(core)
     # The domain's own table, so a sentence can name ``Root.A`` instead of the
     # number the encoding gave it.
     state_paths = {

@@ -1553,3 +1553,48 @@ def test_a_value_a_later_step_leaves_alone_does_not_reach_the_next_frame() -> No
     assert explanation.achieved_mode == "formal"
     assert explanation.proof is None
     assert "no rule in the catalog closes this core" in explanation.reason
+
+
+@pytest.mark.unittest
+def test_a_published_event_names_the_path_its_author_wrote() -> None:
+    """A proposition identity spells the declared path, not the symbol's body.
+
+    The encoder's symbol body replaces a path's dots, so a name recovered from it
+    reads ``Uploader_Idle_Fail`` where the author wrote ``Uploader.Idle.Fail``.  The
+    domain's own event table is the authority, and this asserts against that table
+    rather than against a literal: a published identity whose subject the domain does
+    not declare is one the reader cannot look up and a rule cannot match, and the two
+    readings of one symbol lived one function apart.
+    """
+    machine = load_state_machine_from_text(_DURING_ACTION_MODEL, "retry.fcstm")
+    context = BmcEngine(machine).prepare(
+        'init state("Uploader.Idle") where retries == 0;\n'
+        'assume at 1: active("Uploader.Retrying");\n'
+        'assume at 2: var("retries") == 0;\n'
+        'check reach <= 2: active("Uploader.GaveUp");\n',
+        query_source_path="query.fbmcq",
+    )
+    core = build_bmc_core_formula(context)
+    declared = {entry["path"] for entry in core.context.domain.to_canonical()["events"]}
+    feasibility = solve_bmc_property(
+        compile_bmc_property(core), infeasibility_explanation="proof"
+    ).feasibility
+
+    published = []
+    for item in feasibility.explanation.core.items:
+        fact = item.normalized_fact or {}
+        candidates = [fact] + list(fact.get("condition") or ())
+        published.extend(
+            entry["identity"]
+            for entry in candidates
+            if entry.get("kind") == "proposition"
+        )
+
+    assert published, "the query was chosen because its core carries an event"
+    for identity in published:
+        subject, _, step = identity.rpartition("@")
+        assert subject in declared, (
+            "published %r names %r, which the domain does not declare; it declares %s"
+            % (identity, subject, sorted(declared))
+        )
+        assert step.isdigit()

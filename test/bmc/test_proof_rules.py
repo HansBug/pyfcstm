@@ -1650,13 +1650,20 @@ def test_preceding_value_entailment_refuses_anything_else(premise, conclusion) -
             ),
             _fact("variable_equality", variable="x", frame=1, value=5),
         ),
-        # A conclusion of another kind entirely.  The premise is fine; what is refused
-        # is concluding something this rule does not produce.
+        # A conclusion of another kind, carrying every field this rule consumes, so
+        # the kind guard is the only thing left that can refuse it.  The first draft
+        # used ``{"kind": "false"}``, which the field check would have refused on its
+        # own -- the case passed while proving nothing about the guard it named.
         (
             "preceding_value_entailment",
             (_fact("variable_equality", variable="x", frame=2, value=5),),
-            _fact("false"),
+            _fact("variable_bound", variable="x", frame=1, value=5),
         ),
+        # Three premises holding exactly one equality and one exclusion, so the
+        # equality/exclusion counts are both satisfied and only the arity refuses
+        # them.  Two earlier drafts were shadowed: a single premise fails the counts,
+        # and a third exclusion fails them too -- each passed while proving nothing
+        # about arity.
         (
             "excluded_state_selected",
             (
@@ -1667,6 +1674,8 @@ def test_preceding_value_entailment_refuses_anything_else(premise, conclusion) -
                     frame=1,
                     value=3,
                 ),
+                _fact("state_exclusion", frame=1, state=3),
+                _fact("proposition", identity="Root.Go@1", holds=True),
             ),
             _fact("false"),
         ),
@@ -1704,7 +1713,7 @@ def test_preceding_value_entailment_refuses_anything_else(premise, conclusion) -
     ids=[
         "carry_with_two_premises",
         "carry_concluding_something_else",
-        "opposition_with_one_premise",
+        "opposition_with_three_premises",
         "opposition_concluding_something_else",
         "opposition_with_an_unconsumed_field_on_the_exclusion",
     ],

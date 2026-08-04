@@ -1212,20 +1212,24 @@ state Root {
         'assume at 3: var("x") == 5;\n',
     ],
 )
-def test_a_condition_the_core_does_not_force_is_not_discharged(
+def test_a_guarded_core_is_not_promoted_to_proof_depth(
     assumptions: str,
 ) -> None:
-    """The check has to be able to say no, and this is where it does.
+    """A guarded case leaves the artifact at ``formal``, and that is all this pins.
 
-    A guarded case assigns only where its guard holds and the machine is where the
-    case says.  Neither is settled here -- the guard leaves a way out of ``A`` -- so
-    the members do not entail the condition and the assignment stays conditional.
-    Discharging it anyway would publish "``x`` increases by one" as something the
-    model guarantees, when the model guarantees it only along one branch, and the
-    verdict would be unsound rather than merely optimistic.
+    The name and the claim are narrower than they were, because the wider one was
+    measured and did not hold.  This began as "a condition the core does not force is
+    not discharged" -- but replacing the entailment check with a constant ``True``
+    leaves every assertion here passing.  A guard leaves the state at the next frame
+    and the guard's own value unsettled, so ``transition_assignment`` never gets a
+    value fact at the case's frame and the chain cannot close whether the condition
+    was discharged wrongly or not at all.  On this shape the discharge's correctness
+    is simply not observable through the published artifact.
 
-    The artifact stays honest instead: the formal explanation is published and the
-    reason names the proof as what fell short.
+    What it does pin is real and worth pinning: a core whose case is guarded is not
+    promoted to proof depth, so the formal explanation is what a reader gets.  The
+    discharge's own correctness is recorded as a known boundary in the contract
+    instead of being asserted by a test that cannot see it.
 
     :param assumptions: The query's assumption lines.
     :type assumptions: str

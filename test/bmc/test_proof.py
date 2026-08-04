@@ -752,3 +752,37 @@ def test_a_method_that_contradicts_the_node_kind_is_refused(
             method,
             *unit_fields,
         )
+
+    # And the schema says the same, so this is not a semantic-gate exception.  The
+    # relation is an object-internal condition on two of the node's own values, which
+    # is the line the schema's own comment draws between what it expresses and what it
+    # delegates -- a sibling comparison or a cross-node relation.  Asserting only the
+    # constructor would let the published contract drift looser than the library, and
+    # a consumer validating JSON would accept what no run can produce.
+    import json
+
+    jsonschema = pytest.importorskip("jsonschema")
+
+    schema = json.load(
+        open("docs/source/reference/bmc_results/bmc_cli.schema.json", encoding="utf-8")
+    )
+    validator = jsonschema.Draft202012Validator(
+        {"$ref": "#/$defs/proofNode", "$defs": schema["$defs"]}
+    )
+    payload = {
+        "stable_id": "proof.node.0000",
+        "kind": kind,
+        "rule_id": rule_id,
+        "premise_ids": [],
+        "conclusion": conclusion,
+        "item_ids": ["assumption.0000"],
+        "human_text": "t",
+        "verification_method": method,
+    }
+    if unit_fields:
+        payload["unit_index"], payload["unit_count"] = unit_fields
+
+    assert list(validator.iter_errors(payload)), (
+        "the schema accepts %s on a %s node; the two gates have to agree"
+        % (method, kind)
+    )

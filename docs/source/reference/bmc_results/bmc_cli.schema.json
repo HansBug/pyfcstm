@@ -7021,6 +7021,23 @@
       ],
       "allOf": [
         {
+          "$comment": "Which side of the graph a method belongs to. Expressible here for the same reason as the rule below: it is an object-internal condition on two of this object's own values, not a relation to a sibling node and not a numeric comparison. The reference states it as prose -- both bindings are used by input nodes only, the checker and the solver by derived and root nodes -- and a reversed pairing describes a check that cannot have happened: a contradiction has no core member to re-encode against, an input has no premises to re-derive from.",
+          "if": {
+            "required": ["kind"],
+            "properties": { "kind": { "const": "input" } }
+          },
+          "then": {
+            "properties": {
+              "verification_method": { "enum": ["core_binding", "core_binding_unit"] }
+            }
+          },
+          "else": {
+            "properties": {
+              "verification_method": { "enum": ["rule_checker", "solver_entailment"] }
+            }
+          }
+        },
+        {
           "$comment": "The two unit fields travel with the method that admits them, in both directions. Expressible here because it is an object-internal condition on which keys are present; the remaining rule -- unit_index below unit_count -- compares two sibling integers and is a named semantic-gate exception instead.",
           "if": {
             "required": [

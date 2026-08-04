@@ -1657,6 +1657,23 @@ def check_case_conditions(
     # group may never mention, and the two sides have to talk about the same symbols.
     symbols = _binding_symbols(z3.And(*[claim for _, claim in members]), declared)
 
+    # Both answers below fold three solver outcomes into one boolean: decided the way
+    # this asked, decided the other way, and not decided at all.  ``check_core_bindings``
+    # next door keeps those three apart and writes a distinct sentence for each, and the
+    # difference is deliberate rather than an oversight here.  There, anything but
+    # ``unsat`` is a hard failure that ends the whole binding check, so which of the
+    # three it was decides what a reader should do about it.  Here, a solve that does
+    # not come back the way it was asked means one case does not discharge while every
+    # other case carries on, so the discharge decision is the same for the last two and
+    # the phase's own outcome is unchanged.
+    #
+    # Reporting them separately anyway was tried and reverted: no input was found that
+    # reaches an undecided solve inside this phase.  A tight budget is spent by an
+    # earlier phase, so this one never runs; a generous one decides these small
+    # queries; non-linear real arithmetic (``x * y``, ``x / y``, ``sqrt``) still comes
+    # back decided.  Two reviewers raised the asymmetry and both said they could not
+    # reproduce it either.  Adding an unreached branch to answer an unreproducible
+    # report is the shape of over-design, so this says why instead.
     def entailed(claims: Sequence[Any], target: Any) -> bool:
         """Report whether these claims refute the condition's negation."""
         solver = z3.Solver()

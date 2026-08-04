@@ -389,8 +389,10 @@ worse than no index.
 The step relations are the only groups that decompose this way, so a query whose
 core rests on one of their cases is where the pair is published: such an input
 carries ``core_binding_unit`` while the other members of the same core carry
-``core_binding``, and a reader sees which requirement of the relation the case
-restated.  For a while the pair was defined and never published, because the
+``core_binding``, and the node names which requirement of the relation the case
+restated.  The pair reaches a consumer of the JSON result; the terminal report
+carries each node's sentence rather than how it was checked.  For a while the pair
+was defined and never published, because the
 attribution stopped at the binding check and never reached the node -- a gap that
 read from the outside exactly like a method no query could produce.
 

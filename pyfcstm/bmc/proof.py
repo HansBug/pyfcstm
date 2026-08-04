@@ -543,15 +543,18 @@ def _conclusion_for(
     ):
         return {"kind": "false"}
     if rule_id == "case_condition_entailment":
-        # Neither guard is reached by the search, and for two different reasons worth
-        # keeping apart.  The arity and the tag are settled upstream by
-        # ``_candidates``, which matches ``premise_kinds`` before proposing -- these
-        # restate that rather than trusting it, the same way each side condition
-        # re-establishes what the builder claimed.  The empty condition is blocked by
-        # something else: discharging an already-unconditional case would conclude
-        # exactly its own premise, so the canonical key is already in ``seen`` and the
-        # candidate is dropped before it arrives here.  Measured, not assumed -- a
-        # real run reaches this branch zero times.
+        # Neither guard is reached by the search, and for reasons worth keeping apart.
+        # The arity and the tag are settled upstream by ``_candidates``, which matches
+        # ``premise_kinds`` before proposing -- these restate that rather than trusting
+        # it, the same way each side condition re-establishes what the builder claimed.
+        # An empty condition is blocked twice over, and earlier than here both times.
+        # A case with no condition has no entry in the discharge table, because
+        # ``check_case_conditions`` only considers cases that carry one -- so the
+        # verdict lookup above returns ``None`` and the candidate is dropped before
+        # this function is called at all.  And a published ``transition_case`` never
+        # has an empty condition in the first place: the reading is discarded whole
+        # when its condition reads as nothing.  Measured, not assumed -- a real run
+        # reaches this branch zero times.
         if len(facts) != 1:
             return None
         case = facts[0]

@@ -1108,7 +1108,10 @@ def test_a_discharged_case_carries_the_arithmetic_chain_to_a_contradiction() -> 
     unusable: the evaluation rule refuses an expression carrying a condition, so the
     chain had no second step and ``transition_assignment``,
     ``arithmetic_evaluation`` and ``equality_substitution`` were unreachable by any
-    query at all.  The discharge is a solver step rather than a rule check because
+    query at all.  Two of the three fire in the chain below; the third needs an
+    operand that is still a name, which this machine's literal ``+ 1`` cannot
+    produce, so it has a fixture of its own further down.  The discharge is a solver
+    step rather than a rule check because
     the members that establish the condition include one no reader can see -- the
     step relation that puts the machine in the state, which publishes as a
     structural constraint.

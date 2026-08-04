@@ -354,7 +354,7 @@ A published proof is a claim that each step was checked.  The interesting design
 question is *by whom*, because a checker that shares code with the constructor
 agrees with it by construction and proves nothing.
 
-Three methods divide the work.  Input nodes use ``core_binding``: the normalized
+Four methods divide the work.  Input nodes use ``core_binding``: the normalized
 fact is re-encoded from scratch and the solver is asked to refute both
 ``group => fact`` and ``fact => group``.  Both directions are required.  One
 direction alone would allow a fact that is merely *implied by* the core member,
@@ -368,9 +368,13 @@ that produced it.  It compares whole conclusion mappings rather than selected
 fields, and refuses a conclusion carrying a field it does not recognize, so a
 constructor that quietly adds information cannot slip it past.
 
-``solver_entailment`` is reserved for derived and root steps discharged by the
-solver instead.  The current catalog does not use it; naming it here is what
-keeps a future node carrying it readable rather than surprising.
+``solver_entailment`` covers derived and root steps the solver discharges instead.
+``case_condition_entailment`` is one: whether the core members establish a case's
+condition is a question about their constraints, and a rule checker sees only the
+published facts, which do not contain it.  The node names the members that entail
+the condition, and those members are asserted to be a subset of the published core
+-- a step resting on something outside it would break the minimality the proof
+claims for its own leaves.
 
 A group that holds one requirement per case is a conjunction, and no single fact
 can imply the whole of it -- so an input restating one of those requirements uses
@@ -382,11 +386,13 @@ relation" does not.  A fact equivalent to two requirements identifies neither, s
 the binding is refused rather than resolved -- an index a reader cannot rely on is
 worse than no index.
 
-No query reaches this method today, so the pair is defined and unpublished.  The
-only groups that decompose into separate requirements are the step relations, and
-the only rule whose premises include one of their cases is
-``transition_assignment`` -- the rule the reachability table marks unreachable.
-The next section sets out why that rule does not fire.
+The step relations are the only groups that decompose this way, so a query whose
+core rests on one of their cases is where the pair is published: such an input
+carries ``core_binding_unit`` while the other members of the same core carry
+``core_binding``, and a reader sees which requirement of the relation the case
+restated.  For a while the pair was defined and never published, because the
+attribution stopped at the binding check and never reached the node -- a gap that
+read from the outside exactly like a method no query could produce.
 
 The boundary is therefore: **a reader may trust that each sentence follows from
 the core members named beside it, and may not trust that the encoding faithfully

@@ -128,13 +128,18 @@ _PROOF_VERIFICATION_METHODS = (
 
 #: Methods the explanation page names without assigning work to them.
 #:
-#: The page divides the checking between the methods that are wired to a node
-#: role, and separately names the one held for a future solver-decided step.  The
-#: count in its prose is therefore the vocabulary minus these, which is why they
-#: are listed rather than folded into the number: adding a fifth method that does
-#: carry work should move the expected count, and adding another reserved name
-#: should not.
-_RESERVED_VERIFICATION_METHODS = ("solver_entailment",)
+#: The page divides the checking between the methods that are wired to a node role,
+#: and would separately name any held for a future step.  The count in its prose is
+#: therefore the vocabulary minus these, which is why they are listed rather than
+#: folded into the number: adding a method that does carry work should move the
+#: expected count, and adding a reserved name should not.
+#:
+#: Empty because every method now carries work: ``solver_entailment`` was the last
+#: reserved one and ``case_condition_entailment`` discharges through it.  While it
+#: sat here the page's own sentence saying so went unchecked, which is how the page
+#: came to claim the method was unused after it was wired -- so an entry here has to
+#: be removed in the same change that gives the method a job.
+_RESERVED_VERIFICATION_METHODS: Tuple[str, ...] = ()
 
 #: Every kind of node a proof graph contains.
 _PROOF_NODE_KINDS = ("input", "derived", "contradiction")
@@ -290,6 +295,12 @@ _UNREACHABLE_RULES: Tuple[str, ...] = ()
 #: The proof tier landed after this page described it as never closing, so the
 #: page told a reader the feature does not work.  A stale claim is worse than a
 #: missing one, and nothing else in this checker would notice it.
+#:
+#: Both languages of a page pair are scanned against every phrase here, so a claim is
+#: written once in each language it was made in rather than in a second registry: one
+#: sentence lives in four places, and a correction applied to three of them reads as
+#: complete.  Phrases are matched against the folded text, so they are written with
+#: single spaces and do not have to guess where reST wrapped them.
 _FORBIDDEN_CLAIMS: Dict[str, Tuple[Tuple[str, str], ...]] = {
     "reference/bmc_results/index": (
         (
@@ -297,6 +308,53 @@ _FORBIDDEN_CLAIMS: Dict[str, Tuple[Tuple[str, str], ...]] = {
             "the proof tier does close for reachable cases; describe both the "
             "closing and the degrading outcome instead",
         ),
+        (
+            "The current catalog does not use it",
+            "``solver_entailment`` is used by ``case_condition_entailment``; say "
+            "what it discharges rather than that nothing does",
+        ),
+        (
+            "no query reaches them today",
+            "every rule in the catalog fires for some query; the paragraph this "
+            "clause belonged to counted unreachable rules",
+        ),
+        (
+            "No proof published today contains one",
+            "a closed arithmetic chain publishes derived nodes; describe the chain "
+            "and the fan as the two shapes a consumer accepts",
+        ),
+        (
+            "当前目录不使用它",
+            "``solver_entailment`` 已由 ``case_condition_entailment`` 使用",
+        ),
+        ("今天没有查询能走到它们", "目录里每条规则都能被某个查询点亮"),
+        ("今天发布的证明里不含派生节点", "闭合的算术链会发布 ``derived`` 节点"),
+    ),
+    "explanations/bmc_solving/index": (
+        (
+            "The current catalog does not use it",
+            "``solver_entailment`` is used by ``case_condition_entailment``; say "
+            "what it discharges rather than that nothing does",
+        ),
+        (
+            "No query reaches this method today",
+            "``core_binding_unit`` is published for an input restating one case of "
+            "a step relation",
+        ),
+        (
+            "the rule the reachability table marks unreachable",
+            "the table marks no rule unreachable; do not point a reader at a row "
+            "that no longer says that",
+        ),
+        (
+            "当前目录不使用",
+            "``solver_entailment`` 已由 ``case_condition_entailment`` 使用",
+        ),
+        (
+            "今天没有查询能走到这个方法",
+            "``core_binding_unit`` 会为重述步关系某个 case 的输入发布",
+        ),
+        ("可达性表里标为不可达的那条", "可达性表里没有任何规则标为不可达"),
     ),
 }
 
@@ -784,7 +842,7 @@ def _check_forbidden_claims(errors: List[str]) -> None:
     """
     for relative, claims in sorted(_FORBIDDEN_CLAIMS.items()):
         for label, path in _prose_pages(relative):
-            text = _read(path)
+            text = _flowed_text(path)
             for phrase, guidance in claims:
                 if phrase in text:
                     errors.append("%s still claims %r; %s." % (label, phrase, guidance))

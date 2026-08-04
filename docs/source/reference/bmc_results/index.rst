@@ -676,17 +676,15 @@ closed; a query that needs a reading outside it degrades to ``formal`` rather
 than inventing one.
 
 The ``Reachable`` column records whether any query is currently known to produce
-a node carrying that rule.  No rule is unreachable: every one is part of the closed
-vocabulary a consumer must accept, but no query reaches them today, so a reader
-who picks ``proof`` depth for such a conflict receives ``formal`` instead.  The
-reasons are structural and are set out in
-:doc:`/explanations/bmc_solving/index`.
+a node carrying that rule.  No rule is unreachable: each one fires for some query a
+user can write.  Three of them waited on a fourth for a while, and what unblocked
+them is set out in :doc:`/explanations/bmc_solving/index`.
 
-Those three are also the only rules whose conclusion is not the contradiction
-itself, so they are the only ones that can produce a ``derived`` node.  No proof
-published today contains one: a reader sees one input node per subset-minimal
-member and the single contradiction root.  A consumer still has to accept
-``derived``, because the vocabulary is closed and these rows can change.
+The rules whose conclusion is not the contradiction itself are the ones that produce
+a ``derived`` node, so a published proof over such a conflict is a chain rather than
+a fan: input nodes for the subset-minimal members, one derived node per step, and the
+single contradiction root.  A conflict no chain reaches still publishes the fan, and
+a consumer accepts both shapes.
 
 .. list-table::
    :header-rows: 1
@@ -746,11 +744,13 @@ member and the single contradiction root.  A consumer still has to accept
        would lose its only premise source if state assertions moved to
        ``proposition``.
 
-The six reachable rules are exercised by the checked-in benchmark corpus under
+Six of these rules are exercised by the checked-in benchmark corpus under
 ``benchmarks/bmc/infeasibility/cases/handwritten/``, and its report records which
 case produced which rule.  The checked-in report was measured before
 ``boolean_complement`` became reachable, so it records five of them; the case that
-reaches the sixth is ``event_conflict.fbmcq``, in the same corpus.  Read the
+reaches the sixth is ``event_conflict.fbmcq``, in the same corpus.  The four rules
+of the arithmetic chain are reached by the queries
+:doc:`/explanations/bmc_solving/index` sets out, not yet by a corpus case.  Read the
 measured ratio there rather than from this page: it is a property of that corpus
 at a given revision, not of the tool.
 
@@ -779,9 +779,11 @@ proof's trust boundary rather than a label:
      - An independent checker re-derived the conclusion from the premises without
        reusing the code that constructed it.  Used by derived and root nodes.
    * - ``solver_entailment``
-     - Reserved for derived and root steps whose rule and side conditions are
-       discharged by the solver.  The current catalog does not use it; a node
-       carrying it would mean a rule was checked this way instead.
+     - The step's rule and side conditions were discharged by the solver rather
+       than by a checker, because the question is about the core members'
+       constraints and not about the published facts a checker sees.  The node's
+       ``item_ids`` name the members the solver used, and they are a subset of the
+       published core.  Used by derived and root nodes.
 
 A proof also states what it claims about its own shape.  ``input_minimality`` is
 ``subset_minimal``: the inputs are exactly the subset-minimal core, one node per

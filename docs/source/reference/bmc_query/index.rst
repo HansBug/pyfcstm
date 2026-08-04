@@ -600,7 +600,10 @@ at most once.
      - Public runtime state path.
    * - Active leaf
      - ``active_leaf=STRING``
-     - Public active leaf path at the call.
+     - Runtime state path where the call executed: the active leaf state
+       when one is active, otherwise the call's host state path. Entering
+       or leaving a composite state, or running a plain ``during`` action
+       declared on one, has no active leaf and matches the host path.
    * - Named ref
      - ``named_ref=STRING`` or ``named_ref=null``
      - Existing named ref callsite, or explicitly no named ref.
@@ -625,6 +628,38 @@ Legal filters:
        called(action="Root.Library.Shared", step=-2..+0,
               state="Root.A", active_leaf="Root.A",
               named_ref="Root.A.FirstRef", where x >= 0 && var("y") < 10);
+
+Entering a composite state has no active leaf, so ``active_leaf`` there is the
+host state path rather than a leaf. For the model below, the ``enter ref`` on the
+composite ``Root`` records ``state="Root"`` and ``active_leaf="Root"``, even
+though the only leaf state is ``Root.Inner.Leaf``:
+
+.. code-block:: fcstm
+
+   def int a = 0;
+
+   state Root
+   {
+       [*]->Inner;
+       Inner->[*];
+
+       enter ref Inner.act;
+
+       state Inner
+       {
+           [*]->Leaf;
+           Leaf->[*];
+
+           enter abstract act;
+
+           state Leaf;
+       }
+   }
+
+.. code-block:: fbmcq
+
+   check reach <= 2:
+       called("Root.Inner.act", step=0, state="Root", active_leaf="Root");
 
 An empty filter is legal: ``called()`` asks whether any abstract call occurred
 at the current anchor, and ``call_count(step=*)`` counts all recorded calls in

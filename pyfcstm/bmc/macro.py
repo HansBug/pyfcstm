@@ -728,8 +728,10 @@ class ActionBlock:
     :param is_abstract: Whether this block represents an abstract hook, defaults
         to ``False``.
     :type is_abstract: bool, optional
-    :param active_leaf_path: Runtime active leaf path when the block executes,
-        defaults to ``None`` for legacy callers.
+    :param active_leaf_path: Runtime state path where the block executes --
+        the innermost non-pseudo leaf on the frontier stack when one is
+        active, otherwise the block's host state path -- defaults to
+        ``None`` for legacy callers.
     :type active_leaf_path: str, optional
     :param execution_state_path: Runtime public state path passed to abstract
         handler context, defaults to ``None`` and falls back to owner state.

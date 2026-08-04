@@ -3639,7 +3639,10 @@ class BmcWitnessCallRecord(_PrettyPrintableMixin):
     :type role: str
     :param state: Calling state path.
     :type state: str
-    :param active_leaf: Active leaf path visible to the handler.
+    :param active_leaf: Runtime state path where the call executed, as the
+        handler sees it: the active leaf state when one is active, otherwise
+        the call's host state path. Entering or leaving a composite state
+        has no active leaf, so this is the host path there.
     :type active_leaf: str
     :param named_ref: Named ``ref`` callsite path, defaults to ``None``.
     :type named_ref: str, optional

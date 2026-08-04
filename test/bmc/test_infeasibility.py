@@ -2281,3 +2281,73 @@ def test_a_condition_the_core_refutes_is_not_reported_as_discharged() -> None:
     assert record.name == "case_condition"
     assert record.status == "complete"
     assert record.reason is None
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    ("label", "member_ids"),
+    [
+        # A member id the core does not track.  Reached by a caller holding ids from
+        # an earlier run, and what it pins is that the id is skipped rather than
+        # dereferenced: without that the group lookup returns ``None`` and reading its
+        # expressions raises.
+        (
+            "an id from somewhere else",
+            ("no.such.member", "initial.target", "transition.step.0000"),
+        ),
+        # Nothing to build an antecedent from.  Pins the caller-visible contract --
+        # no members, no discharge -- rather than the route taken to honour it: the
+        # early return exists to skip solver calls, and removing it leaves behaviour
+        # unchanged because an empty conjunction entails no condition either.
+        ("no members at all", ()),
+        # Members that can hold together and leave the condition open: step 0 relates
+        # frame 0 to frame 1 without settling which state frame 1 is in.  This is the
+        # shape the whole function is for, and the only one of the three where the
+        # entailment question itself decides the answer.
+        ("members that leave it open", ("transition.step.0000",)),
+    ],
+)
+def test_a_condition_that_cannot_be_discharged_gets_no_entry(label, member_ids) -> None:
+    """The documented silent failure, through each way of arriving at it.
+
+    The contract this function states is that a condition it cannot discharge simply
+    gets no entry -- the rule that would consume it never fires and the explanation
+    stays at formal depth.  That promise is only worth as much as the paths to it, so
+    each is entered here with members a caller could really pass: a stale id, an
+    empty list, and a subset that settles less than the whole core does.
+
+    Each case was checked against a mutation that should break it, because the shared
+    assertion is weak enough to pass for the wrong reason: two of the three first went
+    green against a mutation of the line they were written for, and only the third had
+    a mutation of its own.  The comments beside each case say what it pins.
+    """
+    core = _core_formula(
+        'assume at 2: var("x") == 1;\n'
+        'assume at 3: var("x") == 0;\n'
+        'check reach <= 3: active("Root.A");\n',
+        model_text=(
+            "def int x = 0;\n"
+            "state Root { state A; state B; [*] -> A;\n"
+            "  A -> A effect { x = x + 1; }; A -> B; }"
+        ),
+    )
+    case = {
+        "kind": "transition_case",
+        "variable": "x",
+        "frame": 1,
+        "target_frame": 2,
+        "operation": "add",
+        "operand": 1,
+        "condition": (
+            {"kind": "state_membership", "frame": 1, "state": 2, "excluded": False},
+        ),
+    }
+
+    discharged, record = check_case_conditions(
+        core, [("transition.step.0001", case)], member_ids, _SolveBudget(None)
+    )
+
+    assert discharged == {}, label
+    assert record.name == "case_condition"
+    assert record.status == "complete"
+    assert record.started is False

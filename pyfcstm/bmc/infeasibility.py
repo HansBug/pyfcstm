@@ -1646,6 +1646,9 @@ def check_case_conditions(
             )
         )
     if not members:
+        # A shortcut, not a decision: an empty conjunction entails no condition either,
+        # so removing this leaves every answer unchanged and only spends a solver call
+        # per conditional case to reach it.
         return discharged, ProbeRecord(
             "case_condition", "complete", False, elapsed(), None
         )

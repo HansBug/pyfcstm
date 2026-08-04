@@ -1454,3 +1454,182 @@ def test_the_checker_agrees_with_the_simulator_about_a_real_quotient(
     )
 
     assert check_rule(application) is True, (start, divisor, simulated)
+
+
+@pytest.mark.unittest
+def test_excluded_state_selected_closes_on_a_slot_pinned_to_an_excluded_state() -> None:
+    """A frame required to be in the state it also rules out has nowhere to be."""
+    application = RuleApplication(
+        "excluded_state_selected",
+        (
+            _fact(
+                "variable_equality",
+                variable="$state",
+                state_slot=True,
+                frame=1,
+                value=3,
+            ),
+            _fact("state_exclusion", frame=1, state=3),
+        ),
+        _fact("false"),
+    )
+
+    assert check_rule(application) is True
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "premises",
+    [
+        # A model variable rather than the frame's state slot.  Without the flag this
+        # would close a value contradiction under a sentence about states.
+        (
+            _fact("variable_equality", variable="x", frame=1, value=3),
+            _fact("state_exclusion", frame=1, state=3),
+        ),
+        # Different frames are different subjects, so neither contradicts the other.
+        (
+            _fact(
+                "variable_equality",
+                variable="$state",
+                state_slot=True,
+                frame=1,
+                value=3,
+            ),
+            _fact("state_exclusion", frame=2, state=3),
+        ),
+        # The exclusion names a state the slot was not pinned to.
+        (
+            _fact(
+                "variable_equality",
+                variable="$state",
+                state_slot=True,
+                frame=1,
+                value=3,
+            ),
+            _fact("state_exclusion", frame=1, state=4),
+        ),
+        # Two exclusions and no equality: that shape belongs to the domain rule.
+        (
+            _fact("state_exclusion", frame=1, state=3),
+            _fact("state_exclusion", frame=1, state=4),
+        ),
+        # A field the rule does not consume.  Dropping it silently would make a
+        # vocabulary addition disappear at the step that closes the proof.
+        (
+            _fact(
+                "variable_equality",
+                variable="$state",
+                state_slot=True,
+                frame=1,
+                value=3,
+                surprise=1,
+            ),
+            _fact("state_exclusion", frame=1, state=3),
+        ),
+    ],
+    ids=[
+        "a_model_variable",
+        "different_frames",
+        "a_different_state",
+        "two_exclusions",
+        "an_unconsumed_field",
+    ],
+)
+def test_excluded_state_selected_refuses_anything_else(premises) -> None:
+    """Each premise shape that must not close, and why it must not.
+
+    :param premises: The premises the rule is offered.
+    :type premises: Tuple[Mapping[str, object], ...]
+    """
+    assert (
+        check_rule(RuleApplication("excluded_state_selected", premises, _fact("false")))
+        is False
+    )
+
+
+@pytest.mark.unittest
+def test_preceding_value_entailment_moves_the_frame_and_nothing_else() -> None:
+    """The same variable at the same value, one frame earlier."""
+    application = RuleApplication(
+        "preceding_value_entailment",
+        (_fact("variable_equality", variable="x", frame=2, value=5),),
+        _fact("variable_equality", variable="x", frame=1, value=5),
+    )
+
+    assert check_rule(application) is True
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "premise, conclusion",
+    [
+        # Frame 0 has no predecessor, so there is no earlier frame to speak about.
+        (
+            _fact("variable_equality", variable="x", frame=0, value=5),
+            _fact("variable_equality", variable="x", frame=-1, value=5),
+        ),
+        # Two frames back is a second step this premise says nothing about.
+        (
+            _fact("variable_equality", variable="x", frame=3, value=5),
+            _fact("variable_equality", variable="x", frame=1, value=5),
+        ),
+        # Forwards, which is the direction the citation seam cannot record.
+        (
+            _fact("variable_equality", variable="x", frame=2, value=5),
+            _fact("variable_equality", variable="x", frame=3, value=5),
+        ),
+        # A different value: letting it move would conclude anything about the
+        # earlier frame and call it carried.
+        (
+            _fact("variable_equality", variable="x", frame=2, value=5),
+            _fact("variable_equality", variable="x", frame=1, value=4),
+        ),
+        # A different variable.
+        (
+            _fact("variable_equality", variable="x", frame=2, value=5),
+            _fact("variable_equality", variable="y", frame=1, value=5),
+        ),
+        # A bound restricts a range rather than pinning a value.
+        (
+            _fact("variable_bound", variable="x", frame=2, value=5, operator="lt"),
+            _fact("variable_equality", variable="x", frame=1, value=5),
+        ),
+        # A field the rule does not consume, on either side.
+        (
+            _fact("variable_equality", variable="x", frame=2, value=5, surprise=1),
+            _fact("variable_equality", variable="x", frame=1, value=5),
+        ),
+        (
+            _fact("variable_equality", variable="x", frame=2, value=5),
+            _fact("variable_equality", variable="x", frame=1, value=5, surprise=1),
+        ),
+    ],
+    ids=[
+        "frame_zero",
+        "two_frames_back",
+        "forwards",
+        "a_different_value",
+        "a_different_variable",
+        "a_bound",
+        "an_unconsumed_field_in_the_premise",
+        "an_unconsumed_field_in_the_conclusion",
+    ],
+)
+def test_preceding_value_entailment_refuses_anything_else(premise, conclusion) -> None:
+    """Each shape that must not pass the syntax half of this rule.
+
+    The solver settles whether the earlier value was forced; this settles that the
+    step is the one the rule describes, and these are the ways it is not.
+
+    :param premise: The premise offered.
+    :type premise: Mapping[str, object]
+    :param conclusion: The conclusion offered.
+    :type conclusion: Mapping[str, object]
+    """
+    assert (
+        check_rule(
+            RuleApplication("preceding_value_entailment", (premise,), conclusion)
+        )
+        is False
+    )

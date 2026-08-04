@@ -1688,6 +1688,43 @@ def check_case_conditions(
         status, _, _, _, _ = _check_with_budget(solver, budget)
         return status == "sat"
 
+    def discharge_target(target: Any) -> Optional[Tuple[str, ...]]:
+        """Return the members that entail one target, or ``None`` when none do.
+
+        The whole of what makes an entailment here informative lives in this one
+        place, so a second kind of target -- a value carried across a step rather
+        than a case's condition -- reuses it rather than growing a parallel copy of
+        the shrink and the consistency guard.
+
+        :param target: The constraint to prove from the members.
+        :return: The member ids to cite, or ``None`` when the target is not
+            established non-vacuously.
+        :rtype: Optional[Tuple[str, ...]]
+        """
+        if not entailed([claim for _, claim in members], target):
+            return None
+        kept = list(members)
+        for candidate in list(members):
+            trimmed = [item for item in kept if item[0] != candidate[0]]
+            if trimmed and entailed([claim for _, claim in trimmed], target):
+                kept = trimmed
+        if not consistent([claim for _, claim in kept]):
+            # The check above is vacuous over members that contradict each other: a
+            # set that cannot hold entails every target, its negation included.
+            # These members normally do contradict each other -- they are a minimal
+            # unsatisfiable core -- so what makes an entailment here informative is
+            # the shrink, which drops members until the survivors can hold together
+            # and the question becomes a real one.  The shrink tends that way on its
+            # own, because an unsatisfiable subset still entails everything and so is
+            # always accepted; but tending is not the same as arriving.  When every
+            # single deletion breaks the entailment while the survivors still cannot
+            # hold, the shrink stops on a set that proves nothing, and a target the
+            # core outright refutes would be published as discharged.  Refusing here
+            # is the silent failure this function documents: no entry, so the rule
+            # never fires and the explanation stays at formal depth.
+            return None
+        return tuple(sorted(item[0] for item in kept))
+
     for stable_id, fact in conditional:
         encoded = [
             _encode_condition_member(member, symbols)
@@ -1705,30 +1742,10 @@ def check_case_conditions(
             # property rather than a coincidence: if one gains a reading the other
             # lacks, this refuses to discharge instead of encoding a slot wrongly.
             continue
-        target = z3.And(*encoded)
-        if not entailed([claim for _, claim in members], target):
+        cited = discharge_target(z3.And(*encoded))
+        if cited is None:
             continue
-        kept = list(members)
-        for candidate in list(members):
-            trimmed = [item for item in kept if item[0] != candidate[0]]
-            if trimmed and entailed([claim for _, claim in trimmed], target):
-                kept = trimmed
-        if not consistent([claim for _, claim in kept]):
-            # The check above is vacuous over members that contradict each other: a
-            # set that cannot hold entails every condition, its negation included.
-            # These members normally do contradict each other -- they are a minimal
-            # unsatisfiable core -- so what makes an entailment here informative is
-            # the shrink, which drops members until the survivors can hold together
-            # and the question becomes a real one.  The shrink tends that way on its
-            # own, because an unsatisfiable subset still entails everything and so is
-            # always accepted; but tending is not the same as arriving.  When every
-            # single deletion breaks the entailment while the survivors still cannot
-            # hold, the shrink stops on a set that proves nothing, and a condition the
-            # core outright refutes would be published as discharged.  Refusing here
-            # is the silent failure this function documents: no entry, so the rule
-            # never fires and the explanation stays at formal depth.
-            continue
-        discharged[stable_id] = tuple(sorted(item[0] for item in kept))
+        discharged[stable_id] = cited
     return discharged, ProbeRecord(
         "case_condition", "complete", bool(discharged), elapsed(), None
     )

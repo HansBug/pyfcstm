@@ -676,7 +676,7 @@ closed; a query that needs a reading outside it degrades to ``formal`` rather
 than inventing one.
 
 The ``Reachable`` column records whether any query is currently known to produce
-a node carrying that rule.  Three rules are not: they are part of the closed
+a node carrying that rule.  No rule is unreachable: every one is part of the closed
 vocabulary a consumer must accept, but no query reaches them today, so a reader
 who picks ``proof`` depth for such a conflict receives ``formal`` instead.  The
 reasons are structural and are set out in
@@ -698,24 +698,28 @@ member and the single contradiction root.  A consumer still has to accept
    * - ``source_fact``
      - yes
      - An input node's own fact, taken from the core member it restates.
+   * - ``case_condition_entailment``
+     - yes
+     - The same transition case with its condition discharged.  A case's assignment
+       holds where the case applies, so the condition has to be established from the
+       members before the assignment can be used -- and the solver does that, against
+       the members' own constraints rather than their published facts.  The node cites
+       the members that entail it and records ``solver_entailment``; the condition key
+       is removed rather than emptied, because the evaluation rule reads keys.
    * - ``transition_assignment``
-     - no
+     - yes
      - What a transition's effect assigns to a variable at the next frame.  A step
-       relation now publishes that assignment as ``transition_case``, and the binding
-       proves it equivalent to one requirement of the group -- so the premise exists.
-       What is missing is the condition: a case's assignment holds where its case
-       applies, and nothing in the catalog discharges that condition from the members
-       that establish it, so the evaluation rule refuses an expression carrying one.
+       relation publishes that assignment as ``transition_case``, the binding proves
+       it equivalent to one requirement of the group, and
+       ``case_condition_entailment`` supplies the unconditional form this rule reads.
    * - ``equality_substitution``
-     - no
-     - The result of substituting a known value into another fact.  Needs a
-       derived fact to condition on, for the same reason.
+     - yes
+     - The result of substituting a known value into another fact, for an operand
+       still standing as a symbol.
    * - ``arithmetic_evaluation``
-     - no
+     - yes
      - The value an arithmetic step leaves in a variable.  It consumes an
-       ``arithmetic_expression`` fact, and the only thing that produces one is
-       ``transition_assignment`` -- so the chain has no starting point while that
-       row reads ``no``.
+       ``arithmetic_expression`` fact, which ``transition_assignment`` produces.
    * - ``interval_intersection``
      - yes
      - That no value satisfies every bound required at one slot.

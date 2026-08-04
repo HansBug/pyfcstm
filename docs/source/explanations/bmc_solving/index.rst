@@ -415,14 +415,30 @@ built without the intermediate facts would lose.  A reader chasing a cross-step
 conflict is better served by ``formal`` today, and the report says so in its
 ``reason`` line rather than leaving them to wonder.
 
-Two further rules are out of reach for the same reason, one step removed.
-``equality_substitution`` needs a derived fact to substitute into, and
-``arithmetic_evaluation`` needs an ``arithmetic_expression`` fact -- which only
-``transition_assignment`` produces.  The translation from core members to proof
-facts emits seven kinds, and that is not one of them, so both chains are missing
-their first link rather than their last.  This is why the catalog can be closed
-and complete while three of its nine rules never fire: they are the ones whose
-premises no core member can state.
+Three rules were out of reach for one shared reason until recently, and the account
+is kept here because the shape it describes is still what a reader meets.  A case
+publishes the assignment it makes, but the assignment holds *where the case
+applies*, and the evaluation rule refuses an expression carrying a condition --
+rightly, since "``x`` increases by one under C" together with "``x`` is 0" does not
+give "``x`` is 1" unless C is established.  Nothing established it, so
+``transition_assignment`` had no usable premise, and ``equality_substitution`` and
+``arithmetic_evaluation`` waited one step further back on the
+``arithmetic_expression`` it produces.
+
+``case_condition_entailment`` establishes it.  The condition is proved from the core
+members themselves rather than from their published facts -- the members that put the
+machine in the state a case names include the step relation that got it there, and a
+step relation publishes as ``structural_constraint``, content no reader sees.  So the
+solver does that step, the node cites the members it used, and it records
+``solver_entailment`` rather than ``rule_checker`` because no predicate over the
+premises could have settled it.  The translation from core members to proof facts
+emits seven kinds and none of them is an ``arithmetic_expression``, so that fact
+still has exactly one producer and the chain still starts where it always would
+have -- what changed is that the first link now carries no condition.  Zero of its
+ten rules never fire, and the
+paragraphs above still describe the conflicts that have no proof: those are the ones
+whose *facts* no core member states, which is a different shortage from the one this
+rule filled.
 
 A second boundary is narrower.  An event assumption is published as a
 ``structural_constraint`` fact: the core member is known and located, but its

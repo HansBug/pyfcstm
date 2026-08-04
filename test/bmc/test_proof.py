@@ -116,6 +116,7 @@ def test_the_proof_vocabularies_are_transcribed_from_the_contract() -> None:
     assert module._PROOF_NODE_KINDS == ("input", "derived", "contradiction")
     assert module._PROOF_RULE_IDS == (
         "source_fact",
+        "case_condition_entailment",
         "transition_assignment",
         "equality_substitution",
         "arithmetic_evaluation",

@@ -7061,6 +7061,7 @@
         "rule_id": {
           "enum": [
             "source_fact",
+            "case_condition_entailment",
             "transition_assignment",
             "equality_substitution",
             "arithmetic_evaluation",

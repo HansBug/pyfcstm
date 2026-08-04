@@ -107,6 +107,7 @@ _TUTORIAL_DIAGRAMS = (
 #: Every ``rule_id`` a proof node can carry.
 _PROOF_RULE_IDS = (
     "source_fact",
+    "case_condition_entailment",
     "transition_assignment",
     "equality_substitution",
     "arithmetic_evaluation",
@@ -277,16 +278,12 @@ _TABULATED_VOCABULARY: Dict[str, Tuple[Tuple[str, ...], ...]] = {
 #: unreachable is a user-facing fact, and it is the kind that goes stale quietly.
 #:
 #: ``boolean_complement`` left this list when event assumptions began publishing
-#: ``proposition`` facts.  The three that remain share one cause rather than three:
-#: a transition case publishes its assignment now, but the assignment holds only
-#: where its case applies, and nothing discharges that condition from the members
-#: that establish it -- so the evaluation rule refuses the expression and the chain
-#: has no starting point.  They will leave together or not at all.
-_UNREACHABLE_RULES = (
-    "transition_assignment",
-    "equality_substitution",
-    "arithmetic_evaluation",
-)
+#: ``proposition`` facts.  The three that remained shared one cause rather than
+#: three: a case publishes its assignment, but the assignment holds only where the
+#: case applies, and nothing discharged that condition from the members establishing
+#: it.  ``case_condition_entailment`` discharges it, so they left together as that
+#: note said they would, and this is empty.
+_UNREACHABLE_RULES: Tuple[str, ...] = ()
 
 #: Sentences that were true when written and are now misleading.
 #:
@@ -911,6 +908,13 @@ def _check_rule_reachability(errors: List[str]) -> None:
 #:
 #: Shared by every prose-count check so the two languages cannot disagree about
 #: how a number is written, which is how one of them ends up unchecked.
+#:
+#: Longer than the vocabularies being counted, deliberately.  These were sized to
+#: the rule catalog and the reasoning was "nine rules exist, so at most nine can be
+#: unreachable, so indices 0..9 all resolve" -- correct only while the catalog had
+#: nine.  Adding a tenth rule turned the count into an ``IndexError`` inside the
+#: checker itself.  An index bound that depends on a number this file does not own
+#: is not a bound.
 _ENGLISH_NUMERALS = (
     "zero",
     "one",
@@ -922,6 +926,9 @@ _ENGLISH_NUMERALS = (
     "seven",
     "eight",
     "nine",
+    "ten",
+    "eleven",
+    "twelve",
 )
 
 #: Chinese numerals, as the spellings a page may legitimately use for each value.
@@ -941,12 +948,33 @@ _CHINESE_NUMERALS: Tuple[Tuple[str, ...], ...] = (
     ("七",),
     ("八",),
     ("九",),
+    ("十",),
+    ("十一",),
+    ("十二",),
 )
 
 #: The character class matching any spelling above, for use inside a pattern.
 _CHINESE_NUMERAL_CLASS = "[%s]" % "".join(
     spelling for forms in _CHINESE_NUMERALS for spelling in forms
 )
+
+
+def _flowed_text(path: Path) -> str:
+    """Return a page's visible text with its line wrapping folded away.
+
+    Every prose-count check below matches a sentence, and reST wraps sentences at
+    column width -- so a pattern written on one line silently stops matching when an
+    edit pushes three words onto the next.  That failure looks exactly like a missing
+    sentence, which is the wrong diagnosis and the one this file reported twice: once
+    on inline markup scanned line by line, and once on a count split across a wrap.
+    Folding whitespace first makes the patterns say what they mean.
+
+    :param path: Page to read.
+    :type path: pathlib.Path
+    :return: The page text with runs of whitespace collapsed to single spaces.
+    :rtype: str
+    """
+    return re.sub(r"\s+", " ", _visible_text(path))
 
 
 def _numeral_forms(value: int, label: str) -> Tuple[str, ...]:
@@ -979,15 +1007,59 @@ def _numeral_forms(value: int, label: str) -> Tuple[str, ...]:
 #: two halves of one nine-way split contradicting each other fifty lines apart,
 #: in both languages.
 _UNREACHABLE_COUNT_PROSE: Dict[str, Tuple[str, str]] = {
+    # Two spellings per language, because a count of zero is not the same sentence
+    # with a different numeral in it.  "有零条不可达" is not Chinese anyone writes, and
+    # a gate that only matches one句模 would demand it.  The alternation lets the page
+    # say "no rule is unreachable" the way a reader would, and the numeral branch
+    # still pins every other value.
     "reference/bmc_results/index.rst": (
         "no",
-        r"\b([A-Za-z]+) rules are not\b",
+        r"\b(?:([A-Za-z]+) rules are not\b|(No) rule is unreachable\b)",
     ),
     "reference/bmc_results/index_zh.rst": (
         "否",
-        r"有(%s)条不可达" % _CHINESE_NUMERAL_CLASS,
+        r"(?:有(%s)条不可达|(没有)任何规则不可达)" % _CHINESE_NUMERAL_CLASS,
     ),
 }
+
+#: How each language spells a count of zero in the sentence above.
+_ZERO_PROSE = {
+    "reference/bmc_results/index.rst": "No",
+    "reference/bmc_results/index_zh.rst": "没有",
+}
+
+
+def _check_every_rule_has_a_reachability_row(errors: List[str]) -> None:
+    """Confirm every rule has its own row in the reachability table.
+
+    The vocabulary check nearby asks whether a page *mentions* each rule, which a
+    sentence anywhere satisfies -- so deleting a rule's row from the closed table
+    left both pages passing while a reader could no longer see whether that rule is
+    reachable.  A name in prose is not a row in a table, and this is the difference
+    the table exists to publish.
+
+    :param errors: Accumulator the caller raises from.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    markers = {
+        "reference/bmc_results/index.rst": ("yes", "no"),
+        "reference/bmc_results/index_zh.rst": ("\u662f", "\u5426"),
+    }
+    for label, path in _prose_pages("reference/bmc_results/index"):
+        text = _visible_text(path)
+        rows = {
+            rule
+            for rule, value in re.findall(r"\* - ``([a-z_]+)``\n\s+- (\S+)\n", text)
+            if value in markers[label]
+        }
+        missing = [rule for rule in _PROOF_RULE_IDS if rule not in rows]
+        if missing:
+            errors.append(
+                "%s has no reachability row for %s, so the table stops being the "
+                "closed list it is published as." % (label, ", ".join(missing))
+            )
 
 
 def _check_unreachable_count(errors: List[str]) -> None:
@@ -1010,6 +1082,7 @@ def _check_unreachable_count(errors: List[str]) -> None:
     for label, path in _prose_pages("reference/bmc_results/index"):
         marker, pattern = _UNREACHABLE_COUNT_PROSE[label]
         text = _visible_text(path)
+        flowed = _flowed_text(path)
         rows = re.findall(r"\* - ``([a-z_]+)``\n\s+- (\S+)\n", text)
         counted = sum(1 for _, value in rows if value == marker)
         if counted != len(_UNREACHABLE_RULES):
@@ -1019,8 +1092,10 @@ def _check_unreachable_count(errors: List[str]) -> None:
                 % (label, counted, len(_UNREACHABLE_RULES))
             )
             continue
-        expected = _numeral_forms(counted, label)
-        found = re.search(pattern, text)
+        expected = (
+            (_ZERO_PROSE[label],) if counted == 0 else _numeral_forms(counted, label)
+        )
+        found = re.search(pattern, flowed)
         if found is None:
             errors.append(
                 "%s does not state how many rules are unreachable, so the "
@@ -1028,11 +1103,12 @@ def _check_unreachable_count(errors: List[str]) -> None:
                 % (label, counted, marker)
             )
             continue
-        if found.group(1) not in expected:
+        spelling = next(item for item in found.groups() if item is not None)
+        if spelling not in expected:
             errors.append(
                 "%s says %s rules are unreachable while its table marks %d; "
                 "the paragraph and the rows describe one split."
-                % (label, found.group(1), counted)
+                % (label, spelling, counted)
             )
 
 
@@ -1056,18 +1132,18 @@ def _check_rule_partition_prose(errors: List[str]) -> None:
     # to line up.
     patterns = {
         "explanations/bmc_solving/index.rst": (
-            r"while ([A-Za-z]+) of its ([A-Za-z]+) rules never fire",
+            r"([A-Za-z]+) of its ([A-Za-z]+) rules never fire",
             (unreachable, total),
         ),
         "explanations/bmc_solving/index_zh.rst": (
-            r"(%s)条规则里仍有(%s)条从不触发"
+            r"(%s)条规则里(?:仍有)?(%s)条从不触发"
             % (_CHINESE_NUMERAL_CLASS, _CHINESE_NUMERAL_CLASS),
             (total, unreachable),
         ),
     }
     for label, path in _prose_pages("explanations/bmc_solving/index"):
         pattern, values = patterns[label]
-        found = re.search(pattern, _visible_text(path))
+        found = re.search(pattern, _flowed_text(path))
         if found is None:
             errors.append(
                 "%s no longer states how many of the %d rules never fire; the "
@@ -1135,7 +1211,7 @@ def _check_benchmark_report_claim(errors: List[str]) -> None:
         ),
     }
     for label, path in _prose_pages("reference/bmc_results/index"):
-        found = re.search(patterns[label], _visible_text(path))
+        found = re.search(patterns[label], _flowed_text(path))
         if found is None:
             errors.append(
                 "%s does not say how many rules the checked-in benchmark report "
@@ -1201,7 +1277,7 @@ def _check_verification_method_count(errors: List[str]) -> None:
     for label, path in _prose_pages("explanations/bmc_solving/index"):
         pattern = patterns[label]
         expected = _numeral_forms(len(working), label)
-        text = _visible_text(path)
+        text = _flowed_text(path)
         missing = [name for name in _PROOF_VERIFICATION_METHODS if name not in text]
         if missing:
             errors.append(
@@ -1317,7 +1393,7 @@ def _check_translated_kind_count(errors: List[str]) -> None:
     for label, path in _prose_pages("explanations/bmc_solving/index"):
         pattern = patterns[label]
         expected = _numeral_forms(len(kinds), label)
-        found = re.search(pattern, _visible_text(path))
+        found = re.search(pattern, _flowed_text(path))
         if found is None:
             errors.append(
                 "%s no longer says how many fact kinds the translation emits, "
@@ -1446,6 +1522,7 @@ def check() -> None:
     _check_forbidden_claims(errors)
     _check_schema_vocabularies(errors)
     _check_rule_reachability(errors)
+    _check_every_rule_has_a_reachability_row(errors)
     _check_unreachable_count(errors)
     _check_rule_partition_prose(errors)
     _check_translated_kind_count(errors)

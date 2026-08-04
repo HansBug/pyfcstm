@@ -1975,6 +1975,17 @@ def test_the_same_query_publishes_the_same_proof_every_time(query: str) -> None:
     reader saved unreproducible, and the variation would show up as a flake somewhere
     far from its cause.
 
+    What this cannot see, stated because the reverse would be assumed: three runs in
+    one process share a hash seed, and a set's iteration order is stable within a
+    process, so iterating a set of strings somewhere in the chain would produce a proof
+    that is identical here and different on the next machine.  Determinism against that
+    rests on construction instead -- every place an order is published goes through
+    ``sorted``, and the phases iterate sequences rather than sets.  Measured across four
+    ``PYTHONHASHSEED`` values in separate processes, the canonical proof was identical
+    for both shapes; that measurement is evidence and not a gate, because asserting the
+    citation is sorted would pass on these fixtures whether or not ``sorted`` were
+    there -- the published member order already happens to be alphabetical.
+
     :param query: The query text.
     :type query: str
     """

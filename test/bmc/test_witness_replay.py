@@ -1086,7 +1086,7 @@ _TERMINATES = "check reach <= 2: terminated();"
 # A `ref` on a composite host, pointing at a named abstract action declared in a
 # child. `_active_leaf_path` has no leaf on the stack while `Root` is being
 # entered, so it falls back -- and the fallback used to read the `owner` a `ref`
-# had already redirected to the declaring state. See issue #430.
+# had already redirected to the declaring state.
 _COMPOSITE_ENTER_REF = """
 def int a = 0;
 state Root {
@@ -1417,7 +1417,7 @@ def test_call_metadata_matches_the_runtime_across_the_sample_corpus() -> None:
 # A `ref` chain whose outermost hop is anonymous and whose second hop is a named
 # `ref`. Only a callsite names its own call, so this call has no named `ref` --
 # but the encoder used to scan the chain and let the first named hop win, which
-# reported `Root.A.mid` where the runtime reported nothing. See issue #432.
+# reported `Root.A.mid` where the runtime reported nothing.
 _CHAINED_REF_ANONYMOUS_HEAD = """
 state Root {
     [*] -> A;
@@ -1695,6 +1695,34 @@ state Root {
             during mid ref act;
             during abstract act;
         }
+    }
+}
+""",
+    "aspect_during_after_anonymous_head": """
+def int a = 0;
+state Root {
+    [*] -> A;
+    A -> [*];
+    >> during after ref A.L.mid;
+    state A {
+        [*] -> L;
+        L -> [*];
+        state L {
+            during mid ref act;
+            during abstract act;
+        }
+    }
+}
+""",
+    "leaf_during_anonymous_head": """
+def int a = 0;
+state Root {
+    [*] -> L;
+    L -> [*];
+    state L {
+        during ref mid;
+        during mid ref act;
+        during abstract act;
     }
 }
 """,

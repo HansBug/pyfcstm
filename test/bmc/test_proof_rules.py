@@ -1336,3 +1336,62 @@ def test_case_condition_entailment_refuses_premises_it_does_not_read(
     )
 
     assert check_rule(application) is False, why
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    ("start", "divisor"),
+    [(7.5, 2), (-7.5, 2), (1.0, 4), (5.0, 2), (-1.0, 8)],
+)
+def test_the_checker_agrees_with_the_simulator_about_a_real_quotient(
+    start, divisor
+) -> None:
+    """Two surfaces, one model, one arithmetic -- checked against each other.
+
+    The simulator runs the effect and the proof checker re-derives it, and a reader
+    holding both is entitled to the same number from each.  They disagreed: the
+    checker truncated, so ``7.5 / 2`` came back as ``3.0`` from a proof whose
+    ``verification_status`` said ``verified`` while ``pyfcstm simulate`` printed
+    ``3.75``.  Reconciling them by construction is what this pins.
+
+    Division only.  ``add`` and ``mul`` on reals are left out on purpose: there the
+    simulator's IEEE754 answer and the encoder's exact rational differ -- ``0.1 + 0.2``
+    is the standing example -- and the two reference surfaces disagree, so which one
+    the proof should follow is an open question rather than a settled invariant.
+    Pinning it here would freeze that question shut.
+    """
+    from pyfcstm.model import load_state_machine_from_text
+    from pyfcstm.simulate import SimulationRuntime
+
+    model = (
+        "def float x = 0.0;\n"
+        "state Root { state A; state B; [*] -> A;\n"
+        "  A -> A effect { x = x / %s; }; A -> B; }" % divisor
+    )
+    runtime = SimulationRuntime(
+        load_state_machine_from_text(model, "machine.fcstm"),
+        initial_vars={"x": start},
+    )
+    # The first cycle takes the initial transition into ``A``; the second runs the
+    # self-loop, which is the one that divides.
+    runtime.cycle()
+    runtime.cycle()
+    simulated = dict(runtime.vars)["x"]
+
+    application = RuleApplication(
+        "arithmetic_evaluation",
+        (
+            _equality(value=start),
+            _fact(
+                "arithmetic_expression",
+                variable="x",
+                frame=0,
+                operator="div",
+                operand=divisor,
+                target_frame=1,
+            ),
+        ),
+        _equality(frame=1, value=simulated),
+    )
+
+    assert check_rule(application) is True, (start, divisor, simulated)

@@ -319,9 +319,12 @@ def _evaluate(operator: str, left: Any, right: Any):
     seven sign and sort combinations, including the very example the old docstring
     used to justify it: ``-7 / 2`` encodes as ``-4``, not ``-3``.
 
-    The simulator agrees with the encoder on the real quotient, so a published
-    ``7.5 / 2`` of ``3.0`` was a sentence a reader could check against either of the
-    other two surfaces and find wrong.
+    A published ``7.5 / 2`` of ``3.0`` was therefore wrong against the encoder by a
+    quarter, and against the simulator by the same -- checkable from either side.  The
+    two other surfaces do not always agree with each other, though: the simulator
+    divides in IEEE754, so ``0.3 / 0.1`` reaches ``2.9999999999999996`` where the
+    encoder holds exactly ``3``.  This follows the encoder, which is the semantics the
+    reference says a proof is about.
 
     An exact quotient with no finite decimal form is refused rather than rounded: a
     step reporting ``0.333...`` truncated to a float would state a value the

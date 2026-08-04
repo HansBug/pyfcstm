@@ -1346,19 +1346,27 @@ def test_case_condition_entailment_refuses_premises_it_does_not_read(
 def test_the_checker_agrees_with_the_simulator_about_a_real_quotient(
     start, divisor
 ) -> None:
-    """Two surfaces, one model, one arithmetic -- checked against each other.
+    """Two surfaces, one model, one quotient -- checked against each other.
 
-    The simulator runs the effect and the proof checker re-derives it, and a reader
-    holding both is entitled to the same number from each.  They disagreed: the
-    checker truncated, so ``7.5 / 2`` came back as ``3.0`` from a proof whose
-    ``verification_status`` said ``verified`` while ``pyfcstm simulate`` printed
-    ``3.75``.  Reconciling them by construction is what this pins.
+    The simulator runs the effect and the proof checker re-derives it.  They disagreed
+    by a whole quarter: the checker truncated, so ``7.5 / 2`` came back as ``3.0`` from
+    a proof whose ``verification_status`` said ``verified`` while ``pyfcstm simulate``
+    printed ``3.75``.  Catching that class again is what this is for.
 
-    Division only.  ``add`` and ``mul`` on reals are left out on purpose: there the
-    simulator's IEEE754 answer and the encoder's exact rational differ -- ``0.1 + 0.2``
-    is the standing example -- and the two reference surfaces disagree, so which one
-    the proof should follow is an open question rather than a settled invariant.
-    Pinning it here would freeze that question shut.
+    The divisors below are ones where the two surfaces agree exactly, and that
+    agreement is *not* general -- picking five passing values and concluding the
+    surfaces always agree is the mistake this docstring exists to not repeat.  The
+    checker divides reals exactly, as the encoder does, and the simulator divides them
+    in IEEE754; where that loses precision the two part ways by an ulp.  ``0.3 / 0.1``
+    is exactly ``3`` and the simulator reaches ``2.9999999999999996``; ``9.9 / 3.3``
+    is ``3`` and it reaches ``3.0000000000000004``.
+
+    So division shares the open question that ``add`` and ``mul`` are left out for,
+    in one sub-case: the two reference surfaces disagree about real arithmetic in
+    general, and which one a proof should follow is a semantics decision.  The proof
+    follows the encoder, which is what the reference says it is about.  What is pinned
+    here is narrower and still worth pinning: a quotient the two surfaces *do* agree
+    on has to come back as that number, not as a truncation of it.
     """
     from pyfcstm.model import load_state_machine_from_text
     from pyfcstm.simulate import SimulationRuntime

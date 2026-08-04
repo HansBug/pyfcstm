@@ -1074,13 +1074,9 @@ def _replay_active_leaves(dsl_text: str, query_text: str):
     """
     model, trace = _trace(dsl_text, query_text)
     replay = replay_bmc_witness(model, trace)
-    witness_calls = tuple(
-        call for step in trace.steps for call in step.abstract_calls
-    )
+    witness_calls = tuple(call for step in trace.steps for call in step.abstract_calls)
     runtime_calls = tuple(
-        call
-        for step in replay.runtime_trace.steps
-        for call in step.abstract_calls
+        call for step in replay.runtime_trace.steps for call in step.abstract_calls
     )
     return replay, witness_calls, runtime_calls
 
@@ -1121,13 +1117,15 @@ state Root {
 }
 """
 
+
 # `during before` / `during after` written without `>>` belong to the composite
 # state itself, so they are recorded before any child leaf is on the stack. The
 # `>>` aspect form runs for a descendant leaf's cycle and therefore never
 # reaches the fallback -- that difference is why these cases cannot be replaced
 # by an aspect model.
 def _plain_during_ref(position: str) -> str:
-    return """
+    return (
+        """
 def int a = 0;
 state Root {
     [*] -> Parent;
@@ -1144,7 +1142,10 @@ state Root {
         state Leaf;
     }
 }
-""" % position
+"""
+        % position
+    )
+
 
 # The host is itself a leaf, so the stack has it and the main path returns it.
 # Four of the conditions in issue #430 hold here and it still aligns, which is
@@ -1245,15 +1246,13 @@ def test_plain_during_ref_on_composite_host_records_the_host(position) -> None:
 
     assert replay.ok is True, [item.to_canonical() for item in replay.mismatches]
     shared = [
-        call
-        for call in witness_calls
-        if call.action_name == "Root.Library.LL.Shared"
+        call for call in witness_calls if call.action_name == "Root.Library.LL.Shared"
     ]
     assert shared, [call.action_name for call in witness_calls]
     assert [call.active_leaf for call in shared] == ["Root.Parent"] * len(shared)
-    assert [call.role for call in shared] == [
-        "plain_during_%s" % position
-    ] * len(shared)
+    assert [call.role for call in shared] == ["plain_during_%s" % position] * len(
+        shared
+    )
     assert [call.active_leaf for call in witness_calls] == [
         call.active_leaf for call in runtime_calls
     ]
@@ -1287,17 +1286,11 @@ def test_aspect_during_ref_takes_the_descendant_leaf() -> None:
 
     assert replay.ok is True, [item.to_canonical() for item in replay.mismatches]
     shared = [
-        call
-        for call in witness_calls
-        if call.action_name == "Root.Library.LL.Shared"
+        call for call in witness_calls if call.action_name == "Root.Library.LL.Shared"
     ]
     assert shared, [call.action_name for call in witness_calls]
-    assert [call.active_leaf for call in shared] == [
-        "Root.Parent.Leaf"
-    ] * len(shared)
-    assert [call.role for call in shared] == [
-        "aspect_during_before"
-    ] * len(shared)
+    assert [call.active_leaf for call in shared] == ["Root.Parent.Leaf"] * len(shared)
+    assert [call.role for call in shared] == ["aspect_during_before"] * len(shared)
     assert [call.active_leaf for call in witness_calls] == [
         call.active_leaf for call in runtime_calls
     ]
@@ -1310,9 +1303,7 @@ def test_composite_during_without_ref_falls_back_to_its_own_host() -> None:
     )
 
     assert replay.ok is True, [item.to_canonical() for item in replay.mismatches]
-    mock = [
-        call for call in witness_calls if call.action_name == "Root.Parent.mock"
-    ]
+    mock = [call for call in witness_calls if call.action_name == "Root.Parent.mock"]
     assert mock, [call.action_name for call in witness_calls]
     # No `ref`, so `owner` is the host and the fallback value is already right.
     assert [call.active_leaf for call in mock] == ["Root.Parent"] * len(mock)
@@ -1333,30 +1324,32 @@ def test_active_leaf_matches_the_runtime_across_the_sample_corpus() -> None:
     the real execution stack, which is the reference semantics the repository
     already treats as authoritative.
     """
-    corpus = (
-        pathlib.Path(__file__).resolve().parents[1]
-        / "testfile"
-        / "sample_codes"
-    )
+    corpus = pathlib.Path(__file__).resolve().parents[1] / "testfile" / "sample_codes"
     sources = sorted(corpus.glob("*.fcstm"))
     assert sources, "the sample corpus should not be empty"
 
+    # `dlc1.fcstm` shifts by a variable amount, which the core lowering does not
+    # support. A model that compiles no core carries no witness and so no
+    # recorded call to check.
+    expected_skips = {"dlc1.fcstm"}
+    skipped: list = []
     compared = 0
     checked_models = 0
     for source in sources:
         try:
-            model = load_state_machine_from_text(
-                source.read_text(encoding="utf-8")
-            )
+            model = load_state_machine_from_text(source.read_text(encoding="utf-8"))
             formula = compile_bmc_property(
                 build_bmc_core_formula(
                     BmcEngine(model).prepare("check reach <= 3: terminated();")
                 )
             )
         except UnsupportedBmcQuery:
-            # `dlc1.fcstm` shifts by a variable amount, which the core lowering
-            # does not support; such models compile no core, carry no witness,
-            # and so have no recorded call to check. Anything else propagates.
+            # Only the models known to compile no core are allowed to drop out,
+            # and the set is asserted below. Catching the class alone would let
+            # any future lowering regression turn this scan into a silent skip:
+            # `dlc3.fcstm` contributes a single call, so losing it still clears
+            # both floors.
+            skipped.append(source.name)
             continue
         result = solve_bmc_property(formula)
         if result.status != "sat":
@@ -1368,9 +1361,7 @@ def test_active_leaf_matches_the_runtime_across_the_sample_corpus() -> None:
             source.name,
             [item.to_canonical() for item in replay.mismatches],
         )
-        for witness_step, runtime_step in zip(
-            trace.steps, replay.runtime_trace.steps
-        ):
+        for witness_step, runtime_step in zip(trace.steps, replay.runtime_trace.steps):
             assert len(witness_step.abstract_calls) == len(
                 runtime_step.abstract_calls
             ), source.name
@@ -1385,5 +1376,6 @@ def test_active_leaf_matches_the_runtime_across_the_sample_corpus() -> None:
                 )
                 compared += 1
 
+    assert set(skipped) == expected_skips, skipped
     assert checked_models >= 4, checked_models
     assert compared >= 10, compared

@@ -354,7 +354,7 @@ A published proof is a claim that each step was checked.  The interesting design
 question is *by whom*, because a checker that shares code with the constructor
 agrees with it by construction and proves nothing.
 
-Two methods divide the work.  Input nodes use ``core_binding``: the normalized
+Four methods divide the work.  Input nodes use ``core_binding``: the normalized
 fact is re-encoded from scratch and the solver is asked to refute both
 ``group => fact`` and ``fact => group``.  Both directions are required.  One
 direction alone would allow a fact that is merely *implied by* the core member,
@@ -368,9 +368,33 @@ that produced it.  It compares whole conclusion mappings rather than selected
 fields, and refuses a conclusion carrying a field it does not recognize, so a
 constructor that quietly adds information cannot slip it past.
 
-``solver_entailment`` is reserved for derived and root steps discharged by the
-solver instead.  The current catalog does not use it; naming it here is what
-keeps a future node carrying it readable rather than surprising.
+``solver_entailment`` covers derived and root steps the solver discharges instead.
+``case_condition_entailment`` is one: whether the core members establish a case's
+condition is a question about their constraints, and a rule checker sees only the
+published facts, which do not contain it.  The node names the members that entail
+the condition, and those members are asserted to be a subset of the published core
+-- a step resting on something outside it would break the minimality the proof
+claims for its own leaves.
+
+A group that holds one requirement per case is a conjunction, and no single fact
+can imply the whole of it -- so an input restating one of those requirements uses
+``core_binding_unit`` instead.  The same two directions are refuted, against that
+one requirement rather than against the group, and the node names which one it was
+through ``unit_index`` beside ``unit_count``.  The pair is what lets a reader see
+the proportion covered: "requirement 5 of 12" says something that "the transition
+relation" does not.  A fact equivalent to two requirements identifies neither, so
+the binding is refused rather than resolved -- an index a reader cannot rely on is
+worse than no index.
+
+The step relations are the only groups that decompose this way, so a query whose
+core rests on one of their cases is where the pair is published: such an input
+carries ``core_binding_unit`` while the other members of the same core carry
+``core_binding``, and the node names which requirement of the relation the case
+restated.  The pair reaches a consumer of the JSON result; the terminal report
+carries each node's sentence rather than how it was checked.  For a while the pair
+was defined and never published, because the
+attribution stopped at the binding check and never reached the node -- a gap that
+read from the outside exactly like a method no query could produce.
 
 The boundary is therefore: **a reader may trust that each sentence follows from
 the core members named beside it, and may not trust that the encoding faithfully
@@ -399,14 +423,30 @@ built without the intermediate facts would lose.  A reader chasing a cross-step
 conflict is better served by ``formal`` today, and the report says so in its
 ``reason`` line rather than leaving them to wonder.
 
-Two further rules are out of reach for the same reason, one step removed.
-``equality_substitution`` needs a derived fact to substitute into, and
-``arithmetic_evaluation`` needs an ``arithmetic_expression`` fact -- which only
-``transition_assignment`` produces.  The translation from core members to proof
-facts emits four kinds, and that is not one of them, so both chains are missing
-their first link rather than their last.  This is why the catalog can be closed
-and complete while four of its nine rules never fire: they are the ones whose
-premises no core member can state.
+Three rules were out of reach for one shared reason until recently, and the account
+is kept here because the shape it describes is still what a reader meets.  A case
+publishes the assignment it makes, but the assignment holds *where the case
+applies*, and the evaluation rule refuses an expression carrying a condition --
+rightly, since "``x`` increases by one under C" together with "``x`` is 0" does not
+give "``x`` is 1" unless C is established.  Nothing established it, so
+``transition_assignment`` had no usable premise, and ``equality_substitution`` and
+``arithmetic_evaluation`` waited one step further back on the
+``arithmetic_expression`` it produces.
+
+``case_condition_entailment`` establishes it.  The condition is proved from the core
+members themselves rather than from their published facts -- the members that put the
+machine in the state a case names include the step relation that got it there, and a
+step relation publishes as ``structural_constraint``, content no reader sees.  So the
+solver does that step, the node cites the members it used, and it records
+``solver_entailment`` rather than ``rule_checker`` because no predicate over the
+premises could have settled it.  The translation from core members to proof facts
+emits seven kinds and none of them is an ``arithmetic_expression``, so that fact
+still has exactly one producer and the chain still starts where it always would
+have -- what changed is that the first link now carries no condition.  Zero of its
+twelve rules never fire, and the
+paragraphs above still describe the conflicts that have no proof: those are the ones
+whose *facts* no core member states, which is a different shortage from the one this
+rule filled.
 
 A second boundary is narrower.  An event assumption is published as a
 ``structural_constraint`` fact: the core member is known and located, but its

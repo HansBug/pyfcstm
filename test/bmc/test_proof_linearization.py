@@ -352,3 +352,29 @@ def test_the_two_readings_of_one_state_agree(names) -> None:
 
     spelling = formal.split("state ", 1)[1].rstrip(".")
     assert "state %s is ruled out" % spelling in reading, (reading, formal)
+
+
+@pytest.mark.unittest
+def test_every_rule_that_closes_a_proof_says_how_it_closed() -> None:
+    """A contradiction the catalog can reach has a sentence naming it.
+
+    The lookup falls back to a generic clause, so a closing rule added without an
+    entry still produces readable prose -- it just stops naming the contradiction,
+    and that degradation is invisible from the rule's own tests and from any report
+    a reader would think to check.  The catalog is the authority here rather than a
+    list, for the same reason the search derives its closing set from it: a literal
+    copy is what goes stale.
+    """
+    from pyfcstm.bmc.proof_rules import PROOF_RULES
+    from pyfcstm.bmc.proof_text import _CLOSING_PHRASES
+
+    closing = {
+        rule_id
+        for rule_id, rule in PROOF_RULES.items()
+        if rule.conclusion_kind == "false"
+    }
+
+    assert closing, "the catalog is expected to contain rules that close a proof"
+    assert closing <= set(_CLOSING_PHRASES), "no closing sentence for %s" % sorted(
+        closing - set(_CLOSING_PHRASES)
+    )

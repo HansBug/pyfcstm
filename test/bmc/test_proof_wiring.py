@@ -263,6 +263,104 @@ def test_a_definedness_conflict_reaches_the_proof_tier() -> None:
 
 
 @pytest.mark.unittest
+def test_an_assignment_a_transition_makes_binds_to_the_requirement_it_states() -> None:
+    """A step relation's assignment is now bindable, one requirement at a time.
+
+    Two of the catalog's rules speak about a transition, and both were unreachable
+    while the step relation published no content: a premise no query can produce is
+    a rule that passes its own tests and never runs.  The member now publishes the
+    assignment it makes, and the binding proves that reading equivalent to exactly
+    one requirement of the group -- which is what ``core_binding`` reaching
+    ``complete`` here reports.  Before, the member was ``structural_constraint``,
+    no encoder existed for it, and this phase ended ``unknown``.
+
+    The discharge has since landed, and this is the test that recorded the boundary
+    before it did: a published case was conditional, the rule that evaluates an
+    expression refused one carrying a condition, and the chain waited.  The note here
+    said that when the discharge arrived ``proof_construction`` would become
+    ``complete`` and the last two assertions would be what changed.  They are the two
+    below, and they now assert the reached depth rather than the refusal -- kept
+    rather than deleted, because the earlier assertions about the binding are the
+    same either way and a test that only ever passed under the old behaviour would
+    have taken them with it.
+
+    ``case_condition_entailment`` discharges the condition against the members that
+    establish it, verified by the solver rather than by the rule checker, and the
+    chain closes through ``transition_assignment`` into the arithmetic rules.
+    """
+    machine = load_state_machine_from_text(_MODEL, "machine.fcstm")
+    context = BmcEngine(machine).prepare(
+        'init state("Root.A") where x == 0;\n'
+        'assume at 1: var("x") == 5;\n'
+        'check reach <= 1: active("Root.B");\n',
+        query_source_path="query.fbmcq",
+    )
+    result = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="proof",
+    )
+
+    ledger = {check.name: check for check in result.feasibility.refinement_checks}
+    assert ledger["core_binding"].status == "complete"
+    assert ledger["core_binding"].reason is None
+    explanation = result.feasibility.explanation
+    assert any(
+        item.normalized_fact.get("kind") == "transition_case"
+        for item in explanation.core.items
+    ), [item.normalized_fact.get("kind") for item in explanation.core.items]
+    assert explanation.achieved_mode == "proof"
+    assert "case_condition_entailment" in {
+        node.rule_id for node in explanation.proof.nodes
+    }
+
+
+@pytest.mark.unittest
+def test_an_event_opposition_reaches_the_proof_tier() -> None:
+    """The rule that closes over a proposition and its complement, end to end.
+
+    This was verified on the command line before it was verified by a test, which is
+    the same gap in the other direction from the usual one: a suite can be green while
+    production is wrong, and production can be right along a path no test walks.  The
+    binding branch a proposition takes -- its subject is the group's own boolean, not a
+    frame symbol -- ran only under the CLI until this existed, so a regression in it
+    would have gone unreported.
+
+    Form one rather than form two: an event assumption encodes to a single boolean, so
+    the fact and its group are equivalent in both directions and none of the
+    conjunctive-unit machinery is involved.
+    """
+    machine = load_state_machine_from_text(
+        "def int a = 0;\nstate Root { state A; state B; [*]->A; A->B :: Go; B->[*]; }",
+        "machine.fcstm",
+    )
+    context = BmcEngine(machine).prepare(
+        'assume event("Root.A.Go", 0) == true;\n'
+        'assume event("Root.A.Go", 0) == false;\n'
+        'check reach <= 2: active("Root.B");\n',
+        query_source_path="query.fbmcq",
+    )
+    result = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="proof",
+    )
+    explanation = result.feasibility.explanation
+
+    assert explanation.achieved_mode == "proof"
+    assert explanation.proof.nodes[-1].rule_id == "boolean_complement"
+    assert [node.verification_method for node in explanation.proof.nodes] == [
+        "core_binding",
+        "core_binding",
+        "rule_checker",
+    ], [node.verification_method for node in explanation.proof.nodes]
+    identities = {
+        node.conclusion.get("identity")
+        for node in explanation.proof.nodes
+        if node.kind == "input"
+    }
+    assert identities == {"Root.A.Go@0"}, identities
+
+
+@pytest.mark.unittest
 def test_a_member_no_fact_was_read_from_blocks_publication() -> None:
     """Coverage is judged against the core, not against what could be translated.
 
@@ -546,7 +644,7 @@ def test_a_binding_that_runs_out_of_time_is_reported_as_a_timeout() -> None:
     spent = _SolveBudget(1)
     spent.deadline = time.monotonic() - 1.0
 
-    held, record = check_core_bindings(core, facts, spent)
+    held, record, _ = check_core_bindings(core, facts, spent)
 
     assert held is False
     assert record.status == "timeout", record.reason
@@ -578,7 +676,7 @@ def test_nothing_to_bind_is_reported_as_unestablished_rather_than_complete() -> 
     )
     core = build_bmc_core_formula(context)
 
-    held, record = check_core_bindings(core, (), _SolveBudget(None))
+    held, record, _ = check_core_bindings(core, (), _SolveBudget(None))
 
     assert held is False, "an empty binding establishes nothing"
     assert record.status == "unknown"
@@ -670,6 +768,13 @@ def test_a_core_holding_a_structural_member_cannot_reach_the_proof_tier() -> Non
     group in both directions.  A contentless fact cannot be equivalent to a macro-step
     relation, so a core holding one degrades however many recognizers are added.
 
+    The effect below assigns *two* variables, which is what makes its step keep the
+    structural tag: the reading a step publishes is one assignment, and a step that
+    makes two has no single one to name.  Declining is the honest answer there --
+    publishing either assignment as though it were the step's reading would hide the
+    other.  A step that makes exactly one assignment does get a content reading, so
+    that shape is pinned in ``test_provenance`` instead of here.
+
     The transition chain below is the shape this matters for, and it is worth pinning
     rather than leaving as an apparent gap: the ``formal`` tier answers the question
     the query asks -- the prefix forces the counter to one -- and the proof tier says
@@ -677,8 +782,9 @@ def test_a_core_holding_a_structural_member_cannot_reach_the_proof_tier() -> Non
     """
     machine = load_state_machine_from_text(
         "def int retries = 0;\n"
+        "def int spare = 0;\n"
         "state Root { state Igniting; state Purge; [*] -> Igniting;\n"
-        "    Igniting -> Purge effect { retries = retries + 1; }; }",
+        "    Igniting -> Purge effect { retries = retries + 1; spare = spare + 2; }; }",
         "machine.fcstm",
     )
     context = BmcEngine(machine).prepare(
@@ -958,3 +1064,1001 @@ def test_an_input_node_restates_one_member_and_says_so(query) -> None:
     for node in explanation.proof.nodes:
         if node.kind != "input":
             assert node.verification_method in ("rule_checker", "solver_entailment")
+
+
+#: A machine whose step relation reads as one case, so a proof can use it.
+#:
+#: Two transitions leave ``A`` and only the first assigns, which is what lets the
+#: step group publish a readable case rather than degrading to a structural
+#: constraint.  The second is unreachable in the encoding -- an unguarded transition
+#: declared first takes priority -- and that is exactly why the case's condition is
+#: the state alone: nothing else has to hold for the assignment to.
+_CASE_MODEL = """
+def int x = 0;
+
+state Root {
+    state A;
+    state B;
+
+    [*] -> A;
+    A -> A effect { x = x + 1; };
+    A -> B;
+}
+"""
+
+
+def _explain_case_model(query: str, mode: str = "proof", **kwargs):
+    """Run one query against the readable-case machine and return the explanation."""
+    machine = load_state_machine_from_text(_CASE_MODEL, "machine.fcstm")
+    context = BmcEngine(machine).prepare(query, query_source_path="query.fbmcq")
+    result = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation=mode,
+        **kwargs,
+    )
+    return result.feasibility
+
+
+@pytest.mark.unittest
+def test_a_discharged_case_carries_the_arithmetic_chain_to_a_contradiction() -> None:
+    """The whole chain, end to end, over a query a user can write.
+
+    Three rules waited on this one.  A case states what it assigns *where the case
+    applies*, and until the condition could be discharged the assignment was
+    unusable: the evaluation rule refuses an expression carrying a condition, so the
+    chain had no second step and ``transition_assignment``,
+    ``arithmetic_evaluation`` and ``equality_substitution`` were unreachable by any
+    query at all.  Two of the three fire in the chain below; the third needs an
+    operand that is still a name, which this machine's literal ``+ 1`` cannot
+    produce, so it has a fixture of its own further down.  The discharge is a solver
+    step rather than a rule check because
+    the members that establish the condition include one no reader can see -- the
+    step relation that puts the machine in the state, which publishes as a
+    structural constraint.
+    """
+    feasibility = _explain_case_model(
+        'assume at 2: var("x") == 1;\n'
+        'assume at 3: var("x") == 0;\n'
+        'check reach <= 3: active("Root.A");\n'
+    )
+    explanation = feasibility.explanation
+
+    assert explanation.achieved_mode == "proof"
+    assert explanation.status == "complete"
+    assert explanation.proof.verification_status == "verified"
+    assert [node.rule_id for node in explanation.proof.nodes] == [
+        "source_fact",
+        "source_fact",
+        "source_fact",
+        "case_condition_entailment",
+        "transition_assignment",
+        "arithmetic_evaluation",
+        "incompatible_equalities",
+    ]
+    discharge = next(
+        node
+        for node in explanation.proof.nodes
+        if node.rule_id == "case_condition_entailment"
+    )
+    assert discharge.kind == "derived"
+    assert discharge.verification_method == "solver_entailment"
+    assert "condition" not in discharge.conclusion
+
+
+@pytest.mark.unittest
+def test_a_discharge_cites_only_members_of_the_published_core() -> None:
+    """The entailment names where the condition came from, and stays inside the core.
+
+    A node citing something outside the core would break the subset-minimality the
+    proof claims for its own leaves: the reader is told these members and no others
+    carry the contradiction.  The citation is also the only place the condition's
+    origin is visible, so it has to be the members that actually establish it rather
+    than every member that happened to be present.
+    """
+    feasibility = _explain_case_model(
+        'assume at 2: var("x") == 1;\n'
+        'assume at 3: var("x") == 0;\n'
+        'check reach <= 3: active("Root.A");\n'
+    )
+    explanation = feasibility.explanation
+    members = {item.constraint.stable_id for item in explanation.core.items}
+    discharge = next(
+        node
+        for node in explanation.proof.nodes
+        if node.rule_id == "case_condition_entailment"
+    )
+
+    assert set(discharge.item_ids) <= members
+    assert "transition.step.0000" in discharge.item_ids
+    assert "initial.target" in discharge.item_ids
+
+
+@pytest.mark.unittest
+def test_the_ledger_reports_the_discharge_phase_that_ran() -> None:
+    """A phase a caller pays for is a phase they can see in the ledger."""
+    feasibility = _explain_case_model(
+        'assume at 2: var("x") == 1;\n'
+        'assume at 3: var("x") == 0;\n'
+        'check reach <= 3: active("Root.A");\n'
+    )
+    names = [check.name for check in feasibility.refinement_checks]
+
+    assert "case_condition" in names
+    assert names.index("case_condition") < names.index("proof_construction")
+
+
+@pytest.mark.unittest
+def test_a_case_input_publishes_the_requirement_it_was_bound_against() -> None:
+    """An input bound against one requirement says so, and says which one.
+
+    A step relation holds one requirement per case, and a case fact restates exactly
+    one of them -- it cannot imply the whole group, so the binding check proves it
+    equivalent to a single unit and records which.  Publishing ``core_binding`` for
+    such an input claims the group's whole equivalence, which is not what was
+    checked; the reader is told "the transition relation" and left to find the part
+    that mattered.  The binding check's own comment promised the attribution would
+    travel with the node, and the orchestration dropped it on the floor.
+    """
+    feasibility = _explain_case_model(
+        'assume at 2: var("x") == 1;\n'
+        'assume at 3: var("x") == 0;\n'
+        'check reach <= 3: active("Root.A");\n'
+    )
+    inputs = [
+        node for node in feasibility.explanation.proof.nodes if node.kind == "input"
+    ]
+    cases = [node for node in inputs if node.conclusion["kind"] == "transition_case"]
+    assumptions = [
+        node for node in inputs if node.conclusion["kind"] == "variable_equality"
+    ]
+
+    assert cases, "the fixture is meant to publish a case input"
+    for node in cases:
+        assert node.verification_method == "core_binding_unit"
+        assert node.unit_count is not None and node.unit_count >= 1
+        assert 0 <= node.unit_index < node.unit_count
+    # A whole-group binding is still published as one: the distinction is the point.
+    for node in assumptions:
+        assert node.verification_method == "core_binding"
+        assert node.unit_index is None
+        assert node.unit_count is None
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    ("mode", "expected_mode"),
+    [("formal", "formal"), ("proof", "proof")],
+)
+def test_a_tier_is_attempted_only_when_it_was_asked_for(mode, expected_mode) -> None:
+    """Depth is what the caller requested, never more.
+
+    A caller who asks for a formal explanation is asking for a cheaper artifact, and
+    the published contract refuses one deeper than the request.  So the proof tier
+    has to be gated on the request, not only on whether the formal artifact is solid
+    enough to carry a proof: this core is solid but its narrative falls short, so the
+    complete-formal return does not fire, and an ungated deeper tier picked the query
+    up on its way past and delivered proof depth to a formal request -- rejected by
+    the delivery check as an exception rather than an explanation.
+    """
+    feasibility = _explain_case_model(
+        'assume at 2: var("x") == 1;\n'
+        'assume at 3: var("x") == 0;\n'
+        'check reach <= 3: active("Root.A");\n',
+        mode=mode,
+    )
+    explanation = feasibility.explanation
+
+    assert explanation.requested_mode == mode
+    assert explanation.achieved_mode == expected_mode
+
+
+#: A machine that adds a variable rather than a literal, so the operand is a name.
+#:
+#: The distinction is the whole subject of ``equality_substitution``: an expression
+#: whose operand still stands as a symbol has no value to evaluate, and that rule is
+#: what supplies one.  Reaching it needs an assignment whose right-hand side names a
+#: second variable, which the literal-operand machine above cannot produce.
+_OPERAND_VARIABLE_MODEL = """
+def int x = 0;
+def int y = 2;
+
+state Root {
+    state A;
+    state B;
+
+    [*] -> A;
+    A -> A effect { x = x + y; };
+    A -> B;
+}
+"""
+
+
+def _explain_operand_variable_model(query: str, **kwargs):
+    """Run one query against the variable-operand machine and return the outcome."""
+    machine = load_state_machine_from_text(_OPERAND_VARIABLE_MODEL, "machine.fcstm")
+    context = BmcEngine(machine).prepare(query, query_source_path="query.fbmcq")
+    result = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="proof",
+        **kwargs,
+    )
+    return result.feasibility
+
+
+@pytest.mark.unittest
+def test_an_operand_still_named_does_not_raise_out_of_the_search() -> None:
+    """A proposal and its checker have to read an operand the same way.
+
+    The checker refused an expression whose operand still stands as a symbol, and
+    said in its own comment what would happen otherwise: ``_evaluate`` would add
+    ``None`` to a number.  The proposal did not make the same refusal, so the search
+    built that call itself and raised out of a public solve -- not a degraded
+    explanation, an exception.  The two sides now ask one shared question.
+
+    What the crash was hiding is the substitution step itself: it is the only rule
+    that can turn a named operand into a value, so it stood behind the raise and no
+    query reached it.  The chain below is where it fires.
+    """
+    feasibility = _explain_operand_variable_model(
+        'assume at 1: var("x") == 0;\n'
+        'assume at 1: var("y") == 2;\n'
+        'assume at 2: var("x") == 1;\n'
+        'check reach <= 3: active("Root.A");\n'
+    )
+    explanation = feasibility.explanation
+
+    assert explanation.achieved_mode == "proof"
+    assert explanation.status == "complete"
+    assert explanation.proof.verification_status == "verified"
+    assert [node.rule_id for node in explanation.proof.nodes] == [
+        "source_fact",
+        "source_fact",
+        "source_fact",
+        "source_fact",
+        "case_condition_entailment",
+        "transition_assignment",
+        "equality_substitution",
+        "arithmetic_evaluation",
+        "incompatible_equalities",
+    ]
+    substitution = next(
+        node
+        for node in explanation.proof.nodes
+        if node.rule_id == "equality_substitution"
+    )
+    assert "operand_variable" not in substitution.conclusion
+    assert substitution.conclusion["operand"] == 2
+
+
+#: A machine whose case applies only under a guard, so its condition is not free.
+#:
+#: The guard is what makes the second transition reachable: with ``x >= 2`` the
+#: self-loop cannot fire and the machine leaves ``A``, so neither the state at the
+#: next frame nor the guard is settled by the prefix alone.  A case here carries a
+#: two-member condition and the core does not force it.
+_GUARDED_CASE_MODEL = """
+def int x = 0;
+
+state Root {
+    state A;
+    state B;
+
+    [*] -> A;
+    A -> A : if [x < 2] effect { x = x + 1; };
+    A -> B;
+}
+"""
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "assumptions, expected_mode",
+    [
+        # The core here keeps a step whose relation has no readable assignment, and
+        # no citation covers it, so the contradiction cannot rest on every member.
+        (
+            'assume at 2: var("x") == 1;\nassume at 3: var("x") == 0;\n',
+            "formal",
+        ),
+        # This core's members are all either readable or reachable by a citation, so
+        # the guard stops being what holds the depth back.
+        ('assume at 3: var("x") == 5;\n', "proof"),
+    ],
+    ids=["an_unreadable_step_in_the_core", "every_member_accounted_for"],
+)
+@pytest.mark.unittest
+def test_a_guarded_case_holds_the_depth_back_only_while_a_member_is_unaccounted_for(
+    assumptions: str, expected_mode: str
+) -> None:
+    """What a guard costs, separated from what an unreadable member costs.
+
+    This asserted that a guarded case leaves the artifact at ``formal``, for both
+    queries, and the reason it gave was the guard: a guard leaves the state at the next
+    frame and the guard's own value unsettled, so ``transition_assignment`` never gets a
+    value fact at the case's frame.  The first half of that survived the catalog gaining
+    a rule that supplies exactly such a value by entailment; the attribution did not.
+    The guard was never what held the second query back on its own.
+
+    The two cores differ in something else, and that is what decides the depth.  The
+    first keeps a step relation with no readable assignment and no citation reaching it,
+    so the coverage requirement refuses the proof -- the honest outcome, and the same
+    boundary a reader meets whenever a core member has no account.  In the second every
+    member is either read or cited, and the chain closes.
+
+    Both ids assert the published condition count as well, because a fixture that
+    stopped publishing a guarded condition would test neither thing.
+
+    :param assumptions: The query's assumption lines.
+    :type assumptions: str
+    :param expected_mode: The depth this core is expected to reach.
+    :type expected_mode: str
+    """
+    machine = load_state_machine_from_text(_GUARDED_CASE_MODEL, "machine.fcstm")
+    context = BmcEngine(machine).prepare(
+        assumptions + 'check reach <= 3: active("Root.A");\n',
+        query_source_path="query.fbmcq",
+    )
+    feasibility = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="proof",
+    ).feasibility
+    explanation = feasibility.explanation
+
+    published = [item.normalized_fact or {} for item in explanation.core.items]
+    conditions = [
+        len(fact.get("condition") or ())
+        for fact in published
+        if fact.get("kind") == "transition_case"
+    ]
+
+    assert conditions and all(count >= 2 for count in conditions), (
+        "the fixture must publish a case whose condition names both the state and "
+        "the guard, or it is not testing the refusal"
+    )
+    assert explanation.achieved_mode == expected_mode
+
+    if expected_mode == "formal":
+        assert explanation.proof is None
+        assert {fact.get("kind") for fact in published} & {"structural_constraint"}, (
+            "this id exists for the core that keeps a member no fact was read from"
+        )
+    else:
+        assert explanation.proof is not None
+        assert explanation.proof.verification_status == "verified"
+
+
+@pytest.mark.unittest
+def test_a_published_condition_only_names_readings_the_discharge_shares() -> None:
+    """Publication and the discharge read a condition the same two ways.
+
+    The discharge refuses a condition slot it cannot encode, and that guard is never
+    reached -- not because the shape is rare but because publication already declined
+    it: a conjunct neither a state equality nor a variable comparison makes the whole
+    case fall back to ``structural_constraint``.  The agreement is what makes the
+    guard a property rather than a coincidence, so it is asserted here rather than
+    left to the two functions happening to stay in step.
+
+    Written as an assertion over what a real query publishes, because that is where
+    the two readings meet.  Forging a condition to reach the guard would prove the
+    guard runs, which was never in doubt, and not the thing that matters.
+    """
+    feasibility = _explain_case_model(
+        'assume at 2: var("x") == 1;\n'
+        'assume at 3: var("x") == 0;\n'
+        'check reach <= 3: active("Root.A");\n'
+    )
+    conditions = [
+        member
+        for item in feasibility.explanation.core.items
+        for member in ((item.normalized_fact or {}).get("condition") or ())
+    ]
+
+    assert conditions, "the fixture must publish at least one condition"
+    assert {member.get("kind") for member in conditions} <= {
+        "state_membership",
+        "variable_comparison",
+    }
+
+
+#: The model from the motivating issue, whose update lives in a ``during`` action.
+#:
+#: Every fixture above puts its assignment on a transition's ``effect``.  This one is
+#: how the issue's own reporter wrote it -- the state carries a ``during`` block, and
+#: the event-triggered entry plus the unconditional exit give the step relations a
+#: different shape.  Both are ordinary FCSTM, and only the first shape was ever
+#: exercised, which is how a reachability claim came to rest on the easier one.
+_DURING_ACTION_MODEL = """
+def int retries = 0;
+
+state Uploader {
+    event Fail;
+
+    state Idle;
+    state Retrying {
+        during {
+            retries = retries + 1;
+        }
+    }
+    state GaveUp;
+
+    [*] -> Idle;
+    Idle -> Retrying :: Fail;
+    Retrying -> GaveUp;
+}
+"""
+
+
+def _explain_during_model(query: str, mode: str = "proof"):
+    """Run one query against the ``during``-action machine and return the outcome."""
+    machine = load_state_machine_from_text(_DURING_ACTION_MODEL, "retry.fcstm")
+    context = BmcEngine(machine).prepare(query, query_source_path="query.fbmcq")
+    result = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation=mode,
+    )
+    return result.feasibility
+
+
+@pytest.mark.unittest
+def test_an_event_driven_during_action_closes_within_one_step() -> None:
+    """The chain closes for an update written as a ``during`` action.
+
+    Every other fixture here puts its assignment on a transition's ``effect``.  This
+    model is how the motivating issue's reporter wrote it, and three things kept it
+    from closing -- none of them a missing capability.
+
+    The entry step's case condition names the event that triggers it, and the
+    condition reader knew two readings, state membership and variable comparison,
+    while the event reading it needed already existed one function away in the
+    proposition publisher.  The binding side then had to learn the same reading, or
+    the fact named a symbol "the group does not mention".  And the step read *two*
+    assignments where the publisher requires exactly one: the second is the fallback
+    case for "in this state and no transition applies", whose condition reduces to
+    ``s == state and not s == state`` and therefore never holds.  A case that cannot
+    apply says nothing about the step, so counting it hid the one that does.
+
+    The contradiction here is inside one step, which is the part that now works.  The
+    issue's own query puts it a frame later, and that needs something this catalog
+    does not have -- see the test below.
+    """
+    feasibility = _explain_during_model(
+        'init state("Uploader.Idle") where retries == 0;\n'
+        'assume at 1: active("Uploader.Retrying");\n'
+        'assume at 1: var("retries") == 0;\n'
+        'check reach <= 2: active("Uploader.GaveUp");\n'
+    )
+    explanation = feasibility.explanation
+
+    assert explanation.achieved_mode == "proof"
+    assert explanation.status == "complete"
+    assert [node.rule_id for node in explanation.proof.nodes] == [
+        "source_fact",
+        "source_fact",
+        "source_fact",
+        "case_condition_entailment",
+        "transition_assignment",
+        "arithmetic_evaluation",
+        "incompatible_equalities",
+    ]
+
+
+@pytest.mark.unittest
+def test_a_value_a_step_leaves_alone_still_reaches_the_next_frame() -> None:
+    """A contradiction spanning a step that only preserves the variable closes.
+
+    This test's subject is the boundary it used to pin.  It asserted that the answer
+    degrades here, on the reasoning that the step from frame 1 to frame 2 only carries
+    ``retries`` forward, that the published reading declines a requirement saying
+    "x becomes x", and that closing it therefore needed a fact kind for "this step
+    leaves the variable alone".  The reasoning was right about the reading and wrong
+    about the only way out: what the step will not *say* it still *constrains*, and
+    a constraint is something the solver tier can be asked about.
+
+    The chain is longer than the frame-1 case by exactly the step it crosses, and the
+    citation names that step.  It does not necessarily name the frame's own state
+    requirement, which is worth writing down because the first draft of this test
+    asserted that it would: the step relation alone does not force the value, so
+    something has to select the preserving case, but which members do the selecting is
+    whatever the deletion pass keeps.  Here it keeps the initial value and the first
+    step rather than the state assumption -- a different set, equally sufficient.  The
+    shrink is greedy, not minimum-cardinality, so pinning one particular set would pin
+    the deletion order instead of the property.
+    """
+    query = (
+        'init state("Uploader.Idle") where retries == 0;\n'
+        'assume at 1: active("Uploader.Retrying");\n'
+        'assume at %d: var("retries") == 0;\n'
+        'check reach <= 2: active("Uploader.GaveUp");\n'
+    )
+    within_one_step = _explain_during_model(query % 1).explanation
+    across_a_step = _explain_during_model(query % 2).explanation
+
+    for reading in (within_one_step, across_a_step):
+        assert reading.achieved_mode == "proof"
+        assert reading.proof is not None
+        assert reading.proof.verification_status == "verified"
+
+    carried = [
+        node
+        for node in across_a_step.proof.nodes
+        if node.rule_id == "preceding_value_entailment"
+    ]
+    assert len(carried) == 1, "the crossing is expected to take exactly one carry"
+    assert carried[0].verification_method == "solver_entailment"
+    assert len(across_a_step.proof.nodes) > len(within_one_step.proof.nodes)
+
+    # The step being crossed is what the carry is about, so it is cited whatever else
+    # the shrink keeps.  The set is also a strict subset of the core: a carry citing
+    # every member would be the vacuous case the consistency guard exists to refuse.
+    cited = set(carried[0].item_ids)
+    members = {item.constraint.stable_id for item in across_a_step.core.items}
+
+    assert "transition.step.0001" in cited
+    assert cited < members
+
+
+@pytest.mark.unittest
+def test_a_published_event_names_the_path_its_author_wrote() -> None:
+    """A proposition identity spells the declared path, not the symbol's body.
+
+    The encoder's symbol body replaces a path's dots, so a name recovered from it
+    reads ``Uploader_Idle_Fail`` where the author wrote ``Uploader.Idle.Fail``.  The
+    domain's own event table is the authority, and this asserts against that table
+    rather than against a literal: a published identity whose subject the domain does
+    not declare is one the reader cannot look up and a rule cannot match, and the two
+    readings of one symbol lived one function apart.
+    """
+    machine = load_state_machine_from_text(_DURING_ACTION_MODEL, "retry.fcstm")
+    context = BmcEngine(machine).prepare(
+        'init state("Uploader.Idle") where retries == 0;\n'
+        'assume at 1: active("Uploader.Retrying");\n'
+        'assume at 2: var("retries") == 0;\n'
+        'check reach <= 2: active("Uploader.GaveUp");\n',
+        query_source_path="query.fbmcq",
+    )
+    core = build_bmc_core_formula(context)
+    declared = {entry["path"] for entry in core.context.domain.to_canonical()["events"]}
+    feasibility = solve_bmc_property(
+        compile_bmc_property(core), infeasibility_explanation="proof"
+    ).feasibility
+
+    published = []
+    for item in feasibility.explanation.core.items:
+        fact = item.normalized_fact or {}
+        candidates = [fact] + list(fact.get("condition") or ())
+        published.extend(
+            entry["identity"]
+            for entry in candidates
+            if entry.get("kind") == "proposition"
+        )
+
+    assert published, "the query was chosen because its core carries an event"
+    for identity in published:
+        subject, _, step = identity.rpartition("@")
+        assert subject in declared, (
+            "published %r names %r, which the domain does not declare; it declares %s"
+            % (identity, subject, sorted(declared))
+        )
+        assert step.isdigit()
+
+    # Membership in the table is not enough on its own: with two events whose paths
+    # differ only in where the dots fall, the other one is also declared, so a
+    # subject picked wrongly would still pass the loop above.  This names the event
+    # the transition under test is triggered by.
+    assert {identity.rpartition("@")[0] for identity in published} == {
+        "Uploader.Idle.Fail"
+    }
+
+    # The other publishing entrance, on the same model.  A bare event assumption is
+    # read by a different function from a condition's conjunct, and it already
+    # resolved against the table -- which is why nothing here was failing before.
+    # Nothing pinned it either, so its passing the table was untested rather than
+    # established.
+    bare = BmcEngine(machine).prepare(
+        'assume event("Uploader.Idle.Fail", 0) == true;\n'
+        'assume event("Uploader.Idle.Fail", 0) == false;\n'
+        'check reach <= 1: active("Uploader.GaveUp");\n',
+        query_source_path="query.fbmcq",
+    )
+    opposed = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(bare)),
+        infeasibility_explanation="proof",
+    ).feasibility.explanation
+
+    assert {
+        (item.normalized_fact or {}).get("identity")
+        for item in opposed.core.items
+        if (item.normalized_fact or {}).get("kind") == "proposition"
+    } == {"Uploader.Idle.Fail@0"}
+
+
+#: Two events whose paths differ only in where the dots fall.
+#:
+#: The encoder's symbol body replaces the dots, so both collapse to one name and a
+#: reading that recovers the body cannot tell them apart.  Declaring the second one
+#: is the whole difference between the two models below: it takes part in no
+#: transition the query mentions.
+_COLLIDING_EVENT_MODEL = """
+def int x = 0;
+
+state Root {
+    state A_B {
+        state Idle {
+            event Go;
+        }
+        state Done;
+
+        [*] -> Idle;
+        Idle -> Done :: Go effect {
+            x = x + 1;
+        }
+    }
+%s
+    [*] -> A_B;
+}
+"""
+
+_UNRELATED_EVENT_DECLARATION = """
+    state A {
+        state B {
+            state Idle {
+                event Go;
+            }
+            [*] -> Idle;
+        }
+        [*] -> B;
+    }
+"""
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "extra", ["", _UNRELATED_EVENT_DECLARATION], ids=["alone", "with_a_namesake"]
+)
+def test_an_event_a_query_never_mentions_does_not_change_the_answer(extra: str) -> None:
+    """Declaring an unrelated event leaves the proof this query gets untouched.
+
+    The second declaration takes part in no transition the query mentions, so the
+    core is the same core and the chain that closes it is the same chain.  What it
+    does share is the name the encoder's symbol body collapses to, and a reading
+    that recovers a subject from that body rather than from the domain's table would
+    file both events under one key -- which is not a wrong sentence in the output but
+    a proof that stops closing, because the premise gets filed where the rule does
+    not look for it.
+
+    The two ids do different jobs, and only one of them fails on a body reading:
+    ``alone`` is the control that this model and query close at all, ``with_a_namesake``
+    is the assertion about the collapse.  Neither is decoration -- withholding the
+    discharge fails both.
+    """
+    machine = load_state_machine_from_text(
+        _COLLIDING_EVENT_MODEL % extra, "collide.fcstm"
+    )
+    context = BmcEngine(machine).prepare(
+        'init state("Root.A_B.Idle") where x == 0;\n'
+        'assume at 1: active("Root.A_B.Idle");\n'
+        'assume event("Root.A_B.Idle.Go", 1) == true;\n'
+        'assume at 1: var("x") == 0;\n'
+        'assume at 2: var("x") == 0;\n'
+        'check reach <= 2: active("Root.A_B.Done");\n',
+        query_source_path="query.fbmcq",
+    )
+    explanation = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="proof",
+    ).feasibility.explanation
+
+    assert explanation.achieved_mode == "proof"
+    assert explanation.status == "complete"
+    assert "case_condition_entailment" in {
+        node.rule_id for node in explanation.proof.nodes if node.rule_id
+    }
+
+
+#: The four queries the motivation for this catalog work states expectations for.
+#:
+#: Written out here rather than referenced, because the point of the table is that
+#: each shape closes: an arithmetic chain crossing a step, an event opposition, a
+#: state opposition, and a same-frame value conflict as the control.
+_CLOSING_QUERIES = {
+    "an_arithmetic_chain_across_a_step": (
+        'init state("Uploader.Idle") where retries == 0;\n'
+        'assume at 1: active("Uploader.Retrying");\n'
+        'assume at 2: var("retries") == 0;\n'
+        'check reach <= 2: active("Uploader.GaveUp");\n',
+        "preceding_value_entailment",
+    ),
+    "an_event_demanded_and_ruled_out": (
+        'assume event("Uploader.Fail", 0) == true;\n'
+        'assume event("Uploader.Fail", 0) == false;\n'
+        'check reach <= 2: active("Uploader.GaveUp");\n',
+        "boolean_complement",
+    ),
+    "a_state_demanded_and_ruled_out": (
+        'assume at 1: active("Uploader.Retrying");\n'
+        'assume at 1: !active("Uploader.Retrying");\n'
+        'check reach <= 2: active("Uploader.GaveUp");\n',
+        "excluded_state_selected",
+    ),
+    "one_frame_two_values": (
+        'init state("Uploader.Idle") where retries == 0;\n'
+        'assume at 0: var("retries") == 1;\n'
+        'check reach <= 2: active("Uploader.GaveUp");\n',
+        "incompatible_equalities",
+    ),
+}
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "query, closer",
+    list(_CLOSING_QUERIES.values()),
+    ids=list(_CLOSING_QUERIES),
+)
+def test_each_shape_the_catalog_was_extended_for_closes_at_proof_depth(
+    query: str, closer: str
+) -> None:
+    """Every shape reaches a verified proof, and the named rule is what took part.
+
+    Four shapes rather than one, and the rule is asserted rather than only the depth,
+    because reaching proof depth by a different route would satisfy the depth check
+    while leaving the rule this shape exists for unexercised -- which is the state two
+    of these were in before, reported as reachable by a closure analysis that read
+    premise kinds without running a query.
+
+    :param query: The query text.
+    :type query: str
+    :param closer: The rule expected to take part in the chain.
+    :type closer: str
+    """
+    explanation = _explain_during_model(query).explanation
+
+    assert explanation.achieved_mode == "proof"
+    assert explanation.status == "complete"
+    assert explanation.proof is not None
+    assert explanation.proof.verification_status == "verified"
+    assert closer in {node.rule_id for node in explanation.proof.nodes if node.rule_id}
+
+
+@pytest.mark.unittest
+def test_no_rule_in_the_catalog_is_left_without_a_query_that_reaches_it() -> None:
+    """The catalog has no member that only a closure analysis calls reachable.
+
+    Reachability was once read off ``premise_kinds`` alone, and four rules that the
+    reading called reachable were never lit by any query.  The record of which rules a
+    real run reaches therefore lives with the runs, not with the analysis: this asserts
+    the published set of reachable ids is the whole catalog, and the queries above plus
+    the rest of this module are what make it so.
+    """
+    from pyfcstm.bmc.proof_rules import PROOF_RULES, UNREACHABLE_RULE_IDS
+
+    assert UNREACHABLE_RULE_IDS == ()
+    assert len(PROOF_RULES) == 12
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "query",
+    [pair[0] for pair in _CLOSING_QUERIES.values()],
+    ids=list(_CLOSING_QUERIES),
+)
+def test_a_solver_settled_step_is_re_provable_from_the_members_it_cites(
+    query: str,
+) -> None:
+    """Every solver-settled step still holds when the claim is re-proved from scratch.
+
+    The phase that settles these steps decides two things -- that the cited members
+    entail the target, and that they can hold together -- and then the artifact reports
+    ``solver_entailment`` and nothing re-asks.  A shrink that stopped one deletion too
+    late, or a target encoded against the wrong symbol, would produce a step the
+    checker cannot see and the reader has no way to doubt.  So this re-asks both
+    questions with a solver of its own, over the members named in the published
+    citation and nothing else.
+
+    Satisfiability of the citation is the half that makes the other half mean anything:
+    a set that cannot hold entails every target, its own negation included.
+
+    Both kinds of solver-settled step are re-asked, and the second was added after the
+    first version skipped it.  A step that discharges a case's condition concludes a
+    fact rather than a value, so the value branch below has nothing to check for it --
+    and skipping it meant the only claim being re-verified for that step was that its
+    citation could hold, which is the weaker half.  The condition it discharged is
+    re-encoded from the premise's published facts and refuted against the citation.
+
+    :param query: The query text.
+    :type query: str
+    """
+    import z3
+
+    from pyfcstm.bmc.infeasibility import (
+        _binding_symbols,
+        _declared_variable_names,
+        _encode_condition_member,
+        _event_paths_of,
+    )
+
+    machine = load_state_machine_from_text(_DURING_ACTION_MODEL, "retry.fcstm")
+    core = build_bmc_core_formula(
+        BmcEngine(machine).prepare(query, query_source_path="query.fbmcq")
+    )
+    explanation = solve_bmc_property(
+        compile_bmc_property(core), infeasibility_explanation="proof"
+    ).feasibility.explanation
+
+    assert explanation.proof is not None
+    by_id = {node.stable_id: node for node in explanation.proof.nodes}
+    claims = {
+        group.stable_id: (
+            z3.And(*group.expressions) if group.expressions else z3.BoolVal(True)
+        )
+        for group in core._tracked_groups
+    }
+    published = [item.constraint.stable_id for item in explanation.core.items]
+    symbols = _binding_symbols(
+        z3.And(*[claims[stable_id] for stable_id in published if stable_id in claims]),
+        _declared_variable_names(core),
+        _event_paths_of(core),
+    )
+
+    for node in explanation.proof.nodes:
+        if node.verification_method != "solver_entailment":
+            continue
+        cited = [
+            claims[stable_id] for stable_id in node.item_ids if stable_id in claims
+        ]
+
+        assert cited, "a solver-settled step has to name the members it rests on"
+        together = z3.Solver()
+        together.add(*cited)
+
+        assert together.check() == z3.sat, (
+            "%s cites members that cannot hold together, which entail anything"
+            % node.rule_id
+        )
+
+        conclusion = dict(node.conclusion or {})
+        if conclusion.get("kind") == "transition_case":
+            # The claim is that the citation forces the condition this step removed,
+            # so the condition is what has to be refuted -- read off the premise,
+            # because the conclusion is the case with the key gone.
+            premises = [by_id[premise_id] for premise_id in node.premise_ids]
+
+            assert len(premises) == 1, "a discharge reads exactly one case"
+            discharged = (dict(premises[0].conclusion or {})).get("condition") or ()
+
+            assert discharged, "a discharge is expected to have removed something"
+            encoded = [
+                _encode_condition_member(dict(member), symbols) for member in discharged
+            ]
+
+            assert all(item is not None for item in encoded), (
+                "the condition this step discharged has a member no symbol matches, "
+                "so the publishing and binding readings have diverged"
+            )
+            refuted_condition = z3.Solver()
+            refuted_condition.add(*cited, z3.Not(z3.And(*encoded)))
+
+            assert refuted_condition.check() == z3.unsat, (
+                "%s discharged a condition its own citation does not force"
+                % node.rule_id
+            )
+            continue
+        if conclusion.get("kind") != "variable_equality" or conclusion.get(
+            "state_slot"
+        ):
+            continue
+        symbol = symbols.get((conclusion.get("frame"), conclusion.get("variable")))
+
+        assert symbol is not None, "the conclusion names a slot no member mentions"
+        refuted = z3.Solver()
+        refuted.add(*cited, symbol != conclusion.get("value"))
+
+        assert refuted.check() == z3.unsat, (
+            "%s concludes %r, which its own citation does not force"
+            % (node.rule_id, conclusion)
+        )
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "query",
+    [pair[0] for pair in _CLOSING_QUERIES.values()],
+    ids=list(_CLOSING_QUERIES),
+)
+def test_the_same_query_publishes_the_same_proof_every_time(query: str) -> None:
+    """One query, one proof, byte for byte.
+
+    The citation each solver-settled step publishes comes out of a deletion pass over
+    the members, so the answer depends on the order they are visited in.  That order is
+    the published member order rather than a set's iteration order, and this is what
+    holds it that way: a proof that varied between runs would make every artifact a
+    reader saved unreproducible, and the variation would show up as a flake somewhere
+    far from its cause.
+
+    What this cannot see, stated because the reverse would be assumed: three runs in
+    one process share a hash seed, and a set's iteration order is stable within a
+    process, so iterating a set of strings somewhere in the chain would produce a proof
+    that is identical here and different on the next machine.  Determinism against that
+    rests on construction instead -- every place an order is published goes through
+    ``sorted``, and the phases iterate sequences rather than sets.  Measured across four
+    ``PYTHONHASHSEED`` values in separate processes, the canonical proof was identical
+    for both shapes; that measurement is evidence and not a gate, because asserting the
+    citation is sorted would pass on these fixtures whether or not ``sorted`` were
+    there -- the published member order already happens to be alphabetical.
+
+    :param query: The query text.
+    :type query: str
+    """
+    import json
+
+    shapes = set()
+    for _ in range(3):
+        machine = load_state_machine_from_text(_DURING_ACTION_MODEL, "retry.fcstm")
+        explanation = solve_bmc_property(
+            compile_bmc_property(
+                build_bmc_core_formula(
+                    BmcEngine(machine).prepare(query, query_source_path="query.fbmcq")
+                )
+            ),
+            infeasibility_explanation="proof",
+        ).feasibility.explanation
+
+        assert explanation.proof is not None
+        shapes.add(
+            json.dumps(
+                explanation.proof.to_canonical(), sort_keys=True, ensure_ascii=False
+            )
+        )
+
+    assert len(shapes) == 1, "the proof differed between runs of one query"
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "contradicted_frame, bound, expected_mode, expected_carries",
+    [(2, 2, "proof", 1), (3, 3, "formal", 0), (4, 4, "formal", 0)],
+    ids=["one_step_away", "two_steps_away", "three_steps_away"],
+)
+def test_a_value_carries_across_one_untouched_step_and_no_further(
+    contradicted_frame: int, bound: int, expected_mode: str, expected_carries: int
+) -> None:
+    """The reach of the carry, pinned on both sides of its own boundary.
+
+    The rule that pins a value at the preceding frame concludes into a derived node,
+    and the citation seam records a verdict per member, so that conclusion cannot be
+    the premise of a second application: there is no member to record the verdict
+    against.  One step closes and two do not, and both halves are asserted here
+    because the degradation alone would be satisfied by the rule never firing at all.
+
+    Iterating would mean attributing an entailment to a subtree rather than to a
+    member, which is the shape the attribution refuses on purpose.  So this is a
+    boundary to know rather than a defect to fix, and it is written down where a
+    reader meets it.
+
+    :param contradicted_frame: The frame the contradicted assumption sits at.
+    :type contradicted_frame: int
+    :param bound: The query's bound.
+    :type bound: int
+    :param expected_mode: The depth this shape is expected to reach.
+    :type expected_mode: str
+    :param expected_carries: How many carry steps the proof is expected to hold.
+    :type expected_carries: int
+    """
+    explanation = _explain_during_model(
+        'init state("Uploader.Idle") where retries == 0;\n'
+        'assume at 1: active("Uploader.Retrying");\n'
+        'assume at %d: var("retries") == 0;\n'
+        'check reach <= %d: active("Uploader.GaveUp");\n' % (contradicted_frame, bound)
+    ).explanation
+
+    assert explanation.achieved_mode == expected_mode
+    carried = [
+        node
+        for node in (explanation.proof.nodes if explanation.proof else ())
+        if node.rule_id == "preceding_value_entailment"
+    ]
+
+    assert len(carried) == expected_carries
+    if expected_mode == "formal":
+        assert explanation.proof is None
+        assert "no rule in the catalog closes this core" in explanation.reason

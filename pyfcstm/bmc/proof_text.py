@@ -67,6 +67,9 @@ _CLOSING_PHRASES = {
         "the operation cannot stay defined on the value required here"
     ),
     "boolean_complement": ("the same requirement is both demanded and ruled out"),
+    "excluded_state_selected": (
+        "the frame is required to be in a state it also rules out"
+    ),
 }
 
 

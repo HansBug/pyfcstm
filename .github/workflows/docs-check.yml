@@ -17,6 +17,7 @@ on:
       - 'auto_rst.py'
       - 'auto_rst_top_index.py'
       - 'tools/check_docs_terminology.py'
+      - 'tools/check_bmc_docs.py'
       - '.github/scripts/detect_ci_routes.py'
       - '.readthedocs.yaml'
       - '.github/workflows/docs-check.yml'
@@ -35,6 +36,7 @@ on:
       - 'auto_rst.py'
       - 'auto_rst_top_index.py'
       - 'tools/check_docs_terminology.py'
+      - 'tools/check_bmc_docs.py'
       - '.github/scripts/detect_ci_routes.py'
       - '.readthedocs.yaml'
       - '.github/workflows/docs-check.yml'
@@ -203,6 +205,14 @@ jobs:
         shell: bash
         run: |
           NO_CONTENTS_BUILD=1 READTHEDOCS_LANGUAGE=zh sphinx-build -b html docs/source /tmp/pyfcstm-docs-check-zh
+      - name: Check BMC documentation contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          make bmc_docs_check
+          python tools/check_bmc_docs.py --check \
+            --html-root-en /tmp/pyfcstm-docs-check-en \
+            --html-root-zh /tmp/pyfcstm-docs-check-zh
       - name: Scan rendered HTML for reST markup problems
         shell: bash
         run: |

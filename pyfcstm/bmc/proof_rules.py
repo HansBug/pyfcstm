@@ -21,10 +21,11 @@ and its frame -- before it compares values, because facts about different slots
 constrain different things and never contradict each other.
 
 .. note::
-   Arithmetic is evaluated under the model's semantics rather than Python's.  The
-   two disagree on integer division of negative operands, and a proof that reported
-   Python's answer would be checking a different program than the one being
-   verified.
+   Arithmetic is evaluated under the encoder's semantics, which is what the proof is
+   about, and that holds for every operator rather than for division alone.  Reals are
+   computed exactly and published only when a decimal represents them; a quotient whose
+   operands do not settle whether the variable is an integer or a real is declined
+   rather than guessed.
 
 Example::
 
@@ -41,10 +42,13 @@ Example::
 """
 
 from dataclasses import dataclass
+from fractions import Fraction
 from typing import Any, Callable, Dict, Mapping, Tuple
 
 __all__ = [
     "PROOF_RULES",
+    "UNREACHABLE_RULE_IDS",
+    "reachable_rule_ids",
     "ProofRule",
     "RuleApplication",
     "check_rule",
@@ -303,38 +307,195 @@ def _incompatible_equalities(application: RuleApplication) -> bool:
     return premises[0].get("value") != premises[1].get("value")
 
 
+#: The operators whose answer is exact in Z3, keyed by the published operator name.
+#:
+#: Written as functions so the real and integer paths differ only in what they are
+#: handed -- two ``Fraction`` values or two ``int`` values -- rather than in a second
+#: copy of the operator table.
+_EXACT_OPERATORS = {
+    "add": lambda left, right: left + right,
+    "sub": lambda left, right: left - right,
+    "mul": lambda left, right: left * right,
+}
+
+
+def _publishable(exact: Fraction):
+    """Return an exact value as a published number, or ``None`` when it is not one.
+
+    A published fact carries a JSON number, which is a decimal.  Most rationals have no
+    finite decimal form, and reporting the nearest one would put a value in the proof
+    that the encoding does not hold -- so a value is published only when its decimal
+    form reads back as the same rational.
+
+    The test is deliberately about the decimal text rather than about the float: a
+    binary fraction that a float represents exactly can still have a shortest ``repr``
+    shorter than its exact expansion, and this refuses those too.  It is the stricter
+    of the two readings, and the safe one, because refusing costs a step while
+    publishing a number the encoding does not hold costs the proof its meaning.
+
+    :param exact: The exact value the encoder holds.
+    :type exact: fractions.Fraction
+    :return: The value as a float, or ``None`` when no exact decimal represents it.
+
+    Example::
+
+        >>> _publishable(Fraction(3, 10))
+        0.3
+        >>> _publishable(Fraction(1, 3)) is None
+        True
+    """
+    try:
+        published = float(exact)
+    except OverflowError:
+        # A rational larger than every float.  The query language accepts ``1e308``
+        # and a model may divide by ``1e-308``, so this is reachable input rather
+        # than a hypothetical, and raising would put an exception into a search whose
+        # only failure channel is ``None``.
+        return None
+    if Fraction(repr(published)) != exact:
+        return None
+    return published
+
+
 def _evaluate(operator: str, left: Any, right: Any):
     """Apply one arithmetic operator under the model's semantics.
 
-    Integer division truncates toward zero, which is what the encoded semantics do
-    and what Python's ``//`` does not: ``-7 // 2`` is ``-4`` in Python and ``-3``
-    here.  Reporting Python's answer would check a different program.
+    The encoder is the reference, because it is what the reference says a proof is
+    about, and it was for a long time simply not asked.  Division truncated toward
+    zero on the stated grounds that truncation is "what the encoded semantics do";
+    the other three operators used Python's operators on whatever the fact carried.
+    Neither matches.  Z3 adds, subtracts and multiplies reals exactly, and divides
+    two integers Euclidean-style and two reals exactly, so ``0.1 + 0.2`` is ``3/10``
+    where a double reaches ``0.30000000000000004``, and ``-7 / 2`` is ``-4`` where
+    truncation reaches ``-3``.
+
+    Reals therefore go through ``Fraction`` and are published only when their decimal
+    form reads back as the same rational; the alternative is a step stating a value
+    the encoding does not hold, which is what the published proof used to do under
+    ``verification_status`` ``verified``.  Two integers add, subtract and multiply
+    exactly in Python already, so those need no detour.
+
+    Division with two integer operands is the one case with no answer here.  A
+    ``float`` variable states an integral value as an integer -- a query asking
+    ``var("x") == -7`` about a real variable produces exactly that -- so the operands
+    do not say which sort is behind them, and the two readings differ.  Where they
+    agree the shared answer is published; where they do not, the step is declined
+    rather than guessed, and the explanation stays at formal depth.
 
     :param operator: The operator name carried by the expression fact.
     :type operator: str
     :param left: Left operand.
     :param right: Right operand.
-    :return: The value, or ``None`` when the operator is unknown or undefined here.
+    :return: The value, or ``None`` when the operator is unknown, undefined here,
+        exact but not representable as a published number, or a quotient whose sort
+        the operands do not settle.
 
     Example::
 
-        >>> _evaluate("div", -7, 2)
-        -3
+        >>> _evaluate("add", 0.1, 0.2)
+        0.3
+        >>> _evaluate("div", 7.5, 2)
+        3.75
+        >>> _evaluate("div", 1.0, 3) is None
+        True
+        >>> _evaluate("div", -7, 2) is None
+        True
+        >>> _evaluate("div", -8, 2)
+        -4
     """
-    if operator == "add":
-        return left + right
-    if operator == "sub":
-        return left - right
-    if operator == "mul":
-        return left * right
+    real = isinstance(left, float) or isinstance(right, float)
+    if operator in _EXACT_OPERATORS:
+        if not real:
+            # Two integers add, subtract and multiply exactly in Python and in Z3
+            # alike, so there is nothing to reconcile.
+            return _EXACT_OPERATORS[operator](left, right)
+        return _publishable(
+            _EXACT_OPERATORS[operator](Fraction(str(left)), Fraction(str(right)))
+        )
     if operator == "div":
         if right == 0:
             # Definedness is a separate rule's subject; this one has no value to
             # report, and returning a guess would let a step past that check.
             return None
-        quotient = abs(left) // abs(right)
-        return -quotient if (left < 0) != (right < 0) else quotient
+        exact = _exact_quotient(left, right)
+        if real:
+            return exact
+        # Two integer operands do not say whether the variable they describe is one.
+        # A ``float`` variable publishes an integral value as an integer -- a query
+        # asking ``var("x") == -7`` about a real variable produces exactly that -- so
+        # the sort is not recoverable here, and the two semantics part ways: Z3
+        # divides two integers Euclidean-style and two reals exactly.  Where they
+        # agree the answer is the same either way and can be published; where they do
+        # not, publishing one would be a guess about a declaration this function
+        # cannot see, so the rule declines and the explanation stays at formal depth.
+        euclidean = left // right if right > 0 else -(left // -right)
+        return euclidean if exact == euclidean else None
     return None
+
+
+def _exact_quotient(left: Any, right: Any):
+    """Return a real quotient as a published number, or ``None`` when it is not one.
+
+    Z3 divides reals exactly, so the quotient is a rational.  A published fact carries
+    a JSON number, which is a decimal, and most rationals have no finite decimal form.
+    Reporting the nearest one would put a value in the proof that the encoding does
+    not hold -- so the quotient is computed exactly and published only when its
+    decimal form reads back as the same rational.
+
+    :param left: Numerator, as published.
+    :param right: Denominator, as published.
+    :return: The quotient as a float, or ``None`` when no exact decimal represents it.
+
+    Example::
+
+        >>> _exact_quotient(7.5, 2)
+        3.75
+        >>> _exact_quotient(1.0, 3) is None
+        True
+    """
+    try:
+        return _publishable(Fraction(str(left)) / Fraction(str(right)))
+    except (ValueError, ZeroDivisionError):
+        # ValueError: an operand whose text is not a number, which a fact should not
+        # carry and this refuses rather than guesses at.  ZeroDivisionError: a zero
+        # denominator the caller's own check did not see, such as ``0.0``.  A quotient
+        # too large for a float is refused inside ``_publishable``, which is where
+        # every "no published number represents this" answer now lives.
+        return None
+
+
+def _carried_value(value_fact: Mapping[str, Any], expression: Mapping[str, Any]):
+    """Return the value an expression carries, or ``None`` when it carries none yet.
+
+    Two sides ask this question -- the rule checker below, and the proof search's
+    proposal side in :mod:`pyfcstm.bmc.proof` -- and they have to ask it the same
+    way.  They did not.  The checker refused an operand still standing as a symbol;
+    the proposal handed one straight to :func:`_evaluate`, which added ``None`` to a
+    number and raised out of a search whose only failure channel is ``None``.  One
+    function is what makes the two agree by construction rather than by review.
+
+    :param value_fact: The equality supplying the left operand's value.
+    :type value_fact: Mapping[str, Any]
+    :param expression: The arithmetic expression fact to evaluate.
+    :type expression: Mapping[str, Any]
+    :return: The value, or ``None`` when no step can produce one here.
+
+    Example::
+
+        >>> _carried_value({"value": 1}, {"operator": "add", "operand": 2})
+        3
+        >>> _carried_value(
+        ...     {"value": 1}, {"operator": "add", "operand_variable": "y"}
+        ... ) is None
+        True
+    """
+    if expression.get("operand_variable"):
+        # An operand still standing as a symbol has no value to evaluate; the
+        # substitution step has to run first, and it is the rule that supplies one.
+        return None
+    return _evaluate(
+        expression.get("operator"), value_fact.get("value"), expression.get("operand")
+    )
 
 
 def _arithmetic_evaluation(application: RuleApplication) -> bool:
@@ -353,15 +514,7 @@ def _arithmetic_evaluation(application: RuleApplication) -> bool:
     value_fact, expression = premises
     if _slot(value_fact) != _slot(expression):
         return False
-    if expression.get("operand_variable"):
-        # An operand still standing as a symbol has no value to evaluate; the
-        # substitution step has to run first.  Reaching ``_evaluate`` with it would
-        # add ``None`` to a number and raise out of a predicate that answers yes or
-        # no.
-        return False
-    result = _evaluate(
-        expression.get("operator"), value_fact.get("value"), expression.get("operand")
-    )
+    result = _carried_value(value_fact, expression)
     if result is None:
         return False
     if not _only(expression, _EVALUABLE_EXPRESSION_FIELDS):
@@ -494,6 +647,106 @@ def _definedness_failure(application: RuleApplication) -> bool:
     return value.get("value") == guard.get("forbidden")
 
 
+def _preceding_value_entailment(application: RuleApplication) -> bool:
+    """A value one frame earlier, where the solver showed it could not differ.
+
+    The second rule whose side condition a predicate cannot settle, and for the same
+    reason as the first: whether the previous frame was forced to this value is a
+    question about the core's constraints, not about the shape of a fact.  This
+    predicate settles the shape -- one equality in, the same equality one frame back
+    out, nothing else touched -- and a node carrying this rule records
+    ``solver_entailment``.
+
+    Only the frame moves.  A step that changed the variable would make this a claim
+    about a different value, and a rule that let the value move as well could conclude
+    anything about the earlier frame and call it carried.
+
+    Earlier rather than later, and the reason is where the shapes this was added for
+    put their assumption, not a restriction on which way a value may travel.  The
+    citation seam records a verdict per member, so a premise has to stand for exactly
+    one -- which rules out a premise that is itself derived, in either direction.  On
+    these shapes the value a single member states sits at the later frame while the
+    forward chain derives the earlier one, so this is the direction that meets the
+    chain.  A model stating its value at the earlier frame would want the mirror of
+    this rule, and the seam would permit it just as readily.
+
+    One step, and only one.  This rule's own conclusion is a derived node, so it
+    cannot be the premise of a second application -- the seam has no member to record
+    a verdict against.  A contradiction two or more untouched steps away from the
+    value that states it therefore stays at ``formal`` depth, which is the honest
+    answer rather than a chain the citation could not account for.  Iterating would
+    mean attributing a verdict to a subtree instead of a member, and that is the
+    fail-open shape the attribution was built to refuse.
+
+    :param application: The step to check.
+    :type application: RuleApplication
+    :return: ``True`` when the conclusion is the premise one frame earlier.
+    :rtype: bool
+    """
+    premises = application.premises
+    if len(premises) != 1:
+        return False
+    stated = premises[0]
+    conclusion = application.conclusion
+    if stated.get("kind") != "variable_equality":
+        return False
+    if conclusion.get("kind") != "variable_equality":
+        return False
+    if not _only(stated, ("kind", "variable", "frame", "value")):
+        return False
+    if not _only(conclusion, ("kind", "variable", "frame", "value")):
+        return False
+    frame = stated.get("frame")
+    if not isinstance(frame, int) or frame <= 0:
+        return False
+    if conclusion.get("frame") != frame - 1:
+        return False
+    if conclusion.get("variable") != stated.get("variable"):
+        return False
+    return conclusion.get("value") == stated.get("value")
+
+
+def _excluded_state_selected(application: RuleApplication) -> bool:
+    """A frame pinned to the one state the same frame rules out.
+
+    The two premises come from the same published fact kind read two ways: a state
+    requirement that holds reads as an equality on the frame's slot, and one that is
+    excluded reads as an exclusion.  A frame asked for both about the same state has
+    nowhere to be, and no earlier rule says so -- the equality is not a second
+    equality, so the rule that refuses two values does not apply, and one state is
+    not a domain, so the rule that exhausts a domain does not either.
+
+    The equality has to be the one about a frame's state slot rather than about a
+    model variable.  A variable named the way a slot is named would otherwise let a
+    value contradiction close under a sentence about states.
+
+    :param application: The step to check.
+    :type application: RuleApplication
+    :return: ``True`` when one premise pins the frame's slot to the state the other
+        excludes.
+    :rtype: bool
+    """
+    premises = application.premises
+    if len(premises) != 2 or application.conclusion.get("kind") != "false":
+        return False
+    equalities = [item for item in premises if item.get("kind") == "variable_equality"]
+    exclusions = [item for item in premises if item.get("kind") == "state_exclusion"]
+    if len(equalities) != 1 or len(exclusions) != 1:
+        return False
+    equality, exclusion = equalities[0], exclusions[0]
+    if not equality.get("state_slot"):
+        return False
+    if not _only(equality, ("kind", "variable", "state_slot", "frame", "value")):
+        return False
+    if not _only(exclusion, ("kind", "frame", "state")):
+        return False
+    frame = equality.get("frame")
+    if frame is None or exclusion.get("frame") != frame:
+        return False
+    state = exclusion.get("state")
+    return state is not None and equality.get("value") == state
+
+
 def _boolean_complement(application: RuleApplication) -> bool:
     """One proposition asserted and denied.
 
@@ -510,6 +763,43 @@ def _boolean_complement(application: RuleApplication) -> bool:
     if len(identities) != 1 or None in identities:
         return False
     return {item.get("holds") for item in premises} == {True, False}
+
+
+def _case_condition_entailment(application: RuleApplication) -> bool:
+    """A case whose condition the solver discharged, and nothing else changed.
+
+    This is the one rule in the catalog whose side condition a predicate cannot
+    settle.  A case's assignment holds *where the case applies*, so discharging the
+    condition means showing the core members entail it -- a question about
+    constraints the checker never sees.  The split is therefore deliberate: this
+    predicate settles the part that is syntax, and the solver settles the
+    entailment, which is why a node carrying this rule records
+    ``solver_entailment`` rather than ``rule_checker``.
+
+    Refusing an already-unconditional premise is not pedantry.  Such a step would
+    conclude what its own premise says, and the dependency pruning that keeps the
+    graph honest cannot tell that apart from a step that carried weight.
+
+    :param application: The step to check.
+    :type application: RuleApplication
+    :return: ``True`` when the conclusion is the premise with its condition
+        emptied and every other field untouched.
+    :rtype: bool
+    """
+    premises = application.premises
+    if len(premises) != 1:
+        return False
+    case = premises[0]
+    if case.get("kind") != "transition_case":
+        return False
+    condition = case.get("condition")
+    if not isinstance(condition, tuple) or not condition:
+        return False
+    # The key goes, not just its contents.  ``_only`` reads keys, so an empty tuple
+    # left behind is still a field the evaluation rule does not recognize -- and it
+    # refuses an unrecognized field rather than dropping it, which is the behaviour
+    # that keeps a fact from quietly losing part of itself.
+    return _exactly(application.conclusion, _transformed(case, condition=None))
 
 
 def _transition_assignment(application: RuleApplication) -> bool:
@@ -570,6 +860,86 @@ def _equality_substitution(application: RuleApplication) -> bool:
     return _exactly(application.conclusion, expected)
 
 
+#: Rules no query can reach today, and why each one waits.
+#:
+#: A closed catalog a consumer has to accept includes rules nothing produces a
+#: premise for.  Which ones is a user-facing fact and the kind that goes stale
+#: quietly, so it is declared here and checked against the closure below rather than
+#: left for a reader to work out.  Membership is not a judgement about the rule: a
+#: listed rule is implemented and tested from its own premises, and waits only on a
+#: premise no published fact carries yet.
+#:
+#: It is empty, and that is the state the closure has to keep agreeing with.  The
+#: three arithmetic rules were listed here for one shared cause -- a case publishes
+#: its assignment, but the assignment holds only where the case applies, and nothing
+#: discharged that condition from the members establishing it.
+#: ``case_condition_entailment`` discharges it, so the chain has a starting point and
+#: they left together, as the note here said they would.
+#:
+#: An empty list makes the paired self-check weaker in one direction and it must not
+#: be read as a stronger claim than it is: nothing here can be stale, but the closure
+#: it is compared against is only as wide as the fact kinds it is seeded with.  That
+#: seed is the part to keep honest -- it had already lost a whole encoder family
+#: once, and the agreement stayed green because both sides were computed from the
+#: same short reading.
+UNREACHABLE_RULE_IDS: Tuple[str, ...] = ()
+
+#: The one rule that seeds a graph rather than deriving within it.
+#:
+#: ``source_fact`` states a core member's own fact, so it has no ``kind`` premise to
+#: wait for and takes no part in the closure below.  It is excluded by name rather
+#: than by a property of its premise tuple: a rule that happened to declare no
+#: premises would then be silently excluded too, and the closure would report a
+#: reachability it never established.
+CLOSURE_EXCLUDED_RULE_IDS = ("source_fact",)
+
+
+def reachable_rule_ids(available_kinds) -> Tuple[str, ...]:
+    """Return the rules a graph can reach from the fact kinds it can read.
+
+    The fixpoint is the honest question to ask of a rule catalog: a rule runs when
+    every premise kind it declares is available, and running it makes its conclusion
+    available in turn.  Asking only "is each premise kind published" would call a rule
+    reachable whose premise no rule and no translation ever produces.
+
+    The seed is what the caller can actually read, not what the vocabulary lists.
+    Passing the whole vocabulary answers a different question -- what the catalog
+    could do -- and the difference is the point: three rules of this catalog are
+    reachable in that weaker sense and unreachable in this one.
+
+    :param available_kinds: Fact kinds a graph can read as input.
+    :type available_kinds: Iterable[str]
+    :return: Reachable rule ids, sorted, excluding the input-node rule.
+    :rtype: Tuple[str, ...]
+
+    Example::
+
+        >>> reachable_rule_ids(("variable_equality",))
+        ('incompatible_equalities', 'preceding_value_entailment')
+        >>> reachable_rule_ids(())
+        ()
+    """
+    candidates = {
+        rule_id: rule
+        for rule_id, rule in PROOF_RULES.items()
+        if rule_id not in CLOSURE_EXCLUDED_RULE_IDS
+    }
+    available = set(available_kinds)
+    reached: Dict[str, bool] = {}
+    while True:
+        fired = [
+            rule_id
+            for rule_id, rule in sorted(candidates.items())
+            if rule_id not in reached
+            and all(kind in available for kind in rule.premise_kinds if kind)
+        ]
+        if not fired:
+            return tuple(sorted(reached))
+        for rule_id in fired:
+            reached[rule_id] = True
+            available.add(candidates[rule_id].conclusion_kind)
+
+
 #: The domain rules a proof step may cite, keyed by published rule id.
 #:
 #: A builder dispatches on this mapping: it matches ``premise_kinds`` to find
@@ -583,6 +953,15 @@ PROOF_RULES = {
     rule.rule_id: rule
     for rule in (
         ProofRule("source_fact", ("",), "any", _source_fact),
+        # One premise, like ``source_fact`` has none: the arity a rule declares is
+        # whatever its premises are, and a case carries its own condition, so
+        # nothing else has to be matched to discharge it.
+        ProofRule(
+            "case_condition_entailment",
+            ("transition_case",),
+            "transition_case",
+            _case_condition_entailment,
+        ),
         ProofRule(
             "arithmetic_evaluation",
             ("variable_equality", "arithmetic_expression"),
@@ -618,6 +997,24 @@ PROOF_RULES = {
             ("proposition", "proposition"),
             "false",
             _boolean_complement,
+        ),
+        # A pair the two readings of one published kind produce, which no earlier
+        # rule matches: an equality on a frame's slot is not a second equality, and
+        # one state is not a domain.
+        # One premise, like ``case_condition_entailment``: what the previous frame was
+        # forced to hold is a question about constraints, and the value requirement
+        # that asks it is the only fact involved.
+        ProofRule(
+            "preceding_value_entailment",
+            ("variable_equality",),
+            "variable_equality",
+            _preceding_value_entailment,
+        ),
+        ProofRule(
+            "excluded_state_selected",
+            ("variable_equality", "state_exclusion"),
+            "false",
+            _excluded_state_selected,
         ),
         ProofRule(
             "transition_assignment",

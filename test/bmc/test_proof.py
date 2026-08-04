@@ -116,6 +116,7 @@ def test_the_proof_vocabularies_are_transcribed_from_the_contract() -> None:
     assert module._PROOF_NODE_KINDS == ("input", "derived", "contradiction")
     assert module._PROOF_RULE_IDS == (
         "source_fact",
+        "case_condition_entailment",
         "transition_assignment",
         "equality_substitution",
         "arithmetic_evaluation",
@@ -124,12 +125,22 @@ def test_the_proof_vocabularies_are_transcribed_from_the_contract() -> None:
         "definedness_failure",
         "incompatible_equalities",
         "boolean_complement",
+        "excluded_state_selected",
+        "preceding_value_entailment",
     )
     assert module._PROOF_VERIFICATION_METHODS == (
         "core_binding",
+        "core_binding_unit",
         "rule_checker",
         "solver_entailment",
     )
+    # Which side each method belongs to is a sentence in the reference, transcribed
+    # here the same way as the vocabulary itself: both bindings are "used by input
+    # nodes only", and the other two are "used by derived and root nodes".
+    assert module._INPUT_VERIFICATION_METHODS == ("core_binding", "core_binding_unit")
+    assert set(module._PROOF_VERIFICATION_METHODS) - set(
+        module._INPUT_VERIFICATION_METHODS
+    ) == {"rule_checker", "solver_entailment"}
     assert module._PROOF_INPUT_MINIMALITIES == ("subset_minimal",)
     assert module._PROOF_GRAPH_MINIMALITIES == ("dependency_pruned",)
     assert module._PROOF_VERIFICATION_STATUSES == ("verified",)
@@ -153,6 +164,10 @@ def test_the_proof_dataclasses_carry_the_frozen_field_order() -> None:
         "item_ids",
         "human_text",
         "verification_method",
+        # Last because they are optional: the eight required arguments keep their
+        # positions, and a unit binding names the two it adds.
+        "unit_index",
+        "unit_count",
     ]
     assert [field.name for field in dataclasses.fields(BmcConflictProof)] == [
         "scope",
@@ -221,6 +236,37 @@ def test_a_node_publishes_its_canonical_mapping_in_field_order() -> None:
         "frame": 0,
         "value": 0,
     }
+
+
+@pytest.mark.unittest
+def test_only_a_unit_binding_publishes_the_two_unit_fields() -> None:
+    """The pair travels with the method that admits it, in the output as well.
+
+    The fields exist on the dataclass, so a constructor check alone would pass while
+    the mapping a consumer actually reads never carried them.  Publishing them on a
+    whole-group binding would be the opposite error: two keys that mean nothing
+    there, and a claim to a decomposition that binding never made.
+    """
+    unit = BmcProofNode(
+        "proof.input.0000",
+        "input",
+        "source_fact",
+        (),
+        {"kind": "transition_case", "variable": "x", "frame": 0, "target_frame": 1},
+        ("transition.step.0000",),
+        "Between frame 0 and frame 1, the transition adds 1 to x.",
+        "core_binding_unit",
+        5,
+        12,
+    )
+
+    canonical = unit.to_canonical()
+
+    assert list(canonical)[-2:] == ["unit_index", "unit_count"]
+    assert (canonical["unit_index"], canonical["unit_count"]) == (5, 12)
+    whole = _input_node("proof.input.0001", "assumption.0000", 0)
+    assert "unit_index" not in whole.to_canonical()
+    assert "unit_count" not in whole.to_canonical()
 
 
 @pytest.mark.unittest
@@ -640,3 +686,105 @@ def test_a_variable_and_a_state_sharing_a_subject_are_not_one_slot() -> None:
 
     assert proof is None, [node.human_text for node in proof.nodes]
     assert record.reason
+
+
+@pytest.mark.unittest
+def test_a_unit_count_below_one_is_refused() -> None:
+    """A decomposition has at least one requirement, so zero is not a count.
+
+    ``unit_index`` and ``unit_count`` are ordinary public constructor arguments, and
+    this is the combination a caller reaches by computing the count from an empty
+    sequence: the index then passes its own lower bound and the pair still describes
+    no decomposition.  Refusing it here is what keeps ``0 of 0`` out of a published
+    proof, where it would read as a group nothing covers.
+    """
+    with pytest.raises(ValueError, match="unit_count must be at least 1"):
+        BmcProofNode(
+            "proof.input.0000",
+            "input",
+            "source_fact",
+            (),
+            {"kind": "variable_equality", "variable": "x", "frame": 0, "value": 0},
+            ("assumption.0000",),
+            "t",
+            "core_binding_unit",
+            0,
+            0,
+        )
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    ("kind", "rule_id", "method", "unit_fields"),
+    [
+        ("contradiction", "incompatible_equalities", "core_binding", ()),
+        ("contradiction", "incompatible_equalities", "core_binding_unit", (0, 1)),
+        ("derived", "arithmetic_evaluation", "core_binding_unit", (0, 1)),
+        ("input", "source_fact", "rule_checker", ()),
+        ("input", "source_fact", "solver_entailment", ()),
+    ],
+)
+def test_a_method_that_contradicts_the_node_kind_is_refused(
+    kind, rule_id, method, unit_fields
+) -> None:
+    """How a node was verified and what kind of node it is are one statement.
+
+    The published reference says which side each method belongs to: the two bindings
+    are what an input's re-encoding was checked by and are used by input nodes only,
+    while the rule checker and the solver discharge derived and root steps.  A node
+    pairing them the other way describes a check that cannot have happened -- a
+    contradiction has no core member to re-encode against, and an input has no
+    premises to re-derive from -- and the constructor is where a caller assembling
+    an explanation to publish finds that out.
+    """
+    conclusion = (
+        {"kind": "false"}
+        if kind == "contradiction"
+        else {"kind": "variable_equality", "variable": "x", "frame": 0, "value": 0}
+    )
+    with pytest.raises(ValueError, match="verification_method"):
+        BmcProofNode(
+            "proof.node.0000",
+            kind,
+            rule_id,
+            (),
+            conclusion,
+            ("assumption.0000",),
+            "t",
+            method,
+            *unit_fields,
+        )
+
+    # And the schema says the same, so this is not a semantic-gate exception.  The
+    # relation is an object-internal condition on two of the node's own values, which
+    # is the line the schema's own comment draws between what it expresses and what it
+    # delegates -- a sibling comparison or a cross-node relation.  Asserting only the
+    # constructor would let the published contract drift looser than the library, and
+    # a consumer validating JSON would accept what no run can produce.
+    import json
+
+    jsonschema = pytest.importorskip("jsonschema")
+
+    schema = json.load(
+        open("docs/source/reference/bmc_results/bmc_cli.schema.json", encoding="utf-8")
+    )
+    validator = jsonschema.Draft202012Validator(
+        {"$ref": "#/$defs/proofNode", "$defs": schema["$defs"]}
+    )
+    payload = {
+        "stable_id": "proof.node.0000",
+        "kind": kind,
+        "rule_id": rule_id,
+        "premise_ids": [],
+        "conclusion": conclusion,
+        "item_ids": ["assumption.0000"],
+        "human_text": "t",
+        "verification_method": method,
+    }
+    if unit_fields:
+        payload["unit_index"], payload["unit_count"] = unit_fields
+
+    assert list(validator.iter_errors(payload)), (
+        "the schema accepts %s on a %s node; the two gates have to agree"
+        % (method, kind)
+    )

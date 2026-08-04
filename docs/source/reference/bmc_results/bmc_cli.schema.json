@@ -2820,6 +2820,8 @@
             "unsat_core_minimization",
             "value_propagation",
             "core_binding",
+            "case_condition",
+            "value_carry",
             "proof_construction"
           ]
         },
@@ -2884,6 +2886,8 @@
                   "unsat_core_minimization",
                   "value_propagation",
                   "core_binding",
+                  "case_condition",
+                  "value_carry",
                   "proof_construction"
                 ]
               },
@@ -5229,9 +5233,11 @@
                 "variable_comparison",
                 "state_membership",
                 "state_domain",
-                "definedness_condition"
+                "definedness_condition",
+                "transition_case",
+                "proposition"
               ],
-              "$comment": "A fact describes one source group. variable_comparison carries the relation in its operator field instead of splitting into a tag per relation. Cross-group patterns -- incompatible equalities, an empty interval, an exhausted state domain, a value carried across a step, a definedness failure -- are derivations over several facts and are named by the narrative's rule vocabulary, never here. structural_constraint is the honest fallback for a shape no recognizer reads."
+              "$comment": "A fact describes one source group. variable_comparison carries the relation in its operator field instead of splitting into a tag per relation. transition_case gives the assignment one step's selected case makes, under the condition that selects it; exactly one of operand and operand_variable is present, decided by whether the model wrote a literal or a variable. operation is add, sub, mul, div or set; set is a replacement rather than an arithmetic update -- the next frame's value does not depend on this one -- and the rules decline it because there is nothing to evaluate. proposition gives one requirement about one event at one step, carrying the identity the rule compares and the polarity the query asked for; a state assertion is not one of these and stays state_membership. Cross-group patterns -- incompatible equalities, an empty interval, an exhausted state domain, a value carried across a step, a definedness failure -- are derivations over several facts and are named by the narrative's rule vocabulary, never here. structural_constraint is the honest fallback for a shape no recognizer reads."
             }
           },
           "$comment": "Machine consumers dispatch on kind rather than on human text, so the tag is required.  Later stages extend the enum as recognizers land. Draft 2020-12 has no depth keyword, no way to bound an integer's digit count, and no way to see a non-finite number, a value with no JSON counterpart or a non-string object key -- a payload reaching a validator was already parsed from JSON text. The constructor refuses all of those at every nesting depth."
@@ -7015,6 +7021,50 @@
         "human_text",
         "verification_method"
       ],
+      "allOf": [
+        {
+          "$comment": "Which side of the graph a method belongs to. Expressible here for the same reason as the rule below: it is an object-internal condition on two of this object's own values, not a relation to a sibling node and not a numeric comparison. The reference states it as prose -- both bindings are used by input nodes only, the checker and the solver by derived and root nodes -- and a reversed pairing describes a check that cannot have happened: a contradiction has no core member to re-encode against, an input has no premises to re-derive from.",
+          "if": {
+            "required": ["kind"],
+            "properties": { "kind": { "const": "input" } }
+          },
+          "then": {
+            "properties": {
+              "verification_method": { "enum": ["core_binding", "core_binding_unit"] }
+            }
+          },
+          "else": {
+            "properties": {
+              "verification_method": { "enum": ["rule_checker", "solver_entailment"] }
+            }
+          }
+        },
+        {
+          "$comment": "The two unit fields travel with the method that admits them, in both directions. Expressible here because it is an object-internal condition on which keys are present; the remaining rule -- unit_index below unit_count -- compares two sibling integers and is a named semantic-gate exception instead.",
+          "if": {
+            "required": [
+              "verification_method"
+            ],
+            "properties": {
+              "verification_method": {
+                "const": "core_binding_unit"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "unit_index",
+              "unit_count"
+            ]
+          },
+          "else": {
+            "properties": {
+              "unit_index": false,
+              "unit_count": false
+            }
+          }
+        }
+      ],
       "properties": {
         "stable_id": {
           "type": "string",
@@ -7030,6 +7080,7 @@
         "rule_id": {
           "enum": [
             "source_fact",
+            "case_condition_entailment",
             "transition_assignment",
             "equality_substitution",
             "arithmetic_evaluation",
@@ -7037,7 +7088,9 @@
             "state_domain_exhaustion",
             "definedness_failure",
             "incompatible_equalities",
-            "boolean_complement"
+            "boolean_complement",
+            "excluded_state_selected",
+            "preceding_value_entailment"
           ]
         },
         "premise_ids": {
@@ -7080,10 +7133,21 @@
         "verification_method": {
           "enum": [
             "core_binding",
+            "core_binding_unit",
             "rule_checker",
             "solver_entailment"
           ],
           "$comment": "No value for an unchecked step: a published proof carries no hole, trust or opaque solver step, so the absence is the contract rather than an omission."
+        },
+        "unit_index": {
+          "type": "integer",
+          "minimum": 0,
+          "$comment": "Which requirement of the member's group a core_binding_unit input restates, counting from zero in the group's own decomposition order. Only a core_binding_unit input carries it, and it must be below unit_count."
+        },
+        "unit_count": {
+          "type": "integer",
+          "minimum": 1,
+          "$comment": "How many requirements that decomposition has, so a reader sees what proportion of the group one fact covers. Travels with unit_index in both directions: neither may appear without the other, and neither may appear on a whole-group core_binding."
         }
       }
     },

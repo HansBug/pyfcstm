@@ -111,6 +111,39 @@ def _record(status: str, started: bool, elapsed: float, reason: Optional[str]):
     return ProbeRecord(_PHASE_NAME, status, started, elapsed, reason)
 
 
+def _solver_verdict(
+    rule_id: str,
+    premises: Sequence[_Node],
+    verdicts: Optional[Mapping[str, Mapping[str, Sequence[str]]]],
+) -> Optional[Tuple[str, ...]]:
+    """Return the members a solver phase proved this candidate's side condition from.
+
+    The one seam for rules a predicate cannot settle.  A verdict is looked up by the
+    rule and then by the member the premise restates, so adding another such rule
+    means adding a table entry rather than another parameter to this signature.
+
+    A premise standing for more than one member gets no verdict.  Reading the first
+    would attribute an entailment proved about one member to another, and the citation
+    is the only record of where the side condition came from.
+
+    :param rule_id: The rule being proposed.
+    :type rule_id: str
+    :param premises: The candidate's premises.
+    :type premises: Sequence[_Node]
+    :param verdicts: Cited members per rule, keyed by rule id then by member id.
+    :type verdicts: Optional[Mapping[str, Mapping[str, Sequence[str]]]]
+    :return: The cited member ids, or ``None`` when nothing settled this candidate.
+    :rtype: Optional[Tuple[str, ...]]
+    """
+    if not verdicts or len(premises) != 1:
+        return None
+    owners = premises[0].item_ids
+    if len(owners) != 1:
+        return None
+    cited = (verdicts.get(rule_id) or {}).get(owners[0])
+    return None if cited is None else tuple(cited)
+
+
 def _candidates(nodes: Sequence[_Node]) -> List[Tuple[str, Tuple[int, ...]]]:
     """Enumerate every rule application the current facts allow, in a total order.
 
@@ -157,6 +190,71 @@ def _candidates(nodes: Sequence[_Node]) -> List[Tuple[str, Tuple[int, ...]]]:
 #: Rules whose premise count follows the input rather than the rule.
 _VARIADIC_RULES = frozenset({"state_domain_exhaustion"})
 
+#: Rules a predicate cannot settle, and who settled them instead.
+#:
+#: Keyed by rule rather than by node kind because that is where the difference
+#: lives: every other derived step is a pure reading of its premises, so
+#: ``rule_checker`` describes it, while discharging a case's condition is a question
+#: about the members' constraints that the checker never sees.  Publishing
+#: ``rule_checker`` for it would name a checker that did not do the work.
+#:
+#: This table is the one place that knows *that* a rule needs the solver, and it
+#: drives both halves of that: which candidates need a verdict before they may fire,
+#: and what the published node records.  The first shape took a parameter naming the
+#: one rule's verdicts, which meant the next such rule would take a second parameter
+#: -- the contract reserves ``solver_entailment`` for derived and root steps in the
+#: plural, so there is expected to be a next one.
+#:
+#: It does not centralise everything about such a rule, and the claim here is
+#: deliberately narrow: ``_conclusion_for`` still dispatches on the rule id to build
+#: its conclusion, exactly as it does for every other rule.  How a rule's conclusion is
+#: shaped is rule-specific work that belongs there; whether a predicate can settle it
+#: is what belongs here.
+_VERIFIED_BY = {
+    "case_condition_entailment": "solver_entailment",
+    "preceding_value_entailment": "solver_entailment",
+}
+
+
+def _verification(
+    node: _Node, unit_bindings: Optional[Mapping[str, Tuple[int, int]]]
+) -> Tuple[str, Optional[int], Optional[int]]:
+    """Report how one node was verified, and against which requirement.
+
+    Four published methods, and the node's own shape picks one.  A rule that needs a
+    solver names itself in :data:`_VERIFIED_BY`.  A step that a predicate settles is a
+    rule check.  An input is a binding -- but of which kind depends on what the
+    binding check could prove: a group holding one requirement per case cannot be
+    implied by a fact restating one of them, so such a fact is proved equivalent to a
+    single unit and the attribution travels here.  Publishing ``core_binding`` for it
+    would claim the whole group's equivalence, which is a stronger statement than the
+    one that was checked.
+
+    :param node: The node about to be published.
+    :type node: pyfcstm.bmc.proof._Node
+    :param unit_bindings: Member ids that were bound against one unit, mapped to
+        ``(unit_index, unit_count)``; ``None`` when no binding ran unit-scoped.
+    :type unit_bindings: Optional[Mapping[str, Tuple[int, int]]]
+    :return: The method, and the unit index and count when the method names one.
+    :rtype: Tuple[str, Optional[int], Optional[int]]
+    """
+    method = _VERIFIED_BY.get(node.rule_id)
+    if method is not None:
+        return method, None, None
+    if node.kind != "input":
+        return "rule_checker", None, None
+    # One lookup rather than a search, and the reason is worth stating precisely: an
+    # input carries exactly one member id because there is a single place in this module
+    # that builds an ``input`` node and it passes a one-element tuple.  Nothing checks
+    # the arity, so a second construction site would make this line read the wrong key
+    # instead of failing -- the property holds by there being one producer, which is
+    # weaker than holding by construction.
+    attribution = (unit_bindings or {}).get(node.item_ids[0])
+    if attribution is None:
+        return "core_binding", None, None
+    unit_index, unit_count = attribution
+    return "core_binding_unit", unit_index, unit_count
+
 
 def _frame_groups(nodes: Sequence[_Node]) -> List[Tuple[int, ...]]:
     """Group node indices by the frame their fact is about.
@@ -183,6 +281,8 @@ def build_domain_proof(
     budget,
     member_ids: Optional[Sequence[str]] = None,
     state_names: Optional[Mapping[int, str]] = None,
+    solver_verdicts: Optional[Mapping[str, Mapping[str, Sequence[str]]]] = None,
+    unit_bindings: Optional[Mapping[str, Tuple[int, int]]] = None,
 ) -> Tuple[Optional[BmcConflictProof], Any]:
     """Search for a checked proof that these facts admit no execution.
 
@@ -214,6 +314,18 @@ def build_domain_proof(
         states through the same table; without one, both fall back to the index.
         Defaults to ``None``.
     :type state_names: Optional[Mapping[int, str]], optional
+    :param solver_verdicts: For each rule a predicate cannot settle, the members
+        that establish each premise, keyed by rule id and then by member id.  A rule
+        named here proposes only where a verdict exists, because the search has no
+        way to check it and must not publish an unchecked step.  Defaults to
+        ``None``.
+    :type solver_verdicts: Optional[Mapping[str, Mapping[str, Sequence[str]]]], optional
+    :param unit_bindings: Member ids whose fact was proved equivalent to a single
+        requirement rather than to its whole group, mapped to
+        ``(unit_index, unit_count)``.  Such an input publishes
+        ``core_binding_unit``, which is the statement that was actually checked.
+        Defaults to ``None``.
+    :type unit_bindings: Optional[Mapping[str, Tuple[int, int]]], optional
     :return: The proof and the ledger entry, or ``None`` and the entry.
     :rtype: Tuple[Optional[BmcConflictProof], pyfcstm.bmc.infeasibility.ProbeRecord]
 
@@ -285,6 +397,15 @@ def build_domain_proof(
                     "timeout", True, elapsed(), "budget exhausted during proof search."
                 )
             premises = [nodes[index] for index in premise_indices]
+            cited: Tuple[str, ...] = ()
+            if rule_id in _VERIFIED_BY:
+                # The syntax is the checker's business; a side condition a predicate
+                # cannot settle was settled by a solver phase before the search
+                # began, and a candidate with no verdict may not fire on shape alone.
+                verdict = _solver_verdict(rule_id, premises, solver_verdicts)
+                if verdict is None:
+                    continue
+                cited = verdict
             conclusion = _conclusion_for(rule_id, premises)
             if conclusion is None:
                 continue
@@ -298,7 +419,9 @@ def build_domain_proof(
                 )
             ):
                 continue
-            item_ids = sorted({item for node in premises for item in node.item_ids})
+            item_ids = sorted(
+                {item for node in premises for item in node.item_ids} | set(cited)
+            )
             index = len(nodes)
             seen[key] = index
             kind = "contradiction" if conclusion.get("kind") == "false" else "derived"
@@ -361,7 +484,7 @@ def build_domain_proof(
                 node.fact,
                 node.item_ids,
                 _fact_sentence(node.fact, state_names),
-                "core_binding" if node.kind == "input" else "rule_checker",
+                *_verification(node, unit_bindings),
             )
         )
     proof = BmcConflictProof(
@@ -418,14 +541,48 @@ def _conclusion_for(
     :rtype: Optional[Mapping[str, object]]
     """
     facts = [node.fact for node in premises]
-    if rule_id in (
-        "incompatible_equalities",
-        "interval_intersection",
-        "state_domain_exhaustion",
-        "definedness_failure",
-        "boolean_complement",
-    ):
+    if rule_id in _CLOSING_RULES:
         return {"kind": "false"}
+    if rule_id == "preceding_value_entailment":
+        if len(facts) != 1:
+            return None
+        stated = facts[0]
+        frame = stated.get("frame")
+        if stated.get("kind") != "variable_equality" or not isinstance(frame, int):
+            return None
+        if frame <= 0 or stated.get("state_slot"):
+            return None
+        return {
+            "kind": "variable_equality",
+            "variable": stated.get("variable"),
+            "frame": frame - 1,
+            "value": stated.get("value"),
+        }
+    if rule_id == "case_condition_entailment":
+        # Neither guard is reached by the search, and for reasons worth keeping apart.
+        # The arity and the tag are settled upstream by ``_candidates``, which matches
+        # ``premise_kinds`` before proposing -- these restate that rather than trusting
+        # it, the same way each side condition re-establishes what the builder claimed.
+        # An empty condition is blocked twice over, and earlier than here both times.
+        # A case with no condition has no entry in the discharge table, because
+        # ``check_case_conditions`` only considers cases that carry one -- so the
+        # verdict lookup above returns ``None`` and the candidate is dropped before
+        # this function is called at all.  And a published ``transition_case`` never
+        # has an empty condition in the first place: the reading is discarded whole
+        # when its condition reads as nothing.  Measured, not assumed -- a real run
+        # reaches this branch zero times.
+        if len(facts) != 1:
+            return None
+        case = facts[0]
+        if case.get("kind") != "transition_case" or not case.get("condition"):
+            return None
+        # Only the condition goes, and it goes entirely: ``arithmetic_evaluation``
+        # reads keys, so an emptied ``condition`` still reaches it as a field it does
+        # not recognize and refuses.  Everything else is carried whole for the same
+        # reason the assignment rule carries its case whole.
+        proposal = dict(case)
+        proposal.pop("condition", None)
+        return proposal
     if rule_id == "transition_assignment":
         if len(facts) != 2:
             return None
@@ -461,13 +618,12 @@ def _conclusion_for(
             return None
         if expression.get("kind") != "arithmetic_expression":
             return None
-        from .proof_rules import _evaluate
+        from .proof_rules import _carried_value
 
-        result = _evaluate(
-            expression.get("operator"),
-            value_fact.get("value"),
-            expression.get("operand"),
-        )
+        # The same question the checker asks, asked through the same function.  Asking
+        # it separately here is what let a proposal reach ``_evaluate`` with an operand
+        # the checker would have refused, and raise instead of declining.
+        result = _carried_value(value_fact, expression)
         if result is None:
             return None
         return _inherit_subject(
@@ -480,6 +636,17 @@ def _conclusion_for(
             expression,
         )
     return None
+
+
+#: Rules whose conclusion is the contradiction itself.
+#:
+#: Derived from the catalog rather than listed, because a rule added with
+#: ``conclusion_kind == "false"`` and left out of a literal list is registered,
+#: matched by ``_candidates``, and then never proposed -- it fails by being absent
+#: from the search, which no test of the rule's own predicate can see.
+_CLOSING_RULES = frozenset(
+    rule_id for rule_id, rule in PROOF_RULES.items() if rule.conclusion_kind == "false"
+)
 
 
 #: How a published comparison operator reads as a proof fact.
@@ -586,6 +753,48 @@ def proof_facts_for_core(items) -> Tuple[Tuple[str, Mapping[str, Any]], ...]:
                         "operation": "division",
                         "forbidden": 0,
                     },
+                )
+            )
+        elif kind == "proposition":
+            # The published name and the rule's name coincide here: a proposition is
+            # already stated in the terms a rule reads -- one subject, one polarity --
+            # so there is nothing to translate beyond carrying it across.
+            translated.append(
+                (
+                    stable_id,
+                    {
+                        "kind": "proposition",
+                        "identity": fact.get("identity"),
+                        "holds": fact.get("holds"),
+                    },
+                )
+            )
+        elif kind == "transition_case":
+            # ``operation`` is the published name and ``operator`` the rule's own;
+            # the boundary is the contract's, so this is where one becomes the other.
+            # Everything else travels unchanged, including the condition: a rule
+            # reading a case without it would treat a conditional assignment as
+            # unconditional, which is the one claim the group does not make.
+            translated.append(
+                (
+                    stable_id,
+                    dict(
+                        {
+                            key: value
+                            for key, value in fact.items()
+                            if key
+                            in (
+                                "variable",
+                                "frame",
+                                "target_frame",
+                                "operand",
+                                "operand_variable",
+                                "condition",
+                            )
+                        },
+                        kind="transition_case",
+                        operator=fact.get("operation"),
+                    ),
                 )
             )
         elif kind == "state_membership":

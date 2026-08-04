@@ -207,7 +207,7 @@ BmcProofNode
 -----------------------------------------------------
 
 .. autoclass:: BmcProofNode
-    :members: __post_init__,to_canonical,stable_id,kind,rule_id,premise_ids,conclusion,item_ids,human_text,verification_method
+    :members: __post_init__,to_canonical,stable_id,kind,rule_id,premise_ids,conclusion,item_ids,human_text,verification_method,unit_index,unit_count
 
 
 BmcConflictProof

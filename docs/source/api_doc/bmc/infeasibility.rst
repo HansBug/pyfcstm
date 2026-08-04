@@ -115,6 +115,24 @@ check\_core\_bindings
 .. autofunction:: check_core_bindings
 
 
+check\_case\_conditions
+-----------------------------------------------------
+
+.. autofunction:: check_case_conditions
+
+
+check\_value\_carries
+-----------------------------------------------------
+
+.. autofunction:: check_value_carries
+
+
+encodable\_fact\_kinds
+-----------------------------------------------------
+
+.. autofunction:: encodable_fact_kinds
+
+
 explain\_infeasibility
 -----------------------------------------------------
 

@@ -29,6 +29,8 @@ from pyfcstm.bmc.infeasibility import (
     _indices,
     _semantic_role,
     build_core_item,
+    check_case_conditions,
+    check_value_carries,
     classify_infeasibility,
     derive_forced_values,
     explain_infeasibility,
@@ -302,29 +304,24 @@ def test_an_achieved_proof_is_always_reported_complete() -> None:
     assert ("proof", "partial") not in seen, seen
 
 
-def test_a_state_opposition_still_cannot_reach_boolean_complement() -> None:
-    """Why ``boolean_complement`` is unreachable however the opposition is written.
-
-    The reference page used to blame event assumptions publishing a fact whose
-    content no rule reads.  That is true of events but is not the reason: the
-    checker accepts premises of kind ``proposition`` only, and nothing produces a
-    fact of that kind, so the rule stays out of reach even when the premises are
-    complete.
+def test_a_state_opposition_closes_without_reaching_boolean_complement() -> None:
+    """The cleanest state opposition closes, and not by the rule about propositions.
 
     ``active(X)`` and ``!active(X)`` at one frame are the cleanest opposition the
-    query language can state.  They publish two facts that carry their content,
-    agree on frame and state, and differ only in ``excluded`` -- and the result is
-    still a formal explanation.  A later change that starts producing
-    ``proposition`` facts should fail here, which is the signal that the page needs
-    rewriting.
+    query language can state.  Both halves of the claim below matter, and they used
+    to be one: this once asserted that the opposition reaches no rule at all, on the
+    correct observation that ``boolean_complement`` reads ``identity`` and ``holds``
+    while a state requirement carries ``frame``, ``state`` and ``excluded``.  The
+    observation held; the conclusion did not survive the catalog gaining a rule that
+    reads what a state requirement actually publishes.
 
-    Three independent gates hold this shut, which is worth knowing before trying to
-    open it: the closure filters candidates against ``premise_kinds`` before ever
-    proposing the rule, the checker asserts the premise kinds again, and the checker
-    then reads ``identity`` and ``holds`` -- fields a ``state_membership`` fact does
-    not have, carrying ``frame``, ``state`` and ``excluded`` instead.  Relaxing any
-    one or two of them leaves this test passing, so it is not pinned by a
-    single-point mutation.
+    So this pins two things.  The opposition closes at proof depth, by
+    ``excluded_state_selected`` -- a frame pinned to the state it also rules out.  And
+    ``boolean_complement`` is still not what closes it, because the two readings of a
+    state requirement are an equality and an exclusion, neither of which is a
+    proposition.  A later change that routes state requirements to ``proposition``
+    facts fails the second assertion, which is the signal that the reference page's
+    account of both rules needs rewriting.
     """
     core = _core_formula(
         'assume at 1: active("Root.A"); '
@@ -343,8 +340,12 @@ def test_a_state_opposition_still_cannot_reach_boolean_complement() -> None:
     assert len({fact["frame"] for fact in facts}) == 1
     assert len({fact["state"] for fact in facts}) == 1
 
-    assert explanation.achieved_mode == "formal"
-    assert explanation.proof is None
+    assert explanation.achieved_mode == "proof"
+    assert explanation.proof is not None
+
+    applied = {node.rule_id for node in explanation.proof.nodes if node.rule_id}
+    assert "excluded_state_selected" in applied
+    assert "boolean_complement" not in applied
 
 
 @pytest.mark.parametrize(
@@ -2216,3 +2217,174 @@ def test_every_forced_value_survives_an_independent_uniqueness_check() -> None:
         symbol = core.symbols.frame_var(entry.frame, entry.variable)
         solver.add(symbol != entry.value)
         assert solver.check() == z3.unsat, entry
+
+
+#: The members of one query's minimal core, as published for that query.
+#:
+#: Named here rather than derived so the test states which members it hands over: a
+#: reader can see that this is a whole core and therefore an unsatisfiable one.
+_REFUTED_CASE_MEMBERS = (
+    "assumption.0000.frame.0002",
+    "assumption.0001.frame.0003",
+    "initial.target",
+    "transition.step.0000",
+    "transition.step.0001",
+    "transition.step.0002",
+)
+
+
+@pytest.mark.unittest
+def test_a_condition_the_core_refutes_is_not_reported_as_discharged() -> None:
+    """Entailment out of a contradiction proves nothing, and is refused as such.
+
+    The members handed to this function are a minimal unsatisfiable core, so they
+    entail every condition and its negation alike.  What makes an entailment here
+    informative is the shrink: it drops members until the survivors can hold
+    together.  It gets there on its own in the ordinary case, because an
+    unsatisfiable subset is always accepted -- but when every single deletion breaks
+    the entailment, it stops on a set that still cannot hold, and a condition these
+    members outright *refute* would come back reported as discharged.
+
+    The condition below asks for ``Root.B`` at frame 1, which the initial transition
+    forbids.  It has to produce no entry.
+    """
+    core = _core_formula(
+        'assume at 2: var("x") == 1;\n'
+        'assume at 3: var("x") == 0;\n'
+        'check reach <= 3: active("Root.A");\n',
+        model_text=(
+            "def int x = 0;\n"
+            "state Root { state A; state B; [*] -> A;\n"
+            "  A -> A effect { x = x + 1; }; A -> B; }"
+        ),
+    )
+    refuted = {
+        "kind": "transition_case",
+        "variable": "x",
+        "frame": 1,
+        "target_frame": 2,
+        "operation": "add",
+        "operand": 1,
+        "condition": (
+            {"kind": "state_membership", "frame": 1, "state": 2, "excluded": False},
+        ),
+    }
+
+    discharged, record = check_case_conditions(
+        core,
+        [("transition.step.0001", refuted)],
+        _REFUTED_CASE_MEMBERS,
+        _SolveBudget(None),
+    )
+
+    assert discharged == {}
+    assert record.name == "case_condition"
+    assert record.status == "complete"
+    assert record.reason is None
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    ("label", "member_ids"),
+    [
+        # A member id the core does not track.  Reached by a caller holding ids from
+        # an earlier run, and what it pins is that the id is skipped rather than
+        # dereferenced: without that the group lookup returns ``None`` and reading its
+        # expressions raises.
+        (
+            "an id from somewhere else",
+            ("no.such.member", "initial.target", "transition.step.0000"),
+        ),
+        # Nothing to build an antecedent from.  Pins the caller-visible contract --
+        # no members, no discharge -- rather than the route taken to honour it: the
+        # early return exists to skip solver calls, and removing it leaves behaviour
+        # unchanged because an empty conjunction entails no condition either.
+        ("no members at all", ()),
+        # Members that can hold together and leave the condition open: step 0 relates
+        # frame 0 to frame 1 without settling which state frame 1 is in.  This is the
+        # shape the whole function is for, and the only one of the three where the
+        # entailment question itself decides the answer.
+        ("members that leave it open", ("transition.step.0000",)),
+    ],
+)
+def test_a_condition_that_cannot_be_discharged_gets_no_entry(label, member_ids) -> None:
+    """The documented silent failure, through each way of arriving at it.
+
+    The contract this function states is that a condition it cannot discharge simply
+    gets no entry -- the rule that would consume it never fires and the explanation
+    stays at formal depth.  That promise is only worth as much as the paths to it, so
+    each is entered here with members a caller could really pass: a stale id, an
+    empty list, and a subset that settles less than the whole core does.
+
+    Each case was checked against a mutation that should break it, because the shared
+    assertion is weak enough to pass for the wrong reason: two of the three first went
+    green against a mutation of the line they were written for, and only the third had
+    a mutation of its own.  The comments beside each case say what it pins.
+    """
+    core = _core_formula(
+        'assume at 2: var("x") == 1;\n'
+        'assume at 3: var("x") == 0;\n'
+        'check reach <= 3: active("Root.A");\n',
+        model_text=(
+            "def int x = 0;\n"
+            "state Root { state A; state B; [*] -> A;\n"
+            "  A -> A effect { x = x + 1; }; A -> B; }"
+        ),
+    )
+    case = {
+        "kind": "transition_case",
+        "variable": "x",
+        "frame": 1,
+        "target_frame": 2,
+        "operation": "add",
+        "operand": 1,
+        "condition": (
+            {"kind": "state_membership", "frame": 1, "state": 2, "excluded": False},
+        ),
+    }
+
+    discharged, record = check_case_conditions(
+        core, [("transition.step.0001", case)], member_ids, _SolveBudget(None)
+    )
+
+    assert discharged == {}, label
+    assert record.name == "case_condition"
+    assert record.status == "complete"
+    assert record.started is False
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "member_ids",
+    [(), ("no.such.member",)],
+    ids=["no_members_named", "a_member_the_core_does_not_have"],
+)
+def test_the_value_carry_phase_answers_nothing_when_it_has_no_members(
+    member_ids,
+) -> None:
+    """A phase with nothing to build an antecedent from returns an empty table.
+
+    The two entrances differ and both matter.  Naming no members at all is what a
+    caller does before a core has been reduced; naming one the core does not hold is
+    what happens when a table outlives the reduction that produced it.  Neither is an
+    error -- the phase supports the deeper tier and refuses rather than guessing --
+    but a phase that raised on either would take the whole explanation down with it,
+    and the sibling phase has both entrances covered while this one had neither.
+
+    :param member_ids: The member ids the phase is given.
+    :type member_ids: Sequence[str]
+    """
+    core = _core_formula(
+        'assume at 1: var("x") == 1; assume at 2: var("x") == 2; '
+        'check reach <= 2: active("Root.B");'
+    )
+    stated = {"kind": "variable_equality", "variable": "x", "frame": 1, "value": 1}
+
+    carried, record = check_value_carries(
+        core, [("assumption.0000.frame.0001", stated)], member_ids, _SolveBudget(None)
+    )
+
+    assert carried == {}
+    assert record.name == "value_carry"
+    assert record.status == "complete"
+    assert record.started is False

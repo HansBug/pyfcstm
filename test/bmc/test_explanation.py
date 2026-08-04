@@ -172,6 +172,8 @@ def test_a_category_outside_every_family_is_refused() -> None:
 #: Frozen structures the transcription test above pins by value.
 _TRANSCRIBED_FROZEN_NAMES = frozenset(
     {
+        "_ASSIGNMENT_PHRASES",
+        "_CONDITION_RELATIONS",
         "_DERIVATION_STATUSES",
         "_FACT_REQUIRED_KEYS",
         "_REASONING_STEP_KINDS",
@@ -206,9 +208,11 @@ _DERIVED_FROZEN_NAMES = {
     "_MODE_ORDER": "an ordering over _MODES, pinned by the delivery matrix",
     "_REDUCTION_MINIMALITY": "pinned by the reduction/minimality coupling tests",
     # The proof vocabularies live beside the proof types they gate, so they are
-    # transcribed in test_proof.py rather than twice.  Listed here so this guard
-    # still fails when a *seventh* one appears with no home.
+    # transcribed in test_proof.py rather than twice.  Listed one by one, with no
+    # count in this comment to drift out of date, so that the next one to appear
+    # fails this guard until it is given a home too.
     "_PROOF_NODE_KINDS": "transcribed by test_proof.py",
+    "_INPUT_VERIFICATION_METHODS": "transcribed by test_proof.py",
     "_PROOF_RULE_IDS": "transcribed by test_proof.py",
     "_PROOF_VERIFICATION_METHODS": "transcribed by test_proof.py",
     "_PROOF_INPUT_MINIMALITIES": "transcribed by test_proof.py",
@@ -285,6 +289,7 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
         "provenance.TRACKED_GROUP_PAIRINGS",
         "infeasibility.AGGREGATE_SELECTORS",
         "infeasibility._BINDING_ENCODERS",
+        "infeasibility._UNIT_BOUND_ENCODERS",
         "infeasibility._INDEX_REF_KEYS",
         "infeasibility._STAGE_FALLBACK_BY_STAGE",
     }
@@ -297,6 +302,26 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
     # Transcribed because they are published dispatch vocabularies: a kind or
     # status added without a schema enum entry would pass Python and fail
     # validation, and one removed would silently narrow what can be published.
+    assert module._CONDITION_RELATIONS == {
+        "eq": "is %s",
+        "ne": "is not %s",
+        "le": "is at most %s",
+        "lt": "is less than %s",
+        "ge": "is at least %s",
+        "gt": "is greater than %s",
+    }
+    # Transcribed beside the requirement phrases rather than derived from them: the
+    # two tables carry the same six relations in different grammatical moods, and a
+    # relation added to one and not the other renders as "is constrained" inside a
+    # condition while reading correctly everywhere else.
+    assert set(module._CONDITION_RELATIONS) == set(module._RELATION_PHRASES)
+    assert module._ASSIGNMENT_PHRASES == {
+        "add": "adds {operand} to {variable}",
+        "sub": "subtracts {operand} from {variable}",
+        "mul": "multiplies {variable} by {operand}",
+        "div": "divides {variable} by {operand}",
+        "set": "sets {variable} to {operand}",
+    }
     # Transcribed because it decides which members a reader may index directly:
     # a tag whose keys are dropped from here silently becomes indexable without
     # them, which is the KeyError this table exists to prevent.
@@ -306,6 +331,14 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
         "state_membership": ("frame", "state"),
         "state_domain": ("frame", "states"),
         "definedness_condition": ("frame", "operation"),
+        "transition_case": (
+            "variable",
+            "frame",
+            "target_frame",
+            "operation",
+            "condition",
+        ),
+        "proposition": ("identity", "holds"),
     }
     # Every published tag needs an entry, or it becomes readable by omission.
     assert set(module._FACT_REQUIRED_KEYS) == set(module._FACT_KINDS)
@@ -351,12 +384,18 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
     # here has no encoding, so its member fails the binding check and no proof is
     # published over it -- which is the contract's answer for a group that does not
     # normalize losslessly, and therefore a published boundary rather than a detail.
+    # A group holding one requirement per case binds against the requirement, so
+    # its encoder lives in a second table.  Transcribed for the same reason as the
+    # first: a kind dropped from here silently stops being bindable, and the proof
+    # then goes unpublished with no gate pointing at the cause.
+    assert set(infeasibility._UNIT_BOUND_ENCODERS) == {"transition_case"}
     assert set(infeasibility._BINDING_ENCODERS) == {
         "variable_equality",
         "variable_bound",
         "definedness_guard",
         "state_domain",
         "state_exclusion",
+        "proposition",
     }
     assert infeasibility._INDEX_REF_KEYS == ("frame", "frames", "step", "steps")
     assert dict(infeasibility._STAGE_FALLBACK_BY_STAGE) == {
@@ -426,6 +465,8 @@ def test_every_frozen_vocabulary_matches_the_authored_list() -> None:
         "state_membership",
         "state_domain",
         "definedness_condition",
+        "transition_case",
+        "proposition",
     )
     assert module.UNBUILT_SLOTS == ()
     assert module.INDEX_REF_KEYS == ("frame", "frames", "step", "steps")
@@ -3325,6 +3366,10 @@ def test_a_partly_complete_fact_is_declined_by_every_consumer() -> None:
         "state": 1,
         "states": [1, 2],
         "operation": "division",
+        "target_frame": 1,
+        "condition": "Implies(0 == F_0_state, True)",
+        "identity": "Root.A.Go@0",
+        "holds": True,
     }
 
     def core_of(fact):
@@ -3931,3 +3976,308 @@ def test_narrative_refuses_a_repeated_review_surface() -> None:
             (BmcReasoningStep("fact", ("g0",), (), "text"),),
             ("surface.a", "surface.a"),
         )
+
+
+#: A field value per key any publishable fact requires, so a witness for one kind can
+#: be built from the table that declares what that kind implies.
+#:
+#: ``operation`` is deliberately absent here and supplied per kind below.  Two kinds
+#: require a field of that name and their value vocabularies are disjoint: a
+#: definedness condition names an operation whose domain can fail (``division``),
+#: while a transition case names the arithmetic an assignment applies (``add``).  One
+#: shared value would satisfy the table and mean nothing to one of the two readers --
+#: which is how this gate first reported a kind as silent when the renderer was fine.
+_FACT_FIELD_SAMPLE = {
+    "variable": "x",
+    "frame": 0,
+    "operator": "eq",
+    "value": 1,
+    "state": 1,
+    "states": [1, 2],
+    "target_frame": 1,
+    "condition": [{"kind": "state_membership", "frame": 0, "state": 1}],
+    "identity": "Root.A.Go@0",
+    "holds": True,
+}
+
+#: What ``operation`` means for each kind that requires it.
+_OPERATION_BY_KIND = {
+    "definedness_condition": "division",
+    "transition_case": "add",
+}
+
+
+@pytest.mark.unittest
+def test_every_publishable_kind_reads_as_more_than_its_own_identity() -> None:
+    """A kind with no sentence degrades to the fallback, and nothing says so.
+
+    ``human_text_for_fact`` dispatches on the tag and returns the unreduced sentence
+    for anything it does not recognize.  That is the right behaviour for a shape no
+    recognizer read -- and indistinguishable from a shape whose recognizer landed
+    while its sentence did not.  Comparing against the fallback for every published
+    kind is what tells the two apart: this is the touch point that has no other gate,
+    since adding a member to the vocabulary does not make any test mention the
+    renderer.
+    """
+    from pyfcstm.bmc.explanation import (
+        _FACT_KINDS,
+        _FACT_REQUIRED_KEYS,
+        _unreduced_sentence,
+        human_text_for_fact,
+    )
+
+    silent = []
+    for kind in _FACT_KINDS:
+        if kind == "structural_constraint":
+            # The fallback *is* this kind's reading, so it is the one exception.
+            continue
+        fact = {"kind": kind}
+        for key in _FACT_REQUIRED_KEYS[kind]:
+            if key == "operation":
+                fact[key] = _OPERATION_BY_KIND[kind]
+            else:
+                fact[key] = _FACT_FIELD_SAMPLE[key]
+        if kind == "transition_case":
+            # Exactly one of the two operand shapes is present; either will do here.
+            fact["operand"] = 1
+        reading = human_text_for_fact("assumption", fact)
+        if reading == _unreduced_sentence("assumption", fact):
+            silent.append(kind)
+
+    assert not silent, "these kinds publish but have no sentence: %s" % silent
+
+
+@pytest.mark.unittest
+def test_the_two_operation_vocabularies_stay_disjoint() -> None:
+    """Two kinds require a field named ``operation`` and mean different things by it.
+
+    A definedness condition names an operation whose domain can fail; a transition
+    case names the arithmetic an assignment applies.  Both are right for their own
+    kind, and a consumer that dispatched on ``operation`` without reading ``kind``
+    first would be reading one vocabulary as the other.  Keeping the value sets
+    disjoint is what makes that mistake detectable instead of silent: an overlapping
+    value would be accepted by both readers and mean different things to each.
+
+    The two sets are transcribed rather than derived so that a value moving from one
+    to the other has to be written down here, which is the point where someone has to
+    think about whether a consumer can still tell them apart.
+    """
+    from pyfcstm.bmc.explanation import _ASSIGNMENT_PHRASES
+
+    assignment = set(_ASSIGNMENT_PHRASES)
+    # Set at the call sites that build a definedness group in ``relation.py``, so
+    # there is no table to read; transcribed for the same reason the frozen tables
+    # are, and the pair below is the whole reason this test exists: ``div`` and
+    # ``division`` differ by five characters and mean different things.  A reader who
+    # conflates them reads an assignment's operator as an operation whose domain can
+    # fail, or the reverse.
+    definedness = {"division", "sqrt"}
+
+    # ``set`` joined when a constant assignment turned out to be an ordinary effect
+    # the recognizer was not shaped for.  It is a replacement rather than an
+    # arithmetic update, which is why the rules decline it -- and why it still has to
+    # stay clear of the definedness vocabulary.
+    assert assignment == {"add", "sub", "mul", "div", "set"}
+    assert assignment & definedness == set()
+
+
+#: Every fact tag a proof node's conclusion can carry, with a witness for each.
+#:
+#: The rule vocabulary, not the publication one: these are what ``_fact_sentence``
+#: renders, and it is the touch point with no other gate.  A tag whose branch is
+#: missing falls through to the generic reading, which is correct for a shape nothing
+#: recognized and wrong for one whose rule landed while its sentence did not.
+_RULE_FACT_WITNESSES = (
+    {"kind": "variable_equality", "variable": "x", "frame": 0, "value": 1},
+    {
+        "kind": "variable_bound",
+        "variable": "x",
+        "frame": 0,
+        "operator": "ge",
+        "value": 1,
+    },
+    {"kind": "state_domain", "frame": 0, "states": [1, 2]},
+    {"kind": "state_exclusion", "frame": 0, "state": 1},
+    {
+        "kind": "definedness_guard",
+        "variable": "x",
+        "frame": 0,
+        "operation": "division",
+        "forbidden": 0,
+    },
+    {"kind": "proposition", "identity": "Root.A.Go@0", "holds": True},
+    {
+        "kind": "transition_case",
+        "variable": "x",
+        "frame": 0,
+        "target_frame": 1,
+        "operator": "add",
+        "operand": 1,
+        "condition": [{"kind": "state_membership", "frame": 0, "state": 1}],
+    },
+    {
+        "kind": "arithmetic_expression",
+        "variable": "x",
+        "frame": 0,
+        "target_frame": 1,
+        "operator": "add",
+        "operand": 1,
+    },
+    {"kind": "false"},
+)
+
+
+@pytest.mark.unittest
+def test_every_rule_fact_tag_has_a_sentence_of_its_own() -> None:
+    """A tag with no branch reads as the generic fallback and nothing says so.
+
+    ``_fact_sentence`` is what a proof node's ``human_text`` is built from, so a tag
+    it does not recognize produces a node whose sentence says less than its
+    conclusion.  Comparing every tag's reading against the fallback is what catches
+    that: the alternative is noticing by eye that one sentence in a published proof
+    is vaguer than the others.
+    """
+    from pyfcstm.bmc.explanation import _fact_sentence
+
+    generic = _fact_sentence({"kind": "a_tag_no_rule_declares"})
+    silent = [
+        witness["kind"]
+        for witness in _RULE_FACT_WITNESSES
+        if _fact_sentence(witness) == generic
+    ]
+
+    assert not silent, "these tags have no sentence of their own: %s" % silent
+
+
+@pytest.mark.unittest
+def test_the_rule_fact_witnesses_cover_every_tag_a_rule_names() -> None:
+    """The witness list only helps while it cannot fall behind the catalog."""
+    from pyfcstm.bmc.proof_rules import PROOF_RULES
+
+    named = {
+        kind
+        for rule in PROOF_RULES.values()
+        for kind in tuple(rule.premise_kinds) + (rule.conclusion_kind,)
+        if kind and kind != "any"
+    }
+    covered = {witness["kind"] for witness in _RULE_FACT_WITNESSES}
+
+    assert named <= covered, sorted(named - covered)
+
+
+@pytest.mark.unittest
+def test_a_conditional_case_says_what_it_is_conditional_on() -> None:
+    """The condition is part of the fact, so it has to be part of the reading.
+
+    Without it the sentence asserts an assignment unconditionally while the fact it
+    was built from carries a condition -- the human account and the machine fact then
+    disagree, and a reader following the prose would believe the step rests on less
+    than it does.
+    """
+    from pyfcstm.bmc.explanation import _fact_sentence
+
+    conditional = {
+        "kind": "transition_case",
+        "variable": "x",
+        "frame": 0,
+        "target_frame": 1,
+        "operator": "add",
+        "operand": 1,
+        "condition": [
+            {"kind": "state_membership", "frame": 0, "state": 1},
+            {
+                "kind": "variable_comparison",
+                "variable": "y",
+                "frame": 0,
+                "operator": "ge",
+                "value": 3,
+            },
+        ],
+    }
+
+    reading = _fact_sentence(conditional, {1: "Root.A"})
+
+    assert "where" in reading
+    assert "Root.A" in reading, "a condition names the state the author wrote"
+    assert "y is at least 3" in reading, reading
+    unconditional = {
+        key: value for key, value in conditional.items() if key != "condition"
+    }
+    assert "where" not in _fact_sentence(unconditional)
+
+
+@pytest.mark.unittest
+def test_both_renderers_read_a_condition_out_rather_than_alluding_to_it() -> None:
+    """The two renderers have to agree, and only one of them had a gate.
+
+    A conditional assignment read as "where its case applies" is not false, and that
+    is what made it survive: the machine fact carries the requirement, the sentence
+    alludes to it, and the step after says "therefore" on the strength of a condition
+    the reader was never shown.  The asymmetry was in the gates rather than in the
+    code -- one renderer was pinned to name the condition and the state, the other
+    only for kinds that have no condition at all, and an allusion is not the fallback
+    sentence so it passed.
+    """
+    from pyfcstm.bmc.explanation import _fact_sentence, human_text_for_fact
+
+    published = {
+        "kind": "transition_case",
+        "variable": "x",
+        "frame": 1,
+        "target_frame": 2,
+        "operation": "add",
+        "operand_variable": "y",
+        "condition": [{"kind": "state_membership", "frame": 1, "state": 1}],
+    }
+    rule_side = dict(published)
+    rule_side["operator"] = rule_side.pop("operation")
+
+    readings = (
+        human_text_for_fact("transition_rule", published, {1: "Root.A"}),
+        _fact_sentence(rule_side, {1: "Root.A"}),
+    )
+
+    for reading in readings:
+        assert "where" in reading, reading
+        assert "Root.A" in reading, reading
+        assert "its case applies" not in reading, (
+            "the condition is named, not alluded to: %s" % reading
+        )
+
+
+@pytest.mark.unittest
+def test_a_constant_assignment_is_published_as_the_replacement_it_is() -> None:
+    """``x = 1`` is an ordinary effect and was reaching the core with no reading.
+
+    Every fixture this branch was built on wrote ``x = x + 1``, so the recognizer was
+    shaped for an arithmetic update and a constant assignment fell to the structural
+    fallback.  Two things had to change: the operation vocabulary needed a value for
+    "becomes" as opposed to "changes by", and the equality had to be read in both
+    operand orders -- the encoder writes an update as ``F_next_x == F_step_x + 1`` and
+    a constant as ``1 == F_next_x``, so reading position 0 as the target finds one and
+    misses the other.
+    """
+    from pyfcstm.bmc import BmcEngine, build_bmc_core_formula
+    from pyfcstm.bmc.explanation import human_text_for_fact
+    from pyfcstm.bmc.provenance import normalized_fact_for
+    from pyfcstm.model import load_state_machine_from_text
+
+    machine = (
+        "def int x = 0;\n"
+        "state Root { state A; state B; [*]->A; A->B effect { x = 1; } B->[*]; }"
+    )
+    context = BmcEngine(load_state_machine_from_text(machine)).prepare(
+        'assume at 2: var("x") == 5; check reach <= 2: active("Root.B");'
+    )
+    core = build_bmc_core_formula(context)
+    facts = [
+        normalized_fact_for(group, ("x",))
+        for group in core._tracked_groups
+        if group.refs.get("step") == 1 and group.category == "transition.step"
+    ]
+
+    assert len(facts) == 1, facts
+    fact = facts[0]
+    assert fact["kind"] == "transition_case", fact
+    assert (fact["operation"], fact["operand"]) == ("set", 1), fact
+    assert "sets x to 1" in human_text_for_fact("transition_rule", fact), fact

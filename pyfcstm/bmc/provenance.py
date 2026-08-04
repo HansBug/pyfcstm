@@ -38,7 +38,7 @@ import os
 import sys
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any, Dict, Mapping, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from pyfcstm.utils.validate import Span
 
@@ -897,7 +897,597 @@ def _frame_state_slot(expression: Any, frame: int) -> bool:
     return str(expression) == "F_%d_state" % frame
 
 
-def normalized_fact_for(group: Any, declared: Optional[Any] = None) -> Dict[str, Any]:
+def _event_path_of_symbol(expression: Any, event_paths: Optional[Any] = None):
+    """Return the event a proposition symbol stands for, and the step it names.
+
+    The encoder builds the symbol as ``E_<step>_event_<id>_<body>_<digest>``, where
+    the body is the event path with its dots replaced and the digest is a hash of
+    the path itself.  Reading the body back recovers the replacement rather than the
+    path, so two events whose names differ only in a dot would share it.  Hashing the
+    known paths and comparing instead answers with the path the author wrote, or with
+    nothing.
+
+    Without ``event_paths`` the body is the fallback, which is correct for every path
+    whose characters survive the replacement intact -- the same trade
+    :func:`_frame_variable_name` makes for a variable name.
+
+    :param expression: The candidate symbol.
+    :type expression: object
+    :param event_paths: Event paths to resolve against, defaults to ``None``.
+    :type event_paths: Optional[Iterable[str]], optional
+    :return: ``(path, step)``, or ``None`` when the operand is not one.
+    :rtype: Optional[Tuple[str, int]]
+    """
+    import z3
+
+    if not z3.is_const(expression):
+        return None
+    text = str(expression)
+    parts = text.split("_")
+    if len(parts) < 5 or parts[0] != "E" or not parts[1].isdigit():
+        return None
+    if parts[2] != "event":
+        return None
+    step = int(parts[1])
+    digest = parts[-1]
+    if event_paths:
+        matches = [
+            path
+            for path in event_paths
+            if hashlib.sha1(path.encode("utf-8")).hexdigest() == digest
+        ]
+        if len(matches) != 1:
+            # No match means the symbol is not this model's event; more than one
+            # would mean the digest failed to tell them apart, and either answer
+            # would name the wrong declaration.
+            return None
+        return matches[0], step
+    body = "_".join(parts[4:-1])
+    return (body, step) if body else None
+
+
+def proposition_identity(path: str, step: int) -> str:
+    """Return the published identity of one event at one step.
+
+    One string rather than two fields, because the rule that closes over a proposition
+    compares subjects for equality and nothing else: a single opaque identity is what
+    it needs, while a reader still gets the path and the step it was built from.
+
+    The format lives here alone.  It had been written out at three call sites -- two
+    publishers and the binding side's key -- and the three agreed, which is the state a
+    duplicated format string is in right up until it stops being.  Every consumer
+    compares this for equality, so a fourth spelling would make a rule refuse a premise
+    that says exactly what it asked for.
+
+    The caller owes an authored path, not one recovered from a symbol body.  This
+    function joins what it is given, so passing the body's spelling produces an
+    identity no other layer will match.
+    :param path: The event path, as the model declares it.
+    :type path: str
+    :param step: The macro-step the symbol names.
+    :type step: int
+    :return: The identity a ``proposition`` fact publishes.
+    :rtype: str
+
+    Example::
+
+        >>> proposition_identity("Root_Go", 2)
+        'Root_Go@2'
+    """
+    return "%s@%d" % (path, step)
+
+
+def _proposition_fact(
+    group: Any, event_paths: Optional[Any] = None
+) -> Optional[Dict[str, Any]]:
+    """Read an event assumption as the proposition it requires.
+
+    An event assertion is one requirement about one event at one step, and the
+    encoding says so directly: a single boolean symbol, negated when the query wrote
+    ``== false``.  The published fact keeps that shape -- one identity, one polarity
+    -- so the rule that closes a core holding both a proposition and its complement
+    can compare them without knowing how either was spelled.
+
+    The step is part of the identity.  Leaving it out would make "this event at step
+    0" and "the same event at step 1" one subject, and the rule would then report a
+    contradiction the query never stated.
+
+    :param group: The tracked group to read.
+    :type group: BmcTrackedConstraint
+    :param event_paths: Event paths to resolve the symbol against, defaults to
+        ``None``.
+    :type event_paths: Optional[Iterable[str]], optional
+    :return: The fact mapping, or ``None`` when the shape is not one event symbol.
+    :rtype: Optional[Dict[str, Any]]
+    """
+    import z3
+
+    if len(group.expressions) != 1:
+        return None
+    expression = group.expressions[0]
+    holds = True
+    if z3.is_app(expression) and expression.decl().kind() == z3.Z3_OP_NOT:
+        if expression.num_args() != 1:
+            return None
+        expression, holds = expression.arg(0), False
+    resolved = _event_path_of_symbol(expression, event_paths)
+    if resolved is None:
+        return None
+    path, step = resolved
+    return {
+        "kind": "proposition",
+        "identity": proposition_identity(path, step),
+        "holds": holds,
+    }
+
+
+def conjunctive_units(expression: Any) -> Tuple[Any, ...]:
+    """Split one constraint into the independent requirements it makes.
+
+    Two rewrites, applied until neither changes anything:
+
+    * a conjunction contributes its members rather than itself, recursively, so a
+      nested ``And`` is flattened rather than counted as one requirement;
+    * an implication whose consequent is a conjunction contributes one implication
+      per member, because "under P, both a and b hold" says the same as "under P,
+      a holds" beside "under P, b holds".
+
+    The order is the traversal's own -- depth first, left to right, with a
+    distributed implication taking the position of the consequent member it came
+    from.  It is part of the contract rather than an accident: a published fact
+    identifies which requirement it stands for by index, so the same model and
+    query have to decompose the same way every time.
+
+    An implication whose consequent is a further implication is left alone.  The
+    rewrite is about conjunctive consequents; collapsing nested antecedents would
+    be a second transformation with its own soundness argument, and this reading is
+    not the place to make it.
+
+    :param expression: The constraint to split.
+    :type expression: z3.BoolRef
+    :return: The requirements, in traversal order.
+    :rtype: Tuple[z3.BoolRef, ...]
+
+    Example::
+
+        >>> import z3
+        >>> a, b, p = z3.Bool("a"), z3.Bool("b"), z3.Bool("p")
+        >>> [str(unit) for unit in conjunctive_units(z3.And(a, z3.And(b, p)))]
+        ['a', 'b', 'p']
+        >>> [str(unit) for unit in conjunctive_units(z3.Implies(p, z3.And(a, b)))]
+        ['Implies(p, a)', 'Implies(p, b)']
+    """
+    import z3
+
+    def flatten(node: Any) -> List[Any]:
+        if z3.is_and(node):
+            return [unit for child in node.children() for unit in flatten(child)]
+        return [node]
+
+    units = flatten(expression)
+    changed = True
+    while changed:
+        changed = False
+        rewritten: List[Any] = []
+        for unit in units:
+            if z3.is_implies(unit):
+                consequents = flatten(unit.arg(1))
+                if len(consequents) > 1:
+                    rewritten.extend(
+                        z3.Implies(unit.arg(0), part) for part in consequents
+                    )
+                    changed = True
+                    continue
+            rewritten.append(unit)
+        units = rewritten
+    return tuple(units)
+
+
+def _frame_of_symbol(expression: Any) -> Optional[int]:
+    """Return the frame index a frame symbol belongs to.
+
+    :param expression: The candidate symbol.
+    :type expression: object
+    :return: The frame index, or ``None`` when the operand is not a frame symbol.
+    :rtype: Optional[int]
+    """
+    text = str(_without_coercion(expression))
+    if not text.startswith("F_"):
+        return None
+    parts = text.split("_")
+    if len(parts) < 3 or not parts[1].isdigit():
+        return None
+    return int(parts[1])
+
+
+#: How a z3 arithmetic application names the operation a published fact reports.
+#:
+#: Keyed by ``decl().kind()`` so the reading does not depend on how z3 renders the
+#: operator.  Only the four the evaluation rule can apply appear here: an operation
+#: outside this set has no published name, so the case it belongs to degrades
+#: rather than arriving under a name no rule evaluates.
+def _arithmetic_operations(z3: Any) -> Dict[int, str]:
+    """Return the operation name for each arithmetic declaration kind.
+
+    :param z3: The imported ``z3`` module.
+    :type z3: module
+    :return: Declaration kind mapped to the published operation name.
+    :rtype: Dict[int, str]
+    """
+    return {
+        z3.Z3_OP_ADD: "add",
+        z3.Z3_OP_SUB: "sub",
+        z3.Z3_OP_MUL: "mul",
+        z3.Z3_OP_IDIV: "div",
+        z3.Z3_OP_DIV: "div",
+    }
+
+
+def _condition_facts(
+    expression: Any,
+    declared: Optional[Any] = None,
+    event_paths: Optional[Any] = None,
+) -> Optional[Tuple[Dict[str, Any], ...]]:
+    """Read the condition that selects one case as the facts it requires.
+
+    The condition is published as facts rather than as the encoder's own text.  A
+    reader is owed the model's terms -- a frame, a state, a variable -- and the
+    encoder's rendering carries neither: ``And(1 == F_0_state, True)`` names a slot
+    and a digest, so a consumer could not match it against anything and a sentence
+    quoting it would put the encoding in front of the reader.
+
+    Order is the conjunction's own, so the same model and query publish the same
+    list every time.  A conjunct that is trivially true carries no requirement and
+    is dropped; one that no existing fact category reads makes the whole condition
+    unreadable, and the case then keeps its structural identity rather than
+    publishing a condition weaker than the one the encoding holds.
+
+    :param expression: The case's selection condition.
+    :type expression: z3.BoolRef
+    :param declared: Model variable names to resolve symbols against, defaults to
+        ``None``.
+    :type declared: Optional[Iterable[str]], optional
+    :param event_paths: Event paths to resolve an event conjunct against, defaults
+        to ``None``.  Without them the reading recovers the encoder's symbol body,
+        which spells a path's dots as underscores -- a different subject from the one
+        a bare event assumption publishes for the same event.
+    :type event_paths: Optional[Iterable[str]], optional
+    :return: The facts the condition requires, in conjunction order, or ``None``
+        when any conjunct has no reading.
+    :rtype: Optional[Tuple[Dict[str, Any], ...]]
+    """
+    import z3
+
+    facts: List[Dict[str, Any]] = []
+    for conjunct in conjunctive_units(expression):
+        if z3.is_true(conjunct):
+            # The guard slot of a transition that carries no guard.  It requires
+            # nothing, so publishing it would add a member standing for nothing.
+            continue
+        fact = _state_equality_fact(conjunct, declared)
+        if fact is None:
+            fact = _variable_comparison_in(conjunct, declared)
+        if fact is None:
+            # An event-triggered transition names its event in the condition, and the
+            # reading for that was already here -- one function away, used by the
+            # proposition publisher -- while this list knew two readings and not the
+            # third.  A condition mentioning an event was therefore unreadable, and
+            # the case kept its structural identity, which is what kept the whole
+            # arithmetic chain from starting on any event-triggered model.
+            fact = _event_proposition_in(conjunct, event_paths)
+        if fact is None:
+            return None
+        facts.append(fact)
+    return tuple(facts)
+
+
+def _event_proposition_in(
+    expression: Any, event_paths: Optional[Any] = None
+) -> Optional[Dict[str, Any]]:
+    """Read a condition conjunct that requires an event, as a ``proposition`` fact.
+
+    The same reading the proposition publisher performs, applied where a case's
+    condition names the event that triggers its transition -- including the table it
+    resolves against.
+
+    This once said no table was needed, on the grounds that the encoder puts the path
+    and the step into the symbol's own name.  It puts a *replacement* of the path
+    there: the dots become underscores, and reading the body back recovers the
+    replacement.  The reasoning was the defect, not a description of it -- the same
+    event then had one spelling here and another where a bare assumption published it,
+    and since every consumer compares the subject for equality, a rule stopped finding
+    a premise that said exactly what it asked for.
+
+    :param expression: One conjunct of a case's selection condition.
+    :type expression: z3.BoolRef
+    :param event_paths: Event paths to resolve the symbol against, defaults to
+        ``None``.  Omitting them falls back to the body reading described above, which
+        is correct only for a path whose characters survive the replacement intact.
+    :type event_paths: Optional[Iterable[str]], optional
+    :return: A ``proposition`` fact, or ``None`` when the conjunct names no event.
+    :rtype: Optional[Dict[str, object]]
+
+    Example::
+
+        >>> _event_proposition_in(None) is None
+        True
+    """
+    import z3
+
+    if expression is None:
+        return None
+    holds = True
+    if z3.is_app(expression) and expression.decl().kind() == z3.Z3_OP_NOT:
+        if expression.num_args() != 1:
+            return None
+        holds = False
+        expression = expression.arg(0)
+    resolved = _event_path_of_symbol(expression, event_paths)
+    if resolved is None:
+        return None
+    path, step = resolved
+    # The same shape :func:`_proposition_fact` publishes, through the same identity
+    # constructor.  Writing the fields from understanding instead produced ``event``
+    # and ``step`` here against its ``identity``, which every consumer compares for
+    # equality -- two spellings of one fact is how a rule comes to refuse a premise
+    # that says what it asked for.
+    return {
+        "kind": "proposition",
+        "identity": proposition_identity(path, step),
+        "holds": holds,
+    }
+
+
+def _state_equality_fact(
+    expression: Any, declared: Optional[Any] = None
+) -> Optional[Dict[str, Any]]:
+    """Read one equality between a state code and some frame's state slot.
+
+    Unlike :func:`_state_membership_fact` the frame is not known in advance here:
+    a condition names the frame it speaks about rather than inheriting it from a
+    group's refs, so the slot's own name supplies it.
+
+    :param expression: The candidate conjunct.
+    :type expression: z3.BoolRef
+    :param declared: Unused; present so both condition readers share one shape.
+    :type declared: Optional[Iterable[str]], optional
+    :return: A ``state_membership`` fact, or ``None``.
+    :rtype: Optional[Dict[str, Any]]
+    """
+    import z3
+
+    del declared
+    if not z3.is_app(expression) or expression.decl().kind() != z3.Z3_OP_EQ:
+        return None
+    if expression.num_args() != 2:
+        return None
+    for slot, code in (
+        (expression.arg(0), expression.arg(1)),
+        (expression.arg(1), expression.arg(0)),
+    ):
+        frame = _frame_of_symbol(slot)
+        if frame is None or not _frame_state_slot(slot, frame):
+            continue
+        value = _numeric_value(code)
+        if value is not None:
+            return {
+                "kind": "state_membership",
+                "frame": frame,
+                "state": value,
+                "excluded": False,
+            }
+    return None
+
+
+def _variable_comparison_in(
+    expression: Any, declared: Optional[Any] = None
+) -> Optional[Dict[str, Any]]:
+    """Read one comparison between a frame variable and a numeral.
+
+    The group-level reader takes its frame from ``refs``; a guard inside a
+    condition names its own, so this one reads the frame off the symbol.
+
+    :param expression: The candidate conjunct.
+    :type expression: z3.BoolRef
+    :param declared: Model variable names to resolve symbols against, defaults to
+        ``None``.
+    :type declared: Optional[Iterable[str]], optional
+    :return: A ``variable_comparison`` fact, or ``None``.
+    :rtype: Optional[Dict[str, Any]]
+    """
+    import z3
+
+    if not z3.is_app(expression):
+        return None
+    operator = _relational_operators(z3).get(expression.decl().kind())
+    if operator is None or expression.num_args() != 2:
+        return None
+    left, right = expression.arg(0), expression.arg(1)
+    name, value = _frame_variable_name(left, declared), _numeric_value(right)
+    slot = left
+    if name is None or value is None:
+        name, value = _frame_variable_name(right, declared), _numeric_value(left)
+        slot = right
+        operator = {"lt": "gt", "gt": "lt", "le": "ge", "ge": "le"}.get(
+            operator, operator
+        )
+    if name is None or value is None:
+        return None
+    frame = _frame_of_symbol(slot)
+    if frame is None:
+        return None
+    return {
+        "kind": "variable_comparison",
+        "variable": name,
+        "frame": frame,
+        "operator": operator,
+        "value": value,
+    }
+
+
+def _assignment_in_unit(
+    unit: Any, step: int, declared: Optional[Any] = None
+) -> Optional[Dict[str, Any]]:
+    """Read one decomposed requirement as an assignment a transition makes.
+
+    The shape read is ``Implies(condition, next == <arithmetic over this frame>)``:
+    an implication whose consequent equates a variable at the following frame with
+    an expression over the same variable at this one.  A requirement that only
+    carries a value forward unchanged is not an assignment the model wrote, so it
+    is declined -- reporting it would put "x becomes x" in a proof as though the
+    transition had said something.
+
+    :param unit: One requirement from :func:`conjunctive_units`.
+    :type unit: z3.BoolRef
+    :param step: The macro-step the requirement belongs to.
+    :type step: int
+    :param declared: Model variable names to resolve symbols against, defaults to
+        ``None``.
+    :type declared: Optional[Iterable[str]], optional
+    :return: The variable, operation and operand, or ``None`` when the requirement
+        is not an assignment.
+    :rtype: Optional[Dict[str, Any]]
+    """
+    import z3
+
+    if not z3.is_implies(unit):
+        return None
+    consequent = unit.arg(1)
+    if not z3.is_eq(consequent) or consequent.num_args() != 2:
+        return None
+    # Operand order is not fixed.  An arithmetic update encodes as
+    # ``F_next_x == F_step_x + 1`` and a constant assignment as ``1 == F_next_x``, so
+    # reading position 0 as the target alone finds one shape and misses the other --
+    # which is how a plain ``x = 1`` went unpublished.  The mirrored reading is what
+    # the value-comparison recognizer has always done, and the omission here was the
+    # asymmetry.
+    target, source = consequent.arg(0), consequent.arg(1)
+    variable = _frame_variable_name(target, declared)
+    if variable is None or _frame_of_symbol(target) != step + 1:
+        target, source = consequent.arg(1), consequent.arg(0)
+        variable = _frame_variable_name(target, declared)
+    if variable is None or _frame_of_symbol(target) != step + 1:
+        return None
+    if not z3.is_app(source):
+        return None
+    value = _numeric_value(source)
+    if value is not None:
+        # ``x = 1``: the next frame's value does not depend on this one, so the
+        # published operation is a replacement rather than an arithmetic update.  The
+        # rules read ``set`` and decline it -- "x becomes 1" is not a step a value can
+        # be carried across -- but the reader is still owed what the transition wrote.
+        return {
+            "variable": variable,
+            "operation": "set",
+            "operand": value,
+            "condition_expression": unit.arg(0),
+        }
+    operation = _arithmetic_operations(z3).get(source.decl().kind())
+    if operation is None or source.num_args() != 2:
+        return None
+    left, right = source.arg(0), source.arg(1)
+    if (
+        _frame_variable_name(left, declared) != variable
+        or _frame_of_symbol(left) != step
+    ):
+        # The rule that evaluates this reads the left operand as the variable's own
+        # value at this frame.  A different subject there is a statement about two
+        # variables, which the published shape has no field for.
+        return None
+    reading = {
+        "variable": variable,
+        "operation": operation,
+        "condition_expression": unit.arg(0),
+    }
+    operand = _numeric_value(right)
+    if operand is not None:
+        reading["operand"] = operand
+        return reading
+    operand_variable = _frame_variable_name(right, declared)
+    if operand_variable is None or _frame_of_symbol(right) != step:
+        return None
+    # A symbolic operand is named rather than resolved: the substitution rule needs
+    # to see which variable is still standing before the evaluation rule can run.
+    reading["operand_variable"] = operand_variable
+    return reading
+
+
+def _transition_case_fact(
+    group: Any,
+    declared: Optional[Any] = None,
+    event_paths: Optional[Any] = None,
+) -> Optional[Dict[str, Any]]:
+    """Read a step relation as the assignment its one assigning case makes.
+
+    A step relation holds every case the step could take -- initial entry, delta,
+    absorb, fallback, each authored transition -- so it is a conjunction of many
+    requirements rather than one statement.  What a reader is owed from it is the
+    assignment the model wrote, and that is recoverable when exactly one decomposed
+    requirement reads as an assignment: the fact then names it and carries the
+    condition under which it applies, which is what lets a checker agree that the
+    fact and the requirement say the same thing.
+
+    Two or more assigning requirements are declined rather than picked between.
+    The group would then need one fact per assignment, and publishing one of them
+    as though it were the group's reading would hide the rest.
+
+    :param group: The tracked group to read.
+    :type group: BmcTrackedConstraint
+    :param declared: Model variable names to resolve symbols against, defaults to
+        ``None``.
+    :type declared: Optional[Iterable[str]], optional
+    :return: The fact mapping, or ``None`` when the step makes no single
+        recoverable assignment.
+    :rtype: Optional[Dict[str, Any]]
+    """
+    if len(group.expressions) != 1:
+        return None
+    step = group.refs.get("step")
+    if not isinstance(step, int):
+        return None
+    # Which requirement of the group this reads is a property of the *binding*, not
+    # of the fact, so the position is used to decide uniqueness and then dropped.
+    # The binding check recomputes the decomposition; publishing the index here as
+    # well would give a reader two answers that could disagree.
+    readings = [
+        reading
+        for reading in (
+            _assignment_in_unit(unit, step, declared)
+            for unit in conjunctive_units(group.expressions[0])
+        )
+        if reading is not None
+    ]
+    if len(readings) != 1:
+        return None
+    reading = readings[0]
+    fact = {
+        "kind": "transition_case",
+        "variable": reading["variable"],
+        "frame": step,
+        "target_frame": step + 1,
+        "operation": reading["operation"],
+    }
+    if "operand" in reading:
+        fact["operand"] = reading["operand"]
+    else:
+        fact["operand_variable"] = reading["operand_variable"]
+    # The condition travels as facts rather than as the encoder's text, and a
+    # condition with no reading takes the whole case down with it: publishing an
+    # assignment whose condition is weaker than the encoding's would state something
+    # the group does not require, which the binding check refuses in one direction
+    # and a reader has no way to notice.
+    condition = _condition_facts(reading["condition_expression"], declared, event_paths)
+    if not condition:
+        return None
+    fact["condition"] = list(condition)
+    return fact
+
+
+def normalized_fact_for(
+    group: Any,
+    declared: Optional[Any] = None,
+    event_paths: Optional[Any] = None,
+) -> Dict[str, Any]:
     """Return the published domain fact for one tracked source group.
 
     The reading is deterministic and carries no Z3 object: a machine consumer
@@ -913,6 +1503,10 @@ def normalized_fact_for(group: Any, declared: Optional[Any] = None) -> Dict[str,
         for every name short enough to survive truncation intact.  Defaults to
         ``None``.
     :type declared: Optional[Iterable[str]], optional
+    :param event_paths: The model's event paths, resolved the same way and for the
+        same reason: the symbol body replaces the path's dots, so two events whose
+        names differ only there would share it.  Defaults to ``None``.
+    :type event_paths: Optional[Iterable[str]], optional
     :return: A tagged mapping of plain JSON-compatible values.
     :rtype: Dict[str, Any]
 
@@ -950,6 +1544,14 @@ def normalized_fact_for(group: Any, declared: Optional[Any] = None) -> Dict[str,
             return fact
     elif group.category == "definedness":
         fact = _definedness_fact(group, declared)
+        if fact is not None:
+            return fact
+    elif group.category == "transition.step":
+        fact = _transition_case_fact(group, declared, event_paths)
+        if fact is not None:
+            return fact
+    elif group.category == "assumption.event":
+        fact = _proposition_fact(group, event_paths)
         if fact is not None:
             return fact
     return {

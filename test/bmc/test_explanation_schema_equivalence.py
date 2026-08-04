@@ -109,6 +109,13 @@ _INEXPRESSIBLE = {
         "uniqueness over a nested key (items[*].constraint.stable_id) has no "
         "Draft 2020-12 keyword; uniqueItems only catches identical members"
     ),
+    "unit_index at or past its sibling unit_count": (
+        "Draft 2020-12 bounds each number on its own; comparing two sibling "
+        "integers of the same object is not something it can say.  The pairing of "
+        "the two fields with verification_method is *not* part of this exception -- "
+        "that is a condition on which keys are present, if/then/else expresses it, "
+        "and the schema now does"
+    ),
     "aggregate reason drift": (
         "Draft 2020-12 has no way to compare two arbitrary strings, so it "
         "cannot check that refinement_reason equals explanation.reason; the "
@@ -846,11 +853,124 @@ def feasibility_validator():
     )
 
 
-def test_a_real_solved_payload_is_schema_valid(feasibility_validator) -> None:
-    """The payload the solver actually produces must satisfy the schema."""
-    payload = _feasibility_payload()
+#: Query text and depth per shape whose real payload must satisfy the schema.
+#:
+#: One query at one depth was what this checked before, so it never produced a
+#: document carrying the phases or rules added since -- and a value the package emits
+#: while the schema refuses it stayed invisible.  Each entry puts a different part of
+#: the vocabulary into a real document.
+#: A machine whose ``during`` action moves a variable across a step.
+#:
+#: The simple machine beside it cannot reach the deeper phases: nothing carries a value
+#: forward, so the phase that pins one at the preceding frame never records anything and
+#: the document never carries its name.  That is how the corpus came to miss the very
+#: value it was extended for -- checked before wiring it in, not after.
+_CARRYING_MACHINE = (
+    "def int n = 0;\n"
+    "state Root {\n"
+    "    event Go;\n"
+    "    state Idle;\n"
+    "    state Busy { during { n = n + 1; } }\n"
+    "    state Done;\n"
+    "    [*] -> Idle;\n"
+    "    Idle -> Busy :: Go;\n"
+    "    Busy -> Done;\n"
+    "}\n"
+)
 
-    assert payload["explanation"] is not None
+_SCHEMA_CORPUS = {
+    "a_value_carried_across_a_step": (
+        'init state("Root.Idle") where n == 0;\n'
+        'assume at 1: active("Root.Busy");\n'
+        'assume at 2: var("n") == 0;\n'
+        'check reach <= 2: active("Root.Done");\n',
+        "proof",
+        _CARRYING_MACHINE,
+    ),
+    "one_frame_two_values_at_proof_depth": (
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");',
+        "proof",
+        "def int x = 0;\n"
+        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }",
+    ),
+    "a_state_demanded_and_ruled_out": (
+        'init state("Root.A") where x == 0; '
+        'assume at 1: active("Root.A"); assume at 1: !active("Root.A"); '
+        'check reach <= 2: active("Root.B");',
+        "proof",
+        "def int x = 0;\n"
+        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }",
+    ),
+    "an_event_demanded_and_ruled_out": (
+        'init state("Root.A") where x == 0; '
+        'assume event("Root.Go", 0) == true; assume event("Root.Go", 0) == false; '
+        'check reach <= 2: active("Root.B");',
+        "proof",
+        "def int x = 0;\n"
+        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }",
+    ),
+    "formal_depth_only": (
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");',
+        "formal",
+        "def int x = 0;\n"
+        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }",
+    ),
+    "no_explanation_requested": (
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");',
+        "none",
+        "def int x = 0;\n"
+        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }",
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "query, mode, machine_text",
+    list(_SCHEMA_CORPUS.values()),
+    ids=list(_SCHEMA_CORPUS),
+)
+def test_a_real_solved_payload_is_schema_valid(
+    feasibility_validator, query: str, mode: str, machine_text: str
+) -> None:
+    """Every shape's real payload satisfies the schema, not one shape's.
+
+    Validating the document is what a vocabulary-versus-enum scan was approximating,
+    and it is strictly better at it in two ways that both produced defects.  A phase
+    name present in the declaration and missing from a narrowed branch passes any
+    membership check and fails here, because the document carries the status that
+    selects the branch.  And a value the schema states with ``const`` rather than
+    ``enum`` is invisible to a scan for enums while a document carries it either way.
+
+    A membership-based check over a hand-kept list of vocabularies stood here and was
+    removed rather than repaired: it was weaker in both of those directions, its list
+    was incomplete, and one of its passes came from a value appearing in an unrelated
+    field's enum.
+
+    :param query: The query text.
+    :type query: str
+    :param mode: The explanation depth requested.
+    :type mode: str
+    :param machine_text: The FCSTM source this shape needs.
+    :type machine_text: str
+    """
+    from pyfcstm.bmc import build_bmc_core_formula, compile_bmc_property
+    from pyfcstm.bmc.engine import BmcEngine
+    from pyfcstm.bmc.witness import solve_bmc_property
+    from pyfcstm.model import load_state_machine_from_text
+
+    machine = load_state_machine_from_text(machine_text, "machine.fcstm")
+    context = BmcEngine(machine).prepare(query, query_source_path="query.fbmcq")
+    payload = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation=mode,
+    ).feasibility.to_canonical()
+
     assert list(feasibility_validator.iter_errors(payload)) == []
 
 
@@ -1201,6 +1321,13 @@ def test_the_constructor_still_enforces_every_named_asymmetry() -> None:
         "duration past the float range",
         "non-finite number anywhere in a published mapping",
         "non-JSON value anywhere in a published mapping",
+        # Pinned by ``test_the_unit_pairing_is_a_structural_gate_and_the_ordering_is
+        # _not`` rather than by a drift case: the drift harness mutates a feasibility
+        # payload, and this asymmetry lives inside one proof node.  That test also
+        # bounds the exception on the other side -- the two conditions the language
+        # *can* express are asserted to be rejected by the schema, so widening the
+        # exception to cover them would turn it red.
+        "unit_index at or past its sibling unit_count",
     }
 
 
@@ -1339,3 +1466,144 @@ def test_every_republished_vocabulary_is_neither_wider_nor_narrower_at_its_decla
         if published != vocabulary:
             mismatched[pointer] = (published, vocabulary)
     assert not mismatched, "schema and package disagree: %r" % mismatched
+
+
+@pytest.mark.unittest
+def test_the_unit_pairing_is_a_structural_gate_and_the_ordering_is_not() -> None:
+    """§11.2 exception 8, pinned in both directions and bounded on both sides.
+
+    Three payloads sat between the two gates when the fields were first published.
+    Two of them -- fields on a whole-group binding, and a unit binding missing one of
+    them -- are conditions on which keys are present, which Draft 2020-12 states with
+    ``if/then/else``; leaving them to the constructor was a gap in the structural
+    gate rather than a limit of the language, and calling all three inexpressible
+    would have hidden that.  The third compares two sibling integers, which the
+    language cannot say, so it is the exception.
+
+    Positive payloads are checked too: a schema that rejected every shape would pass
+    a test that only fed it bad ones.
+    """
+    import json
+
+    jsonschema = pytest.importorskip("jsonschema")
+
+    from pyfcstm.bmc.explanation import BmcProofNode
+
+    schema = json.load(
+        open("docs/source/reference/bmc_results/bmc_cli.schema.json", encoding="utf-8")
+    )
+    validator = jsonschema.Draft202012Validator(
+        {"$ref": "#/$defs/proofNode", "$defs": schema["$defs"]}
+    )
+    base = {
+        "stable_id": "proof.input.0000",
+        "kind": "input",
+        "rule_id": "source_fact",
+        "premise_ids": [],
+        "conclusion": {"kind": "variable_equality"},
+        "item_ids": ["g0"],
+        "human_text": "t",
+    }
+
+    def constructed(payload):
+        try:
+            BmcProofNode(
+                payload["stable_id"],
+                payload["kind"],
+                payload["rule_id"],
+                tuple(payload["premise_ids"]),
+                payload["conclusion"],
+                tuple(payload["item_ids"]),
+                payload["human_text"],
+                payload["verification_method"],
+                payload.get("unit_index"),
+                payload.get("unit_count"),
+            )
+        except ValueError:
+            return False
+        return True
+
+    def accepted(payload):
+        return not list(validator.iter_errors(payload))
+
+    cases = (
+        # (label, payload, schema accepts, constructor accepts)
+        (
+            "fields on a whole-group binding",
+            dict(base, verification_method="core_binding", unit_index=0, unit_count=3),
+            False,
+            False,
+        ),
+        (
+            "unit binding missing unit_count",
+            dict(base, verification_method="core_binding_unit", unit_index=0),
+            False,
+            False,
+        ),
+        (
+            "index at its sibling count",
+            dict(
+                base,
+                verification_method="core_binding_unit",
+                unit_index=3,
+                unit_count=3,
+            ),
+            True,  # §11.2 exception 8: the language cannot compare the two
+            False,
+        ),
+        (
+            "a well-formed unit binding",
+            dict(
+                base,
+                verification_method="core_binding_unit",
+                unit_index=1,
+                unit_count=3,
+            ),
+            True,
+            True,
+        ),
+        (
+            "a whole-group binding carrying neither",
+            dict(base, verification_method="core_binding"),
+            True,
+            True,
+        ),
+    )
+
+    for label, payload, schema_ok, ctor_ok in cases:
+        assert accepted(payload) is schema_ok, label
+        assert constructed(payload) is ctor_ok, label
+
+
+@pytest.mark.unittest
+def test_the_refinement_ledger_publishes_every_phase_name_the_package_can_emit() -> (
+    None
+):
+    """The schema's phase names cover the package's, at the declaration.
+
+    Not an entry in :data:`_MIRRORED_ENUMS`, and the reason is the shape rather than
+    the importance: the package holds these as a set, so there is no order to mirror
+    and the exact-tuple comparison that table performs cannot express the claim.
+
+    The claim itself is the one that was missing.  A phase added to the package and
+    not to this enum makes ``pyfcstm bmc --json`` stop validating against the schema
+    this repository publishes for it, and every other gate stays green: the vocabulary
+    is not a ``Literal`` any constructor checks, the docs gate reads the rule tables
+    rather than this one, and no test fed a document containing the new phase to the
+    schema.  The narrowed branch below it may list fewer -- a scope where only some
+    phases occur is stricter, not inconsistent -- so only the declaration is required
+    to cover.
+    """
+    from pyfcstm.bmc.witness import _FEASIBILITY_REFINEMENT_NAMES
+
+    schema = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
+    declared = set(schema["$defs"]["refinementCheck"]["properties"]["name"]["enum"])
+
+    assert set(_FEASIBILITY_REFINEMENT_NAMES) == declared, (
+        "package emits %s the schema does not declare; schema declares %s the package "
+        "cannot emit"
+        % (
+            sorted(set(_FEASIBILITY_REFINEMENT_NAMES) - declared),
+            sorted(declared - set(_FEASIBILITY_REFINEMENT_NAMES)),
+        )
+    )

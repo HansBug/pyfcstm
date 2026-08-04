@@ -40,8 +40,10 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import (
     TYPE_CHECKING,
+    Any,
     Callable,
     Dict,
+    List,
     Mapping,
     Optional,
     Sequence,
@@ -1282,6 +1284,7 @@ def build_core_item(
     registry: Optional[SourceDocumentRegistry] = None,
     declared: Optional[Sequence[str]] = None,
     state_paths: Optional[Mapping[int, str]] = None,
+    event_paths: Optional[Sequence[str]] = None,
 ) -> BmcCoreItem:
     """Turn one tracked source group into a publishable core member.
 
@@ -1352,7 +1355,7 @@ def build_core_item(
     # instead of inviting a guess.  Frames, steps and refs stay in the constraint
     # reference above: publishing them here as well would give a reader two
     # copies of the same values and blur which keys are the fact itself.
-    fact = normalized_fact_for(group, declared)
+    fact = normalized_fact_for(group, declared, event_paths)
     return BmcCoreItem(
         constraint=reference,
         semantic_role=role,
@@ -1383,6 +1386,10 @@ _BINDING_ENCODERS = {
         *[symbol == state for state in fact["states"]]
     ),
     "state_exclusion": lambda fact, symbol: symbol != fact["state"],
+    # The polarity is the whole content: the group is one boolean, required or ruled
+    # out.  Encoding it as the boolean itself under a positive requirement keeps the
+    # two sides of the equivalence literally the same expression.
+    "proposition": lambda fact, symbol: symbol if fact["holds"] else z3.Not(symbol),
 }
 
 
@@ -1410,15 +1417,17 @@ def check_core_bindings(
     :type facts: Sequence[Tuple[str, Mapping[str, object]]]
     :param budget: The shared solve budget.
     :type budget: pyfcstm.bmc.solver._SolveBudget
-    :return: Whether every binding held, and the ledger entry for the phase.
-    :rtype: Tuple[bool, ProbeRecord]
+    :return: Whether every binding held, the ledger entry for the phase, and which
+        requirement each unit-scoped binding matched, keyed by member id.  A member
+        bound against its whole group does not appear in that mapping.
+    :rtype: Tuple[bool, ProbeRecord, Dict[str, Tuple[int, int]]]
 
     Example::
 
         >>> from pyfcstm.bmc.solver import _SolveBudget
-        >>> held, record = check_core_bindings(None, (), _SolveBudget(None))
-        >>> held, record.status
-        (False, 'unknown')
+        >>> held, record, units = check_core_bindings(None, (), _SolveBudget(None))
+        >>> held, record.status, units
+        (False, 'unknown', {})
     """
     started_at = time.perf_counter()
 
@@ -1432,12 +1441,16 @@ def check_core_bindings(
         # and the published ledger refuses a completed check that carries a reason,
         # so a query reaching here raised out of the solve chain instead of
         # degrading.  An unestablished binding is what this is.
-        return False, ProbeRecord(
-            "core_binding",
-            "unknown",
-            True,
-            elapsed(),
-            "no core member states a fact this check can encode",
+        return (
+            False,
+            ProbeRecord(
+                "core_binding",
+                "unknown",
+                True,
+                elapsed(),
+                "no core member states a fact this check can encode",
+            ),
+            {},
         )
 
     groups = {group.stable_id: group for group in core._tracked_groups}
@@ -1446,29 +1459,68 @@ def check_core_bindings(
     # declared names are what the published facts were resolved against, and the
     # binding has to resolve the same way or a long name stops matching itself.
     declared = _declared_variable_names(core)
+    unit_bindings: Dict[str, Tuple[int, int]] = {}
     for stable_id, fact in facts:
         group = groups.get(stable_id)
-        encoder = _BINDING_ENCODERS.get(fact.get("kind"))
-        if group is None or encoder is None:
-            return False, ProbeRecord(
-                "core_binding",
-                "unknown",
-                True,
-                elapsed(),
-                "no equivalence check exists for %s" % stable_id,
+        kind = fact.get("kind")
+        encoder = _BINDING_ENCODERS.get(kind)
+        if group is None or (encoder is None and kind not in _UNIT_BOUND_ENCODERS):
+            return (
+                False,
+                ProbeRecord(
+                    "core_binding",
+                    "unknown",
+                    True,
+                    elapsed(),
+                    "no equivalence check exists for %s" % stable_id,
+                ),
+                {},
             )
         conjunction = (
             z3.And(*group.expressions) if group.expressions else z3.BoolVal(True)
         )
+        if kind in _UNIT_BOUND_ENCODERS:
+            # A group holding one requirement per case is a conjunction, and a fact
+            # states one of them.  Both directions still have to fail refutation --
+            # against that one requirement rather than against the whole group, which
+            # the fact could not imply.  Which requirement it was travels with the
+            # node so a reader sees the proportion covered rather than being told
+            # "the transition relation" and left to find the part that mattered.
+            outcome = _bind_against_one_unit(
+                _UNIT_BOUND_ENCODERS[kind],
+                fact,
+                conjunction,
+                declared,
+                budget,
+                _event_paths_of(core),
+            )
+            if outcome.attribution is None:
+                return (
+                    False,
+                    ProbeRecord(
+                        "core_binding",
+                        outcome.status,
+                        True,
+                        elapsed(),
+                        "%s for %s" % (outcome.reason, stable_id),
+                    ),
+                    {},
+                )
+            unit_bindings[stable_id] = outcome.attribution
+            continue
         symbol = _binding_symbol(conjunction, fact, declared)
         if symbol is None:
-            return False, ProbeRecord(
-                "core_binding",
-                "unknown",
-                True,
-                elapsed(),
-                "the group behind %s names no symbol this fact could restate"
-                % stable_id,
+            return (
+                False,
+                ProbeRecord(
+                    "core_binding",
+                    "unknown",
+                    True,
+                    elapsed(),
+                    "the group behind %s names no symbol this fact could restate"
+                    % stable_id,
+                ),
+                {},
             )
         encoded = encoder(fact, symbol)
         for direction, claim in (
@@ -1490,22 +1542,363 @@ def check_core_bindings(
                     "sat": "was refuted: the fact is not equivalent to its group",
                     "unknown": "could not be decided by the solver",
                 }.get(status, "ran out of budget")
-                return False, ProbeRecord(
-                    "core_binding",
-                    # The solver's own word, not its negation.  These were swapped
-                    # once, so each payload advised the opposite of what it meant.
-                    "timeout" if status == "timeout" else "unknown",
-                    True,
-                    elapsed(),
-                    "%s %s for %s%s"
-                    % (
-                        direction,
-                        explanation,
-                        stable_id,
-                        ": %s" % reason if reason else "",
+                return (
+                    False,
+                    ProbeRecord(
+                        "core_binding",
+                        # The solver's own word, not its negation.  These were swapped
+                        # once, so each payload advised the opposite of what it meant.
+                        "timeout" if status == "timeout" else "unknown",
+                        True,
+                        elapsed(),
+                        "%s %s for %s%s"
+                        % (
+                            direction,
+                            explanation,
+                            stable_id,
+                            ": %s" % reason if reason else "",
+                        ),
                     ),
+                    {},
                 )
-    return True, ProbeRecord("core_binding", "complete", True, elapsed(), None)
+    return (
+        True,
+        ProbeRecord("core_binding", "complete", True, elapsed(), None),
+        unit_bindings,
+    )
+
+
+def _entailment_prover(members, budget: _SolveBudget):
+    """Return the predicate that decides whether these members establish a target.
+
+    Hoisted out of its first caller when a second phase needed the same three steps.
+    Two copies of the shrink and the consistency guard would be two chances to get
+    "informative" wrong, and the guard is the whole difference between a claim about
+    the target and a claim about nothing.
+
+    :param members: ``(stable_id, claim)`` for every core member.
+    :type members: Sequence[Tuple[str, object]]
+    :param budget: The solver budget the phase shares.
+    :type budget: _SolveBudget
+    :return: A callable taking a target and returning the member ids to cite, or
+        ``None`` when the target is not established non-vacuously.
+    :rtype: Callable[[object], Optional[Tuple[str, ...]]]
+    """
+
+    # Both answers below fold three solver outcomes into one boolean: decided the way
+    # this asked, decided the other way, and not decided at all.  ``check_core_bindings``
+    # next door keeps those three apart and writes a distinct sentence for each, and the
+    # difference is deliberate rather than an oversight here.  There, anything but
+    # ``unsat`` is a hard failure that ends the whole binding check, so which of the
+    # three it was decides what a reader should do about it.  Here, a solve that does
+    # not come back the way it was asked means one case does not discharge while every
+    # other case carries on, so the discharge decision is the same for the last two and
+    # the phase's own outcome is unchanged.
+    #
+    # Reporting them separately anyway was tried and reverted: no input was found that
+    # reaches an undecided solve inside this phase.  A tight budget is spent by an
+    # earlier phase, so this one never runs; a generous one decides these small
+    # queries; non-linear real arithmetic (``x * y``, ``x / y``, ``sqrt``) still comes
+    # back decided.  Two reviewers raised the asymmetry and both said they could not
+    # reproduce it either.  Adding an unreached branch to answer an unreproducible
+    # report is the shape of over-design, so this says why instead.
+    def entailed(claims: Sequence[Any], target: Any) -> bool:
+        """Report whether these claims refute the condition's negation."""
+        solver = z3.Solver()
+        solver.add(z3.And(z3.And(*claims), z3.Not(target)))
+        status, _, _, _, _ = _check_with_budget(solver, budget)
+        return status == "unsat"
+
+    def consistent(claims: Sequence[Any]) -> bool:
+        """Report whether these claims can hold together at all."""
+        solver = z3.Solver()
+        solver.add(z3.And(*claims))
+        status, _, _, _, _ = _check_with_budget(solver, budget)
+        return status == "sat"
+
+    def discharge_target(target: Any) -> Optional[Tuple[str, ...]]:
+        """Return the members that entail one target, or ``None`` when none do.
+
+        Three steps rather than one, because "the members entail this" is not yet
+        informative: the antecedent is a minimal unsat core, so it entails anything,
+        and the shrink plus the consistency guard are what turn the answer into a
+        claim about the target.  They are named together because they are one
+        concept, and two phases now ask it: a case's own condition, and a value a
+        neighbouring frame pins.
+
+        :param target: The constraint to prove from the members.
+        :type target: z3.BoolRef
+        :return: The member ids to cite, or ``None`` when the target is not
+            established non-vacuously.
+        :rtype: Optional[Tuple[str, ...]]
+        """
+        if not entailed([claim for _, claim in members], target):
+            return None
+        kept = list(members)
+        for candidate in list(members):
+            trimmed = [item for item in kept if item[0] != candidate[0]]
+            if trimmed and entailed([claim for _, claim in trimmed], target):
+                kept = trimmed
+        if not consistent([claim for _, claim in kept]):
+            # The check above is vacuous over members that contradict each other: a
+            # set that cannot hold entails every target, its negation included.
+            # These members normally do contradict each other -- they are a minimal
+            # unsatisfiable core -- so what makes an entailment here informative is
+            # the shrink, which drops members until the survivors can hold together
+            # and the question becomes a real one.  The shrink tends that way on its
+            # own, because an unsatisfiable subset still entails everything and so is
+            # always accepted; but tending is not the same as arriving.  When every
+            # single deletion breaks the entailment while the survivors still cannot
+            # hold, the shrink stops on a set that proves nothing, and a target the
+            # core outright refutes would be published as discharged.  Refusing here
+            # is the silent failure this function documents: no entry, so the rule
+            # never fires and the explanation stays at formal depth.
+            return None
+        return tuple(sorted(item[0] for item in kept))
+
+    return discharge_target
+
+
+def check_case_conditions(
+    core: "BmcCoreFormula",
+    facts: Sequence[Tuple[str, Mapping[str, object]]],
+    member_ids: Sequence[str],
+    budget: _SolveBudget,
+) -> Tuple[Dict[str, Tuple[str, ...]], ProbeRecord]:
+    """Prove which core members entail each transition case's own condition.
+
+    A case says what it assigns *where the case applies*, and a rule that used the
+    assignment without the condition would prove something the model does not
+    promise.  Discharging the condition is therefore a claim about constraints
+    rather than about facts, and this is where it can be made: the members' real
+    expressions are here, and the solver with them.
+
+    The antecedent is the members, not their published facts.  That distinction is
+    the whole reason this cannot live in the proof builder: a condition naming
+    frame 1's state is entailed by the frame-0 initializer together with step 0's
+    relation, and step 0 publishes as ``structural_constraint`` -- content a reader
+    cannot see and an encoder cannot re-express.  **A condition entailed by the core
+    need not be entailed by the core's readable facts.**
+
+    A citation set is then shrunk by deterministic deletion, in the order the
+    members were published: whatever can be dropped while the entailment still holds
+    is dropped.  Citing every member would be sound and useless -- a node that names
+    the whole core tells a reader nothing about which part carried the condition.
+
+    Failure is silent by design: a condition that cannot be discharged simply gets
+    no entry, the rule that would consume it never fires, and the proof degrades to
+    ``formal`` with its own reason.  Nothing here refuses a proof on its own.
+
+    :param core: The core formula whose tracked groups the facts came from.
+    :type core: BmcCoreFormula
+    :param facts: Member ids paired with the fact each restates.
+    :type facts: Sequence[Tuple[str, Mapping[str, object]]]
+    :param member_ids: Every member of the published core, readable or not.  The
+        antecedent is built from these rather than from ``facts``: a member with no
+        rule reading still constrains the run, and the condition here is entailed by
+        exactly such a member -- the step relation that puts the machine in the state
+        the case names publishes as ``structural_constraint``.
+    :type member_ids: Sequence[str]
+    :param budget: The shared solve budget.
+    :type budget: pyfcstm.bmc.solver._SolveBudget
+    :return: Member ids of readable cases whose condition was discharged, each
+        mapped to the members that entail it, and the ledger entry for the phase.
+    :rtype: Tuple[Dict[str, Tuple[str, ...]], ProbeRecord]
+
+    Example::
+
+        >>> from pyfcstm.bmc.solver import _SolveBudget
+        >>> discharged, record = check_case_conditions(None, (), (), _SolveBudget(None))
+        >>> discharged, record.status
+        ({}, 'complete')
+    """
+    started_at = time.perf_counter()
+
+    def elapsed() -> float:
+        return (time.perf_counter() - started_at) * 1000.0
+
+    discharged: Dict[str, Tuple[str, ...]] = {}
+    conditional = [
+        (stable_id, fact)
+        for stable_id, fact in facts
+        if fact.get("kind") == "transition_case" and fact.get("condition")
+    ]
+    if not conditional:
+        return discharged, ProbeRecord(
+            "case_condition", "complete", False, elapsed(), None
+        )
+
+    groups = {group.stable_id: group for group in core._tracked_groups}
+    declared = _declared_variable_names(core)
+    members: List[Tuple[str, Any]] = []
+    for stable_id in member_ids:
+        group = groups.get(stable_id)
+        if group is None:
+            continue
+        members.append(
+            (
+                stable_id,
+                z3.And(*group.expressions) if group.expressions else z3.BoolVal(True),
+            )
+        )
+    if not members:
+        # A shortcut, not a decision: an empty conjunction entails no condition either,
+        # so removing this leaves every answer unchanged and only spends a solver call
+        # per conditional case to reach it.
+        return discharged, ProbeRecord(
+            "case_condition", "complete", False, elapsed(), None
+        )
+
+    # One table over every member, not per group: the condition names slots its own
+    # group may never mention, and the two sides have to talk about the same symbols.
+    symbols = _binding_symbols(
+        z3.And(*[claim for _, claim in members]), declared, _event_paths_of(core)
+    )
+
+    discharge_target = _entailment_prover(members, budget)
+
+    for stable_id, fact in conditional:
+        encoded = [
+            _encode_condition_member(member, symbols)
+            for member in fact.get("condition") or ()
+        ]
+        if any(item is None for item in encoded):
+            # Unreached today, and by construction rather than by luck: publication
+            # and this layer read a condition with the same two readings, and
+            # :func:`pyfcstm.bmc.provenance._condition_facts` -- the publishing
+            # side, which lives in another module -- returns ``None`` for a conjunct
+            # it cannot read, and its caller drops the whole reading on ``None``, so
+            # a case whose condition has an unreadable slot never becomes a
+            # ``transition_case`` in the first place.  Kept because the two sides are
+            # separate functions and the guard is what makes their agreement a
+            # property rather than a coincidence: if one gains a reading the other
+            # lacks, this refuses to discharge instead of encoding a slot wrongly.
+            continue
+        cited = discharge_target(z3.And(*encoded))
+        if cited is None:
+            continue
+        discharged[stable_id] = cited
+    return discharged, ProbeRecord(
+        "case_condition", "complete", bool(discharged), elapsed(), None
+    )
+
+
+def check_value_carries(
+    core: "BmcCoreFormula",
+    facts: Sequence[Tuple[str, Mapping[str, object]]],
+    member_ids: Sequence[str],
+    budget: _SolveBudget,
+) -> Tuple[Dict[str, Tuple[str, ...]], ProbeRecord]:
+    """Prove which core members pin a value at the frame before the one that states it.
+
+    A step that leaves a variable alone says nothing a fact can restate: the published
+    reading declines "x becomes x" on the grounds that the transition did not say it,
+    and that decision is right about what a transition *says*.  The consequence is that
+    a contradiction spanning such a step has no fact to stand on, and the whole chain
+    stops one frame short of the assumption it contradicts.
+
+    What the step does do is constrain, and a constraint is what this phase can ask
+    about.  The premise has to be a value a single member states, because the citation
+    seam records a verdict per member and reading the first of several would attribute
+    an entailment proved about one member to another.  That rules out a premise the
+    search derived, whichever frame it would carry to.
+
+    Backwards is therefore about where these shapes put their assumption rather than
+    about direction being privileged: the value one member states sits at the later
+    frame, and the forward chain derives the earlier one, so asking what the members
+    force at the *previous* frame is what meets the chain.  A model stating its value
+    at the earlier frame would want the mirror of this, and the seam would record it
+    just as readily.
+
+    The reach is one step.  What this phase publishes becomes a derived node, and a
+    derived node cannot be the premise of another entailment, so a contradiction two
+    or more untouched steps from the value that states it is not closed here.  The
+    explanation stays at ``formal`` depth for it, and the reason names the catalog
+    rather than pretending the shape is unrecognised.
+
+    The step relation alone does not answer it.  It holds every case the step could
+    take, so on its own it permits the ones that change the variable; the case has to
+    be selected, which the frame's own state requirement does.  The citation therefore
+    names the state requirement too, and a reader sees why the value could not have
+    been anything else.
+
+    :param core: The core whose members supply the constraints.
+    :type core: BmcCoreFormula
+    :param facts: The published proof facts, as ``(stable_id, fact)``.
+    :type facts: Sequence[Tuple[str, Mapping[str, object]]]
+    :param member_ids: Every core member, whether or not a fact was read from it.
+    :type member_ids: Sequence[str]
+    :param budget: The solver budget this phase shares with the others.
+    :type budget: _SolveBudget
+    :return: Member ids of value requirements whose preceding frame was pinned, each
+        with the members cited, and this phase's record.
+    :rtype: Tuple[Dict[str, Tuple[str, ...]], ProbeRecord]
+
+    Example::
+
+        >>> from pyfcstm.bmc.solver import _SolveBudget
+        >>> carried, record = check_value_carries(None, (), (), _SolveBudget(None))
+        >>> carried, record.status
+        ({}, 'complete')
+    """
+    started_at = time.perf_counter()
+
+    def elapsed() -> float:
+        return (time.perf_counter() - started_at) * 1000.0
+
+    carried: Dict[str, Tuple[str, ...]] = {}
+    # These are the translated facts the rules read, not the published ones: a
+    # comparison has already been split into an equality or a bound by the time it
+    # gets here, and only an equality pins a value there is anything to carry.  A
+    # state slot is excluded because its own rules compare states; frame 0 has no
+    # predecessor to carry to.
+    stated = [
+        (stable_id, fact)
+        for stable_id, fact in facts
+        if fact.get("kind") == "variable_equality"
+        and not fact.get("state_slot")
+        and isinstance(fact.get("frame"), int)
+        and fact.get("frame") > 0
+    ]
+    if not stated:
+        return carried, ProbeRecord("value_carry", "complete", False, elapsed(), None)
+
+    groups = {group.stable_id: group for group in core._tracked_groups}
+    declared = _declared_variable_names(core)
+    members: List[Tuple[str, Any]] = []
+    for stable_id in member_ids:
+        group = groups.get(stable_id)
+        if group is None:
+            continue
+        members.append(
+            (
+                stable_id,
+                z3.And(*group.expressions) if group.expressions else z3.BoolVal(True),
+            )
+        )
+    if not members:
+        return carried, ProbeRecord("value_carry", "complete", False, elapsed(), None)
+
+    symbols = _binding_symbols(
+        z3.And(*[claim for _, claim in members]), declared, _event_paths_of(core)
+    )
+    discharge_target = _entailment_prover(members, budget)
+
+    for stable_id, fact in stated:
+        symbol = symbols.get((fact["frame"] - 1, fact.get("variable")))
+        if symbol is None:
+            # The previous frame never mentions this variable in any member, so there
+            # is no symbol to state the target about.  Publication and this layer
+            # resolve symbols the same way, so this is the honest "nothing to ask"
+            # rather than a disagreement between them.
+            continue
+        cited = discharge_target(symbol == fact.get("value"))
+        if cited is None:
+            continue
+        carried[stable_id] = cited
+    return carried, ProbeRecord(
+        "value_carry", "complete", bool(carried), elapsed(), None
+    )
 
 
 def _declared_variable_names(core: "BmcCoreFormula"):
@@ -1535,6 +1928,359 @@ def _state_names(core: "BmcCoreFormula"):
     return {entry.id: entry.path for entry in entries}
 
 
+#: Which published fact kinds bind against one requirement of their group.
+#:
+#: A group that holds one requirement per case is a conjunction, and a fact states
+#: one of them: the fact cannot imply the whole group, so the bidirectional check
+#: runs against the requirement instead.  Membership here is what selects that
+#: reading, and the encoder beside it is the one that rebuilds the requirement's own
+#: shape rather than a single symbol's constraint.
+_UNIT_BOUND_ENCODERS = {}  # populated below, after the encoders are defined
+
+
+class _UnitBindingOutcome:
+    """What one unit-scoped binding attempt established, or why it did not.
+
+    :param attribution: ``(unit_index, unit_count)`` when exactly one requirement
+        was proved equivalent, otherwise ``None``.
+    :type attribution: Optional[Tuple[int, int]]
+    :param status: The ledger status to report when nothing was established.
+    :type status: str
+    :param reason: What fell short, phrased for the ledger.
+    :type reason: Optional[str]
+    """
+
+    __slots__ = ("attribution", "status", "reason")
+
+    def __init__(self, attribution=None, status="complete", reason=None):
+        self.attribution = attribution
+        self.status = status
+        self.reason = reason
+
+
+def _bind_against_one_unit(
+    encoder, fact, conjunction, declared, budget, event_paths=None
+):
+    """Prove a fact equivalent to exactly one requirement of its group.
+
+    Both directions are refuted against the requirement, exactly as the whole-group
+    check does against the group.  Ambiguity is refused rather than resolved: a fact
+    equivalent to two requirements identifies neither, and publishing the first would
+    make ``unit_index`` a number the reader cannot rely on.
+
+    :param encoder: The re-encoder for this fact kind.
+    :type encoder: Callable
+    :param fact: The published fact.
+    :type fact: Mapping[str, Any]
+    :param conjunction: The group's own conjunction.
+    :type conjunction: z3.BoolRef
+    :param declared: Model variable names for symbol resolution.
+    :type declared: Optional[Iterable[str]]
+    :param budget: The shared solve budget.
+    :type budget: pyfcstm.bmc.solver._SolveBudget
+    :return: The outcome, carrying the attribution when one was established.
+    :rtype: _UnitBindingOutcome
+    """
+    from .provenance import conjunctive_units
+
+    symbols = _binding_symbols(conjunction, declared, event_paths)
+    encoded = encoder(fact, symbols)
+    if encoded is None:
+        return _UnitBindingOutcome(
+            status="unknown",
+            reason="the fact names something its group does not mention",
+        )
+    units = conjunctive_units(conjunction)
+    matched = []
+    for index, unit in enumerate(units):
+        held = True
+        for claim in (
+            z3.And(unit, z3.Not(encoded)),
+            z3.And(encoded, z3.Not(unit)),
+        ):
+            solver = z3.Solver()
+            solver.add(claim)
+            status, _, reason, _, _ = _check_with_budget(solver, budget)
+            if status == "timeout":
+                return _UnitBindingOutcome(
+                    status="timeout",
+                    reason="ran out of budget while binding one requirement%s"
+                    % (": %s" % reason if reason else ""),
+                )
+            if status != "unsat":
+                held = False
+                break
+        if held:
+            matched.append(index)
+    if len(matched) != 1:
+        return _UnitBindingOutcome(
+            status="unknown",
+            reason=(
+                "no requirement of the group is equivalent to the fact"
+                if not matched
+                else "%d requirements of the group are equivalent to the fact"
+                % len(matched)
+            ),
+        )
+    return _UnitBindingOutcome(attribution=(matched[0], len(units)))
+
+
+def _event_paths_of(core: "BmcCoreFormula") -> Tuple[str, ...]:
+    """Return the event paths of one core's domain, as the author spelled them.
+
+    The encoder's symbol body replaces a path's dots, so a name recovered from it
+    spells ``Root_A_Go`` where the author wrote ``Root.A.Go``.  Resolving against
+    this table instead recovers the authored spelling, and every layer that turns a
+    symbol into a published identity needs the same table: a published fact and the
+    key a rule looks it up under are compared for equality, so two layers reading
+    one symbol against different tables put two spellings of one event into one
+    document and make the lookup miss.
+
+    There is no guard for a missing core, deliberately.  Every caller dereferences
+    ``core`` before it reaches here, so a ``None`` cannot arrive -- and a guard
+    returning an empty table would be worse than its absence: an empty table is
+    falsy, so the reader it feeds falls back to the symbol body, which is the
+    spelling this function exists to avoid.  An attribute error names the bug; a
+    silent empty table reinstates it.
+
+    :param core: The core whose domain declares the events.
+    :type core: BmcCoreFormula
+    :return: The declared event paths.
+    :rtype: Tuple[str, ...]
+    """
+    return tuple(
+        entry["path"] for entry in core.context.domain.to_canonical()["events"]
+    )
+
+
+def _event_identity_of(symbol: Any, event_paths: Optional[Any] = None) -> Optional[str]:
+    """Return the published identity of an event symbol, or ``None``.
+
+    The identity has to be the one the publisher writes, character for character,
+    because it is the key both sides look the symbol up by.  So it is built from the
+    same reader rather than from a second parse of the name: writing the format twice
+    is how a lookup comes to miss a symbol that is right there.
+
+    :param symbol: A symbol taken from a group's expressions.
+    :return: ``"<event path>@<step>"``, or ``None`` when the symbol names no event.
+    :rtype: Optional[str]
+
+    Example::
+
+        >>> _event_identity_of(None) is None
+        True
+    """
+    if symbol is None or not z3.is_bool(symbol):
+        return None
+    from .provenance import _event_path_of_symbol, proposition_identity
+
+    resolved = _event_path_of_symbol(symbol, event_paths)
+    if resolved is None:
+        return None
+    return proposition_identity(*resolved)
+
+
+def _binding_symbols(
+    expression, declared=None, event_paths=None
+) -> Dict[Tuple[int, Any], Any]:
+    """Index every frame symbol a group mentions, by frame and subject.
+
+    :func:`_binding_symbol` answers "which symbol is this fact about" for a fact
+    that is about one.  A transition case is about several -- the variable before
+    the step and after it, the operand when that is a variable, and whichever slots
+    its condition names -- so the symbols are indexed once and read by key.
+
+    The key's subject is the declared variable name, or ``None`` for a frame's own
+    state slot.  Both come out of the expressions being compared, so the two sides
+    of an equivalence talk about the same objects by construction rather than by
+    agreeing on how a symbol is spelled.
+
+    :param expression: The group's conjunction.
+    :type expression: z3.BoolRef
+    :param declared: Model variable names to resolve symbols against, defaults to
+        ``None``.
+    :type declared: Optional[Iterable[str]], optional
+    :return: ``(frame, subject)`` mapped to the symbol, subject ``None`` for a slot.
+    :rtype: Dict[Tuple[int, Any], Any]
+    """
+    indexed: Dict[Tuple[int, Any], Any] = {}
+    for symbol in z3.z3util.get_vars(expression):
+        event = _event_identity_of(symbol, event_paths)
+        if event is not None:
+            # A third kind of key.  An event symbol carries its own step inside its
+            # name, and a case condition naming the event needs to find it the same
+            # way a variable comparison finds its slot -- by key, not by re-parsing.
+            indexed[(None, event)] = symbol
+            continue
+        frame = _symbol_frame(symbol)
+        if frame is None:
+            continue
+        if str(symbol) == "F_%d_state" % frame:
+            indexed[(frame, None)] = symbol
+            continue
+        name = _frame_variable_name(symbol, declared)
+        if name is not None:
+            indexed[(frame, name)] = symbol
+    return indexed
+
+
+#: How a condition member re-encodes, keyed by the fact category it arrives as.
+#:
+#: A condition's members are ordinary facts, so they are encoded by the same
+#: reasoning as any other -- but against the symbol table of the group they came
+#: from rather than against one symbol, since a condition may name several frames.
+def _encode_condition_member(member: Mapping[str, Any], symbols) -> Optional[Any]:
+    """Re-encode one member of a case's selection condition.
+
+    :param member: One published condition fact.
+    :type member: Mapping[str, Any]
+    :param symbols: The group's symbol table from :func:`_binding_symbols`.
+    :type symbols: Mapping[Tuple[int, Any], Any]
+    :return: The constraint, or ``None`` when the member names nothing the group
+        mentions or carries a relation with no encoding.
+    :rtype: Optional[Any]
+    """
+    kind = member.get("kind")
+    if kind == "proposition":
+        # Keyed by identity rather than by frame, because a proposition names no
+        # frame -- its step lives inside the identity.  Publishing this reading
+        # without encoding it here is what made the fact name something the group
+        # "does not mention": the reading existed on one side only.
+        symbol = symbols.get((None, member.get("identity")))
+        if symbol is None:
+            return None
+        return symbol if member.get("holds") else z3.Not(symbol)
+    frame = member.get("frame")
+    if not isinstance(frame, int):
+        return None
+    if kind == "state_membership":
+        symbol = symbols.get((frame, None))
+        if symbol is None:
+            return None
+        required = symbol == member.get("state")
+        return z3.Not(required) if member.get("excluded") else required
+    if kind == "variable_comparison":
+        symbol = symbols.get((frame, member.get("variable")))
+        if symbol is None:
+            return None
+        value = member.get("value")
+        relation = {
+            "eq": lambda: symbol == value,
+            "ne": lambda: symbol != value,
+            "ge": lambda: symbol >= value,
+            "gt": lambda: symbol > value,
+            "le": lambda: symbol <= value,
+            "lt": lambda: symbol < value,
+        }.get(member.get("operator"))
+        return None if relation is None else relation()
+    return None
+
+
+def _encode_assignment(fact: Mapping[str, Any], symbols) -> Optional[Any]:
+    """Re-encode the equality a case's assignment states, without its condition.
+
+    Split out from :func:`_encode_transition_case` because the two callers need
+    different halves: a binding compares the whole conditional requirement, while a
+    discharge asks whether the assignment alone follows once the condition is known.
+
+    :param fact: The transition-case fact, conditional or not.
+    :type fact: Mapping[str, Any]
+    :param symbols: The group's symbol table from :func:`_binding_symbols`.
+    :type symbols: Mapping[Tuple[int, Any], Any]
+    :return: The equality, or ``None`` when the fact cannot be re-encoded.
+    :rtype: Optional[Any]
+    """
+    frame, target_frame = fact.get("frame"), fact.get("target_frame")
+    variable = fact.get("variable")
+    if not isinstance(frame, int) or not isinstance(target_frame, int):
+        return None
+    source = symbols.get((frame, variable))
+    target = symbols.get((target_frame, variable))
+    if source is None or target is None:
+        return None
+    if "operand_variable" in fact:
+        operand = symbols.get((frame, fact.get("operand_variable")))
+        if operand is None:
+            return None
+    else:
+        operand = fact.get("operand")
+        if operand is None:
+            return None
+    # ``operator`` rather than ``operation``: this runs on the *rule* fact, the one
+    # ``proof_facts_for_core`` produced, and the two vocabularies name this field
+    # differently on purpose.  Reading the published name here found nothing and the
+    # binding failed with "the fact names something its group does not mention",
+    # which points at the symbols rather than at the field it was actually about.
+    combine = {
+        "add": lambda: source + operand,
+        "sub": lambda: source - operand,
+        "mul": lambda: source * operand,
+        "div": lambda: source / operand,
+        # ``set`` ignores the source: the requirement it restates is the plain
+        # equality the encoder wrote, so re-encoding it any other way would compare
+        # the fact against something the group never said.
+        "set": lambda: operand,
+    }.get(fact.get("operator"))
+    if combine is None:
+        return None
+    return target == combine()
+
+
+def _encode_transition_case(fact: Mapping[str, Any], symbols) -> Optional[Any]:
+    """Re-encode a transition case as the conditional assignment it states.
+
+    The shape produced is the one a decomposed step requirement has --
+    ``Implies(condition, target == source <op> operand)`` -- because that is what
+    the equivalence is checked against.  A fact whose condition or operand names
+    something the group does not mention has no re-encoding, and the binding then
+    fails rather than comparing against a constraint built from a guess.
+
+    :param fact: The published transition-case fact.
+    :type fact: Mapping[str, Any]
+    :param symbols: The group's symbol table from :func:`_binding_symbols`.
+    :type symbols: Mapping[Tuple[int, Any], Any]
+    :return: The constraint, or ``None`` when the fact cannot be re-encoded.
+    :rtype: Optional[Any]
+    """
+    assignment = _encode_assignment(fact, symbols)
+    if assignment is None:
+        return None
+    members = fact.get("condition") or ()
+    encoded_members = [_encode_condition_member(member, symbols) for member in members]
+    if not encoded_members or any(part is None for part in encoded_members):
+        return None
+    return z3.Implies(z3.And(*encoded_members), assignment)
+
+
+#: Registered after the encoder it names, so the table cannot reference a
+#: function that does not exist yet.
+_UNIT_BOUND_ENCODERS["transition_case"] = _encode_transition_case
+
+
+def encodable_fact_kinds() -> Tuple[str, ...]:
+    """Return every fact kind a core binding can re-encode.
+
+    This is the seed the rule catalog's reachability closure starts from: a rule
+    whose premise kind nothing here produces cannot fire, whatever its checker
+    would say.  It is computed from the encoder tables rather than written out,
+    because writing it out is how it went wrong: the seed was read off
+    ``_BINDING_ENCODERS`` alone and missed ``_UNIT_BOUND_ENCODERS`` entirely, so the
+    closure reported three rules unreachable for a reason that was not the real one,
+    and the registry it was compared against agreed -- both sides had been computed
+    from the same short reading.  A future encoder family joins the seed by being
+    registered, with nobody to remember.
+
+    :return: The fact kinds, sorted, that a binding knows how to encode.
+    :rtype: Tuple[str, ...]
+
+    Example::
+
+        >>> "transition_case" in encodable_fact_kinds()
+        True
+    """
+    return tuple(sorted(set(_BINDING_ENCODERS) | set(_UNIT_BOUND_ENCODERS)))
+
+
 def _binding_symbol(expression, fact: Mapping[str, object], declared=None):
     """Return the frame symbol a fact is about, taken from its own group.
 
@@ -1542,6 +2288,18 @@ def _binding_symbol(expression, fact: Mapping[str, object], declared=None):
     of the very expressions being compared means the two sides of the equivalence
     talk about the same object by construction.
     """
+    if fact.get("kind") == "proposition":
+        # A proposition names no frame: its step is inside its identity, because the
+        # rule that closes over it compares subjects and nothing else.  Its subject
+        # is the group's own boolean, and an event assumption encodes to exactly one
+        # -- so taking that one is both the reading and the check that the shape is
+        # what this branch assumes.
+        booleans = [
+            symbol
+            for symbol in sorted(z3.z3util.get_vars(expression), key=str)
+            if z3.is_bool(symbol)
+        ]
+        return booleans[0] if len(booleans) == 1 else None
     frame = fact.get("frame")
     if frame is None:
         return None
@@ -1649,6 +2407,10 @@ def explain_infeasibility(
     # The declared names let a published fact name the variable the author wrote
     # rather than the encoder's truncation of it.
     declared = tuple(core.context.model.defines)
+    # The event paths, for the same reason and by the same mechanism: the symbol
+    # body replaces the path's dots, so an identity built from it would spell
+    # ``Root_A_Go`` where the author wrote ``Root.A.Go``.
+    event_paths = _event_paths_of(core)
     # The domain's own table, so a sentence can name ``Root.A`` instead of the
     # number the encoding gave it.
     state_paths = {
@@ -1740,7 +2502,7 @@ def explain_infeasibility(
             reduction=minimized.reduction,
             subset_minimality=minimized.subset_minimality,
             items=tuple(
-                build_core_item(group, registry, declared, state_paths)
+                build_core_item(group, registry, declared, state_paths, event_paths)
                 for group in minimized.groups
             ),
         )
@@ -1778,10 +2540,20 @@ def explain_infeasibility(
     if propagation_record is not None:
         checks = checks + (propagation_record,)
     narrative = build_conflict_narrative(published, forced_values, state_paths)
+    # Two questions, and they were one boolean until it became clear they answer to
+    # different things.  Whether this artifact is solid enough to carry a proof is
+    # about the core; whether the formal tier explained it is about the recognizers.
+    # Requiring the second to attempt the first inverted the tiers: every core that
+    # passed had a value derivation, and a core with one has a rule that closes it
+    # outright, so the deeper tier only ever ran where it added nothing and the
+    # arithmetic chain could not be reached at all.  Proof depth rebuilds the
+    # narrative from its own graph, so a ``structural_only`` reading here neither
+    # blocks a proof nor survives into one.
+    formal_is_publishable = (
+        outcome.classification is not None and minimized.subset_minimality == "proven"
+    )
     formal_is_complete = (
-        outcome.classification is not None
-        and minimized.subset_minimality == "proven"
-        and narrative.derivation_status == "complete"
+        formal_is_publishable and narrative.derivation_status == "complete"
     )
     if formal_is_complete and requested_mode == "formal":
         # Every condition the frozen table names for a complete formal artifact
@@ -1800,9 +2572,15 @@ def explain_infeasibility(
             ),
             checks,
         )
-    if formal_is_complete:
-        # A complete formal artifact is what a proof is built on top of, so this is
-        # where the deeper tier is attempted.  Either it closes and the run reaches
+    if formal_is_publishable and requested_mode == "proof":
+        # Both halves are load-bearing.  A publishable formal artifact is what a proof
+        # is built on top of; asking for proof depth is what makes building one this
+        # run's business.  Widening the first half without the second is what let a
+        # ``formal`` request whose narrative fell short reach this tier: the earlier
+        # return needs a complete narrative, so an incomplete one fell through to
+        # here, closed a proof, and produced an artifact deeper than the caller asked
+        # for -- which the delivery check rejects, turning a legal request into an
+        # exception.  Either it closes and the run reaches
         # the depth that was asked for, or it does not and the formal artifact is
         # published unchanged with a reason naming what fell short.
         from .proof import build_domain_proof, proof_facts_for_core
@@ -1812,18 +2590,46 @@ def explain_infeasibility(
         # The binding check comes first: a graph built on facts that were never
         # shown equivalent to their members would carry ``core_binding`` as a trust
         # label, which the contract forbids outright.
-        bound, binding_record = check_core_bindings(core, proof_facts, budget)
+        bound, binding_record, unit_bindings = check_core_bindings(
+            core, proof_facts, budget
+        )
         checks = checks + (binding_record,)
         if bound:
             # One table for both artifacts: a node's own sentence and the reading
             # built from it are two spellings of the same state to the same reader.
             state_names = _state_names(core)
+            # Before the search, not inside it: a case's condition is discharged
+            # against the members' own constraints, and the builder only ever sees
+            # their published facts.  A condition the core entails need not be
+            # entailed by anything a reader can see, so this is the only layer that
+            # can answer it.
+            member_ids = [item.constraint.stable_id for item in published.items]
+            discharges, discharge_record = check_case_conditions(
+                core, proof_facts, member_ids, budget
+            )
+            checks = checks + (discharge_record,)
+            carries, carry_record = check_value_carries(
+                core, proof_facts, member_ids, budget
+            )
+            checks = checks + (carry_record,)
             proof, proof_record = build_domain_proof(
                 published.scope,
                 proof_facts,
                 budget,
-                member_ids=[item.constraint.stable_id for item in published.items],
+                member_ids=member_ids,
                 state_names=state_names,
+                # Keyed by rule, so a second solver-decided rule joins the same
+                # argument instead of adding another one.
+                solver_verdicts={
+                    "case_condition_entailment": discharges,
+                    "preceding_value_entailment": carries,
+                },
+                # What the binding check proved, rather than what the group is: a
+                # case fact was proved equivalent to one requirement out of several,
+                # and an input that published ``core_binding`` for it would claim the
+                # whole relation.  The check already records which requirement; this
+                # is what carries it to the node the reader sees.
+                unit_bindings=unit_bindings,
             )
             checks = checks + (proof_record,)
         else:
@@ -1869,8 +2675,17 @@ def explain_infeasibility(
                 core=published,
                 narrative=narrative,
                 reason=(
-                    "the formal explanation is complete, but %s"
-                    % (proof_record.reason or "no verifiable proof DAG was produced")
+                    # Says which formal reading was published, because the two are
+                    # now both possible here.  Claiming a complete explanation over a
+                    # ``structural_only`` narrative would misdescribe the artifact the
+                    # reader is holding.
+                    "the formal explanation is %s, but %s"
+                    % (
+                        "complete"
+                        if narrative.derivation_status == "complete"
+                        else narrative.derivation_status,
+                        proof_record.reason or "no verifiable proof DAG was produced",
+                    )
                 ),
                 elapsed_ms=elapsed_ms,
             ),

@@ -19,6 +19,8 @@ The module contains:
    editing a list.
 """
 
+from fractions import Fraction
+
 import pytest
 
 from pyfcstm.bmc.proof_rules import (
@@ -233,47 +235,113 @@ def test_arithmetic_evaluation_refuses_the_four_ways_it_can_be_misapplied(
 
 
 @pytest.mark.unittest
-def test_arithmetic_evaluation_uses_the_model_semantics_for_integer_division() -> None:
-    """Integer division is the case where guessing in Python gets it wrong.
+def test_division_is_checked_against_the_encoder_not_against_a_guess() -> None:
+    """Division was pinned to a semantics the encoder does not have.
 
-    The contract requires the current model semantics rather than a Python
-    evaluation, and the two disagree on negative operands: Python floors toward
-    negative infinity while the encoded semantics truncate toward zero.  Pinning
-    the disagreement is what keeps the checker honest about which one it uses.
+    The claim used to be that Python floors while "the encoded semantics truncate
+    toward zero", and the encoder was never asked.  It divides two ways, neither of
+    them truncation: an ``int`` variable lowers onto Z3's integer division, which is
+    Euclidean, and a ``float`` variable lowers onto Z3's reals, which divide exactly.
+
+    Which of the two applies is not recoverable from the published operands.  A
+    ``float`` variable states an integral value as an integer -- a query asking
+    ``var("x") == -7`` about a real variable produces exactly that -- so two integer
+    operands say nothing about the declaration behind them.  Where the two semantics
+    agree the answer is the same either way and is published; where they part ways,
+    publishing one would be a guess about a declaration the checker cannot see, and no
+    claimed value is accepted.
     """
-    truncating = RuleApplication(
-        "arithmetic_evaluation",
-        (
-            _equality(value=-7),
-            _fact(
-                "arithmetic_expression",
-                variable="x",
-                frame=0,
-                operator="div",
-                operand=2,
-                target_frame=1,
-            ),
-        ),
-        _equality(frame=1, value=-3),
-    )
-    flooring = RuleApplication(
-        "arithmetic_evaluation",
-        (
-            _equality(value=-7),
-            _fact(
-                "arithmetic_expression",
-                variable="x",
-                frame=0,
-                operator="div",
-                operand=2,
-                target_frame=1,
-            ),
-        ),
-        _equality(frame=1, value=-4),
-    )
 
-    assert check_rule(truncating) is True
-    assert check_rule(flooring) is False, "-7 // 2 is Python's answer, not the model's"
+    def application(left, operand, claimed):
+        return RuleApplication(
+            "arithmetic_evaluation",
+            (
+                _equality(value=left),
+                _fact(
+                    "arithmetic_expression",
+                    variable="x",
+                    frame=0,
+                    operator="div",
+                    operand=operand,
+                    target_frame=1,
+                ),
+            ),
+            _equality(frame=1, value=claimed),
+        )
+
+    # Integer operands whose quotient is the same under both readings: published, and
+    # a neighbour is refused.
+    for left, operand, agreed in ((8, 2, 4), (-8, 2, -4), (6, 3, 2), (-6, -3, 2)):
+        assert check_rule(application(left, operand, agreed)) is True, (left, operand)
+        assert check_rule(application(left, operand, agreed + 1)) is False
+
+    # Integer operands where the readings part ways.  ``-7 / 2`` is ``-4`` for an
+    # integer variable and ``-3.5`` for a real one, so neither is asserted.
+    for left, operand in ((7, 2), (-7, 2), (7, -2), (-7, -2)):
+        for claimed in (3, -3, 4, -4, 3.5, -3.5):
+            assert check_rule(application(left, operand, claimed)) is False, (
+                left,
+                operand,
+                claimed,
+            )
+
+    # A float operand names the sort, so reals divide exactly.
+    assert check_rule(application(7.5, 2, 3.75)) is True
+    assert check_rule(application(7.5, 2, 3.0)) is False, "truncation is not the model"
+    assert check_rule(application(-7.0, 2, -3.5)) is True
+
+    # An exact quotient with no finite decimal form, and one beyond every float, are
+    # refused rather than rounded: no published number is the one the encoding holds.
+    assert check_rule(application(1.0, 3, 0.3333333333333333)) is False
+    assert check_rule(application(1.0, 3, 0.0)) is False
+    assert check_rule(application(1e308, 1e-308, 1e308)) is False
+    assert check_rule(application(1e308, 1e-308, 0.0)) is False
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("operator", ["add", "sub", "mul"])
+def test_real_arithmetic_publishes_what_the_encoder_holds(operator) -> None:
+    """The other three operators answer to the encoder too, not to IEEE754.
+
+    Division was reconciled with the encoder and the module docstring was rewritten to
+    say arithmetic follows it -- and ``add``, ``sub`` and ``mul`` stayed on Python's
+    floats, so the sentence was false for three operators out of four.  ``0.1 + 0.2``
+    is ``3/10`` in the encoding and ``0.30000000000000004`` in a double, and the
+    published proof said the latter under ``verification_status`` ``verified``.
+
+    Deciding between the simulator and the encoder was not required after all: the
+    quotient path had already established the shape -- compute exactly, publish only
+    a value the decimal form reads back as, otherwise decline the step -- and these
+    three reuse it.
+    """
+    exact = {
+        "add": (Fraction(1, 10) + Fraction(2, 10), 0.1, 0.2),
+        "sub": (Fraction(3, 10) - Fraction(1, 10), 0.3, 0.1),
+        "mul": (Fraction(1, 10) * Fraction(3, 1), 0.1, 3),
+    }[operator]
+    encoded, left, operand = exact
+    ieee = {"add": 0.1 + 0.2, "sub": 0.3 - 0.1, "mul": 0.1 * 3}[operator]
+    assert float(encoded) != ieee, "the fixture has to exercise the disagreement"
+
+    def application(claimed):
+        return RuleApplication(
+            "arithmetic_evaluation",
+            (
+                _equality(value=left),
+                _fact(
+                    "arithmetic_expression",
+                    variable="x",
+                    frame=0,
+                    operator=operator,
+                    operand=operand,
+                    target_frame=1,
+                ),
+            ),
+            _equality(frame=1, value=claimed),
+        )
+
+    assert check_rule(application(float(encoded))) is True
+    assert check_rule(application(ieee)) is False
 
 
 @pytest.mark.unittest
@@ -1042,3 +1110,630 @@ def test_evaluation_refuses_an_expression_it_does_not_fully_understand() -> None
     )
 
     assert check_rule(application) is False
+
+
+#: The fact kinds a published proof can actually read as an input node's own fact.
+#:
+#: Three conditions at once, and the third is the one that took a measurement to
+#: find: the kind has to be publishable, its fact has to be re-encodable so the
+#: binding can hold, and it has to be consumable without a condition standing in the
+#: way.  ``transition_case`` meets the first two and fails the third -- it always
+#: carries the condition its case is selected under, and the rule that evaluates an
+#: arithmetic expression refuses one carrying a field it does not recognize.  Seeding
+#: the closure with it answers a different question (what the catalog could do) and
+#: reports 8 of 8 where 5 of 8 is the truth.
+def _seed_kinds():
+    """Return the kinds a closure over the catalog may start from.
+
+    Taken from production rather than transcribed.  Reading one encoder table by
+    hand is what made this seed too small: ``transition_case`` is registered in the
+    unit-bound family, the seed named only the ordinary one, and the closure then
+    reported three rules unreachable for a cause that was not theirs -- while the
+    registry it is compared against agreed, because both had been derived from the
+    same short reading.
+    """
+    from pyfcstm.bmc.infeasibility import encodable_fact_kinds
+
+    return frozenset(encodable_fact_kinds())
+
+
+@pytest.mark.unittest
+def test_the_closure_and_the_unreachable_registry_agree() -> None:
+    """The self-check the contract asks for, in the direction that is automatable.
+
+    A closed catalog a consumer has to accept includes rules nothing reaches, and
+    which ones is a user-facing fact.  Computing it from the rules' own premise kinds
+    and comparing against the declared list is what stops the list going stale in
+    either direction: a rule that becomes reachable and stays listed, or one that
+    goes dark and is not.
+    """
+    from pyfcstm.bmc.proof_rules import (
+        CLOSURE_EXCLUDED_RULE_IDS,
+        PROOF_RULES,
+        UNREACHABLE_RULE_IDS,
+        reachable_rule_ids,
+    )
+
+    counted = set(PROOF_RULES) - set(CLOSURE_EXCLUDED_RULE_IDS)
+    reached = set(reachable_rule_ids(_seed_kinds()))
+
+    assert counted - reached == set(UNREACHABLE_RULE_IDS)
+    assert reached & set(UNREACHABLE_RULE_IDS) == set()
+
+
+@pytest.mark.unittest
+def test_the_closure_excludes_the_input_rule_by_name_and_nothing_else() -> None:
+    """The exclusion set is pinned, because a wider one would hide a real gap.
+
+    ``source_fact`` seeds a graph rather than deriving within it, so it has no
+    premise kind to wait for.  Excluding it by a property of its premise tuple would
+    also exclude any rule that came to declare none, and the closure would then
+    report a reachability it never established.  Pinning the set literally is what
+    makes a new member of it a deliberate act.
+    """
+    from pyfcstm.bmc.proof_rules import CLOSURE_EXCLUDED_RULE_IDS
+
+    assert CLOSURE_EXCLUDED_RULE_IDS == ("source_fact",)
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("dropped", sorted(_seed_kinds()))
+def test_removing_any_fact_source_changes_what_the_closure_reaches(
+    dropped: str,
+) -> None:
+    """Every seed kind is load-bearing, so the self-check can fail.
+
+    A self-check that cannot fail reports nothing.  The contract asks for this
+    direction by name: deleting any fact source has to turn it red.  A seed whose
+    removal changed nothing would mean the closure never depended on it, and the
+    agreement above would hold for a reason other than the one it claims.
+    """
+    from pyfcstm.bmc.proof_rules import reachable_rule_ids
+
+    full = set(reachable_rule_ids(_seed_kinds()))
+    without = set(reachable_rule_ids(_seed_kinds() - {dropped}))
+
+    assert without < full, "%s reaches nothing the others do not" % dropped
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "dropped, goes_dark",
+    [
+        ("transition_case", "case_condition_entailment"),
+        ("proposition", "boolean_complement"),
+        ("state_exclusion", "state_domain_exhaustion"),
+    ],
+)
+def test_a_reachability_regression_breaks_the_agreement(
+    dropped: str, goes_dark: str
+) -> None:
+    """The other direction the contract names, restated for an empty registry.
+
+    While the registry had entries, this direction was tested by removing one and
+    requiring the agreement to break.  An empty registry has nothing to remove, and
+    deleting the test with the entries would have retired a gate rather than
+    satisfying it -- the stale state it guards is still reachable, only from the
+    other side: a fact source disappears, a rule goes dark, and an empty registry
+    keeps saying nothing is.
+
+    The witnesses are written out rather than derived so that a change to the seed
+    cannot quietly empty this test too.
+
+    :param dropped: The fact kind removed from the closure's seed.
+    :type dropped: str
+    :param goes_dark: The rule that must lose its only premise source with it.
+    :type goes_dark: str
+    """
+    from pyfcstm.bmc.proof_rules import (
+        CLOSURE_EXCLUDED_RULE_IDS,
+        PROOF_RULES,
+        UNREACHABLE_RULE_IDS,
+        reachable_rule_ids,
+    )
+
+    seed = _seed_kinds()
+    assert dropped in seed, "the witness names a kind no binding encodes"
+    counted = set(PROOF_RULES) - set(CLOSURE_EXCLUDED_RULE_IDS)
+    reached = set(reachable_rule_ids(seed - {dropped}))
+
+    assert goes_dark not in reached, "%s survived without %s" % (goes_dark, dropped)
+    assert counted - reached != set(UNREACHABLE_RULE_IDS)
+
+
+def _discharged_case(**overrides) -> dict:
+    """The same case with its condition discharged: the key is gone, not emptied.
+
+    ``arithmetic_evaluation`` reads keys rather than values, and refuses a field it
+    does not recognize rather than dropping it, so a condition left behind as an
+    empty tuple still stops the chain one step later.
+    """
+    case = _conditional_case(**overrides)
+    case.pop("condition", None)
+    return case
+
+
+def _conditional_case(**overrides) -> dict:
+    """A transition case whose assignment holds only where its condition does."""
+    fields = {
+        "variable": "x",
+        "frame": 1,
+        "target_frame": 2,
+        "operator": "add",
+        "operand": 1,
+        "condition": (_fact("state_membership", frame=1, state=1, excluded=False),),
+    }
+    fields.update(overrides)
+    return _fact("transition_case", **fields)
+
+
+@pytest.mark.unittest
+def test_case_condition_entailment_empties_the_condition_and_nothing_else() -> None:
+    """The one thing this rule is allowed to change is the condition.
+
+    The rule exists because an assignment guarded by a condition is not an
+    assignment: ``x`` increases by one *where this case applies*, and a step that
+    forgets the second half proves something the model does not promise.  Its
+    conclusion is therefore the same case with the condition discharged -- every
+    other field travels unchanged, and the checker is what makes that a fact
+    rather than an intention.
+    """
+    application = RuleApplication(
+        "case_condition_entailment",
+        (_conditional_case(),),
+        _discharged_case(),
+    )
+
+    assert check_rule(application) is True
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "conclusion, why",
+    [
+        (_conditional_case(), "the condition survives, so nothing was discharged"),
+        (_discharged_case(operand=2), "the operand was rewritten"),
+        (_discharged_case(variable="y"), "the subject was rewritten"),
+        (_discharged_case(target_frame=3), "the step was widened"),
+    ],
+)
+def test_case_condition_entailment_refuses_a_rewritten_conclusion(
+    conclusion, why
+) -> None:
+    """A discharged condition is not a licence to change the assignment.
+
+    :param conclusion: The conclusion the checker must refuse.
+    :type conclusion: dict
+    :param why: What the caller got wrong, for the failure message.
+    :type why: str
+    """
+    application = RuleApplication(
+        "case_condition_entailment", (_conditional_case(),), conclusion
+    )
+
+    assert check_rule(application) is False, why
+
+
+@pytest.mark.unittest
+def test_case_condition_entailment_refuses_a_case_with_nothing_to_discharge() -> None:
+    """An unconditional case is already what the rule produces.
+
+    Accepting it would put a node in the graph that establishes what its own
+    premise says, which the dependency pruning cannot tell from a real step.
+    """
+    application = RuleApplication(
+        "case_condition_entailment",
+        (_discharged_case(),),
+        _discharged_case(),
+    )
+
+    assert check_rule(application) is False
+
+
+@pytest.mark.unittest
+def test_every_rule_in_the_catalog_is_reachable() -> None:
+    """The acceptance the contract asks for: no rule a consumer must accept is dark.
+
+    A closed catalog whose premises nothing produces is a promise the tool cannot
+    keep, and the registry of unreachable rules is where that gap was recorded
+    honestly.  With the condition discharged by ``case_condition_entailment`` the
+    registry is empty, and this test is what stops it filling up again unnoticed.
+    """
+    from pyfcstm.bmc.proof_rules import (
+        CLOSURE_EXCLUDED_RULE_IDS,
+        UNREACHABLE_RULE_IDS,
+        reachable_rule_ids,
+    )
+
+    counted = set(PROOF_RULES) - set(CLOSURE_EXCLUDED_RULE_IDS)
+
+    assert UNREACHABLE_RULE_IDS == ()
+    assert counted - set(reachable_rule_ids(_seed_kinds())) == set()
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "premises, why",
+    [
+        ((), "no premise names a case to discharge"),
+        (
+            (_conditional_case(), _equality()),
+            "a second premise means the rule was matched to something it does not read",
+        ),
+        ((_equality(),), "a value is not a case, whatever its condition would be"),
+        (
+            (_fact("arithmetic_expression", variable="x", frame=1, operator="add"),),
+            "an expression derived from a case is not the case",
+        ),
+    ],
+)
+def test_case_condition_entailment_refuses_premises_it_does_not_read(
+    premises, why
+) -> None:
+    """The two shape guards every rule in the catalog carries, for this one.
+
+    ``premise_kinds`` is what a builder matches on, but a checker that trusted the
+    match would agree with a step the builder proposed wrongly -- and the builder is
+    the part being checked.  So the arity and the tag are both re-established here,
+    and a conclusion is never reached from premises this rule cannot read.
+
+    :param premises: The premises the checker must refuse.
+    :type premises: tuple
+    :param why: What the caller got wrong, for the failure message.
+    :type why: str
+    """
+    application = RuleApplication(
+        "case_condition_entailment", premises, _discharged_case()
+    )
+
+    assert check_rule(application) is False, why
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    ("start", "divisor"),
+    [(7.5, 2), (-7.5, 2), (1.0, 4), (5.0, 2), (-1.0, 8)],
+)
+def test_the_checker_agrees_with_the_simulator_about_a_real_quotient(
+    start, divisor
+) -> None:
+    """Two surfaces, one model, one quotient -- checked against each other.
+
+    The simulator runs the effect and the proof checker re-derives it.  They disagreed
+    by a whole quarter: the checker truncated, so ``7.5 / 2`` came back as ``3.0`` from
+    a proof whose ``verification_status`` said ``verified`` while ``pyfcstm simulate``
+    printed ``3.75``.  Catching that class again is what this is for.
+
+    The divisors below are ones where the two surfaces agree exactly, and that
+    agreement is *not* general -- picking five passing values and concluding the
+    surfaces always agree is the mistake this docstring exists to not repeat.  The
+    checker divides reals exactly, as the encoder does, and the simulator divides them
+    in IEEE754; where that loses precision the two part ways by an ulp.  ``0.3 / 0.1``
+    is exactly ``3`` and the simulator reaches ``2.9999999999999996``; ``9.9 / 3.3``
+    is ``3`` and it reaches ``3.0000000000000004``.
+
+    So division shares the open question that ``add`` and ``mul`` are left out for,
+    in one sub-case: the two reference surfaces disagree about real arithmetic in
+    general, and which one a proof should follow is a semantics decision.  The proof
+    follows the encoder, which is what the reference says it is about.  What is pinned
+    here is narrower and still worth pinning: a quotient the two surfaces *do* agree
+    on has to come back as that number, not as a truncation of it.
+    """
+    from pyfcstm.model import load_state_machine_from_text
+    from pyfcstm.simulate import SimulationRuntime
+
+    model = (
+        "def float x = 0.0;\n"
+        "state Root { state A; state B; [*] -> A;\n"
+        "  A -> A effect { x = x / %s; }; A -> B; }" % divisor
+    )
+    runtime = SimulationRuntime(
+        load_state_machine_from_text(model, "machine.fcstm"),
+        initial_vars={"x": start},
+    )
+    # The first cycle takes the initial transition into ``A``; the second runs the
+    # self-loop, which is the one that divides.
+    runtime.cycle()
+    runtime.cycle()
+    simulated = dict(runtime.vars)["x"]
+
+    application = RuleApplication(
+        "arithmetic_evaluation",
+        (
+            _equality(value=start),
+            _fact(
+                "arithmetic_expression",
+                variable="x",
+                frame=0,
+                operator="div",
+                operand=divisor,
+                target_frame=1,
+            ),
+        ),
+        _equality(frame=1, value=simulated),
+    )
+
+    assert check_rule(application) is True, (start, divisor, simulated)
+
+
+@pytest.mark.unittest
+def test_excluded_state_selected_closes_on_a_slot_pinned_to_an_excluded_state() -> None:
+    """A frame required to be in the state it also rules out has nowhere to be."""
+    application = RuleApplication(
+        "excluded_state_selected",
+        (
+            _fact(
+                "variable_equality",
+                variable="$state",
+                state_slot=True,
+                frame=1,
+                value=3,
+            ),
+            _fact("state_exclusion", frame=1, state=3),
+        ),
+        _fact("false"),
+    )
+
+    assert check_rule(application) is True
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "premises",
+    [
+        # A model variable rather than the frame's state slot.  Without the flag this
+        # would close a value contradiction under a sentence about states.
+        (
+            _fact("variable_equality", variable="x", frame=1, value=3),
+            _fact("state_exclusion", frame=1, state=3),
+        ),
+        # Different frames are different subjects, so neither contradicts the other.
+        (
+            _fact(
+                "variable_equality",
+                variable="$state",
+                state_slot=True,
+                frame=1,
+                value=3,
+            ),
+            _fact("state_exclusion", frame=2, state=3),
+        ),
+        # The exclusion names a state the slot was not pinned to.
+        (
+            _fact(
+                "variable_equality",
+                variable="$state",
+                state_slot=True,
+                frame=1,
+                value=3,
+            ),
+            _fact("state_exclusion", frame=1, state=4),
+        ),
+        # Two exclusions and no equality: that shape belongs to the domain rule.
+        (
+            _fact("state_exclusion", frame=1, state=3),
+            _fact("state_exclusion", frame=1, state=4),
+        ),
+        # A field the rule does not consume.  Dropping it silently would make a
+        # vocabulary addition disappear at the step that closes the proof.
+        (
+            _fact(
+                "variable_equality",
+                variable="$state",
+                state_slot=True,
+                frame=1,
+                value=3,
+                surprise=1,
+            ),
+            _fact("state_exclusion", frame=1, state=3),
+        ),
+    ],
+    ids=[
+        "a_model_variable",
+        "different_frames",
+        "a_different_state",
+        "two_exclusions",
+        "an_unconsumed_field",
+    ],
+)
+def test_excluded_state_selected_refuses_anything_else(premises) -> None:
+    """Each premise shape that must not close, and why it must not.
+
+    :param premises: The premises the rule is offered.
+    :type premises: Tuple[Mapping[str, object], ...]
+    """
+    assert (
+        check_rule(RuleApplication("excluded_state_selected", premises, _fact("false")))
+        is False
+    )
+
+
+@pytest.mark.unittest
+def test_preceding_value_entailment_moves_the_frame_and_nothing_else() -> None:
+    """The same variable at the same value, one frame earlier."""
+    application = RuleApplication(
+        "preceding_value_entailment",
+        (_fact("variable_equality", variable="x", frame=2, value=5),),
+        _fact("variable_equality", variable="x", frame=1, value=5),
+    )
+
+    assert check_rule(application) is True
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "premise, conclusion",
+    [
+        # Frame 0 has no predecessor, so there is no earlier frame to speak about.
+        (
+            _fact("variable_equality", variable="x", frame=0, value=5),
+            _fact("variable_equality", variable="x", frame=-1, value=5),
+        ),
+        # Two frames back is a second step this premise says nothing about.
+        (
+            _fact("variable_equality", variable="x", frame=3, value=5),
+            _fact("variable_equality", variable="x", frame=1, value=5),
+        ),
+        # Forwards, which is the direction the citation seam cannot record.
+        (
+            _fact("variable_equality", variable="x", frame=2, value=5),
+            _fact("variable_equality", variable="x", frame=3, value=5),
+        ),
+        # A different value: letting it move would conclude anything about the
+        # earlier frame and call it carried.
+        (
+            _fact("variable_equality", variable="x", frame=2, value=5),
+            _fact("variable_equality", variable="x", frame=1, value=4),
+        ),
+        # A different variable.
+        (
+            _fact("variable_equality", variable="x", frame=2, value=5),
+            _fact("variable_equality", variable="y", frame=1, value=5),
+        ),
+        # A bound restricts a range rather than pinning a value.
+        (
+            _fact("variable_bound", variable="x", frame=2, value=5, operator="lt"),
+            _fact("variable_equality", variable="x", frame=1, value=5),
+        ),
+        # A field the rule does not consume, on either side.
+        (
+            _fact("variable_equality", variable="x", frame=2, value=5, surprise=1),
+            _fact("variable_equality", variable="x", frame=1, value=5),
+        ),
+        (
+            _fact("variable_equality", variable="x", frame=2, value=5),
+            _fact("variable_equality", variable="x", frame=1, value=5, surprise=1),
+        ),
+    ],
+    ids=[
+        "frame_zero",
+        "two_frames_back",
+        "forwards",
+        "a_different_value",
+        "a_different_variable",
+        "a_bound",
+        "an_unconsumed_field_in_the_premise",
+        "an_unconsumed_field_in_the_conclusion",
+    ],
+)
+def test_preceding_value_entailment_refuses_anything_else(premise, conclusion) -> None:
+    """Each shape that must not pass the syntax half of this rule.
+
+    The solver settles whether the earlier value was forced; this settles that the
+    step is the one the rule describes, and these are the ways it is not.
+
+    :param premise: The premise offered.
+    :type premise: Mapping[str, object]
+    :param conclusion: The conclusion offered.
+    :type conclusion: Mapping[str, object]
+    """
+    assert (
+        check_rule(
+            RuleApplication("preceding_value_entailment", (premise,), conclusion)
+        )
+        is False
+    )
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "rule_id, premises, conclusion",
+    [
+        # Arity. The search matches ``premise_kinds`` before proposing, so this shape
+        # does not arrive from there -- the guard restates the arity rather than
+        # trusting it, and the sibling rules have the same restatement covered.
+        (
+            "preceding_value_entailment",
+            (
+                _fact("variable_equality", variable="x", frame=2, value=5),
+                _fact("variable_equality", variable="y", frame=2, value=5),
+            ),
+            _fact("variable_equality", variable="x", frame=1, value=5),
+        ),
+        # A conclusion of another kind, carrying every field this rule consumes, so
+        # the kind guard is the only thing left that can refuse it.  The first draft
+        # used ``{"kind": "false"}``, which the field check would have refused on its
+        # own -- the case passed while proving nothing about the guard it named.
+        (
+            "preceding_value_entailment",
+            (_fact("variable_equality", variable="x", frame=2, value=5),),
+            _fact("variable_bound", variable="x", frame=1, value=5),
+        ),
+        # Three premises holding exactly one equality and one exclusion, so the
+        # equality/exclusion counts are both satisfied and only the arity refuses
+        # them.  Two earlier drafts were shadowed: a single premise fails the counts,
+        # and a third exclusion fails them too -- each passed while proving nothing
+        # about arity.
+        (
+            "excluded_state_selected",
+            (
+                _fact(
+                    "variable_equality",
+                    variable="$state",
+                    state_slot=True,
+                    frame=1,
+                    value=3,
+                ),
+                _fact("state_exclusion", frame=1, state=3),
+                _fact("proposition", identity="Root.Go@1", holds=True),
+            ),
+            _fact("false"),
+        ),
+        (
+            "excluded_state_selected",
+            (
+                _fact(
+                    "variable_equality",
+                    variable="$state",
+                    state_slot=True,
+                    frame=1,
+                    value=3,
+                ),
+                _fact("state_exclusion", frame=1, state=3),
+            ),
+            _fact("variable_equality", variable="x", frame=1, value=3),
+        ),
+        # An unconsumed field on the exclusion rather than on the equality.  Both
+        # sides are read into a different shape, so both have to refuse one.
+        (
+            "excluded_state_selected",
+            (
+                _fact(
+                    "variable_equality",
+                    variable="$state",
+                    state_slot=True,
+                    frame=1,
+                    value=3,
+                ),
+                _fact("state_exclusion", frame=1, state=3, surprise=1),
+            ),
+            _fact("false"),
+        ),
+    ],
+    ids=[
+        "carry_with_two_premises",
+        "carry_concluding_something_else",
+        "opposition_with_three_premises",
+        "opposition_concluding_something_else",
+        "opposition_with_an_unconsumed_field_on_the_exclusion",
+    ],
+)
+def test_the_new_rules_restate_the_arity_and_the_conclusion_kind(
+    rule_id: str, premises, conclusion
+) -> None:
+    """Shapes the search settles upstream, refused here as well.
+
+    ``_candidates`` matches ``premise_kinds`` and the proposal builds the conclusion,
+    so none of these arrives from the search.  They are refused anyway for the reason
+    the catalog's older rules give: a checker that trusted its caller about arity or
+    about what it was concluding would be a checker whose contract is "whatever the
+    search happens to pass", and the search is the thing under test elsewhere.
+
+    :param rule_id: The rule being offered the shape.
+    :type rule_id: str
+    :param premises: The premises offered.
+    :type premises: Tuple[Mapping[str, object], ...]
+    :param conclusion: The conclusion offered.
+    :type conclusion: Mapping[str, object]
+    """
+    assert check_rule(RuleApplication(rule_id, premises, conclusion)) is False

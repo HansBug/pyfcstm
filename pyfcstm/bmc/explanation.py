@@ -111,6 +111,7 @@ BmcReasoningStepKind = Literal["fact", "derivation", "conflict"]
 BmcProofNodeKind = Literal["input", "derived", "contradiction"]
 BmcProofRuleId = Literal[
     "source_fact",
+    "case_condition_entailment",
     "transition_assignment",
     "equality_substitution",
     "arithmetic_evaluation",
@@ -119,9 +120,11 @@ BmcProofRuleId = Literal[
     "definedness_failure",
     "incompatible_equalities",
     "boolean_complement",
+    "excluded_state_selected",
+    "preceding_value_entailment",
 ]
 BmcProofVerificationMethod = Literal[
-    "core_binding", "rule_checker", "solver_entailment"
+    "core_binding", "core_binding_unit", "rule_checker", "solver_entailment"
 ]
 BmcProofInputMinimality = Literal["subset_minimal"]
 BmcProofGraphMinimality = Literal["dependency_pruned"]
@@ -373,6 +376,24 @@ _RELATION_PHRASES = {
     "gt": "to be greater than %s",
 }
 
+#: How an assignment reads, keyed by the operation a published fact names.
+#:
+#: Each phrase names both the operand and the variable, because the natural word
+#: order differs between them: an addition reads "adds 1 to x" and a multiplication
+#: reads "multiplies x by 1".  Formatting by name rather than by position is what
+#: lets each operation put them where its own English wants them.  An operation
+#: absent here has no reading, which is why the recognizer only names the four the
+#: evaluation rule can apply.
+_ASSIGNMENT_PHRASES = {
+    "add": "adds {operand} to {variable}",
+    "sub": "subtracts {operand} from {variable}",
+    "mul": "multiplies {variable} by {operand}",
+    "div": "divides {variable} by {operand}",
+    # Not an arithmetic update: the next frame's value does not depend on this one,
+    # so the sentence says what the variable becomes rather than how it changes.
+    "set": "sets {variable} to {operand}",
+}
+
 #: Which authority a role speaks for, in the voice the sentence needs.
 #:
 #: A reader deciding where to make an edit cares whether a requirement came from
@@ -538,6 +559,79 @@ def _state_phrase(states, names: Optional[Mapping[int, str]] = None) -> str:
     return ", ".join(_state_display(state, names) for state in states)
 
 
+#: How a relation reads inside a condition clause.
+#:
+#: Separate from :data:`_RELATION_PHRASES` because that table completes "requires
+#: x", so its phrases are infinitives.  A clause needs the indicative: "where y is
+#: at least 3", not "where y to be at least 3".
+_CONDITION_RELATIONS = {
+    "eq": "is %s",
+    "ne": "is not %s",
+    "le": "is at most %s",
+    "lt": "is less than %s",
+    "ge": "is at least %s",
+    "gt": "is greater than %s",
+}
+
+
+def _condition_clause(members, names=None) -> str:
+    """Read the condition a case is selected under, as a clause that can be inserted.
+
+    Empty when there is no condition, so a fact that carries none reads exactly as it
+    did before this existed.  A member with no reading is named by its tag rather than
+    dropped: a clause that quietly listed fewer requirements than the fact carries
+    would understate what the step depends on.
+
+    :param members: The published condition facts, or ``None``.
+    :type members: Optional[Sequence[Mapping[str, Any]]]
+    :param names: What the model calls each state, keyed by encoded index, defaults to
+        ``None``.
+    :type names: Optional[Mapping[int, str]], optional
+    :return: A leading-space clause, or the empty string.
+    :rtype: str
+
+    Example::
+
+        >>> _condition_clause(None)
+        ''
+        >>> member = {"kind": "state_membership", "frame": 0, "state": 1}
+        >>> _condition_clause([member])
+        ' where frame 0 holds 1'
+        >>> _condition_clause([member], {1: "Root.A"})
+        ' where frame 0 holds Root.A'
+    """
+    if not members:
+        return ""
+    phrases = []
+    for member in members:
+        kind = member.get("kind")
+        if kind == "state_membership":
+            phrases.append(
+                "frame %s %s %s"
+                % (
+                    member.get("frame"),
+                    "does not hold" if member.get("excluded") else "holds",
+                    _state_display(member.get("state"), names),
+                )
+            )
+        elif kind == "variable_comparison":
+            # A relation reads differently as a condition than as a requirement:
+            # ``_RELATION_PHRASES`` is written to follow "requires x", which gives
+            # "y to be at least 3" where a clause needs "y is at least 3".
+            phrase = _CONDITION_RELATIONS.get(member.get("operator"))
+            phrases.append(
+                "%s %s at frame %s"
+                % (
+                    member.get("variable"),
+                    (phrase % member.get("value")) if phrase else "is constrained",
+                    member.get("frame"),
+                )
+            )
+        else:
+            phrases.append("a %s requirement" % (kind or "further"))
+    return " where %s" % " and ".join(phrases)
+
+
 def _fact_sentence(
     fact: Mapping[str, Any], names: Optional[Mapping[int, str]] = None
 ) -> str:
@@ -611,11 +705,16 @@ def _fact_sentence(
             "hold" if fact.get("holds") else "not hold",
         )
     if kind == "transition_case":
-        return "Between frame %s and frame %s, the transition changes %s by %s." % (
+        # The condition is part of what the fact states, so it is part of the reading.
+        # Without it the sentence asserts the assignment unconditionally while the
+        # fact carries a condition -- the human account and the machine fact would
+        # then disagree, which is the one thing this tier exists to prevent.
+        return "Between frame %s and frame %s, the transition changes %s by %s%s." % (
             fact.get("frame"),
             fact.get("target_frame"),
             fact.get("variable"),
-            fact.get("operand"),
+            fact.get("operand", fact.get("operand_variable")),
+            _condition_clause(fact.get("condition"), names),
         )
     if kind == "arithmetic_expression":
         return "Between frame %s and frame %s, %s changes by %s." % (
@@ -714,6 +813,38 @@ def human_text_for_fact(
             voice,
             count,
             "" if count == 1 else "s",
+        )
+    if kind == "proposition" and {"identity", "holds"} <= set(fact):
+        return "At the step it names, %s requires %s to %s." % (
+            voice,
+            fact["identity"],
+            "occur" if fact["holds"] else "not occur",
+        )
+    if kind == "transition_case" and {
+        "variable",
+        "frame",
+        "target_frame",
+        "operation",
+        "condition",
+    } <= set(fact):
+        phrase = _ASSIGNMENT_PHRASES.get(fact["operation"])
+        operand = fact.get("operand")
+        if operand is None:
+            operand = fact.get("operand_variable")
+        if phrase is None or operand is None:
+            return _unreduced_sentence(role, fact)
+        # The condition is read out rather than alluded to.  An earlier version said
+        # "where its case applies" and justified it by the condition being the
+        # encoder's own text -- true of the first shape this fact had, and false once
+        # it became a list of normalized facts.  The reader is owed the requirement
+        # itself: the step after this one says "therefore", and its only warrant is
+        # that this condition holds.
+        return "Between frame %s and frame %s, %s %s%s." % (
+            fact["frame"],
+            fact["target_frame"],
+            voice,
+            phrase.format(operand=operand, variable=fact["variable"]),
+            _condition_clause(fact["condition"], state_paths),
         )
     if kind == "definedness_condition" and {"frame", "operation"} <= set(fact):
         variable = fact.get("variable")
@@ -868,6 +999,12 @@ SCOPE_AGGREGATES = MappingProxyType(
 #: which is what an initial target and an ``active(...)`` assumption both lower to.
 #: ``state_domain`` gives the legal states of a frame
 #: and ``definedness_condition`` the operation a group keeps well defined.
+#: ``transition_case`` gives the assignment one step's selected case makes, under
+#: the condition that selects it.  ``proposition`` gives one requirement about one
+#: event at one step, with the polarity the query asked for; a state assertion is
+#: *not* one of these -- it stays ``state_membership``, because the rule that
+#: exhausts a frame's domain reads state exclusions and would go dark if state
+#: assertions moved here.
 #: ``structural_constraint`` is the honest fallback for a shape no recognizer
 #: reads.
 #:
@@ -882,6 +1019,8 @@ _FACT_KINDS = (
     "state_membership",
     "state_domain",
     "definedness_condition",
+    "transition_case",
+    "proposition",
 )
 
 #: Frozen upper bound on a published excerpt, in Unicode code points.  A long
@@ -1787,6 +1926,14 @@ _PROOF_RULE_IDS = get_args(BmcProofRuleId)
 #: forbids holes, trust and opaque solver steps in a published proof.
 _PROOF_VERIFICATION_METHODS = get_args(BmcProofVerificationMethod)
 
+#: The methods that describe an input's binding rather than a step's derivation.
+#:
+#: The split is published, not implied: the reference says of both bindings that they
+#: are "used by input nodes only", and of the other two that they are used by derived
+#: and root nodes.  Written out rather than derived, because which side a method falls
+#: on is a statement about what was checked, not a fact about its name.
+_INPUT_VERIFICATION_METHODS = ("core_binding", "core_binding_unit")
+
 #: The one input-minimality a published proof may claim.
 #:
 #: Single-valued because a proof whose leaves are not exactly a proven
@@ -1829,8 +1976,17 @@ class BmcProofNode:
     :type human_text: str
     :param verification_method: How the step was checked.
     :type verification_method: BmcProofVerificationMethod
+    :param unit_index: Which requirement of the member's group this input restates,
+        counting from zero in the group's own decomposition order.  Only a
+        ``core_binding_unit`` input carries it, defaults to ``None``.
+    :type unit_index: Optional[int], optional
+    :param unit_count: How many requirements that decomposition has, so a reader
+        can see what proportion of the group this one fact covers.  Only a
+        ``core_binding_unit`` input carries it, defaults to ``None``.
+    :type unit_count: Optional[int], optional
     :raises ValueError: If a vocabulary value is unknown, a published text is
-        blank, or a sequence repeats an id.
+        blank, a sequence repeats an id, or the two unit fields disagree with the
+        verification method or with each other.
 
     Example::
 
@@ -1852,6 +2008,8 @@ class BmcProofNode:
     item_ids: Tuple[str, ...]
     human_text: str
     verification_method: BmcProofVerificationMethod
+    unit_index: Optional[int] = None
+    unit_count: Optional[int] = None
 
     def __post_init__(self) -> None:
         # Copied before the invariants read them, so a caller's list cannot be
@@ -1867,6 +2025,43 @@ class BmcProofNode:
             _PROOF_VERIFICATION_METHODS,
             "proof node verification_method",
         )
+        # One predicate, both directions.  A binding is what an input's re-encoding
+        # was checked by; the rule checker and the solver discharge derived and root
+        # steps.  Either pairing reversed describes a check that cannot have happened
+        # -- a contradiction has no core member to re-encode against, an input has no
+        # premises to re-derive from -- and the reference states the split outright,
+        # so the constructor is where a caller assembling a proof to publish learns
+        # it rather than a consumer reading the result.
+        if (self.verification_method in _INPUT_VERIFICATION_METHODS) != (
+            self.kind == "input"
+        ):
+            raise ValueError(
+                "proof node verification_method %r does not belong to a %s node."
+                % (self.verification_method, self.kind)
+            )
+        # The two unit fields and the method that admits them travel together in
+        # both directions.  Either alone says something a reader cannot use: an
+        # index without a count gives no proportion, a count without an index names
+        # no requirement, and either on a whole-group binding claims a decomposition
+        # that binding never made.
+        unit_fields = (self.unit_index, self.unit_count)
+        if self.verification_method == "core_binding_unit":
+            if any(value is None for value in unit_fields):
+                raise ValueError(
+                    "a core_binding_unit proof node must carry unit_index and "
+                    "unit_count."
+                )
+            index = exact_int(self.unit_index, "proof node unit_index")
+            count = exact_int(self.unit_count, "proof node unit_count")
+            if count < 1:
+                raise ValueError("proof node unit_count must be at least 1.")
+            if not 0 <= index < count:
+                raise ValueError("proof node unit_index must be within its unit_count.")
+        elif any(value is not None for value in unit_fields):
+            raise ValueError(
+                "only a core_binding_unit proof node may carry unit_index or "
+                "unit_count."
+            )
         for name, ids in (
             ("premise_ids", self.premise_ids),
             ("item_ids", self.item_ids),
@@ -1910,7 +2105,7 @@ class BmcProofNode:
             >>> node.to_canonical()["conclusion"]
             {'kind': 'false'}
         """
-        return {
+        mapping = {
             "stable_id": self.stable_id,
             "kind": self.kind,
             "rule_id": self.rule_id,
@@ -1920,6 +2115,14 @@ class BmcProofNode:
             "human_text": self.human_text,
             "verification_method": self.verification_method,
         }
+        if self.verification_method == "core_binding_unit":
+            # Present only where the method admits them, matching the constructor's
+            # own rule in both directions.  Emitting nulls on a whole-group binding
+            # would put two keys in front of every reader that mean nothing there,
+            # and the published schema lists them as optional for the same reason.
+            mapping["unit_index"] = exact_int(self.unit_index, "proof node unit_index")
+            mapping["unit_count"] = exact_int(self.unit_count, "proof node unit_count")
+        return mapping
 
 
 @dataclass(frozen=True)
@@ -2790,6 +2993,17 @@ _FACT_REQUIRED_KEYS = {
     "state_membership": ("frame", "state"),
     "state_domain": ("frame", "states"),
     "definedness_condition": ("frame", "operation"),
+    # ``operand`` and ``operand_variable`` are deliberately absent: exactly one of
+    # them is present, decided by whether the model wrote a literal or a variable
+    # on the right of the assignment.  Requiring either would make the other shape
+    # unpublishable, and requiring neither is what lets a reader dispatch on which
+    # one arrived.
+    "transition_case": ("variable", "frame", "target_frame", "operation", "condition"),
+    # No ``frame``: a proposition's step is inside its identity, because the rule
+    # that closes over a proposition and its complement compares subjects and
+    # nothing else.  Publishing the step separately as well would give a reader two
+    # places to look for the same thing.
+    "proposition": ("identity", "holds"),
 }
 
 
@@ -2956,6 +3170,22 @@ def _conflict_pattern(
         >>> _conflict_pattern(()) is None
         True
     """
+    propositions = _members(items, "proposition")
+    if len(propositions) == 2 and _explains_every_member(propositions, items):
+        first, second = (item.normalized_fact for item in propositions)
+        if (
+            first["identity"] == second["identity"]
+            and first["holds"] != second["holds"]
+        ):
+            # The same subject demanded and ruled out.  Naming it is the whole value:
+            # "jointly unsatisfiable" would leave the reader to notice that the two
+            # lines are about one event at one step, which is exactly what the
+            # identity was built to make visible.
+            return (
+                "boolean_complement",
+                "%s is required to occur and required not to occur."
+                % first["identity"],
+            )
     definedness = _members(items, "definedness_condition")
     if len(definedness) == 1 and len(items) > 1 and minimality == "proven":
         # One domain condition beside facts about the very variable it guards.

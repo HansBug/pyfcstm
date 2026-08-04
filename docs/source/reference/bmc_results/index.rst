@@ -676,11 +676,15 @@ closed; a query that needs a reading outside it degrades to ``formal`` rather
 than inventing one.
 
 The ``Reachable`` column records whether any query is currently known to produce
-a node carrying that rule.  Four rules are not: they are part of the closed
-vocabulary a consumer must accept, but no query reaches them today, so a reader
-who picks ``proof`` depth for such a conflict receives ``formal`` instead.  The
-reasons are structural and are set out in
-:doc:`/explanations/bmc_solving/index`.
+a node carrying that rule.  No rule is unreachable: each one fires for some query a
+user can write.  Three of them waited on a fourth for a while, and what unblocked
+them is set out in :doc:`/explanations/bmc_solving/index`.
+
+The rules whose conclusion is not the contradiction itself are the ones that produce
+a ``derived`` node, so a published proof over such a conflict is a chain rather than
+a fan: input nodes for the subset-minimal members, one derived node per step, and the
+single contradiction root.  A conflict no chain reaches still publishes the fan, and
+a consumer accepts both shapes.
 
 .. list-table::
    :header-rows: 1
@@ -692,20 +696,28 @@ reasons are structural and are set out in
    * - ``source_fact``
      - yes
      - An input node's own fact, taken from the core member it restates.
+   * - ``case_condition_entailment``
+     - yes
+     - The same transition case with its condition discharged.  A case's assignment
+       holds where the case applies, so the condition has to be established from the
+       members before the assignment can be used -- and the solver does that, against
+       the members' own constraints rather than their published facts.  The node cites
+       the members that entail it and records ``solver_entailment``; the condition key
+       is removed rather than emptied, because the evaluation rule reads keys.
    * - ``transition_assignment``
-     - no
-     - What a transition's effect assigns to a variable at the next frame.  Needs
-       a fact about an intermediate frame, which no core member states.
+     - yes
+     - What a transition's effect assigns to a variable at the next frame.  A step
+       relation publishes that assignment as ``transition_case``, the binding proves
+       it equivalent to one requirement of the group, and
+       ``case_condition_entailment`` supplies the unconditional form this rule reads.
    * - ``equality_substitution``
-     - no
-     - The result of substituting a known value into another fact.  Needs a
-       derived fact to condition on, for the same reason.
+     - yes
+     - The result of substituting a known value into another fact, for an operand
+       still standing as a symbol.
    * - ``arithmetic_evaluation``
-     - no
+     - yes
      - The value an arithmetic step leaves in a variable.  It consumes an
-       ``arithmetic_expression`` fact, and the only thing that produces one is
-       ``transition_assignment`` -- so the chain has no starting point while that
-       row reads ``no``.
+       ``arithmetic_expression`` fact, which ``transition_assignment`` produces.
    * - ``interval_intersection``
      - yes
      - That no value satisfies every bound required at one slot.
@@ -719,23 +731,46 @@ reasons are structural and are set out in
      - yes
      - That one slot is required to hold two different values.
    * - ``boolean_complement``
-     - no
-     - That the same requirement is both demanded and ruled out.  It reads
-       premises of kind ``proposition``, and nothing in the package produces a fact
-       of that kind -- every occurrence of the string is a reader.  Three gates hold
-       it shut: the closure filters candidates against the rule's premise kinds
-       before proposing it, the checker asserts those kinds again, and the checker
-       then reads ``identity`` and ``holds``, which no published fact carries.  So
-       the rule is out of reach however the opposition is written, not only for
-       events: ``assume at 1: active("Root.A")`` together with
-       ``assume at 1: !active("Root.A")`` publishes two ``state_membership`` facts
-       that carry their full content, agree on frame and state, and differ only in
-       ``excluded`` -- and the result still degrades to a formal explanation.
+     - yes
+     - That the same requirement is both demanded and ruled out.  Reached through an
+       event assumption: ``assume event("Root.A.Go", 0) == true`` beside
+       ``assume event("Root.A.Go", 0) == false`` publishes two ``proposition`` facts
+       that agree on ``identity`` and differ in ``holds``.  The step is part of the
+       identity, so the same event at two steps is two subjects rather than one.
+       An opposition written over states does **not** reach it, and does not need
+       to: ``assume at 1: active("Root.A")`` with ``assume at 1: !active("Root.A")``
+       publishes two ``state_membership`` facts differing in ``excluded``, which
+       ``excluded_state_selected`` below closes.  State assertions stay where they
+       are rather than moving to ``proposition``, because the rule that exhausts a
+       frame's state domain reads those exclusions and would lose its only premise
+       source.
+   * - ``excluded_state_selected``
+     - yes
+     - That a frame is required to be in a state it also rules out.  The two
+       premises are one published fact kind read two ways: a state requirement that
+       holds reads as an equality on the frame's slot, and one that is excluded reads
+       as an exclusion.  Neither of the earlier rules applies -- an equality on a
+       slot is not a second equality, and one state is not a domain.
+   * - ``preceding_value_entailment``
+     - yes
+     - That a variable held the same value at the frame before the one a requirement
+       states it at.  A step that only carries a variable forward says nothing a fact
+       can restate, so this asks the solver what the members force instead, and cites
+       the ones that force it.  The direction is backwards because the requirement
+       that states the value is one member, which is what the citation seam can
+       record; a value carried forward from a derived step would stand for however
+       many members its subtree used.
 
-The five reachable rules are exercised by the checked-in benchmark corpus under
+Six of these rules are exercised by the checked-in benchmark corpus under
 ``benchmarks/bmc/infeasibility/cases/handwritten/``, and its report records which
-case produced which rule.  Read the measured ratio there rather than from this
-page: it is a property of that corpus at a given revision, not of the tool.
+case produced which rule.  The checked-in report was measured before
+``boolean_complement`` became reachable, so it records five of them; the case that
+reaches the sixth is ``event_conflict.fbmcq``, in the same corpus.  The rules of the
+arithmetic chain, together with ``excluded_state_selected`` and
+``preceding_value_entailment``, are reached by the queries
+:doc:`/explanations/bmc_solving/index` sets out, not yet by a corpus case.  Read the
+measured ratio there rather than from this page: it is a property of that corpus
+at a given revision, not of the tool.
 
 ``verification_method`` says who agreed with the step, and the division is the
 proof's trust boundary rather than a label:
@@ -751,13 +786,22 @@ proof's trust boundary rather than a label:
        both directions: ``group => fact`` and ``fact => group`` must each be
        refuted.  Either direction coming back unknown, timing out, or failing to
        hold keeps the proof out of ``complete``.  Used by input nodes only.
+   * - ``core_binding_unit``
+     - The member's group holds one requirement per case, so it is a conjunction and
+       no single fact can imply the whole of it.  The fact was re-encoded and checked
+       against **one** requirement of that conjunction in both directions, and the
+       node names which one through ``unit_index`` beside ``unit_count``.  A fact
+       equivalent to two requirements identifies neither, so the binding is refused
+       rather than resolved.  Used by input nodes only.
    * - ``rule_checker``
      - An independent checker re-derived the conclusion from the premises without
        reusing the code that constructed it.  Used by derived and root nodes.
    * - ``solver_entailment``
-     - Reserved for derived and root steps whose rule and side conditions are
-       discharged by the solver.  The current catalog does not use it; a node
-       carrying it would mean a rule was checked this way instead.
+     - The step's rule and side conditions were discharged by the solver rather
+       than by a checker, because the question is about the core members'
+       constraints and not about the published facts a checker sees.  The node's
+       ``item_ids`` name the members the solver used, and they are a subset of the
+       published core.  Used by derived and root nodes.
 
 A proof also states what it claims about its own shape.  ``input_minimality`` is
 ``subset_minimal``: the inputs are exactly the subset-minimal core, one node per

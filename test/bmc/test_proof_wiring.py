@@ -1437,3 +1437,119 @@ def test_a_published_condition_only_names_readings_the_discharge_shares() -> Non
         "state_membership",
         "variable_comparison",
     }
+
+
+#: The model from the motivating issue, whose update lives in a ``during`` action.
+#:
+#: Every fixture above puts its assignment on a transition's ``effect``.  This one is
+#: how the issue's own reporter wrote it -- the state carries a ``during`` block, and
+#: the event-triggered entry plus the unconditional exit give the step relations a
+#: different shape.  Both are ordinary FCSTM, and only the first shape was ever
+#: exercised, which is how a reachability claim came to rest on the easier one.
+_DURING_ACTION_MODEL = """
+def int retries = 0;
+
+state Uploader {
+    event Fail;
+
+    state Idle;
+    state Retrying {
+        during {
+            retries = retries + 1;
+        }
+    }
+    state GaveUp;
+
+    [*] -> Idle;
+    Idle -> Retrying :: Fail;
+    Retrying -> GaveUp;
+}
+"""
+
+
+def _explain_during_model(query: str, mode: str = "proof"):
+    """Run one query against the ``during``-action machine and return the outcome."""
+    machine = load_state_machine_from_text(_DURING_ACTION_MODEL, "retry.fcstm")
+    context = BmcEngine(machine).prepare(query, query_source_path="query.fbmcq")
+    result = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation=mode,
+    )
+    return result.feasibility
+
+
+@pytest.mark.unittest
+def test_an_event_driven_during_action_closes_within_one_step() -> None:
+    """The chain closes for an update written as a ``during`` action.
+
+    Every other fixture here puts its assignment on a transition's ``effect``.  This
+    model is how the motivating issue's reporter wrote it, and three things kept it
+    from closing -- none of them a missing capability.
+
+    The entry step's case condition names the event that triggers it, and the
+    condition reader knew two readings, state membership and variable comparison,
+    while the event reading it needed already existed one function away in the
+    proposition publisher.  The binding side then had to learn the same reading, or
+    the fact named a symbol "the group does not mention".  And the step read *two*
+    assignments where the publisher requires exactly one: the second is the fallback
+    case for "in this state and no transition applies", whose condition reduces to
+    ``s == state and not s == state`` and therefore never holds.  A case that cannot
+    apply says nothing about the step, so counting it hid the one that does.
+
+    The contradiction here is inside one step, which is the part that now works.  The
+    issue's own query puts it a frame later, and that needs something this catalog
+    does not have -- see the test below.
+    """
+    feasibility = _explain_during_model(
+        'init state("Uploader.Idle") where retries == 0;\n'
+        'assume at 1: active("Uploader.Retrying");\n'
+        'assume at 1: var("retries") == 0;\n'
+        'check reach <= 2: active("Uploader.GaveUp");\n'
+    )
+    explanation = feasibility.explanation
+
+    assert explanation.achieved_mode == "proof"
+    assert explanation.status == "complete"
+    assert [node.rule_id for node in explanation.proof.nodes] == [
+        "source_fact",
+        "source_fact",
+        "source_fact",
+        "case_condition_entailment",
+        "transition_assignment",
+        "arithmetic_evaluation",
+        "incompatible_equalities",
+    ]
+
+
+@pytest.mark.unittest
+def test_a_value_a_later_step_leaves_alone_does_not_reach_the_next_frame() -> None:
+    """The boundary the catalog still has, pinned so it is a fact and not a surprise.
+
+    Same model, same machinery, one difference: the contradicted assumption sits at
+    frame 2 rather than frame 1.  The chain establishes ``retries`` at frame 1 exactly
+    as above, and then needs to carry that value across a step that does not touch it
+    -- the exit transition, which only preserves the variable.
+
+    Nothing published says so.  ``_assignment_in_unit`` declines a requirement that
+    merely carries a value forward, on the stated grounds that reporting it would put
+    "x becomes x" in a proof as though the transition had said something.  The
+    decision is right about what a transition *says*; the consequence is that a value
+    a step leaves alone cannot be spoken about at all, and a cross-step chain over an
+    untouched frame has no step to stand on.
+
+    Closing this needs a fact kind for "this step leaves the variable alone" and a
+    rule that reads it, which is a catalog change rather than wiring.  Until then the
+    honest outcome is formal depth with a reason that says the catalog does not cover
+    the shape, and that is what this asserts.
+    """
+    feasibility = _explain_during_model(
+        'init state("Uploader.Idle") where retries == 0;\n'
+        'assume at 1: active("Uploader.Retrying");\n'
+        'assume at 2: var("retries") == 0;\n'
+        'check reach <= 2: active("Uploader.GaveUp");\n'
+    )
+    explanation = feasibility.explanation
+
+    assert explanation.achieved_mode == "formal"
+    assert explanation.proof is None
+    assert "no rule in the catalog closes this core" in explanation.reason

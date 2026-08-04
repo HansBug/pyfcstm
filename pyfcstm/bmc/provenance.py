@@ -1133,9 +1133,94 @@ def _condition_facts(
         if fact is None:
             fact = _variable_comparison_in(conjunct, declared)
         if fact is None:
+            # An event-triggered transition names its event in the condition, and the
+            # reading for that was already here -- one function away, used by the
+            # proposition publisher -- while this list knew two readings and not the
+            # third.  A condition mentioning an event was therefore unreadable, and
+            # the case kept its structural identity, which is what kept the whole
+            # arithmetic chain from starting on any event-triggered model.
+            fact = _event_proposition_in(conjunct)
+        if fact is None:
             return None
         facts.append(fact)
     return tuple(facts)
+
+
+def _condition_can_hold(expression: Any) -> bool:
+    """Report whether a case's condition is satisfiable at all.
+
+    A case whose condition cannot hold never fires, so it states nothing about the
+    step and must not be counted among the step's assignments.  The shape this exists
+    for is the fallback case of a state whose every outgoing transition is
+    unconditional: "no transition applies" reduces to ``s == state and not s ==
+    state``.
+
+    The solve is over one small condition with no budget attached, which is
+    deliberate: a step relation has a handful of cases and each condition is a short
+    conjunction, and an unknown answer is treated as "may hold" so an undecided solve
+    can only make the reading more conservative, never less.
+
+    :param expression: The case's selection condition.
+    :type expression: z3.BoolRef
+    :return: ``False`` only when the condition is refuted outright.
+    :rtype: bool
+
+    Example::
+
+        >>> import z3
+        >>> _condition_can_hold(z3.BoolVal(True))
+        True
+        >>> _condition_can_hold(z3.BoolVal(False))
+        False
+    """
+    import z3
+
+    solver = z3.Solver()
+    solver.add(expression)
+    return solver.check() != z3.unsat
+
+
+def _event_proposition_in(expression: Any) -> Optional[Dict[str, Any]]:
+    """Read a condition conjunct that requires an event, as a ``proposition`` fact.
+
+    The same reading the proposition publisher performs, applied where a case's
+    condition names the event that triggers its transition.  No event-path table is
+    needed: the encoder puts the path and the step into the symbol's own name, so the
+    fact is recoverable from the symbol alone.
+
+    :param expression: One conjunct of a case's selection condition.
+    :type expression: z3.BoolRef
+    :return: A ``proposition`` fact, or ``None`` when the conjunct names no event.
+    :rtype: Optional[Dict[str, object]]
+
+    Example::
+
+        >>> _event_proposition_in(None) is None
+        True
+    """
+    import z3
+
+    if expression is None:
+        return None
+    holds = True
+    if z3.is_app(expression) and expression.decl().kind() == z3.Z3_OP_NOT:
+        if expression.num_args() != 1:
+            return None
+        holds = False
+        expression = expression.arg(0)
+    resolved = _event_path_of_symbol(expression)
+    if resolved is None:
+        return None
+    path, step = resolved
+    # The shape is copied from :func:`_proposition_fact`, field for field.  Writing it
+    # from understanding instead produced ``event`` and ``step`` here against its
+    # ``identity``, which every consumer compares for equality -- two spellings of one
+    # fact is how a rule comes to refuse a premise that says what it asked for.
+    return {
+        "kind": "proposition",
+        "identity": "%s@%d" % (path, step),
+        "holds": holds,
+    }
 
 
 def _state_equality_fact(
@@ -1329,6 +1414,14 @@ def _transition_case_fact(
     The group would then need one fact per assignment, and publishing one of them
     as though it were the group's reading would hide the rest.
 
+    A requirement whose condition cannot hold is not one of them.  A step's fallback
+    case requires that no transition applies, and where every transition out of the
+    state is unconditional that requirement reduces to ``s == state and not
+    s == state`` -- unsatisfiable, so the case never fires and says nothing about the
+    step.  Counting it as a second assignment is what made a ``during`` action on such
+    a state unreadable: two readings, one of them empty, and the group declined a
+    reading it could have given.
+
     :param group: The tracked group to read.
     :type group: BmcTrackedConstraint
     :param declared: Model variable names to resolve symbols against, defaults to
@@ -1353,7 +1446,7 @@ def _transition_case_fact(
             _assignment_in_unit(unit, step, declared)
             for unit in conjunctive_units(group.expressions[0])
         )
-        if reading is not None
+        if reading is not None and _condition_can_hold(reading["condition_expression"])
     ]
     if len(readings) != 1:
         return None

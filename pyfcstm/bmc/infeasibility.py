@@ -1856,6 +1856,34 @@ def _bind_against_one_unit(encoder, fact, conjunction, declared, budget):
     return _UnitBindingOutcome(attribution=(matched[0], len(units)))
 
 
+def _event_identity_of(symbol: Any) -> Optional[str]:
+    """Return the published identity of an event symbol, or ``None``.
+
+    The identity has to be the one the publisher writes, character for character,
+    because it is the key both sides look the symbol up by.  So it is built from the
+    same reader rather than from a second parse of the name: writing the format twice
+    is how a lookup comes to miss a symbol that is right there.
+
+    :param symbol: A symbol taken from a group's expressions.
+    :return: ``"<event path>@<step>"``, or ``None`` when the symbol names no event.
+    :rtype: Optional[str]
+
+    Example::
+
+        >>> _event_identity_of(None) is None
+        True
+    """
+    if symbol is None or not z3.is_bool(symbol):
+        return None
+    from .provenance import _event_path_of_symbol
+
+    resolved = _event_path_of_symbol(symbol)
+    if resolved is None:
+        return None
+    path, step = resolved
+    return "%s@%d" % (path, step)
+
+
 def _binding_symbols(expression, declared=None) -> Dict[Tuple[int, Any], Any]:
     """Index every frame symbol a group mentions, by frame and subject.
 
@@ -1879,6 +1907,13 @@ def _binding_symbols(expression, declared=None) -> Dict[Tuple[int, Any], Any]:
     """
     indexed: Dict[Tuple[int, Any], Any] = {}
     for symbol in z3.z3util.get_vars(expression):
+        event = _event_identity_of(symbol)
+        if event is not None:
+            # A third kind of key.  An event symbol carries its own step inside its
+            # name, and a case condition naming the event needs to find it the same
+            # way a variable comparison finds its slot -- by key, not by re-parsing.
+            indexed[(None, event)] = symbol
+            continue
         frame = _symbol_frame(symbol)
         if frame is None:
             continue
@@ -1908,6 +1943,15 @@ def _encode_condition_member(member: Mapping[str, Any], symbols) -> Optional[Any
     :rtype: Optional[Any]
     """
     kind = member.get("kind")
+    if kind == "proposition":
+        # Keyed by identity rather than by frame, because a proposition names no
+        # frame -- its step lives inside the identity.  Publishing this reading
+        # without encoding it here is what made the fact name something the group
+        # "does not mention": the reading existed on one side only.
+        symbol = symbols.get((None, member.get("identity")))
+        if symbol is None:
+            return None
+        return symbol if member.get("holds") else z3.Not(symbol)
     frame = member.get("frame")
     if not isinstance(frame, int):
         return None

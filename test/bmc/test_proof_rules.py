@@ -233,47 +233,57 @@ def test_arithmetic_evaluation_refuses_the_four_ways_it_can_be_misapplied(
 
 
 @pytest.mark.unittest
-def test_arithmetic_evaluation_uses_the_model_semantics_for_integer_division() -> None:
-    """Integer division is the case where guessing in Python gets it wrong.
+def test_division_is_checked_against_the_encoder_not_against_a_guess() -> None:
+    """Division was pinned to a semantics the encoder does not have.
 
-    The contract requires the current model semantics rather than a Python
-    evaluation, and the two disagree on negative operands: Python floors toward
-    negative infinity while the encoded semantics truncate toward zero.  Pinning
-    the disagreement is what keeps the checker honest about which one it uses.
+    The claim used to be that Python floors while "the encoded semantics truncate
+    toward zero", and the encoder was never asked.  It lowers ``/`` straight onto Z3,
+    which divides two integers Euclidean-style: the remainder is never negative, so
+    the quotient floors for a positive divisor.  Asked directly, Z3 answers ``-4`` for
+    ``-7 / 2`` -- the very value the old docstring called "Python's answer, not the
+    model's".  Truncation was wrong in five of seven sign and sort combinations.
+
+    A real quotient is the clearer half: ``float`` lowers onto Z3's reals, which
+    divide exactly, and the simulator agrees with them.  A step reporting ``3.0`` for
+    ``7.5 / 2`` was checkable against two other surfaces and wrong against both.
     """
-    truncating = RuleApplication(
-        "arithmetic_evaluation",
-        (
-            _equality(value=-7),
-            _fact(
-                "arithmetic_expression",
-                variable="x",
-                frame=0,
-                operator="div",
-                operand=2,
-                target_frame=1,
-            ),
-        ),
-        _equality(frame=1, value=-3),
-    )
-    flooring = RuleApplication(
-        "arithmetic_evaluation",
-        (
-            _equality(value=-7),
-            _fact(
-                "arithmetic_expression",
-                variable="x",
-                frame=0,
-                operator="div",
-                operand=2,
-                target_frame=1,
-            ),
-        ),
-        _equality(frame=1, value=-4),
-    )
 
-    assert check_rule(truncating) is True
-    assert check_rule(flooring) is False, "-7 // 2 is Python's answer, not the model's"
+    def application(left, operand, claimed):
+        return RuleApplication(
+            "arithmetic_evaluation",
+            (
+                _equality(value=left),
+                _fact(
+                    "arithmetic_expression",
+                    variable="x",
+                    frame=0,
+                    operator="div",
+                    operand=operand,
+                    target_frame=1,
+                ),
+            ),
+            _equality(frame=1, value=claimed),
+        )
+
+    # Every sign combination, with the value Z3 gives for it.  ``-7 / 2`` is the one
+    # the old test had backwards.
+    for left, operand, encoded, refused in (
+        (7, 2, 3, 4),
+        (-7, 2, -4, -3),
+        (7, -2, -3, -4),
+        (-7, -2, 4, 3),
+    ):
+        assert check_rule(application(left, operand, encoded)) is True, (left, operand)
+        assert check_rule(application(left, operand, refused)) is False, (left, operand)
+
+    # Reals divide exactly, so the quotient is the one the simulator also reaches.
+    assert check_rule(application(7.5, 2, 3.75)) is True
+    assert check_rule(application(7.5, 2, 3.0)) is False, "truncation is not the model"
+
+    # A quotient with no finite decimal form is refused rather than rounded: no value
+    # a published fact can carry is the one the encoding holds.
+    assert check_rule(application(1.0, 3, 0.3333333333333333)) is False
+    assert check_rule(application(1.0, 3, 0.0)) is False
 
 
 @pytest.mark.unittest

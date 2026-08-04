@@ -21,10 +21,10 @@ and its frame -- before it compares values, because facts about different slots
 constrain different things and never contradict each other.
 
 .. note::
-   Arithmetic is evaluated under the model's semantics rather than Python's.  The
-   two disagree on integer division of negative operands, and a proof that reported
-   Python's answer would be checking a different program than the one being
-   verified.
+   Arithmetic is evaluated under the encoder's semantics, which is what the proof is
+   about.  Division is where that matters: two integers divide Euclidean-style and
+   two reals divide exactly, and an exact quotient with no finite decimal form is
+   refused rather than rounded to one the encoding does not hold.
 
 Example::
 
@@ -41,6 +41,7 @@ Example::
 """
 
 from dataclasses import dataclass
+from fractions import Fraction
 from typing import Any, Callable, Dict, Mapping, Tuple
 
 __all__ = [
@@ -308,20 +309,39 @@ def _incompatible_equalities(application: RuleApplication) -> bool:
 def _evaluate(operator: str, left: Any, right: Any):
     """Apply one arithmetic operator under the model's semantics.
 
-    Integer division truncates toward zero, which is what the encoded semantics do
-    and what Python's ``//`` does not: ``-7 // 2`` is ``-4`` in Python and ``-3``
-    here.  Reporting Python's answer would check a different program.
+    Division is the operator with a story.  It used to truncate toward zero on the
+    stated grounds that this is "what the encoded semantics do", and the encoder was
+    never asked.  It divides two ways, neither of them truncation: an ``int``
+    variable lowers onto Z3's integer division, which is Euclidean -- its remainder
+    is never negative, so it floors for a positive divisor and rounds the other way
+    for a negative one -- and a ``float`` variable lowers onto Z3's reals, which
+    divide exactly.  Measured against the encoder, truncation was wrong in five of
+    seven sign and sort combinations, including the very example the old docstring
+    used to justify it: ``-7 / 2`` encodes as ``-4``, not ``-3``.
+
+    The simulator agrees with the encoder on the real quotient, so a published
+    ``7.5 / 2`` of ``3.0`` was a sentence a reader could check against either of the
+    other two surfaces and find wrong.
+
+    An exact quotient with no finite decimal form is refused rather than rounded: a
+    step reporting ``0.333...`` truncated to a float would state a value the
+    encoding does not hold, which is the defect this replaced.
 
     :param operator: The operator name carried by the expression fact.
     :type operator: str
     :param left: Left operand.
     :param right: Right operand.
-    :return: The value, or ``None`` when the operator is unknown or undefined here.
+    :return: The value, or ``None`` when the operator is unknown, undefined here, or
+        exact but not representable as a published number.
 
     Example::
 
         >>> _evaluate("div", -7, 2)
-        -3
+        -4
+        >>> _evaluate("div", 7.5, 2)
+        3.75
+        >>> _evaluate("div", 1.0, 3) is None
+        True
     """
     if operator == "add":
         return left + right
@@ -334,9 +354,45 @@ def _evaluate(operator: str, left: Any, right: Any):
             # Definedness is a separate rule's subject; this one has no value to
             # report, and returning a guess would let a step past that check.
             return None
-        quotient = abs(left) // abs(right)
-        return -quotient if (left < 0) != (right < 0) else quotient
+        if isinstance(left, int) and isinstance(right, int):
+            # Euclidean, because that is what Z3 does with two integers: floor for a
+            # positive divisor, and the mirror of it for a negative one.
+            return left // right if right > 0 else -(left // -right)
+        return _exact_quotient(left, right)
     return None
+
+
+def _exact_quotient(left: Any, right: Any):
+    """Return a real quotient as a published number, or ``None`` when it is not one.
+
+    Z3 divides reals exactly, so the quotient is a rational.  A published fact carries
+    a JSON number, which is a decimal, and most rationals have no finite decimal form.
+    Reporting the nearest one would put a value in the proof that the encoding does
+    not hold -- so the quotient is computed exactly and published only when its
+    decimal form reads back as the same rational.
+
+    :param left: Numerator, as published.
+    :param right: Denominator, as published.
+    :return: The quotient as a float, or ``None`` when no exact decimal represents it.
+
+    Example::
+
+        >>> _exact_quotient(7.5, 2)
+        3.75
+        >>> _exact_quotient(1.0, 3) is None
+        True
+    """
+    try:
+        exact = Fraction(str(left)) / Fraction(str(right))
+    except (ValueError, ZeroDivisionError):
+        # ValueError: an operand whose text is not a number, which a fact should not
+        # carry and this refuses rather than guesses at.  ZeroDivisionError: a zero
+        # denominator the caller's own check did not see, such as ``0.0``.
+        return None
+    published = float(exact)
+    if Fraction(repr(published)) != exact:
+        return None
+    return published
 
 
 def _carried_value(value_fact: Mapping[str, Any], expression: Mapping[str, Any]):

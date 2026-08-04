@@ -853,11 +853,124 @@ def feasibility_validator():
     )
 
 
-def test_a_real_solved_payload_is_schema_valid(feasibility_validator) -> None:
-    """The payload the solver actually produces must satisfy the schema."""
-    payload = _feasibility_payload()
+#: Query text and depth per shape whose real payload must satisfy the schema.
+#:
+#: One query at one depth was what this checked before, so it never produced a
+#: document carrying the phases or rules added since -- and a value the package emits
+#: while the schema refuses it stayed invisible.  Each entry puts a different part of
+#: the vocabulary into a real document.
+#: A machine whose ``during`` action moves a variable across a step.
+#:
+#: The simple machine beside it cannot reach the deeper phases: nothing carries a value
+#: forward, so the phase that pins one at the preceding frame never records anything and
+#: the document never carries its name.  That is how the corpus came to miss the very
+#: value it was extended for -- checked before wiring it in, not after.
+_CARRYING_MACHINE = (
+    "def int n = 0;\n"
+    "state Root {\n"
+    "    event Go;\n"
+    "    state Idle;\n"
+    "    state Busy { during { n = n + 1; } }\n"
+    "    state Done;\n"
+    "    [*] -> Idle;\n"
+    "    Idle -> Busy :: Go;\n"
+    "    Busy -> Done;\n"
+    "}\n"
+)
 
-    assert payload["explanation"] is not None
+_SCHEMA_CORPUS = {
+    "a_value_carried_across_a_step": (
+        'init state("Root.Idle") where n == 0;\n'
+        'assume at 1: active("Root.Busy");\n'
+        'assume at 2: var("n") == 0;\n'
+        'check reach <= 2: active("Root.Done");\n',
+        "proof",
+        _CARRYING_MACHINE,
+    ),
+    "one_frame_two_values_at_proof_depth": (
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");',
+        "proof",
+        "def int x = 0;\n"
+        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }",
+    ),
+    "a_state_demanded_and_ruled_out": (
+        'init state("Root.A") where x == 0; '
+        'assume at 1: active("Root.A"); assume at 1: !active("Root.A"); '
+        'check reach <= 2: active("Root.B");',
+        "proof",
+        "def int x = 0;\n"
+        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }",
+    ),
+    "an_event_demanded_and_ruled_out": (
+        'init state("Root.A") where x == 0; '
+        'assume event("Root.Go", 0) == true; assume event("Root.Go", 0) == false; '
+        'check reach <= 2: active("Root.B");',
+        "proof",
+        "def int x = 0;\n"
+        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }",
+    ),
+    "formal_depth_only": (
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");',
+        "formal",
+        "def int x = 0;\n"
+        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }",
+    ),
+    "no_explanation_requested": (
+        'init state("Root.A") where x == 0; '
+        'assume at 0: var("x") == 1; assume at 0: var("x") == 2; '
+        'check reach <= 2: active("Root.B");',
+        "none",
+        "def int x = 0;\n"
+        "state Root { event Go; state A; state B; [*] -> A; A -> B :: Go; }",
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "query, mode, machine_text",
+    list(_SCHEMA_CORPUS.values()),
+    ids=list(_SCHEMA_CORPUS),
+)
+def test_a_real_solved_payload_is_schema_valid(
+    feasibility_validator, query: str, mode: str, machine_text: str
+) -> None:
+    """Every shape's real payload satisfies the schema, not one shape's.
+
+    Validating the document is what a vocabulary-versus-enum scan was approximating,
+    and it is strictly better at it in two ways that both produced defects.  A phase
+    name present in the declaration and missing from a narrowed branch passes any
+    membership check and fails here, because the document carries the status that
+    selects the branch.  And a value the schema states with ``const`` rather than
+    ``enum`` is invisible to a scan for enums while a document carries it either way.
+
+    A membership-based check over a hand-kept list of vocabularies stood here and was
+    removed rather than repaired: it was weaker in both of those directions, its list
+    was incomplete, and one of its passes came from a value appearing in an unrelated
+    field's enum.
+
+    :param query: The query text.
+    :type query: str
+    :param mode: The explanation depth requested.
+    :type mode: str
+    :param machine_text: The FCSTM source this shape needs.
+    :type machine_text: str
+    """
+    from pyfcstm.bmc import build_bmc_core_formula, compile_bmc_property
+    from pyfcstm.bmc.engine import BmcEngine
+    from pyfcstm.bmc.witness import solve_bmc_property
+    from pyfcstm.model import load_state_machine_from_text
+
+    machine = load_state_machine_from_text(machine_text, "machine.fcstm")
+    context = BmcEngine(machine).prepare(query, query_source_path="query.fbmcq")
+    payload = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation=mode,
+    ).feasibility.to_canonical()
+
     assert list(feasibility_validator.iter_errors(payload)) == []
 
 
@@ -1493,80 +1606,4 @@ def test_the_refinement_ledger_publishes_every_phase_name_the_package_can_emit()
             sorted(set(_FEASIBILITY_REFINEMENT_NAMES) - declared),
             sorted(declared - set(_FEASIBILITY_REFINEMENT_NAMES)),
         )
-    )
-
-
-#: Vocabularies the package emits that the published schema constrains.
-#:
-#: Pointer-free on purpose.  Three of these are declared inside conditional blocks,
-#: and this file already warns that an ``allOf`` index moves the moment an unrelated
-#: rule is inserted -- three failures nobody caused is how a gate gets deleted.  What
-#: matters for the failure this catches is not where a value is declared but whether
-#: it is declared at all: a member added to the package and to no enum makes the
-#: emitted document invalid against the schema published for it.
-_PUBLISHED_VOCABULARIES = (
-    ("refinement phase names", "witness", "_FEASIBILITY_REFINEMENT_NAMES"),
-    ("core-family phase names", "witness", "_FEASIBILITY_CORE_REFINEMENT_NAMES"),
-    ("component phase names", "witness", "_FEASIBILITY_COMPONENT_REFINEMENT_NAMES"),
-    ("deeper-tier phase names", "witness", "_FEASIBILITY_PHASE_REFINEMENT_NAMES"),
-    ("refinement statuses", "witness", "_FEASIBILITY_REFINEMENT_STATUSES"),
-    ("model roles", "witness", "_BMC_MODEL_ROLES"),
-    ("source kinds", "provenance", "_SOURCE_KINDS"),
-)
-
-
-@pytest.mark.unittest
-@pytest.mark.parametrize(
-    "subject, module_name, attribute",
-    _PUBLISHED_VOCABULARIES,
-    ids=[entry[2] for entry in _PUBLISHED_VOCABULARIES],
-)
-def test_every_value_the_package_emits_is_declared_somewhere_in_the_schema(
-    subject: str, module_name: str, attribute: str
-) -> None:
-    """No value the package can emit is absent from every enum in the schema.
-
-    The narrow version of this ran for one vocabulary and the rest went uncovered,
-    which is how a phase name reached two package vocabularies and neither enum: the
-    names are not a ``Literal`` any constructor checks, and no test fed a document
-    carrying the new one to the schema.  Adding the entries one at a time is what left
-    the gap, so this reads the list.
-
-    Membership rather than equality, because the schema legitimately narrows: a
-    conditional branch may accept fewer values where only those can occur.  The
-    direction that has to hold is the other one -- a value the package emits and the
-    schema never names.
-
-    :param subject: What the vocabulary is called in prose.
-    :type subject: str
-    :param module_name: Module under ``pyfcstm.bmc`` holding it.
-    :type module_name: str
-    :param attribute: The vocabulary's attribute name.
-    :type attribute: str
-    """
-    import importlib
-
-    module = importlib.import_module("pyfcstm.bmc.%s" % module_name)
-    vocabulary = set(getattr(module, attribute))
-
-    assert vocabulary, "%s is expected to be non-empty" % subject
-    schema = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
-    declared = set()
-
-    def collect(node):
-        if isinstance(node, dict):
-            values = node.get("enum")
-            if isinstance(values, list):
-                declared.update(value for value in values if isinstance(value, str))
-            for value in node.values():
-                collect(value)
-        elif isinstance(node, list):
-            for value in node:
-                collect(value)
-
-    collect(schema)
-
-    assert vocabulary <= declared, "the schema never names %s from %s" % (
-        sorted(vocabulary - declared),
-        subject,
     )

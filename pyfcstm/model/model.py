@@ -244,10 +244,20 @@ def _attach_model_source_metadata(
             # forced declaration names states it does not live beside.  An effect is
             # lexically inside its transition, and an event or a lifecycle action is
             # lexically inside its state's braces, so for those the host state's file
-            # *is* the file they were written in.  Measured over every import fixture
-            # in the tree -- 15 effects, 11 events, 3 actions -- nothing disagrees with
-            # its container.  Giving them tiers would add a lookup that can only ever
-            # answer with what they already have.
+            # *is* the file they were written in.
+            #
+            # For an effect the grammar settles it outright: the only transition that
+            # can land in another file is a forced expansion, and every alternative of
+            # ``transition_force_definition`` ends at ``SEMI`` with no ``EFFECT``
+            # branch -- so a cross-file transition carries no effects at all.  Plain
+            # and combo transitions do take ``EFFECT``, and they are written inside
+            # the braces of the state whose children they name, so their file is the
+            # host's.
+            #
+            # A measurement over the tree's import fixtures reports nothing
+            # disagreeing with its container, and that number is worth nothing on its
+            # own: those fixtures hold no cross-file transition, so the count reads the
+            # same whether the code is right or wrong.  The grammar is the reason.
             for effect in transition.effects:
                 attach_operation(effect, state_source)
         for event in model_state.events.values():

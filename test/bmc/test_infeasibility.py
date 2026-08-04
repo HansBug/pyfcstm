@@ -30,6 +30,7 @@ from pyfcstm.bmc.infeasibility import (
     _semantic_role,
     build_core_item,
     check_case_conditions,
+    check_value_carries,
     classify_infeasibility,
     derive_forced_values,
     explain_infeasibility,
@@ -2348,5 +2349,42 @@ def test_a_condition_that_cannot_be_discharged_gets_no_entry(label, member_ids) 
 
     assert discharged == {}, label
     assert record.name == "case_condition"
+    assert record.status == "complete"
+    assert record.started is False
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "member_ids",
+    [(), ("no.such.member",)],
+    ids=["no_members_named", "a_member_the_core_does_not_have"],
+)
+def test_the_value_carry_phase_answers_nothing_when_it_has_no_members(
+    member_ids,
+) -> None:
+    """A phase with nothing to build an antecedent from returns an empty table.
+
+    The two entrances differ and both matter.  Naming no members at all is what a
+    caller does before a core has been reduced; naming one the core does not hold is
+    what happens when a table outlives the reduction that produced it.  Neither is an
+    error -- the phase supports the deeper tier and refuses rather than guessing --
+    but a phase that raised on either would take the whole explanation down with it,
+    and the sibling phase has both entrances covered while this one had neither.
+
+    :param member_ids: The member ids the phase is given.
+    :type member_ids: Sequence[str]
+    """
+    core = _core_formula(
+        'assume at 1: var("x") == 1; assume at 2: var("x") == 2; '
+        'check reach <= 2: active("Root.B");'
+    )
+    stated = {"kind": "variable_equality", "variable": "x", "frame": 1, "value": 1}
+
+    carried, record = check_value_carries(
+        core, [("assumption.0000.frame.0001", stated)], member_ids, _SolveBudget(None)
+    )
+
+    assert carried == {}
+    assert record.name == "value_carry"
     assert record.status == "complete"
     assert record.started is False

@@ -1633,3 +1633,98 @@ def test_preceding_value_entailment_refuses_anything_else(premise, conclusion) -
         )
         is False
     )
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "rule_id, premises, conclusion",
+    [
+        # Arity. The search matches ``premise_kinds`` before proposing, so this shape
+        # does not arrive from there -- the guard restates the arity rather than
+        # trusting it, and the sibling rules have the same restatement covered.
+        (
+            "preceding_value_entailment",
+            (
+                _fact("variable_equality", variable="x", frame=2, value=5),
+                _fact("variable_equality", variable="y", frame=2, value=5),
+            ),
+            _fact("variable_equality", variable="x", frame=1, value=5),
+        ),
+        # A conclusion of another kind entirely.  The premise is fine; what is refused
+        # is concluding something this rule does not produce.
+        (
+            "preceding_value_entailment",
+            (_fact("variable_equality", variable="x", frame=2, value=5),),
+            _fact("false"),
+        ),
+        (
+            "excluded_state_selected",
+            (
+                _fact(
+                    "variable_equality",
+                    variable="$state",
+                    state_slot=True,
+                    frame=1,
+                    value=3,
+                ),
+            ),
+            _fact("false"),
+        ),
+        (
+            "excluded_state_selected",
+            (
+                _fact(
+                    "variable_equality",
+                    variable="$state",
+                    state_slot=True,
+                    frame=1,
+                    value=3,
+                ),
+                _fact("state_exclusion", frame=1, state=3),
+            ),
+            _fact("variable_equality", variable="x", frame=1, value=3),
+        ),
+        # An unconsumed field on the exclusion rather than on the equality.  Both
+        # sides are read into a different shape, so both have to refuse one.
+        (
+            "excluded_state_selected",
+            (
+                _fact(
+                    "variable_equality",
+                    variable="$state",
+                    state_slot=True,
+                    frame=1,
+                    value=3,
+                ),
+                _fact("state_exclusion", frame=1, state=3, surprise=1),
+            ),
+            _fact("false"),
+        ),
+    ],
+    ids=[
+        "carry_with_two_premises",
+        "carry_concluding_something_else",
+        "opposition_with_one_premise",
+        "opposition_concluding_something_else",
+        "opposition_with_an_unconsumed_field_on_the_exclusion",
+    ],
+)
+def test_the_new_rules_restate_the_arity_and_the_conclusion_kind(
+    rule_id: str, premises, conclusion
+) -> None:
+    """Shapes the search settles upstream, refused here as well.
+
+    ``_candidates`` matches ``premise_kinds`` and the proposal builds the conclusion,
+    so none of these arrives from the search.  They are refused anyway for the reason
+    the catalog's older rules give: a checker that trusted its caller about arity or
+    about what it was concluding would be a checker whose contract is "whatever the
+    search happens to pass", and the search is the thing under test elsewhere.
+
+    :param rule_id: The rule being offered the shape.
+    :type rule_id: str
+    :param premises: The premises offered.
+    :type premises: Tuple[Mapping[str, object], ...]
+    :param conclusion: The conclusion offered.
+    :type conclusion: Mapping[str, object]
+    """
+    assert check_rule(RuleApplication(rule_id, premises, conclusion)) is False

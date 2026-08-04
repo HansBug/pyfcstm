@@ -20,9 +20,12 @@ The schema is versioned by the release it ships with, not by its own field.  Its
 the JSON output carries a version number.  Validate against the copy that shipped
 with the ``pyfcstm`` you are running: ``additionalProperties: false`` promises that
 *this* version emits no undeclared field, not that the field set is the same across
-versions.  A release may add one -- the bounded-model-checking explanation surface
-added ``result.feasibility.explanation``, which an earlier copy of this schema
-rejects.
+versions.  A release may add one.  The bounded-model-checking explanation surface added
+``explanation`` to the two definitions that close themselves to unknown fields --
+``feasibility`` and ``notCheckedFeasibility`` -- and made it required in both, so an
+earlier copy of this schema rejects the output of this one at either.  Everything
+else it added is a definition that copy does not have at all, which no consumer was
+validating against.
 
 Use the local contents below to look up the option surface, output transaction,
 verdict matrix, human report, JSON envelope, witness, replay, errors, or

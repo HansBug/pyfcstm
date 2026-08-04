@@ -592,8 +592,11 @@ def _condition_clause(members, names=None) -> str:
 
         >>> _condition_clause(None)
         ''
-        >>> _condition_clause([{"kind": "state_membership", "frame": 0, "state": 1}])
-        ' where frame 0 holds state 1'
+        >>> member = {"kind": "state_membership", "frame": 0, "state": 1}
+        >>> _condition_clause([member])
+        ' where frame 0 holds 1'
+        >>> _condition_clause([member], {1: "Root.A"})
+        ' where frame 0 holds Root.A'
     """
     if not members:
         return ""

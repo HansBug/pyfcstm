@@ -676,11 +676,17 @@ closed; a query that needs a reading outside it degrades to ``formal`` rather
 than inventing one.
 
 The ``Reachable`` column records whether any query is currently known to produce
-a node carrying that rule.  Four rules are not: they are part of the closed
+a node carrying that rule.  Three rules are not: they are part of the closed
 vocabulary a consumer must accept, but no query reaches them today, so a reader
 who picks ``proof`` depth for such a conflict receives ``formal`` instead.  The
 reasons are structural and are set out in
 :doc:`/explanations/bmc_solving/index`.
+
+Those three are also the only rules whose conclusion is not the contradiction
+itself, so they are the only ones that can produce a ``derived`` node.  No proof
+published today contains one: a reader sees one input node per subset-minimal
+member and the single contradiction root.  A consumer still has to accept
+``derived``, because the vocabulary is closed and these rows can change.
 
 .. list-table::
    :header-rows: 1

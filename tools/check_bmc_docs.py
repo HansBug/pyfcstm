@@ -897,6 +897,73 @@ def _check_rule_reachability(errors: List[str]) -> None:
             )
 
 
+#: How each reference page spells the count of unreachable rules in prose.
+#:
+#: The reachability partition is written twice on the page: once as a ``yes`` or
+#: ``no`` on every table row, and once as a numeral in the paragraph above the
+#: table.  Only the rows were checked, so raising the reachable count from five
+#: to six left ``Four rules are not`` standing beside a table with three -- the
+#: two halves of one nine-way split contradicting each other fifty lines apart,
+#: in both languages.
+_UNREACHABLE_COUNT_PROSE: Dict[str, Tuple[str, str, Tuple[str, ...]]] = {
+    "reference/bmc_results/index.rst": (
+        "no",
+        r"\b(One|Two|Three|Four|Five|Six|Seven|Eight|Nine) rules are not\b",
+        ("", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine"),
+    ),
+    "reference/bmc_results/index_zh.rst": (
+        "否",
+        r"有([一二三四五六七八九])条不可达",
+        ("", "一", "二", "三", "四", "五", "六", "七", "八", "九"),
+    ),
+}
+
+
+def _check_unreachable_count(errors: List[str]) -> None:
+    """Confirm the prose count of unreachable rules matches the table beside it.
+
+    The count is taken from the table's own rows rather than from
+    :data:`_UNREACHABLE_RULES`, and the transcription is then required to agree
+    with it.  Deriving it from the rows is what makes this stricter than
+    :func:`_check_rule_reachability`: that check asks whether each transcribed
+    rule has a ``no`` row, so a fourth row wrongly marked unreachable satisfies
+    it.  Counting the rows notices the extra one, and comparing the count with
+    the transcription notices a vocabulary change the checker has not been told
+    about yet.
+
+    :param errors: Accumulator the caller raises from.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    for label, path in _prose_pages("reference/bmc_results/index"):
+        marker, pattern, numerals = _UNREACHABLE_COUNT_PROSE[label]
+        text = _visible_text(path)
+        rows = re.findall(r"\* - ``([a-z_]+)``\n\s+- (\S+)\n", text)
+        counted = sum(1 for _, value in rows if value == marker)
+        if counted != len(_UNREACHABLE_RULES):
+            errors.append(
+                "%s marks %d rules unreachable in its table but the checker "
+                "transcribes %d; reconcile the table with the rule catalog."
+                % (label, counted, len(_UNREACHABLE_RULES))
+            )
+            continue
+        found = re.search(pattern, text)
+        if found is None:
+            errors.append(
+                "%s does not state how many rules are unreachable, so the "
+                "table's %d ``%s`` rows are the reader's only count."
+                % (label, counted, marker)
+            )
+            continue
+        if found.group(1) != numerals[counted]:
+            errors.append(
+                "%s says %s rules are unreachable while its table marks %d; "
+                "the paragraph and the rows describe one split."
+                % (label, found.group(1), counted)
+            )
+
+
 def _rendered_text(html_root: Path, relative: str) -> str:
     """Return the visible text of one built page.
 
@@ -1012,6 +1079,7 @@ def check() -> None:
     _check_forbidden_claims(errors)
     _check_schema_vocabularies(errors)
     _check_rule_reachability(errors)
+    _check_unreachable_count(errors)
     if errors:
         raise CheckFailure("BMC documentation check failed:\n" + "\n".join(errors))
 

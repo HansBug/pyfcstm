@@ -132,6 +132,13 @@ def test_the_proof_vocabularies_are_transcribed_from_the_contract() -> None:
         "rule_checker",
         "solver_entailment",
     )
+    # Which side each method belongs to is a sentence in the reference, transcribed
+    # here the same way as the vocabulary itself: both bindings are "used by input
+    # nodes only", and the other two are "used by derived and root nodes".
+    assert module._INPUT_VERIFICATION_METHODS == ("core_binding", "core_binding_unit")
+    assert set(module._PROOF_VERIFICATION_METHODS) - set(
+        module._INPUT_VERIFICATION_METHODS
+    ) == {"rule_checker", "solver_entailment"}
     assert module._PROOF_INPUT_MINIMALITIES == ("subset_minimal",)
     assert module._PROOF_GRAPH_MINIMALITIES == ("dependency_pruned",)
     assert module._PROOF_VERIFICATION_STATUSES == ("verified",)
@@ -701,4 +708,47 @@ def test_a_unit_count_below_one_is_refused() -> None:
             "core_binding_unit",
             0,
             0,
+        )
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    ("kind", "rule_id", "method", "unit_fields"),
+    [
+        ("contradiction", "incompatible_equalities", "core_binding", ()),
+        ("contradiction", "incompatible_equalities", "core_binding_unit", (0, 1)),
+        ("derived", "arithmetic_evaluation", "core_binding_unit", (0, 1)),
+        ("input", "source_fact", "rule_checker", ()),
+        ("input", "source_fact", "solver_entailment", ()),
+    ],
+)
+def test_a_method_that_contradicts_the_node_kind_is_refused(
+    kind, rule_id, method, unit_fields
+) -> None:
+    """How a node was verified and what kind of node it is are one statement.
+
+    The published reference says which side each method belongs to: the two bindings
+    are what an input's re-encoding was checked by and are used by input nodes only,
+    while the rule checker and the solver discharge derived and root steps.  A node
+    pairing them the other way describes a check that cannot have happened -- a
+    contradiction has no core member to re-encode against, and an input has no
+    premises to re-derive from -- and the constructor is where a caller assembling
+    an explanation to publish finds that out.
+    """
+    conclusion = (
+        {"kind": "false"}
+        if kind == "contradiction"
+        else {"kind": "variable_equality", "variable": "x", "frame": 0, "value": 0}
+    )
+    with pytest.raises(ValueError, match="verification_method"):
+        BmcProofNode(
+            "proof.node.0000",
+            kind,
+            rule_id,
+            (),
+            conclusion,
+            ("assumption.0000",),
+            "t",
+            method,
+            *unit_fields,
         )

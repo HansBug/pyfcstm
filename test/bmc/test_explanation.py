@@ -208,9 +208,11 @@ _DERIVED_FROZEN_NAMES = {
     "_MODE_ORDER": "an ordering over _MODES, pinned by the delivery matrix",
     "_REDUCTION_MINIMALITY": "pinned by the reduction/minimality coupling tests",
     # The proof vocabularies live beside the proof types they gate, so they are
-    # transcribed in test_proof.py rather than twice.  Listed here so this guard
-    # still fails when a *seventh* one appears with no home.
+    # transcribed in test_proof.py rather than twice.  Listed one by one, with no
+    # count in this comment to drift out of date, so that the next one to appear
+    # fails this guard until it is given a home too.
     "_PROOF_NODE_KINDS": "transcribed by test_proof.py",
+    "_INPUT_VERIFICATION_METHODS": "transcribed by test_proof.py",
     "_PROOF_RULE_IDS": "transcribed by test_proof.py",
     "_PROOF_VERIFICATION_METHODS": "transcribed by test_proof.py",
     "_PROOF_INPUT_MINIMALITIES": "transcribed by test_proof.py",

@@ -2357,6 +2357,12 @@ def explain_infeasibility(
                 # Keyed by rule, so a second solver-decided rule joins the same
                 # argument instead of adding another one.
                 solver_verdicts={"case_condition_entailment": discharges},
+                # What the binding check proved, rather than what the group is: a
+                # case fact was proved equivalent to one requirement out of several,
+                # and an input that published ``core_binding`` for it would claim the
+                # whole relation.  The check already records which requirement; this
+                # is what carries it to the node the reader sees.
+                unit_bindings=unit_bindings,
             )
             checks = checks + (proof_record,)
         else:

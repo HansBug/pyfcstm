@@ -1921,6 +1921,14 @@ _PROOF_RULE_IDS = get_args(BmcProofRuleId)
 #: forbids holes, trust and opaque solver steps in a published proof.
 _PROOF_VERIFICATION_METHODS = get_args(BmcProofVerificationMethod)
 
+#: The methods that describe an input's binding rather than a step's derivation.
+#:
+#: The split is published, not implied: the reference says of both bindings that they
+#: are "used by input nodes only", and of the other two that they are used by derived
+#: and root nodes.  Written out rather than derived, because which side a method falls
+#: on is a statement about what was checked, not a fact about its name.
+_INPUT_VERIFICATION_METHODS = ("core_binding", "core_binding_unit")
+
 #: The one input-minimality a published proof may claim.
 #:
 #: Single-valued because a proof whose leaves are not exactly a proven
@@ -2012,6 +2020,20 @@ class BmcProofNode:
             _PROOF_VERIFICATION_METHODS,
             "proof node verification_method",
         )
+        # One predicate, both directions.  A binding is what an input's re-encoding
+        # was checked by; the rule checker and the solver discharge derived and root
+        # steps.  Either pairing reversed describes a check that cannot have happened
+        # -- a contradiction has no core member to re-encode against, an input has no
+        # premises to re-derive from -- and the reference states the split outright,
+        # so the constructor is where a caller assembling a proof to publish learns
+        # it rather than a consumer reading the result.
+        if (self.verification_method in _INPUT_VERIFICATION_METHODS) != (
+            self.kind == "input"
+        ):
+            raise ValueError(
+                "proof node verification_method %r does not belong to a %s node."
+                % (self.verification_method, self.kind)
+            )
         # The two unit fields and the method that admits them travel together in
         # both directions.  Either alone says something a reader cannot use: an
         # index without a count gives no proportion, a count without an index names

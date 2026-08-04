@@ -213,6 +213,42 @@ _VARIADIC_RULES = frozenset({"state_domain_exhaustion"})
 _VERIFIED_BY = {"case_condition_entailment": "solver_entailment"}
 
 
+def _verification(
+    node: _Node, unit_bindings: Optional[Mapping[str, Tuple[int, int]]]
+) -> Tuple[str, Optional[int], Optional[int]]:
+    """Report how one node was verified, and against which requirement.
+
+    Four published methods, and the node's own shape picks one.  A rule that needs a
+    solver names itself in :data:`_VERIFIED_BY`.  A step that a predicate settles is a
+    rule check.  An input is a binding -- but of which kind depends on what the
+    binding check could prove: a group holding one requirement per case cannot be
+    implied by a fact restating one of them, so such a fact is proved equivalent to a
+    single unit and the attribution travels here.  Publishing ``core_binding`` for it
+    would claim the whole group's equivalence, which is a stronger statement than the
+    one that was checked.
+
+    :param node: The node about to be published.
+    :type node: pyfcstm.bmc.proof._Node
+    :param unit_bindings: Member ids that were bound against one unit, mapped to
+        ``(unit_index, unit_count)``; ``None`` when no binding ran unit-scoped.
+    :type unit_bindings: Optional[Mapping[str, Tuple[int, int]]]
+    :return: The method, and the unit index and count when the method names one.
+    :rtype: Tuple[str, Optional[int], Optional[int]]
+    """
+    method = _VERIFIED_BY.get(node.rule_id)
+    if method is not None:
+        return method, None, None
+    if node.kind != "input":
+        return "rule_checker", None, None
+    # An input carries exactly the one member it was read from, so its attribution is
+    # a single lookup rather than a search.
+    attribution = (unit_bindings or {}).get(node.item_ids[0])
+    if attribution is None:
+        return "core_binding", None, None
+    unit_index, unit_count = attribution
+    return "core_binding_unit", unit_index, unit_count
+
+
 def _frame_groups(nodes: Sequence[_Node]) -> List[Tuple[int, ...]]:
     """Group node indices by the frame their fact is about.
 
@@ -239,6 +275,7 @@ def build_domain_proof(
     member_ids: Optional[Sequence[str]] = None,
     state_names: Optional[Mapping[int, str]] = None,
     solver_verdicts: Optional[Mapping[str, Mapping[str, Sequence[str]]]] = None,
+    unit_bindings: Optional[Mapping[str, Tuple[int, int]]] = None,
 ) -> Tuple[Optional[BmcConflictProof], Any]:
     """Search for a checked proof that these facts admit no execution.
 
@@ -270,6 +307,18 @@ def build_domain_proof(
         states through the same table; without one, both fall back to the index.
         Defaults to ``None``.
     :type state_names: Optional[Mapping[int, str]], optional
+    :param solver_verdicts: For each rule a predicate cannot settle, the members
+        that establish each premise, keyed by rule id and then by member id.  A rule
+        named here proposes only where a verdict exists, because the search has no
+        way to check it and must not publish an unchecked step.  Defaults to
+        ``None``.
+    :type solver_verdicts: Optional[Mapping[str, Mapping[str, Sequence[str]]]], optional
+    :param unit_bindings: Member ids whose fact was proved equivalent to a single
+        requirement rather than to its whole group, mapped to
+        ``(unit_index, unit_count)``.  Such an input publishes
+        ``core_binding_unit``, which is the statement that was actually checked.
+        Defaults to ``None``.
+    :type unit_bindings: Optional[Mapping[str, Tuple[int, int]]], optional
     :return: The proof and the ledger entry, or ``None`` and the entry.
     :rtype: Tuple[Optional[BmcConflictProof], pyfcstm.bmc.infeasibility.ProbeRecord]
 
@@ -428,8 +477,7 @@ def build_domain_proof(
                 node.fact,
                 node.item_ids,
                 _fact_sentence(node.fact, state_names),
-                _VERIFIED_BY.get(node.rule_id)
-                or ("core_binding" if node.kind == "input" else "rule_checker"),
+                *_verification(node, unit_bindings),
             )
         )
     proof = BmcConflictProof(

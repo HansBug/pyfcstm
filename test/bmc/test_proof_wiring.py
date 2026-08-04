@@ -1185,6 +1185,43 @@ def test_the_ledger_reports_the_discharge_phase_that_ran() -> None:
 
 
 @pytest.mark.unittest
+def test_a_case_input_publishes_the_requirement_it_was_bound_against() -> None:
+    """An input bound against one requirement says so, and says which one.
+
+    A step relation holds one requirement per case, and a case fact restates exactly
+    one of them -- it cannot imply the whole group, so the binding check proves it
+    equivalent to a single unit and records which.  Publishing ``core_binding`` for
+    such an input claims the group's whole equivalence, which is not what was
+    checked; the reader is told "the transition relation" and left to find the part
+    that mattered.  The binding check's own comment promised the attribution would
+    travel with the node, and the orchestration dropped it on the floor.
+    """
+    feasibility = _explain_case_model(
+        'assume at 2: var("x") == 1;\n'
+        'assume at 3: var("x") == 0;\n'
+        'check reach <= 3: active("Root.A");\n'
+    )
+    inputs = [
+        node for node in feasibility.explanation.proof.nodes if node.kind == "input"
+    ]
+    cases = [node for node in inputs if node.conclusion["kind"] == "transition_case"]
+    assumptions = [
+        node for node in inputs if node.conclusion["kind"] == "variable_equality"
+    ]
+
+    assert cases, "the fixture is meant to publish a case input"
+    for node in cases:
+        assert node.verification_method == "core_binding_unit"
+        assert node.unit_count is not None and node.unit_count >= 1
+        assert 0 <= node.unit_index < node.unit_count
+    # A whole-group binding is still published as one: the distinction is the point.
+    for node in assumptions:
+        assert node.verification_method == "core_binding"
+        assert node.unit_index is None
+        assert node.unit_count is None
+
+
+@pytest.mark.unittest
 @pytest.mark.parametrize(
     ("mode", "expected_mode"),
     [("formal", "formal"), ("proof", "proof")],

@@ -58,8 +58,11 @@ class ReadOnlyExecutionContext:
     :param abstract_target: Explicit resolved abstract target path. When
         omitted, it defaults to ``action_name``.
     :type abstract_target: str, optional
-    :param named_ref: Full path of the named ``ref`` callsite, or ``None`` when
-        the action was not invoked through a named reference.
+    :param named_ref: Path of the named ``ref`` action at the callsite, or
+        ``None`` when the callsite is not a named ``ref``. Only the callsite
+        names a call: a named action arrived at by following a ``ref`` is that
+        reference's target, so a chain starting from an anonymous ``ref``
+        reports ``None`` however many named actions it passes through.
     :type named_ref: Optional[str], optional
 
     Example::

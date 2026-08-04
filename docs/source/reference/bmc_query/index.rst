@@ -606,7 +606,10 @@ at most once.
        declared on one, has no active leaf and matches the host path.
    * - Named ref
      - ``named_ref=STRING`` or ``named_ref=null``
-     - Existing named ref callsite, or explicitly no named ref.
+     - Existing named ``ref`` callsite, or explicitly no named ``ref``.
+       Matches the callsite's own named ``ref``; a call whose ``ref`` chain
+       merely passes through a named action has no named ``ref`` and is
+       matched by ``named_ref=null``.
    * - Snapshot predicate
      - ``where cond_expr``
      - Evaluated against persistent-variable values captured at call time.

@@ -1858,6 +1858,13 @@ def test_a_solver_settled_step_is_re_provable_from_the_members_it_cites(
     Satisfiability of the citation is the half that makes the other half mean anything:
     a set that cannot hold entails every target, its own negation included.
 
+    Both kinds of solver-settled step are re-asked, and the second was added after the
+    first version skipped it.  A step that discharges a case's condition concludes a
+    fact rather than a value, so the value branch below has nothing to check for it --
+    and skipping it meant the only claim being re-verified for that step was that its
+    citation could hold, which is the weaker half.  The condition it discharged is
+    re-encoded from the premise's published facts and refuted against the citation.
+
     :param query: The query text.
     :type query: str
     """
@@ -1866,6 +1873,7 @@ def test_a_solver_settled_step_is_re_provable_from_the_members_it_cites(
     from pyfcstm.bmc.infeasibility import (
         _binding_symbols,
         _declared_variable_names,
+        _encode_condition_member,
         _event_paths_of,
     )
 
@@ -1878,6 +1886,7 @@ def test_a_solver_settled_step_is_re_provable_from_the_members_it_cites(
     ).feasibility.explanation
 
     assert explanation.proof is not None
+    by_id = {node.stable_id: node for node in explanation.proof.nodes}
     claims = {
         group.stable_id: (
             z3.And(*group.expressions) if group.expressions else z3.BoolVal(True)
@@ -1908,12 +1917,35 @@ def test_a_solver_settled_step_is_re_provable_from_the_members_it_cites(
         )
 
         conclusion = dict(node.conclusion or {})
+        if conclusion.get("kind") == "transition_case":
+            # The claim is that the citation forces the condition this step removed,
+            # so the condition is what has to be refuted -- read off the premise,
+            # because the conclusion is the case with the key gone.
+            premises = [by_id[premise_id] for premise_id in node.premise_ids]
+
+            assert len(premises) == 1, "a discharge reads exactly one case"
+            discharged = (dict(premises[0].conclusion or {})).get("condition") or ()
+
+            assert discharged, "a discharge is expected to have removed something"
+            encoded = [
+                _encode_condition_member(dict(member), symbols) for member in discharged
+            ]
+
+            assert all(item is not None for item in encoded), (
+                "the condition this step discharged has a member no symbol matches, "
+                "so the publishing and binding readings have diverged"
+            )
+            refuted_condition = z3.Solver()
+            refuted_condition.add(*cited, z3.Not(z3.And(*encoded)))
+
+            assert refuted_condition.check() == z3.unsat, (
+                "%s discharged a condition its own citation does not force"
+                % node.rule_id
+            )
+            continue
         if conclusion.get("kind") != "variable_equality" or conclusion.get(
             "state_slot"
         ):
-            # Only a value equality can be restated as a constraint here; a case with
-            # its condition removed is a claim about a fact's shape, which the rule
-            # checker settles rather than the solver.
             continue
         symbol = symbols.get((conclusion.get("frame"), conclusion.get("variable")))
 

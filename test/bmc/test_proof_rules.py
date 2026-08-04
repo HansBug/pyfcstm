@@ -19,6 +19,8 @@ The module contains:
    editing a list.
 """
 
+from fractions import Fraction
+
 import pytest
 
 from pyfcstm.bmc.proof_rules import (
@@ -237,15 +239,17 @@ def test_division_is_checked_against_the_encoder_not_against_a_guess() -> None:
     """Division was pinned to a semantics the encoder does not have.
 
     The claim used to be that Python floors while "the encoded semantics truncate
-    toward zero", and the encoder was never asked.  It lowers ``/`` straight onto Z3,
-    which divides two integers Euclidean-style: the remainder is never negative, so
-    the quotient floors for a positive divisor.  Asked directly, Z3 answers ``-4`` for
-    ``-7 / 2`` -- the very value the old docstring called "Python's answer, not the
-    model's".  Truncation was wrong in five of seven sign and sort combinations.
+    toward zero", and the encoder was never asked.  It divides two ways, neither of
+    them truncation: an ``int`` variable lowers onto Z3's integer division, which is
+    Euclidean, and a ``float`` variable lowers onto Z3's reals, which divide exactly.
 
-    A real quotient is the clearer half: ``float`` lowers onto Z3's reals, which
-    divide exactly, and the simulator agrees with them.  A step reporting ``3.0`` for
-    ``7.5 / 2`` was checkable against two other surfaces and wrong against both.
+    Which of the two applies is not recoverable from the published operands.  A
+    ``float`` variable states an integral value as an integer -- a query asking
+    ``var("x") == -7`` about a real variable produces exactly that -- so two integer
+    operands say nothing about the declaration behind them.  Where the two semantics
+    agree the answer is the same either way and is published; where they part ways,
+    publishing one would be a guess about a declaration the checker cannot see, and no
+    claimed value is accepted.
     """
 
     def application(left, operand, claimed):
@@ -265,32 +269,79 @@ def test_division_is_checked_against_the_encoder_not_against_a_guess() -> None:
             _equality(frame=1, value=claimed),
         )
 
-    # Every sign combination, with the value Z3 gives for it.  ``-7 / 2`` is the one
-    # the old test had backwards.
-    for left, operand, encoded, refused in (
-        (7, 2, 3, 4),
-        (-7, 2, -4, -3),
-        (7, -2, -3, -4),
-        (-7, -2, 4, 3),
-    ):
-        assert check_rule(application(left, operand, encoded)) is True, (left, operand)
-        assert check_rule(application(left, operand, refused)) is False, (left, operand)
+    # Integer operands whose quotient is the same under both readings: published, and
+    # a neighbour is refused.
+    for left, operand, agreed in ((8, 2, 4), (-8, 2, -4), (6, 3, 2), (-6, -3, 2)):
+        assert check_rule(application(left, operand, agreed)) is True, (left, operand)
+        assert check_rule(application(left, operand, agreed + 1)) is False
 
-    # Reals divide exactly, so the quotient is the one the simulator also reaches.
+    # Integer operands where the readings part ways.  ``-7 / 2`` is ``-4`` for an
+    # integer variable and ``-3.5`` for a real one, so neither is asserted.
+    for left, operand in ((7, 2), (-7, 2), (7, -2), (-7, -2)):
+        for claimed in (3, -3, 4, -4, 3.5, -3.5):
+            assert check_rule(application(left, operand, claimed)) is False, (
+                left,
+                operand,
+                claimed,
+            )
+
+    # A float operand names the sort, so reals divide exactly.
     assert check_rule(application(7.5, 2, 3.75)) is True
     assert check_rule(application(7.5, 2, 3.0)) is False, "truncation is not the model"
+    assert check_rule(application(-7.0, 2, -3.5)) is True
 
-    # A quotient with no finite decimal form is refused rather than rounded: no value
-    # a published fact can carry is the one the encoding holds.
+    # An exact quotient with no finite decimal form, and one beyond every float, are
+    # refused rather than rounded: no published number is the one the encoding holds.
     assert check_rule(application(1.0, 3, 0.3333333333333333)) is False
     assert check_rule(application(1.0, 3, 0.0)) is False
-
-    # A quotient larger than any float is the same refusal for the same reason.  The
-    # query language accepts ``1e308`` and a model may divide by ``1e-308``, so the
-    # exact answer is a rational no published number represents -- and converting it
-    # raised ``OverflowError`` out of a search whose only failure channel is ``None``.
     assert check_rule(application(1e308, 1e-308, 1e308)) is False
     assert check_rule(application(1e308, 1e-308, 0.0)) is False
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("operator", ["add", "sub", "mul"])
+def test_real_arithmetic_publishes_what_the_encoder_holds(operator) -> None:
+    """The other three operators answer to the encoder too, not to IEEE754.
+
+    Division was reconciled with the encoder and the module docstring was rewritten to
+    say arithmetic follows it -- and ``add``, ``sub`` and ``mul`` stayed on Python's
+    floats, so the sentence was false for three operators out of four.  ``0.1 + 0.2``
+    is ``3/10`` in the encoding and ``0.30000000000000004`` in a double, and the
+    published proof said the latter under ``verification_status`` ``verified``.
+
+    Deciding between the simulator and the encoder was not required after all: the
+    quotient path had already established the shape -- compute exactly, publish only
+    a value the decimal form reads back as, otherwise decline the step -- and these
+    three reuse it.
+    """
+    exact = {
+        "add": (Fraction(1, 10) + Fraction(2, 10), 0.1, 0.2),
+        "sub": (Fraction(3, 10) - Fraction(1, 10), 0.3, 0.1),
+        "mul": (Fraction(1, 10) * Fraction(3, 1), 0.1, 3),
+    }[operator]
+    encoded, left, operand = exact
+    ieee = {"add": 0.1 + 0.2, "sub": 0.3 - 0.1, "mul": 0.1 * 3}[operator]
+    assert float(encoded) != ieee, "the fixture has to exercise the disagreement"
+
+    def application(claimed):
+        return RuleApplication(
+            "arithmetic_evaluation",
+            (
+                _equality(value=left),
+                _fact(
+                    "arithmetic_expression",
+                    variable="x",
+                    frame=0,
+                    operator=operator,
+                    operand=operand,
+                    target_frame=1,
+                ),
+            ),
+            _equality(frame=1, value=claimed),
+        )
+
+    assert check_rule(application(float(encoded))) is True
+    assert check_rule(application(ieee)) is False
 
 
 @pytest.mark.unittest

@@ -833,7 +833,22 @@ class _MacroExpander:
         runtime_role: str,
         named_ref: Optional[str] = None,
         execution_state_path: Optional[str] = None,
+        named_ref_decided: bool = False,
     ) -> _MacroFrontier:
+        # Three quantities cross a `ref` hop, and each one follows a different
+        # rule. Getting a quantity onto the wrong rule is what both recorded
+        # defects in this function were, so the rules are stated here rather
+        # than left to be re-derived:
+        #
+        # * `owner` is *rewritten* to the referenced action's declaring state,
+        #   because `owner_state_path` and `action_name` name the declaration.
+        # * `execution_state_path` is *carried* from the outermost call, because
+        #   `state` and `active_leaf` name the host the caller was running in.
+        # * `named_ref` is *decided once* at the outermost call, because only a
+        #   callsite can name its own call.
+        #
+        # Nothing here accumulates along the chain. A named action found after a
+        # hop is the reference's target, not the reference the caller wrote.
         public_state_path = execution_state_path or ".".join(owner.path)
         if isinstance(func, (OnStage, OnAspect)) and func.is_ref:
             if func.ref is None:
@@ -842,7 +857,7 @@ class _MacroExpander:
                 )
             ref_owner = func.ref.parent if func.ref.parent is not None else owner
             ref_name = named_ref
-            if ref_name is None and getattr(func, "name", None) is not None:
+            if not named_ref_decided and getattr(func, "name", None) is not None:
                 ref_name = func.func_name
             return self._record_func(
                 frontier,
@@ -852,6 +867,7 @@ class _MacroExpander:
                 runtime_role,
                 ref_name,
                 public_state_path,
+                named_ref_decided=True,
             )
         if not isinstance(func, (OnStage, OnAspect)):
             raise _internal_expansion_error(  # pragma: no cover

@@ -768,7 +768,10 @@ class CallFilter:
         leaving a composite state has no active leaf, so this filter
         matches the host path there.
     :type active_leaf: str, optional
-    :param named_ref: Named-ref callsite path filter, defaults to ``None``.
+    :param named_ref: Named-``ref`` callsite path filter. Matches the
+        callsite's own named ``ref``; a call whose chain merely passes
+        through a named action is matched by ``named_ref=null``.
+        Defaults to ``None``.
     :type named_ref: str, optional
     :param named_ref_is_null: Whether ``named_ref=null`` was requested.
     :type named_ref_is_null: bool, optional

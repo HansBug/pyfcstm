@@ -551,13 +551,12 @@ def _conclusion_for(
             return None
         if expression.get("kind") != "arithmetic_expression":
             return None
-        from .proof_rules import _evaluate
+        from .proof_rules import _carried_value
 
-        result = _evaluate(
-            expression.get("operator"),
-            value_fact.get("value"),
-            expression.get("operand"),
-        )
+        # The same question the checker asks, asked through the same function.  Asking
+        # it separately here is what let a proposal reach ``_evaluate`` with an operand
+        # the checker would have refused, and raise instead of declining.
+        result = _carried_value(value_fact, expression)
         if result is None:
             return None
         return _inherit_subject(

@@ -29,6 +29,7 @@ from pyfcstm.bmc.infeasibility import (
     _indices,
     _semantic_role,
     build_core_item,
+    check_case_conditions,
     classify_infeasibility,
     derive_forced_values,
     explain_infeasibility,
@@ -2216,3 +2217,67 @@ def test_every_forced_value_survives_an_independent_uniqueness_check() -> None:
         symbol = core.symbols.frame_var(entry.frame, entry.variable)
         solver.add(symbol != entry.value)
         assert solver.check() == z3.unsat, entry
+
+
+#: The members of one query's minimal core, as published for that query.
+#:
+#: Named here rather than derived so the test states which members it hands over: a
+#: reader can see that this is a whole core and therefore an unsatisfiable one.
+_REFUTED_CASE_MEMBERS = (
+    "assumption.0000.frame.0002",
+    "assumption.0001.frame.0003",
+    "initial.target",
+    "transition.step.0000",
+    "transition.step.0001",
+    "transition.step.0002",
+)
+
+
+@pytest.mark.unittest
+def test_a_condition_the_core_refutes_is_not_reported_as_discharged() -> None:
+    """Entailment out of a contradiction proves nothing, and is refused as such.
+
+    The members handed to this function are a minimal unsatisfiable core, so they
+    entail every condition and its negation alike.  What makes an entailment here
+    informative is the shrink: it drops members until the survivors can hold
+    together.  It gets there on its own in the ordinary case, because an
+    unsatisfiable subset is always accepted -- but when every single deletion breaks
+    the entailment, it stops on a set that still cannot hold, and a condition these
+    members outright *refute* would come back reported as discharged.
+
+    The condition below asks for ``Root.B`` at frame 1, which the initial transition
+    forbids.  It has to produce no entry.
+    """
+    core = _core_formula(
+        'assume at 2: var("x") == 1;\n'
+        'assume at 3: var("x") == 0;\n'
+        'check reach <= 3: active("Root.A");\n',
+        model_text=(
+            "def int x = 0;\n"
+            "state Root { state A; state B; [*] -> A;\n"
+            "  A -> A effect { x = x + 1; }; A -> B; }"
+        ),
+    )
+    refuted = {
+        "kind": "transition_case",
+        "variable": "x",
+        "frame": 1,
+        "target_frame": 2,
+        "operation": "add",
+        "operand": 1,
+        "condition": (
+            {"kind": "state_membership", "frame": 1, "state": 2, "excluded": False},
+        ),
+    }
+
+    discharged, record = check_case_conditions(
+        core,
+        [("transition.step.0001", refuted)],
+        _REFUTED_CASE_MEMBERS,
+        _SolveBudget(None),
+    )
+
+    assert discharged == {}
+    assert record.name == "case_condition"
+    assert record.status == "complete"
+    assert record.reason is None

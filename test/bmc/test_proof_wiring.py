@@ -1087,13 +1087,13 @@ state Root {
 """
 
 
-def _explain_case_model(query: str, **kwargs):
+def _explain_case_model(query: str, mode: str = "proof", **kwargs):
     """Run one query against the readable-case machine and return the explanation."""
     machine = load_state_machine_from_text(_CASE_MODEL, "machine.fcstm")
     context = BmcEngine(machine).prepare(query, query_source_path="query.fbmcq")
     result = solve_bmc_property(
         compile_bmc_property(build_bmc_core_formula(context)),
-        infeasibility_explanation="proof",
+        infeasibility_explanation=mode,
         **kwargs,
     )
     return result.feasibility
@@ -1182,6 +1182,112 @@ def test_the_ledger_reports_the_discharge_phase_that_ran() -> None:
 
     assert "case_condition" in names
     assert names.index("case_condition") < names.index("proof_construction")
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    ("mode", "expected_mode"),
+    [("formal", "formal"), ("proof", "proof")],
+)
+def test_a_tier_is_attempted_only_when_it_was_asked_for(mode, expected_mode) -> None:
+    """Depth is what the caller requested, never more.
+
+    A caller who asks for a formal explanation is asking for a cheaper artifact, and
+    the published contract refuses one deeper than the request.  So the proof tier
+    has to be gated on the request, not only on whether the formal artifact is solid
+    enough to carry a proof: this core is solid but its narrative falls short, so the
+    complete-formal return does not fire, and an ungated deeper tier picked the query
+    up on its way past and delivered proof depth to a formal request -- rejected by
+    the delivery check as an exception rather than an explanation.
+    """
+    feasibility = _explain_case_model(
+        'assume at 2: var("x") == 1;\n'
+        'assume at 3: var("x") == 0;\n'
+        'check reach <= 3: active("Root.A");\n',
+        mode=mode,
+    )
+    explanation = feasibility.explanation
+
+    assert explanation.requested_mode == mode
+    assert explanation.achieved_mode == expected_mode
+
+
+#: A machine that adds a variable rather than a literal, so the operand is a name.
+#:
+#: The distinction is the whole subject of ``equality_substitution``: an expression
+#: whose operand still stands as a symbol has no value to evaluate, and that rule is
+#: what supplies one.  Reaching it needs an assignment whose right-hand side names a
+#: second variable, which the literal-operand machine above cannot produce.
+_OPERAND_VARIABLE_MODEL = """
+def int x = 0;
+def int y = 2;
+
+state Root {
+    state A;
+    state B;
+
+    [*] -> A;
+    A -> A effect { x = x + y; };
+    A -> B;
+}
+"""
+
+
+def _explain_operand_variable_model(query: str, **kwargs):
+    """Run one query against the variable-operand machine and return the outcome."""
+    machine = load_state_machine_from_text(_OPERAND_VARIABLE_MODEL, "machine.fcstm")
+    context = BmcEngine(machine).prepare(query, query_source_path="query.fbmcq")
+    result = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="proof",
+        **kwargs,
+    )
+    return result.feasibility
+
+
+@pytest.mark.unittest
+def test_an_operand_still_named_does_not_raise_out_of_the_search() -> None:
+    """A proposal and its checker have to read an operand the same way.
+
+    The checker refused an expression whose operand still stands as a symbol, and
+    said in its own comment what would happen otherwise: ``_evaluate`` would add
+    ``None`` to a number.  The proposal did not make the same refusal, so the search
+    built that call itself and raised out of a public solve -- not a degraded
+    explanation, an exception.  The two sides now ask one shared question.
+
+    What the crash was hiding is the substitution step itself: it is the only rule
+    that can turn a named operand into a value, so it stood behind the raise and no
+    query reached it.  The chain below is where it fires.
+    """
+    feasibility = _explain_operand_variable_model(
+        'assume at 1: var("x") == 0;\n'
+        'assume at 1: var("y") == 2;\n'
+        'assume at 2: var("x") == 1;\n'
+        'check reach <= 3: active("Root.A");\n'
+    )
+    explanation = feasibility.explanation
+
+    assert explanation.achieved_mode == "proof"
+    assert explanation.status == "complete"
+    assert explanation.proof.verification_status == "verified"
+    assert [node.rule_id for node in explanation.proof.nodes] == [
+        "source_fact",
+        "source_fact",
+        "source_fact",
+        "source_fact",
+        "case_condition_entailment",
+        "transition_assignment",
+        "equality_substitution",
+        "arithmetic_evaluation",
+        "incompatible_equalities",
+    ]
+    substitution = next(
+        node
+        for node in explanation.proof.nodes
+        if node.rule_id == "equality_substitution"
+    )
+    assert "operand_variable" not in substitution.conclusion
+    assert substitution.conclusion["operand"] == 2
 
 
 #: A machine whose case applies only under a guard, so its condition is not free.

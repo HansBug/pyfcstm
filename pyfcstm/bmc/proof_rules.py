@@ -339,6 +339,40 @@ def _evaluate(operator: str, left: Any, right: Any):
     return None
 
 
+def _carried_value(value_fact: Mapping[str, Any], expression: Mapping[str, Any]):
+    """Return the value an expression carries, or ``None`` when it carries none yet.
+
+    Two sides ask this question -- the rule checker below, and the proof search's
+    proposal side in :mod:`pyfcstm.bmc.proof` -- and they have to ask it the same
+    way.  They did not.  The checker refused an operand still standing as a symbol;
+    the proposal handed one straight to :func:`_evaluate`, which added ``None`` to a
+    number and raised out of a search whose only failure channel is ``None``.  One
+    function is what makes the two agree by construction rather than by review.
+
+    :param value_fact: The equality supplying the left operand's value.
+    :type value_fact: Mapping[str, Any]
+    :param expression: The arithmetic expression fact to evaluate.
+    :type expression: Mapping[str, Any]
+    :return: The value, or ``None`` when no step can produce one here.
+
+    Example::
+
+        >>> _carried_value({"value": 1}, {"operator": "add", "operand": 2})
+        3
+        >>> _carried_value(
+        ...     {"value": 1}, {"operator": "add", "operand_variable": "y"}
+        ... ) is None
+        True
+    """
+    if expression.get("operand_variable"):
+        # An operand still standing as a symbol has no value to evaluate; the
+        # substitution step has to run first, and it is the rule that supplies one.
+        return None
+    return _evaluate(
+        expression.get("operator"), value_fact.get("value"), expression.get("operand")
+    )
+
+
 def _arithmetic_evaluation(application: RuleApplication) -> bool:
     """A value carried across an expression whose operands are all known.
 
@@ -355,15 +389,7 @@ def _arithmetic_evaluation(application: RuleApplication) -> bool:
     value_fact, expression = premises
     if _slot(value_fact) != _slot(expression):
         return False
-    if expression.get("operand_variable"):
-        # An operand still standing as a symbol has no value to evaluate; the
-        # substitution step has to run first.  Reaching ``_evaluate`` with it would
-        # add ``None`` to a number and raise out of a predicate that answers yes or
-        # no.
-        return False
-    result = _evaluate(
-        expression.get("operator"), value_fact.get("value"), expression.get("operand")
-    )
+    result = _carried_value(value_fact, expression)
     if result is None:
         return False
     if not _only(expression, _EVALUABLE_EXPRESSION_FIELDS):

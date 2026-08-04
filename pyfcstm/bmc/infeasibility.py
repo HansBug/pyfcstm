@@ -1661,6 +1661,13 @@ def check_case_conditions(
         status, _, _, _, _ = _check_with_budget(solver, budget)
         return status == "unsat"
 
+    def consistent(claims: Sequence[Any]) -> bool:
+        """Report whether these claims can hold together at all."""
+        solver = z3.Solver()
+        solver.add(z3.And(*claims))
+        status, _, _, _, _ = _check_with_budget(solver, budget)
+        return status == "sat"
+
     for stable_id, fact in conditional:
         encoded = [
             _encode_condition_member(member, symbols)
@@ -1669,8 +1676,10 @@ def check_case_conditions(
         if any(item is None for item in encoded):
             # Unreached today, and by construction rather than by luck: publication
             # and this layer read a condition with the same two readings, and
-            # ``_condition_facts`` returns ``None`` for a conjunct it cannot read --
-            # so a case whose condition has an unreadable slot never becomes a
+            # :func:`pyfcstm.bmc.provenance._condition_facts` -- the publishing
+            # side, which lives in another module -- returns ``None`` for a conjunct
+            # it cannot read, and its caller drops the whole reading on ``None``, so
+            # a case whose condition has an unreadable slot never becomes a
             # ``transition_case`` in the first place.  Kept because the two sides are
             # separate functions and the guard is what makes their agreement a
             # property rather than a coincidence: if one gains a reading the other
@@ -1684,6 +1693,21 @@ def check_case_conditions(
             trimmed = [item for item in kept if item[0] != candidate[0]]
             if trimmed and entailed([claim for _, claim in trimmed], target):
                 kept = trimmed
+        if not consistent([claim for _, claim in kept]):
+            # The check above is vacuous over members that contradict each other: a
+            # set that cannot hold entails every condition, its negation included.
+            # These members normally do contradict each other -- they are a minimal
+            # unsatisfiable core -- so what makes an entailment here informative is
+            # the shrink, which drops members until the survivors can hold together
+            # and the question becomes a real one.  The shrink tends that way on its
+            # own, because an unsatisfiable subset still entails everything and so is
+            # always accepted; but tending is not the same as arriving.  When every
+            # single deletion breaks the entailment while the survivors still cannot
+            # hold, the shrink stops on a set that proves nothing, and a condition the
+            # core outright refutes would be published as discharged.  Refusing here
+            # is the silent failure this function documents: no entry, so the rule
+            # never fires and the explanation stays at formal depth.
+            continue
         discharged[stable_id] = tuple(sorted(item[0] for item in kept))
     return discharged, ProbeRecord(
         "case_condition", "complete", bool(discharged), elapsed(), None
@@ -2288,9 +2312,15 @@ def explain_infeasibility(
             ),
             checks,
         )
-    if formal_is_publishable:
-        # A publishable formal artifact is what a proof is built on top of, so this is
-        # where the deeper tier is attempted.  Either it closes and the run reaches
+    if formal_is_publishable and requested_mode == "proof":
+        # Both halves are load-bearing.  A publishable formal artifact is what a proof
+        # is built on top of; asking for proof depth is what makes building one this
+        # run's business.  Widening the first half without the second is what let a
+        # ``formal`` request whose narrative fell short reach this tier: the earlier
+        # return needs a complete narrative, so an incomplete one fell through to
+        # here, closed a proof, and produced an artifact deeper than the caller asked
+        # for -- which the delivery check rejects, turning a legal request into an
+        # exception.  Either it closes and the run reaches
         # the depth that was asked for, or it does not and the formal artifact is
         # published unchanged with a reason naming what fell short.
         from .proof import build_domain_proof, proof_facts_for_core

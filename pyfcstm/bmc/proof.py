@@ -111,29 +111,36 @@ def _record(status: str, started: bool, elapsed: float, reason: Optional[str]):
     return ProbeRecord(_PHASE_NAME, status, started, elapsed, reason)
 
 
-def _discharge_for(
+def _solver_verdict(
+    rule_id: str,
     premises: Sequence[_Node],
-    discharges: Optional[Mapping[str, Sequence[str]]],
+    verdicts: Optional[Mapping[str, Mapping[str, Sequence[str]]]],
 ) -> Optional[Tuple[str, ...]]:
-    """Return the members entailing this case's condition, or ``None``.
+    """Return the members a solver phase proved this candidate's side condition from.
 
-    The verdict is keyed by the member the case restates, so a premise standing for
-    more than one member has no single verdict to read and gets none -- reading the
-    first would attribute an entailment proved for one member to another.
+    The one seam for rules a predicate cannot settle.  A verdict is looked up by the
+    rule and then by the member the premise restates, so adding another such rule
+    means adding a table entry rather than another parameter to this signature.
 
+    A premise standing for more than one member gets no verdict.  Reading the first
+    would attribute an entailment proved about one member to another, and the citation
+    is the only record of where the side condition came from.
+
+    :param rule_id: The rule being proposed.
+    :type rule_id: str
     :param premises: The candidate's premises.
     :type premises: Sequence[_Node]
-    :param discharges: Verdicts from the solver phase, keyed by member id.
-    :type discharges: Optional[Mapping[str, Sequence[str]]]
-    :return: The cited member ids, or ``None`` when nothing discharged this one.
+    :param verdicts: Cited members per rule, keyed by rule id then by member id.
+    :type verdicts: Optional[Mapping[str, Mapping[str, Sequence[str]]]]
+    :return: The cited member ids, or ``None`` when nothing settled this candidate.
     :rtype: Optional[Tuple[str, ...]]
     """
-    if not discharges or len(premises) != 1:
+    if not verdicts or len(premises) != 1:
         return None
     owners = premises[0].item_ids
     if len(owners) != 1:
         return None
-    cited = discharges.get(owners[0])
+    cited = (verdicts.get(rule_id) or {}).get(owners[0])
     return None if cited is None else tuple(cited)
 
 
@@ -190,6 +197,13 @@ _VARIADIC_RULES = frozenset({"state_domain_exhaustion"})
 #: ``rule_checker`` describes it, while discharging a case's condition is a question
 #: about the members' constraints that the checker never sees.  Publishing
 #: ``rule_checker`` for it would name a checker that did not do the work.
+#:
+#: This table is the one place that knows a rule needs the solver, and it drives both
+#: halves of that: which candidates need a verdict before they may fire, and what the
+#: published node records.  The first shape of this took a parameter naming the one
+#: rule's verdicts, which meant the next such rule would take a second parameter --
+#: the contract reserves ``solver_entailment`` for derived and root steps in the
+#: plural, so there is expected to be a next one.
 _VERIFIED_BY = {"case_condition_entailment": "solver_entailment"}
 
 
@@ -218,7 +232,7 @@ def build_domain_proof(
     budget,
     member_ids: Optional[Sequence[str]] = None,
     state_names: Optional[Mapping[int, str]] = None,
-    condition_discharges: Optional[Mapping[str, Sequence[str]]] = None,
+    solver_verdicts: Optional[Mapping[str, Mapping[str, Sequence[str]]]] = None,
 ) -> Tuple[Optional[BmcConflictProof], Any]:
     """Search for a checked proof that these facts admit no execution.
 
@@ -322,11 +336,11 @@ def build_domain_proof(
                 )
             premises = [nodes[index] for index in premise_indices]
             cited: Tuple[str, ...] = ()
-            if rule_id == "case_condition_entailment":
-                # The syntax is the checker's business; whether the members entail
-                # the condition was settled by the solver before the search began,
-                # and a candidate with no verdict may not fire on shape alone.
-                verdict = _discharge_for(premises, condition_discharges)
+            if rule_id in _VERIFIED_BY:
+                # The syntax is the checker's business; a side condition a predicate
+                # cannot settle was settled by a solver phase before the search
+                # began, and a candidate with no verdict may not fire on shape alone.
+                verdict = _solver_verdict(rule_id, premises, solver_verdicts)
                 if verdict is None:
                     continue
                 cited = verdict

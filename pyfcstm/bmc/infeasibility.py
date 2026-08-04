@@ -2319,7 +2319,9 @@ def explain_infeasibility(
                 budget,
                 member_ids=member_ids,
                 state_names=state_names,
-                condition_discharges=discharges,
+                # Keyed by rule, so a second solver-decided rule joins the same
+                # argument instead of adding another one.
+                solver_verdicts={"case_condition_entailment": discharges},
             )
             checks = checks + (proof_record,)
         else:

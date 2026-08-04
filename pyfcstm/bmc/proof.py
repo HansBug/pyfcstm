@@ -207,7 +207,7 @@ _VARIADIC_RULES = frozenset({"state_domain_exhaustion"})
 #:
 #: It does not centralise everything about such a rule, and the claim here is
 #: deliberately narrow: ``_conclusion_for`` still dispatches on the rule id to build
-#: its conclusion, exactly as it does for the other nine.  How a rule's conclusion is
+#: its conclusion, exactly as it does for every other rule.  How a rule's conclusion is
 #: shaped is rule-specific work that belongs there; whether a predicate can settle it
 #: is what belongs here.
 _VERIFIED_BY = {

@@ -1968,3 +1968,54 @@ def test_the_same_query_publishes_the_same_proof_every_time(query: str) -> None:
         )
 
     assert len(shapes) == 1, "the proof differed between runs of one query"
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "contradicted_frame, bound, expected_mode, expected_carries",
+    [(2, 2, "proof", 1), (3, 3, "formal", 0), (4, 4, "formal", 0)],
+    ids=["one_step_away", "two_steps_away", "three_steps_away"],
+)
+def test_a_value_carries_across_one_untouched_step_and_no_further(
+    contradicted_frame: int, bound: int, expected_mode: str, expected_carries: int
+) -> None:
+    """The reach of the carry, pinned on both sides of its own boundary.
+
+    The rule that pins a value at the preceding frame concludes into a derived node,
+    and the citation seam records a verdict per member, so that conclusion cannot be
+    the premise of a second application: there is no member to record the verdict
+    against.  One step closes and two do not, and both halves are asserted here
+    because the degradation alone would be satisfied by the rule never firing at all.
+
+    Iterating would mean attributing an entailment to a subtree rather than to a
+    member, which is the shape the attribution refuses on purpose.  So this is a
+    boundary to know rather than a defect to fix, and it is written down where a
+    reader meets it.
+
+    :param contradicted_frame: The frame the contradicted assumption sits at.
+    :type contradicted_frame: int
+    :param bound: The query's bound.
+    :type bound: int
+    :param expected_mode: The depth this shape is expected to reach.
+    :type expected_mode: str
+    :param expected_carries: How many carry steps the proof is expected to hold.
+    :type expected_carries: int
+    """
+    explanation = _explain_during_model(
+        'init state("Uploader.Idle") where retries == 0;\n'
+        'assume at 1: active("Uploader.Retrying");\n'
+        'assume at %d: var("retries") == 0;\n'
+        'check reach <= %d: active("Uploader.GaveUp");\n' % (contradicted_frame, bound)
+    ).explanation
+
+    assert explanation.achieved_mode == expected_mode
+    carried = [
+        node
+        for node in (explanation.proof.nodes if explanation.proof else ())
+        if node.rule_id == "preceding_value_entailment"
+    ]
+
+    assert len(carried) == expected_carries
+    if expected_mode == "formal":
+        assert explanation.proof is None
+        assert "no rule in the catalog closes this core" in explanation.reason

@@ -1460,3 +1460,37 @@ def test_the_unit_pairing_is_a_structural_gate_and_the_ordering_is_not() -> None
     for label, payload, schema_ok, ctor_ok in cases:
         assert accepted(payload) is schema_ok, label
         assert constructed(payload) is ctor_ok, label
+
+
+@pytest.mark.unittest
+def test_the_refinement_ledger_publishes_every_phase_name_the_package_can_emit() -> (
+    None
+):
+    """The schema's phase names cover the package's, at the declaration.
+
+    Not an entry in :data:`_MIRRORED_ENUMS`, and the reason is the shape rather than
+    the importance: the package holds these as a set, so there is no order to mirror
+    and the exact-tuple comparison that table performs cannot express the claim.
+
+    The claim itself is the one that was missing.  A phase added to the package and
+    not to this enum makes ``pyfcstm bmc --json`` stop validating against the schema
+    this repository publishes for it, and every other gate stays green: the vocabulary
+    is not a ``Literal`` any constructor checks, the docs gate reads the rule tables
+    rather than this one, and no test fed a document containing the new phase to the
+    schema.  The narrowed branch below it may list fewer -- a scope where only some
+    phases occur is stricter, not inconsistent -- so only the declaration is required
+    to cover.
+    """
+    from pyfcstm.bmc.witness import _FEASIBILITY_REFINEMENT_NAMES
+
+    schema = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
+    declared = set(schema["$defs"]["refinementCheck"]["properties"]["name"]["enum"])
+
+    assert set(_FEASIBILITY_REFINEMENT_NAMES) == declared, (
+        "package emits %s the schema does not declare; schema declares %s the package "
+        "cannot emit"
+        % (
+            sorted(set(_FEASIBILITY_REFINEMENT_NAMES) - declared),
+            sorted(declared - set(_FEASIBILITY_REFINEMENT_NAMES)),
+        )
+    )

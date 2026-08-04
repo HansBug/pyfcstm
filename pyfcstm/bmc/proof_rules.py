@@ -661,6 +661,23 @@ def _preceding_value_entailment(application: RuleApplication) -> bool:
     about a different value, and a rule that let the value move as well could conclude
     anything about the earlier frame and call it carried.
 
+    Earlier rather than later, and the reason is where the shapes this was added for
+    put their assumption, not a restriction on which way a value may travel.  The
+    citation seam records a verdict per member, so a premise has to stand for exactly
+    one -- which rules out a premise that is itself derived, in either direction.  On
+    these shapes the value a single member states sits at the later frame while the
+    forward chain derives the earlier one, so this is the direction that meets the
+    chain.  A model stating its value at the earlier frame would want the mirror of
+    this rule, and the seam would permit it just as readily.
+
+    One step, and only one.  This rule's own conclusion is a derived node, so it
+    cannot be the premise of a second application -- the seam has no member to record
+    a verdict against.  A contradiction two or more untouched steps away from the
+    value that states it therefore stays at ``formal`` depth, which is the honest
+    answer rather than a chain the citation could not account for.  Iterating would
+    mean attributing a verdict to a subtree instead of a member, and that is the
+    fail-open shape the attribution was built to refuse.
+
     :param application: The step to check.
     :type application: RuleApplication
     :return: ``True`` when the conclusion is the premise one frame earlier.

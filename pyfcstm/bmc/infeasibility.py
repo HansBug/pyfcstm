@@ -1619,16 +1619,18 @@ def _entailment_prover(members, budget: _SolveBudget):
     def discharge_target(target: Any) -> Optional[Tuple[str, ...]]:
         """Return the members that entail one target, or ``None`` when none do.
 
-            Three steps rather than one, because "the members entail this" is not yet
-            informative: the antecedent is a minimal unsat core, so it entails anything,
-            and the shrink plus the consistency guard are what turn the answer into a
-            claim about the target.  They are named together because they are one concept, and
-        two phases now ask it: a case's own condition, and a value a later frame pins.
+        Three steps rather than one, because "the members entail this" is not yet
+        informative: the antecedent is a minimal unsat core, so it entails anything,
+        and the shrink plus the consistency guard are what turn the answer into a
+        claim about the target.  They are named together because they are one
+        concept, and two phases now ask it: a case's own condition, and a value a
+        neighbouring frame pins.
 
-            :param target: The constraint to prove from the members.
-            :return: The member ids to cite, or ``None`` when the target is not
-                established non-vacuously.
-            :rtype: Optional[Tuple[str, ...]]
+        :param target: The constraint to prove from the members.
+        :type target: z3.BoolRef
+        :return: The member ids to cite, or ``None`` when the target is not
+            established non-vacuously.
+        :rtype: Optional[Tuple[str, ...]]
         """
         if not entailed([claim for _, claim in members], target):
             return None
@@ -1796,12 +1798,23 @@ def check_value_carries(
     stops one frame short of the assumption it contradicts.
 
     What the step does do is constrain, and a constraint is what this phase can ask
-    about.  The direction is backwards on purpose.  Carrying a derived value *forward*
-    would make the premise a derived node, and a derived node stands for however many
-    members its subtree used, which the citation seam refuses -- reading the first of
-    several would attribute an entailment proved about one member to another.  A value
-    an assumption states is one member, so the question "what does this force at the
-    previous frame" has an answer the seam can record.
+    about.  The premise has to be a value a single member states, because the citation
+    seam records a verdict per member and reading the first of several would attribute
+    an entailment proved about one member to another.  That rules out a premise the
+    search derived, whichever frame it would carry to.
+
+    Backwards is therefore about where these shapes put their assumption rather than
+    about direction being privileged: the value one member states sits at the later
+    frame, and the forward chain derives the earlier one, so asking what the members
+    force at the *previous* frame is what meets the chain.  A model stating its value
+    at the earlier frame would want the mirror of this, and the seam would record it
+    just as readily.
+
+    The reach is one step.  What this phase publishes becomes a derived node, and a
+    derived node cannot be the premise of another entailment, so a contradiction two
+    or more untouched steps from the value that states it is not closed here.  The
+    explanation stays at ``formal`` depth for it, and the reason names the catalog
+    rather than pretending the shape is unrecognised.
 
     The step relation alone does not answer it.  It holds every case the step could
     take, so on its own it permits the ones that change the variable; the case has to

@@ -2821,6 +2821,7 @@
             "value_propagation",
             "core_binding",
             "case_condition",
+            "value_carry",
             "proof_construction"
           ]
         },
@@ -2886,6 +2887,7 @@
                   "value_propagation",
                   "core_binding",
                   "case_condition",
+                  "value_carry",
                   "proof_construction"
                 ]
               },

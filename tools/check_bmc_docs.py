@@ -264,7 +264,7 @@ _EXPLANATION_VOCABULARY: Dict[str, Tuple[str, ...]] = {
 #: Vocabularies that must be tabulated together rather than mentioned apart.
 #:
 #: A reader looking up one ``rule_id`` needs to see the others to know the list
-#: is closed; nine names scattered over nine sections do not answer that.  The
+#: is closed; the names scattered over as many sections do not answer that.  The
 #: window is a single contiguous run of non-blank lines, which is what a reST
 #: table or definition list is.
 _TABULATED_VOCABULARY: Dict[str, Tuple[Tuple[str, ...], ...]] = {
@@ -277,10 +277,12 @@ _TABULATED_VOCABULARY: Dict[str, Tuple[Tuple[str, ...], ...]] = {
 
 #: Rules the reference page must mark as currently unreachable.
 #:
-#: Three of the nine are part of the closed vocabulary a consumer has to accept
-#: while no query reaches them.  Listing all nine without saying which is which
-#: reads as nine available readings, so a reader who picks ``proof`` depth for one
-#: of these three is surprised by a degraded result.  The measured ratio belongs to
+#: An unreachable rule is part of the closed vocabulary a consumer has to accept
+#: while no query reaches it.  Listing the catalog without saying which entries those
+#: are reads as though every entry were an available reading, so a reader who picks
+#: ``proof`` depth for one of them is surprised by a degraded result.  The set is
+#: empty as this stands, and the check below is what keeps the page honest if it
+#: stops being.  The measured ratio belongs to
 #: the benchmark corpus rather than to a reference page, but *which* rules are
 #: unreachable is a user-facing fact, and it is the kind that goes stale quietly.
 #:
@@ -960,7 +962,8 @@ def _check_rule_reachability(errors: List[str]) -> None:
                 continue
             errors.append(
                 "%s does not mark %s unreachable in its own table row, so the "
-                "catalog reads as nine available readings." % (label, rule)
+                "catalog reads as %d available readings."
+                % (label, rule, len(_PROOF_RULE_IDS))
             )
 
 
@@ -1075,7 +1078,7 @@ def _numeral_forms(value: int, label: str) -> Tuple[str, ...]:
 #: ``no`` on every table row, and once as a numeral in the paragraph above the
 #: table.  Only the rows were checked, so raising the reachable count from five
 #: to six left ``Four rules are not`` standing beside a table with three -- the
-#: two halves of one nine-way split contradicting each other fifty lines apart,
+#: two halves of one reachability split contradicting each other fifty lines apart,
 #: in both languages.
 _UNREACHABLE_COUNT_PROSE: Dict[str, Tuple[str, str]] = {
     # Two spellings per language, because a count of zero is not the same sentence
@@ -1187,7 +1190,7 @@ def _check_rule_partition_prose(errors: List[str]) -> None:
     """Confirm the explanation page's rule counts match the rule catalog.
 
     The reference page's table and the explanation page's paragraph describe the
-    same nine-way split, so both can go stale from one change to the catalog and
+    same reachability split, so both can go stale from one change to the catalog and
     a check on either one alone proves nothing about the other.  This one reads
     the paragraph that names both halves at once -- how many rules exist and how
     many never fire -- and compares each numeral with the transcribed catalog.

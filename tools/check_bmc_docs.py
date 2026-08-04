@@ -9,7 +9,7 @@ import json
 import re
 import textwrap
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -1086,6 +1086,93 @@ def _check_rule_partition_prose(errors: List[str]) -> None:
             )
 
 
+def _check_benchmark_report_claim(errors: List[str]) -> None:
+    """Confirm what the page says the checked-in benchmark report records.
+
+    The page sends a reader to that report for the measured ratio, so the number
+    it quotes has to be the report's own.  Raising the reachable count to six
+    made the sentence claim six where the checked-in run records five: the run
+    was measured before the sixth rule became reachable, and a reader following
+    the pointer would have found a report disagreeing with the page that sent
+    them there.  The corpus does reach the sixth at this revision -- the report
+    is what predates it.
+
+    Counted over every checked-in run, since any of them is a report a reader can
+    open.  Re-measuring the corpus will move the number here, and the sentence
+    then has to move with it.
+
+    :param errors: Accumulator the caller raises from.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    runs = sorted(
+        (_REPO_ROOT / "benchmarks/bmc/infeasibility/outputs/runs").glob(
+            "*/summary.json"
+        )
+    )
+    if not runs:
+        errors.append(
+            "no checked-in benchmark run remains under "
+            "benchmarks/bmc/infeasibility/outputs/runs, so the reference page "
+            "sends a reader to a report that is not there."
+        )
+        return
+    recorded = set()
+    for run in runs:
+        try:
+            summary = json.loads(run.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as err:
+            # OSError: unreadable file.  ValueError: json.JSONDecodeError, the run
+            # was truncated or hand-edited, so its rule list cannot be trusted.
+            errors.append("cannot read the benchmark run %s: %s" % (run, err))
+            return
+        recorded.update(_recorded_rule_ids(summary))
+    patterns = {
+        "reference/bmc_results/index.rst": r"it records ([A-Za-z]+) of them",
+        "reference/bmc_results/index_zh.rst": (
+            r"只记录其中(%s)条" % _CHINESE_NUMERAL_CLASS
+        ),
+    }
+    for label, path in _prose_pages("reference/bmc_results/index"):
+        found = re.search(patterns[label], _visible_text(path))
+        if found is None:
+            errors.append(
+                "%s does not say how many rules the checked-in benchmark report "
+                "records, so its own reachable count reads as that report's." % label
+            )
+            continue
+        if found.group(1) not in _numeral_forms(len(recorded), label):
+            errors.append(
+                "%s says the checked-in report records %s rules while it records "
+                "%d: %s." % (label, found.group(1), len(recorded), sorted(recorded))
+            )
+
+
+def _recorded_rule_ids(summary: Any) -> set:
+    """Return every ``rule_id`` a benchmark summary records, at any depth.
+
+    The summary nests per-arm and per-case objects, and the key appears at more
+    than one level, so the search is structural rather than a fixed path.
+
+    :param summary: Parsed ``summary.json`` content.
+    :type summary: Any
+    :return: The rule ids found anywhere inside it.
+    :rtype: set
+    """
+    found = set()
+    if isinstance(summary, dict):
+        for key, value in summary.items():
+            if key == "proof_rule_ids" and isinstance(value, list):
+                found.update(item for item in value if isinstance(item, str))
+            else:
+                found.update(_recorded_rule_ids(value))
+    elif isinstance(summary, list):
+        for item in summary:
+            found.update(_recorded_rule_ids(item))
+    return found
+
+
 def _check_verification_method_count(errors: List[str]) -> None:
     """Confirm the explanation page counts the methods that carry work.
 
@@ -1363,6 +1450,7 @@ def check() -> None:
     _check_rule_partition_prose(errors)
     _check_translated_kind_count(errors)
     _check_verification_method_count(errors)
+    _check_benchmark_report_claim(errors)
     if errors:
         raise CheckFailure("BMC documentation check failed:\n" + "\n".join(errors))
 

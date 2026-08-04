@@ -744,8 +744,11 @@ member and the single contradiction root.  A consumer still has to accept
 
 The six reachable rules are exercised by the checked-in benchmark corpus under
 ``benchmarks/bmc/infeasibility/cases/handwritten/``, and its report records which
-case produced which rule.  Read the measured ratio there rather than from this
-page: it is a property of that corpus at a given revision, not of the tool.
+case produced which rule.  The checked-in report was measured before
+``boolean_complement`` became reachable, so it records five of them; the case that
+reaches the sixth is ``event_conflict.fbmcq``, in the same corpus.  Read the
+measured ratio there rather than from this page: it is a property of that corpus
+at a given revision, not of the tool.
 
 ``verification_method`` says who agreed with the step, and the division is the
 proof's trust boundary rather than a label:

@@ -289,11 +289,11 @@ This object is passed into every abstract hook.
 
 Fields:
 
-- `state_path`: owning action state path as `Tuple[str, ...]`
+- `state_path`: state path that owns the executing action, as `Tuple[str, ...]`. A leaf for leaf lifecycle actions and for ancestor aspect actions; entering or leaving a composite state, or a plain `during` action declared on one, gives that composite state's own path
 - `vars`: snapshot dictionary of persistent variables
 - `action_name`: resolved abstract target action path
 - `action_stage`: lifecycle callsite stage string
-- `active_leaf`: active leaf state path; aspect hooks use the active leaf, while direct hooks and refs use the callsite owner path unless a leaf path is supplied by runtime dispatch
+- `active_leaf`: runtime state path where the action executes — the active leaf state when one is active, otherwise the action's host state path. Aspect hooks run for a descendant leaf's cycle and so report that leaf; entering or leaving a composite state has no active leaf and reports the host path
 - `call_stage`: explicit lifecycle callsite stage, equal to `action_stage`
 - `abstract_target`: resolved abstract target action path, equal to `action_name` for abstract hooks
 - `named_ref`: named ref callsite path, or `None` for anonymous refs and direct abstract actions

@@ -289,7 +289,7 @@ the intended omission clearer.
 | Stage | `stage="enter"`, `stage="during"`, or `stage="exit"` | Lifecycle stage |
 | Role | `role="state_enter"`, `role="state_exit"`, `role="leaf_during"`, `role="plain_during_before"`, `role="plain_during_after"`, `role="aspect_during_before"`, `role="aspect_during_after"`, or `role="transition_effect"` | Exact supplied runtime call role |
 | State | `state="Root.A"` | State path associated with the call |
-| Active leaf | `active_leaf="Root.A.Leaf"` | Active leaf at the call |
+| Active leaf | `active_leaf="Root.A.Leaf"` | Runtime state path at the call: the active leaf state when one is active, otherwise the call's host state path. Entering or leaving a composite state has no active leaf, so it matches the host path there |
 | Named reference | `named_ref="Root.A.Ref"` or `named_ref=null` | Exact named reference callsite or explicitly no named reference |
 | Snapshot | `where x >= 0 && var("y") < 10` | Call-time persistent-variable condition |
 

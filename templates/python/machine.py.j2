@@ -225,7 +225,11 @@ class ReadOnlyExecutionContext:
     """
     Read-only execution context passed to abstract handlers.
 
-    :param state_path: Owning action state path.
+    :param state_path: State path that owns the executing action. A leaf for
+        leaf lifecycle actions and for ancestor aspect actions, which run
+        for a descendant leaf's cycle; entering or leaving a composite
+        state, or running a plain ``during`` action declared on one, gives
+        that composite state's own path.
     :type state_path: Tuple[str, ...]
     :param vars: Snapshot of machine variables.
     :type vars: Mapping[str, Number]
@@ -233,7 +237,9 @@ class ReadOnlyExecutionContext:
     :type action_name: str
     :param action_stage: Lifecycle callsite stage.
     :type action_stage: str
-    :param active_leaf: Current active leaf path, defaults to ``state_path``.
+    :param active_leaf: Runtime state path where the action executes: the
+        active leaf state when one is active, otherwise the action's host
+        state path. Defaults to ``state_path``, which is the host path.
     :type active_leaf: Tuple[str, ...], optional
     :param call_stage: Explicit callsite lifecycle stage, defaults to
         ``action_stage``.

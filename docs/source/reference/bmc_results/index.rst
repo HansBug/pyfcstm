@@ -657,7 +657,11 @@ are not replay inputs.
 
 Each abstract call record has ``ordinal``, ``action_name``, ``stage``, ``role``,
 ``state``, ``active_leaf``, nullable ``named_ref``, and pre-call variable
-``snapshot``.  The CLI records these calls during replay but supplies no user
+``snapshot``.  ``active_leaf`` is the runtime state path where the call
+executed: the active leaf state when one is active, otherwise the call's host
+state path.  Entering or leaving a composite state, or running a plain
+``during`` action declared on one, has no active leaf, so ``active_leaf``
+equals ``state`` there.  The CLI records these calls during replay but supplies no user
 handler behavior.  JSON-stable maps permit null, booleans, finite numbers,
 strings, arrays, and nested string-keyed objects; non-finite numbers and raw
 Python/Z3 objects are not public JSON values.  The schema's reusable

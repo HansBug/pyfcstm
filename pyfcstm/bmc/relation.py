@@ -139,9 +139,11 @@ class BmcAbstractCallRecord:
     :type stage: str
     :param role: Runtime role that produced the call.
     :type role: str
-    :param state_path: Runtime public state path approximation.
+    :param state_path: Host state path passed to the handler context.
     :type state_path: str
-    :param active_leaf_path: Runtime active leaf approximation.
+    :param active_leaf_path: Runtime state path where the call executed:
+        the innermost non-pseudo leaf on the frontier stack when one is
+        active, otherwise the host state path.
     :type active_leaf_path: str
     :param named_ref: Named reference callsite, defaults to ``None``.
     :type named_ref: str, optional

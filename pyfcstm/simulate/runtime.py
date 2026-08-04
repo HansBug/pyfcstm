@@ -1826,8 +1826,9 @@ class SimulationRuntime:
         :param execution_state_path: Current execution location for handler
             context. Defaults to the action owner state path.
         :type execution_state_path: Optional[Tuple[str, ...]]
-        :param active_leaf_path: Active leaf path for context metadata. Defaults
-            to ``execution_state_path``.
+        :param active_leaf_path: Runtime state path recorded in the context --
+            the active leaf state when one is active, otherwise the host state
+            path. Defaults to ``execution_state_path``.
         :type active_leaf_path: Optional[Tuple[str, ...]]
         :return: ``None``.
         :rtype: None

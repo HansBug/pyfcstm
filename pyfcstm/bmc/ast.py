@@ -762,7 +762,11 @@ class CallFilter:
     :type role: str, optional
     :param state: Runtime public state path filter.
     :type state: str, optional
-    :param active_leaf: Runtime active leaf path filter.
+    :param active_leaf: Filter on the runtime state path where the call
+        executed: the innermost non-pseudo leaf on the frontier stack when
+        one is active, otherwise the call's host state path. Entering or
+        leaving a composite state has no active leaf, so this filter
+        matches the host path there.
     :type active_leaf: str, optional
     :param named_ref: Named-ref callsite path filter, defaults to ``None``.
     :type named_ref: str, optional

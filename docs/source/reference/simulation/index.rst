@@ -244,6 +244,9 @@ Python runtime API
    * - ``ReadOnlyExecutionContext``
      - Immutable handler context exposing state path, variable snapshot,
        action metadata, active leaf, abstract target, and named-ref metadata.
+       ``active_leaf`` is the runtime state path where the action executes: the
+       active leaf state when one is active, otherwise the action's host state
+       path, which is what entering a composite state reports.
    * - ``abstract_handler(action_path)``
      - Decorator that marks object methods for bulk handler registration.
 

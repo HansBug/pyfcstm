@@ -568,7 +568,9 @@ BMC 原子及上下文合法性
      - 公开运行时状态路径。
    * - 活跃叶状态
      - ``active_leaf=STRING``
-     - 调用时的公开活跃叶状态路径。
+     - 调用执行时的运行时状态路径：存在活跃叶状态时为该叶状态，否则为该调用的
+       宿主状态路径。进入或离开复合状态、以及执行声明在复合状态上的普通
+       ``during`` 动作时不存在活跃叶状态，此时匹配宿主状态路径。
    * - 具名引用
      - ``named_ref=STRING`` 或 ``named_ref=null``
      - 已存在的具名 ref 调用点，或明确要求不存在具名 ref。
@@ -593,6 +595,37 @@ BMC 原子及上下文合法性
        called(action="Root.Library.Shared", step=-2..+0,
               state="Root.A", active_leaf="Root.A",
               named_ref="Root.A.FirstRef", where x >= 0 && var("y") < 10);
+
+进入复合状态时不存在活跃叶状态，此时 ``active_leaf`` 是宿主状态路径而非叶状态。
+对下面这个模型，复合状态 ``Root`` 上的 ``enter ref`` 记录的是 ``state="Root"``
+与 ``active_leaf="Root"``，尽管模型里唯一的叶状态是 ``Root.Inner.Leaf``：
+
+.. code-block:: fcstm
+
+   def int a = 0;
+
+   state Root
+   {
+       [*]->Inner;
+       Inner->[*];
+
+       enter ref Inner.act;
+
+       state Inner
+       {
+           [*]->Leaf;
+           Leaf->[*];
+
+           enter abstract act;
+
+           state Leaf;
+       }
+   }
+
+.. code-block:: fbmcq
+
+   check reach <= 2:
+       called("Root.Inner.act", step=0, state="Root", active_leaf="Root");
 
 空过滤器合法：``called()`` 查询当前锚点是否发生过任意抽象调用，
 ``call_count(step=*)`` 统计整个有界轨迹中的所有已记录调用。匿名 abstract block

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pathlib
 from dataclasses import replace
 
 import pytest
@@ -10,6 +11,7 @@ from hbutils.testing import TextAligner
 from pyfcstm.bmc import (
     BmcBuildError,
     BmcEngine,
+    UnsupportedBmcQuery,
     build_bmc_core_formula,
     compile_bmc_property,
 )
@@ -1058,3 +1060,322 @@ def test_replay_reports_state_and_termination_mismatches() -> None:
         """,
         replay.to_text(show_legend=False),
     )
+
+
+def _replay_active_leaves(dsl_text: str, query_text: str):
+    """Replay a witness and return the two sides' ``active_leaf`` sequences.
+
+    :param dsl_text: FCSTM source of the model under test.
+    :type dsl_text: str
+    :param query_text: FBMCQ query text driving the search.
+    :type query_text: str
+    :return: The replay result, the witness-side calls and the runtime-side ones.
+    :rtype: Tuple[BmcReplayResult, Tuple[BmcWitnessCallRecord, ...], tuple]
+    """
+    model, trace = _trace(dsl_text, query_text)
+    replay = replay_bmc_witness(model, trace)
+    witness_calls = tuple(call for step in trace.steps for call in step.abstract_calls)
+    runtime_calls = tuple(
+        call for step in replay.runtime_trace.steps for call in step.abstract_calls
+    )
+    return replay, witness_calls, runtime_calls
+
+
+_TERMINATES = "check reach <= 2: terminated();"
+
+# A `ref` on a composite host, pointing at a named abstract action declared in a
+# child. `_active_leaf_path` has no leaf on the stack while `Root` is being
+# entered, so it falls back -- and the fallback used to read the `owner` a `ref`
+# had already redirected to the declaring state. See issue #430.
+_COMPOSITE_ENTER_REF = """
+def int a = 0;
+state Root {
+    [*] -> Inner;
+    Inner -> [*];
+    enter ref Inner.act;
+    state Inner {
+        [*] -> Leaf;
+        Leaf -> [*];
+        enter abstract act;
+        state Leaf;
+    }
+}
+"""
+
+_COMPOSITE_EXIT_REF = """
+def int a = 0;
+state Root {
+    [*] -> Inner;
+    Inner -> [*];
+    exit abstract teardown;
+    state Inner {
+        [*] -> Leaf;
+        Leaf -> [*];
+        exit ref /teardown;
+        state Leaf;
+    }
+}
+"""
+
+
+# `during before` / `during after` written without `>>` belong to the composite
+# state itself, so they are recorded before any child leaf is on the stack. The
+# `>>` aspect form runs for a descendant leaf's cycle and therefore never
+# reaches the fallback -- that difference is why these cases cannot be replaced
+# by an aspect model.
+def _plain_during_ref(position: str) -> str:
+    return (
+        """
+def int a = 0;
+state Root {
+    [*] -> Parent;
+    Parent -> [*];
+    state Library {
+        [*] -> LL;
+        LL -> [*];
+        state LL { during abstract Shared; }
+    }
+    state Parent {
+        [*] -> Leaf;
+        Leaf -> [*];
+        during %s ref /Library.LL.Shared;
+        state Leaf;
+    }
+}
+"""
+        % position
+    )
+
+
+# The host is itself a leaf, so the stack has it and the main path returns it.
+# Four of the conditions in issue #430 hold here and it still aligns, which is
+# why the condition is "no non-pseudo leaf on the stack" and not "enter/exit".
+_LEAF_HOST_REF = """
+def int a = 0;
+state Root {
+    [*] -> L;
+    L -> [*];
+    enter abstract act;
+    state L { enter ref /act; }
+}
+"""
+
+# `>> during before` on two ancestors: recorded while the descendant leaf is on
+# the stack, so both sides take the main path and read that leaf.
+# `>> during before` on an ancestor: recorded while a descendant leaf is on the
+# stack, so both sides take the main path of `_active_leaf_path`.
+#
+# This case cannot fail if the main path is deleted, and no case can: at the
+# moment a block is recorded, the innermost non-pseudo leaf on the stack and the
+# host state are the same state, so the two branches never disagree. A witness
+# scan over the whole corpus finds `state == active_leaf` on every call (13 of
+# 13). The main path is therefore unobservable through the public JSON, and this
+# case pins the recorded value, not the branch that produced it.
+_ASPECT_DURING_REF = """
+def int a = 0;
+state Root {
+    [*] -> Parent;
+    Parent -> [*];
+    state Library {
+        [*] -> LL;
+        LL -> [*];
+        state LL { during abstract Shared; }
+    }
+    state Parent {
+        [*] -> Leaf;
+        Leaf -> [*];
+        >> during before ref /Library.LL.Shared;
+        state Leaf;
+    }
+}
+"""
+
+# A composite host with a plain `during before abstract` -- the fallback branch
+# again, but no `ref`, so `owner` is never redirected and the fallback value is
+# already the host. This is the half of the fallback that was always correct.
+_COMPOSITE_DURING_NO_REF = """
+def int a = 0;
+state Root {
+    [*] -> Parent;
+    Parent -> [*];
+    state Parent {
+        [*] -> Leaf;
+        Leaf -> [*];
+        during before abstract mock;
+        state Leaf;
+    }
+}
+"""
+
+
+def test_composite_host_enter_ref_records_the_host_as_active_leaf() -> None:
+    """A `ref` entered on a composite host reports the host, not the declarer."""
+    replay, witness_calls, runtime_calls = _replay_active_leaves(
+        _COMPOSITE_ENTER_REF, _TERMINATES
+    )
+
+    assert replay.ok is True, [item.to_canonical() for item in replay.mismatches]
+    # The first call is the host's `ref`; `Root` is composite, so a witness that
+    # said `Root.Inner` here is exactly the defect issue #430 reports.
+    assert [call.active_leaf for call in witness_calls] == ["Root", "Root.Inner"]
+    assert [call.active_leaf for call in runtime_calls] == ["Root", "Root.Inner"]
+    assert [call.state for call in witness_calls] == ["Root", "Root.Inner"]
+
+
+def test_composite_host_exit_ref_records_the_host_as_active_leaf() -> None:
+    """The exit direction reports the host too, with the ref pointing outward."""
+    replay, witness_calls, runtime_calls = _replay_active_leaves(
+        _COMPOSITE_EXIT_REF, _TERMINATES
+    )
+
+    assert replay.ok is True, [item.to_canonical() for item in replay.mismatches]
+    leaves = [call.active_leaf for call in witness_calls]
+    assert leaves == [call.active_leaf for call in runtime_calls]
+    # `Root.Inner` exits first and refers outward to `/teardown` on `Root`; the
+    # recorded path must stay the host `Root.Inner`, never the declarer `Root`.
+    assert "Root.Inner" in leaves
+    assert all(leaf in {"Root", "Root.Inner"} for leaf in leaves)
+
+
+@pytest.mark.parametrize("position", ["before", "after"])
+def test_plain_during_ref_on_composite_host_records_the_host(position) -> None:
+    """A plain `during` ref on a composite host reaches the same fallback."""
+    replay, witness_calls, runtime_calls = _replay_active_leaves(
+        _plain_during_ref(position), _TERMINATES
+    )
+
+    assert replay.ok is True, [item.to_canonical() for item in replay.mismatches]
+    shared = [
+        call for call in witness_calls if call.action_name == "Root.Library.LL.Shared"
+    ]
+    assert shared, [call.action_name for call in witness_calls]
+    assert [call.active_leaf for call in shared] == ["Root.Parent"] * len(shared)
+    assert [call.role for call in shared] == ["plain_during_%s" % position] * len(
+        shared
+    )
+    assert [call.active_leaf for call in witness_calls] == [
+        call.active_leaf for call in runtime_calls
+    ]
+
+
+def test_leaf_host_ref_takes_the_stack_leaf_which_is_the_host() -> None:
+    """A cross-state ref whose host is a leaf aligned before the fix too.
+
+    This pins the boundary of the defect: four of the conditions in issue #430
+    hold and it still aligned before the fix, because the host is on the stack.
+    """
+    replay, witness_calls, runtime_calls = _replay_active_leaves(
+        _LEAF_HOST_REF, _TERMINATES
+    )
+
+    assert replay.ok is True, [item.to_canonical() for item in replay.mismatches]
+    assert [call.active_leaf for call in witness_calls] == ["Root", "Root.L"]
+    assert [call.active_leaf for call in runtime_calls] == ["Root", "Root.L"]
+
+
+def test_aspect_during_ref_takes_the_descendant_leaf() -> None:
+    """An aspect ref runs for a leaf's cycle, so both sides read that leaf.
+
+    Pins the recorded value, not the branch: see the note above
+    `_ASPECT_DURING_REF` for why no witness-level case can distinguish
+    `_active_leaf_path`'s two branches.
+    """
+    replay, witness_calls, runtime_calls = _replay_active_leaves(
+        _ASPECT_DURING_REF, _TERMINATES
+    )
+
+    assert replay.ok is True, [item.to_canonical() for item in replay.mismatches]
+    shared = [
+        call for call in witness_calls if call.action_name == "Root.Library.LL.Shared"
+    ]
+    assert shared, [call.action_name for call in witness_calls]
+    assert [call.active_leaf for call in shared] == ["Root.Parent.Leaf"] * len(shared)
+    assert [call.role for call in shared] == ["aspect_during_before"] * len(shared)
+    assert [call.active_leaf for call in witness_calls] == [
+        call.active_leaf for call in runtime_calls
+    ]
+
+
+def test_composite_during_without_ref_falls_back_to_its_own_host() -> None:
+    """The fallback is only wrong when a `ref` has redirected the owner."""
+    replay, witness_calls, runtime_calls = _replay_active_leaves(
+        _COMPOSITE_DURING_NO_REF, _TERMINATES
+    )
+
+    assert replay.ok is True, [item.to_canonical() for item in replay.mismatches]
+    mock = [call for call in witness_calls if call.action_name == "Root.Parent.mock"]
+    assert mock, [call.action_name for call in witness_calls]
+    # No `ref`, so `owner` is the host and the fallback value is already right.
+    assert [call.active_leaf for call in mock] == ["Root.Parent"] * len(mock)
+    assert [call.active_leaf for call in witness_calls] == [
+        call.active_leaf for call in runtime_calls
+    ]
+
+
+def test_active_leaf_matches_the_runtime_across_the_sample_corpus() -> None:
+    """Every recorded ``active_leaf`` agrees with the runtime, corpus-wide.
+
+    The six cases above pin named shapes. This one pins the field's contract
+    over whatever the checked-in corpus happens to contain, so a future path
+    that writes some third value -- neither the active leaf nor the host -- is
+    caught even if no named case covers its shape.
+
+    The oracle is the replay trace: ``SimulationRuntime`` computes the path from
+    the real execution stack, which is the reference semantics the repository
+    already treats as authoritative.
+    """
+    corpus = pathlib.Path(__file__).resolve().parents[1] / "testfile" / "sample_codes"
+    sources = sorted(corpus.glob("*.fcstm"))
+    assert sources, "the sample corpus should not be empty"
+
+    # `dlc1.fcstm` shifts by a variable amount, which the core lowering does not
+    # support. A model that compiles no core carries no witness and so no
+    # recorded call to check.
+    expected_skips = {"dlc1.fcstm"}
+    skipped: list = []
+    compared = 0
+    checked_models = 0
+    for source in sources:
+        try:
+            model = load_state_machine_from_text(source.read_text(encoding="utf-8"))
+            formula = compile_bmc_property(
+                build_bmc_core_formula(
+                    BmcEngine(model).prepare("check reach <= 3: terminated();")
+                )
+            )
+        except UnsupportedBmcQuery:
+            # Only the models known to compile no core are allowed to drop out,
+            # and the set is asserted below. Catching the class alone would let
+            # any future lowering regression turn this scan into a silent skip:
+            # `dlc3.fcstm` contributes a single call, so losing it still clears
+            # both floors.
+            skipped.append(source.name)
+            continue
+        result = solve_bmc_property(formula)
+        if result.status != "sat":
+            continue
+        checked_models += 1
+        trace = decode_bmc_witness(formula, result.model)
+        replay = replay_bmc_witness(model, trace)
+        assert replay.ok is True, (
+            source.name,
+            [item.to_canonical() for item in replay.mismatches],
+        )
+        for witness_step, runtime_step in zip(trace.steps, replay.runtime_trace.steps):
+            assert len(witness_step.abstract_calls) == len(
+                runtime_step.abstract_calls
+            ), source.name
+            for witness_call, runtime_call in zip(
+                witness_step.abstract_calls, runtime_step.abstract_calls
+            ):
+                assert witness_call.active_leaf == runtime_call.active_leaf, (
+                    source.name,
+                    witness_call.action_name,
+                    witness_call.active_leaf,
+                    runtime_call.active_leaf,
+                )
+                compared += 1
+
+    assert set(skipped) == expected_skips, skipped
+    assert checked_models >= 4, checked_models
+    assert compared >= 10, compared

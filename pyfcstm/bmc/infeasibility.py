@@ -1698,10 +1698,11 @@ def check_case_conditions(
     def discharge_target(target: Any) -> Optional[Tuple[str, ...]]:
         """Return the members that entail one target, or ``None`` when none do.
 
-        The whole of what makes an entailment here informative lives in this one
-        place, so a second kind of target -- a value carried across a step rather
-        than a case's condition -- reuses it rather than growing a parallel copy of
-        the shrink and the consistency guard.
+        Three steps rather than one, because "the members entail this" is not yet
+        informative: the antecedent is a minimal unsat core, so it entails anything,
+        and the shrink plus the consistency guard are what turn the answer into a
+        claim about the target.  They are named together here because they are one
+        concept, not because a second caller exists -- there is one.
 
         :param target: The constraint to prove from the members.
         :return: The member ids to cite, or ``None`` when the target is not

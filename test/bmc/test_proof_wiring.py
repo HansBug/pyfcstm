@@ -1541,14 +1541,24 @@ def test_a_value_a_later_step_leaves_alone_does_not_reach_the_next_frame() -> No
     rule that reads it, which is a catalog change rather than wiring.  Until then the
     honest outcome is formal depth with a reason that says the catalog does not cover
     the shape, and that is what this asserts.
+
+    The frame-1 control runs here rather than only in the test above, because the
+    reason string is the same sentence for every uncovered shape: on its own, the
+    degradation is evidence that *something* is uncovered and not that this is what
+    it is.  Asserting the pair makes the difference between the frames the subject.
     """
-    feasibility = _explain_during_model(
+    query = (
         'init state("Uploader.Idle") where retries == 0;\n'
         'assume at 1: active("Uploader.Retrying");\n'
-        'assume at 2: var("retries") == 0;\n'
+        'assume at %d: var("retries") == 0;\n'
         'check reach <= 2: active("Uploader.GaveUp");\n'
     )
-    explanation = feasibility.explanation
+    within_one_step = _explain_during_model(query % 1).explanation
+
+    assert within_one_step.achieved_mode == "proof"
+    assert within_one_step.proof is not None
+
+    explanation = _explain_during_model(query % 2).explanation
 
     assert explanation.achieved_mode == "formal"
     assert explanation.proof is None
@@ -1598,3 +1608,86 @@ def test_a_published_event_names_the_path_its_author_wrote() -> None:
             % (identity, subject, sorted(declared))
         )
         assert step.isdigit()
+
+
+#: Two events whose paths differ only in where the dots fall.
+#:
+#: The encoder's symbol body replaces the dots, so both collapse to one name and a
+#: reading that recovers the body cannot tell them apart.  Declaring the second one
+#: is the whole difference between the two models below: it takes part in no
+#: transition the query mentions.
+_COLLIDING_EVENT_MODEL = """
+def int x = 0;
+
+state Root {
+    state A_B {
+        state Idle {
+            event Go;
+        }
+        state Done;
+
+        [*] -> Idle;
+        Idle -> Done :: Go effect {
+            x = x + 1;
+        }
+    }
+%s
+    [*] -> A_B;
+}
+"""
+
+_UNRELATED_EVENT_DECLARATION = """
+    state A {
+        state B {
+            state Idle {
+                event Go;
+            }
+            [*] -> Idle;
+        }
+        [*] -> B;
+    }
+"""
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "extra", ["", _UNRELATED_EVENT_DECLARATION], ids=["alone", "with_a_namesake"]
+)
+def test_an_event_a_query_never_mentions_does_not_change_the_answer(extra: str) -> None:
+    """Declaring an unrelated event leaves the proof this query gets untouched.
+
+    The second declaration takes part in no transition the query mentions, so the
+    core is the same core and the chain that closes it is the same chain.  What it
+    does share is the name the encoder's symbol body collapses to, and a reading
+    that recovers a subject from that body rather than from the domain's table would
+    file both events under one key -- which is not a wrong sentence in the output but
+    a proof that stops closing, because the premise gets filed where the rule does
+    not look for it.
+
+    The two ids do different jobs, and only one of them fails on a body reading:
+    ``alone`` is the control that this model and query close at all, ``with_a_namesake``
+    is the assertion about the collapse.  Neither is decoration -- withholding the
+    discharge fails both.
+    """
+    machine = load_state_machine_from_text(
+        _COLLIDING_EVENT_MODEL % extra, "collide.fcstm"
+    )
+    context = BmcEngine(machine).prepare(
+        'init state("Root.A_B.Idle") where x == 0;\n'
+        'assume at 1: active("Root.A_B.Idle");\n'
+        'assume event("Root.A_B.Idle.Go", 1) == true;\n'
+        'assume at 1: var("x") == 0;\n'
+        'assume at 2: var("x") == 0;\n'
+        'check reach <= 2: active("Root.A_B.Done");\n',
+        query_source_path="query.fbmcq",
+    )
+    explanation = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(context)),
+        infeasibility_explanation="proof",
+    ).feasibility.explanation
+
+    assert explanation.achieved_mode == "proof"
+    assert explanation.status == "complete"
+    assert "case_condition_entailment" in {
+        node.rule_id for node in explanation.proof.nodes if node.rule_id
+    }

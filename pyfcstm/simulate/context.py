@@ -34,8 +34,11 @@ class ReadOnlyExecutionContext:
     the additional metadata fields expose the same callsite information in a
     fixture-friendly shape.
 
-    :param state_path: Current execution state path from root to leaf. For
-        ancestor aspect actions this is the active descendant leaf.
+    :param state_path: State path that owns the executing action. It is a leaf
+        for leaf lifecycle actions and for ancestor aspect actions, which
+        run for a descendant leaf's cycle; entering or leaving a composite
+        state, or running a plain ``during`` action declared on one, gives
+        that composite state's own path.
     :type state_path: Tuple[str, ...]
     :param vars: Snapshot of current variable values (immutable mapping copy)
     :type vars: Mapping[str, Union[int, float]]
@@ -44,8 +47,10 @@ class ReadOnlyExecutionContext:
     :param action_stage: Lifecycle stage at the current callsite
         (``'enter'``, ``'during'``, or ``'exit'``).
     :type action_stage: str
-    :param active_leaf: Current active leaf state path. When omitted, it
-        defaults to ``state_path``.
+    :param active_leaf: Runtime state path where the action executes: the
+        active leaf state when one is active, otherwise the action's host
+        state path. Omitting it selects the host path via ``state_path``,
+        which is what every callsite without an active leaf relies on.
     :type active_leaf: Tuple[str, ...], optional
     :param call_stage: Explicit callsite lifecycle stage. When omitted, it
         defaults to ``action_stage``.

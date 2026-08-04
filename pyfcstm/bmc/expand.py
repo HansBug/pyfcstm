@@ -892,6 +892,12 @@ class _MacroExpander:
         execution_state_path: Optional[str] = None,
     ) -> _MacroFrontier:
         owner_path = ".".join(owner.path)
+        # The runtime path is the host state, which is not `owner` once a `ref`
+        # has redirected `owner` to the referenced action's declaring state. Both
+        # the active-leaf fallback and the handler-visible execution path need
+        # the host, so they read the same local instead of one of them reaching
+        # for `owner` and quietly picking up the declaration site.
+        runtime_state_path = execution_state_path or owner_path
         block = ActionBlock(
             block_kind,
             runtime_role,
@@ -901,8 +907,8 @@ class _MacroExpander:
             action_name=action_name,
             transition_label=transition_label,
             is_abstract=is_abstract,
-            active_leaf_path=self._active_leaf_path(frontier, owner),
-            execution_state_path=execution_state_path or owner_path,
+            active_leaf_path=self._active_leaf_path(frontier, runtime_state_path),
+            execution_state_path=runtime_state_path,
             named_ref=named_ref,
         )
         return self._replace_frontier(
@@ -910,11 +916,29 @@ class _MacroExpander:
             action_blocks=frontier.action_blocks + (block,),
         )
 
-    def _active_leaf_path(self, frontier: _MacroFrontier, owner: State) -> str:
+    def _active_leaf_path(
+        self, frontier: _MacroFrontier, runtime_state_path: str
+    ) -> str:
+        """Return the runtime state path recorded for an action block.
+
+        A non-pseudo leaf on the frontier stack is that path. With no such leaf
+        -- entering or leaving a composite state, or a plain ``during`` aspect
+        hung on one -- the runtime falls back to the host state, so this returns
+        ``runtime_state_path``. It must be the **host**, never the declaring
+        state a ``ref`` resolved to: ``SimulationRuntime`` records the host, and
+        a witness that disagrees fails replay.
+
+        :param frontier: Macro frontier whose stack is searched for a leaf.
+        :type frontier: _MacroFrontier
+        :param runtime_state_path: Host state path used when no leaf is active.
+        :type runtime_state_path: str
+        :return: The leaf path when one is active, else the host path.
+        :rtype: str
+        """
         for frame in reversed(frontier.stack):
             if frame.state.is_leaf_state and not frame.state.is_pseudo:
                 return ".".join(frame.state.path)
-        return ".".join(owner.path)
+        return runtime_state_path
 
     def _leaf_fallback_outcomes(
         self,

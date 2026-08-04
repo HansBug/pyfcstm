@@ -281,11 +281,11 @@ except SimulationRuntimeExpressionError as err:
 
 字段：
 
-- `state_path`：所属动作状态路径，类型为 `Tuple[str, ...]`
+- `state_path`：执行该动作的所属状态路径，类型为 `Tuple[str, ...]`。叶状态生命周期动作与祖先 aspect 动作（为后代叶状态的周期执行）拿到的是叶状态；进入或离开复合状态、以及声明在复合状态上的普通 `during` 动作，拿到的是该复合状态自身的路径
 - `vars`：持久变量快照字典
 - `action_name`：解析后的 abstract target 动作路径
 - `action_stage`：生命周期调用点阶段字符串
-- `active_leaf`：当前 active leaf 状态路径；aspect hook 使用 active leaf，direct hook 和 ref 在运行时未传入 leaf 路径时使用调用点所属状态路径
+- `active_leaf`：动作执行时的运行时状态路径——存在活跃叶状态时为该叶状态，否则为该动作的宿主状态路径。aspect hook 为后代叶状态的周期执行，因此报告该叶状态；进入或离开复合状态时不存在活跃叶状态，报告宿主路径
 - `call_stage`：显式生命周期调用点阶段，等同于 `action_stage`
 - `abstract_target`：解析后的 abstract target 动作路径，对 abstract hook 等同于 `action_name`
 - `named_ref`：命名 ref 的调用点路径；匿名 ref 和 direct abstract action 为 `None`

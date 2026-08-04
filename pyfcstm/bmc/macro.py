@@ -736,8 +736,11 @@ class ActionBlock:
     :param execution_state_path: Runtime public state path passed to abstract
         handler context, defaults to ``None`` and falls back to owner state.
     :type execution_state_path: str, optional
-    :param named_ref: Named reference callsite path when this block was reached
-        through ``ref``, defaults to ``None``.
+    :param named_ref: Path of the named ``ref`` action at the callsite, or
+        ``None`` when the callsite is not a named ``ref``. A named action
+        arrived at by following a ``ref`` is that reference's target and does
+        not name the call, so a chain starting from an anonymous ``ref``
+        reports ``None``. Defaults to ``None``.
     :type named_ref: str, optional
 
     Example::

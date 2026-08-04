@@ -83,6 +83,19 @@ state Root {
 """
 
 
+_CHAINED_REF_CALL_DSL = """
+state Root {
+    [*] -> A;
+    A -> [*];
+    enter ref A.mid;
+    state A {
+        enter mid ref act;
+        enter abstract act;
+    }
+}
+"""
+
+
 _ASPECT_CALL_DSL = """
 state Root {
     >> during before abstract Observe;
@@ -679,3 +692,54 @@ def test_property_formula_canonical_schema_is_stable() -> None:
     )
     assert canonical["case_label"] is None
     assert canonical["response_window"] is None
+
+
+@pytest.mark.unittest
+def test_compile_named_ref_filter_separates_anonymous_and_named_callsites() -> None:
+    """``named_ref`` filters split calls by the callsite, not by the ``ref`` chain.
+
+    ``Root``'s anonymous ``enter ref A.mid`` and ``A``'s own ``enter mid`` both
+    end at ``Root.A.act``, and only the second one is named. Counting through
+    the public filter is how a user tells them apart, so the counts below are
+    the user-visible form of the contract.
+
+    This goes through the property compiler rather than replay because the two
+    paths fail differently. A wrong ``named_ref`` makes replay report
+    ``RESULT UNTRUSTED``, which at least withholds a verdict; here it makes the
+    objective unsatisfiable, and the CLI then prints
+    ``NOT SATISFIED WITHIN BOUND (NO WITNESS)`` with no warning at all -- a
+    silent verdict that is the opposite of the true one.
+    """
+    formula = compile_bmc_property(
+        _core(
+            _CHAINED_REF_CALL_DSL,
+            'check reach <= 2: call_count("Root.A.act", named_ref=null) == 2 '
+            '&& call_count("Root.A.act", named_ref="Root.A.mid") == 1 '
+            '&& called("Root.A.act", named_ref=null, state="Root");',
+        )
+    )
+
+    assert _solver(formula.solve_formula).check() == z3.sat
+
+
+@pytest.mark.unittest
+def test_compile_named_ref_filter_rejects_the_inner_name_for_an_anonymous_callsite() -> (
+    None
+):
+    """The anonymous callsite is not matched by the name its chain passes through.
+
+    The negative half of the test above. ``call_count(...) == 3`` is what makes
+    it carry weight: a bounded ``reach`` may satisfy its property on a prefix,
+    and without a clause that forces all three calls to have happened, both the
+    negation and an inequality on a zero count hold vacuously on the empty
+    execution -- which the defective encoder passes too.
+    """
+    formula = compile_bmc_property(
+        _core(
+            _CHAINED_REF_CALL_DSL,
+            'check reach <= 2: call_count("Root.A.act") == 3 '
+            '&& !called("Root.A.act", named_ref="Root.A.mid", state="Root");',
+        )
+    )
+
+    assert _solver(formula.solve_formula).check() == z3.sat

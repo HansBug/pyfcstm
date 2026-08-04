@@ -290,7 +290,7 @@ the intended omission clearer.
 | Role | `role="state_enter"`, `role="state_exit"`, `role="leaf_during"`, `role="plain_during_before"`, `role="plain_during_after"`, `role="aspect_during_before"`, `role="aspect_during_after"`, or `role="transition_effect"` | Exact supplied runtime call role |
 | State | `state="Root.A"` | State path associated with the call |
 | Active leaf | `active_leaf="Root.A.Leaf"` | Runtime state path at the call: the active leaf state when one is active, otherwise the call's host state path. Entering or leaving a composite state has no active leaf, so it matches the host path there |
-| Named reference | `named_ref="Root.A.Ref"` or `named_ref=null` | Exact named reference callsite or explicitly no named reference |
+| Named reference | `named_ref="Root.A.Ref"` or `named_ref=null` | The callsite's own named `ref`, or explicitly no named `ref`. A call reached through an anonymous `ref` has none, even when the chain passes through a named action |
 | Snapshot | `where x >= 0 && var("y") < 10` | Call-time persistent-variable condition |
 
 For a call anchored at step `i`, omitted step and `+0` select `i`; `*` selects

@@ -3649,7 +3649,9 @@ class BmcWitnessCallRecord(_PrettyPrintableMixin):
         the call's host state path. Entering or leaving a composite state
         has no active leaf, so this is the host path there.
     :type active_leaf: str
-    :param named_ref: Named ``ref`` callsite path, defaults to ``None``.
+    :param named_ref: Path of the named ``ref`` action at the callsite;
+        an anonymous callsite reports ``None`` even when the ``ref``
+        chain passes through a named action. Defaults to ``None``.
     :type named_ref: str, optional
     :param snapshot: Persistent variable snapshot before the handler call,
         defaults to ``{}``.

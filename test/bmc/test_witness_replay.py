@@ -1062,8 +1062,8 @@ def test_replay_reports_state_and_termination_mismatches() -> None:
     )
 
 
-def _replay_active_leaves(dsl_text: str, query_text: str):
-    """Replay a witness and return the two sides' ``active_leaf`` sequences.
+def _replay_call_records(dsl_text: str, query_text: str):
+    """Replay a witness and return both sides' abstract call records.
 
     :param dsl_text: FCSTM source of the model under test.
     :type dsl_text: str
@@ -1086,7 +1086,7 @@ _TERMINATES = "check reach <= 2: terminated();"
 # A `ref` on a composite host, pointing at a named abstract action declared in a
 # child. `_active_leaf_path` has no leaf on the stack while `Root` is being
 # entered, so it falls back -- and the fallback used to read the `owner` a `ref`
-# had already redirected to the declaring state. See issue #430.
+# had already redirected to the declaring state.
 _COMPOSITE_ENTER_REF = """
 def int a = 0;
 state Root {
@@ -1210,7 +1210,7 @@ state Root {
 
 def test_composite_host_enter_ref_records_the_host_as_active_leaf() -> None:
     """A `ref` entered on a composite host reports the host, not the declarer."""
-    replay, witness_calls, runtime_calls = _replay_active_leaves(
+    replay, witness_calls, runtime_calls = _replay_call_records(
         _COMPOSITE_ENTER_REF, _TERMINATES
     )
 
@@ -1224,7 +1224,7 @@ def test_composite_host_enter_ref_records_the_host_as_active_leaf() -> None:
 
 def test_composite_host_exit_ref_records_the_host_as_active_leaf() -> None:
     """The exit direction reports the host too, with the ref pointing outward."""
-    replay, witness_calls, runtime_calls = _replay_active_leaves(
+    replay, witness_calls, runtime_calls = _replay_call_records(
         _COMPOSITE_EXIT_REF, _TERMINATES
     )
 
@@ -1240,7 +1240,7 @@ def test_composite_host_exit_ref_records_the_host_as_active_leaf() -> None:
 @pytest.mark.parametrize("position", ["before", "after"])
 def test_plain_during_ref_on_composite_host_records_the_host(position) -> None:
     """A plain `during` ref on a composite host reaches the same fallback."""
-    replay, witness_calls, runtime_calls = _replay_active_leaves(
+    replay, witness_calls, runtime_calls = _replay_call_records(
         _plain_during_ref(position), _TERMINATES
     )
 
@@ -1264,7 +1264,7 @@ def test_leaf_host_ref_takes_the_stack_leaf_which_is_the_host() -> None:
     This pins the boundary of the defect: four of the conditions in issue #430
     hold and it still aligned before the fix, because the host is on the stack.
     """
-    replay, witness_calls, runtime_calls = _replay_active_leaves(
+    replay, witness_calls, runtime_calls = _replay_call_records(
         _LEAF_HOST_REF, _TERMINATES
     )
 
@@ -1280,7 +1280,7 @@ def test_aspect_during_ref_takes_the_descendant_leaf() -> None:
     `_ASPECT_DURING_REF` for why no witness-level case can distinguish
     `_active_leaf_path`'s two branches.
     """
-    replay, witness_calls, runtime_calls = _replay_active_leaves(
+    replay, witness_calls, runtime_calls = _replay_call_records(
         _ASPECT_DURING_REF, _TERMINATES
     )
 
@@ -1298,7 +1298,7 @@ def test_aspect_during_ref_takes_the_descendant_leaf() -> None:
 
 def test_composite_during_without_ref_falls_back_to_its_own_host() -> None:
     """The fallback is only wrong when a `ref` has redirected the owner."""
-    replay, witness_calls, runtime_calls = _replay_active_leaves(
+    replay, witness_calls, runtime_calls = _replay_call_records(
         _COMPOSITE_DURING_NO_REF, _TERMINATES
     )
 
@@ -1312,70 +1312,539 @@ def test_composite_during_without_ref_falls_back_to_its_own_host() -> None:
     ]
 
 
-def test_active_leaf_matches_the_runtime_across_the_sample_corpus() -> None:
-    """Every recorded ``active_leaf`` agrees with the runtime, corpus-wide.
+def test_call_metadata_matches_the_runtime_across_the_sample_corpus() -> None:
+    """Every recorded ``active_leaf`` and ``named_ref`` agrees with the runtime.
 
-    The six cases above pin named shapes. This one pins the field's contract
-    over whatever the checked-in corpus happens to contain, so a future path
-    that writes some third value -- neither the active leaf nor the host -- is
-    caught even if no named case covers its shape.
+    The named cases above pin named shapes. This one pins both fields over
+    whatever the checked-in corpus happens to contain, so a future path that
+    writes some third value is caught even where no named case covers its shape.
+    Both fields come from the same ``ref`` recursion, so one scan checks both.
 
-    The oracle is the replay trace: ``SimulationRuntime`` computes the path from
-    the real execution stack, which is the reference semantics the repository
-    already treats as authoritative.
+    Each model is driven by several queries rather than one. A single
+    ``terminated()`` reaches only the models that can terminate within the
+    bound, and it is structurally unreachable in ``dlc6_more.fcstm`` -- which is
+    the one corpus model carrying a chain with an anonymous outermost hop
+    (``exit ref /F1x`` onto the named ``exit F1x ref F1``). Adding a few
+    ``active(...)`` goals brings that model, and its chain, into the scan.
+
+    The oracle is the replay trace: ``SimulationRuntime`` computes both fields
+    from the real execution stack, which is the reference semantics the
+    repository already treats as authoritative.
     """
     corpus = pathlib.Path(__file__).resolve().parents[1] / "testfile" / "sample_codes"
     sources = sorted(corpus.glob("*.fcstm"))
     assert sources, "the sample corpus should not be empty"
 
     # `dlc1.fcstm` shifts by a variable amount, which the core lowering does not
-    # support. A model that compiles no core carries no witness and so no
-    # recorded call to check.
+    # support. A model that compiles no core under any goal carries no witness
+    # and so no recorded call to check. Naming the set rather than catching the
+    # class keeps a future lowering regression from turning this scan into a
+    # silent skip: `dlc3.fcstm` contributes few enough calls that losing it
+    # would still clear the floors below.
     expected_skips = {"dlc1.fcstm"}
     skipped: list = []
+    checked: list = []
     compared = 0
-    checked_models = 0
     for source in sources:
-        try:
-            model = load_state_machine_from_text(source.read_text(encoding="utf-8"))
-            formula = compile_bmc_property(
-                build_bmc_core_formula(
-                    BmcEngine(model).prepare("check reach <= 3: terminated();")
+        model = load_state_machine_from_text(source.read_text(encoding="utf-8"))
+        leaves = [
+            ".".join(state.path) for state in model.walk_states() if state.is_stoppable
+        ]
+        goals = ["check reach <= 3: terminated();"] + [
+            'check reach <= 2: active("%s");' % path for path in leaves[:3]
+        ]
+        lowered = False
+        model_compared = 0
+        for goal in goals:
+            try:
+                formula = compile_bmc_property(
+                    build_bmc_core_formula(BmcEngine(model).prepare(goal))
                 )
+            except UnsupportedBmcQuery:
+                continue
+            lowered = True
+            result = solve_bmc_property(formula)
+            if result.status != "sat":
+                continue
+            trace = decode_bmc_witness(formula, result.model)
+            replay = replay_bmc_witness(model, trace)
+            assert replay.ok is True, (
+                source.name,
+                goal,
+                [item.to_canonical() for item in replay.mismatches],
             )
-        except UnsupportedBmcQuery:
-            # Only the models known to compile no core are allowed to drop out,
-            # and the set is asserted below. Catching the class alone would let
-            # any future lowering regression turn this scan into a silent skip:
-            # `dlc3.fcstm` contributes a single call, so losing it still clears
-            # both floors.
+            for witness_step, runtime_step in zip(
+                trace.steps, replay.runtime_trace.steps
+            ):
+                assert len(witness_step.abstract_calls) == len(
+                    runtime_step.abstract_calls
+                ), (source.name, goal)
+                for witness_call, runtime_call in zip(
+                    witness_step.abstract_calls, runtime_step.abstract_calls
+                ):
+                    assert witness_call.active_leaf == runtime_call.active_leaf, (
+                        source.name,
+                        goal,
+                        witness_call.action_name,
+                        witness_call.active_leaf,
+                        runtime_call.active_leaf,
+                    )
+                    assert witness_call.named_ref == runtime_call.named_ref, (
+                        source.name,
+                        goal,
+                        witness_call.action_name,
+                        witness_call.named_ref,
+                        runtime_call.named_ref,
+                    )
+                    model_compared += 1
+        if not lowered:
             skipped.append(source.name)
             continue
-        result = solve_bmc_property(formula)
-        if result.status != "sat":
-            continue
-        checked_models += 1
-        trace = decode_bmc_witness(formula, result.model)
-        replay = replay_bmc_witness(model, trace)
-        assert replay.ok is True, (
-            source.name,
-            [item.to_canonical() for item in replay.mismatches],
-        )
-        for witness_step, runtime_step in zip(trace.steps, replay.runtime_trace.steps):
-            assert len(witness_step.abstract_calls) == len(
-                runtime_step.abstract_calls
-            ), source.name
-            for witness_call, runtime_call in zip(
-                witness_step.abstract_calls, runtime_step.abstract_calls
-            ):
-                assert witness_call.active_leaf == runtime_call.active_leaf, (
-                    source.name,
-                    witness_call.action_name,
-                    witness_call.active_leaf,
-                    runtime_call.active_leaf,
-                )
-                compared += 1
+        if model_compared:
+            checked.append(source.name)
+            compared += model_compared
 
     assert set(skipped) == expected_skips, skipped
-    assert checked_models >= 4, checked_models
-    assert compared >= 10, compared
+    # Named rather than counted: `dlc6_more.fcstm` is the one corpus model with
+    # an anonymous outermost hop, and it only enters the scan because of the
+    # `active(...)` goals -- a lone `terminated()` is unsatisfiable there at
+    # every bound. A floor would let it drop out silently.
+    assert "dlc6_more.fcstm" in checked, checked
+    assert len(checked) >= 4, checked
+    assert compared >= 30, compared
+
+
+# A `ref` chain whose outermost hop is anonymous and whose second hop is a named
+# `ref`. Only a callsite names its own call, so this call has no named `ref` --
+# but the encoder used to scan the chain and let the first named hop win, which
+# reported `Root.A.mid` where the runtime reported nothing.
+_CHAINED_REF_ANONYMOUS_HEAD = """
+state Root {
+    [*] -> A;
+    A -> [*];
+    enter ref A.mid;
+    state A {
+        enter mid ref act;
+        enter abstract act;
+    }
+}
+"""
+
+# The outermost hop is itself named, so both rules agree that it names the call.
+_NAMED_REF_SINGLE_HOP = """
+def int a = 0;
+state Root {
+    [*] -> Inner;
+    Inner -> [*];
+    enter outer ref Inner.act;
+    state Inner {
+        [*] -> Leaf;
+        Leaf -> [*];
+        enter abstract act;
+        state Leaf;
+    }
+}
+"""
+
+# An anonymous hop straight onto the abstract action: there is no named hop
+# anywhere, so both rules report nothing and the chain length is irrelevant.
+_ANONYMOUS_REF_SINGLE_HOP = """
+def int a = 0;
+state Root {
+    [*] -> Inner;
+    Inner -> [*];
+    enter ref Inner.act;
+    state Inner {
+        [*] -> Leaf;
+        Leaf -> [*];
+        enter abstract act;
+        state Leaf;
+    }
+}
+"""
+
+# Both hops are named. This is the counterexample that shows the trigger is not
+# "the chain is longer than one hop": deciding once at the callsite and scanning
+# for the first named hop pick the same action here, so the two rules agree and
+# the defect stays hidden. Only an anonymous outermost hop separates them.
+_CHAINED_REF_NAMED_HEAD = """
+def int a = 0;
+state Root {
+    [*] -> Inner;
+    Inner -> [*];
+    enter outer ref Inner.mid;
+    state Inner {
+        [*] -> Leaf;
+        Leaf -> [*];
+        enter mid ref Deep.act;
+        state Deep {
+            [*] -> L2;
+            L2 -> [*];
+            enter abstract act;
+            state L2;
+        }
+        state Leaf;
+    }
+}
+"""
+
+
+def test_anonymous_head_of_a_ref_chain_reports_no_named_ref() -> None:
+    """An anonymous callsite names nothing, whatever the chain passes through.
+
+    This is the defect case. The chain is ``Root.enter`` (anonymous) ->
+    ``Root.A.mid`` (named) -> ``Root.A.act``, and the call it produces belongs to
+    a callsite that wrote no name. Reporting ``Root.A.mid`` here also collapsed
+    two distinct callsites onto one value: the second call below comes from
+    ``A``'s own ``enter mid``, which really is named, so a handler could no
+    longer tell the two apart.
+    """
+    replay, witness_calls, runtime_calls = _replay_call_records(
+        _CHAINED_REF_ANONYMOUS_HEAD, _TERMINATES
+    )
+    assert replay.ok is True, [item.to_canonical() for item in replay.mismatches]
+    assert [call.named_ref for call in witness_calls] == [
+        None,
+        "Root.A.mid",
+        None,
+    ]
+    assert [call.named_ref for call in runtime_calls] == [
+        None,
+        "Root.A.mid",
+        None,
+    ]
+    # The states the three calls run in, so the sequence above cannot be read as
+    # three anonymous callsites that happen to line up.
+    assert [call.state for call in witness_calls] == ["Root", "Root.A", "Root.A"]
+
+
+def test_named_head_of_a_single_hop_ref_names_the_call() -> None:
+    """A named callsite names its call -- the positive half of the contract."""
+    replay, witness_calls, runtime_calls = _replay_call_records(
+        _NAMED_REF_SINGLE_HOP, _TERMINATES
+    )
+    assert replay.ok is True, [item.to_canonical() for item in replay.mismatches]
+    assert witness_calls[0].named_ref == "Root.outer"
+    assert runtime_calls[0].named_ref == "Root.outer"
+
+
+def test_anonymous_single_hop_ref_reports_no_named_ref() -> None:
+    """No named hop anywhere means no named ``ref`` on either side."""
+    replay, witness_calls, runtime_calls = _replay_call_records(
+        _ANONYMOUS_REF_SINGLE_HOP, _TERMINATES
+    )
+    assert replay.ok is True, [item.to_canonical() for item in replay.mismatches]
+    assert [call.named_ref for call in witness_calls] == [None, None]
+    assert [call.named_ref for call in runtime_calls] == [None, None]
+
+
+def test_named_head_of_a_ref_chain_keeps_the_callsite_not_the_inner_name() -> None:
+    """A named outermost hop wins over a named hop deeper in the chain.
+
+    This pins the direction of the choice. Both rules report ``Root.outer``
+    here, which is why this shape cannot expose the defect -- and why the
+    trigger needs the outermost hop to be anonymous rather than merely to sit
+    above another named hop.
+    """
+    replay, witness_calls, runtime_calls = _replay_call_records(
+        _CHAINED_REF_NAMED_HEAD, _TERMINATES
+    )
+    assert replay.ok is True, [item.to_canonical() for item in replay.mismatches]
+    assert witness_calls[0].named_ref == "Root.outer"
+    assert runtime_calls[0].named_ref == "Root.outer"
+    assert witness_calls[0].named_ref != "Root.Inner.mid"
+
+
+def _ref_chain_model(depth: int, head_named: bool, stage: str) -> str:
+    """Build a model whose lifecycle action reaches an abstract action by a ``ref`` chain.
+
+    The chain runs ``S0`` -> ``S1`` -> ... -> ``Sdepth``, where ``Sdepth`` declares
+    the abstract action and every state above it declares a named ``ref`` pointing
+    one level down. Only the outermost hop varies: it is named ``h0`` or left
+    anonymous. A ``ref`` target must itself be named -- the model rejects a
+    reference to an anonymous action -- so the hops below the outermost one are
+    necessarily named, and "the outermost hop is anonymous" is the only way the
+    two rules for ``named_ref`` can disagree.
+
+    Entering ``Si`` also executes that state's own hop, so one model yields one
+    call per level and the whole ``named_ref`` sequence is observable at once.
+
+    :param depth: Number of ``ref`` hops between the outermost callsite and the
+        abstract action.
+    :type depth: int
+    :param head_named: Whether the outermost hop carries a name.
+    :type head_named: bool
+    :param stage: Lifecycle stage the chain is declared on, ``'enter'`` or
+        ``'exit'``.
+    :type stage: str
+    :return: FCSTM source text.
+    :rtype: str
+    """
+    names = ["S%d" % index for index in range(depth + 1)]
+
+    def hop(index: int) -> str:
+        below = names[index + 1]
+        target = (
+            "%s.h%d" % (below, index + 1) if index + 1 < depth else "%s.act" % below
+        )
+        return "%s h%d ref %s;" % (stage, index, target)
+
+    head_target = "%s.h1" % names[1] if depth > 1 else "%s.act" % names[1]
+    head = "%s %sref %s;" % (stage, "h0 " if head_named else "", head_target)
+
+    def build(index: int, indent: int) -> list:
+        pad = "    " * indent
+        if index == depth:
+            return [
+                "%sstate %s {" % (pad, names[index]),
+                "%s    %s abstract act;" % (pad, stage),
+                "%s}" % pad,
+            ]
+        return (
+            [
+                "%sstate %s {" % (pad, names[index]),
+                "%s    [*] -> %s;" % (pad, names[index + 1]),
+                "%s    %s -> [*];" % (pad, names[index + 1]),
+                "%s    %s" % (pad, head if index == 0 else hop(index)),
+            ]
+            + build(index + 1, indent + 1)
+            + ["%s}" % pad]
+        )
+
+    return "def int a = 0;\n" + "\n".join(build(0, 0)) + "\n"
+
+
+@pytest.mark.parametrize("stage", ["enter", "exit"])
+@pytest.mark.parametrize("head_named", [True, False])
+@pytest.mark.parametrize("depth", [1, 2, 3, 4, 5, 6, 7, 8])
+def test_named_ref_follows_the_callsite_across_ref_chain_depths(
+    depth, head_named, stage
+) -> None:
+    """``named_ref`` answers to the callsite at every chain depth and stage.
+
+    The named cases above pin the shapes by hand; this one sweeps the space the
+    hand-written ones sample from, so a rule that happens to be right for a
+    two-hop chain but wrong for a four-hop one cannot pass. Restoring the defect
+    -- letting the encoder scan the chain for the first named hop -- makes the
+    two sides disagree on most of the shapes generated here.
+    """
+    replay, witness_calls, runtime_calls = _replay_call_records(
+        _ref_chain_model(depth, head_named, stage),
+        "check reach <= %d: terminated();" % (depth + 4),
+    )
+    assert replay.ok is True, [item.to_canonical() for item in replay.mismatches]
+    assert [call.named_ref for call in witness_calls] == [
+        call.named_ref for call in runtime_calls
+    ]
+    # `enter` runs outermost-first and `exit` innermost-first, so the call made by
+    # the outermost callsite sits at opposite ends of the sequence.
+    outermost = witness_calls[0] if stage == "enter" else witness_calls[-1]
+    assert outermost.named_ref == ("S0.h0" if head_named else None)
+    assert outermost.state == "S0"
+
+
+# Chain shapes the depth sweep cannot reach: a global `ref` through the root
+# scope, aspect and plain `during` heads, two callsites sharing one chain, several
+# chains in one model, a concrete action at the end of one chain beside an
+# abstract one, and a named hop referenced both from inside the chain and from
+# outside it. Every one of these has a named hop somewhere, so each is a place a
+# chain-scanning rule could put that name on the wrong call.
+_COMPLEX_REF_CHAINS = {
+    "global_ref_through_root_scope": """
+def int a = 0;
+state Root {
+    [*] -> A;
+    A -> [*];
+    exit gate ref A.mid;
+    enter ref /gate;
+    state A {
+        [*] -> L;
+        L -> [*];
+        enter mid ref Deep.act;
+        state Deep { [*] -> L2; L2 -> [*]; enter abstract act; state L2; }
+        state L;
+    }
+}
+""",
+    "aspect_during_before_anonymous_head": """
+def int a = 0;
+state Root {
+    [*] -> A;
+    A -> [*];
+    >> during before ref A.L.mid;
+    state A {
+        [*] -> L;
+        L -> [*];
+        state L {
+            during mid ref act;
+            during abstract act;
+        }
+    }
+}
+""",
+    "aspect_during_after_named_head": """
+def int a = 0;
+state Root {
+    [*] -> A;
+    A -> [*];
+    >> during after outer ref A.L.mid;
+    state A {
+        [*] -> L;
+        L -> [*];
+        state L {
+            during mid ref act;
+            during abstract act;
+        }
+    }
+}
+""",
+    "aspect_during_after_anonymous_head": """
+def int a = 0;
+state Root {
+    [*] -> A;
+    A -> [*];
+    >> during after ref A.L.mid;
+    state A {
+        [*] -> L;
+        L -> [*];
+        state L {
+            during mid ref act;
+            during abstract act;
+        }
+    }
+}
+""",
+    "leaf_during_anonymous_head": """
+def int a = 0;
+state Root {
+    [*] -> L;
+    L -> [*];
+    state L {
+        during ref mid;
+        during mid ref act;
+        during abstract act;
+    }
+}
+""",
+    "plain_during_on_composite_host": """
+def int a = 0;
+state Root {
+    [*] -> A;
+    A -> [*];
+    during before ref A.mid;
+    state A {
+        [*] -> L;
+        L -> [*];
+        enter mid ref Deep.act;
+        state Deep { [*] -> L2; L2 -> [*]; enter abstract act; state L2; }
+        state L;
+    }
+}
+""",
+    "two_callsites_share_one_chain": """
+def int a = 0;
+state Root {
+    [*] -> A;
+    A -> [*];
+    enter ref A.mid;
+    exit tail ref A.mid;
+    state A {
+        [*] -> L;
+        L -> [*];
+        enter mid ref Deep.act;
+        state Deep { [*] -> L2; L2 -> [*]; enter abstract act; state L2; }
+        state L;
+    }
+}
+""",
+    "several_chains_across_stages": """
+def int a = 0;
+state Root {
+    [*] -> A;
+    A -> [*];
+    enter ref A.e1;
+    exit ex0 ref A.x1;
+    state A {
+        [*] -> L;
+        L -> [*];
+        enter e1 ref Deep.eact;
+        exit x1 ref Deep.xact;
+        state Deep {
+            [*] -> L2;
+            L2 -> [*];
+            enter abstract eact;
+            exit abstract xact;
+            state L2;
+        }
+        state L;
+    }
+}
+""",
+    "concrete_tail_beside_an_abstract_chain": """
+def int a = 0;
+state Root {
+    [*] -> A;
+    A -> [*];
+    enter ref A.conc;
+    exit ref A.mid;
+    state A {
+        [*] -> L;
+        L -> [*];
+        enter conc ref Deep.body;
+        exit mid ref Deep.act;
+        state Deep {
+            [*] -> L2;
+            L2 -> [*];
+            enter body { a = a + 1; }
+            exit abstract act;
+            state L2;
+        }
+        state L;
+    }
+}
+""",
+    "named_hop_referenced_from_inside_and_outside": """
+def int a = 0;
+state Root {
+    [*] -> A;
+    A -> [*];
+    enter ref A.h1;
+    exit ref A.B.h2;
+    state A {
+        [*] -> B;
+        B -> [*];
+        enter h1 ref B.h2;
+        state B {
+            [*] -> L;
+            L -> [*];
+            enter h2 ref L.act;
+            state L { enter abstract act; }
+        }
+    }
+}
+""",
+}
+
+
+@pytest.mark.parametrize("shape", sorted(_COMPLEX_REF_CHAINS))
+def test_named_ref_agrees_with_the_runtime_across_complex_ref_chains(shape) -> None:
+    """The two sides agree on ``named_ref`` for chains the depth sweep cannot build.
+
+    The sweep varies one axis at a time on a single straight chain. These models
+    vary the surrounding shape instead: the scope a hop is resolved through, the
+    kind of action the head is declared as, how many callsites reach one chain,
+    and whether a chain ends in an abstract or a concrete action.
+    """
+    replay, witness_calls, runtime_calls = _replay_call_records(
+        _COMPLEX_REF_CHAINS[shape], "check reach <= 6: terminated();"
+    )
+    assert replay.ok is True, (
+        shape,
+        [item.to_canonical() for item in replay.mismatches],
+    )
+    assert [call.named_ref for call in witness_calls] == [
+        call.named_ref for call in runtime_calls
+    ]
+    # Each of these models has at least one named hop, so a rule that reported
+    # nothing everywhere would pass the equality above.
+    assert any(call.named_ref is not None for call in witness_calls), shape

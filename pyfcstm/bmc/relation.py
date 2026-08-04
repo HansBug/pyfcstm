@@ -146,7 +146,9 @@ class BmcAbstractCallRecord:
         the innermost non-pseudo leaf on the frontier stack when one is
         active, otherwise the host state path.
     :type active_leaf_path: str
-    :param named_ref: Named reference callsite, defaults to ``None``.
+    :param named_ref: Path of the named ``ref`` action at the callsite;
+        an anonymous callsite reports ``None`` even when the ``ref``
+        chain passes through a named action. Defaults to ``None``.
     :type named_ref: str, optional
     :param snapshot: Mapping from persistent variable names to call-time Z3
         expressions.

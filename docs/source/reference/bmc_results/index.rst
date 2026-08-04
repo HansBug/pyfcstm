@@ -1200,7 +1200,11 @@ Each abstract call record has ``ordinal``, ``action_name``, ``stage``, ``role``,
 executed: the active leaf state when one is active, otherwise the call's host
 state path.  Entering or leaving a composite state, or running a plain
 ``during`` action declared on one, has no active leaf, so ``active_leaf``
-equals ``state`` there.  The CLI records these calls during replay but supplies no user
+equals ``state`` there.  ``named_ref`` is the named ``ref`` action at the
+callsite, or null when the callsite is not a named ``ref``: only a callsite
+names its own call, so a chain starting from an anonymous ``ref`` stays null
+however many named actions it passes through.
+The CLI records these calls during replay but supplies no user
 handler behavior.  JSON-stable maps permit null, booleans, finite numbers,
 strings, arrays, and nested string-keyed objects; non-finite numbers and raw
 Python/Z3 objects are not public JSON values.  The schema's reusable

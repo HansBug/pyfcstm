@@ -1892,13 +1892,12 @@ def _event_identity_of(symbol: Any) -> Optional[str]:
     """
     if symbol is None or not z3.is_bool(symbol):
         return None
-    from .provenance import _event_path_of_symbol
+    from .provenance import _event_path_of_symbol, proposition_identity
 
     resolved = _event_path_of_symbol(symbol)
     if resolved is None:
         return None
-    path, step = resolved
-    return "%s@%d" % (path, step)
+    return proposition_identity(*resolved)
 
 
 def _binding_symbols(expression, declared=None) -> Dict[Tuple[int, Any], Any]:

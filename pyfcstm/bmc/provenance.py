@@ -946,6 +946,34 @@ def _event_path_of_symbol(expression: Any, event_paths: Optional[Any] = None):
     return (body, step) if body else None
 
 
+def proposition_identity(path: str, step: int) -> str:
+    """Return the published identity of one event at one step.
+
+    One string rather than two fields, because the rule that closes over a proposition
+    compares subjects for equality and nothing else: a single opaque identity is what
+    it needs, while a reader still gets the path and the step it was built from.
+
+    The format lives here alone.  It had been written out at three call sites -- two
+    publishers and the binding side's key -- and the three agreed, which is the state a
+    duplicated format string is in right up until it stops being.  Every consumer
+    compares this for equality, so a fourth spelling would make a rule refuse a premise
+    that says exactly what it asked for.
+
+    :param path: The event path, as the encoder spells it in the symbol name.
+    :type path: str
+    :param step: The macro-step the symbol names.
+    :type step: int
+    :return: The identity a ``proposition`` fact publishes.
+    :rtype: str
+
+    Example::
+
+        >>> proposition_identity("Root_Go", 2)
+        'Root_Go@2'
+    """
+    return "%s@%d" % (path, step)
+
+
 def _proposition_fact(
     group: Any, event_paths: Optional[Any] = None
 ) -> Optional[Dict[str, Any]]:
@@ -985,10 +1013,7 @@ def _proposition_fact(
     path, step = resolved
     return {
         "kind": "proposition",
-        # One string rather than two fields: the rule compares subjects for equality
-        # and nothing else, so a single opaque identity is what it needs, while a
-        # reader gets the path and the step it was built from.
-        "identity": "%s@%d" % (path, step),
+        "identity": proposition_identity(path, step),
         "holds": holds,
     }
 
@@ -1178,13 +1203,14 @@ def _event_proposition_in(expression: Any) -> Optional[Dict[str, Any]]:
     if resolved is None:
         return None
     path, step = resolved
-    # The shape is copied from :func:`_proposition_fact`, field for field.  Writing it
-    # from understanding instead produced ``event`` and ``step`` here against its
-    # ``identity``, which every consumer compares for equality -- two spellings of one
-    # fact is how a rule comes to refuse a premise that says what it asked for.
+    # The same shape :func:`_proposition_fact` publishes, through the same identity
+    # constructor.  Writing the fields from understanding instead produced ``event``
+    # and ``step`` here against its ``identity``, which every consumer compares for
+    # equality -- two spellings of one fact is how a rule comes to refuse a premise
+    # that says what it asked for.
     return {
         "kind": "proposition",
-        "identity": "%s@%d" % (path, step),
+        "identity": proposition_identity(path, step),
         "holds": holds,
     }
 

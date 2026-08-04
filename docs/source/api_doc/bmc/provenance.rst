@@ -81,6 +81,12 @@ exact\_optional\_index
 .. autofunction:: exact_optional_index
 
 
+proposition\_identity
+-----------------------------------------------------
+
+.. autofunction:: proposition_identity
+
+
 conjunctive\_units
 -----------------------------------------------------
 

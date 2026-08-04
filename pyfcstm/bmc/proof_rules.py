@@ -647,6 +647,89 @@ def _definedness_failure(application: RuleApplication) -> bool:
     return value.get("value") == guard.get("forbidden")
 
 
+def _preceding_value_entailment(application: RuleApplication) -> bool:
+    """A value one frame earlier, where the solver showed it could not differ.
+
+    The second rule whose side condition a predicate cannot settle, and for the same
+    reason as the first: whether the previous frame was forced to this value is a
+    question about the core's constraints, not about the shape of a fact.  This
+    predicate settles the shape -- one equality in, the same equality one frame back
+    out, nothing else touched -- and a node carrying this rule records
+    ``solver_entailment``.
+
+    Only the frame moves.  A step that changed the variable would make this a claim
+    about a different value, and a rule that let the value move as well could conclude
+    anything about the earlier frame and call it carried.
+
+    :param application: The step to check.
+    :type application: RuleApplication
+    :return: ``True`` when the conclusion is the premise one frame earlier.
+    :rtype: bool
+    """
+    premises = application.premises
+    if len(premises) != 1:
+        return False
+    stated = premises[0]
+    conclusion = application.conclusion
+    if stated.get("kind") != "variable_equality":
+        return False
+    if conclusion.get("kind") != "variable_equality":
+        return False
+    if not _only(stated, ("kind", "variable", "frame", "value")):
+        return False
+    if not _only(conclusion, ("kind", "variable", "frame", "value")):
+        return False
+    frame = stated.get("frame")
+    if not isinstance(frame, int) or frame <= 0:
+        return False
+    if conclusion.get("frame") != frame - 1:
+        return False
+    if conclusion.get("variable") != stated.get("variable"):
+        return False
+    return conclusion.get("value") == stated.get("value")
+
+
+def _excluded_state_selected(application: RuleApplication) -> bool:
+    """A frame pinned to the one state the same frame rules out.
+
+    The two premises come from the same published fact kind read two ways: a state
+    requirement that holds reads as an equality on the frame's slot, and one that is
+    excluded reads as an exclusion.  A frame asked for both about the same state has
+    nowhere to be, and no earlier rule says so -- the equality is not a second
+    equality, so the rule that refuses two values does not apply, and one state is
+    not a domain, so the rule that exhausts a domain does not either.
+
+    The equality has to be the one about a frame's state slot rather than about a
+    model variable.  A variable named the way a slot is named would otherwise let a
+    value contradiction close under a sentence about states.
+
+    :param application: The step to check.
+    :type application: RuleApplication
+    :return: ``True`` when one premise pins the frame's slot to the state the other
+        excludes.
+    :rtype: bool
+    """
+    premises = application.premises
+    if len(premises) != 2 or application.conclusion.get("kind") != "false":
+        return False
+    equalities = [item for item in premises if item.get("kind") == "variable_equality"]
+    exclusions = [item for item in premises if item.get("kind") == "state_exclusion"]
+    if len(equalities) != 1 or len(exclusions) != 1:
+        return False
+    equality, exclusion = equalities[0], exclusions[0]
+    if not equality.get("state_slot"):
+        return False
+    if not _only(equality, ("kind", "variable", "state_slot", "frame", "value")):
+        return False
+    if not _only(exclusion, ("kind", "frame", "state")):
+        return False
+    frame = equality.get("frame")
+    if frame is None or exclusion.get("frame") != frame:
+        return False
+    state = exclusion.get("state")
+    return state is not None and equality.get("value") == state
+
+
 def _boolean_complement(application: RuleApplication) -> bool:
     """One proposition asserted and denied.
 
@@ -815,7 +898,7 @@ def reachable_rule_ids(available_kinds) -> Tuple[str, ...]:
     Example::
 
         >>> reachable_rule_ids(("variable_equality",))
-        ('incompatible_equalities',)
+        ('incompatible_equalities', 'preceding_value_entailment')
         >>> reachable_rule_ids(())
         ()
     """
@@ -897,6 +980,24 @@ PROOF_RULES = {
             ("proposition", "proposition"),
             "false",
             _boolean_complement,
+        ),
+        # A pair the two readings of one published kind produce, which no earlier
+        # rule matches: an equality on a frame's slot is not a second equality, and
+        # one state is not a domain.
+        # One premise, like ``case_condition_entailment``: what the previous frame was
+        # forced to hold is a question about constraints, and the value requirement
+        # that asks it is the only fact involved.
+        ProofRule(
+            "preceding_value_entailment",
+            ("variable_equality",),
+            "variable_equality",
+            _preceding_value_entailment,
+        ),
+        ProofRule(
+            "excluded_state_selected",
+            ("variable_equality", "state_exclusion"),
+            "false",
+            _excluded_state_selected,
         ),
         ProofRule(
             "transition_assignment",

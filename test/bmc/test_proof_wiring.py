@@ -1352,33 +1352,46 @@ state Root {
 
 @pytest.mark.unittest
 @pytest.mark.parametrize(
-    "assumptions",
+    "assumptions, expected_mode",
     [
-        'assume at 2: var("x") == 1;\nassume at 3: var("x") == 0;\n',
-        'assume at 3: var("x") == 5;\n',
+        # The core here keeps a step whose relation has no readable assignment, and
+        # no citation covers it, so the contradiction cannot rest on every member.
+        (
+            'assume at 2: var("x") == 1;\nassume at 3: var("x") == 0;\n',
+            "formal",
+        ),
+        # This core's members are all either readable or reachable by a citation, so
+        # the guard stops being what holds the depth back.
+        ('assume at 3: var("x") == 5;\n', "proof"),
     ],
+    ids=["an_unreadable_step_in_the_core", "every_member_accounted_for"],
 )
-def test_a_guarded_core_is_not_promoted_to_proof_depth(
-    assumptions: str,
+@pytest.mark.unittest
+def test_a_guarded_case_holds_the_depth_back_only_while_a_member_is_unaccounted_for(
+    assumptions: str, expected_mode: str
 ) -> None:
-    """A guarded case leaves the artifact at ``formal``, and that is all this pins.
+    """What a guard costs, separated from what an unreadable member costs.
 
-    The name and the claim are narrower than they were, because the wider one was
-    measured and did not hold.  This began as "a condition the core does not force is
-    not discharged" -- but replacing the entailment check with a constant ``True``
-    leaves every assertion here passing.  A guard leaves the state at the next frame
-    and the guard's own value unsettled, so ``transition_assignment`` never gets a
-    value fact at the case's frame and the chain cannot close whether the condition
-    was discharged wrongly or not at all.  On this shape the discharge's correctness
-    is simply not observable through the published artifact.
+    This asserted that a guarded case leaves the artifact at ``formal``, for both
+    queries, and the reason it gave was the guard: a guard leaves the state at the next
+    frame and the guard's own value unsettled, so ``transition_assignment`` never gets a
+    value fact at the case's frame.  The first half of that survived the catalog gaining
+    a rule that supplies exactly such a value by entailment; the attribution did not.
+    The guard was never what held the second query back on its own.
 
-    What it does pin is real and worth pinning: a core whose case is guarded is not
-    promoted to proof depth, so the formal explanation is what a reader gets.  The
-    discharge's own correctness is recorded as a known boundary in the contract
-    instead of being asserted by a test that cannot see it.
+    The two cores differ in something else, and that is what decides the depth.  The
+    first keeps a step relation with no readable assignment and no citation reaching it,
+    so the coverage requirement refuses the proof -- the honest outcome, and the same
+    boundary a reader meets whenever a core member has no account.  In the second every
+    member is either read or cited, and the chain closes.
+
+    Both ids assert the published condition count as well, because a fixture that
+    stopped publishing a guarded condition would test neither thing.
 
     :param assumptions: The query's assumption lines.
     :type assumptions: str
+    :param expected_mode: The depth this core is expected to reach.
+    :type expected_mode: str
     """
     machine = load_state_machine_from_text(_GUARDED_CASE_MODEL, "machine.fcstm")
     context = BmcEngine(machine).prepare(
@@ -1402,8 +1415,16 @@ def test_a_guarded_core_is_not_promoted_to_proof_depth(
         "the fixture must publish a case whose condition names both the state and "
         "the guard, or it is not testing the refusal"
     )
-    assert explanation.achieved_mode == "formal"
-    assert explanation.proof is None
+    assert explanation.achieved_mode == expected_mode
+
+    if expected_mode == "formal":
+        assert explanation.proof is None
+        assert {fact.get("kind") for fact in published} & {"structural_constraint"}, (
+            "this id exists for the core that keeps a member no fact was read from"
+        )
+    else:
+        assert explanation.proof is not None
+        assert explanation.proof.verification_status == "verified"
 
 
 @pytest.mark.unittest
@@ -1522,30 +1543,26 @@ def test_an_event_driven_during_action_closes_within_one_step() -> None:
 
 
 @pytest.mark.unittest
-def test_a_value_a_later_step_leaves_alone_does_not_reach_the_next_frame() -> None:
-    """The boundary the catalog still has, pinned so it is a fact and not a surprise.
+def test_a_value_a_step_leaves_alone_still_reaches_the_next_frame() -> None:
+    """A contradiction spanning a step that only preserves the variable closes.
 
-    Same model, same machinery, one difference: the contradicted assumption sits at
-    frame 2 rather than frame 1.  The chain establishes ``retries`` at frame 1 exactly
-    as above, and then needs to carry that value across a step that does not touch it
-    -- the exit transition, which only preserves the variable.
+    This test's subject is the boundary it used to pin.  It asserted that the answer
+    degrades here, on the reasoning that the step from frame 1 to frame 2 only carries
+    ``retries`` forward, that the published reading declines a requirement saying
+    "x becomes x", and that closing it therefore needed a fact kind for "this step
+    leaves the variable alone".  The reasoning was right about the reading and wrong
+    about the only way out: what the step will not *say* it still *constrains*, and
+    a constraint is something the solver tier can be asked about.
 
-    Nothing published says so.  ``_assignment_in_unit`` declines a requirement that
-    merely carries a value forward, on the stated grounds that reporting it would put
-    "x becomes x" in a proof as though the transition had said something.  The
-    decision is right about what a transition *says*; the consequence is that a value
-    a step leaves alone cannot be spoken about at all, and a cross-step chain over an
-    untouched frame has no step to stand on.
-
-    Closing this needs a fact kind for "this step leaves the variable alone" and a
-    rule that reads it, which is a catalog change rather than wiring.  Until then the
-    honest outcome is formal depth with a reason that says the catalog does not cover
-    the shape, and that is what this asserts.
-
-    The frame-1 control runs here rather than only in the test above, because the
-    reason string is the same sentence for every uncovered shape: on its own, the
-    degradation is evidence that *something* is uncovered and not that this is what
-    it is.  Asserting the pair makes the difference between the frames the subject.
+    The chain is longer than the frame-1 case by exactly the step it crosses, and the
+    citation names that step.  It does not necessarily name the frame's own state
+    requirement, which is worth writing down because the first draft of this test
+    asserted that it would: the step relation alone does not force the value, so
+    something has to select the preserving case, but which members do the selecting is
+    whatever the deletion pass keeps.  Here it keeps the initial value and the first
+    step rather than the state assumption -- a different set, equally sufficient.  The
+    shrink is greedy, not minimum-cardinality, so pinning one particular set would pin
+    the deletion order instead of the property.
     """
     query = (
         'init state("Uploader.Idle") where retries == 0;\n'
@@ -1554,15 +1571,30 @@ def test_a_value_a_later_step_leaves_alone_does_not_reach_the_next_frame() -> No
         'check reach <= 2: active("Uploader.GaveUp");\n'
     )
     within_one_step = _explain_during_model(query % 1).explanation
+    across_a_step = _explain_during_model(query % 2).explanation
 
-    assert within_one_step.achieved_mode == "proof"
-    assert within_one_step.proof is not None
+    for reading in (within_one_step, across_a_step):
+        assert reading.achieved_mode == "proof"
+        assert reading.proof is not None
+        assert reading.proof.verification_status == "verified"
 
-    explanation = _explain_during_model(query % 2).explanation
+    carried = [
+        node
+        for node in across_a_step.proof.nodes
+        if node.rule_id == "preceding_value_entailment"
+    ]
+    assert len(carried) == 1, "the crossing is expected to take exactly one carry"
+    assert carried[0].verification_method == "solver_entailment"
+    assert len(across_a_step.proof.nodes) > len(within_one_step.proof.nodes)
 
-    assert explanation.achieved_mode == "formal"
-    assert explanation.proof is None
-    assert "no rule in the catalog closes this core" in explanation.reason
+    # The step being crossed is what the carry is about, so it is cited whatever else
+    # the shrink keeps.  The set is also a strict subset of the core: a carry citing
+    # every member would be the vacuous case the consistency guard exists to refuse.
+    cited = set(carried[0].item_ids)
+    members = {item.constraint.stable_id for item in across_a_step.core.items}
+
+    assert "transition.step.0001" in cited
+    assert cited < members
 
 
 @pytest.mark.unittest
@@ -1608,6 +1640,36 @@ def test_a_published_event_names_the_path_its_author_wrote() -> None:
             % (identity, subject, sorted(declared))
         )
         assert step.isdigit()
+
+    # Membership in the table is not enough on its own: with two events whose paths
+    # differ only in where the dots fall, the other one is also declared, so a
+    # subject picked wrongly would still pass the loop above.  This names the event
+    # the transition under test is triggered by.
+    assert {identity.rpartition("@")[0] for identity in published} == {
+        "Uploader.Idle.Fail"
+    }
+
+    # The other publishing entrance, on the same model.  A bare event assumption is
+    # read by a different function from a condition's conjunct, and it already
+    # resolved against the table -- which is why nothing here was failing before.
+    # Nothing pinned it either, so its passing the table was untested rather than
+    # established.
+    bare = BmcEngine(machine).prepare(
+        'assume event("Uploader.Idle.Fail", 0) == true;\n'
+        'assume event("Uploader.Idle.Fail", 0) == false;\n'
+        'check reach <= 1: active("Uploader.GaveUp");\n',
+        query_source_path="query.fbmcq",
+    )
+    opposed = solve_bmc_property(
+        compile_bmc_property(build_bmc_core_formula(bare)),
+        infeasibility_explanation="proof",
+    ).feasibility.explanation
+
+    assert {
+        (item.normalized_fact or {}).get("identity")
+        for item in opposed.core.items
+        if (item.normalized_fact or {}).get("kind") == "proposition"
+    } == {"Uploader.Idle.Fail@0"}
 
 
 #: Two events whose paths differ only in where the dots fall.
@@ -1691,3 +1753,84 @@ def test_an_event_a_query_never_mentions_does_not_change_the_answer(extra: str) 
     assert "case_condition_entailment" in {
         node.rule_id for node in explanation.proof.nodes if node.rule_id
     }
+
+
+#: The four queries the motivation for this catalog work states expectations for.
+#:
+#: Written out here rather than referenced, because the point of the table is that
+#: each shape closes: an arithmetic chain crossing a step, an event opposition, a
+#: state opposition, and a same-frame value conflict as the control.
+_CLOSING_QUERIES = {
+    "an_arithmetic_chain_across_a_step": (
+        'init state("Uploader.Idle") where retries == 0;\n'
+        'assume at 1: active("Uploader.Retrying");\n'
+        'assume at 2: var("retries") == 0;\n'
+        'check reach <= 2: active("Uploader.GaveUp");\n',
+        "preceding_value_entailment",
+    ),
+    "an_event_demanded_and_ruled_out": (
+        'assume event("Uploader.Fail", 0) == true;\n'
+        'assume event("Uploader.Fail", 0) == false;\n'
+        'check reach <= 2: active("Uploader.GaveUp");\n',
+        "boolean_complement",
+    ),
+    "a_state_demanded_and_ruled_out": (
+        'assume at 1: active("Uploader.Retrying");\n'
+        'assume at 1: !active("Uploader.Retrying");\n'
+        'check reach <= 2: active("Uploader.GaveUp");\n',
+        "excluded_state_selected",
+    ),
+    "one_frame_two_values": (
+        'init state("Uploader.Idle") where retries == 0;\n'
+        'assume at 0: var("retries") == 1;\n'
+        'check reach <= 2: active("Uploader.GaveUp");\n',
+        "incompatible_equalities",
+    ),
+}
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "query, closer",
+    list(_CLOSING_QUERIES.values()),
+    ids=list(_CLOSING_QUERIES),
+)
+def test_each_shape_the_catalog_was_extended_for_closes_at_proof_depth(
+    query: str, closer: str
+) -> None:
+    """Every shape reaches a verified proof, and the named rule is what took part.
+
+    Four shapes rather than one, and the rule is asserted rather than only the depth,
+    because reaching proof depth by a different route would satisfy the depth check
+    while leaving the rule this shape exists for unexercised -- which is the state two
+    of these were in before, reported as reachable by a closure analysis that read
+    premise kinds without running a query.
+
+    :param query: The query text.
+    :type query: str
+    :param closer: The rule expected to take part in the chain.
+    :type closer: str
+    """
+    explanation = _explain_during_model(query).explanation
+
+    assert explanation.achieved_mode == "proof"
+    assert explanation.status == "complete"
+    assert explanation.proof is not None
+    assert explanation.proof.verification_status == "verified"
+    assert closer in {node.rule_id for node in explanation.proof.nodes if node.rule_id}
+
+
+@pytest.mark.unittest
+def test_no_rule_in_the_catalog_is_left_without_a_query_that_reaches_it() -> None:
+    """The catalog has no member that only a closure analysis calls reachable.
+
+    Reachability was once read off ``premise_kinds`` alone, and four rules that the
+    reading called reachable were never lit by any query.  The record of which rules a
+    real run reaches therefore lives with the runs, not with the analysis: this asserts
+    the published set of reachable ids is the whole catalog, and the queries above plus
+    the rest of this module are what make it so.
+    """
+    from pyfcstm.bmc.proof_rules import PROOF_RULES, UNREACHABLE_RULE_IDS
+
+    assert UNREACHABLE_RULE_IDS == ()
+    assert len(PROOF_RULES) == 12

@@ -7086,7 +7086,9 @@
             "state_domain_exhaustion",
             "definedness_failure",
             "incompatible_equalities",
-            "boolean_complement"
+            "boolean_complement",
+            "excluded_state_selected",
+            "preceding_value_entailment"
           ]
         },
         "premise_ids": {

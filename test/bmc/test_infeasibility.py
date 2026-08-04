@@ -303,29 +303,24 @@ def test_an_achieved_proof_is_always_reported_complete() -> None:
     assert ("proof", "partial") not in seen, seen
 
 
-def test_a_state_opposition_still_cannot_reach_boolean_complement() -> None:
-    """Why ``boolean_complement`` is unreachable however the opposition is written.
-
-    The reference page used to blame event assumptions publishing a fact whose
-    content no rule reads.  That is true of events but is not the reason: the
-    checker accepts premises of kind ``proposition`` only, and nothing produces a
-    fact of that kind, so the rule stays out of reach even when the premises are
-    complete.
+def test_a_state_opposition_closes_without_reaching_boolean_complement() -> None:
+    """The cleanest state opposition closes, and not by the rule about propositions.
 
     ``active(X)`` and ``!active(X)`` at one frame are the cleanest opposition the
-    query language can state.  They publish two facts that carry their content,
-    agree on frame and state, and differ only in ``excluded`` -- and the result is
-    still a formal explanation.  A later change that starts producing
-    ``proposition`` facts should fail here, which is the signal that the page needs
-    rewriting.
+    query language can state.  Both halves of the claim below matter, and they used
+    to be one: this once asserted that the opposition reaches no rule at all, on the
+    correct observation that ``boolean_complement`` reads ``identity`` and ``holds``
+    while a state requirement carries ``frame``, ``state`` and ``excluded``.  The
+    observation held; the conclusion did not survive the catalog gaining a rule that
+    reads what a state requirement actually publishes.
 
-    Three independent gates hold this shut, which is worth knowing before trying to
-    open it: the closure filters candidates against ``premise_kinds`` before ever
-    proposing the rule, the checker asserts the premise kinds again, and the checker
-    then reads ``identity`` and ``holds`` -- fields a ``state_membership`` fact does
-    not have, carrying ``frame``, ``state`` and ``excluded`` instead.  Relaxing any
-    one or two of them leaves this test passing, so it is not pinned by a
-    single-point mutation.
+    So this pins two things.  The opposition closes at proof depth, by
+    ``excluded_state_selected`` -- a frame pinned to the state it also rules out.  And
+    ``boolean_complement`` is still not what closes it, because the two readings of a
+    state requirement are an equality and an exclusion, neither of which is a
+    proposition.  A later change that routes state requirements to ``proposition``
+    facts fails the second assertion, which is the signal that the reference page's
+    account of both rules needs rewriting.
     """
     core = _core_formula(
         'assume at 1: active("Root.A"); '
@@ -344,8 +339,12 @@ def test_a_state_opposition_still_cannot_reach_boolean_complement() -> None:
     assert len({fact["frame"] for fact in facts}) == 1
     assert len({fact["state"] for fact in facts}) == 1
 
-    assert explanation.achieved_mode == "formal"
-    assert explanation.proof is None
+    assert explanation.achieved_mode == "proof"
+    assert explanation.proof is not None
+
+    applied = {node.rule_id for node in explanation.proof.nodes if node.rule_id}
+    assert "excluded_state_selected" in applied
+    assert "boolean_complement" not in applied
 
 
 @pytest.mark.parametrize(

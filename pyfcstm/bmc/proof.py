@@ -210,7 +210,10 @@ _VARIADIC_RULES = frozenset({"state_domain_exhaustion"})
 #: its conclusion, exactly as it does for the other nine.  How a rule's conclusion is
 #: shaped is rule-specific work that belongs there; whether a predicate can settle it
 #: is what belongs here.
-_VERIFIED_BY = {"case_condition_entailment": "solver_entailment"}
+_VERIFIED_BY = {
+    "case_condition_entailment": "solver_entailment",
+    "preceding_value_entailment": "solver_entailment",
+}
 
 
 def _verification(
@@ -538,14 +541,23 @@ def _conclusion_for(
     :rtype: Optional[Mapping[str, object]]
     """
     facts = [node.fact for node in premises]
-    if rule_id in (
-        "incompatible_equalities",
-        "interval_intersection",
-        "state_domain_exhaustion",
-        "definedness_failure",
-        "boolean_complement",
-    ):
+    if rule_id in _CLOSING_RULES:
         return {"kind": "false"}
+    if rule_id == "preceding_value_entailment":
+        if len(facts) != 1:
+            return None
+        stated = facts[0]
+        frame = stated.get("frame")
+        if stated.get("kind") != "variable_equality" or not isinstance(frame, int):
+            return None
+        if frame <= 0 or stated.get("state_slot"):
+            return None
+        return {
+            "kind": "variable_equality",
+            "variable": stated.get("variable"),
+            "frame": frame - 1,
+            "value": stated.get("value"),
+        }
     if rule_id == "case_condition_entailment":
         # Neither guard is reached by the search, and for reasons worth keeping apart.
         # The arity and the tag are settled upstream by ``_candidates``, which matches
@@ -624,6 +636,17 @@ def _conclusion_for(
             expression,
         )
     return None
+
+
+#: Rules whose conclusion is the contradiction itself.
+#:
+#: Derived from the catalog rather than listed, because a rule added with
+#: ``conclusion_kind == "false"`` and left out of a literal list is registered,
+#: matched by ``_candidates``, and then never proposed -- it fails by being absent
+#: from the search, which no test of the rule's own predicate can see.
+_CLOSING_RULES = frozenset(
+    rule_id for rule_id, rule in PROOF_RULES.items() if rule.conclusion_kind == "false"
+)
 
 
 #: How a published comparison operator reads as a proof fact.

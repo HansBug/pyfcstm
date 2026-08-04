@@ -737,19 +737,37 @@ a consumer accepts both shapes.
        ``assume event("Root.A.Go", 0) == false`` publishes two ``proposition`` facts
        that agree on ``identity`` and differ in ``holds``.  The step is part of the
        identity, so the same event at two steps is two subjects rather than one.
-       An opposition written over states does **not** reach it and is not meant to:
-       ``assume at 1: active("Root.A")`` with ``assume at 1: !active("Root.A")``
-       publishes two ``state_membership`` facts differing in ``excluded``, because
-       the rule that exhausts a frame's state domain reads those exclusions and
-       would lose its only premise source if state assertions moved to
-       ``proposition``.
+       An opposition written over states does **not** reach it, and does not need
+       to: ``assume at 1: active("Root.A")`` with ``assume at 1: !active("Root.A")``
+       publishes two ``state_membership`` facts differing in ``excluded``, which
+       ``excluded_state_selected`` below closes.  State assertions stay where they
+       are rather than moving to ``proposition``, because the rule that exhausts a
+       frame's state domain reads those exclusions and would lose its only premise
+       source.
+   * - ``excluded_state_selected``
+     - yes
+     - That a frame is required to be in a state it also rules out.  The two
+       premises are one published fact kind read two ways: a state requirement that
+       holds reads as an equality on the frame's slot, and one that is excluded reads
+       as an exclusion.  Neither of the earlier rules applies -- an equality on a
+       slot is not a second equality, and one state is not a domain.
+   * - ``preceding_value_entailment``
+     - yes
+     - That a variable held the same value at the frame before the one a requirement
+       states it at.  A step that only carries a variable forward says nothing a fact
+       can restate, so this asks the solver what the members force instead, and cites
+       the ones that force it.  The direction is backwards because the requirement
+       that states the value is one member, which is what the citation seam can
+       record; a value carried forward from a derived step would stand for however
+       many members its subtree used.
 
 Six of these rules are exercised by the checked-in benchmark corpus under
 ``benchmarks/bmc/infeasibility/cases/handwritten/``, and its report records which
 case produced which rule.  The checked-in report was measured before
 ``boolean_complement`` became reachable, so it records five of them; the case that
-reaches the sixth is ``event_conflict.fbmcq``, in the same corpus.  The four rules
-of the arithmetic chain are reached by the queries
+reaches the sixth is ``event_conflict.fbmcq``, in the same corpus.  The rules of the
+arithmetic chain, together with ``excluded_state_selected`` and
+``preceding_value_entailment``, are reached by the queries
 :doc:`/explanations/bmc_solving/index` sets out, not yet by a corpus case.  Read the
 measured ratio there rather than from this page: it is a property of that corpus
 at a given revision, not of the tool.

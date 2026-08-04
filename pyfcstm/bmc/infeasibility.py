@@ -1568,6 +1568,95 @@ def check_core_bindings(
     )
 
 
+def _entailment_prover(members, budget: _SolveBudget):
+    """Return the predicate that decides whether these members establish a target.
+
+    Hoisted out of its first caller when a second phase needed the same three steps.
+    Two copies of the shrink and the consistency guard would be two chances to get
+    "informative" wrong, and the guard is the whole difference between a claim about
+    the target and a claim about nothing.
+
+    :param members: ``(stable_id, claim)`` for every core member.
+    :type members: Sequence[Tuple[str, object]]
+    :param budget: The solver budget the phase shares.
+    :type budget: _SolveBudget
+    :return: A callable taking a target and returning the member ids to cite, or
+        ``None`` when the target is not established non-vacuously.
+    :rtype: Callable[[object], Optional[Tuple[str, ...]]]
+    """
+
+    # Both answers below fold three solver outcomes into one boolean: decided the way
+    # this asked, decided the other way, and not decided at all.  ``check_core_bindings``
+    # next door keeps those three apart and writes a distinct sentence for each, and the
+    # difference is deliberate rather than an oversight here.  There, anything but
+    # ``unsat`` is a hard failure that ends the whole binding check, so which of the
+    # three it was decides what a reader should do about it.  Here, a solve that does
+    # not come back the way it was asked means one case does not discharge while every
+    # other case carries on, so the discharge decision is the same for the last two and
+    # the phase's own outcome is unchanged.
+    #
+    # Reporting them separately anyway was tried and reverted: no input was found that
+    # reaches an undecided solve inside this phase.  A tight budget is spent by an
+    # earlier phase, so this one never runs; a generous one decides these small
+    # queries; non-linear real arithmetic (``x * y``, ``x / y``, ``sqrt``) still comes
+    # back decided.  Two reviewers raised the asymmetry and both said they could not
+    # reproduce it either.  Adding an unreached branch to answer an unreproducible
+    # report is the shape of over-design, so this says why instead.
+    def entailed(claims: Sequence[Any], target: Any) -> bool:
+        """Report whether these claims refute the condition's negation."""
+        solver = z3.Solver()
+        solver.add(z3.And(z3.And(*claims), z3.Not(target)))
+        status, _, _, _, _ = _check_with_budget(solver, budget)
+        return status == "unsat"
+
+    def consistent(claims: Sequence[Any]) -> bool:
+        """Report whether these claims can hold together at all."""
+        solver = z3.Solver()
+        solver.add(z3.And(*claims))
+        status, _, _, _, _ = _check_with_budget(solver, budget)
+        return status == "sat"
+
+    def discharge_target(target: Any) -> Optional[Tuple[str, ...]]:
+        """Return the members that entail one target, or ``None`` when none do.
+
+            Three steps rather than one, because "the members entail this" is not yet
+            informative: the antecedent is a minimal unsat core, so it entails anything,
+            and the shrink plus the consistency guard are what turn the answer into a
+            claim about the target.  They are named together because they are one concept, and
+        two phases now ask it: a case's own condition, and a value a later frame pins.
+
+            :param target: The constraint to prove from the members.
+            :return: The member ids to cite, or ``None`` when the target is not
+                established non-vacuously.
+            :rtype: Optional[Tuple[str, ...]]
+        """
+        if not entailed([claim for _, claim in members], target):
+            return None
+        kept = list(members)
+        for candidate in list(members):
+            trimmed = [item for item in kept if item[0] != candidate[0]]
+            if trimmed and entailed([claim for _, claim in trimmed], target):
+                kept = trimmed
+        if not consistent([claim for _, claim in kept]):
+            # The check above is vacuous over members that contradict each other: a
+            # set that cannot hold entails every target, its negation included.
+            # These members normally do contradict each other -- they are a minimal
+            # unsatisfiable core -- so what makes an entailment here informative is
+            # the shrink, which drops members until the survivors can hold together
+            # and the question becomes a real one.  The shrink tends that way on its
+            # own, because an unsatisfiable subset still entails everything and so is
+            # always accepted; but tending is not the same as arriving.  When every
+            # single deletion breaks the entailment while the survivors still cannot
+            # hold, the shrink stops on a set that proves nothing, and a target the
+            # core outright refutes would be published as discharged.  Refusing here
+            # is the silent failure this function documents: no entry, so the rule
+            # never fires and the explanation stays at formal depth.
+            return None
+        return tuple(sorted(item[0] for item in kept))
+
+    return discharge_target
+
+
 def check_case_conditions(
     core: "BmcCoreFormula",
     facts: Sequence[Tuple[str, Mapping[str, object]]],
@@ -1664,74 +1753,7 @@ def check_case_conditions(
         z3.And(*[claim for _, claim in members]), declared, _event_paths_of(core)
     )
 
-    # Both answers below fold three solver outcomes into one boolean: decided the way
-    # this asked, decided the other way, and not decided at all.  ``check_core_bindings``
-    # next door keeps those three apart and writes a distinct sentence for each, and the
-    # difference is deliberate rather than an oversight here.  There, anything but
-    # ``unsat`` is a hard failure that ends the whole binding check, so which of the
-    # three it was decides what a reader should do about it.  Here, a solve that does
-    # not come back the way it was asked means one case does not discharge while every
-    # other case carries on, so the discharge decision is the same for the last two and
-    # the phase's own outcome is unchanged.
-    #
-    # Reporting them separately anyway was tried and reverted: no input was found that
-    # reaches an undecided solve inside this phase.  A tight budget is spent by an
-    # earlier phase, so this one never runs; a generous one decides these small
-    # queries; non-linear real arithmetic (``x * y``, ``x / y``, ``sqrt``) still comes
-    # back decided.  Two reviewers raised the asymmetry and both said they could not
-    # reproduce it either.  Adding an unreached branch to answer an unreproducible
-    # report is the shape of over-design, so this says why instead.
-    def entailed(claims: Sequence[Any], target: Any) -> bool:
-        """Report whether these claims refute the condition's negation."""
-        solver = z3.Solver()
-        solver.add(z3.And(z3.And(*claims), z3.Not(target)))
-        status, _, _, _, _ = _check_with_budget(solver, budget)
-        return status == "unsat"
-
-    def consistent(claims: Sequence[Any]) -> bool:
-        """Report whether these claims can hold together at all."""
-        solver = z3.Solver()
-        solver.add(z3.And(*claims))
-        status, _, _, _, _ = _check_with_budget(solver, budget)
-        return status == "sat"
-
-    def discharge_target(target: Any) -> Optional[Tuple[str, ...]]:
-        """Return the members that entail one target, or ``None`` when none do.
-
-        Three steps rather than one, because "the members entail this" is not yet
-        informative: the antecedent is a minimal unsat core, so it entails anything,
-        and the shrink plus the consistency guard are what turn the answer into a
-        claim about the target.  They are named together here because they are one
-        concept, not because a second caller exists -- there is one.
-
-        :param target: The constraint to prove from the members.
-        :return: The member ids to cite, or ``None`` when the target is not
-            established non-vacuously.
-        :rtype: Optional[Tuple[str, ...]]
-        """
-        if not entailed([claim for _, claim in members], target):
-            return None
-        kept = list(members)
-        for candidate in list(members):
-            trimmed = [item for item in kept if item[0] != candidate[0]]
-            if trimmed and entailed([claim for _, claim in trimmed], target):
-                kept = trimmed
-        if not consistent([claim for _, claim in kept]):
-            # The check above is vacuous over members that contradict each other: a
-            # set that cannot hold entails every target, its negation included.
-            # These members normally do contradict each other -- they are a minimal
-            # unsatisfiable core -- so what makes an entailment here informative is
-            # the shrink, which drops members until the survivors can hold together
-            # and the question becomes a real one.  The shrink tends that way on its
-            # own, because an unsatisfiable subset still entails everything and so is
-            # always accepted; but tending is not the same as arriving.  When every
-            # single deletion breaks the entailment while the survivors still cannot
-            # hold, the shrink stops on a set that proves nothing, and a target the
-            # core outright refutes would be published as discharged.  Refusing here
-            # is the silent failure this function documents: no entry, so the rule
-            # never fires and the explanation stays at formal depth.
-            return None
-        return tuple(sorted(item[0] for item in kept))
+    discharge_target = _entailment_prover(members, budget)
 
     for stable_id, fact in conditional:
         encoded = [
@@ -1756,6 +1778,113 @@ def check_case_conditions(
         discharged[stable_id] = cited
     return discharged, ProbeRecord(
         "case_condition", "complete", bool(discharged), elapsed(), None
+    )
+
+
+def check_value_carries(
+    core: "BmcCoreFormula",
+    facts: Sequence[Tuple[str, Mapping[str, object]]],
+    member_ids: Sequence[str],
+    budget: _SolveBudget,
+) -> Tuple[Dict[str, Tuple[str, ...]], ProbeRecord]:
+    """Prove which core members pin a value at the frame before the one that states it.
+
+    A step that leaves a variable alone says nothing a fact can restate: the published
+    reading declines "x becomes x" on the grounds that the transition did not say it,
+    and that decision is right about what a transition *says*.  The consequence is that
+    a contradiction spanning such a step has no fact to stand on, and the whole chain
+    stops one frame short of the assumption it contradicts.
+
+    What the step does do is constrain, and a constraint is what this phase can ask
+    about.  The direction is backwards on purpose.  Carrying a derived value *forward*
+    would make the premise a derived node, and a derived node stands for however many
+    members its subtree used, which the citation seam refuses -- reading the first of
+    several would attribute an entailment proved about one member to another.  A value
+    an assumption states is one member, so the question "what does this force at the
+    previous frame" has an answer the seam can record.
+
+    The step relation alone does not answer it.  It holds every case the step could
+    take, so on its own it permits the ones that change the variable; the case has to
+    be selected, which the frame's own state requirement does.  The citation therefore
+    names the state requirement too, and a reader sees why the value could not have
+    been anything else.
+
+    :param core: The core whose members supply the constraints.
+    :type core: BmcCoreFormula
+    :param facts: The published proof facts, as ``(stable_id, fact)``.
+    :type facts: Sequence[Tuple[str, Mapping[str, object]]]
+    :param member_ids: Every core member, whether or not a fact was read from it.
+    :type member_ids: Sequence[str]
+    :param budget: The solver budget this phase shares with the others.
+    :type budget: _SolveBudget
+    :return: Member ids of value requirements whose preceding frame was pinned, each
+        with the members cited, and this phase's record.
+    :rtype: Tuple[Dict[str, Tuple[str, ...]], ProbeRecord]
+
+    Example::
+
+        >>> from pyfcstm.bmc.solver import _SolveBudget
+        >>> carried, record = check_value_carries(None, (), (), _SolveBudget(None))
+        >>> carried, record.status
+        ({}, 'complete')
+    """
+    started_at = time.perf_counter()
+
+    def elapsed() -> float:
+        return (time.perf_counter() - started_at) * 1000.0
+
+    carried: Dict[str, Tuple[str, ...]] = {}
+    # These are the translated facts the rules read, not the published ones: a
+    # comparison has already been split into an equality or a bound by the time it
+    # gets here, and only an equality pins a value there is anything to carry.  A
+    # state slot is excluded because its own rules compare states; frame 0 has no
+    # predecessor to carry to.
+    stated = [
+        (stable_id, fact)
+        for stable_id, fact in facts
+        if fact.get("kind") == "variable_equality"
+        and not fact.get("state_slot")
+        and isinstance(fact.get("frame"), int)
+        and fact.get("frame") > 0
+    ]
+    if not stated:
+        return carried, ProbeRecord("value_carry", "complete", False, elapsed(), None)
+
+    groups = {group.stable_id: group for group in core._tracked_groups}
+    declared = _declared_variable_names(core)
+    members: List[Tuple[str, Any]] = []
+    for stable_id in member_ids:
+        group = groups.get(stable_id)
+        if group is None:
+            continue
+        members.append(
+            (
+                stable_id,
+                z3.And(*group.expressions) if group.expressions else z3.BoolVal(True),
+            )
+        )
+    if not members:
+        return carried, ProbeRecord("value_carry", "complete", False, elapsed(), None)
+
+    symbols = _binding_symbols(
+        z3.And(*[claim for _, claim in members]), declared, _event_paths_of(core)
+    )
+    discharge_target = _entailment_prover(members, budget)
+
+    for stable_id, fact in stated:
+        symbol = symbols.get((fact["frame"] - 1, fact.get("variable")))
+        if symbol is None:
+            # The previous frame never mentions this variable in any member, so there
+            # is no symbol to state the target about.  Publication and this layer
+            # resolve symbols the same way, so this is the honest "nothing to ask"
+            # rather than a disagreement between them.
+            continue
+        cited = discharge_target(symbol == fact.get("value"))
+        if cited is None:
+            continue
+        carried[stable_id] = cited
+    return carried, ProbeRecord(
+        "value_carry", "complete", bool(carried), elapsed(), None
     )
 
 
@@ -1883,7 +2012,7 @@ def _bind_against_one_unit(
     return _UnitBindingOutcome(attribution=(matched[0], len(units)))
 
 
-def _event_paths_of(core: Optional["BmcCoreFormula"]) -> Tuple[str, ...]:
+def _event_paths_of(core: "BmcCoreFormula") -> Tuple[str, ...]:
     """Return the event paths of one core's domain, as the author spelled them.
 
     The encoder's symbol body replaces a path's dots, so a name recovered from it
@@ -1894,13 +2023,18 @@ def _event_paths_of(core: Optional["BmcCoreFormula"]) -> Tuple[str, ...]:
     one symbol against different tables put two spellings of one event into one
     document and make the lookup miss.
 
-    :param core: The core whose domain declares the events, or ``None``.
-    :type core: Optional[BmcCoreFormula]
-    :return: The declared event paths, empty when there is no core to ask.
+    There is no guard for a missing core, deliberately.  Every caller dereferences
+    ``core`` before it reaches here, so a ``None`` cannot arrive -- and a guard
+    returning an empty table would be worse than its absence: an empty table is
+    falsy, so the reader it feeds falls back to the symbol body, which is the
+    spelling this function exists to avoid.  An attribute error names the bug; a
+    silent empty table reinstates it.
+
+    :param core: The core whose domain declares the events.
+    :type core: BmcCoreFormula
+    :return: The declared event paths.
     :rtype: Tuple[str, ...]
     """
-    if core is None:
-        return ()
     return tuple(
         entry["path"] for entry in core.context.domain.to_canonical()["events"]
     )
@@ -2461,6 +2595,10 @@ def explain_infeasibility(
                 core, proof_facts, member_ids, budget
             )
             checks = checks + (discharge_record,)
+            carries, carry_record = check_value_carries(
+                core, proof_facts, member_ids, budget
+            )
+            checks = checks + (carry_record,)
             proof, proof_record = build_domain_proof(
                 published.scope,
                 proof_facts,
@@ -2469,7 +2607,10 @@ def explain_infeasibility(
                 state_names=state_names,
                 # Keyed by rule, so a second solver-decided rule joins the same
                 # argument instead of adding another one.
-                solver_verdicts={"case_condition_entailment": discharges},
+                solver_verdicts={
+                    "case_condition_entailment": discharges,
+                    "preceding_value_entailment": carries,
+                },
                 # What the binding check proved, rather than what the group is: a
                 # case fact was proved equivalent to one requirement out of several,
                 # and an input that published ``core_binding`` for it would claim the

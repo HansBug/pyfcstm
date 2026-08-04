@@ -121,6 +121,12 @@ check\_case\_conditions
 .. autofunction:: check_case_conditions
 
 
+check\_value\_carries
+-----------------------------------------------------
+
+.. autofunction:: check_value_carries
+
+
 encodable\_fact\_kinds
 -----------------------------------------------------
 

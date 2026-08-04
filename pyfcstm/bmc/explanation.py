@@ -120,6 +120,8 @@ BmcProofRuleId = Literal[
     "definedness_failure",
     "incompatible_equalities",
     "boolean_complement",
+    "excluded_state_selected",
+    "preceding_value_entailment",
 ]
 BmcProofVerificationMethod = Literal[
     "core_binding", "core_binding_unit", "rule_checker", "solver_entailment"

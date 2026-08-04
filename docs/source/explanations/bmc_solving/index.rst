@@ -443,7 +443,7 @@ premises could have settled it.  The translation from core members to proof fact
 emits seven kinds and none of them is an ``arithmetic_expression``, so that fact
 still has exactly one producer and the chain still starts where it always would
 have -- what changed is that the first link now carries no condition.  Zero of its
-ten rules never fire, and the
+twelve rules never fire, and the
 paragraphs above still describe the conflicts that have no proof: those are the ones
 whose *facts* no core member states, which is a different shortage from the one this
 rule filled.

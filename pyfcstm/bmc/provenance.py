@@ -959,7 +959,10 @@ def proposition_identity(path: str, step: int) -> str:
     compares this for equality, so a fourth spelling would make a rule refuse a premise
     that says exactly what it asked for.
 
-    :param path: The event path, as the encoder spells it in the symbol name.
+    The caller owes an authored path, not one recovered from a symbol body.  This
+    function joins what it is given, so passing the body's spelling produces an
+    identity no other layer will match.
+    :param path: The event path, as the model declares it.
     :type path: str
     :param step: The macro-step the symbol names.
     :type step: int
@@ -1144,6 +1147,11 @@ def _condition_facts(
     :param declared: Model variable names to resolve symbols against, defaults to
         ``None``.
     :type declared: Optional[Iterable[str]], optional
+    :param event_paths: Event paths to resolve an event conjunct against, defaults
+        to ``None``.  Without them the reading recovers the encoder's symbol body,
+        which spells a path's dots as underscores -- a different subject from the one
+        a bare event assumption publishes for the same event.
+    :type event_paths: Optional[Iterable[str]], optional
     :return: The facts the condition requires, in conjunction order, or ``None``
         when any conjunct has no reading.
     :rtype: Optional[Tuple[Dict[str, Any], ...]]
@@ -1179,12 +1187,23 @@ def _event_proposition_in(
     """Read a condition conjunct that requires an event, as a ``proposition`` fact.
 
     The same reading the proposition publisher performs, applied where a case's
-    condition names the event that triggers its transition.  No event-path table is
-    needed: the encoder puts the path and the step into the symbol's own name, so the
-    fact is recoverable from the symbol alone.
+    condition names the event that triggers its transition -- including the table it
+    resolves against.
+
+    This once said no table was needed, on the grounds that the encoder puts the path
+    and the step into the symbol's own name.  It puts a *replacement* of the path
+    there: the dots become underscores, and reading the body back recovers the
+    replacement.  The reasoning was the defect, not a description of it -- the same
+    event then had one spelling here and another where a bare assumption published it,
+    and since every consumer compares the subject for equality, a rule stopped finding
+    a premise that said exactly what it asked for.
 
     :param expression: One conjunct of a case's selection condition.
     :type expression: z3.BoolRef
+    :param event_paths: Event paths to resolve the symbol against, defaults to
+        ``None``.  Omitting them falls back to the body reading described above, which
+        is correct only for a path whose characters survive the replacement intact.
+    :type event_paths: Optional[Iterable[str]], optional
     :return: A ``proposition`` fact, or ``None`` when the conjunct names no event.
     :rtype: Optional[Dict[str, object]]
 

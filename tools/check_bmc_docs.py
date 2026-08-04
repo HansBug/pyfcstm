@@ -116,6 +116,8 @@ _PROOF_RULE_IDS = (
     "definedness_failure",
     "incompatible_equalities",
     "boolean_complement",
+    "excluded_state_selected",
+    "preceding_value_entailment",
 )
 
 #: Every way a proof step can be checked before it is published.
@@ -1011,10 +1013,21 @@ _CHINESE_NUMERALS: Tuple[Tuple[str, ...], ...] = (
     ("十二",),
 )
 
-#: The character class matching any spelling above, for use inside a pattern.
-_CHINESE_NUMERAL_CLASS = "[%s]" % "".join(
-    spelling for forms in _CHINESE_NUMERALS for spelling in forms
+#: An alternation matching any spelling above, for use inside a pattern.
+#:
+#: Longest first, and an alternation rather than a character class.  A class over
+#: these spellings collapses to single characters, so ``十二`` matched as ``二`` and
+#: the page was reported as spelling the count wrong when it spelled it right -- the
+#: same ordering rule the lexer follows for multi-character operators.
+_CHINESE_NUMERAL_ALTERNATION = "(?:%s)" % "|".join(
+    sorted(
+        (spelling for forms in _CHINESE_NUMERALS for spelling in forms),
+        key=lambda spelling: (-len(spelling), spelling),
+    )
 )
+
+#: Retained under its former name for the patterns that spell it in place.
+_CHINESE_NUMERAL_CLASS = _CHINESE_NUMERAL_ALTERNATION
 
 
 def _flowed_text(path: Path) -> str:

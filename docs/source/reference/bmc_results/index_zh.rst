@@ -638,15 +638,28 @@ scope 上面那句话。粒度、成员数、带标签的最小性行以及解�
      - 同一个要求同时被要求成立又被排除。经事件断言可达：``assume event("Root.A.Go", 0) == true``
        与 ``assume event("Root.A.Go", 0) == false`` 会发布两个 ``proposition`` 事实，
        ``identity`` 相同而 ``holds`` 相反。步号是 ``identity`` 的一部分，所以同一事件
-       在两个步上是两个主体而非一个。写在状态上的对立式\ **不**\ 触发它，而且这是有意的：
+       在两个步上是两个主体而非一个。写在状态上的对立式\ **不**\ 触发它，也不需要触发它：
        ``assume at 1: active("Root.A")`` 配 ``assume at 1: !active("Root.A")`` 发布的是两个
-       只在 ``excluded`` 上相反的 ``state_membership`` 事实——因为穷尽帧状态域的那条规则
-       正是读这些排除，若状态断言改走 ``proposition``，它会失去唯一的前提来源。
+       只在 ``excluded`` 上相反的 ``state_membership`` 事实，由下面的
+       ``excluded_state_selected`` 闭合。状态断言不改走 ``proposition``，因为穷尽帧状态域的
+       那条规则正是读这些排除，改了它会失去唯一的前提来源。
+   * - ``excluded_state_selected``
+     - 是
+     - 某一帧被要求处于它同时排除的状态。两个前提来自同一个已发布事实类的两种读法：成立的
+       状态要求读作该帧状态槽上的等式，被排除的读作排除。此前的规则都不适用——状态槽上的
+       等式不是第二个等式，单个状态也不是一个域。
+   * - ``preceding_value_entailment``
+     - 是
+     - 某变量在「某要求陈述它的那一帧」的前一帧持有同一个值。只保持变量的步骤说不出任何
+       事实能复述的话，所以这里改问求解器「核成员强制了什么」，并点名强制它的那些成员。
+       方向是反向的，因为陈述该值的要求是单个成员，这正是引用接缝能记录的形态；向前传递的
+       前提会是派生节点，而派生节点代表其子树用到的全部成员。
 
 其中六条由入库的 benchmark 语料
 ``benchmarks/bmc/infeasibility/cases/handwritten/`` 行使，其报告记录了哪个用例产出了
 哪条规则。入库报告的测量早于 ``boolean_complement`` 变为可达，因此只记录其中五条；
-走到第六条的用例是同一份语料里的 ``event_conflict.fbmcq``\ 。算术链那四条规则由
+走到第六条的用例是同一份语料里的 ``event_conflict.fbmcq``\ 。算术链那几条规则，连同
+``excluded_state_selected`` 与 ``preceding_value_entailment``\ ，由
 :doc:`/explanations/bmc_solving/index_zh` 给出的查询走到，尚无对应的语料用例。实测
 比值请从那里读，而不要从本页读：它是那份语料在某个版本上的性质，不是工具的性质。
 

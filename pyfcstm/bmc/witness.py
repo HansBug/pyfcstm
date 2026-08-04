@@ -2075,6 +2075,7 @@ _FEASIBILITY_REFINEMENT_NAMES = {
     "value_propagation",
     "core_binding",
     "case_condition",
+    "value_carry",
     "proof_construction",
 }
 _FEASIBILITY_REFINEMENT_STATUSES = {
@@ -2115,6 +2116,10 @@ _FEASIBILITY_PHASE_REFINEMENT_NAMES = _FEASIBILITY_CORE_REFINEMENT_NAMES | {
     # same reason core binding does.  It supports the deeper tier and proves nothing
     # about the core, so it stays out of the core family.
     "case_condition",
+    # Pinning a value at the frame before the one that states it, for the same reason
+    # and by the same machinery: one entailment check per value requirement plus the
+    # shrink over each citation set.
+    "value_carry",
     "proof_construction",
 }
 _FEASIBILITY_TIMEOUT_BEFORE_ASSUMPTIONS = (

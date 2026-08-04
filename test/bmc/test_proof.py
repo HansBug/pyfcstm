@@ -125,6 +125,8 @@ def test_the_proof_vocabularies_are_transcribed_from_the_contract() -> None:
         "definedness_failure",
         "incompatible_equalities",
         "boolean_complement",
+        "excluded_state_selected",
+        "preceding_value_entailment",
     )
     assert module._PROOF_VERIFICATION_METHODS == (
         "core_binding",

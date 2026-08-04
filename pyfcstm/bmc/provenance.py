@@ -1146,40 +1146,6 @@ def _condition_facts(
     return tuple(facts)
 
 
-def _condition_can_hold(expression: Any) -> bool:
-    """Report whether a case's condition is satisfiable at all.
-
-    A case whose condition cannot hold never fires, so it states nothing about the
-    step and must not be counted among the step's assignments.  The shape this exists
-    for is the fallback case of a state whose every outgoing transition is
-    unconditional: "no transition applies" reduces to ``s == state and not s ==
-    state``.
-
-    The solve is over one small condition with no budget attached, which is
-    deliberate: a step relation has a handful of cases and each condition is a short
-    conjunction, and an unknown answer is treated as "may hold" so an undecided solve
-    can only make the reading more conservative, never less.
-
-    :param expression: The case's selection condition.
-    :type expression: z3.BoolRef
-    :return: ``False`` only when the condition is refuted outright.
-    :rtype: bool
-
-    Example::
-
-        >>> import z3
-        >>> _condition_can_hold(z3.BoolVal(True))
-        True
-        >>> _condition_can_hold(z3.BoolVal(False))
-        False
-    """
-    import z3
-
-    solver = z3.Solver()
-    solver.add(expression)
-    return solver.check() != z3.unsat
-
-
 def _event_proposition_in(expression: Any) -> Optional[Dict[str, Any]]:
     """Read a condition conjunct that requires an event, as a ``proposition`` fact.
 
@@ -1414,14 +1380,6 @@ def _transition_case_fact(
     The group would then need one fact per assignment, and publishing one of them
     as though it were the group's reading would hide the rest.
 
-    A requirement whose condition cannot hold is not one of them.  A step's fallback
-    case requires that no transition applies, and where every transition out of the
-    state is unconditional that requirement reduces to ``s == state and not
-    s == state`` -- unsatisfiable, so the case never fires and says nothing about the
-    step.  Counting it as a second assignment is what made a ``during`` action on such
-    a state unreadable: two readings, one of them empty, and the group declined a
-    reading it could have given.
-
     :param group: The tracked group to read.
     :type group: BmcTrackedConstraint
     :param declared: Model variable names to resolve symbols against, defaults to
@@ -1446,7 +1404,7 @@ def _transition_case_fact(
             _assignment_in_unit(unit, step, declared)
             for unit in conjunctive_units(group.expressions[0])
         )
-        if reading is not None and _condition_can_hold(reading["condition_expression"])
+        if reading is not None
     ]
     if len(readings) != 1:
         return None

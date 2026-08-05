@@ -612,21 +612,23 @@ def test_write_build_identity_file_leaves_no_descriptor_or_temporary_file(tmp_pa
 
 
 @pytest.mark.unittest
-def test_directory_fsync_is_its_own_function(tmp_path):
-    """The post-replace directory flush is reachable without holding the temporary.
+def test_directory_flush_is_delegated_rather_than_opened_inline(tmp_path, monkeypatch):
+    """The writer reaches the post-replace flush through a separate function.
 
-    Inlining it would need a nested ``try`` opened while the temporary file is
-    held, which is the shape that leaks from CPython 3.11 onwards.
+    Observed by substitution rather than by reading the source: the flush must
+    be somewhere the writer can call while holding nothing, because opening the
+    descriptor inline would need a nested ``try`` entered while the temporary
+    file is still held.
     """
-    import inspect
-
-    assert inspect.isfunction(_build_identity._fsync_directory)
-    body = inspect.getsource(_build_identity.write_build_identity_file)
-    assert "_fsync_directory(target.parent)" in body
-    assert "os.open(" not in body
+    called = []
+    monkeypatch.setattr(
+        _build_identity, "_fsync_directory", lambda directory: called.append(directory)
+    )
+    target = tmp_path / "build_info.py"
+    _build_identity.write_build_identity_file(str(target), _identity())
+    assert target.is_file()
     if _build_identity._is_windows():
-        # Windows refuses os.open on a directory, which is exactly why the
-        # writer guards the call with the same predicate. The structural
-        # assertions above are the portable half of this test.
-        return
-    _build_identity._fsync_directory(tmp_path)
+        # Windows refuses os.open on a directory, so the writer skips the flush.
+        assert called == []
+    else:
+        assert called == [tmp_path]

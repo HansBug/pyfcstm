@@ -260,10 +260,6 @@ def _terminate(
     process, job, posix_group: bool, grace: float = SIGTERM_GRACE
 ) -> Optional[str]:
     """Terminate one worker tree and return cleanup diagnostics."""
-    if process is None:
-        # Ownership handlers established before the spawn can reach cleanup with
-        # nothing spawned yet; that is a clean exit, not a termination failure.
-        return None
     if job is not None:
         return _finish_job(job, process, grace, terminate=True)
     errors = []
@@ -741,11 +737,13 @@ def run_check_process(
         if os.name == "nt":
             try:
                 tree.job = attach_process(process)
-            except Exception as err:
-                # Native job setup fails in restricted or already-nested job
-                # environments. Only Exception is caught: a control sentinel
-                # unwinds to the owning context manager, which terminates the
-                # worker there rather than turning it into a check result.
+            except JobAssignmentError as err:
+                # attach_process normalises every native failure -- restricted or
+                # already-nested job environments, a missing ctypes, a refused
+                # handle -- into this one class, so it is the whole reachable set.
+                # Anything else, a control sentinel included, unwinds to the
+                # owning context manager, which terminates the worker there
+                # rather than turning it into a check result.
                 cleanup_error = tree.terminate()
                 details = str(err)
                 if cleanup_error:

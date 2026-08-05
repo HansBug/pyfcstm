@@ -509,19 +509,16 @@ def write_build_identity_file(path: os.PathLike, identity: BuildIdentity) -> Non
         if not _is_windows():
             _fsync_directory(target.parent)
     finally:
+        # Nothing in here may raise: a control-flow exception can be unwinding,
+        # and replacing it with a cleanup failure would hide why the write
+        # stopped. Each helper reports instead.
         if stream is not None:
-            stream.close()
+            _close_stream(stream)
         elif fd is not None:
             # os.fdopen raised, so the descriptor never found a new owner.
             _close_descriptor(fd)
         if temporary_name is not None:
-            try:
-                os.unlink(temporary_name)
-            except FileNotFoundError:
-                # os.replace has already moved this temporary path on a
-                # successful atomic replacement, so cleanup has no remaining
-                # file to remove.
-                pass
+            _discard_temporary(temporary_name)
 
 
 def _close_descriptor(descriptor: int) -> None:
@@ -543,6 +540,51 @@ def _close_descriptor(descriptor: int) -> None:
         # Only reachable when os.fdopen already failed, so an exception is
         # unwinding that describes the real problem better than this one.
         pass
+
+
+def _close_stream(stream) -> None:
+    """
+    Close the temporary writer without displacing the reportable cause.
+
+    :param stream: The stream to close.
+    :type stream: io.IOBase
+    :return: ``None``.
+    :rtype: None
+    """
+    try:
+        stream.close()
+    except OSError:
+        # A buffered flush can fail on close when the filesystem filled up. The
+        # descriptor is released either way, and whatever led here -- a write
+        # error, or an interrupt -- describes the problem better.
+        pass
+
+
+def _discard_temporary(path: str) -> None:
+    """
+    Remove the abandoned temporary file, reporting rather than raising.
+
+    :param path: Temporary file to remove.
+    :type path: str
+    :return: ``None``.
+    :rtype: None
+    """
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        # os.replace has already moved this temporary path on a successful
+        # atomic replacement, so cleanup has no remaining file to remove.
+        return
+    except OSError as err:
+        # A read-only or removed parent directory keeps the file alive. stderr
+        # is still available here, so the failure stays observable instead of
+        # being swallowed or raised over an in-flight exception.
+        message = "pyfcstm: failed to remove temporary file {}: {}\n".format(path, err)
+        try:
+            os.write(2, message.encode("ascii", "backslashreplace"))
+        except OSError:
+            # Raw stderr is closed; the primary exception still reaches the caller.
+            pass
 
 
 def _fsync_directory(directory: Path) -> None:

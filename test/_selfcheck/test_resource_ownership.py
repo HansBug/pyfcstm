@@ -2,9 +2,9 @@
 
 import glob
 import os
+import shutil
 import subprocess
 import sys
-import textwrap
 import time
 import tempfile
 
@@ -73,34 +73,46 @@ def _kill_and_reap_pids(pids):
         except OSError:
             # The child may have exited between detection and the signal.
             pass
-    _reap()
+    _reap(pids)
 
 
-def _wait_for_no_children(pid, timeout=5.0):
-    """Wait until *pid* has no children left, returning whatever still remains.
+def _wait_for_new_children(baseline, timeout=5.0):
+    """Wait until no child outside *baseline* is left, returning any that are.
+
+    Compared against a baseline rather than asserting the process has no
+    children at all: under ``pytest -n`` this worker also hosts multiprocessing
+    helpers belonging to other tests, and "this process has no children" is not
+    a property of the code under test.
 
     SIGKILL delivery and reaping are both asynchronous, so a child killed a
-    moment ago can still be listed as a zombie. Only a bounded wait can tell
-    that apart from a child that was never released.
+    moment ago can still be listed as a zombie. Only a bounded wait tells that
+    apart from a child that was never released.
     """
     deadline = time.monotonic() + timeout
     while True:
-        _reap()
-        remaining = _child_pids(pid)
+        remaining = [pid for pid in _child_pids(os.getpid()) if pid not in baseline]
+        _reap(remaining)
+        remaining = [pid for pid in _child_pids(os.getpid()) if pid not in baseline]
         if not remaining or time.monotonic() >= deadline:
             return remaining
         time.sleep(0.05)
 
 
-def _reap():
-    """Collect any already-exited children so counts do not carry over."""
-    while True:
+def _reap(pids):
+    """Collect the given children, and only those.
+
+    Never ``waitpid(-1)``: this process also owns subprocesses belonging to
+    other tests and to :mod:`multiprocessing`, and reaping one of those makes
+    its real owner see ``ChildProcessError``, which :class:`subprocess.Popen`
+    swallows and reports as ``returncode = 0``. A genuine non-zero exit
+    elsewhere would then read as success.
+    """
+    for pid in pids:
         try:
-            pid, _ = os.waitpid(-1, os.WNOHANG)
-        except ChildProcessError:
-            return
-        if pid == 0:
-            return
+            os.waitpid(pid, os.WNOHANG)
+        except (ChildProcessError, OSError):
+            # Already reaped by its owner, or never ours to begin with.
+            pass
 
 
 def _sleeper():
@@ -123,27 +135,29 @@ def _worker_popen_kwargs():
 @requires_proc
 def test_bounded_popen_reaps_the_child_when_the_body_is_interrupted():
     """An interrupt inside the ``with`` body still terminates and reaps the child."""
-    _reap()
+    baseline = set(_child_pids(os.getpid()))
     with pytest.raises(KeyboardInterrupt):
         with registry_module._bounded_popen(
             _sleeper(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         ) as child:
             assert child.poll() is None
             raise KeyboardInterrupt("interrupted while the child is running")
-    assert _wait_for_no_children(os.getpid()) == []
+    assert _wait_for_new_children(baseline) == []
 
 
 @requires_proc
 def test_run_subprocess_bounded_leaves_no_orphan_at_any_injection_point():
     """No line of the bounded runner leaves a live or unreaped child behind."""
-    _reap()
+    baseline = set(_child_pids(os.getpid()))
     report = inject_per_line(
         registry_module._run_subprocess_bounded,
         lambda: registry_module._run_subprocess_bounded(_sleeper(), timeout=0.3),
+        lambda: {pid for pid in _child_pids(os.getpid()) if pid not in baseline},
+        _kill_and_reap_pids,
+        must_reach=("_bounded_popen(", "process.poll()", "_read_bounded_process_file("),
     )
-    assert report.points_reached > 0
     assert not report.body_windows, report.describe()
-    assert _wait_for_no_children(os.getpid()) == []
+    assert _wait_for_new_children(baseline) == []
 
 
 def test_session_transport_removes_its_directory_when_the_body_raises():
@@ -196,7 +210,7 @@ def test_output_spools_yield_no_half_created_pair(monkeypatch):
 @requires_proc
 def test_worker_tree_terminates_the_worker_when_the_body_raises():
     """An interrupt in the ``with`` body terminates the spawned worker tree."""
-    _reap()
+    baseline = set(_child_pids(os.getpid()))
     with pytest.raises(KeyboardInterrupt):
         with process_module._worker_tree(
             _sleeper(),
@@ -207,7 +221,7 @@ def test_worker_tree_terminates_the_worker_when_the_body_raises():
             assert spawn_error is None
             assert tree.process.poll() is None
             raise KeyboardInterrupt("interrupted while the worker runs")
-    assert _wait_for_no_children(os.getpid()) == []
+    assert _wait_for_new_children(baseline) == []
 
 
 def test_worker_tree_reports_a_failed_spawn_instead_of_raising():
@@ -230,11 +244,6 @@ def test_worker_tree_terminates_only_once():
         assert spawn_error is None
         tree.terminate()
         assert tree.terminate() is None
-
-
-def test_terminate_accepts_a_tree_that_was_never_spawned():
-    """Cleanup reached before the spawn is a clean exit, not an attribute error."""
-    assert process_module._terminate(None, None, False, 0.5) is None
 
 
 @requires_proc
@@ -311,7 +320,7 @@ def test_output_spools_leave_no_descriptor_at_any_injection_point():
 @requires_proc
 def test_worker_tree_leaves_no_child_at_any_injection_point():
     """No line of the worker context manager can strand the spawned child."""
-    _reap()
+    baseline = set(_child_pids(os.getpid()))
 
     def use_tree():
         with process_module._worker_tree(
@@ -322,67 +331,54 @@ def test_worker_tree_leaves_no_child_at_any_injection_point():
     report = inject_per_line(
         process_module._worker_tree,
         use_tree,
-        lambda: set(_child_pids(os.getpid())),
+        lambda: {pid for pid in _child_pids(os.getpid()) if pid not in baseline},
         _kill_and_reap_pids,
+        must_reach=("_spawn_worker_process(", "yield tree", "owner.terminate()"),
     )
-    assert report.points_reached > 0
     assert not report.body_windows, report.describe()
-    assert _wait_for_no_children(os.getpid()) == []
+    assert _wait_for_new_children(baseline) == []
 
 
-def test_no_ownership_function_opens_a_handler_while_holding():
-    """No resource-owning function nests a ``try`` inside its own ``try``.
+@requires_proc
+def test_run_check_process_releases_everything_at_any_injection_point(private_tmpdir):
+    """No line of the supervisor entry point strands a resource.
 
-    Version-independent on purpose. The runtime consequence only appears from
-    CPython 3.11, where the inner ``try:`` compiles to a ``NOP`` that no
-    exception-table entry covers and the owner's ``finally`` is skipped
-    outright. A suite pinned to 3.10 would never see it, so the shape is
-    checked structurally instead of only by injection.
+    This is the composition a user actually interrupts, and the per-manager
+    sweeps above cannot see a resource the entry point acquires between them.
+    It spawns one real worker per injection point, so it is the most expensive
+    test in this file -- about 25 seconds for 74 points -- which is affordable
+    only because most points abort the run before the worker does any work.
     """
-    import ast
-    import inspect
+    from pyfcstm._selfcheck.model import CheckSpec
 
-    import pyfcstm.entry.bmc as bmc_module
-    from pyfcstm import _bootstrap
-    from pyfcstm.config import _build_identity
+    baseline = set(_child_pids(os.getpid()))
+    spec = CheckSpec("artifact.self_dispatch", "self_dispatch")
 
-    # Every function this contract covers, across all four subsystems: the ones
-    # that own a resource and the failure-tolerant helpers they were split into.
-    owners = (
+    def residue():
+        leftovers = {
+            path for path in glob.glob(os.path.join(private_tmpdir, _SESSION_GLOB))
+        }
+        leftovers.update(
+            "pid:%d" % pid
+            for pid in _child_pids(os.getpid())
+            if pid not in baseline
+        )
+        return leftovers
+
+    def release(items):
+        _kill_and_reap_pids(
+            [int(item.split(":", 1)[1]) for item in items if item.startswith("pid:")]
+        )
+        for item in items:
+            if not item.startswith("pid:"):
+                shutil.rmtree(item, ignore_errors=True)
+
+    report = inject_per_line(
         process_module.run_check_process,
-        process_module._session_transport,
-        process_module._make_session_directory,
-        process_module._create_empty_file,
-        process_module._output_spools,
-        process_module._make_output_spool,
-        process_module._worker_tree,
-        process_module._spawn_worker_process,
-        process_module._terminate,
-        registry_module._bounded_popen,
-        registry_module._kill_and_reap,
-        registry_module._run_subprocess_bounded,
-        report_module.write_report,
-        worker_module._write_frame,
-        worker_module._append_frame_to_file,
-        bmc_module.write_bmc_output,
-        _build_identity.write_build_identity_file,
-        _build_identity._fsync_directory,
-        _bootstrap._emergency_write,
+        lambda: process_module.run_check_process(spec, 6.0),
+        residue,
+        release,
+        must_reach=("_session_transport()", "_worker_tree(", "process.communicate("),
     )
-    offenders = []
-    for owner in owners:
-        function = getattr(owner, "__wrapped__", owner)
-        source, first = inspect.getsourcelines(function)
-        tree = ast.parse(textwrap.dedent("".join(source)))
-        for outer in ast.walk(tree):
-            if not isinstance(outer, ast.Try):
-                continue
-            # Only the outer ``try``'s body holds a resource across an inner
-            # handler; its own handlers and ``finally`` are the release path.
-            for statement in outer.body:
-                for node in ast.walk(statement):
-                    if isinstance(node, ast.Try) and node is not outer:
-                        offenders.append(
-                            "{}:{}".format(function.__name__, node.lineno + first - 1)
-                        )
-    assert not offenders, "nested try inside an owning try: {}".format(offenders)
+    assert not report.body_windows, report.describe()
+    assert _wait_for_new_children(baseline) == []

@@ -90,9 +90,7 @@ Two mechanisms produce those windows, and they differ in how they age:
   "It works locally" therefore proves nothing about it. Rule 7 removes it.
 
 6. **Acquire a resource only after its cleanup handler is established.** Do not write "acquire, then wrap in `try`";
-   write "enter the `try`, acquire inside it, and let `finally` decide whether anything needs releasing". This shape
-   does **not** reduce the hit rate of asynchronous interrupts; its guaranteed benefit is removing the class where a
-   statement between the acquisition and the `try` raises a synchronous exception, which leaks 100% of the time.
+   write "enter the `try`, acquire inside it, and let `finally` decide whether anything needs releasing".
    **Bind the sentinel so that it is never one line behind the resource**, which depends on how cleanup identifies the
    resource:
    - *By handle* (`os.open`, `Popen`, `mkstemp`): bind in the acquisition statement itself. Deriving a second name on
@@ -102,8 +100,10 @@ Two mechanisms produce those windows, and they differ in how they age:
      release tolerate a path that never came into existence. A name bound afterwards leaves the creating call as a
      window in which the artifact exists and nothing knows its name.
 7. **Do not enter a nested `try` while holding a resource.** The outer `finally` is not merely bypassed for one line —
-   it does not run at all, including when the outer handler lives in a `@contextlib.contextmanager` generator. An
-   outer `with` **does** protect an inner `try`; an outer `try` does not. Two remedies:
+   it does not run at all. Two frames must be kept apart here: a nested `try` in the *body* of a `with` is protected on
+   every version, but a nested `try` inside the `try`/`finally` of a `@contextlib.contextmanager` generator leaks from
+   3.11 exactly as a plain nested `try` does. So an outer `with` protects you; writing the generator that backs it does
+   not. Two remedies:
    - Use `with` for the outer ownership wherever the resource has, or can be given, a context manager.
    - Otherwise move the inner handler into its own function, so its `try` starts with nothing held. Two shapes are
      safe there, and which one you need depends on what the helper returns:
@@ -117,16 +117,20 @@ Two mechanisms produce those windows, and they differ in how they age:
 8. **Put cleanup in `finally`, not in `except`.** This does not conflict with rules 1-5: broad catches stay forbidden,
    and what is required here is moving the cleanup action into `finally`, not widening the `except` type set. A
    `finally` must also never raise over an exception that is already unwinding, which is why the release itself belongs
-   in a small dedicated helper (`_close_descriptor`, `_remove_temporary`, `_kill_and_reap`) rather than an inline
-   `try` — an inline one would violate rule 7 as well. Such a helper is the one place where rule 4's ban on silent
-   swallowing is relaxed, and only under all three of: it does nothing but release one resource; its docstring names
-   the reason no reporting channel remains; and where a channel *does* remain, the failure is still surfaced, as
-   `_write_cleanup_diagnostic` and `_report_cleanup_failure` do. There are two distinct exceptions to putting cleanup
-   in `finally` at all, which must not be conflated. First, **the resource is the function's deliverable** — e.g.
+   in a small dedicated helper rather than an inline `try` — an inline one would violate rule 7 as well. Such a helper
+   must do nothing but release one resource, and then one of two things. **Prefer returning a diagnostic** for the
+   caller to route, as `_remove_temporary` and `_kill_and_reap` do; the caller hands it to `_write_cleanup_diagnostic`
+   or `_report_cleanup_failure`. **Swallow only when no channel is left**, which is the one relaxation of rule 4's ban
+   on silent swallowing, and only when the reason is stated at the swallow site — `_close_fd_quietly` in
+   [pyfcstm/_bootstrap.py](pyfcstm/_bootstrap.py) is the model: it runs after both stderr and raw fd two have already
+   failed. There are two distinct exceptions to putting cleanup in `finally` at all, which must not be conflated.
+   First, **the resource is the function's deliverable** — e.g.
    `_emergency_write` returns the emergency log path, so cleanup covers the failure path only; the test is "has it been
-   handed to the caller?". Second, **ownership transfers to a process-level holder** — e.g. `_private_viewer_directory`
-   registers the directory for an `atexit` hook; the test is "has it been successfully registered with that holder?".
-   Parking an arbitrary object in a module-level global does **not** qualify.
+   handed to the caller?". Second, **ownership transfers to a process-level holder** — e.g. the fallback path of
+   `_private_viewer_directory` registers its directory with an `atexit` hook; the test is "has it been successfully
+   registered with a holder that will actually run?". Parking an object in a module-level global does **not** qualify
+   on its own — that same function's normal path keeps its directory in a module dict with no hook, and relies on the
+   directory being reused rather than released.
 9. **Clear the sentinel once ownership transfers.** After `os.fdopen(fd, ...)` returns, the stream owns the descriptor;
    set `fd = None` immediately. Otherwise `finally` double-closes a descriptor number that may already have been
    reused, and the damage escapes the function.
@@ -136,16 +140,17 @@ Two mechanisms produce those windows, and they differ in how they age:
     temporary files, temporary directories, subprocesses, sockets, locks. **Subprocesses matter most** — an orphan is
     not reclaimed when the parent exits. The test is "does releasing it require an explicit action?", not "is it an
     integer fd?".
-12. **A new acquisition point needs an injection test or a structural gate alongside it.** Code review alone does not
-    catch this class: in [PR #389](https://github.com/HansBug/pyfcstm/pull/389) one such defect took four commits to
-    fix, because the first two only relocated the unowned line before the actual 3.11 cause was identified.
+12. **A new acquisition point needs an injection test alongside it.** Rule 7 is already enforced for the whole package
+    by `make resource_ownership_check`, which discovers every function calling an acquisition primitive and fails on
+    any handler opened while one is held; run it after adding such a point. Rules 6, 8 and 9 have no mechanical gate,
+    so a `sys.settrace` injection sweep is what pins them — see `test/testings/interrupt_injection.py`. Code review
+    alone does not catch this class: in [PR #389](https://github.com/HansBug/pyfcstm/pull/389) one such defect took
+    four commits to fix, because the first two only relocated the unowned line before the 3.11 cause was identified.
 
-Rules 6-11 are mechanically checkable from the AST; rule 12 is a review convention. Two further conventions govern how
-this defect class is surveyed and reported — an audit's completeness is bounded by the completeness of its primitive
-list, and per-line injection deliberately bypasses the interpreter's signal-delivery limits, so a window it finds is
-not by itself a real-interrupt risk figure. Both are set out in
-[issue #412](https://github.com/HansBug/pyfcstm/issues/412), which also records the measurement design required before
-quoting a quantitative reachability claim.
+Rule 7 is gated by `make resource_ownership_check`; the rest are review conventions supported by injection tests.
+[Issue #412](https://github.com/HansBug/pyfcstm/issues/412) carries the survey and measurement conventions: an audit is
+only as complete as its list of acquisition primitives, and per-line injection deliberately bypasses the interpreter's
+signal-delivery limits, so a window it finds is not by itself a real-interrupt risk figure.
 
 ## Code Review Scope (findings must be reachable through the public surface)
 
@@ -454,25 +459,18 @@ When prompting an LLM to generate template code, prefer instructions such as "ma
 formatter defaults" instead of writing large hand-authored style guides. Avoid manual column alignment or other
 styling that formatters will immediately rewrite.
 
-**Run `ruff` from the repository root so it picks up [ruff.toml](ruff.toml).** That file exists for one setting,
-`target-version = "py37"`, which is what makes the 3.7 floor in `setup.py` actually enforced rather than merely
-declared. It does two things:
+[ruff.toml](ruff.toml) sets `target-version = "py37"`, which is what makes the 3.7 floor in `setup.py` enforced
+rather than merely declared: `ruff check` reports `match`, `:=`, and a parenthesised multi-item `with` as
+`invalid-syntax`, and `ruff format` stops rewriting a long multi-item `with` into that parenthesised form. **The gate
+is syntax only** — a 3.9 library API such as `str.removeprefix` still passes, so staying inside the supported standard
+library remains a review matter. Keep the setting in `ruff.toml`, not a new `pyproject.toml`: this project builds from
+`setup.py`, and a `pyproject.toml` would switch pip to PEP 517 isolated builds.
 
-- **`ruff check` becomes a syntax-floor gate.** Without it, `match`, `:=`, and a parenthesised multi-item `with` all
-  pass silently; with it, each is reported as `invalid-syntax` naming the version that introduced the syntax. The
-  gate is syntax only — a 3.9 library API such as `str.removeprefix` still passes, so staying inside the supported
-  standard library remains a review matter.
-- **`ruff format` stops introducing such syntax.** A multi-item `with` that does not fit on one line gets rewritten
-  into the parenthesised form, which is a `SyntaxError` on 3.7 and 3.8. (3.9 accepts it as an undocumented side
-  effect of its PEG parser, so testing there proves nothing.) With the floor pinned, the formatter wraps inside each
-  context manager instead.
+Two consequences when running the formatter:
 
-The setting changes no lint rule: `ruff check` reports the same findings on the existing tree either way. Two further
-points:
-
-- Keep the configuration in `ruff.toml`, not a new `pyproject.toml`. This project builds from `setup.py`, and adding
-  a `pyproject.toml` would switch pip to PEP 517 isolated builds and change how the sdist, wheel, and frozen CLI are
-  produced.
+- Ruff finds `ruff.toml` from the file's own ancestors, so the floor applies wherever you invoke it from — **except
+  for files outside the repository**, where it falls back to the working directory. Pass `--target-version py37`
+  explicitly when checking generated output written to a temporary directory.
 - `ruff format` is **not** safe to run unconditionally over [pyfcstm/](pyfcstm/). It is wired into the ANTLR and
   sample-generation Makefile targets, where it reformats generated files that are committed; elsewhere the package
   source carries pre-existing formatting drift that reformatting would turn into unrelated diff noise. Format the

@@ -635,15 +635,33 @@ class TestPythonBuiltinTemplate:
                 assert 'subprocess' not in source
                 assert 'pathlib' not in source
 
+                # --target-version is explicit rather than inherited from the
+                # repository ruff.toml: the artifact lives in a TemporaryDirectory
+                # outside the repo, so ruff would resolve the floor from the
+                # current working directory and this gate would depend on where
+                # pytest was invoked from.
                 subprocess.run(
-                    [ruff_executable, 'check', artifacts['machine_file']],
+                    [
+                        ruff_executable,
+                        'check',
+                        '--target-version',
+                        'py37',
+                        artifacts['machine_file'],
+                    ],
                     check=True,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
                 )
                 subprocess.run(
-                    [ruff_executable, 'format', '--check', artifacts['machine_file']],
+                    [
+                        ruff_executable,
+                        'format',
+                        '--check',
+                        '--target-version',
+                        'py37',
+                        artifacts['machine_file'],
+                    ],
                     check=True,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,

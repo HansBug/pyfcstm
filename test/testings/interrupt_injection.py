@@ -27,9 +27,8 @@ import inspect
 import os
 import shutil
 import sys
-import tempfile
 import textwrap
-from typing import Callable, Dict, List, NamedTuple, Optional, Set
+from typing import Callable, Dict, List, NamedTuple, Optional, Sequence, Set
 
 __all__ = [
     "InjectionPoint",
@@ -159,6 +158,7 @@ def inject_per_line(
     invoke: Callable[[], object],
     residues: Optional[Callable[[], Set]] = None,
     release_residues: Optional[Callable[[Set], None]] = None,
+    must_reach: Sequence[str] = (),
 ) -> InjectionReport:
     """
     Raise :exc:`KeyboardInterrupt` at each line of ``function`` and record leaks.
@@ -179,8 +179,15 @@ def inject_per_line(
     :param release_residues: Callable releasing the residues one point leaked,
         defaults to ``None`` for path removal.
     :type release_residues: collections.abc.Callable, optional
+    :param must_reach: Source fragments that the sweep must actually have
+        injected at, defaults to ``()``. Name the lines that acquire and release
+        the resource: a bare "some line was reached" floor is satisfied by an
+        invocation that returns at a guard before acquiring anything, and every
+        assertion in this module is a negative one that such a sweep passes.
+    :type must_reach: collections.abc.Sequence[str], optional
     :return: The classified sweep result.
     :rtype: InjectionReport
+    :raises AssertionError: If a ``must_reach`` fragment was never injected at.
     """
     # contextlib.contextmanager wraps the generator, and it is the generator's
     # body that acquires and releases; tracing the wrapper would see one line.
@@ -194,6 +201,7 @@ def inject_per_line(
     # lines that carry bytecode, which is exactly what an injection sweep needs.
     lines = sorted({line for _, line in dis.findlinestarts(code) if line is not None})
     reached = 0
+    reached_lines = []
     leaks = []
     for line in lines:
         before_descriptors = open_descriptors()
@@ -202,6 +210,7 @@ def inject_per_line(
         if not fired:
             continue
         reached += 1
+        reached_lines.append(line)
         leaked_descriptors = {
             descriptor: target
             for descriptor, target in open_descriptors().items()
@@ -217,13 +226,33 @@ def inject_per_line(
                     in_cleanup=line in in_cleanup,
                 )
             )
-        _close_descriptors(leaked_descriptors)
+        # Leaked descriptors are deliberately left open. Closing one by number
+        # is the very hazard rule 9 describes: the number may already belong to
+        # a live object, and this instrument would then corrupt whatever runs
+        # next. Leaving it open is harmless -- an open descriptor cannot be
+        # reused, and the next point's baseline absorbs it.
         release_residues(leaked_residues)
+    _require_reached(function, reached_lines, must_reach)
     return InjectionReport(
         points_reached=reached,
         body_windows=[point for point in leaks if not point.in_cleanup],
         in_cleanup=[point for point in leaks if point.in_cleanup],
     )
+
+
+def _require_reached(function: Callable, reached_lines, must_reach: Sequence[str]) -> None:
+    """Fail unless every named source fragment was actually injected at."""
+    if not must_reach:
+        return
+    source, first = inspect.getsourcelines(function)
+    covered = "".join(
+        source[line - first] for line in reached_lines if 0 <= line - first < len(source)
+    )
+    missing = [fragment for fragment in must_reach if fragment not in covered]
+    assert not missing, (
+        "the sweep over {} never injected at {}; the invocation probably returns "
+        "before it acquires anything, which every negative assertion would pass"
+    ).format(function.__name__, missing)
 
 
 def _invoke_with_injection(code, invoke: Callable[[], object], line: int) -> bool:
@@ -241,6 +270,12 @@ def _invoke_with_injection(code, invoke: Callable[[], object], line: int) -> boo
             return trace_line
         return None
 
+    # Restore whatever was tracing before rather than clearing the slot:
+    # ``sys.settrace(None)`` removes coverage's own tracer too, and everything
+    # that runs after this sweep in the same process then goes unmeasured. The
+    # symptom is a coverage report that shrinks when an injection test happens
+    # to run first.
+    previous = sys.gettrace()
     sys.settrace(trace_call)
     try:
         invoke()
@@ -248,40 +283,8 @@ def _invoke_with_injection(code, invoke: Callable[[], object], line: int) -> boo
         # Every injection unwinds the call; the leak check below is the result.
         pass
     finally:
-        sys.settrace(None)
+        sys.settrace(previous)
     return bool(fired)
-
-
-def _is_temporary_target(target: str) -> bool:
-    """Return whether a descriptor's target is a temporary artifact.
-
-    Releasing an arbitrary descriptor that merely appeared during a traced call
-    is not safe: the call may have triggered a lazy import that opened and
-    cached something long-lived, and closing that would break every later test
-    in the process. Every resource this harness is meant to observe is a
-    temporary file, so the release is confined to those.
-
-    :param target: The ``/proc/self/fd`` link target.
-    :type target: str
-    :return: Whether the descriptor may be closed by the harness.
-    :rtype: bool
-    """
-    if target.endswith(" (deleted)"):
-        return True
-    root = os.path.realpath(tempfile.gettempdir())
-    return os.path.realpath(target).startswith(root + os.sep)
-
-
-def _close_descriptors(descriptors: Dict[int, str]) -> None:
-    """Close the temporary-file descriptors one injection point leaked."""
-    for descriptor, target in descriptors.items():
-        if not _is_temporary_target(target):
-            continue
-        try:
-            os.close(descriptor)
-        except OSError:
-            # Already closed by an interpreter-level finalizer.
-            pass
 
 
 def _remove_paths(residues: Set[str]) -> None:

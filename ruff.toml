@@ -15,6 +15,16 @@
 # The gate is syntax only. A 3.9 library API such as `str.removeprefix` still
 # passes; keeping to the supported standard library remains a review matter.
 #
+# `invalid-syntax` cannot be suppressed -- neither `# noqa` nor `per-file-ignores`
+# silences it. The floor is therefore repo-wide and applies equally to trees that
+# never run on 3.7 (`tools/`, `llm_eval/`, docs demo scripts). Nothing there trips
+# it today; if something ever needs to, the only escape hatch is `exclude`.
+#
+# Discovery walks the checked file's own ancestors, so the floor holds wherever
+# ruff is invoked from -- except for files outside the repository, where ruff
+# falls back to the working directory. Those call sites must pass
+# `--target-version py37` explicitly; test/template/python/test_runtime.py does.
+#
 # It changes no lint rule: `ruff check` reports the same findings with and
 # without it on the existing tree.
 #

@@ -27,7 +27,6 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Mapping, Optional, Tuple
 
 from .model import CheckOutcome, CheckSpec
-from .process import _write_cleanup_diagnostic
 
 
 try:
@@ -278,6 +277,36 @@ def _read_bounded_process_file(stream) -> bytes:
     return head + marker + tail
 
 
+def _write_cleanup_diagnostic(label: str, error: Optional[str]) -> None:
+    """Write last-resort cleanup evidence without replacing the check result.
+
+    A local copy rather than an import from :mod:`pyfcstm._selfcheck.process`:
+    this module is imported by the worker child, which has no supervisor to
+    speak of, and pulling the supervisor module into every worker to reach ten
+    lines would invert the layering. :func:`_write_fd_all` is duplicated between
+    the worker and the bootstrap for the same reason.
+
+    :param label: Short label naming the cleanup step that failed.
+    :type label: str
+    :param error: The diagnostic, or ``None`` when nothing needs reporting.
+    :type error: str or None
+    :return: ``None``.
+    :rtype: None
+    """
+    if not error:
+        return
+    try:
+        os.write(
+            2,
+            ("self-check {}: {}\n".format(label, error)).encode(
+                "ascii", "backslashreplace"
+            ),
+        )
+    except OSError:
+        # The structured result remains authoritative if raw stderr is unavailable.
+        pass
+
+
 def _kill_and_reap(process) -> Optional[str]:
     """Kill one still-running child and reap it, returning cleanup diagnostics.
 
@@ -294,14 +323,21 @@ def _kill_and_reap(process) -> Optional[str]:
     """
     if process.poll() is not None:
         return None
-    process.kill()
     try:
+        process.kill()
         process.wait(timeout=_PROCESS_KILL_GRACE)
     except subprocess.TimeoutExpired:
         # SIGKILL delivery is asynchronous and a child wedged in uninterruptible
-        # I/O may outlive the grace. Reporting beats raising: this runs from a
-        # ``finally``, where raising would replace whatever is already unwinding.
+        # I/O may outlive the grace.
         return "child survived SIGKILL for {}s".format(_PROCESS_KILL_GRACE)
+    except OSError as err:
+        # On Windows kill() is TerminateProcess, which CPython re-raises as
+        # PermissionError while GetExitCodeProcess still reports STILL_ACTIVE,
+        # and the wait() can surface a WaitForSingleObject failure. On POSIX the
+        # poll() above makes ESRCH unreachable, but this runs from a ``finally``
+        # where raising would replace whatever is already unwinding, so the whole
+        # pair is reported instead.
+        return "{} while terminating child: {}".format(type(err).__name__, err)
     return None
 
 

@@ -742,7 +742,12 @@ def test_native_containment_failure_terminates_started_worker(monkeypatch):
     monkeypatch.setattr(
         process_module,
         "attach_process",
-        lambda child: (_ for _ in ()).throw(OSError("assignment")),
+        # JobAssignmentError, not a bare OSError: attach_process normalises
+        # every native failure into that one class, so it is the only thing the
+        # call site can actually see.
+        lambda child: (_ for _ in ()).throw(
+            process_module.JobAssignmentError("assignment")
+        ),
     )
     result = run_check_process(_spec(), timeout=0.1)
     assert result.status == "ERROR"
@@ -809,7 +814,12 @@ def test_native_containment_failure_preserves_cleanup_evidence(monkeypatch):
     monkeypatch.setattr(
         process_module,
         "attach_process",
-        lambda child: (_ for _ in ()).throw(OSError("assignment")),
+        # JobAssignmentError, not a bare OSError: attach_process normalises
+        # every native failure into that one class, so it is the only thing the
+        # call site can actually see.
+        lambda child: (_ for _ in ()).throw(
+            process_module.JobAssignmentError("assignment")
+        ),
     )
     monkeypatch.setattr(process_module, "_terminate", lambda *args: "leader_cleanup")
     result = run_check_process(_spec(), timeout=0.1)

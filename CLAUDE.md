@@ -311,10 +311,6 @@ make pdocs                       # Production documentation with versioning
 make rst_auto                    # Generate RST from Python source files
 make rst_auto RANGE_DIR=model    # Generate RST for specific directory
 make sha256                      # Update generated SHA-256 sidecar files
-make docs_auto                   # Generate Python docstrings (requires hbllmutils)
-make todos_auto                  # Complete TODO comments (requires hbllmutils)
-make tests_auto                  # Generate unit tests (requires hbllmutils)
-make docs_auto AUTO_OPTIONS="--model-name deepseek-V3 --param max_tokens=200000"
 ```
 
 ### ANTLR Grammar Development
@@ -1048,45 +1044,30 @@ class StateMachineCodeRenderer:
 
 ## Development Notes
 
-### LLM-Based Documentation Generation
+### RST Documentation Generation
 
 ```bash
-# RST generation (no additional setup needed)
 make rst_auto                    # Generate RST for all Python files
 make rst_auto RANGE_DIR=model    # Specific directory
 python auto_rst_top_index.py -i pyfcstm -o docs/source/api_doc.rst
-
-# LLM features (requires: pip install hbllmutils + configure .llmconfig.yaml)
-make docs_auto    # Generate Python docstrings
-make todos_auto   # Complete TODO comments
-make tests_auto   # Generate unit tests
-make docs_auto AUTO_OPTIONS="--model-name deepseek-V3 --param max_tokens=200000"
 ```
-
-Common `AUTO_OPTIONS`: `--param max_tokens=N`, `--model-name MODEL`, `--no-ignore-module pyfcstm`, `--timeout SECONDS`.
-
-Key file: `.llmconfig.yaml` (gitignored, contains API credentials; copy from
-[.llmconfig.yaml.example](.llmconfig.yaml.example)).
 
 #### File Structure
 
+Paths below are relative to the repository root.
+
 ```
-pyfcstm/
+<repo root>/
 ├── auto_rst.py                    # RST generation from Python files
 ├── auto_rst_top_index.py          # Top-level API index generation
-├── .llmconfig.yaml.example        # Example LLM configuration
-├── .llmconfig.yaml                # Your LLM configuration (gitignored)
-├── LLM_DOCS_README.md             # Detailed documentation
 └── docs/source/api_doc/           # Generated RST files
 ```
 
 #### Best Practices
 
 1. **Start with RST Generation** - Generate RST files first to establish structure
-2. **Review LLM Output** - Always review generated docstrings and code before committing
-3. **Incremental Updates** - Use `RANGE_DIR` to target specific modules
-4. **Version Control** - Commit generated documentation separately from code changes
-5. **API Token Security** - Never commit `.llmconfig.yaml` to git
+2. **Incremental Updates** - Use `RANGE_DIR` to target specific modules
+3. **Review Generated RST** - Commit intentional generated updates together with the code change
 
 **Commit Message Style**: Follow the dominant repository convention from recent history.
 
@@ -1572,7 +1553,8 @@ states.
 Core ([requirements.txt](requirements.txt)): `antlr4-python3-runtime==4.9.3`, `jinja2>=3`, `pyyaml`, `click>=8`, `hbutils>=0.14.0`,
 `pathspec`, `z3-solver<=4.15.4` (constraint solver), `prompt_toolkit>=3.0.0` + `rich>=13,<14` (simulation REPL UI),
 `pygments>=2.10.0` (syntax highlighting), `unidecode`, `chardet`. Development
-([requirements-dev.txt](requirements-dev.txt)): `ruff`.
+([requirements-dev.txt](requirements-dev.txt)): `ruff<0.16`, `antlr4-python3-runtime==4.9.3`,
+`cairosvg`, `Pillow`.
 
 ### Documentation Editing
 

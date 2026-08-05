@@ -1237,8 +1237,6 @@ junit.xml
 /test/testfile/python_native_dlc6_more_result/
 *.cli_history
 
-# LLM configuration (contains API tokens)
-.llmconfig.yaml
 
 # Claude Code auto memory directory
 .claude

@@ -1563,7 +1563,7 @@ jobs:
           python -m pip install --upgrade pip
           # Read the pin out of requirements-dev.txt so the ruff version
           # contract keeps living in exactly one place. The rest of that file
-          # is LLM/image tooling this job has no use for.
+          # is antlr/image tooling this job has no use for.
           python -m pip install "$(grep -E '^ruff' requirements-dev.txt)"
           python -m pip install -r requirements.txt
       - name: Lint the diagram surface

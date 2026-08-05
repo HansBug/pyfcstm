@@ -1,0 +1,3 @@
+assume at 1: var("latch_engaged") == 0;
+assume at 1: var("latch_engaged") == 1;
+check reach <= 2: active("Door.Open");

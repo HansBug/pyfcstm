@@ -1369,6 +1369,64 @@ stdout/stderr, and traceback detail to diagnose deployment failures. A passing
 self-check is evidence that this deployment is usable under the observed
 conditions, not a replacement for unit tests or release CI.
 
+#### Public API And Normal-Path Test Boundary
+
+All tests, including deliberately adversarial ones, must exercise the code through its public API and the normal
+business usage chain: parse a DSL/query text, build a model, run an engine or renderer, call a documented public
+constructor or function, or invoke the CLI. Tests exist to protect behavior that a real caller can reach. They are not
+a venue for prying the implementation open to manufacture states the product cannot produce.
+
+Out of bounds — do not write these, and remove them when found:
+
+- **Type impostors / hostile stand-ins.** Objects that lie about their type (a class whose `__eq__`, `__hash__`,
+  `__str__`, `__index__`, or `__class__` fakes a primitive) in order to slip past a validation gate.
+- **Forged internal state.** Using `dataclasses.replace`, direct `__dict__` writes, `object.__new__`, deserialization
+  hooks such as `__setstate__`, or a subclass override to build an object that no public code path constructs, and then
+  asserting on it. `dataclasses.replace` remains fine when it produces a **valid** variant a caller could have built
+  directly.
+- **Private-helper archaeology.** Reaching past the public surface to assert the behavior of a private function,
+  private method, or module-private guard whose only caller already has public coverage.
+- **Monkeypatching internals to force unreachable branches.** Patching a module attribute so an otherwise impossible
+  branch executes, purely to colour in a coverage line.
+- **Source-syntax scanning as an invariant.** Enumerating call sites with `ast`/regex to prove a property about the
+  implementation. If a property must hold, enforce it where the value is produced and observe it from real runs.
+
+In bounds, and still adversarial: wrong-but-plausible inputs through public entry points (a bad query text, an invalid
+public constructor argument, a malformed CLI flag, a hostile-looking DSL file), boundary values, real degradation and
+timeout paths, JSON round-trips through the published schema, and cross-checking two public surfaces against each
+other.
+
+These boundary cases decide themselves the same way every time:
+
+- **A mixed test function is split, not deleted.** When one test holds both in-bounds and out-of-bounds assertions, keep
+  the in-bounds part — folding it into an existing parametrized table where one exists — and remove only the rest.
+  Deleting the whole function silently drops coverage of behavior a real caller reaches.
+- **Removing a test means deciding about its guard.** If the only thing that reached a production guard was an
+  out-of-bounds test, say what happens to the guard in the same change: keep it as stated defensive code, or remove it.
+  Leaving it unmentioned accumulates dead defense that nothing reaches and nothing describes. A guard that a public
+  surface *can* reach is not dead — check whether the type is exported and documented before concluding it is
+  unreachable, because two public surfaces disagreeing about which values exist is itself an in-bounds finding.
+- **Adding, removing or reordering a guard means rechecking what its tests now prove.** Guards on one value shadow each
+  other: inserting a stricter check ahead of a looser one makes the looser one unreachable, and deleting a redundant
+  check can move the live refusal into a handler that nothing reached before. The tests keep passing either way, so they
+  stop proving what their names say. After changing a guard, verify which branch a test actually lands in — replacing
+  the branch body with a raise, or removing the guard and watching the test go red, both settle it in one run — and fix
+  the comment or docstring that describes it.
+- **Subclassing is in bounds where subclassing is the documented extension point**, such as a generated runtime's
+  override hooks. It is out of bounds only where the value is a closed vocabulary that no caller is invited to extend.
+  Likewise, fault injection is a real degradation path when it simulates what an external dependency actually does — a
+  solver returning `unknown`, a timeout, a failing filesystem call — and is forcing an unreachable branch when it
+  patches an internal invariant helper to a value the system cannot hold.
+
+This is also a **review standard**. A review finding whose only reproduction requires one of the out-of-bounds
+techniques above is not a legitimate finding, and must not be graded as blocking; say so and move on instead of
+building machinery to satisfy it. Genuinely unreachable states need no runtime guard — if a line cannot be reached
+through any public path, the correct outcome is to leave it unguarded and untested, or to delete it, not to invent an
+exotic construction that reaches it. When a guard is genuinely warranted, put it where the value enters the system and
+prove it with a normal-path fixture. Over-design produced by chasing hack-only findings must be removed, not preserved
+for its test count: a smaller suite that mirrors real usage is worth more than a larger one that documents impossible
+states.
+
 - Tests in [test/](test/); use `@pytest.mark.unittest`
 - Unit tests must not depend on local files ignored by version control (for example, gitignored files).
 - Unit test suites must be strictly self-contained within their owning test tree. Python tests may use fixtures,

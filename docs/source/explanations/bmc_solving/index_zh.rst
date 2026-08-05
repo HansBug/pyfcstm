@@ -240,6 +240,124 @@ SAT 对两类性质具有相反含义。``reach``、``exists_always`` 和 ``cove
 已解码公开观测的一致性。它不证明未选中分支编码正确，不证明所有 SAT 模型都能解码，不证明查询在 :math:`N` 之外成立，
 也不排除 BMC 与运行时共享同一个建模错误。
 
+冲突落在哪里，以及为什么答案是互斥的
+------------------------------------
+
+场景不可行时，第一个有用的问题不是\ *哪一条子句*\ ，而是\ *哪一部分*\ 。分阶段
+求解已经回答了它：kernel、初始化、假设按此顺序进入求解器，所以可满足性在哪一阶段
+丢失就标识出哪个族。kernel 本身已不可满足属于 ``kernel_conflict``，它牵涉的是模型
+而非查询。kernel 一直成立直到 ``init`` 加入，给出 ``initialization_*`` 族；一直
+成立直到 ``assume`` 加入，给出 ``assumptions_*`` 族。
+
+族内三个成员由\ *新子句与什么相冲突*\ 来区分。``*_self_conflict`` 意味着新子句彼此
+矛盾，即使别的什么都不在也会失败。``*_domain_conflict`` 意味着它们各自自洽，但合在
+一起让某一帧没有合法取值——它们超出了帧域允许的范围。``assumptions_prefix_conflict``
+（以及它的初始化对应项）意味着这些子句与帧域也是相容的，只有转换关系排除了它们：
+机器无论怎么走都到不了所要求的组合。
+
+这七个取值互斥，是因为每一个都由第一个失败的阶段或子检查决定，而这些检查是有序的。
+这也是报告打印一个分类而不是一个集合的原因，也是读者能据此行动的原因：分类点明了
+他们应该打开哪个文件。
+
+
+可靠不等于极小
+--------------
+
+求解器自己给出的 unsat core 是\ *可靠的*\ ：把它整个删掉，公式就变得可满足。但它
+不是\ *极小的*\ ：它可能包含与冲突毫无关系的子句，因为求解器一旦够用就停下了。拿到
+一个仅可靠的核，读者只能猜哪些成员真的相关。
+
+最小化通过逐个检验成员来消除这种猜测：删掉它、重新求解，只有剩余部分仍不可满足时
+才保留这次删除。对每个成员都经受住这一检验的核就是子集极小（subset minimal）的
+——每个成员都承重，因此每个成员都值得读。发布的断言如实区分三种状态：没有成员被
+检验时为 ``raw``，预算中途耗尽时为 ``partial_minimized``，全部检验完成时为
+``subset_minimal``。
+
+这一点之所以重要，是因为极小性正是下一阶段得以可能的前提。证明的一步必须说明它
+重述了哪个冲突核成员，而仅可靠的核里有些成员什么也没重述。
+
+
+证明被信任的是什么
+------------------
+
+发布出来的证明，是"每一步都被检查过"这一断言。有意思的设计问题是\ *由谁检查*\ ，
+因为与构造者共享代码的检查器是按构造必然同意的，什么也证明不了。
+
+四种方法分担这件事。``input`` 节点用 ``core_binding``：归一化事实被从零重新编码，
+并要求求解器同时驳倒 ``group => fact`` 与 ``fact => group``。两个方向都是必需的。
+只查一个方向会允许一个仅仅\ *被冲突核成员蕴含*\ 的事实，那是摘要而非重述——而摘要
+恰好可能丢掉读者需要的那个细节。任一方向返回可满足、unknown 或超时，该证明就到不了
+``complete``。
+
+``derived`` 与根节点用 ``rule_checker``：一个独立检查器拿前提与所声称的结论，不调用
+产出它的代码而重新推导一遍。它比较整个结论映射而不是挑选字段，并拒绝携带它不认识的
+字段的结论，因此悄悄添加信息的构造者无法蒙混过关。
+
+``solver_entailment`` 用于改由求解器判定的 ``derived`` 与根步骤。``case_condition_entailment``
+就是其中一条：冲突核成员是否确立了某个 case 的条件，问的是这些成员的约束，而检查器只看得到
+已发布的事实，那里面并没有这个信息。节点会点名蕴含该条件的成员，且这些成员被断言为已发布
+冲突核的子集——一个步骤若依赖核外的东西，就会破坏证明对自己叶子所声称的极小性。
+
+一个按 case 各持一条要求的组是合取式，任何单条事实都蕴含不了它的全部——因此重述
+其中某一条要求的 ``input`` 节点改用 ``core_binding_unit``。要驳倒的仍是同样两个方向，
+只是对着那一条要求而非整组，节点再通过 ``unit_index`` 与 ``unit_count`` 指明是哪一条。
+这一对数字的用处是让读者看见覆盖比例：「12 条要求中的第 5 条」说出了「转移关系」说不
+出的东西。若一条事实同时等价于两条要求，它谁也没有指认，此时绑定被拒绝而不是择一——
+一个读者不能依赖的索引比没有索引更糟。
+
+会这样分解的组只有步关系，因此冲突核落在它某个 case 上的查询，就是这一对数字被发布的
+地方：这样的 ``input`` 节点携带 ``core_binding_unit``\ ，同一冲突核的其他成员携带
+``core_binding``\ ，节点由此点明该 case 重述的是这个关系的哪一条要求。这一对数字送达的是
+JSON 结果的消费方；终端报告携带的是每个节点的句子，而不是它是如何被核验的。这一对数字曾有一段
+时间是已定义而从不发布的，原因是归属只停在绑定检查里、从未走到节点上——这个缺口从外面
+看，和「没有查询能产出这个方法」一模一样。
+
+所以边界是：\ **读者可以相信每一句话都从旁边点名的那些冲突核成员推出，但不能相信
+编码忠实地建模了他们的意图。** 证明谈论的是编码之后的约束。这与重放为见证划出的
+边界是同一条，理由也相同。
+
+
+为什么有些冲突没有证明
+----------------------
+
+``proof`` 深度会降级而不是伪造，其原因是结构性的而非偶然的。
+
+一个 ``input`` 节点代表一个冲突核成员，而冲突核是\ *作者写下的*\ 子句加上生成的
+支撑组。关于中间帧的事实——比如某变量走两步之后持有什么——并没有写在任何地方；它是
+从转换规则\ *派生*\ 出来的。因此，只有在跨步累加之后才显现的冲突，其关键事实没有
+可归属的冲突核成员，闭包也就无处起步。这类查询把 ``achieved_mode`` 报告为
+``formal``。
+
+对这些冲突来说，``formal`` 解释并不是次一等的答案。它给出分类、子集极小的冲突核
+以及每个源位置，而它的叙述能点名初始状态与冲突的具体取值——那恰恰是缺少中间事实的
+证明会丢掉的东西。追查跨步冲突的读者今天从 ``formal`` 得到的服务更好，而报告会在
+``reason`` 行里说明这一点，不让人猜。
+
+有三条规则曾因同一个原因不可达，这里保留那段说明，因为它描述的形状仍是读者会遇到的。
+一个 case 发布它所做的赋值，但该赋值只在\ **该 case 适用时**\ 成立，而求值规则拒绝
+携带条件的表达式——这是对的：「在条件 C 下 x 增加 1」加上「x 等于 0」推不出「x 等于 1」，
+除非 C 被立起来。当时没有任何东西立它，于是 ``transition_assignment`` 拿不到可用的前提，
+``equality_substitution`` 与 ``arithmetic_evaluation`` 又隔着它产出的
+``arithmetic_expression`` 再等一层。
+
+``case_condition_entailment`` 把它立起来。条件是从冲突核\ **成员自身**\ 证出的，
+而不是从它们已发布的事实：把机器置于该 case 所指状态的成员里，包含那条把它送到那里的
+步关系，而步关系发布为 ``structural_constraint``，内容读者看不见。所以这一步由求解器完成，
+节点点名它用到的成员，并记 ``solver_entailment`` 而非 ``rule_checker``——因为任何只看前提
+的谓词都判不了它。从冲突核成员到证明事实的翻译仍只发出七种 kind，其中并没有
+``arithmetic_expression``，所以那个事实依旧只有一个产出者、链条起点也依旧在原处，
+变的只是第一环不再带条件。十二条规则里零条从不触发，而上面几段描述的仍然是那些没有证明的
+冲突：那些冲突缺的是\ **事实**\ ——没有冲突核成员能陈述它们，这与本规则填上的短缺不是
+同一件事。
+
+第二条边界更窄。事件假设发布为 ``structural_constraint`` 事实：冲突核成员是已知且
+已定位的，但它的内容没有被读出，所以没有规则适用于它。叙述随之报告
+``structural_only``，只说这些约束无法同时成立——这是真的，但对想知道\ *是哪两个*\ 事件
+要求撞在一起的读者来说过于单薄。两条边界都是契约中所记录决策的后果，而不是检查器的
+缺陷，并且两者都通过 ``achieved_mode`` 与 ``derivation_status`` 对调用方可见，不是
+静默的。
+
+
 为什么有界结构会增长
 --------------------
 
@@ -288,41 +406,128 @@ delta、gamma 两个符号，并为每个步/分支对创建一个选择变量�
 :math:`V=0`、:math:`E=0`，唯一宏步有 :math:`K_0=2` 个选择变量。由 :eq:`bmc-symbol-growth` 可得
 :math:`|X_1|=2+2+2=6`：两个帧状态符号、delta 与 gamma，以及两个分支选择变量。
 
-下表是本页带标签公式的前向审计图。字面 LaTeX 就是每个带标签公式目标处的块；中英文文件使用完全相同的块。
+下列条目是本页带标签公式的前向审计图。字面 LaTeX 就是每个带标签公式目标处的块；中英文文件使用完全相同的块。
 
-.. list-table:: 求解公式台账
-   :header-rows: 1
-   :widths: 21 27 28 24
+下面每个方程都点名它的实现、它的测试，以及能行使它的查询轨迹。
 
-   * - 公式与主张
-     - 实现锚点
-     - 测试锚点
-     - 可运行查询与轨迹
-   * - :eq:`bmc-solve-formulas`：可行性分阶段检查与响应尾部
-     - ``compile_bmc_property``；``solve_bmc_property``；``_SolveBudget``
-     - ``test_compile_response_strict_successor_and_incomplete_suffix``；
-       ``test_solver_unknown_and_timeout_paths_are_structured``
-     - 上面的 ``response`` 查询：主公式 UNSAT、尾部 SAT
-   * - :eq:`bmc-verdict-map`：解释极性的三值结论
-     - ``BmcSolveResult.property_satisfied`` 与 ``outcome``
-     - ``test_solve_result_public_verdict_truth_table``；
-       ``test_response_violation_verdict_stays_decisive_with_suffix``
-     - ``response`` 得到 ``incomplete``；``reach`` 得到 ``witness_found``
-   * - :eq:`bmc-witness-projection`：SAT 模型到稀疏公开轨迹
-     - ``decode_bmc_witness``；``_decode_step``；
-       ``_event_inputs_for_step``
-     - ``test/bmc/test_witness.py`` 中的见证解码器与事件策略测试
-     - ``reach`` 查询：两个帧和一个宏步
-   * - :eq:`bmc-replay-agreement`：公开观测相等
-     - ``replay_bmc_witness``；``_compare_frame``；``_compare_step``
-     - ``test_replay_reports_structured_var_mismatch``；
-       ``test_bmc_witness_replay_matches_full_semantic_fixture_trace``
-     - ``reach`` 查询：``replay.ok=true``；篡改 ``x`` 的轨迹失败
-   * - :eq:`bmc-symbol-growth`：已分配轨迹符号的精确计数
-     - ``BmcTraceSymbols.allocate``
-     - ``test/bmc/test_domain.py`` 与 ``test/bmc/test_relation_public_api.py`` 中的
-       形状断言
-     - ``reach`` 查询：:math:`N=1,V=0,E=0,K_0=2`，因此共有六个符号
+:eq:`bmc-solve-formulas` —— 可行性分阶段检查与响应尾部
+    ``compile_bmc_property``、``solve_bmc_property`` 与 ``_SolveBudget``。由
+    ``test_compile_response_strict_successor_and_incomplete_suffix`` 与
+    ``test_solver_unknown_and_timeout_paths_are_structured`` 覆盖。上文的
+    ``response`` 查询在主目标上给出 UNSAT，在尾部给出 SAT。
+
+:eq:`bmc-verdict-map` —— 极性感知的三值判定
+    ``BmcSolveResult.property_satisfied`` 与 ``outcome``。``response`` 查询给出
+    ``incomplete``，``reach`` 查询给出 ``witness_found``。由以下测试覆盖：
+
+    - ``test_solve_result_public_verdict_truth_table``
+    - ``test_response_violation_verdict_stays_decisive_with_suffix``
+
+:eq:`bmc-witness-projection` —— 从 SAT 模型到稀疏的公开轨迹
+    ``decode_bmc_witness``、``_decode_step`` 与 ``_event_inputs_for_step``。由
+    ``test/bmc/test_witness.py`` 中的见证解码与事件策略测试覆盖。``reach``
+    查询解码出两帧一步。
+
+:eq:`bmc-replay-agreement` —— 公开观测相等
+    ``replay_bmc_witness``、``_compare_frame`` 与 ``_compare_step``。``reach``
+    查询报告 ``replay.ok=true``，而篡改过 ``x`` 的轨迹会失败。覆盖它的测试是：
+
+    - ``test_replay_reports_structured_var_mismatch``
+    - ``test_bmc_witness_replay_matches_full_semantic_fixture_trace``
+
+:eq:`bmc-symbol-growth` —— 精确的轨迹符号分配数
+    ``BmcTraceSymbols.allocate``。由 ``test/bmc/test_domain.py`` 与
+    ``test/bmc/test_relation_public_api.py`` 中的形状断言覆盖。``reach`` 查询有
+    :math:`N=1,V=0,E=0,K_0=2`，因此共六个符号。
 
 语义夹具回放测试组尤其重要：它对登记为必须通过的场景检查完整运行时轨迹，而不只是检查见证对象能否序列化。
 篡改测试提供反方向证据：改变一个公开观测后，必须得到路径精确的不匹配项。
+
+
+解释在形式上断言了什么
+----------------------
+
+下面四条陈述是可选解释对它自己的输出所作的断言。它们与上文的求解方程是分开的，因为
+它们约束的是一份\ *报告*\ 而不是一次搜索：每一条都是发布对象要么具备、要么因缺失而
+被拒绝发布的性质。
+
+设 :math:`C = \{c_1, \dots, c_n\}` 为发布出来的源组冲突核，每个 :math:`c_i` 是一条
+作者写下的子句或一个生成支撑组的编码，并以 :math:`\Phi` 表示合取。
+
+可靠性是最弱的断言，每个冲突核都作出它。冲突核可靠，是指仅凭它的成员就已经不容许
+任何赋值：
+
+.. math::
+   :label: bmc-core-soundness
+
+   \mathrm{UNSAT}\bigl(\Phi(C)\bigr)
+
+这正是求解器自己给出的核所提供的，它并没有说明每个成员是否都必需。子集极小性是更强
+的断言，只有在每个成员都经过"删掉它再重新求解"的检验之后才作出：
+
+.. math::
+   :label: bmc-core-subset-minimality
+
+   \forall c \in C:\ \mathrm{SAT}\bigl(\Phi(C \setminus \{c\})\bigr)
+
+满足 :eq:`bmc-core-subset-minimality` 的冲突核报告 ``subset_minimal``，且
+``subset_minimality`` 为 ``proven``。只满足 :eq:`bmc-core-soundness` 的报告
+``raw``，检验被中途截断的报告 ``partial_minimized``。这个区分正是告诉读者"列出的
+每一行是否都值得改"的依据。
+
+在 ``proof`` 深度，每个 ``input`` 节点把一个冲突核成员重述为归一化事实 :math:`f`。
+重述比双向的任一单向蕴含都强，而两个方向都是必需的：
+
+.. math::
+   :label: bmc-proof-input-binding
+
+   \mathrm{UNSAT}\bigl(\Phi(c) \wedge \neg f\bigr)
+   \ \wedge\
+   \mathrm{UNSAT}\bigl(f \wedge \neg \Phi(c)\bigr)
+
+左侧合取项说的是成员强制该事实；右侧说的是该事实强制该成员。只检查左侧会容许一个
+比 :math:`c` 更弱的 :math:`f`——那是摘要，而摘要可能已经丢掉了读者需要的细节。这些
+检查中任何一个返回可满足、unknown 或超时，都会让该证明到不了 ``complete``。
+
+最后，输入与冲突核之间是双射，从而每个成员恰好被读一次，且没有节点替两个成员说话：
+
+.. math::
+   :label: bmc-proof-input-bijection
+
+   \bigl|\{\,v : \mathrm{kind}(v) = \texttt{input}\,\}\bigr| = |C|
+   \ \wedge\
+   \forall v:\ \bigl|\mathrm{items}(v)\bigr| = 1
+
+缺失、多余或重复的输入都违反 :eq:`bmc-proof-input-bijection`，会被拒绝而不是发布
+——包括两个不同成员陈述同一事实的情形，那种情形无处安放：合并它们会让一个节点带上
+两份归属，丢掉一个又会让某个成员没人读。
+
+下面每条断言都点名它的实现、它的测试，以及一个能产出它的查询。四条共用同一个两行
+查询 ``assume at 1: var("x") == 1; assume at 1: var("x") == 2;``，所以跑一次就能
+重现整份台账。
+
+:eq:`bmc-core-soundness` —— 仅冲突核本身不可满足
+    由 ``pyfcstm/bmc/infeasibility.py`` 中的 ``extract_source_core`` 构造；由
+    ``test/bmc/test_infeasibility.py`` 覆盖。该查询在场景 UNSAT 的同时报告
+    ``Core size: 2``。
+
+:eq:`bmc-core-subset-minimality` —— 每个成员都承重
+    由同一函数中的最小化循环构造；由 ``test/bmc/test_explanation.py`` 中的
+    ``test_reduction_and_minimality_stay_coupled`` 覆盖。该查询报告
+    ``Reduction: subset_minimal`` 与 ``Subset minimality: proven``。
+
+:eq:`bmc-proof-input-binding` —— 两个方向都被驳倒
+    由 ``pyfcstm/bmc/infeasibility.py`` 中的 ``check_core_bindings`` 检查；由
+    ``test/bmc/test_proof_wiring.py`` 覆盖。该查询发布两个输入，
+    ``verification_method`` 均为 ``core_binding``。
+
+:eq:`bmc-proof-input-bijection` —— 一个成员一个节点
+    由 ``pyfcstm/bmc/proof.py`` 中的 ``build_domain_proof`` 强制。该查询为两成员
+    冲突核发布两个 ``input`` 节点，各自的 ``item_ids`` 只有一项。覆盖它的两个测试
+    各占一行，以免长标识符在窄栏里被裁断：
+
+    - ``test_an_input_node_restates_one_member_and_says_so``
+    - ``test_two_members_stating_one_fact_are_refused_rather_than_merged``
+
+这份台账值得对照上文的边界来读：这四条断言谈论的都是编码之后的约束。没有一条说编码
+符合作者的本意，这也正是信任边界要单独陈述的原因。

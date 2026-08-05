@@ -1,4 +1,4 @@
-.PHONY: docs docs_en docs_zh docs_pdf docs_pdf_en docs_pdf_zh test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build build_info build_info_cli package clean build_assets build_assets_clean diagram_assets_check diagram_rendering_check diagram_browser_check diagram_contract_check diagram_data_check diagram_options_check diagram_csp_check diagram_parity_check diagram_reference_check diagram_export_limits_check diagram_headless_check diagram_notebooks_check diagram_browser_headless_check diagram_engine_floor diagram_provenance_check diagram_viewer_gate_check diagram_viewer_option_flow_check diagram_webview_expander_check diagram_assets_verify diagram_package_check diagram_corpus docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check test_boundary_check
+.PHONY: docs docs_en docs_zh docs_pdf docs_pdf_en docs_pdf_zh test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build build_info build_info_cli package clean docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check test_boundary_check api_doc_toctree_check bmc_docs_check bmc_benchmark_check bmc_benchmark build_assets build_assets_clean diagram_assets_check diagram_rendering_check diagram_browser_check diagram_contract_check diagram_data_check diagram_options_check diagram_csp_check diagram_parity_check diagram_reference_check diagram_export_limits_check diagram_headless_check diagram_notebooks_check diagram_browser_headless_check diagram_engine_floor diagram_provenance_check diagram_viewer_gate_check diagram_webview_expander_check diagram_assets_verify diagram_package_check diagram_corpus diagram_viewer_option_flow_check
 
 PYTHON := $(shell which python)
 
@@ -29,6 +29,10 @@ RANGE_SRC_DIR_TEST := ${TEST_DIR}/${RANGE_DIR}
 DIAGRAM_REFERENCE ?=
 
 COV_TYPES ?= xml term-missing
+
+# BMC infeasibility benchmark: measured repetitions and discarded warmups.
+BMC_BENCHMARK_REPETITIONS ?= 5
+BMC_BENCHMARK_WARMUPS     ?= 1
 
 # LLM-based documentation generation options
 AUTO_OPTIONS ?= --param max_tokens=400000 --no-ignore-module pyfcstm --no-ignore-module hbutils --model-name gpt-5.2-codex
@@ -149,6 +153,10 @@ help:
 	@echo "  make template_packaging_check - Validate repository template packaging contracts"
 	@echo "  make template_source_install_check - Validate source-install template extraction"
 	@echo "  make test_boundary_check - Validate pytest test-boundary rules"
+	@echo "  make api_doc_toctree_check - Validate generated API documentation toctrees"
+	@echo "  make bmc_docs_check - Validate the BMC documentation contracts"
+	@echo "  make bmc_benchmark_check - Validate the BMC infeasibility benchmark corpus"
+	@echo "  make bmc_benchmark - Measure explanation cost across baseline/none/formal/proof"
 	@echo ""
 	@echo "Sample Tests:"
 	@echo "  make sample       - Generate test files from sample DSL files"
@@ -373,6 +381,20 @@ docs_terminology_check:
 test_boundary_check:
 	$(PYTHON) tools/check_test_boundary.py
 
+api_doc_toctree_check:
+	$(PYTHON) tools/check_api_doc_toctree.py --self-check
+	$(PYTHON) tools/check_api_doc_toctree.py --check
+
+bmc_docs_check:
+	$(PYTHON) tools/check_bmc_docs.py --check
+
+bmc_benchmark_check:
+	$(PYTHON) tools/run_bmc_infeasibility_benchmark.py --check
+
+bmc_benchmark: bmc_benchmark_check
+	$(PYTHON) tools/run_bmc_infeasibility_benchmark.py --run \
+		--repetitions ${BMC_BENCHMARK_REPETITIONS} --warmups ${BMC_BENCHMARK_WARMUPS}
+
 
 # LLM-based documentation generation targets
 docs_auto:
@@ -395,11 +417,24 @@ ${RST_DOC_DIR}/%.rst: ${PYTHON_CODE_DIR}/%.py auto_rst.py Makefile
 	@mkdir -p $(dir $@)
 	python auto_rst.py -i $< -o $@
 
-${RST_DOC_DIR}/%/index.rst: ${PYTHON_CODE_DIR}/%/__init__.py auto_rst.py Makefile
+# A package index carries the toctree that auto_rst.py builds by listing the
+# package directory, so it goes stale when a module or subpackage appears or is
+# edited beside it -- not only when __init__.py itself changes.  The wildcards
+# need the stem, which is why they are deferred to the second expansion; without
+# them a new module gets its own generated page while the toctree keeps the shape
+# it had before, and Sphinx reports the page as included in no toctree.
+#
+# A *deleted* module is outside what prerequisites can express: a file that no
+# longer exists cannot make anything out of date.  That half of the invariant is
+# checked instead of built -- make api_doc_toctree_check compares each toctree
+# against the directory and reports an entry with no module behind it.
+.SECONDEXPANSION:
+
+${RST_DOC_DIR}/%/index.rst: ${PYTHON_CODE_DIR}/%/__init__.py $$(wildcard ${PYTHON_CODE_DIR}/$$*/*.py) $$(wildcard ${PYTHON_CODE_DIR}/$$*/*/__init__.py) auto_rst.py Makefile
 	@mkdir -p $(dir $@)
 	python auto_rst.py -i $< -o $@
 
-${RST_DOC_DIR}/index.rst: ${PYTHON_CODE_DIR}/__init__.py auto_rst.py Makefile
+${RST_DOC_DIR}/index.rst: ${PYTHON_CODE_DIR}/__init__.py $(wildcard ${PYTHON_CODE_DIR}/*.py) $(wildcard ${PYTHON_CODE_DIR}/*/__init__.py) auto_rst.py Makefile
 	@mkdir -p $(dir $@)
 	python auto_rst.py -i $< -o $@
 

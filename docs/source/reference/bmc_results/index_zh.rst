@@ -13,6 +13,16 @@ BMC 命令行与结果协议参考
 JSON 类型和必需键以模式为准；执行顺序、标准输出/标准错误、
 文件副作用和退出状态以入口模块为准。
 
+模式的版本由随它发布的那个版本决定，模式自身不带版本字段。它的 ``$id``
+指向 ``main`` 分支上的一个路径，而那个路径会随发布移动；模式与 JSON 产物
+都不带版本号。请用与所运行的 ``pyfcstm`` 同批发布的那份模式做校验：
+``additionalProperties: false`` 承诺的是\ **本版本**\ 不会发出未声明的字段，
+而不是字段集跨版本不变。某个版本可能新增字段。有界模型检查的解释面把
+``explanation`` 加进了两个「对未知字段关闭」的定义 —— ``feasibility`` 与
+``notCheckedFeasibility`` —— 并在两处都设为必需，所以较早的模式副本在这两处
+都会拒绝本版本的产物。它新增的其余定义在那份副本里根本不存在，没有消费者
+在对它们校验。
+
 可用下面的本页目录直接定位选项、输出事务、结论矩阵、人类可读报告、JSON 封装、
 见证、重放、错误或消费规则。``.fbmcq`` 语法和上下文合法性请查
 :doc:`../bmc_query/index_zh`，不要从结果页反推语法规则。
@@ -34,6 +44,7 @@ JSON 类型和必需键以模式为准；执行顺序、标准输出/标准错�
 .. cli-ref-option: command=bmc option=--json
 .. cli-ref-option: command=bmc option=--timeout-ms
 .. cli-ref-option: command=bmc option=--max-bound
+.. cli-ref-option: command=bmc option=--explain-infeasibility choices=none,formal,proof default=none
 .. cli-ref-option: command=bmc option=--color choices=auto,always,never default=auto
 .. cli-ref-option: command=bmc option=--help
 .. cli-ref-boundary: command=bmc stdout stderr exit-status side-effects success-signal failure-taxonomy human json atomic-output witness replay dual-check response-cause packaging property-verdict color timing llm-consumption
@@ -84,6 +95,15 @@ JSON 类型和必需键以模式为准；执行顺序、标准输出/标准错�
      - 未设置；无 CLI 上限
      - 构造 ``BmcOptions(max_bound=N)``。查询边界大于 ``N`` 时，在关系
        构造前作为受控编译错误拒绝；不会改写或截断查询边界。
+   * - ``--explain-infeasibility``
+     - ``none``、``formal`` 或 ``proof``
+     - ``none``
+     - 按给定深度请求可选的场景不可行解释。``none``\ 不增加任何求解工作，
+       ``explanation`` 保持为空且 ``refinement_status`` 为 ``not_requested``；
+       ``formal`` 发布分类与可靠源组冲突核（sound source core）；``proof``\ 额外
+       构造逐步证明，在每一步都被核验过时发布它，在规则目录中没有规则能闭合该
+       冲突核时降级为 ``formal``。实际达成的深度总会被报告，因此调用方能区分
+       两者。该深度不改变强制判定。
    * - ``--color``
      - ``auto``、``always`` 或 ``never``
      - ``auto``
@@ -336,6 +356,459 @@ JSON 类型和必需键以模式为准；执行顺序、标准输出/标准错�
 各节之间恰好一个空行，报告末尾恰好一个换行。``--color auto`` 在终端中用绿色表示见证或有界保证，
 红色表示缺少见证、发现反例或重放不匹配，黄色表示空场景、无定论、响应未完成和有界提醒，青色表示报告标签；
 颜色不会进入 JSON 或文件。脚本和大语言模型集成必须使用 ``--json``，不得解析人类文案、ANSI 或实时耗时。
+
+解释区块
+~~~~~~~~
+
+``--explain-infeasibility formal`` 或 ``proof`` 会在人类报告后追加一个解释区块。
+``BmcSolveResult.__str__()`` 与 ``to_text()`` 使用同一个辅助函数渲染同一区块，
+因此读者从任一入口看到的文本完全一致。对一个不可行场景的真实调用输出如下：
+
+.. code-block:: text
+
+   Explanation: PARTIAL FORMAL DOMAIN EXPLANATION
+   Classification: assumptions conflict with the feasible prefix
+
+   Conflict constraints:
+     1. r22.fbmcq:2:1-2:28
+        assume at 1: var("x") == 0;
+     2. r22.fbmcq:1:1-1:35
+        init state("Root.A") where x == 0;
+     3. r22.fcstm:1:1-1:15
+        def int x = 0;
+     4. generated transition constraint at step 0
+
+   The displayed core is sufficient for UNSAT but is not proven subset-minimal.
+   Core scope: assumptions_prefix
+   Reduction: raw
+   Reason: sound source core published without a minimality proof
+
+
+``Explanation`` 给出实际达成的深度及其完整程度。``Classification`` 是机器字段
+``classification`` 对应的读者可读句子。冲突约束的每一项要么用两行给出作者约束的
+位置与其源码文本，要么给出生成的支撑组，说明它的类别首段——``domain``、
+``transition``、``initial``、``assumption`` 或 ``definedness``\ ——以及它约束哪个
+frame 或 step。生成组占一行，若它还带有位置之外的构造元数据（被跟踪的 case 组确实带），
+则再加一行缩进列出。
+
+这里用类别首段而不是该组所属的聚合公式，原因是聚合词表太小：它只提供 ``domain``、
+``transition``、``initial`` 与 ``environment`` 四个词，而构造器实际发布的组需要五个名词，
+其中两个根本不是聚合名——assumption 组的聚合名是 ``environment``\ ，这个词在报告其他任何
+地方都不出现；definedness 组的聚合名则视发布它的阶段而定，来自 initialization 时是
+``initial``\ 、来自 assumption 时是 ``environment``\ ，既没命名该组、在两处之间也不稳定。``Core scope`` 与 ``Reduction`` 说明证明了什么、最小化进行到哪一步，
+``Reason`` 说明为什么停在那里。
+
+当请求的深度比实际达成的更深时会多出一行，因此请求 ``proof`` 而得到 ``formal``
+的调用者能同时看到两者：
+
+.. code-block:: text
+
+   Explanation depth: requested proof, achieved formal
+
+每个 core 都会报告自己的 scope 与 reduction，无论最小性是否已证明；区分两者的是
+scope 上面那句话。粒度、成员数、带标签的最小性行以及解释耗时属于更完整的发布区块，
+而那个区块还带有本深度不构造的叙述与因果链，所以这里不出现它们。
+
+
+分类与冲突核归约
+~~~~~~~~~~~~~~~~
+
+``classification`` 指出冲突落在场景的哪一部分。该词表是封闭的，报告打印的是面向
+读者的短语而非机器取值：
+
+.. list-table::
+   :header-rows: 1
+   :widths: 38 62
+
+   * - ``classification``
+     - 打印的短语
+   * - ``kernel_conflict``
+     - the model's own domain and transition rules conflict
+   * - ``initialization_self_conflict``
+     - initialization is internally inconsistent
+   * - ``initialization_domain_conflict``
+     - initialization conflicts with the frame domain
+   * - ``initialization_kernel_conflict``
+     - initialization conflicts with the transition relation
+   * - ``assumptions_self_conflict``
+     - the assumptions are internally inconsistent
+   * - ``assumptions_domain_conflict``
+     - the assumptions conflict with the frame domain
+   * - ``assumptions_prefix_conflict``
+     - assumptions conflict with the feasible prefix
+
+两个族的区别在于读者应该改什么。``initialization_*``\ 类冲突意味着 ``init`` 子句
+根本无法满足，或者能满足却无法继续；``assumptions_*``\ 类冲突意味着是 ``assume``
+子句让可行执行不复存在。``kernel_conflict`` 不牵涉这两者，它指向模型本身。
+
+``reduction`` 说明冲突核发布前最小化推进到了哪一步：
+
+.. list-table::
+   :header-rows: 1
+   :widths: 26 74
+
+   * - ``reduction``
+     - 含义
+   * - ``raw``
+     - 求解器自己给出的核，对 UNSAT 可靠但未收缩。
+   * - ``partial_minimized``
+     - 已证明可删的成员被删掉了，但预算在检验完每个剩余成员之前耗尽。
+   * - ``subset_minimal``
+     - 每个剩余成员都被检验过，一个也删不掉。
+
+``subset_minimality`` 是这个断言本身，取 ``proven`` 或 ``not_proven``，且只有
+``subset_minimal`` 携带 ``proven``。这个区分对决定改哪里的读者很重要：``raw``
+核可能包含根本不属于该冲突的成员。
+
+
+证明区块
+~~~~~~~~
+
+这个区块只有在确实有东西可解释时才出现：场景必须不可行，且请求的深度必须高于
+``none``。可行场景没有冲突，``none`` 没有请求解释，所以两者都不打印标题——在那里
+找不到标题是预期结果，不是字段缺失。
+
+区块出现时，它的标题行是由两个事实\ **拼出来**\ 的，不是从一张清单里挑出来的，而
+这条规则覆盖全部情形：
+
+**产出了东西时**\ ，标题命名\ *实际达成*\ 的深度与它的完整程度——``COMPLETE`` 或
+``PARTIAL``，接 ``FORMAL DOMAIN EXPLANATION`` 或 ``VERIFIED DOMAIN PROOF``。
+
+**什么都没产出时**\ ——``achieved_mode`` 为 ``none``——没有已达成的深度可命名，于是
+标题命名\ *被请求*\ 的深度，后接 ``NOT ACHIEVED``。
+
+针对 benchmark 语料的四次真实运行，覆盖规则的两半：
+
+.. code-block:: console
+
+   $ pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
+       --explain-infeasibility proof --color never
+   Explanation: COMPLETE VERIFIED DOMAIN PROOF
+
+   $ pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
+       --explain-infeasibility formal --color never
+   Explanation: COMPLETE FORMAL DOMAIN EXPLANATION
+
+   $ pyfcstm bmc -i latch.fcstm -q cross_step.fbmcq \
+       --explain-infeasibility proof --color never
+   Explanation: PARTIAL FORMAL DOMAIN EXPLANATION
+   Explanation depth: requested proof, achieved formal
+   Reason: the formal explanation is complete, but no rule in the catalog closes
+   this core.
+
+   $ pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
+       --explain-infeasibility proof --color never --timeout-ms 1
+   Explanation: PROOF EXPLANATION NOT ACHIEVED
+
+   $ pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
+       --explain-infeasibility formal --color never --timeout-ms 1
+   Explanation: FORMAL EXPLANATION NOT ACHIEVED
+   Reason: component probe did not start: budget exhausted before the probe
+   started; ...
+
+把规则套用到未展示的那个组合上：一个已构造但报告为 ``partial`` 的证明，标题会是
+``PARTIAL VERIFIED DOMAIN PROOF``——因为达成的是 ``proof``，完整程度是 ``partial``。
+
+这里没有对应的运行，原因不是语料缺用例，而是\ **当前实现产不出它**\ ，后者是更强的
+说法。构造 ``BmcInfeasibilityExplanation`` 的九处代码里，只有一处设置
+``achieved_mode="proof"``，而它同时把 ``status`` 硬编码为 ``complete``：证明要么闭合，
+要么整体降级为 ``formal``。所以这个组合被冻结交付表允许、也被规则命名，但今天没有任何
+代码发出它。请把这一行读作规则对深度阶梯预留形状给出的答案，而不是你应当期待看到的输出。
+
+中间那种最容易意外：请求 ``proof`` 而降级时显示的是 ``FORMAL`` 标题，因为实际达成的
+是 ``formal``。最后那种在没有任何证明的情况下标题里出现 ``PROOF``，因为什么都没达成，
+可命名的只剩请求本身。
+
+``Explanation depth:`` 只在标题本身让这一对变得有歧义时出现，也就是降级那种情形——
+标题命名达成的深度，该行补上被请求的深度。它在 ``NOT ACHIEVED`` 形状里不出现，因为
+标题已经命名了请求；请求被满足时也不出现。因此消费方应当在 JSON 里比较
+``requested_mode`` 与 ``achieved_mode``，而不是去找那一行——它只在三种形状之一里存在。
+
+``formal`` 深度上的 ``COMPLETE`` 意思是该档承诺的内容都产出了——一个分类与一个源组
+冲突核——而不是"找到了证明"。把它读成"工具已经做完了"，正是这张表要防的误解。
+
+最后一行需要仔细读。当 ``achieved_mode`` 为 ``none`` 时没有任何产出可供命名，于是
+标题报告的是\ *请求*\ 的深度加上 ``NOT ACHIEVED``——也就是说，请求 ``proof`` 却什么
+都没到达时，显示的是 ``PROOF EXPLANATION NOT ACHIEVED``，尽管并不存在证明。而降级到
+``formal`` 是另一种情形：确实有产出，所以由达成的深度命名，显示 ``FORMAL`` 标题。
+两种情形下差异都由 ``Explanation depth:`` 行报告，那才是可靠的分支依据。
+
+
+``--explain-infeasibility proof`` 会构造证明，并在每一步都被核验过时发布它。区块
+开头是 ``COMPLETE VERIFIED DOMAIN PROOF`` 而不是
+``PARTIAL FORMAL DOMAIN EXPLANATION``，推理是编号的而非概括的。针对
+``latch.fcstm`` 和一个把同一变量在同一帧钉成两个值的查询：
+
+.. code-block:: text
+
+   Explanation: COMPLETE VERIFIED DOMAIN PROOF
+   Classification: the assumptions are internally inconsistent
+
+   Why no execution exists:
+     1. At frame 1, retries must equal 1.
+     2. At frame 1, retries must equal 2.
+     3. Therefore one value cannot be two things at once. No execution satisfies
+        these initialization and query requirements, and the property was not
+        evaluated.
+
+   Conflict constraints:
+     1. two_values.fbmcq:1:1-1:34
+        assume at 1: var("retries") == 1;
+     2. two_values.fbmcq:2:1-2:34
+        assume at 1: var("retries") == 2;
+
+   The displayed core is sufficient for UNSAT and proven subset-minimal.
+   Core scope: assumptions_component
+   Core granularity: source_group
+   Core size: 2
+   Reduction: subset_minimal
+   Subset minimality: proven
+
+与 ``formal`` 区块的三处差异属于契约而非外观。标题写的是\ **已核验**\ 的证明，
+所以那些句子背后的每一步都经过下文某种方法的检查。``Why no execution exists``
+是按依赖顺序读出的证明，一步一句，以矛盾收尾。而 ``Reason:`` 行不存在：完整证明
+没有"为何提前停止"可解释，而 ``formal`` 区块总要说明它做不到什么。
+
+收尾那句话报告的是"不存在任何执行，因此属性未被求值"。空场景与属性被违反是两个
+不同的结论；读者不能把这个区块当作反例。
+
+
+证明词表
+~~~~~~~~
+
+证明的每一步是一个节点。``kind`` 说明节点的用途：
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 80
+
+   * - ``kind``
+     - 含义
+   * - ``input``
+     - 把一个冲突核成员重述为归一化事实。恰好一个成员，且每个子集极小
+       （subset minimal）成员恰好有一个 ``input`` 节点。
+   * - ``derived``
+     - 从已建立的事实产出一个新事实。
+   * - ``contradiction``
+     - 唯一的根，表明已建立的事实无法同时成立。
+
+``rule_id`` 指出是哪条规则产出了该节点的结论。目录是封闭的；需要目录之外读法的
+查询会降级为 ``formal``，而不是临时发明一条。
+
+「可达」一列记录当前是否已知有查询能产出携带该规则的节点。\ **没有任何规则不可达**\ ：每一条都
+能被某个用户写得出的查询点亮。其中三条曾有一段时间在等第四条，解开它们的是什么，详见
+:doc:`/explanations/bmc_solving/index_zh`。
+
+结论不为矛盾本身的那些规则就是产出 ``derived`` 节点的规则，因此这类冲突上发布的证明是一条
+链而不是一把扇：子集极小成员各一个 ``input`` 节点，每一步一个 ``derived`` 节点，加上唯一的
+``contradiction`` 根。没有链能到达的冲突仍然发布那把扇，消费方两种形状都要接受。
+
+.. list-table::
+   :header-rows: 1
+   :widths: 26 12 62
+
+   * - ``rule_id``
+     - 可达
+     - 它得出什么结论
+   * - ``source_fact``
+     - 是
+     - ``input`` 节点自身的事实，取自它重述的那个冲突核成员。
+   * - ``case_condition_entailment``
+     - 是
+     - 同一个转移 case，但条件已被消去。一个 case 的赋值只在该 case 适用时成立，所以
+       必须先从冲突核成员把条件立起来，赋值才能用——这件事由求解器完成，对着成员**自身
+       的约束**做，而不是对着它们已发布的事实。节点会点名蕴含该条件的成员，并记
+       ``solver_entailment``；``condition`` 是整个键被移除而非置空，因为求值规则按键判断。
+   * - ``transition_assignment``
+     - 是
+     - 一次转换的 effect 在下一帧赋给某变量的值。步关系把该赋值发布为
+       ``transition_case``，绑定证明它与该组的恰好一条要求等价，而
+       ``case_condition_entailment`` 提供这条规则要读的无条件形态。
+   * - ``equality_substitution``
+     - 是
+     - 把已知值代入另一个事实后的结果，用于操作数仍是符号的情形。
+   * - ``arithmetic_evaluation``
+     - 是
+     - 一个算术步骤留在变量里的值。它消费一个 ``arithmetic_expression`` 事实，而该事实
+       由 ``transition_assignment`` 产出。
+   * - ``interval_intersection``
+     - 是
+     - 不存在同时满足此处全部界限的值。
+   * - ``state_domain_exhaustion``
+     - 是
+     - 某一帧已经没有可处于的状态。
+   * - ``definedness_failure``
+     - 是
+     - 某个运算在此处要求的取值上无法保持有定义。
+   * - ``incompatible_equalities``
+     - 是
+     - 同一个槽位被要求持有两个不同的值。
+   * - ``boolean_complement``
+     - 是
+     - 同一个要求同时被要求成立又被排除。经事件断言可达：``assume event("Root.A.Go", 0) == true``
+       与 ``assume event("Root.A.Go", 0) == false`` 会发布两个 ``proposition`` 事实，
+       ``identity`` 相同而 ``holds`` 相反。步号是 ``identity`` 的一部分，所以同一事件
+       在两个步上是两个主体而非一个。写在状态上的对立式\ **不**\ 触发它，也不需要触发它：
+       ``assume at 1: active("Root.A")`` 配 ``assume at 1: !active("Root.A")`` 发布的是两个
+       只在 ``excluded`` 上相反的 ``state_membership`` 事实，由下面的
+       ``excluded_state_selected`` 闭合。状态断言不改走 ``proposition``，因为穷尽帧状态域的
+       那条规则正是读这些排除，改了它会失去唯一的前提来源。
+   * - ``excluded_state_selected``
+     - 是
+     - 某一帧被要求处于它同时排除的状态。两个前提来自同一个已发布事实类的两种读法：成立的
+       状态要求读作该帧状态槽上的等式，被排除的读作排除。此前的规则都不适用——状态槽上的
+       等式不是第二个等式，单个状态也不是一个域。
+   * - ``preceding_value_entailment``
+     - 是
+     - 某变量在「某要求陈述它的那一帧」的前一帧持有同一个值。只保持变量的步骤说不出任何
+       事实能复述的话，所以这里改问求解器「核成员强制了什么」，并点名强制它的那些成员。
+       方向是反向的，因为陈述该值的要求是单个成员，这正是引用接缝能记录的形态；向前传递的
+       前提会是派生节点，而派生节点代表其子树用到的全部成员。
+
+其中六条由入库的 benchmark 语料
+``benchmarks/bmc/infeasibility/cases/handwritten/`` 行使，其报告记录了哪个用例产出了
+哪条规则。入库报告的测量早于 ``boolean_complement`` 变为可达，因此只记录其中五条；
+走到第六条的用例是同一份语料里的 ``event_conflict.fbmcq``\ 。算术链那几条规则，连同
+``excluded_state_selected`` 与 ``preceding_value_entailment``\ ，由
+:doc:`/explanations/bmc_solving/index_zh` 给出的查询走到，尚无对应的语料用例。实测
+比值请从那里读，而不要从本页读：它是那份语料在某个版本上的性质，不是工具的性质。
+
+``verification_method`` 说明是谁认可了这一步；这个划分是证明的信任边界，不是标签：
+
+.. list-table::
+   :header-rows: 1
+   :widths: 26 74
+
+   * - ``verification_method``
+     - 检查了什么
+   * - ``core_binding``
+     - 归一化事实被重新编码，并与冲突核成员做双向检查：``group => fact`` 与
+       ``fact => group`` 都必须被驳倒。任一方向返回 unknown、超时或不成立，都会
+       让该证明无法进入 ``complete``。仅 ``input`` 节点使用。
+   * - ``core_binding_unit``
+     - 该成员所属的组按 case 各持一条要求，因此它是一个合取式，任何单条事实都蕴含
+       不了它的全部。事实被重新编码后与该合取式中的\ **一条**\ 要求做双向检查，
+       节点通过 ``unit_index`` 与 ``unit_count`` 指明是哪一条。若一条事实同时等价于
+       两条要求，它谁也没有指认，此时绑定被拒绝而不是择一。仅 ``input`` 节点使用。
+   * - ``rule_checker``
+     - 一个独立检查器不复用构造它的代码，从前提重新推导出该结论。``derived``
+       与根节点使用。
+   * - ``solver_entailment``
+     - 该步骤的规则与边条件由求解器判定，而不是由检查器判定，因为要问的是冲突核成员
+       的约束，而不是检查器看得到的已发布事实。节点的 ``item_ids`` 点名求解器用到的
+       成员，且它们是已发布冲突核的子集。``derived`` 与根节点使用。
+
+证明还会陈述它对自身形状的断言。``input_minimality`` 为 ``subset_minimal``：输入
+恰好是子集极小的冲突核，一个成员一个节点；缺失、多余或重复的输入会被拒绝而不是
+发布。``graph_minimality`` 为 ``dependency_pruned``：发布的每个节点都可从根到达。
+``verification_status`` 为 ``verified``，且这是它唯一的取值——未核验的图根本不会
+被发布。
+
+
+解释类型
+~~~~~~~~
+
+Python 调用方通过冻结的 dataclass 读取同样的内容，而不是去解析报告文本：
+
+.. list-table::
+   :header-rows: 1
+   :widths: 34 66
+
+   * - 类型
+     - 它携带什么
+   * - :class:`~pyfcstm.bmc.BmcInfeasibilityExplanation`
+     - ``requested_mode``、``achieved_mode``、``status``、``reason``、
+       ``classification``、``elapsed_ms``，以及 core、narrative 与 proof。
+   * - :class:`~pyfcstm.bmc.BmcConflictCore`
+     - ``scope``、``granularity``、``items``、``reduction`` 与
+       ``subset_minimality``。
+   * - :class:`~pyfcstm.bmc.BmcCoreItem`
+     - 一个冲突核成员：稳定 id、语义角色、约束引用与归一化事实。
+   * - :class:`~pyfcstm.bmc.BmcConstraintRef`
+     - 该成员来自哪个阶段的哪个公式。
+   * - :class:`~pyfcstm.bmc.BmcSourceRef`
+     - 该成员写在哪个文档的什么位置。
+   * - :class:`~pyfcstm.bmc.BmcConflictNarrative`
+     - ``derivation_status``、``headline`` 与 ``reasoning_steps``。
+   * - :class:`~pyfcstm.bmc.BmcReasoningStep`
+     - 一句话，附带它所读的冲突核成员与证明节点。
+   * - :class:`~pyfcstm.bmc.BmcConflictProof`
+     - ``scope``、``root_id``、``nodes``、``input_minimality``、
+       ``graph_minimality`` 与 ``verification_status``。
+   * - :class:`~pyfcstm.bmc.BmcProofNode`
+     - ``stable_id``、``kind``、``rule_id``、``premise_ids``、``conclusion``、
+       ``item_ids``、``human_text`` 与 ``verification_method``。
+
+.. code-block:: python
+
+    from pyfcstm.bmc import BmcConflictProof, BmcProofNode, solve_bmc_property
+
+    result = solve_bmc_property(
+        model, query_text, infeasibility_explanation="proof"
+    )
+    explanation = result.feasibility.explanation
+    if explanation is not None and explanation.proof is not None:
+        proof: BmcConflictProof = explanation.proof
+        for node in proof.nodes:
+            assert isinstance(node, BmcProofNode)
+            print(node.stable_id, node.rule_id, node.verification_method)
+
+同一个对象在 JSON 中位于 ``result.feasibility.explanation``；它的 ``proof`` 键在
+低于 ``proof`` 的任何深度下为 ``null``，在 ``proof`` 深度但发生降级时同样为
+``null``。
+
+
+解释状态与降级
+~~~~~~~~~~~~~~
+
+``requested_mode`` 是调用方请求的深度，``achieved_mode`` 是实际产出的深度。
+``status`` 说明已达成深度的完整程度：
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 78
+
+   * - ``status``
+     - 含义
+   * - ``complete``
+     - 已达成深度产出了它承诺的全部内容。
+   * - ``partial``
+     - 只产出了一部分。``reason`` 说明是什么让它停在那里。
+   * - ``unknown``
+     - 该深度依赖的某个检查返回了不确定结果。
+   * - ``timeout``
+     - 解释预算在达到该深度之前耗尽。
+
+深度、status 与载荷字段的组合并非任意。完整集合是一张十四行矩阵，由公开构造器强制；
+与其在这里复述它——本页早先的版本试过并且写错了——读者需要的是这两条事实：
+
+* ``complete`` 意味着该深度交付了它承诺的内容，所以 ``achieved_mode`` 为 ``none``
+  时永远不是 ``complete``。构造这种组合会抛出
+  ``achieved_mode 'none' cannot be complete; it is partial, unknown or timeout``。
+* ``reason`` 是例外，且值得知道，因为降级的结果正是通过它解释自己的：``complete``
+  从不携带它——没有什么要解释的——而 ``partial``、``unknown``、``timeout`` 一定携带。
+  这一条在全部十四条签名、三种达成深度上都成立。
+* 其余载荷字段不要去推断。``classification``、``core``、``narrative`` 与 ``proof``
+  请按"是否存在"来读，而不是从 ``status`` 预测；上文逐个记录了它们，且每个都可为空。
+
+:class:`~pyfcstm.bmc.BmcInfeasibilityExplanation` 会拒绝矩阵之外的组合并给出指明问题
+的消息，所以构造它的消费方立刻就会知道，而只读取结果的消费方根本不需要这张矩阵。
+
+因此，请求 ``proof`` 而发生降级时，``achieved_mode`` 报告为 ``formal``，并由
+``reason`` 指明原因。针对同一模型、但冲突需要转换读法的查询：
+
+.. code-block:: text
+
+   Explanation: PARTIAL FORMAL DOMAIN EXPLANATION
+   Explanation depth: requested proof, achieved formal
+   ...
+   Reason: the formal explanation is complete, but no rule in the catalog closes
+   this core.
+
+降级不等于失败：``formal`` 区块仍然给出分类、子集极小的冲突核以及每个源位置。
+对某些冲突，它给出的信息甚至\ **多于**\ 证明——参见
+:doc:`/explanations/bmc_solving/index_zh` 中的边界说明。
+
 
 直接打印 Python 结果对象
 ------------------------

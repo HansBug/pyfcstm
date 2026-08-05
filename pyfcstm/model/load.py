@@ -96,6 +96,12 @@ def load_state_machine_from_file(path: Union[str, os.PathLike]) -> StateMachine:
     file_path = os.fspath(path)
     code = auto_decode(pathlib.Path(file_path).read_bytes())
     ast_node = parse_state_machine_dsl(code)
+    # Two source-text mechanisms coexist and serve different readers: BMC
+    # provenance slices spans out of a path-keyed document map, while inspect and
+    # the diagram viewer read the scalars for the one file the caller named.  Only
+    # the scalars are set here, because ``_attach_model_source_metadata`` walks the
+    # assembled AST and builds the map from them -- setting the map here as well
+    # was dead code, which a mutation confirmed: removing it left 7645 tests green.
     ast_node._source_path = os.path.abspath(file_path)
     ast_node._source_text = code
     machine = parse_dsl_node_to_state_machine(ast_node, path=file_path)
@@ -159,6 +165,11 @@ def load_state_machine_from_text(
     """
     effective_path = os.getcwd() if path is None else os.fspath(path)
     ast_node = parse_state_machine_dsl(text)
+    # Same pairing as the file loader, and the same reason for setting only the
+    # scalars.  ``<memory>`` is what the map ends up keyed on, and
+    # ``pyfcstm.diagram.api`` reads that key to tell a model loaded from text --
+    # whose ``source_path`` is the working directory used for import resolution --
+    # from one loaded from a file.
     ast_node._source_path = "<memory>"
     ast_node._source_text = text
     machine = parse_dsl_node_to_state_machine(ast_node, path=effective_path)

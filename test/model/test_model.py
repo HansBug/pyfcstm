@@ -6,6 +6,10 @@ from pyfcstm.dsl import node as dsl_nodes
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model.expr import *
 from pyfcstm.model.model import *
+
+# Explicit alongside the star imports above: this file calls the public loader
+# 30+ times, and naming it here keeps those calls resolvable to a linter.
+from pyfcstm.model.model import parse_dsl_node_to_state_machine
 from pyfcstm.model.plantuml import PlantUMLOptions
 
 
@@ -270,6 +274,37 @@ lx --> [*]
 
 @pytest.mark.unittest
 class TestModelModel:
+    def test_public_loader_rejects_named_action_reference_cycles(self):
+        """Named lifecycle references must form an acyclic public model graph."""
+        program = parse_with_grammar_entry(
+            """
+            state Root {
+                enter First ref Second;
+                enter Second ref First;
+            }
+            """,
+            entry_name="state_machine_dsl",
+        )
+
+        model, diagnostics = parse_dsl_node_to_state_machine(program, collect=True)
+
+        assert model is not None
+        assert [item.code for item in diagnostics] == [
+            "E_NAMED_FUNCTION_REF_CYCLE",
+            "E_NAMED_FUNCTION_REF_CYCLE",
+        ]
+        assert {item.refs["ref_path"] for item in diagnostics} == {
+            "Root.First",
+            "Root.Second",
+        }
+        assert {item.refs["cycle_path"] for item in diagnostics} == {
+            "Root.First -> Root.Second -> Root.First",
+            "Root.Second -> Root.First -> Root.Second",
+        }
+
+        with pytest.raises(SyntaxError, match="Action reference cycle"):
+            parse_dsl_node_to_state_machine(program)
+
     def test_model_basic(self, demo_model_1):
         assert demo_model_1.defines == {
             "a": VarDefine(name="a", type="int", init=Integer(value=0)),
@@ -1467,9 +1502,7 @@ class TestModelModel:
         )
 
         state_machine = parse_dsl_node_to_state_machine(ast_node)
-        operations = (
-            state_machine.root_state.on_during_aspects[0].operations
-        )
+        operations = state_machine.root_state.on_during_aspects[0].operations
         assert [op.var_name for op in operations] == ["a", "c", "b"]
         assert operations[2].expr == BinaryOp(
             x=Variable(name="c"),

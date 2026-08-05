@@ -1,0 +1,3 @@
+init state("Controller.Idle") where retries == 0;
+assume at 1: var("retries") == 3;
+check reach <= 2: active("Controller.Vented");

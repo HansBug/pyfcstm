@@ -72,6 +72,12 @@ def test_pipeline_public_contract_is_exact() -> None:
                 default=None,
                 annotation="Optional[BmcOptions]",
             ),
+            inspect.Parameter(
+                "query_source_path",
+                inspect.Parameter.KEYWORD_ONLY,
+                default=None,
+                annotation="Optional[str]",
+            ),
         ],
         return_annotation="BmcPropertyFormula",
     )
@@ -132,6 +138,45 @@ def test_text_and_ast_inputs_share_semantics_but_keep_distinct_provenance() -> N
     assert text_formula.to_canonical() == ast_formula.to_canonical()
     assert text_context.source_text == query_text
     assert ast_context.source_text is None
+
+
+def test_compile_bmc_query_preserves_query_source_path_and_text() -> None:
+    """The compile facade keeps query provenance for later source excerpts."""
+    model = _model()
+    query_text = 'init state("Root.Idle") where true;\ncheck reach <= 1: true;'
+
+    formula = compile_bmc_query(
+        model,
+        query_text,
+        query_source_path="property.fbmcq",
+    )
+
+    context = formula.core.context
+    assert context.query_source_path == "property.fbmcq"
+    assert context.source_text == query_text
+    target = next(
+        group
+        for group in formula.core._tracked_groups
+        if group.stable_id == "initial.target"
+    )
+    assert target.source_ref.path == "property.fbmcq"
+    assert context._source_registry.excerpt(target.source_ref) == (
+        'init state("Root.Idle") where true;'
+    )
+
+
+def test_query_source_path_is_metadata_only_for_context_identity() -> None:
+    """Source paths must not change prepared-context repr or equality."""
+    model = _model()
+    query = 'check reach <= 1: active("Root.Idle");'
+
+    without_path = compile_bmc_query(model, query).core.context
+    with_path = compile_bmc_query(
+        model, query, query_source_path="property.fbmcq"
+    ).core.context
+
+    assert without_path == with_path
+    assert "query_source_path" not in repr(with_path)
 
 
 def test_compile_bmc_query_forwards_options_and_rejects_positional_options() -> None:

@@ -4,11 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import re
 import textwrap
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -54,6 +55,10 @@ _EQUATION_LABELS = (
     "bmc-witness-projection",
     "bmc-replay-agreement",
     "bmc-symbol-growth",
+    "bmc-core-soundness",
+    "bmc-core-subset-minimality",
+    "bmc-proof-input-binding",
+    "bmc-proof-input-bijection",
 )
 
 _PAGE_PAIRS = (
@@ -64,6 +69,11 @@ _PAGE_PAIRS = (
     "explanations/bmc_solving/index",
     "reference/bmc_query/index",
     "reference/bmc_results/index",
+    # The CLI reference documents ``pyfcstm bmc`` alongside the other commands,
+    # so it carries BMC option contracts and belongs under the same structural
+    # checks.  It was outside them while the only BMC option surface lived on
+    # the result-protocol page.
+    "reference/cli/index",
 )
 
 _EQUATION_PAIRS = (
@@ -82,6 +92,275 @@ _TUTORIAL_DIAGRAMS = (
     ("bmc_pipeline.puml", "bmc_pipeline_zh.puml"),
     ("first_check_en.puml", "first_check_zh.puml"),
 )
+
+# The optional scenario-infeasibility explanation is published on three surfaces
+# at once -- a human report block, a JSON object, and a set of public dataclasses
+# -- and the vocabularies below are closed enums in the code.  Every value a
+# reader can be handed therefore needs somewhere to look it up, which is why
+# these are checked as whole sets rather than as a few representative names.
+#
+# The values are transcribed from pyfcstm/bmc/explanation.py.  They are copied
+# rather than imported because this checker guards documentation against the
+# code, and importing the code would make a renamed value silently agree with a
+# stale page instead of failing.
+
+#: Every ``rule_id`` a proof node can carry.
+_PROOF_RULE_IDS = (
+    "source_fact",
+    "case_condition_entailment",
+    "transition_assignment",
+    "equality_substitution",
+    "arithmetic_evaluation",
+    "interval_intersection",
+    "state_domain_exhaustion",
+    "definedness_failure",
+    "incompatible_equalities",
+    "boolean_complement",
+    "excluded_state_selected",
+    "preceding_value_entailment",
+)
+
+#: Every way a proof step can be checked before it is published.
+_PROOF_VERIFICATION_METHODS = (
+    "core_binding",
+    "core_binding_unit",
+    "rule_checker",
+    "solver_entailment",
+)
+
+#: Methods the explanation page names without assigning work to them.
+#:
+#: The page divides the checking between the methods that are wired to a node role,
+#: and would separately name any held for a future step.  The count in its prose is
+#: therefore the vocabulary minus these, which is why they are listed rather than
+#: folded into the number: adding a method that does carry work should move the
+#: expected count, and adding a reserved name should not.
+#:
+#: Empty because every method now carries work: ``solver_entailment`` was the last
+#: reserved one and ``case_condition_entailment`` discharges through it.  While it
+#: sat here the page's own sentence saying so went unchecked, which is how the page
+#: came to claim the method was unused after it was wired -- so an entry here has to
+#: be removed in the same change that gives the method a job.
+_RESERVED_VERIFICATION_METHODS: Tuple[str, ...] = ()
+
+#: Every kind of node a proof graph contains.
+_PROOF_NODE_KINDS = ("input", "derived", "contradiction")
+
+#: Every classification the explanation can reach.
+_CLASSIFICATIONS = (
+    "kernel_conflict",
+    "initialization_self_conflict",
+    "initialization_domain_conflict",
+    "initialization_kernel_conflict",
+    "assumptions_self_conflict",
+    "assumptions_domain_conflict",
+    "assumptions_prefix_conflict",
+)
+
+#: The depths a caller can request, and the states the attempt can end in.
+_EXPLANATION_MODES = ("none", "formal", "proof")
+_EXPLANATION_STATUSES = ("complete", "partial", "unknown", "timeout")
+
+#: Every headline the reference page must show a real example of.
+#:
+#: This one *is* the complete set, and it is the only constant here that can say
+#: so honestly: ``_ALL_EXPLANATION_HEADLINES`` collects all six in one mapping
+#: rather than leaving two of them in a renderer fallback, so "all of them" is a
+#: fact about one mapping instead of a reading of scattered code.  Twice before
+#: that refactor a constant here claimed a closed vocabulary the renderer did not
+#: honour, and because the page was written from the same reading, the gate agreed
+#: with it by construction.  Transcribe from that private mapping, not from the
+#: published ``EXPLANATION_HEADLINES``, which documents itself as covering the
+#: achieved depths only.
+#:
+#: Still transcribed rather than imported, and three separate edges keep the
+#: transcription honest.  A value edited here stops appearing on the page, so
+#: ``--check`` reports it as undocumented.  A value edited in the code's mapping
+#: fails the transcription guard in test/bmc/test_explanation.py.  And
+#: ``_check_headline_transcription`` compares this tuple against that mapping
+#: directly.
+#:
+#: The third edge was missing until a reviewer found the hole: editing the code's
+#: mapping *and* the pytest guard together left both gates green while the CLI
+#: published a string neither this tuple nor either page carried.  Two edges
+#: sharing an endpoint are not a cycle, and only a cycle catches every single
+#: omission.  The pytest guard cannot supply the missing edge itself -- it
+#: compares the mapping against a literal in the test file, and the pytest
+#: boundary rules forbid a test importing tools/.
+_EXPLANATION_HEADLINES = (
+    "COMPLETE FORMAL DOMAIN EXPLANATION",
+    "PARTIAL FORMAL DOMAIN EXPLANATION",
+    "COMPLETE VERIFIED DOMAIN PROOF",
+    "PARTIAL VERIFIED DOMAIN PROOF",
+    "FORMAL EXPLANATION NOT ACHIEVED",
+    "PROOF EXPLANATION NOT ACHIEVED",
+)
+
+#: How far minimization got, and what the proof's own minimality claims are.
+_CORE_REDUCTIONS = ("raw", "partial_minimized", "subset_minimal")
+_PROOF_MINIMALITY = ("subset_minimal", "dependency_pruned", "verified")
+
+#: The published dataclasses a Python caller reads the explanation through.
+_EXPLANATION_TYPES = (
+    "BmcInfeasibilityExplanation",
+    "BmcConflictCore",
+    "BmcCoreItem",
+    "BmcConflictNarrative",
+    "BmcReasoningStep",
+    "BmcConflictProof",
+    "BmcProofNode",
+    "BmcConstraintRef",
+    "BmcSourceRef",
+)
+
+#: Which prose page owns which part of the vocabulary.
+#:
+#: Keyed by page pair, so each requirement is checked in the English page and its
+#: Chinese counterpart.  Only the ``index.rst`` / ``index_zh.rst`` prose is read:
+#: the same names also appear in ``bmc_cli.schema.json`` and in the generated
+#: ``api_doc`` pages, and an anchor that those files could satisfy would report
+#: success while the prose stayed empty.
+_EXPLANATION_VOCABULARY: Dict[str, Tuple[str, ...]] = {
+    "reference/bmc_results/index": (
+        _PROOF_RULE_IDS
+        + _PROOF_VERIFICATION_METHODS
+        + _CLASSIFICATIONS
+        + _CORE_REDUCTIONS
+        + _PROOF_MINIMALITY
+        + _EXPLANATION_STATUSES
+        + _EXPLANATION_TYPES
+        + _EXPLANATION_HEADLINES
+        + (
+            "--explain-infeasibility",
+            "result.feasibility.explanation",
+        )
+    ),
+    "reference/cli/index": (
+        _EXPLANATION_MODES
+        + (
+            "--explain-infeasibility",
+            "NO_COLOR",
+        )
+    ),
+    "tutorials/bmc/index": (
+        "--explain-infeasibility",
+        "COMPLETE VERIFIED DOMAIN PROOF",
+        "verification_method",
+    ),
+    "how_to/bmc/index": (
+        "--explain-infeasibility",
+        "achieved_mode",
+        "requested_mode",
+    ),
+    "explanations/bmc_solving/index": (
+        _PROOF_VERIFICATION_METHODS
+        + (
+            "subset_minimal",
+            "structural_only",
+        )
+    ),
+}
+
+#: Vocabularies that must be tabulated together rather than mentioned apart.
+#:
+#: A reader looking up one ``rule_id`` needs to see the others to know the list
+#: is closed; the names scattered over as many sections do not answer that.  The
+#: window is a single contiguous run of non-blank lines, which is what a reST
+#: table or definition list is.
+_TABULATED_VOCABULARY: Dict[str, Tuple[Tuple[str, ...], ...]] = {
+    "reference/bmc_results/index": (
+        _PROOF_RULE_IDS,
+        _PROOF_VERIFICATION_METHODS,
+        _PROOF_NODE_KINDS,
+    ),
+}
+
+#: Rules the reference page must mark as currently unreachable.
+#:
+#: An unreachable rule is part of the closed vocabulary a consumer has to accept
+#: while no query reaches it.  Listing the catalog without saying which entries those
+#: are reads as though every entry were an available reading, so a reader who picks
+#: ``proof`` depth for one of them is surprised by a degraded result.  The set is
+#: empty as this stands, and the check below is what keeps the page honest if it
+#: stops being.  The measured ratio belongs to
+#: the benchmark corpus rather than to a reference page, but *which* rules are
+#: unreachable is a user-facing fact, and it is the kind that goes stale quietly.
+#:
+#: ``boolean_complement`` left this list when event assumptions began publishing
+#: ``proposition`` facts.  The three that remained shared one cause rather than
+#: three: a case publishes its assignment, but the assignment holds only where the
+#: case applies, and nothing discharged that condition from the members establishing
+#: it.  ``case_condition_entailment`` discharges it, so they left together as that
+#: note said they would, and this is empty.
+_UNREACHABLE_RULES: Tuple[str, ...] = ()
+
+#: Sentences that were true when written and are now misleading.
+#:
+#: The proof tier landed after this page described it as never closing, so the
+#: page told a reader the feature does not work.  A stale claim is worse than a
+#: missing one, and nothing else in this checker would notice it.
+#:
+#: Both languages of a page pair are scanned against every phrase here, so a claim is
+#: written once in each language it was made in rather than in a second registry: one
+#: sentence lives in four places, and a correction applied to three of them reads as
+#: complete.  Phrases are matched against the folded text, so they are written with
+#: single spaces and do not have to guess where reST wrapped them.
+_FORBIDDEN_CLAIMS: Dict[str, Tuple[Tuple[str, str], ...]] = {
+    "reference/bmc_results/index": (
+        (
+            "reports as unclosed rather than fabricating",
+            "the proof tier does close for reachable cases; describe both the "
+            "closing and the degrading outcome instead",
+        ),
+        (
+            "The current catalog does not use it",
+            "``solver_entailment`` is used by ``case_condition_entailment``; say "
+            "what it discharges rather than that nothing does",
+        ),
+        (
+            "no query reaches them today",
+            "every rule in the catalog fires for some query; the paragraph this "
+            "clause belonged to counted unreachable rules",
+        ),
+        (
+            "No proof published today contains one",
+            "a closed arithmetic chain publishes derived nodes; describe the chain "
+            "and the fan as the two shapes a consumer accepts",
+        ),
+        (
+            "当前目录不使用它",
+            "``solver_entailment`` 已由 ``case_condition_entailment`` 使用",
+        ),
+        ("今天没有查询能走到它们", "目录里每条规则都能被某个查询点亮"),
+        ("今天发布的证明里不含派生节点", "闭合的算术链会发布 ``derived`` 节点"),
+    ),
+    "explanations/bmc_solving/index": (
+        (
+            "The current catalog does not use it",
+            "``solver_entailment`` is used by ``case_condition_entailment``; say "
+            "what it discharges rather than that nothing does",
+        ),
+        (
+            "No query reaches this method today",
+            "``core_binding_unit`` is published for an input restating one case of "
+            "a step relation",
+        ),
+        (
+            "the rule the reachability table marks unreachable",
+            "the table marks no rule unreachable; do not point a reader at a row "
+            "that no longer says that",
+        ),
+        (
+            "当前目录不使用",
+            "``solver_entailment`` 已由 ``case_condition_entailment`` 使用",
+        ),
+        (
+            "今天没有查询能走到这个方法",
+            "``core_binding_unit`` 会为重述步关系某个 case 的输入发布",
+        ),
+        ("可达性表里标为不可达的那条", "可达性表里没有任何规则标为不可达"),
+    ),
+}
 
 
 class CheckFailure(Exception):
@@ -134,6 +413,129 @@ def _extract_equations(path: Path) -> List[Tuple[str, str]]:
     return equations
 
 
+def _equation_references(path: Path) -> List[str]:
+    """Return every ``:eq:`label``` reference in one page, in order.
+
+    :param path: Page to scan.
+    :type path: pathlib.Path
+    :return: The referenced labels, duplicates kept.
+    :rtype: List[str]
+    """
+    return re.findall(r":eq:`([^`]+)`", path.read_text(encoding="utf-8"))
+
+
+def _check_headline_transcription(errors: List[str]) -> None:
+    """Compare the transcribed headline tuple against the mapping in the code.
+
+    This is the edge the interlock was missing.  Editing the tuple alone is caught
+    -- the value stops appearing on the page.  Editing the code's mapping and the
+    pytest guard together was not: the guard compares the mapping to a literal in
+    the test file and cannot see this module, so both gates stayed green while the
+    CLI published a string neither the tuple nor either page carried.
+
+    Read with ``ast`` rather than imported, so running the checker needs no
+    importable ``pyfcstm`` and a syntax error in the module is reported here
+    instead of crashing the run.
+
+    :param errors: Collected problems, appended to.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    source = _REPO_ROOT / "pyfcstm/bmc/explanation.py"
+    try:
+        module = ast.parse(source.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError) as err:
+        # OSError: the module is missing or unreadable.
+        # SyntaxError: it is mid-edit, so the mapping cannot be trusted either way.
+        errors.append("cannot read the headline mapping from %s: %s" % (source, err))
+        return
+    # ``_ALL_EXPLANATION_HEADLINES`` is ``{**EXPLANATION_HEADLINES, ...}``, so the
+    # strings live in two dict displays and reading only the merged one loses the
+    # four it inherits.  Both names are read, and both must be present: if either
+    # is renamed away the transcription below is unchecked, which is the state this
+    # function exists to prevent.
+    wanted = ("EXPLANATION_HEADLINES", "_ALL_EXPLANATION_HEADLINES")
+    found: Dict[str, set] = {}
+    for node in module.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        names = {getattr(target, "id", None) for target in node.targets}
+        for name in wanted:
+            if name in names:
+                # Values only.  The keys are ``(mode, status)`` tuples whose parts
+                # are strings too, and walking the whole node would collect those
+                # as headlines.
+                found[name] = {
+                    value.value
+                    for display in ast.walk(node.value)
+                    if isinstance(display, ast.Dict)
+                    for value in display.values
+                    if isinstance(value, ast.Constant) and isinstance(value.value, str)
+                }
+    missing_names = [name for name in wanted if name not in found]
+    if missing_names:
+        errors.append(
+            "%s no longer defines %s, so the transcribed headline list here is "
+            "unchecked." % (source, ", ".join(missing_names))
+        )
+        return
+    published = set().union(*found.values())
+    transcribed = set(_EXPLANATION_HEADLINES)
+    for headline in sorted(published - transcribed):
+        errors.append(
+            "the code publishes headline %r, which _EXPLANATION_HEADLINES here "
+            "does not transcribe." % headline
+        )
+    for headline in sorted(transcribed - published):
+        errors.append(
+            "_EXPLANATION_HEADLINES here transcribes %r, which the code no longer "
+            "publishes." % headline
+        )
+
+
+def _check_equation_references(errors: List[str]) -> None:
+    """Check that every equation reference resolves and every equation is cited.
+
+    The ledger's whole job is that each labelled equation can be traced to its
+    implementation, its tests, and a query that exercises it.  A typo in a
+    reference points that row at an equation which does not exist, and Sphinx
+    answers with a warning among the dozens a full build already emits.  So the
+    label list alone is not enough to check: what the reader follows is the
+    reference.
+
+    The reverse direction matters too.  An equation nobody cites has dropped out
+    of the ledger even though its ``:label:`` is still there, which the frozen
+    list cannot see either.
+
+    :param errors: Collected problems, appended to.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    known = set(_EQUATION_LABELS)
+    source = _REPO_ROOT / "docs/source"
+    for language, suffix in (("English", ".rst"), ("Chinese", "_zh.rst")):
+        cited: set = set()
+        for relative in _EQUATION_PAIRS:
+            page = source / (relative + suffix)
+            for label in _equation_references(page):
+                cited.add(label)
+                if label not in known:
+                    errors.append(
+                        "%s references equation %r, which no labelled block "
+                        "defines." % (page.relative_to(_REPO_ROOT), label)
+                    )
+        # Counted across the pages together, because the labels are spread over
+        # them and no single page carries the whole list.
+        missing = [label for label in _EQUATION_LABELS if label not in cited]
+        if missing:
+            errors.append(
+                "The %s pages never reference %s, so those equations are outside "
+                "the ledger." % (language, ", ".join(missing))
+            )
+
+
 def _check_equations(errors: List[str]) -> None:
     english: List[Tuple[str, str]] = []
     chinese: List[Tuple[str, str]] = []
@@ -145,11 +547,11 @@ def _check_equations(errors: List[str]) -> None:
     chinese_labels = tuple(label for label, _latex in chinese)
     if english_labels != _EQUATION_LABELS:
         errors.append(
-            "English BMC equation ledger does not match the frozen 40 labels."
+            "English BMC equation ledger does not match the frozen label list."
         )
     if chinese_labels != _EQUATION_LABELS:
         errors.append(
-            "Chinese BMC equation ledger does not match the frozen 40 labels."
+            "Chinese BMC equation ledger does not match the frozen label list."
         )
     if english != chinese:
         errors.append("English and Chinese BMC equation labels/LaTeX differ.")
@@ -304,14 +706,902 @@ def _check_schema(errors: List[str]) -> None:
             errors.append("%s still describes the removed package resource." % relative)
 
 
+def _visible_text(path: Path) -> str:
+    """Return a page's text with reST comment blocks removed.
+
+    A vocabulary anchor is meant to prove a reader can look the value up, and a
+    comment proves the opposite: the words are in the file and not on the page.
+    Reading the raw character stream cannot tell those apart -- prefixing one
+    ``..`` line turned this page's whole proof-vocabulary section into a comment
+    while every anchor still matched, and the rendered HTML lost the content.
+
+    A comment is a line that starts with ``..`` and is neither a directive
+    (``.. name::``) nor a target (``.. _label:``), together with the indented
+    block that follows it.  Directives and targets are kept, since their content
+    does render.
+
+    :param path: Page to read.
+    :type path: pathlib.Path
+    :return: The page text with comment blocks blanked out.
+    :rtype: str
+    """
+    lines = _read(path).replace("\r\n", "\n").split("\n")
+    kept: List[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        stripped = line.strip()
+        is_comment_marker = stripped == ".." or (
+            stripped.startswith(".. ")
+            and not re.match(r"^\.\.\s+[^\s]+::", stripped)
+            and not re.match(r"^\.\.\s+_", stripped)
+        )
+        if not is_comment_marker:
+            kept.append(line)
+            index += 1
+            continue
+        indent = len(line) - len(line.lstrip())
+        kept.append("")
+        index += 1
+        # The comment body is every following line that is blank or indented
+        # deeper than the marker.  Blank lines alone do not end it.
+        while index < len(lines):
+            following = lines[index]
+            if not following.strip():
+                kept.append("")
+                index += 1
+                continue
+            if len(following) - len(following.lstrip()) > indent:
+                kept.append("")
+                index += 1
+                continue
+            break
+    return "\n".join(kept)
+
+
+def _prose_pages(relative: str) -> List[Tuple[str, Path]]:
+    """Return the English and Chinese prose pages of one page pair.
+
+    :param relative: Page pair path without the ``.rst`` suffix.
+    :type relative: str
+    :return: ``(label, path)`` for each page of the pair.
+    :rtype: List[Tuple[str, pathlib.Path]]
+    """
+    source = _REPO_ROOT / "docs/source"
+    return [
+        (relative + ".rst", source / (relative + ".rst")),
+        (relative + "_zh.rst", source / (relative + "_zh.rst")),
+    ]
+
+
+def _check_explanation_vocabulary(errors: List[str]) -> None:
+    """Confirm each prose page documents the vocabulary it owns.
+
+    :param errors: Accumulator the caller raises from.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    for relative, required in sorted(_EXPLANATION_VOCABULARY.items()):
+        for label, path in _prose_pages(relative):
+            text = _visible_text(path)
+            missing = [value for value in required if value not in text]
+            if missing:
+                errors.append(
+                    "%s does not document %s."
+                    % (label, ", ".join(sorted(set(missing))))
+                )
+
+
+def _contiguous_blocks(text: str) -> List[str]:
+    """Split page text into runs of consecutive non-blank lines.
+
+    :param text: Page contents.
+    :type text: str
+    :return: One string per run, blank-line separated in the source.
+    :rtype: List[str]
+    """
+    blocks: List[str] = []
+    current: List[str] = []
+    for line in text.splitlines():
+        if line.strip():
+            current.append(line)
+            continue
+        if current:
+            blocks.append("\n".join(current))
+            current = []
+    if current:
+        blocks.append("\n".join(current))
+    return blocks
+
+
+def _check_tabulated_vocabulary(errors: List[str]) -> None:
+    """Confirm closed vocabularies appear together rather than scattered.
+
+    :param errors: Accumulator the caller raises from.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    for relative, groups in sorted(_TABULATED_VOCABULARY.items()):
+        for label, path in _prose_pages(relative):
+            blocks = _contiguous_blocks(_visible_text(path))
+            for group in groups:
+                if any(all(value in block for value in group) for block in blocks):
+                    continue
+                errors.append(
+                    "%s mentions %s apart rather than in one table, so a reader "
+                    "cannot see that the list is closed."
+                    % (label, " / ".join(group[:3]) + ("..." if len(group) > 3 else ""))
+                )
+
+
+def _check_forbidden_claims(errors: List[str]) -> None:
+    """Confirm no page still carries a claim the implementation outgrew.
+
+    :param errors: Accumulator the caller raises from.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    for relative, claims in sorted(_FORBIDDEN_CLAIMS.items()):
+        for label, path in _prose_pages(relative):
+            text = _flowed_text(path)
+            for phrase, guidance in claims:
+                if phrase in text:
+                    errors.append("%s still claims %r; %s." % (label, phrase, guidance))
+
+
+def _schema_field_vocabularies(field: str) -> List[Tuple[str, ...]]:
+    """Return every closed value list the schema gives one property name.
+
+    A name can appear in several places with different subsets -- ``status``
+    means one thing for a solver check and another for an explanation, and
+    ``classification`` is narrowed per conflict scope.  Returning all of them
+    lets the caller decide whether it wants an exact match somewhere or a union.
+
+    :param field: Property name to collect.
+    :type field: str
+    :return: One tuple per occurrence that closes its values.
+    :rtype: List[Tuple[str, ...]]
+    """
+    schema = json.loads(_read(_REPO_ROOT / "docs/source" / _SCHEMA_RELATIVE_PATH))
+    found: List[Tuple[str, ...]] = []
+
+    def walk(node: object) -> None:
+        if isinstance(node, dict):
+            properties = node.get("properties")
+            if isinstance(properties, dict):
+                spec = properties.get(field)
+                if isinstance(spec, dict) and isinstance(spec.get("enum"), list):
+                    found.append(
+                        tuple(value for value in spec["enum"] if value is not None)
+                    )
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    walk(schema)
+    return found
+
+
+def _check_schema_vocabularies(errors: List[str]) -> None:
+    """Confirm the schema's closed lists still match the published vocabularies.
+
+    The reference tables written above are transcribed from the code, and the
+    schema is what a machine consumer validates against.  If those two drift, a
+    consumer that trusts the schema and a reader who trusts the table disagree
+    about which values exist, and nothing else here would notice.
+
+    :param errors: Accumulator the caller raises from.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    exact = {
+        "rule_id": _PROOF_RULE_IDS,
+        "verification_method": _PROOF_VERIFICATION_METHODS,
+        "kind": _PROOF_NODE_KINDS,
+        "reduction": _CORE_REDUCTIONS,
+        "requested_mode": _EXPLANATION_MODES,
+        "achieved_mode": _EXPLANATION_MODES,
+        "status": _EXPLANATION_STATUSES,
+    }
+    for field, expected in sorted(exact.items()):
+        occurrences = _schema_field_vocabularies(field)
+        if not any(set(values) == set(expected) for values in occurrences):
+            errors.append(
+                "bmc_cli.schema.json has no %s enum matching the documented "
+                "%d values." % (field, len(expected))
+            )
+    # classification is narrowed per conflict scope, which is stricter than the
+    # flat vocabulary rather than inconsistent with it -- so the union is what has
+    # to agree, and a value reachable in no scope would be a real gap.
+    union = {
+        value
+        for values in _schema_field_vocabularies("classification")
+        for value in values
+    }
+    if union != set(_CLASSIFICATIONS):
+        errors.append(
+            "The union of the schema's classification enums does not match the "
+            "documented list; schema-only %s, documented-only %s."
+            % (
+                sorted(union - set(_CLASSIFICATIONS)),
+                sorted(set(_CLASSIFICATIONS) - union),
+            )
+        )
+
+
+def _check_rule_reachability(errors: List[str]) -> None:
+    """Confirm the reference page still says which rules no query reaches.
+
+    Matched against the table row's exact shape rather than against the marker
+    appearing anywhere nearby.  The looser reading passed while the English
+    column was missing entirely: ``"no" in block`` is satisfied by ``no value``,
+    ``nodes``, or ``not``, so the check agreed with a two-column table.  Both
+    languages are checked with the same predicate against their own marker word,
+    because writing one check per language is how the two drift apart.
+
+    :param errors: Accumulator the caller raises from.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    markers = {
+        "reference/bmc_results/index.rst": "no",
+        "reference/bmc_results/index_zh.rst": "\u5426",
+    }
+    for label, path in _prose_pages("reference/bmc_results/index"):
+        text = _visible_text(path)
+        for rule in _UNREACHABLE_RULES:
+            row = "   * - ``%s``\n     - %s\n" % (rule, markers[label])
+            if row in text:
+                continue
+            errors.append(
+                "%s does not mark %s unreachable in its own table row, so the "
+                "catalog reads as %d available readings."
+                % (label, rule, len(_PROOF_RULE_IDS))
+            )
+
+
+#: Numeral spellings, indexed by the value each names.
+#:
+#: Shared by every prose-count check so the two languages cannot disagree about
+#: how a number is written, which is how one of them ends up unchecked.
+#:
+#: Longer than the vocabularies being counted, deliberately.  These were sized to
+#: the rule catalog and the reasoning was "nine rules exist, so at most nine can be
+#: unreachable, so indices 0..9 all resolve" -- correct only while the catalog had
+#: nine.  Adding a tenth rule turned the count into an ``IndexError`` inside the
+#: checker itself.  An index bound that depends on a number this file does not own
+#: is not a bound.
+_ENGLISH_NUMERALS = (
+    "zero",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+    "eleven",
+    "twelve",
+)
+
+#: Chinese numerals, as the spellings a page may legitimately use for each value.
+#:
+#: Two is written ``两`` before a measure word and ``二`` in a bare numeral, so a
+#: single spelling per value would make the check demand ``二条`` -- which is not
+#: what a Chinese page should say.  Both are accepted; the check is about the
+#: number, not the register.
+_CHINESE_NUMERALS: Tuple[Tuple[str, ...], ...] = (
+    ("零",),
+    ("一",),
+    ("两", "二"),
+    ("三",),
+    ("四",),
+    ("五",),
+    ("六",),
+    ("七",),
+    ("八",),
+    ("九",),
+    ("十",),
+    ("十一",),
+    ("十二",),
+)
+
+#: An alternation matching any spelling above, for use inside a pattern.
+#:
+#: Longest first, and an alternation rather than a character class.  A class over
+#: these spellings collapses to single characters, so ``十二`` matched as ``二`` and
+#: the page was reported as spelling the count wrong when it spelled it right -- the
+#: same ordering rule the lexer follows for multi-character operators.
+_CHINESE_NUMERAL_ALTERNATION = "(?:%s)" % "|".join(
+    sorted(
+        (spelling for forms in _CHINESE_NUMERALS for spelling in forms),
+        key=lambda spelling: (-len(spelling), spelling),
+    )
+)
+
+#: Retained under its former name for the patterns that spell it in place.
+_CHINESE_NUMERAL_CLASS = _CHINESE_NUMERAL_ALTERNATION
+
+
+def _flowed_text(path: Path) -> str:
+    """Return a page's visible text with its line wrapping folded away.
+
+    Every prose-count check below matches a sentence, and reST wraps sentences at
+    column width -- so a pattern written on one line silently stops matching when an
+    edit pushes three words onto the next.  That failure looks exactly like a missing
+    sentence, which is the wrong diagnosis and the one this file reported twice: once
+    on inline markup scanned line by line, and once on a count split across a wrap.
+    Folding whitespace first makes the patterns say what they mean.
+
+    :param path: Page to read.
+    :type path: pathlib.Path
+    :return: The page text with runs of whitespace collapsed to single spaces.
+    :rtype: str
+    """
+    return re.sub(r"\s+", " ", _visible_text(path))
+
+
+def _numeral_forms(value: int, label: str) -> Tuple[str, ...]:
+    """Return every spelling a page may use for one count.
+
+    One function for both languages on purpose.  Writing the English comparison
+    as an equality and the Chinese one as a membership test is how the two halves
+    of a bilingual check end up enforcing different things, and the values where
+    they disagree are exactly the ones neither test covers.
+
+    :param value: The count the page should be naming.
+    :type value: int
+    :param label: Page filename, used to pick the language.
+    :type label: str
+    :return: Acceptable spellings, including the sentence-initial form.
+    :rtype: Tuple[str, ...]
+    """
+    if label.endswith("_zh.rst"):
+        return _CHINESE_NUMERALS[value]
+    word = _ENGLISH_NUMERALS[value]
+    return (word, word.capitalize())
+
+
+#: How each reference page spells the count of unreachable rules in prose.
+#:
+#: The reachability partition is written twice on the page: once as a ``yes`` or
+#: ``no`` on every table row, and once as a numeral in the paragraph above the
+#: table.  Only the rows were checked, so raising the reachable count from five
+#: to six left ``Four rules are not`` standing beside a table with three -- the
+#: two halves of one reachability split contradicting each other fifty lines apart,
+#: in both languages.
+_UNREACHABLE_COUNT_PROSE: Dict[str, Tuple[str, str]] = {
+    # Two spellings per language, because a count of zero is not the same sentence
+    # with a different numeral in it.  "有零条不可达" is not Chinese anyone writes, and
+    # a gate that only matches one句模 would demand it.  The alternation lets the page
+    # say "no rule is unreachable" the way a reader would, and the numeral branch
+    # still pins every other value.
+    "reference/bmc_results/index.rst": (
+        "no",
+        r"\b(?:([A-Za-z]+) rules are not\b|(No) rule is unreachable\b)",
+    ),
+    "reference/bmc_results/index_zh.rst": (
+        "否",
+        r"(?:有(%s)条不可达|(没有)任何规则不可达)" % _CHINESE_NUMERAL_CLASS,
+    ),
+}
+
+#: How each language spells a count of zero in the sentence above.
+_ZERO_PROSE = {
+    "reference/bmc_results/index.rst": "No",
+    "reference/bmc_results/index_zh.rst": "没有",
+}
+
+
+def _check_every_rule_has_a_reachability_row(errors: List[str]) -> None:
+    """Confirm every rule has its own row in the reachability table.
+
+    The vocabulary check nearby asks whether a page *mentions* each rule, which a
+    sentence anywhere satisfies -- so deleting a rule's row from the closed table
+    left both pages passing while a reader could no longer see whether that rule is
+    reachable.  A name in prose is not a row in a table, and this is the difference
+    the table exists to publish.
+
+    :param errors: Accumulator the caller raises from.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    markers = {
+        "reference/bmc_results/index.rst": ("yes", "no"),
+        "reference/bmc_results/index_zh.rst": ("\u662f", "\u5426"),
+    }
+    for label, path in _prose_pages("reference/bmc_results/index"):
+        text = _visible_text(path)
+        rows = {
+            rule
+            for rule, value in re.findall(r"\* - ``([a-z_]+)``\n\s+- (\S+)\n", text)
+            if value in markers[label]
+        }
+        missing = [rule for rule in _PROOF_RULE_IDS if rule not in rows]
+        if missing:
+            errors.append(
+                "%s has no reachability row for %s, so the table stops being the "
+                "closed list it is published as." % (label, ", ".join(missing))
+            )
+
+
+def _check_unreachable_count(errors: List[str]) -> None:
+    """Confirm the prose count of unreachable rules matches the table beside it.
+
+    The count is taken from the table's own rows rather than from
+    :data:`_UNREACHABLE_RULES`, and the transcription is then required to agree
+    with it.  Deriving it from the rows is what makes this stricter than
+    :func:`_check_rule_reachability`: that check asks whether each transcribed
+    rule has a ``no`` row, so a fourth row wrongly marked unreachable satisfies
+    it.  Counting the rows notices the extra one, and comparing the count with
+    the transcription notices a vocabulary change the checker has not been told
+    about yet.
+
+    :param errors: Accumulator the caller raises from.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    for label, path in _prose_pages("reference/bmc_results/index"):
+        marker, pattern = _UNREACHABLE_COUNT_PROSE[label]
+        text = _visible_text(path)
+        flowed = _flowed_text(path)
+        rows = re.findall(r"\* - ``([a-z_]+)``\n\s+- (\S+)\n", text)
+        counted = sum(1 for _, value in rows if value == marker)
+        if counted != len(_UNREACHABLE_RULES):
+            errors.append(
+                "%s marks %d rules unreachable in its table but the checker "
+                "transcribes %d; reconcile the table with the rule catalog."
+                % (label, counted, len(_UNREACHABLE_RULES))
+            )
+            continue
+        expected = (
+            (_ZERO_PROSE[label],) if counted == 0 else _numeral_forms(counted, label)
+        )
+        found = re.search(pattern, flowed)
+        if found is None:
+            errors.append(
+                "%s does not state how many rules are unreachable, so the "
+                "table's %d ``%s`` rows are the reader's only count."
+                % (label, counted, marker)
+            )
+            continue
+        spelling = next(item for item in found.groups() if item is not None)
+        if spelling not in expected:
+            errors.append(
+                "%s says %s rules are unreachable while its table marks %d; "
+                "the paragraph and the rows describe one split."
+                % (label, spelling, counted)
+            )
+
+
+def _check_rule_partition_prose(errors: List[str]) -> None:
+    """Confirm the explanation page's rule counts match the rule catalog.
+
+    The reference page's table and the explanation page's paragraph describe the
+    same reachability split, so both can go stale from one change to the catalog and
+    a check on either one alone proves nothing about the other.  This one reads
+    the paragraph that names both halves at once -- how many rules exist and how
+    many never fire -- and compares each numeral with the transcribed catalog.
+
+    :param errors: Accumulator the caller raises from.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    total, unreachable = len(_PROOF_RULE_IDS), len(_UNREACHABLE_RULES)
+    # Each language states the two halves in its own order, so the pattern and the
+    # values it is read against are declared together per page rather than assumed
+    # to line up.
+    patterns = {
+        "explanations/bmc_solving/index.rst": (
+            r"([A-Za-z]+) of its ([A-Za-z]+) rules never fire",
+            (unreachable, total),
+        ),
+        "explanations/bmc_solving/index_zh.rst": (
+            r"(%s)条规则里(?:仍有)?(%s)条从不触发"
+            % (_CHINESE_NUMERAL_CLASS, _CHINESE_NUMERAL_CLASS),
+            (total, unreachable),
+        ),
+    }
+    for label, path in _prose_pages("explanations/bmc_solving/index"):
+        pattern, values = patterns[label]
+        found = re.search(pattern, _flowed_text(path))
+        if found is None:
+            errors.append(
+                "%s no longer states how many of the %d rules never fire; the "
+                "reachability split is then documented on one page only."
+                % (label, total)
+            )
+            continue
+        if any(
+            spelling not in _numeral_forms(value, label)
+            for spelling, value in zip(found.groups(), values)
+        ):
+            errors.append(
+                "%s spells the rule split %s while the catalog has %d rules of "
+                "which %d never fire."
+                % (label, list(found.groups()), total, unreachable)
+            )
+
+
+def _check_benchmark_report_claim(errors: List[str]) -> None:
+    """Confirm what the page says the checked-in benchmark report records.
+
+    The page sends a reader to that report for the measured ratio, so the number
+    it quotes has to be the report's own.  Raising the reachable count to six
+    made the sentence claim six where the checked-in run records five: the run
+    was measured before the sixth rule became reachable, and a reader following
+    the pointer would have found a report disagreeing with the page that sent
+    them there.  The corpus does reach the sixth at this revision -- the report
+    is what predates it.
+
+    Counted over every checked-in run, since any of them is a report a reader can
+    open.  Re-measuring the corpus will move the number here, and the sentence
+    then has to move with it.
+
+    :param errors: Accumulator the caller raises from.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    runs = sorted(
+        (_REPO_ROOT / "benchmarks/bmc/infeasibility/outputs/runs").glob(
+            "*/summary.json"
+        )
+    )
+    if not runs:
+        errors.append(
+            "no checked-in benchmark run remains under "
+            "benchmarks/bmc/infeasibility/outputs/runs, so the reference page "
+            "sends a reader to a report that is not there."
+        )
+        return
+    recorded = set()
+    for run in runs:
+        try:
+            summary = json.loads(run.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as err:
+            # OSError: unreadable file.  ValueError: json.JSONDecodeError, the run
+            # was truncated or hand-edited, so its rule list cannot be trusted.
+            errors.append("cannot read the benchmark run %s: %s" % (run, err))
+            return
+        recorded.update(_recorded_rule_ids(summary))
+    patterns = {
+        "reference/bmc_results/index.rst": r"it records ([A-Za-z]+) of them",
+        "reference/bmc_results/index_zh.rst": (
+            r"只记录其中(%s)条" % _CHINESE_NUMERAL_CLASS
+        ),
+    }
+    for label, path in _prose_pages("reference/bmc_results/index"):
+        found = re.search(patterns[label], _flowed_text(path))
+        if found is None:
+            errors.append(
+                "%s does not say how many rules the checked-in benchmark report "
+                "records, so its own reachable count reads as that report's." % label
+            )
+            continue
+        if found.group(1) not in _numeral_forms(len(recorded), label):
+            errors.append(
+                "%s says the checked-in report records %s rules while it records "
+                "%d: %s." % (label, found.group(1), len(recorded), sorted(recorded))
+            )
+
+
+def _recorded_rule_ids(summary: Any) -> set:
+    """Return every ``rule_id`` a benchmark summary records, at any depth.
+
+    The summary nests per-arm and per-case objects, and the key appears at more
+    than one level, so the search is structural rather than a fixed path.
+
+    :param summary: Parsed ``summary.json`` content.
+    :type summary: Any
+    :return: The rule ids found anywhere inside it.
+    :rtype: set
+    """
+    found = set()
+    if isinstance(summary, dict):
+        for key, value in summary.items():
+            if key == "proof_rule_ids" and isinstance(value, list):
+                found.update(item for item in value if isinstance(item, str))
+            else:
+                found.update(_recorded_rule_ids(value))
+    elif isinstance(summary, list):
+        for item in summary:
+            found.update(_recorded_rule_ids(item))
+    return found
+
+
+def _check_verification_method_count(errors: List[str]) -> None:
+    """Confirm the explanation page counts the methods that carry work.
+
+    The sentence opening that section says how many methods divide the checking,
+    and each following paragraph assigns one to a node role.  Adding a method
+    means adding a paragraph, and adding a paragraph is exactly the edit that
+    leaves the opening numeral behind: ``core_binding_unit`` arrived with its own
+    paragraph while the sentence above it still read ``Two``.
+
+    :param errors: Accumulator the caller raises from.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    working = [
+        method
+        for method in _PROOF_VERIFICATION_METHODS
+        if method not in _RESERVED_VERIFICATION_METHODS
+    ]
+    patterns = {
+        "explanations/bmc_solving/index.rst": r"\b([A-Za-z]+) methods divide the work\b",
+        "explanations/bmc_solving/index_zh.rst": (
+            r"(%s)种方法分担" % _CHINESE_NUMERAL_CLASS
+        ),
+    }
+    for label, path in _prose_pages("explanations/bmc_solving/index"):
+        pattern = patterns[label]
+        expected = _numeral_forms(len(working), label)
+        text = _flowed_text(path)
+        missing = [name for name in _PROOF_VERIFICATION_METHODS if name not in text]
+        if missing:
+            errors.append(
+                "%s does not name %s, so the count of methods that divide the "
+                "work cannot be read against the vocabulary."
+                % (label, ", ".join(missing))
+            )
+            continue
+        found = re.search(pattern, text)
+        if found is None:
+            errors.append(
+                "%s no longer says how many methods divide the checking, which "
+                "is what tells a reader the list below it is complete." % label
+            )
+            continue
+        if found.group(1) not in expected:
+            errors.append(
+                "%s says %s methods divide the work while %d do: %s."
+                % (label, found.group(1), len(working), ", ".join(working))
+            )
+
+
+def _translated_fact_kinds() -> Tuple[Optional[Sequence[str]], Optional[str]]:
+    """Return the fact kinds the core-to-proof translation can emit.
+
+    Read from the source of ``proof_facts_for_core`` rather than transcribed.  A
+    transcription would have to be updated by the same edit that adds a branch,
+    which is exactly the edit that forgot the prose count twice; deriving the set
+    means adding a branch moves the expected number on its own.
+
+    Two shapes carry a kind: a dict display with a ``"kind"`` key, and a
+    ``dict(..., kind=...)`` call.  One branch takes its kind from
+    ``_COMPARISON_FACTS`` instead of naming it, so that mapping's string values
+    are read as well.
+
+    :return: The kinds, and an error message when the source cannot be read.
+    :rtype: Tuple[Optional[Sequence[str]], Optional[str]]
+    """
+    source = _REPO_ROOT / "pyfcstm/bmc/proof.py"
+    try:
+        module = ast.parse(source.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError) as err:
+        # OSError: the module is missing or unreadable.
+        # SyntaxError: it is mid-edit, so any count read from it would be wrong.
+        return None, "cannot read the fact translation from %s: %s" % (source, err)
+    functions = [
+        node
+        for node in module.body
+        if isinstance(node, ast.FunctionDef) and node.name == "proof_facts_for_core"
+    ]
+    if not functions:
+        return None, (
+            "%s no longer defines proof_facts_for_core, so the documented count "
+            "of translated fact kinds is unchecked." % source
+        )
+    kinds = set()
+    for node in ast.walk(functions[0]):
+        if isinstance(node, ast.Dict):
+            for key, value in zip(node.keys, node.values):
+                if (
+                    isinstance(key, ast.Constant)
+                    and key.value == "kind"
+                    and isinstance(value, ast.Constant)
+                ):
+                    kinds.add(value.value)
+        if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "dict":
+            for keyword in node.keywords:
+                if keyword.arg == "kind" and isinstance(keyword.value, ast.Constant):
+                    kinds.add(keyword.value.value)
+    for node in module.body:
+        if isinstance(node, ast.Assign) and any(
+            getattr(target, "id", None) == "_COMPARISON_FACTS"
+            for target in node.targets
+        ):
+            kinds.update(
+                value.value
+                for display in ast.walk(node.value)
+                if isinstance(display, ast.Dict)
+                for value in display.values
+                if isinstance(value, ast.Constant) and isinstance(value.value, str)
+            )
+    return sorted(kinds), None
+
+
+def _check_translated_kind_count(errors: List[str]) -> None:
+    """Confirm the explanation page's count of translated fact kinds is current.
+
+    The paragraph uses the count to argue that ``arithmetic_expression`` is not
+    among them, so the argument survives a change to the number while the
+    sentence does not: adding ``proposition`` and ``transition_case`` to the
+    translation left ``four kinds`` on a page describing seven.
+
+    :param errors: Accumulator the caller raises from.
+    :type errors: List[str]
+    :return: ``None``.
+    :rtype: None
+    """
+    kinds, failure = _translated_fact_kinds()
+    if failure is not None:
+        errors.append(failure)
+        return
+    if "arithmetic_expression" in kinds:
+        errors.append(
+            "the fact translation now emits arithmetic_expression, so the "
+            "explanation page's account of why the arithmetic rules never fire "
+            "no longer holds."
+        )
+    patterns = {
+        "explanations/bmc_solving/index.rst": r"emits ([A-Za-z]+) kinds",
+        "explanations/bmc_solving/index_zh.rst": r"发出(%s)种 kind"
+        % _CHINESE_NUMERAL_CLASS,
+    }
+    for label, path in _prose_pages("explanations/bmc_solving/index"):
+        pattern = patterns[label]
+        expected = _numeral_forms(len(kinds), label)
+        found = re.search(pattern, _flowed_text(path))
+        if found is None:
+            errors.append(
+                "%s no longer says how many fact kinds the translation emits, "
+                "which is the premise of its own argument." % label
+            )
+            continue
+        if found.group(1) not in expected:
+            errors.append(
+                "%s says the translation emits %s kinds while it emits %d: %s."
+                % (label, found.group(1), len(kinds), ", ".join(kinds))
+            )
+
+
+def _rendered_text(html_root: Path, relative: str) -> str:
+    """Return the visible text of one built page.
+
+    Reading the source can only approximate what reaches a reader.  Sphinx
+    resolves ``only``, ``include``, substitutions and metadata long after the
+    text a source-level check sees, so a table inside a false ``only`` block --
+    or an anchor sitting in a ``meta`` directive -- is present in the file and
+    absent from the page.  Both are ordinary directives, so no amount of regex
+    on the source settles it; the built page does.
+
+    :param html_root: Directory a Sphinx HTML build wrote to.
+    :type html_root: pathlib.Path
+    :param relative: Page path without the ``.rst`` suffix.
+    :type relative: str
+    :return: The page's text with tags removed.
+    :rtype: str
+    :raises CheckFailure: If the page is missing from the build.
+    """
+    page = html_root / (relative + ".html")
+    if not page.exists():
+        raise CheckFailure("%s is not in the build at %s." % (relative, html_root))
+    markup = page.read_text(encoding="utf-8", errors="replace")
+    # Script and style content is in the file and not on the page.
+    markup = re.sub(r"(?is)<(script|style)\b.*?</\1>", " ", markup)
+    # Narrow to the article body before stripping tags.  The theme renders the
+    # global toctree into every page's sidebar and puts page titles in the
+    # next/previous links, so a value named anywhere in the project counts as
+    # shown on every page -- which is the same "present but not where a reader
+    # is looking" failure this function exists to catch, one layer out.
+    # Cut from the body's opening tag to the footer rather than trying to match
+    # its closing tag: the body contains nested divs, so a non-greedy match to
+    # </div> stops at the first inner one and a greedy one runs past the footer.
+    start = re.search(r'(?is)<div[^>]+\bitemprop=["\']articleBody["\']', markup)
+    if start is None:
+        start = re.search(r"(?is)<main\b", markup)
+    if start is not None:
+        rest = markup[start.end() :]
+        end = re.search(r"(?is)<footer\b|</main\b", rest)
+        markup = rest[: end.start()] if end else rest
+    return _collapse(re.sub(r"(?s)<[^>]+>", " ", markup))
+
+
+def _collapse(text: str) -> str:
+    """Collapse whitespace runs so both sides of a comparison agree.
+
+    Sphinx renders an inline literal as one ``<span class="pre">`` per word, so
+    stripping tags leaves the words separated by several spaces.  Comparing a
+    single-spaced needle against that finds nothing, which reads exactly like the
+    value being absent.  Both the page and the value it is searched for go
+    through this function, because two sides normalizing differently is how a
+    check ends up covering neither.
+
+    :param text: Text to normalize.
+    :type text: str
+    :return: The text with every whitespace run reduced to one space.
+    :rtype: str
+    """
+    return re.sub(r"\s+", " ", text)
+
+
+def check_rendered(html_roots: Dict[str, Path]) -> None:
+    """Re-check the vocabulary anchors against built pages.
+
+    The source-level checks stay as the fast gate.  This one asks a narrower but
+    stronger question: is the value in the article body of the built page, rather
+    than merely in the source that produced it.
+
+    It does *not* establish visibility.  Stripping tags cannot resolve CSS, so an
+    element the browser hides -- ``<span hidden>`` from a ``raw`` directive, or
+    anything a stylesheet sets to ``display: none`` -- still counts here.  What
+    computed style hides is the visual gate's question, and
+    ``tools/check_bmc_math_visual.py`` is the one holding a browser.  Saying so
+    is the point: a check that claimed to answer visibility while measuring DOM
+    presence would be the same overclaim this slice keeps finding in prose.
+
+    :param html_roots: ``{"en": path, "zh": path}`` for two language builds.
+    :type html_roots: Dict[str, pathlib.Path]
+    :return: ``None``.
+    :rtype: None
+    :raises CheckFailure: If a required value is absent from a built page.
+    """
+    errors: List[str] = []
+    for relative, required in sorted(_EXPLANATION_VOCABULARY.items()):
+        for language, suffix in (("en", ""), ("zh", "_zh")):
+            root = html_roots.get(language)
+            if root is None:
+                continue
+            text = _rendered_text(root, relative + suffix)
+            missing = [value for value in required if _collapse(value) not in text]
+            if missing:
+                errors.append(
+                    "%s.html in the %s build does not show %s."
+                    % (relative + suffix, language, ", ".join(sorted(set(missing))))
+                )
+    if errors:
+        raise CheckFailure(
+            "BMC rendered documentation check failed:\n" + "\n".join(errors)
+        )
+
+
 def check() -> None:
     """Run every deterministic BMC documentation contract check."""
     errors: List[str] = []
     _check_equations(errors)
+    _check_equation_references(errors)
+    _check_headline_transcription(errors)
     _check_pages(errors)
     _check_readme(errors)
     _check_localized_diagrams(errors)
     _check_schema(errors)
+    _check_explanation_vocabulary(errors)
+    _check_tabulated_vocabulary(errors)
+    _check_forbidden_claims(errors)
+    _check_schema_vocabularies(errors)
+    _check_rule_reachability(errors)
+    _check_every_rule_has_a_reachability_row(errors)
+    _check_unreachable_count(errors)
+    _check_rule_partition_prose(errors)
+    _check_translated_kind_count(errors)
+    _check_verification_method_count(errors)
+    _check_benchmark_report_claim(errors)
     if errors:
         raise CheckFailure("BMC documentation check failed:\n" + "\n".join(errors))
 
@@ -320,16 +1610,27 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     """Run the tools-only command-line checker."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
+    parser.add_argument("--html-root-en", type=Path)
+    parser.add_argument("--html-root-zh", type=Path)
     args = parser.parse_args(argv)
     if not args.check:
         parser.error("Only --check mode is supported.")
     try:
         check()
+        roots = {
+            language: root
+            for language, root in (("en", args.html_root_en), ("zh", args.html_root_zh))
+            if root is not None
+        }
+        if roots:
+            check_rendered(roots)
     except CheckFailure as err:
         # CheckFailure: one or more deterministic documentation contracts failed.
         print(str(err))
         return 1
     print("BMC documentation structure, diagrams, and equation ledger are up to date.")
+    if args.html_root_en or args.html_root_zh:
+        print("Required values are present in the built pages, not only the source.")
     return 0
 
 

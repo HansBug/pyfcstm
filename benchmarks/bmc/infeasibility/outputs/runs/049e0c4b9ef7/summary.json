@@ -1,0 +1,707 @@
+{
+  "cross_step": {
+    "arms": {
+      "baseline-901f30e9": {
+        "failures": 0,
+        "outcome": "scenario_infeasible",
+        "peak_child_rss_bytes": 89612288,
+        "samples": 5,
+        "solver_checks": 0,
+        "stages_p50_ms": {},
+        "wall_ms": {
+          "max": 1.8883990123867989,
+          "p50": 1.8433500081300735,
+          "p95": 1.8883990123867989
+        }
+      },
+      "formal": {
+        "achieved_mode": "formal",
+        "classification": "assumptions_prefix_conflict",
+        "core_size": 4,
+        "derivation_status": "complete",
+        "failures": 0,
+        "outcome": "scenario_infeasible",
+        "peak_child_rss_bytes": 94593024,
+        "reduction": "subset_minimal",
+        "requested_mode": "formal",
+        "samples": 5,
+        "solver_checks": 5,
+        "stages_p50_ms": {
+          "component_assumptions": 0.42821792885661125,
+          "domain_assumptions": 0.07183989509940147,
+          "unsat_core": 1.2189224362373352,
+          "unsat_core_minimization": 7.734786253422499,
+          "value_propagation": 1.3093231245875359
+        },
+        "status": "complete",
+        "subset_minimality": "proven",
+        "wall_ms": {
+          "max": 25.322061963379383,
+          "p50": 23.326302878558636,
+          "p95": 25.322061963379383
+        }
+      },
+      "none": {
+        "failures": 0,
+        "outcome": "scenario_infeasible",
+        "peak_child_rss_bytes": 91017216,
+        "samples": 5,
+        "solver_checks": 0,
+        "stages_p50_ms": {},
+        "wall_ms": {
+          "max": 1.8514296971261501,
+          "p50": 1.7711296677589417,
+          "p95": 1.8514296971261501
+        }
+      },
+      "proof": {
+        "achieved_mode": "formal",
+        "classification": "assumptions_prefix_conflict",
+        "core_size": 4,
+        "derivation_status": "complete",
+        "failures": 0,
+        "outcome": "scenario_infeasible",
+        "peak_child_rss_bytes": 95940608,
+        "reduction": "subset_minimal",
+        "requested_mode": "proof",
+        "samples": 5,
+        "solver_checks": 7,
+        "stages_p50_ms": {
+          "component_assumptions": 0.4295380786061287,
+          "core_binding": 5.158871877938509,
+          "domain_assumptions": 0.07183989509940147,
+          "proof_construction": 0.112979207187891,
+          "unsat_core": 1.2186132371425629,
+          "unsat_core_minimization": 7.7565680257976055,
+          "value_propagation": 1.293752808123827
+        },
+        "status": "partial",
+        "subset_minimality": "proven",
+        "wall_ms": {
+          "max": 32.050053123384714,
+          "p50": 29.529036954045296,
+          "p95": 32.050053123384714
+        }
+      }
+    },
+    "expected_depth": "formal",
+    "why": "conflict visible only after accumulating a step"
+  },
+  "definedness": {
+    "arms": {
+      "baseline-901f30e9": {
+        "failures": 0,
+        "outcome": "scenario_infeasible",
+        "peak_child_rss_bytes": 90591232,
+        "samples": 5,
+        "solver_checks": 0,
+        "stages_p50_ms": {},
+        "wall_ms": {
+          "max": 1.6129412688314915,
+          "p50": 1.5178807079792023,
+          "p95": 1.6129412688314915
+        }
+      },
+      "formal": {
+        "achieved_mode": "formal",
+        "classification": "assumptions_self_conflict",
+        "core_size": 2,
+        "derivation_status": "complete",
+        "failures": 0,
+        "outcome": "scenario_infeasible",
+        "peak_child_rss_bytes": 95498240,
+        "reduction": "subset_minimal",
+        "requested_mode": "formal",
+        "samples": 5,
+        "solver_checks": 3,
+        "stages_p50_ms": {
+          "component_assumptions": 0.24816906079649925,
+          "unsat_core": 1.0777241550385952,
+          "unsat_core_minimization": 2.882583998143673
+        },
+        "status": "complete",
+        "subset_minimality": "proven",
+        "wall_ms": {
+          "max": 13.194757979363203,
+          "p50": 13.066089246422052,
+          "p95": 13.194757979363203
+        }
+      },
+      "none": {
+        "failures": 0,
+        "outcome": "scenario_infeasible",
+        "peak_child_rss_bytes": 90537984,
+        "samples": 5,
+        "solver_checks": 0,
+        "stages_p50_ms": {},
+        "wall_ms": {
+          "max": 1.5508811920881271,
+          "p50": 1.5199421904981136,
+          "p95": 1.5508811920881271
+        }
+      },
+      "proof": {
+        "achieved_mode": "proof",
+        "classification": "assumptions_self_conflict",
+        "core_size": 2,
+        "derivation_status": "complete",
+        "failures": 0,
+        "outcome": "scenario_infeasible",
+        "peak_child_rss_bytes": 95510528,
+        "proof_edges": 2,
+        "proof_nodes": 3,
+        "proof_rule_ids": [
+          "definedness_failure",
+          "source_fact"
+        ],
+        "proof_verification_methods": {
+          "core_binding": 2,
+          "rule_checker": 1
+        },
+        "reduction": "subset_minimal",
+        "requested_mode": "proof",
+        "samples": 5,
+        "solver_checks": 5,
+        "stages_p50_ms": {
+          "component_assumptions": 0.25484897196292877,
+          "core_binding": 2.733455039560795,
+          "proof_construction": 0.2682078629732132,
+          "proof_linearization": 0.0171000137925148,
+          "unsat_core": 1.1041825637221336,
+          "unsat_core_minimization": 2.9859221540391445
+        },
+        "status": "complete",
+        "subset_minimality": "proven",
+        "wall_ms": {
+          "max": 19.5980416610837,
+          "p50": 17.721583135426044,
+          "p95": 19.5980416610837
+        }
+      }
+    },
+    "expected_depth": "proof",
+    "why": "an operation that cannot stay defined"
+  },
+  "empty_interval": {
+    "arms": {
+      "baseline-901f30e9": {
+        "failures": 0,
+        "outcome": "scenario_infeasible",
+        "peak_child_rss_bytes": 91676672,
+        "samples": 5,
+        "solver_checks": 0,
+        "stages_p50_ms": {},
+        "wall_ms": {
+          "max": 2.11592810228467,
+          "p50": 1.796289812773466,
+          "p95": 2.11592810228467
+        }
+      },
+      "formal": {
+        "achieved_mode": "formal",
+        "classification": "assumptions_self_conflict",
+        "core_size": 2,
+        "derivation_status": "complete",
+        "failures": 0,
+        "outcome": "scenario_infeasible",
+        "peak_child_rss_bytes": 95899648,
+        "reduction": "subset_minimal",
+        "requested_mode": "formal",
+        "samples": 5,
+        "solver_checks": 3,
+        "stages_p50_ms": {
+          "component_assumptions": 0.3760978579521179,
+          "unsat_core": 1.4861426316201687,
+          "unsat_core_minimization": 3.038052935153246
+        },
+        "status": "complete",
+        "subset_minimality": "proven",
+        "wall_ms": {
+          "max": 19.506151787936687,
+          "p50": 17.04129483550787,
+          "p95": 19.506151787936687
+        }
+      },
+      "none": {
+        "failures": 0,
+        "outcome": "scenario_infeasible",
+        "peak_child_rss_bytes": 91648000,
+        "samples": 5,
+        "solver_checks": 0,
+        "stages_p50_ms": {},
+        "wall_ms": {
+          "max": 2.2800671868026257,
+          "p50": 1.8112598918378353,
+          "p95": 2.2800671868026257
+        }
+      },
+      "proof": {
+        "achieved_mode": "proof",
+        "classification": "assumptions_self_conflict",
+        "core_size": 2,
+        "derivation_status": "complete",
+        "failures": 0,
+        "outcome": "scenario_infeasible",
+        "peak_child_rss_bytes": 95993856,
+        "proof_edges": 2,
+        "proof_nodes": 3,
+        "proof_rule_ids": [
+          "interval_intersection",
+          "source_fact"
+        ],
+        "proof_verification_methods": {
+          "core_binding": 2,
+          "rule_checker": 1
+        },
+        "reduction": "subset_minimal",
+        "requested_mode": "proof",
+        "samples": 5,
+        "solver_checks": 5,
+        "stages_p50_ms": {
+          "component_assumptions": 0.36508776247501373,
+          "core_binding": 3.9671179838478565,
+          "proof_construction": 0.2613076940178871,
+          "proof_linearization": 0.017719808965921402,
+          "unsat_core": 1.4332020655274391,
+          "unsat_core_minimization": 3.212982788681984
+        },
+        "status": "complete",
+        "subset_minimality": "proven",
+        "wall_ms": {
+          "max": 24.436262901872396,
+          "p50": 22.765812929719687,
+          "p95": 24.436262901872396
+        }
+      }
+    },
+    "expected_depth": "proof",
+    "why": "bounds that no value satisfies"
+  },
+  "event_conflict": {
+    "arms": {
+      "baseline-901f30e9": {
+        "failures": 0,
+        "outcome": "scenario_infeasible",
+        "peak_child_rss_bytes": 89743360,
+        "samples": 5,
+        "solver_checks": 0,
+        "stages_p50_ms": {},
+        "wall_ms": {
+          "max": 1.7374707385897636,
+          "p50": 1.702070701867342,
+          "p95": 1.7374707385897636
+        }
+      },
+      "formal": {
+        "achieved_mode": "formal",
+        "classification": "assumptions_self_conflict",
+        "core_size": 2,
+        "derivation_status": "structural_only",
+        "failures": 0,
+        "outcome": "scenario_infeasible",
+        "peak_child_rss_bytes": 92712960,
+        "reduction": "subset_minimal",
+        "requested_mode": "formal",
+        "samples": 5,
+        "solver_checks": 3,
+        "stages_p50_ms": {
+          "component_assumptions": 0.34508807584643364,
+          "unsat_core": 0.1576901413500309,
+          "unsat_core_minimization": 1.3119028881192207
+        },
+        "status": "partial",
+        "subset_minimality": "proven",
+        "wall_ms": {
+          "max": 14.97914781793952,
+          "p50": 13.083797879517078,
+          "p95": 14.97914781793952
+        }
+      },
+      "none": {
+        "failures": 0,
+        "outcome": "scenario_infeasible",
+        "peak_child_rss_bytes": 91578368,
+        "samples": 5,
+        "solver_checks": 0,
+        "stages_p50_ms": {},
+        "wall_ms": {
+          "max": 3.1204726547002792,
+          "p50": 1.7528110183775425,
+          "p95": 3.1204726547002792
+        }
+      },
+      "proof": {
+        "achieved_mode": "formal",
+        "classification": "assumptions_self_conflict",
+        "core_size": 2,
+        "derivation_status": "structural_only",
+        "failures": 0,
+        "outcome": "scenario_infeasible",
+        "peak_child_rss_bytes": 92594176,
+        "reduction": "subset_minimal",
+        "requested_mode": "proof",
+        "samples": 5,
+        "solver_checks": 3,
+        "stages_p50_ms": {
+          "component_assumptions": 0.3484180197119713,
+          "unsat_core": 0.15908898785710335,
+          "unsat_core_minimization": 1.3321028091013432
+        },
+        "status": "partial",
+        "subset_minimality": "proven",
+        "wall_ms": {
+          "max": 15.290936920791864,
+          "p50": 13.209227938205004,
+          "p95": 15.290936920791864
+        }
+      }
+    },
+    "expected_depth": "formal",
+    "why": "event assumption published without content"
+  },
+  "feasible": {
+    "arms": {
+      "baseline-901f30e9": {
+        "failures": 0,
+        "outcome": "no_witness",
+        "peak_child_rss_bytes": 90255360,
+        "samples": 5,
+        "solver_checks": 0,
+        "stages_p50_ms": {},
+        "wall_ms": {
+          "max": 1.848519779741764,
+          "p50": 1.80710107088089,
+          "p95": 1.848519779741764
+        }
+      },
+      "formal": {
+        "failures": 0,
+        "outcome": "no_witness",
+        "peak_child_rss_bytes": 90169344,
+        "samples": 5,
+        "solver_checks": 0,
+        "stages_p50_ms": {},
+        "wall_ms": {
+          "max": 1.7737606540322304,
+          "p50": 1.7399308271706104,
+          "p95": 1.7737606540322304
+        }
+      },
+      "none": {
+        "failures": 0,
+        "outcome": "no_witness",
+        "peak_child_rss_bytes": 90312704,
+        "samples": 5,
+        "solver_checks": 0,
+        "stages_p50_ms": {},
+        "wall_ms": {
+          "max": 1.8976889550685883,
+          "p50": 1.778260339051485,
+          "p95": 1.8976889550685883
+        }
+      },
+      "proof": {
+        "failures": 0,
+        "outcome": "no_witness",
+        "peak_child_rss_bytes": 90099712,
+        "samples": 5,
+        "solver_checks": 0,
+        "stages_p50_ms": {},
+        "wall_ms": {
+          "max": 1.885139849036932,
+          "p50": 1.81958032771945,
+          "p95": 1.885139849036932
+        }
+      }
+    },
+    "expected_depth": "none",
+    "why": "feasible scenario; the explanation does no work"
+  },
+  "state_domain": {
+    "arms": {
+      "baseline-901f30e9": {
+        "failures": 0,
+        "outcome": "scenario_infeasible",
+        "peak_child_rss_bytes": 89968640,
+        "samples": 5,
+        "solver_checks": 0,
+        "stages_p50_ms": {},
+        "wall_ms": {
+          "max": 1.6279998235404491,
+          "p50": 1.5911511145532131,
+          "p95": 1.6279998235404491
+        }
+      },
+      "formal": {
+        "achieved_mode": "formal",
+        "classification": "assumptions_domain_conflict",
+        "core_size": 5,
+        "derivation_status": "complete",
+        "failures": 0,
+        "outcome": "scenario_infeasible",
+        "peak_child_rss_bytes": 95076352,
+        "reduction": "subset_minimal",
+        "requested_mode": "formal",
+        "samples": 5,
+        "solver_checks": 4,
+        "stages_p50_ms": {
+          "component_assumptions": 0.31191809102892876,
+          "domain_assumptions": 0.04184897989034653,
+          "unsat_core": 0.9898152202367783,
+          "unsat_core_minimization": 8.06530611589551
+        },
+        "status": "complete",
+        "subset_minimality": "proven",
+        "wall_ms": {
+          "max": 22.28733664378524,
+          "p50": 20.6917361356318,
+          "p95": 22.28733664378524
+        }
+      },
+      "none": {
+        "failures": 0,
+        "outcome": "scenario_infeasible",
+        "peak_child_rss_bytes": 90140672,
+        "samples": 5,
+        "solver_checks": 0,
+        "stages_p50_ms": {},
+        "wall_ms": {
+          "max": 1.643890980631113,
+          "p50": 1.5688021667301655,
+          "p95": 1.643890980631113
+        }
+      },
+      "proof": {
+        "achieved_mode": "proof",
+        "classification": "assumptions_domain_conflict",
+        "core_size": 5,
+        "derivation_status": "complete",
+        "failures": 0,
+        "outcome": "scenario_infeasible",
+        "peak_child_rss_bytes": 95506432,
+        "proof_edges": 5,
+        "proof_nodes": 6,
+        "proof_rule_ids": [
+          "source_fact",
+          "state_domain_exhaustion"
+        ],
+        "proof_verification_methods": {
+          "core_binding": 5,
+          "rule_checker": 1
+        },
+        "reduction": "subset_minimal",
+        "requested_mode": "proof",
+        "samples": 5,
+        "solver_checks": 6,
+        "stages_p50_ms": {
+          "component_assumptions": 0.3044581972062588,
+          "core_binding": 9.544168133288622,
+          "domain_assumptions": 0.04078913480043411,
+          "proof_construction": 0.6845872849225998,
+          "proof_linearization": 0.028989743441343307,
+          "unsat_core": 1.0054628364741802,
+          "unsat_core_minimization": 7.997154723852873
+        },
+        "status": "complete",
+        "subset_minimality": "proven",
+        "wall_ms": {
+          "max": 32.92020922526717,
+          "p50": 31.950934324413538,
+          "p95": 32.92020922526717
+        }
+      }
+    },
+    "expected_depth": "proof",
+    "why": "every state at a frame excluded at once"
+  },
+  "two_states": {
+    "arms": {
+      "baseline-901f30e9": {
+        "failures": 0,
+        "outcome": "scenario_infeasible",
+        "peak_child_rss_bytes": 90963968,
+        "samples": 5,
+        "solver_checks": 0,
+        "stages_p50_ms": {},
+        "wall_ms": {
+          "max": 1.9151903688907623,
+          "p50": 1.7767003737390041,
+          "p95": 1.9151903688907623
+        }
+      },
+      "formal": {
+        "achieved_mode": "formal",
+        "classification": "assumptions_self_conflict",
+        "core_size": 2,
+        "derivation_status": "complete",
+        "failures": 0,
+        "outcome": "scenario_infeasible",
+        "peak_child_rss_bytes": 94511104,
+        "reduction": "subset_minimal",
+        "requested_mode": "formal",
+        "samples": 5,
+        "solver_checks": 3,
+        "stages_p50_ms": {
+          "component_assumptions": 0.3543579950928688,
+          "unsat_core": 0.9047649800777435,
+          "unsat_core_minimization": 2.8621829114854336
+        },
+        "status": "complete",
+        "subset_minimality": "proven",
+        "wall_ms": {
+          "max": 18.409957643598318,
+          "p50": 16.128569841384888,
+          "p95": 18.409957643598318
+        }
+      },
+      "none": {
+        "failures": 0,
+        "outcome": "scenario_infeasible",
+        "peak_child_rss_bytes": 89890816,
+        "samples": 5,
+        "solver_checks": 0,
+        "stages_p50_ms": {},
+        "wall_ms": {
+          "max": 1.8124999478459358,
+          "p50": 1.7614909447729588,
+          "p95": 1.8124999478459358
+        }
+      },
+      "proof": {
+        "achieved_mode": "proof",
+        "classification": "assumptions_self_conflict",
+        "core_size": 2,
+        "derivation_status": "complete",
+        "failures": 0,
+        "outcome": "scenario_infeasible",
+        "peak_child_rss_bytes": 94584832,
+        "proof_edges": 2,
+        "proof_nodes": 3,
+        "proof_rule_ids": [
+          "incompatible_equalities",
+          "source_fact"
+        ],
+        "proof_verification_methods": {
+          "core_binding": 2,
+          "rule_checker": 1
+        },
+        "reduction": "subset_minimal",
+        "requested_mode": "proof",
+        "samples": 5,
+        "solver_checks": 5,
+        "stages_p50_ms": {
+          "component_assumptions": 0.36248890683054924,
+          "core_binding": 3.4742308780550957,
+          "proof_construction": 0.2680881880223751,
+          "proof_linearization": 0.017520040273666382,
+          "unsat_core": 0.9185750968754292,
+          "unsat_core_minimization": 2.8910040855407715
+        },
+        "status": "complete",
+        "subset_minimality": "proven",
+        "wall_ms": {
+          "max": 22.719822824001312,
+          "p50": 21.314631681889296,
+          "p95": 22.719822824001312
+        }
+      }
+    },
+    "expected_depth": "proof",
+    "why": "two states required of one frame"
+  },
+  "two_values": {
+    "arms": {
+      "baseline-901f30e9": {
+        "failures": 0,
+        "outcome": "scenario_infeasible",
+        "peak_child_rss_bytes": 89858048,
+        "samples": 5,
+        "solver_checks": 0,
+        "stages_p50_ms": {},
+        "wall_ms": {
+          "max": 1.75528135150671,
+          "p50": 1.697600819170475,
+          "p95": 1.75528135150671
+        }
+      },
+      "formal": {
+        "achieved_mode": "formal",
+        "classification": "assumptions_self_conflict",
+        "core_size": 2,
+        "derivation_status": "complete",
+        "failures": 0,
+        "outcome": "scenario_infeasible",
+        "peak_child_rss_bytes": 94527488,
+        "reduction": "subset_minimal",
+        "requested_mode": "formal",
+        "samples": 5,
+        "solver_checks": 3,
+        "stages_p50_ms": {
+          "component_assumptions": 0.37443777546286583,
+          "unsat_core": 0.9216754697263241,
+          "unsat_core_minimization": 2.9540136456489563
+        },
+        "status": "complete",
+        "subset_minimality": "proven",
+        "wall_ms": {
+          "max": 17.392583191394806,
+          "p50": 16.16725791245699,
+          "p95": 17.392583191394806
+        }
+      },
+      "none": {
+        "failures": 0,
+        "outcome": "scenario_infeasible",
+        "peak_child_rss_bytes": 89513984,
+        "samples": 5,
+        "solver_checks": 0,
+        "stages_p50_ms": {},
+        "wall_ms": {
+          "max": 1.7744801007211208,
+          "p50": 1.7059403471648693,
+          "p95": 1.7744801007211208
+        }
+      },
+      "proof": {
+        "achieved_mode": "proof",
+        "classification": "assumptions_self_conflict",
+        "core_size": 2,
+        "derivation_status": "complete",
+        "failures": 0,
+        "outcome": "scenario_infeasible",
+        "peak_child_rss_bytes": 94605312,
+        "proof_edges": 2,
+        "proof_nodes": 3,
+        "proof_rule_ids": [
+          "incompatible_equalities",
+          "source_fact"
+        ],
+        "proof_verification_methods": {
+          "core_binding": 2,
+          "rule_checker": 1
+        },
+        "reduction": "subset_minimal",
+        "requested_mode": "proof",
+        "samples": 5,
+        "solver_checks": 5,
+        "stages_p50_ms": {
+          "component_assumptions": 0.3721984103322029,
+          "core_binding": 3.7358589470386505,
+          "proof_construction": 0.26091886684298515,
+          "proof_linearization": 0.016919802874326706,
+          "unsat_core": 0.94945402815938,
+          "unsat_core_minimization": 3.0044931918382645
+        },
+        "status": "complete",
+        "subset_minimality": "proven",
+        "wall_ms": {
+          "max": 23.25774822384119,
+          "p50": 21.779296919703484,
+          "p95": 23.25774822384119
+        }
+      }
+    },
+    "expected_depth": "proof",
+    "why": "one variable pinned to two values at one frame"
+  }
+}

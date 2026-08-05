@@ -1044,6 +1044,22 @@ JSON 写入标准输出；HTML 写到请求路径。使用 ``--open`` 且省略�
      - 未知键、畸形 ``key=value`` 或非法类型值会在源码被接受前失败。
      - 输出源码应体现目标选项，例如隐藏事件或折叠深度。
 
+.. list-table:: ``bmc`` 选项决策
+   :header-rows: 1
+
+   * - 选项
+     - 合法写法
+     - 边界或反例
+     - 应检查的证据
+   * - ``--explain-infeasibility``
+     - ``none`` 只要强制判定；``formal`` 要分类与源组冲突核；``proof`` 要逐步核验过的证明。
+     - 该深度从不改变判定，所以它无法把不确定的运行变成确定的。规则目录中没有规则能闭合冲突核时，``proof`` 会降级为 ``formal``；把缺失的 ``proof`` 键当成错误处理的调用方会误读这一点。
+     - ``Explanation:`` 给出实际达成的深度；请求未被满足时会出现 ``Explanation depth: requested proof, achieved formal`` 一行。在 JSON 中，比较 ``result.feasibility.explanation`` 下的 ``requested_mode`` 与 ``achieved_mode``。
+   * - ``--color``
+     - 终端用 ``auto``；日志与 CI 用 ``never``；需要让颜色穿过管道时（例如分页）用 ``always``。
+     - ``auto`` 在管道中不产生颜色，环境中的 ``NO_COLOR`` 即使在 TTY 上也会禁用颜色。无论该选项如何设置，JSON 与 ``--output`` 文件都不带 ANSI 装饰。
+     - 管道中 ``--color never`` 不产生转义字节；``--color always`` 会保留；``NO_COLOR=1`` 配 ``--color auto`` 不产生。
+
 .. list-table:: ``visualize`` 选项决策
    :header-rows: 1
 

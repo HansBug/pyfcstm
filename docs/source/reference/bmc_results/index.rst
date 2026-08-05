@@ -15,6 +15,18 @@ The source facts for this page are :mod:`pyfcstm.entry.bmc`, the
 JSON types and required keys; the entry module is authoritative for process
 ordering, streams, file effects, and exit status.
 
+The schema is versioned by the release it ships with, not by its own field.  Its
+``$id`` names a path on the ``main`` branch, which moves, and neither the schema nor
+the JSON output carries a version number.  Validate against the copy that shipped
+with the ``pyfcstm`` you are running: ``additionalProperties: false`` promises that
+*this* version emits no undeclared field, not that the field set is the same across
+versions.  A release may add one.  The bounded-model-checking explanation surface added
+``explanation`` to the two definitions that close themselves to unknown fields --
+``feasibility`` and ``notCheckedFeasibility`` -- and made it required in both, so an
+earlier copy of this schema rejects the output of this one at either.  Everything
+else it added is a definition that copy does not have at all, which no consumer was
+validating against.
+
 Use the local contents below to look up the option surface, output transaction,
 verdict matrix, human report, JSON envelope, witness, replay, errors, or
 consumer rules.  For ``.fbmcq`` syntax and contextual legality, use
@@ -38,6 +50,7 @@ lines.
 .. cli-ref-option: command=bmc option=--json
 .. cli-ref-option: command=bmc option=--timeout-ms
 .. cli-ref-option: command=bmc option=--max-bound
+.. cli-ref-option: command=bmc option=--explain-infeasibility choices=none,formal,proof default=none
 .. cli-ref-option: command=bmc option=--color choices=auto,always,never default=auto
 .. cli-ref-option: command=bmc option=--help
 .. cli-ref-boundary: command=bmc stdout stderr exit-status side-effects success-signal failure-taxonomy human json atomic-output witness replay dual-check response-cause packaging property-verdict color timing llm-consumption
@@ -93,6 +106,18 @@ Both installed entry forms have the same behavior:
      - Creates ``BmcOptions(max_bound=N)``.  A query bound above ``N`` is
        rejected before relation construction as a controlled compile error.
        It does not rewrite or clamp the query bound.
+   * - ``--explain-infeasibility``
+     - ``none``, ``formal``, or ``proof``
+     - ``none``
+     - Requests the optional scenario-infeasibility explanation at the given
+       depth.  ``none`` performs no additional solver work and leaves
+       ``explanation`` null with ``refinement_status`` as ``not_requested``.
+       ``formal`` publishes the classification and a sound source core;
+       ``proof`` additionally builds a step-by-step proof and publishes it when
+       every step was checked, and degrades to ``formal`` when no rule in the
+       catalog closes the core.  The achieved depth is always reported, so a
+       caller can tell the two apart.  The depth never changes the mandatory
+       verdict.
    * - ``--color``
      - ``auto``, ``always``, or ``never``
      - ``auto``
@@ -388,6 +413,532 @@ mismatch, yellow for an empty/unknown/incomplete scenario and the bounded
 caveat, and cyan for report labels.  Color never enters JSON or files.  Scripts
 and LLM integrations must consume ``--json`` rather than parse human wording,
 ANSI, or live timing.
+
+Explanation block
+~~~~~~~~~~~~~~~~~
+
+``--explain-infeasibility formal`` or ``proof`` appends an explanation block to
+the human report.  ``BmcSolveResult.__str__()`` and ``to_text()`` render the same
+block from the same helper, so a reader sees identical text whichever surface
+they read.  A real invocation against an infeasible scenario produces:
+
+.. code-block:: text
+
+   Explanation: PARTIAL FORMAL DOMAIN EXPLANATION
+   Classification: assumptions conflict with the feasible prefix
+
+   Conflict constraints:
+     1. r22.fbmcq:2:1-2:28
+        assume at 1: var("x") == 0;
+     2. r22.fbmcq:1:1-1:35
+        init state("Root.A") where x == 0;
+     3. r22.fcstm:1:1-1:15
+        def int x = 0;
+     4. generated transition constraint at step 0
+
+   The displayed core is sufficient for UNSAT but is not proven subset-minimal.
+   Core scope: assumptions_prefix
+   Reduction: raw
+   Reason: sound source core published without a minimality proof
+
+
+``Explanation`` names the depth that was achieved and how complete it is.
+``Classification`` is the reader-facing sentence for the machine
+``classification`` field.  Each conflict-constraint entry gives an authored
+member's location and its own source text on two lines, or a generated support
+group naming the leading segment of its category -- ``domain``, ``transition``,
+``initial``, ``assumption`` or ``definedness`` -- and the frame or step it
+constrains.  A generated group takes one line, plus a second indented line
+listing any builder metadata that is not already in the position, which the
+tracked case groups do carry.
+
+The category segment is used rather than the aggregate formula the group belongs
+to because the aggregate vocabulary is too small: it offers ``domain``,
+``transition``, ``initial`` and ``environment``, while the groups the builder
+emits need five nouns, and two of those are not aggregate names.  An assumption
+group's aggregate is ``environment``, a word that appears nowhere else in the
+report, and a definedness group's aggregate is ``initial`` or ``environment``
+depending on which stage emitted it, naming neither the group nor anything stable
+across the two.  ``Core scope`` and ``Reduction`` describe what was proven and how
+far minimization got, and ``Reason`` states why it stopped there.
+
+An additional line appears when a deeper depth was requested than was achieved,
+so a caller who asked for ``proof`` and received ``formal`` is told both:
+
+.. code-block:: text
+
+   Explanation depth: requested proof, achieved formal
+
+Every core reports its scope and its reduction, whether or not minimality was
+proven; the sentence above the scope is what distinguishes the two.  Granularity,
+member count, a labelled minimality line and the elapsed explanation time belong
+to the fuller published block, which also carries a narrative and a causal chain
+this depth does not build, so they do not appear here.
+
+
+Classification and core reduction
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``classification`` names which part of the scenario the conflict lies in.  The
+list is closed, and the report prints the reader-facing phrase rather than the
+machine value:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 38 62
+
+   * - ``classification``
+     - Printed phrase
+   * - ``kernel_conflict``
+     - the model's own domain and transition rules conflict
+   * - ``initialization_self_conflict``
+     - initialization is internally inconsistent
+   * - ``initialization_domain_conflict``
+     - initialization conflicts with the frame domain
+   * - ``initialization_kernel_conflict``
+     - initialization conflicts with the transition relation
+   * - ``assumptions_self_conflict``
+     - the assumptions are internally inconsistent
+   * - ``assumptions_domain_conflict``
+     - the assumptions conflict with the frame domain
+   * - ``assumptions_prefix_conflict``
+     - assumptions conflict with the feasible prefix
+
+The two families differ in what the reader should change.  An
+``initialization_*`` conflict means the ``init`` clause cannot be satisfied at
+all, or cannot be satisfied and then continued; an ``assumptions_*`` conflict
+means the ``assume`` clauses are the ones that leave nothing admissible.  A
+``kernel_conflict`` implicates neither, and points at the model itself.
+
+``reduction`` says how far minimization got before the core was published:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 26 74
+
+   * - ``reduction``
+     - Meaning
+   * - ``raw``
+     - The solver's own core, sound for UNSAT but not shrunk.
+   * - ``partial_minimized``
+     - Some members were proven removable and dropped, but the budget ran out
+       before every remaining member had been tested.
+   * - ``subset_minimal``
+     - Every remaining member was tested and none can be dropped.
+
+``subset_minimality`` is the claim itself, ``proven`` or ``not_proven``, and only
+``subset_minimal`` carries ``proven``.  The distinction matters to a reader
+deciding what to edit: a ``raw`` core may contain members that are not part of
+the conflict at all.
+
+
+Proof block
+~~~~~~~~~~~
+
+The block appears at all only when there is something to explain: the scenario
+must be infeasible and a depth above ``none`` must have been requested.  A
+feasible scenario has no conflict, and ``none`` asked for no explanation, so
+neither prints a headline -- looking for one there and finding nothing is the
+expected result rather than a missing field.
+
+When the block does appear, its headline is built from two facts rather than
+chosen from a list, and the rule covers every case:
+
+**When something was produced**, the headline names the depth that was *achieved*
+and how complete it is -- ``COMPLETE`` or ``PARTIAL``, then ``FORMAL DOMAIN
+EXPLANATION`` or ``VERIFIED DOMAIN PROOF``.
+
+**When nothing was produced** -- ``achieved_mode`` of ``none`` -- there is no
+achieved depth to name, so the headline names the depth that was *requested*,
+followed by ``NOT ACHIEVED``.
+
+Four runs against the benchmark corpus, covering both halves of the rule:
+
+.. code-block:: console
+
+   $ pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
+       --explain-infeasibility proof --color never
+   Explanation: COMPLETE VERIFIED DOMAIN PROOF
+
+   $ pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
+       --explain-infeasibility formal --color never
+   Explanation: COMPLETE FORMAL DOMAIN EXPLANATION
+
+   $ pyfcstm bmc -i latch.fcstm -q cross_step.fbmcq \
+       --explain-infeasibility proof --color never
+   Explanation: PARTIAL FORMAL DOMAIN EXPLANATION
+   Explanation depth: requested proof, achieved formal
+   Reason: the formal explanation is complete, but no rule in the catalog closes
+   this core.
+
+   $ pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
+       --explain-infeasibility proof --color never --timeout-ms 1
+   Explanation: PROOF EXPLANATION NOT ACHIEVED
+
+   $ pyfcstm bmc -i latch.fcstm -q two_values.fbmcq \
+       --explain-infeasibility formal --color never --timeout-ms 1
+   Explanation: FORMAL EXPLANATION NOT ACHIEVED
+   Reason: component probe did not start: budget exhausted before the probe
+   started; ...
+
+Applying the rule to the pairing not shown: a proof that was built but reported
+``partial`` would open on ``PARTIAL VERIFIED DOMAIN PROOF``, since ``proof`` is
+what was achieved and ``partial`` is how complete it is.
+
+No run is shown for it because the current implementation does not produce it,
+and that is a stronger statement than the corpus lacking a case.  Of the nine
+places that build a ``BmcInfeasibilityExplanation``, exactly one sets
+``achieved_mode="proof"``, and it sets ``status="complete"`` alongside: a proof
+either closes or the result degrades to ``formal``.  So the pairing is admitted
+by the frozen delivery table and named by the rule, but nothing emits it today.
+Read the row as the rule's answer for a shape the depth ladder reserves, not as
+an output you should expect to see.
+
+The middle case is the one that surprises: a request for ``proof`` that degrades
+shows a ``FORMAL`` headline, because ``formal`` is what was achieved.  The last
+case shows ``PROOF`` in the headline while no proof exists, because nothing was
+achieved and the request is all there is to name.
+
+``Explanation depth:`` appears only when the headline leaves the pair ambiguous,
+which is exactly the degrading case -- the headline names the achieved depth and
+the line supplies the requested one.  It is absent from the ``NOT ACHIEVED``
+shape, where the headline already names the request, and absent when the request
+was met.  A consumer should therefore compare ``requested_mode`` with
+``achieved_mode`` in JSON rather than looking for that line, which is present
+only in one of the three shapes.
+
+``COMPLETE`` at ``formal`` depth means the formal explanation produced everything
+it promises -- a classification and a source core -- not that a proof was found.
+Reading it as "the tool is done" is the mistake this table exists to prevent.
+
+The last row is the one to read carefully.  When ``achieved_mode`` is ``none``
+nothing was produced to name, so the headline reports the *requested* depth with
+``NOT ACHIEVED`` -- meaning a request for ``proof`` that reaches nothing shows
+``PROOF EXPLANATION NOT ACHIEVED``, even though no proof exists.  A request that
+degrades to ``formal`` is the other case: something was produced, so the achieved
+depth names it and a ``FORMAL`` headline appears.  Either way the
+``Explanation depth:`` line reports the difference, and it is the reliable field
+to branch on.
+
+
+``--explain-infeasibility proof`` builds a proof and publishes it when every step
+was checked.  The block opens on ``COMPLETE VERIFIED DOMAIN PROOF`` rather than
+``PARTIAL FORMAL DOMAIN EXPLANATION``, and the reasoning is numbered rather than
+summarized.  Against ``latch.fcstm`` and a query that pins one variable to two
+values at the same frame:
+
+.. code-block:: text
+
+   Explanation: COMPLETE VERIFIED DOMAIN PROOF
+   Classification: the assumptions are internally inconsistent
+
+   Why no execution exists:
+     1. At frame 1, retries must equal 1.
+     2. At frame 1, retries must equal 2.
+     3. Therefore one value cannot be two things at once. No execution satisfies
+        these initialization and query requirements, and the property was not
+        evaluated.
+
+   Conflict constraints:
+     1. two_values.fbmcq:1:1-1:34
+        assume at 1: var("retries") == 1;
+     2. two_values.fbmcq:2:1-2:34
+        assume at 1: var("retries") == 2;
+
+   The displayed core is sufficient for UNSAT and proven subset-minimal.
+   Core scope: assumptions_component
+   Core granularity: source_group
+   Core size: 2
+   Reduction: subset_minimal
+   Subset minimality: proven
+
+Three differences from the formal block are contractual rather than cosmetic.
+The heading names a *verified* proof, so every step behind those sentences was
+checked by one of the methods below.  ``Why no execution exists`` is the proof
+read in dependency order, one sentence per step, ending on the contradiction.
+And the ``Reason:`` line is absent: a complete proof has nothing to explain about
+why it stopped early, whereas the formal block always says what it could not do.
+
+The closing sentence reports that no execution exists and that the property was
+therefore *not evaluated*.  An empty scenario and a violated property are
+different findings; a reader must not take this block as a counterexample.
+
+
+Proof vocabulary
+~~~~~~~~~~~~~~~~
+
+Each proof step is a node.  ``kind`` says what the node is for:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 80
+
+   * - ``kind``
+     - Meaning
+   * - ``input``
+     - Restates one core member as a normalized fact.  Exactly one member, and
+       every subset-minimal member has exactly one input node.
+   * - ``derived``
+     - Produces a new fact from facts already established.
+   * - ``contradiction``
+     - The single root, showing that the established facts cannot hold together.
+
+``rule_id`` names which rule produced the node's conclusion.  The catalog is
+closed; a query that needs a reading outside it degrades to ``formal`` rather
+than inventing one.
+
+The ``Reachable`` column records whether any query is currently known to produce
+a node carrying that rule.  No rule is unreachable: each one fires for some query a
+user can write.  Three of them waited on a fourth for a while, and what unblocked
+them is set out in :doc:`/explanations/bmc_solving/index`.
+
+The rules whose conclusion is not the contradiction itself are the ones that produce
+a ``derived`` node, so a published proof over such a conflict is a chain rather than
+a fan: input nodes for the subset-minimal members, one derived node per step, and the
+single contradiction root.  A conflict no chain reaches still publishes the fan, and
+a consumer accepts both shapes.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 26 14 60
+
+   * - ``rule_id``
+     - Reachable
+     - What it concludes
+   * - ``source_fact``
+     - yes
+     - An input node's own fact, taken from the core member it restates.
+   * - ``case_condition_entailment``
+     - yes
+     - The same transition case with its condition discharged.  A case's assignment
+       holds where the case applies, so the condition has to be established from the
+       members before the assignment can be used -- and the solver does that, against
+       the members' own constraints rather than their published facts.  The node cites
+       the members that entail it and records ``solver_entailment``; the condition key
+       is removed rather than emptied, because the evaluation rule reads keys.
+   * - ``transition_assignment``
+     - yes
+     - What a transition's effect assigns to a variable at the next frame.  A step
+       relation publishes that assignment as ``transition_case``, the binding proves
+       it equivalent to one requirement of the group, and
+       ``case_condition_entailment`` supplies the unconditional form this rule reads.
+   * - ``equality_substitution``
+     - yes
+     - The result of substituting a known value into another fact, for an operand
+       still standing as a symbol.
+   * - ``arithmetic_evaluation``
+     - yes
+     - The value an arithmetic step leaves in a variable.  It consumes an
+       ``arithmetic_expression`` fact, which ``transition_assignment`` produces.
+   * - ``interval_intersection``
+     - yes
+     - That no value satisfies every bound required at one slot.
+   * - ``state_domain_exhaustion``
+     - yes
+     - That a frame has no state left it could be in.
+   * - ``definedness_failure``
+     - yes
+     - That an operation cannot stay defined on the value required of it.
+   * - ``incompatible_equalities``
+     - yes
+     - That one slot is required to hold two different values.
+   * - ``boolean_complement``
+     - yes
+     - That the same requirement is both demanded and ruled out.  Reached through an
+       event assumption: ``assume event("Root.A.Go", 0) == true`` beside
+       ``assume event("Root.A.Go", 0) == false`` publishes two ``proposition`` facts
+       that agree on ``identity`` and differ in ``holds``.  The step is part of the
+       identity, so the same event at two steps is two subjects rather than one.
+       An opposition written over states does **not** reach it, and does not need
+       to: ``assume at 1: active("Root.A")`` with ``assume at 1: !active("Root.A")``
+       publishes two ``state_membership`` facts differing in ``excluded``, which
+       ``excluded_state_selected`` below closes.  State assertions stay where they
+       are rather than moving to ``proposition``, because the rule that exhausts a
+       frame's state domain reads those exclusions and would lose its only premise
+       source.
+   * - ``excluded_state_selected``
+     - yes
+     - That a frame is required to be in a state it also rules out.  The two
+       premises are one published fact kind read two ways: a state requirement that
+       holds reads as an equality on the frame's slot, and one that is excluded reads
+       as an exclusion.  Neither of the earlier rules applies -- an equality on a
+       slot is not a second equality, and one state is not a domain.
+   * - ``preceding_value_entailment``
+     - yes
+     - That a variable held the same value at the frame before the one a requirement
+       states it at.  A step that only carries a variable forward says nothing a fact
+       can restate, so this asks the solver what the members force instead, and cites
+       the ones that force it.  The direction is backwards because the requirement
+       that states the value is one member, which is what the citation seam can
+       record; a value carried forward from a derived step would stand for however
+       many members its subtree used.
+
+Six of these rules are exercised by the checked-in benchmark corpus under
+``benchmarks/bmc/infeasibility/cases/handwritten/``, and its report records which
+case produced which rule.  The checked-in report was measured before
+``boolean_complement`` became reachable, so it records five of them; the case that
+reaches the sixth is ``event_conflict.fbmcq``, in the same corpus.  The rules of the
+arithmetic chain, together with ``excluded_state_selected`` and
+``preceding_value_entailment``, are reached by the queries
+:doc:`/explanations/bmc_solving/index` sets out, not yet by a corpus case.  Read the
+measured ratio there rather than from this page: it is a property of that corpus
+at a given revision, not of the tool.
+
+``verification_method`` says who agreed with the step, and the division is the
+proof's trust boundary rather than a label:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 26 74
+
+   * - ``verification_method``
+     - What was checked
+   * - ``core_binding``
+     - The normalized fact was re-encoded and checked against the core member in
+       both directions: ``group => fact`` and ``fact => group`` must each be
+       refuted.  Either direction coming back unknown, timing out, or failing to
+       hold keeps the proof out of ``complete``.  Used by input nodes only.
+   * - ``core_binding_unit``
+     - The member's group holds one requirement per case, so it is a conjunction and
+       no single fact can imply the whole of it.  The fact was re-encoded and checked
+       against **one** requirement of that conjunction in both directions, and the
+       node names which one through ``unit_index`` beside ``unit_count``.  A fact
+       equivalent to two requirements identifies neither, so the binding is refused
+       rather than resolved.  Used by input nodes only.
+   * - ``rule_checker``
+     - An independent checker re-derived the conclusion from the premises without
+       reusing the code that constructed it.  Used by derived and root nodes.
+   * - ``solver_entailment``
+     - The step's rule and side conditions were discharged by the solver rather
+       than by a checker, because the question is about the core members'
+       constraints and not about the published facts a checker sees.  The node's
+       ``item_ids`` name the members the solver used, and they are a subset of the
+       published core.  Used by derived and root nodes.
+
+A proof also states what it claims about its own shape.  ``input_minimality`` is
+``subset_minimal``: the inputs are exactly the subset-minimal core, one node per
+member, and a missing, extra, or duplicated input is refused rather than
+published.  ``graph_minimality`` is ``dependency_pruned``: every node published
+is reachable from the root.  ``verification_status`` is ``verified``, which is
+the only value it takes -- an unverified graph is not published at all.
+
+
+Explanation types
+~~~~~~~~~~~~~~~~~
+
+A Python caller reads the same content through frozen dataclasses rather than by
+parsing the report:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 34 66
+
+   * - Type
+     - What it carries
+   * - :class:`~pyfcstm.bmc.BmcInfeasibilityExplanation`
+     - ``requested_mode``, ``achieved_mode``, ``status``, ``reason``,
+       ``classification``, ``elapsed_ms``, and the core, narrative and proof.
+   * - :class:`~pyfcstm.bmc.BmcConflictCore`
+     - ``scope``, ``granularity``, ``items``, ``reduction`` and
+       ``subset_minimality``.
+   * - :class:`~pyfcstm.bmc.BmcCoreItem`
+     - One core member: its stable id, semantic role, constraint reference and
+       normalized fact.
+   * - :class:`~pyfcstm.bmc.BmcConstraintRef`
+     - Which stage and formula a member came from.
+   * - :class:`~pyfcstm.bmc.BmcSourceRef`
+     - Where in which document a member was written.
+   * - :class:`~pyfcstm.bmc.BmcConflictNarrative`
+     - ``derivation_status``, ``headline`` and ``reasoning_steps``.
+   * - :class:`~pyfcstm.bmc.BmcReasoningStep`
+     - One sentence, with the core items and proof nodes it reads.
+   * - :class:`~pyfcstm.bmc.BmcConflictProof`
+     - ``scope``, ``root_id``, ``nodes``, ``input_minimality``,
+       ``graph_minimality`` and ``verification_status``.
+   * - :class:`~pyfcstm.bmc.BmcProofNode`
+     - ``stable_id``, ``kind``, ``rule_id``, ``premise_ids``, ``conclusion``,
+       ``item_ids``, ``human_text`` and ``verification_method``.
+
+.. code-block:: python
+
+    from pyfcstm.bmc import BmcConflictProof, BmcProofNode, solve_bmc_property
+
+    result = solve_bmc_property(
+        model, query_text, infeasibility_explanation="proof"
+    )
+    explanation = result.feasibility.explanation
+    if explanation is not None and explanation.proof is not None:
+        proof: BmcConflictProof = explanation.proof
+        for node in proof.nodes:
+            assert isinstance(node, BmcProofNode)
+            print(node.stable_id, node.rule_id, node.verification_method)
+
+The same object is reachable in JSON at
+``result.feasibility.explanation``, whose ``proof`` key is ``null`` at any depth
+below ``proof`` and at ``proof`` depth whenever the attempt degraded.
+
+
+Explanation status and degradation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``requested_mode`` is what the caller asked for and ``achieved_mode`` is what was
+produced.  ``status`` says how complete the achieved depth is:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 78
+
+   * - ``status``
+     - Meaning
+   * - ``complete``
+     - The achieved depth produced everything it promises.
+   * - ``partial``
+     - Some of it was produced.  ``reason`` says what stopped there.
+   * - ``unknown``
+     - A check the depth depends on came back neither way.
+   * - ``timeout``
+     - The explanation budget ran out before the depth was reached.
+
+Not every pairing of depth, status and payload exists.  The full set is a
+fourteen-row matrix that the public constructor enforces, and rather than restate
+it here -- an earlier revision of this page tried and got it wrong -- the two
+facts a reader needs are these:
+
+* ``complete`` means the depth delivered what it promises, so an
+  ``achieved_mode`` of ``none`` is never ``complete``.  Constructing that pairing
+  raises ``achieved_mode 'none' cannot be complete; it is partial, unknown or
+  timeout``.
+* ``reason`` is the exception, and it is worth knowing because it is the field a
+  degraded result explains itself through: ``complete`` never carries one --
+  there is nothing to explain -- and ``partial``, ``unknown`` and ``timeout``
+  always do.  This holds across all fourteen signatures and all three achieved
+  depths.
+* Every other payload field is not something to infer.  Read ``classification``,
+  ``core``, ``narrative`` and ``proof`` for presence rather than predicting it
+  from ``status``; each is documented above and each is nullable.
+
+:class:`~pyfcstm.bmc.BmcInfeasibilityExplanation` refuses a combination outside
+the matrix with a message naming what is wrong, so a consumer that builds one
+learns immediately, and a consumer that only reads results never needs the matrix
+at all.
+
+A request for ``proof`` that degrades therefore reports ``achieved_mode`` as
+``formal``, and ``reason`` names the cause.  Against the same model and a query
+whose conflict needs a transition reading:
+
+.. code-block:: text
+
+   Explanation: PARTIAL FORMAL DOMAIN EXPLANATION
+   Explanation depth: requested proof, achieved formal
+   ...
+   Reason: the formal explanation is complete, but no rule in the catalog closes
+   this core.
+
+Degradation is not failure: the formal block still names the classification, the
+subset-minimal core and every source location.  For some conflicts it says *more*
+than a proof would -- see the boundary notes in
+:doc:`/explanations/bmc_solving/index`.
+
 
 Direct Python result text
 -------------------------

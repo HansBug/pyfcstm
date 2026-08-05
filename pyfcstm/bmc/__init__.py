@@ -109,6 +109,56 @@ Public module structure:
        :class:`BmcEngine`, :func:`prepare_bmc_query`
      - Prepare ``StateMachine + .fbmcq`` inputs into bound query and domain
        context without solver, witness, CLI, or verify-registry coupling.
+   * - Internal preparation support
+     - :mod:`pyfcstm.bmc.solver`, :mod:`pyfcstm.bmc.provenance`
+     - Share staged solver-budget mechanics and preserve source documents /
+       tracked constraint groups for later explanation layers; these modules
+       are intentionally not root-package public exports.
+   * - Internal proof support
+     - :mod:`pyfcstm.bmc.proof`, :mod:`pyfcstm.bmc.proof_rules`,
+       :mod:`pyfcstm.bmc.proof_text`
+     - Build the closure from core facts to ``false``, check each step against
+       the rule catalog with a checker that shares no code with the constructor,
+       and read the finished graph as ordered prose.  Split three ways because
+       the checker must be able to disagree with the builder: a checker calling
+       the construction helpers would agree by construction and prove nothing.
+       Like the row above, these are not root-package public exports -- the
+       results they produce are, as :class:`BmcConflictProof` and
+       :class:`BmcProofNode`.
+   * - Scenario infeasibility explanation
+     - :class:`BmcInfeasibilityExplanation`, :class:`BmcConflictCore`,
+       :class:`BmcCoreItem`, :class:`BmcConstraintRef`
+     - Answer the two questions a localized stage leaves open: *how* it is
+       infeasible, and *which* authored FCSTM/FBMCQ constraints already suffice
+       to make it so.  Request one through
+       ``solve_bmc_property(..., infeasibility_explanation='formal')``; the
+       default ``'none'`` runs no extra solver check.  The data layer in
+       :mod:`pyfcstm.bmc.explanation` stays free of Z3 so a reader can consume
+       a result without loading the solver, while
+       :mod:`pyfcstm.bmc.infeasibility` owns every probe and shares the
+       mandatory solve budget.
+   * - Conflict narrative
+     - :class:`BmcConflictNarrative`, :class:`BmcReasoningStep`
+     - Answer *why* no execution exists, as a causal chain over the published
+       core: each ``fact`` step states one requirement and a closing ``conflict``
+       step names the contradiction, every step citing the core members it reads.
+       The chain is rendered from the published normalized facts alone, so a shape
+       no recognizer reduced yields ``derivation_status="structural_only"`` and no
+       conflict step instead of an invented derivation.  ``review_surfaces`` lists
+       the authored entry points worth inspecting together; it is not a repair
+       suggestion, and editing one is no promise that the full target becomes
+       satisfiable.
+   * - Verifiable domain proof
+     - :class:`BmcConflictProof`, :class:`BmcProofNode`
+     - Answer *why* the narrative's chain holds, as a checked graph: every node
+       states one domain fact and records how it was established -- an input
+       restates a core member, a derived node applies one named rule to earlier
+       nodes, and a single ``contradiction`` closes on ``false``.  ``nodes`` is
+       itself the canonical topological order, premises look backwards only, and
+       every node reaches the root, so a step that took no part cannot ride along.
+       A published proof is verified throughout: there is no value for an
+       unchecked step, and a shape no rule covers degrades the whole tier to
+       ``formal`` rather than publishing a partial graph.
    * - BMC relation builder
      - :class:`BmcAbstractCallRecord`, :class:`BmcTraceSymbols`,
        :class:`BmcCaseRelation`, :class:`BmcStepRelation`, :class:`BmcCoreFormula`,
@@ -215,6 +265,34 @@ from .query import (
 )
 
 if TYPE_CHECKING:
+    from .explanation import (
+        BmcConflictCore,
+        BmcConflictNarrative,
+        BmcConflictProof,
+        BmcProofNode,
+        BmcProofNodeKind,
+        BmcProofRuleId,
+        BmcProofVerificationMethod,
+        BmcProofInputMinimality,
+        BmcProofGraphMinimality,
+        BmcProofVerificationStatus,
+        BmcSourceRef,
+        BmcConflictCoreScope,
+        BmcConstraintRef,
+        BmcConstraintStage,
+        BmcCoreGranularity,
+        BmcCoreItem,
+        BmcCoreReduction,
+        BmcDerivationStatus,
+        BmcInfeasibilityClassification,
+        BmcInfeasibilityExplanation,
+        BmcInfeasibilityExplanationMode,
+        BmcInfeasibilityExplanationStatus,
+        BmcReasoningStep,
+        BmcReasoningStepKind,
+        BmcSemanticRole,
+        BmcSubsetMinimality,
+    )
     from .witness import (
         BmcFeasibilityCheck,
         BmcFeasibilityRefinementCheck,
@@ -327,8 +405,38 @@ _WITNESS_EXPORTS = {
     "replay_bmc_witness",
 }
 
+_EXPLANATION_EXPORTS = {
+    "BmcConflictCore",
+    "BmcConflictNarrative",
+    "BmcConflictProof",
+    "BmcProofNode",
+    "BmcProofNodeKind",
+    "BmcProofRuleId",
+    "BmcProofVerificationMethod",
+    "BmcProofInputMinimality",
+    "BmcProofGraphMinimality",
+    "BmcProofVerificationStatus",
+    "BmcSourceRef",
+    "BmcConflictCoreScope",
+    "BmcConstraintRef",
+    "BmcConstraintStage",
+    "BmcCoreGranularity",
+    "BmcCoreItem",
+    "BmcCoreReduction",
+    "BmcDerivationStatus",
+    "BmcInfeasibilityClassification",
+    "BmcInfeasibilityExplanation",
+    "BmcInfeasibilityExplanationMode",
+    "BmcInfeasibilityExplanationStatus",
+    "BmcReasoningStep",
+    "BmcReasoningStepKind",
+    "BmcSemanticRole",
+    "BmcSubsetMinimality",
+}
+
 _LAZY_EXPORT_MODULES = {
     "pyfcstm.bmc.binding": _BINDING_EXPORTS,
+    "pyfcstm.bmc.explanation": _EXPLANATION_EXPORTS,
     "pyfcstm.bmc.domain": _DOMAIN_EXPORTS,
     "pyfcstm.bmc.source": _SOURCE_EXPORTS,
     "pyfcstm.bmc.macro": _MACRO_EXPORTS,
@@ -389,6 +497,7 @@ def __dir__():
     return sorted(
         set(globals())
         | _BINDING_EXPORTS
+        | _EXPLANATION_EXPORTS
         | _DOMAIN_EXPORTS
         | _SOURCE_EXPORTS
         | _MACRO_EXPORTS
@@ -524,4 +633,30 @@ __all__ = [
     "decode_bmc_result_trace",
     "decode_bmc_witness",
     "replay_bmc_witness",
+    "BmcConflictCore",
+    "BmcConflictNarrative",
+    "BmcConflictProof",
+    "BmcProofNode",
+    "BmcProofNodeKind",
+    "BmcProofRuleId",
+    "BmcProofVerificationMethod",
+    "BmcProofInputMinimality",
+    "BmcProofGraphMinimality",
+    "BmcProofVerificationStatus",
+    "BmcSourceRef",
+    "BmcConflictCoreScope",
+    "BmcConstraintRef",
+    "BmcConstraintStage",
+    "BmcCoreGranularity",
+    "BmcCoreItem",
+    "BmcCoreReduction",
+    "BmcDerivationStatus",
+    "BmcInfeasibilityClassification",
+    "BmcInfeasibilityExplanation",
+    "BmcInfeasibilityExplanationMode",
+    "BmcInfeasibilityExplanationStatus",
+    "BmcReasoningStep",
+    "BmcReasoningStepKind",
+    "BmcSemanticRole",
+    "BmcSubsetMinimality",
 ]

@@ -15,14 +15,21 @@ pyfcstm.bmc
     engine
     errors
     expand
+    explanation
     grammar/index
+    infeasibility
     listener
     macro
     parse
     pipeline
+    proof
+    proof_rules
+    proof_text
     properties
+    provenance
     query
     relation
+    solver
     source
     witness
 

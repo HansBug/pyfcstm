@@ -15,3 +15,53 @@ code.literal {
   overflow-wrap: anywhere;
   white-space: normal;
 }
+
+/*
+ * An inline literal that lands at the end of a line carries its horizontal
+ * padding past the content box, which is enough to give the document a
+ * horizontal scrollbar on a narrow viewport even though the text itself fits.
+ * Dropping the padding below the mobile breakpoint keeps the literal readable
+ * without letting it widen the page.  Applied by class rather than to the few
+ * pages that happen to trip it today, since any literal can land there.
+ */
+@media (max-width: 480px) {
+  code.literal {
+    padding-left: 1px;
+    padding-right: 1px;
+  }
+}
+
+/*
+ * Inline mathematics gets the same treatment as display mathematics.  A long
+ * inline formula in a Chinese paragraph cannot break -- CJK text has no spaces
+ * for the browser to break at before it -- so the glyphs run past the content
+ * box on a narrow viewport even though the container itself is constrained.
+ * Letting the container scroll keeps the formula readable without giving the
+ * document a horizontal scrollbar.
+ */
+mjx-container:not([display="true"]) {
+  max-width: 100%;
+}
+
+/*
+ * CJK paragraphs have no spaces for the browser to break at, so a line can only
+ * end where a break opportunity exists.  Allowing one anywhere lets the line end
+ * before an inline formula instead of carrying it past the content box.
+ *
+ * Scoped to Chinese pages by :lang, since the motivation is CJK-specific and
+ * English prose already has spaces to break at -- an unscoped rule would change
+ * wrapping on pages that never had the problem.  Inline literals opt back out:
+ * overflow-wrap is inherited, and breaking a short identifier mid-word costs
+ * more readability than the line it saves.
+ */
+@media (max-width: 480px) {
+  html[lang|="zh"] .rst-content p,
+  html[lang|="zh"] .rst-content dd,
+  html[lang|="zh"] .rst-content li {
+    overflow-wrap: anywhere;
+  }
+
+  html[lang|="zh"] .rst-content code.literal {
+    overflow-wrap: break-word;
+  }
+}

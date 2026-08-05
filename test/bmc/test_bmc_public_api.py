@@ -137,6 +137,32 @@ def test_bmc_public_api_exports_exact_names():
         "BmcRuntimeTrace",
         "BmcReplayMismatch",
         "BmcReplayResult",
+        "BmcConflictCore",
+        "BmcConflictNarrative",
+        "BmcConflictProof",
+        "BmcProofNode",
+        "BmcProofNodeKind",
+        "BmcProofRuleId",
+        "BmcProofVerificationMethod",
+        "BmcProofInputMinimality",
+        "BmcProofGraphMinimality",
+        "BmcProofVerificationStatus",
+        "BmcSourceRef",
+        "BmcConflictCoreScope",
+        "BmcConstraintRef",
+        "BmcConstraintStage",
+        "BmcCoreGranularity",
+        "BmcCoreItem",
+        "BmcCoreReduction",
+        "BmcDerivationStatus",
+        "BmcInfeasibilityClassification",
+        "BmcInfeasibilityExplanation",
+        "BmcInfeasibilityExplanationMode",
+        "BmcInfeasibilityExplanationStatus",
+        "BmcReasoningStep",
+        "BmcReasoningStepKind",
+        "BmcSemanticRole",
+        "BmcSubsetMinimality",
     }
 
     assert set(bmc.__all__) == expected
@@ -203,6 +229,30 @@ def test_bmc_public_api_exports_exact_names():
         "BmcRuntimeTrace",
         "BmcReplayMismatch",
         "BmcReplayResult",
+        "BmcConflictCore",
+        "BmcConflictNarrative",
+        "BmcSourceRef",
+        "BmcConflictCoreScope",
+        "BmcConstraintRef",
+        "BmcConstraintStage",
+        "BmcCoreGranularity",
+        "BmcCoreItem",
+        "BmcCoreReduction",
+        "BmcDerivationStatus",
+        "BmcProofNodeKind",
+        "BmcProofRuleId",
+        "BmcProofVerificationMethod",
+        "BmcProofInputMinimality",
+        "BmcProofGraphMinimality",
+        "BmcProofVerificationStatus",
+        "BmcInfeasibilityClassification",
+        "BmcInfeasibilityExplanation",
+        "BmcInfeasibilityExplanationMode",
+        "BmcInfeasibilityExplanationStatus",
+        "BmcReasoningStep",
+        "BmcReasoningStepKind",
+        "BmcSemanticRole",
+        "BmcSubsetMinimality",
         "solve_bmc_property",
         "decode_bmc_witness",
         "replay_bmc_witness",
@@ -530,3 +580,69 @@ def test_bmc_schema_freezes_feasibility_localization_contract():
         in feasibility_text
     )
     assert '"status": {"enum": ["unknown", "timeout"]}' in inconclusive_text
+
+
+@pytest.mark.unittest
+def test_every_lazy_export_is_reachable_named_and_discoverable() -> None:
+    """``__getattr__``, ``__all__`` and ``__dir__`` must agree on one name set.
+
+    The three are maintained separately, so a layer can be wired into the lazy
+    resolver and left out of discovery: the name then imports fine, which is
+    what a test usually checks, while ``dir()``, tab completion, ``help()`` and
+    autodoc cannot see it.  That is exactly what happened to the explanation
+    layer -- resolvable and listed in ``__all__``, absent from ``__dir__``.
+    """
+    import pyfcstm.bmc as bmc
+
+    lazy_names = set()
+    for exports in bmc._LAZY_EXPORT_MODULES.values():
+        lazy_names |= set(exports)
+
+    listed = set(bmc.__all__)
+    discoverable = set(dir(bmc))
+
+    # Every lazily wired name is listed and discoverable.
+    assert lazy_names - listed == set(), "lazy exports missing from __all__"
+    assert lazy_names - discoverable == set(), "lazy exports missing from __dir__"
+    # And every listed name actually resolves, so __all__ cannot promise a name
+    # the resolver does not know.
+    for name in sorted(listed):
+        assert hasattr(bmc, name), name
+
+
+@pytest.mark.unittest
+def test_the_frozen_narrative_literals_are_public_types() -> None:
+    """The narrative's two vocabularies are published types, not private tuples.
+
+    Every other frozen vocabulary in this contract is exported as a ``Literal``
+    a caller can annotate against -- reductions, minimality, roles, stages.  The
+    two the narrative introduced were implemented as module-private tuples only,
+    so a consumer typing a ``derivation_status`` had nothing to import and the
+    exact-name test could not notice the omission.
+    """
+    from pyfcstm.bmc import BmcDerivationStatus, BmcReasoningStepKind
+
+    assert BmcDerivationStatus is not None
+    assert BmcReasoningStepKind is not None
+
+
+@pytest.mark.unittest
+def test_the_narrative_parameter_documents_that_it_is_published() -> None:
+    """The class pydoc must not still say a narrative is refused.
+
+    A caller reads ``:param narrative:`` to find out whether they may pass one.
+    Publishing the slot while the docstring says it is rejected tells them the
+    opposite of what the constructor does.
+    """
+    import inspect
+
+    from pyfcstm.bmc import BmcInfeasibilityExplanation
+
+    line = next(
+        line
+        for line in inspect.getdoc(BmcInfeasibilityExplanation).splitlines()
+        if line.startswith(":param narrative:")
+    )
+
+    assert "rejected" not in line
+    assert "Reserved for a later stage" not in line

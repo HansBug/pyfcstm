@@ -287,6 +287,105 @@
 只有 ``response`` 拥有可能产生 ``incomplete`` 的独立边界公式。库级
 ``unchecked`` 状态和完整退出优先级矩阵见 :doc:`../../reference/bmc_results/index_zh`。
 
+8. 追问一个不可能的场景为何不可能
+---------------------------------
+
+``SCENARIO INFEASIBLE`` 报告说的是不存在任何执行，这意味着属性从未被求值。这种情况
+很容易无意造成——两条无法同时成立的假设、机器无法从之继续的初始化器——而报告本身
+并不说明是哪条子句的问题。
+
+写一个要求门锁在同一帧持有两个值的查询：
+
+.. literalinclude:: impossible_latch.fbmcq
+   :language: text
+
+先按默认深度运行：
+
+.. code-block:: bash
+
+   python -m pyfcstm bmc \
+       -i first_check_fixed.fcstm \
+       -q impossible_latch.fbmcq --color never
+
+判定到手了，却没有任何解释：
+
+.. code-block:: text
+
+   BMC reach <= 2: SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED
+   Scenario: INFEASIBLE
+   Property verdict: NOT EVALUATED (SCENARIO INFEASIBLE)
+   Evidence:
+     Failure boundary: ASSUMPTIONS
+
+``Failure boundary: ASSUMPTIONS`` 把范围缩到了 ``assume`` 子句，这已经有用，但还不是
+行号。请求解释：
+
+.. code-block:: bash
+
+   python -m pyfcstm bmc \
+       -i first_check_fixed.fcstm \
+       -q impossible_latch.fbmcq \
+       --explain-infeasibility proof --color never
+
+.. code-block:: text
+
+   Explanation: COMPLETE VERIFIED DOMAIN PROOF
+   Classification: the assumptions are internally inconsistent
+
+   Why no execution exists:
+     1. At frame 1, latch_engaged must equal 0.
+     2. At frame 1, latch_engaged must equal 1.
+     3. Therefore one value cannot be two things at once. No execution satisfies
+        these initialization and query requirements, and the property was not
+        evaluated.
+
+   Conflict constraints:
+     1. impossible_latch.fbmcq:1:1-1:40
+        assume at 1: var("latch_engaged") == 0;
+     2. impossible_latch.fbmcq:2:1-2:40
+        assume at 1: var("latch_engaged") == 1;
+
+   The displayed core is sufficient for UNSAT and proven subset-minimal.
+   Core scope: assumptions_component
+   Reduction: subset_minimal
+   Subset minimality: proven
+
+这个区块里有三点值得细读。
+
+``COMPLETE VERIFIED DOMAIN PROOF`` 意味着那些句子背后的每一步都被检查过——不是"工具
+有信心"，而是"确实跑过一次检查"。JSON 说明是哪一种：
+
+.. code-block:: bash
+
+   python -m pyfcstm bmc \
+       -i first_check_fixed.fcstm \
+       -q impossible_latch.fbmcq \
+       --explain-infeasibility proof --json -o /tmp/latch-proof.json
+   python -c "
+   import json
+   proof = json.load(open('/tmp/latch-proof.json'))['result']['feasibility']['explanation']['proof']
+   for node in proof['nodes']:
+       print(node['stable_id'], node['kind'], node['verification_method'])
+   "
+
+.. code-block:: text
+
+   proof.input.0000 input core_binding
+   proof.input.0001 input core_binding
+   proof.step.0002 contradiction rule_checker
+
+每个 ``input`` 都与它所重述的子句做过核验；结论由一个不与构造者共享代码的检查器重新
+推导。``verification_method`` 字段就是这个划分被发布出来的地方。
+
+``proven subset-minimal`` 意味着列出的每条子句都承重。删掉任意一条，场景就重新变得
+可行——所以两行都值得你关注，都不是噪声。
+
+而收尾那句话说的是属性\ **未被求值**\ 。这不是 ``reach`` 的反例。退出状态是 ``3``
+而不是 ``2``：关于这道门什么也没有被证明。先修好假设、重新运行，然后再读判定。
+
+如果你请求 ``proof`` 而区块显示 ``achieved formal``，那是能力边界而不是错误——
+``formal`` 解释仍然是完整的，并且会告诉你它为何停在那里。下一步怎么做，见操作指南。
+
 概念检查点
 ----------
 

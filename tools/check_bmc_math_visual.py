@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import tempfile
 from importlib.metadata import PackageNotFoundError, version
@@ -11,6 +12,8 @@ from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Sequence, Tuple
 
 from playwright.sync_api import sync_playwright
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 _PLAYWRIGHT_VERSION = "1.55.0"
@@ -49,6 +52,43 @@ def _rendered_pages(
                 directory,
                 html_root / _rendered_page_relative(language, directory),
             )
+
+
+def _expected_anchor_count() -> int:
+    """Return how many labelled equations the ledger currently declares.
+
+    Read from ``tools/check_bmc_docs.py`` rather than hardcoded here.  The two
+    checkers disagreed the first time an equation was added: one enforced the
+    label list and the other still expected the previous count, so a correct
+    addition failed the visual pass for a reason that had nothing to do with
+    rendering.  Deriving the number keeps one place to update.
+
+    :return: The number of frozen equation labels.
+    :rtype: int
+    :raises VisualCheckFailure: If the label list cannot be read.
+    """
+    source = _REPO_ROOT / "tools/check_bmc_docs.py"
+    try:
+        module = ast.parse(source.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError) as err:
+        # OSError: the sibling checker is missing or unreadable.
+        # SyntaxError: it is mid-edit; either way the count cannot be trusted.
+        raise VisualCheckFailure(
+            "cannot read the equation label list from %s: %s" % (source.name, err)
+        )
+    for node in module.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(
+            isinstance(target, ast.Name) and target.id == "_EQUATION_LABELS"
+            for target in node.targets
+        ):
+            continue
+        if isinstance(node.value, ast.Tuple):
+            return len(node.value.elts)
+    raise VisualCheckFailure(
+        "%s no longer defines _EQUATION_LABELS as a tuple literal." % source.name
+    )
 
 
 def _check_page_path_contract() -> None:
@@ -128,6 +168,51 @@ def _check_page(page, url: str) -> Dict[str, object]:
     )
 
 
+def _require_text_rendering(page) -> None:
+    """Refuse to report a pass when the browser cannot render text.
+
+    A browser with no usable font lays every string out at zero width.  Nothing
+    can then overflow, no formula container can be too wide, and every geometric
+    check passes while the screenshots contain no glyphs at all -- which is how
+    this checker once reported twelve passing pages whose images were blank.
+
+    Point ``FONTCONFIG_FILE`` at a configuration naming a font the browser can
+    load if this fires.
+
+    :param page: The page to measure on.
+    :type page: playwright.sync_api.Page
+    :return: ``None``.
+    :rtype: None
+    :raises VisualCheckFailure: If a known string measures zero wide.
+    """
+    measured = page.evaluate(
+        """() => {
+          const c = document.createElement('canvas').getContext('2d');
+          c.font = '32px sans-serif';
+          return {latin: c.measureText('HELLO 12345').width,
+                  cjk: c.measureText('\u6c42\u89e3\u4e0e\u56de\u653e').width,
+                  cjkRef: c.measureText('MMMMM').width};
+        }"""
+    )
+    if not measured["latin"]:
+        raise VisualCheckFailure(
+            "the browser measures text at zero width, so no visual check here "
+            "means anything; set FONTCONFIG_FILE to a config with a loadable font"
+        )
+    # A missing CJK font does not give zero width -- Chromium draws tofu boxes,
+    # which are narrower than real glyphs.  Measured at 95px against 160px here,
+    # a 40% error, while the overflow this check exists to catch had 10px of
+    # margin.  Five ideographs at 32px are about as wide as five 'M's; well under
+    # that means the boxes, not the characters.
+    if measured["cjk"] < 0.8 * measured["cjkRef"]:
+        raise VisualCheckFailure(
+            "the browser has no CJK font -- five ideographs measure %.0fpx "
+            "against %.0fpx for five 'M's, so the Chinese pages would be laid "
+            "out from tofu-box widths; add a CJK family to FONTCONFIG_FILE"
+            % (measured["cjk"], measured["cjkRef"])
+        )
+
+
 def check(
     html_roots: Dict[str, Path],
     output_root: Path,
@@ -153,6 +238,7 @@ def check(
             for viewport_name, viewport in _VIEWPORTS.items():
                 context = browser.new_context(viewport=viewport)
                 page = context.new_page()
+                _require_text_rendering(page)
                 for _page_language, directory, html_path in _rendered_pages(
                     {language: html_root}
                 ):
@@ -186,10 +272,11 @@ def check(
                     )
                 context.close()
         browser.close()
-    if len(all_anchors) != 40:
+    expected_anchors = _expected_anchor_count()
+    if len(all_anchors) != expected_anchors:
         errors.append(
-            "expected 40 distinct equation anchors across rendered pages, found %d"
-            % len(all_anchors)
+            "expected %d distinct equation anchors across rendered pages, found %d"
+            % (expected_anchors, len(all_anchors))
         )
     report["equation_anchor_count"] = len(all_anchors)
     report["errors"] = errors

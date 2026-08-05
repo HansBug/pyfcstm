@@ -579,7 +579,7 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
     incomplete_elapsed_ms  -
     has_incomplete_model   false
     total_elapsed_ms       1.25
-    feasibility            assumptions=elapsed_ms=-, origin=not_checked, reason=-, status=-, infeasible_stage=-, initialization=elapsed_ms=-, origin=not_checked, reason=-, status=-, kernel=elapsed_ms=-, origin=not_checked, reason=-, status=-, localization_status=not_checked, refinement_checks=-, refinement_reason=-, refinement_status=not_needed
+    feasibility            assumptions=elapsed_ms=-, origin=not_checked, reason=-, status=-, explanation=-, infeasible_stage=-, initialization=elapsed_ms=-, origin=not_checked, reason=-, status=-, kernel=elapsed_ms=-, origin=not_checked, reason=-, status=-, localization_status=not_checked, refinement_checks=-, refinement_reason=-, refinement_status=not_needed
     available_model_roles  -
     diagnostics            diag
     """

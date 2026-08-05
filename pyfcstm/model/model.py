@@ -53,7 +53,6 @@ from typing import Any, Optional, Union, List, Dict, Tuple, Iterator, Set
 from .base import AstExportable, PlantUMLExportable
 from .expr import Expr, parse_expr_node_to_expr
 from .imports import (
-    _annotate_ast_source,
     assemble_state_machine_imports,
     _get_trusted_generated_combo_transition_metadata,
     _is_trusted_generated_combo_pseudo_node,
@@ -100,6 +99,12 @@ def _node_span(node) -> Optional[Span]:
     return getattr(node, "_span", None)
 
 
+# Two implementations of source-ownership propagation met here when the BMC and
+# diagram umbrellas merged.  This is the span-table one from the diagram work,
+# because it also collects the document map and covers ``defines``; the two things
+# the other one did and this one did not -- recursing into conditional branches and
+# recording ``_source_root`` -- are folded in below rather than kept as a second
+# walk, since two walkers over the same tree drift.
 def _span_key(
     span: Optional[Span],
 ) -> Optional[Tuple[int, int, Optional[int], Optional[int]]]:
@@ -117,7 +122,15 @@ def _collect_ast_source_metadata(
         if isinstance(source_path, str):
             span = _span_key(getattr(node, "_span", None))
             if span is not None:
-                spans.setdefault(span, source_path)
+                # A key is coordinates only, so two files agreeing on a line and a
+                # length share one.  Letting the first walked entry answer for both
+                # publishes a reference to a line nobody wrote: an expansion
+                # declared at line 5 of the outer file lands on a state from an
+                # inner one whose line 5 is an unrelated transition.  An ambiguous
+                # key therefore answers with nothing at all -- a member with no
+                # reference is honest, a member pointing at the wrong file is not.
+                if spans.setdefault(span, source_path) != source_path:
+                    spans[span] = None
             if isinstance(source_text, str):
                 documents[source_path] = source_text
         for item in fields(node):
@@ -144,8 +157,39 @@ def _attach_model_source_metadata(
         if source_path is not None:
             setattr(value, "_source_path", source_path)
 
-    for definition in machine.defines.values():
-        attach(definition)
+    # A define is paired with its AST node by name, not by span.  A span key is
+    # (line, column, end_line, end_column) with no document in it, so two files
+    # that declare something at the same coordinates collide and whichever was
+    # walked first wins -- and an imported model very often has that collision,
+    # because ``def int x = 1;`` on line 1 of two modules is enough to produce it.
+    # The published excerpt would then be a different variable from a different
+    # file, which is worse than having none.  The AST nodes already carry the
+    # right path each, and import resolution renames them to the same
+    # alias-qualified keys the model uses, so the pairing is exact.  The span
+    # table stays as the fallback for a define with no AST match.
+    ast_definitions = {
+        getattr(item, "name", None): item
+        for item in getattr(dnode, "definitions", ()) or ()
+    }
+    for name, definition in machine.defines.items():
+        matched = ast_definitions.get(name)
+        attach(definition, getattr(matched, "_source_path", None))
+
+    def attach_operation(operation: Any, source: Optional[str]) -> None:
+        """Give an operation and everything nested inside it the same owner.
+
+        A conditional operation carries its arms in ``branches``, each arm has its
+        own statements, and a statement may be conditional in turn.  The descent
+        has to reach the bottom of that tree: stopping one level down leaves a
+        branch inside a branch without an owner, and a probe over a model with a
+        nested ``if`` in both an action and a transition effect finds seven such
+        objects when the walk stops early and none when it does not.
+        """
+        attach(operation, source)
+        for branch in getattr(operation, "branches", ()):
+            attach(branch, source)
+            for statement in getattr(branch, "statements", ()):
+                attach_operation(statement, source)
 
     def pair_states(ast_state: Any, model_state: "State") -> None:
         state_source = getattr(ast_state, "_source_path", None)
@@ -160,14 +204,62 @@ def _attach_model_source_metadata(
             ]
         }
         for transition in model_state.transitions:
-            attach(
-                transition,
-                transition_sources.get(
-                    _span_key(getattr(transition, "_span", None)), state_source
-                ),
-            )
+            # A combo or forced declaration expands into transitions on states it
+            # does not live beside: ``!* -> M1 :: Panic;`` written at line 10 of the
+            # host file lands on a state that came from a five-line imported module.
+            # Handing ``attach`` a non-empty fallback short-circuits its own span
+            # lookup, so the host state's file used to win and the published path
+            # named a document that cannot contain the span -- a reference that
+            # sends a reader to the wrong file, or to no line at all.  The order is
+            # the host state's own transitions, then the whole-program span table,
+            # then the host state; the middle step is what finds the file a
+            # cross-boundary expansion was actually written in.
+            transition_key = _span_key(getattr(transition, "_span", None))
+            carried = getattr(transition, "_source_path", None)
+            own = transition_sources.get(transition_key)
+            if carried is not None:
+                # A forced expansion records the file its declaration was written
+                # in.  That beats a span match: the host state's AST carries a
+                # clone of the declaration annotated with the host's file, so
+                # matching by span answers with wherever the expansion landed
+                # rather than with where it was written.
+                attach(transition, carried)
+            elif own is not None:
+                attach(transition, own)
+            else:
+                # The span matched none of the host state's own transitions, so this
+                # is an expansion: a combo or forced declaration living in some other
+                # state, possibly some other file.  The host's file is wrong for it by
+                # construction, so it is not used as a fallback here -- the whole-program
+                # table answers, and when its key is ambiguous it answers with nothing.
+                # A member with no reference is honest; one pointing at a file whose
+                # line at that span belongs to an unrelated statement is not.
+                declared = all_spans.get(transition_key)
+                if declared is not None:
+                    attach(transition, declared)
+            # The three tiers above are for the transition alone, and everything
+            # below this line takes the host state's file with no tier at all.  That
+            # asymmetry is the language's, not an oversight: only a transition can be
+            # written in one file and land on a state from another, because a combo or
+            # forced declaration names states it does not live beside.  An effect is
+            # lexically inside its transition, and an event or a lifecycle action is
+            # lexically inside its state's braces, so for those the host state's file
+            # *is* the file they were written in.
+            #
+            # For an effect the grammar settles it outright: the only transition that
+            # can land in another file is a forced expansion, and every alternative of
+            # ``transition_force_definition`` ends at ``SEMI`` with no ``EFFECT``
+            # branch -- so a cross-file transition carries no effects at all.  Plain
+            # and combo transitions do take ``EFFECT``, and they are written inside
+            # the braces of the state whose children they name, so their file is the
+            # host's.
+            #
+            # A measurement over the tree's import fixtures reports nothing
+            # disagreeing with its container, and that number is worth nothing on its
+            # own: those fixtures hold no cross-file transition, so the count reads the
+            # same whether the code is right or wrong.  The grammar is the reason.
             for effect in transition.effects:
-                attach(effect, state_source)
+                attach_operation(effect, state_source)
         for event in model_state.events.values():
             attach(event, state_source)
         for action in [
@@ -178,7 +270,7 @@ def _attach_model_source_metadata(
         ]:
             attach(action, state_source)
             for operation in getattr(action, "operations", ()):
-                attach(operation, state_source)
+                attach_operation(operation, state_source)
         ast_children = {
             child.name: child for child in getattr(ast_state, "substates", ())
         }
@@ -189,6 +281,13 @@ def _attach_model_source_metadata(
 
     pair_states(dnode.root_state, machine.root_state)
     machine._source_documents = documents
+    # BMC reports paths relative to the model's own directory, so it needs the
+    # root as well as the documents; ``engine.py`` reads ``_source_root`` when it
+    # shortens a span's path for display.
+    root_source_path = getattr(dnode.root_state, "_source_path", None)
+    if root_source_path is not None:
+        setattr(machine, "_source_path", root_source_path)
+        setattr(machine, "_source_root", os.path.dirname(root_source_path))
 
 
 def _event_origin_from_id(
@@ -2787,10 +2886,19 @@ def parse_dsl_node_to_state_machine(
     """
 
     sink = DiagnosticSink(collect=collect)
-    entry_source = None
-    if path is not None and not os.path.isdir(os.fspath(path)):
-        entry_source = os.path.abspath(os.fspath(path))
-    _annotate_ast_source(dnode, entry_source)
+    # The entry AST is annotated inside ``assemble_state_machine_imports``, which
+    # has to do it for its own standalone callers anyway.  Annotating here as well
+    # walked the whole entry tree a second time to write nearly the same values.
+    #
+    # The two sites derived the entry path independently and agree on a file path,
+    # a directory path, ``None``, a trailing slash, a relative path, a path that
+    # does not exist, and a path through a symlinked directory.  They disagree on
+    # one input: ``path=""``.  ``isdir("")`` is false, so the removed site treated
+    # the empty string as a file and annotated the whole tree with the working
+    # directory; ``isdir(abspath(""))`` is true, so the surviving site reads it as
+    # "no named file" and annotates nothing.  The surviving reading is the right
+    # one -- an empty path names no document -- so the disagreement is a small
+    # correction rather than a loss.
     dnode = assemble_state_machine_imports(dnode, path=path, collect_into=sink)
 
     d_defines: Dict[str, VarDefine] = {}
@@ -3748,6 +3856,12 @@ def parse_dsl_node_to_state_machine(
                     f_transnode.event_scope,
                     getattr(f_transnode, "source_raw", None) or str(f_transnode),
                     _node_span(f_transnode),
+                    # The file the declaration was written in, carried with its
+                    # span.  An expansion lands on states from other files, and a
+                    # span alone cannot say which document it belongs to -- two
+                    # modules that put a statement of the same length at the same
+                    # place share a key.  Asking the declaration directly is exact.
+                    getattr(f_transnode, "_source_path", None),
                 )
             )
 
@@ -3764,6 +3878,7 @@ def parse_dsl_node_to_state_machine(
                 event_scope,
                 forced_origin,
                 forced_span,
+                forced_source_path,
             ) in force_transition_tuples_to_inherit:
                 if from_state is dsl_nodes.ALL or from_state == subnode.name:
                     transitions.append(
@@ -3779,17 +3894,25 @@ def parse_dsl_node_to_state_machine(
                             _span=forced_span,
                         )
                     )
-                    _inner_force_transitions.append(
-                        dsl_nodes.ForceTransitionDefinition(
-                            from_state=dsl_nodes.ALL,
-                            to_state=dsl_nodes.EXIT_STATE,
-                            event_id=my_event_id,
-                            condition_expr=condition_expr,
-                            event_scope=event_scope,
-                            source_raw=forced_origin,
-                            _span=forced_span,
-                        )
+                    if forced_source_path is not None:
+                        setattr(transitions[-1], "_source_path", forced_source_path)
+                    inherited = dsl_nodes.ForceTransitionDefinition(
+                        from_state=dsl_nodes.ALL,
+                        to_state=dsl_nodes.EXIT_STATE,
+                        event_id=my_event_id,
+                        condition_expr=condition_expr,
+                        event_scope=event_scope,
+                        source_raw=forced_origin,
+                        _span=forced_span,
                     )
+                    if forced_source_path is not None:
+                        # This node is synthesised to carry the declaration one
+                        # level deeper, and it keeps the declaration's span, so it
+                        # has to keep its file too.  Without this the descent stops
+                        # having an answer after the first level, and the span alone
+                        # cannot supply one across documents.
+                        setattr(inherited, "_source_path", forced_source_path)
+                    _inner_force_transitions.append(inherited)
 
             _recursive_finish_states(
                 node=subnode,
@@ -4241,24 +4364,26 @@ def parse_dsl_node_to_state_machine(
             priority_run_identity: Tuple[str, Optional[int]],
             priority_run_index: int,
             source_span: Optional[Span],
+            source_path: Optional[str],
         ) -> None:
-            transitions.append(
-                Transition(
-                    from_state=from_state,
-                    to_state=to_state,
-                    event=event,
-                    guard=guard,
-                    effects=effects,
-                    event_scope=event_scope,
-                    combo_origin_refs=origin_refs,
-                    combo_projection_key=projection_key,
-                    combo_projection_order_key=projection_order_key,
-                    combo_reuse_group_id=reuse_group_id,
-                    combo_priority_run_identity=priority_run_identity,
-                    combo_priority_run_index=priority_run_index,
-                    _span=source_span,
-                )
+            transition = Transition(
+                from_state=from_state,
+                to_state=to_state,
+                event=event,
+                guard=guard,
+                effects=effects,
+                event_scope=event_scope,
+                combo_origin_refs=origin_refs,
+                combo_projection_key=projection_key,
+                combo_projection_order_key=projection_order_key,
+                combo_reuse_group_id=reuse_group_id,
+                combo_priority_run_identity=priority_run_identity,
+                combo_priority_run_index=priority_run_index,
+                _span=source_span,
             )
+            if source_path is not None:
+                setattr(transition, "_source_path", source_path)
+            transitions.append(transition)
 
         combo_preorder_counter = 0
 
@@ -4320,6 +4445,7 @@ def parse_dsl_node_to_state_machine(
                 priority_run_identity=priority_run_identity,
                 priority_run_index=priority_run_index,
                 source_span=_node_span(first_alt.transnode),
+                source_path=getattr(first_alt.transnode, "_source_path", None),
             )
 
         def _expand_combo_alternatives(

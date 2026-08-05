@@ -299,6 +299,165 @@ does not prove that unselected cases are encoded correctly, that all SAT models
 decode, that the query is true beyond :math:`N`, or that BMC and the runtime do
 not share the same modeling mistake.
 
+Where a conflict lies, and why the answer is exclusive
+------------------------------------------------------
+
+When the scenario is infeasible, the first useful question is not *which clause*
+but *which part*.  The staged solve already answers it: the kernel, the
+initialization, and the assumptions enter the solver in that order, so the stage
+at which satisfiability is lost identifies the family.  A kernel that is already
+unsatisfiable is a ``kernel_conflict`` and implicates the model rather than the
+query.  A kernel that holds until ``init`` arrives gives an
+``initialization_*`` family; one that holds until ``assume`` arrives gives an
+``assumptions_*`` family.
+
+Within a family the three members are distinguished by *what the new clauses
+disagree with*.  ``*_self_conflict`` means the new clauses contradict each other
+and would fail with nothing else present.  ``*_domain_conflict`` means each is
+individually consistent but together they leave a frame with no legal value --
+they exceed what the frame domain allows.  ``assumptions_prefix_conflict`` (and
+its initialization counterpart) means the clauses are consistent with the domain
+too, and only the transition relation rules them out: nothing the machine can do
+reaches the required combination.
+
+The seven values are exclusive because each is decided by the first stage or
+sub-check that fails, and the checks are ordered.  That is why the report prints
+one classification rather than a set, and why a reader can act on it: the
+classification names the file they should open.
+
+
+Sufficient is not minimal
+-------------------------
+
+The solver's own unsat core is *sufficient*: removing all of it makes the
+formula satisfiable.  It is not *minimal*: it may contain clauses that play no
+part in the conflict, because the solver stops as soon as it has enough.  A
+reader handed a sufficient core has to guess which members matter.
+
+Minimization removes the guesswork by testing each member: drop it, re-solve,
+and keep the drop only if the remainder is still unsatisfiable.  A core that
+survives this for every member is ``subset_minimal`` -- every member is load
+bearing, so every member is worth reading.  The published claim distinguishes
+the two states honestly: ``raw`` when no member was tested,
+``partial_minimized`` when the budget ran out mid-way, ``subset_minimal`` when
+all of them were.
+
+This matters because minimality is what makes the next stage possible at all.  A
+proof step has to say which core member it restates, and a sufficient-only core
+has members that restate nothing.
+
+
+What the proof is trusted on
+-----------------------------
+
+A published proof is a claim that each step was checked.  The interesting design
+question is *by whom*, because a checker that shares code with the constructor
+agrees with it by construction and proves nothing.
+
+Four methods divide the work.  Input nodes use ``core_binding``: the normalized
+fact is re-encoded from scratch and the solver is asked to refute both
+``group => fact`` and ``fact => group``.  Both directions are required.  One
+direction alone would allow a fact that is merely *implied by* the core member,
+which is a summary rather than a restatement -- and a summary can drop exactly
+the detail a reader needed.  If either direction comes back satisfiable, unknown,
+or times out, the proof does not reach ``complete``.
+
+Derived and root nodes use ``rule_checker``: an independent checker takes the
+premises and the claimed conclusion and re-derives it, without calling the code
+that produced it.  It compares whole conclusion mappings rather than selected
+fields, and refuses a conclusion carrying a field it does not recognize, so a
+constructor that quietly adds information cannot slip it past.
+
+``solver_entailment`` covers derived and root steps the solver discharges instead.
+``case_condition_entailment`` is one: whether the core members establish a case's
+condition is a question about their constraints, and a rule checker sees only the
+published facts, which do not contain it.  The node names the members that entail
+the condition, and those members are asserted to be a subset of the published core
+-- a step resting on something outside it would break the minimality the proof
+claims for its own leaves.
+
+A group that holds one requirement per case is a conjunction, and no single fact
+can imply the whole of it -- so an input restating one of those requirements uses
+``core_binding_unit`` instead.  The same two directions are refuted, against that
+one requirement rather than against the group, and the node names which one it was
+through ``unit_index`` beside ``unit_count``.  The pair is what lets a reader see
+the proportion covered: "requirement 5 of 12" says something that "the transition
+relation" does not.  A fact equivalent to two requirements identifies neither, so
+the binding is refused rather than resolved -- an index a reader cannot rely on is
+worse than no index.
+
+The step relations are the only groups that decompose this way, so a query whose
+core rests on one of their cases is where the pair is published: such an input
+carries ``core_binding_unit`` while the other members of the same core carry
+``core_binding``, and the node names which requirement of the relation the case
+restated.  The pair reaches a consumer of the JSON result; the terminal report
+carries each node's sentence rather than how it was checked.  For a while the pair
+was defined and never published, because the
+attribution stopped at the binding check and never reached the node -- a gap that
+read from the outside exactly like a method no query could produce.
+
+The boundary is therefore: **a reader may trust that each sentence follows from
+the core members named beside it, and may not trust that the encoding faithfully
+models their intent.** The proof is about the constraints as encoded.  That is
+the same boundary replay draws for a witness, for the same reason.
+
+
+Why some conflicts have no proof
+---------------------------------
+
+The proof depth degrades rather than fabricating, and the reason is structural
+rather than incidental.
+
+An input node stands for one core member, and the core is the set of *authored*
+clauses plus generated support groups.  A fact about an intermediate frame -- what
+a variable holds after two steps, for instance -- is not authored anywhere; it is
+*derived* from a transition rule.  So a conflict that only becomes visible after
+accumulating across steps has no core member to attribute its key facts to, and
+the closure has nowhere to start.  Such a query reports ``achieved_mode`` as
+``formal``.
+
+For those conflicts the formal explanation is not a lesser answer.  It names the
+classification, the subset-minimal core and every source location, and its
+narrative can name the initial state and the conflicting values -- which a proof
+built without the intermediate facts would lose.  A reader chasing a cross-step
+conflict is better served by ``formal`` today, and the report says so in its
+``reason`` line rather than leaving them to wonder.
+
+Three rules were out of reach for one shared reason until recently, and the account
+is kept here because the shape it describes is still what a reader meets.  A case
+publishes the assignment it makes, but the assignment holds *where the case
+applies*, and the evaluation rule refuses an expression carrying a condition --
+rightly, since "``x`` increases by one under C" together with "``x`` is 0" does not
+give "``x`` is 1" unless C is established.  Nothing established it, so
+``transition_assignment`` had no usable premise, and ``equality_substitution`` and
+``arithmetic_evaluation`` waited one step further back on the
+``arithmetic_expression`` it produces.
+
+``case_condition_entailment`` establishes it.  The condition is proved from the core
+members themselves rather than from their published facts -- the members that put the
+machine in the state a case names include the step relation that got it there, and a
+step relation publishes as ``structural_constraint``, content no reader sees.  So the
+solver does that step, the node cites the members it used, and it records
+``solver_entailment`` rather than ``rule_checker`` because no predicate over the
+premises could have settled it.  The translation from core members to proof facts
+emits seven kinds and none of them is an ``arithmetic_expression``, so that fact
+still has exactly one producer and the chain still starts where it always would
+have -- what changed is that the first link now carries no condition.  Zero of its
+twelve rules never fire, and the
+paragraphs above still describe the conflicts that have no proof: those are the ones
+whose *facts* no core member states, which is a different shortage from the one this
+rule filled.
+
+A second boundary is narrower.  An event assumption is published as a
+``structural_constraint`` fact: the core member is known and located, but its
+content is not read, so no rule applies to it.  The narrative then reports
+``structural_only`` and says only that the constraints cannot hold together --
+true, and unhelpfully thin for a reader who wanted to know *which* two event
+requirements collided.  Both boundaries are consequences of decisions recorded
+in the contract, not defects in the checker, and both are visible to the caller
+through ``achieved_mode`` and ``derivation_status`` rather than silent.
+
+
 Why the bounded structure grows
 --------------------------------
 
@@ -363,45 +522,150 @@ Equation :eq:`bmc-symbol-growth` therefore gives
 :math:`|X_1|=2+2+2=6`: two frame-state symbols, delta and gamma, and two case
 selectors.
 
-The table is the forward audit map for the labelled equations in this page.
+The list below is the forward audit map for the labelled equations in this
+page.
 Literal LaTeX is the labelled block at each labelled equation target; the
 English and Chinese files carry identical blocks.
 
-.. list-table:: Solving-equation ledger
-   :header-rows: 1
-   :widths: 21 27 28 24
+Each equation below names its implementation, its tests, and the query whose
+trace exercises it.
 
-   * - Equation and claim
-     - Implementation anchor
-     - Test anchor
-     - Working query and trace
-   * - :eq:`bmc-solve-formulas`: staged feasibility and response suffix
-     - ``compile_bmc_property``; ``solve_bmc_property``; ``_SolveBudget``
-     - ``test_compile_response_strict_successor_and_incomplete_suffix``;
-       ``test_solver_unknown_and_timeout_paths_are_structured``
-     - Response query above: UNSAT main, SAT tail
-   * - :eq:`bmc-verdict-map`: polarity-aware three-valued verdict
-     - ``BmcSolveResult.property_satisfied`` and ``outcome``
-     - ``test_solve_result_public_verdict_truth_table``;
-       ``test_response_violation_verdict_stays_decisive_with_suffix``
-     - Response gives ``incomplete``; reach gives ``witness_found``
-   * - :eq:`bmc-witness-projection`: SAT model to sparse public trace
-     - ``decode_bmc_witness``; ``_decode_step``;
-       ``_event_inputs_for_step``
-     - witness decoder and event-policy tests in ``test/bmc/test_witness.py``
-     - Reach query: two frames and one step
-   * - :eq:`bmc-replay-agreement`: public observation equality
-     - ``replay_bmc_witness``; ``_compare_frame``; ``_compare_step``
-     - ``test_replay_reports_structured_var_mismatch``;
-       ``test_bmc_witness_replay_matches_full_semantic_fixture_trace``
-     - Reach query: ``replay.ok=true``; tampered ``x`` trace fails
-   * - :eq:`bmc-symbol-growth`: exact allocated trace-symbol count
-     - ``BmcTraceSymbols.allocate``
-     - shape assertions in ``test/bmc/test_domain.py`` and
-       ``test/bmc/test_relation_public_api.py``
-     - Reach query: :math:`N=1,V=0,E=0,K_0=2`, hence six symbols
+:eq:`bmc-solve-formulas` -- staged feasibility and response suffix
+    ``compile_bmc_property``, ``solve_bmc_property`` and ``_SolveBudget``.
+    Covered by ``test_compile_response_strict_successor_and_incomplete_suffix``
+    and ``test_solver_unknown_and_timeout_paths_are_structured``.  The response
+    query above gives UNSAT on the main objective and SAT on the tail.
+
+:eq:`bmc-verdict-map` -- polarity-aware three-valued verdict
+    ``BmcSolveResult.property_satisfied`` and ``outcome``.  The response query
+    gives ``incomplete``; the reach query gives ``witness_found``.  Covered by:
+
+    - ``test_solve_result_public_verdict_truth_table``
+    - ``test_response_violation_verdict_stays_decisive_with_suffix``
+
+:eq:`bmc-witness-projection` -- SAT model to sparse public trace
+    ``decode_bmc_witness``, ``_decode_step`` and ``_event_inputs_for_step``.
+    Covered by the witness decoder and event-policy tests in
+    ``test/bmc/test_witness.py``.  The reach query decodes two frames and one
+    step.
+
+:eq:`bmc-replay-agreement` -- public observation equality
+    ``replay_bmc_witness``, ``_compare_frame`` and ``_compare_step``.  The reach
+    query reports ``replay.ok=true``, and a trace with a tampered ``x`` fails.
+    Covered by:
+
+    - ``test_replay_reports_structured_var_mismatch``
+    - ``test_bmc_witness_replay_matches_full_semantic_fixture_trace``
+
+:eq:`bmc-symbol-growth` -- exact allocated trace-symbol count
+    ``BmcTraceSymbols.allocate``.  Covered by shape assertions in
+    ``test/bmc/test_domain.py`` and ``test/bmc/test_relation_public_api.py``.
+    The reach query has :math:`N=1,V=0,E=0,K_0=2`, hence six symbols.
 
 The semantic-fixture replay suite is especially important: it checks complete
 runtime traces for the registered hard-pass scenarios, not merely that a
 witness object can be serialized.  The tampering tests provide the opposite
 evidence by changing a public observation and requiring a precise mismatch.
+
+
+What the explanation claims, formally
+-------------------------------------
+
+The four statements below are what the optional explanation asserts about its own
+output.  They are separate from the solve equations above because they constrain
+a *report*, not a search: each one is a property the published object either has
+or is refused for lacking.
+
+Let :math:`C = \{c_1, \dots, c_n\}` be the published conflict core, each
+:math:`c_i` the encoding of one authored clause or generated support group, and
+let :math:`\Phi` denote conjunction.
+
+Soundness is the weakest claim, and every core makes it.  A core is sound when
+its members alone already admit no assignment:
+
+.. math::
+   :label: bmc-core-soundness
+
+   \mathrm{UNSAT}\bigl(\Phi(C)\bigr)
+
+This is what the solver's own core gives, and it says nothing about whether every
+member is needed.  Subset-minimality is the stronger claim, and it is made only
+when every member was tested by removing it and re-solving:
+
+.. math::
+   :label: bmc-core-subset-minimality
+
+   \forall c \in C:\ \mathrm{SAT}\bigl(\Phi(C \setminus \{c\})\bigr)
+
+A core satisfying :eq:`bmc-core-subset-minimality` reports ``subset_minimal``
+with ``subset_minimality`` as ``proven``.  One satisfying only
+:eq:`bmc-core-soundness` reports ``raw``, and one whose testing was cut short
+reports ``partial_minimized``.  The distinction is what tells a reader whether
+every listed line is worth editing.
+
+At proof depth each input node restates one core member as a normalized fact
+:math:`f`.  Restatement is stronger than implication in both directions, and both
+are required:
+
+.. math::
+   :label: bmc-proof-input-binding
+
+   \mathrm{UNSAT}\bigl(\Phi(c) \wedge \neg f\bigr)
+   \ \wedge\
+   \mathrm{UNSAT}\bigl(f \wedge \neg \Phi(c)\bigr)
+
+The left conjunct says the member forces the fact; the right says the fact forces
+the member.  Checking only the left would admit an :math:`f` weaker than
+:math:`c` -- a summary, which may have dropped the detail the reader needed.  Any
+of these checks returning satisfiable, unknown, or timing out keeps the proof out
+of ``complete``.
+
+Finally the inputs and the core stand in bijection, so that every member is read
+exactly once and no node speaks for two:
+
+.. math::
+   :label: bmc-proof-input-bijection
+
+   \bigl|\{\,v : \mathrm{kind}(v) = \texttt{input}\,\}\bigr| = |C|
+   \ \wedge\
+   \forall v:\ \bigl|\mathrm{items}(v)\bigr| = 1
+
+A missing, extra, or duplicated input violates
+:eq:`bmc-proof-input-bijection` and is refused rather than published --
+including the case of two distinct members stating the same fact, which has no
+place to go: merging them would give one node two attributions and dropping one
+would leave a member unread.
+
+Each claim below names its implementation, its test, and a query that produces
+it.  All four share the two-line query
+``assume at 1: var("x") == 1; assume at 1: var("x") == 2;``, so one run
+reproduces the whole ledger.
+
+:eq:`bmc-core-soundness` -- the core alone is unsatisfiable
+    Built by ``extract_source_core`` in ``pyfcstm/bmc/infeasibility.py``; covered
+    by ``test/bmc/test_infeasibility.py``.  The query reports ``Core size: 2``
+    with the scenario UNSAT.
+
+:eq:`bmc-core-subset-minimality` -- every member is load bearing
+    Built by the minimization loop in the same function; covered by
+    ``test_reduction_and_minimality_stay_coupled`` in
+    ``test/bmc/test_explanation.py``.  The query reports
+    ``Reduction: subset_minimal`` and ``Subset minimality: proven``.
+
+:eq:`bmc-proof-input-binding` -- both directions are refuted
+    Checked by ``check_core_bindings`` in ``pyfcstm/bmc/infeasibility.py``;
+    covered by ``test/bmc/test_proof_wiring.py``.  The query publishes both
+    inputs with ``verification_method`` as ``core_binding``.
+
+:eq:`bmc-proof-input-bijection` -- one node per member
+    Enforced by ``build_domain_proof`` in ``pyfcstm/bmc/proof.py``.  The query
+    publishes two input nodes for a two-member core, each with one entry in
+    ``item_ids``.  Its two tests take a line each, so that a long identifier is
+    not clipped in a narrow column:
+
+    - ``test_an_input_node_restates_one_member_and_says_so``
+    - ``test_two_members_stating_one_fact_are_refused_rather_than_merged``
+
+The ledger is worth reading against the boundary above: these four claims are
+about the constraints as encoded.  None of them says the encoding matches what
+the author meant, which is why the trust boundary is stated separately.

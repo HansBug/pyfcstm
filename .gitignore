@@ -1237,6 +1237,10 @@ junit.xml
 /test/testfile/python_native_dlc6_more_result/
 *.cli_history
 
+# Local model/provider credentials, if any tooling ever writes them here.
+# The batch generation targets that used to read this file are gone; the
+# entry stays because an existing local copy would otherwise be stageable.
+.llmconfig.yaml
 
 # Claude Code auto memory directory
 .claude

@@ -90,7 +90,10 @@ Two mechanisms produce those windows, and they differ in how they age:
   "It works locally" therefore proves nothing about it. Rule 7 removes it.
 
 6. **Acquire a resource only after its cleanup handler is established.** Do not write "acquire, then wrap in `try`";
-   write "enter the `try`, acquire inside it, and let `finally` decide whether anything needs releasing".
+   write "enter the `try`, acquire inside it, and let `finally` decide whether anything needs releasing". Know what
+   this buys: it does **not** reduce the hit rate of asynchronous interrupts, measured. Its guaranteed benefit is
+   removing the class where a statement between the acquisition and the `try` raises a synchronous exception, which
+   leaks 100% of the time.
    **Bind the sentinel so that it is never one line behind the resource**, which depends on how cleanup identifies the
    resource:
    - *By handle* (`os.open`, `Popen`, `mkstemp`): bind in the acquisition statement itself. Deriving a second name on
@@ -107,9 +110,10 @@ Two mechanisms produce those windows, and they differ in how they age:
    - Use `with` for the outer ownership wherever the resource has, or can be given, a context manager.
    - Otherwise move the inner handler into its own function, so its `try` starts with nothing held. Two shapes are
      safe there, and which one you need depends on what the helper returns:
-     * *Acquire and hand over in one statement* — `return tempfile.mkdtemp(...)`. An interrupt on that line fires
-       before the call, so nothing is acquired. Splitting it across lines, including a parenthesised multi-line
-       `return`, puts a line event back between the acquisition and the handover and reintroduces the window.
+     * *Acquire and hand over in one statement* — `return tempfile.mkdtemp(...)`. This closes the window a *line*
+       event can land in; the bytecode gap between the primitive returning and the caller binding it stays open, and
+       real-signal measurement puts every hand-over shape at the same hit rate. Splitting it across lines, including a
+       parenthesised multi-line `return`, is still worse: it puts a line event back between acquisition and hand-over.
      * *Append into a caller-owned container* — `spawned.append(subprocess.Popen(...))`, where the caller created
        `spawned` before calling and its `finally` drains it. Prefer this whenever the resource is a subprocess: a
        returned value is unowned until the caller's assignment completes, and an orphaned process is the one leak
@@ -120,10 +124,12 @@ Two mechanisms produce those windows, and they differ in how they age:
    in a small dedicated helper rather than an inline `try` — an inline one would violate rule 7 as well. Such a helper
    must do nothing but release one resource, and then one of two things. **Prefer returning a diagnostic** for the
    caller to route, as `_remove_temporary` and `_kill_and_reap` do; the caller hands it to `_write_cleanup_diagnostic`
-   or `_report_cleanup_failure`. **Swallow only when no channel is left**, which is the one relaxation of rule 4's ban
-   on silent swallowing, and only when the reason is stated at the swallow site — `_close_fd_quietly` in
-   [pyfcstm/_bootstrap.py](pyfcstm/_bootstrap.py) is the model: it runs after both stderr and raw fd two have already
-   failed. There are two distinct exceptions to putting cleanup in `finally` at all, which must not be conflated.
+   or `_report_cleanup_failure`. **Swallow only with a stated reason at the swallow site**, which is the one
+   relaxation of rule 4's ban on silent swallowing. Two reasons qualify, and the site must say which: no reporting
+   channel is left, as in `_close_fd_quietly` in [pyfcstm/_bootstrap.py](pyfcstm/_bootstrap.py), which runs only after
+   both stderr and raw fd two have failed; or an exception is already unwinding and describes the problem better than
+   the release failure would, as in `_close_stream` in
+   [pyfcstm/config/_build_identity.py](pyfcstm/config/_build_identity.py). There are two distinct exceptions to putting cleanup in `finally` at all, which must not be conflated.
    First, **the resource is the function's deliverable** — e.g.
    `_emergency_write` returns the emergency log path, so cleanup covers the failure path only; the test is "has it been
    handed to the caller?". Second, **ownership transfers to a process-level holder** — e.g. the fallback path of
@@ -140,14 +146,17 @@ Two mechanisms produce those windows, and they differ in how they age:
     temporary files, temporary directories, subprocesses, sockets, locks. **Subprocesses matter most** — an orphan is
     not reclaimed when the parent exits. The test is "does releasing it require an explicit action?", not "is it an
     integer fd?".
-12. **A new acquisition point needs an injection test alongside it.** Rule 7 is already enforced for the whole package
-    by `make resource_ownership_check`, which discovers every function calling an acquisition primitive and fails on
-    any handler opened while one is held; run it after adding such a point. Rules 6, 8 and 9 have no mechanical gate,
-    so a `sys.settrace` injection sweep is what pins them — see `test/testings/interrupt_injection.py`. Code review
-    alone does not catch this class: in [PR #389](https://github.com/HansBug/pyfcstm/pull/389) one such defect took
-    four commits to fix, because the first two only relocated the unowned line before the 3.11 cause was identified.
+12. **A new acquisition point needs an injection test or a structural gate alongside it.** Rule 7 is gated for the
+    whole package by `make resource_ownership_check`, which runs in CI: it discovers every function calling an
+    acquisition primitive and fails when the outer `finally` would not run. Rules 6, 8 and 9 have no gate, so a
+    `sys.settrace` sweep is what pins them — see `test/testings/interrupt_injection.py`. Both have limits worth
+    knowing: the gate is only as complete as its list of primitives, which today covers descriptors, temporary files
+    and subprocesses but not process-global state, and a sweep observes nothing on the versions where the shape is
+    harmless. Code review alone catches neither: in
+    [PR #389](https://github.com/HansBug/pyfcstm/pull/389) one such defect took four commits to fix, because the first
+    two only relocated the unowned line before the 3.11 cause was identified.
 
-Rule 7 is gated by `make resource_ownership_check`; the rest are review conventions supported by injection tests.
+Rule 7 is gated by `make resource_ownership_check` in CI; the rest are review conventions that injection sweeps support but do not enforce.
 [Issue #412](https://github.com/HansBug/pyfcstm/issues/412) carries the survey and measurement conventions: an audit is
 only as complete as its list of acquisition primitives, and per-line injection deliberately bypasses the interpreter's
 signal-delivery limits, so a window it finds is not by itself a real-interrupt risk figure.

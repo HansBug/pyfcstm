@@ -245,42 +245,61 @@ def _exception_outcome(summary: str, reason: str) -> CheckOutcome:
     )
 
 
+def _classify_worker_call(worker):
+    """Call one worker and turn whatever it does into an outcome and exit code.
+
+    Split out of :func:`_execute_worker_callback` so this handler starts with
+    nothing held. Inlined it was a nested ``try`` entered while the output
+    limiters were installed, and from CPython 3.11 that escapes the outer
+    handler -- which would leave this worker child's process-global
+    ``os.write``, ``sys.stdout`` and ``sys.stderr`` replaced for the rest of its
+    life. Measured: the inner ``try:`` line skips the restore on 3.11, 3.12 and
+    3.14, and not on 3.10.
+
+    :param worker: The registered callback to run.
+    :type worker: collections.abc.Callable
+    :return: The outcome and the process exit code it implies.
+    :rtype: tuple
+    """
+    try:
+        outcome = worker()
+        if not isinstance(outcome, CheckOutcome):
+            raise TypeError("self-check worker must return CheckOutcome")
+        return outcome, 0
+    except _OutputLimitExceeded:
+        return (
+            CheckOutcome(
+                "ERROR",
+                "worker output capture limit exceeded",
+                reason="output_capture_limit",
+            ),
+            1,
+        )
+    except SystemExit as err:
+        return_code = err.code if isinstance(err.code, int) else 1
+        return _exception_outcome("worker raised SystemExit", "worker_system_exit"), return_code
+    except KeyboardInterrupt:
+        return _exception_outcome("worker interrupted", "worker_interrupted"), 130
+    except BaseException as err:
+        # Registered checks may raise any ordinary Exception; non-runtime
+        # control sentinels remain visible instead of being swallowed.
+        if not isinstance(err, Exception):
+            raise
+        return (
+            _exception_outcome("worker exception: {}".format(err), "worker_exception"),
+            1,
+        )
+
+
 def _execute_worker_callback(worker):
     """Run one callback under a temporary bounded output facade."""
-    state = _install_output_limiters()
+    state = None
     try:
-        try:
-            outcome = worker()
-            if not isinstance(outcome, CheckOutcome):
-                raise TypeError("self-check worker must return CheckOutcome")
-            return outcome, 0
-        except _OutputLimitExceeded:
-            return (
-                CheckOutcome(
-                    "ERROR",
-                    "worker output capture limit exceeded",
-                    reason="output_capture_limit",
-                ),
-                1,
-            )
-        except SystemExit as err:
-            return_code = err.code if isinstance(err.code, int) else 1
-            return _exception_outcome("worker raised SystemExit", "worker_system_exit"), return_code
-        except KeyboardInterrupt:
-            return _exception_outcome("worker interrupted", "worker_interrupted"), 130
-        except BaseException as err:
-            # Registered checks may raise any ordinary Exception; non-runtime
-            # control sentinels remain visible instead of being swallowed.
-            if not isinstance(err, Exception):
-                raise
-            return (
-                _exception_outcome(
-                    "worker exception: {}".format(err), "worker_exception"
-                ),
-                1,
-            )
+        state = _install_output_limiters()
+        return _classify_worker_call(worker)
     finally:
-        _restore_output_limiters(state)
+        if state is not None:
+            _restore_output_limiters(state)
 
 
 def _emit_outcome(

@@ -772,6 +772,10 @@ jobs:
         shell: bash
         run: |
           make test_boundary_check
+      - name: Run resource ownership check
+        shell: bash
+        run: |
+          make resource_ownership_check
       - name: Run unittest
         env:
           CI: 'true'

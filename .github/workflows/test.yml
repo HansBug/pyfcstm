@@ -348,7 +348,14 @@ jobs:
             && git diff --name-only "$merge_base" "${HEAD_SHA}" > "$changed_file"; then
             echo "Changed files between ${merge_base} and ${HEAD_SHA}:"
             cat "$changed_file"
-            targets="$(grep -E '^pyfcstm/.*\.py$' "$changed_file" | while read -r f; do [ -f "$f" ] && printf '%s ' "$f"; done)"
+            # grep exits 1 when no changed file is a pyfcstm module, which is the
+            # ordinary case for a docs- or config-only change. `shell: bash` runs
+            # with -e, and pipefail carries that 1 out of the substitution, so
+            # leaving it unguarded turns "nothing to report" into a failed job --
+            # the very case the else branch below exists to report. Splitting the
+            # match out of the pipeline keeps -e in force for the rest of the step.
+            matched="$(grep -E '^pyfcstm/.*\.py$' "$changed_file" || true)"
+            targets="$(for f in $matched; do [ -f "$f" ] && printf '%s ' "$f"; done)"
             if [ -n "$targets" ]; then
               # shellcheck disable=SC2086
               python -m pytest $targets --doctest-modules -p tools.doctest_plugin \
@@ -1563,7 +1570,7 @@ jobs:
           python -m pip install --upgrade pip
           # Read the pin out of requirements-dev.txt so the ruff version
           # contract keeps living in exactly one place. The rest of that file
-          # is LLM/image tooling this job has no use for.
+          # is antlr/image tooling this job has no use for.
           python -m pip install "$(grep -E '^ruff' requirements-dev.txt)"
           python -m pip install -r requirements.txt
       - name: Lint the diagram surface

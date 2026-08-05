@@ -1,4 +1,4 @@
-.PHONY: docs docs_en docs_zh docs_pdf docs_pdf_en docs_pdf_zh test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build build_info build_info_cli package clean docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check test_boundary_check resource_ownership_check api_doc_toctree_check bmc_docs_check bmc_benchmark_check bmc_benchmark build_assets build_assets_clean diagram_assets_check diagram_rendering_check diagram_browser_check diagram_contract_check diagram_data_check diagram_options_check diagram_csp_check diagram_parity_check diagram_reference_check diagram_export_limits_check diagram_headless_check diagram_notebooks_check diagram_browser_headless_check diagram_engine_floor diagram_provenance_check diagram_viewer_gate_check diagram_webview_expander_check diagram_assets_verify diagram_package_check diagram_corpus diagram_viewer_option_flow_check doctest
+.PHONY: docs docs_en docs_zh docs_pdf docs_pdf_en docs_pdf_zh test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build build_info build_info_cli package clean rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check test_boundary_check resource_ownership_check api_doc_toctree_check bmc_docs_check bmc_benchmark_check bmc_benchmark build_assets build_assets_clean diagram_assets_check diagram_rendering_check diagram_browser_check diagram_contract_check diagram_data_check diagram_options_check diagram_csp_check diagram_parity_check diagram_reference_check diagram_export_limits_check diagram_headless_check diagram_notebooks_check diagram_browser_headless_check diagram_engine_floor diagram_provenance_check diagram_viewer_gate_check diagram_webview_expander_check diagram_assets_verify diagram_package_check diagram_corpus diagram_viewer_option_flow_check doctest
 
 PYTHON := $(shell which python)
 
@@ -21,7 +21,6 @@ SHA256_FILES := $(addsuffix .sha256,${SHA256_SOURCE_FILES})
 RANGE_DIR      ?= .
 RANGE_TEST_DIR := ${TEST_DIR}/${RANGE_DIR}
 RANGE_SRC_DIR  := ${SRC_DIR}/${RANGE_DIR}
-RANGE_SRC_DIR_TEST := ${TEST_DIR}/${RANGE_DIR}
 
 # Frozen custom-backend reference bundle used by the required parity gate.
 # It is intentionally external to the source tree and must be restored by the
@@ -33,9 +32,6 @@ COV_TYPES ?= xml term-missing
 # BMC infeasibility benchmark: measured repetitions and discarded warmups.
 BMC_BENCHMARK_REPETITIONS ?= 5
 BMC_BENCHMARK_WARMUPS     ?= 1
-
-# LLM-based documentation generation options
-AUTO_OPTIONS ?= --param max_tokens=400000 --no-ignore-module pyfcstm --no-ignore-module hbutils --model-name gpt-5.2-codex
 
 # RST documentation generation variables
 PYTHON_CODE_DIR   := ${SRC_DIR}
@@ -134,12 +130,6 @@ help:
 	@echo "  make docs_terminology_check - Check Chinese documentation terminology"
 	@echo "  make sha256       - Update generated SHA-256 sidecar files"
 	@echo ""
-	@echo "LLM-Based Documentation (requires hbllmutils):"
-	@echo "  make docs_auto    - Generate Python docstrings"
-	@echo "  make todos_auto   - Complete TODO comments"
-	@echo "  make tests_auto   - Generate unit tests"
-	@echo "                      Options: RANGE_DIR=<dir> AUTO_OPTIONS='...'"
-	@echo ""
 	@echo "ANTLR Grammar:"
 	@echo "  make antlr        - Download ANTLR jar and setup (requires Java)"
 	@echo "  make antlr_build - Regenerate both FCSTM and FBMCQ lexer/parser files"
@@ -184,7 +174,6 @@ help:
 	@echo "  COV_TYPES=<types> - Coverage report types (default: xml term-missing)"
 	@echo "  MIN_COVERAGE=<n>  - Minimum coverage percentage"
 	@echo "  WORKERS=<n>       - Number of parallel test workers"
-	@echo "  AUTO_OPTIONS=...  - LLM generation options"
 	@echo ""
 
 package: build_assets diagram_assets_check build_info
@@ -412,14 +401,6 @@ bmc_benchmark: bmc_benchmark_check
 	$(PYTHON) tools/run_bmc_infeasibility_benchmark.py --run \
 		--repetitions ${BMC_BENCHMARK_REPETITIONS} --warmups ${BMC_BENCHMARK_WARMUPS}
 
-
-# LLM-based documentation generation targets
-docs_auto:
-	python -m hbllmutils code pydoc -i "${RANGE_SRC_DIR}" ${AUTO_OPTIONS}
-todos_auto:
-	python -m hbllmutils code todo -i "${RANGE_SRC_DIR}" ${AUTO_OPTIONS}
-tests_auto:
-	python -m hbllmutils code unittest -i "${RANGE_SRC_DIR}" -o "${RANGE_SRC_DIR_TEST}" ${AUTO_OPTIONS}
 
 # RST documentation generation targets
 rst_auto: ${RST_DOC_FILES} ${RST_NONM_FILES} auto_rst_top_index.py

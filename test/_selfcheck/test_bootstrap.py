@@ -865,3 +865,50 @@ def test_public_main_handles_devnull_reusing_stdout_descriptor(monkeypatch):
         assert main(("--self-check",)) == 3
     assert not sys.stdout.closed
     assert b"BrokenPipeError" in stderr.buffer.getvalue()
+
+
+@pytest.mark.unittest
+def test_emergency_write_leaves_no_descriptor_or_file_at_any_injection_point(
+    tmp_path, monkeypatch
+):
+    """The last-resort writer owns its descriptor and its file at every line.
+
+    Both earlier channels are disabled so the temporary-file fallback is the
+    path actually under injection.
+    """
+    import glob
+    import os
+    import tempfile
+
+    from pyfcstm import _bootstrap
+    from test.testings.interrupt_injection import inject_per_line
+
+    if not os.path.isdir("/proc/self/fd"):
+        pytest.skip("descriptor accounting needs /proc/self/fd")
+
+    private = tmp_path / "tmp"
+    private.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(private))
+    real_write = os.write
+
+    def refuse_stderr(descriptor, data):
+        if descriptor == 2:
+            raise OSError("stderr is closed")
+        return real_write(descriptor, data)
+
+    class _StderrWithoutBuffer:
+        """Stand-in whose missing ``buffer`` drives the first fallback."""
+
+    monkeypatch.setattr(os, "write", refuse_stderr)
+    monkeypatch.setattr(sys, "stderr", _StderrWithoutBuffer())
+    pattern = os.path.join(str(private), "pyfcstm-selfcheck-emergency-*.log")
+    report = inject_per_line(
+        _bootstrap._emergency_write,
+        lambda: _bootstrap._emergency_write(b"payload\n"),
+        lambda: set(glob.glob(pattern)),
+    )
+    assert report.points_reached > 0
+    # The one accepted survivor is the ``return`` that hands the path to the
+    # caller: past that point the file is the deliverable, not a leak.
+    handover = [point for point in report.body_windows if not point.descriptors]
+    assert len(report.body_windows) == len(handover) <= 1, report.describe()

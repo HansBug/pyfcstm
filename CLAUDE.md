@@ -74,6 +74,96 @@ Applies to all code in [pyfcstm/](pyfcstm/), [editors/jsfcstm/src/](editors/jsfc
 [editors/jsfcstm/src/dsl/grammar/](editors/jsfcstm/src/dsl/grammar/))
 are exempt — they are produced by ANTLR.
 
+### Resource Ownership Under Interruption
+
+Rules 6-12 below extend the same policy to **where a handler is placed** rather than **what it catches**, and apply to
+Python code under [pyfcstm/](pyfcstm/) only. A resource acquired outside the handler that releases it, or held across
+a handler opened inside that one, has a window in which an interrupt releases nothing.
+
+Two mechanisms produce those windows, and they differ in how they age:
+
+- Any statement standing between the acquisition and the handler leaks whenever it raises. This holds on **every**
+  version and is the class rule 6 removes outright.
+- From CPython 3.11 a nested `try:` line compiles to a `NOP` that no `co_exceptiontable` entry covers, so entering an
+  inner `try` while holding a resource reopens a window the outer `finally` does not cover. This one is
+  version-dependent: identical code is safe on 3.7-3.10 and leaks from 3.11. Which *other* lines join it depends on
+  the shape -- a body that compiles to a bare `NOP`, such as `pass` or a nested `finally:` header, adds one from 3.12,
+  while a body of ordinary statements does not. "It works locally" therefore proves nothing about any of it. Rule 7
+  removes the class.
+
+6. **Acquire a resource only after its cleanup handler is established.** Do not write "acquire, then wrap in `try`";
+   write "enter the `try`, acquire inside it, and let `finally` decide whether anything needs releasing". Know what
+   this buys: it does **not** reduce the hit rate of asynchronous interrupts, measured. Its guaranteed benefit is
+   removing the class where a statement between the acquisition and the `try` raises a synchronous exception, which
+   leaks 100% of the time.
+   **Bind the sentinel so that it is never one line behind the resource**, which depends on how cleanup identifies the
+   resource:
+   - *By handle* (`os.open`, `Popen`, `mkstemp`): bind in the acquisition statement itself. Deriving a second name on
+     the following line — `path = Path(name)`, `wrapper = Owner(handle)` — just moves the window down one line, and
+     `finally` then guards on a name that is still `None`.
+   - *By path* (a file or directory you are about to create): bind the name **before** creating it, and make the
+     release tolerate a path that never came into existence. A name bound afterwards leaves the creating call as a
+     window in which the artifact exists and nothing knows its name.
+7. **Do not enter a nested `try` while holding a resource.** The outer `finally` is not merely bypassed for one line —
+   it does not run at all. Two frames must be kept apart here: a nested `try` in the *body* of a `with` is protected on
+   every version, but a nested `try` inside the `try`/`finally` of a `@contextlib.contextmanager` generator leaks from
+   3.11 exactly as a plain nested `try` does. So an outer `with` protects you; writing the generator that backs it does
+   not. Two remedies:
+   - Use `with` for the outer ownership wherever the resource has, or can be given, a context manager.
+   - Otherwise move the inner handler into its own function, so its `try` starts with nothing held. Two shapes are
+     safe there, and which one you need depends on what the helper returns:
+     * *Acquire and hand over in one statement* — `return tempfile.mkdtemp(...)`. This closes the window a *line*
+       event can land in; the bytecode gap between the primitive returning and the caller binding it stays open, and
+       real-signal measurement puts every hand-over shape at the same hit rate. Splitting it across lines, including a
+       parenthesised multi-line `return`, is still worse: it puts a line event back between acquisition and hand-over.
+     * *Append into a caller-owned container* — `spawned.append(subprocess.Popen(...))`, where the caller created
+       `spawned` before calling and its `finally` drains it. Prefer this whenever the resource is a subprocess: a
+       returned value is unowned until the caller's assignment completes, and an orphaned process is the one leak
+       the operating system will not reclaim.
+8. **Put cleanup in `finally`, not in `except`.** This does not conflict with rules 1-5: broad catches stay forbidden,
+   and what is required here is moving the cleanup action into `finally`, not widening the `except` type set. A
+   `finally` must also never raise over an exception that is already unwinding, which is why the release itself belongs
+   in a small dedicated helper rather than an inline `try` — an inline one would violate rule 7 as well. Such a helper
+   must do nothing but release one resource, and then one of two things. **Prefer returning a diagnostic** for the
+   caller to route, as `_remove_temporary` and `_kill_and_reap` do; the caller hands it to `_write_cleanup_diagnostic`
+   or `_report_cleanup_failure`. **Swallow only with a stated reason at the swallow site**, which is the one
+   relaxation of rule 4's ban on silent swallowing. Two reasons qualify, and the site must say which: no reporting
+   channel is left, as in `_close_fd_quietly` in [pyfcstm/_bootstrap.py](pyfcstm/_bootstrap.py), which runs only after
+   both stderr and raw fd two have failed; or an exception is already unwinding and describes the problem better than
+   the release failure would, as in `_close_stream` in
+   [pyfcstm/config/_build_identity.py](pyfcstm/config/_build_identity.py). There are two distinct exceptions to putting cleanup in `finally` at all, which must not be conflated.
+   First, **the resource is the function's deliverable** — e.g.
+   `_emergency_write` returns the emergency log path, so cleanup covers the failure path only; the test is "has it been
+   handed to the caller?". Second, **ownership transfers to a process-level holder** — e.g. the fallback path of
+   `_private_viewer_directory` registers its directory with an `atexit` hook; the test is "has it been successfully
+   registered with a holder that will actually run?". Parking an object in a module-level global does **not** qualify
+   on its own — that same function's normal path keeps its directory in a module dict with no hook, and relies on the
+   directory being reused rather than released.
+9. **Clear the sentinel once ownership transfers.** After `os.fdopen(fd, ...)` returns, the stream owns the descriptor;
+   set `fd = None` immediately. Otherwise `finally` double-closes a descriptor number that may already have been
+   reused, and the damage escapes the function.
+10. **When rules 6 and 7 conflict — acquiring a second resource while already holding the first — rule 7 wins.** Sink
+    the second acquisition and its release into their own function, or use `with`.
+11. **"Resource" is not just file descriptors.** This applies to anything needing an explicit release: descriptors,
+    temporary files, temporary directories, subprocesses, sockets, locks. **Subprocesses matter most** — an orphan is
+    not reclaimed when the parent exits. The test is "does releasing it require an explicit action?", not "is it an
+    integer fd?".
+12. **A new acquisition point needs an injection test or a structural gate alongside it.** Neither alone is enough,
+    and knowing where each stops matters more than knowing that they exist. `make resource_ownership_check` runs in
+    CI and covers one shape — a resource acquired before an inner `try` that the enclosing handler owns. It is blind
+    to three others, all of which this repository has actually contained: an escape needing no nested `try` at all
+    (`with X: pass`), an acquisition reached through a helper rather than a primitive, and process-global state such
+    as a replaced `os.write`. A `sys.settrace` sweep covers rules 6, 8 and 9 and those three shapes — see
+    `test/testings/interrupt_injection.py` — but observes nothing on the versions where a shape is harmless, and
+    skips entirely where `/proc/self/fd` is unavailable. Code review alone catches neither: in
+    [PR #389](https://github.com/HansBug/pyfcstm/pull/389) one such defect took four commits to fix, because the first
+    two only relocated the unowned line before the 3.11 cause was identified.
+
+One shape of rule 7 is gated by `make resource_ownership_check` in the CI lint job; the rest are review conventions that injection sweeps support but do not enforce.
+[Issue #412](https://github.com/HansBug/pyfcstm/issues/412) carries the survey and measurement conventions: an audit is
+only as complete as its list of acquisition primitives, and per-line injection deliberately bypasses the interpreter's
+signal-delivery limits, so a window it finds is not by itself a real-interrupt risk figure.
+
 ## Code Review Scope (findings must be reachable through the public surface)
 
 A code-review finding about this repository's behaviour must describe a failure a
@@ -167,6 +257,7 @@ make unittest COV_TYPES="xml term-missing"           # With coverage types
 make unittest MIN_COVERAGE=80                        # With minimum coverage
 make unittest WORKERS=4                              # With parallel workers
 make test_boundary_check                              # Validate pytest boundary rules
+make resource_ownership_check                         # Report handlers opened while holding a resource
 
 # Run a single test file or function directly:
 pytest test/simulate/test_semantic_fixtures.py -v
@@ -376,6 +467,23 @@ mainstream target languages that pyfcstm cares about:
 When prompting an LLM to generate template code, prefer instructions such as "make the output acceptable to the
 formatter defaults" instead of writing large hand-authored style guides. Avoid manual column alignment or other
 styling that formatters will immediately rewrite.
+
+[ruff.toml](ruff.toml) sets `target-version = "py37"`, which is what makes the 3.7 floor in `setup.py` enforced
+rather than merely declared: `ruff check` reports `match`, `:=`, and a parenthesised multi-item `with` as
+`invalid-syntax`, and `ruff format` stops rewriting a long multi-item `with` into that parenthesised form. **The gate
+is syntax only** — a 3.9 library API such as `str.removeprefix` still passes, so staying inside the supported standard
+library remains a review matter. Keep the setting in `ruff.toml`, not a new `pyproject.toml`: this project builds from
+`setup.py`, and a `pyproject.toml` would switch pip to PEP 517 isolated builds.
+
+Two consequences when running the formatter:
+
+- Ruff finds `ruff.toml` from the file's own ancestors, so the floor applies wherever you invoke it from — **except
+  for files outside the repository**, where it falls back to the working directory. Pass `--target-version py37`
+  explicitly when checking generated output written to a temporary directory.
+- `ruff format` is **not** safe to run unconditionally over [pyfcstm/](pyfcstm/). It is wired into the ANTLR and
+  sample-generation Makefile targets, where it reformats generated files that are committed; elsewhere the package
+  source carries pre-existing formatting drift that reformatting would turn into unrelated diff noise. Format the
+  files you touched, not the tree.
 
 Recommended installation commands:
 
@@ -654,7 +762,7 @@ RST updates in the same commit.
 
 ### Mandatory Pre-Commit Commands
 
-Three commands are required before committing changes to repository code, and they carry equal weight. Skipping any one
+Four commands are required before committing changes to repository code, and they carry equal weight. Skipping any one
 of them is not a judgement call:
 
 | Command | Required when | What a failure means |
@@ -662,8 +770,9 @@ of them is not a judgement call:
 | `make unittest` | Any change to [pyfcstm/](pyfcstm/), [templates/](templates/), or [test/](test/) | Behavior regressed |
 | `make rst_auto` | Any change to repository code or the public Python API | Generated API RST is stale; commit the intentional updates together with the code |
 | `make doctest` | Any change to a docstring under [pyfcstm/](pyfcstm/), or to the gate's own files | A packaged docstring example no longer tells the truth |
+| `make resource_ownership_check` | Adding or moving a call that acquires something needing an explicit release: a descriptor, temporary file, temporary directory, subprocess, socket or lock | A handler is opened while a resource is held, which from CPython 3.11 skips the owner's `finally` entirely (rules 6-12 of the Exception Handling Policy) |
 
-`make doctest` is a full peer of the other two, not an optional extra. A docstring is a published contract: an example
+`make doctest` is a full peer of the others, not an optional extra. A docstring is a published contract: an example
 that no longer runs is a defect in the same sense as a failing test, and the gate admits no exemptions -- there is no
 known-failure list to add one to. Use `make doctest DOCTEST_SCOPE=<path>` for a fast check while iterating, then the
 full `make doctest` before committing.
@@ -1535,6 +1644,10 @@ states.
 - `make unittest` intentionally depends on `make tpl` so packaged built-in template assets are refreshed before the
   Python unit-test suite runs. Do not remove that dependency merely to avoid packaging work in tests; instead, keep
   pytest on packaged/public inputs and move source-template maintenance coverage to explicit tooling commands.
+- Run `make resource_ownership_check` when adding or moving a call that acquires something needing an explicit
+  release -- a descriptor, temporary file, temporary directory, subprocess, socket or lock. It is an AST scan, so it
+  is version-independent and takes under a second. See rules 6-12 of the Exception Handling Policy for what it covers
+  and, just as importantly, the three classes it cannot see.
 - Run `make test_boundary_check` when changing test infrastructure, template tests, maintenance tooling, or
   repository guidance that affects the pytest boundary. This command is a pytest-external guard for direct `tools.*`
   imports/execution, repo-root `templates/` access, and source-install smoke markers under [test/](test/).

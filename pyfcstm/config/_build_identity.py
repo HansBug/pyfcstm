@@ -489,29 +489,125 @@ def write_build_identity_file(path: os.PathLike, identity: BuildIdentity) -> Non
         lines.append("{} = {}".format(field, ascii(identity.values()[field])))
     payload = ("\n".join(lines) + "\n").encode("ascii")
 
-    fd, temporary_name = tempfile.mkstemp(
-        prefix=".build_info.", suffix=".tmp", dir=str(target.parent)
-    )
-    temporary_path = Path(temporary_name)
+    fd = None
+    stream = None
+    # Both sentinels are bound by the mkstemp call itself. Deriving one of them
+    # on a following line would leave that line as a window in which neither
+    # the descriptor nor the file has an owner.
+    temporary_name = None
     try:
-        with os.fdopen(fd, "wb") as file:
-            file.write(payload)
-            file.flush()
-            os.fsync(file.fileno())
-        os.replace(str(temporary_path), str(target))
+        fd, temporary_name = tempfile.mkstemp(
+            prefix=".build_info.", suffix=".tmp", dir=str(target.parent)
+        )
+        stream = os.fdopen(fd, "wb")
+        fd = None  # os.fdopen owns the descriptor from here on.
+        stream.write(payload)
+        stream.flush()
+        os.fsync(stream.fileno())
+        stream.close()
+        os.replace(temporary_name, str(target))
         if not _is_windows():
-            directory_fd = os.open(str(target.parent), os.O_RDONLY)
-            try:
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
+            _fsync_directory(target.parent)
     finally:
+        # Nothing in here may raise: a control-flow exception can be unwinding,
+        # and replacing it with a cleanup failure would hide why the write
+        # stopped. Each helper reports instead.
+        if stream is not None:
+            _close_stream(stream)
+        elif fd is not None:
+            # os.fdopen raised, so the descriptor never found a new owner.
+            _close_descriptor(fd)
+        if temporary_name is not None:
+            _discard_temporary(temporary_name)
+
+
+def _close_descriptor(descriptor: int) -> None:
+    """
+    Close one descriptor that never reached an owning stream.
+
+    A function rather than an inline ``try`` because the caller invokes this
+    from a ``finally``: opening a handler there would be a nested ``try``
+    entered while the temporary file is still held.
+
+    :param descriptor: An open file descriptor.
+    :type descriptor: int
+    :return: ``None``.
+    :rtype: None
+    """
+    try:
+        os.close(descriptor)
+    except OSError:
+        # Only reachable when os.fdopen already failed, so an exception is
+        # unwinding that describes the real problem better than this one.
+        pass
+
+
+def _close_stream(stream) -> None:
+    """
+    Close the temporary writer without displacing the reportable cause.
+
+    :param stream: The stream to close.
+    :type stream: io.IOBase
+    :return: ``None``.
+    :rtype: None
+    """
+    try:
+        stream.close()
+    except OSError:
+        # A buffered flush can fail on close when the filesystem filled up. The
+        # descriptor is released either way, and whatever led here -- a write
+        # error, or an interrupt -- describes the problem better.
+        pass
+
+
+def _discard_temporary(path: str) -> None:
+    """
+    Remove the abandoned temporary file, reporting rather than raising.
+
+    :param path: Temporary file to remove.
+    :type path: str
+    :return: ``None``.
+    :rtype: None
+    """
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        # os.replace has already moved this temporary path on a successful
+        # atomic replacement, so cleanup has no remaining file to remove.
+        return
+    except OSError as err:
+        # A read-only or removed parent directory keeps the file alive. stderr
+        # is still available here, so the failure stays observable instead of
+        # being swallowed or raised over an in-flight exception.
+        message = "pyfcstm: failed to remove temporary file {}: {}\n".format(path, err)
         try:
-            temporary_path.unlink()
-        except FileNotFoundError:
-            # os.replace has already moved this temporary path on a successful
-            # atomic replacement, so cleanup has no remaining file to remove.
+            os.write(2, message.encode("ascii", "backslashreplace"))
+        except OSError:
+            # Raw stderr is closed; the primary exception still reaches the caller.
             pass
+
+
+def _fsync_directory(directory: Path) -> None:
+    """
+    Flush one directory entry so a completed atomic replacement survives a crash.
+
+    Extracted from :func:`write_build_identity_file` so that the descriptor is
+    opened inside its own handler rather than in a nested ``try`` entered while
+    the temporary file is still held.
+
+    :param directory: Directory whose entry should be flushed to storage.
+    :type directory: pathlib.Path
+    :return: ``None``.
+    :rtype: None
+    :raises OSError: If the directory cannot be opened or synchronized.
+    """
+    directory_fd = None
+    try:
+        directory_fd = os.open(str(directory), os.O_RDONLY)
+        os.fsync(directory_fd)
+    finally:
+        if directory_fd is not None:
+            os.close(directory_fd)
 
 
 def _is_windows() -> bool:

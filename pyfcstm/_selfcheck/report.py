@@ -474,6 +474,29 @@ def write_human(snapshot: ReportSnapshot, color: str = "auto") -> None:
     sys.stdout.flush()
 
 
+def _release_quietly(release, *arguments) -> None:
+    """
+    Release one resource on a path whose outcome is already decided.
+
+    Used from ``finally`` handlers where the function is about to return a
+    diagnostic string, or where an exception is already unwinding. Raising a
+    secondary failure there would replace the reportable cause with a lesser
+    one.
+
+    :param release: The releasing callable, such as :func:`os.close`.
+    :type release: collections.abc.Callable
+    :param arguments: Positional arguments for ``release``.
+    :return: ``None``.
+    :rtype: None
+    """
+    try:
+        release(*arguments)
+    except OSError:
+        # A removed parent directory or a filesystem error can defeat cleanup.
+        # The report result already carries whatever the caller can act on.
+        pass
+
+
 def write_report(path: str, snapshot: ReportSnapshot) -> Optional[str]:
     """
     Atomically write a report beside its destination.
@@ -494,6 +517,8 @@ def write_report(path: str, snapshot: ReportSnapshot) -> Optional[str]:
         True
     """
     parent = os.path.dirname(os.path.abspath(path)) or "."
+    descriptor = None
+    stream = None
     temporary = None
     try:
         if not os.path.isdir(parent):
@@ -501,11 +526,13 @@ def write_report(path: str, snapshot: ReportSnapshot) -> Optional[str]:
         descriptor, temporary = tempfile.mkstemp(
             prefix=".pyfcstm-selfcheck-", suffix=".tmp", dir=parent
         )
-        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-            stream.write(render_json(snapshot))
-            stream.write("\n")
-            stream.flush()
-            os.fsync(stream.fileno())
+        stream = os.fdopen(descriptor, "w", encoding="utf-8")
+        descriptor = None  # os.fdopen owns the descriptor from here on.
+        stream.write(render_json(snapshot))
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+        stream.close()
         os.replace(temporary, path)
         temporary = None
         return None
@@ -513,8 +540,12 @@ def write_report(path: str, snapshot: ReportSnapshot) -> Optional[str]:
         # Permission, encoding, and atomic-replace errors must remain diagnostic.
         return "{}: {}".format(type(err).__name__, err)
     finally:
+        # The descriptor sentinel matters as much as the path one: os.fdopen
+        # takes ownership only once it returns, so a failure or interrupt
+        # before that point leaves this handler as the descriptor's only owner.
+        if stream is not None:
+            _release_quietly(stream.close)
+        elif descriptor is not None:
+            _release_quietly(os.close, descriptor)
         if temporary is not None:
-            try:
-                os.unlink(temporary)
-            except OSError:
-                pass
+            _release_quietly(os.unlink, temporary)

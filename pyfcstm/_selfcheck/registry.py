@@ -8,6 +8,7 @@ outcomes only; process isolation, report formatting, and exit-code policy stay
 in the supervisor/worker layers.
 """
 
+import contextlib
 import importlib
 import json
 import os
@@ -53,6 +54,7 @@ _BMC_FORBID_QUERY = 'check forbid <= 1: active("Root");'
 _PROCESS_OUTPUT_LIMIT = 64 * 1024
 _PROCESS_OUTPUT_HARD_LIMIT = 2 * 1024 * 1024
 _PROCESS_POLL_INTERVAL = 0.01
+_PROCESS_KILL_GRACE = 1.0
 _PLANTUML_JAR_ENV = "PLANTUML_JAR"
 _PLANTUML_HOST_ENV = "PLANTUML_HOST"
 _OFFICIAL_PLANTUML_HOST = "http://www.plantuml.com/plantuml"
@@ -275,66 +277,157 @@ def _read_bounded_process_file(stream) -> bytes:
     return head + marker + tail
 
 
+def _write_cleanup_diagnostic(label: str, error: Optional[str]) -> None:
+    """Write last-resort cleanup evidence without replacing the check result.
+
+    A local copy rather than an import from :mod:`pyfcstm._selfcheck.process`:
+    this module is imported by the worker child, which has no supervisor to
+    speak of, and pulling the supervisor module into every worker to reach ten
+    lines would invert the layering. :func:`_write_fd_all` is duplicated between
+    the worker and the bootstrap for the same reason.
+
+    :param label: Short label naming the cleanup step that failed.
+    :type label: str
+    :param error: The diagnostic, or ``None`` when nothing needs reporting.
+    :type error: str or None
+    :return: ``None``.
+    :rtype: None
+    """
+    if not error:
+        return
+    try:
+        os.write(
+            2,
+            ("self-check {}: {}\n".format(label, error)).encode(
+                "ascii", "backslashreplace"
+            ),
+        )
+    except OSError:
+        # The structured result remains authoritative if raw stderr is unavailable.
+        pass
+
+
+def _kill_and_reap(process) -> Optional[str]:
+    """Kill one still-running child and reap it, returning cleanup diagnostics.
+
+    Lives in its own function so that :func:`_bounded_popen` never enters a
+    handler while it is holding the child: from CPython 3.11 the ``try:`` line
+    compiles to a ``NOP`` that no exception-table entry covers, so a handler
+    opened while a resource is held reopens the window the outer one exists to
+    close.
+
+    :param process: The child to terminate, already spawned.
+    :type process: subprocess.Popen
+    :return: A diagnostic when the child outlived the grace, otherwise ``None``.
+    :rtype: str or None
+    """
+    if process.poll() is not None:
+        return None
+    try:
+        process.kill()
+        process.wait(timeout=_PROCESS_KILL_GRACE)
+    except subprocess.TimeoutExpired:
+        # SIGKILL delivery is asynchronous and a child wedged in uninterruptible
+        # I/O may outlive the grace.
+        return "child survived SIGKILL for {}s".format(_PROCESS_KILL_GRACE)
+    except OSError as err:
+        # On Windows kill() is TerminateProcess, which CPython re-raises as
+        # PermissionError while GetExitCodeProcess still reports STILL_ACTIVE,
+        # and the wait() can surface a WaitForSingleObject failure. On POSIX the
+        # poll() above makes ESRCH unreachable, but this runs from a ``finally``
+        # where raising would replace whatever is already unwinding, so the whole
+        # pair is reported instead.
+        return "{} while terminating child: {}".format(type(err).__name__, err)
+    return None
+
+
+@contextlib.contextmanager
+def _bounded_popen(command, **popen_kwargs):
+    """Own one spawned child for exactly as long as the ``with`` block runs.
+
+    The child is spawned inside the ``try`` rather than before it, so nothing
+    executes between the spawn and the handler that reaps it.
+
+    :param command: Argument vector handed to :class:`subprocess.Popen`.
+    :type command: collections.abc.Sequence[str]
+    :param popen_kwargs: Remaining keyword arguments for :class:`subprocess.Popen`.
+    :return: An iterator yielding the spawned child.
+    :rtype: collections.abc.Iterator[subprocess.Popen]
+    """
+    process = None
+    try:
+        process = subprocess.Popen(command, **popen_kwargs)
+        yield process
+    finally:
+        if process is not None:
+            _write_cleanup_diagnostic("bounded process", _kill_and_reap(process))
+
+
 def _run_subprocess_bounded(command, timeout: float, input_data=None, cwd=None):
     """Run one external command and kill it when output exceeds a hard limit."""
+    # Nested rather than one parenthesised multi-item ``with``: that form is
+    # 3.10+ syntax and this package still supports 3.7.
     with tempfile.TemporaryFile(prefix="pyfcstm-process-stdout-") as stdout_stream:
         with tempfile.TemporaryFile(prefix="pyfcstm-process-stderr-") as stderr_stream:
-            process = subprocess.Popen(
+            with _bounded_popen(
                 command,
-                stdin=subprocess.PIPE if input_data is not None else subprocess.DEVNULL,
+                stdin=(
+                    subprocess.PIPE if input_data is not None else subprocess.DEVNULL
+                ),
                 stdout=stdout_stream,
                 stderr=stderr_stream,
                 cwd=cwd,
-            )
-            if input_data is not None:
-                try:
+            ) as process:
+                if input_data is not None:
+                    # PIPE setup, writes, and closes raise AttributeError, OSError or
+                    # ValueError if the child exits before consuming the fixed probe
+                    # input. They are deliberately left to propagate: _bounded_popen
+                    # reaps the child on the way out, so catching here would only add
+                    # a handler entered while the child is held.
                     process.stdin.write(input_data)
                     process.stdin.close()
-                except (AttributeError, OSError, ValueError):
-                    # PIPE setup, writes, and closes can fail if the child exits
-                    # before consuming the fixed probe input.
-                    if process.poll() is None:
-                        process.kill()
-                        process.wait(timeout=1.0)
-                    raise
 
-            deadline = time.monotonic() + timeout
-            while True:
-                return_code = process.poll()
-                stdout_size = os.fstat(stdout_stream.fileno()).st_size
-                stderr_size = os.fstat(stderr_stream.fileno()).st_size
-                if (
-                    stdout_size > _PROCESS_OUTPUT_HARD_LIMIT
-                    or stderr_size > _PROCESS_OUTPUT_HARD_LIMIT
-                ):
-                    if return_code is None:
-                        process.kill()
-                        process.wait(timeout=1.0)
-                    raise _ProcessOutputLimitExceeded(
-                        command,
-                        _read_bounded_process_file(stdout_stream),
-                        _read_bounded_process_file(stderr_stream),
-                    )
-                if return_code is not None:
-                    break
-                remaining = deadline - time.monotonic()
-                if remaining <= 0.0:
-                    process.kill()
-                    process.wait(timeout=1.0)
-                    raise subprocess.TimeoutExpired(
-                        command,
-                        timeout,
-                        output=_read_bounded_process_file(stdout_stream),
-                        stderr=_read_bounded_process_file(stderr_stream),
-                    )
-                time.sleep(min(_PROCESS_POLL_INTERVAL, remaining))
+                deadline = time.monotonic() + timeout
+                while True:
+                    return_code = process.poll()
+                    stdout_size = os.fstat(stdout_stream.fileno()).st_size
+                    stderr_size = os.fstat(stderr_stream.fileno()).st_size
+                    if (
+                        stdout_size > _PROCESS_OUTPUT_HARD_LIMIT
+                        or stderr_size > _PROCESS_OUTPUT_HARD_LIMIT
+                    ):
+                        if return_code is None:
+                            # Stop the child before snapshotting so the captured
+                            # bytes are final rather than a torn mid-write read.
+                            _write_cleanup_diagnostic(
+                                "bounded process", _kill_and_reap(process)
+                            )
+                        raise _ProcessOutputLimitExceeded(
+                            command,
+                            _read_bounded_process_file(stdout_stream),
+                            _read_bounded_process_file(stderr_stream),
+                        )
+                    if return_code is not None:
+                        break
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0.0:
+                        _write_cleanup_diagnostic(
+                            "bounded process", _kill_and_reap(process)
+                        )
+                        raise subprocess.TimeoutExpired(
+                            command,
+                            timeout,
+                            output=_read_bounded_process_file(stdout_stream),
+                            stderr=_read_bounded_process_file(stderr_stream),
+                        )
+                    time.sleep(min(_PROCESS_POLL_INTERVAL, remaining))
 
-            return subprocess.CompletedProcess(
-                command,
-                return_code,
-                stdout=_read_bounded_process_file(stdout_stream),
-                stderr=_read_bounded_process_file(stderr_stream),
-            )
+                return subprocess.CompletedProcess(
+                    command,
+                    return_code,
+                    stdout=_read_bounded_process_file(stdout_stream),
+                    stderr=_read_bounded_process_file(stderr_stream),
+                )
 
 
 def _process_evidence(

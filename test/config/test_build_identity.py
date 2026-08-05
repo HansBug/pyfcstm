@@ -589,3 +589,46 @@ class TestBuildIdentityData:
         _build_identity.write_build_identity_file(path, _identity())
 
         assert _build_identity.load_build_identity_file(path).commit == "a" * 40
+
+
+@pytest.mark.unittest
+def test_write_build_identity_file_leaves_no_descriptor_or_temporary_file(tmp_path):
+    """No line of the atomic writer leaves its descriptor or temporary file behind."""
+    import os
+
+    from test.testings.interrupt_injection import inject_per_line
+
+    if not os.path.isdir("/proc/self/fd"):
+        pytest.skip("descriptor accounting needs /proc/self/fd")
+    target = tmp_path / "build_info.py"
+    identity = _identity()
+    report = inject_per_line(
+        _build_identity.write_build_identity_file,
+        lambda: _build_identity.write_build_identity_file(str(target), identity),
+        lambda: {str(path) for path in tmp_path.glob(".build_info.*.tmp")},
+    )
+    assert report.points_reached > 0
+    assert not report.body_windows, report.describe()
+
+
+@pytest.mark.unittest
+def test_directory_flush_is_delegated_rather_than_opened_inline(tmp_path, monkeypatch):
+    """The writer reaches the post-replace flush through a separate function.
+
+    Observed by substitution rather than by reading the source: the flush must
+    be somewhere the writer can call while holding nothing, because opening the
+    descriptor inline would need a nested ``try`` entered while the temporary
+    file is still held.
+    """
+    called = []
+    monkeypatch.setattr(
+        _build_identity, "_fsync_directory", lambda directory: called.append(directory)
+    )
+    target = tmp_path / "build_info.py"
+    _build_identity.write_build_identity_file(str(target), _identity())
+    assert target.is_file()
+    if _build_identity._is_windows():
+        # Windows refuses os.open on a directory, so the writer skips the flush.
+        assert called == []
+    else:
+        assert called == [tmp_path]

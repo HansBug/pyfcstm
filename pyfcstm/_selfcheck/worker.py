@@ -110,10 +110,31 @@ class _LimitedText:
         return getattr(self._stream, name)
 
 
-def _install_output_limiters():
-    """Install temporary cross-platform Python output limits for one callback."""
-    original_write = os.write
-    original_streams = (sys.stdout, sys.stderr)
+def _capture_output_state():
+    """Snapshot the process-global output objects before anything replaces them.
+
+    Separate from :func:`_install_output_limiters` because capturing acquires
+    nothing: the caller can take this before entering its ``try``, so the
+    handler that restores it is established before the first global is
+    overwritten. Returning the snapshot from the installer instead left five
+    lines -- on every version, not only from 3.11 -- where ``os.write`` was
+    already replaced and the caller's sentinel was still ``None``.
+
+    :return: The original ``os.write`` and the original ``(stdout, stderr)``.
+    :rtype: tuple
+    """
+    return os.write, (sys.stdout, sys.stderr)
+
+
+def _install_output_limiters(state) -> None:
+    """Install temporary cross-platform Python output limits for one callback.
+
+    :param state: Snapshot from :func:`_capture_output_state`.
+    :type state: tuple
+    :return: ``None``.
+    :rtype: None
+    """
+    original_write, _ = state
     budget = _OutputBudget(original_write, OUTPUT_LIMIT)
 
     def limited_write(descriptor, data):
@@ -124,7 +145,6 @@ def _install_output_limiters():
         stream = getattr(sys, name, None)
         if stream is not None:
             setattr(sys, name, _LimitedText(stream, budget, descriptor))
-    return original_write, original_streams
 
 
 def _restore_output_limiters(state) -> None:
@@ -170,19 +190,43 @@ def _read_start_gate(nonce: str) -> Optional[str]:
     return "start_gate_mismatch"
 
 
+def _append_frame_to_file(result_file: str, frame: bytes) -> None:
+    """Append one frame to the result transport file and flush it to storage.
+
+    Split out of :func:`_write_frame` so the descriptor is opened inside its own
+    handler. Inlining it would need a nested ``try`` entered while the
+    descriptor is held, and from CPython 3.11 that ``try:`` line compiles to a
+    ``NOP`` no exception-table entry covers, so an interrupt there would escape
+    both handlers and leak the descriptor.
+
+    :param result_file: Path of the append-mode transport file.
+    :type result_file: str
+    :param frame: Encoded result frame to append.
+    :type frame: bytes
+    :return: ``None``.
+    :rtype: None
+    :raises OSError: If opening, writing, synchronizing, or closing fails.
+    """
+    descriptor = None
+    try:
+        flags = os.O_WRONLY | os.O_APPEND | getattr(os, "O_BINARY", 0)
+        descriptor = os.open(result_file, flags)
+        _write_fd_all(descriptor, frame)
+        os.fsync(descriptor)
+    finally:
+        if descriptor is not None:
+            # Deliberately not swallowed: a close failure propagates to the
+            # caller, which turns it into a reportable transport diagnostic.
+            os.close(descriptor)
+
+
 def _write_frame(mode: str, result_file: Optional[str], frame: bytes) -> Optional[str]:
     """Write one result frame through the selected transport."""
     try:
         if mode == "file":
             if not result_file:
                 return "missing_result_file"
-            flags = os.O_WRONLY | os.O_APPEND | getattr(os, "O_BINARY", 0)
-            descriptor = os.open(result_file, flags)
-            try:
-                _write_fd_all(descriptor, frame)
-                os.fsync(descriptor)
-            finally:
-                os.close(descriptor)
+            _append_frame_to_file(result_file, frame)
         else:
             _write_stream_all(sys.stdout.buffer, frame)
             sys.stdout.buffer.flush()
@@ -221,40 +265,61 @@ def _exception_outcome(summary: str, reason: str) -> CheckOutcome:
     )
 
 
+def _classify_worker_call(worker):
+    """Call one worker and turn whatever it does into an outcome and exit code.
+
+    Split out of :func:`_execute_worker_callback` so this handler starts with
+    nothing held. Inlined it was a nested ``try`` entered while the output
+    limiters were installed, and from CPython 3.11 that escapes the outer
+    handler -- which would leave this worker child's process-global
+    ``os.write``, ``sys.stdout`` and ``sys.stderr`` replaced for the rest of its
+    life. Measured: the inner ``try:`` line skips the restore on 3.11, 3.12 and
+    3.14, and not on 3.10.
+
+    :param worker: The registered callback to run.
+    :type worker: collections.abc.Callable
+    :return: The outcome and the process exit code it implies.
+    :rtype: tuple
+    """
+    try:
+        outcome = worker()
+        if not isinstance(outcome, CheckOutcome):
+            raise TypeError("self-check worker must return CheckOutcome")
+        return outcome, 0
+    except _OutputLimitExceeded:
+        return (
+            CheckOutcome(
+                "ERROR",
+                "worker output capture limit exceeded",
+                reason="output_capture_limit",
+            ),
+            1,
+        )
+    except SystemExit as err:
+        return_code = err.code if isinstance(err.code, int) else 1
+        return _exception_outcome("worker raised SystemExit", "worker_system_exit"), return_code
+    except KeyboardInterrupt:
+        return _exception_outcome("worker interrupted", "worker_interrupted"), 130
+    except BaseException as err:
+        # Registered checks may raise any ordinary Exception; non-runtime
+        # control sentinels remain visible instead of being swallowed.
+        if not isinstance(err, Exception):
+            raise
+        return (
+            _exception_outcome("worker exception: {}".format(err), "worker_exception"),
+            1,
+        )
+
+
 def _execute_worker_callback(worker):
     """Run one callback under a temporary bounded output facade."""
-    state = _install_output_limiters()
+    # Captured before the try because capturing acquires nothing; the restore is
+    # then unconditional, and an interrupt part-way through the install still
+    # puts every global back.
+    state = _capture_output_state()
     try:
-        try:
-            outcome = worker()
-            if not isinstance(outcome, CheckOutcome):
-                raise TypeError("self-check worker must return CheckOutcome")
-            return outcome, 0
-        except _OutputLimitExceeded:
-            return (
-                CheckOutcome(
-                    "ERROR",
-                    "worker output capture limit exceeded",
-                    reason="output_capture_limit",
-                ),
-                1,
-            )
-        except SystemExit as err:
-            return_code = err.code if isinstance(err.code, int) else 1
-            return _exception_outcome("worker raised SystemExit", "worker_system_exit"), return_code
-        except KeyboardInterrupt:
-            return _exception_outcome("worker interrupted", "worker_interrupted"), 130
-        except BaseException as err:
-            # Registered checks may raise any ordinary Exception; non-runtime
-            # control sentinels remain visible instead of being swallowed.
-            if not isinstance(err, Exception):
-                raise
-            return (
-                _exception_outcome(
-                    "worker exception: {}".format(err), "worker_exception"
-                ),
-                1,
-            )
+        _install_output_limiters(state)
+        return _classify_worker_call(worker)
     finally:
         _restore_output_limiters(state)
 

@@ -284,6 +284,41 @@ def _silence_broken_stdout(error: BaseException) -> None:
                 pass
 
 
+def _close_fd_quietly(descriptor: int) -> None:
+    """Release one descriptor on a path that has no way left to report.
+
+    Kept local to the bootstrap for the same reason :func:`_write_fd_all` is:
+    this module must work when the rest of the package cannot be imported.
+
+    :param descriptor: An open file descriptor.
+    :type descriptor: int
+    :return: ``None``.
+    :rtype: None
+    """
+    try:
+        os.close(descriptor)
+    except OSError:
+        # This runs only after stderr and raw fd two have both already failed,
+        # so there is no remaining channel on which to report a close failure.
+        pass
+
+
+def _unlink_quietly(path: str) -> None:
+    """Remove one abandoned emergency file on a path that cannot report.
+
+    :param path: Filesystem path to remove.
+    :type path: str
+    :return: ``None``.
+    :rtype: None
+    """
+    try:
+        os.unlink(path)
+    except OSError:
+        # Same reasoning as :func:`_close_fd_quietly`: every output channel
+        # this function could complain through has already been exhausted.
+        pass
+
+
 def _emergency_write(data: bytes) -> Optional[str]:
     """Write bytes through stderr, raw fd two, then a private temp file."""
     try:
@@ -296,24 +331,31 @@ def _emergency_write(data: bytes) -> Optional[str]:
         _write_fd_all(2, data)
         return None
     except OSError:
+        descriptor = None
         temporary = None
+        written = False
         try:
             descriptor, temporary = tempfile.mkstemp(
                 prefix="pyfcstm-selfcheck-emergency-", suffix=".log"
             )
-            try:
-                _write_fd_all(descriptor, data)
-                os.fsync(descriptor)
-            finally:
-                os.close(descriptor)
-            return temporary
+            _write_fd_all(descriptor, data)
+            os.fsync(descriptor)
+            written = True
         except (OSError, ValueError):
-            if temporary is not None:
-                try:
-                    os.unlink(temporary)
-                except OSError:
-                    pass
-            return None
+            # mkstemp, the write, and fsync all fail when the temporary
+            # filesystem is full, read-only, or unavailable. There is no
+            # further sink to fall back to, so the caller is told nothing was
+            # written rather than being handed a half-written path.
+            written = False
+        finally:
+            # Reached by the failure path above and by any control-flow
+            # exception raised between mkstemp and the last write; neither the
+            # descriptor nor the file has an owner other than this handler.
+            if descriptor is not None:
+                _close_fd_quietly(descriptor)
+            if temporary is not None and not written:
+                _unlink_quietly(temporary)
+        return temporary if written else None
 
 
 def format_version_info() -> str:

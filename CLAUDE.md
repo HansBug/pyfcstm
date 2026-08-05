@@ -74,6 +74,68 @@ Applies to all code in [pyfcstm/](pyfcstm/), [editors/jsfcstm/src/](editors/jsfc
 [editors/jsfcstm/src/dsl/grammar/](editors/jsfcstm/src/dsl/grammar/))
 are exempt — they are produced by ANTLR.
 
+### Resource Ownership Under Interruption
+
+Rules 6-12 below extend the same policy to **where a handler is placed** rather than **what it catches**, and apply to
+Python code under [pyfcstm/](pyfcstm/) only. A resource acquired outside the handler that releases it, or held across
+a handler opened inside that one, has a window in which an interrupt releases nothing.
+
+Two mechanisms produce those windows, and they differ in how they age:
+
+- Any statement standing between the acquisition and the handler leaks whenever it raises. This holds on **every**
+  version and is the class rule 6 removes outright.
+- From CPython 3.11 a nested `try:` line compiles to a `NOP` that no `co_exceptiontable` entry covers, so entering an
+  inner `try` while holding a resource reopens a window the outer `finally` does not cover. This one is
+  version-dependent: identical code is safe on 3.7-3.10, leaks from 3.11, and leaks on one more line still from 3.12.
+  "It works locally" therefore proves nothing about it. Rule 7 removes it.
+
+6. **Acquire a resource only after its cleanup handler is established.** Do not write "acquire, then wrap in `try`";
+   write "enter the `try`, acquire inside it, and let `finally` decide whether anything needs releasing". This shape
+   does **not** reduce the hit rate of asynchronous interrupts; its guaranteed benefit is removing the class where a
+   statement between the acquisition and the `try` raises a synchronous exception, which leaks 100% of the time.
+   **Bind the sentinel so that it is never one line behind the resource**, which depends on how cleanup identifies the
+   resource:
+   - *By handle* (`os.open`, `Popen`, `mkstemp`): bind in the acquisition statement itself. Deriving a second name on
+     the following line — `path = Path(name)`, `wrapper = Owner(handle)` — just moves the window down one line, and
+     `finally` then guards on a name that is still `None`.
+   - *By path* (a file or directory you are about to create): bind the name **before** creating it, and make the
+     release tolerate a path that never came into existence. A name bound afterwards leaves the creating call as a
+     window in which the artifact exists and nothing knows its name.
+7. **Do not enter a nested `try` while holding a resource.** Use `with`, or split the section into its own function so
+   that its handler starts with nothing held. An outer `with` **does** protect an inner `try`; an outer `try` does not.
+8. **Put cleanup in `finally`, not in `except`.** This does not conflict with rules 1-5: broad catches stay forbidden,
+   and what is required here is moving the cleanup action into `finally`, not widening the `except` type set. A
+   `finally` must also never raise over an exception that is already unwinding, which is why the release itself belongs
+   in a small dedicated helper (`_close_descriptor`, `_remove_temporary`, `_kill_and_reap`) rather than an inline
+   `try` — an inline one would violate rule 7 as well. Such a helper is the one place where rule 4's ban on silent
+   swallowing is relaxed, and only under all three of: it does nothing but release one resource; its docstring names
+   the reason no reporting channel remains; and where a channel *does* remain, the failure is still surfaced, as
+   `_write_cleanup_diagnostic` and `_report_cleanup_failure` do. There are two distinct exceptions to putting cleanup
+   in `finally` at all, which must not be conflated. First, **the resource is the function's deliverable** — e.g.
+   `_emergency_write` returns the emergency log path, so cleanup covers the failure path only; the test is "has it been
+   handed to the caller?". Second, **ownership transfers to a process-level holder** — e.g. `_private_viewer_directory`
+   registers the directory for an `atexit` hook; the test is "has it been successfully registered with that holder?".
+   Parking an arbitrary object in a module-level global does **not** qualify.
+9. **Clear the sentinel once ownership transfers.** After `os.fdopen(fd, ...)` returns, the stream owns the descriptor;
+   set `fd = None` immediately. Otherwise `finally` double-closes a descriptor number that may already have been
+   reused, and the damage escapes the function.
+10. **When rules 6 and 7 conflict — acquiring a second resource while already holding the first — rule 7 wins.** Sink
+    the second acquisition and its release into their own function, or use `with`.
+11. **"Resource" is not just file descriptors.** This applies to anything needing an explicit release: descriptors,
+    temporary files, temporary directories, subprocesses, sockets, locks. **Subprocesses matter most** — an orphan is
+    not reclaimed when the parent exits. The test is "does releasing it require an explicit action?", not "is it an
+    integer fd?".
+12. **A new acquisition point needs an injection test or a structural gate alongside it.** Code review alone does not
+    catch this class: in [PR #389](https://github.com/HansBug/pyfcstm/pull/389) one such defect took four commits to
+    fix, because the first two only relocated the unowned line before the actual 3.11 cause was identified.
+
+Rules 6-11 are mechanically checkable from the AST; rule 12 is a review convention. Two further conventions govern how
+this defect class is surveyed and reported — an audit's completeness is bounded by the completeness of its primitive
+list, and per-line injection deliberately bypasses the interpreter's signal-delivery limits, so a window it finds is
+not by itself a real-interrupt risk figure. Both are set out in
+[issue #412](https://github.com/HansBug/pyfcstm/issues/412), which also records the measurement design required before
+quoting a quantitative reachability claim.
+
 ## Code Review Scope (findings must be reachable through the public surface)
 
 A code-review finding about this repository's behaviour must describe a failure a

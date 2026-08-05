@@ -7,6 +7,7 @@ and fed to a bounded capture after process completion. This module does not
 create threads or schedule checks concurrently.
 """
 
+import contextlib
 import errno
 import os
 import signal
@@ -259,6 +260,10 @@ def _terminate(
     process, job, posix_group: bool, grace: float = SIGTERM_GRACE
 ) -> Optional[str]:
     """Terminate one worker tree and return cleanup diagnostics."""
+    if process is None:
+        # Ownership handlers established before the spawn can reach cleanup with
+        # nothing spawned yet; that is a clean exit, not a termination failure.
+        return None
     if job is not None:
         return _finish_job(job, process, grace, terminate=True)
     errors = []
@@ -411,6 +416,152 @@ def _make_result(
     )
 
 
+@contextlib.contextmanager
+def _session_transport():
+    """
+    Own the private session directory and the worker result file inside it.
+
+    A system that can provide neither still yields, with ``result_file`` set to
+    ``None``, so the caller falls back to the stdout transport instead of
+    failing the check outright.
+
+    :return: An iterator yielding ``(session_dir, result_file, result_mode)``.
+    :rtype: collections.abc.Iterator[tuple]
+    """
+    session_dir = None
+    result_file = None
+    try:
+        try:
+            session_dir = tempfile.mkdtemp(prefix="pyfcstm-selfcheck-")
+            # Name the file before creating it. Cleanup here is by path, not by
+            # handle, and _cleanup_session tolerates a path that was never
+            # created -- but it cannot remove a directory whose file it was
+            # never told about, so binding the name afterwards would leave the
+            # create-truncate as a window that leaks the whole session
+            # directory.
+            result_file = os.path.join(session_dir, "result.log")
+            with open(result_file, "wb"):
+                pass
+        except (OSError, IOError):
+            # mkdtemp and the create-truncate both fail on a full, damaged or
+            # read-only temporary filesystem. Entered while nothing is held yet,
+            # so the outer handler still covers whatever this acquires.
+            result_file = None
+        yield session_dir, result_file, "file" if result_file else "stdout"
+    finally:
+        _cleanup_session(session_dir, result_file)
+
+
+@contextlib.contextmanager
+def _output_spools():
+    """
+    Own the two bounded spool files that collect worker stdout and stderr.
+
+    Both spools are yielded as ``None`` when either could not be created, so a
+    half-created pair is never used for bounded capture.
+
+    :return: An iterator yielding ``(stdout_spool, stderr_spool, setup_error)``.
+    :rtype: collections.abc.Iterator[tuple]
+    """
+    stdout_spool = None
+    stderr_spool = None
+    setup_error = None
+    try:
+        try:
+            stdout_spool = tempfile.TemporaryFile(mode="w+b")
+            stderr_spool = tempfile.TemporaryFile(mode="w+b")
+        except (OSError, ValueError) as err:
+            # Temporary output storage can be unavailable on a damaged or
+            # read-only system; never fall back to unbounded PIPE collection.
+            setup_error = "{}: {}".format(type(err).__name__, err)
+        if setup_error is None:
+            yield stdout_spool, stderr_spool, None
+        else:
+            yield None, None, setup_error
+    finally:
+        _close_capture_stream(stdout_spool)
+        _close_capture_stream(stderr_spool)
+
+
+class _WorkerTree:
+    """
+    One spawned worker process together with the job object that bounds it.
+
+    Termination is recorded so that the owning context manager stays quiet when
+    the caller already terminated the tree and folded the diagnostics into a
+    check result.
+
+    :param process: The spawned worker.
+    :type process: subprocess.Popen
+    :param posix_group: Whether the worker leads its own POSIX process group.
+    :type posix_group: bool
+    :param grace: Seconds allowed between graceful and forceful termination.
+    :type grace: float
+
+    :ivar job: Native job object bounding the tree on Windows, else ``None``.
+    :vartype job: Any
+    """
+
+    def __init__(self, process, posix_group: bool, grace: float):
+        self.process = process
+        self.job = None
+        self._posix_group = posix_group
+        self._grace = grace
+        self._terminated = False
+
+    def terminate(self) -> Optional[str]:
+        """
+        Terminate the tree at most once and return cleanup diagnostics.
+
+        :return: Cleanup diagnostics, or ``None`` when nothing needed doing.
+        :rtype: str or None
+        """
+        if self._terminated:
+            return None
+        self._terminated = True
+        job, self.job = self.job, None
+        return _terminate(self.process, job, self._posix_group, self._grace)
+
+
+@contextlib.contextmanager
+def _worker_tree(command, popen_kwargs, posix_group: bool, grace: float):
+    """
+    Own one spawned worker tree for exactly as long as the ``with`` block runs.
+
+    The worker is spawned inside the ``try``, so no statement runs between the
+    spawn and the handler that terminates it.
+
+    :param command: Argument vector for the worker process.
+    :type command: collections.abc.Sequence[str]
+    :param popen_kwargs: Keyword arguments for :class:`subprocess.Popen`.
+    :type popen_kwargs: dict
+    :param posix_group: Whether the worker leads its own POSIX process group.
+    :type posix_group: bool
+    :param grace: Seconds allowed between graceful and forceful termination.
+    :type grace: float
+    :return: An iterator yielding ``(tree, spawn_error)``; ``tree`` is ``None``
+        exactly when the spawn failed.
+    :rtype: collections.abc.Iterator[tuple]
+    """
+    tree = None
+    spawn_error = None
+    try:
+        try:
+            tree = _WorkerTree(
+                subprocess.Popen(command, **popen_kwargs), posix_group, grace
+            )
+        except (OSError, ValueError) as err:
+            # The spawn fails when the interpreter path is unusable, the working
+            # directory was removed, or the environment is rejected by the OS.
+            # Reported rather than raised so the caller can classify it as one
+            # check result instead of unwinding the whole run.
+            spawn_error = err
+        yield tree, spawn_error
+    finally:
+        if tree is not None:
+            _write_cleanup_diagnostic("worker cleanup", tree.terminate())
+
+
 def run_check_process(
     check: CheckSpec,
     timeout: float,
@@ -441,98 +592,77 @@ def run_check_process(
     started = time.monotonic()
     nonce = make_nonce()
     scaled_grace = min(5.0, max(0.1, SIGTERM_GRACE * timeout_scale))
-    session_dir = None
-    result_file = None
-    result_mode = "file"
-    try:
-        session_dir = tempfile.mkdtemp(prefix="pyfcstm-selfcheck-")
-        result_file = os.path.join(session_dir, "result.log")
-        with open(result_file, "wb"):
-            pass
-    except (OSError, IOError):
-        result_mode = "stdout"
-        result_file = None
+    # Every resource below is owned by the stack before it is acquired, so an
+    # interrupt anywhere in this function still releases it. Handlers opened
+    # while a resource is held would not: from CPython 3.11 a nested ``try:``
+    # compiles to a ``NOP`` that no exception-table entry covers.
+    with contextlib.ExitStack() as stack:
+        session_dir, result_file, result_mode = stack.enter_context(
+            _session_transport()
+        )
+        stdout_spool, stderr_spool, capture_setup_error = stack.enter_context(
+            _output_spools()
+        )
+        if capture_setup_error and result_mode == "stdout":
+            return _make_result(
+                check,
+                "ERROR",
+                "bounded worker output capture is unavailable",
+                "capture_unavailable",
+                started,
+                evidence=capture_setup_error,
+                result_mode=result_mode,
+            )
+        command = _command_for_worker(check, nonce, result_mode, result_file)
+        child_environment = os.environ.copy()
+        child_environment["PYFCSTM_SELFCHECK_WORKER_PROCESS"] = "1"
+        _set_network_environment(child_environment, network)
+        popen_kwargs = {
+            "stdin": subprocess.PIPE,
+            "stdout": stdout_spool or subprocess.DEVNULL,
+            "stderr": stderr_spool or subprocess.DEVNULL,
+            "bufsize": 0,
+            "env": child_environment,
+        }
+        package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        package_parent = os.path.dirname(package_dir)
+        # Put the package under test first while preserving caller-provided import
+        # roots for worker callbacks and runtime diagnostics.
+        inherited_pythonpath = child_environment.get("PYTHONPATH")
+        child_environment["PYTHONPATH"] = _PATH_SEPARATOR.join(
+            path for path in (package_parent, inherited_pythonpath) if path
+        )
+        popen_kwargs["cwd"] = session_dir or package_dir
+        posix_group = os.name == "posix"
+        if posix_group:
+            popen_kwargs["start_new_session"] = True
+        elif os.name == "nt":
+            popen_kwargs["creationflags"] = getattr(
+                subprocess, "CREATE_NEW_PROCESS_GROUP", 0
+            )
+        tree, spawn_error = stack.enter_context(
+            _worker_tree(command, popen_kwargs, posix_group, scaled_grace)
+        )
+        if spawn_error is not None:
+            return _make_result(
+                check,
+                "ERROR",
+                "worker spawn failed",
+                "spawn_failed",
+                started,
+                evidence=str(spawn_error),
+            )
+        process = tree.process
 
-    command = _command_for_worker(check, nonce, result_mode, result_file)
-    child_environment = os.environ.copy()
-    child_environment["PYFCSTM_SELFCHECK_WORKER_PROCESS"] = "1"
-    _set_network_environment(child_environment, network)
-    stdout_spool = None
-    stderr_spool = None
-    capture_setup_error = None
-    try:
-        stdout_spool = tempfile.TemporaryFile(mode="w+b")
-        stderr_spool = tempfile.TemporaryFile(mode="w+b")
-    except (OSError, ValueError) as err:
-        # Temporary output storage can be unavailable on a damaged or
-        # read-only system; never fall back to unbounded PIPE collection.
-        capture_setup_error = "{}: {}".format(type(err).__name__, err)
-        _close_capture_stream(stdout_spool)
-        _close_capture_stream(stderr_spool)
-        stdout_spool = None
-        stderr_spool = None
-    if capture_setup_error and result_mode == "stdout":
-        _cleanup_session(session_dir, result_file)
-        return _make_result(
-            check,
-            "ERROR",
-            "bounded worker output capture is unavailable",
-            "capture_unavailable",
-            started,
-            evidence=capture_setup_error,
-            result_mode=result_mode,
-        )
-    popen_kwargs = {
-        "stdin": subprocess.PIPE,
-        "stdout": stdout_spool or subprocess.DEVNULL,
-        "stderr": stderr_spool or subprocess.DEVNULL,
-        "bufsize": 0,
-        "env": child_environment,
-    }
-    package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    package_parent = os.path.dirname(package_dir)
-    # Put the package under test first while preserving caller-provided import
-    # roots for worker callbacks and runtime diagnostics.
-    inherited_pythonpath = child_environment.get("PYTHONPATH")
-    child_environment["PYTHONPATH"] = _PATH_SEPARATOR.join(
-        path for path in (package_parent, inherited_pythonpath) if path
-    )
-    popen_kwargs["cwd"] = session_dir or package_dir
-    posix_group = os.name == "posix"
-    if posix_group:
-        popen_kwargs["start_new_session"] = True
-    elif os.name == "nt":
-        popen_kwargs["creationflags"] = getattr(
-            subprocess, "CREATE_NEW_PROCESS_GROUP", 0
-        )
-    try:
-        process = subprocess.Popen(command, **popen_kwargs)
-    except (OSError, ValueError) as err:
-        _close_capture_stream(stdout_spool)
-        _close_capture_stream(stderr_spool)
-        _cleanup_session(session_dir, result_file)
-        return _make_result(
-            check,
-            "ERROR",
-            "worker spawn failed",
-            "spawn_failed",
-            started,
-            evidence=str(err),
-        )
-
-    job = None
-    try:
         if os.name == "nt":
             try:
-                job = attach_process(process)
-            except BaseException as err:
-                # Any ordinary native setup failure must clean the already-spawned
-                # worker; control sentinels are cleaned and then re-raised.
-                cleanup_error = _terminate(process, None, False, scaled_grace)
-                if isinstance(err, (KeyboardInterrupt, SystemExit)):
-                    raise
-                if not isinstance(err, Exception):
-                    raise
+                tree.job = attach_process(process)
+            except Exception as err:
+                # Native job setup fails in restricted or already-nested job
+                # environments. Only Exception is caught: a control sentinel
+                # unwinds to the owning context manager, which terminates the
+                # worker there rather than turning it into a check result.
+                cleanup_error = tree.terminate()
                 details = str(err)
                 if cleanup_error:
                     details += "; cleanup=" + cleanup_error
@@ -561,8 +691,7 @@ def run_check_process(
             timed_out = True
             stdout_data = err.output if stdout_spool is None else None
             stderr_data = err.stderr if stderr_spool is None else None
-            cleanup_error = _terminate(process, job, posix_group, scaled_grace)
-            job = None
+            cleanup_error = tree.terminate()
             try:
                 stdout_data, stderr_data = process.communicate(timeout=scaled_grace)
             except subprocess.TimeoutExpired as drain_error:
@@ -585,8 +714,7 @@ def run_check_process(
                     )
                 )
         except (OSError, ValueError) as err:
-            cleanup_error = _terminate(process, job, posix_group, scaled_grace)
-            job = None
+            cleanup_error = tree.terminate()
             exception = traceback.format_exc()
             details = "worker_communication:{}: {}\n{}".format(
                 type(err).__name__, err, exception.rstrip()
@@ -621,8 +749,7 @@ def run_check_process(
         if not timed_out:
             # A normally returning worker may still leave descendants in its
             # process group; always close the group before the next check.
-            cleanup_error = _terminate(process, job, posix_group, scaled_grace)
-            job = None
+            cleanup_error = tree.terminate()
         process_fields["return_code"] = return_code
         if timed_out:
             details = _diagnostics(communication_errors, cleanup_error=cleanup_error)
@@ -687,21 +814,3 @@ def run_check_process(
             ntstatus=ntstatus,
             **process_fields,
         )
-    except BaseException as err:
-        # Interrupts and unexpected callback/setup exceptions must not leave a
-        # worker or descendant process alive after the parent unwinds.
-        cleanup_error = _terminate(process, job, posix_group, scaled_grace)
-        job = None
-        _write_cleanup_diagnostic("interrupted cleanup", cleanup_error)
-        if isinstance(err, (KeyboardInterrupt, SystemExit)):
-            raise
-        if not isinstance(err, Exception):
-            raise
-        raise
-    finally:
-        if job is not None:
-            cleanup_error = _finish_job(job, process, scaled_grace, terminate=True)
-            _write_cleanup_diagnostic("job cleanup", cleanup_error)
-        _cleanup_session(session_dir, result_file)
-        _close_capture_stream(stdout_spool)
-        _close_capture_stream(stderr_spool)

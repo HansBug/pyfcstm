@@ -589,3 +589,39 @@ class TestBuildIdentityData:
         _build_identity.write_build_identity_file(path, _identity())
 
         assert _build_identity.load_build_identity_file(path).commit == "a" * 40
+
+
+@pytest.mark.unittest
+def test_write_build_identity_file_leaves_no_descriptor_or_temporary_file(tmp_path):
+    """No line of the atomic writer leaves its descriptor or temporary file behind."""
+    import os
+
+    from test.testings.interrupt_injection import inject_per_line
+
+    if not os.path.isdir("/proc/self/fd"):
+        pytest.skip("descriptor accounting needs /proc/self/fd")
+    target = tmp_path / "build_info.py"
+    identity = _identity()
+    report = inject_per_line(
+        _build_identity.write_build_identity_file,
+        lambda: _build_identity.write_build_identity_file(str(target), identity),
+        lambda: {str(path) for path in tmp_path.glob(".build_info.*.tmp")},
+    )
+    assert report.points_reached > 0
+    assert not report.body_windows, report.describe()
+
+
+@pytest.mark.unittest
+def test_directory_fsync_is_its_own_function(tmp_path):
+    """The post-replace directory flush is reachable without holding the temporary.
+
+    Inlining it would need a nested ``try`` opened while the temporary file is
+    held, which is the shape that leaks from CPython 3.11 onwards.
+    """
+    import inspect
+
+    assert inspect.isfunction(_build_identity._fsync_directory)
+    body = inspect.getsource(_build_identity.write_build_identity_file)
+    assert "_fsync_directory(target.parent)" in body
+    assert "os.open(" not in body
+    _build_identity._fsync_directory(tmp_path)

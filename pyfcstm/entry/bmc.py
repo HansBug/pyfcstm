@@ -713,6 +713,91 @@ def _build_bmc_report(
     )
 
 
+def _close_output_stream(stream) -> None:
+    """
+    Close one temporary output stream without displacing the reportable cause.
+
+    :param stream: The stream to close, or ``None`` when the descriptor was
+        never handed over to one.
+    :type stream: io.IOBase or None
+    :return: ``None``.
+    :rtype: None
+    """
+    if stream is None:
+        return
+    try:
+        stream.close()
+    except OSError:
+        # A buffered flush can fail on a full filesystem during close. The
+        # descriptor is released regardless, and the write failure that led
+        # here is the more useful thing to report.
+        pass
+
+
+def _close_descriptor(descriptor: int) -> None:
+    """
+    Close one descriptor that never reached an owning stream.
+
+    A function rather than an inline ``try`` because the caller invokes this
+    from a ``finally``: opening a handler there would be a nested ``try``
+    entered while the temporary file is still held.
+
+    :param descriptor: An open file descriptor.
+    :type descriptor: int
+    :return: ``None``.
+    :rtype: None
+    """
+    try:
+        os.close(descriptor)
+    except OSError:
+        # Only reachable when os.fdopen already failed, so an exception is
+        # unwinding that describes the real problem better than this one.
+        pass
+
+
+def _remove_temporary(path: Optional[str]) -> Optional[str]:
+    """
+    Remove one abandoned temporary file and describe any failure to do so.
+
+    :param path: Temporary file to remove, or ``None`` when none was created.
+    :type path: str or None
+    :return: A diagnostic when removal failed, otherwise ``None``.
+    :rtype: str or None
+    """
+    if path is None:
+        return None
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        # os.replace already consumed the temporary path.
+        return None
+    except OSError as err:
+        # A read-only, full, or already-removed parent directory keeps the
+        # temporary file alive; the caller decides how to surface that.
+        return str(err)
+    return None
+
+
+def _report_cleanup_failure(path: Optional[str], error: str) -> None:
+    """
+    Write cleanup evidence to stderr without raising over an unwinding error.
+
+    :param path: The temporary file that could not be removed.
+    :type path: str or None
+    :param error: Description of the removal failure.
+    :type error: str
+    :return: ``None``.
+    :rtype: None
+    """
+    message = "pyfcstm: failed to remove temporary file {}: {}\n".format(path, error)
+    try:
+        os.write(2, message.encode("ascii", "backslashreplace"))
+    except OSError:
+        # Nothing further is available if raw stderr is closed or redirected
+        # to a broken pipe; the primary exception still reaches the caller.
+        pass
+
+
 def write_bmc_output(output_file: str, text: str) -> None:
     """Atomically replace one output file with a completed BMC report.
 
@@ -741,32 +826,52 @@ def write_bmc_output(output_file: str, text: str) -> None:
         'ok\\n'
     """
     target = pathlib.Path(output_file)
-    fd, temporary_name = tempfile.mkstemp(
-        prefix=".%s." % target.name,
-        suffix=".tmp",
-        dir=str(target.parent),
-    )
+    fd = None
+    stream = None
+    temporary_name = None
+    temporary_handled = False
     try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
-            stream.write(text)
-            stream.flush()
-            os.fsync(stream.fileno())
+        fd, temporary_name = tempfile.mkstemp(
+            prefix=".%s." % target.name,
+            suffix=".tmp",
+            dir=str(target.parent),
+        )
+        stream = os.fdopen(fd, "w", encoding="utf-8", newline="\n")
+        fd = None  # os.fdopen owns the descriptor from here on.
+        stream.write(text)
+        stream.flush()
+        os.fsync(stream.fileno())
+        stream.close()
         os.replace(temporary_name, str(target))
+        temporary_handled = True
     except (OSError, UnicodeError) as err:
         # os.fdopen/write/fsync/replace can fail for filesystem or encoding
         # reasons. Preserve the original target and report cleanup failures.
-        try:
-            os.unlink(temporary_name)
-        except FileNotFoundError:
-            # os.replace already removed the temporary path.
-            pass
-        except OSError as cleanup_err:
+        temporary_handled = True
+        _close_output_stream(stream)  # Windows cannot unlink an open file.
+        cleanup_error = _remove_temporary(temporary_name)
+        if cleanup_error is not None:
             # A failed cleanup is observable and must not be silently lost.
             raise OSError(
                 "%s; additionally failed to remove temporary file %s: %s"
-                % (err, temporary_name, cleanup_err)
+                % (err, temporary_name, cleanup_error)
             ) from err
         raise
+    finally:
+        # Reached by every exit, including a control-flow exception raised
+        # between mkstemp and the write. Neither the descriptor nor the
+        # temporary file has an owner other than this handler.
+        if stream is not None:
+            _close_output_stream(stream)
+        elif fd is not None:
+            # os.fdopen raised, so the descriptor never found a new owner.
+            _close_descriptor(fd)
+        if not temporary_handled:
+            cleanup_error = _remove_temporary(temporary_name)
+            if cleanup_error is not None:
+                # Something is already unwinding and carries the primary cause;
+                # raising here would replace it with the lesser failure.
+                _report_cleanup_failure(temporary_name, cleanup_error)
 
 
 @command_wrap()

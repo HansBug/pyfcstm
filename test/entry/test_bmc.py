@@ -3403,3 +3403,22 @@ def test_an_unrepresentable_forced_value_degrades_instead_of_failing(
     assert result.exit_code == 3, result.output
     assert "Unexpected error" not in result.output
     assert "internal mismatch" not in result.output
+
+
+def test_write_bmc_output_leaves_no_descriptor_or_temporary_file(tmp_path: Path) -> None:
+    """No line of the atomic writer leaves its descriptor or temporary file behind."""
+    import os
+
+    import pyfcstm.entry.bmc as bmc_entry
+    from test.testings.interrupt_injection import inject_per_line
+
+    if not os.path.isdir("/proc/self/fd"):
+        pytest.skip("descriptor accounting needs /proc/self/fd")
+    target = tmp_path / "result.txt"
+    report = inject_per_line(
+        bmc_entry.write_bmc_output,
+        lambda: bmc_entry.write_bmc_output(str(target), "payload\n"),
+        lambda: {str(path) for path in tmp_path.glob(".result.txt.*.tmp")},
+    )
+    assert report.points_reached > 0
+    assert not report.body_windows, report.describe()

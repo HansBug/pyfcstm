@@ -170,19 +170,43 @@ def _read_start_gate(nonce: str) -> Optional[str]:
     return "start_gate_mismatch"
 
 
+def _append_frame_to_file(result_file: str, frame: bytes) -> None:
+    """Append one frame to the result transport file and flush it to storage.
+
+    Split out of :func:`_write_frame` so the descriptor is opened inside its own
+    handler. Inlining it would need a nested ``try`` entered while the
+    descriptor is held, and from CPython 3.11 that ``try:`` line compiles to a
+    ``NOP`` no exception-table entry covers, so an interrupt there would escape
+    both handlers and leak the descriptor.
+
+    :param result_file: Path of the append-mode transport file.
+    :type result_file: str
+    :param frame: Encoded result frame to append.
+    :type frame: bytes
+    :return: ``None``.
+    :rtype: None
+    :raises OSError: If opening, writing, synchronizing, or closing fails.
+    """
+    descriptor = None
+    try:
+        flags = os.O_WRONLY | os.O_APPEND | getattr(os, "O_BINARY", 0)
+        descriptor = os.open(result_file, flags)
+        _write_fd_all(descriptor, frame)
+        os.fsync(descriptor)
+    finally:
+        if descriptor is not None:
+            # Deliberately not swallowed: a close failure propagates to the
+            # caller, which turns it into a reportable transport diagnostic.
+            os.close(descriptor)
+
+
 def _write_frame(mode: str, result_file: Optional[str], frame: bytes) -> Optional[str]:
     """Write one result frame through the selected transport."""
     try:
         if mode == "file":
             if not result_file:
                 return "missing_result_file"
-            flags = os.O_WRONLY | os.O_APPEND | getattr(os, "O_BINARY", 0)
-            descriptor = os.open(result_file, flags)
-            try:
-                _write_fd_all(descriptor, frame)
-                os.fsync(descriptor)
-            finally:
-                os.close(descriptor)
+            _append_frame_to_file(result_file, frame)
         else:
             _write_stream_all(sys.stdout.buffer, frame)
             sys.stdout.buffer.flush()

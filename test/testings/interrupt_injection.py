@@ -22,6 +22,7 @@ Example::
 """
 
 import ast
+import dis
 import inspect
 import os
 import shutil
@@ -129,15 +130,27 @@ def cleanup_line_numbers(function: Callable) -> Set[int]:
     tree = ast.parse(textwrap.dedent("".join(source)))
     inside = set()
     for node in ast.walk(tree):
-        if not isinstance(node, ast.Try):
+        if not isinstance(node, ast.Try) or not node.finalbody:
             continue
-        for statement in node.finalbody:
-            for element in ast.walk(statement):
-                start = getattr(element, "lineno", None)
-                if start is None:
-                    continue
-                end = getattr(element, "end_lineno", None) or start
-                inside.update(range(start + first - 1, end + first))
+        # The span is filled from the lowest to the highest line any descendant
+        # touches, rather than per node. ``end_lineno`` only exists from 3.8, so
+        # a per-node union would leave the closing bracket of a multi-line
+        # cleanup statement unclassified on 3.7. A ``finally`` body is
+        # contiguous, so filling the span cannot swallow a line outside it.
+        seen = [
+            element.lineno
+            for statement in node.finalbody
+            for element in ast.walk(statement)
+            if getattr(element, "lineno", None) is not None
+        ]
+        seen.extend(
+            getattr(element, "end_lineno", 0) or 0
+            for statement in node.finalbody
+            for element in ast.walk(statement)
+        )
+        positive = [line for line in seen if line]
+        if positive:
+            inside.update(range(min(positive) + first - 1, max(positive) + first))
     return inside
 
 
@@ -176,7 +189,10 @@ def inject_per_line(
     in_cleanup = cleanup_line_numbers(function)
     residues = residues or (lambda: set())
     release_residues = release_residues or _remove_paths
-    lines = sorted({line for _, _, line in code.co_lines() if line is not None})
+    # dis.findlinestarts rather than code.co_lines: the latter arrived in 3.10
+    # (PEP 626) and this package still supports 3.7. The two agree on the set of
+    # lines that carry bytecode, which is exactly what an injection sweep needs.
+    lines = sorted({line for _, line in dis.findlinestarts(code) if line is not None})
     reached = 0
     leaks = []
     for line in lines:

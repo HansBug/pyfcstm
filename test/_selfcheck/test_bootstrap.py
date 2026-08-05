@@ -869,7 +869,7 @@ def test_public_main_handles_devnull_reusing_stdout_descriptor(monkeypatch):
 
 @pytest.mark.unittest
 def test_emergency_write_leaves_no_descriptor_or_file_at_any_injection_point(
-    monkeypatch,
+    tmp_path, monkeypatch
 ):
     """The last-resort writer owns its descriptor and its file at every line.
 
@@ -886,6 +886,9 @@ def test_emergency_write_leaves_no_descriptor_or_file_at_any_injection_point(
     if not os.path.isdir("/proc/self/fd"):
         pytest.skip("descriptor accounting needs /proc/self/fd")
 
+    private = tmp_path / "tmp"
+    private.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(private))
     real_write = os.write
 
     def refuse_stderr(descriptor, data):
@@ -898,7 +901,7 @@ def test_emergency_write_leaves_no_descriptor_or_file_at_any_injection_point(
 
     monkeypatch.setattr(os, "write", refuse_stderr)
     monkeypatch.setattr(sys, "stderr", _StderrWithoutBuffer())
-    pattern = os.path.join(tempfile.gettempdir(), "pyfcstm-selfcheck-emergency-*.log")
+    pattern = os.path.join(str(private), "pyfcstm-selfcheck-emergency-*.log")
     report = inject_per_line(
         _bootstrap._emergency_write,
         lambda: _bootstrap._emergency_write(b"payload\n"),

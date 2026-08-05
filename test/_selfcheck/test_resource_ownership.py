@@ -21,6 +21,22 @@ pytestmark = pytest.mark.unittest
 
 _SESSION_GLOB = "pyfcstm-selfcheck-*"
 
+
+@pytest.fixture()
+def private_tmpdir(tmp_path, monkeypatch):
+    """Point ``tempfile`` at a per-test directory for the duration of one test.
+
+    The session directory is created with ``tempfile.mkdtemp`` and no explicit
+    ``dir``, so a residue check against the shared temporary directory would see
+    any concurrent run -- another xdist worker, another suite, a stray
+    ``pyfcstm --self-check`` -- and fail for reasons that have nothing to do with
+    the code under test.
+    """
+    private = tmp_path / "tmp"
+    private.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(private))
+    return str(private)
+
 requires_proc = pytest.mark.skipif(
     not os.path.isdir("/proc/self/fd"),
     reason="descriptor accounting needs /proc/self/fd",
@@ -258,7 +274,7 @@ def test_write_report_leaves_no_descriptor_or_temporary_file(tmp_path):
 
 
 @requires_proc
-def test_session_transport_leaves_no_directory_at_any_injection_point():
+def test_session_transport_leaves_no_directory_at_any_injection_point(private_tmpdir):
     """No line of the session context manager can strand its private directory.
 
     Covers the case the body-level test cannot reach: an interrupt between
@@ -273,7 +289,7 @@ def test_session_transport_leaves_no_directory_at_any_injection_point():
     report = inject_per_line(
         process_module._session_transport,
         use_transport,
-        lambda: set(glob.glob(os.path.join(tempfile.gettempdir(), _SESSION_GLOB))),
+        lambda: set(glob.glob(os.path.join(private_tmpdir, _SESSION_GLOB))),
     )
     assert report.points_reached > 0
     assert not report.body_windows, report.describe()

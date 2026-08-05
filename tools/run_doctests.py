@@ -12,6 +12,7 @@ The module contains:
 * :class:`DoctestGateError` - Raised when the gate cannot produce a verdict
 * :func:`require_installed_distribution` - Reject a bare checkout early
 * :func:`load_ledger` - Parse the known-failure ledger file
+* :func:`normalize_scope` - Make in-repository absolute scope paths relative
 * :func:`filter_ledger_to_scope` - Restrict the ledger to the current scope
 * :func:`select_changed_scope` - Reduce a changed-file list to gate paths
 * :func:`classify_outcome` - Three-way comparison driving the ratchet
@@ -201,6 +202,45 @@ def node_file(node_id: str) -> str:
         'pyfcstm/utils/safe.py'
     """
     return node_id.split("::", 1)[0].replace(os.sep, "/")
+
+
+def normalize_scope(scope: Sequence[str], root: Optional[str] = None) -> List[str]:
+    """
+    Rewrite scope entries that live under the repository root as relative paths.
+
+    pytest node ids are relative to the rootdir, so an absolute ``--scope``
+    collects the same items but matches no ledger entry. Left unnormalized the
+    whole in-scope ledger then reads as newly failing. That is a false red rather
+    than a false green, but still a wrong verdict.
+
+    :param scope: Paths or node ids requested by the caller.
+    :type scope: collections.abc.Sequence[str]
+    :param root: Repository root the paths are measured against, defaults to
+        this file's repository.
+    :type root: str, optional
+    :return: Scope entries with in-repository absolute paths made relative.
+    :rtype: List[str]
+
+    Example::
+
+        >>> import os
+        >>> normalize_scope(['pyfcstm/bmc'], root='/repo')
+        ['pyfcstm/bmc']
+        >>> normalize_scope([os.path.join('/repo', 'pyfcstm', 'bmc')], root='/repo')
+        ['pyfcstm/bmc']
+        >>> normalize_scope(['/elsewhere/pkg'], root='/repo')
+        ['/elsewhere/pkg']
+    """
+    base = os.path.abspath(root or _REPO_ROOT)
+    normalized: List[str] = []
+    for item in scope:
+        path, separator, node = item.partition("::")
+        if os.path.isabs(path):
+            relative = os.path.relpath(os.path.abspath(path), base)
+            if not relative.startswith(os.pardir):
+                path = relative.replace(os.sep, "/")
+        normalized.append(path + separator + node)
+    return normalized
 
 
 def filter_ledger_to_scope(
@@ -554,6 +594,19 @@ def run_self_check() -> None:
             "self-check: an uninstalled distribution must be reported"
         )
 
+    # Every helper main() reaches for is exercised here, so a missing or renamed
+    # one fails --check instead of waiting for the flag that happens to use it.
+    if normalize_scope(["pyfcstm/bmc"], root="/repo") != ["pyfcstm/bmc"]:
+        raise DoctestGateError("self-check: relative scope must pass through")
+    inside = os.path.join("/repo", "pyfcstm", "bmc")
+    if normalize_scope([inside], root="/repo") != ["pyfcstm/bmc"]:
+        raise DoctestGateError("self-check: in-repo absolute scope must relativize")
+    if normalize_scope(["/elsewhere/pkg"], root="/repo") != ["/elsewhere/pkg"]:
+        raise DoctestGateError("self-check: out-of-repo scope must be left alone")
+    node = os.path.join("/repo", "pyfcstm", "a.py") + "::pyfcstm.a.f"
+    if normalize_scope([node], root="/repo") != ["pyfcstm/a.py::pyfcstm.a.f"]:
+        raise DoctestGateError("self-check: absolute node id must keep its node part")
+
     reject_unsupported_pytest_args(["--tb=long", "-x"])
     for rejected in (["-n", "4"], ["--numprocesses=auto"], ["--dist=loadscope"]):
         try:
@@ -705,7 +758,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return 0
         scope = tuple(selected)
     elif args.scope:
-        scope = tuple(args.scope)
+        scope = tuple(normalize_scope(args.scope))
     else:
         scope = DEFAULT_SCOPE
     outcome_dir = tempfile.mkdtemp(prefix="pyfcstm-doctest-")

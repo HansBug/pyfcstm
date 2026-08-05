@@ -243,13 +243,14 @@ def test_division_is_checked_against_the_encoder_not_against_a_guess() -> None:
     them truncation: an ``int`` variable lowers onto Z3's integer division, which is
     Euclidean, and a ``float`` variable lowers onto Z3's reals, which divide exactly.
 
-    Which of the two applies is not recoverable from the published operands.  A
-    ``float`` variable states an integral value as an integer -- a query asking
-    ``var("x") == -7`` about a real variable produces exactly that -- so two integer
-    operands say nothing about the declaration behind them.  Where the two semantics
-    agree the answer is the same either way and is published; where they part ways,
-    publishing one would be a guess about a declaration the checker cannot see, and no
-    claimed value is accepted.
+    This function does not act on the operand types to choose between the two.
+    Where the semantics agree the answer is the same either way and is published;
+    where they part ways, no claimed value is accepted.
+
+    The refusal is conservative rather than forced: a published value's type does
+    follow the variable's sort, so two integer operands do settle which reading
+    applies.  What this test pins is the contract -- agree and publish, differ and
+    decline -- not a claim that the operand types are uninformative.
     """
 
     def application(left, operand, claimed):
@@ -408,6 +409,93 @@ def test_interval_intersection_decides_emptiness_on_the_endpoints(
     )
 
     assert check_rule(application) is empty
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "lower, upper, empty",
+    [
+        (("ge", 6.0), ("le", 5.0), True),
+        (("gt", 5.0), ("lt", 6.0), False),
+        (("gt", 5.0), ("lt", 5.0), True),
+        (("ge", 5.0), ("le", 5.0), False),
+        (("gt", 5.0), ("le", 5.0), True),
+        (("ge", 5.0), ("lt", 5.0), True),
+    ],
+    ids=[
+        "real-bounds-cross",
+        "a-real-lies-strictly-between",
+        "an-empty-strict-pair-at-one-point",
+        "a-single-real-point-survives",
+        "an-open-lower-end-at-the-same-limit",
+        "an-open-upper-end-at-the-same-limit",
+    ],
+)
+def test_interval_intersection_reads_bounds_stated_over_the_reals(
+    lower, upper, empty
+) -> None:
+    """Real-domain limits are decided too, and by their own arithmetic.
+
+    Emptiness does not depend on the domain -- 6 <= x with x <= 5 admits nothing
+    either way -- so reading the operand type to decide whether the rule applies
+    dropped every contradiction a real variable could state.  The type decides
+    only how an open limit is handled: an integer one tightens to the first value
+    it admits, a real one has no such value and instead makes the limits meeting
+    enough.
+
+    The second and third cases are the pair that separates the two readings.
+    Tightening 5.0 < x < 6.0 the integer way would answer "empty", which is wrong
+    here; not tightening 5.0 < x < 5.0 at all would answer "not empty", which is
+    wrong as well.
+
+    The last three say which limits have to meet.  5.0 <= x <= 5.0 keeps the point
+    while both 5.0 < x <= 5.0 and 5.0 <= x < 5.0 lose it, so the comparison may
+    only stay at ``>`` when *both* ends are closed.  Each open side needs its own
+    case: reading the test as "the upper end is closed" survives one of them, and
+    reading it as "the lower end is closed" survives the other.
+    """
+    application = RuleApplication(
+        "interval_intersection",
+        (
+            _fact(
+                "variable_bound",
+                variable="x",
+                frame=0,
+                operator=lower[0],
+                value=lower[1],
+            ),
+            _fact(
+                "variable_bound",
+                variable="x",
+                frame=0,
+                operator=upper[0],
+                value=upper[1],
+            ),
+        ),
+        _fact("false"),
+    )
+
+    assert check_rule(application) is empty
+
+
+@pytest.mark.unittest
+def test_interval_intersection_refuses_bounds_that_are_not_numbers() -> None:
+    """A non-numeric limit is declined rather than compared.
+
+    The integer check used to double as this guard.  Widening it to accept reals
+    means the numeric check has to be stated on its own, or a bound carrying a
+    string would reach the comparison and raise.
+    """
+    application = RuleApplication(
+        "interval_intersection",
+        (
+            _fact("variable_bound", variable="x", frame=0, operator="ge", value="6"),
+            _fact("variable_bound", variable="x", frame=0, operator="le", value=5),
+        ),
+        _fact("false"),
+    )
+
+    assert check_rule(application) is False
 
 
 @pytest.mark.unittest

@@ -261,6 +261,9 @@ class SimulationRuntimeDfsError(RuntimeError):
 
     Example of problematic state machine::
 
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> from pyfcstm.simulate import SimulationRuntime
         >>> dsl_code = '''
         ... state Root {
         ...     state A {
@@ -273,7 +276,9 @@ class SimulationRuntimeDfsError(RuntimeError):
         >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
         >>> sm = parse_dsl_node_to_state_machine(ast)
         >>> runtime = SimulationRuntime(sm)
-        >>> runtime.cycle()  # Raises SimulationRuntimeDfsError
+        >>> result = runtime.cycle()
+        >>> result.delta  # no stoppable successor was committed
+        True
 
     .. note::
        This exception is raised during validation, not during normal execution.
@@ -436,7 +441,12 @@ class _Frame:
     Example::
 
         >>> # Internal frame structure (not directly created by users)
-        >>> frame = _Frame(state=some_state, mode='active')
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> sm = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(DEMO_DSL, 'state_machine_dsl')
+        ... )
+        >>> frame = _Frame(state=sm.root_state.substates['Active'], mode='active')
         >>> frame.state.path
         ('System', 'Active')
         >>> frame.mode
@@ -550,12 +560,12 @@ class SimulationRuntime:
         >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
         >>> sm = parse_dsl_node_to_state_machine(ast)
         >>> runtime = SimulationRuntime(sm)
-        >>> runtime.cycle()
+        >>> _ = runtime.cycle()
         >>> runtime.current_state.path
         ('System', 'Idle')
         >>> runtime.vars['counter']
         1
-        >>> runtime.cycle(['System.Idle.Start'])
+        >>> _ = runtime.cycle(['System.Idle.Start'])
         >>> runtime.current_state.path
         ('System', 'Active')
         >>> runtime.vars['counter']
@@ -640,7 +650,7 @@ class SimulationRuntime:
             >>> from pyfcstm.simulate import SimulationRuntime
             >>> dsl_code = '''
             ... def int x = 10;
-            ... def int y = x + 5;  # Can reference earlier variables
+            ... def int y = 15;  // initialisers are constant expressions
             ... state Root {
             ...     state A;
             ...     [*] -> A;
@@ -684,7 +694,7 @@ class SimulationRuntime:
             ('System', 'Active')
             >>> runtime.vars['counter']
             10
-            >>> runtime.cycle()  # First cycle starts from Active state
+            >>> _ = runtime.cycle()  # First cycle starts from Active state
             >>> runtime.vars['counter']
             20
 
@@ -887,10 +897,15 @@ class SimulationRuntime:
 
         Example::
 
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> sm = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(DEMO_DSL, 'state_machine_dsl')
+            ... )
+            >>> runtime = SimulationRuntime(sm)
             >>> # Assuming we have a state from the state machine
-            >>> runtime = SimulationRuntime(state_machine)
-            >>> some_state = state_machine.root_state.substates['System']
-            >>> runtime._state_belongs_to_machine(some_state)
+            
+            >>> runtime._state_belongs_to_machine(sm.root_state.substates['Active'])
             True
         """
         current = state
@@ -920,13 +935,18 @@ class SimulationRuntime:
 
         Example::
 
-            >>> runtime = SimulationRuntime(state_machine)
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> sm = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(DEMO_DSL, 'state_machine_dsl')
+            ... )
+            >>> runtime = SimulationRuntime(sm)
             >>> # String path
             >>> state = runtime._resolve_initial_state("System.Active")
             >>> # Tuple path
             >>> state = runtime._resolve_initial_state(('System', 'Active'))
             >>> # State object
-            >>> state_obj = state_machine.root_state.substates['System']
+            >>> state_obj = sm.root_state.substates['Active']
             >>> state = runtime._resolve_initial_state(state_obj)
         """
         # Handle State object
@@ -998,11 +1018,16 @@ class SimulationRuntime:
 
         Example::
 
-            >>> runtime = SimulationRuntime(state_machine)
-            >>> target = state_machine.root_state.substates['System'].substates['Active']
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> sm = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(DEMO_DSL, 'state_machine_dsl')
+            ... )
+            >>> runtime = SimulationRuntime(sm)
+            >>> target = sm.root_state.substates['Active']
             >>> stack = runtime._build_hot_start_stack(target)
-            >>> len(stack)
-            3  # Root, System, Active
+            >>> len(stack)  # System, Active
+            2
             >>> stack[-1].state.name
             'Active'
             >>> stack[-1].mode
@@ -1674,6 +1699,13 @@ class SimulationRuntime:
 
         Example::
 
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> sm = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(DEMO_DSL, 'state_machine_dsl')
+            ... )
+            >>> runtime = SimulationRuntime(sm)
+            >>> handler = lambda ctx: None
             >>> key = SimulationRuntime._handler_identity(handler)
             >>> isinstance(key, tuple)
             True
@@ -1698,6 +1730,12 @@ class SimulationRuntime:
 
         Example::
 
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> sm = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(DEMO_DSL, 'state_machine_dsl')
+            ... )
+            >>> runtime = SimulationRuntime(sm)
             >>> paths = runtime._named_abstract_action_paths()
             >>> all(isinstance(path, str) for path in paths)
             True
@@ -1734,6 +1772,12 @@ class SimulationRuntime:
 
         Example::
 
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> sm = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(DEMO_DSL, 'state_machine_dsl')
+            ... )
+            >>> runtime = SimulationRuntime(sm)
             >>> runtime._validate_abstract_action_path("System.Active.Init")
             'System.Active.Init'
         """
@@ -2071,8 +2115,13 @@ class SimulationRuntime:
 
         Example::
 
-            >>> from pyfcstm.model import State
-            >>> state = State(name="P", path=("Root", "P"), substates={}, is_pseudo=True)
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> dsl = 'state Root { [*] -> A; state A; pseudo state P; A -> P; }'
+            >>> sm = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(dsl, 'state_machine_dsl')
+            ... )
+            >>> state = sm.root_state.substates['P']
             >>> SimulationRuntime._is_no_outgoing_pseudo(state)
             True
         """
@@ -3635,6 +3684,12 @@ class SimulationRuntime:
 
             >>> from pyfcstm.dsl import parse_with_grammar_entry
             >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> sm = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(DEMO_DSL, 'state_machine_dsl')
+            ... )
+            >>> runtime = SimulationRuntime(sm)
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
             >>> from pyfcstm.simulate import SimulationRuntime
             >>> dsl_code = '''
             ... state System {
@@ -3651,10 +3706,10 @@ class SimulationRuntime:
             'System'
             >>> runtime.current_state.path
             ('System',)
-            >>> runtime.cycle()
+            >>> _ = runtime.cycle()
             >>> runtime.current_state.name
             'Idle'
-            >>> runtime.cycle(['System.Idle.Start'])
+            >>> _ = runtime.cycle(['System.Idle.Start'])
             >>> runtime.current_state.name
             'Active'
 
@@ -3702,6 +3757,12 @@ class SimulationRuntime:
 
             >>> from pyfcstm.dsl import parse_with_grammar_entry
             >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> sm = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(DEMO_DSL, 'state_machine_dsl')
+            ... )
+            >>> runtime = SimulationRuntime(sm)
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
             >>> from pyfcstm.simulate import SimulationRuntime
             >>> dsl_code = '''
             ... state System {
@@ -3715,7 +3776,7 @@ class SimulationRuntime:
             >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
             >>> sm = parse_dsl_node_to_state_machine(ast)
             >>> runtime = SimulationRuntime(sm)
-            >>> runtime.cycle()
+            >>> _ = runtime.cycle()
             >>> runtime.brief_stack
             [(('System',), 'active'), (('System', 'SubSystem'), 'active'), (('System', 'SubSystem', 'Active'), 'active')]
 
@@ -3749,6 +3810,12 @@ class SimulationRuntime:
 
             >>> from pyfcstm.dsl import parse_with_grammar_entry
             >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> sm = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(DEMO_DSL, 'state_machine_dsl')
+            ... )
+            >>> runtime = SimulationRuntime(sm)
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
             >>> from pyfcstm.simulate import SimulationRuntime
             >>> dsl_code = '''
             ... def int counter = 0;
@@ -3765,19 +3832,19 @@ class SimulationRuntime:
             >>> runtime = SimulationRuntime(sm)
             >>> runtime.is_ended
             False
-            >>> runtime.cycle()
+            >>> _ = runtime.cycle()
             >>> runtime.is_ended
             False
-            >>> runtime.cycle()
+            >>> _ = runtime.cycle()
             >>> runtime.is_ended
             False
-            >>> runtime.cycle()
+            >>> _ = runtime.cycle()
             >>> runtime.is_ended
             False
-            >>> runtime.cycle()  # counter >= 3, exit transition fires
+            >>> _ = runtime.cycle()  # counter >= 3, exit transition fires
             >>> runtime.is_ended
             True
-            >>> runtime.cycle()  # No-op, runtime already ended
+            >>> _ = runtime.cycle()  # No-op, runtime already ended
             >>> runtime.is_ended
             True
 
@@ -3802,10 +3869,25 @@ class SimulationRuntime:
 
         Example::
 
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> sm = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(DEMO_DSL, 'state_machine_dsl')
+            ... )
+            >>> from pyfcstm.simulate import abstract_handler
             >>> runtime = SimulationRuntime(sm, abstract_error_mode='raise')
             >>> runtime.is_error_state
             False
-            >>> # After handler raises exception
+            >>> class Failing:
+            ...     @abstract_handler('System.Active.Init')
+            ...     def on_init(self, ctx):
+            ...         raise RuntimeError('handler failed')
+            ...
+            >>> _ = runtime.register_handlers_from_object(Failing())
+            >>> try:  # raise mode re-raises after recording the error
+            ...     _ = runtime.cycle()
+            ... except RuntimeError:
+            ...     pass
             >>> runtime.is_error_state
             True
         """
@@ -3821,6 +3903,12 @@ class SimulationRuntime:
 
         Example::
 
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> sm = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(DEMO_DSL, 'state_machine_dsl')
+            ... )
+            >>> runtime = SimulationRuntime(sm)
             >>> if runtime.is_error_state:
             ...     action_path, exception = runtime.error_info
             ...     print(f"Error in {action_path}: {exception}")
@@ -3840,8 +3928,14 @@ class SimulationRuntime:
 
         Example::
 
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> sm = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(DEMO_DSL, 'state_machine_dsl')
+            ... )
+            >>> runtime = SimulationRuntime(sm)
             >>> runtime = SimulationRuntime(sm, abstract_error_mode='log')
-            >>> runtime.cycle()
+            >>> _ = runtime.cycle()
             >>> for action_path, exception in runtime.abstract_handler_errors:
             ...     print(f"Error in {action_path}: {exception}")
         """
@@ -3878,8 +3972,18 @@ class SimulationRuntime:
 
         Example::
 
-            >>> replacement = SimulationRuntime(state_machine)
-            >>> runtime.copy_session_configuration_to(replacement)
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> sm = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(DEMO_DSL, 'state_machine_dsl')
+            ... )
+            >>> runtime = SimulationRuntime(sm)
+            >>> replacement = SimulationRuntime(
+            ...     parse_dsl_node_to_state_machine(
+            ...         parse_with_grammar_entry(DEMO_DSL, 'state_machine_dsl')
+            ...     )
+            ... )
+            >>> _ = runtime.copy_session_configuration_to(replacement)
             >>> replacement.history_size == runtime.history_size
             True
         """
@@ -3935,13 +4039,19 @@ class SimulationRuntime:
 
         Example::
 
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> sm = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(DEMO_DSL, 'state_machine_dsl')
+            ... )
+            >>> runtime = SimulationRuntime(sm)
             >>> def my_init(ctx: ReadOnlyExecutionContext):
             ...     print(f"Initializing in state {ctx.get_state_name()}")
             ...     print(f"Counter value: {ctx.get_var('counter')}")
-            >>> runtime.register_abstract_handler("System.Active.InitHardware", my_init)
+            >>> _ = runtime.register_abstract_handler("System.Active.Init", my_init)
             >>> def my_init2(ctx: ReadOnlyExecutionContext):
             ...     print(f"Second handler for {ctx.action_name}")
-            >>> runtime.register_abstract_handler("System.Active.InitHardware", my_init2)
+            >>> _ = runtime.register_abstract_handler("System.Active.Init", my_init2)
         """
         action_path = self._validate_abstract_action_path(action_path)
         handler_key = self._handler_identity(handler)
@@ -3999,9 +4109,17 @@ class SimulationRuntime:
 
         Example::
 
-            >>> count = runtime.unregister_abstract_handler("System.Active.InitHardware")
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> sm = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(DEMO_DSL, 'state_machine_dsl')
+            ... )
+            >>> runtime = SimulationRuntime(sm)
+            >>> count = runtime.unregister_abstract_handler("System.Active.Init")
             >>> print(f"Removed {count} handlers")
-            >>> runtime.unregister_abstract_handler("System.Active.InitHardware", my_init)
+            Removed 0 handlers
+            >>> my_init = lambda ctx: None
+            >>> _ = runtime.unregister_abstract_handler("System.Active.Init", my_init)
         """
         if removal_mode not in ("all", "one"):
             raise ValueError("removal_mode must be 'all' or 'one'")
@@ -4058,8 +4176,15 @@ class SimulationRuntime:
 
         Example::
 
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> sm = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(DEMO_DSL, 'state_machine_dsl')
+            ... )
+            >>> runtime = SimulationRuntime(sm)
             >>> count = runtime.clear_abstract_handler_session()
             >>> print(f"Cleared {count} handlers and handler diagnostics")
+            Cleared 0 handlers and handler diagnostics
         """
         total_count = sum(
             len(handlers) for handlers in self._abstract_handlers.values()
@@ -4086,8 +4211,15 @@ class SimulationRuntime:
 
         Example::
 
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> sm = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(DEMO_DSL, 'state_machine_dsl')
+            ... )
+            >>> runtime = SimulationRuntime(sm)
             >>> count = runtime.clear_all_abstract_handlers()
             >>> print(f"Cleared {count} handlers")
+            Cleared 0 handlers
         """
         return self.clear_abstract_handler_session()
 
@@ -4104,8 +4236,15 @@ class SimulationRuntime:
 
         Example::
 
-            >>> handlers = runtime.get_abstract_handlers("System.Active.InitHardware")
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> sm = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(DEMO_DSL, 'state_machine_dsl')
+            ... )
+            >>> runtime = SimulationRuntime(sm)
+            >>> handlers = runtime.get_abstract_handlers("System.Active.Init")
             >>> print(f"Found {len(handlers)} handlers")
+            Found 0 handlers
         """
         return list(self._abstract_handlers.get(action_path, []))
 
@@ -4120,7 +4259,13 @@ class SimulationRuntime:
 
         Example::
 
-            >>> if runtime.has_abstract_handlers("System.Active.InitHardware"):
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> sm = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(DEMO_DSL, 'state_machine_dsl')
+            ... )
+            >>> runtime = SimulationRuntime(sm)
+            >>> if runtime.has_abstract_handlers("System.Active.Init"):
             ...     print("Handlers registered")
         """
         return (
@@ -4174,6 +4319,13 @@ class SimulationRuntime:
 
         Example::
 
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> sm = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(DEMO_DSL, 'state_machine_dsl')
+            ... )
+            >>> runtime = SimulationRuntime(sm)
+            >>> from pyfcstm.simulate import abstract_handler
             >>> class Handlers:
             ...     @abstract_handler('System.Active.Init')
             ...     def init(self, ctx):
@@ -4230,6 +4382,19 @@ class SimulationRuntime:
 
         Example::
 
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> sm = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(DEMO_DSL, 'state_machine_dsl')
+            ... )
+            >>> runtime = SimulationRuntime(sm)
+            >>> from pyfcstm.simulate import abstract_handler
+            >>> class Handlers:
+            ...     @abstract_handler('System.Active.Init')
+            ...     def on_init(self, ctx):
+            ...         pass
+            ...
+            >>> handlers = Handlers()
             >>> registrations = runtime._collect_object_handler_registrations(handlers)
             >>> all(len(item) == 3 for item in registrations)
             True
@@ -4304,6 +4469,13 @@ class SimulationRuntime:
 
         Example::
 
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> sm = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(DEMO_DSL, 'state_machine_dsl')
+            ... )
+            >>> runtime = SimulationRuntime(sm)
+            >>> from pyfcstm.simulate import abstract_handler
             >>> from pyfcstm.simulate import abstract_handler
             >>> class MyHandlers:
             ...     def __init__(self):
@@ -4325,10 +4497,16 @@ class SimulationRuntime:
             ...         # Not decorated, won't be registered
             ...         pass
             >>>
-            >>> handlers = MyHandlers()
+            >>> from pyfcstm.simulate import abstract_handler
+            >>> class Handlers:
+            ...     @abstract_handler('System.Active.Init')
+            ...     def on_init(self, ctx):
+            ...         pass
+            ...
+            >>> handlers = Handlers()
             >>> count = runtime.register_handlers_from_object(handlers)
             >>> print(f"Registered {count} handlers")
-            Registered 2 handlers
+            Registered 1 handlers
 
         .. note::
            Only methods decorated with :func:`~pyfcstm.simulate.decorators.abstract_handler`

@@ -141,6 +141,12 @@ class ReadOnlyExecutionContext:
 
         Example::
 
+            >>> ctx = ReadOnlyExecutionContext(
+            ...     state_path=('System', 'Active'),
+            ...     vars={'counter': 10},
+            ...     action_name='Initialize',
+            ...     action_stage='enter',
+            ... )
             >>> ctx.get_var('counter')
             10
         """
@@ -155,6 +161,12 @@ class ReadOnlyExecutionContext:
 
         Example::
 
+            >>> ctx = ReadOnlyExecutionContext(
+            ...     state_path=('System', 'Active'),
+            ...     vars={'counter': 10},
+            ...     action_name='Initialize',
+            ...     action_stage='enter',
+            ... )
             >>> ctx.get_state_name()
             'Active'
         """
@@ -169,6 +181,12 @@ class ReadOnlyExecutionContext:
 
         Example::
 
+            >>> ctx = ReadOnlyExecutionContext(
+            ...     state_path=('System', 'Active'),
+            ...     vars={'counter': 10},
+            ...     action_name='Initialize',
+            ...     action_stage='enter',
+            ... )
             >>> ctx.get_full_state_path()
             'System.Active'
         """
@@ -185,6 +203,12 @@ class ReadOnlyExecutionContext:
 
         Example::
 
+            >>> ctx = ReadOnlyExecutionContext(
+            ...     state_path=('System', 'Active'),
+            ...     vars={'counter': 10},
+            ...     action_name='Initialize',
+            ...     action_stage='enter',
+            ... )
             >>> ctx.has_var('counter')
             True
             >>> ctx.has_var('nonexistent')

@@ -924,7 +924,7 @@ class Operation(ASTNode):
         >>> operation = Operation([op1, op2])
         >>> print(str(operation))
         counter := counter + 1;
-        flag := true;
+        flag := True;
     """
 
     stats: List[OperationalDeprecatedAssignment]
@@ -1827,7 +1827,7 @@ class EventDefinition(ASTNode):
         'event start;'
         >>> named_event = EventDefinition("start", "Start Event")
         >>> str(named_event)
-        'event start named "Start Event";'
+        "event start named 'Start Event';"
     """
 
     name: str
@@ -2066,7 +2066,7 @@ class ExitOperations(ExitStatement):
         >>> exit_ops = ExitOperations([op])
         >>> print(str(exit_ops))
         exit {
-            active = false;
+            active = False;
         }
     """
 

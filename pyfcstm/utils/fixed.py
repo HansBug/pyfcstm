@@ -713,7 +713,7 @@ class Int8(_FixedInt):
         >>> x + 1
         Int8(-128)
         >>> x - 200
-        Int8(183)
+        Int8(-73)
     """
     _ctype = ctypes.c_int8
     _type_name = "Int8"

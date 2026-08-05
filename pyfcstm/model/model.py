@@ -516,7 +516,8 @@ class Operation(OperationStatement):
 
     Example::
 
-        >>> op = Operation(var_name="counter", expr=some_expr)
+        >>> from pyfcstm.model.expr import Integer
+        >>> op = Operation(var_name="counter", expr=Integer(1))
         >>> op.var_name
         'counter'
     """
@@ -945,12 +946,44 @@ class OnStage(AstExportable):
 
         Example::
 
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> dsl = '''def int counter = 0;
+            ...
+            ... state System {
+            ...     >> during before PreProcess {
+            ...         counter = counter;
+            ...     }
+            ...     >> during after {
+            ...         counter = counter;
+            ...     }
+            ...     [*] -> Active;
+            ...     state Active {
+            ...         enter Initialize {
+            ...             counter = 0;
+            ...         }
+            ...         [*] -> Ready;
+            ...         state Ready {
+            ...             during {
+            ...                 counter = counter + 1;
+            ...             }
+            ...         }
+            ...         state Error {
+            ...             event critical;
+            ...         }
+            ...     }
+            ... }
+            ... '''
+            >>> sm = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(dsl, 'state_machine_dsl')
+            ... )
+            >>> active = sm.root_state.substates['Active']
             >>> # Named enter action
-            >>> action.func_name
+            >>> active.on_enters[0].func_name
             'System.Active.Initialize'
-            >>> # Unnamed during action
-            >>> action.func_name
-            'System.Active.<unnamed>'
+            >>> # Unnamed during action on a leaf state
+            >>> active.substates['Ready'].on_durings[0].func_name
+            'System.Active.Ready.<unnamed>'
         """
         sp = self.state_path
         if sp[-1] is None:
@@ -1169,11 +1202,43 @@ class OnAspect(AstExportable):
 
         Example::
 
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> dsl = '''def int counter = 0;
+            ...
+            ... state System {
+            ...     >> during before PreProcess {
+            ...         counter = counter;
+            ...     }
+            ...     >> during after {
+            ...         counter = counter;
+            ...     }
+            ...     [*] -> Active;
+            ...     state Active {
+            ...         enter Initialize {
+            ...             counter = 0;
+            ...         }
+            ...         [*] -> Ready;
+            ...         state Ready {
+            ...             during {
+            ...                 counter = counter + 1;
+            ...             }
+            ...         }
+            ...         state Error {
+            ...             event critical;
+            ...         }
+            ...     }
+            ... }
+            ... '''
+            >>> sm = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(dsl, 'state_machine_dsl')
+            ... )
+            >>> aspects = sm.root_state.on_during_aspects
             >>> # Named aspect action
-            >>> action.func_name
+            >>> aspects[0].func_name
             'System.PreProcess'
             >>> # Unnamed aspect action
-            >>> action.func_name
+            >>> aspects[1].func_name
             'System.<unnamed>'
         """
         sp = self.state_path
@@ -2220,16 +2285,49 @@ class State(AstExportable, PlantUMLExportable):
 
         Example::
 
-            >>> # Assuming current state path is ("Root", "System", "Active")
-            >>> # and an event "critical" exists in state "Root.System.Active.error"
-            >>> state.resolve_event("error.critical")
-            Event(name="critical", state_path=("Root", "System", "Active", "error"))
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> dsl = '''def int counter = 0;
+            ...
+            ... state System {
+            ...     >> during before PreProcess {
+            ...         counter = counter;
+            ...     }
+            ...     >> during after {
+            ...         counter = counter;
+            ...     }
+            ...     [*] -> Active;
+            ...     state Active {
+            ...         enter Initialize {
+            ...             counter = 0;
+            ...         }
+            ...         [*] -> Ready;
+            ...         state Ready {
+            ...             during {
+            ...                 counter = counter + 1;
+            ...             }
+            ...         }
+            ...         state Error {
+            ...             event critical;
+            ...         }
+            ...     }
+            ... }
+            ... '''
+            >>> sm = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(dsl, 'state_machine_dsl')
+            ... )
+            >>> state = sm.root_state.substates['Active']
+            >>> event = state.resolve_event("Error.critical")
+            >>> event.name, event.state_path
+            ('critical', ('System', 'Active', 'Error'))
 
-            >>> state.resolve_event(".error.critical")
-            Event(name="critical", state_path=("Root", "System", "error"))
+            >>> # A leading dot resolves from the containing state instead
+            >>> state.substates['Ready'].resolve_event(".Error.critical").name
+            'critical'
 
-            >>> state.resolve_event("/global.shutdown")
-            Event(name="shutdown", state_path=("Root", "global"))
+            >>> # A leading slash resolves from the root state
+            >>> state.resolve_event("/Active.Error.critical").name
+            'critical'
         """
         # Determine the resolution scope from the lexical form of the reference.
         # This is used both for the structured ``refs.scope`` field on
@@ -2416,7 +2514,8 @@ class VarDefine(AstExportable):
 
     Example::
 
-        >>> var_def = VarDefine(name="counter", type="int", init=some_expr)
+        >>> from pyfcstm.model.expr import Integer
+        >>> var_def = VarDefine(name="counter", type="int", init=Integer(0))
         >>> var_def.name
         'counter'
     """
@@ -2461,9 +2560,39 @@ class StateMachine(AstExportable, PlantUMLExportable):
 
     Example::
 
-        >>> sm = StateMachine(defines={}, root_state=some_state)
-        >>> list(sm.walk_states())  # Get all states in the machine
-        [...]
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> dsl = '''def int counter = 0;
+        ...
+        ... state System {
+        ...     >> during before PreProcess {
+        ...         counter = counter;
+        ...     }
+        ...     >> during after {
+        ...         counter = counter;
+        ...     }
+        ...     [*] -> Active;
+        ...     state Active {
+        ...         enter Initialize {
+        ...             counter = 0;
+        ...         }
+        ...         [*] -> Ready;
+        ...         state Ready {
+        ...             during {
+        ...                 counter = counter + 1;
+        ...             }
+        ...         }
+        ...         state Error {
+        ...             event critical;
+        ...         }
+        ...     }
+        ... }
+        ... '''
+        >>> sm = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(dsl, 'state_machine_dsl')
+        ... )
+        >>> [state.name for state in sm.walk_states()]
+        ['System', 'Active', 'Ready', 'Error']
     """
 
     defines: Dict[str, VarDefine]
@@ -2620,7 +2749,38 @@ class StateMachine(AstExportable, PlantUMLExportable):
 
         Example::
 
-            >>> model.diagram().to_dict()['kind']
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> dsl = '''def int counter = 0;
+            ...
+            ... state System {
+            ...     >> during before PreProcess {
+            ...         counter = counter;
+            ...     }
+            ...     >> during after {
+            ...         counter = counter;
+            ...     }
+            ...     [*] -> Active;
+            ...     state Active {
+            ...         enter Initialize {
+            ...             counter = 0;
+            ...         }
+            ...         [*] -> Ready;
+            ...         state Ready {
+            ...             during {
+            ...                 counter = counter + 1;
+            ...             }
+            ...         }
+            ...         state Error {
+            ...             event critical;
+            ...         }
+            ...     }
+            ... }
+            ... '''
+            >>> sm = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(dsl, 'state_machine_dsl')
+            ... )
+            >>> sm.diagram().to_dict()['kind']
             'diagram'
         """
         from ..diagram.api import Diagram
@@ -2675,7 +2835,12 @@ class StateMachine(AstExportable, PlantUMLExportable):
 
         Example::
 
-            >>> model.show(open_window=False).suffix
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> dsl = 'state System {\\n    [*] -> Idle;\\n    state Idle;\\n}\\n'
+            >>> node = parse_with_grammar_entry(dsl, 'state_machine_dsl')
+            >>> sm = parse_dsl_node_to_state_machine(node)
+            >>> sm.show(open_window=False).suffix
             '.html'
         """
         return self.diagram(
@@ -2727,11 +2892,40 @@ class StateMachine(AstExportable, PlantUMLExportable):
 
         Example::
 
-            >>> # Assuming a state machine with Root -> System -> Active -> error event
-            >>> sm = StateMachine(defines={}, root_state=root_state)
-            >>> event = sm.resolve_event("Root.System.Active.error")
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> dsl = '''def int counter = 0;
+            ...
+            ... state System {
+            ...     >> during before PreProcess {
+            ...         counter = counter;
+            ...     }
+            ...     >> during after {
+            ...         counter = counter;
+            ...     }
+            ...     [*] -> Active;
+            ...     state Active {
+            ...         enter Initialize {
+            ...             counter = 0;
+            ...         }
+            ...         [*] -> Ready;
+            ...         state Ready {
+            ...             during {
+            ...                 counter = counter + 1;
+            ...             }
+            ...         }
+            ...         state Error {
+            ...             event critical;
+            ...         }
+            ...     }
+            ... }
+            ... '''
+            >>> sm = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(dsl, 'state_machine_dsl')
+            ... )
+            >>> event = sm.resolve_event("System.Active.Error.critical")
             >>> event.name
-            'error'
+            'critical'
         """
 
         def _fail_invalid(reason: str, message: str) -> None:
@@ -2876,13 +3070,16 @@ def parse_dsl_node_to_state_machine(
 
     Example::
 
-        >>> # Assuming you have a parsed DSL node
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> dsl = 'state System {\\n    [*] -> Idle;\\n    state Idle;\\n}\\n'
+        >>> node = parse_with_grammar_entry(dsl, 'state_machine_dsl')
         >>> state_machine = parse_dsl_node_to_state_machine(
-        ...     dsl_program_node,
+        ...     node,
         ...     path="root.fcstm",
         ... )
         >>> state_machine.root_state.name
-        'root'
+        'System'
     """
 
     sink = DiagnosticSink(collect=collect)

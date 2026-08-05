@@ -20,7 +20,7 @@ Example::
     ...  *  multiline comment
     ...  */\"\"\"
     >>> format_multiline_comment(raw)
-    'Example\\nmultiline comment'
+    'Example\\n*  multiline comment'
 """
 
 import os
@@ -49,7 +49,7 @@ def format_multiline_comment(raw_doc: str) -> str:
         ...  *  multiline comment
         ...  */\"\"\"
         >>> format_multiline_comment(raw)
-        'This is a\\nmultiline comment'
+        'This is a\\n*  multiline comment'
     """
     if re.fullmatch(r'\s*/\*+/\s*', raw_doc.strip()):
         return ""

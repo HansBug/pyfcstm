@@ -7,31 +7,6 @@
 #
 # Regenerate with: python tools/run_doctests.py --update-ledger
 
-pyfcstm/model/expr.py::pyfcstm.model.expr.Expr.and_
-pyfcstm/model/expr.py::pyfcstm.model.expr.Expr.if_then_else
-pyfcstm/model/expr.py::pyfcstm.model.expr.Expr.or_
-pyfcstm/model/expr.py::pyfcstm.model.expr.Expr.select
-pyfcstm/model/expr.py::pyfcstm.model.expr.parse_expr_from_string
-pyfcstm/model/model.py::pyfcstm.model.model.OnAspect.func_name
-pyfcstm/model/model.py::pyfcstm.model.model.OnStage.func_name
-pyfcstm/model/model.py::pyfcstm.model.model.Operation
-pyfcstm/model/model.py::pyfcstm.model.model.State.resolve_event
-pyfcstm/model/model.py::pyfcstm.model.model.StateMachine
-pyfcstm/model/model.py::pyfcstm.model.model.StateMachine.diagram
-pyfcstm/model/model.py::pyfcstm.model.model.StateMachine.resolve_event
-pyfcstm/model/model.py::pyfcstm.model.model.StateMachine.show
-pyfcstm/model/model.py::pyfcstm.model.model.VarDefine
-pyfcstm/model/model.py::pyfcstm.model.model.parse_dsl_node_to_state_machine
-pyfcstm/model/plantuml.py::pyfcstm.model.plantuml
-pyfcstm/model/plantuml.py::pyfcstm.model.plantuml.PlantUMLOptions
-pyfcstm/model/plantuml.py::pyfcstm.model.plantuml.PlantUMLOptions.to_config
-pyfcstm/model/plantuml.py::pyfcstm.model.plantuml.assign_event_colors
-pyfcstm/model/plantuml.py::pyfcstm.model.plantuml.collect_event_transitions
-pyfcstm/model/plantuml.py::pyfcstm.model.plantuml.escape_plantuml_table_cell
-pyfcstm/model/plantuml.py::pyfcstm.model.plantuml.format_action_text
-pyfcstm/model/plantuml.py::pyfcstm.model.plantuml.format_event_name
-pyfcstm/model/plantuml.py::pyfcstm.model.plantuml.format_state_name
-pyfcstm/model/plantuml.py::pyfcstm.model.plantuml.should_show_action
 pyfcstm/simulate/context.py::pyfcstm.simulate.context.ReadOnlyExecutionContext.get_full_state_path
 pyfcstm/simulate/context.py::pyfcstm.simulate.context.ReadOnlyExecutionContext.get_state_name
 pyfcstm/simulate/context.py::pyfcstm.simulate.context.ReadOnlyExecutionContext.get_var

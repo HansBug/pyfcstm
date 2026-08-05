@@ -630,13 +630,13 @@ def _write_ledger(path: str, entries: Sequence[str]) -> None:
         raise DoctestGateError("cannot write ledger {0}: {1}".format(path, err))
 
 
-def run_self_check() -> None:
+def _self_check_ratchet() -> None:
     """
-    Validate the ratchet classification without invoking pytest.
+    Assert the three-way comparison classifies each ratchet state correctly.
 
     :return: ``None``.
     :rtype: None
-    :raises DoctestGateError: If any self-check expectation fails.
+    :raises DoctestGateError: If a classification is wrong.
     """
     clean = classify_outcome(
         collected=["m.py::a", "m.py::b"],
@@ -662,15 +662,28 @@ def run_self_check() -> None:
     if stale["stale"] != ["m.py::gone"]:
         raise DoctestGateError("self-check: uncollected ledger node must be stale")
 
-    command = build_pytest_command(["pyfcstm"], "/tmp/out.json")
-    if "tools.doctest_plugin" not in command:
-        raise DoctestGateError("self-check: gate must load the doctest plugin")
-    if command[-1] != "pyfcstm":
-        raise DoctestGateError("self-check: scope must be the trailing argument")
 
-    empty = load_ledger(os.path.join(_REPO_ROOT, "no-such-ledger-file.txt"))
-    if empty != []:
-        raise DoctestGateError("self-check: missing ledger must read as empty")
+def _self_check_scope() -> None:
+    """
+    Assert scope normalization, ledger narrowing and changed-file selection.
+
+    The changed-file assertions run against a throwaway tree so the self-check
+    does not depend on any particular module surviving in the package.
+
+    :return: ``None``.
+    :rtype: None
+    :raises DoctestGateError: If a scope helper misbehaves.
+    """
+    if normalize_scope(["pyfcstm/bmc"], root="/repo") != ["pyfcstm/bmc"]:
+        raise DoctestGateError("self-check: relative scope must pass through")
+    inside = os.path.join("/repo", "pyfcstm", "bmc")
+    if normalize_scope([inside], root="/repo") != ["pyfcstm/bmc"]:
+        raise DoctestGateError("self-check: in-repo absolute scope must relativize")
+    if normalize_scope(["/elsewhere/pkg"], root="/repo") != ["/elsewhere/pkg"]:
+        raise DoctestGateError("self-check: out-of-repo scope must be left alone")
+    node = os.path.join("/repo", "pyfcstm", "a.py") + "::pyfcstm.a.f"
+    if normalize_scope([node], root="/repo") != ["pyfcstm/a.py::pyfcstm.a.f"]:
+        raise DoctestGateError("self-check: absolute node id must keep its node part")
 
     led = ["pyfcstm/utils/safe.py::a", "pyfcstm/bmc/ast.py::b"]
     if filter_ledger_to_scope(led, ["pyfcstm"]) != led:
@@ -684,8 +697,6 @@ def run_self_check() -> None:
     if filter_ledger_to_scope(led, ["pyfcstm/bmc/ast.py::b"]) != led[1:]:
         raise DoctestGateError("self-check: exact node id scope must be honored")
 
-    # A temporary tree keeps the self-check independent of which modules
-    # currently exist in the package.
     sandbox = tempfile.mkdtemp(prefix="pyfcstm-doctest-selfcheck-")
     os.makedirs(os.path.join(sandbox, "pyfcstm", "utils"))
     open(os.path.join(sandbox, "pyfcstm", "utils", "text.py"), "w").close()
@@ -697,6 +708,15 @@ def run_self_check() -> None:
     if select_changed_scope(dup, root=sandbox) != ["pyfcstm/utils/text.py"]:
         raise DoctestGateError("self-check: changed paths must be de-duplicated")
 
+
+def _self_check_environment() -> None:
+    """
+    Assert the preconditions that keep the ledger meaningful across machines.
+
+    :return: ``None``.
+    :rtype: None
+    :raises DoctestGateError: If a precondition check misbehaves.
+    """
     require_installed_distribution()
     try:
         require_installed_distribution("no-such-distribution-xyz")
@@ -708,8 +728,6 @@ def run_self_check() -> None:
             "self-check: an uninstalled distribution must be reported"
         )
 
-    # Every helper main() reaches for is exercised here, so a missing or renamed
-    # one fails --check instead of waiting for the flag that happens to use it.
     if not require_usable_run(0, ["a.py::a"]):
         raise DoctestGateError("self-check: a clean run must have results")
     if not require_usable_run(1, ["a.py::a"]):
@@ -719,11 +737,11 @@ def run_self_check() -> None:
             "self-check: an allowed empty collection must report no results"
         )
     for status, nodes, empty_ok, why in (
-        (4, [], False, "a nonexistent scope"),
-        (4, [], True, "a nonexistent scope even when empties are allowed"),
-        (2, ["a.py::a"], False, "an interrupted run"),
-        (5, [], False, "an unexplained empty collection"),
-        (0, [], False, "success with nothing collected"),
+            (4, [], False, "a nonexistent scope"),
+            (4, [], True, "a nonexistent scope even when empties are allowed"),
+            (2, ["a.py::a"], False, "an interrupted run"),
+            (5, [], False, "an unexplained empty collection"),
+            (0, [], False, "success with nothing collected"),
     ):
         try:
             require_usable_run(status, nodes, allow_empty=empty_ok)
@@ -734,17 +752,16 @@ def run_self_check() -> None:
             "self-check: {0} must not yield a verdict".format(why)
         )
 
-    if normalize_scope(["pyfcstm/bmc"], root="/repo") != ["pyfcstm/bmc"]:
-        raise DoctestGateError("self-check: relative scope must pass through")
-    inside = os.path.join("/repo", "pyfcstm", "bmc")
-    if normalize_scope([inside], root="/repo") != ["pyfcstm/bmc"]:
-        raise DoctestGateError("self-check: in-repo absolute scope must relativize")
-    if normalize_scope(["/elsewhere/pkg"], root="/repo") != ["/elsewhere/pkg"]:
-        raise DoctestGateError("self-check: out-of-repo scope must be left alone")
-    node = os.path.join("/repo", "pyfcstm", "a.py") + "::pyfcstm.a.f"
-    if normalize_scope([node], root="/repo") != ["pyfcstm/a.py::pyfcstm.a.f"]:
-        raise DoctestGateError("self-check: absolute node id must keep its node part")
 
+def _self_check_arguments() -> None:
+    """
+    Assert every ratchet-breaking passthrough argument is refused.
+
+    :return: ``None``.
+    :rtype: None
+    :raises DoctestGateError: If a listed argument is accepted, or an ordinary
+        reporting flag is refused.
+    """
     reject_unsupported_pytest_args(["--tb=long", "-q", "-p", "no:randomly"])
     for rejected in (
             ["-n", "4"], ["--numprocesses=auto"], ["--dist=loadscope"],
@@ -761,6 +778,45 @@ def run_self_check() -> None:
         raise DoctestGateError(
             "self-check: {0!r} must be rejected".format(rejected)
         )
+
+
+def _self_check_command() -> None:
+    """
+    Assert the pytest command shape and ledger reading.
+
+    :return: ``None``.
+    :rtype: None
+    :raises DoctestGateError: If the command shape or ledger reading is wrong.
+    """
+    command = build_pytest_command(["pyfcstm"], "/tmp/out.json")
+    if "tools.doctest_plugin" not in command:
+        raise DoctestGateError("self-check: gate must load the doctest plugin")
+    if command[-1] != "pyfcstm":
+        raise DoctestGateError("self-check: scope must be the trailing argument")
+
+    empty = load_ledger(os.path.join(_REPO_ROOT, "no-such-ledger-file.txt"))
+    if empty != []:
+        raise DoctestGateError("self-check: missing ledger must read as empty")
+
+
+def run_self_check() -> None:
+    """
+    Validate every helper :func:`main` depends on, without invoking pytest.
+
+    The invariant is coverage of the helpers, not coverage of the flags. A
+    self-check that only exercised what one flag happens to reach once let a
+    missing function survive a passing ``--check`` while ``--scope`` raised
+    ``NameError``.
+
+    :return: ``None``.
+    :rtype: None
+    :raises DoctestGateError: If any self-check expectation fails.
+    """
+    _self_check_ratchet()
+    _self_check_scope()
+    _self_check_environment()
+    _self_check_arguments()
+    _self_check_command()
 
 
 def _build_parser() -> argparse.ArgumentParser:

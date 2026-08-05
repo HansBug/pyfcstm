@@ -451,7 +451,7 @@ def test_interval_intersection_reads_bounds_stated_over_the_reals(
     The last three say which limits have to meet.  5.0 <= x <= 5.0 keeps the point
     while both 5.0 < x <= 5.0 and 5.0 <= x < 5.0 lose it, so the comparison may
     only stay at ``>`` when *both* ends are closed.  Each open side needs its own
-    case: reading the test as "either end is closed" survives one of them, and
+    case: reading the test as "the upper end is closed" survives one of them, and
     reading it as "the lower end is closed" survives the other.
     """
     application = RuleApplication(

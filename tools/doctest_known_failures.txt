@@ -7,12 +7,6 @@
 #
 # Regenerate with: python tools/run_doctests.py --update-ledger
 
-pyfcstm/simulate/context.py::pyfcstm.simulate.context.ReadOnlyExecutionContext.get_full_state_path
-pyfcstm/simulate/context.py::pyfcstm.simulate.context.ReadOnlyExecutionContext.get_state_name
-pyfcstm/simulate/context.py::pyfcstm.simulate.context.ReadOnlyExecutionContext.get_var
-pyfcstm/simulate/context.py::pyfcstm.simulate.context.ReadOnlyExecutionContext.has_var
-pyfcstm/simulate/decorators.py::pyfcstm.simulate.decorators
-pyfcstm/simulate/decorators.py::pyfcstm.simulate.decorators.abstract_handler
 pyfcstm/simulate/runtime.py::pyfcstm.simulate.runtime.SimulationRuntime
 pyfcstm/simulate/runtime.py::pyfcstm.simulate.runtime.SimulationRuntime.__init__
 pyfcstm/simulate/runtime.py::pyfcstm.simulate.runtime.SimulationRuntime._build_hot_start_stack

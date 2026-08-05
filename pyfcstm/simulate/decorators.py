@@ -31,9 +31,25 @@ Example::
     ...     def handle_monitor(self, ctx):
     ...         print(f"Monitoring: {ctx.get_full_state_path()}")
     ...
+    >>> from pyfcstm.dsl import parse_with_grammar_entry
+    >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+    >>> dsl = '''def int counter = 0;
+    ...
+    ... state System {
+    ...     [*] -> Active;
+    ...     state Active {
+    ...         enter abstract Init;
+    ...         during abstract Monitor;
+    ...     }
+    ... }
+    ... '''
+    >>> state_machine = parse_dsl_node_to_state_machine(
+    ...     parse_with_grammar_entry(dsl, 'state_machine_dsl')
+    ... )
     >>> runtime = SimulationRuntime(state_machine)
     >>> handlers = MyHandlers()
-    >>> runtime.register_handlers_from_object(handlers)
+    >>> runtime.register_handlers_from_object(handlers)  # number registered
+    2
 """
 
 from typing import Callable, Optional, Tuple
@@ -178,6 +194,7 @@ def abstract_handler(action_path: str) -> Callable[[Callable], Callable]:
 
     Example::
 
+        >>> from pyfcstm.simulate.context import ReadOnlyExecutionContext
         >>> class MyHandlers:
         ...     @abstract_handler('System.Active.Init')
         ...     def handle_init(self, ctx: ReadOnlyExecutionContext):

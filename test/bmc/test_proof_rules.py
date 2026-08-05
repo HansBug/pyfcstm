@@ -248,10 +248,9 @@ def test_division_is_checked_against_the_encoder_not_against_a_guess() -> None:
     where they part ways, no claimed value is accepted.
 
     The refusal is conservative rather than forced: a published value's type does
-    follow the variable's sort, so two integer operands do settle the reading.
-    Acting on that is a separate change.  What this test pins is only the current
-    contract -- agree and publish, differ and decline -- not the reason once given
-    for it, which held that the types were uninformative.
+    follow the variable's sort, so two integer operands do settle which reading
+    applies.  What this test pins is the contract -- agree and publish, differ and
+    decline -- not a claim that the operand types are uninformative.
     """
 
     def application(left, operand, claimed):
@@ -423,11 +422,11 @@ def test_interval_intersection_decides_emptiness_on_the_endpoints(
         (("gt", 6.0), ("le", 5.0), True),
     ],
     ids=[
-        "the-bounds-cross",
+        "real-bounds-cross",
         "a-real-lies-strictly-between",
         "an-empty-strict-pair-at-one-point",
-        "a-single-point-survives",
-        "an-open-lower-bound-past-the-upper",
+        "a-single-real-point-survives",
+        "an-open-real-lower-bound-past-the-upper",
     ],
 )
 def test_interval_intersection_reads_bounds_stated_over_the_reals(

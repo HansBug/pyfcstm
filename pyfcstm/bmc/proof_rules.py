@@ -382,11 +382,13 @@ def _evaluate(operator: str, left: Any, right: Any):
     they do not, the step is declined rather than guessed, and the explanation
     stays at formal depth.
 
-    That refusal is more conservative than it needs to be.  A published value's
-    type does follow the variable's sort -- integers state integers, reals state
-    floats even for whole values -- so two integer operands do settle the reading.
-    Acting on that is a separate change, tracked on its own; the reason recorded
-    here used to be that the types said nothing, which is not the case.
+    The refusal is conservative rather than forced.  A published value's type does
+    follow the variable's sort -- integers state integers, reals state floats even
+    for whole values -- so two integer operands do settle which reading applies.
+    Acting on that reaches past this function: the quotient it would then publish
+    has to be the one the encoder holds, and the encoder divides integers the
+    Euclidean way, which is not what a Python ``//`` or a truncation gives for
+    every sign pair.
 
     :param operator: The operator name carried by the expression fact.
     :type operator: str

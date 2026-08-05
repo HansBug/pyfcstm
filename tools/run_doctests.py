@@ -10,6 +10,7 @@ documentation-correctness contract rather than a unit-test contract.
 The module contains:
 
 * :class:`DoctestGateError` - Raised when the gate cannot produce a verdict
+* :func:`require_installed_distribution` - Reject a bare checkout early
 * :func:`load_ledger` - Parse the known-failure ledger file
 * :func:`filter_ledger_to_scope` - Restrict the ledger to the current scope
 * :func:`select_changed_scope` - Reduce a changed-file list to gate paths
@@ -97,6 +98,47 @@ def reject_unsupported_pytest_args(pytest_args: Sequence[str]) -> None:
                 "ratchet needs a single collecting process and the whole "
                 "gate runs in seconds".format(head)
             )
+
+
+def require_installed_distribution(name: str = "pyfcstm") -> None:
+    """
+    Fail early when the package under documentation is not installed.
+
+    Some docstrings document behavior that only exists in an installed
+    distribution. ``pyfcstm.highlight.pygments_lexer`` is the concrete case: its
+    examples call ``get_lexer_by_name("fcstm")``, which Pygments resolves through
+    the ``pygments.lexers`` entry point declared in ``setup.py``. A bare checkout
+    can import the package but registers no entry point, so those examples raise
+    ``ClassNotFound`` and the gate reports failures no reader would ever see.
+
+    :param name: Distribution name to look for, defaults to ``'pyfcstm'``.
+    :type name: str, optional
+    :return: ``None``.
+    :rtype: None
+    :raises DoctestGateError: If the distribution is not installed.
+
+    Example::
+
+        >>> require_installed_distribution()
+        >>> require_installed_distribution('no-such-distribution-xyz')
+        Traceback (most recent call last):
+            ...
+        DoctestGateError: no-such-distribution-xyz is not installed ...
+    """
+    try:
+        from importlib.metadata import PackageNotFoundError, version
+    except ImportError:
+        # Python 3.7 ships no importlib.metadata. The gate itself runs on 3.11,
+        # and this probe only improves an error message, so skip it there.
+        return
+    try:
+        version(name)
+    except PackageNotFoundError:
+        raise DoctestGateError(
+            "{0} is not installed in this environment, so docstrings that rely "
+            "on entry points (the Pygments 'fcstm' lexer) fail for a reason no "
+            "reader would hit. Run `pip install -e .` and retry.".format(name)
+        )
 
 
 def load_ledger(path: str) -> List[str]:
@@ -501,6 +543,17 @@ def run_self_check() -> None:
     if select_changed_scope(dup, root=sandbox) != ["pyfcstm/utils/text.py"]:
         raise DoctestGateError("self-check: changed paths must be de-duplicated")
 
+    require_installed_distribution()
+    try:
+        require_installed_distribution("no-such-distribution-xyz")
+    except DoctestGateError:
+        # DoctestGateError: expected; an absent distribution must be reported.
+        pass
+    else:
+        raise DoctestGateError(
+            "self-check: an uninstalled distribution must be reported"
+        )
+
     reject_unsupported_pytest_args(["--tb=long", "-x"])
     for rejected in (["-n", "4"], ["--numprocesses=auto"], ["--dist=loadscope"]):
         try:
@@ -625,8 +678,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     try:
         reject_unsupported_pytest_args(args.pytest_args)
+        require_installed_distribution()
     except DoctestGateError as err:
-        # DoctestGateError: caller passed an argument that breaks the ratchet.
+        # DoctestGateError: caller passed an argument that breaks the ratchet,
+        # or the package is not installed and entry-point examples would fail.
         parser.exit(2, "run_doctests: {0}\n".format(err))
 
     if args.changed_files:

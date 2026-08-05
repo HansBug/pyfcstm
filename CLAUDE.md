@@ -1365,6 +1365,12 @@ green gate as "the documentation has been verified".
 
 - Entry point: `python tools/run_doctests.py` (via `make doctest`). Run
   `python tools/run_doctests.py --check` when changing the runner.
+- The gate needs `pyfcstm` installed (`pip install -e .`). Some docstrings
+  document entry-point behaviour -- `pyfcstm.highlight.pygments_lexer` calls
+  `get_lexer_by_name("fcstm")`, which Pygments resolves through the
+  `pygments.lexers` entry point in `setup.py` -- so a bare checkout fails two
+  examples that no reader would ever hit. The runner refuses to run and says so
+  rather than letting those two look like documentation defects.
 - `make doctest` depends on `build_assets`. `pyfcstm/diagram` docstrings render
   real SVG and PNG through packaged assets, so a checkout without them fails
   seven examples for a reason that has nothing to do with documentation. CI

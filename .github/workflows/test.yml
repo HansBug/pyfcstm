@@ -316,8 +316,13 @@ jobs:
         shell: bash
         run: |
           python -m pip install --upgrade pip
+          pip install --upgrade setuptools wheel
           pip install -r requirements.txt
           pip install -r requirements-test.txt
+          # Docstrings that document entry-point behaviour -- the Pygments
+          # "fcstm" lexer resolved by get_lexer_by_name -- only work from an
+          # installed distribution, so the gate runs against one.
+          pip install -e .
       - name: Self-check the doctest runner
         shell: bash
         run: |

@@ -37,6 +37,7 @@ def private_tmpdir(tmp_path, monkeypatch):
     monkeypatch.setattr(tempfile, "tempdir", str(private))
     return str(private)
 
+
 requires_proc = pytest.mark.skipif(
     not os.path.isdir("/proc/self/fd"),
     reason="descriptor accounting needs /proc/self/fd",
@@ -359,9 +360,7 @@ def test_run_check_process_releases_everything_at_any_injection_point(private_tm
             path for path in glob.glob(os.path.join(private_tmpdir, _SESSION_GLOB))
         }
         leftovers.update(
-            "pid:%d" % pid
-            for pid in _child_pids(os.getpid())
-            if pid not in baseline
+            "pid:%d" % pid for pid in _child_pids(os.getpid()) if pid not in baseline
         )
         return leftovers
 

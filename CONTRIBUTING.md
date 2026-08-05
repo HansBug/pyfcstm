@@ -184,9 +184,10 @@ pyfcstm follows PEP 8 style guidelines with automatic formatting using `ruff`.
    ruff format pyfcstm/dsl/parse.py
    ```
 
-   Format what you touched, not the tree. `ruff format .` rewrites 183 existing
-   files, because the package carries formatting drift that predates the current
-   `ruff` pin; a whole-tree run buries your change in unrelated diff noise. Run
+   Format what you touched, not the tree. `ruff format .` rewrites some 180
+   existing files, because the package carries formatting drift that predates the
+   current `ruff` pin; a whole-tree run buries your change in unrelated diff
+   noise. Run
    `ruff` from the repository root so it picks up `ruff.toml`, whose
    `target-version = "py37"` keeps the output parseable at the supported floor.
 

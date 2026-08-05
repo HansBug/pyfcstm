@@ -233,7 +233,7 @@ def scan_tree(root: Path) -> List[Finding]:
 
 
 #: A shape the scanner must reject, so that a green run means something.
-_PLANTED_VIOLATION = '''
+_PLANTED_VIOLATION = """
 import tempfile
 
 
@@ -248,12 +248,12 @@ def writer(path):
     finally:
         if handle is not None:
             handle.close()
-'''
+"""
 
 #: A sibling helper's acquisition must not read as held by another's handler.
 #: Without this the innermost-scope binding has no control, and reverting it to
 #: ``setdefault`` over an outward walk passes the self-check.
-_PLANTED_SIBLING_SCOPES = '''
+_PLANTED_SIBLING_SCOPES = """
 import tempfile
 
 
@@ -271,10 +271,10 @@ def outer(path):
             pass
 
     return acquires, handles
-'''
+"""
 
 #: The same function with the inner handler sunk out, which must pass.
-_PLANTED_CLEAN = '''
+_PLANTED_CLEAN = """
 import tempfile
 
 
@@ -293,7 +293,7 @@ def writer(path):
     finally:
         if handle is not None:
             handle.close()
-'''
+"""
 
 
 #: A nested handler entered with nothing held. Real code does this -- the retry
@@ -301,7 +301,7 @@ def writer(path):
 #: ``try`` -- and it must not be flagged. Without this case the negative control
 #: never exercises the held-resource computation at all, so a scanner mutated to
 #: report everything would still pass its own self-check.
-_PLANTED_NESTED_BUT_UNHELD = '''
+_PLANTED_NESTED_BUT_UNHELD = """
 import os
 
 
@@ -317,7 +317,7 @@ def retry(name, flags):
     finally:
         if handle != -1:
             os.close(handle)
-'''
+"""
 
 
 #: A floor on file discovery. Without it, mutating ``scan_tree`` to return early

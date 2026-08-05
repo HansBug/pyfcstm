@@ -3405,7 +3405,9 @@ def test_an_unrepresentable_forced_value_degrades_instead_of_failing(
     assert "internal mismatch" not in result.output
 
 
-def test_write_bmc_output_leaves_no_descriptor_or_temporary_file(tmp_path: Path) -> None:
+def test_write_bmc_output_leaves_no_descriptor_or_temporary_file(
+    tmp_path: Path,
+) -> None:
     """No line of the atomic writer leaves its descriptor or temporary file behind."""
     import os
 

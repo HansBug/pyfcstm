@@ -240,13 +240,17 @@ def inject_per_line(
     )
 
 
-def _require_reached(function: Callable, reached_lines, must_reach: Sequence[str]) -> None:
+def _require_reached(
+    function: Callable, reached_lines, must_reach: Sequence[str]
+) -> None:
     """Fail unless every named source fragment was actually injected at."""
     if not must_reach:
         return
     source, first = inspect.getsourcelines(function)
     covered = "".join(
-        source[line - first] for line in reached_lines if 0 <= line - first < len(source)
+        source[line - first]
+        for line in reached_lines
+        if 0 <= line - first < len(source)
     )
     missing = [fragment for fragment in must_reach if fragment not in covered]
     assert not missing, (

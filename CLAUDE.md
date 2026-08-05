@@ -86,8 +86,10 @@ Two mechanisms produce those windows, and they differ in how they age:
   version and is the class rule 6 removes outright.
 - From CPython 3.11 a nested `try:` line compiles to a `NOP` that no `co_exceptiontable` entry covers, so entering an
   inner `try` while holding a resource reopens a window the outer `finally` does not cover. This one is
-  version-dependent: identical code is safe on 3.7-3.10, leaks from 3.11, and leaks on one more line still from 3.12.
-  "It works locally" therefore proves nothing about it. Rule 7 removes it.
+  version-dependent: identical code is safe on 3.7-3.10 and leaks from 3.11. Which *other* lines join it depends on
+  the shape -- a body that compiles to a bare `NOP`, such as `pass` or a nested `finally:` header, adds one from 3.12,
+  while a body of ordinary statements does not. "It works locally" therefore proves nothing about any of it. Rule 7
+  removes the class.
 
 6. **Acquire a resource only after its cleanup handler is established.** Do not write "acquire, then wrap in `try`";
    write "enter the `try`, acquire inside it, and let `finally` decide whether anything needs releasing". Know what
@@ -764,7 +766,7 @@ RST updates in the same commit.
 
 ### Mandatory Pre-Commit Commands
 
-Three commands are required before committing changes to repository code, and they carry equal weight. Skipping any one
+Four commands are required before committing changes to repository code, and they carry equal weight. Skipping any one
 of them is not a judgement call:
 
 | Command | Required when | What a failure means |
@@ -772,8 +774,9 @@ of them is not a judgement call:
 | `make unittest` | Any change to [pyfcstm/](pyfcstm/), [templates/](templates/), or [test/](test/) | Behavior regressed |
 | `make rst_auto` | Any change to repository code or the public Python API | Generated API RST is stale; commit the intentional updates together with the code |
 | `make doctest` | Any change to a docstring under [pyfcstm/](pyfcstm/), or to the gate's own files | A packaged docstring example no longer tells the truth |
+| `make resource_ownership_check` | Adding or moving a call that acquires something needing an explicit release: a descriptor, temporary file, temporary directory, subprocess, socket or lock | A handler is opened while a resource is held, which from CPython 3.11 skips the owner's `finally` entirely (rules 6-12 of the Exception Handling Policy) |
 
-`make doctest` is a full peer of the other two, not an optional extra. A docstring is a published contract: an example
+`make doctest` is a full peer of the others, not an optional extra. A docstring is a published contract: an example
 that no longer runs is a defect in the same sense as a failing test, and the gate admits no exemptions -- there is no
 known-failure list to add one to. Use `make doctest DOCTEST_SCOPE=<path>` for a fast check while iterating, then the
 full `make doctest` before committing.

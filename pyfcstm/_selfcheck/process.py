@@ -416,6 +416,45 @@ def _make_result(
     )
 
 
+def _make_session_directory() -> Optional[str]:
+    """
+    Create the private session directory, or report that none is available.
+
+    A plain function rather than part of :func:`_session_transport`, because
+    tolerating the failure needs a handler and opening one inside that context
+    manager would nest it inside the handler that owns the directory. From
+    CPython 3.11 the inner ``try`` escapes the outer one, which skips the
+    owner's ``finally`` entirely.
+
+    :return: The new directory, or ``None`` when it could not be created.
+    :rtype: str or None
+    """
+    try:
+        return tempfile.mkdtemp(prefix="pyfcstm-selfcheck-")
+    except (OSError, IOError):
+        # A full, damaged, or read-only temporary filesystem leaves the stdout
+        # transport as the only way for a worker to report its result.
+        return None
+
+
+def _create_empty_file(path: str) -> bool:
+    """
+    Create or truncate one file and report whether it is now usable.
+
+    :param path: Path the caller has already bound for cleanup.
+    :type path: str
+    :return: Whether the file exists and is writable.
+    :rtype: bool
+    """
+    try:
+        with open(path, "wb"):
+            pass
+    except (OSError, IOError):
+        # The session directory can be unwritable even when it was created.
+        return False
+    return True
+
+
 @contextlib.contextmanager
 def _session_transport():
     """
@@ -431,8 +470,8 @@ def _session_transport():
     session_dir = None
     result_file = None
     try:
-        try:
-            session_dir = tempfile.mkdtemp(prefix="pyfcstm-selfcheck-")
+        session_dir = _make_session_directory()
+        if session_dir is not None:
             # Name the file before creating it. Cleanup here is by path, not by
             # handle, and _cleanup_session tolerates a path that was never
             # created -- but it cannot remove a directory whose file it was
@@ -440,16 +479,30 @@ def _session_transport():
             # create-truncate as a window that leaks the whole session
             # directory.
             result_file = os.path.join(session_dir, "result.log")
-            with open(result_file, "wb"):
-                pass
-        except (OSError, IOError):
-            # mkdtemp and the create-truncate both fail on a full, damaged or
-            # read-only temporary filesystem. Entered while nothing is held yet,
-            # so the outer handler still covers whatever this acquires.
-            result_file = None
+            if not _create_empty_file(result_file):
+                result_file = None
         yield session_dir, result_file, "file" if result_file else "stdout"
     finally:
         _cleanup_session(session_dir, result_file)
+
+
+def _make_output_spool():
+    """
+    Create one bounded output spool, or describe why it is unavailable.
+
+    Split out of :func:`_output_spools` for the reason given in
+    :func:`_make_session_directory`: the handler that tolerates the failure must
+    not be nested inside the handler that owns the spool.
+
+    :return: ``(spool, setup_error)``; exactly one of the two is ``None``.
+    :rtype: tuple
+    """
+    try:
+        return tempfile.TemporaryFile(mode="w+b"), None
+    except (OSError, ValueError) as err:
+        # Temporary output storage can be unavailable on a damaged or
+        # read-only system; never fall back to unbounded PIPE collection.
+        return None, "{}: {}".format(type(err).__name__, err)
 
 
 @contextlib.contextmanager
@@ -465,18 +518,15 @@ def _output_spools():
     """
     stdout_spool = None
     stderr_spool = None
-    setup_error = None
     try:
-        try:
-            stdout_spool = tempfile.TemporaryFile(mode="w+b")
-            stderr_spool = tempfile.TemporaryFile(mode="w+b")
-        except (OSError, ValueError) as err:
-            # Temporary output storage can be unavailable on a damaged or
-            # read-only system; never fall back to unbounded PIPE collection.
-            setup_error = "{}: {}".format(type(err).__name__, err)
+        stdout_spool, setup_error = _make_output_spool()
+        if setup_error is None:
+            stderr_spool, setup_error = _make_output_spool()
         if setup_error is None:
             yield stdout_spool, stderr_spool, None
         else:
+            # A half-created pair must never be used for bounded capture; both
+            # spools are still released by this handler.
             yield None, None, setup_error
     finally:
         _close_capture_stream(stdout_spool)
@@ -523,6 +573,40 @@ class _WorkerTree:
         return _terminate(self.process, job, self._posix_group, self._grace)
 
 
+def _spawn_worker_process(spawned: list, command, popen_kwargs) -> Optional[Exception]:
+    """
+    Spawn one worker into a caller-owned list and report any spawn failure.
+
+    Split out of :func:`_worker_tree` for the reason given in
+    :func:`_make_session_directory`: the handler that tolerates the failure must
+    not be nested inside the handler that terminates the worker.
+
+    The child is appended to a list the caller created *before* calling, rather
+    than returned. A return would put the handover after the spawn, and an
+    interrupt in between would leave the child with no owner at all -- and an
+    orphaned process is the one leak in this module that the operating system
+    will not reclaim when the parent exits.
+
+    :param spawned: Caller-owned list that receives the child on success.
+    :type spawned: list
+    :param command: Argument vector for the worker process.
+    :type command: collections.abc.Sequence[str]
+    :param popen_kwargs: Keyword arguments for :class:`subprocess.Popen`.
+    :type popen_kwargs: dict
+    :return: The spawn failure, or ``None`` when the child started.
+    :rtype: Exception or None
+    """
+    try:
+        spawned.append(subprocess.Popen(command, **popen_kwargs))
+    except (OSError, ValueError) as err:
+        # The spawn fails when the interpreter path is unusable, the working
+        # directory was removed, or the environment is rejected by the OS.
+        # Reported rather than raised so the caller can classify it as one check
+        # result instead of unwinding the whole run.
+        return err
+    return None
+
+
 @contextlib.contextmanager
 def _worker_tree(command, popen_kwargs, posix_group: bool, grace: float):
     """
@@ -543,23 +627,23 @@ def _worker_tree(command, popen_kwargs, posix_group: bool, grace: float):
         exactly when the spawn failed.
     :rtype: collections.abc.Iterator[tuple]
     """
+    spawned = []
     tree = None
-    spawn_error = None
     try:
-        try:
-            tree = _WorkerTree(
-                subprocess.Popen(command, **popen_kwargs), posix_group, grace
-            )
-        except (OSError, ValueError) as err:
-            # The spawn fails when the interpreter path is unusable, the working
-            # directory was removed, or the environment is rejected by the OS.
-            # Reported rather than raised so the caller can classify it as one
-            # check result instead of unwinding the whole run.
-            spawn_error = err
+        spawn_error = _spawn_worker_process(spawned, command, popen_kwargs)
+        if spawned:
+            tree = _WorkerTree(spawned[0], posix_group, grace)
         yield tree, spawn_error
     finally:
-        if tree is not None:
-            _write_cleanup_diagnostic("worker cleanup", tree.terminate())
+        if spawned:
+            # ``tree`` is unset only when an interrupt landed between the spawn
+            # and the line that wraps it; the child still needs terminating, and
+            # a fresh wrapper does that with no job attached, which is correct
+            # because nothing got far enough to attach one.
+            owner = tree if tree is not None else _WorkerTree(
+                spawned[0], posix_group, grace
+            )
+            _write_cleanup_diagnostic("worker cleanup", owner.terminate())
 
 
 def run_check_process(

@@ -101,8 +101,19 @@ Two mechanisms produce those windows, and they differ in how they age:
    - *By path* (a file or directory you are about to create): bind the name **before** creating it, and make the
      release tolerate a path that never came into existence. A name bound afterwards leaves the creating call as a
      window in which the artifact exists and nothing knows its name.
-7. **Do not enter a nested `try` while holding a resource.** Use `with`, or split the section into its own function so
-   that its handler starts with nothing held. An outer `with` **does** protect an inner `try`; an outer `try` does not.
+7. **Do not enter a nested `try` while holding a resource.** The outer `finally` is not merely bypassed for one line —
+   it does not run at all, including when the outer handler lives in a `@contextlib.contextmanager` generator. An
+   outer `with` **does** protect an inner `try`; an outer `try` does not. Two remedies:
+   - Use `with` for the outer ownership wherever the resource has, or can be given, a context manager.
+   - Otherwise move the inner handler into its own function, so its `try` starts with nothing held. Two shapes are
+     safe there, and which one you need depends on what the helper returns:
+     * *Acquire and hand over in one statement* — `return tempfile.mkdtemp(...)`. An interrupt on that line fires
+       before the call, so nothing is acquired. Splitting it across lines, including a parenthesised multi-line
+       `return`, puts a line event back between the acquisition and the handover and reintroduces the window.
+     * *Append into a caller-owned container* — `spawned.append(subprocess.Popen(...))`, where the caller created
+       `spawned` before calling and its `finally` drains it. Prefer this whenever the resource is a subprocess: a
+       returned value is unowned until the caller's assignment completes, and an orphaned process is the one leak
+       the operating system will not reclaim.
 8. **Put cleanup in `finally`, not in `except`.** This does not conflict with rules 1-5: broad catches stay forbidden,
    and what is required here is moving the cleanup action into `finally`, not widening the `except` type set. A
    `finally` must also never raise over an exception that is already unwinding, which is why the release itself belongs

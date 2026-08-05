@@ -4,6 +4,7 @@ import glob
 import os
 import subprocess
 import sys
+import textwrap
 import time
 import tempfile
 
@@ -311,3 +312,45 @@ def test_worker_tree_leaves_no_child_at_any_injection_point():
     assert report.points_reached > 0
     assert not report.body_windows, report.describe()
     assert _wait_for_no_children(os.getpid()) == []
+
+
+def test_no_ownership_function_opens_a_handler_while_holding():
+    """No resource-owning function nests a ``try`` inside its own ``try``.
+
+    Version-independent on purpose. The runtime consequence only appears from
+    CPython 3.11, where the inner ``try:`` compiles to a ``NOP`` that no
+    exception-table entry covers and the owner's ``finally`` is skipped
+    outright. A suite pinned to 3.10 would never see it, so the shape is
+    checked structurally instead of only by injection.
+    """
+    import ast
+    import inspect
+
+    owners = (
+        process_module._session_transport,
+        process_module._output_spools,
+        process_module._worker_tree,
+        process_module.run_check_process,
+        registry_module._bounded_popen,
+        registry_module._run_subprocess_bounded,
+        report_module.write_report,
+        worker_module._write_frame,
+        worker_module._append_frame_to_file,
+    )
+    offenders = []
+    for owner in owners:
+        function = getattr(owner, "__wrapped__", owner)
+        source, first = inspect.getsourcelines(function)
+        tree = ast.parse(textwrap.dedent("".join(source)))
+        for outer in ast.walk(tree):
+            if not isinstance(outer, ast.Try):
+                continue
+            # Only the outer ``try``'s body holds a resource across an inner
+            # handler; its own handlers and ``finally`` are the release path.
+            for statement in outer.body:
+                for node in ast.walk(statement):
+                    if isinstance(node, ast.Try) and node is not outer:
+                        offenders.append(
+                            "{}:{}".format(function.__name__, node.lineno + first - 1)
+                        )
+    assert not offenders, "nested try inside an owning try: {}".format(offenders)

@@ -624,4 +624,9 @@ def test_directory_fsync_is_its_own_function(tmp_path):
     body = inspect.getsource(_build_identity.write_build_identity_file)
     assert "_fsync_directory(target.parent)" in body
     assert "os.open(" not in body
+    if _build_identity._is_windows():
+        # Windows refuses os.open on a directory, which is exactly why the
+        # writer guards the call with the same predicate. The structural
+        # assertions above are the portable half of this test.
+        return
     _build_identity._fsync_directory(tmp_path)

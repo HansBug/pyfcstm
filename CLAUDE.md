@@ -656,6 +656,26 @@ assets, source commit, and clean-state evidence before replay can be accepted.
 Before committing repository code or public Python API changes, run `make rst_auto` and include any intentional generated
 RST updates in the same commit.
 
+### Mandatory Pre-Commit Commands
+
+Three commands are required before committing changes to repository code, and they carry equal weight. Skipping any one
+of them is not a judgement call:
+
+| Command | Required when | What a failure means |
+| --- | --- | --- |
+| `make unittest` | Any change to [pyfcstm/](pyfcstm/), [templates/](templates/), or [test/](test/) | Behavior regressed |
+| `make rst_auto` | Any change to repository code or the public Python API | Generated API RST is stale; commit the intentional updates together with the code |
+| `make doctest` | Any change to a docstring under [pyfcstm/](pyfcstm/), or to the gate's own files | A packaged docstring example no longer tells the truth, or the known-failure ledger drifted |
+
+`make doctest` is a full peer of the other two, not an optional extra. A docstring is a published contract: an example
+that no longer runs is a defect in the same sense as a failing test, and the ledger only keeps its meaning if every
+commit that touches a docstring re-runs the gate. Use `make doctest DOCTEST_ARGS="--changed-files <list>"` for a
+one-second check while iterating, then the full `make doctest` before committing.
+
+Record why a command does not apply rather than silently skipping it. `make rst_auto` genuinely does not apply to
+[tools/](tools/), which sits outside `PYTHON_CODE_DIR`; `make doctest` genuinely does not apply to a change that touches
+no docstring and no gate file.
+
 ### Quick Reference
 
 - Variables must be declared before the single top-level root `state`; current

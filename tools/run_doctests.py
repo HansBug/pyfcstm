@@ -11,6 +11,7 @@ The module contains:
 
 * :class:`DoctestGateError` - Raised when the gate cannot produce a verdict
 * :func:`require_installed_distribution` - Reject a bare checkout early
+* :func:`require_usable_run` - Reject a pytest run that enumerated nothing
 * :func:`load_ledger` - Parse the known-failure ledger file
 * :func:`normalize_scope` - Make in-repository absolute scope paths relative
 * :func:`filter_ledger_to_scope` - Restrict the ledger to the current scope
@@ -139,6 +140,58 @@ def require_installed_distribution(name: str = "pyfcstm") -> None:
             "{0} is not installed in this environment, so docstrings that rely "
             "on entry points (the Pygments 'fcstm' lexer) fail for a reason no "
             "reader would hit. Run `pip install -e .` and retry.".format(name)
+        )
+
+
+#: pytest exit codes from which a ratchet verdict can be derived: everything
+#: passed, or some tests failed. Interruption (2), internal error (3), usage
+#: error (4) and nothing-collected (5) all leave the recorded node-id sets
+#: incomplete, which would silently read as "the ledger went stale".
+_VERDICT_EXIT_CODES = (0, 1)
+
+
+def require_usable_run(pytest_status: int, collected: Sequence[str]) -> None:
+    """
+    Refuse to derive a verdict from a run that could not enumerate the doctests.
+
+    Ignoring pytest's exit code makes a mistyped or renamed scope report success:
+    pytest exits 4 without collecting anything, the plugin records empty sets,
+    and the three-way comparison then finds no unexpected failure. The gate would
+    print ``0 doctest(s) collected`` and exit 0 -- the exact silent pass this
+    design exists to prevent.
+
+    :param pytest_status: Exit code returned by the pytest subprocess.
+    :type pytest_status: int
+    :param collected: Doctest node ids the plugin recorded.
+    :type collected: collections.abc.Sequence[str]
+    :return: ``None``.
+    :rtype: None
+    :raises DoctestGateError: If the exit code or the collected set is unusable.
+
+    Example::
+
+        >>> require_usable_run(0, ['a.py::a'])
+        >>> require_usable_run(1, ['a.py::a'])
+        >>> require_usable_run(4, [])
+        Traceback (most recent call last):
+            ...
+        DoctestGateError: pytest exited 4 ...
+        >>> require_usable_run(0, [])
+        Traceback (most recent call last):
+            ...
+        DoctestGateError: pytest collected no doctest at all ...
+    """
+    if pytest_status not in _VERDICT_EXIT_CODES:
+        raise DoctestGateError(
+            "pytest exited {0} rather than 0 or 1, so the collected and failed "
+            "node-id sets are incomplete and no ratchet verdict can be "
+            "derived. Exit 4 usually means the requested scope does not "
+            "exist.".format(pytest_status)
+        )
+    if not collected:
+        raise DoctestGateError(
+            "pytest collected no doctest at all. A scope that matches nothing "
+            "is a mistake, not a clean run; check the paths passed to --scope."
         )
 
 
@@ -596,6 +649,22 @@ def run_self_check() -> None:
 
     # Every helper main() reaches for is exercised here, so a missing or renamed
     # one fails --check instead of waiting for the flag that happens to use it.
+    require_usable_run(0, ["a.py::a"])
+    require_usable_run(1, ["a.py::a"])
+    for status, nodes, why in (
+        (4, [], "a nonexistent scope"),
+        (2, ["a.py::a"], "an interrupted run"),
+        (0, [], "an empty collected set"),
+    ):
+        try:
+            require_usable_run(status, nodes)
+        except DoctestGateError:
+            # DoctestGateError: expected; the run cannot support a verdict.
+            continue
+        raise DoctestGateError(
+            "self-check: {0} must not yield a verdict".format(why)
+        )
+
     if normalize_scope(["pyfcstm/bmc"], root="/repo") != ["pyfcstm/bmc"]:
         raise DoctestGateError("self-check: relative scope must pass through")
     inside = os.path.join("/repo", "pyfcstm", "bmc")
@@ -769,12 +838,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "$ {0}\n".format(" ".join(shlex_quote(part) for part in command))
     )
     sys.stdout.flush()
-    subprocess.call(command, cwd=_REPO_ROOT)
+    pytest_status = subprocess.call(command, cwd=_REPO_ROOT)
 
     try:
         outcome = _read_outcome(outcome_file)
+        require_usable_run(pytest_status, outcome["collected"])
     except DoctestGateError as err:
-        # DoctestGateError: pytest aborted before the plugin could report.
+        # DoctestGateError: pytest aborted before the plugin could report, or it
+        # exited in a way that makes the recorded node-id sets untrustworthy.
         sys.stderr.write("run_doctests: {0}\n".format(err))
         return 2
 

@@ -312,6 +312,13 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: '3.11'
+      - name: Build diagram assets
+        shell: bash
+        run: |
+          # setup.py refuses to build the distribution while these are absent,
+          # so this has to precede `pip install -e .`. The script itself is
+          # stdlib plus npm, so it needs no Python requirements yet.
+          make build_assets
       - name: Install dependencies
         shell: bash
         run: |

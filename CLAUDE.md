@@ -1409,10 +1409,13 @@ green gate as "the documentation has been verified".
   it, so always list the full set.
 - `--scope` and `--changed-files` narrow what pytest collects, and the runner
   narrows the ledger to match. Without that, every out-of-scope ledger entry
-  would be reported as a renamed docstring. CI reports the changed-file subset
+  would be reported as a renamed docstring. CI runs the changed-file subset
   before the full run, so a contributor who touches a ledgered docstring sees
   "these examples were already failing" instead of diffing against the default
-  branch by hand. The full `make doctest` right after it is authoritative.
+  branch by hand. That step can fail the job on its own, and doing so is safe:
+  its scope is a subset of the full run's, so it never reports a problem the
+  full `make doctest` would not also report. It is a faster path to the same
+  verdict, not a second opinion.
 - The gate is single-process. `pytest-xdist` collects items inside workers, so
   the ratchet's node-id comparison would report every ledger entry as stale;
   the runner rejects `-n` / `--numprocesses` / `--dist` explicitly.

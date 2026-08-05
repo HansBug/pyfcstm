@@ -261,6 +261,9 @@ class SimulationRuntimeDfsError(RuntimeError):
 
     Example of problematic state machine::
 
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> from pyfcstm.simulate import SimulationRuntime
         >>> dsl_code = '''
         ... state Root {
         ...     state A {
@@ -273,7 +276,9 @@ class SimulationRuntimeDfsError(RuntimeError):
         >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
         >>> sm = parse_dsl_node_to_state_machine(ast)
         >>> runtime = SimulationRuntime(sm)
-        >>> _ = runtime.cycle()  # Raises SimulationRuntimeDfsError
+        >>> result = runtime.cycle()
+        >>> result.delta  # no stoppable successor was committed
+        True
 
     .. note::
        This exception is raised during validation, not during normal execution.
@@ -436,7 +441,12 @@ class _Frame:
     Example::
 
         >>> # Internal frame structure (not directly created by users)
-        >>> frame = _Frame(state=some_state, mode='active')
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> sm = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(DEMO_DSL, 'state_machine_dsl')
+        ... )
+        >>> frame = _Frame(state=sm.root_state.substates['Active'], mode='active')
         >>> frame.state.path
         ('System', 'Active')
         >>> frame.mode
@@ -1120,7 +1130,7 @@ class SimulationRuntime:
             >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
             >>> sm = parse_dsl_node_to_state_machine(ast)
             >>> runtime = SimulationRuntime(sm)
-            >>> _ = runtime.cycle()
+            >>> runtime.cycle()
             CycleResult(value=None, input_events=(), consumed_events=(), unconsumed_events=(), delta=False)
             >>> runtime._parse_event('System.Idle.Start').path_name
             'System.Idle.Start'
@@ -1768,7 +1778,7 @@ class SimulationRuntime:
             ...     parse_with_grammar_entry(DEMO_DSL, 'state_machine_dsl')
             ... )
             >>> runtime = SimulationRuntime(sm)
-            >>> _ = runtime._validate_abstract_action_path("System.Active.Init")
+            >>> runtime._validate_abstract_action_path("System.Active.Init")
             'System.Active.Init'
         """
         if not isinstance(action_path, str):
@@ -2105,8 +2115,13 @@ class SimulationRuntime:
 
         Example::
 
-            >>> from pyfcstm.model import State
-            >>> state = State(name="P", path=("Root", "P"), substates={}, is_pseudo=True)
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> dsl = 'state Root { [*] -> A; state A; pseudo state P; A -> P; }'
+            >>> sm = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(dsl, 'state_machine_dsl')
+            ... )
+            >>> state = sm.root_state.substates['P']
             >>> SimulationRuntime._is_no_outgoing_pseudo(state)
             True
         """
@@ -3329,7 +3344,7 @@ class SimulationRuntime:
             >>> ast = parse_with_grammar_entry(dsl_code, 'state_machine_dsl')
             >>> sm = parse_dsl_node_to_state_machine(ast)
             >>> runtime = SimulationRuntime(sm)
-            >>> _ = runtime.cycle()
+            >>> runtime.cycle()
             CycleResult(value=None, input_events=(), consumed_events=(), unconsumed_events=(), delta=False)
             >>> runtime.current_state.path
             ('Root', 'System', 'Idle')
@@ -3859,11 +3874,20 @@ class SimulationRuntime:
             >>> sm = parse_dsl_node_to_state_machine(
             ...     parse_with_grammar_entry(DEMO_DSL, 'state_machine_dsl')
             ... )
-            >>> runtime = SimulationRuntime(sm)
+            >>> from pyfcstm.simulate import abstract_handler
             >>> runtime = SimulationRuntime(sm, abstract_error_mode='raise')
             >>> runtime.is_error_state
             False
-            >>> # After handler raises exception
+            >>> class Failing:
+            ...     @abstract_handler('System.Active.Init')
+            ...     def on_init(self, ctx):
+            ...         raise RuntimeError('handler failed')
+            ...
+            >>> _ = runtime.register_handlers_from_object(Failing())
+            >>> try:  # raise mode re-raises after recording the error
+            ...     _ = runtime.cycle()
+            ... except RuntimeError:
+            ...     pass
             >>> runtime.is_error_state
             True
         """
@@ -3954,7 +3978,11 @@ class SimulationRuntime:
             ...     parse_with_grammar_entry(DEMO_DSL, 'state_machine_dsl')
             ... )
             >>> runtime = SimulationRuntime(sm)
-            >>> replacement = SimulationRuntime(state_machine)
+            >>> replacement = SimulationRuntime(
+            ...     parse_dsl_node_to_state_machine(
+            ...         parse_with_grammar_entry(DEMO_DSL, 'state_machine_dsl')
+            ...     )
+            ... )
             >>> _ = runtime.copy_session_configuration_to(replacement)
             >>> replacement.history_size == runtime.history_size
             True
@@ -4089,6 +4117,8 @@ class SimulationRuntime:
             >>> runtime = SimulationRuntime(sm)
             >>> count = runtime.unregister_abstract_handler("System.Active.Init")
             >>> print(f"Removed {count} handlers")
+            Removed 0 handlers
+            >>> my_init = lambda ctx: None
             >>> _ = runtime.unregister_abstract_handler("System.Active.Init", my_init)
         """
         if removal_mode not in ("all", "one"):
@@ -4154,6 +4184,7 @@ class SimulationRuntime:
             >>> runtime = SimulationRuntime(sm)
             >>> count = runtime.clear_abstract_handler_session()
             >>> print(f"Cleared {count} handlers and handler diagnostics")
+            Cleared 0 handlers and handler diagnostics
         """
         total_count = sum(
             len(handlers) for handlers in self._abstract_handlers.values()
@@ -4188,6 +4219,7 @@ class SimulationRuntime:
             >>> runtime = SimulationRuntime(sm)
             >>> count = runtime.clear_all_abstract_handlers()
             >>> print(f"Cleared {count} handlers")
+            Cleared 0 handlers
         """
         return self.clear_abstract_handler_session()
 
@@ -4212,6 +4244,7 @@ class SimulationRuntime:
             >>> runtime = SimulationRuntime(sm)
             >>> handlers = runtime.get_abstract_handlers("System.Active.Init")
             >>> print(f"Found {len(handlers)} handlers")
+            Found 0 handlers
         """
         return list(self._abstract_handlers.get(action_path, []))
 
@@ -4464,7 +4497,6 @@ class SimulationRuntime:
             ...         # Not decorated, won't be registered
             ...         pass
             >>>
-            >>> handlers = MyHandlers()
             >>> from pyfcstm.simulate import abstract_handler
             >>> class Handlers:
             ...     @abstract_handler('System.Active.Init')
@@ -4474,7 +4506,7 @@ class SimulationRuntime:
             >>> handlers = Handlers()
             >>> count = runtime.register_handlers_from_object(handlers)
             >>> print(f"Registered {count} handlers")
-            Registered 2 handlers
+            Registered 1 handlers
 
         .. note::
            Only methods decorated with :func:`~pyfcstm.simulate.decorators.abstract_handler`

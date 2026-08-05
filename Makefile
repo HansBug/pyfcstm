@@ -154,8 +154,7 @@ help:
 	@echo "  make template_source_install_check - Validate source-install template extraction"
 	@echo "  make test_boundary_check - Validate pytest test-boundary rules"
 	@echo "  make doctest      - Run the docstring example gate (separate from unittest)"
-	@echo "                      Options: DOCTEST_ARGS='--scope pyfcstm/bmc'"
-	@echo "                               DOCTEST_ARGS='--changed-files /tmp/changed.txt'"
+	@echo "                      Options: DOCTEST_SCOPE=pyfcstm/bmc DOCTEST_ARGS='-q'"
 	@echo "  make api_doc_toctree_check - Validate generated API documentation toctrees"
 	@echo "  make bmc_docs_check - Validate the BMC documentation contracts"
 	@echo "  make bmc_benchmark_check - Validate the BMC infeasibility benchmark corpus"
@@ -384,8 +383,15 @@ docs_terminology_check:
 test_boundary_check:
 	$(PYTHON) tools/check_test_boundary.py
 
+DOCTEST_SCOPE ?= ${SRC_DIR}
+DOCTEST_FLAGS ?= ELLIPSIS IGNORE_EXCEPTION_DETAIL DONT_ACCEPT_TRUE_FOR_1
+
 doctest: build_assets
-	$(PYTHON) tools/run_doctests.py $(DOCTEST_ARGS)
+	$(PYTHON) -m pytest "${DOCTEST_SCOPE}" \
+		--doctest-modules \
+		-p tools.doctest_plugin \
+		-o doctest_optionflags="${DOCTEST_FLAGS}" \
+		$(DOCTEST_ARGS)
 
 api_doc_toctree_check:
 	$(PYTHON) tools/check_api_doc_toctree.py --self-check

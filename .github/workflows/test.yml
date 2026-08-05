@@ -330,10 +330,6 @@ jobs:
           # "fcstm" lexer resolved by get_lexer_by_name -- only work from an
           # installed distribution, so the gate runs against one.
           pip install -e .
-      - name: Self-check the doctest runner
-        shell: bash
-        run: |
-          python tools/run_doctests.py --check
       - name: Report doctest status for changed files
         env:
           HEAD_SHA: ${{ github.event.after || github.sha }}
@@ -352,9 +348,17 @@ jobs:
             && git diff --name-only "$merge_base" "${HEAD_SHA}" > "$changed_file"; then
             echo "Changed files between ${merge_base} and ${HEAD_SHA}:"
             cat "$changed_file"
-            python tools/run_doctests.py --changed-files "$changed_file"
+            targets="$(grep -E '^pyfcstm/.*\.py$' "$changed_file" | while read -r f; do [ -f "$f" ] && printf '%s ' "$f"; done)"
+            if [ -n "$targets" ]; then
+              # shellcheck disable=SC2086
+              python -m pytest $targets --doctest-modules -p tools.doctest_plugin \
+                -o doctest_optionflags="ELLIPSIS IGNORE_EXCEPTION_DETAIL DONT_ACCEPT_TRUE_FOR_1" \
+                --tb=short -q
+            else
+              echo "No changed pyfcstm Python file carries docstring examples."
+            fi
           else
-            echo "Could not compute a changed-file list; the full gate below is authoritative."
+            echo "Changed-file list unavailable on this ref; the full gate below covers everything."
           fi
       - name: Run the doctest gate
         shell: bash

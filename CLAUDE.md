@@ -665,12 +665,12 @@ of them is not a judgement call:
 | --- | --- | --- |
 | `make unittest` | Any change to [pyfcstm/](pyfcstm/), [templates/](templates/), or [test/](test/) | Behavior regressed |
 | `make rst_auto` | Any change to repository code or the public Python API | Generated API RST is stale; commit the intentional updates together with the code |
-| `make doctest` | Any change to a docstring under [pyfcstm/](pyfcstm/), or to the gate's own files | A packaged docstring example no longer tells the truth, or the known-failure ledger drifted |
+| `make doctest` | Any change to a docstring under [pyfcstm/](pyfcstm/), or to the gate's own files | A packaged docstring example no longer tells the truth |
 
 `make doctest` is a full peer of the other two, not an optional extra. A docstring is a published contract: an example
-that no longer runs is a defect in the same sense as a failing test, and the ledger only keeps its meaning if every
-commit that touches a docstring re-runs the gate. Use `make doctest DOCTEST_ARGS="--changed-files <list>"` for a
-one-second check while iterating, then the full `make doctest` before committing.
+that no longer runs is a defect in the same sense as a failing test, and the gate admits no exemptions -- there is no
+known-failure list to add one to. Use `make doctest DOCTEST_SCOPE=<path>` for a fast check while iterating, then the
+full `make doctest` before committing.
 
 Record why a command does not apply rather than silently skipping it. `make rst_auto` genuinely does not apply to
 [tools/](tools/), which sits outside `PYTHON_CODE_DIR`; `make doctest` genuinely does not apply to a change that touches
@@ -1375,62 +1375,56 @@ For built-in template work, the current design bar is defined by the `python` te
 #### Docstring Example Gate
 
 `make doctest` runs every `>>>` example under [pyfcstm/](pyfcstm/) through
-`pytest --doctest-modules` and is intentionally **outside** the
-`pytest -m unittest` suite. Docstring examples are a documentation-correctness
-contract, not a unit-test contract: they exercise happy paths the unit suite
-already covers, so the gate is not wired to `--cov` and must never gate on
-coverage. It also does **not** validate prose. `DocTestParser` only executes
-`>>>` blocks, so a wrong sentence in a docstring passes the gate; do not read a
+`pytest --doctest-modules` and requires all of them to pass. It is intentionally
+**outside** the `pytest -m unittest` suite: docstring examples are a
+documentation-correctness contract, not a unit-test contract. They exercise happy
+paths the unit suite already covers, so the gate is not wired to `--cov` and must
+never gate on coverage. It also does **not** validate prose -- `DocTestParser`
+only executes `>>>` blocks, so a wrong sentence passes the gate; do not read a
 green gate as "the documentation has been verified".
 
-- Entry point: `python tools/run_doctests.py` (via `make doctest`). Run
-  `python tools/run_doctests.py --check` when changing the runner.
-- The gate needs `pyfcstm` installed (`pip install -e .`). Some docstrings
-  document entry-point behaviour -- `pyfcstm.highlight.pygments_lexer` calls
-  `get_lexer_by_name("fcstm")`, which Pygments resolves through the
-  `pygments.lexers` entry point in `setup.py` -- so a bare checkout fails two
-  examples that no reader would ever hit. The runner refuses to run and says so
-  rather than letting those two look like documentation defects.
+- **There is no known-failure list.** An example that cannot run is a defect to
+  fix, not an exemption to record. `# doctest: +SKIP` hides the problem instead
+  of solving it and must not be used to get the gate green; an example that
+  genuinely cannot be executed should stop being presented as an executable
+  example, and become prose or a plain code block instead.
+- The gate is a plain pytest invocation, kept that way on purpose. An earlier
+  version wrapped it in a runner that compared node-id sets against a ledger,
+  and that runner discarded pytest's exit code -- so a mistyped `--scope`
+  collected nothing, found no unlisted failure, and reported success. Plain
+  pytest exits 4 on an unresolvable path and `make` propagates it, so that whole
+  class of silent pass cannot occur.
 - `make doctest` depends on `build_assets`. `pyfcstm/diagram` docstrings render
   real SVG and PNG through packaged assets, so a checkout without them fails
   seven examples for a reason that has nothing to do with documentation. CI
   therefore needs Node 20, because `build_assets` runs `npm ci`.
-- Known failures live in
-  [tools/doctest_known_failures.txt](tools/doctest_known_failures.txt). The
-  ledger is a ratchet: the gate fails when an unlisted docstring starts failing,
-  when a listed docstring starts passing (delete the line), and when a listed
-  node id matches no collected doctest (the docstring was renamed). Never
-  regenerate the ledger with `--update-ledger` to silence a regression; that
-  flag exists to bootstrap a new scope.
+- The gate needs `pyfcstm` installed (`pip install -e .`).
+  `pyfcstm.highlight.pygments_lexer` calls `get_lexer_by_name("fcstm")`, which
+  Pygments resolves through the `pygments.lexers` entry point in `setup.py`, so a
+  bare checkout fails two examples no reader would ever hit. `setup.py` refuses
+  to build while the diagram assets are absent, so `make build_assets` has to
+  precede `pip install -e .`.
 - Option flags are pinned to
   `ELLIPSIS IGNORE_EXCEPTION_DETAIL DONT_ACCEPT_TRUE_FOR_1`, matching
   `sphinx.ext.doctest`'s `doctest_default_flags`. pytest's own default is
   `ELLIPSIS` alone and setting the ini value replaces it rather than extending
   it, so always list the full set.
-- `--scope` and `--changed-files` narrow what pytest collects, and the runner
-  narrows the ledger to match. Without that, every out-of-scope ledger entry
-  would be reported as a renamed docstring. CI runs the changed-file subset
-  before the full run, so a contributor who touches a ledgered docstring sees
-  "these examples were already failing" instead of diffing against the default
-  branch by hand. That step can fail the job on its own, and doing so is safe:
-  its scope is a subset of the full run's, so it never reports a problem the
-  full `make doctest` would not also report. It is a faster path to the same
-  verdict, not a second opinion.
-- The runner rejects pytest arguments that change which items run, or whether
-  they run: `-n` / `--numprocesses` / `--dist` (xdist collects inside workers, so
-  the controller records nothing), `-k`, `--collect-only` / `--co`, `--deselect`,
-  `--ignore` / `--ignore-glob`, and `-x` / `--exitfirst` / `--maxfail`. The
-  comparison asks which of the doctests that exist right now failed, so an item
-  that never ran is indistinguishable from a ledger entry that started passing --
-  and the report would then advise deleting it, destroying the record the ratchet
-  exists to keep. Ordinary reporting flags such as `--tb=line` pass through.
+- Narrow a run with `make doctest DOCTEST_SCOPE=pyfcstm/bmc` while iterating. CI
+  additionally runs the examples in the files a push touched before the full run,
+  so a contributor sees the relevant failures at the top of the log; that step
+  can fail the job on its own, which is safe because its scope is a subset of the
+  full run's.
+- Do not pass pytest arguments that leave examples unexecuted: `-k`,
+  `--collect-only`, `--deselect`, `--ignore`, `-x`, `--maxfail`, or
+  `pytest-xdist`'s `-n`. A green result only means something if every example
+  that exists actually ran.
 - Examples needing files, directories, or a specific working directory get them
   through [tools/doctest_plugin.py](tools/doctest_plugin.py) rather than by
-  rewriting the docstring into something a reader cannot copy. The plugin
-  already runs every example in a throwaway working directory, so
-  file-writing examples cannot pollute the checkout.
+  rewriting the docstring into something a reader cannot copy. The plugin already
+  runs every example in a throwaway working directory, so file-writing examples
+  cannot pollute the checkout.
 - Names that can be written as a plain `>>> import` inside the docstring must be
-  written there, so the example stays copy-pasteable. The plugin may inject a
+  written there, so the example stays copy-pasteable. The plugin injects a
   deliberately small set of names that cannot be inlined; every one of them
   belongs in the table below with the call that produces it, and adding to the
   table requires a reviewer decision recorded in the pull request.

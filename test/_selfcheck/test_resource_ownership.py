@@ -342,16 +342,32 @@ def test_no_ownership_function_opens_a_handler_while_holding():
     import ast
     import inspect
 
+    import pyfcstm.entry.bmc as bmc_module
+    from pyfcstm import _bootstrap
+    from pyfcstm.config import _build_identity
+
+    # Every function this contract covers, across all four subsystems: the ones
+    # that own a resource and the failure-tolerant helpers they were split into.
     owners = (
-        process_module._session_transport,
-        process_module._output_spools,
-        process_module._worker_tree,
         process_module.run_check_process,
+        process_module._session_transport,
+        process_module._make_session_directory,
+        process_module._create_empty_file,
+        process_module._output_spools,
+        process_module._make_output_spool,
+        process_module._worker_tree,
+        process_module._spawn_worker_process,
+        process_module._terminate,
         registry_module._bounded_popen,
+        registry_module._kill_and_reap,
         registry_module._run_subprocess_bounded,
         report_module.write_report,
         worker_module._write_frame,
         worker_module._append_frame_to_file,
+        bmc_module.write_bmc_output,
+        _build_identity.write_build_identity_file,
+        _build_identity._fsync_directory,
+        _bootstrap._emergency_write,
     )
     offenders = []
     for owner in owners:

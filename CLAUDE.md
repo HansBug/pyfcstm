@@ -454,6 +454,30 @@ When prompting an LLM to generate template code, prefer instructions such as "ma
 formatter defaults" instead of writing large hand-authored style guides. Avoid manual column alignment or other
 styling that formatters will immediately rewrite.
 
+**Run `ruff` from the repository root so it picks up [ruff.toml](ruff.toml).** That file exists for one setting,
+`target-version = "py37"`, which is what makes the 3.7 floor in `setup.py` actually enforced rather than merely
+declared. It does two things:
+
+- **`ruff check` becomes a syntax-floor gate.** Without it, `match`, `:=`, and a parenthesised multi-item `with` all
+  pass silently; with it, each is reported as `invalid-syntax` naming the version that introduced the syntax. The
+  gate is syntax only — a 3.9 library API such as `str.removeprefix` still passes, so staying inside the supported
+  standard library remains a review matter.
+- **`ruff format` stops introducing such syntax.** A multi-item `with` that does not fit on one line gets rewritten
+  into the parenthesised form, which is a `SyntaxError` on 3.7 and 3.8. (3.9 accepts it as an undocumented side
+  effect of its PEG parser, so testing there proves nothing.) With the floor pinned, the formatter wraps inside each
+  context manager instead.
+
+The setting changes no lint rule: `ruff check` reports the same findings on the existing tree either way. Two further
+points:
+
+- Keep the configuration in `ruff.toml`, not a new `pyproject.toml`. This project builds from `setup.py`, and adding
+  a `pyproject.toml` would switch pip to PEP 517 isolated builds and change how the sdist, wheel, and frozen CLI are
+  produced.
+- `ruff format` is **not** safe to run unconditionally over [pyfcstm/](pyfcstm/). It is wired into the ANTLR and
+  sample-generation Makefile targets, where it reformats generated files that are committed; elsewhere the package
+  source carries pre-existing formatting drift that reformatting would turn into unrelated diff noise. Format the
+  files you touched, not the tree.
+
 Recommended installation commands:
 
 ```bash

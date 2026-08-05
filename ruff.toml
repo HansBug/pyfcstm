@@ -1,0 +1,28 @@
+# Lint/format configuration for pyfcstm.
+#
+# `target-version` is the whole point of this file, and it does two things.
+#
+# 1. It makes `ruff check` a syntax-floor gate. `setup.py` declares
+#    `python_requires=">=3.7"`, but nothing enforced it: without this setting
+#    ruff accepts `match`, `:=`, and a parenthesised multi-item `with` in
+#    silence. With it, each is reported as `invalid-syntax` naming the version
+#    that introduced it.
+# 2. It stops `ruff format` from *introducing* such syntax. A multi-item `with`
+#    that does not fit on one line gets rewritten into the parenthesised form,
+#    which is a SyntaxError on 3.7 and 3.8. Pinning the floor makes the
+#    formatter wrap inside each context manager instead.
+#
+# The gate is syntax only. A 3.9 library API such as `str.removeprefix` still
+# passes; keeping to the supported standard library remains a review matter.
+#
+# It changes no lint rule: `ruff check` reports the same findings with and
+# without it on the existing tree.
+#
+# Kept as ruff.toml rather than a [tool.ruff] table in pyproject.toml on
+# purpose. This project builds from setup.py, and introducing a pyproject.toml
+# would switch pip to PEP 517 isolated builds and change how the sdist, wheel,
+# and frozen CLI are produced.
+#
+# See also the ruff<0.16 pin in requirements-dev.txt, which holds the rule set
+# at the 0.15 defaults for the same 3.7 floor.
+target-version = "py37"

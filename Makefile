@@ -447,6 +447,11 @@ antlr: antlr-${ANTLR_VERSION}.jar
 
 antlr_build: fcstm_antlr_build fbmcq_antlr_build
 
+# Every `ruff format` below reformats generated Python that is committed and
+# shipped, so it must stay parseable at this project's 3.7 floor. ruff.toml's
+# target-version = "py37" is what keeps it there: without it the formatter can
+# emit a parenthesised multi-item `with`, a SyntaxError on 3.7 and 3.8. Run
+# these targets from the repository root so ruff.toml is discovered.
 fcstm_antlr_build: antlr
 	java -jar antlr-${ANTLR_VERSION}.jar -Dlanguage=Python3 -Xexact-output-dir -o ${ANTLR_GRAMMAR_DIR} \
 		${ANTLR_LEXER_GRAMMAR_FILE} ${ANTLR_PARSER_GRAMMAR_FILE}

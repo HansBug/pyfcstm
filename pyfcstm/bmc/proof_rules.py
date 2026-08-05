@@ -23,9 +23,9 @@ constrain different things and never contradict each other.
 .. note::
    Arithmetic is evaluated under the encoder's semantics, which is what the proof is
    about, and that holds for every operator rather than for division alone.  Reals are
-   computed exactly and published only when a decimal represents them; a quotient whose
-   operands do not settle whether the variable is an integer or a real is declined
-   rather than guessed.
+   computed exactly and published only when a decimal represents them; a quotient the
+   integer and the real reading disagree on is declined rather than guessed, because
+   this checker does not act on the operand types to pick between them.
 
 Example::
 
@@ -395,8 +395,8 @@ def _evaluate(operator: str, left: Any, right: Any):
     :param left: Left operand.
     :param right: Right operand.
     :return: The value, or ``None`` when the operator is unknown, undefined here,
-        exact but not representable as a published number, or a quotient whose sort
-        the operands do not settle.
+        exact but not representable as a published number, or a quotient the integer
+        and the real reading disagree on.
 
     Example::
 

@@ -427,8 +427,8 @@ def test_interval_intersection_decides_emptiness_on_the_endpoints(
         "a-real-lies-strictly-between",
         "an-empty-strict-pair-at-one-point",
         "a-single-real-point-survives",
-        "an-open-upper-end-at-the-same-limit",
         "an-open-lower-end-at-the-same-limit",
+        "an-open-upper-end-at-the-same-limit",
     ],
 )
 def test_interval_intersection_reads_bounds_stated_over_the_reals(

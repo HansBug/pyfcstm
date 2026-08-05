@@ -110,10 +110,31 @@ class _LimitedText:
         return getattr(self._stream, name)
 
 
-def _install_output_limiters():
-    """Install temporary cross-platform Python output limits for one callback."""
-    original_write = os.write
-    original_streams = (sys.stdout, sys.stderr)
+def _capture_output_state():
+    """Snapshot the process-global output objects before anything replaces them.
+
+    Separate from :func:`_install_output_limiters` because capturing acquires
+    nothing: the caller can take this before entering its ``try``, so the
+    handler that restores it is established before the first global is
+    overwritten. Returning the snapshot from the installer instead left five
+    lines -- on every version, not only from 3.11 -- where ``os.write`` was
+    already replaced and the caller's sentinel was still ``None``.
+
+    :return: The original ``os.write`` and the original ``(stdout, stderr)``.
+    :rtype: tuple
+    """
+    return os.write, (sys.stdout, sys.stderr)
+
+
+def _install_output_limiters(state) -> None:
+    """Install temporary cross-platform Python output limits for one callback.
+
+    :param state: Snapshot from :func:`_capture_output_state`.
+    :type state: tuple
+    :return: ``None``.
+    :rtype: None
+    """
+    original_write, _ = state
     budget = _OutputBudget(original_write, OUTPUT_LIMIT)
 
     def limited_write(descriptor, data):
@@ -124,7 +145,6 @@ def _install_output_limiters():
         stream = getattr(sys, name, None)
         if stream is not None:
             setattr(sys, name, _LimitedText(stream, budget, descriptor))
-    return original_write, original_streams
 
 
 def _restore_output_limiters(state) -> None:
@@ -293,13 +313,15 @@ def _classify_worker_call(worker):
 
 def _execute_worker_callback(worker):
     """Run one callback under a temporary bounded output facade."""
-    state = None
+    # Captured before the try because capturing acquires nothing; the restore is
+    # then unconditional, and an interrupt part-way through the install still
+    # puts every global back.
+    state = _capture_output_state()
     try:
-        state = _install_output_limiters()
+        _install_output_limiters(state)
         return _classify_worker_call(worker)
     finally:
-        if state is not None:
-            _restore_output_limiters(state)
+        _restore_output_limiters(state)
 
 
 def _emit_outcome(

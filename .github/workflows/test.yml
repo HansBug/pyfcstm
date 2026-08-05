@@ -772,10 +772,6 @@ jobs:
         shell: bash
         run: |
           make test_boundary_check
-      - name: Run resource ownership check
-        shell: bash
-        run: |
-          make resource_ownership_check
       - name: Run unittest
         env:
           CI: 'true'
@@ -1499,6 +1495,14 @@ jobs:
           ruff check pyfcstm/diagram pyfcstm/model/model.py \
             pyfcstm/model/imports.py pyfcstm/bmc/domain.py test/diagram
           ruff format --check pyfcstm/diagram test/diagram
+      - name: Check resource ownership
+        shell: bash
+        # Here rather than in the Code Test job: this is a sub-second
+        # platform-independent AST scan, and the Code Test job is disarmed by
+        # `ci skip`, `test skip` and `[python skip]`, which would silently take
+        # the gate with it.
+        run: |
+          make resource_ownership_check
       - name: Check the generated API RST is current
         shell: bash
         run: |

@@ -146,17 +146,18 @@ Two mechanisms produce those windows, and they differ in how they age:
     temporary files, temporary directories, subprocesses, sockets, locks. **Subprocesses matter most** — an orphan is
     not reclaimed when the parent exits. The test is "does releasing it require an explicit action?", not "is it an
     integer fd?".
-12. **A new acquisition point needs an injection test or a structural gate alongside it.** Rule 7 is gated for the
-    whole package by `make resource_ownership_check`, which runs in CI: it discovers every function calling an
-    acquisition primitive and fails when the outer `finally` would not run. Rules 6, 8 and 9 have no gate, so a
-    `sys.settrace` sweep is what pins them — see `test/testings/interrupt_injection.py`. Both have limits worth
-    knowing: the gate is only as complete as its list of primitives, which today covers descriptors, temporary files
-    and subprocesses but not process-global state, and a sweep observes nothing on the versions where the shape is
-    harmless. Code review alone catches neither: in
+12. **A new acquisition point needs an injection test or a structural gate alongside it.** Neither alone is enough,
+    and knowing where each stops matters more than knowing that they exist. `make resource_ownership_check` runs in
+    CI and covers one shape — a resource acquired before an inner `try` that the enclosing handler owns. It is blind
+    to three others, all of which this repository has actually contained: an escape needing no nested `try` at all
+    (`with X: pass`), an acquisition reached through a helper rather than a primitive, and process-global state such
+    as a replaced `os.write`. A `sys.settrace` sweep covers rules 6, 8 and 9 and those three shapes — see
+    `test/testings/interrupt_injection.py` — but observes nothing on the versions where a shape is harmless, and
+    skips entirely where `/proc/self/fd` is unavailable. Code review alone catches neither: in
     [PR #389](https://github.com/HansBug/pyfcstm/pull/389) one such defect took four commits to fix, because the first
     two only relocated the unowned line before the 3.11 cause was identified.
 
-Rule 7 is gated by `make resource_ownership_check` in CI; the rest are review conventions that injection sweeps support but do not enforce.
+One shape of rule 7 is gated by `make resource_ownership_check` in the CI lint job; the rest are review conventions that injection sweeps support but do not enforce.
 [Issue #412](https://github.com/HansBug/pyfcstm/issues/412) carries the survey and measurement conventions: an audit is
 only as complete as its list of acquisition primitives, and per-line injection deliberately bypasses the interpreter's
 signal-delivery limits, so a window it finds is not by itself a real-interrupt risk figure.
@@ -254,6 +255,7 @@ make unittest COV_TYPES="xml term-missing"           # With coverage types
 make unittest MIN_COVERAGE=80                        # With minimum coverage
 make unittest WORKERS=4                              # With parallel workers
 make test_boundary_check                              # Validate pytest boundary rules
+make resource_ownership_check                         # Report handlers opened while holding a resource
 
 # Run a single test file or function directly:
 pytest test/simulate/test_semantic_fixtures.py -v
@@ -1577,6 +1579,10 @@ states.
 - `make unittest` intentionally depends on `make tpl` so packaged built-in template assets are refreshed before the
   Python unit-test suite runs. Do not remove that dependency merely to avoid packaging work in tests; instead, keep
   pytest on packaged/public inputs and move source-template maintenance coverage to explicit tooling commands.
+- Run `make resource_ownership_check` when adding or moving a call that acquires something needing an explicit
+  release -- a descriptor, temporary file, temporary directory, subprocess, socket or lock. It is an AST scan, so it
+  is version-independent and takes under a second. See rules 6-12 of the Exception Handling Policy for what it covers
+  and, just as importantly, the three classes it cannot see.
 - Run `make test_boundary_check` when changing test infrastructure, template tests, maintenance tooling, or
   repository guidance that affects the pytest boundary. This command is a pytest-external guard for direct `tools.*`
   imports/execution, repo-root `templates/` access, and source-install smoke markers under [test/](test/).

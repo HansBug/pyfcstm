@@ -20,6 +20,24 @@ The roster is discovered, not listed: any function that calls an acquisition
 primitive is audited. A hand-maintained list cannot fail for a site added after
 it was written, which is the failure mode this guard exists to prevent.
 
+**What it cannot see.** The predicate is "a resource acquired before an inner
+``try`` that the enclosing handler owns", calibrated against per-line injection
+-- every shape it flags measured leaking from 3.11, and the wider predicates
+tried first did not survive that calibration. Three classes stay outside it, and
+an injection sweep is the only cover they have:
+
+* An escape that needs no nested ``try`` at all. A ``with X: pass`` body leaks
+  from 3.11 because ``pass`` compiles to a bare ``NOP`` no exception-table entry
+  covers; that was the real mechanism behind the context managers this module
+  was written after, and no nested-``try`` scan can reach it.
+* An acquisition reached through a helper. ``session_dir = _make_session_directory()``
+  is invisible here, and sinking acquisitions into helpers is exactly the remedy
+  rule 7 prescribes -- so remediated code is harder for this gate to re-check
+  than the code it replaced.
+* Process-global state. ``ACQUISITION_PRIMITIVES`` names descriptors, temporary
+  files and subprocesses; replacing ``os.write`` or ``sys.stdout`` is a resource
+  by rule 11 and is not matched. An audit is only as complete as this list.
+
 Example::
 
     $ python tools/check_resource_ownership.py
@@ -127,53 +145,28 @@ def _acquisition_calls(scope: ast.AST) -> list:
     ]
 
 
-def _resources_at_risk(scope: ast.AST, inner: ast.Try) -> tuple:
-    """Return the acquisitions the outer ``finally`` would fail to release.
+def _resources_held_on_entry(scope: ast.AST, inner: ast.Try) -> tuple:
+    """Return the resources live in ``scope`` when ``inner`` is entered.
 
-    The predicate is derived from measurement, not from intuition, and neither
-    obvious form of it is right.
+    Deliberately narrow, and calibrated against per-line injection rather than
+    intuition. Only "acquired before the inner ``try``" survived that
+    calibration: it has true positives on every supported version from 3.11, and
+    none of the shapes it flags measured clean.
 
-    "Held when the inner ``try`` is entered" misses the shape this guard exists
-    for: the three context managers acquired *inside* their inner ``try`` and a
-    later line in the same body escaped while holding the result.
-
-    "Anything the function acquires" over-reports the retry idiom, where the
-    acquisition is the last statement before ``break`` and nothing afterwards
-    holds it -- swept on 3.10/3.11/3.12/3.14, that shape leaks only inside its
-    own ``finally``, which no Python version survives.
-
-    What separates them is whether any line still runs while the resource is
-    live: an acquisition before the inner ``try``, or one inside it with a
-    statement after it.
+    An earlier revision also flagged "acquired inside the inner ``try`` with a
+    statement after it", reasoning from the three context managers that leaked
+    here. Sweeping that clause over thirteen shapes on eight interpreters gave
+    zero true positives and ten false positives: the real discriminator in those
+    context managers was a ``with X: pass`` body, whose ``pass`` compiles to a
+    bare ``NOP`` that no exception-table entry covers. See the blind spots in
+    this module's docstring -- that shape needs no nested ``try`` at all and is
+    outside what any nested-``try`` scan can see.
     """
     inside_inner = {node for node in ast.walk(inner)}
-    at_risk = []
-    for node in _acquisition_calls(scope):
-        label = "{}() at line {}".format(_called_name(node), node.lineno)
-        if node not in inside_inner:
-            if node.lineno < inner.lineno:
-                at_risk.append(label + ", held on entry")
-            continue
-        # inner.body only: a ``continue`` in the handler runs after the
-        # acquisition failed, not while its result is live.
-        last = max(
-            (
-                statement.lineno
-                for entry in inner.body
-                for statement in ast.walk(entry)
-                if _is_statement(statement)
-            ),
-            default=node.lineno,
-        )
-        if last > node.lineno:
-            at_risk.append(label + ", live for the rest of the handler")
-    return tuple(at_risk)
-
-
-def _is_statement(node: ast.AST) -> bool:
-    """Return whether ``node`` is an executable statement with a line number."""
-    return isinstance(node, ast.stmt) and not isinstance(
-        node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+    return tuple(
+        "{}() at line {}".format(_called_name(node), node.lineno)
+        for node in _acquisition_calls(scope)
+        if node not in inside_inner and node.lineno < inner.lineno
     )
 
 
@@ -210,7 +203,7 @@ def scan_source(source: str, path: str) -> List[Finding]:
                 if not isinstance(node, ast.Try) or node is outer:
                     continue
                 scope = scopes.get(node, tree)
-                held = _resources_at_risk(scope, node)
+                held = _resources_held_on_entry(scope, node)
                 if held:
                     findings.append(
                         Finding(
@@ -233,11 +226,8 @@ def scan_tree(root: Path) -> List[Finding]:
     :rtype: list
     """
     findings = []
-    package = root / "pyfcstm"
-    for path in sorted(package.rglob("*.py")):
+    for path in _module_paths(root):
         relative = path.relative_to(root).as_posix()
-        if any(part in relative for part in EXEMPT_DIRECTORIES):
-            continue
         findings.extend(scan_source(path.read_text(encoding="utf-8"), relative))
     return findings
 
@@ -260,27 +250,27 @@ def writer(path):
             handle.close()
 '''
 
-#: The shape a held-at-entry predicate scores zero on: acquired *inside* the
-#: inner handler, with a statement after it that runs while the result is live.
-#: This is what the three context managers in pyfcstm/_selfcheck/process.py did,
-#: and it was measured leaking on 3.11, 3.12 and 3.14.
-_PLANTED_VIOLATION_INSIDE = '''
-import os
+#: A sibling helper's acquisition must not read as held by another's handler.
+#: Without this the innermost-scope binding has no control, and reverting it to
+#: ``setdefault`` over an outward walk passes the self-check.
+_PLANTED_SIBLING_SCOPES = '''
 import tempfile
 
 
-def writer(payload):
-    directory = None
-    try:
+def outer(path):
+    def acquires():
+        return tempfile.mkstemp(dir=path)
+
+    def handles():
         try:
-            directory = tempfile.mkdtemp()
-            with open(os.path.join(directory, "f"), "wb") as handle:
-                handle.write(payload)
-        except OSError:
-            directory = None
-        return directory
-    finally:
-        pass
+            try:
+                pass
+            except OSError:
+                pass
+        finally:
+            pass
+
+    return acquires, handles
 '''
 
 #: The same function with the inner handler sunk out, which must pass.
@@ -333,17 +323,25 @@ def retry(name, flags):
 #: A floor on file discovery. Without it, mutating ``scan_tree`` to return early
 #: -- or pointing it at a directory that does not exist, or exempting the whole
 #: package -- leaves the scanner reporting a clean tree and ``--check`` agreeing.
-_MINIMUM_SCANNED_MODULES = 40
+_MINIMUM_SCANNED_MODULES = 120
 
 
-def _scan_tree_reached(root: Path) -> int:
-    """Return how many modules :func:`scan_tree` would actually parse."""
+def _module_paths(root: Path) -> List[Path]:
+    """Return the modules the scan will parse.
+
+    The single source of discovery for both :func:`scan_tree` and the
+    ``--check`` floor. They were two implementations sharing one constant, so
+    mutating ``scan_tree`` to return early -- or pointing it at a directory that
+    does not exist -- left the floor satisfied and the gate reporting success.
+    """
     package = root / "pyfcstm"
-    return sum(
-        1
-        for path in package.rglob("*.py")
-        if not any(part in path.relative_to(root).as_posix() for part in EXEMPT_DIRECTORIES)
-    )
+    return [
+        path
+        for path in sorted(package.rglob("*.py"))
+        if not any(
+            part in path.relative_to(root).as_posix() for part in EXEMPT_DIRECTORIES
+        )
+    ]
 
 
 def self_check() -> int:
@@ -353,20 +351,17 @@ def self_check() -> int:
     :return: ``0`` when both halves behave, ``1`` otherwise.
     :rtype: int
     """
-    for label, sample in (
-        ("held-on-entry", _PLANTED_VIOLATION),
-        ("acquired-inside", _PLANTED_VIOLATION_INSIDE),
-    ):
-        violations = scan_source(sample, "<planted-{}>".format(label))
-        if len(violations) != 1:
-            print(
-                "resource ownership self-check FAILED: planted {} violation "
-                "produced {} findings, expected 1".format(label, len(violations))
-            )
-            return 1
+    violations = scan_source(_PLANTED_VIOLATION, "<planted-held-on-entry>")
+    if len(violations) != 1:
+        print(
+            "resource ownership self-check FAILED: planted violation produced "
+            "{} findings, expected 1".format(len(violations))
+        )
+        return 1
     for label, sample in (
         ("clean", _PLANTED_CLEAN),
         ("nested-but-unheld", _PLANTED_NESTED_BUT_UNHELD),
+        ("sibling-scopes", _PLANTED_SIBLING_SCOPES),
     ):
         findings = scan_source(sample, "<planted-{}>".format(label))
         if findings:
@@ -375,7 +370,7 @@ def self_check() -> int:
                 "{} findings, expected 0".format(label, len(findings))
             )
             return 1
-    reached = _scan_tree_reached(repository_root())
+    reached = len(_module_paths(repository_root()))
     if reached < _MINIMUM_SCANNED_MODULES:
         print(
             "resource ownership self-check FAILED: file discovery reached {} "

@@ -35,8 +35,8 @@ Example::
     ('name', 'path')
     >>>
     >>> # Optional types
-    >>> parse_value('none', 'optional[str]')
-    None
+    >>> parse_value('none', 'optional[str]') is None
+    True
     >>> parse_value('hello', 'optional[str]')
     'hello'
     >>> parse_value('42', 'optional')
@@ -127,8 +127,8 @@ def parse_value(
         3.14
         >>> parse_value('true')
         True
-        >>> parse_value('none')
-        None
+        >>> parse_value('none') is None
+        True
         >>> parse_value('hello')
         'hello'
         >>> parse_value('"hello world"')
@@ -141,10 +141,10 @@ def parse_value(
         42
         >>> parse_value('true', bool)
         True
-        >>> parse_value('none', None)
-        None
-        >>> parse_value('none', type(None))
-        None
+        >>> parse_value('none', None) is None
+        True
+        >>> parse_value('none', type(None)) is None
+        True
         >>> parse_value('"hello world"', str)
         'hello world'
         >>>
@@ -155,8 +155,8 @@ def parse_value(
         3.14
         >>> parse_value('true', 'bool')
         True
-        >>> parse_value('none', 'none')
-        None
+        >>> parse_value('none', 'none') is None
+        True
         >>> parse_value('hello', 'str')
         'hello'
         >>>

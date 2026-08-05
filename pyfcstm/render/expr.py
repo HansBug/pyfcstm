@@ -381,6 +381,7 @@ def fn_expr_render(node: Union[float, int, dict, dsl_nodes.Expr, Any],
 
     Example::
 
+        >>> from pyfcstm.render.env import create_env
         >>> env = create_env()
         >>> templates = _DSL_STYLE
         >>> fn_expr_render(Integer(42).to_ast_node(), templates, env)

@@ -30,10 +30,18 @@ def sequence_safe(segments: Iterable[str]) -> str:
     Convert a sequence of strings into a safe underscore-separated identifier.
 
     Each input segment is transformed into underscore style using
-    :func:`hbutils.string.underscore`, multiple consecutive underscores are
-    collapsed to a single underscore, and all segments are joined by a double
-    underscore separator (``"__"``). The resulting identifier is stable and
-    suitable for consistent naming.
+    :func:`hbutils.string.underscore`, characters outside ``[0-9a-zA-Z_]`` are
+    replaced with underscores, multiple consecutive underscores are collapsed to
+    a single underscore, and all segments are joined by a double underscore
+    separator (``"__"``). The resulting identifier is stable and suitable for
+    consistent naming.
+
+    .. note::
+       ``hbutils.string.underscore`` handles naming conventions such as
+       CamelCase and kebab-case but leaves whitespace and punctuation alone, so
+       the extra replacement step is what makes the result an identifier rather
+       than merely lower-cased text. The result feeds PlantUML state
+       identifiers, where a stray space would emit a malformed diagram.
 
     :param segments: Sequence of string segments to be normalized and joined.
     :type segments: Iterable[str]
@@ -46,5 +54,10 @@ def sequence_safe(segments: Iterable[str]) -> str:
         'camel_case__snake_case__kebab_case'
         >>> sequence_safe(['Hello World', 'Test___String'])
         'hello_world__test_string'
+        >>> sequence_safe(['name with spaces', 'dots.and,commas'])
+        'name_with_spaces__dots_and_commas'
     """
-    return '__'.join(map(lambda x: re.sub(r'_+', '_', underscore(x)), segments))
+    return '__'.join(
+        re.sub(r'_+', '_', re.sub(r'[^0-9a-zA-Z_]', '_', underscore(segment)))
+        for segment in segments
+    )

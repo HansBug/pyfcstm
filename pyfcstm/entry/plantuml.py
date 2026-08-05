@@ -507,7 +507,13 @@ def build_plantuml_output(
 
     Example::
 
-        >>> plantuml_text = build_plantuml_output('traffic_light.fcstm', detail_level='minimal')
+        >>> import os, pathlib, tempfile
+        >>> directory = tempfile.mkdtemp()
+        >>> source = os.path.join(directory, 'traffic_light.fcstm')
+        >>> _ = pathlib.Path(source).write_text(
+        ...     'state TrafficLight {\\n    [*] -> Red;\\n    state Red;\\n}\\n'
+        ... )
+        >>> plantuml_text = build_plantuml_output(source, detail_level='minimal')
         >>> plantuml_text.startswith('@startuml')
         True
     """

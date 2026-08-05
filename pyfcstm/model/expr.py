@@ -910,7 +910,7 @@ class Expr(AstExportable):
 
             >>> x = Variable("x")
             >>> y = Variable("y")
-            >>> expr = x.gt(0).and_(y.gt(0))  # Creates: (x > 0) && (y > 0)
+            >>> expr = (x > 0).and_(y > 0)  # Creates: (x > 0) && (y > 0)
             >>> expr(x=5, y=10)
             True
             >>> expr(x=5, y=-1)
@@ -934,7 +934,7 @@ class Expr(AstExportable):
 
             >>> x = Variable("x")
             >>> y = Variable("y")
-            >>> expr = x.gt(0).or_(y.gt(0))  # Creates: (x > 0) || (y > 0)
+            >>> expr = (x > 0).or_(y > 0)  # Creates: (x > 0) || (y > 0)
             >>> expr(x=5, y=-1)
             True
             >>> expr(x=-1, y=-2)
@@ -982,7 +982,7 @@ class Expr(AstExportable):
         Example::
 
             >>> x = Variable("x")
-            >>> expr = x.gt(0).select(x, -x)  # Creates: (x > 0) ? x : -x
+            >>> expr = (x > 0).select(x, -x)  # Creates: (x > 0) ? x : -x
             >>> expr(x=5)
             5
             >>> expr(x=-3)
@@ -1012,7 +1012,7 @@ class Expr(AstExportable):
         Example::
 
             >>> x = Variable("x")
-            >>> expr = x.gt(0).if_then_else(x, -x)  # Creates: (x > 0) ? x : -x
+            >>> expr = (x > 0).if_then_else(x, -x)  # Creates: (x > 0) ? x : -x
             >>> expr(x=5)
             5
             >>> expr(x=-3)
@@ -1742,7 +1742,7 @@ def parse_expr_from_string(expr_string: str, mode: Literal['generic', 'numeric',
         >>> expr = parse_expr_from_string("x > 5 && y < 10", mode='logical')
         >>> isinstance(expr, BinaryOp)
         True
-        >>> expr = parse_expr_from_string("!flag || (a == b)", mode='logical')
+        >>> expr = parse_expr_from_string("!(flag != 0) || (a == b)", mode='logical')
         >>> isinstance(expr, BinaryOp)
         True
     """

@@ -14,10 +14,16 @@ The module contains the following main components:
 
 Example::
 
+    >>> import os, pathlib, tempfile
     >>> from pyfcstm.utils.binary import is_binary_file
-    >>> is_binary_file('example.txt')
+    >>> directory = tempfile.mkdtemp()
+    >>> text_file = os.path.join(directory, 'example.txt')
+    >>> _ = pathlib.Path(text_file).write_text('plain text\\n')
+    >>> binary_file = os.path.join(directory, 'example.bin')
+    >>> _ = pathlib.Path(binary_file).write_bytes(b'\\x00\\x01\\x02')
+    >>> is_binary_file(text_file)
     False
-    >>> is_binary_file('example.bin')
+    >>> is_binary_file(binary_file)
     True
 """
 
@@ -43,9 +49,15 @@ def is_binary_file(file: str) -> bool:
 
     Example::
 
-        >>> is_binary_file('example.txt')
+        >>> import os, pathlib, tempfile
+        >>> directory = tempfile.mkdtemp()
+        >>> text_file = os.path.join(directory, 'example.txt')
+        >>> _ = pathlib.Path(text_file).write_text('plain text\\n')
+        >>> binary_file = os.path.join(directory, 'example.bin')
+        >>> _ = pathlib.Path(binary_file).write_bytes(b'\\x00\\x01\\x02')
+        >>> is_binary_file(text_file)
         False
-        >>> is_binary_file('example.bin')
+        >>> is_binary_file(binary_file)
         True
     """
     with open(file, 'rb') as f:

@@ -37,9 +37,20 @@ templating, YAML configuration, and ignore pattern handling.
 Example::
 
     >>> from pyfcstm.render.render import StateMachineCodeRenderer
-    >>> from pyfcstm.model import StateMachine
-    >>> renderer = StateMachineCodeRenderer('./templates')
-    >>> renderer.render(StateMachine(defines={}, root_state=some_state), './output')
+    >>> import os, tempfile
+    >>> from pyfcstm.dsl import parse_with_grammar_entry
+    >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+    >>> from pyfcstm.template import extract_template
+    >>>
+    >>> template_dir = extract_template('python', tempfile.mkdtemp())
+    >>> dsl = 'state Demo {\\n    [*] -> Idle;\\n    state Idle;\\n}\\n'
+    >>> machine = parse_dsl_node_to_state_machine(
+    ...     parse_with_grammar_entry(dsl, 'state_machine_dsl')
+    ... )
+    >>> output_dir = tempfile.mkdtemp()
+    >>> StateMachineCodeRenderer(template_dir).render(machine, output_dir)
+    >>> os.path.isfile(os.path.join(output_dir, 'machine.py'))
+    True
 
 """
 
@@ -144,8 +155,21 @@ class StateMachineCodeRenderer:
 
     Example::
 
-        >>> renderer = StateMachineCodeRenderer('./templates')
-        >>> renderer.render(my_state_machine, './output', clear_previous_directory=True)
+        >>> import os, tempfile
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> from pyfcstm.template import extract_template
+        >>>
+        >>> template_dir = extract_template('python', tempfile.mkdtemp())
+        >>> dsl = 'state Demo {\\n    [*] -> Idle;\\n    state Idle;\\n}\\n'
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(dsl, 'state_machine_dsl')
+        ... )
+        >>> output_dir = tempfile.mkdtemp()
+        >>> renderer = StateMachineCodeRenderer(template_dir)
+        >>> renderer.render(machine, output_dir, clear_previous_directory=True)
+        >>> os.path.isfile(os.path.join(output_dir, 'machine.py'))
+        True
     """
 
     def __init__(self, template_dir: str, config_file: str = "config.yaml") -> None:
@@ -599,8 +623,21 @@ class StateMachineCodeRenderer:
 
         Example::
 
-            >>> renderer = StateMachineCodeRenderer('./templates')
-            >>> renderer.render(my_state_machine, './output', clear_previous_directory=True)
+            >>> import os, tempfile
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> from pyfcstm.template import extract_template
+            >>>
+            >>> template_dir = extract_template('python', tempfile.mkdtemp())
+            >>> dsl = 'state Demo {\\n    [*] -> Idle;\\n    state Idle;\\n}\\n'
+            >>> machine = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(dsl, 'state_machine_dsl')
+            ... )
+            >>> output_dir = tempfile.mkdtemp()
+            >>> renderer = StateMachineCodeRenderer(template_dir)
+            >>> renderer.render(machine, output_dir, clear_previous_directory=True)
+            >>> os.path.isfile(os.path.join(output_dir, 'machine.py'))
+            True
         """
         output_dir = os.path.abspath(output_dir)
         os.makedirs(output_dir, exist_ok=True)

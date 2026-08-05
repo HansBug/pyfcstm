@@ -27,7 +27,8 @@ Example::
     ...     show_lifecycle_actions=True,
     ... )
     >>> config = options.to_config()
-    >>> config.show_enter_actions  # True (inherited from show_lifecycle_actions)
+    >>> config.show_enter_actions  # inherited from show_lifecycle_actions
+    True
 
 """
 
@@ -69,6 +70,21 @@ def format_state_name(state: 'State', name_format: Tuple[Literal['name', 'extra_
 
     Example::
 
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> dsl = '''state System {
+        ...     event Start named "启动模块";
+        ...     [*] -> Running;
+        ...     state Running named "系统运行中";
+        ...     state Failed;
+        ...     Running -> Failed : Start;
+        ...     Failed -> Running : Start;
+        ... }
+        ... '''
+        >>> sm = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(dsl, 'state_machine_dsl')
+        ... )
+        >>> state = sm.root_state.substates['Running']
         >>> format_state_name(state, ('extra_name', 'name'))
         '系统运行中 (Running)'
     """
@@ -113,10 +129,27 @@ def format_event_name(
 
     Example::
 
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> dsl = '''state System {
+        ...     event Start named "启动模块";
+        ...     [*] -> Running;
+        ...     state Running named "系统运行中";
+        ...     state Failed;
+        ...     Running -> Failed : Start;
+        ...     Failed -> Running : Start;
+        ... }
+        ... '''
+        >>> sm = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(dsl, 'state_machine_dsl')
+        ... )
+        >>> from pyfcstm.model.plantuml import collect_event_transitions
+        >>> _state, transition = collect_event_transitions(sm)['System.Start'][0]
+        >>> event = transition.event
         >>> format_event_name(event, ('extra_name', 'name'))
         '启动模块 (Start)'
-        >>> format_event_name(event, ('extra_name', 'relpath'), trans_node)
-        '启动模块 (State.Start)'
+        >>> format_event_name(event, ('extra_name', 'relpath'))
+        '启动模块 (/Start)'
     """
     parts = []
     for element in name_format:
@@ -168,7 +201,7 @@ def escape_plantuml_table_cell(text: str) -> str:
     Example::
 
         >>> escape_plantuml_table_cell("2 | 5")
-        '2 \\| 5'
+        '2 \\\\| 5'
         >>> escape_plantuml_table_cell("normal text")
         'normal text'
     """
@@ -189,7 +222,26 @@ def should_show_action(action: 'Union[OnStage, OnAspect]', config: 'PlantUMLOpti
 
     Example::
 
-        >>> # For an abstract action
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> dsl = '''state System {
+        ...     [*] -> Idle;
+        ...     state Idle {
+        ...         enter abstract InitHardware;
+        ...         [*] -> Ready;
+        ...         state Ready;
+        ...     }
+        ...     state Failed;
+        ...     !* -> Failed : /ErrorEvent;
+        ... }
+        ... '''
+        >>> sm = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(dsl, 'state_machine_dsl')
+        ... )
+        >>> action = list(sm.root_state.substates['Idle'].on_enters)[0]
+        >>> action.is_abstract
+        True
+        >>> config = PlantUMLOptions(show_lifecycle_actions=True).to_config()
         >>> should_show_action(action, config)
         True
     """
@@ -216,8 +268,26 @@ def format_action_text(action: 'Union[OnStage, OnAspect]', config: 'PlantUMLOpti
 
     Example::
 
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> dsl = '''state System {
+        ...     [*] -> Idle;
+        ...     state Idle {
+        ...         enter abstract InitHardware;
+        ...         [*] -> Ready;
+        ...         state Ready;
+        ...     }
+        ...     state Failed;
+        ...     !* -> Failed : /ErrorEvent;
+        ... }
+        ... '''
+        >>> sm = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(dsl, 'state_machine_dsl')
+        ... )
+        >>> action = list(sm.root_state.substates['Idle'].on_enters)[0]
+        >>> config = PlantUMLOptions(show_lifecycle_actions=True).to_config()
         >>> format_action_text(action, config)
-        'enter abstract InitHardware'
+        'enter abstract InitHardware;'
     """
     # Convert action to AST node and get text representation
     ast_node = action.to_ast_node()
@@ -302,8 +372,8 @@ class PlantUMLOptions:
 
         Example::
 
-            >>> PlantUMLOptions(detail_level='minimal')  # Clean structure view
-            >>> PlantUMLOptions(detail_level='full')     # Show all details
+            >>> options = PlantUMLOptions(detail_level='minimal')  # Clean structure view
+            >>> options = PlantUMLOptions(detail_level='full')     # Show all details
 
     show_variable_definitions : Optional[bool], default=None
         Whether to display variable definitions in the diagram.
@@ -315,7 +385,7 @@ class PlantUMLOptions:
         Example::
 
             >>> # Show variables in a note block
-            >>> PlantUMLOptions(show_variable_definitions=True, variable_display_mode='note')
+            >>> options = PlantUMLOptions(show_variable_definitions=True, variable_display_mode='note')
             >>> # Output: note as DefinitionNote
             >>> #         defines {
             >>> #             def int counter = 0;
@@ -332,7 +402,7 @@ class PlantUMLOptions:
         Example::
 
             >>> # Legend format (compact table)
-            >>> PlantUMLOptions(show_variable_definitions=True, variable_display_mode='legend')
+            >>> options = PlantUMLOptions(show_variable_definitions=True, variable_display_mode='legend')
             >>> # Output: legend top left
             >>> #         |= Variable |= Type |= Initial Value |
             >>> #         | counter | int | 0 |
@@ -354,13 +424,13 @@ class PlantUMLOptions:
         Example::
 
             >>> # Place legend at top-left (default)
-            >>> PlantUMLOptions(variable_display_mode='legend', variable_legend_position='top left')
+            >>> options = PlantUMLOptions(variable_display_mode='legend', variable_legend_position='top left')
             >>> # Output: legend top left
             >>> #         |= Variable |= Type |= Initial Value |
             >>> #         endlegend
 
             >>> # Place legend at bottom-right
-            >>> PlantUMLOptions(variable_display_mode='legend', variable_legend_position='bottom right')
+            >>> options = PlantUMLOptions(variable_display_mode='legend', variable_legend_position='bottom right')
             >>> # Output: legend bottom right
             >>> #         |= Variable |= Type |= Initial Value |
             >>> #         endlegend
@@ -376,15 +446,15 @@ class PlantUMLOptions:
         Example::
 
             >>> # Show only extra_name (default)
-            >>> PlantUMLOptions(state_name_format=('extra_name',))
+            >>> options = PlantUMLOptions(state_name_format=('extra_name',))
             >>> # Output: state "运行中" as running
 
             >>> # Show extra_name with name in parentheses
-            >>> PlantUMLOptions(state_name_format=('extra_name', 'name'))
+            >>> options = PlantUMLOptions(state_name_format=('extra_name', 'name'))
             >>> # Output: state "运行中 (Running)" as running
 
             >>> # Show name with full path
-            >>> PlantUMLOptions(state_name_format=('name', 'path'))
+            >>> options = PlantUMLOptions(state_name_format=('name', 'path'))
             >>> # Output: state "Running (System.Module.Running)" as system__module__running
 
     show_pseudo_state_style : Optional[bool], default=None
@@ -396,7 +466,7 @@ class PlantUMLOptions:
 
         Example::
 
-            >>> PlantUMLOptions(show_pseudo_state_style=True)
+            >>> options = PlantUMLOptions(show_pseudo_state_style=True)
             >>> # Output: state "PseudoState" as pseudo_state <<pseudo>> #line.dotted
 
     collapse_empty_states : bool, default=False
@@ -408,7 +478,7 @@ class PlantUMLOptions:
         Example::
 
             >>> # With collapse_empty_states=True, empty states are more compact
-            >>> PlantUMLOptions(collapse_empty_states=True)
+            >>> options = PlantUMLOptions(collapse_empty_states=True)
             >>> # State with no actions: state "EmptyState" as empty_state
             >>> # (no "EmptyState :" line)
 
@@ -426,7 +496,7 @@ class PlantUMLOptions:
         Example::
 
             >>> # Show all lifecycle actions
-            >>> PlantUMLOptions(show_lifecycle_actions=True)
+            >>> options = PlantUMLOptions(show_lifecycle_actions=True)
             >>> # Output: state "Active" as active
             >>> #         active : enter {\\n    counter = 0;\\n}\\nduring {\\n    counter++;\\n}
 
@@ -436,7 +506,7 @@ class PlantUMLOptions:
         Example::
 
             >>> # Show only enter actions, hide others
-            >>> PlantUMLOptions(show_lifecycle_actions=False, show_enter_actions=True)
+            >>> options = PlantUMLOptions(show_lifecycle_actions=False, show_enter_actions=True)
 
     show_during_actions : Optional[bool], default=None
         Whether to show during actions. Inherits from ``show_lifecycle_actions`` if None.
@@ -451,7 +521,7 @@ class PlantUMLOptions:
         Example::
 
             >>> # Show aspect actions for cross-cutting concerns
-            >>> PlantUMLOptions(show_lifecycle_actions=True, show_aspect_actions=True)
+            >>> options = PlantUMLOptions(show_lifecycle_actions=True, show_aspect_actions=True)
             >>> # Output: state : >> during before abstract GlobalMonitor;
 
     show_abstract_actions : Optional[bool], default=None
@@ -461,7 +531,7 @@ class PlantUMLOptions:
         Example::
 
             >>> # Show only abstract actions (API surface)
-            >>> PlantUMLOptions(show_lifecycle_actions=True,
+            >>> options = PlantUMLOptions(show_lifecycle_actions=True,
             ...                 show_abstract_actions=True,
             ...                 show_concrete_actions=False)
             >>> # Output: state : enter abstract InitHardware;
@@ -473,7 +543,7 @@ class PlantUMLOptions:
         Example::
 
             >>> # Show only concrete actions (implementation details)
-            >>> PlantUMLOptions(show_lifecycle_actions=True,
+            >>> options = PlantUMLOptions(show_lifecycle_actions=True,
             ...                 show_abstract_actions=False,
             ...                 show_concrete_actions=True)
             >>> # Output: state : enter {\\n    counter = 0;\\n}
@@ -487,7 +557,7 @@ class PlantUMLOptions:
 
         Example::
 
-            >>> PlantUMLOptions(show_lifecycle_actions=True, abstract_action_marker='symbol')
+            >>> options = PlantUMLOptions(show_lifecycle_actions=True, abstract_action_marker='symbol')
             >>> # Output: state : enter «abstract» InitHardware;
 
     max_action_lines : Optional[int], default=None
@@ -500,7 +570,7 @@ class PlantUMLOptions:
         Example::
 
             >>> # Limit actions to 3 lines for compact diagrams
-            >>> PlantUMLOptions(show_lifecycle_actions=True, max_action_lines=3)
+            >>> options = PlantUMLOptions(show_lifecycle_actions=True, max_action_lines=3)
             >>> # Output: state : enter {\\n    a = 1;\\n    b = 2;\\n...
 
     show_transition_guards : Optional[bool], default=None
@@ -512,7 +582,7 @@ class PlantUMLOptions:
 
         Example::
 
-            >>> PlantUMLOptions(show_transition_guards=True)
+            >>> options = PlantUMLOptions(show_transition_guards=True)
             >>> # Output: idle --> active : [temperature > 25]
 
     show_transition_effects : Optional[bool], default=None
@@ -524,7 +594,7 @@ class PlantUMLOptions:
 
         Example::
 
-            >>> PlantUMLOptions(show_transition_effects=True, transition_effect_mode='inline')
+            >>> options = PlantUMLOptions(show_transition_effects=True, transition_effect_mode='inline')
             >>> # Output: idle --> active : Start / counter = 0
 
     transition_effect_mode : Literal['note', 'inline', 'hide'], default='note'
@@ -537,7 +607,7 @@ class PlantUMLOptions:
         Example::
 
             >>> # Note format (detailed)
-            >>> PlantUMLOptions(show_transition_effects=True, transition_effect_mode='note')
+            >>> options = PlantUMLOptions(show_transition_effects=True, transition_effect_mode='note')
             >>> # Output: idle --> active : Start
             >>> #         note on link
             >>> #         effect {
@@ -546,7 +616,7 @@ class PlantUMLOptions:
             >>> #         end note
 
             >>> # Inline format (compact)
-            >>> PlantUMLOptions(show_transition_effects=True, transition_effect_mode='inline')
+            >>> options = PlantUMLOptions(show_transition_effects=True, transition_effect_mode='inline')
             >>> # Output: idle --> active : Start / counter = 0
 
     show_events : Optional[bool], default=None
@@ -567,11 +637,11 @@ class PlantUMLOptions:
         Example::
 
             >>> # Show extra_name with relative path
-            >>> PlantUMLOptions(event_name_format=('extra_name', 'relpath'))
+            >>> options = PlantUMLOptions(event_name_format=('extra_name', 'relpath'))
             >>> # Output: idle --> active : 启动 (State.Start)
 
             >>> # Show only name
-            >>> PlantUMLOptions(event_name_format=('name',))
+            >>> options = PlantUMLOptions(event_name_format=('name',))
             >>> # Output: idle --> active : Start
 
     event_visualization_mode : Literal['none', 'color', 'legend', 'both', 'dependency_view'], default='none'
@@ -586,11 +656,11 @@ class PlantUMLOptions:
         Example::
 
             >>> # Color-code transitions by event
-            >>> PlantUMLOptions(event_visualization_mode='color')
+            >>> options = PlantUMLOptions(event_visualization_mode='color')
             >>> # Output: idle --> active : Start #4E79A7
 
             >>> # Show event legend
-            >>> PlantUMLOptions(event_visualization_mode='legend')
+            >>> options = PlantUMLOptions(event_visualization_mode='legend')
             >>> # Output: legend right
             >>> #         Event Scoping
             >>> #         * Start: 3 transitions
@@ -612,10 +682,10 @@ class PlantUMLOptions:
         Example::
 
             >>> # Place event legend on the right (default)
-            >>> PlantUMLOptions(event_visualization_mode='legend', event_legend_position='right')
+            >>> options = PlantUMLOptions(event_visualization_mode='legend', event_legend_position='right')
 
             >>> # Place event legend at bottom-right
-            >>> PlantUMLOptions(event_visualization_mode='legend', event_legend_position='bottom right')
+            >>> options = PlantUMLOptions(event_visualization_mode='legend', event_legend_position='bottom right')
 
     max_depth : Optional[int], default=None
         Maximum depth to expand in state hierarchy. States beyond this depth
@@ -628,7 +698,7 @@ class PlantUMLOptions:
         Example::
 
             >>> # Show only 2 levels deep
-            >>> PlantUMLOptions(max_depth=2, collapsed_state_marker='[...]')
+            >>> options = PlantUMLOptions(max_depth=2, collapsed_state_marker='[...]')
             >>> # Output: state "Level1" as level1 {
             >>> #             state "Level2" as level1__level2 {
             >>> #                 state "[...]" as level1__level2___collapsed_
@@ -640,7 +710,7 @@ class PlantUMLOptions:
 
         Example::
 
-            >>> PlantUMLOptions(max_depth=1, collapsed_state_marker='[more states...]')
+            >>> options = PlantUMLOptions(max_depth=1, collapsed_state_marker='[more states...]')
             >>> # Output: state "[more states...]" as parent___collapsed_
 
     use_skinparam : bool, default=True
@@ -651,7 +721,7 @@ class PlantUMLOptions:
 
         Example::
 
-            >>> PlantUMLOptions(use_skinparam=True)
+            >>> options = PlantUMLOptions(use_skinparam=True)
             >>> # Output: skinparam state {
             >>> #           BackgroundColor<<pseudo>> LightGray
             >>> #           BackgroundColor<<composite>> LightBlue
@@ -667,7 +737,7 @@ class PlantUMLOptions:
 
         Example::
 
-            >>> PlantUMLOptions(use_stereotypes=True)
+            >>> options = PlantUMLOptions(use_stereotypes=True)
             >>> # Output: state "Parent" as parent <<composite>> {
             >>> #             state "Child" as parent__child
             >>> #         }
@@ -680,7 +750,7 @@ class PlantUMLOptions:
 
         Example::
 
-            >>> PlantUMLOptions(
+            >>> options = PlantUMLOptions(
             ...     event_visualization_mode='color',
             ...     custom_colors={'Root.Start': '#FF0000', 'Root.Stop': '#00FF00'}
             ... )
@@ -692,13 +762,31 @@ class PlantUMLOptions:
 
     **Quick mode with presets**::
 
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> dsl = '''state System {
+        ...     [*] -> Idle;
+        ...     state Idle {
+        ...         enter abstract InitHardware;
+        ...         [*] -> Ready;
+        ...         state Ready;
+        ...     }
+        ...     state Failed;
+        ...     !* -> Failed : /ErrorEvent;
+        ... }
+        ... '''
+        >>> sm = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(dsl, 'state_machine_dsl')
+        ... )
         >>> # Minimal diagram for presentations
         >>> options = PlantUMLOptions(detail_level='minimal')
-        >>> sm.to_plantuml(options)
+        >>> sm.to_plantuml(options).startswith('@startuml')
+        True
 
         >>> # Full details for documentation
         >>> options = PlantUMLOptions(detail_level='full')
-        >>> sm.to_plantuml(options)
+        >>> sm.to_plantuml(options).startswith('@startuml')
+        True
 
     **Fine-grained control**::
 
@@ -861,9 +949,12 @@ class PlantUMLOptions:
             ...     show_enter_actions=None,
             ... )
             >>> config = options.to_config()
-            >>> config.show_lifecycle_actions  # True
-            >>> config.show_enter_actions  # True (inherited)
-            >>> config.show_during_actions  # True (inherited)
+            >>> config.show_lifecycle_actions
+            True
+            >>> config.show_enter_actions  # inherited
+            True
+            >>> config.show_during_actions  # inherited
+            True
         """
         detail_defaults = self._get_detail_level_defaults()
 
@@ -1003,9 +1094,27 @@ def collect_event_transitions(state_machine: 'StateMachine') -> Dict[str, List[T
 
     Example::
 
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> dsl = '''state System {
+        ...     [*] -> Idle;
+        ...     state Idle {
+        ...         enter abstract InitHardware;
+        ...         [*] -> Ready;
+        ...         state Ready;
+        ...     }
+        ...     state Failed;
+        ...     !* -> Failed : /ErrorEvent;
+        ... }
+        ... '''
+        >>> sm = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(dsl, 'state_machine_dsl')
+        ... )
         >>> event_map = collect_event_transitions(sm)
-        >>> event_map['System.ErrorEvent']
-        [(state1, trans1), (state2, trans2)]
+        >>> sorted(event_map)
+        ['System.ErrorEvent']
+        >>> len(event_map['System.ErrorEvent']) >= 2
+        True
     """
     from collections import defaultdict
     event_map = defaultdict(list)
@@ -1035,9 +1144,24 @@ def assign_event_colors(event_map: Dict[str, List], custom_colors: Optional[dict
 
     Example::
 
+        >>> from pyfcstm.dsl import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> dsl = '''state System {
+        ...     event Start named "启动模块";
+        ...     [*] -> Running;
+        ...     state Running named "系统运行中";
+        ...     state Failed;
+        ...     Running -> Failed : Start;
+        ...     Failed -> Running : Start;
+        ... }
+        ... '''
+        >>> sm = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(dsl, 'state_machine_dsl')
+        ... )
+        >>> event_map = collect_event_transitions(sm)
         >>> colors = assign_event_colors(event_map)
-        >>> colors['System.ErrorEvent']  # Only if ErrorEvent appears >= 2 times
-        '#FF6B6B'
+        >>> colors['System.Start']  # only events used at least twice get a colour
+        '#4E79A7'
     """
     # Default color palette (colorblind-friendly)
     default_palette = [

@@ -375,12 +375,18 @@ def _evaluate(operator: str, left: Any, right: Any):
     ``verification_status`` ``verified``.  Two integers add, subtract and multiply
     exactly in Python already, so those need no detour.
 
-    Division with two integer operands is the one case with no answer here.  A
-    ``float`` variable states an integral value as an integer -- a query asking
-    ``var("x") == -7`` about a real variable produces exactly that -- so the operands
-    do not say which sort is behind them, and the two readings differ.  Where they
-    agree the shared answer is published; where they do not, the step is declined
-    rather than guessed, and the explanation stays at formal depth.
+    Division with two integer operands is the one case with no answer here.  The
+    two readings -- Euclidean over the integers, exact over the reals -- part ways
+    on a remainder, and this function does not act on the operand types to choose
+    between them.  Where the readings agree the shared answer is published; where
+    they do not, the step is declined rather than guessed, and the explanation
+    stays at formal depth.
+
+    That refusal is more conservative than it needs to be.  A published value's
+    type does follow the variable's sort -- integers state integers, reals state
+    floats even for whole values -- so two integer operands do settle the reading.
+    Acting on that is a separate change, tracked on its own; the reason recorded
+    here used to be that the types said nothing, which is not the case.
 
     :param operator: The operator name carried by the expression fact.
     :type operator: str
@@ -555,9 +561,19 @@ _UPPER_OPERATORS = frozenset({"le", "lt"})
 def _interval_intersection(application: RuleApplication) -> bool:
     """A lower and an upper bound on one slot that leave no value between them.
 
-    Whether the limits are included decides the answer at the endpoint, and over
-    the integers a strict pair one apart is empty as well: ``5 < x < 6`` has
-    solutions over the reals and none here.
+    Emptiness is a question about the two limits, not about the domain: ``6 <= x``
+    with ``x <= 5`` admits nothing whether ``x`` is an integer or a real.  What the
+    domain decides is only how much an *open* limit gives away.  Over the integers
+    a strict pair one apart is empty too -- ``5 < x < 6`` has solutions over the
+    reals and none here -- so an open integer bound tightens to the first value it
+    admits.  Over the reals nothing is gained by tightening; a strict limit instead
+    turns the final comparison from ``>`` into ``>=``.
+
+    The published value's own type carries the domain, which is why the operands
+    are read for it rather than a separate key: an integer variable states integers
+    and a real variable states floats, including for whole values.  Reading that
+    type to decide whether the rule *applies at all* -- rather than whether it may
+    tighten -- is what used to drop every real-domain contradiction here.
     """
     premises = application.premises
     if len(premises) != 2 or set(_kinds(premises)) != {"variable_bound"}:
@@ -570,17 +586,28 @@ def _interval_intersection(application: RuleApplication) -> bool:
         return False
     low, high = lower[0], upper[0]
     low_value, high_value = low.get("value"), high.get("value")
-    if not isinstance(low_value, int) or not isinstance(high_value, int):
+    if not isinstance(low_value, (int, float)) or not isinstance(
+        high_value, (int, float)
+    ):
         return False
-    # Tighten each open bound to the first integer it admits, then the emptiness
-    # question is a single comparison and the endpoint cases fall out of it.
     if application.conclusion.get("kind") != "false":
         return False
-    least = low_value if low.get("operator") in _CLOSED_OPERATORS else low_value + 1
-    greatest = (
-        high_value if high.get("operator") in _CLOSED_OPERATORS else high_value - 1
-    )
-    return least > greatest
+    low_closed = low.get("operator") in _CLOSED_OPERATORS
+    high_closed = high.get("operator") in _CLOSED_OPERATORS
+    if isinstance(low_value, int) and isinstance(high_value, int):
+        # Tighten each open bound to the first integer it admits, then the
+        # emptiness question is a single comparison and the endpoint cases fall
+        # out of it.
+        least = low_value if low_closed else low_value + 1
+        greatest = high_value if high_closed else high_value - 1
+        return least > greatest
+    # Over the reals an open bound admits values arbitrarily close to the limit,
+    # so there is no first one to tighten to.  One open end makes the limits
+    # meeting enough to leave nothing between them, which is the same statement
+    # the tightening makes for integers.
+    if low_closed and high_closed:
+        return low_value > high_value
+    return low_value >= high_value
 
 
 def _source_fact(application: RuleApplication) -> bool:

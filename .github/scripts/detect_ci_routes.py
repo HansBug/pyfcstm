@@ -108,7 +108,6 @@ _DOCS_META_PATTERNS = (
 _SAFE_MAINTENANCE_PATTERNS = (
     ".gitattributes",
     ".gitignore",
-    ".llmconfig.yaml.example",
     "AGENTS.md",
     "CLAUDE.md",
     "CONTRIBUTING.md",

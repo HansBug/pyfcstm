@@ -3,6 +3,5 @@
 # so the lint contract stays on the 0.15 rule set until it is retargeted.
 ruff<0.16
 antlr4-python3-runtime==4.9.3
-hbllmutils
 cairosvg
 Pillow

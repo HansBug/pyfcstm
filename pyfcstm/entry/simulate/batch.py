@@ -112,8 +112,24 @@ class BatchProcessor:
 
         Example::
 
-            >>> processor.execute_commands("current; cycle Start; current")
-            # Outputs each command result immediately
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> from pyfcstm.simulate import SimulationRuntime
+            >>>
+            >>> dsl = 'state Demo {\\n    [*] -> Idle;\\n    state Idle;\\n}\\n'
+            >>> machine = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(dsl, 'state_machine_dsl')
+            ... )
+            >>> lines = []
+            >>> processor = BatchProcessor(
+            ...     SimulationRuntime(machine),
+            ...     state_machine=machine,
+            ...     use_color=False,
+            ...     output_func=lines.append,
+            ... )
+            >>> processor.execute_commands("current; cycle; current")
+            >>> any('Demo' in line for line in lines)
+            True
         """
         commands = [cmd.strip() for cmd in command_string.split(';') if cmd.strip()]
 

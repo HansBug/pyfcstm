@@ -1,3 +1,4 @@
+import re
 from unittest.mock import patch
 
 import pytest
@@ -78,6 +79,23 @@ class TestSequenceSafe:
     def test_segments_with_special_chars(self, segments_with_special_chars):
         result = sequence_safe(segments_with_special_chars)
         assert "__" in result
+
+    @pytest.mark.parametrize(
+        "segments",
+        [
+            ["Hello World", "Test___String"],
+            ["name with spaces", "dots.and,commas"],
+            ["tab\tseparated", "new\nline"],
+            ["kebab-case", "CamelCase", "snake_case"],
+            ["unicode caf\u00e9", "percent%sign"],
+        ],
+    )
+    def test_result_is_an_identifier(self, segments):
+        # The docstring promises a safe identifier for free-form input, so the
+        # character set is the contract; asserting only that "__" appears let a
+        # result containing a literal space pass for a long time.
+        result = sequence_safe(segments)
+        assert re.fullmatch(r"[0-9a-zA-Z_]+", result), result
 
     def test_segments_with_multiple_underscores(
             self, segments_with_multiple_underscores

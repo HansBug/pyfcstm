@@ -19,13 +19,31 @@ The module contains the following main components:
 
 Example::
 
-    >>> from antlr4 import CommonTokenStream
-    >>> from pyfcstm.dsl.error import CollectingErrorListener
-    >>> listener = CollectingErrorListener()
-    >>> # ... attach listener to a parser and parse input ...
-    >>> # After parsing:
-    >>> listener.check_unfinished_parsing_error(token_stream)
-    >>> listener.check_errors()
+    >>> from antlr4 import CommonTokenStream, InputStream
+    >>> from pyfcstm.dsl.error import CollectingErrorListener, GrammarParseError
+    >>> from pyfcstm.dsl.grammar import GrammarLexer, GrammarParser
+    >>>
+    >>> def parse_num_expression(text):
+    ...     listener = CollectingErrorListener()
+    ...     lexer = GrammarLexer(InputStream(text))
+    ...     lexer.removeErrorListeners()
+    ...     lexer.addErrorListener(listener)
+    ...     stream = CommonTokenStream(lexer)
+    ...     parser = GrammarParser(stream)
+    ...     parser.removeErrorListeners()
+    ...     parser.addErrorListener(listener)
+    ...     parser.num_expression()
+    ...     listener.check_unfinished_parsing_error(stream)
+    ...     listener.check_errors()
+    ...     return listener
+    ...
+    >>> parse_num_expression('1 + 2').errors
+    []
+    >>> parse_num_expression('1 +')
+    Traceback (most recent call last):
+        ...
+    pyfcstm.dsl.error.GrammarParseError: Found 1 errors during parsing:
+    ...
 
 .. note::
    The listener stores errors in memory until :meth:`CollectingErrorListener.check_errors`

@@ -144,55 +144,86 @@ def require_installed_distribution(name: str = "pyfcstm") -> None:
 
 
 #: pytest exit codes from which a ratchet verdict can be derived: everything
-#: passed, or some tests failed. Interruption (2), internal error (3), usage
-#: error (4) and nothing-collected (5) all leave the recorded node-id sets
-#: incomplete, which would silently read as "the ledger went stale".
+#: passed, or some tests failed. Interruption (2), internal error (3) and usage
+#: error (4) all leave the recorded node-id sets incomplete, which would
+#: otherwise read as "the whole ledger went stale".
 _VERDICT_EXIT_CODES = (0, 1)
 
+#: pytest's exit code for "the paths resolved but held nothing to run". It is a
+#: mistake for an explicit scope and an ordinary outcome for a changed-file list
+#: naming only modules without examples, so the two cases are told apart.
+_NOTHING_COLLECTED_EXIT_CODE = 5
 
-def require_usable_run(pytest_status: int, collected: Sequence[str]) -> None:
+
+def require_usable_run(
+        pytest_status: int,
+        collected: Sequence[str],
+        allow_empty: bool = False,
+) -> bool:
     """
-    Refuse to derive a verdict from a run that could not enumerate the doctests.
+    Decide whether a pytest run can support a ratchet verdict.
 
     Ignoring pytest's exit code makes a mistyped or renamed scope report success:
-    pytest exits 4 without collecting anything, the plugin records empty sets,
-    and the three-way comparison then finds no unexpected failure. The gate would
+    pytest exits 4 without collecting anything, the plugin records empty sets, and
+    the three-way comparison then finds no unexpected failure. The gate would
     print ``0 doctest(s) collected`` and exit 0 -- the exact silent pass this
     design exists to prevent.
+
+    Collecting nothing is not always a mistake though. A pull request may touch
+    only modules that carry no examples, and 33 of the 161 modules under
+    ``pyfcstm`` are in that category, so ``--changed-files`` passes
+    ``allow_empty=True`` and gets a clean skip instead of a failure.
 
     :param pytest_status: Exit code returned by the pytest subprocess.
     :type pytest_status: int
     :param collected: Doctest node ids the plugin recorded.
     :type collected: collections.abc.Sequence[str]
-    :return: ``None``.
-    :rtype: None
-    :raises DoctestGateError: If the exit code or the collected set is unusable.
+    :param allow_empty: Whether an empty collection is an acceptable outcome,
+        defaults to ``False``.
+    :type allow_empty: bool, optional
+    :return: ``True`` when there are node-id sets to compare, ``False`` when the
+        run legitimately collected nothing.
+    :rtype: bool
+    :raises DoctestGateError: If the run cannot support a verdict.
 
     Example::
 
         >>> require_usable_run(0, ['a.py::a'])
+        True
         >>> require_usable_run(1, ['a.py::a'])
-        >>> require_usable_run(4, [])
-        Traceback (most recent call last):
-            ...
-        DoctestGateError: pytest exited 4 ...
-        >>> require_usable_run(0, [])
+        True
+        >>> require_usable_run(5, [], allow_empty=True)
+        False
+        >>> require_usable_run(5, [])
         Traceback (most recent call last):
             ...
         DoctestGateError: pytest collected no doctest at all ...
+        >>> require_usable_run(4, [], allow_empty=True)
+        Traceback (most recent call last):
+            ...
+        DoctestGateError: pytest exited 4 ...
     """
-    if pytest_status not in _VERDICT_EXIT_CODES:
-        raise DoctestGateError(
-            "pytest exited {0} rather than 0 or 1, so the collected and failed "
-            "node-id sets are incomplete and no ratchet verdict can be "
-            "derived. Exit 4 usually means the requested scope does not "
-            "exist.".format(pytest_status)
-        )
-    if not collected:
+    if pytest_status == _NOTHING_COLLECTED_EXIT_CODE and not collected:
+        if allow_empty:
+            return False
         raise DoctestGateError(
             "pytest collected no doctest at all. A scope that matches nothing "
             "is a mistake, not a clean run; check the paths passed to --scope."
         )
+    if pytest_status not in _VERDICT_EXIT_CODES:
+        raise DoctestGateError(
+            "pytest exited {0} rather than 0 or 1, so the collected and failed "
+            "node-id sets are incomplete and no ratchet verdict can be derived. "
+            "Exit 4 usually means a requested path does not exist.".format(
+                pytest_status,
+            )
+        )
+    if not collected:
+        raise DoctestGateError(
+            "pytest reported success but collected no doctest, so the recorded "
+            "node-id sets cannot be trusted."
+        )
+    return True
 
 
 def load_ledger(path: str) -> List[str]:
@@ -649,15 +680,23 @@ def run_self_check() -> None:
 
     # Every helper main() reaches for is exercised here, so a missing or renamed
     # one fails --check instead of waiting for the flag that happens to use it.
-    require_usable_run(0, ["a.py::a"])
-    require_usable_run(1, ["a.py::a"])
-    for status, nodes, why in (
-        (4, [], "a nonexistent scope"),
-        (2, ["a.py::a"], "an interrupted run"),
-        (0, [], "an empty collected set"),
+    if not require_usable_run(0, ["a.py::a"]):
+        raise DoctestGateError("self-check: a clean run must have results")
+    if not require_usable_run(1, ["a.py::a"]):
+        raise DoctestGateError("self-check: a failing run must have results")
+    if require_usable_run(5, [], allow_empty=True):
+        raise DoctestGateError(
+            "self-check: an allowed empty collection must report no results"
+        )
+    for status, nodes, empty_ok, why in (
+        (4, [], False, "a nonexistent scope"),
+        (4, [], True, "a nonexistent scope even when empties are allowed"),
+        (2, ["a.py::a"], False, "an interrupted run"),
+        (5, [], False, "an unexplained empty collection"),
+        (0, [], False, "success with nothing collected"),
     ):
         try:
-            require_usable_run(status, nodes)
+            require_usable_run(status, nodes, allow_empty=empty_ok)
         except DoctestGateError:
             # DoctestGateError: expected; the run cannot support a verdict.
             continue
@@ -842,12 +881,23 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     try:
         outcome = _read_outcome(outcome_file)
-        require_usable_run(pytest_status, outcome["collected"])
+        has_results = require_usable_run(
+            pytest_status,
+            outcome["collected"],
+            allow_empty=bool(args.changed_files),
+        )
     except DoctestGateError as err:
         # DoctestGateError: pytest aborted before the plugin could report, or it
         # exited in a way that makes the recorded node-id sets untrustworthy.
         sys.stderr.write("run_doctests: {0}\n".format(err))
         return 2
+
+    if not has_results:
+        sys.stdout.write(
+            "doctest gate skipped: the changed pyfcstm files carry no docstring "
+            "example\n"
+        )
+        return 0
 
     if args.update_ledger:
         try:

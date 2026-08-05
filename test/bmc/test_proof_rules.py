@@ -420,13 +420,15 @@ def test_interval_intersection_decides_emptiness_on_the_endpoints(
         (("gt", 5.0), ("lt", 5.0), True),
         (("ge", 5.0), ("le", 5.0), False),
         (("gt", 5.0), ("le", 5.0), True),
+        (("ge", 5.0), ("lt", 5.0), True),
     ],
     ids=[
         "real-bounds-cross",
         "a-real-lies-strictly-between",
         "an-empty-strict-pair-at-one-point",
         "a-single-real-point-survives",
-        "one-open-end-at-the-same-limit",
+        "an-open-upper-end-at-the-same-limit",
+        "an-open-lower-end-at-the-same-limit",
     ],
 )
 def test_interval_intersection_reads_bounds_stated_over_the_reals(
@@ -446,10 +448,11 @@ def test_interval_intersection_reads_bounds_stated_over_the_reals(
     here; not tightening 5.0 < x < 5.0 at all would answer "not empty", which is
     wrong as well.
 
-    The last two say which limits have to meet.  5.0 <= x <= 5.0 keeps the point
-    and 5.0 < x <= 5.0 does not, so the comparison may only relax to ``>=`` when
-    *both* ends are open -- reading it as "either end" answers "not empty" for the
-    second one.
+    The last three say which limits have to meet.  5.0 <= x <= 5.0 keeps the point
+    while both 5.0 < x <= 5.0 and 5.0 <= x < 5.0 lose it, so the comparison may
+    only stay at ``>`` when *both* ends are closed.  Each open side needs its own
+    case: reading the test as "either end is closed" survives one of them, and
+    reading it as "the lower end is closed" survives the other.
     """
     application = RuleApplication(
         "interval_intersection",

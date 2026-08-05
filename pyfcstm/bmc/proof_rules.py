@@ -428,14 +428,14 @@ def _evaluate(operator: str, left: Any, right: Any):
         exact = _exact_quotient(left, right)
         if real:
             return exact
-        # Two integer operands do not say whether the variable they describe is one.
-        # A ``float`` variable publishes an integral value as an integer -- a query
-        # asking ``var("x") == -7`` about a real variable produces exactly that -- so
-        # the sort is not recoverable here, and the two semantics part ways: Z3
-        # divides two integers Euclidean-style and two reals exactly.  Where they
-        # agree the answer is the same either way and can be published; where they do
-        # not, publishing one would be a guess about a declaration this function
-        # cannot see, so the rule declines and the explanation stays at formal depth.
+        # The two semantics part ways here: Z3 divides two integers
+        # Euclidean-style and two reals exactly.  This function does not act on the
+        # operand types to choose between them, so where the semantics agree the
+        # answer is the same either way and can be published, and where they do not
+        # the rule declines and the explanation stays at formal depth.  Acting on
+        # the types would mean publishing the Euclidean quotient, which has to be
+        # the one the encoder holds -- see this function's docstring for why that
+        # reaches past here.
         euclidean = left // right if right > 0 else -(left // -right)
         return euclidean if exact == euclidean else None
     return None

@@ -180,12 +180,15 @@ pyfcstm follows PEP 8 style guidelines with automatic formatting using `ruff`.
 1. **Automatic Formatting**
 
    ```bash
-   # Format all Python files
-   ruff format .
-
-   # Format specific files
+   # Format the files you changed
    ruff format pyfcstm/dsl/parse.py
    ```
+
+   Format what you touched, not the tree. `ruff format .` rewrites 183 existing
+   files, because the package carries formatting drift that predates the current
+   `ruff` pin; a whole-tree run buries your change in unrelated diff noise. Run
+   `ruff` from the repository root so it picks up `ruff.toml`, whose
+   `target-version = "py37"` keeps the output parseable at the supported floor.
 
 2. **Code Style Guidelines**
 
@@ -404,7 +407,7 @@ git checkout -b docs/update-api-reference
 
    Before submitting, ensure:
     - [ ] All tests pass (`make unittest`)
-    - [ ] Code is formatted (`ruff format .`)
+    - [ ] Changed files are formatted (`ruff format <your files>`; not the whole tree)
     - [ ] Documentation is updated if needed
     - [ ] Commit messages are clear and descriptive
     - [ ] No unrelated changes are included
@@ -531,8 +534,8 @@ Here's a typical workflow for contributing to pyfcstm:
    # Run tests
    make unittest
 
-   # Format code
-   ruff format .
+   # Format the files you changed
+   ruff format <your files>
 
    # Run specific tests
    make unittest RANGE_DIR=./dsl

@@ -125,3 +125,37 @@ def pytest_sessionfinish(session, exitstatus):
     with open(path, "w", encoding="utf-8") as file:
         json.dump(payload, file, indent=2, sort_keys=True)
         file.write("\n")
+
+
+#: DSL text shared by the simulation-runtime docstrings. Twenty-two private
+#: methods on :class:`pyfcstm.simulate.SimulationRuntime` need a built machine
+#: before they can demonstrate anything, and repeating the source in each
+#: docstring would add several hundred lines of setup to the rendered API
+#: documentation. The root state is named ``System`` so the abstract action paths
+#: the examples reference -- ``System.Active.Init`` and ``System.Active.Monitor``
+#: -- are the real ones.
+DEMO_DSL = """def int counter = 0;
+
+state System {
+    [*] -> Active;
+    state Active {
+        enter abstract Init;
+        during abstract Monitor;
+    }
+    state Idle;
+    Active -> Idle :: Start;
+}
+"""
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _doctest_demo_dsl(doctest_namespace):
+    """
+    Expose :data:`DEMO_DSL` to docstring examples.
+
+    :param doctest_namespace: Pytest doctest namespace injection fixture.
+    :type doctest_namespace: Dict[str, object]
+    :return: ``None``.
+    :rtype: None
+    """
+    doctest_namespace["DEMO_DSL"] = DEMO_DSL

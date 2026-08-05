@@ -1437,7 +1437,7 @@ green gate as "the documentation has been verified".
 
   | Injected name | Produced by |
   |---|---|
-  | *(none yet)* | — |
+  | `DEMO_DSL` | `tools/doctest_plugin.py`'s `DEMO_DSL` constant: a small machine whose root state is `System` and whose leaf `Active` declares `enter abstract Init` and `during abstract Monitor` |
 
 #### Self-Check Boundary
 

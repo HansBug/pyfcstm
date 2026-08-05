@@ -1352,6 +1352,59 @@ For built-in template work, the current design bar is defined by the `python` te
 
 ### Testing Strategy
 
+#### Docstring Example Gate
+
+`make doctest` runs every `>>>` example under [pyfcstm/](pyfcstm/) through
+`pytest --doctest-modules` and is intentionally **outside** the
+`pytest -m unittest` suite. Docstring examples are a documentation-correctness
+contract, not a unit-test contract: they exercise happy paths the unit suite
+already covers, so the gate is not wired to `--cov` and must never gate on
+coverage. It also does **not** validate prose. `DocTestParser` only executes
+`>>>` blocks, so a wrong sentence in a docstring passes the gate; do not read a
+green gate as "the documentation has been verified".
+
+- Entry point: `python tools/run_doctests.py` (via `make doctest`). Run
+  `python tools/run_doctests.py --check` when changing the runner.
+- `make doctest` depends on `build_assets`. `pyfcstm/diagram` docstrings render
+  real SVG and PNG through packaged assets, so a checkout without them fails
+  seven examples for a reason that has nothing to do with documentation. CI
+  therefore needs Node 20, because `build_assets` runs `npm ci`.
+- Known failures live in
+  [tools/doctest_known_failures.txt](tools/doctest_known_failures.txt). The
+  ledger is a ratchet: the gate fails when an unlisted docstring starts failing,
+  when a listed docstring starts passing (delete the line), and when a listed
+  node id matches no collected doctest (the docstring was renamed). Never
+  regenerate the ledger with `--update-ledger` to silence a regression; that
+  flag exists to bootstrap a new scope.
+- Option flags are pinned to
+  `ELLIPSIS IGNORE_EXCEPTION_DETAIL DONT_ACCEPT_TRUE_FOR_1`, matching
+  `sphinx.ext.doctest`'s `doctest_default_flags`. pytest's own default is
+  `ELLIPSIS` alone and setting the ini value replaces it rather than extending
+  it, so always list the full set.
+- `--scope` and `--changed-files` narrow what pytest collects, and the runner
+  narrows the ledger to match. Without that, every out-of-scope ledger entry
+  would be reported as a renamed docstring. CI reports the changed-file subset
+  before the full run, so a contributor who touches a ledgered docstring sees
+  "these examples were already failing" instead of diffing against the default
+  branch by hand. The full `make doctest` right after it is authoritative.
+- The gate is single-process. `pytest-xdist` collects items inside workers, so
+  the ratchet's node-id comparison would report every ledger entry as stale;
+  the runner rejects `-n` / `--numprocesses` / `--dist` explicitly.
+- Examples needing files, directories, or a specific working directory get them
+  through [tools/doctest_plugin.py](tools/doctest_plugin.py) rather than by
+  rewriting the docstring into something a reader cannot copy. The plugin
+  already runs every example in a throwaway working directory, so
+  file-writing examples cannot pollute the checkout.
+- Names that can be written as a plain `>>> import` inside the docstring must be
+  written there, so the example stays copy-pasteable. The plugin may inject a
+  deliberately small set of names that cannot be inlined; every one of them
+  belongs in the table below with the call that produces it, and adding to the
+  table requires a reviewer decision recorded in the pull request.
+
+  | Injected name | Produced by |
+  |---|---|
+  | *(none yet)* | — |
+
 #### Self-Check Boundary
 
 The self-check entry point (``pyfcstm --self-check``) is a deployment

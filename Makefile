@@ -1,4 +1,4 @@
-.PHONY: docs docs_en docs_zh docs_pdf docs_pdf_en docs_pdf_zh test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build build_info build_info_cli package clean docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check test_boundary_check api_doc_toctree_check bmc_docs_check bmc_benchmark_check bmc_benchmark build_assets build_assets_clean diagram_assets_check diagram_rendering_check diagram_browser_check diagram_contract_check diagram_data_check diagram_options_check diagram_csp_check diagram_parity_check diagram_reference_check diagram_export_limits_check diagram_headless_check diagram_notebooks_check diagram_browser_headless_check diagram_engine_floor diagram_provenance_check diagram_viewer_gate_check diagram_webview_expander_check diagram_assets_verify diagram_package_check diagram_corpus diagram_viewer_option_flow_check
+.PHONY: docs docs_en docs_zh docs_pdf docs_pdf_en docs_pdf_zh test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build build_info build_info_cli package clean docs_auto todos_auto tests_auto rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check test_boundary_check api_doc_toctree_check bmc_docs_check bmc_benchmark_check bmc_benchmark build_assets build_assets_clean diagram_assets_check diagram_rendering_check diagram_browser_check diagram_contract_check diagram_data_check diagram_options_check diagram_csp_check diagram_parity_check diagram_reference_check diagram_export_limits_check diagram_headless_check diagram_notebooks_check diagram_browser_headless_check diagram_engine_floor diagram_provenance_check diagram_viewer_gate_check diagram_webview_expander_check diagram_assets_verify diagram_package_check diagram_corpus diagram_viewer_option_flow_check doctest
 
 PYTHON := $(shell which python)
 
@@ -153,6 +153,9 @@ help:
 	@echo "  make template_packaging_check - Validate repository template packaging contracts"
 	@echo "  make template_source_install_check - Validate source-install template extraction"
 	@echo "  make test_boundary_check - Validate pytest test-boundary rules"
+	@echo "  make doctest      - Run the docstring example gate (separate from unittest)"
+	@echo "                      Options: DOCTEST_ARGS='--scope pyfcstm/bmc'"
+	@echo "                               DOCTEST_ARGS='--changed-files /tmp/changed.txt'"
 	@echo "  make api_doc_toctree_check - Validate generated API documentation toctrees"
 	@echo "  make bmc_docs_check - Validate the BMC documentation contracts"
 	@echo "  make bmc_benchmark_check - Validate the BMC infeasibility benchmark corpus"
@@ -380,6 +383,9 @@ docs_terminology_check:
 
 test_boundary_check:
 	$(PYTHON) tools/check_test_boundary.py
+
+doctest: build_assets
+	$(PYTHON) tools/run_doctests.py $(DOCTEST_ARGS)
 
 api_doc_toctree_check:
 	$(PYTHON) tools/check_api_doc_toctree.py --self-check

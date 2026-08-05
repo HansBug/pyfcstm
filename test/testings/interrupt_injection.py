@@ -26,6 +26,7 @@ import inspect
 import os
 import shutil
 import sys
+import tempfile
 import textwrap
 from typing import Callable, Dict, List, NamedTuple, Optional, Set
 
@@ -179,13 +180,17 @@ def inject_per_line(
     reached = 0
     leaks = []
     for line in lines:
-        before_descriptors = set(open_descriptors())
+        before_descriptors = open_descriptors()
         before_residues = set(residues())
         fired = _invoke_with_injection(code, invoke, line)
         if not fired:
             continue
         reached += 1
-        leaked_descriptors = set(open_descriptors()) - before_descriptors
+        leaked_descriptors = {
+            descriptor: target
+            for descriptor, target in open_descriptors().items()
+            if descriptor not in before_descriptors
+        }
         leaked_residues = set(residues()) - before_residues
         if leaked_descriptors or leaked_residues:
             leaks.append(
@@ -231,9 +236,31 @@ def _invoke_with_injection(code, invoke: Callable[[], object], line: int) -> boo
     return bool(fired)
 
 
-def _close_descriptors(descriptors: Set[int]) -> None:
-    """Close whatever descriptors one injection point leaked."""
-    for descriptor in descriptors:
+def _is_temporary_target(target: str) -> bool:
+    """Return whether a descriptor's target is a temporary artifact.
+
+    Releasing an arbitrary descriptor that merely appeared during a traced call
+    is not safe: the call may have triggered a lazy import that opened and
+    cached something long-lived, and closing that would break every later test
+    in the process. Every resource this harness is meant to observe is a
+    temporary file, so the release is confined to those.
+
+    :param target: The ``/proc/self/fd`` link target.
+    :type target: str
+    :return: Whether the descriptor may be closed by the harness.
+    :rtype: bool
+    """
+    if target.endswith(" (deleted)"):
+        return True
+    root = os.path.realpath(tempfile.gettempdir())
+    return os.path.realpath(target).startswith(root + os.sep)
+
+
+def _close_descriptors(descriptors: Dict[int, str]) -> None:
+    """Close the temporary-file descriptors one injection point leaked."""
+    for descriptor, target in descriptors.items():
+        if not _is_temporary_target(target):
+            continue
         try:
             os.close(descriptor)
         except OSError:

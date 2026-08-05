@@ -1416,9 +1416,14 @@ green gate as "the documentation has been verified".
   its scope is a subset of the full run's, so it never reports a problem the
   full `make doctest` would not also report. It is a faster path to the same
   verdict, not a second opinion.
-- The gate is single-process. `pytest-xdist` collects items inside workers, so
-  the ratchet's node-id comparison would report every ledger entry as stale;
-  the runner rejects `-n` / `--numprocesses` / `--dist` explicitly.
+- The runner rejects pytest arguments that change which items run, or whether
+  they run: `-n` / `--numprocesses` / `--dist` (xdist collects inside workers, so
+  the controller records nothing), `-k`, `--collect-only` / `--co`, `--deselect`,
+  `--ignore` / `--ignore-glob`, and `-x` / `--exitfirst` / `--maxfail`. The
+  comparison asks which of the doctests that exist right now failed, so an item
+  that never ran is indistinguishable from a ledger entry that started passing --
+  and the report would then advise deleting it, destroying the record the ratchet
+  exists to keep. Ordinary reporting flags such as `--tb=line` pass through.
 - Examples needing files, directories, or a specific working directory get them
   through [tools/doctest_plugin.py](tools/doctest_plugin.py) rather than by
   rewriting the docstring into something a reader cannot copy. The plugin

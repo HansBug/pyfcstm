@@ -67,11 +67,34 @@ class DoctestGateError(Exception):
     """
 
 
-#: ``pytest-xdist`` collects items inside worker processes, so the controller
-#: process running :mod:`tools.doctest_plugin` records an empty collected set
-#: and reports every ledger entry as stale. The whole gate takes a couple of
-#: seconds, so the fix is to reject parallelism rather than merge worker files.
-_REJECTED_PYTEST_ARGS = ("-n", "--numprocesses", "--dist")
+#: Passthrough arguments the ratchet cannot survive, each mapped to why.
+#:
+#: The comparison asks "which of the doctests that exist right now failed?", so
+#: anything that changes which items run, or whether they run at all, makes the
+#: answer wrong. The wrong answer is not merely a red: an item that never ran
+#: looks like a ledger entry that started passing, and the report then advises
+#: deleting it -- destroying the record the ratchet exists to keep.
+_REJECTED_PYTEST_ARGS = {
+    "-n": "pytest-xdist collects inside worker processes, so the controller "
+          "records an empty collected set and every ledger entry reads as stale",
+    "--numprocesses": "pytest-xdist collects inside worker processes, so the "
+                      "controller records an empty collected set",
+    "--dist": "pytest-xdist distribution changes which process collects",
+    "-k": "a keyword filter leaves the unmatched ledger entries unrun, which "
+          "reads as though they started passing",
+    "--collect-only": "collecting without running leaves every ledger entry "
+                      "unrun, which reads as though they all started passing",
+    "--co": "collecting without running leaves every ledger entry unrun",
+    "--deselect": "the ledger owns deselection; deselecting here hides an entry "
+                  "and reports it as newly passing",
+    "--ignore": "ignoring a path drops its ledger entries from the run",
+    "--ignore-glob": "ignoring paths drops their ledger entries from the run",
+    "-x": "stopping at the first failure leaves the remaining ledger entries "
+          "unrun, which reads as though they started passing",
+    "--exitfirst": "stopping at the first failure leaves the remaining ledger "
+                   "entries unrun",
+    "--maxfail": "stopping early leaves the remaining ledger entries unrun",
+}
 
 
 def reject_unsupported_pytest_args(pytest_args: Sequence[str]) -> None:
@@ -86,19 +109,26 @@ def reject_unsupported_pytest_args(pytest_args: Sequence[str]) -> None:
 
     Example::
 
-        >>> reject_unsupported_pytest_args(['--tb=long'])
+        >>> reject_unsupported_pytest_args(['--tb=long', '-q'])
         >>> reject_unsupported_pytest_args(['-n', '4'])
         Traceback (most recent call last):
             ...
-        DoctestGateError: doctest gate does not support pytest-xdist ('-n'); ...
+        DoctestGateError: doctest gate rejects '-n': pytest-xdist ...
+        >>> reject_unsupported_pytest_args(['-x'])
+        Traceback (most recent call last):
+            ...
+        DoctestGateError: doctest gate rejects '-x': stopping at the first ...
+        >>> reject_unsupported_pytest_args(['--maxfail=1'])
+        Traceback (most recent call last):
+            ...
+        DoctestGateError: doctest gate rejects '--maxfail': stopping early ...
     """
     for argument in pytest_args:
         head = argument.split("=", 1)[0]
-        if head in _REJECTED_PYTEST_ARGS:
+        reason = _REJECTED_PYTEST_ARGS.get(head)
+        if reason is not None:
             raise DoctestGateError(
-                "doctest gate does not support pytest-xdist ({0!r}); the "
-                "ratchet needs a single collecting process and the whole "
-                "gate runs in seconds".format(head)
+                "doctest gate rejects {0!r}: {1}".format(head, reason)
             )
 
 
@@ -715,12 +745,18 @@ def run_self_check() -> None:
     if normalize_scope([node], root="/repo") != ["pyfcstm/a.py::pyfcstm.a.f"]:
         raise DoctestGateError("self-check: absolute node id must keep its node part")
 
-    reject_unsupported_pytest_args(["--tb=long", "-x"])
-    for rejected in (["-n", "4"], ["--numprocesses=auto"], ["--dist=loadscope"]):
+    reject_unsupported_pytest_args(["--tb=long", "-q", "-p", "no:randomly"])
+    for rejected in (
+            ["-n", "4"], ["--numprocesses=auto"], ["--dist=loadscope"],
+            ["-k", "normalize"], ["--collect-only"], ["--co"],
+            ["--deselect", "a.py::a"], ["--ignore=pyfcstm/bmc"],
+            ["--ignore-glob=pyfcstm/*"], ["-x"], ["--exitfirst"],
+            ["--maxfail=1"],
+    ):
         try:
             reject_unsupported_pytest_args(rejected)
         except DoctestGateError:
-            # DoctestGateError: expected; xdist arguments must be rejected.
+            # DoctestGateError: expected; the argument would break the ratchet.
             continue
         raise DoctestGateError(
             "self-check: {0!r} must be rejected".format(rejected)

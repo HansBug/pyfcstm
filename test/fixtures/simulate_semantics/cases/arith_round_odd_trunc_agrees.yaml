@@ -1,0 +1,17 @@
+title: Tie at 1.5 agrees under both tie-breaking rules
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/451
+  notes:
+  - 'Control: the even neighbour and the away-from-zero neighbour coincide here.'
+categories:
+- runtime
+- template_alignment
+steps:
+- cycle: []
+  expect:
+    state: Root.A
+    vars:
+      a: 1.5
+      r: 2
+    ended: false

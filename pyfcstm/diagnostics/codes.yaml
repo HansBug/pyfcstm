@@ -2841,9 +2841,11 @@ W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE:
   emit_tier: static_pipeline
   description: >-
     A shift count folds to a constant below zero or not less than the default
-    C/C++ target integer width. This is a C/C++ 64-bit deployment-profile
-    portability risk; Python big-integer shifting is not the same target
-    contract.
+    C/C++ target integer width. The two halves differ: a negative count is
+    rejected at runtime by the simulator and by every generated runtime,
+    including C/C++ and Python, while a count at or above the width is a
+    C/C++ 64-bit deployment-profile portability risk that Python big-integer
+    shifting does not share.
   refs:
     target_family:
       type: str
@@ -2862,8 +2864,9 @@ W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE:
       type: str
       required: true
       description: >-
-        Human-readable note that this is a C/C++ deployment-profile risk and
-        that Python generated runtimes may not have the same fixed-width shift risk.
+        Human-readable note separating the two halves: a negative count is
+        rejected by every generated runtime, while a count at or above the
+        default width is a C/C++-only fixed-width risk.
     context:
       type: str
       required: true
@@ -2894,12 +2897,16 @@ W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE:
   for_llm:
     summary: >-
       A shift count is statically outside the C/C++ default 64-bit profile.
-      Treat this as a target-profile portability warning, not as a Python
-      generated-runtime error.
+      A negative count is a runtime error in every generated runtime; a count
+      at or above the width is a target-profile portability warning that
+      Python generated runtimes do not share.
     recommended_actions:
       - kind: bound_shift_count
         target: expression
-        rationale: Keep constant shift counts within ``0 <= count < 64`` for the default C/C++ profile.
+        rationale: >-
+          A negative count must be removed outright -- every generated runtime rejects it.
+          A count at or above the width must be kept within ``0 <= count < 64`` for the
+          default C/C++ profile.
       - kind: use_verify_for_dynamic_count
         target: deployment_plan
         rationale: If the shift count is not constant, use the verify line to prove the range before C/C++ deployment.

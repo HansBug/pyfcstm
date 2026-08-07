@@ -1,0 +1,20 @@
+def float a = 2.5;
+def int hit = 0;
+
+state Root {
+    state A;
+    state B {
+        enter {
+            hit = 1;
+        }
+    }
+    state C {
+        enter {
+            hit = 2;
+        }
+    }
+
+    [*] -> A;
+    A -> B : [round(a) == 2];
+    A -> C : [round(a) == 3];
+}

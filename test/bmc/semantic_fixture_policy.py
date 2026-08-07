@@ -91,6 +91,8 @@ TEMPORARY_BMC_CORE_EXCLUDE_CASES = {
     "expression_failure_transition_effect_raises_expression_error",
     "expression_failure_transition_guard_raises_expression_error",
     "expression_type_error_wraps_transition_effect",
+    "arith_shl_negative_count_raises",
+    "arith_shr_negative_count_raises",
     "hot_start_leaf_defers_during_expression_error",
     "persistent_operation_writeback_rejects_float_and_rolls_back",
     "pseudo_self_loop_step_limit_raises_dfs_error",

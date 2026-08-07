@@ -1,0 +1,18 @@
+title: Tie-breaking inside an action-block if selects the even-neighbour branch
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/451
+  notes:
+  - 'If-condition context: an away-from-zero round() would take the else branch.'
+categories:
+- runtime
+- template_alignment
+- if_blocks
+steps:
+- cycle: []
+  expect:
+    state: Root.A
+    vars:
+      a: 2.5
+      taken: 1
+    ended: false

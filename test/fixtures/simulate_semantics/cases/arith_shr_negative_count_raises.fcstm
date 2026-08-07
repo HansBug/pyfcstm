@@ -1,0 +1,13 @@
+def int r = 0;
+
+state Root {
+    state A {
+        during {
+            r = 1 >> -1;
+        }
+    }
+    state B;
+
+    [*] -> A;
+    A -> B :: Go;
+}

@@ -1,0 +1,17 @@
+title: Tie at 0.5 rounds to even (0), not away from zero (1)
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/451
+  notes:
+  - 'round() ties toward the even neighbour: C''s round() would give 1.'
+categories:
+- runtime
+- template_alignment
+steps:
+- cycle: []
+  expect:
+    state: Root.A
+    vars:
+      a: 0.5
+      r: 0
+    ended: false

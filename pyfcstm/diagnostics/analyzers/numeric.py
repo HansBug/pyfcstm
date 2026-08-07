@@ -64,8 +64,10 @@ _RUNTIME_NOTES = {
     ),
     "W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE": (
         "C/C++ deployment profile risk: the default C-family integer width is "
-        "64 bits, while Python generated runtimes may not have the same "
-        "fixed-width shift risk."
+        "64 bits. A negative shift count is rejected at runtime by the "
+        "simulator and by every generated runtime, including C/C++ and Python; "
+        "a count at or above the width is a C/C++-only fixed-width risk that "
+        "Python big-integer shifting does not share."
     ),
     "W_NUMERIC_FLOAT_BITWISE": (
         "C/C++ integer-operation profile risk: bitwise and shift operators are "
@@ -341,10 +343,24 @@ def _shift_count_diagnostic(
         _diagnostic(
             "W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE",
             (
-                "C/C++ default deployment profile risk: the shift count of "
-                f"operator {expr.op!r} folds to {_number_text(rhs_value)}, "
-                f"outside 0 <= count < {_TARGET_BITS}; Python generated runtimes "
-                "do not represent the same fixed-width shift contract."
+                # The two halves of the emission condition have different
+                # runtime consequences, so they must not share one sentence: a
+                # negative count is rejected by every generated runtime, while a
+                # count at or above the width is a C/C++-only fixed-width risk.
+                (
+                    "Negative shift count: the shift count of operator "
+                    f"{expr.op!r} folds to {_number_text(rhs_value)}. The "
+                    "simulator and every generated runtime, including C/C++ "
+                    "and Python, reject a negative shift count at runtime."
+                )
+                if rhs_value < 0
+                else (
+                    "C/C++ default deployment profile risk: the shift count of "
+                    f"operator {expr.op!r} folds to {_number_text(rhs_value)}, "
+                    f"which is not less than the default width {_TARGET_BITS}; "
+                    "Python generated runtimes do not represent the same "
+                    "fixed-width shift contract."
+                )
             ),
             context.span,
             refs,

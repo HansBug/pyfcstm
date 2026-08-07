@@ -1,0 +1,17 @@
+title: Non-tie round() agrees under every tie-breaking rule
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/451
+  notes:
+  - 'Control: not a tie, so every tie-breaking rule agrees.'
+categories:
+- runtime
+- template_alignment
+steps:
+- cycle: []
+  expect:
+    state: Root.A
+    vars:
+      a: 2.6
+      r: 3
+    ended: false

@@ -947,8 +947,14 @@ def _emit_expr_checks(
         if expr.op in {"<<", ">>"}:
             # Python rejects a negative shift count with ValueError, while C
             # leaves it undefined (C11 6.5.7p3).  The check runs after the
-            # float-operand check above so that a float operand still reports
-            # the same TypeError the simulator raises first.
+            # float-operand check above, which is right for a genuinely float
+            # operand -- the simulator raises TypeError there first.  It is
+            # *not* right for an operand whose inferred type is float only
+            # because it came from ``**``: the simulator evaluates that to an
+            # int and raises ValueError for the negative count, while the
+            # float-operand branch returns early and this check never runs.
+            # That gap belongs to the ``**`` type inference, not to the order
+            # here; see the shift-of-power note in the pull request.
             _line(lines, indent, level, "if ((%s) < 0) {" % right.text)
             _emit_error(
                 lines,

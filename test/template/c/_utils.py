@@ -35,10 +35,17 @@ def _runtime_exception_from_message(message):
         if (
             'division by zero' in cause_text
             or 'modulo' in cause_text
-            or 'cannot be raised to a negative power' in cause_text
+            or 'negative power' in cause_text
         ):
             # The simulator raises ZeroDivisionError for all three: division by
             # zero, modulo by zero, and a zero base with a negative exponent.
+            #
+            # These are the interpreter's own wordings, and it has reworded them
+            # three times across the supported range, so each arm matches the
+            # part that is common to every version: `'negative power'` covers
+            # both '0.0 cannot be raised to a negative power' and the shorter
+            # 'zero to a negative power', and `'division by zero'` covers the
+            # newest interpreters' unified modulo text.
             cause = ZeroDivisionError(cause_text)
         elif 'unsupported operand type' in cause_text:
             cause = TypeError(cause_text)

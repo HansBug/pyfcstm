@@ -1,0 +1,22 @@
+title: "Left shift by a positive count"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/449
+  notes:
+  - "Fills corpus coverage for arithmetic left shift, which previously had only one variable case."
+categories:
+- runtime
+- template_alignment
+steps:
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      r: 8
+    ended: false
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      r: 8
+    ended: false

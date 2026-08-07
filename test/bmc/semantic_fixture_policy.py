@@ -63,6 +63,16 @@ NUMERIC_UNSUPPORTED_CASES = {
     "persistent_default_int_initializer_normalizes_integer_float",
     "persistent_effect_writeback_normalizes_integer_float",
     "persistent_int_writeback_normalizes_integer_float",
+    "arith_bitand_negative",
+    "arith_bitor_negative",
+    "arith_bitxor_negative",
+    "arith_shl_basic",
+    "arith_shr_negative",
+}
+
+FLOAT_MODULO_UNSUPPORTED_CASES = {
+    "arith_mod_float_negative_dividend",
+    "arith_mod_float_negative_divisor",
 }
 
 HANDLER_CALL_ALIGNMENT_CASES = {
@@ -83,6 +93,18 @@ HANDLER_CALL_ALIGNMENT_CASES = {
 }
 
 TEMPORARY_BMC_CORE_EXCLUDE_CASES = {
+    # Arithmetic alignment fixtures whose values the current encoder computes
+    # differently, or whose step-level exception expectations it cannot build.
+    "arith_div_by_zero_raises",
+    "arith_div_odd_raises",
+    "arith_mod_both_negative",
+    "arith_mod_by_zero_raises",
+    "arith_mod_mixed_int_float_by_zero_raises",
+    "arith_mod_negative_divisor",
+    "arith_pow_float_zero_base_negative_exponent_raises",
+    "arith_pow_negative_exponent_raises",
+    "arith_pow_zero_base_negative_exponent_raises",
+    "arith_pow_zero_base_negative_exponent_to_float_raises",
     # Future runtime-error relation work.
     "design_speculative_dfs_safety_limit",
     "expression_error_preserves_runtime_snapshot",
@@ -110,6 +132,7 @@ BMC_CORE_FIXTURE_LEDGER_CASES = (
     PLAIN_BEFORE_ALIGNMENT_CASES
     | INITIAL_DELTA_ALIGNMENT_CASES
     | NUMERIC_UNSUPPORTED_CASES
+    | FLOAT_MODULO_UNSUPPORTED_CASES
     | HANDLER_CALL_ALIGNMENT_CASES
     | TEMPORARY_BMC_CORE_EXCLUDE_CASES
     | CONSTRUCTOR_DIAGNOSTIC_EXCLUDE_CASES
@@ -156,6 +179,12 @@ def policy_for_case(case_id: str) -> BmcSemanticFixturePolicy:
             mode="expected_unsupported",
             bucket="numeric_unsupported",
             reason="Current Int bitwise / integer-normalization lowering is unsupported and must fail loudly.",
+        )
+    if case_id in FLOAT_MODULO_UNSUPPORTED_CASES:
+        return BmcSemanticFixturePolicy(
+            mode="expected_unsupported",
+            bucket="float_modulo_unsupported",
+            reason="Floored float modulo lowering is unsupported and must fail loudly.",
         )
     if case_id in HANDLER_CALL_ALIGNMENT_CASES:
         return BmcSemanticFixturePolicy(

@@ -1,0 +1,28 @@
+title: "Mixed int/float modulo by zero raises after a promoted successful modulo"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/449
+  notes:
+  - "The first cycle computes 7 % 2.5, which is 2.0 only under the promotion rule: reading the operator as integer would truncate the divisor and give 1. That pins the promotion more directly than the host-dependent 'float modulo' wording ever did."
+categories:
+- runtime
+- template_alignment
+exclude_runners:
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      d: 0.0
+      r: 2.0
+    ended: false
+- cycle: []
+  expect:
+    raises:
+      type: SimulationRuntimeExpressionError
+      cause_type: ZeroDivisionError
+    vars_exact:
+      d: 0.0
+      r: 2.0
+    ended: false

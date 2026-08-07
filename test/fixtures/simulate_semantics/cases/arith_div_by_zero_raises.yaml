@@ -1,0 +1,30 @@
+title: "Division by zero raises a structured expression error"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/449
+  notes:
+  - "The first cycle computes 7 / 2 as 3.5, which no other binary operator produces for those operands and which also pins that division always yields float. The second cycle zeroes the divisor. Division-by-zero wording happens to be stable across the supported range, so this one keeps a text match as well."
+categories:
+- runtime
+- template_alignment
+exclude_runners:
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      d: 0
+      r: 3.5
+    ended: false
+- cycle: []
+  expect:
+    raises:
+      type: SimulationRuntimeExpressionError
+      match: division by zero
+      match_kind: substring
+      cause_type: ZeroDivisionError
+    vars_exact:
+      d: 0
+      r: 3.5
+    ended: false

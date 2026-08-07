@@ -1,0 +1,22 @@
+title: "Float modulo with a negative divisor follows floored division"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/449
+  notes:
+  - "Floored float modulo takes the sign of the divisor, so 7.5 % -2.0 is -0.5 rather than fmod's 1.5."
+categories:
+- runtime
+- template_alignment
+steps:
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      r: -0.5
+    ended: false
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      r: -0.5
+    ended: false

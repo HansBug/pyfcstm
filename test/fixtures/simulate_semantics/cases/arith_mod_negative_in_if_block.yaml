@@ -1,0 +1,23 @@
+title: "Floored modulo in an action-block if condition selects the branch"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/449
+  notes:
+  - "Action-block if conditions are a distinct render call site from plain assignments."
+categories:
+- runtime
+- template_alignment
+- if_blocks
+steps:
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      taken: 1
+    ended: false
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      taken: 1
+    ended: false

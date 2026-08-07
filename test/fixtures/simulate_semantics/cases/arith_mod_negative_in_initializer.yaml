@@ -1,0 +1,28 @@
+title: "Floored modulo in a persistent variable initializer"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/449
+  notes:
+  - "Initializers are rendered by a separate reset-vars body, so they need their own coverage."
+categories:
+- runtime
+- template_alignment
+steps:
+- cycle_count: 0
+  expect:
+    state: Root
+    vars_exact:
+      r: 1
+    ended: false
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      r: 1
+    ended: false
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      r: 1
+    ended: false

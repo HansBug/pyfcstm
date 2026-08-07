@@ -1,0 +1,11 @@
+def int r = 0;
+
+state Root {
+    state A {
+        during {
+            r = 3 ** 34;
+        }
+    }
+
+    [*] -> A;
+}

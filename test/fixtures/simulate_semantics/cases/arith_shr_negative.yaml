@@ -1,0 +1,22 @@
+title: "Arithmetic right shift of a negative value"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/449
+  notes:
+  - "Python and int64 C agree on arithmetic right shift; fills zero corpus coverage."
+categories:
+- runtime
+- template_alignment
+steps:
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      r: -2
+    ended: false
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      r: -2
+    ended: false

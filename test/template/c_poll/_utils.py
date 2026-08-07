@@ -32,7 +32,13 @@ class SimulationRuntimeDfsError(RuntimeError):
 def _runtime_exception_from_message(message):
     if 'evaluation failed:' in message:
         cause_text = message.split('evaluation failed:', 1)[1].strip()
-        if 'division by zero' in cause_text or 'modulo' in cause_text:
+        if (
+            'division by zero' in cause_text
+            or 'modulo' in cause_text
+            or 'cannot be raised to a negative power' in cause_text
+        ):
+            # The simulator raises ZeroDivisionError for all three: division by
+            # zero, modulo by zero, and a zero base with a negative exponent.
             cause = ZeroDivisionError(cause_text)
         elif 'unsupported operand type' in cause_text:
             cause = TypeError(cause_text)

@@ -1,0 +1,22 @@
+title: "trunc of a negative value writes back to int"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/449
+  notes:
+  - "trunc rounds toward zero, so trunc(-2.5) is -2 and the int writeback succeeds."
+categories:
+- runtime
+- template_alignment
+steps:
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      r: -2
+    ended: false
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      r: -2
+    ended: false

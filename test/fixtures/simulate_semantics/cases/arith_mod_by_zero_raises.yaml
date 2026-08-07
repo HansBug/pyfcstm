@@ -1,0 +1,24 @@
+title: "Integer modulo by zero raises a structured expression error"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/449
+  notes:
+  - "Message wording is host-CPython dependent: 3.11 says 'integer modulo by zero', 3.7-3.10 say 'integer division or modulo by zero'."
+categories:
+- runtime
+- template_alignment
+exclude_runners:
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    raises:
+      type: SimulationRuntimeExpressionError
+      match: modulo
+      match_kind: substring
+      cause_type: ZeroDivisionError
+      cause_match: modulo
+      cause_match_kind: substring
+    vars_exact:
+      r: 0
+    ended: false

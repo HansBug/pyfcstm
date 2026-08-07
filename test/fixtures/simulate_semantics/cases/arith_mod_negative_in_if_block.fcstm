@@ -1,0 +1,15 @@
+def int taken = 0;
+
+state Root {
+    state A {
+        during {
+            if [-7 % 2 == 1] {
+                taken = 1;
+            } else {
+                taken = 2;
+            }
+        }
+    }
+
+    [*] -> A;
+}

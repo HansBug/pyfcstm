@@ -1,0 +1,24 @@
+title: "Floored modulo in a transition guard selects the target state"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/449
+  notes:
+  - "Guard divergence changes the state machine trajectory, not just a variable value."
+categories:
+- runtime
+- template_alignment
+steps:
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      a: -7
+      b: 2
+    ended: false
+- cycle: []
+  expect:
+    state: Root.B
+    vars_exact:
+      a: -7
+      b: 2
+    ended: false

@@ -126,6 +126,51 @@ class _CNames:
         """
         return "_%s_set_error" % self.machine_class_name
 
+    @property
+    def floormod_i64(self) -> str:
+        """
+        Return the generated integer floored-modulo helper name.
+
+        :return: Helper function name.
+        :rtype: str
+
+        Example::
+
+            >>> _CNames("Demo", "DEMO").floormod_i64
+            '_Demo_floormod_i64'
+        """
+        return "_%s_floormod_i64" % self.machine_class_name
+
+    @property
+    def floormod_f64(self) -> str:
+        """
+        Return the generated float floored-modulo helper name.
+
+        :return: Helper function name.
+        :rtype: str
+
+        Example::
+
+            >>> _CNames("Demo", "DEMO").floormod_f64
+            '_Demo_floormod_f64'
+        """
+        return "_%s_floormod_f64" % self.machine_class_name
+
+    @property
+    def ipow_i64(self) -> str:
+        """
+        Return the generated exact integer-power helper name.
+
+        :return: Helper function name.
+        :rtype: str
+
+        Example::
+
+            >>> _CNames("Demo", "DEMO").ipow_i64
+            '_Demo_ipow_i64'
+        """
+        return "_%s_ipow_i64" % self.machine_class_name
+
 
 OperationalNode = Union[OperationStatement, dsl_nodes.OperationalStatement]
 
@@ -158,6 +203,84 @@ _MATH_FUNC_NAMES = {
 
 
 _INT_OPERATORS = {"<<", ">>", "&", "^", "|"}
+
+
+def _host_arithmetic_message(compute: Any) -> str:
+    """
+    Return the host CPython diagnostic text for a failing arithmetic operation.
+
+    Generated runtimes must reproduce :class:`pyfcstm.simulate.SimulationRuntime`
+    diagnostics verbatim, and the simulator embeds the interpreter's own
+    :exc:`ZeroDivisionError` text. That text is not stable across supported
+    interpreters: CPython 3.11 reworded integer modulo by zero from ``'integer
+    division or modulo by zero'`` to ``'integer modulo by zero'``. Asking the
+    host for the wording keeps a generated artifact aligned with the simulator
+    that runs beside it instead of freezing one interpreter's phrasing.
+
+    :param compute: Zero-argument callable performing the failing operation.
+    :type compute: typing.Callable[[], typing.Any]
+    :return: Diagnostic text reported by the host interpreter.
+    :rtype: str
+    :raises RuntimeError: If the operation unexpectedly succeeds.
+
+    Example::
+
+        >>> "modulo" in _host_arithmetic_message(lambda: 7 % 0)
+        True
+    """
+    try:
+        compute()
+    except ZeroDivisionError as err:
+        # The only expected failure: every caller passes a division, modulo, or
+        # power operation whose operands make it fail with ZeroDivisionError.
+        return str(err)
+    # Anything else propagates and surfaces the bug.
+    raise RuntimeError("expected arithmetic operation to fail on this interpreter")
+
+
+_INTEGER_MODULO_BY_ZERO_MESSAGE = _host_arithmetic_message(lambda: 7 % 0)
+_FLOAT_MODULO_BY_ZERO_MESSAGE = _host_arithmetic_message(lambda: 7.0 % 0.0)
+_DIVISION_BY_ZERO_MESSAGE = _host_arithmetic_message(lambda: 7 / 0)
+_FLOAT_DIVISION_BY_ZERO_MESSAGE = _host_arithmetic_message(lambda: 7.0 / 0.0)
+_ZERO_BASE_NEGATIVE_POWER_MESSAGE = _host_arithmetic_message(lambda: 0**-1)
+
+
+def _static_int_literal(expr: dsl_nodes.Expr) -> Optional[int]:
+    """
+    Return the integer value of a syntactically literal integer expression.
+
+    The C emitter uses this to decide whether an exponent is known to be a
+    non-negative integer at generation time, which is what selects between the
+    exact integer-power helper and the ``double`` :c:func:`pow` form. It stays
+    deliberately narrow: only literals and their signs are folded, because
+    broader constant reasoning belongs in the inspect/verify layers.
+
+    :param expr: Expression to inspect.
+    :type expr: pyfcstm.dsl.node.Expr
+    :return: Literal integer value, or ``None`` when the expression is not a
+        signed integer literal.
+    :rtype: int, optional
+
+    Example::
+
+        >>> _static_int_literal(dsl_nodes.Integer("3"))
+        3
+        >>> _static_int_literal(dsl_nodes.UnaryOp("-", dsl_nodes.Integer("1")))
+        -1
+        >>> _static_int_literal(dsl_nodes.Float("3.0")) is None
+        True
+    """
+    expr = _coerce_expr(expr)
+    if isinstance(expr, dsl_nodes.Paren):
+        return _static_int_literal(expr.expr)
+    if isinstance(expr, dsl_nodes.UnaryOp) and expr.op in {"+", "-"}:
+        inner = _static_int_literal(expr.expr)
+        if inner is None:
+            return None
+        return -inner if expr.op == "-" else inner
+    if isinstance(expr, (dsl_nodes.Integer, dsl_nodes.HexInt)):
+        return expr.value
+    return None
 
 
 def _quote_c_string(value: str) -> str:
@@ -275,6 +398,19 @@ def _infer_expr_type(
             return "int"
         if expr.op == "/":
             return "float"
+        if expr.op == "**":
+            # Python keeps `int ** int` an int only while the exponent is a
+            # non-negative integer; `2 ** -1` is the float 0.5. A variable
+            # exponent is undecidable here, so it falls back to float and the
+            # runtime writeback guard performs the integer-ness check.
+            exponent = _static_int_literal(expr.expr2)
+            if (
+                exponent is not None
+                and exponent >= 0
+                and _infer_expr_type(expr.expr1, known_types) == "int"
+            ):
+                return "int"
+            return "float"
         return _merge_types(
             _infer_expr_type(expr.expr1, known_types),
             _infer_expr_type(expr.expr2, known_types),
@@ -347,6 +483,7 @@ def _safe_static_zero_result(value_type: Optional[str]) -> str:
 def _render_expr(
     expr: dsl_nodes.Expr,
     known_types: Mapping[str, str],
+    names: _CNames,
     state_names: Optional[Iterable[str]] = None,
 ) -> _ExprRenderResult:
     expr = _coerce_expr(expr)
@@ -371,16 +508,16 @@ def _render_expr(
             return _ExprRenderResult(text, known_types.get(expr.name))
         return _ExprRenderResult(to_c_identifier(expr.name), None)
     if isinstance(expr, dsl_nodes.Paren):
-        inner = _render_expr(expr.expr, known_types, state_name_set)
+        inner = _render_expr(expr.expr, known_types, names, state_name_set)
         return _ExprRenderResult("(%s)" % inner.text, inner.value_type)
     if isinstance(expr, dsl_nodes.UnaryOp):
-        inner = _render_expr(expr.expr, known_types, state_name_set)
+        inner = _render_expr(expr.expr, known_types, names, state_name_set)
         op = "!" if expr.op == "not" else expr.op
         return _ExprRenderResult(
             "(%s%s)" % (op, inner.text), _infer_expr_type(expr, known_types)
         )
     if isinstance(expr, dsl_nodes.UFunc):
-        inner = _render_expr(expr.expr, known_types, state_name_set)
+        inner = _render_expr(expr.expr, known_types, names, state_name_set)
         if expr.func == "sign":
             text = "(((%s) > 0) - ((%s) < 0))" % (inner.text, inner.text)
         elif expr.func == "abs":
@@ -397,8 +534,8 @@ def _render_expr(
             text = "%s(%s)" % (expr.func, inner.text)
         return _ExprRenderResult(text, _infer_expr_type(expr, known_types))
     if isinstance(expr, dsl_nodes.BinaryOp):
-        left = _render_expr(expr.expr1, known_types, state_name_set)
-        right = _render_expr(expr.expr2, known_types, state_name_set)
+        left = _render_expr(expr.expr1, known_types, names, state_name_set)
+        right = _render_expr(expr.expr2, known_types, names, state_name_set)
         value_type = _infer_expr_type(expr, known_types)
         if expr.op in {"/", "%"} and _is_static_zero(expr.expr2):
             text = _safe_static_zero_result(value_type)
@@ -407,11 +544,21 @@ def _render_expr(
         ):
             text = "0"
         elif expr.op == "**":
-            text = "pow(%s, %s)" % (left.text, right.text)
-        elif expr.op == "%" and (
-            left.value_type == "float" or right.value_type == "float"
-        ):
-            text = "fmod(%s, %s)" % (left.text, right.text)
+            # `value_type` already encodes Python's rule: int only when the
+            # exponent is a statically non-negative integer and the base is an
+            # int. `pow()` would lose the low bits of any exact integer result
+            # wider than the double mantissa, so that case uses exact integer
+            # exponentiation instead.
+            if value_type == "int":
+                text = "%s(%s, %s)" % (names.ipow_i64, left.text, right.text)
+            else:
+                text = "pow(%s, %s)" % (left.text, right.text)
+        elif expr.op == "%":
+            # DSL modulo is floored like Python's, so neither C `%` nor `fmod`
+            # can be used directly: both truncate and take the sign of the
+            # dividend instead of the divisor.
+            helper = names.floormod_f64 if value_type == "float" else names.floormod_i64
+            text = "%s(%s, %s)" % (helper, left.text, right.text)
         elif expr.op == "/":
             text = "(((double)(%s)) / (%s))" % (left.text, right.text)
         elif expr.op == "=>":
@@ -424,9 +571,9 @@ def _render_expr(
             text = "((%s) %s (%s))" % (left.text, expr.op, right.text)
         return _ExprRenderResult(text, value_type)
     if isinstance(expr, dsl_nodes.ConditionalOp):
-        cond = _render_expr(expr.cond, known_types, state_name_set)
-        value_true = _render_expr(expr.value_true, known_types, state_name_set)
-        value_false = _render_expr(expr.value_false, known_types, state_name_set)
+        cond = _render_expr(expr.cond, known_types, names, state_name_set)
+        value_true = _render_expr(expr.value_true, known_types, names, state_name_set)
+        value_false = _render_expr(expr.value_false, known_types, names, state_name_set)
         text = "((%s) ? (%s) : (%s))" % (cond.text, value_true.text, value_false.text)
         return _ExprRenderResult(text, _infer_expr_type(expr, known_types))
     raise TypeError("Unsupported C expression node: %r" % (type(expr),))
@@ -443,11 +590,11 @@ def _zero_division_message(
 ) -> str:
     if operator_text == "%":
         if value_type == "float":
-            return "float modulo"
-        return "integer modulo by zero"
+            return _FLOAT_MODULO_BY_ZERO_MESSAGE
+        return _INTEGER_MODULO_BY_ZERO_MESSAGE
     if value_type == "float" or "." in right_text:
-        return "float division by zero"
-    return "division by zero"
+        return _FLOAT_DIVISION_BY_ZERO_MESSAGE
+    return _DIVISION_BY_ZERO_MESSAGE
 
 
 def _emit_error(
@@ -487,7 +634,7 @@ def _emit_expr_checks(
             lines, expr.expr, known_types, state_name_set, names, usage, indent, level
         )
     if isinstance(expr, dsl_nodes.ConditionalOp):
-        cond = _render_expr(expr.cond, known_types, state_name_set).text
+        cond = _render_expr(expr.cond, known_types, names, state_name_set).text
         safe = _emit_expr_checks(
             lines, expr.cond, known_types, state_name_set, names, usage, indent, level
         )
@@ -522,8 +669,8 @@ def _emit_expr_checks(
         _line(lines, indent, level, "}")
         return safe
     if isinstance(expr, dsl_nodes.BinaryOp):
-        left = _render_expr(expr.expr1, known_types, state_name_set)
-        right = _render_expr(expr.expr2, known_types, state_name_set)
+        left = _render_expr(expr.expr1, known_types, names, state_name_set)
+        right = _render_expr(expr.expr2, known_types, names, state_name_set)
         if expr.op == "&&":
             safe = _emit_expr_checks(
                 lines,
@@ -613,6 +760,30 @@ def _emit_expr_checks(
                 ),
             )
             _line(lines, indent, level, "}")
+        if expr.op == "**":
+            # Python raises ZeroDivisionError for a zero base with a negative
+            # exponent, while evaluating the operator and independently of the
+            # writeback target type. A float target never reaches the int
+            # writeback guard, so the check has to live here. Skip it when the
+            # exponent is a statically non-negative literal, where the condition
+            # is dead code.
+            exponent = _static_int_literal(expr.expr2)
+            if exponent is None or exponent < 0:
+                _line(
+                    lines,
+                    indent,
+                    level,
+                    "if ((%s) < 0 && (%s) == 0) {" % (right.text, left.text),
+                )
+                _emit_error(
+                    lines,
+                    names,
+                    indent,
+                    level + 1,
+                    "%s evaluation failed: %s"
+                    % (usage, _ZERO_BASE_NEGATIVE_POWER_MESSAGE),
+                )
+                _line(lines, indent, level, "}")
         if expr.op in _INT_OPERATORS:
             invalid = left.value_type == "float" or right.value_type == "float"
             if invalid:
@@ -657,7 +828,7 @@ def _render_statement_sequence(
         known_types = {**state_types, **current_types}
         if isinstance(statement, dsl_nodes.OperationAssignment):
             target = _state_target(statement.name, state_types)
-            expr = _render_expr(statement.expr, known_types, state_types.keys())
+            expr = _render_expr(statement.expr, known_types, names, state_types.keys())
             checks: List[str] = []
             safe = _emit_expr_checks(
                 checks,
@@ -761,7 +932,7 @@ def _render_statement_sequence(
                     chain_level,
                     "if (%s) {"
                     % _render_expr(
-                        branch.condition, branch_known, state_types.keys()
+                        branch.condition, branch_known, names, state_types.keys()
                     ).text,
                 )
                 emit_branch_body(branch, chain_level + 1)
@@ -867,7 +1038,7 @@ def render_c_reset_vars_body(
         "%s(void)scope;" % indent,
     ]
     for name, define in var_defines.items():
-        expr = _render_expr(define.init, state_types, state_types.keys())
+        expr = _render_expr(define.init, state_types, names, state_types.keys())
         checks: List[str] = []
         safe = _emit_expr_checks(
             checks,
@@ -968,7 +1139,7 @@ def render_c_condition_body(
     _emit_expr_checks(
         lines, expr_node, state_types, state_types.keys(), names, usage, indent, 1
     )
-    rendered = _render_expr(expr_node, state_types, state_types.keys())
+    rendered = _render_expr(expr_node, state_types, names, state_types.keys())
     lines.append("%s*%s = !!(%s);" % (indent, result_name, rendered.text))
     lines.append("%sreturn %s;" % (indent, names.success))
     return "\n".join(lines)

@@ -9,10 +9,21 @@ generated runtimes, or touch native toolchains.
 
 import argparse
 import re
+import sys
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import (
+    Any,
+    Dict,
+    Iterator,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+)
 
 import yaml
 
@@ -113,6 +124,27 @@ class SemanticCaseRecord:
 
 def _repository_root() -> Path:
     return Path(__file__).resolve().parents[1]
+
+
+def _import_dsl_parser():
+    """
+    Import the FCSTM parser, making the repository root importable if needed.
+
+    The operator-coverage contract parses fixture sources, so this maintenance
+    tool needs ``pyfcstm``. Running it as ``python tools/inventory_simulate_semantics.py``
+    puts ``tools/`` on ``sys.path`` rather than the repository root, so an
+    editable install is otherwise required just to run a corpus check.
+
+    :return: The ``parse_with_grammar_entry`` function and the AST node module.
+    :rtype: typing.Tuple[typing.Callable[..., typing.Any], types.ModuleType]
+    """
+    root = str(_repository_root())
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from pyfcstm.dsl import node as dsl_nodes
+    from pyfcstm.dsl import parse_with_grammar_entry
+
+    return parse_with_grammar_entry, dsl_nodes
 
 
 def _read_text(path: Path) -> str:
@@ -782,12 +814,157 @@ def _field_contract_errors(records: Sequence[SemanticCaseRecord]) -> List[str]:
     return errors
 
 
+BINARY_ARITHMETIC_OPERATORS = (
+    "+",
+    "-",
+    "*",
+    "/",
+    "%",
+    "**",
+    "<<",
+    ">>",
+    "&",
+    "^",
+    "|",
+)
+
+NEGATIVE_OPERAND_OPERATORS = ("/", "%", "**", ">>")
+
+
+def _iter_expr_nodes(node: Any, seen: Optional[Set[int]] = None) -> Iterator[Any]:
+    """
+    Yield every AST node reachable from ``node``.
+
+    :param node: FCSTM AST node to walk.
+    :type node: pyfcstm.dsl.node.ASTNode
+    :param seen: Identity set guarding against shared sub-trees, defaults to
+        ``None``.
+    :type seen: typing.Set[int], optional
+    :return: Iterator over reachable AST nodes.
+    :rtype: typing.Iterator[typing.Any]
+    """
+    _, dsl_nodes = _import_dsl_parser()
+
+    if seen is None:
+        seen = set()
+    if not isinstance(node, dsl_nodes.ASTNode) or id(node) in seen:
+        return
+    seen.add(id(node))
+    yield node
+    for value in vars(node).values():
+        if isinstance(value, dsl_nodes.ASTNode):
+            for item in _iter_expr_nodes(value, seen):
+                yield item
+        elif isinstance(value, (list, tuple)):
+            for element in value:
+                for item in _iter_expr_nodes(element, seen):
+                    yield item
+        elif isinstance(value, Mapping):
+            for element in value.values():
+                for item in _iter_expr_nodes(element, seen):
+                    yield item
+
+
+def _is_negative_literal(expr: Any) -> bool:
+    """
+    Return whether an expression is a syntactically negative numeric literal.
+
+    The operator-coverage contract is defined in terms of literal operands
+    rather than variables holding negative values. A textual definition is not
+    decidable: ``r = -7 % 2`` and ``def int a = -7; r = a % b;`` both reproduce a
+    floored-vs-truncated divergence, but only the first states the sign at the
+    operator. Requiring the literal spelling keeps the contract checkable and
+    keeps new divergence fixtures self-describing.
+
+    :param expr: Expression to inspect.
+    :type expr: pyfcstm.dsl.node.Expr
+    :return: ``True`` when the expression is a negated numeric literal.
+    :rtype: bool
+    """
+    _, dsl_nodes = _import_dsl_parser()
+
+    while isinstance(expr, dsl_nodes.Paren):
+        expr = expr.expr
+    if not isinstance(expr, dsl_nodes.UnaryOp) or expr.op != "-":
+        return False
+    inner = expr.expr
+    while isinstance(inner, dsl_nodes.Paren):
+        inner = inner.expr
+    return isinstance(inner, (dsl_nodes.Integer, dsl_nodes.HexInt, dsl_nodes.Float))
+
+
+def _operator_coverage(
+    records: Sequence[SemanticCaseRecord],
+) -> Tuple[Dict[str, Set[str]], Dict[str, Set[str]]]:
+    """
+    Return per-operator case coverage, keyed by DSL binary operator.
+
+    Coverage is computed from the parsed FCSTM AST rather than by grepping the
+    source. Text search cannot distinguish arithmetic ``>>`` from the aspect
+    action syntax ``>> during before``, and the corpus contains eighteen of the
+    latter and none of the former, so a textual counter reports full coverage
+    for an operator with no cases at all.
+
+    :param records: Loaded fixture records.
+    :type records: typing.Sequence[SemanticCaseRecord]
+    :return: Case ids per operator, and case ids per operator with a negative
+        literal operand.
+    :rtype: typing.Tuple[typing.Dict[str, typing.Set[str]], typing.Dict[str, typing.Set[str]]]
+    """
+    parse_with_grammar_entry, dsl_nodes = _import_dsl_parser()
+
+    covered: Dict[str, Set[str]] = {op: set() for op in BINARY_ARITHMETIC_OPERATORS}
+    negative: Dict[str, Set[str]] = {op: set() for op in BINARY_ARITHMETIC_OPERATORS}
+    for record in records:
+        ast = parse_with_grammar_entry(
+            _read_text(record.fcstm_path), entry_name="state_machine_dsl"
+        )
+        for node in _iter_expr_nodes(ast):
+            if not isinstance(node, dsl_nodes.BinaryOp):
+                continue
+            if node.op not in covered:
+                continue
+            covered[node.op].add(record.case_id)
+            if _is_negative_literal(node.expr1) or _is_negative_literal(node.expr2):
+                negative[node.op].add(record.case_id)
+    return covered, negative
+
+
+def _operator_coverage_errors(records: Sequence[SemanticCaseRecord]) -> List[str]:
+    """
+    Check that every binary arithmetic operator has fixture coverage.
+
+    :param records: Loaded fixture records.
+    :type records: typing.Sequence[SemanticCaseRecord]
+    :return: Contract violations, empty when the corpus satisfies the contract.
+    :rtype: typing.List[str]
+    """
+    covered, negative = _operator_coverage(records)
+    errors = []
+    for operator in BINARY_ARITHMETIC_OPERATORS:
+        if not covered[operator]:
+            errors.append(
+                "operator coverage: no fixture case uses the binary `%s` operator; "
+                "add a case whose action block, guard, or initializer applies it"
+                % operator
+            )
+    for operator in NEGATIVE_OPERAND_OPERATORS:
+        if covered[operator] and not negative[operator]:
+            errors.append(
+                "operator coverage: no fixture case applies `%s` to a negative "
+                "literal operand; the sign-dependent semantics of this operator "
+                "stay untested without one" % operator
+            )
+    return errors
+
+
 def _contract_errors(root: Path, records: Sequence[SemanticCaseRecord]) -> List[str]:
     errors = []
     errors.extend(_paired_file_errors(root, records))
     errors.extend(_markdown_contract_errors(root))
     errors.extend(_runner_field_errors(root))
     errors.extend(_field_contract_errors(records))
+    errors.extend(_operator_coverage_errors(records))
     return errors
 
 

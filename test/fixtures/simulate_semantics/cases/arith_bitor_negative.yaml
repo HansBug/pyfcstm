@@ -1,0 +1,22 @@
+title: "Bitwise or with a negative operand"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/449
+  notes:
+  - "Fills zero corpus coverage for the bitwise or operator with a negative literal operand."
+categories:
+- runtime
+- template_alignment
+steps:
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      r: -5
+    ended: false
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      r: -5
+    ended: false

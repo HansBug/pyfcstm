@@ -1,0 +1,13 @@
+def int a = -7;
+def int b = 2;
+
+state Root {
+    state A;
+    state B;
+    state C;
+
+    A -> B : [a % b == 1];
+    A -> C : [a % b == -1];
+
+    [*] -> A;
+}

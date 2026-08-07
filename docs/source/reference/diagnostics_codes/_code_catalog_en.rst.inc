@@ -4645,7 +4645,7 @@ W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``const_fold``; span object ``expression``.
 
-**Meaning.** A shift count folds to a constant below zero or not less than the default C/C++ target integer width. The two halves differ: a negative count is rejected at runtime by the simulator and by every generated runtime, including C/C++ and Python, while a count at or above the width is a C/C++ 64-bit deployment-profile portability risk that Python big-integer shifting does not share.
+**Meaning.** A shift count folds to a constant below zero or not less than the default C/C++ target integer width. Three input shapes reach this code and they differ: a negative integer count is rejected at runtime by the simulator and by every generated runtime, including C/C++ and Python; an integer count at or above the width is a C/C++ 64-bit deployment-profile portability risk that Python big-integer shifting does not share; and a non-integer count is rejected earlier by the operand type check, so neither reason applies to it.
 
 **LLM repair summary.** A shift count is statically outside the C/C++ default 64-bit profile. A negative count is a runtime error in every generated runtime; a count at or above the width is a target-profile portability warning that Python generated runtimes do not share.
 

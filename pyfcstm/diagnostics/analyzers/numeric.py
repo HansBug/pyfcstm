@@ -349,7 +349,10 @@ def _shift_count_diagnostic(
                 # generated runtime; a count at or above the width is a
                 # C/C++-only fixed-width risk; a non-integer count is rejected
                 # earlier by the operand type check, so neither reason applies
-                # and the message stays neutral about the cause.
+                # and the message stays neutral about the cause.  The
+                # non-integer test therefore has to come before the width test:
+                # a count such as ``100.5`` is both non-integer and above the
+                # width, and the type check is what actually rejects it.
                 (
                     "Negative shift count: the shift count of operator "
                     f"{expr.op!r} folds to {_number_text(rhs_value)}. The "
@@ -358,18 +361,18 @@ def _shift_count_diagnostic(
                 )
                 if isinstance(rhs_value, int) and rhs_value < 0
                 else (
+                    "Shift count out of the C/C++ default target range: the "
+                    f"shift count of operator {expr.op!r} folds to "
+                    f"{_number_text(rhs_value)}, outside "
+                    f"0 <= count < {_TARGET_BITS}."
+                )
+                if not isinstance(rhs_value, int)
+                else (
                     "C/C++ default deployment profile risk: the shift count of "
                     f"operator {expr.op!r} folds to {_number_text(rhs_value)}, "
                     f"which is not less than the default width {_TARGET_BITS}; "
                     "Python generated runtimes do not represent the same "
                     "fixed-width shift contract."
-                )
-                if rhs_value >= _TARGET_BITS
-                else (
-                    "Shift count out of the C/C++ default target range: the "
-                    f"shift count of operator {expr.op!r} folds to "
-                    f"{_number_text(rhs_value)}, outside "
-                    f"0 <= count < {_TARGET_BITS}."
                 )
             ),
             context.span,

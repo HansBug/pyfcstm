@@ -919,7 +919,9 @@ def test_numeric_descriptions_are_target_specific(code):
         ("-0.5", "Shift count out of the C/C++ default target range:"),
     ],
 )
-def test_shift_count_message_separates_its_three_input_shapes(shift_count, expected_lead):
+def test_shift_count_message_separates_its_three_input_shapes(
+    shift_count, expected_lead
+):
     source = dedent(
         """
         def int flags = 1;

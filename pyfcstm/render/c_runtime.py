@@ -323,7 +323,7 @@ def _is_static_zero(expr: dsl_nodes.Expr) -> bool:
     return False
 
 
-def _signed_literal_value(expr: dsl_nodes.Expr) -> Optional[float]:
+def _signed_literal_value(expr: dsl_nodes.Expr) -> Optional[Union[int, float]]:
     """
     Return the value of a numeric literal behind any chain of unary signs.
 
@@ -335,9 +335,9 @@ def _signed_literal_value(expr: dsl_nodes.Expr) -> Optional[float]:
 
     :param expr: Expression to inspect.
     :type expr: pyfcstm.dsl.node.Expr
-    :return: Literal value, or ``None`` when the expression is not a signed
-        numeric literal.
-    :rtype: float, optional
+    :return: Literal value, keeping the literal's own numeric type, or
+        ``None`` when the expression is not a signed numeric literal.
+    :rtype: int or float, optional
 
     Example::
 
@@ -370,8 +370,10 @@ def _is_static_negative(expr: dsl_nodes.Expr) -> bool:
     compileable: a negative shift count is undefined behaviour in C
     (C11 6.5.7p3), which ``-Wshift-count-negative`` reports and the
     ``-Werror`` command in the generated README turns into a hard failure.
-    Like :func:`_is_static_zero`, it folds only parentheses and unary signs,
-    so a computed count such as ``0 - 1`` is left to the runtime guard.
+    Like :func:`_is_static_zero`, it folds only parentheses and unary signs.
+    A computed count such as ``0 - 1`` is therefore not masked and still
+    reaches the generated source, exactly as ``x / (1 - 1)`` does for the
+    sibling helper; both stay compile-time failures under ``-Werror``.
 
     :param expr: Expression to inspect.
     :type expr: pyfcstm.dsl.node.Expr

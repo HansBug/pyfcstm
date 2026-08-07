@@ -2841,11 +2841,13 @@ W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE:
   emit_tier: static_pipeline
   description: >-
     A shift count folds to a constant below zero or not less than the default
-    C/C++ target integer width. The two halves differ: a negative count is
-    rejected at runtime by the simulator and by every generated runtime,
-    including C/C++ and Python, while a count at or above the width is a
-    C/C++ 64-bit deployment-profile portability risk that Python big-integer
-    shifting does not share.
+    C/C++ target integer width. Three input shapes reach this code and they
+    differ: a negative integer count is rejected at runtime by the simulator
+    and by every generated runtime, including C/C++ and Python; an integer
+    count at or above the width is a C/C++ 64-bit deployment-profile
+    portability risk that Python big-integer shifting does not share; and a
+    non-integer count is rejected earlier by the operand type check, so
+    neither reason applies to it.
   refs:
     target_family:
       type: str
@@ -2864,9 +2866,9 @@ W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE:
       type: str
       required: true
       description: >-
-        Human-readable note separating the two halves: a negative count is
-        rejected by every generated runtime, while a count at or above the
-        default width is a C/C++-only fixed-width risk.
+        Human-readable note separating the input shapes: a negative integer
+        count is rejected by every generated runtime, while an integer count
+        at or above the default width is a C/C++-only fixed-width risk.
     context:
       type: str
       required: true

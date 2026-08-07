@@ -1,0 +1,24 @@
+title: "Integer modulo agrees for same-sign operands"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/449
+  notes:
+  - "Floored and truncated modulo agree when dividend and divisor share a sign; coverage guard only."
+categories:
+- runtime
+- template_alignment
+exclude_runners:
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      r: -1
+    ended: false
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      r: -1
+    ended: false

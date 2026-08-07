@@ -1,0 +1,21 @@
+title: "True division rejects a non-integer int writeback"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/449
+  notes:
+  - "Pins that division always yields float: 7 / 2 is 3.5, so the int writeback fails."
+categories:
+- runtime
+- template_alignment
+exclude_runners:
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    raises:
+      type: ValueError
+      match: non-integer float from operation block writeback
+      match_kind: substring
+    vars_exact:
+      r: 0
+    ended: false

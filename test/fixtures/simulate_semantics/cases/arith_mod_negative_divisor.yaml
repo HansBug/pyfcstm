@@ -1,0 +1,24 @@
+title: "Integer modulo with a negative divisor follows floored division"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/449
+  notes:
+  - "Floored modulo takes the sign of the divisor, so 7 % -2 is -1 rather than the C truncated 1."
+categories:
+- runtime
+- template_alignment
+exclude_runners:
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      r: -1
+    ended: false
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      r: -1
+    ended: false

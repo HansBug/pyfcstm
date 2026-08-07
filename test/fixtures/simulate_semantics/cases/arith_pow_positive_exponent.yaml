@@ -1,0 +1,22 @@
+title: "Integer power with a non-negative exponent stays an integer"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/449
+  notes:
+  - "Regression guard for the non-negative-exponent path. The int/float distinction is not observable through this surface -- vars_exact compares by value and 8 == 8.0 -- so it pins the value, not the type."
+categories:
+- runtime
+- template_alignment
+steps:
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      r: 8
+    ended: false
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      r: 8
+    ended: false

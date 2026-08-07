@@ -1,0 +1,21 @@
+title: "Integer power with a negative exponent rejects the int writeback"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/449
+  notes:
+  - "2 ** -1 is float 0.5 in Python, so writing it back to a declared int is a writeback error."
+categories:
+- runtime
+- template_alignment
+exclude_runners:
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    raises:
+      type: ValueError
+      match: non-integer float from operation block writeback
+      match_kind: substring
+    vars_exact:
+      r: 0
+    ended: false

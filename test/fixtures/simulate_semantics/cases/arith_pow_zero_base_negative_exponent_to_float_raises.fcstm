@@ -1,0 +1,13 @@
+def int d = 2;
+def float r = 0.0;
+
+state Root {
+    state A {
+        during {
+            r = d ** -1;
+            d = d - 2;
+        }
+    }
+
+    [*] -> A;
+}

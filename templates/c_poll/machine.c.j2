@@ -413,6 +413,79 @@ static const {{ machine_class_name(model) }}Vars *_{{ machine_class_name(model) 
     return machine->_active_vars != NULL ? machine->_active_vars : &machine->vars;
 }
 
+/*
+ * Arithmetic helpers that keep generated code aligned with the simulator.
+ *
+ * The DSL follows Python arithmetic. Two operators therefore cannot use the
+ * native C spelling:
+ *
+ * - `%` is floored: the remainder takes the sign of the divisor, while C `%`
+ *   and `fmod` truncate and take the sign of the dividend.
+ * - integer `**` is exact, while `pow()` routes through `double` and loses the
+ *   low bits of any result wider than the 53-bit mantissa.
+ *
+ * Callers guarantee a non-zero divisor: the emitter writes a zero check ahead
+ * of every expression that contains `/` or `%`.
+ */
+static PYFCSTM_GENERATED_UNUSED PYFCSTM_GENERATED_INT64 _{{ machine_class_name(model) }}_floormod_i64(
+    PYFCSTM_GENERATED_INT64 dividend,
+    PYFCSTM_GENERATED_INT64 divisor)
+{
+    PYFCSTM_GENERATED_INT64 remainder;
+    /* `INT64_MIN % -1` is undefined in C99 6.5.5p6 and traps on x86-64, while
+       every `x % -1` is exactly 0. Answering directly keeps the helper total
+       over the whole int64 range without a signed-overflow window. */
+    if (divisor == -1) {
+        return 0;
+    }
+    remainder = dividend % divisor;
+    if (remainder != 0 && ((remainder < 0) != (divisor < 0))) {
+        remainder += divisor;
+    }
+    return remainder;
+}
+
+static PYFCSTM_GENERATED_UNUSED double _{{ machine_class_name(model) }}_floormod_f64(
+    double dividend,
+    double divisor)
+{
+    double remainder = fmod(dividend, divisor);
+    if (remainder != 0.0) {
+        if ((remainder < 0.0) != (divisor < 0.0)) {
+            remainder += divisor;
+        }
+        return remainder;
+    }
+    /* CPython's float_rem gives a zero remainder the sign of the divisor, so
+       `-4.0 % 2.0` is `0.0` and `4.0 % -2.0` is `-0.0`; plain fmod keeps the
+       sign of the dividend. */
+    return copysign(0.0, divisor);
+}
+
+/*
+ * Exact integer power. `exponent` is non-negative by construction: the emitter
+ * routes here only when the exponent is a non-negative integer literal, and
+ * otherwise renders the float `pow()` form. Products accumulate in unsigned
+ * arithmetic so that a wrap is an implementation-defined conversion instead of
+ * signed-overflow undefined behaviour.
+ */
+static PYFCSTM_GENERATED_UNUSED PYFCSTM_GENERATED_INT64 _{{ machine_class_name(model) }}_ipow_i64(
+    PYFCSTM_GENERATED_INT64 base,
+    PYFCSTM_GENERATED_INT64 exponent)
+{
+    PYFCSTM_GENERATED_UINT64 accumulator = 1u;
+    PYFCSTM_GENERATED_UINT64 factor = (PYFCSTM_GENERATED_UINT64) base;
+    PYFCSTM_GENERATED_UINT64 remaining = (PYFCSTM_GENERATED_UINT64) exponent;
+    while (remaining != 0u) {
+        if ((remaining & 1u) != 0u) {
+            accumulator *= factor;
+        }
+        factor *= factor;
+        remaining >>= 1;
+    }
+    return (PYFCSTM_GENERATED_INT64) accumulator;
+}
+
 /* Reset persistent variables to the DSL `def ... = ...;` defaults. */
 static int _{{ machine_class_name(model) }}_reset_vars(
     {{ machine_class_name(model) }} *machine,

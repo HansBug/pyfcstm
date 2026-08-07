@@ -1,0 +1,28 @@
+title: "Float zero base with a negative exponent raises during evaluation"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/449
+  notes:
+  - "Exercises the float-typed base comparison, a different code path from the int-typed base. The first cycle computes 2.0 ** -1 as 0.5, which no other binary operator produces for those operands."
+categories:
+- runtime
+- template_alignment
+exclude_runners:
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      d: 0.0
+      r: 0.5
+    ended: false
+- cycle: []
+  expect:
+    raises:
+      type: SimulationRuntimeExpressionError
+      cause_type: ZeroDivisionError
+    vars_exact:
+      d: 0.0
+      r: 0.5
+    ended: false

@@ -1,0 +1,13 @@
+def int d = 3;
+def int r = 0;
+
+state Root {
+    state A {
+        during {
+            r = 7 % d;
+            d = d - 3;
+        }
+    }
+
+    [*] -> A;
+}

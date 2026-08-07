@@ -1,0 +1,13 @@
+def int r = 0;
+def int rp = 0;
+
+state Root {
+    state A {
+        during {
+            r = ceil(-2.5);
+            rp = ceil(2.5);
+        }
+    }
+
+    [*] -> A;
+}

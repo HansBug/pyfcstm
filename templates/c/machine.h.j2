@@ -40,6 +40,33 @@ typedef long long PYFCSTM_GENERATED_INT64;
 #endif
 #endif
 
+/*
+ * Unsigned companion of `PYFCSTM_GENERATED_INT64`, mirroring the same branches.
+ *
+ * Generated integer exponentiation accumulates products in this type so that a
+ * wrap is an implementation-defined conversion rather than signed-overflow
+ * undefined behaviour. The C++98 branches avoid `long long` because
+ * `-std=c++98 -pedantic-errors` rejects it.
+ */
+#ifndef PYFCSTM_GENERATED_UINT64_DEFINED
+#define PYFCSTM_GENERATED_UINT64_DEFINED 1
+#if defined(_MSC_VER) && !defined(__clang__)
+typedef unsigned __int64 PYFCSTM_GENERATED_UINT64;
+#elif defined(__cplusplus) && (__cplusplus < 201103L)
+#if defined(__SIZEOF_LONG__) && (__SIZEOF_LONG__ >= 8)
+typedef unsigned long PYFCSTM_GENERATED_UINT64;
+#elif defined(__GNUC__)
+typedef unsigned long long PYFCSTM_GENERATED_UINT64;
+#else
+typedef unsigned long PYFCSTM_GENERATED_UINT64;
+#endif
+#elif defined(__GNUC__) || defined(__clang__)
+typedef __UINT64_TYPE__ PYFCSTM_GENERATED_UINT64;
+#else
+typedef unsigned long long PYFCSTM_GENERATED_UINT64;
+#endif
+#endif
+
 /* Common runtime return codes and generated safety limits. */
 #define {{ machine_macro_name(model) }}_SUCCESS 1
 #define {{ machine_macro_name(model) }}_FAILURE 0

@@ -14,6 +14,27 @@ def _model_from_dsl(dsl_code):
     return parse_dsl_node_to_state_machine(ast_node)
 
 
+def _host_zero_division_text(compute):
+    """Return this interpreter's own ZeroDivisionError text for ``compute``.
+
+    Generated diagnostics must match the simulator's, and the simulator embeds
+    the interpreter's wording, which is not stable across the supported range:
+    integer modulo by zero reads ``'integer division or modulo by zero'`` up to
+    CPython 3.10, ``'integer modulo by zero'`` in 3.11, and ``'division by
+    zero'`` in the newest interpreters. Asking the host here rather than
+    freezing one phrasing keeps the assertion meaningful on every supported
+    version, and still fails if the emitter goes back to a frozen literal.
+    """
+    try:
+        compute()
+    except ZeroDivisionError as err:
+        # The only expected failure: every caller passes a division or modulo
+        # whose operands make it fail with ZeroDivisionError.
+        return str(err)
+    # Anything else propagates and surfaces the bug.
+    raise AssertionError("expected the probe operation to fail on this interpreter")
+
+
 @pytest.mark.unittest
 class TestCRuntimeRendering:
     def test_static_zero_division_initializer_keeps_generated_c_compileable(self):
@@ -29,7 +50,7 @@ class TestCRuntimeRendering:
 
         body = render_c_reset_vars_body(model.defines, "RootMachine", "ROOT_MACHINE")
 
-        assert "float division by zero" in body
+        assert _host_zero_division_text(lambda: 1.0 / 0.0) in body
         assert "return ROOT_MACHINE_FAILURE;" in body
         assert "/ (0.0)" not in body
         assert "scope->recovered = 0.0;" in body
@@ -49,7 +70,7 @@ class TestCRuntimeRendering:
             "ROOT_MACHINE",
         )
 
-        assert "integer modulo by zero" in body
+        assert _host_zero_division_text(lambda: 1 % 0) in body
         assert "return ROOT_MACHINE_FAILURE;" in body
         assert "% (0)" not in body
         assert "scope->counter = 0;" in body

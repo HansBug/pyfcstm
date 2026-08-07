@@ -1,0 +1,22 @@
+title: "Float modulo with a negative dividend follows floored division"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/449
+  notes:
+  - "Python float modulo is floored, so -7.5 % 2.0 is 0.5 rather than the C fmod result -1.5."
+categories:
+- runtime
+- template_alignment
+steps:
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      r: 0.5
+    ended: false
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      r: 0.5
+    ended: false

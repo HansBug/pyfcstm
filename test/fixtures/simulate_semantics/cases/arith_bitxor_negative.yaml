@@ -1,0 +1,22 @@
+title: "Bitwise xor with a negative operand"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/449
+  notes:
+  - "Fills zero corpus coverage for bitwise xor with a negative literal operand. The operands share a set bit, so the result differs from bitwise or of the same pair."
+categories:
+- runtime
+- template_alignment
+steps:
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      r: -6
+    ended: false
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      r: -6
+    ended: false

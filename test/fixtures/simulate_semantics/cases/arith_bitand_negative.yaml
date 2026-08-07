@@ -1,0 +1,22 @@
+title: "Bitwise and with a negative operand"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/449
+  notes:
+  - "Two's-complement bitwise and agrees between Python and int64 C. The declared default is a sentinel so the expected result 0 cannot be confused with an unexecuted action block."
+categories:
+- runtime
+- template_alignment
+steps:
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      r: 0
+    ended: false
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      r: 0
+    ended: false

@@ -1,0 +1,28 @@
+title: "Integer modulo by zero raises a structured expression error"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/449
+  notes:
+  - "The first cycle computes 7 % 3, whose result 1 no other binary operator produces for those operands, then zeroes the divisor. The wording of the failure is host-dependent, so the second cycle pins the exception and cause classes plus the rolled-back values."
+categories:
+- runtime
+- template_alignment
+exclude_runners:
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      d: 0
+      r: 1
+    ended: false
+- cycle: []
+  expect:
+    raises:
+      type: SimulationRuntimeExpressionError
+      cause_type: ZeroDivisionError
+    vars_exact:
+      d: 0
+      r: 1
+    ended: false

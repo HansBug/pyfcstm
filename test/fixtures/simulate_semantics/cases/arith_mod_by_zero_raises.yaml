@@ -3,7 +3,7 @@ origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/449
   notes:
-  - "Message wording is host-CPython dependent: 3.11 says 'integer modulo by zero', 3.7-3.10 say 'integer division or modulo by zero'."
+  - "Message wording is host-CPython dependent -- 'integer division or modulo by zero' up to 3.10, 'integer modulo by zero' in 3.11, 'division by zero' in the newest interpreters -- so this fixture pins the exception and cause classes rather than the text."
 categories:
 - runtime
 - template_alignment
@@ -14,11 +14,7 @@ steps:
   expect:
     raises:
       type: SimulationRuntimeExpressionError
-      match: modulo
-      match_kind: substring
       cause_type: ZeroDivisionError
-      cause_match: modulo
-      cause_match_kind: substring
     vars_exact:
       r: 0
     ended: false

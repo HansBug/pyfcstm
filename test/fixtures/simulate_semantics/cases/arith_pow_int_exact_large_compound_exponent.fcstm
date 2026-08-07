@@ -3,7 +3,7 @@ def int r = 0;
 state Root {
     state A {
         during {
-            r = -7 ^ 3;
+            r = 3 ** (30 + 4);
         }
     }
 

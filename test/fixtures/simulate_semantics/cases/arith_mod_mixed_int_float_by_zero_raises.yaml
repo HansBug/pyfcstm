@@ -14,11 +14,7 @@ steps:
   expect:
     raises:
       type: SimulationRuntimeExpressionError
-      match: float modulo
-      match_kind: substring
       cause_type: ZeroDivisionError
-      cause_match: float modulo
-      cause_match_kind: substring
     vars_exact:
       r: 0.0
     ended: false

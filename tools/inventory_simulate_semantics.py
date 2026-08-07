@@ -160,6 +160,11 @@ def _load_yaml(path: Path) -> Mapping[str, Any]:
 
 def _load_cases(root: Path) -> List[SemanticCaseRecord]:
     case_dir = root / CASE_DIR_RELATIVE_PATH
+    if not case_dir.is_dir():
+        raise ValueError(
+            "fixture case directory not found: %s (is --root a pyfcstm checkout?)"
+            % case_dir
+        )
     records = []
     for yaml_path in sorted(case_dir.glob("*.yaml")):
         case_id = yaml_path.stem
@@ -831,41 +836,47 @@ BINARY_ARITHMETIC_OPERATORS = (
 NEGATIVE_OPERAND_OPERATORS = ("/", "%", "**", ">>")
 
 
-def _iter_expr_nodes(node: Any, seen: Optional[Set[int]] = None) -> Iterator[Any]:
+def _iter_expr_nodes(
+    node: Any, dsl_nodes: Any, seen: Optional[Set[int]] = None
+) -> Iterator[Any]:
     """
     Yield every AST node reachable from ``node``.
 
+    Containers are walked to any depth. No current AST field nests a list inside
+    a list, but a walker backing a coverage contract should not report zero
+    because a future field grew a level.
+
     :param node: FCSTM AST node to walk.
     :type node: pyfcstm.dsl.node.ASTNode
+    :param dsl_nodes: The ``pyfcstm.dsl.node`` module, passed in so the import
+        does not repeat per visited node.
+    :type dsl_nodes: types.ModuleType
     :param seen: Identity set guarding against shared sub-trees, defaults to
         ``None``.
     :type seen: typing.Set[int], optional
     :return: Iterator over reachable AST nodes.
     :rtype: typing.Iterator[typing.Any]
     """
-    _, dsl_nodes = _import_dsl_parser()
-
     if seen is None:
         seen = set()
-    if not isinstance(node, dsl_nodes.ASTNode) or id(node) in seen:
+    if isinstance(node, dsl_nodes.ASTNode):
+        if id(node) in seen:
+            return
+        seen.add(id(node))
+        yield node
+        values = list(vars(node).values())
+    elif isinstance(node, (list, tuple)):
+        values = list(node)
+    elif isinstance(node, Mapping):
+        values = list(node.values())
+    else:
         return
-    seen.add(id(node))
-    yield node
-    for value in vars(node).values():
-        if isinstance(value, dsl_nodes.ASTNode):
-            for item in _iter_expr_nodes(value, seen):
-                yield item
-        elif isinstance(value, (list, tuple)):
-            for element in value:
-                for item in _iter_expr_nodes(element, seen):
-                    yield item
-        elif isinstance(value, Mapping):
-            for element in value.values():
-                for item in _iter_expr_nodes(element, seen):
-                    yield item
+    for value in values:
+        for item in _iter_expr_nodes(value, dsl_nodes, seen):
+            yield item
 
 
-def _is_negative_literal(expr: Any) -> bool:
+def _is_negative_literal(expr: Any, dsl_nodes: Any) -> bool:
     """
     Return whether an expression is a syntactically negative numeric literal.
 
@@ -878,18 +889,25 @@ def _is_negative_literal(expr: Any) -> bool:
 
     :param expr: Expression to inspect.
     :type expr: pyfcstm.dsl.node.Expr
+    :param dsl_nodes: The ``pyfcstm.dsl.node`` module.
+    :type dsl_nodes: types.ModuleType
     :return: ``True`` when the expression is a negated numeric literal.
     :rtype: bool
     """
-    _, dsl_nodes = _import_dsl_parser()
 
-    while isinstance(expr, dsl_nodes.Paren):
-        expr = expr.expr
+    def strip(node: Any) -> Any:
+        # Parentheses and a leading unary plus do not change the value, so
+        # `+(-7)` is as negative as `-7`.
+        while isinstance(node, dsl_nodes.Paren) or (
+            isinstance(node, dsl_nodes.UnaryOp) and node.op == "+"
+        ):
+            node = node.expr
+        return node
+
+    expr = strip(expr)
     if not isinstance(expr, dsl_nodes.UnaryOp) or expr.op != "-":
         return False
-    inner = expr.expr
-    while isinstance(inner, dsl_nodes.Paren):
-        inner = inner.expr
+    inner = strip(expr.expr)
     return isinstance(inner, (dsl_nodes.Integer, dsl_nodes.HexInt, dsl_nodes.Float))
 
 
@@ -901,31 +919,52 @@ def _operator_coverage(
 
     Coverage is computed from the parsed FCSTM AST rather than by grepping the
     source. Text search cannot distinguish arithmetic ``>>`` from the aspect
-    action syntax ``>> during before``, and the corpus contains eighteen of the
-    latter and none of the former, so a textual counter reports full coverage
-    for an operator with no cases at all.
+    action syntax ``>> during before``, and the corpus contains dozens of the
+    latter and one of the former, so a textual counter reports full coverage
+    for an operator with no arithmetic case at all.
+
+    Only cases that some shared runner actually executes are counted: a case
+    excluded from every runner, or one with no steps, is data no runner reads.
+    What this cannot see is *reachability inside* a case -- an operator in a
+    state no execution enters still counts. Closing that needs execution-side
+    observation, so the diagnostics below claim coverage of the corpus, not that
+    the operator was evaluated.
 
     :param records: Loaded fixture records.
     :type records: typing.Sequence[SemanticCaseRecord]
     :return: Case ids per operator, and case ids per operator with a negative
         literal operand.
     :rtype: typing.Tuple[typing.Dict[str, typing.Set[str]], typing.Dict[str, typing.Set[str]]]
+    :raises ValueError: If a fixture source cannot be parsed.
     """
     parse_with_grammar_entry, dsl_nodes = _import_dsl_parser()
 
     covered: Dict[str, Set[str]] = {op: set() for op in BINARY_ARITHMETIC_OPERATORS}
     negative: Dict[str, Set[str]] = {op: set() for op in BINARY_ARITHMETIC_OPERATORS}
     for record in records:
-        ast = parse_with_grammar_entry(
-            _read_text(record.fcstm_path), entry_name="state_machine_dsl"
-        )
-        for node in _iter_expr_nodes(ast):
+        if not record.runners or not record.data.get("steps"):
+            continue
+        try:
+            ast = parse_with_grammar_entry(
+                _read_text(record.fcstm_path), entry_name="state_machine_dsl"
+            )
+        except Exception as err:
+            # Any parse or read failure: the pairing and schema checks own the
+            # actionable diagnostics, so re-raise with the path attached rather
+            # than letting a bare traceback name no file out of 190-odd sources.
+            raise ValueError(
+                "%s: cannot parse fixture source for operator coverage: %s"
+                % (record.fcstm_path, err)
+            )
+        for node in _iter_expr_nodes(ast, dsl_nodes):
             if not isinstance(node, dsl_nodes.BinaryOp):
                 continue
             if node.op not in covered:
                 continue
             covered[node.op].add(record.case_id)
-            if _is_negative_literal(node.expr1) or _is_negative_literal(node.expr2):
+            if _is_negative_literal(node.expr1, dsl_nodes) or _is_negative_literal(
+                node.expr2, dsl_nodes
+            ):
                 negative[node.op].add(record.case_id)
     return covered, negative
 
@@ -944,16 +983,16 @@ def _operator_coverage_errors(records: Sequence[SemanticCaseRecord]) -> List[str
     for operator in BINARY_ARITHMETIC_OPERATORS:
         if not covered[operator]:
             errors.append(
-                "operator coverage: no fixture case uses the binary `%s` operator; "
-                "add a case whose action block, guard, or initializer applies it"
-                % operator
+                "operator coverage: no runnable fixture case contains the binary "
+                "`%s` operator; add a case whose action block, guard, or "
+                "initializer applies it" % operator
             )
     for operator in NEGATIVE_OPERAND_OPERATORS:
         if covered[operator] and not negative[operator]:
             errors.append(
-                "operator coverage: no fixture case applies `%s` to a negative "
-                "literal operand; the sign-dependent semantics of this operator "
-                "stay untested without one" % operator
+                "operator coverage: no runnable fixture case applies `%s` to a "
+                "negative literal operand; this operator's result depends on "
+                "operand sign, so the corpus needs one" % operator
             )
     return errors
 
@@ -964,6 +1003,11 @@ def _contract_errors(root: Path, records: Sequence[SemanticCaseRecord]) -> List[
     errors.extend(_markdown_contract_errors(root))
     errors.extend(_runner_field_errors(root))
     errors.extend(_field_contract_errors(records))
+    if errors:
+        # Operator coverage parses every fixture source, so it cannot run over a
+        # corpus that fails pairing or schema checks: it would raise on the
+        # missing or malformed file and bury the diagnostic that names it.
+        return errors
     errors.extend(_operator_coverage_errors(records))
     return errors
 
@@ -990,10 +1034,23 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     root = Path(args.root).resolve()
-    records = _load_cases(root)
+    try:
+        records = _load_cases(root)
+    except ValueError as err:
+        # _load_cases raises this for a missing case directory or a fixture whose
+        # YAML is not a mapping. Both are contributor mistakes that deserve the
+        # message, not a traceback.
+        print(str(err))
+        return 1
 
     if args.check:
-        errors = _contract_errors(root, records)
+        try:
+            errors = _contract_errors(root, records)
+        except ValueError as err:
+            # Operator coverage raises this when a fixture source cannot be
+            # parsed, with the path attached.
+            print(str(err))
+            return 1
         if errors:
             for error in errors:
                 print(error)

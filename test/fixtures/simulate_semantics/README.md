@@ -37,7 +37,7 @@ ordinary simulator pytest files.
 ```bash
 python -m pytest test/simulate/test_semantic_fixtures.py -v
 python -m pytest test/template/python/test_semantic_fixture_alignment.py -v
-python tools/inventory_simulate_semantics.py --check
+make fixture_corpus_check
 SKIP_SLOW_TESTS=1 make unittest
 ```
 
@@ -116,10 +116,34 @@ stdout. The repository does not keep generated inventory snapshots or a
 generated README case table. Long-term documentation in this directory is
 limited to this README and `schema.md`.
 
-Use `python tools/inventory_simulate_semantics.py --check` when changing this
-corpus. The check verifies YAML/FCSTM pairing, the top-level Markdown file list,
-absence of retired fields and include-style runner selection, absence of legacy cycle
-and path shapes, and absence of known private simulator surfaces in shared YAML.
+Run `make fixture_corpus_check` (or `python tools/inventory_simulate_semantics.py
+--check` directly) when changing this corpus. CI runs the same target in the
+`lint` job, so the contract is enforced rather than merely available. The check
+verifies YAML/FCSTM pairing, the top-level Markdown file list, absence of retired
+fields and include-style runner selection, absence of legacy cycle and path
+shapes, absence of known private simulator surfaces in shared YAML, and
+per-operator arithmetic coverage.
+
+### Operator coverage
+
+Every binary arithmetic and bitwise operator the DSL supports (`+ - * / % **
+<< >> & ^ |`) must appear in at least one runnable case, and `/`, `%`, `**` and
+`>>` must additionally appear with a **negative literal** operand, because their
+results depend on operand sign.
+
+Two properties of the rule are worth knowing before you satisfy it:
+
+- It is computed from the parsed AST, not from text. Most textual `>>` in this
+  corpus is the aspect syntax `>> during before/after`, so a grep-based counter
+  would report full coverage for an operator with no arithmetic case.
+- "Negative literal" means the sign is written at the operator: `r = -7 % 2`
+  counts, `def int a = -7; r = a % b;` does not. A textual or value-based
+  definition is not decidable, and writing the sign inline keeps a divergence
+  case self-describing.
+
+The rule sees corpus *content*, not execution. A case excluded from every runner
+or with no steps is skipped, but an operator inside a state that no run enters
+still counts. Do not treat a green check as proof the operator was evaluated.
 
 ## Public-observation checklist
 

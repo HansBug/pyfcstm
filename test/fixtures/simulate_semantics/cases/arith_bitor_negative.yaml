@@ -3,7 +3,7 @@ origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/449
   notes:
-  - "Fills zero corpus coverage for the bitwise or operator with a negative literal operand."
+  - "Fills zero corpus coverage for bitwise or with a negative literal operand. The operands share a set bit, so the result differs from bitwise xor of the same pair."
 categories:
 - runtime
 - template_alignment

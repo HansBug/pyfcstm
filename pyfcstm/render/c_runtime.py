@@ -33,7 +33,18 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 from ..dsl import node as dsl_nodes
 from ..model import IfBlock, Operation, OperationStatement
@@ -204,18 +215,34 @@ _MATH_FUNC_NAMES = {
 
 _INT_OPERATORS = {"<<", ">>", "&", "^", "|"}
 
+_INT64_MIN = -(2**63)
+_INT64_MAX = 2**63 - 1
 
-def _host_arithmetic_message(compute: Any) -> str:
+_CONSTANT_FOLD_OPERATORS = {
+    "+": lambda left, right: left + right,
+    "-": lambda left, right: left - right,
+    "*": lambda left, right: left * right,
+}
+
+
+def _host_arithmetic_message(compute: Callable[[], Any]) -> str:
     """
     Return the host CPython diagnostic text for a failing arithmetic operation.
 
     Generated runtimes must reproduce :class:`pyfcstm.simulate.SimulationRuntime`
     diagnostics verbatim, and the simulator embeds the interpreter's own
-    :exc:`ZeroDivisionError` text. That text is not stable across supported
-    interpreters: CPython 3.11 reworded integer modulo by zero from ``'integer
-    division or modulo by zero'`` to ``'integer modulo by zero'``. Asking the
-    host for the wording keeps a generated artifact aligned with the simulator
-    that runs beside it instead of freezing one interpreter's phrasing.
+    :exc:`ZeroDivisionError` text. That text is not stable across the supported
+    range: integer modulo by zero reads ``'integer division or modulo by zero'``
+    up to CPython 3.10, ``'integer modulo by zero'`` in 3.11, and ``'division by
+    zero'`` in the newest interpreters, which also shortened the zero-base power
+    text to ``'zero to a negative power'``. Asking the host for the wording keeps
+    a generated artifact aligned with the simulator that runs beside it instead
+    of freezing one interpreter's phrasing.
+
+    .. note::
+       A generated artifact's diagnostic strings therefore depend on the
+       interpreter that generated it. That is the intended trade: the alternative
+       is a frozen literal that is wrong on most supported versions.
 
     :param compute: Zero-argument callable performing the failing operation.
     :type compute: typing.Callable[[], typing.Any]
@@ -225,7 +252,8 @@ def _host_arithmetic_message(compute: Any) -> str:
 
     Example::
 
-        >>> "modulo" in _host_arithmetic_message(lambda: 7 % 0)
+        >>> message = _host_arithmetic_message(lambda: 7 % 0)
+        >>> isinstance(message, str) and message != ""
         True
     """
     try:
@@ -247,18 +275,30 @@ _ZERO_BASE_NEGATIVE_POWER_MESSAGE = _host_arithmetic_message(lambda: 0**-1)
 
 def _static_int_literal(expr: dsl_nodes.Expr) -> Optional[int]:
     """
-    Return the integer value of a syntactically literal integer expression.
+    Return the integer value of a constant integer expression.
 
-    The C emitter uses this to decide whether an exponent is known to be a
-    non-negative integer at generation time, which is what selects between the
-    exact integer-power helper and the ``double`` :c:func:`pow` form. It stays
-    deliberately narrow: only literals and their signs are folded, because
-    broader constant reasoning belongs in the inspect/verify layers.
+    The C emitter uses this to decide whether a power's exponent is known to be a
+    non-negative integer at generation time, which selects between the exact
+    integer-power helper and the ``double`` :c:func:`pow` form, and whether the
+    zero-base check is reachable at all.
+
+    Literals, their signs, and ``+ - *`` over them are folded. Folding the
+    additive and multiplicative forms is not a convenience: an exponent written
+    as ``3 ** (30 + 4)`` is exactly as statically known as ``3 ** 34``, and
+    treating it as unknown routes an exact integer power through ``pow()``, which
+    silently returns a different number. Nothing else is folded -- no division,
+    no nested power, no variables -- because a wider constant evaluator would
+    duplicate reasoning that belongs in the inspect/verify layers.
+
+    Every intermediate result must fit ``int64``. The generated C evaluates the
+    same expression in ``int64`` arithmetic, so a fold that overflowed would
+    claim a value the generated code does not compute: ``(INT64_MAX * 2) -
+    INT64_MAX`` folds to ``INT64_MAX`` in Python but wraps in C.
 
     :param expr: Expression to inspect.
     :type expr: pyfcstm.dsl.node.Expr
-    :return: Literal integer value, or ``None`` when the expression is not a
-        signed integer literal.
+    :return: Constant integer value, or ``None`` when the expression is not a
+        constant integer.
     :rtype: int, optional
 
     Example::
@@ -267,6 +307,10 @@ def _static_int_literal(expr: dsl_nodes.Expr) -> Optional[int]:
         3
         >>> _static_int_literal(dsl_nodes.UnaryOp("-", dsl_nodes.Integer("1")))
         -1
+        >>> _static_int_literal(
+        ...     dsl_nodes.BinaryOp(dsl_nodes.Integer("30"), "+", dsl_nodes.Integer("4"))
+        ... )
+        34
         >>> _static_int_literal(dsl_nodes.Float("3.0")) is None
         True
     """
@@ -280,6 +324,15 @@ def _static_int_literal(expr: dsl_nodes.Expr) -> Optional[int]:
         return -inner if expr.op == "-" else inner
     if isinstance(expr, (dsl_nodes.Integer, dsl_nodes.HexInt)):
         return expr.value
+    if isinstance(expr, dsl_nodes.BinaryOp) and expr.op in _CONSTANT_FOLD_OPERATORS:
+        left = _static_int_literal(expr.expr1)
+        right = _static_int_literal(expr.expr2)
+        if left is None or right is None:
+            return None
+        value = _CONSTANT_FOLD_OPERATORS[expr.op](left, right)
+        if not _INT64_MIN <= value <= _INT64_MAX:
+            return None
+        return value
     return None
 
 

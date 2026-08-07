@@ -3,7 +3,7 @@ origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/449
   notes:
-  - "Pins the int branch of the power typing rule: 2 ** 3 is int 8 in Python, not float."
+  - "Regression guard for the non-negative-exponent path. The int/float distinction is not observable through this surface -- vars_exact compares by value and 8 == 8.0 -- so it pins the value, not the type."
 categories:
 - runtime
 - template_alignment

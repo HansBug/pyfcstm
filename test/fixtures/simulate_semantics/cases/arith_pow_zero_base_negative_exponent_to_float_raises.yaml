@@ -14,11 +14,7 @@ steps:
   expect:
     raises:
       type: SimulationRuntimeExpressionError
-      match: cannot be raised to a negative power
-      match_kind: substring
       cause_type: ZeroDivisionError
-      cause_match: cannot be raised to a negative power
-      cause_match_kind: substring
     vars_exact:
       r: 0.0
     ended: false

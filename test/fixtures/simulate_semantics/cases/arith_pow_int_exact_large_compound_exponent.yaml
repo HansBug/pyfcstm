@@ -1,0 +1,22 @@
+title: "Integer power is exact for a compound constant exponent"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/449
+  notes:
+  - "A constant exponent written as an expression is as statically known as a literal; treating it as unknown would route an exact integer power through a double-based pow()."
+categories:
+- runtime
+- template_alignment
+steps:
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      r: 16677181699666569
+    ended: false
+- cycle: []
+  expect:
+    state: Root.A
+    vars_exact:
+      r: 16677181699666569
+    ended: false

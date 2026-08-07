@@ -1587,6 +1587,15 @@ jobs:
         # the gate with it.
         run: |
           make resource_ownership_check
+      - name: Check the semantic fixture corpus contract
+        shell: bash
+        # Same reasoning as the resource-ownership gate above: a couple of
+        # seconds of parsing, platform-independent, and it must not be
+        # disarmable by the Code Test skip tokens. Without a CI invocation the
+        # operator-coverage rule would only ever run when somebody remembered
+        # to, which is not a gate.
+        run: |
+          make fixture_corpus_check
       - name: Check the generated API RST is current
         shell: bash
         run: |

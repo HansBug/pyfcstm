@@ -1,9 +1,9 @@
-title: "floor of a negative value writes back to int"
+title: "floor writes back to int and rounds toward negative infinity on both signs"
 origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/449
   notes:
-  - "floor rounds toward negative infinity, so floor(-2.5) is -3."
+  - "floor rounds toward negative infinity: floor(-2.5) is -3, which no other rounding function produces for this input."
 categories:
 - runtime
 - template_alignment
@@ -13,10 +13,12 @@ steps:
     state: Root.A
     vars_exact:
       r: -3
+      rp: 2
     ended: false
 - cycle: []
   expect:
     state: Root.A
     vars_exact:
       r: -3
+      rp: 2
     ended: false

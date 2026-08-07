@@ -1,0 +1,25 @@
+title: Right shift with a negative count is rejected
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/451
+  notes:
+  - >-
+    C leaves a negative shift count undefined (C11 6.5.7p3); the generated
+    runtime must reject it the way the simulator does.
+categories:
+- runtime
+- template_alignment
+exclude_runners:
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    raises:
+      type: SimulationRuntimeExpressionError
+      match: negative shift count
+      match_kind: substring
+      cause_type: ValueError
+      cause_match: negative shift count
+      cause_match_kind: substring
+    vars_exact:
+      r: 0

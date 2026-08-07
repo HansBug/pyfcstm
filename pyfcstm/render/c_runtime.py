@@ -516,6 +516,79 @@ def _is_static_zero(expr: dsl_nodes.Expr) -> bool:
     return False
 
 
+def _signed_literal_value(expr: dsl_nodes.Expr) -> Optional[Union[int, float]]:
+    """
+    Return the value of a numeric literal behind any chain of unary signs.
+
+    Mirrors the recursion depth of :func:`_is_static_zero`: parentheses and
+    unary ``+`` / ``-`` are folded, but nothing else is. Broader arithmetic
+    reasoning belongs in the inspect/verify layers -- code generation only
+    needs to recognise the literal shift counts that a generated runtime
+    diagnostic already rejects.
+
+    :param expr: Expression to inspect.
+    :type expr: pyfcstm.dsl.node.Expr
+    :return: Literal value, keeping the literal's own numeric type, or
+        ``None`` when the expression is not a signed numeric literal.
+    :rtype: int or float, optional
+
+    Example::
+
+        >>> from pyfcstm.dsl import node as dsl_nodes
+        >>> _signed_literal_value(dsl_nodes.UnaryOp("-", dsl_nodes.Integer("1")))
+        -1
+        >>> _signed_literal_value(dsl_nodes.UnaryOp("+", dsl_nodes.UnaryOp("-", dsl_nodes.Integer("2"))))
+        -2
+        >>> _signed_literal_value(dsl_nodes.Name("x")) is None
+        True
+    """
+    expr = _coerce_expr(expr)
+    if isinstance(expr, dsl_nodes.Paren):
+        return _signed_literal_value(expr.expr)
+    if isinstance(expr, dsl_nodes.UnaryOp) and expr.op in {"+", "-"}:
+        inner = _signed_literal_value(expr.expr)
+        if inner is None:
+            return None
+        return -inner if expr.op == "-" else inner
+    if isinstance(expr, (dsl_nodes.Integer, dsl_nodes.HexInt, dsl_nodes.Float)):
+        return expr.value
+    return None
+
+
+def _is_static_negative(expr: dsl_nodes.Expr) -> bool:
+    """
+    Return whether an expression is syntactically a negative numeric literal.
+
+    The C runtime emitter uses this narrow check to keep generated code
+    compileable: a negative shift count is undefined behaviour in C
+    (C11 6.5.7p3), which ``-Wshift-count-negative`` reports and the
+    ``-Werror`` command in the generated README turns into a hard failure.
+    Like :func:`_is_static_zero`, it folds only parentheses and unary signs.
+    A computed count such as ``0 - 1`` is therefore not masked and still
+    reaches the generated source, exactly as ``x / (1 - 1)`` does for the
+    sibling helper; both stay compile-time failures under ``-Werror``.
+
+    :param expr: Expression to inspect.
+    :type expr: pyfcstm.dsl.node.Expr
+    :return: ``True`` when the expression is a negative numeric literal.
+    :rtype: bool
+
+    Example::
+
+        >>> from pyfcstm.dsl import node as dsl_nodes
+        >>> _is_static_negative(dsl_nodes.UnaryOp("-", dsl_nodes.Integer("1")))
+        True
+        >>> _is_static_negative(dsl_nodes.UnaryOp("-", dsl_nodes.UnaryOp("-", dsl_nodes.Integer("1"))))
+        False
+        >>> _is_static_negative(dsl_nodes.Integer("1"))
+        False
+        >>> _is_static_negative(dsl_nodes.BinaryOp(dsl_nodes.Integer("0"), "-", dsl_nodes.Integer("1")))
+        False
+    """
+    value = _signed_literal_value(expr)
+    return value is not None and value < 0
+
+
 def _safe_static_zero_result(value_type: Optional[str]) -> str:
     """
     Return a harmless placeholder for a statically failing expression.
@@ -585,6 +658,14 @@ def _render_expr(
             )
         elif expr.func == "cbrt":
             text = "cbrt(%s)" % inner.text
+        elif expr.func == "round":
+            # C's round() breaks ties away from zero regardless of the current
+            # rounding direction, while the simulator uses Python's round(),
+            # which breaks ties toward the even neighbour.  nearbyint() follows
+            # the current rounding direction, whose default (FE_TONEAREST) is
+            # ties-to-even -- the same default every other floating-point
+            # operation in the generated runtime already relies on.
+            text = "nearbyint(%s)" % inner.text
         elif expr.func in _MATH_FUNC_NAMES:
             text = "%s(%s)" % (expr.func, inner.text)
         else:
@@ -595,6 +676,14 @@ def _render_expr(
         right = _render_expr(expr.expr2, known_types, names, state_name_set)
         value_type = _infer_expr_type(expr, known_types)
         if expr.op in {"/", "%"} and _is_static_zero(expr.expr2):
+            text = _safe_static_zero_result(value_type)
+        elif expr.op in {"<<", ">>"} and _is_static_negative(expr.expr2):
+            # Same reason as the static zero denominator above: a negative shift
+            # count is undefined in C and toolchains reject it at compile time
+            # (``-Wshift-count-negative``, fatal under the ``-Werror`` command in
+            # the generated README).  The generated runtime diagnostic emitted by
+            # ``_emit_expr_checks`` already fails the cycle before this
+            # placeholder can be reached.
             text = _safe_static_zero_result(value_type)
         elif expr.op in _INT_OPERATORS and (
             left.value_type == "float" or right.value_type == "float"
@@ -855,6 +944,26 @@ def _emit_expr_checks(
                 )
                 _emit_error(lines, names, indent, level, message)
                 return False
+        if expr.op in {"<<", ">>"}:
+            # Python rejects a negative shift count with ValueError, while C
+            # leaves it undefined (C11 6.5.7p3).  The check runs after the
+            # float-operand check above, which is right for a genuinely float
+            # operand -- the simulator raises TypeError there first.  It is
+            # *not* right for an operand whose inferred type is float only
+            # because it came from ``**``: the simulator evaluates that to an
+            # int and raises ValueError for the negative count, while the
+            # float-operand branch returns early and this check never runs.
+            # That gap belongs to the ``**`` type inference, not to the order
+            # here; see the shift-of-power note in the pull request.
+            _line(lines, indent, level, "if ((%s) < 0) {" % right.text)
+            _emit_error(
+                lines,
+                names,
+                indent,
+                level + 1,
+                "%s evaluation failed: negative shift count" % usage,
+            )
+            _line(lines, indent, level, "}")
         return safe
     return True
 

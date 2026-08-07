@@ -1,0 +1,14 @@
+def int n = -1;
+def int hit = 0;
+
+state Root {
+    state A;
+    state B {
+        enter {
+            hit = 1;
+        }
+    }
+
+    [*] -> A;
+    A -> B : [(1 << n) == 0];
+}

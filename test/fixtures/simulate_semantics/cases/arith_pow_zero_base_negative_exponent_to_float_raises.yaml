@@ -3,7 +3,7 @@ origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/449
   notes:
-  - "Same evaluation-time error as the int target, proving the check cannot live in the writeback layer."
+  - "The first cycle computes 2 ** -1, whose result 0.5 no other binary operator produces for those operands. The second cycle raises the same evaluation-time error as the int target, proving the check cannot live in the writeback layer."
 categories:
 - runtime
 - template_alignment
@@ -12,9 +12,17 @@ exclude_runners:
 steps:
 - cycle: []
   expect:
+    state: Root.A
+    vars_exact:
+      d: 0
+      r: 0.5
+    ended: false
+- cycle: []
+  expect:
     raises:
       type: SimulationRuntimeExpressionError
       cause_type: ZeroDivisionError
     vars_exact:
-      r: 0.0
+      d: 0
+      r: 0.5
     ended: false

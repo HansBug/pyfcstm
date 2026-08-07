@@ -942,8 +942,9 @@ def _operator_coverage(
     covered: Dict[str, Set[str]] = {op: set() for op in BINARY_ARITHMETIC_OPERATORS}
     negative: Dict[str, Set[str]] = {op: set() for op in BINARY_ARITHMETIC_OPERATORS}
     for record in records:
-        if not record.runners or not record.data.get("steps"):
-            continue
+        # Every source is parsed, including unrunnable ones: a case excluded from
+        # every runner is never loaded by the pytest runners either, so this is
+        # the only place an unparseable source behind one would be noticed.
         try:
             ast = parse_with_grammar_entry(
                 _read_text(record.fcstm_path), entry_name="state_machine_dsl"
@@ -956,6 +957,8 @@ def _operator_coverage(
                 "%s: cannot parse fixture source for operator coverage: %s"
                 % (record.fcstm_path, err)
             )
+        if not record.runners or not record.data.get("steps"):
+            continue
         for node in _iter_expr_nodes(ast, dsl_nodes):
             if not isinstance(node, dsl_nodes.BinaryOp):
                 continue

@@ -1,9 +1,13 @@
+def int base = 2;
+def int exponent = 3;
 def int r = 0;
 
 state Root {
     state A {
         during {
-            r = 0 ** -1;
+            r = base ** exponent;
+            base = base - 2;
+            exponent = exponent - 4;
         }
     }
 

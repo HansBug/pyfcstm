@@ -1,9 +1,11 @@
-def int r = 0;
+def int d = 2;
+def float r = 0.0;
 
 state Root {
     state A {
         during {
-            r = 7 / 0;
+            r = 7 / d;
+            d = d - 2;
         }
     }
 

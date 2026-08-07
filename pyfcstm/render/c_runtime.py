@@ -323,6 +323,10 @@ def _static_int_literal(expr: dsl_nodes.Expr) -> Optional[int]:
             return None
         return -inner if expr.op == "-" else inner
     if isinstance(expr, (dsl_nodes.Integer, dsl_nodes.HexInt)):
+        # A leaf wider than int64 is range-checked like a fold result: the
+        # generated C cannot hold it, so claiming its value would be a lie.
+        if not _INT64_MIN <= expr.value <= _INT64_MAX:
+            return None
         return expr.value
     if isinstance(expr, dsl_nodes.BinaryOp) and expr.op in _CONSTANT_FOLD_OPERATORS:
         left = _static_int_literal(expr.expr1)

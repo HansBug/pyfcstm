@@ -3,7 +3,7 @@ origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/449
   notes:
-  - "Message wording is host-CPython dependent -- 'integer division or modulo by zero' up to 3.10, 'integer modulo by zero' in 3.11, 'division by zero' in the newest interpreters -- so this fixture pins the exception and cause classes rather than the text."
+  - "The first cycle computes 7 % 3, whose result 1 no other binary operator produces for those operands, then zeroes the divisor. The wording of the failure is host-dependent, so the second cycle pins the exception and cause classes plus the rolled-back values."
 categories:
 - runtime
 - template_alignment
@@ -12,9 +12,17 @@ exclude_runners:
 steps:
 - cycle: []
   expect:
+    state: Root.A
+    vars_exact:
+      d: 0
+      r: 1
+    ended: false
+- cycle: []
+  expect:
     raises:
       type: SimulationRuntimeExpressionError
       cause_type: ZeroDivisionError
     vars_exact:
-      r: 0
+      d: 0
+      r: 1
     ended: false

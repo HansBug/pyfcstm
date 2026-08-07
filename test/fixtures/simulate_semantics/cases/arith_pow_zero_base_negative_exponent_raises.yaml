@@ -3,7 +3,7 @@ origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/449
   notes:
-  - "The error is raised while evaluating the operator, independently of the writeback target type."
+  - "The first cycle computes 2 ** 3, whose result 8 no other binary operator produces for those operands, then drives the base to zero and the exponent negative. The error is raised while evaluating the operator, independently of the writeback target type."
 categories:
 - runtime
 - template_alignment
@@ -12,9 +12,19 @@ exclude_runners:
 steps:
 - cycle: []
   expect:
+    state: Root.A
+    vars_exact:
+      base: 0
+      exponent: -1
+      r: 8
+    ended: false
+- cycle: []
+  expect:
     raises:
       type: SimulationRuntimeExpressionError
       cause_type: ZeroDivisionError
     vars_exact:
-      r: 0
+      base: 0
+      exponent: -1
+      r: 8
     ended: false

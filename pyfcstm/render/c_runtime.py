@@ -323,16 +323,55 @@ def _is_static_zero(expr: dsl_nodes.Expr) -> bool:
     return False
 
 
+def _signed_literal_value(expr: dsl_nodes.Expr) -> Optional[float]:
+    """
+    Return the value of a numeric literal behind any chain of unary signs.
+
+    Mirrors the recursion depth of :func:`_is_static_zero`: parentheses and
+    unary ``+`` / ``-`` are folded, but nothing else is. Broader arithmetic
+    reasoning belongs in the inspect/verify layers -- code generation only
+    needs to recognise the literal shift counts that a generated runtime
+    diagnostic already rejects.
+
+    :param expr: Expression to inspect.
+    :type expr: pyfcstm.dsl.node.Expr
+    :return: Literal value, or ``None`` when the expression is not a signed
+        numeric literal.
+    :rtype: float, optional
+
+    Example::
+
+        >>> from pyfcstm.dsl import node as dsl_nodes
+        >>> _signed_literal_value(dsl_nodes.UnaryOp("-", dsl_nodes.Integer("1")))
+        -1
+        >>> _signed_literal_value(dsl_nodes.UnaryOp("+", dsl_nodes.UnaryOp("-", dsl_nodes.Integer("2"))))
+        -2
+        >>> _signed_literal_value(dsl_nodes.Name("x")) is None
+        True
+    """
+    expr = _coerce_expr(expr)
+    if isinstance(expr, dsl_nodes.Paren):
+        return _signed_literal_value(expr.expr)
+    if isinstance(expr, dsl_nodes.UnaryOp) and expr.op in {"+", "-"}:
+        inner = _signed_literal_value(expr.expr)
+        if inner is None:
+            return None
+        return -inner if expr.op == "-" else inner
+    if isinstance(expr, (dsl_nodes.Integer, dsl_nodes.HexInt, dsl_nodes.Float)):
+        return expr.value
+    return None
+
+
 def _is_static_negative(expr: dsl_nodes.Expr) -> bool:
     """
     Return whether an expression is syntactically a negative numeric literal.
 
     The C runtime emitter uses this narrow check to keep generated code
     compileable: a negative shift count is undefined behaviour in C
-    (C11 6.5.7p3) and toolchains reject it at compile time under
-    ``-Wshift-count-negative``. Like :func:`_is_static_zero`, it deliberately
-    does not fold arbitrary expressions -- it only masks literal shift counts
-    that a generated runtime diagnostic already rejects.
+    (C11 6.5.7p3), which ``-Wshift-count-negative`` reports and the
+    ``-Werror`` command in the generated README turns into a hard failure.
+    Like :func:`_is_static_zero`, it folds only parentheses and unary signs,
+    so a computed count such as ``0 - 1`` is left to the runtime guard.
 
     :param expr: Expression to inspect.
     :type expr: pyfcstm.dsl.node.Expr
@@ -344,48 +383,15 @@ def _is_static_negative(expr: dsl_nodes.Expr) -> bool:
         >>> from pyfcstm.dsl import node as dsl_nodes
         >>> _is_static_negative(dsl_nodes.UnaryOp("-", dsl_nodes.Integer("1")))
         True
+        >>> _is_static_negative(dsl_nodes.UnaryOp("-", dsl_nodes.UnaryOp("-", dsl_nodes.Integer("1"))))
+        False
         >>> _is_static_negative(dsl_nodes.Integer("1"))
         False
         >>> _is_static_negative(dsl_nodes.BinaryOp(dsl_nodes.Integer("0"), "-", dsl_nodes.Integer("1")))
         False
     """
-    expr = _coerce_expr(expr)
-    if isinstance(expr, dsl_nodes.Paren):
-        return _is_static_negative(expr.expr)
-    if isinstance(expr, dsl_nodes.UnaryOp) and expr.op == "-":
-        return _is_static_positive_literal(expr.expr)
-    return False
-
-
-def _is_static_positive_literal(expr: dsl_nodes.Expr) -> bool:
-    """
-    Return whether an expression is a numeric literal greater than zero.
-
-    Helper for :func:`_is_static_negative`; kept separate so that the negation
-    check stays a single syntactic step and does not recurse through further
-    unary operators.
-
-    :param expr: Expression to inspect.
-    :type expr: pyfcstm.dsl.node.Expr
-    :return: ``True`` when the expression is a positive numeric literal.
-    :rtype: bool
-
-    Example::
-
-        >>> from pyfcstm.dsl import node as dsl_nodes
-        >>> _is_static_positive_literal(dsl_nodes.Integer("1"))
-        True
-        >>> _is_static_positive_literal(dsl_nodes.Integer("0"))
-        False
-    """
-    expr = _coerce_expr(expr)
-    if isinstance(expr, dsl_nodes.Paren):
-        return _is_static_positive_literal(expr.expr)
-    if isinstance(expr, (dsl_nodes.Integer, dsl_nodes.HexInt)):
-        return expr.value > 0
-    if isinstance(expr, dsl_nodes.Float):
-        return expr.value > 0.0
-    return False
+    value = _signed_literal_value(expr)
+    return value is not None and value < 0
 
 
 def _safe_static_zero_result(value_type: Optional[str]) -> str:

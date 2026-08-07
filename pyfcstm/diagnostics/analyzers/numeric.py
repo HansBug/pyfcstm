@@ -343,23 +343,33 @@ def _shift_count_diagnostic(
         _diagnostic(
             "W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE",
             (
-                # The two halves of the emission condition have different
-                # runtime consequences, so they must not share one sentence: a
-                # negative count is rejected by every generated runtime, while a
-                # count at or above the width is a C/C++-only fixed-width risk.
+                # The emission condition covers three input shapes with
+                # different runtime consequences, so they must not share one
+                # sentence.  A negative integer count is rejected by every
+                # generated runtime; a count at or above the width is a
+                # C/C++-only fixed-width risk; a non-integer count is rejected
+                # earlier by the operand type check, so neither reason applies
+                # and the message stays neutral about the cause.
                 (
                     "Negative shift count: the shift count of operator "
                     f"{expr.op!r} folds to {_number_text(rhs_value)}. The "
                     "simulator and every generated runtime, including C/C++ "
                     "and Python, reject a negative shift count at runtime."
                 )
-                if rhs_value < 0
+                if isinstance(rhs_value, int) and rhs_value < 0
                 else (
                     "C/C++ default deployment profile risk: the shift count of "
                     f"operator {expr.op!r} folds to {_number_text(rhs_value)}, "
                     f"which is not less than the default width {_TARGET_BITS}; "
                     "Python generated runtimes do not represent the same "
                     "fixed-width shift contract."
+                )
+                if rhs_value >= _TARGET_BITS
+                else (
+                    "Shift count out of the C/C++ default target range: the "
+                    f"shift count of operator {expr.op!r} folds to "
+                    f"{_number_text(rhs_value)}, outside "
+                    f"0 <= count < {_TARGET_BITS}."
                 )
             ),
             context.span,

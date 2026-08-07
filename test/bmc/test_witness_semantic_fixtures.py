@@ -213,7 +213,7 @@ def test_bmc_witness_fixture_runner_keeps_policy_counts_auditable() -> None:
     assert mode_counts == {
         "hard_pass": 156,
         "expected_unsupported": 3,
-        "temporary_exclude": 12,
+        "temporary_exclude": 13,
         "long_term_exclude": 4,
     }
     assert len(_hard_pass_cases()) == 156

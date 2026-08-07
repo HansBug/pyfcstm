@@ -1,0 +1,33 @@
+title: Negative shift count in a transition guard is rejected
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/451
+  notes:
+  - >-
+    Guard context: pins that the evaluation-layer check also runs inside
+    render_c_condition_body, not only in action bodies.
+categories:
+- runtime
+- template_alignment
+exclude_runners:
+- bmc_core
+steps:
+- cycle: []
+  expect:
+    state: Root.A
+    vars:
+      n: -1
+      hit: 0
+    ended: false
+- cycle: []
+  expect:
+    raises:
+      type: SimulationRuntimeExpressionError
+      match: negative shift count
+      match_kind: substring
+      cause_type: ValueError
+      cause_match: negative shift count
+      cause_match_kind: substring
+    vars_exact:
+      n: -1
+      hit: 0

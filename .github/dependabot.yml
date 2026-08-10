@@ -1,0 +1,66 @@
+# Dependabot configuration.
+#
+# The ignore rules here are not preference, they are the compatibility envelope
+# described under "VSCode Compatibility Envelope" in CLAUDE.md. The extension
+# declares `engines.vscode` as `^1.60.0`, and Windows 7 caps out at VSCode
+# 1.70.3, so any dependency whose own `engines.vscode` exceeds `^1.70.0` cannot
+# be adopted without removing a platform the repository commits to supporting.
+# Raising the floor is a deliberate product decision and must never arrive as a
+# side effect of an automated upgrade.
+#
+# Security updates honour these rules too, so a blocked major will not reappear
+# as a security PR either. That is the intended trade: the affected packages
+# have to be reviewed by hand instead.
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /editors/vscode
+    schedule:
+      interval: weekly
+    # The documented default; stated explicitly so the blast radius of turning
+    # version updates on is visible. It applies per block, so the two blocks
+    # below allow ten concurrent version-update PRs. Security PRs are exempt.
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)
+      prefix-development: chore(deps-dev)
+    # CLAUDE.md requires every PR, bot-opened included, to carry one `kind:*`
+    # and at least one `area:*` label. A custom list replaces Dependabot's
+    # defaults rather than adding to them, so `dependencies` is repeated here.
+    labels:
+      - "kind: maintenance"
+      - "area: editor"
+      - dependencies
+    ignore:
+      # 9 requires ^1.82.0 and 10 requires ^1.91.0, both above the 1.70.3 cap
+      # that Windows 7 imposes. 7 (^1.52.0) and 8 (^1.67.0) are within it.
+      - dependency-name: vscode-languageclient
+        update-types:
+          - version-update:semver-major
+      # Must stay tilde-pinned to the same minor as `engines.vscode`, otherwise
+      # the type surface drifts past the floor and stops enforcing it. Both
+      # major and minor bumps break that pairing.
+      - dependency-name: "@types/vscode"
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
+
+  - package-ecosystem: npm
+    directory: /editors/jsfcstm
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)
+      prefix-development: chore(deps-dev)
+    labels:
+      - "kind: maintenance"
+      - "area: editor"
+      - dependencies
+    ignore:
+      # The language server ships inside the extension, so its VSCode API
+      # expectations are bound by the same floor as the client.
+      - dependency-name: vscode-languageserver
+        update-types:
+          - version-update:semver-major

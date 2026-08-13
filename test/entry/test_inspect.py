@@ -671,3 +671,37 @@ class TestInspectCollectErrors:
         assert result.exitcode != 0
         assert "Invalid state machine model" in (result.stderr or result.stdout)
         assert "E_DANGLING_TRANSITION" not in (result.stderr or result.stdout)
+
+    @pytest.mark.parametrize('output_format', ['human', 'json', 'llm-json', 'llm-md'])
+    def test_every_format_carries_the_errors(
+        self, multi_error_code_file, output_format
+    ):
+        result = _run_inspect(
+            '-i', multi_error_code_file, '--collect-errors',
+            '--format', output_format,
+        )
+
+        assert result.exitcode != 0
+        assert 'E_DUPLICATE_STATE' in result.stdout
+        assert 'E_DANGLING_TRANSITION' in result.stdout
+
+    @pytest.mark.parametrize('output_format', ['human', 'json', 'llm-json', 'llm-md'])
+    def test_output_file_is_written_before_the_exit_code_is_set(
+        self, multi_error_code_file, output_format
+    ):
+        """The report must survive the non-zero exit, not be skipped by it."""
+        with TemporaryDirectory() as td:
+            out_path = os.path.join(td, f'report.{output_format}')
+
+            result = _run_inspect(
+                '-i', multi_error_code_file, '--collect-errors',
+                '--format', output_format, '-o', out_path,
+            )
+
+            assert result.exitcode != 0
+            assert os.path.exists(out_path)
+            with open(out_path, encoding='utf-8') as f:
+                body = f.read()
+
+        assert 'E_DUPLICATE_STATE' in body
+        assert 'E_DANGLING_TRANSITION' in body

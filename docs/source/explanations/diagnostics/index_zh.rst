@@ -207,6 +207,9 @@
      - 缺右括号会以 ``Failed to parse input DSL file`` 退出。没有成功报告，也没有 ``diagnostics`` 数组。
    * - 重复状态名
      - 模型校验会以 ``Invalid state machine model`` 退出。即使注册表有相关 ``E_*`` 代码，也应把它当作进程失败。
+       加上 ``--collect-errors``\ 可以改为得到一份列出全部 ``E_*``\ 的报告，命令仍以非零码退出。
+   * - ``--collect-errors``
+     - 此时报告会把模型错误与警告一并带出，其背后的模型可能自身并不一致。这既不表示模型可用，也不会把错误降级成警告。
    * - C 系列数值警告
      - 它可以是真实 C/C++ 部署风险，同时不适用于 Python 生成运行时。
    * - ``W_GUARD_VARS_NEVER_CHANGE``

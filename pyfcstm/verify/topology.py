@@ -319,7 +319,14 @@ def _project_target(parent_state: State, target: object) -> Tuple[str, ...]:
         return _dedupe_sorted(projected)
 
     if isinstance(target, str):
-        target_state = parent_state.substates[target]
+        target_state = parent_state.substates.get(target)
+        if target_state is None:
+            # The target name does not resolve in this scope. Only a model built
+            # in collect mode can hold such a transition -- it carries
+            # E_DANGLING_TRANSITION -- because strict mode raises before the
+            # model is handed out. The transition reaches no leaf, so it projects
+            # to no successor.
+            return ()
         return _initial_leaf_targets(target_state)
 
     raise TypeError(  # pragma: no cover
@@ -410,7 +417,14 @@ def build_leaf_level_macro_graph(machine: StateMachine) -> LeafLevelGraph:
                     f"Unsupported transition source: {transition.from_state!r}."
                 )
 
-            source_state = parent_state.substates[transition.from_state]
+            source_state = parent_state.substates.get(transition.from_state)
+            if source_state is None:
+                # The source name does not resolve in this scope. Only a model
+                # built in collect mode can hold such a transition -- it carries
+                # E_DANGLING_TRANSITION -- because strict mode raises before the
+                # model is handed out. The transition contributes no edge: it has
+                # no source node to attach one to.
+                continue
             if not source_state.is_leaf_state:
                 continue
 

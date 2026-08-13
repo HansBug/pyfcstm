@@ -587,3 +587,87 @@ if loaded:
 
         assert result.exitcode != 0
         assert "Failed to write inspect output file" in (result.stderr or result.stdout)
+
+
+_MULTI_ERROR_DSL = textwrap.dedent("""
+    state Root {
+        state A;
+        state A;
+        NoSuch -> A;
+        state Outer { state Inner; }
+        [*] -> A;
+    }
+""").strip()
+
+
+@pytest.fixture()
+def multi_error_code_file():
+    """A model carrying three distinct ``E_*`` codes in one file."""
+    with TemporaryDirectory() as td:
+        code_file = os.path.join(td, "multi_error.fcstm")
+        with open(code_file, "w", encoding="utf-8") as f:
+            f.write(_MULTI_ERROR_DSL)
+        yield code_file
+
+
+@pytest.mark.unittest
+class TestInspectCollectErrors:
+    """``--collect-errors`` reports every ``E_*`` instead of only the first.
+
+    Strict model building raises on the first error, so an inspect report can
+    never carry more than one. The collecting path accumulates all of them and
+    still finishes with a non-zero exit code.
+    """
+
+    def test_json_reports_every_error_code(self, multi_error_code_file):
+        payload = json.loads(
+            build_inspect_json(multi_error_code_file, collect_errors=True)
+        )
+
+        codes = {item["code"] for item in payload["diagnostics"]}
+        assert {
+            "E_DUPLICATE_STATE",
+            "E_DANGLING_TRANSITION",
+            "E_INITIAL_TRANSITION_INVALID",
+        } <= codes
+
+    def test_cli_reports_every_error_code(self, multi_error_code_file):
+        result = _run_inspect("-i", multi_error_code_file, "--collect-errors")
+
+        assert "E_DUPLICATE_STATE" in result.stdout
+        assert "E_DANGLING_TRANSITION" in result.stdout
+        assert "E_INITIAL_TRANSITION_INVALID" in result.stdout
+
+    def test_cli_still_exits_non_zero(self, multi_error_code_file):
+        result = _run_inspect("-i", multi_error_code_file, "--collect-errors")
+
+        assert result.exitcode != 0
+        # Not a usage error: the report itself was produced and the non-zero
+        # code comes from the error-severity diagnostics inside it.
+        assert "no such option" not in (result.stderr or "").lower()
+        assert "FCSTM Inspect Report" in result.stdout
+
+    def test_cli_exits_zero_on_a_clean_model(self, inspect_code_file):
+        result = _run_inspect("-i", inspect_code_file, "--collect-errors")
+
+        assert result.exitcode == 0
+
+    def test_cli_json_carries_the_errors(self, multi_error_code_file):
+        result = _run_inspect(
+            "-i", multi_error_code_file, "--collect-errors", "--format", "json"
+        )
+
+        payload = json.loads(result.stdout)
+        codes = {item["code"] for item in payload["diagnostics"]}
+        assert {
+            "E_DUPLICATE_STATE",
+            "E_DANGLING_TRANSITION",
+            "E_INITIAL_TRANSITION_INVALID",
+        } <= codes
+
+    def test_default_run_stays_a_controlled_single_error(self, multi_error_code_file):
+        result = _run_inspect("-i", multi_error_code_file)
+
+        assert result.exitcode != 0
+        assert "Invalid state machine model" in (result.stderr or result.stdout)
+        assert "E_DANGLING_TRANSITION" not in (result.stderr or result.stdout)

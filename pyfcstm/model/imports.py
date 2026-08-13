@@ -1653,6 +1653,11 @@ def _render_target_template(
                         reason="template_invalid",
                         detail=template,
                     )
+                    # A collecting sink records instead of raising, so the
+                    # statements below would run on a template that has already
+                    # been rejected. There is no closing brace to slice against,
+                    # so stop rendering this template here.
+                    return template
                 raw_index = template[i + 2 : end_index]
                 if not raw_index.isdigit():
                     _emit_import_diag(
@@ -1667,6 +1672,18 @@ def _render_target_template(
                         reason="template_invalid",
                         detail=template,
                     )
+                    # Same reason as above: under a collecting sink the int()
+                    # conversion below would raise ValueError on the very index
+                    # this diagnostic just rejected as non-numeric.
+                    #
+                    # The unrendered template is returned rather than skipping
+                    # the mapping. It becomes the target variable name, which is
+                    # not a legal identifier but does match the ``detail`` field
+                    # of the diagnostic just emitted, so a reader can connect the
+                    # two. Skipping instead would remove the variable and make
+                    # every later reference to it report a second, misleading
+                    # error about an undefined name.
+                    return template
                 rendered.append(
                     _mapping_placeholder_value(
                         source_name=source_name,

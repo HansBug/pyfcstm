@@ -40,12 +40,12 @@ import json
 import os
 import pathlib
 import sys
-from typing import Optional
+from typing import Optional, Tuple
 
 import click
 
 from .base import CONTEXT_SETTINGS, ClickErrorException
-from ..diagnostics import inspect_model
+from ..diagnostics import ModelInspect, inspect_model
 from ..diagnostics.inspect_render import (
     HumanRenderOptions,
     inspect_output_suffix_warning,
@@ -54,8 +54,8 @@ from ..diagnostics.inspect_render import (
     render_inspect_llm_markdown,
 )
 from ..dsl import GrammarParseError
-from ..model import load_state_machine_from_file
-from ..utils import ModelValidationError, auto_decode
+from ..model import StateMachine, load_state_machine_from_file
+from ..utils import ModelDiagnostic, ModelValidationError, auto_decode
 from ..verify import InspectAccessForbiddenError
 from ..verify.taxonomy import (
     CALL_COUNT_SCALING_ORDER,
@@ -213,19 +213,59 @@ def resolve_inspect_color_enabled(
     return bool(stdout_isatty)
 
 
-def build_inspect_json(
+def _load_model_for_inspect(
     input_code_file: str,
     *,
+    collect_errors: bool,
+) -> Tuple["StateMachine", Tuple[ModelDiagnostic, ...]]:
+    """Load the model to inspect, optionally collecting model-build errors.
+
+    Strict loading is the default so that an inspect run on a broken model keeps
+    failing with a controlled error. When ``collect_errors`` is set, the loader
+    returns every model diagnostic together with a possibly inconsistent model,
+    which the caller forwards into :func:`pyfcstm.diagnostics.inspect_model` so
+    the report can carry all of them at once.
+
+    :param input_code_file: Path to the input FCSTM DSL file.
+    :type input_code_file: str
+    :param collect_errors: Whether to accumulate model errors instead of raising
+        on the first one.
+    :type collect_errors: bool
+    :return: The loaded model and its model-build diagnostics.
+    :rtype: Tuple[pyfcstm.model.StateMachine, Tuple[pyfcstm.utils.validate.ModelDiagnostic, ...]]
+    :raises pyfcstm.utils.validate.ModelValidationError: In strict mode on the
+        first model error, and in collect mode when the model could not be built
+        at all.
+    """
+    if not collect_errors:
+        return load_state_machine_from_file(input_code_file), ()
+    machine, diagnostics = load_state_machine_from_file(
+        input_code_file, collect=True
+    )
+    if machine is None:
+        # Collect mode yields None when construction could not progress past a
+        # fatal point. There is no model to inspect, so fall back to the strict
+        # outcome and let the caller's ModelValidationError handler report it.
+        raise ModelValidationError(diagnostics=list(diagnostics))
+    return machine, tuple(diagnostics)
+
+
+def _build_inspect_json_with_report(
+    input_code_file: str,
+    *,
+    collect_errors: bool = False,
     enable_verify: bool = False,
     max_complexity_tier: str = "structural",
     max_call_count_scaling: str = "linear_in_transitions",
     smt_timeout_ms: Optional[int] = None,
-) -> str:
-    """Build stable JSON text for an inspected FCSTM model.
+) -> Tuple[str, "ModelInspect"]:
+    """Build stable JSON text and the report object behind it.
 
     The helper centralizes the CLI workflow: read and parse the DSL file, build
     the state-machine model, run :func:`pyfcstm.diagnostics.inspect_model`, and
     serialize the JSON-friendly dict returned by :meth:`ModelInspect.to_json`.
+    The report is returned alongside the text so the CLI can decide its exit
+    code from the diagnostics without inspecting the rendered output.
 
     :param input_code_file: Path to the input FCSTM DSL file.
     :type input_code_file: str
@@ -244,8 +284,8 @@ def build_inspect_json(
         unset. ``0`` is forwarded unchanged to the solver layer and follows Z3
         semantics, where no finite timeout is configured.
     :type smt_timeout_ms: Optional[int], optional
-    :return: Pretty-printed JSON inspection report text ending with a newline.
-    :rtype: str
+    :return: The JSON report text ending with a newline, and the report object.
+    :rtype: Tuple[str, pyfcstm.diagnostics.ModelInspect]
     :raises pyfcstm.entry.base.ClickErrorException: If the input file is
         missing, cannot be read, cannot be decoded, fails parsing or model
         validation, or requests a forbidden inspect verify policy.
@@ -268,13 +308,16 @@ def build_inspect_json(
             max_complexity_tier,
             max_call_count_scaling,
         )
-        machine = load_state_machine_from_file(input_code_file)
+        machine, model_diagnostics = _load_model_for_inspect(
+            input_code_file, collect_errors=collect_errors
+        )
         report = inspect_model(
             machine,
             enable_verify=enable_verify,
             max_complexity_tier=max_complexity_tier,
             max_call_count_scaling=max_call_count_scaling,
             smt_timeout_ms=smt_timeout_ms,
+            model_diagnostics=model_diagnostics,
         )
     except FileNotFoundError:
         # load_state_machine_from_file reads the user-provided path; a missing
@@ -311,7 +354,7 @@ def build_inspect_json(
         # inspect verify policies such as unknown tiers or scaling values.
         raise ClickErrorException(str(err))
 
-    return (
+    text = (
         json.dumps(
             report.to_json(),
             ensure_ascii=False,
@@ -320,19 +363,81 @@ def build_inspect_json(
         )
         + "\n"
     )
+    return text, report
 
 
-def build_inspect_output(
+def build_inspect_json(
     input_code_file: str,
     *,
-    output_format: str = "human",
-    color_enabled: bool = False,
+    collect_errors: bool = False,
     enable_verify: bool = False,
     max_complexity_tier: str = "structural",
     max_call_count_scaling: str = "linear_in_transitions",
     smt_timeout_ms: Optional[int] = None,
 ) -> str:
-    """Build inspect output text in the requested presentation format.
+    """Build stable JSON text for an inspected FCSTM model.
+
+    Thin wrapper over :func:`_build_inspect_json_with_report` that drops the
+    report object. See that helper for the full parameter contract.
+
+    :param input_code_file: Path to the input FCSTM DSL file.
+    :type input_code_file: str
+    :param collect_errors: Whether to report every model error instead of
+        failing on the first one, defaults to ``False``.
+    :type collect_errors: bool, optional
+    :param enable_verify: Whether to run inspect-eligible verify algorithms.
+    :type enable_verify: bool, optional
+    :param max_complexity_tier: Maximum verify complexity tier accepted by
+        inspect.
+    :type max_complexity_tier: str, optional
+    :param max_call_count_scaling: Maximum verify call-count scaling accepted
+        by inspect.
+    :type max_call_count_scaling: str, optional
+    :param smt_timeout_ms: Optional solver timeout in milliseconds.
+    :type smt_timeout_ms: Optional[int], optional
+    :return: Pretty-printed JSON inspection report text ending with a newline.
+    :rtype: str
+    :raises pyfcstm.entry.base.ClickErrorException: If the input file is
+        missing, cannot be read, cannot be decoded, fails parsing or model
+        validation, or requests a forbidden inspect verify policy.
+
+    Example::
+
+        >>> import json, os
+        >>> from tempfile import TemporaryDirectory
+        >>> with TemporaryDirectory() as td:
+        ...     path = os.path.join(td, "demo.fcstm")
+        ...     with open(path, "w", encoding="utf-8") as f:
+        ...         _ = f.write("state Root { state Idle; [*] -> Idle; }")
+        ...     payload = json.loads(build_inspect_json(path))
+        >>> payload["root_state_path"]
+        'Root'
+    """
+    return _build_inspect_json_with_report(
+        input_code_file,
+        collect_errors=collect_errors,
+        enable_verify=enable_verify,
+        max_complexity_tier=max_complexity_tier,
+        max_call_count_scaling=max_call_count_scaling,
+        smt_timeout_ms=smt_timeout_ms,
+    )[0]
+
+
+def _build_inspect_output_with_report(
+    input_code_file: str,
+    *,
+    output_format: str = "human",
+    color_enabled: bool = False,
+    collect_errors: bool = False,
+    enable_verify: bool = False,
+    max_complexity_tier: str = "structural",
+    max_call_count_scaling: str = "linear_in_transitions",
+    smt_timeout_ms: Optional[int] = None,
+) -> Tuple[str, "ModelInspect"]:
+    """Build inspect output text and the report object behind it.
+
+    The report is returned alongside the text so the CLI can decide its exit
+    code from the diagnostics without inspecting the rendered output.
 
     ``output_format="json"`` delegates to :func:`build_inspect_json` so the
     full JSON contract stays byte-for-byte aligned with the pre-existing
@@ -357,8 +462,8 @@ def build_inspect_output(
     :type max_call_count_scaling: str, optional
     :param smt_timeout_ms: Optional solver timeout in milliseconds.
     :type smt_timeout_ms: Optional[int], optional
-    :return: Rendered inspect output ending with a newline.
-    :rtype: str
+    :return: Rendered inspect output ending with a newline, and the report.
+    :rtype: Tuple[str, pyfcstm.diagnostics.ModelInspect]
     :raises pyfcstm.entry.base.ClickErrorException: If reading, parsing, model
         validation, or inspect policy validation fails.
     :raises ValueError: If ``output_format`` is not supported.
@@ -376,8 +481,9 @@ def build_inspect_output(
         True
     """
     if output_format == "json":
-        return build_inspect_json(
+        return _build_inspect_json_with_report(
             input_code_file,
+            collect_errors=collect_errors,
             enable_verify=enable_verify,
             max_complexity_tier=max_complexity_tier,
             max_call_count_scaling=max_call_count_scaling,
@@ -391,13 +497,16 @@ def build_inspect_output(
             max_call_count_scaling,
         )
         source_text = _read_inspect_source_text(input_code_file)
-        machine = load_state_machine_from_file(input_code_file)
+        machine, model_diagnostics = _load_model_for_inspect(
+            input_code_file, collect_errors=collect_errors
+        )
         report = inspect_model(
             machine,
             enable_verify=enable_verify,
             max_complexity_tier=max_complexity_tier,
             max_call_count_scaling=max_call_count_scaling,
             smt_timeout_ms=smt_timeout_ms,
+            model_diagnostics=model_diagnostics,
         )
     except FileNotFoundError:
         # _read_inspect_source_text reads the user-provided path; a missing
@@ -433,15 +542,87 @@ def build_inspect_output(
         raise ClickErrorException(str(err))
 
     if output_format == "human":
-        return render_inspect_human(
+        text = render_inspect_human(
             report,
             source_text,
             input_path=input_code_file,
             options=HumanRenderOptions(color_enabled=color_enabled),
         )
-    if output_format == "llm-json":
-        return render_inspect_llm_json(report, source_text, input_path=input_code_file)
-    return render_inspect_llm_markdown(report, source_text, input_path=input_code_file)
+    elif output_format == "llm-json":
+        text = render_inspect_llm_json(
+            report, source_text, input_path=input_code_file
+        )
+    else:
+        text = render_inspect_llm_markdown(
+            report, source_text, input_path=input_code_file
+        )
+    return text, report
+
+
+def build_inspect_output(
+    input_code_file: str,
+    *,
+    output_format: str = "human",
+    color_enabled: bool = False,
+    collect_errors: bool = False,
+    enable_verify: bool = False,
+    max_complexity_tier: str = "structural",
+    max_call_count_scaling: str = "linear_in_transitions",
+    smt_timeout_ms: Optional[int] = None,
+) -> str:
+    """Build inspect output text in the requested presentation format.
+
+    Thin wrapper over :func:`_build_inspect_output_with_report` that drops the
+    report object. See that helper for the full parameter contract.
+
+    :param input_code_file: Path to the input FCSTM DSL file.
+    :type input_code_file: str
+    :param output_format: Inspect output format.
+    :type output_format: str, optional
+    :param color_enabled: Whether the human renderer emits ANSI color.
+    :type color_enabled: bool, optional
+    :param collect_errors: Whether to report every model error instead of
+        failing on the first one, defaults to ``False``.
+    :type collect_errors: bool, optional
+    :param enable_verify: Whether to run inspect-eligible verify algorithms.
+    :type enable_verify: bool, optional
+    :param max_complexity_tier: Maximum verify complexity tier accepted by
+        inspect.
+    :type max_complexity_tier: str, optional
+    :param max_call_count_scaling: Maximum verify call-count scaling accepted
+        by inspect.
+    :type max_call_count_scaling: str, optional
+    :param smt_timeout_ms: Optional solver timeout in milliseconds.
+    :type smt_timeout_ms: Optional[int], optional
+    :return: Inspect output text in the requested format.
+    :rtype: str
+    :raises ValueError: If ``output_format`` is unsupported.
+    :raises pyfcstm.entry.base.ClickErrorException: If the input file is
+        missing, cannot be read, cannot be decoded, fails parsing or model
+        validation, or requests a forbidden inspect verify policy.
+
+    Example::
+
+        >>> import os
+        >>> from tempfile import TemporaryDirectory
+        >>> with TemporaryDirectory() as td:
+        ...     path = os.path.join(td, "demo.fcstm")
+        ...     with open(path, "w", encoding="utf-8") as f:
+        ...         _ = f.write("state Root { state Idle; [*] -> Idle; }")
+        ...     text = build_inspect_output(path, output_format="human")
+        >>> "FCSTM Inspect Report" in text
+        True
+    """
+    return _build_inspect_output_with_report(
+        input_code_file,
+        output_format=output_format,
+        color_enabled=color_enabled,
+        collect_errors=collect_errors,
+        enable_verify=enable_verify,
+        max_complexity_tier=max_complexity_tier,
+        max_call_count_scaling=max_call_count_scaling,
+        smt_timeout_ms=smt_timeout_ms,
+    )[0]
 
 
 def _add_inspect_subcommand(cli: click.Group) -> click.Group:
@@ -504,6 +685,14 @@ def _add_inspect_subcommand(cli: click.Group) -> click.Group:
         help="Control ANSI color for human inspect output only.",
     )
     @click.option(
+        "--collect-errors",
+        is_flag=True,
+        help=(
+            "Report every model error instead of stopping at the first one. "
+            "Still exits non-zero."
+        ),
+    )
+    @click.option(
         "--enable-verify",
         is_flag=True,
         help="Run inspect-eligible pyfcstm.verify algorithms.",
@@ -536,6 +725,7 @@ def _add_inspect_subcommand(cli: click.Group) -> click.Group:
         output_file: Optional[str],
         output_format: str,
         color_mode: str,
+        collect_errors: bool,
         enable_verify: bool,
         max_complexity_tier: str,
         max_call_count_scaling: str,
@@ -553,6 +743,10 @@ def _add_inspect_subcommand(cli: click.Group) -> click.Group:
         :type output_format: str
         :param color_mode: ANSI color mode for human output.
         :type color_mode: str
+        :param collect_errors: Whether to report every model error instead of
+            failing on the first one. The command still exits non-zero when the
+            report carries any error-severity diagnostic.
+        :type collect_errors: bool
         :param enable_verify: Whether to run inspect-eligible verify
             algorithms.
         :type enable_verify: bool
@@ -576,16 +770,19 @@ def _add_inspect_subcommand(cli: click.Group) -> click.Group:
             $ pyfcstm inspect -i machine.fcstm --format json
             $ pyfcstm inspect -i machine.fcstm --color always
             $ pyfcstm inspect -i machine.fcstm --enable-verify --max-complexity-tier smt_linear
+            $ pyfcstm inspect -i machine.fcstm --collect-errors
+            $ pyfcstm inspect -i machine.fcstm --collect-errors --format json
         """
         color_enabled = resolve_inspect_color_enabled(
             color_mode,
             output_format=output_format,
             output_file=output_file,
         )
-        inspect_output = build_inspect_output(
+        inspect_output, inspect_report = _build_inspect_output_with_report(
             input_code_file,
             output_format=output_format,
             color_enabled=color_enabled,
+            collect_errors=collect_errors,
             enable_verify=enable_verify,
             max_complexity_tier=max_complexity_tier,
             max_call_count_scaling=max_call_count_scaling,
@@ -606,5 +803,11 @@ def _add_inspect_subcommand(cli: click.Group) -> click.Group:
                 raise ClickErrorException(
                     f"Failed to write inspect output file {output_file}: {err}"
                 )
+        if any(diagnostic.is_error() for diagnostic in inspect_report.diagnostics):
+            # A report can only carry error-severity diagnostics under
+            # --collect-errors; strict loading raises before the report exists.
+            # The report has already been emitted, so the command signals the
+            # errors through the exit code rather than an exception message.
+            raise click.exceptions.Exit(1)
 
     return cli

@@ -3060,6 +3060,7 @@ def inspect_model(
         max_complexity_tier: str = 'structural',
         max_call_count_scaling: str = 'linear_in_transitions',
         smt_timeout_ms: Optional[int] = None,
+        model_diagnostics: Sequence[ModelDiagnostic] = (),
 ) -> ModelInspect:
     """
     Build a structured inspection report for a state machine model.
@@ -3093,6 +3094,13 @@ def inspect_model(
         verify algorithms. ``None`` preserves the raw verify default of no
         configured timeout.
     :type smt_timeout_ms: Optional[int], optional
+    :param model_diagnostics: Diagnostics produced while building ``machine``,
+        prepended to the analyzer output. Callers that built the model with
+        :func:`pyfcstm.model.parse_dsl_node_to_state_machine` in collect mode
+        pass the returned diagnostic list here so the report carries the model
+        errors alongside the design-health warnings. Defaults to ``()``, which
+        reproduces the strict-mode report shape.
+    :type model_diagnostics: Sequence[pyfcstm.utils.validate.ModelDiagnostic], optional
     :return: Structured view of the model.
     :rtype: ModelInspect
 
@@ -3140,7 +3148,12 @@ def inspect_model(
     metrics = _build_metrics(states, transitions, variables, events)
     reachability_graph = _build_reachability_graph(states, transitions)
     root_state_path = _state_path(machine.root_state)
-    diagnostics = list(collect_design_health_warnings(
+    # Model-build diagnostics come first so a report on a model built in collect
+    # mode leads with the errors that make it inconsistent, before the warnings
+    # derived from it. They join the same catalog-filter and dedup pipeline as
+    # analyzer output rather than being appended afterwards.
+    diagnostics = list(model_diagnostics)
+    diagnostics.extend(collect_design_health_warnings(
         states,
         transitions,
         variables,

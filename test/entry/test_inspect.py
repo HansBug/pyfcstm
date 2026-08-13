@@ -705,3 +705,19 @@ class TestInspectCollectErrors:
 
         assert 'E_DUPLICATE_STATE' in body
         assert 'E_DANGLING_TRANSITION' in body
+
+    def test_a_syntax_error_still_fails_before_any_report(self):
+        """Collection covers model errors, not parse errors.
+
+        A file that does not parse has no AST to build a model from, so there is
+        nothing to collect and the run must still stop at the parse failure.
+        """
+        with TemporaryDirectory() as td:
+            code_file = os.path.join(td, 'broken.fcstm')
+            with open(code_file, 'w', encoding='utf-8') as f:
+                f.write('state Root {')
+
+            result = _run_inspect('-i', code_file, '--collect-errors')
+
+        assert result.exitcode != 0
+        assert 'Failed to parse input DSL file' in (result.stderr or result.stdout)

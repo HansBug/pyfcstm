@@ -204,6 +204,10 @@ behind such a report may be internally inconsistent — a transition endpoint th
 does not resolve, for example — so treat the report as a fix list, not as
 evidence that the model is usable.
 
+This covers model errors only. A file that does not parse has no AST to build a
+model from, so a syntax error still stops the run with
+``Failed to parse input DSL file`` and produces no report.
+
 Generate code from a built-in template
 --------------------------------------
 

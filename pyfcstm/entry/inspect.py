@@ -243,9 +243,15 @@ def _load_model_for_inspect(
         input_code_file, collect=True
     )
     if machine is None:
-        # Collect mode yields None when construction could not progress past a
-        # fatal point. There is no model to inspect, so fall back to the strict
-        # outcome and let the caller's ModelValidationError handler report it.
+        # parse_dsl_node_to_state_machine documents that collect mode may return
+        # None when construction cannot progress past a fatal point, so this
+        # honours the declared Optional. No FCSTM input is currently known to
+        # produce it -- every malformed source either yields a partial model or
+        # fails earlier in the grammar -- and reaching it would need production
+        # internals driven directly, so it is left unguarded by a test rather
+        # than pinned by one. There is no model to inspect either way, so fall
+        # back to the strict outcome and let the caller's ModelValidationError
+        # handler report it.
         raise ModelValidationError(diagnostics=list(diagnostics))
     return machine, tuple(diagnostics)
 

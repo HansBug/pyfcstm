@@ -3851,3 +3851,19 @@ class TestInspectModelOnUnresolvedEndpoints:
         assert len(errors) == len(diagnostics)
         for diagnostic in errors:
             _assert_has_span(diagnostic.span)
+
+    def test_unresolved_source_on_an_event_transition_does_not_raise(self):
+        """Event-triggered transitions reach a separate lookup.
+
+        ``_event_consumer_reachability`` resolves the source only for transitions
+        that carry an event, so an unresolved source there is a distinct site
+        from the one the plain-transition cases cover.
+        """
+        machine, diagnostics = _parse_collecting(
+            'state Root { event Go; state A; NoSuch -> A : Go; [*] -> A; }'
+        )
+        assert 'E_DANGLING_TRANSITION' in {d.code for d in diagnostics}
+
+        report = inspect_model(machine, enable_verify=True)
+
+        assert isinstance(report, ModelInspect)

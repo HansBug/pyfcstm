@@ -1068,12 +1068,18 @@ def _event_consumer_reachability(
             if transition.from_state is INIT_STATE:
                 reachable = parent_path in init_sources
             elif isinstance(transition.from_state, str):
-                source_state = parent_state.substates[transition.from_state]
-                source_path = _state_path(source_state)
-                if source_state.is_leaf_state:
-                    reachable = source_path in active_leaves
+                source_state = parent_state.substates.get(transition.from_state)
+                if source_state is None:
+                    # Same unresolved-name case as in the graph builder: only a
+                    # model built in collect mode carries such a transition, and
+                    # it reaches no state, so it consumes the event nowhere.
+                    reachable = False
                 else:
-                    reachable = source_path in boundary_sources
+                    source_path = _state_path(source_state)
+                    if source_state.is_leaf_state:
+                        reachable = source_path in active_leaves
+                    else:
+                        reachable = source_path in boundary_sources
             else:
                 raise TypeError(  # pragma: no cover
                     # Grammar-produced non-init transition sources are strings.

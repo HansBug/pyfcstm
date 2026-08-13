@@ -377,6 +377,11 @@ def build_leaf_level_macro_graph(machine: StateMachine) -> LeafLevelGraph:
     leaf is treated as root-exit-capable by adding an edge to
     :data:`EXIT_ROOT_SINK`.
 
+    A transition whose source or target name does not resolve in its scope
+    contributes no edge. Only a model built in collect mode can hold one --
+    it carries ``E_DANGLING_TRANSITION`` -- so the projection of a strictly
+    built model is unaffected.
+
     :param machine: State machine to project.
     :type machine: StateMachine
     :return: Leaf-level macro graph.
@@ -1105,6 +1110,11 @@ def event_emission_to_consumer_reachable(machine: StateMachine) -> Tuple[str, ..
     ``Leaf -> [*]`` bubble semantics rather than while any descendant leaf is
     merely active. If every consumer source for a used event is outside these
     root-reachable topology points, the event's qualified name is returned.
+
+    A consumer whose source name does not resolve in its scope counts as
+    unreachable, since it reaches no state. Only a model built in collect mode
+    can hold one -- it carries ``E_DANGLING_TRANSITION`` -- so the result for a
+    strictly built model is unaffected.
 
     :param machine: State machine to inspect.
     :type machine: StateMachine

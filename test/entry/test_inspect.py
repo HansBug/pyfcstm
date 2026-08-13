@@ -721,3 +721,43 @@ class TestInspectCollectErrors:
 
         assert result.exitcode != 0
         assert 'Failed to parse input DSL file' in (result.stderr or result.stdout)
+
+    def test_error_severity_rendering_is_exercised_for_the_first_time(
+        self, multi_error_code_file
+    ):
+        """Collecting errors activates render paths that were unreachable.
+
+        The renderer has always had an ``error`` entry in its severity order,
+        human label, status map and ANSI style table, but an inspect report could
+        never carry an error-severity diagnostic, so none of it ran. These
+        assertions cover that newly reachable path.
+        """
+        text = build_inspect_output(
+            multi_error_code_file,
+            output_format="human",
+            collect_errors=True,
+            color_enabled=False,
+        )
+        colored = build_inspect_output(
+            multi_error_code_file,
+            output_format="human",
+            collect_errors=True,
+            color_enabled=True,
+        )
+
+        assert "[ERROR] FCSTM Inspect Report" in text
+        assert "status: error" in text
+        assert not _has_ansi(text)
+        assert _has_ansi(colored)
+
+    def test_llm_json_counts_the_errors(self, multi_error_code_file):
+        payload = json.loads(
+            build_inspect_output(
+                multi_error_code_file,
+                output_format="llm-json",
+                collect_errors=True,
+            )
+        )
+
+        assert payload["status"] == "error"
+        assert payload["summary"]["errors"] >= 2

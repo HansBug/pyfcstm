@@ -305,8 +305,10 @@ def _build_inspect_json_with_report(
         ...     path = os.path.join(td, "demo.fcstm")
         ...     with open(path, "w", encoding="utf-8") as f:
         ...         _ = f.write("state Root { state Idle; [*] -> Idle; }")
-        ...     payload = json.loads(build_inspect_json(path))
-        >>> payload["root_state_path"]
+        ...     text, report = _build_inspect_json_with_report(path)
+        >>> json.loads(text)["root_state_path"]
+        'Root'
+        >>> report.root_state_path
         'Root'
     """
     try:
@@ -482,9 +484,11 @@ def _build_inspect_output_with_report(
         ...     path = os.path.join(td, "demo.fcstm")
         ...     with open(path, "w", encoding="utf-8") as f:
         ...         _ = f.write("state Root { state Idle; [*] -> Idle; }")
-        ...     text = build_inspect_output(path)
+        ...     text, report = _build_inspect_output_with_report(path)
         >>> "[WARN] FCSTM Inspect Report" in text
         True
+        >>> report.root_state_path
+        'Root'
     """
     if output_format == "json":
         return _build_inspect_json_with_report(

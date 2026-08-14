@@ -379,7 +379,10 @@ export interface InspectVerificationEnabledReport {
     reason_code: null;
     requested_policy: InspectVerificationPolicy;
     summary: InspectVerificationSummary;
-    algorithms: InspectVerificationAlgorithm[];
+    algorithms: [
+        InspectVerificationAlgorithm,
+        ...InspectVerificationAlgorithm[],
+    ];
 }
 
 export type InspectVerificationReport =

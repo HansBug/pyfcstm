@@ -74,6 +74,26 @@ DEFAULT_DEEP_HIERARCHY_THRESHOLD = 6
 DEFAULT_LARGE_COMPOSITE_THRESHOLD = 12
 DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD = 2.0
 
+# Keep policy validation local so a normal structural inspect does not import
+# the verify package merely to construct its disabled execution metadata.
+_INSPECT_COMPLEXITY_TIERS = (
+    'structural',
+    'smt_linear',
+    'smt_nonlinear_decidable',
+    'smt_undecidable_heuristic',
+)
+_INSPECT_CALL_COUNT_SCALINGS = (
+    'none',
+    'one',
+    'linear_in_states',
+    'linear_in_transitions',
+    'linear_in_vars',
+    'linear_in_leaves',
+    'quadratic_in_outgoing_per_state',
+    'quadratic_in_states',
+    'vars_times_transitions',
+)
+
 # PR-D2 span contract guard: analyzer diagnostics should carry a real
 # source span by default. Any future code that intentionally cannot point to
 # one source object must be listed here and covered by
@@ -3213,6 +3233,42 @@ def _deduplicate_model_diagnostics(
     return tuple(out)
 
 
+def _validate_inspect_verification_policy(
+        max_complexity_tier: str,
+        max_call_count_scaling: str,
+        smt_timeout_ms: Optional[int],
+) -> None:
+    """Validate public verification policy arguments without eager imports."""
+    if max_complexity_tier not in _INSPECT_COMPLEXITY_TIERS:
+        from ..verify.inspect_adapter import InspectAccessForbiddenError
+
+        raise InspectAccessForbiddenError(
+            "unknown inspect complexity tier: {maximum!r}".format(
+                maximum=max_complexity_tier,
+            )
+        )
+    if max_call_count_scaling not in _INSPECT_CALL_COUNT_SCALINGS:
+        from ..verify.inspect_adapter import InspectAccessForbiddenError
+
+        raise InspectAccessForbiddenError(
+            "unknown inspect call-count scaling: {maximum!r}".format(
+                maximum=max_call_count_scaling,
+            )
+        )
+    if smt_timeout_ms is not None and (
+            isinstance(smt_timeout_ms, bool)
+            or not isinstance(smt_timeout_ms, int)
+            or smt_timeout_ms < 0
+    ):
+        from ..verify.inspect_adapter import InspectAccessForbiddenError
+
+        raise InspectAccessForbiddenError(
+            "smt_timeout_ms must be a non-negative integer or None, got {value!r}".format(
+                value=smt_timeout_ms,
+            )
+        )
+
+
 def inspect_model(
         machine: 'StateMachine',
         *,
@@ -3255,7 +3311,7 @@ def inspect_model(
     :type max_call_count_scaling: str, optional
     :param smt_timeout_ms: Optional solver timeout forwarded to SMT-local
         verify algorithms. ``None`` preserves the raw verify default of no
-        configured timeout.
+        configured timeout; an integer value must be non-negative.
     :type smt_timeout_ms: Optional[int], optional
     :param model_diagnostics: Diagnostics produced while building ``machine``,
         prepended to the analyzer output. Callers that built the model with
@@ -3288,6 +3344,11 @@ def inspect_model(
         >>> len(verify_report.diagnostics) >= len(report.diagnostics)
         True
     """
+    _validate_inspect_verification_policy(
+        max_complexity_tier,
+        max_call_count_scaling,
+        smt_timeout_ms,
+    )
     deep_hierarchy_threshold = _normalize_int_threshold(
         'deep_hierarchy_threshold',
         deep_hierarchy_threshold,

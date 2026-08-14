@@ -466,6 +466,19 @@ class TestEntryInspect:
         payload = _json_from_stdout(result)
         assert payload["root_state_path"] == "Root"
 
+    def test_inspect_rejects_negative_smt_timeout(self, inspect_code_file):
+        result = _run_inspect(
+            "-i",
+            inspect_code_file,
+            "--format",
+            "json",
+            "--smt-timeout-ms",
+            "-1",
+        )
+
+        assert result.exitcode != 0
+        assert "-1 is not in the range x>=0" in (result.stdout + result.stderr)
+
     def test_successful_highest_budget_cli_does_not_load_bmc(self, inspect_code_file):
         script = """
 import json

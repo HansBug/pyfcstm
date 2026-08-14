@@ -3925,6 +3925,33 @@ print(json.dumps(verification, sort_keys=True))
                 **kwargs,
             )
 
+    @pytest.mark.parametrize(
+        ('kwargs', 'message'),
+        [
+            ({'max_complexity_tier': 'unknown_tier'}, 'unknown inspect complexity tier'),
+            ({'max_call_count_scaling': 'unknown_scaling'}, 'call-count scaling'),
+        ],
+    )
+    def test_invalid_policy_is_rejected_before_disabled_report(self, kwargs, message):
+        from pyfcstm.verify import InspectAccessForbiddenError
+
+        with pytest.raises(InspectAccessForbiddenError, match=message):
+            inspect_model(_parse(SIMPLE_DSL), **kwargs)
+
+    @pytest.mark.parametrize('enable_verify', [False, True])
+    def test_negative_smt_timeout_is_rejected_for_both_execution_states(
+            self,
+            enable_verify,
+    ):
+        from pyfcstm.verify import InspectAccessForbiddenError
+
+        with pytest.raises(InspectAccessForbiddenError, match='non-negative integer'):
+            inspect_model(
+                _parse(SIMPLE_DSL),
+                enable_verify=enable_verify,
+                smt_timeout_ms=-1,
+            )
+
     def test_highest_budget_inspect_model_does_not_load_bmc_in_fresh_process(self):
         script = """
 import sys

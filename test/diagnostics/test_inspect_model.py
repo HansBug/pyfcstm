@@ -2489,6 +2489,15 @@ def test_inspect_guard_text_is_shared_normalized_format():
 class TestInspectModelVerifyIntegration:
     """Optional verify integration for inspect_model."""
 
+    def test_policy_validation_orders_match_verify_taxonomy(self):
+        from pyfcstm.verify.taxonomy import (
+            CALL_COUNT_SCALING_ORDER,
+            COMPLEXITY_TIER_ORDER,
+        )
+
+        assert inspect_module._INSPECT_COMPLEXITY_TIERS == COMPLEXITY_TIER_ORDER
+        assert inspect_module._INSPECT_CALL_COUNT_SCALINGS == CALL_COUNT_SCALING_ORDER
+
     def test_verify_parameters_keep_expected_defaults(self):
         signature = inspect.signature(inspect_model)
 

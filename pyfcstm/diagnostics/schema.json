@@ -21,6 +21,7 @@
     "var_dataflow",
     "aspect_impact_map",
     "action_ref_graph",
+    "verification",
     "diagnostics"
   ],
   "properties": {
@@ -114,12 +115,129 @@
         "items": { "type": "string" }
       }
     },
+    "verification": { "$ref": "#/definitions/VerificationReport" },
     "diagnostics": {
       "type": "array",
       "items": { "$ref": "#/definitions/ModelDiagnostic" }
     }
   },
   "definitions": {
+    "VerificationReport": {
+      "type": "object",
+      "description": "Verification execution metadata. This records which registered algorithms ran and why others did not; it is separate from emitted model diagnostics.",
+      "additionalProperties": false,
+      "required": [
+        "supported", "enabled", "provider", "reason_code",
+        "requested_policy", "summary", "algorithms"
+      ],
+      "properties": {
+        "supported": { "type": "boolean" },
+        "enabled": { "type": "boolean" },
+        "provider": { "type": ["string", "null"] },
+        "reason_code": {
+          "type": ["string", "null"],
+          "enum": ["verification_disabled", "provider_unsupported", null]
+        },
+        "requested_policy": { "$ref": "#/definitions/VerificationPolicy" },
+        "summary": { "$ref": "#/definitions/VerificationSummary" },
+        "algorithms": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/VerificationAlgorithm" }
+        }
+      }
+    },
+    "VerificationPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_complexity_tier", "max_call_count_scaling", "smt_timeout_ms"
+      ],
+      "properties": {
+        "max_complexity_tier": {
+          "type": ["string", "null"],
+          "enum": [
+            "structural", "smt_linear", "smt_nonlinear_decidable",
+            "smt_undecidable_heuristic", null
+          ]
+        },
+        "max_call_count_scaling": {
+          "type": ["string", "null"],
+          "enum": [
+            "none", "one", "linear_in_states", "linear_in_transitions",
+            "linear_in_vars", "linear_in_leaves",
+            "quadratic_in_outgoing_per_state", "quadratic_in_states",
+            "vars_times_transitions", null
+          ]
+        },
+        "smt_timeout_ms": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        }
+      }
+    },
+    "VerificationSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["registered", "executed", "not_run", "indeterminate"],
+      "properties": {
+        "registered": { "type": ["integer", "null"], "minimum": 0 },
+        "executed": { "type": "integer", "minimum": 0 },
+        "not_run": { "type": "integer", "minimum": 0 },
+        "indeterminate": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "VerificationAlgorithm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm_name", "complexity_tier", "call_count_scaling",
+        "verification_scope", "declared_diagnostic_codes", "result_kind",
+        "reason_code", "reason", "partial_diagnostic_count"
+      ],
+      "properties": {
+        "algorithm_name": { "type": "string" },
+        "complexity_tier": {
+          "type": "string",
+          "enum": [
+            "structural", "smt_linear", "smt_nonlinear_decidable",
+            "smt_undecidable_heuristic"
+          ]
+        },
+        "call_count_scaling": {
+          "type": "string",
+          "enum": [
+            "none", "one", "linear_in_states", "linear_in_transitions",
+            "linear_in_vars", "linear_in_leaves",
+            "quadratic_in_outgoing_per_state", "quadratic_in_states",
+            "vars_times_transitions"
+          ]
+        },
+        "verification_scope": {
+          "type": ["string", "null"],
+          "enum": ["topological_only", "smt_local", null]
+        },
+        "declared_diagnostic_codes": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "result_kind": {
+          "type": "string",
+          "enum": [
+            "not_run", "sat", "unsat", "timeout", "unknown",
+            "undecidable_skip"
+          ]
+        },
+        "reason_code": {
+          "type": ["string", "null"],
+          "enum": [
+            "algorithm_not_closed", "complexity_tier_exceeds_policy",
+            "call_count_scaling_exceeds_policy", null
+          ]
+        },
+        "reason": { "type": ["string", "null"] },
+        "partial_diagnostic_count": { "type": "integer", "minimum": 0 }
+      }
+    },
     "StateInfo": {
       "type": "object",
       "additionalProperties": false,

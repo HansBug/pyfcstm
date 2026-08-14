@@ -13,6 +13,7 @@ import os
 import inspect
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -484,6 +485,7 @@ class TestInspectModelToJson:
             'var_dataflow',
             'aspect_impact_map',
             'action_ref_graph',
+            'verification',
             'diagnostics',
         }
 
@@ -567,6 +569,81 @@ class TestSchemaJsonValidates:
         assert required.issubset(set(payload.keys())), (
             f'missing keys: {required - set(payload.keys())}'
         )
+
+    def test_schema_strictly_validates_verification_projection(self):
+        jsonschema = pytest.importorskip('jsonschema')
+        schema = self._load_schema()
+        payload = inspect_model(_parse(SIMPLE_DSL)).to_json()
+
+        payload['verification'] = {
+            'supported': True,
+            'enabled': True,
+            'provider': 'pyfcstm.verify',
+            'reason_code': None,
+            'requested_policy': {
+                'max_complexity_tier': 'smt_linear',
+                'max_call_count_scaling': 'linear_in_transitions',
+                'smt_timeout_ms': 1000,
+            },
+            'summary': {
+                'registered': 1,
+                'executed': 1,
+                'not_run': 0,
+                'indeterminate': 1,
+            },
+            'algorithms': [{
+                'algorithm_name': 'dead_guard',
+                'complexity_tier': 'smt_linear',
+                'call_count_scaling': 'linear_in_transitions',
+                'verification_scope': 'smt_local',
+                'declared_diagnostic_codes': ['W_DEAD_GUARD'],
+                'result_kind': 'unknown',
+                'reason_code': None,
+                'reason': 'solver returned unknown',
+                'partial_diagnostic_count': 1,
+            }],
+        }
+
+        jsonschema.Draft7Validator.check_schema(schema)
+        validator = jsonschema.Draft7Validator(schema)
+        errors = list(validator.iter_errors(payload))
+        assert errors == []
+
+        verification_definitions = (
+            'VerificationReport',
+            'VerificationPolicy',
+            'VerificationSummary',
+            'VerificationAlgorithm',
+        )
+        for name in verification_definitions:
+            assert schema['definitions'][name]['additionalProperties'] is False
+
+        algorithm_schema = schema['definitions']['VerificationAlgorithm']
+        assert set(algorithm_schema['required']) == set(
+            algorithm_schema['properties']
+        )
+        assert algorithm_schema['properties']['result_kind']['enum'] == [
+            'not_run',
+            'sat',
+            'unsat',
+            'timeout',
+            'unknown',
+            'undecidable_skip',
+        ]
+
+        extra_property_paths = (
+            ('verification',),
+            ('verification', 'requested_policy'),
+            ('verification', 'summary'),
+            ('verification', 'algorithms', 0),
+        )
+        for path in extra_property_paths:
+            invalid = json.loads(json.dumps(payload))
+            node = invalid
+            for part in path:
+                node = node[part]
+            node['unexpected'] = True
+            assert list(validator.iter_errors(invalid))
 
     def test_schema_documents_span_contract(self):
         schema = self._load_schema()
@@ -2401,10 +2478,78 @@ class TestInspectModelVerifyIntegration:
             '_run_verify_inspect_algorithms',
             fail_if_called,
         )
+        monkeypatch.setattr(
+            inspect_module,
+            '_project_verify_inspect_eligibility',
+            fail_if_called,
+        )
 
         report = inspect_model(_parse(SIMPLE_DSL))
 
         assert isinstance(report, ModelInspect)
+        assert report.verification == inspect_module.InspectVerificationReport(
+            supported=True,
+            enabled=False,
+            provider='pyfcstm.verify',
+            reason_code='verification_disabled',
+            requested_policy=inspect_module.InspectVerificationPolicy(
+                max_complexity_tier='structural',
+                max_call_count_scaling='linear_in_transitions',
+                smt_timeout_ms=None,
+            ),
+            summary=inspect_module.InspectVerificationSummary(
+                registered=None,
+                executed=0,
+                not_run=0,
+                indeterminate=0,
+            ),
+            algorithms=(),
+        )
+
+    def test_default_verification_projection_serializes_without_verify_import(self):
+        script = """
+import json
+import sys
+
+from pyfcstm.diagnostics import inspect_model
+from pyfcstm.dsl import parse_with_grammar_entry
+from pyfcstm.model import parse_dsl_node_to_state_machine
+
+ast = parse_with_grammar_entry('state Root;', 'state_machine_dsl')
+machine = parse_dsl_node_to_state_machine(ast)
+verification = inspect_model(machine).to_json()['verification']
+if any(name == 'pyfcstm.verify' or name.startswith('pyfcstm.verify.')
+       for name in sys.modules):
+    raise SystemExit('verify imported on disabled path')
+print(json.dumps(verification, sort_keys=True))
+"""
+        result = subprocess.run(
+            [sys.executable, '-c', script],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert json.loads(result.stdout) == {
+            'supported': True,
+            'enabled': False,
+            'provider': 'pyfcstm.verify',
+            'reason_code': 'verification_disabled',
+            'requested_policy': {
+                'max_complexity_tier': 'structural',
+                'max_call_count_scaling': 'linear_in_transitions',
+                'smt_timeout_ms': None,
+            },
+            'summary': {
+                'registered': None,
+                'executed': 0,
+                'not_run': 0,
+                'indeterminate': 0,
+            },
+            'algorithms': [],
+        }
 
     def test_default_inspect_path_does_not_call_verify_topology(self, monkeypatch):
         def fail_if_called(*args, **kwargs):
@@ -2528,6 +2673,122 @@ class TestInspectModelVerifyIntegration:
             'System.A',
             'System.B',
         ]
+
+    def test_enable_verify_projects_plan_and_results_in_registry_order(self):
+        report = inspect_model(_parse(SIMPLE_DSL), enable_verify=True)
+        verification = report.verification
+
+        assert verification.supported is True
+        assert verification.enabled is True
+        assert verification.provider == 'pyfcstm.verify'
+        assert verification.reason_code is None
+        assert verification.summary.registered == len(verification.algorithms)
+        assert verification.summary.executed + verification.summary.not_run == len(
+            verification.algorithms
+        )
+        assert verification.summary.executed > 0
+        assert verification.summary.not_run > 0
+        assert [item.algorithm_name for item in verification.algorithms[:2]] == [
+            'topological_reachable_set',
+            'unreachable_states',
+        ]
+        excluded = next(
+            item for item in verification.algorithms
+            if item.result_kind == 'not_run'
+        )
+        assert excluded.reason_code in {
+            'algorithm_not_closed',
+            'complexity_tier_exceeds_policy',
+            'call_count_scaling_exceeds_policy',
+        }
+        assert isinstance(verification.algorithms, tuple)
+        with pytest.raises(AttributeError):
+            verification.enabled = False
+
+        serialized = report.to_json()['verification']
+        assert isinstance(serialized['algorithms'], list)
+        assert isinstance(
+            serialized['algorithms'][0]['declared_diagnostic_codes'],
+            list,
+        )
+
+    def test_smt_linear_policy_runs_every_registered_algorithm(self):
+        report = inspect_model(
+            _parse(SIMPLE_DSL),
+            enable_verify=True,
+            max_complexity_tier='smt_linear',
+        )
+
+        assert report.verification.summary.registered == 14
+        assert report.verification.summary.executed == 14
+        assert report.verification.summary.not_run == 0
+        assert all(
+            algorithm.result_kind != 'not_run'
+            for algorithm in report.verification.algorithms
+        )
+
+    def test_indeterminate_partial_results_are_projected_not_diagnosed(
+            self,
+            monkeypatch,
+    ):
+        from pyfcstm.verify import InspectRunResult
+
+        meta = SimpleNamespace(
+            name='dead_guard',
+            complexity_tier='smt_linear',
+            call_count_scaling='linear_in_transitions',
+            verification_scope='smt_local',
+            diagnostic_codes=('W_DEAD_GUARD',),
+        )
+        plan = (SimpleNamespace(
+            meta=meta,
+            eligible=True,
+            not_run_reason_code=None,
+        ),)
+        result = InspectRunResult(
+            algorithm_name='dead_guard',
+            complexity_tier='smt_linear',
+            smt_logic='QF_LIRA',
+            verification_scope='smt_local',
+            diagnostic_codes=('W_DEAD_GUARD',),
+            result_kind='timeout',
+            diagnostics=({
+                'code': 'W_DEAD_GUARD',
+                'algorithm_name': 'dead_guard',
+                'data': {},
+            },),
+            reason='solver timeout after partial exploration',
+            raw_result=None,
+        )
+        monkeypatch.setattr(
+            inspect_module,
+            '_project_verify_inspect_eligibility',
+            lambda **kwargs: plan,
+        )
+        monkeypatch.setattr(
+            inspect_module,
+            '_run_verify_inspect_algorithms',
+            lambda machine, **kwargs: (result,),
+        )
+
+        report = inspect_model(
+            _parse(SIMPLE_DSL),
+            enable_verify=True,
+            max_complexity_tier='smt_linear',
+        )
+
+        assert not any(
+            diagnostic.code == 'W_DEAD_GUARD'
+            for diagnostic in report.diagnostics
+        )
+        assert report.verification.summary == inspect_module.InspectVerificationSummary(
+            registered=1,
+            executed=1,
+            not_run=0,
+            indeterminate=1,
+        )
+        assert report.verification.algorithms[0].partial_diagnostic_count == 1
+        assert report.verification.algorithms[0].reason_code is None
 
     def test_enable_verify_reports_deadlock_noexit_with_single_node_scc(self):
         dsl = """
@@ -3156,6 +3417,20 @@ class TestInspectModelVerifyIntegration:
         assert_all_diags_match_schema([dead_guard], context='verify-smt')
         _assert_has_span(dead_guard.span)
         assert 'x > 1 && x < 0' in _slice_by_span(dsl, dead_guard.span)
+        assert report.verification.requested_policy == (
+            inspect_module.InspectVerificationPolicy(
+                max_complexity_tier='smt_linear',
+                max_call_count_scaling='linear_in_transitions',
+                smt_timeout_ms=None,
+            )
+        )
+        dead_guard_run = next(
+            algorithm for algorithm in report.verification.algorithms
+            if algorithm.algorithm_name == 'dead_guard'
+        )
+        assert dead_guard_run.result_kind == 'unsat'
+        assert dead_guard_run.reason_code is None
+        assert dead_guard_run.partial_diagnostic_count == 0
 
     @pytest.mark.parametrize(
         'raw_diagnostic',

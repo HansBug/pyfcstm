@@ -107,6 +107,8 @@ Inspect 报告参考
      - 组合状态路径到被切面动作影响的后代叶状态。
    * - ``action_ref_graph``
      - 命名动作签名到被引用命名动作签名。
+   * - ``verification``
+     - 验证提供方支持情况、请求策略、执行覆盖率，以及每个已注册算法的一条结果记录。
    * - ``diagnostics``
      - ``ModelDiagnostic`` 对象数组。
 
@@ -142,10 +144,44 @@ Inspect 报告参考
    * - ``Span``
      - ``line``、``column``、``end_line`` 和 ``end_column``。
 
+验证执行元数据
+----------------------------------------
+
+``verification`` 记录哪些验证能力可用、哪些工作实际执行。它是执行元数据，不是另一组诊断。
+算法被禁用、被策略排除或返回不确定结果时，不会仅因该执行结果而生成诊断。特别是，不确定结果中的
+部分诊断只公开数量，不公开其载荷。
+
+.. list-table:: 验证报告字段
+   :header-rows: 1
+   :widths: 28 72
+
+   * - 字段
+     - 含义
+   * - ``supported`` / ``provider``
+     - 当前实现是否具备验证提供方及其稳定名称。jsfcstm 报告 ``supported=false`` 和
+       ``provider=null``。
+   * - ``enabled`` / ``reason_code``
+     - 是否请求了验证。``verification_disabled`` 与 ``provider_unsupported`` 区分两种未运行的顶层状态。
+   * - ``requested_policy``
+     - 请求的最高复杂度层级、调用次数规模和 SMT 超时。不支持验证的提供方把三者都报告为 ``null``。
+   * - ``summary``
+     - ``registered``、``executed``、``not_run`` 和 ``indeterminate`` 计数。验证被禁用时不会加载注册表，
+       因此 ``registered`` 为 ``null``，``not_run`` 为零，而不是伪造一个与注册表大小相等的计数。
+   * - ``algorithms``
+     - 有序的算法级元数据，包括声明的诊断码、原始 ``result_kind``、排除原因和
+       ``partial_diagnostic_count``。
+
+算法 ``result_kind`` 原样保留 ``sat``、``unsat``、``timeout``、``unknown`` 或
+``undecidable_skip``；执行前被排除的算法使用 ``not_run``。SAT 与 UNSAT 并不在所有算法中统一表示
+“通过”或“失败”，其极性取决于被检查的性质。因此 human 渲染器只汇报已执行与不确定覆盖率，并且只展开
+不确定算法及其原因。
+
 LLM 报告契约
 ----------------------------------------
 
 ``llm-json`` 和 ``llm-md`` 是修复循环使用的表达契约。它们不替代完整报告。
+其稳定的 ``pyfcstm.inspect.llm.v1`` schema 与输出不包含 ``verification`` 执行元数据；需要覆盖率或
+不确定结果的消费者必须使用完整 JSON 报告。
 
 .. list-table:: LLM 顶层字段
    :header-rows: 1

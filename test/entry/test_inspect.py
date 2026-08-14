@@ -169,6 +169,64 @@ class TestEntryInspect:
         assert "W_DEAD_GUARD" not in {
             diagnostic["code"] for diagnostic in payload["diagnostics"]
         }
+        assert payload["verification"] == {
+            "supported": True,
+            "enabled": False,
+            "provider": "pyfcstm.verify",
+            "reason_code": "verification_disabled",
+            "requested_policy": {
+                "max_complexity_tier": "structural",
+                "max_call_count_scaling": "linear_in_transitions",
+                "smt_timeout_ms": None,
+            },
+            "summary": {
+                "registered": None,
+                "executed": 0,
+                "not_run": 0,
+                "indeterminate": 0,
+            },
+            "algorithms": [],
+        }
+
+    def test_inspect_enable_verify_reports_structural_coverage(self, inspect_code_file):
+        result = _run_inspect(
+            "-i",
+            inspect_code_file,
+            "--format",
+            "json",
+            "--enable-verify",
+        )
+
+        assert result.exitcode == 0
+        summary = _json_from_stdout(result)["verification"]["summary"]
+        assert summary == {
+            "registered": 14,
+            "executed": 6,
+            "not_run": 8,
+            "indeterminate": 0,
+        }
+
+    def test_inspect_enable_smt_linear_reports_complete_coverage(self, inspect_code_file):
+        result = _run_inspect(
+            "-i",
+            inspect_code_file,
+            "--format",
+            "json",
+            "--enable-verify",
+            "--max-complexity-tier",
+            "smt_linear",
+            "--smt-timeout-ms",
+            "1000",
+        )
+
+        assert result.exitcode == 0
+        verification = _json_from_stdout(result)["verification"]
+        assert verification["summary"] == {
+            "registered": 14,
+            "executed": 14,
+            "not_run": 0,
+            "indeterminate": 0,
+        }
 
     def test_inspect_format_llm_json_outputs_stable_packet(self, inspect_code_file):
         result = _run_inspect("-i", inspect_code_file, "--format", "llm-json")

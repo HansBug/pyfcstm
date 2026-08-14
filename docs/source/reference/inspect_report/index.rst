@@ -111,6 +111,9 @@ these required top-level fields.
      - Composite path to descendant leaves reached by aspect actions.
    * - ``action_ref_graph``
      - Named-action signature to referenced named-action signatures.
+   * - ``verification``
+     - Verification-provider support, requested policy, execution coverage,
+       and one result record per registered algorithm.
    * - ``diagnostics``
      - Array of ``ModelDiagnostic`` objects.
 
@@ -146,11 +149,56 @@ Nested object contracts
    * - ``Span``
      - ``line``, ``column``, ``end_line``, and ``end_column``.
 
+Verification execution metadata
+-------------------------------
+
+``verification`` records what verification work was available and executed.
+It is execution metadata, not another diagnostic collection.  An algorithm
+that was disabled, excluded by policy, or returned an indeterminate result does
+not create a diagnostic merely because of that execution outcome.  In
+particular, partial diagnostics from an indeterminate result are counted but
+their payloads are not published.
+
+.. list-table:: Verification report fields
+   :header-rows: 1
+   :widths: 28 72
+
+   * - Field
+     - Meaning
+   * - ``supported`` / ``provider``
+     - Whether this implementation has a verification provider and its stable
+       name.  jsfcstm reports ``supported=false`` and ``provider=null``.
+   * - ``enabled`` / ``reason_code``
+     - Whether verification was requested.  ``verification_disabled`` and
+       ``provider_unsupported`` distinguish the two non-running top-level
+       states.
+   * - ``requested_policy``
+     - Requested maximum complexity tier, call-count scaling, and SMT timeout.
+       An unsupported provider reports all three values as ``null``.
+   * - ``summary``
+     - ``registered``, ``executed``, ``not_run``, and ``indeterminate`` counts.
+       When verification is disabled, the registry stays lazy, so
+       ``registered`` is ``null`` and ``not_run`` is zero rather than a
+       fabricated registry-sized count.
+   * - ``algorithms``
+     - Ordered algorithm-level metadata including the declared diagnostic
+       codes, raw ``result_kind``, exclusion reason, and
+       ``partial_diagnostic_count``.
+
+Algorithm ``result_kind`` preserves ``sat``, ``unsat``, ``timeout``,
+``unknown``, or ``undecidable_skip`` exactly; an algorithm excluded before
+execution uses ``not_run``.  SAT and UNSAT do not mean one uniform "pass" or
+"fail" across algorithms because the polarity depends on the property being
+checked.  The human renderer therefore reports executed and indeterminate
+coverage, and expands only indeterminate algorithms and their reasons.
+
 LLM report contract
 -------------------
 
 ``llm-json`` and ``llm-md`` are presentation contracts for repair loops. They do
-not replace the full report.
+not replace the full report.  Their stable ``pyfcstm.inspect.llm.v1`` schema and
+output do not include ``verification`` execution metadata; consumers that need
+coverage or indeterminate results must use the full JSON report.
 
 .. list-table:: LLM top-level fields
    :header-rows: 1

@@ -254,6 +254,72 @@ export interface ModelMetrics {
     abstract_action_inventory: string[];
 }
 
+export type InspectVerificationResultKind =
+    | 'not_run'
+    | 'sat'
+    | 'unsat'
+    | 'timeout'
+    | 'unknown'
+    | 'undecidable_skip';
+
+export type InspectVerificationComplexityTier =
+    | 'structural'
+    | 'smt_linear'
+    | 'smt_nonlinear_decidable'
+    | 'smt_undecidable_heuristic';
+
+export type InspectVerificationCallCountScaling =
+    | 'none'
+    | 'one'
+    | 'linear_in_states'
+    | 'linear_in_transitions'
+    | 'linear_in_vars'
+    | 'linear_in_leaves'
+    | 'quadratic_in_outgoing_per_state'
+    | 'quadratic_in_states'
+    | 'vars_times_transitions';
+
+export type InspectVerificationAlgorithmReasonCode =
+    | 'algorithm_not_closed'
+    | 'complexity_tier_exceeds_policy'
+    | 'call_count_scaling_exceeds_policy'
+    | null;
+
+export interface InspectVerificationPolicy {
+    max_complexity_tier: InspectVerificationComplexityTier | null;
+    max_call_count_scaling: InspectVerificationCallCountScaling | null;
+    smt_timeout_ms: number | null;
+}
+
+export interface InspectVerificationSummary {
+    registered: number | null;
+    executed: number;
+    not_run: number;
+    indeterminate: number;
+}
+
+export interface InspectVerificationAlgorithm {
+    algorithm_name: string;
+    complexity_tier: InspectVerificationComplexityTier;
+    call_count_scaling: InspectVerificationCallCountScaling;
+    verification_scope: 'topological_only' | 'smt_local' | null;
+    declared_diagnostic_codes: string[];
+    result_kind: InspectVerificationResultKind;
+    reason_code: InspectVerificationAlgorithmReasonCode;
+    reason: string | null;
+    partial_diagnostic_count: number;
+}
+
+export interface InspectVerificationReport {
+    supported: boolean;
+    enabled: boolean;
+    provider: string | null;
+    reason_code: 'verification_disabled' | 'provider_unsupported' | null;
+    requested_policy: InspectVerificationPolicy;
+    summary: InspectVerificationSummary;
+    algorithms: InspectVerificationAlgorithm[];
+}
+
 /**
  * Top-level structured view of a state machine model.
  */
@@ -274,6 +340,7 @@ export interface ModelInspect {
     aspect_impact_map: Record<string, string[]>;
     action_ref_graph: Record<string, string[]>;
     diagnostics: ModelDiagnosticJson[];
+    verification: InspectVerificationReport;
 }
 
 /**
@@ -363,6 +430,24 @@ export function inspectModel(machine: StateMachine, options: InspectModelOptions
             },
             machine,
         ),
+        verification: {
+            supported: false,
+            enabled: false,
+            provider: null,
+            reason_code: 'provider_unsupported',
+            requested_policy: {
+                max_complexity_tier: null,
+                max_call_count_scaling: null,
+                smt_timeout_ms: null,
+            },
+            summary: {
+                registered: null,
+                executed: 0,
+                not_run: 0,
+                indeterminate: 0,
+            },
+            algorithms: [],
+        },
     };
 }
 

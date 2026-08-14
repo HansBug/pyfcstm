@@ -3713,8 +3713,8 @@ W_TRANSITION_SHADOWED:
   capability: requires_solver
   emit_tier: verify_pipeline
   description: >-
-    A later outgoing transition is fully covered by earlier same-source
-    triggers and therefore cannot be selected.
+    A later transition in an ordered selection domain is fully covered by
+    earlier triggers and therefore cannot be selected.
   refs:
     algorithm_name:
       type: str
@@ -3736,7 +3736,12 @@ W_TRANSITION_SHADOWED:
     source_state_path:
       type: str
       required: true
-      description: Dotted source state path whose outgoing order creates the shadowing.
+      description: Dotted owner state path whose ordered selection domain creates the shadowing.
+    selection_domain_kind:
+      type: str
+      required: false
+      description: Ordered selection domain containing the shadowed transition.
+      enum: ['state_outgoing', 'composite_initial']
     reason:
       type: str
       required: true
@@ -3752,8 +3757,9 @@ W_TRANSITION_SHADOWED:
       description: Stable summaries of earlier transitions that shadow this transition.
   for_llm:
     summary: >-
-      Transition ordering means an earlier same-source transition consumes all
-      cases that could have reached this later transition.
+      Transition ordering means earlier transitions in the same ordered
+      selection domain consume all cases that could have reached this later
+      transition.
     recommended_actions:
       - kind: reorder_transitions
         target: transition_list

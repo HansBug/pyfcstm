@@ -3235,6 +3235,50 @@ class TestTransitionShadowedByPredecessor:
         diag = assert_single_diag(result, "W_TRANSITION_SHADOWED")
         assert diag["data"]["reason"] == "unconditional_catchall"
 
+    def test_initial_transition_shadowing_reports_later_event_transition(self):
+        machine = parse_machine(
+            """
+            state Root {
+                event Go;
+                state A;
+                state B;
+                [*] -> A;
+                [*] -> B : Go;
+            }
+            """
+        )
+
+        result = transition_shadowed_by_predecessor(machine, variables(machine))
+
+        assert result.kind == "unsat"
+        diag = assert_single_diag(result, "W_TRANSITION_SHADOWED")
+        assert diag["data"]["reason"] == "unconditional_catchall"
+        assert diag["data"]["source"] == "Root"
+        assert diag["data"]["transition"]["from_state"] == "[*]"
+        assert diag["data"]["transition"]["to_state"] == "B"
+        assert diag["data"]["shadowed_by"][0]["to_state"] == "A"
+
+    def test_initial_shadowing_skips_unstable_predecessor(self):
+        machine = parse_machine(
+            """
+            state Root {
+                event Later;
+                state Broken {
+                    state Waiting;
+                    [*] -> Waiting : Later;
+                }
+                state B;
+                [*] -> Broken;
+                [*] -> B;
+            }
+            """
+        )
+
+        result = transition_shadowed_by_predecessor(machine, variables(machine))
+
+        assert result.kind == "undecidable_skip"
+        assert result.diagnostics == ()
+
 
 class TestEnterPostconditionImpliesDuringPrecondition:
     """Test first-cycle lifecycle coupling checks."""

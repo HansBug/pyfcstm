@@ -1547,6 +1547,7 @@ W_TRANSITION_SHADOWED
 .. diagnostics-ref W_TRANSITION_SHADOWED transition type=dict required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_TRANSITION_SHADOWED transition_summary type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_TRANSITION_SHADOWED source_state_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_TRANSITION_SHADOWED selection_domain_kind type=str required=false enum=state_outgoing|composite_initial item_enum=- exact_values=-
 .. diagnostics-ref W_TRANSITION_SHADOWED reason type=str required=true enum=guard_shadow|duplicate_event|unconditional_catchall|prior_trigger_cover item_enum=- exact_values=-
 .. diagnostics-ref W_TRANSITION_SHADOWED shadowed_by_count type=int required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_TRANSITION_SHADOWED shadowed_by type=list[str] required=true enum=- item_enum=- exact_values=-
@@ -1556,9 +1557,9 @@ W_TRANSITION_SHADOWED
 
 **Registry facts.** Severity ``warning``; emit tier ``verify_pipeline``; capability ``requires_solver``; span object ``transition``.
 
-**Meaning.** A later outgoing transition is fully covered by earlier same-source triggers and therefore cannot be selected.
+**Meaning.** A later transition in an ordered selection domain is fully covered by earlier triggers and therefore cannot be selected.
 
-**LLM repair summary.** Transition ordering means an earlier same-source transition consumes all cases that could have reached this later transition.
+**LLM repair summary.** Transition ordering means earlier transitions in the same ordered selection domain consume all cases that could have reached this later transition.
 
 .. list-table:: Refs schema
    :header-rows: 1
@@ -1587,7 +1588,11 @@ W_TRANSITION_SHADOWED
    * - ``source_state_path``
      - ``str``
      - yes
-     - Dotted source state path whose outgoing order creates the shadowing.
+     - Dotted owner state path whose ordered selection domain creates the shadowing.
+   * - ``selection_domain_kind``
+     - ``str``
+     - no
+     - Ordered selection domain containing the shadowed transition. (enum: ``state_outgoing``, ``composite_initial``)
    * - ``reason``
      - ``str``
      - yes

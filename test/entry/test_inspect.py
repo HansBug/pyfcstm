@@ -5,6 +5,7 @@ import subprocess
 import sys
 import textwrap
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 
 import pytest
 from hbutils.testing import isolated_directory, simulate_entry
@@ -227,6 +228,26 @@ class TestEntryInspect:
             "not_run": 0,
             "indeterminate": 0,
         }
+
+    def test_indeterminate_verification_does_not_change_cli_exit_code(
+        self, monkeypatch, inspect_code_file
+    ):
+        import pyfcstm.entry.inspect as inspect_entry_module
+
+        monkeypatch.setattr(
+            inspect_entry_module,
+            "_build_inspect_output_with_report",
+            lambda *args, **kwargs: (
+                "verification: 1/1 run, 0 not run by policy, 1 indeterminate\n",
+                SimpleNamespace(diagnostics=()),
+            ),
+        )
+
+        result = _run_inspect(
+            "-i", inspect_code_file, "--enable-verify", "--format", "human"
+        )
+
+        assert result.exitcode == 0
 
     def test_inspect_format_llm_json_outputs_stable_packet(self, inspect_code_file):
         result = _run_inspect("-i", inspect_code_file, "--format", "llm-json")

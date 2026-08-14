@@ -144,7 +144,93 @@
           "type": "array",
           "items": { "$ref": "#/definitions/VerificationAlgorithm" }
         }
+      },
+      "oneOf": [
+        {
+          "description": "A provider that cannot perform verification.",
+          "properties": {
+            "supported": { "const": false },
+            "enabled": { "const": false },
+            "provider": { "const": null },
+            "reason_code": { "const": "provider_unsupported" },
+            "requested_policy": { "$ref": "#/definitions/UnsupportedVerificationPolicy" },
+            "summary": { "$ref": "#/definitions/EmptyVerificationSummary" },
+            "algorithms": { "const": [] }
+          }
+        },
+        {
+          "description": "A supported provider whose verification was not requested.",
+          "properties": {
+            "supported": { "const": true },
+            "enabled": { "const": false },
+            "provider": { "const": "pyfcstm.verify" },
+            "reason_code": { "const": "verification_disabled" },
+            "requested_policy": { "$ref": "#/definitions/VerificationPolicy" },
+            "summary": { "$ref": "#/definitions/EmptyVerificationSummary" },
+            "algorithms": { "const": [] }
+          }
+        },
+        {
+          "description": "A supported provider that executed its verification plan.",
+          "properties": {
+            "supported": { "const": true },
+            "enabled": { "const": true },
+            "provider": { "const": "pyfcstm.verify" },
+            "reason_code": { "const": null },
+            "requested_policy": { "$ref": "#/definitions/EnabledVerificationPolicy" },
+            "summary": { "$ref": "#/definitions/EnabledVerificationSummary" },
+            "algorithms": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/definitions/VerificationAlgorithm" }
+            }
+          }
+        }
+      ]
+    },
+    "UnsupportedVerificationPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_complexity_tier", "max_call_count_scaling", "smt_timeout_ms"
+      ],
+      "properties": {
+        "max_complexity_tier": { "const": null },
+        "max_call_count_scaling": { "const": null },
+        "smt_timeout_ms": { "const": null }
       }
+    },
+    "EnabledVerificationPolicy": {
+      "allOf": [
+        { "$ref": "#/definitions/VerificationPolicy" },
+        {
+          "properties": {
+            "max_complexity_tier": { "type": "string" },
+            "max_call_count_scaling": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "EmptyVerificationSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["registered", "executed", "not_run", "indeterminate"],
+      "properties": {
+        "registered": { "const": null },
+        "executed": { "const": 0 },
+        "not_run": { "const": 0 },
+        "indeterminate": { "const": 0 }
+      }
+    },
+    "EnabledVerificationSummary": {
+      "allOf": [
+        { "$ref": "#/definitions/VerificationSummary" },
+        {
+          "properties": {
+            "registered": { "type": "integer", "minimum": 1 }
+          }
+        }
+      ]
     },
     "VerificationPolicy": {
       "type": "object",
@@ -236,7 +322,40 @@
         },
         "reason": { "type": ["string", "null"] },
         "partial_diagnostic_count": { "type": "integer", "minimum": 0 }
-      }
+      },
+      "oneOf": [
+        {
+          "description": "An algorithm excluded before execution.",
+          "properties": {
+            "result_kind": { "const": "not_run" },
+            "reason_code": {
+              "enum": [
+                "algorithm_not_closed", "complexity_tier_exceeds_policy",
+                "call_count_scaling_exceeds_policy"
+              ]
+            },
+            "reason": { "const": null },
+            "partial_diagnostic_count": { "const": 0 }
+          }
+        },
+        {
+          "description": "A definite algorithm result.",
+          "properties": {
+            "result_kind": { "enum": ["sat", "unsat"] },
+            "reason_code": { "const": null },
+            "partial_diagnostic_count": { "const": 0 }
+          }
+        },
+        {
+          "description": "An algorithm result without a definite conclusion.",
+          "properties": {
+            "result_kind": {
+              "enum": ["timeout", "unknown", "undecidable_skip"]
+            },
+            "reason_code": { "const": null }
+          }
+        }
+      ]
     },
     "StateInfo": {
       "type": "object",

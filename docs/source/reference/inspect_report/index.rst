@@ -192,6 +192,12 @@ execution uses ``not_run``.  SAT and UNSAT do not mean one uniform "pass" or
 checked.  The human renderer therefore reports executed and indeterminate
 coverage, and expands only indeterminate algorithms and their reasons.
 
+For structural/topological algorithms, ``sat`` means that the structural
+analysis completed and produced its topology result; it is not a claim that
+the model satisfies every property.  Consumers must read the algorithm's
+diagnostics together with ``result_kind`` rather than treating structural
+``sat`` as a universal pass verdict.
+
 LLM report contract
 -------------------
 

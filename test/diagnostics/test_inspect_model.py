@@ -645,6 +645,32 @@ class TestSchemaJsonValidates:
             node['unexpected'] = True
             assert list(validator.iter_errors(invalid))
 
+    def test_schema_rejects_contradictory_verification_states(self):
+        jsonschema = pytest.importorskip('jsonschema')
+        schema = self._load_schema()
+        validator = jsonschema.Draft7Validator(schema)
+        payload = inspect_model(_parse(SIMPLE_DSL)).to_json()
+
+        unsupported_but_enabled = json.loads(json.dumps(payload))
+        unsupported_but_enabled['verification'].update({
+            'supported': False,
+            'enabled': True,
+            'provider': 'pyfcstm.verify',
+            'reason_code': None,
+        })
+        assert list(validator.iter_errors(unsupported_but_enabled))
+
+        invalid_not_run = inspect_model(
+            _parse(SIMPLE_DSL), enable_verify=True
+        ).to_json()
+        invalid_not_run['verification']['algorithms'][0].update({
+            'result_kind': 'not_run',
+            'reason_code': None,
+            'reason': None,
+            'partial_diagnostic_count': 1,
+        })
+        assert list(validator.iter_errors(invalid_not_run))
+
     def test_schema_documents_span_contract(self):
         schema = self._load_schema()
         span_def = schema['definitions']['Span']

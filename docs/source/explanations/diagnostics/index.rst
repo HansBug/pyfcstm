@@ -264,6 +264,12 @@ inspect, verify, generated code, and repair tooling clear.
    * - Duplicate state name
      - Model validation exits with ``Invalid state machine model``. Treat it as
        a process failure, even if the registry contains related ``E_*`` codes.
+       Pass ``--collect-errors`` to get a report that lists every ``E_*``
+       instead; the command still exits non-zero.
+   * - ``--collect-errors``
+     - The report then carries the model errors alongside the warnings, and the
+       model behind it may be internally inconsistent. It does not mean the
+       model is usable, and it does not turn the errors into warnings.
    * - C-family numeric warning
      - It can be a real C/C++ deployment risk while remaining non-applicable to
        Python generated runtimes.

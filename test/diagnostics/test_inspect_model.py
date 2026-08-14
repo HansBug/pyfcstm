@@ -3752,3 +3752,118 @@ def test_implication_guard_keeps_higher_precedence_right_operand_unwrapped():
     )
 
     assert report.transitions[1].guard == 'a > 0 => b > 0 && c > 0'
+
+
+def _parse_collecting(src):
+    """Build a model in collect mode, returning the partially-built model.
+
+    ``parse_dsl_node_to_state_machine`` documents that ``collect=True`` returns
+    the partially-built model alongside the accumulated diagnostics, so callers
+    can hold a model whose transition endpoints do not all resolve.
+    """
+    ast = parse_with_grammar_entry(src, 'state_machine_dsl')
+    machine, diagnostics = parse_dsl_node_to_state_machine(ast, collect=True)
+    return machine, diagnostics
+
+
+@pytest.mark.unittest
+class TestInspectModelOnUnresolvedEndpoints:
+    """A model carrying ``E_DANGLING_TRANSITION`` must not crash inspect.
+
+    ``parse_dsl_node_to_state_machine(collect=True)`` hands back a model whose
+    transition endpoints may not resolve. Feeding that documented result into
+    ``inspect_model`` must produce a report rather than propagate a raw
+    ``KeyError`` out of the topology graph builder.
+    """
+
+    def test_unresolved_source_with_verify_does_not_raise(self):
+        machine, diagnostics = _parse_collecting(
+            'state Root { state A; NoSuch -> A; [*] -> A; }'
+        )
+        assert [d.code for d in diagnostics] == ['E_DANGLING_TRANSITION']
+
+        report = inspect_model(machine, enable_verify=True)
+
+        assert isinstance(report, ModelInspect)
+
+    def test_unresolved_target_with_verify_does_not_raise(self):
+        machine, diagnostics = _parse_collecting(
+            'state Root { state A; A -> Ghost; [*] -> A; }'
+        )
+        assert [d.code for d in diagnostics] == ['E_DANGLING_TRANSITION']
+
+        report = inspect_model(machine, enable_verify=True)
+
+        assert isinstance(report, ModelInspect)
+
+    @pytest.mark.parametrize(
+        ('label', 'source'),
+        [
+            ('unresolved_source', 'state Root { state A; NoSuch -> A; [*] -> A; }'),
+            ('unresolved_target', 'state Root { state A; A -> Ghost; [*] -> A; }'),
+        ],
+    )
+    def test_default_tier_also_survives(self, label, source):
+        """The default (verify-disabled) report was already safe; keep it so."""
+        machine, _ = _parse_collecting(source)
+
+        report = inspect_model(machine)
+
+        assert isinstance(report, ModelInspect)
+
+    def test_model_diagnostics_lead_the_report(self):
+        machine, diagnostics = _parse_collecting(
+            'state Root { state A; state A; [*] -> A; }'
+        )
+
+        report = inspect_model(machine, model_diagnostics=diagnostics)
+
+        assert report.diagnostics[0].code == 'E_DUPLICATE_STATE'
+
+    def test_model_diagnostics_default_keeps_strict_report_shape(self):
+        machine, _ = _parse_collecting(
+            'state Root { state A; state A; [*] -> A; }'
+        )
+
+        without = inspect_model(machine)
+        with_diags = inspect_model(machine, model_diagnostics=())
+
+        assert [d.code for d in without.diagnostics] == [
+            d.code for d in with_diags.diagnostics
+        ]
+
+    def test_forwarded_model_diagnostics_keep_their_span(self):
+        """Spanless diagnostics are dropped by the report builder, so the
+        forwarded model errors must arrive with a span attached."""
+        machine, diagnostics = _parse_collecting(
+            'state Root {\n'
+            '    state A;\n'
+            '    state A;\n'
+            '    NoSuch -> A;\n'
+            '    state Outer { state Inner; }\n'
+            '    [*] -> A;\n'
+            '}'
+        )
+
+        report = inspect_model(machine, model_diagnostics=diagnostics)
+
+        errors = [d for d in report.diagnostics if d.is_error()]
+        assert len(errors) == len(diagnostics)
+        for diagnostic in errors:
+            _assert_has_span(diagnostic.span)
+
+    def test_unresolved_source_on_an_event_transition_does_not_raise(self):
+        """Event-triggered transitions reach a separate lookup.
+
+        ``_event_consumer_reachability`` resolves the source only for transitions
+        that carry an event, so an unresolved source there is a distinct site
+        from the one the plain-transition cases cover.
+        """
+        machine, diagnostics = _parse_collecting(
+            'state Root { event Go; state A; NoSuch -> A : Go; [*] -> A; }'
+        )
+        assert 'E_DANGLING_TRANSITION' in {d.code for d in diagnostics}
+
+        report = inspect_model(machine, enable_verify=True)
+
+        assert isinstance(report, ModelInspect)

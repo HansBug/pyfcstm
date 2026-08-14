@@ -2139,6 +2139,43 @@ def _iter_ordered_outgoing(
                 yield source, transitions
 
 
+def _iter_ordered_selection_domains(
+    machine: StateMachine,
+) -> Iterable[Tuple[State, List[Transition], str]]:
+    """Yield each FCSTM ordered transition-selection domain.
+
+    Normal outgoing transitions and a composite state's initial transitions are
+    selected by declaration order, but they have different source objects for
+    stable-continuation validation.  Keep the domain kind explicit so callers
+    can share trigger/shadow logic without conflating those semantics.
+
+    :param machine: State machine to inspect.
+    :type machine: StateMachine
+    :return: Domain owner, ordered transitions, and domain kind.
+    :rtype: Iterable[Tuple[State, List[Transition], str]]
+
+    Example::
+
+        >>> from pyfcstm.dsl.parse import parse_with_grammar_entry
+        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> code = "state Root { state A; state B; [*] -> A; [*] -> B; }"
+        >>> machine = parse_dsl_node_to_state_machine(
+        ...     parse_with_grammar_entry(code, "state_machine_dsl")
+        ... )
+        >>> [
+        ...     (state.name, kind)
+        ...     for state, _, kind in _iter_ordered_selection_domains(machine)
+        ... ]
+        [('Root', 'composite_initial')]
+    """
+    for source, outgoing in _iter_ordered_outgoing(machine):
+        yield source, outgoing, "state_outgoing"
+    for source in machine.walk_states():
+        initial = source.init_transitions
+        if initial:
+            yield source, initial, "composite_initial"
+
+
 def _state_has_definite_stable_entry(state: State) -> bool:
     """Return whether entering ``state`` definitely reaches a stable leaf.
 
@@ -2215,6 +2252,31 @@ def _transition_has_definite_stable_continuation(
     if parent is None or not isinstance(transition.to_state, str):
         return False
     target = parent.substates.get(transition.to_state)
+    if target is None:
+        return False
+    return _state_has_definite_stable_entry(target)
+
+
+def _initial_transition_has_definite_stable_continuation(
+    source: State,
+    transition: Transition,
+) -> bool:
+    """Return whether an initial transition reaches a stable entry.
+
+    Initial transitions are owned by the composite state itself, whereas
+    ordinary transitions are stored on that state's parent.  The target lookup
+    therefore starts from ``source.substates`` rather than ``source.parent``.
+
+    :param source: Composite state owning the initial selection domain.
+    :type source: State
+    :param transition: Initial predecessor transition.
+    :type transition: Transition
+    :return: Whether the transition has a locally proven stable continuation.
+    :rtype: bool
+    """
+    if not isinstance(transition.to_state, str):
+        return False
+    target = source.substates.get(transition.to_state)
     if target is None:
         return False
     return _state_has_definite_stable_entry(target)

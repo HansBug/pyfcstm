@@ -1556,9 +1556,9 @@ W_TRANSITION_SHADOWED
 
 **Registry facts.** Severity ``warning``; emit tier ``verify_pipeline``; capability ``requires_solver``; span object ``transition``.
 
-**Meaning.** A later outgoing transition is fully covered by earlier same-source triggers and therefore cannot be selected.
+**Meaning.** A later transition in an ordered selection domain is fully covered by earlier triggers and therefore cannot be selected.
 
-**LLM repair summary.** Transition ordering means an earlier same-source transition consumes all cases that could have reached this later transition.
+**LLM repair summary.** Transition ordering means earlier transitions in the same ordered selection domain consume all cases that could have reached this later transition.
 
 .. list-table:: Refs schema
    :header-rows: 1

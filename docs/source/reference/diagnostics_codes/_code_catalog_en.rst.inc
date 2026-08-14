@@ -1547,6 +1547,7 @@ W_TRANSITION_SHADOWED
 .. diagnostics-ref W_TRANSITION_SHADOWED transition type=dict required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_TRANSITION_SHADOWED transition_summary type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_TRANSITION_SHADOWED source_state_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_TRANSITION_SHADOWED selection_domain_kind type=str required=false enum=state_outgoing|composite_initial item_enum=- exact_values=-
 .. diagnostics-ref W_TRANSITION_SHADOWED reason type=str required=true enum=guard_shadow|duplicate_event|unconditional_catchall|prior_trigger_cover item_enum=- exact_values=-
 .. diagnostics-ref W_TRANSITION_SHADOWED shadowed_by_count type=int required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_TRANSITION_SHADOWED shadowed_by type=list[str] required=true enum=- item_enum=- exact_values=-
@@ -1587,7 +1588,11 @@ W_TRANSITION_SHADOWED
    * - ``source_state_path``
      - ``str``
      - yes
-     - Dotted source state path whose outgoing order creates the shadowing.
+     - Dotted owner state path whose ordered selection domain creates the shadowing.
+   * - ``selection_domain_kind``
+     - ``str``
+     - no
+     - Ordered selection domain containing the shadowed transition. (enum: ``state_outgoing``, ``composite_initial``)
    * - ``reason``
      - ``str``
      - yes

@@ -2452,6 +2452,9 @@ def _verify_smt_refs(raw: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
             'shadowed_by_count': len(shadowed_by_summaries),
             'shadowed_by': shadowed_by_summaries,
         })
+        selection_domain_kind = data.get('selection_domain_kind')
+        if selection_domain_kind in {'state_outgoing', 'composite_initial'}:
+            refs['selection_domain_kind'] = selection_domain_kind
     elif code == 'I_ENTER_DURING_CONTRADICT':
         refs.update({
             'state_path': data.get('state'),

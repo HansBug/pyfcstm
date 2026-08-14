@@ -2172,7 +2172,9 @@ def _iter_ordered_selection_domains(
         yield source, outgoing, "state_outgoing"
     for source in machine.walk_states():
         initial = source.init_transitions
-        if initial:
+        # A single initial transition cannot be shadowed by a predecessor.
+        # Avoid translating its trigger merely to return a no-finding result.
+        if len(initial) > 1:
             yield source, initial, "composite_initial"
 
 

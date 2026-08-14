@@ -3736,7 +3736,12 @@ W_TRANSITION_SHADOWED:
     source_state_path:
       type: str
       required: true
-      description: Dotted source state path whose outgoing order creates the shadowing.
+      description: Dotted owner state path whose ordered selection domain creates the shadowing.
+    selection_domain_kind:
+      type: str
+      required: false
+      description: Ordered selection domain containing the shadowed transition.
+      enum: ['state_outgoing', 'composite_initial']
     reason:
       type: str
       required: true

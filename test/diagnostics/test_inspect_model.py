@@ -2557,6 +2557,62 @@ class TestInspectModelVerifyIntegration:
         _assert_has_span(noexit_diag.span)
         assert 'state B' in _slice_by_span(dsl, noexit_diag.span)
 
+    def test_enable_verify_reports_initial_shadow_refs_and_span(self):
+        dsl = """
+        state Root {
+            event Go;
+            state A;
+            state B;
+            [*] -> A;
+            [*] -> B : Go;
+        }
+        """
+
+        report = inspect_model(
+            _parse(dsl),
+            enable_verify=True,
+            max_complexity_tier='smt_linear',
+        )
+
+        diagnostics = [
+            diag for diag in report.diagnostics
+            if diag.code == 'W_TRANSITION_SHADOWED'
+        ]
+        assert len(diagnostics) == 1
+        diagnostic = diagnostics[0]
+        assert diagnostic.refs['transition_summary'] == 'Root:[*]->B'
+        assert diagnostic.refs['source_state_path'] == 'Root'
+        assert diagnostic.refs['selection_domain_kind'] == 'composite_initial'
+        assert diagnostic.refs['shadowed_by'] == ['Root:[*]->A']
+        assert _slice_by_span(dsl, diagnostic.span) == '[*] -> B : Go;'
+        assert_all_diags_match_schema(
+            diagnostics,
+            context='verify-initial-shadow-public',
+        )
+
+    def test_enable_verify_keeps_initial_shadow_witness(self):
+        dsl = """
+        state Root {
+            event Go;
+            event Later;
+            state A;
+            state B;
+            [*] -> A : Go;
+            [*] -> B : Later;
+        }
+        """
+
+        report = inspect_model(
+            _parse(dsl),
+            enable_verify=True,
+            max_complexity_tier='smt_linear',
+        )
+
+        assert not any(
+            diag.code == 'W_TRANSITION_SHADOWED'
+            for diag in report.diagnostics
+        )
+
     def test_enable_verify_deduplicates_unreachable_state_diagnostics(self):
         dsl = """
         state System {
@@ -2742,6 +2798,7 @@ class TestInspectModelVerifyIntegration:
                 'transition': transition,
                 'shadowed_by': (_verify_transition_payload(to_state='C'),),
                 'reason': 'guard_shadow',
+                'selection_domain_kind': 'state_outgoing',
                 'source': 'Root.A',
                 'verification_scope': 'smt_local',
             },
@@ -2780,6 +2837,7 @@ class TestInspectModelVerifyIntegration:
         assert forced_refs['scope'] == 'dsl_def_init_only'
         assert forced_refs['transition_summary'] == 'Root:A->B'
         assert shadowed_refs['source_state_path'] == 'Root.A'
+        assert shadowed_refs['selection_domain_kind'] == 'state_outgoing'
         assert shadowed_refs['shadowed_by_count'] == 1
         assert shadowed_refs['shadowed_by'] == ['Root:A->C']
         assert lifecycle_refs['state_path'] == 'Root.A'

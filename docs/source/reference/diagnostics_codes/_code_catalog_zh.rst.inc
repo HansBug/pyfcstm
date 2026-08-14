@@ -1547,6 +1547,7 @@ W_TRANSITION_SHADOWED
 .. diagnostics-ref W_TRANSITION_SHADOWED transition type=dict required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_TRANSITION_SHADOWED transition_summary type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_TRANSITION_SHADOWED source_state_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_TRANSITION_SHADOWED selection_domain_kind type=str required=false enum=state_outgoing|composite_initial item_enum=- exact_values=-
 .. diagnostics-ref W_TRANSITION_SHADOWED reason type=str required=true enum=guard_shadow|duplicate_event|unconditional_catchall|prior_trigger_cover item_enum=- exact_values=-
 .. diagnostics-ref W_TRANSITION_SHADOWED shadowed_by_count type=int required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_TRANSITION_SHADOWED shadowed_by type=list[str] required=true enum=- item_enum=- exact_values=-
@@ -1587,7 +1588,11 @@ W_TRANSITION_SHADOWED
    * - ``source_state_path``
      - ``str``
      - 是
-     - 字段含义：产生该诊断的源状态点分路径。
+     - 字段含义：产生该诊断的有序选择域拥有者点分路径。
+   * - ``selection_domain_kind``
+     - ``str``
+     - 否
+     - 字段含义：包含被覆盖转换的有序选择域。（枚举：``state_outgoing``、``composite_initial``）
    * - ``reason``
      - ``str``
      - 是
@@ -1620,12 +1625,12 @@ W_TRANSITION_SHADOWED
 .. diagnostics-example W_TRANSITION_SHADOWED 2 boundary_only
 
 **示例 2**\ （``boundary_only``）——针对 ``W_TRANSITION_SHADOWED`` 的修复方向。
-典型修复是对 ``transition_list`` 执行 ``reorder_transitions``：针对“后面的同源出边转换被前面的触发条件完全覆盖，因此不会被选择。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
+典型修复是对 ``transition_list`` 执行 ``reorder_transitions``：针对“有序选择域中的后续转换被前面的触发条件完全覆盖，因此不会被选择。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_TRANSITION_SHADOWED 3 boundary_only
 
 **示例 3**\ （``boundary_only``）——针对 ``W_TRANSITION_SHADOWED`` 的反例边界。
-不要这样处理：针对“后面的同源出边转换被前面的触发条件完全覆盖，因此不会被选择。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
+不要这样处理：针对“有序选择域中的后续转换被前面的触发条件完全覆盖，因此不会被选择。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 事件和作用域
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -314,6 +314,7 @@ def transition_shadowed_by_predecessor(
                                 transition=current_payload,
                                 shadowed_by=tuple(prior_payloads),
                                 reason=reason,
+                                selection_domain_kind=selection_domain_kind,
                                 source=_state_path(source),
                                 verification_scope="smt_local",
                             )

@@ -671,6 +671,11 @@ class TestSchemaJsonValidates:
         })
         assert list(validator.iter_errors(invalid_not_run))
 
+        for field in ('max_complexity_tier', 'max_call_count_scaling'):
+            invalid_policy = json.loads(json.dumps(payload))
+            invalid_policy['verification']['requested_policy'][field] = None
+            assert list(validator.iter_errors(invalid_policy))
+
     def test_schema_documents_span_contract(self):
         schema = self._load_schema()
         span_def = schema['definitions']['Span']
@@ -2712,6 +2717,7 @@ print(json.dumps(verification, sort_keys=True))
         assert verification.summary.executed + verification.summary.not_run == len(
             verification.algorithms
         )
+        assert verification.summary.indeterminate <= verification.summary.executed
         assert verification.summary.executed > 0
         assert verification.summary.not_run > 0
         assert [item.algorithm_name for item in verification.algorithms[:2]] == [

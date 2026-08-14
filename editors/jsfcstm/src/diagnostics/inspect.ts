@@ -279,46 +279,113 @@ export type InspectVerificationCallCountScaling =
     | 'quadratic_in_states'
     | 'vars_times_transitions';
 
-export type InspectVerificationAlgorithmReasonCode =
+export type InspectVerificationAlgorithmNotRunReasonCode =
     | 'algorithm_not_closed'
     | 'complexity_tier_exceeds_policy'
-    | 'call_count_scaling_exceeds_policy'
+    | 'call_count_scaling_exceeds_policy';
+
+/** Backward-compatible nullable alias for callers that inspect reason codes directly. */
+export type InspectVerificationAlgorithmReasonCode =
+    | InspectVerificationAlgorithmNotRunReasonCode
     | null;
 
 export interface InspectVerificationPolicy {
-    max_complexity_tier: InspectVerificationComplexityTier | null;
-    max_call_count_scaling: InspectVerificationCallCountScaling | null;
+    max_complexity_tier: InspectVerificationComplexityTier;
+    max_call_count_scaling: InspectVerificationCallCountScaling;
     smt_timeout_ms: number | null;
 }
 
+export interface InspectVerificationUnsupportedPolicy {
+    max_complexity_tier: null;
+    max_call_count_scaling: null;
+    smt_timeout_ms: null;
+}
+
 export interface InspectVerificationSummary {
-    registered: number | null;
+    registered: number;
     executed: number;
     not_run: number;
     indeterminate: number;
 }
 
-export interface InspectVerificationAlgorithm {
+export interface InspectVerificationEmptySummary {
+    registered: null;
+    executed: 0;
+    not_run: 0;
+    indeterminate: 0;
+}
+
+interface InspectVerificationAlgorithmBase {
     algorithm_name: string;
     complexity_tier: InspectVerificationComplexityTier;
     call_count_scaling: InspectVerificationCallCountScaling;
     verification_scope: 'topological_only' | 'smt_local' | null;
     declared_diagnostic_codes: string[];
-    result_kind: InspectVerificationResultKind;
-    reason_code: InspectVerificationAlgorithmReasonCode;
+}
+
+export interface InspectVerificationNotRunAlgorithm
+    extends InspectVerificationAlgorithmBase {
+    result_kind: 'not_run';
+    reason_code: InspectVerificationAlgorithmNotRunReasonCode;
+    reason: null;
+    partial_diagnostic_count: 0;
+}
+
+export interface InspectVerificationDefiniteAlgorithm
+    extends InspectVerificationAlgorithmBase {
+    result_kind: 'sat' | 'unsat';
+    reason_code: null;
+    reason: string | null;
+    partial_diagnostic_count: 0;
+}
+
+export interface InspectVerificationIndeterminateAlgorithm
+    extends InspectVerificationAlgorithmBase {
+    result_kind: 'timeout' | 'unknown' | 'undecidable_skip';
+    reason_code: null;
     reason: string | null;
     partial_diagnostic_count: number;
 }
 
-export interface InspectVerificationReport {
-    supported: boolean;
-    enabled: boolean;
-    provider: string | null;
-    reason_code: 'verification_disabled' | 'provider_unsupported' | null;
+export type InspectVerificationAlgorithm =
+    | InspectVerificationNotRunAlgorithm
+    | InspectVerificationDefiniteAlgorithm
+    | InspectVerificationIndeterminateAlgorithm;
+
+export interface InspectVerificationUnsupportedReport {
+    supported: false;
+    enabled: false;
+    provider: null;
+    reason_code: 'provider_unsupported';
+    requested_policy: InspectVerificationUnsupportedPolicy;
+    summary: InspectVerificationEmptySummary;
+    algorithms: [];
+}
+
+export interface InspectVerificationDisabledReport {
+    supported: true;
+    enabled: false;
+    provider: 'pyfcstm.verify';
+    reason_code: 'verification_disabled';
+    requested_policy: InspectVerificationPolicy;
+    summary: InspectVerificationEmptySummary;
+    algorithms: [];
+}
+
+export interface InspectVerificationEnabledReport {
+    supported: true;
+    enabled: true;
+    provider: 'pyfcstm.verify';
+    reason_code: null;
     requested_policy: InspectVerificationPolicy;
     summary: InspectVerificationSummary;
     algorithms: InspectVerificationAlgorithm[];
 }
+
+export type InspectVerificationReport =
+    | InspectVerificationUnsupportedReport
+    | InspectVerificationDisabledReport
+    | InspectVerificationEnabledReport;
 
 /**
  * Top-level structured view of a state machine model.

@@ -165,7 +165,7 @@
             "enabled": { "const": false },
             "provider": { "const": "pyfcstm.verify" },
             "reason_code": { "const": "verification_disabled" },
-            "requested_policy": { "$ref": "#/definitions/VerificationPolicy" },
+            "requested_policy": { "$ref": "#/definitions/EnabledVerificationPolicy" },
             "summary": { "$ref": "#/definitions/EmptyVerificationSummary" },
             "algorithms": { "const": [] }
           }

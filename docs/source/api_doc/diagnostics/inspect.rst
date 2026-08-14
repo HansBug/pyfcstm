@@ -112,11 +112,39 @@ ModelMetrics
     :members: n_states_leaf,n_states_composite,n_states_pseudo,max_hierarchy_depth,n_transitions_normal,n_transitions_forced,n_events,n_variables,var_to_leaf_ratio,aspect_coverage,abstract_action_inventory
 
 
+InspectVerificationPolicy
+-----------------------------------------------------
+
+.. autoclass:: InspectVerificationPolicy
+    :members: max_complexity_tier,max_call_count_scaling,smt_timeout_ms
+
+
+InspectVerificationSummary
+-----------------------------------------------------
+
+.. autoclass:: InspectVerificationSummary
+    :members: registered,executed,not_run,indeterminate
+
+
+InspectVerificationAlgorithm
+-----------------------------------------------------
+
+.. autoclass:: InspectVerificationAlgorithm
+    :members: algorithm_name,complexity_tier,call_count_scaling,verification_scope,declared_diagnostic_codes,result_kind,reason_code,reason,partial_diagnostic_count
+
+
+InspectVerificationReport
+-----------------------------------------------------
+
+.. autoclass:: InspectVerificationReport
+    :members: supported,enabled,provider,reason_code,requested_policy,summary,algorithms
+
+
 ModelInspect
 -----------------------------------------------------
 
 .. autoclass:: ModelInspect
-    :members: to_json,root_state_path,states,transitions,variables,events,actions,forced_transitions,combo_transitions,combo_origins,metrics,reachability_graph,event_emission_map,var_dataflow,aspect_impact_map,action_ref_graph,diagnostics
+    :members: to_json,root_state_path,states,transitions,variables,events,actions,forced_transitions,combo_transitions,combo_origins,metrics,reachability_graph,event_emission_map,var_dataflow,aspect_impact_map,action_ref_graph,diagnostics,verification
 
 
 inspect\_model

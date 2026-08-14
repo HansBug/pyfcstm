@@ -67,12 +67,32 @@ if TYPE_CHECKING:  # pragma: no cover - import-time forward refs only
         StateMachine,
         Transition,
     )
-    from ..verify.inspect_adapter import InspectRunResult
+    from ..verify.inspect_adapter import InspectEligibility, InspectRunResult
 
 
 DEFAULT_DEEP_HIERARCHY_THRESHOLD = 6
 DEFAULT_LARGE_COMPOSITE_THRESHOLD = 12
 DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD = 2.0
+
+# Keep policy validation local so a normal structural inspect does not import
+# the verify package merely to construct its disabled execution metadata.
+_INSPECT_COMPLEXITY_TIERS = (
+    'structural',
+    'smt_linear',
+    'smt_nonlinear_decidable',
+    'smt_undecidable_heuristic',
+)
+_INSPECT_CALL_COUNT_SCALINGS = (
+    'none',
+    'one',
+    'linear_in_states',
+    'linear_in_transitions',
+    'linear_in_vars',
+    'linear_in_leaves',
+    'quadratic_in_outgoing_per_state',
+    'quadratic_in_states',
+    'vars_times_transitions',
+)
 
 # PR-D2 span contract guard: analyzer diagnostics should carry a real
 # source span by default. Any future code that intentionally cannot point to
@@ -571,6 +591,53 @@ class ModelMetrics:
 
 
 @dataclass(frozen=True)
+class InspectVerificationPolicy:
+    """Verify policy requested for one model inspection."""
+
+    max_complexity_tier: Optional[str]
+    max_call_count_scaling: Optional[str]
+    smt_timeout_ms: Optional[int]
+
+
+@dataclass(frozen=True)
+class InspectVerificationSummary:
+    """Aggregate execution counts for the verify projection."""
+
+    registered: Optional[int]
+    executed: int
+    not_run: int
+    indeterminate: int
+
+
+@dataclass(frozen=True)
+class InspectVerificationAlgorithm:
+    """Public execution projection for one registered verify algorithm."""
+
+    algorithm_name: str
+    complexity_tier: str
+    call_count_scaling: str
+    verification_scope: Optional[str]
+    declared_diagnostic_codes: Tuple[str, ...]
+    result_kind: str
+    reason_code: Optional[str]
+    reason: Optional[str]
+    partial_diagnostic_count: int
+
+
+@dataclass(frozen=True)
+class InspectVerificationReport:
+    """Optional verification status attached to :class:`ModelInspect`."""
+
+    supported: bool
+    enabled: bool
+    provider: Optional[str]
+    reason_code: Optional[str]
+    requested_policy: InspectVerificationPolicy
+    summary: InspectVerificationSummary
+    algorithms: Tuple[InspectVerificationAlgorithm, ...]
+
+
+@dataclass(frozen=True)
 class ModelInspect:
     """
     Top-level structured view of a state machine model.
@@ -621,6 +688,10 @@ class ModelInspect:
     :param diagnostics: Layer 1 ``E_*`` plus design-health ``W_*`` /
         ``I_*`` diagnostics derived from the inspect payload.
     :type diagnostics: Tuple[ModelDiagnostic, ...]
+    :param verification: Verify-provider policy and execution projection.
+        The disabled report is populated without importing
+        :mod:`pyfcstm.verify`.
+    :type verification: InspectVerificationReport
     """
 
     root_state_path: str
@@ -639,6 +710,9 @@ class ModelInspect:
     aspect_impact_map: Dict[str, Tuple[str, ...]]
     action_ref_graph: Dict[str, Tuple[str, ...]]
     diagnostics: Tuple[ModelDiagnostic, ...] = field(default_factory=tuple)
+    verification: InspectVerificationReport = field(default_factory=lambda: (
+        _disabled_verification_report()
+    ))
 
     def to_json(self) -> Dict[str, Any]:
         """
@@ -1751,6 +1825,112 @@ def _run_verify_inspect_algorithms(machine: 'StateMachine', **kwargs):
     from ..verify.inspect_adapter import run_inspect_algorithms
 
     return run_inspect_algorithms(machine, **kwargs)
+
+
+def _project_verify_inspect_eligibility(**kwargs):
+    """Project verify eligibility lazily without running algorithms."""
+    from ..verify.inspect_adapter import project_inspect_eligibility
+
+    return project_inspect_eligibility(**kwargs)
+
+
+def _disabled_verification_report(
+        max_complexity_tier: str = 'structural',
+        max_call_count_scaling: str = 'linear_in_transitions',
+        smt_timeout_ms: Optional[int] = None,
+) -> InspectVerificationReport:
+    """Build the stable verify-disabled projection without importing verify."""
+    return InspectVerificationReport(
+        supported=True,
+        enabled=False,
+        provider='pyfcstm.verify',
+        reason_code='verification_disabled',
+        requested_policy=InspectVerificationPolicy(
+            max_complexity_tier=max_complexity_tier,
+            max_call_count_scaling=max_call_count_scaling,
+            smt_timeout_ms=smt_timeout_ms,
+        ),
+        summary=InspectVerificationSummary(
+            registered=None,
+            executed=0,
+            not_run=0,
+            indeterminate=0,
+        ),
+        algorithms=(),
+    )
+
+
+def _verification_report_from_results(
+        plan: Sequence['InspectEligibility'],
+        results: Sequence['InspectRunResult'],
+        *,
+        max_complexity_tier: str,
+        max_call_count_scaling: str,
+        smt_timeout_ms: Optional[int],
+) -> InspectVerificationReport:
+    """Merge the complete adapter plan with executed verify results."""
+    results_by_name = {result.algorithm_name: result for result in results}
+    algorithms: List[InspectVerificationAlgorithm] = []
+    for item in plan:
+        meta = item.meta
+        result = results_by_name.get(meta.name)
+        if not item.eligible or result is None:
+            algorithms.append(InspectVerificationAlgorithm(
+                algorithm_name=meta.name,
+                complexity_tier=meta.complexity_tier,
+                call_count_scaling=meta.call_count_scaling,
+                verification_scope=meta.verification_scope,
+                declared_diagnostic_codes=tuple(meta.diagnostic_codes),
+                result_kind='not_run',
+                reason_code=item.not_run_reason_code,
+                reason=None,
+                partial_diagnostic_count=0,
+            ))
+            continue
+
+        partial_diagnostic_count = 0
+        if result.result_kind in {'unknown', 'timeout', 'undecidable_skip'}:
+            partial_diagnostic_count = len(result.diagnostics)
+        algorithms.append(InspectVerificationAlgorithm(
+            algorithm_name=meta.name,
+            complexity_tier=meta.complexity_tier,
+            call_count_scaling=meta.call_count_scaling,
+            verification_scope=meta.verification_scope,
+            declared_diagnostic_codes=tuple(meta.diagnostic_codes),
+            result_kind=result.result_kind,
+            reason_code=None,
+            reason=result.reason,
+            partial_diagnostic_count=partial_diagnostic_count,
+        ))
+
+    indeterminate_kinds = {'unknown', 'timeout', 'undecidable_skip'}
+    return InspectVerificationReport(
+        supported=True,
+        enabled=True,
+        provider='pyfcstm.verify',
+        reason_code=None,
+        requested_policy=InspectVerificationPolicy(
+            max_complexity_tier=max_complexity_tier,
+            max_call_count_scaling=max_call_count_scaling,
+            smt_timeout_ms=smt_timeout_ms,
+        ),
+        summary=InspectVerificationSummary(
+            registered=len(algorithms),
+            executed=sum(
+                algorithm.result_kind != 'not_run'
+                for algorithm in algorithms
+            ),
+            not_run=sum(
+                algorithm.result_kind == 'not_run'
+                for algorithm in algorithms
+            ),
+            indeterminate=sum(
+                algorithm.result_kind in indeterminate_kinds
+                for algorithm in algorithms
+            ),
+        ),
+        algorithms=tuple(algorithms),
+    )
 
 
 def _transition_summary(payload: Mapping[str, Any]) -> str:
@@ -3053,6 +3233,42 @@ def _deduplicate_model_diagnostics(
     return tuple(out)
 
 
+def _validate_inspect_verification_policy(
+        max_complexity_tier: str,
+        max_call_count_scaling: str,
+        smt_timeout_ms: Optional[int],
+) -> None:
+    """Validate public verification policy arguments without eager imports."""
+    if max_complexity_tier not in _INSPECT_COMPLEXITY_TIERS:
+        from ..verify.inspect_adapter import InspectAccessForbiddenError
+
+        raise InspectAccessForbiddenError(
+            "unknown inspect complexity tier: {maximum!r}".format(
+                maximum=max_complexity_tier,
+            )
+        )
+    if max_call_count_scaling not in _INSPECT_CALL_COUNT_SCALINGS:
+        from ..verify.inspect_adapter import InspectAccessForbiddenError
+
+        raise InspectAccessForbiddenError(
+            "unknown inspect call-count scaling: {maximum!r}".format(
+                maximum=max_call_count_scaling,
+            )
+        )
+    if smt_timeout_ms is not None and (
+            isinstance(smt_timeout_ms, bool)
+            or not isinstance(smt_timeout_ms, int)
+            or smt_timeout_ms < 0
+    ):
+        from ..verify.inspect_adapter import InspectAccessForbiddenError
+
+        raise InspectAccessForbiddenError(
+            "smt_timeout_ms must be a non-negative integer or None, got {value!r}".format(
+                value=smt_timeout_ms,
+            )
+        )
+
+
 def inspect_model(
         machine: 'StateMachine',
         *,
@@ -3095,7 +3311,7 @@ def inspect_model(
     :type max_call_count_scaling: str, optional
     :param smt_timeout_ms: Optional solver timeout forwarded to SMT-local
         verify algorithms. ``None`` preserves the raw verify default of no
-        configured timeout.
+        configured timeout; an integer value must be non-negative.
     :type smt_timeout_ms: Optional[int], optional
     :param model_diagnostics: Diagnostics produced while building ``machine``,
         prepended to the analyzer output. Callers that built the model with
@@ -3128,6 +3344,11 @@ def inspect_model(
         >>> len(verify_report.diagnostics) >= len(report.diagnostics)
         True
     """
+    _validate_inspect_verification_policy(
+        max_complexity_tier,
+        max_call_count_scaling,
+        smt_timeout_ms,
+    )
     deep_hierarchy_threshold = _normalize_int_threshold(
         'deep_hierarchy_threshold',
         deep_hierarchy_threshold,
@@ -3171,7 +3392,16 @@ def inspect_model(
         var_to_leaf_ratio_threshold=var_to_leaf_ratio_threshold,
         machine=machine,
     ))
+    verification = _disabled_verification_report(
+        max_complexity_tier=max_complexity_tier,
+        max_call_count_scaling=max_call_count_scaling,
+        smt_timeout_ms=smt_timeout_ms,
+    )
     if enable_verify:
+        verify_plan = _project_verify_inspect_eligibility(
+            max_complexity_tier=max_complexity_tier,
+            max_call_count_scaling=max_call_count_scaling,
+        )
         verify_results = _run_verify_inspect_algorithms(
             machine,
             max_complexity_tier=max_complexity_tier,
@@ -3186,6 +3416,13 @@ def inspect_model(
             actions,
             combo_guard_replacement_keys=_combo_guard_replacement_keys(diagnostics),
         ))
+        verification = _verification_report_from_results(
+            verify_plan,
+            verify_results,
+            max_complexity_tier=max_complexity_tier,
+            max_call_count_scaling=max_call_count_scaling,
+            smt_timeout_ms=smt_timeout_ms,
+        )
     diagnostics = list(_catalog_emittable_diagnostics(diagnostics))
     diagnostics = list(_deduplicate_model_diagnostics(diagnostics))
     return ModelInspect(
@@ -3205,6 +3442,7 @@ def inspect_model(
         aspect_impact_map=_build_aspect_impact_map(states),
         action_ref_graph=_build_action_ref_graph(machine),
         diagnostics=tuple(diagnostics),
+        verification=verification,
     )
 
 
@@ -3286,6 +3524,7 @@ def _to_json_inspect(report: ModelInspect) -> Dict[str, Any]:
         'aspect_impact_map': {k: list(v) for k, v in report.aspect_impact_map.items()},
         'action_ref_graph': {k: list(v) for k, v in report.action_ref_graph.items()},
         'diagnostics': [_diagnostic_to_json(d) for d in report.diagnostics],
+        'verification': _to_json_dataclass(report.verification),
     }
 
 

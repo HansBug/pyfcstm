@@ -21,6 +21,7 @@
     "var_dataflow",
     "aspect_impact_map",
     "action_ref_graph",
+    "verification",
     "diagnostics"
   ],
   "properties": {
@@ -114,12 +115,248 @@
         "items": { "type": "string" }
       }
     },
+    "verification": { "$ref": "#/definitions/VerificationReport" },
     "diagnostics": {
       "type": "array",
       "items": { "$ref": "#/definitions/ModelDiagnostic" }
     }
   },
   "definitions": {
+    "VerificationReport": {
+      "type": "object",
+      "description": "Verification execution metadata. This records which registered algorithms ran and why others did not; it is separate from emitted model diagnostics.",
+      "additionalProperties": false,
+      "required": [
+        "supported", "enabled", "provider", "reason_code",
+        "requested_policy", "summary", "algorithms"
+      ],
+      "properties": {
+        "supported": { "type": "boolean" },
+        "enabled": { "type": "boolean" },
+        "provider": { "type": ["string", "null"] },
+        "reason_code": {
+          "type": ["string", "null"],
+          "enum": ["verification_disabled", "provider_unsupported", null]
+        },
+        "requested_policy": { "$ref": "#/definitions/VerificationPolicy" },
+        "summary": { "$ref": "#/definitions/VerificationSummary" },
+        "algorithms": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/VerificationAlgorithm" }
+        }
+      },
+      "oneOf": [
+        {
+          "description": "A provider that cannot perform verification.",
+          "properties": {
+            "supported": { "const": false },
+            "enabled": { "const": false },
+            "provider": { "const": null },
+            "reason_code": { "const": "provider_unsupported" },
+            "requested_policy": { "$ref": "#/definitions/UnsupportedVerificationPolicy" },
+            "summary": { "$ref": "#/definitions/EmptyVerificationSummary" },
+            "algorithms": { "const": [] }
+          }
+        },
+        {
+          "description": "A supported provider whose verification was not requested.",
+          "properties": {
+            "supported": { "const": true },
+            "enabled": { "const": false },
+            "provider": { "const": "pyfcstm.verify" },
+            "reason_code": { "const": "verification_disabled" },
+            "requested_policy": { "$ref": "#/definitions/EnabledVerificationPolicy" },
+            "summary": { "$ref": "#/definitions/EmptyVerificationSummary" },
+            "algorithms": { "const": [] }
+          }
+        },
+        {
+          "description": "A supported provider that executed its verification plan.",
+          "properties": {
+            "supported": { "const": true },
+            "enabled": { "const": true },
+            "provider": { "const": "pyfcstm.verify" },
+            "reason_code": { "const": null },
+            "requested_policy": { "$ref": "#/definitions/EnabledVerificationPolicy" },
+            "summary": { "$ref": "#/definitions/EnabledVerificationSummary" },
+            "algorithms": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/definitions/VerificationAlgorithm" }
+            }
+          }
+        }
+      ]
+    },
+    "UnsupportedVerificationPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_complexity_tier", "max_call_count_scaling", "smt_timeout_ms"
+      ],
+      "properties": {
+        "max_complexity_tier": { "const": null },
+        "max_call_count_scaling": { "const": null },
+        "smt_timeout_ms": { "const": null }
+      }
+    },
+    "EnabledVerificationPolicy": {
+      "allOf": [
+        { "$ref": "#/definitions/VerificationPolicy" },
+        {
+          "properties": {
+            "max_complexity_tier": { "type": "string" },
+            "max_call_count_scaling": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "EmptyVerificationSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["registered", "executed", "not_run", "indeterminate"],
+      "properties": {
+        "registered": { "const": null },
+        "executed": { "const": 0 },
+        "not_run": { "const": 0 },
+        "indeterminate": { "const": 0 }
+      }
+    },
+    "EnabledVerificationSummary": {
+      "allOf": [
+        { "$ref": "#/definitions/VerificationSummary" },
+        {
+          "properties": {
+            "registered": { "type": "integer", "minimum": 1 }
+          }
+        }
+      ]
+    },
+    "VerificationPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_complexity_tier", "max_call_count_scaling", "smt_timeout_ms"
+      ],
+      "properties": {
+        "max_complexity_tier": {
+          "type": ["string", "null"],
+          "enum": [
+            "structural", "smt_linear", "smt_nonlinear_decidable",
+            "smt_undecidable_heuristic", null
+          ]
+        },
+        "max_call_count_scaling": {
+          "type": ["string", "null"],
+          "enum": [
+            "none", "one", "linear_in_states", "linear_in_transitions",
+            "linear_in_vars", "linear_in_leaves",
+            "quadratic_in_outgoing_per_state", "quadratic_in_states",
+            "vars_times_transitions", null
+          ]
+        },
+        "smt_timeout_ms": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        }
+      }
+    },
+    "VerificationSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["registered", "executed", "not_run", "indeterminate"],
+      "properties": {
+        "registered": { "type": ["integer", "null"], "minimum": 0 },
+        "executed": { "type": "integer", "minimum": 0 },
+        "not_run": { "type": "integer", "minimum": 0 },
+        "indeterminate": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "VerificationAlgorithm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm_name", "complexity_tier", "call_count_scaling",
+        "verification_scope", "declared_diagnostic_codes", "result_kind",
+        "reason_code", "reason", "partial_diagnostic_count"
+      ],
+      "properties": {
+        "algorithm_name": { "type": "string" },
+        "complexity_tier": {
+          "type": "string",
+          "enum": [
+            "structural", "smt_linear", "smt_nonlinear_decidable",
+            "smt_undecidable_heuristic"
+          ]
+        },
+        "call_count_scaling": {
+          "type": "string",
+          "enum": [
+            "none", "one", "linear_in_states", "linear_in_transitions",
+            "linear_in_vars", "linear_in_leaves",
+            "quadratic_in_outgoing_per_state", "quadratic_in_states",
+            "vars_times_transitions"
+          ]
+        },
+        "verification_scope": {
+          "type": ["string", "null"],
+          "enum": ["topological_only", "smt_local", null]
+        },
+        "declared_diagnostic_codes": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "result_kind": {
+          "type": "string",
+          "enum": [
+            "not_run", "sat", "unsat", "timeout", "unknown",
+            "undecidable_skip"
+          ]
+        },
+        "reason_code": {
+          "type": ["string", "null"],
+          "enum": [
+            "algorithm_not_closed", "complexity_tier_exceeds_policy",
+            "call_count_scaling_exceeds_policy", null
+          ]
+        },
+        "reason": { "type": ["string", "null"] },
+        "partial_diagnostic_count": { "type": "integer", "minimum": 0 }
+      },
+      "oneOf": [
+        {
+          "description": "An algorithm excluded before execution.",
+          "properties": {
+            "result_kind": { "const": "not_run" },
+            "reason_code": {
+              "enum": [
+                "algorithm_not_closed", "complexity_tier_exceeds_policy",
+                "call_count_scaling_exceeds_policy"
+              ]
+            },
+            "reason": { "const": null },
+            "partial_diagnostic_count": { "const": 0 }
+          }
+        },
+        {
+          "description": "A definite algorithm result.",
+          "properties": {
+            "result_kind": { "enum": ["sat", "unsat"] },
+            "reason_code": { "const": null },
+            "partial_diagnostic_count": { "const": 0 }
+          }
+        },
+        {
+          "description": "An algorithm result without a definite conclusion.",
+          "properties": {
+            "result_kind": {
+              "enum": ["timeout", "unknown", "undecidable_skip"]
+            },
+            "reason_code": { "const": null }
+          }
+        }
+      ]
+    },
     "StateInfo": {
       "type": "object",
       "additionalProperties": false,

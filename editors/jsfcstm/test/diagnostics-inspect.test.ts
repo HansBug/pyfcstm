@@ -610,9 +610,28 @@ state Root {
                 'transitions',
                 'var_dataflow',
                 'variables',
+                'verification',
             ]);
             assert.deepEqual(report.combo_transitions, []);
             assert.deepEqual(report.combo_origins, []);
+            assert.deepEqual(report.verification, {
+                supported: false,
+                enabled: false,
+                provider: null,
+                reason_code: 'provider_unsupported',
+                requested_policy: {
+                    max_complexity_tier: null,
+                    max_call_count_scaling: null,
+                    smt_timeout_ms: null,
+                },
+                summary: {
+                    registered: null,
+                    executed: 0,
+                    not_run: 0,
+                    indeterminate: 0,
+                },
+                algorithms: [],
+            });
         });
 
         it('exposes combo provenance from real DSL model construction', async () => {

@@ -4,6 +4,8 @@ import json
 import os
 import re
 import textwrap
+from dataclasses import replace
+from types import SimpleNamespace
 from typing import Any, List, Mapping
 
 import pytest
@@ -174,6 +176,7 @@ class TestInspectRender:
         assert "[WARN] FCSTM Inspect Report: case.fcstm" in text
         assert "status: warning" in text
         assert "diagnostics: 0 errors" in text
+        assert "verification: disabled" in text
         assert "W_UNWRITTEN_READ_VAR" in text
         assert "--> case.fcstm:" in text
         assert "|" in text
@@ -188,6 +191,61 @@ class TestInspectRender:
         assert " 3 |     state Idle;" in text
         assert " 4 |     state Running;" in text
         assert " 5 |     [*] -> Idle;" in text
+
+    def test_human_renderer_summarizes_verification_and_expands_indeterminate(self):
+        report = _report()
+        verification = SimpleNamespace(
+            supported=True,
+            enabled=True,
+            summary=SimpleNamespace(
+                registered=14,
+                executed=14,
+                not_run=0,
+                indeterminate=1,
+            ),
+            algorithms=(
+                SimpleNamespace(
+                    algorithm_name="dead_guard",
+                    result_kind="sat",
+                    reason=None,
+                ),
+                SimpleNamespace(
+                    algorithm_name="transition_shadowed_by_predecessor",
+                    result_kind="undecidable_skip",
+                    reason="Runtime shadowing could not be established.",
+                ),
+            ),
+        )
+
+        text = render_inspect_human(
+            replace(report, verification=verification),
+            SOURCE,
+        )
+
+        assert (
+            "verification: 14/14 run, 0 not run by policy, 1 indeterminate"
+            in text
+        )
+        assert "transition_shadowed_by_predecessor: undecidable_skip" in text
+        assert "reason: Runtime shadowing could not be established." in text
+        assert "dead_guard: sat" not in text
+
+    def test_human_renderer_reports_unsupported_provider(self):
+        report = _report()
+        verification = replace(
+            report.verification,
+            supported=False,
+            enabled=False,
+            provider=None,
+            reason_code="provider_unsupported",
+        )
+
+        text = render_inspect_human(
+            replace(report, verification=verification),
+            SOURCE,
+        )
+
+        assert "verification: unsupported" in text
 
     def test_human_renderer_color_enabled_adds_ansi_without_losing_text(self):
         text = render_inspect_human(
@@ -292,6 +350,34 @@ class TestInspectRender:
         assert context[1]["is_anchor"] is True
         assert context[1]["caret"].strip("^") == "    "
         assert context[2]["text"] == "    [*] -> Idle;"
+
+    def test_llm_v1_renderers_ignore_verification_metadata(self):
+        report = _report()
+        verification = SimpleNamespace(
+            supported=True,
+            enabled=True,
+            summary=SimpleNamespace(
+                registered=14,
+                executed=14,
+                not_run=0,
+                indeterminate=1,
+            ),
+            algorithms=(
+                SimpleNamespace(
+                    algorithm_name="dead_guard",
+                    result_kind="unknown",
+                    reason="Synthetic indeterminate result.",
+                ),
+            ),
+        )
+        verified_report = replace(report, verification=verification)
+
+        assert render_inspect_llm_json(
+            verified_report, SOURCE
+        ) == render_inspect_llm_json(report, SOURCE)
+        assert render_inspect_llm_markdown(
+            verified_report, SOURCE
+        ) == render_inspect_llm_markdown(report, SOURCE)
 
     def test_llm_json_schema_contract_matches_payload_shape(self):
         schema_path = os.path.join(

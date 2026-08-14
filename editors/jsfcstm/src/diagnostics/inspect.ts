@@ -254,6 +254,142 @@ export interface ModelMetrics {
     abstract_action_inventory: string[];
 }
 
+export type InspectVerificationResultKind =
+    | 'not_run'
+    | 'sat'
+    | 'unsat'
+    | 'timeout'
+    | 'unknown'
+    | 'undecidable_skip';
+
+export type InspectVerificationComplexityTier =
+    | 'structural'
+    | 'smt_linear'
+    | 'smt_nonlinear_decidable'
+    | 'smt_undecidable_heuristic';
+
+export type InspectVerificationCallCountScaling =
+    | 'none'
+    | 'one'
+    | 'linear_in_states'
+    | 'linear_in_transitions'
+    | 'linear_in_vars'
+    | 'linear_in_leaves'
+    | 'quadratic_in_outgoing_per_state'
+    | 'quadratic_in_states'
+    | 'vars_times_transitions';
+
+export type InspectVerificationAlgorithmNotRunReasonCode =
+    | 'algorithm_not_closed'
+    | 'complexity_tier_exceeds_policy'
+    | 'call_count_scaling_exceeds_policy';
+
+/** Backward-compatible nullable alias for callers that inspect reason codes directly. */
+export type InspectVerificationAlgorithmReasonCode =
+    | InspectVerificationAlgorithmNotRunReasonCode
+    | null;
+
+export interface InspectVerificationPolicy {
+    max_complexity_tier: InspectVerificationComplexityTier;
+    max_call_count_scaling: InspectVerificationCallCountScaling;
+    smt_timeout_ms: number | null;
+}
+
+export interface InspectVerificationUnsupportedPolicy {
+    max_complexity_tier: null;
+    max_call_count_scaling: null;
+    smt_timeout_ms: null;
+}
+
+export interface InspectVerificationSummary {
+    registered: number;
+    executed: number;
+    not_run: number;
+    indeterminate: number;
+}
+
+export interface InspectVerificationEmptySummary {
+    registered: null;
+    executed: 0;
+    not_run: 0;
+    indeterminate: 0;
+}
+
+interface InspectVerificationAlgorithmBase {
+    algorithm_name: string;
+    complexity_tier: InspectVerificationComplexityTier;
+    call_count_scaling: InspectVerificationCallCountScaling;
+    verification_scope: 'topological_only' | 'smt_local' | null;
+    declared_diagnostic_codes: string[];
+}
+
+export interface InspectVerificationNotRunAlgorithm
+    extends InspectVerificationAlgorithmBase {
+    result_kind: 'not_run';
+    reason_code: InspectVerificationAlgorithmNotRunReasonCode;
+    reason: null;
+    partial_diagnostic_count: 0;
+}
+
+export interface InspectVerificationDefiniteAlgorithm
+    extends InspectVerificationAlgorithmBase {
+    result_kind: 'sat' | 'unsat';
+    reason_code: null;
+    reason: string | null;
+    partial_diagnostic_count: 0;
+}
+
+export interface InspectVerificationIndeterminateAlgorithm
+    extends InspectVerificationAlgorithmBase {
+    result_kind: 'timeout' | 'unknown' | 'undecidable_skip';
+    reason_code: null;
+    reason: string | null;
+    partial_diagnostic_count: number;
+}
+
+export type InspectVerificationAlgorithm =
+    | InspectVerificationNotRunAlgorithm
+    | InspectVerificationDefiniteAlgorithm
+    | InspectVerificationIndeterminateAlgorithm;
+
+export interface InspectVerificationUnsupportedReport {
+    supported: false;
+    enabled: false;
+    provider: null;
+    reason_code: 'provider_unsupported';
+    requested_policy: InspectVerificationUnsupportedPolicy;
+    summary: InspectVerificationEmptySummary;
+    algorithms: [];
+}
+
+export interface InspectVerificationDisabledReport {
+    supported: true;
+    enabled: false;
+    provider: 'pyfcstm.verify';
+    reason_code: 'verification_disabled';
+    requested_policy: InspectVerificationPolicy;
+    summary: InspectVerificationEmptySummary;
+    algorithms: [];
+}
+
+export interface InspectVerificationEnabledReport {
+    supported: true;
+    enabled: true;
+    provider: 'pyfcstm.verify';
+    reason_code: null;
+    requested_policy: InspectVerificationPolicy;
+    summary: InspectVerificationSummary;
+    algorithms: [
+        InspectVerificationAlgorithm,
+        ...InspectVerificationAlgorithm[],
+    ];
+}
+
+export type InspectVerificationReport =
+    | InspectVerificationUnsupportedReport
+    | InspectVerificationDisabledReport
+    | InspectVerificationEnabledReport;
+
 /**
  * Top-level structured view of a state machine model.
  */
@@ -274,6 +410,7 @@ export interface ModelInspect {
     aspect_impact_map: Record<string, string[]>;
     action_ref_graph: Record<string, string[]>;
     diagnostics: ModelDiagnosticJson[];
+    verification: InspectVerificationReport;
 }
 
 /**
@@ -363,6 +500,24 @@ export function inspectModel(machine: StateMachine, options: InspectModelOptions
             },
             machine,
         ),
+        verification: {
+            supported: false,
+            enabled: false,
+            provider: null,
+            reason_code: 'provider_unsupported',
+            requested_policy: {
+                max_complexity_tier: null,
+                max_call_count_scaling: null,
+                smt_timeout_ms: null,
+            },
+            summary: {
+                registered: null,
+                executed: 0,
+                not_run: 0,
+                indeterminate: 0,
+            },
+            algorithms: [],
+        },
     };
 }
 

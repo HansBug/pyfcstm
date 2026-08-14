@@ -66,6 +66,9 @@ _ANSI_STYLE_BY_SEVERITY = {
 _ANSI_BOLD = "1"
 _ANSI_RESET = "\033[0m"
 _SOURCE_CONTEXT_RADIUS = 1
+_INDETERMINATE_RESULT_KINDS = frozenset(
+    ("timeout", "unknown", "undecidable_skip")
+)
 _GLOBAL_REPAIR_RULES = (
     "Make the smallest source edit that preserves the modeler's apparent intent.",
     "Use diagnostic source/provenance before choosing a fix; inspect-static warnings are not solver proofs.",
@@ -308,6 +311,7 @@ def render_inspect_human(
             info=counts["info"],
         )
     )
+    lines.extend(_render_human_verification(report.verification))
     lines.append("")
     if not report.diagnostics:
         lines.append("No diagnostics.")
@@ -324,6 +328,37 @@ def render_inspect_human(
         )
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _render_human_verification(verification: Any) -> List[str]:
+    """Render compact verification coverage and indeterminate details."""
+    if not verification.supported:
+        return ["  verification: unsupported"]
+    if not verification.enabled:
+        return ["  verification: disabled"]
+
+    summary = verification.summary
+    lines = [
+        "  verification: {executed}/{registered} run, {not_run} not run by "
+        "policy, {indeterminate} indeterminate".format(
+            executed=summary.executed,
+            registered=summary.registered,
+            not_run=summary.not_run,
+            indeterminate=summary.indeterminate,
+        )
+    ]
+    for algorithm in verification.algorithms:
+        if algorithm.result_kind not in _INDETERMINATE_RESULT_KINDS:
+            continue
+        lines.append(
+            "    {name}: {kind}".format(
+                name=algorithm.algorithm_name,
+                kind=algorithm.result_kind,
+            )
+        )
+        if algorithm.reason is not None:
+            lines.append("      reason: {reason}".format(reason=algorithm.reason))
+    return lines
 
 
 def render_inspect_llm_json(

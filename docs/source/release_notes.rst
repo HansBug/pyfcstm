@@ -40,6 +40,12 @@ Inspect and Diagnostics
 - Expanded static and verify-backed diagnostics, including numeric and guard
   reasoning, while keeping solver-backed inspect checks behind the existing
   explicit enablement and safety gates.
+- Added ``ModelInspect.verification`` execution metadata to the full JSON/API
+  report. Consumers can distinguish disabled verification, policy-excluded
+  algorithms, definite results, and indeterminate outcomes without treating
+  any of those states as new model diagnostics. The human CLI shows compact
+  coverage and indeterminate reasons; the stable ``pyfcstm.inspect.llm.v1``
+  presentation remains unchanged.
 - Added isolated multi-provider repair evaluations that test whether a consumer
   can locate, explain, repair, and replay real diagnostics without access to
   hidden repository context.

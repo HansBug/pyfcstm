@@ -27,42 +27,48 @@ runPyGeneratedModelCase({
             "init": {
                 "type": "Integer",
                 "value": 5
-            }
+            },
+            "doc": null
         },
         "left_result": {
             "type": "int",
             "init": {
                 "type": "Integer",
                 "value": 0
-            }
+            },
+            "doc": null
         },
         "right_limit": {
             "type": "int",
             "init": {
                 "type": "Integer",
                 "value": 6
-            }
+            },
+            "doc": null
         },
         "right_result": {
             "type": "int",
             "init": {
                 "type": "Integer",
                 "value": 0
-            }
+            },
+            "doc": null
         },
         "shared_counter": {
             "type": "int",
             "init": {
                 "type": "Integer",
                 "value": 100
-            }
+            },
+            "doc": null
         },
         "shared_ready": {
             "type": "int",
             "init": {
                 "type": "Integer",
                 "value": 1
-            }
+            },
+            "doc": null
         }
     },
     "root_state": "Plant",
@@ -96,7 +102,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant"
+                    "parent": "Plant",
+                    "doc": null
                 },
                 {
                     "from_state": "LeftUnit",
@@ -104,7 +111,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant"
+                    "parent": "Plant",
+                    "doc": null
                 }
             ],
             "named_functions": {},
@@ -117,6 +125,7 @@ runPyGeneratedModelCase({
                 "RightUnit": 1
             },
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": false,
             "is_root_state": true,
@@ -136,7 +145,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant"
+                    "parent": "Plant",
+                    "doc": null
                 }
             ],
             "transitions_from": [
@@ -146,7 +156,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": null
+                    "parent": null,
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -156,7 +167,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": null
+                    "parent": null,
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [
@@ -166,7 +178,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant"
+                    "parent": "Plant",
+                    "doc": null
                 }
             ],
             "transitions_entering_children_simplified": [
@@ -176,7 +189,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant"
+                    "parent": "Plant",
+                    "doc": null
                 }
             ],
             "list_on_enters": [],
@@ -218,7 +232,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant.LeftUnit"
+                    "parent": "Plant.LeftUnit",
+                    "doc": null
                 },
                 {
                     "from_state": "Idle",
@@ -254,7 +269,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Plant.LeftUnit"
+                    "parent": "Plant.LeftUnit",
+                    "doc": null
                 },
                 {
                     "from_state": "Busy",
@@ -298,7 +314,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Plant.LeftUnit"
+                    "parent": "Plant.LeftUnit",
+                    "doc": null
                 }
             ],
             "named_functions": {},
@@ -311,6 +328,7 @@ runPyGeneratedModelCase({
                 "Busy": 1
             },
             "extra_name": "Left Unit",
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": false,
             "is_root_state": false,
@@ -330,7 +348,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant.LeftUnit"
+                    "parent": "Plant.LeftUnit",
+                    "doc": null
                 }
             ],
             "transitions_from": [
@@ -340,7 +359,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant"
+                    "parent": "Plant",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -350,7 +370,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant"
+                    "parent": "Plant",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [
@@ -360,7 +381,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant.LeftUnit"
+                    "parent": "Plant.LeftUnit",
+                    "doc": null
                 }
             ],
             "transitions_entering_children_simplified": [
@@ -370,7 +392,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant.LeftUnit"
+                    "parent": "Plant.LeftUnit",
+                    "doc": null
                 }
             ],
             "list_on_enters": [],
@@ -407,6 +430,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -455,7 +479,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Plant.LeftUnit"
+                    "parent": "Plant.LeftUnit",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -465,7 +490,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant.LeftUnit"
+                    "parent": "Plant.LeftUnit",
+                    "doc": null
                 },
                 {
                     "from_state": "Busy",
@@ -509,7 +535,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Plant.LeftUnit"
+                    "parent": "Plant.LeftUnit",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -548,6 +575,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -604,7 +632,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Plant.LeftUnit"
+                    "parent": "Plant.LeftUnit",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -642,7 +671,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Plant.LeftUnit"
+                    "parent": "Plant.LeftUnit",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -682,7 +712,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant.RightUnit"
+                    "parent": "Plant.RightUnit",
+                    "doc": null
                 },
                 {
                     "from_state": "Idle",
@@ -718,7 +749,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Plant.RightUnit"
+                    "parent": "Plant.RightUnit",
+                    "doc": null
                 },
                 {
                     "from_state": "Busy",
@@ -762,7 +794,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Plant.RightUnit"
+                    "parent": "Plant.RightUnit",
+                    "doc": null
                 }
             ],
             "named_functions": {},
@@ -775,6 +808,7 @@ runPyGeneratedModelCase({
                 "Busy": 1
             },
             "extra_name": "Right Unit",
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": false,
             "is_root_state": false,
@@ -794,7 +828,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant.RightUnit"
+                    "parent": "Plant.RightUnit",
+                    "doc": null
                 }
             ],
             "transitions_from": [],
@@ -805,7 +840,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant"
+                    "parent": "Plant",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [
@@ -815,7 +851,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant.RightUnit"
+                    "parent": "Plant.RightUnit",
+                    "doc": null
                 }
             ],
             "transitions_entering_children_simplified": [
@@ -825,7 +862,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant.RightUnit"
+                    "parent": "Plant.RightUnit",
+                    "doc": null
                 }
             ],
             "list_on_enters": [],
@@ -862,6 +900,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -910,7 +949,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Plant.RightUnit"
+                    "parent": "Plant.RightUnit",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -920,7 +960,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant.RightUnit"
+                    "parent": "Plant.RightUnit",
+                    "doc": null
                 },
                 {
                     "from_state": "Busy",
@@ -964,7 +1005,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Plant.RightUnit"
+                    "parent": "Plant.RightUnit",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -1003,6 +1045,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -1059,7 +1102,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Plant.RightUnit"
+                    "parent": "Plant.RightUnit",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -1097,7 +1141,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Plant.RightUnit"
+                    "parent": "Plant.RightUnit",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -1129,7 +1174,8 @@ runPyGeneratedModelCase({
                 "expr": {
                     "__class__": "Integer",
                     "raw": "100"
-                }
+                },
+                "doc": null
             },
             {
                 "__class__": "DefAssignment",
@@ -1138,7 +1184,8 @@ runPyGeneratedModelCase({
                 "expr": {
                     "__class__": "Integer",
                     "raw": "1"
-                }
+                },
+                "doc": null
             },
             {
                 "__class__": "DefAssignment",
@@ -1147,7 +1194,8 @@ runPyGeneratedModelCase({
                 "expr": {
                     "__class__": "Integer",
                     "raw": "5"
-                }
+                },
+                "doc": null
             },
             {
                 "__class__": "DefAssignment",
@@ -1156,7 +1204,8 @@ runPyGeneratedModelCase({
                 "expr": {
                     "__class__": "Integer",
                     "raw": "6"
-                }
+                },
+                "doc": null
             },
             {
                 "__class__": "DefAssignment",
@@ -1165,7 +1214,8 @@ runPyGeneratedModelCase({
                 "expr": {
                     "__class__": "Integer",
                     "raw": "0"
-                }
+                },
+                "doc": null
             },
             {
                 "__class__": "DefAssignment",
@@ -1174,25 +1224,29 @@ runPyGeneratedModelCase({
                 "expr": {
                     "__class__": "Integer",
                     "raw": "0"
-                }
+                },
+                "doc": null
             }
         ],
         "root_state": {
             "__class__": "StateDefinition",
             "name": "Plant",
             "extra_name": null,
+            "doc": null,
             "events": [],
             "substates": [
                 {
                     "__class__": "StateDefinition",
                     "name": "LeftUnit",
                     "extra_name": "Left Unit",
+                    "doc": null,
                     "events": [],
                     "substates": [
                         {
                             "__class__": "StateDefinition",
                             "name": "Idle",
                             "extra_name": null,
+                            "doc": null,
                             "events": [],
                             "substates": [],
                             "transitions": [],
@@ -1206,6 +1260,7 @@ runPyGeneratedModelCase({
                             "__class__": "StateDefinition",
                             "name": "Busy",
                             "extra_name": null,
+                            "doc": null,
                             "events": [],
                             "substates": [],
                             "transitions": [],
@@ -1223,7 +1278,8 @@ runPyGeneratedModelCase({
                             "to_state": "Idle",
                             "event_id": null,
                             "condition_expr": null,
-                            "post_operations": []
+                            "post_operations": [],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -1259,7 +1315,8 @@ runPyGeneratedModelCase({
                                         }
                                     }
                                 }
-                            ]
+                            ],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -1303,7 +1360,8 @@ runPyGeneratedModelCase({
                                         "name": "shared_counter"
                                     }
                                 }
-                            ]
+                            ],
+                            "doc": null
                         }
                     ],
                     "enters": [],
@@ -1316,12 +1374,14 @@ runPyGeneratedModelCase({
                     "__class__": "StateDefinition",
                     "name": "RightUnit",
                     "extra_name": "Right Unit",
+                    "doc": null,
                     "events": [],
                     "substates": [
                         {
                             "__class__": "StateDefinition",
                             "name": "Idle",
                             "extra_name": null,
+                            "doc": null,
                             "events": [],
                             "substates": [],
                             "transitions": [],
@@ -1335,6 +1395,7 @@ runPyGeneratedModelCase({
                             "__class__": "StateDefinition",
                             "name": "Busy",
                             "extra_name": null,
+                            "doc": null,
                             "events": [],
                             "substates": [],
                             "transitions": [],
@@ -1352,7 +1413,8 @@ runPyGeneratedModelCase({
                             "to_state": "Idle",
                             "event_id": null,
                             "condition_expr": null,
-                            "post_operations": []
+                            "post_operations": [],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -1388,7 +1450,8 @@ runPyGeneratedModelCase({
                                         }
                                     }
                                 }
-                            ]
+                            ],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -1432,7 +1495,8 @@ runPyGeneratedModelCase({
                                         "name": "shared_counter"
                                     }
                                 }
-                            ]
+                            ],
+                            "doc": null
                         }
                     ],
                     "enters": [],
@@ -1449,7 +1513,8 @@ runPyGeneratedModelCase({
                     "to_state": "LeftUnit",
                     "event_id": null,
                     "condition_expr": null,
-                    "post_operations": []
+                    "post_operations": [],
+                    "doc": null
                 },
                 {
                     "__class__": "TransitionDefinition",
@@ -1457,7 +1522,8 @@ runPyGeneratedModelCase({
                     "to_state": "RightUnit",
                     "event_id": null,
                     "condition_expr": null,
-                    "post_operations": []
+                    "post_operations": [],
+                    "doc": null
                 }
             ],
             "enters": [],

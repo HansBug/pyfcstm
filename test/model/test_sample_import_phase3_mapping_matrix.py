@@ -102,23 +102,32 @@ class TestModelStateLab:
     def test_model(self, model):
         assert model.defines == {
             "exact_counter": VarDefine(
-                name="exact_counter", type="int", init=Integer(value=1)
+                name="exact_counter", type="int", init=Integer(value=1), doc=None
             ),
             "set_status_flag": VarDefine(
-                name="set_status_flag", type="int", init=Integer(value=2)
+                name="set_status_flag", type="int", init=Integer(value=2), doc=None
             ),
             "sensor_temp": VarDefine(
-                name="sensor_temp", type="int", init=Integer(value=3)
+                name="sensor_temp", type="int", init=Integer(value=3), doc=None
             ),
             "pair_main_low_a_main_b_low": VarDefine(
-                name="pair_main_low_a_main_b_low", type="int", init=Integer(value=4)
+                name="pair_main_low_a_main_b_low",
+                type="int",
+                init=Integer(value=4),
+                doc=None,
             ),
             "fallback_timeout": VarDefine(
-                name="fallback_timeout", type="int", init=Integer(value=5)
+                name="fallback_timeout", type="int", init=Integer(value=5), doc=None
             ),
-            "set_a": VarDefine(name="set_a", type="int", init=Integer(value=6)),
-            "set_b": VarDefine(name="set_b", type="int", init=Integer(value=7)),
-            "set_c": VarDefine(name="set_c", type="int", init=Integer(value=8)),
+            "set_a": VarDefine(
+                name="set_a", type="int", init=Integer(value=6), doc=None
+            ),
+            "set_b": VarDefine(
+                name="set_b", type="int", init=Integer(value=7), doc=None
+            ),
+            "set_c": VarDefine(
+                name="set_c", type="int", init=Integer(value=8), doc=None
+            ),
         }
         assert model.root_state.name == "Lab"
         assert model.root_state.path == ("Lab",)
@@ -127,30 +136,43 @@ class TestModelStateLab:
         ast_node = model.to_ast_node()
         assert ast_node.definitions == [
             dsl_nodes.DefAssignment(
-                name="exact_counter", type="int", expr=dsl_nodes.Integer(raw="1")
+                name="exact_counter",
+                type="int",
+                expr=dsl_nodes.Integer(raw="1"),
+                doc=None,
             ),
             dsl_nodes.DefAssignment(
-                name="set_status_flag", type="int", expr=dsl_nodes.Integer(raw="2")
+                name="set_status_flag",
+                type="int",
+                expr=dsl_nodes.Integer(raw="2"),
+                doc=None,
             ),
             dsl_nodes.DefAssignment(
-                name="sensor_temp", type="int", expr=dsl_nodes.Integer(raw="3")
+                name="sensor_temp",
+                type="int",
+                expr=dsl_nodes.Integer(raw="3"),
+                doc=None,
             ),
             dsl_nodes.DefAssignment(
                 name="pair_main_low_a_main_b_low",
                 type="int",
                 expr=dsl_nodes.Integer(raw="4"),
+                doc=None,
             ),
             dsl_nodes.DefAssignment(
-                name="fallback_timeout", type="int", expr=dsl_nodes.Integer(raw="5")
+                name="fallback_timeout",
+                type="int",
+                expr=dsl_nodes.Integer(raw="5"),
+                doc=None,
             ),
             dsl_nodes.DefAssignment(
-                name="set_a", type="int", expr=dsl_nodes.Integer(raw="6")
+                name="set_a", type="int", expr=dsl_nodes.Integer(raw="6"), doc=None
             ),
             dsl_nodes.DefAssignment(
-                name="set_b", type="int", expr=dsl_nodes.Integer(raw="7")
+                name="set_b", type="int", expr=dsl_nodes.Integer(raw="7"), doc=None
             ),
             dsl_nodes.DefAssignment(
-                name="set_c", type="int", expr=dsl_nodes.Integer(raw="8")
+                name="set_c", type="int", expr=dsl_nodes.Integer(raw="8"), doc=None
             ),
         ]
         assert ast_node.root_state.name == "Lab"
@@ -166,6 +188,7 @@ class TestModelStateLab:
         assert state_lab.transitions[0].event is None
         assert state_lab.transitions[0].guard is None
         assert state_lab.transitions[0].effects == []
+        assert state_lab.transitions[0].doc is None
         assert state_lab.transitions[0].parent_ref().name == "Lab"
         assert state_lab.transitions[0].parent_ref().path == ("Lab",)
         assert state_lab.named_functions == {}
@@ -177,6 +200,7 @@ class TestModelStateLab:
         assert state_lab.substate_name_to_id == {"Worker": 0}
         assert state_lab.extra_name is None
         assert not state_lab.is_pseudo
+        assert state_lab.doc is None
         assert state_lab.abstract_on_during_aspects == []
         assert state_lab.abstract_on_durings == []
         assert state_lab.abstract_on_enters == []
@@ -187,6 +211,7 @@ class TestModelStateLab:
         assert state_lab.init_transitions[0].event is None
         assert state_lab.init_transitions[0].guard is None
         assert state_lab.init_transitions[0].effects == []
+        assert state_lab.init_transitions[0].doc is None
         assert state_lab.init_transitions[0].parent_ref().name == "Lab"
         assert state_lab.init_transitions[0].parent_ref().path == ("Lab",)
         assert not state_lab.is_leaf_state
@@ -203,6 +228,7 @@ class TestModelStateLab:
         assert state_lab.transitions_entering_children[0].event is None
         assert state_lab.transitions_entering_children[0].guard is None
         assert state_lab.transitions_entering_children[0].effects == []
+        assert state_lab.transitions_entering_children[0].doc is None
         assert state_lab.transitions_entering_children[0].parent_ref().name == "Lab"
         assert state_lab.transitions_entering_children[0].parent_ref().path == ("Lab",)
         assert len(state_lab.transitions_entering_children_simplified) == 1
@@ -216,6 +242,7 @@ class TestModelStateLab:
         assert state_lab.transitions_entering_children_simplified[0].event is None
         assert state_lab.transitions_entering_children_simplified[0].guard is None
         assert state_lab.transitions_entering_children_simplified[0].effects == []
+        assert state_lab.transitions_entering_children_simplified[0].doc is None
         assert (
             state_lab.transitions_entering_children_simplified[0].parent_ref().name
             == "Lab"
@@ -229,6 +256,7 @@ class TestModelStateLab:
         assert state_lab.transitions_from[0].event is None
         assert state_lab.transitions_from[0].guard is None
         assert state_lab.transitions_from[0].effects == []
+        assert state_lab.transitions_from[0].doc is None
         assert state_lab.transitions_from[0].parent_ref is None
         assert len(state_lab.transitions_to) == 1
         assert state_lab.transitions_to[0].from_state == INIT_STATE
@@ -236,6 +264,7 @@ class TestModelStateLab:
         assert state_lab.transitions_to[0].event is None
         assert state_lab.transitions_to[0].guard is None
         assert state_lab.transitions_to[0].effects == []
+        assert state_lab.transitions_to[0].doc is None
         assert state_lab.transitions_to[0].parent_ref is None
 
     def test_state_lab_to_ast_node(self, state_lab):
@@ -308,12 +337,14 @@ class TestModelStateLab:
                                         ),
                                     ],
                                     name=None,
+                                    doc=None,
                                 )
                             ],
                             exits=[],
                             during_aspects=[],
                             force_transitions=[],
                             is_pseudo=False,
+                            doc=None,
                         ),
                         dsl_nodes.StateDefinition(
                             name="Active",
@@ -341,12 +372,14 @@ class TestModelStateLab:
                                         )
                                     ],
                                     name=None,
+                                    doc=None,
                                 )
                             ],
                             exits=[],
                             during_aspects=[],
                             force_transitions=[],
                             is_pseudo=False,
+                            doc=None,
                         ),
                     ],
                     transitions=[
@@ -356,6 +389,7 @@ class TestModelStateLab:
                             event_id=None,
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Idle",
@@ -367,6 +401,7 @@ class TestModelStateLab:
                                 expr2=dsl_nodes.Name(name="set_status_flag"),
                             ),
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Active",
@@ -387,6 +422,7 @@ class TestModelStateLab:
                                     ),
                                 )
                             ],
+                            doc=None,
                         ),
                     ],
                     enters=[],
@@ -395,6 +431,7 @@ class TestModelStateLab:
                     during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
+                    doc=None,
                 )
             ],
             transitions=[
@@ -404,6 +441,7 @@ class TestModelStateLab:
                     event_id=None,
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 )
             ],
             enters=[],
@@ -412,6 +450,7 @@ class TestModelStateLab:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_lab_list_on_enters(self, state_lab):
@@ -481,6 +520,7 @@ class TestModelStateLab:
         assert state_lab_worker.transitions[0].event is None
         assert state_lab_worker.transitions[0].guard is None
         assert state_lab_worker.transitions[0].effects == []
+        assert state_lab_worker.transitions[0].doc is None
         assert state_lab_worker.transitions[0].parent_ref().name == "Worker"
         assert state_lab_worker.transitions[0].parent_ref().path == ("Lab", "Worker")
         assert state_lab_worker.transitions[1].from_state == "Idle"
@@ -490,6 +530,7 @@ class TestModelStateLab:
             x=Variable(name="sensor_temp"), op=">", y=Variable(name="set_status_flag")
         )
         assert state_lab_worker.transitions[1].effects == []
+        assert state_lab_worker.transitions[1].doc is None
         assert state_lab_worker.transitions[1].parent_ref().name == "Worker"
         assert state_lab_worker.transitions[1].parent_ref().path == ("Lab", "Worker")
         assert state_lab_worker.transitions[2].from_state == "Active"
@@ -510,6 +551,7 @@ class TestModelStateLab:
                 ),
             )
         ]
+        assert state_lab_worker.transitions[2].doc is None
         assert state_lab_worker.transitions[2].parent_ref().name == "Worker"
         assert state_lab_worker.transitions[2].parent_ref().path == ("Lab", "Worker")
         assert state_lab_worker.named_functions == {}
@@ -522,6 +564,7 @@ class TestModelStateLab:
         assert state_lab_worker.substate_name_to_id == {"Idle": 0, "Active": 1}
         assert state_lab_worker.extra_name == "Mapping Matrix"
         assert not state_lab_worker.is_pseudo
+        assert state_lab_worker.doc is None
         assert state_lab_worker.abstract_on_during_aspects == []
         assert state_lab_worker.abstract_on_durings == []
         assert state_lab_worker.abstract_on_enters == []
@@ -532,6 +575,7 @@ class TestModelStateLab:
         assert state_lab_worker.init_transitions[0].event is None
         assert state_lab_worker.init_transitions[0].guard is None
         assert state_lab_worker.init_transitions[0].effects == []
+        assert state_lab_worker.init_transitions[0].doc is None
         assert state_lab_worker.init_transitions[0].parent_ref().name == "Worker"
         assert state_lab_worker.init_transitions[0].parent_ref().path == (
             "Lab",
@@ -554,6 +598,7 @@ class TestModelStateLab:
         assert state_lab_worker.transitions_entering_children[0].event is None
         assert state_lab_worker.transitions_entering_children[0].guard is None
         assert state_lab_worker.transitions_entering_children[0].effects == []
+        assert state_lab_worker.transitions_entering_children[0].doc is None
         assert (
             state_lab_worker.transitions_entering_children[0].parent_ref().name
             == "Worker"
@@ -580,6 +625,7 @@ class TestModelStateLab:
         assert (
             state_lab_worker.transitions_entering_children_simplified[0].effects == []
         )
+        assert state_lab_worker.transitions_entering_children_simplified[0].doc is None
         assert (
             state_lab_worker.transitions_entering_children_simplified[0]
             .parent_ref()
@@ -596,6 +642,7 @@ class TestModelStateLab:
         assert state_lab_worker.transitions_to[0].event is None
         assert state_lab_worker.transitions_to[0].guard is None
         assert state_lab_worker.transitions_to[0].effects == []
+        assert state_lab_worker.transitions_to[0].doc is None
         assert state_lab_worker.transitions_to[0].parent_ref().name == "Lab"
         assert state_lab_worker.transitions_to[0].parent_ref().path == ("Lab",)
 
@@ -655,12 +702,14 @@ class TestModelStateLab:
                                 ),
                             ],
                             name=None,
+                            doc=None,
                         )
                     ],
                     exits=[],
                     during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
+                    doc=None,
                 ),
                 dsl_nodes.StateDefinition(
                     name="Active",
@@ -686,12 +735,14 @@ class TestModelStateLab:
                                 )
                             ],
                             name=None,
+                            doc=None,
                         )
                     ],
                     exits=[],
                     during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
+                    doc=None,
                 ),
             ],
             transitions=[
@@ -701,6 +752,7 @@ class TestModelStateLab:
                     event_id=None,
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Idle",
@@ -712,6 +764,7 @@ class TestModelStateLab:
                         expr2=dsl_nodes.Name(name="set_status_flag"),
                     ),
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Active",
@@ -732,6 +785,7 @@ class TestModelStateLab:
                             ),
                         )
                     ],
+                    doc=None,
                 ),
             ],
             enters=[],
@@ -740,6 +794,7 @@ class TestModelStateLab:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_lab_worker_list_on_enters(self, state_lab_worker):
@@ -878,6 +933,7 @@ class TestModelStateLab:
         assert state_lab_worker_idle.substate_name_to_id == {}
         assert state_lab_worker_idle.extra_name is None
         assert not state_lab_worker_idle.is_pseudo
+        assert state_lab_worker_idle.doc is None
         assert state_lab_worker_idle.abstract_on_during_aspects == []
         assert state_lab_worker_idle.abstract_on_durings == []
         assert state_lab_worker_idle.abstract_on_enters == []
@@ -968,6 +1024,7 @@ class TestModelStateLab:
             x=Variable(name="sensor_temp"), op=">", y=Variable(name="set_status_flag")
         )
         assert state_lab_worker_idle.transitions_from[0].effects == []
+        assert state_lab_worker_idle.transitions_from[0].doc is None
         assert state_lab_worker_idle.transitions_from[0].parent_ref().name == "Worker"
         assert state_lab_worker_idle.transitions_from[0].parent_ref().path == (
             "Lab",
@@ -979,6 +1036,7 @@ class TestModelStateLab:
         assert state_lab_worker_idle.transitions_to[0].event is None
         assert state_lab_worker_idle.transitions_to[0].guard is None
         assert state_lab_worker_idle.transitions_to[0].effects == []
+        assert state_lab_worker_idle.transitions_to[0].doc is None
         assert state_lab_worker_idle.transitions_to[0].parent_ref().name == "Worker"
         assert state_lab_worker_idle.transitions_to[0].parent_ref().path == (
             "Lab",
@@ -1002,6 +1060,7 @@ class TestModelStateLab:
                 ),
             )
         ]
+        assert state_lab_worker_idle.transitions_to[1].doc is None
         assert state_lab_worker_idle.transitions_to[1].parent_ref().name == "Worker"
         assert state_lab_worker_idle.transitions_to[1].parent_ref().path == (
             "Lab",
@@ -1056,12 +1115,14 @@ class TestModelStateLab:
                         ),
                     ],
                     name=None,
+                    doc=None,
                 )
             ],
             exits=[],
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_lab_worker_idle_list_on_enters(self, state_lab_worker_idle):
@@ -1295,6 +1356,7 @@ class TestModelStateLab:
         assert state_lab_worker_active.substate_name_to_id == {}
         assert state_lab_worker_active.extra_name is None
         assert not state_lab_worker_active.is_pseudo
+        assert state_lab_worker_active.doc is None
         assert state_lab_worker_active.abstract_on_during_aspects == []
         assert state_lab_worker_active.abstract_on_durings == []
         assert state_lab_worker_active.abstract_on_enters == []
@@ -1381,6 +1443,7 @@ class TestModelStateLab:
                 ),
             )
         ]
+        assert state_lab_worker_active.transitions_from[0].doc is None
         assert state_lab_worker_active.transitions_from[0].parent_ref().name == "Worker"
         assert state_lab_worker_active.transitions_from[0].parent_ref().path == (
             "Lab",
@@ -1394,6 +1457,7 @@ class TestModelStateLab:
             x=Variable(name="sensor_temp"), op=">", y=Variable(name="set_status_flag")
         )
         assert state_lab_worker_active.transitions_to[0].effects == []
+        assert state_lab_worker_active.transitions_to[0].doc is None
         assert state_lab_worker_active.transitions_to[0].parent_ref().name == "Worker"
         assert state_lab_worker_active.transitions_to[0].parent_ref().path == (
             "Lab",
@@ -1424,12 +1488,14 @@ class TestModelStateLab:
                         )
                     ],
                     name=None,
+                    doc=None,
                 )
             ],
             exits=[],
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_lab_worker_active_list_on_enters(self, state_lab_worker_active):

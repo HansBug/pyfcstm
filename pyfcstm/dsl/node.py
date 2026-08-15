@@ -42,6 +42,7 @@ Example::
 """
 
 import io
+from contextvars import ContextVar
 import json
 import math
 import os
@@ -53,6 +54,7 @@ from typing import List, Union, Optional, Any
 from hbutils.design import SingletonMark
 
 from ..utils.validate import Span
+from ..utils.doc import validate_documentation_for_export
 
 __all__ = [
     "ASTNode",
@@ -122,6 +124,35 @@ __all__ = [
     "DuringAspectAbstractFunction",
     "DuringAspectRefFunction",
 ]
+
+
+_INCLUDE_DOCUMENTATION = ContextVar(
+    "pyfcstm_include_documentation", default=True
+)
+
+
+def render_ast(node: "ASTNode", *, include_documentation: bool = True) -> str:
+    """Render an AST node without mutating it or any descendant.
+
+    The context-scoped flag is observed by owner renderers while their normal
+    ``__str__`` implementations recurse through child nodes.  This preserves
+    the public no-argument ``__str__`` contract and makes doc-free rendering
+    safe for diagnostic and display callers.
+    """
+    token = _INCLUDE_DOCUMENTATION.set(include_documentation)
+    try:
+        return str(node)
+    finally:
+        _INCLUDE_DOCUMENTATION.reset(token)
+
+
+def render_without_documentation(node: "ASTNode") -> str:
+    """Render an AST subtree while omitting every owner documentation block."""
+    return render_ast(node, include_documentation=False)
+
+
+def _documentation_enabled() -> bool:
+    return _INCLUDE_DOCUMENTATION.get()
 
 
 @dataclass
@@ -699,6 +730,31 @@ def _render_operational_statement_block(
         return sf.getvalue()
 
 
+def _render_documentation_block(doc: Optional[str]) -> Optional[str]:
+    if doc is None or not _documentation_enabled():
+        return None
+    validate_documentation_for_export(doc)
+    if doc == "":
+        return "/*\n */"
+    body = "\n".join(" *" if line == "" else " * " + line for line in doc.split("\n"))
+    return "/*\n" + body + "\n */"
+
+
+def _render_documentation_prefix(doc: Optional[str]) -> str:
+    block = _render_documentation_block(doc)
+    return "" if block is None else block + "\n"
+
+
+def _render_abstract_documented(head: str, doc: Optional[str]) -> str:
+    if doc is None or not _documentation_enabled():
+        return head + ";"
+    validate_documentation_for_export(doc)
+    if doc == "":
+        return head + " /*\n*/"
+    body = "\n".join("    *" if line == "" else "    * " + line for line in doc.split("\n"))
+    return head + " /*\n" + body + "\n*/"
+
+
 @dataclass
 class ConstantDefinition(Statement):
     """
@@ -791,6 +847,7 @@ class DefAssignment(Statement):
     name: str
     type: str
     expr: Expr
+    doc: Optional[str] = None
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
@@ -800,7 +857,7 @@ class DefAssignment(Statement):
         :return: String representation of the definition assignment
         :rtype: str
         """
-        return f"def {self.type} {self.name} = {self.expr};"
+        return _render_documentation_prefix(self.doc) + f"def {self.type} {self.name} = {self.expr};"
 
 
 @dataclass
@@ -1462,6 +1519,7 @@ class TransitionDefinition(ASTNode):
     combo_trigger: Optional[ComboTransitionTrigger] = field(
         default=None, repr=False, compare=False
     )
+    doc: Optional[str] = None
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
@@ -1472,6 +1530,7 @@ class TransitionDefinition(ASTNode):
         :rtype: str
         """
         with io.StringIO() as sf:
+            print(_render_documentation_prefix(self.doc), file=sf, end="")
             print(
                 "[*]" if self.from_state is INIT_STATE else self.from_state,
                 file=sf,
@@ -1545,6 +1604,7 @@ class ForceTransitionDefinition(ASTNode):
     condition_expr: Optional[Expr]
     event_scope: Optional[str] = field(default=None, repr=False, compare=False)
     source_raw: Optional[str] = field(default=None, repr=False, compare=False)
+    doc: Optional[str] = None
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
@@ -1555,6 +1615,7 @@ class ForceTransitionDefinition(ASTNode):
         :rtype: str
         """
         with io.StringIO() as sf:
+            print(_render_documentation_prefix(self.doc), file=sf, end="")
             print("! ", file=sf, end="")
             print("*" if self.from_state is ALL else self.from_state, file=sf, end="")
             print(" -> ", file=sf, end="")
@@ -1640,6 +1701,7 @@ class StateDefinition(ASTNode):
     during_aspects: List["DuringAspectStatement"] = None
     force_transitions: List["ForceTransitionDefinition"] = None
     is_pseudo: bool = False
+    doc: Optional[str] = None
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -1664,6 +1726,7 @@ class StateDefinition(ASTNode):
         :rtype: str
         """
         with io.StringIO() as sf:
+            print(_render_documentation_prefix(self.doc), file=sf, end="")
             if self.is_pseudo:
                 print("pseudo ", file=sf, end="")
             print(f"state {self.name}", file=sf, end="")
@@ -1832,6 +1895,7 @@ class EventDefinition(ASTNode):
 
     name: str
     extra_name: Optional[str] = None
+    doc: Optional[str] = None
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
@@ -1842,6 +1906,7 @@ class EventDefinition(ASTNode):
         :rtype: str
         """
         with io.StringIO() as sf:
+            print(_render_documentation_prefix(self.doc), file=sf, end="")
             print(f"event {self.name}", file=sf, end="")
             if self.extra_name is not None:
                 print(f" named {self.extra_name!r}", file=sf, end="")
@@ -1928,6 +1993,7 @@ class EnterOperations(EnterStatement):
 
     operations: List[OperationalStatement]
     name: Optional[str] = None
+    doc: Optional[str] = None
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
@@ -1944,7 +2010,7 @@ class EnterOperations(EnterStatement):
                 print(f"enter {{", file=f)
             print(_render_operational_statement_block(self.operations), file=f, end="")
             print("}", file=f, end="")
-            return f.getvalue()
+            return _render_documentation_prefix(self.doc) + f.getvalue()
 
 
 @dataclass
@@ -1966,12 +2032,12 @@ class EnterAbstractFunction(EnterStatement):
         >>> enter_func = EnterAbstractFunction("initState", "Initialize the state")
         >>> print(str(enter_func))
         enter abstract initState /*
-            Initialize the state
+            * Initialize the state
         */
     """
 
     name: Optional[str]
-    doc: Optional[str]
+    doc: Optional[str] = None
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
@@ -1981,20 +2047,8 @@ class EnterAbstractFunction(EnterStatement):
         :return: String representation of the enter abstract function
         :rtype: str
         """
-        with io.StringIO() as f:
-            if self.name:
-                print(f"enter abstract {self.name}", file=f, end="")
-            else:
-                print(f"enter abstract", file=f, end="")
-
-            if self.doc is not None:
-                print(" /*", file=f)
-                print(indent(self.doc, prefix="    "), file=f)
-                print("*/", file=f, end="")
-            else:
-                print(";", file=f, end="")
-
-            return f.getvalue()
+        head = f"enter abstract {self.name}" if self.name else "enter abstract"
+        return _render_abstract_documented(head, self.doc)
 
 
 @dataclass
@@ -2020,6 +2074,7 @@ class EnterRefFunction(EnterStatement):
 
     name: Optional[str]
     ref: ChainID
+    doc: Optional[str] = None
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
@@ -2030,9 +2085,9 @@ class EnterRefFunction(EnterStatement):
         :rtype: str
         """
         if self.name:
-            return f"enter {self.name} ref {self.ref};"
+            return _render_documentation_prefix(self.doc) + f"enter {self.name} ref {self.ref};"
         else:
-            return f"enter ref {self.ref};"
+            return _render_documentation_prefix(self.doc) + f"enter ref {self.ref};"
 
 
 @dataclass
@@ -2072,6 +2127,7 @@ class ExitOperations(ExitStatement):
 
     operations: List[OperationalStatement]
     name: Optional[str] = None
+    doc: Optional[str] = None
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
@@ -2089,7 +2145,7 @@ class ExitOperations(ExitStatement):
 
             print(_render_operational_statement_block(self.operations), file=f, end="")
             print("}", file=f, end="")
-            return f.getvalue()
+            return _render_documentation_prefix(self.doc) + f.getvalue()
 
 
 @dataclass
@@ -2111,12 +2167,12 @@ class ExitAbstractFunction(ExitStatement):
         >>> exit_func = ExitAbstractFunction("cleanupState", "Clean up resources")
         >>> print(str(exit_func))
         exit abstract cleanupState /*
-            Clean up resources
+            * Clean up resources
         */
     """
 
     name: Optional[str]
-    doc: Optional[str]
+    doc: Optional[str] = None
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
@@ -2126,20 +2182,8 @@ class ExitAbstractFunction(ExitStatement):
         :return: String representation of the exit abstract function
         :rtype: str
         """
-        with io.StringIO() as f:
-            if self.name:
-                print(f"exit abstract {self.name}", file=f, end="")
-            else:
-                print(f"exit abstract", file=f, end="")
-
-            if self.doc is not None:
-                print(" /*", file=f)
-                print(indent(self.doc, prefix="    "), file=f)
-                print("*/", file=f, end="")
-            else:
-                print(";", file=f, end="")
-
-            return f.getvalue()
+        head = f"exit abstract {self.name}" if self.name else "exit abstract"
+        return _render_abstract_documented(head, self.doc)
 
 
 @dataclass
@@ -2165,6 +2209,7 @@ class ExitRefFunction(ExitStatement):
 
     name: Optional[str]
     ref: ChainID
+    doc: Optional[str] = None
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
@@ -2175,9 +2220,9 @@ class ExitRefFunction(ExitStatement):
         :rtype: str
         """
         if self.name:
-            return f"exit {self.name} ref {self.ref};"
+            return _render_documentation_prefix(self.doc) + f"exit {self.name} ref {self.ref};"
         else:
-            return f"exit ref {self.ref};"
+            return _render_documentation_prefix(self.doc) + f"exit ref {self.ref};"
 
 
 @dataclass
@@ -2220,6 +2265,7 @@ class DuringOperations(DuringStatement):
     aspect: Optional[str]
     operations: List[OperationalStatement]
     name: Optional[str] = None
+    doc: Optional[str] = None
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
@@ -2242,7 +2288,7 @@ class DuringOperations(DuringStatement):
                     print(f"during {{", file=f)
             print(_render_operational_statement_block(self.operations), file=f, end="")
             print("}", file=f, end="")
-            return f.getvalue()
+            return _render_documentation_prefix(self.doc) + f.getvalue()
 
 
 @dataclass
@@ -2266,13 +2312,13 @@ class DuringAbstractFunction(DuringStatement):
         >>> during_func = DuringAbstractFunction("processData", "do", "Process incoming data")
         >>> print(str(during_func))
         during do abstract processData /*
-            Process incoming data
+            * Process incoming data
         */
     """
 
     name: Optional[str]
     aspect: Optional[str]
-    doc: Optional[str]
+    doc: Optional[str] = None
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
@@ -2282,26 +2328,11 @@ class DuringAbstractFunction(DuringStatement):
         :return: String representation of the during abstract function
         :rtype: str
         """
-        with io.StringIO() as f:
-            if self.name:
-                if self.aspect:
-                    print(f"during {self.aspect} abstract {self.name}", file=f, end="")
-                else:
-                    print(f"during abstract {self.name}", file=f, end="")
-            else:
-                if self.aspect:
-                    print(f"during {self.aspect} abstract", file=f, end="")
-                else:
-                    print(f"during abstract", file=f, end="")
-
-            if self.doc is not None:
-                print(" /*", file=f)
-                print(indent(self.doc, prefix="    "), file=f)
-                print("*/", file=f, end="")
-            else:
-                print(";", file=f, end="")
-
-            return f.getvalue()
+        if self.name:
+            head = f"during {self.aspect} abstract {self.name}" if self.aspect else f"during abstract {self.name}"
+        else:
+            head = f"during {self.aspect} abstract" if self.aspect else "during abstract"
+        return _render_abstract_documented(head, self.doc)
 
 
 @dataclass
@@ -2330,6 +2361,7 @@ class DuringRefFunction(DuringStatement):
     name: Optional[str]
     aspect: Optional[str]
     ref: ChainID
+    doc: Optional[str] = None
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
@@ -2341,14 +2373,14 @@ class DuringRefFunction(DuringStatement):
         """
         if self.name:
             if self.aspect:
-                return f"during {self.aspect} {self.name} ref {self.ref};"
+                return _render_documentation_prefix(self.doc) + f"during {self.aspect} {self.name} ref {self.ref};"
             else:
-                return f"during {self.name} ref {self.ref};"
+                return _render_documentation_prefix(self.doc) + f"during {self.name} ref {self.ref};"
         else:
             if self.aspect:
-                return f"during {self.aspect} ref {self.ref};"
+                return _render_documentation_prefix(self.doc) + f"during {self.aspect} ref {self.ref};"
             else:
-                return f"during ref {self.ref};"
+                return _render_documentation_prefix(self.doc) + f"during ref {self.ref};"
 
 
 @dataclass
@@ -2391,6 +2423,7 @@ class DuringAspectOperations(DuringAspectStatement):
     aspect: str
     operations: List[OperationalStatement]
     name: Optional[str] = None
+    doc: Optional[str] = None
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
@@ -2407,7 +2440,7 @@ class DuringAspectOperations(DuringAspectStatement):
                 print(f">> during {self.aspect} {{", file=f)
             print(_render_operational_statement_block(self.operations), file=f, end="")
             print("}", file=f, end="")
-            return f.getvalue()
+            return _render_documentation_prefix(self.doc) + f.getvalue()
 
 
 @dataclass
@@ -2433,13 +2466,13 @@ class DuringAspectAbstractFunction(DuringAspectStatement):
         ... )
         >>> print(str(during_func))
         >> during before abstract processData /*
-            Process incoming data
+            * Process incoming data
         */
     """
 
     name: Optional[str]
     aspect: str
-    doc: Optional[str]
+    doc: Optional[str] = None
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
@@ -2449,20 +2482,8 @@ class DuringAspectAbstractFunction(DuringAspectStatement):
         :return: String representation of the during aspect abstract function
         :rtype: str
         """
-        with io.StringIO() as f:
-            if self.name:
-                print(f">> during {self.aspect} abstract {self.name}", file=f, end="")
-            else:
-                print(f">> during {self.aspect} abstract", file=f, end="")
-
-            if self.doc is not None:
-                print(" /*", file=f)
-                print(indent(self.doc, prefix="    "), file=f)
-                print("*/", file=f, end="")
-            else:
-                print(";", file=f, end="")
-
-            return f.getvalue()
+        head = f">> during {self.aspect} abstract {self.name}" if self.name else f">> during {self.aspect} abstract"
+        return _render_abstract_documented(head, self.doc)
 
 
 @dataclass
@@ -2493,6 +2514,7 @@ class DuringAspectRefFunction(DuringAspectStatement):
     name: Optional[str]
     aspect: str
     ref: ChainID
+    doc: Optional[str] = None
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
@@ -2503,6 +2525,6 @@ class DuringAspectRefFunction(DuringAspectStatement):
         :rtype: str
         """
         if self.name:
-            return f">> during {self.aspect} {self.name} ref {self.ref};"
+            return _render_documentation_prefix(self.doc) + f">> during {self.aspect} {self.name} ref {self.ref};"
         else:
-            return f">> during {self.aspect} ref {self.ref};"
+            return _render_documentation_prefix(self.doc) + f">> during {self.aspect} ref {self.ref};"

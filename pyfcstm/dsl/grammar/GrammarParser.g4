@@ -39,26 +39,26 @@ state_machine_dsl
 
 // Top-level variable definitions that appear before the root state.
 def_assignment
-    : DEF deftype=(INT_TYPE | FLOAT_TYPE) ID ASSIGN init_expression SEMI
+    : leading_doc=MULTILINE_COMMENT? DEF deftype=(INT_TYPE | FLOAT_TYPE) ID ASSIGN init_expression SEMI
     ;
 
 // State-machine structural rules.
 state_definition
-    : pseudo=PSEUDO? STATE state_id=ID (NAMED extra_name=STRING)? SEMI
+    : leading_doc=MULTILINE_COMMENT? pseudo=PSEUDO? STATE state_id=ID (NAMED extra_name=STRING)? SEMI
         # leafStateDefinition
-    | pseudo=PSEUDO? STATE state_id=ID (NAMED extra_name=STRING)? LBRACE
+    | leading_doc=MULTILINE_COMMENT? pseudo=PSEUDO? STATE state_id=ID (NAMED extra_name=STRING)? LBRACE
       state_inner_statement* RBRACE
         # compositeStateDefinition
     ;
 
 transition_definition
-    : INIT_MARKER ARROW to_state=ID entry_combo_transition_trigger?
+    : leading_doc=MULTILINE_COMMENT? INIT_MARKER ARROW to_state=ID entry_combo_transition_trigger?
       (SEMI | EFFECT LBRACE operational_statement_set RBRACE)
         # entryTransitionDefinition
-    | from_state=ID ARROW to_state=ID combo_transition_trigger?
+    | leading_doc=MULTILINE_COMMENT? from_state=ID ARROW to_state=ID combo_transition_trigger?
       (SEMI | EFFECT LBRACE operational_statement_set RBRACE)
         # normalTransitionDefinition
-    | from_state=ID ARROW INIT_MARKER combo_transition_trigger?
+    | leading_doc=MULTILINE_COMMENT? from_state=ID ARROW INIT_MARKER combo_transition_trigger?
       (SEMI | EFFECT LBRACE operational_statement_set RBRACE)
         # exitTransitionDefinition
     ;
@@ -129,70 +129,70 @@ combo_guard_term
     ;
 
 transition_force_definition
-    : BANG from_state=ID ARROW to_state=ID
+    : leading_doc=MULTILINE_COMMENT? BANG from_state=ID ARROW to_state=ID
       (COLONCOLON from_id=ID | COLON chain_id | COLON IF LBRACK cond_expression RBRACK)?
       SEMI
         # normalForceTransitionDefinition
-    | BANG from_state=ID ARROW INIT_MARKER
+    | leading_doc=MULTILINE_COMMENT? BANG from_state=ID ARROW INIT_MARKER
       (COLONCOLON from_id=ID | COLON chain_id | COLON IF LBRACK cond_expression RBRACK)?
       SEMI
         # exitForceTransitionDefinition
-    | BANG STAR ARROW to_state=ID
+    | leading_doc=MULTILINE_COMMENT? BANG STAR ARROW to_state=ID
       ((COLONCOLON | COLON) chain_id | COLON IF LBRACK cond_expression RBRACK)?
       SEMI
         # normalAllForceTransitionDefinition
-    | BANG STAR ARROW INIT_MARKER
+    | leading_doc=MULTILINE_COMMENT? BANG STAR ARROW INIT_MARKER
       ((COLONCOLON | COLON) chain_id | COLON IF LBRACK cond_expression RBRACK)?
       SEMI
         # exitAllForceTransitionDefinition
     ;
 
 enter_definition
-    : ENTER (func_name=ID)? LBRACE operational_statement_set RBRACE
+    : leading_doc=MULTILINE_COMMENT? ENTER (func_name=ID)? LBRACE operational_statement_set RBRACE
         # enterOperations
-    | ENTER ABSTRACT func_name=ID SEMI
+    | leading_doc=MULTILINE_COMMENT? ENTER ABSTRACT func_name=ID SEMI
         # enterAbstractFunc
-    | ENTER ABSTRACT (func_name=ID)? raw_doc=MULTILINE_COMMENT
+    | leading_doc=MULTILINE_COMMENT? ENTER ABSTRACT (func_name=ID)? raw_doc=MULTILINE_COMMENT
         # enterAbstractFunc
-    | ENTER (func_name=ID)? REF chain_id SEMI
+    | leading_doc=MULTILINE_COMMENT? ENTER (func_name=ID)? REF chain_id SEMI
         # enterRefFunc
     ;
 
 exit_definition
-    : EXIT (func_name=ID)? LBRACE operational_statement_set RBRACE
+    : leading_doc=MULTILINE_COMMENT? EXIT (func_name=ID)? LBRACE operational_statement_set RBRACE
         # exitOperations
-    | EXIT ABSTRACT func_name=ID SEMI
+    | leading_doc=MULTILINE_COMMENT? EXIT ABSTRACT func_name=ID SEMI
         # exitAbstractFunc
-    | EXIT ABSTRACT (func_name=ID)? raw_doc=MULTILINE_COMMENT
+    | leading_doc=MULTILINE_COMMENT? EXIT ABSTRACT (func_name=ID)? raw_doc=MULTILINE_COMMENT
         # exitAbstractFunc
-    | EXIT (func_name=ID)? REF chain_id SEMI
+    | leading_doc=MULTILINE_COMMENT? EXIT (func_name=ID)? REF chain_id SEMI
         # exitRefFunc
     ;
 
 during_definition
-    : DURING aspect=(BEFORE | AFTER)? (func_name=ID)? LBRACE operational_statement_set RBRACE
+    : leading_doc=MULTILINE_COMMENT? DURING aspect=(BEFORE | AFTER)? (func_name=ID)? LBRACE operational_statement_set RBRACE
         # duringOperations
-    | DURING aspect=(BEFORE | AFTER)? ABSTRACT func_name=ID SEMI
+    | leading_doc=MULTILINE_COMMENT? DURING aspect=(BEFORE | AFTER)? ABSTRACT func_name=ID SEMI
         # duringAbstractFunc
-    | DURING aspect=(BEFORE | AFTER)? ABSTRACT (func_name=ID)? raw_doc=MULTILINE_COMMENT
+    | leading_doc=MULTILINE_COMMENT? DURING aspect=(BEFORE | AFTER)? ABSTRACT (func_name=ID)? raw_doc=MULTILINE_COMMENT
         # duringAbstractFunc
-    | DURING aspect=(BEFORE | AFTER)? (func_name=ID)? REF chain_id SEMI
+    | leading_doc=MULTILINE_COMMENT? DURING aspect=(BEFORE | AFTER)? (func_name=ID)? REF chain_id SEMI
         # duringRefFunc
     ;
 
 during_aspect_definition
-    : SHIFT_RIGHT DURING aspect=(BEFORE | AFTER) (func_name=ID)? LBRACE operational_statement_set RBRACE
+    : leading_doc=MULTILINE_COMMENT? SHIFT_RIGHT DURING aspect=(BEFORE | AFTER) (func_name=ID)? LBRACE operational_statement_set RBRACE
         # duringAspectOperations
-    | SHIFT_RIGHT DURING aspect=(BEFORE | AFTER) ABSTRACT func_name=ID SEMI
+    | leading_doc=MULTILINE_COMMENT? SHIFT_RIGHT DURING aspect=(BEFORE | AFTER) ABSTRACT func_name=ID SEMI
         # duringAspectAbstractFunc
-    | SHIFT_RIGHT DURING aspect=(BEFORE | AFTER) ABSTRACT (func_name=ID)? raw_doc=MULTILINE_COMMENT
+    | leading_doc=MULTILINE_COMMENT? SHIFT_RIGHT DURING aspect=(BEFORE | AFTER) ABSTRACT (func_name=ID)? raw_doc=MULTILINE_COMMENT
         # duringAspectAbstractFunc
-    | SHIFT_RIGHT DURING aspect=(BEFORE | AFTER) (func_name=ID)? REF chain_id SEMI
+    | leading_doc=MULTILINE_COMMENT? SHIFT_RIGHT DURING aspect=(BEFORE | AFTER) (func_name=ID)? REF chain_id SEMI
         # duringAspectRefFunc
     ;
 
 event_definition
-    : EVENT event_name=ID (NAMED extra_name=STRING)? SEMI
+    : leading_doc=MULTILINE_COMMENT? EVENT event_name=ID (NAMED extra_name=STRING)? SEMI
     ;
 
 // Import declarations are legal only inside composite states. The lexer has

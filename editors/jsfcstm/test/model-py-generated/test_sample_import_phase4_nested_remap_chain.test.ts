@@ -46,7 +46,8 @@ runPyGeneratedModelCase({
                 "Start"
             ],
             "path_name": "Root.Bus.Start",
-            "extra_name": "Top Start"
+            "extra_name": "Top Start",
+            "doc": null
         },
         {
             "name": "Stop",
@@ -60,7 +61,8 @@ runPyGeneratedModelCase({
                 "Stop"
             ],
             "path_name": "Root.Bus.Stop",
-            "extra_name": "Top Stop"
+            "extra_name": "Top Stop",
+            "doc": null
         },
         {
             "name": "Trip",
@@ -74,7 +76,8 @@ runPyGeneratedModelCase({
                 "Trip"
             ],
             "path_name": "Root.Bus.Trip",
-            "extra_name": "Top Trip"
+            "extra_name": "Top Trip",
+            "doc": null
         }
     ],
     "all_actions": [],
@@ -97,7 +100,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Root"
+                    "parent": "Root",
+                    "doc": null
                 }
             ],
             "named_functions": {},
@@ -110,6 +114,7 @@ runPyGeneratedModelCase({
                 "Bus": 1
             },
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": false,
             "is_root_state": true,
@@ -129,7 +134,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Root"
+                    "parent": "Root",
+                    "doc": null
                 }
             ],
             "transitions_from": [
@@ -139,7 +145,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": null
+                    "parent": null,
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -149,7 +156,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": null
+                    "parent": null,
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [
@@ -159,7 +167,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Root"
+                    "parent": "Root",
+                    "doc": null
                 }
             ],
             "transitions_entering_children_simplified": [
@@ -169,7 +178,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Root"
+                    "parent": "Root",
+                    "doc": null
                 }
             ],
             "list_on_enters": [],
@@ -212,7 +222,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Root.Child"
+                    "parent": "Root.Child",
+                    "doc": null
                 }
             ],
             "named_functions": {},
@@ -225,6 +236,7 @@ runPyGeneratedModelCase({
                 "InnerBus": 1
             },
             "extra_name": "Child Layer",
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": false,
             "is_root_state": false,
@@ -244,7 +256,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Root.Child"
+                    "parent": "Root.Child",
+                    "doc": null
                 }
             ],
             "transitions_from": [],
@@ -255,7 +268,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Root"
+                    "parent": "Root",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [
@@ -265,7 +279,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Root.Child"
+                    "parent": "Root.Child",
+                    "doc": null
                 }
             ],
             "transitions_entering_children_simplified": [
@@ -275,7 +290,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Root.Child"
+                    "parent": "Root.Child",
+                    "doc": null
                 }
             ],
             "list_on_enters": [],
@@ -318,7 +334,8 @@ runPyGeneratedModelCase({
                     "event": "Root.Bus.Trip",
                     "guard": null,
                     "effects": [],
-                    "parent": "Root.Child.Grand"
+                    "parent": "Root.Child.Grand",
+                    "doc": null
                 },
                 {
                     "from_state": "Running",
@@ -326,7 +343,8 @@ runPyGeneratedModelCase({
                     "event": "Root.Bus.Trip",
                     "guard": null,
                     "effects": [],
-                    "parent": "Root.Child.Grand"
+                    "parent": "Root.Child.Grand",
+                    "doc": null
                 },
                 {
                     "from_state": "Tripped",
@@ -334,7 +352,8 @@ runPyGeneratedModelCase({
                     "event": "Root.Bus.Trip",
                     "guard": null,
                     "effects": [],
-                    "parent": "Root.Child.Grand"
+                    "parent": "Root.Child.Grand",
+                    "doc": null
                 },
                 {
                     "from_state": "INIT_STATE",
@@ -342,7 +361,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Root.Child.Grand"
+                    "parent": "Root.Child.Grand",
+                    "doc": null
                 },
                 {
                     "from_state": "Idle",
@@ -350,7 +370,8 @@ runPyGeneratedModelCase({
                     "event": "Root.Bus.Start",
                     "guard": null,
                     "effects": [],
-                    "parent": "Root.Child.Grand"
+                    "parent": "Root.Child.Grand",
+                    "doc": null
                 },
                 {
                     "from_state": "Running",
@@ -358,7 +379,8 @@ runPyGeneratedModelCase({
                     "event": "Root.Bus.Stop",
                     "guard": null,
                     "effects": [],
-                    "parent": "Root.Child.Grand"
+                    "parent": "Root.Child.Grand",
+                    "doc": null
                 }
             ],
             "named_functions": {},
@@ -372,6 +394,7 @@ runPyGeneratedModelCase({
                 "Tripped": 2
             },
             "extra_name": "Grand Layer",
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": false,
             "is_root_state": false,
@@ -391,7 +414,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Root.Child.Grand"
+                    "parent": "Root.Child.Grand",
+                    "doc": null
                 }
             ],
             "transitions_from": [],
@@ -402,7 +426,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Root.Child"
+                    "parent": "Root.Child",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [
@@ -412,7 +437,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Root.Child.Grand"
+                    "parent": "Root.Child.Grand",
+                    "doc": null
                 }
             ],
             "transitions_entering_children_simplified": [
@@ -422,7 +448,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Root.Child.Grand"
+                    "parent": "Root.Child.Grand",
+                    "doc": null
                 }
             ],
             "list_on_enters": [],
@@ -461,6 +488,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -481,7 +509,8 @@ runPyGeneratedModelCase({
                     "event": "Root.Bus.Trip",
                     "guard": null,
                     "effects": [],
-                    "parent": "Root.Child.Grand"
+                    "parent": "Root.Child.Grand",
+                    "doc": null
                 },
                 {
                     "from_state": "Idle",
@@ -489,7 +518,8 @@ runPyGeneratedModelCase({
                     "event": "Root.Bus.Start",
                     "guard": null,
                     "effects": [],
-                    "parent": "Root.Child.Grand"
+                    "parent": "Root.Child.Grand",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -499,7 +529,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Root.Child.Grand"
+                    "parent": "Root.Child.Grand",
+                    "doc": null
                 },
                 {
                     "from_state": "Running",
@@ -507,7 +538,8 @@ runPyGeneratedModelCase({
                     "event": "Root.Bus.Stop",
                     "guard": null,
                     "effects": [],
-                    "parent": "Root.Child.Grand"
+                    "parent": "Root.Child.Grand",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -547,6 +579,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -567,7 +600,8 @@ runPyGeneratedModelCase({
                     "event": "Root.Bus.Trip",
                     "guard": null,
                     "effects": [],
-                    "parent": "Root.Child.Grand"
+                    "parent": "Root.Child.Grand",
+                    "doc": null
                 },
                 {
                     "from_state": "Running",
@@ -575,7 +609,8 @@ runPyGeneratedModelCase({
                     "event": "Root.Bus.Stop",
                     "guard": null,
                     "effects": [],
-                    "parent": "Root.Child.Grand"
+                    "parent": "Root.Child.Grand",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -585,7 +620,8 @@ runPyGeneratedModelCase({
                     "event": "Root.Bus.Start",
                     "guard": null,
                     "effects": [],
-                    "parent": "Root.Child.Grand"
+                    "parent": "Root.Child.Grand",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -625,6 +661,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -645,7 +682,8 @@ runPyGeneratedModelCase({
                     "event": "Root.Bus.Trip",
                     "guard": null,
                     "effects": [],
-                    "parent": "Root.Child.Grand"
+                    "parent": "Root.Child.Grand",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -655,7 +693,8 @@ runPyGeneratedModelCase({
                     "event": "Root.Bus.Trip",
                     "guard": null,
                     "effects": [],
-                    "parent": "Root.Child.Grand"
+                    "parent": "Root.Child.Grand",
+                    "doc": null
                 },
                 {
                     "from_state": "Running",
@@ -663,7 +702,8 @@ runPyGeneratedModelCase({
                     "event": "Root.Bus.Trip",
                     "guard": null,
                     "effects": [],
-                    "parent": "Root.Child.Grand"
+                    "parent": "Root.Child.Grand",
+                    "doc": null
                 },
                 {
                     "from_state": "Tripped",
@@ -671,7 +711,8 @@ runPyGeneratedModelCase({
                     "event": "Root.Bus.Trip",
                     "guard": null,
                     "effects": [],
-                    "parent": "Root.Child.Grand"
+                    "parent": "Root.Child.Grand",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -710,6 +751,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -764,7 +806,8 @@ runPyGeneratedModelCase({
                         "Start"
                     ],
                     "path_name": "Root.Bus.Start",
-                    "extra_name": "Top Start"
+                    "extra_name": "Top Start",
+                    "doc": null
                 },
                 "Stop": {
                     "name": "Stop",
@@ -778,7 +821,8 @@ runPyGeneratedModelCase({
                         "Stop"
                     ],
                     "path_name": "Root.Bus.Stop",
-                    "extra_name": "Top Stop"
+                    "extra_name": "Top Stop",
+                    "doc": null
                 },
                 "Trip": {
                     "name": "Trip",
@@ -792,7 +836,8 @@ runPyGeneratedModelCase({
                         "Trip"
                     ],
                     "path_name": "Root.Bus.Trip",
-                    "extra_name": "Top Trip"
+                    "extra_name": "Top Trip",
+                    "doc": null
                 }
             },
             "transitions": [],
@@ -803,6 +848,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -844,24 +890,28 @@ runPyGeneratedModelCase({
             "__class__": "StateDefinition",
             "name": "Root",
             "extra_name": null,
+            "doc": null,
             "events": [],
             "substates": [
                 {
                     "__class__": "StateDefinition",
                     "name": "Child",
                     "extra_name": "Child Layer",
+                    "doc": null,
                     "events": [],
                     "substates": [
                         {
                             "__class__": "StateDefinition",
                             "name": "Grand",
                             "extra_name": "Grand Layer",
+                            "doc": null,
                             "events": [],
                             "substates": [
                                 {
                                     "__class__": "StateDefinition",
                                     "name": "Idle",
                                     "extra_name": null,
+                                    "doc": null,
                                     "events": [],
                                     "substates": [],
                                     "transitions": [],
@@ -875,6 +925,7 @@ runPyGeneratedModelCase({
                                     "__class__": "StateDefinition",
                                     "name": "Running",
                                     "extra_name": null,
+                                    "doc": null,
                                     "events": [],
                                     "substates": [],
                                     "transitions": [],
@@ -888,6 +939,7 @@ runPyGeneratedModelCase({
                                     "__class__": "StateDefinition",
                                     "name": "Tripped",
                                     "extra_name": null,
+                                    "doc": null,
                                     "events": [],
                                     "substates": [],
                                     "transitions": [],
@@ -912,7 +964,8 @@ runPyGeneratedModelCase({
                                         "is_absolute": true
                                     },
                                     "condition_expr": null,
-                                    "post_operations": []
+                                    "post_operations": [],
+                                    "doc": null
                                 },
                                 {
                                     "__class__": "TransitionDefinition",
@@ -927,7 +980,8 @@ runPyGeneratedModelCase({
                                         "is_absolute": true
                                     },
                                     "condition_expr": null,
-                                    "post_operations": []
+                                    "post_operations": [],
+                                    "doc": null
                                 },
                                 {
                                     "__class__": "TransitionDefinition",
@@ -942,7 +996,8 @@ runPyGeneratedModelCase({
                                         "is_absolute": true
                                     },
                                     "condition_expr": null,
-                                    "post_operations": []
+                                    "post_operations": [],
+                                    "doc": null
                                 },
                                 {
                                     "__class__": "TransitionDefinition",
@@ -950,7 +1005,8 @@ runPyGeneratedModelCase({
                                     "to_state": "Idle",
                                     "event_id": null,
                                     "condition_expr": null,
-                                    "post_operations": []
+                                    "post_operations": [],
+                                    "doc": null
                                 },
                                 {
                                     "__class__": "TransitionDefinition",
@@ -965,7 +1021,8 @@ runPyGeneratedModelCase({
                                         "is_absolute": true
                                     },
                                     "condition_expr": null,
-                                    "post_operations": []
+                                    "post_operations": [],
+                                    "doc": null
                                 },
                                 {
                                     "__class__": "TransitionDefinition",
@@ -980,7 +1037,8 @@ runPyGeneratedModelCase({
                                         "is_absolute": true
                                     },
                                     "condition_expr": null,
-                                    "post_operations": []
+                                    "post_operations": [],
+                                    "doc": null
                                 }
                             ],
                             "enters": [],
@@ -993,6 +1051,7 @@ runPyGeneratedModelCase({
                             "__class__": "StateDefinition",
                             "name": "InnerBus",
                             "extra_name": null,
+                            "doc": null,
                             "events": [],
                             "substates": [],
                             "transitions": [],
@@ -1010,7 +1069,8 @@ runPyGeneratedModelCase({
                             "to_state": "Grand",
                             "event_id": null,
                             "condition_expr": null,
-                            "post_operations": []
+                            "post_operations": [],
+                            "doc": null
                         }
                     ],
                     "enters": [],
@@ -1023,21 +1083,25 @@ runPyGeneratedModelCase({
                     "__class__": "StateDefinition",
                     "name": "Bus",
                     "extra_name": null,
+                    "doc": null,
                     "events": [
                         {
                             "__class__": "EventDefinition",
                             "name": "Start",
-                            "extra_name": "Top Start"
+                            "extra_name": "Top Start",
+                            "doc": null
                         },
                         {
                             "__class__": "EventDefinition",
                             "name": "Stop",
-                            "extra_name": "Top Stop"
+                            "extra_name": "Top Stop",
+                            "doc": null
                         },
                         {
                             "__class__": "EventDefinition",
                             "name": "Trip",
-                            "extra_name": "Top Trip"
+                            "extra_name": "Top Trip",
+                            "doc": null
                         }
                     ],
                     "substates": [],
@@ -1056,7 +1120,8 @@ runPyGeneratedModelCase({
                     "to_state": "Child",
                     "event_id": null,
                     "condition_expr": null,
-                    "post_operations": []
+                    "post_operations": [],
+                    "doc": null
                 }
             ],
             "enters": [],

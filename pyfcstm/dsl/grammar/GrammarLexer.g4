@@ -141,6 +141,9 @@ STRING
     ;
 
 MULTILINE_COMMENT: '/*' .*? '*/';
+UNTERMINATED_MULTILINE_COMMENT
+    : '/*' ( ~[*] | '*' ~[/] )* '*'? EOF
+    ;
 LINE_COMMENT: '//' ~[\r\n]* -> skip;
 PYTHON_COMMENT: '#' ~[\r\n]* -> skip;
 WS: [ \t\n\r]+ -> skip;
@@ -151,6 +154,10 @@ mode IMPORT_HEADER_MODE;
 
 IMPORT_HEADER_WS: [ \t\n\r]+ -> skip;
 IMPORT_HEADER_MULTILINE_COMMENT: '/*' .*? '*/' -> skip;
+IMPORT_HEADER_UNTERMINATED_MULTILINE_COMMENT
+    : '/*' ( ~[*] | '*' ~[/] )* '*'? EOF
+      -> type(UNTERMINATED_MULTILINE_COMMENT)
+    ;
 IMPORT_HEADER_LINE_COMMENT: '//' ~[\r\n]* -> skip;
 IMPORT_HEADER_PYTHON_COMMENT: '#' ~[\r\n]* -> skip;
 IMPORT_HEADER_STRING
@@ -171,6 +178,10 @@ mode IMPORT_BLOCK_MODE;
 
 IMPORT_BLOCK_WS: [ \t\n\r]+ -> skip;
 IMPORT_BLOCK_MULTILINE_COMMENT: '/*' .*? '*/' -> skip;
+IMPORT_BLOCK_UNTERMINATED_MULTILINE_COMMENT
+    : '/*' ( ~[*] | '*' ~[/] )* '*'? EOF
+      -> type(UNTERMINATED_MULTILINE_COMMENT)
+    ;
 IMPORT_BLOCK_LINE_COMMENT: '//' ~[\r\n]* -> skip;
 IMPORT_BLOCK_PYTHON_COMMENT: '#' ~[\r\n]* -> skip;
 IMPORT_BLOCK_DEF: 'def' -> type(DEF), mode(IMPORT_DEF_SELECTOR_MODE);
@@ -196,6 +207,10 @@ mode IMPORT_DEF_SELECTOR_MODE;
 
 IMPORT_DEF_SELECTOR_WS: [ \t\n\r]+ -> skip;
 IMPORT_DEF_SELECTOR_MULTILINE_COMMENT: '/*' .*? '*/' -> skip;
+IMPORT_DEF_SELECTOR_UNTERMINATED_MULTILINE_COMMENT
+    : '/*' ( ~[*] | '*' ~[/] )* '*'? EOF
+      -> type(UNTERMINATED_MULTILINE_COMMENT)
+    ;
 IMPORT_DEF_SELECTOR_LINE_COMMENT: '//' ~[\r\n]* -> skip;
 IMPORT_DEF_SELECTOR_PYTHON_COMMENT: '#' ~[\r\n]* -> skip;
 IMPORT_DEF_SELECTOR_LBRACE: '{' -> type(LBRACE);
@@ -215,6 +230,10 @@ mode IMPORT_DEF_TARGET_MODE;
 
 IMPORT_DEF_TARGET_WS: [ \t\n\r]+ -> skip;
 IMPORT_DEF_TARGET_MULTILINE_COMMENT: '/*' .*? '*/' -> skip;
+IMPORT_DEF_TARGET_UNTERMINATED_MULTILINE_COMMENT
+    : '/*' ( ~[*] | '*' ~[/] )* '*'? EOF
+      -> type(UNTERMINATED_MULTILINE_COMMENT)
+    ;
 IMPORT_DEF_TARGET_LINE_COMMENT: '//' ~[\r\n]* -> skip;
 IMPORT_DEF_TARGET_PYTHON_COMMENT: '#' ~[\r\n]* -> skip;
 IMPORT_DEF_TARGET_TEMPLATE

@@ -212,25 +212,25 @@ class TestDSLDuringAspectDefinition:
                     """
                     >> during before abstract funcName /* this is documentation */
                     """,
-                    '>> during before abstract funcName /*\n    this is documentation\n*/'
+                    '>> during before abstract funcName /*\n    * this is documentation\n*/'
             ),  # During aspect with before timing, abstract function and documentation
             (
                     """
                     >> during after abstract funcName /* this is documentation */
                     """,
-                    '>> during after abstract funcName /*\n    this is documentation\n*/'
+                    '>> during after abstract funcName /*\n    * this is documentation\n*/'
             ),  # During aspect with after timing, abstract function and documentation
             (
                     """
                     >> during before abstract /* this is documentation */
                     """,
-                    '>> during before abstract /*\n    this is documentation\n*/'
+                    '>> during before abstract /*\n    * this is documentation\n*/'
             ),  # During aspect with before timing, abstract function without name and documentation
             (
                     """
                     >> during after abstract /* this is documentation */
                     """,
-                    '>> during after abstract /*\n    this is documentation\n*/'
+                    '>> during after abstract /*\n    * this is documentation\n*/'
             ),  # During aspect with after timing, abstract function without name and documentation
             (
                     """

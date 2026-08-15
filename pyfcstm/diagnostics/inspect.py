@@ -56,6 +56,7 @@ from .analyzers import (
     collect_expr_variables,
 )
 from .codes import CODE_REGISTRY, CodeFieldSpec, CodeSpec
+from ..dsl import node as dsl_nodes
 from ..utils.validate import ModelDiagnostic, Span
 
 if TYPE_CHECKING:  # pragma: no cover - import-time forward refs only
@@ -898,7 +899,7 @@ def _expr_text(expr: Optional['Expr']) -> Optional[str]:
         return f'({condition}) ? {when_true} : {when_false}'
 
     try:
-        return str(expr.to_ast_node())
+        return dsl_nodes.render_without_documentation(expr.to_ast_node())
     except (AttributeError, TypeError, ValueError):  # pragma: no cover
         # AttributeError: non-model Expr-like object; TypeError/ValueError:
         # future expression implementations with invalid AST conversion.
@@ -911,7 +912,7 @@ def _effects_text(effects: List['OperationStatement']) -> Optional[str]:
     parts: List[str] = []
     for stmt in effects:
         try:
-            parts.append(str(stmt.to_ast_node()))
+            parts.append(dsl_nodes.render_without_documentation(stmt.to_ast_node()))
         except (AttributeError, TypeError, ValueError):  # pragma: no cover
             # AttributeError: non-model statement-like object; TypeError/ValueError:
             # future statement implementations with invalid AST conversion.

@@ -68,6 +68,19 @@ class GrammarItemError(Exception):
     pass
 
 
+class DuplicateModelDocumentation(GrammarItemError):
+    """A model owner was given both leading and trailing documentation."""
+
+    def __init__(self, leading_token: Any, trailing_token: Any) -> None:
+        self.leading_token = leading_token
+        self.trailing_token = trailing_token
+        super().__init__(
+            "Duplicate model documentation: both leading and trailing blocks "
+            f"at line {leading_token.line}, column {leading_token.column + 1} "
+            f"and line {trailing_token.line}, column {trailing_token.column + 1}"
+        )
+
+
 class SyntaxFailError(GrammarItemError):
     """
     Error raised when a syntax error is encountered during parsing.

@@ -183,13 +183,13 @@ class TestDSLEnterDefinition:
                     """
                     enter abstract setupFunc /* Initialize state variables */
                     """,
-                    'enter abstract setupFunc /*\n    Initialize state variables\n*/'
+                    'enter abstract setupFunc /*\n    * Initialize state variables\n*/'
             ),  # Enter abstract function with single line documentation
             (
                     """
                     enter abstract /* Setup initial conditions */
                     """,
-                    'enter abstract /*\n    Setup initial conditions\n*/'
+                    'enter abstract /*\n    * Setup initial conditions\n*/'
             ),  # Enter abstract function without name but with documentation
             (
                     """

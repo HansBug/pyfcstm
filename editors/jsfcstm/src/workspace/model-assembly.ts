@@ -61,6 +61,7 @@ interface PendingEventRegistration {
     targetEventName: string;
     mappingExtraName?: string;
     sourceExtraName?: string;
+    sourceDoc?: string;
     sourcePath: string[];
 }
 
@@ -116,10 +117,27 @@ function buildImportLookup(imports: FcstmSemanticImport[]): Map<string, FcstmSem
     return lookup;
 }
 
+function aggregateDocumentation(values: Array<string | undefined>): string | undefined {
+    const seen = new Set<string>();
+    const documents: string[] = [];
+    let sawEmpty = false;
+    for (const value of values) {
+        if (value === undefined) continue;
+        if (value.length === 0) {
+            sawEmpty = true;
+        } else if (!seen.has(value)) {
+            seen.add(value);
+            documents.push(value);
+        }
+    }
+    return documents.length > 0 ? documents.join('\n\n') : (sawEmpty ? '' : undefined);
+}
+
 function collectEventExtraNames(
     node: FcstmAstStateDefinition,
     currentPath: string[],
-    output: Map<string, string | undefined>
+    output: Map<string, string | undefined>,
+    docs: Map<string, string | undefined>
 ): void {
     const currentStatePath = [...currentPath, node.name];
     for (const event of node.events) {
@@ -128,15 +146,19 @@ function collectEventExtraNames(
             output.set(localKey, event.extraName);
         }
         output.set(pathKey([...currentStatePath.slice(1), event.name]), event.extraName);
+        docs.set(localKey, aggregateDocumentation([docs.get(localKey), event.doc]));
+        const qualifiedKey = pathKey([...currentStatePath.slice(1), event.name]);
+        docs.set(qualifiedKey, aggregateDocumentation([docs.get(qualifiedKey), event.doc]));
 
         const bareKey = pathKey([event.name]);
         if (!output.has(bareKey)) {
             output.set(bareKey, event.extraName);
         }
+        docs.set(bareKey, aggregateDocumentation([docs.get(bareKey), event.doc]));
     }
 
     for (const substate of node.substates) {
-        collectEventExtraNames(substate, currentStatePath, output);
+        collectEventExtraNames(substate, currentStatePath, output, docs);
     }
 }
 
@@ -145,6 +167,13 @@ function lookupSourceEventExtraName(
     sourceEventNames: Map<string, string | undefined>
 ): string | undefined {
     return sourceEventNames.get(pathKey(sourcePath));
+}
+
+function lookupSourceEventDoc(
+    sourcePath: string[],
+    sourceEventDocs: Map<string, string | undefined>
+): string | undefined {
+    return sourceEventDocs.get(pathKey(sourcePath));
 }
 
 function ensureStatePathExists(
@@ -656,6 +685,7 @@ function mergeImportedDefinitions(
             );
             /* c8 ignore stop */
         }
+        existing.doc = aggregateDocumentation([existing.doc, definition.doc]);
     }
 
     importedProgram.definitions.length = 0;
@@ -747,6 +777,7 @@ function rewriteTransitionEventId(
     transition: FcstmAstTransition | FcstmAstForcedTransition,
     currentScopePath: string[],
     sourceEventNames: Map<string, string | undefined>,
+    sourceEventDocs: Map<string, string | undefined>,
     resolvedEventMappings: Map<string, ResolvedImportEventMapping>,
     pendingRegistrations: PendingEventRegistration[]
 ): void {
@@ -758,6 +789,7 @@ function rewriteTransitionEventId(
         ? [...transition.eventId.path]
         : [...currentScopePath, ...transition.eventId.path];
     const sourceExtraName = lookupSourceEventExtraName(sourcePath, sourceEventNames);
+    const sourceDoc = lookupSourceEventDoc(sourcePath, sourceEventDocs);
     const mapping = resolvedEventMappings.get(pathKey(sourcePath));
 
     if (mapping) {
@@ -771,6 +803,7 @@ function rewriteTransitionEventId(
             targetEventName: mapping.targetEventName,
             mappingExtraName: mapping.extraName,
             sourceExtraName,
+            sourceDoc,
             sourcePath,
         });
     } else if (transition.eventId.isAbsolute) {
@@ -784,6 +817,7 @@ function rewriteImportedStateEventPaths(
     node: FcstmAstStateDefinition,
     currentPath: string[],
     sourceEventNames: Map<string, string | undefined>,
+    sourceEventDocs: Map<string, string | undefined>,
     resolvedEventMappings: Map<string, ResolvedImportEventMapping>,
     pendingRegistrations: PendingEventRegistration[]
 ): void {
@@ -795,6 +829,7 @@ function rewriteImportedStateEventPaths(
             transition,
             currentScopePath,
             sourceEventNames,
+            sourceEventDocs,
             resolvedEventMappings,
             pendingRegistrations
         );
@@ -805,6 +840,7 @@ function rewriteImportedStateEventPaths(
             transition,
             currentScopePath,
             sourceEventNames,
+            sourceEventDocs,
             resolvedEventMappings,
             pendingRegistrations
         );
@@ -815,6 +851,7 @@ function rewriteImportedStateEventPaths(
             substate,
             currentStatePath,
             sourceEventNames,
+            sourceEventDocs,
             resolvedEventMappings,
             pendingRegistrations
         );
@@ -875,6 +912,7 @@ function synthesizeHostEventsForImport(
         const finalExtraName = item.mappingExtraName
             ?? existingEvent?.extraName
             ?? item.sourceExtraName;
+        const finalDoc = aggregateDocumentation([existingEvent?.doc, item.sourceDoc]);
 
         if (!existingEvent) {
             ownerState.events.push({
@@ -886,6 +924,7 @@ function synthesizeHostEventsForImport(
                 displayName: finalExtraName,
                 extraName: finalExtraName,
                 extra_name: finalExtraName,
+                doc: finalDoc,
             });
             continue;
         }
@@ -907,6 +946,7 @@ function synthesizeHostEventsForImport(
             existingEvent.extraName = finalExtraName;
             existingEvent.extra_name = finalExtraName;
         }
+        existingEvent.doc = aggregateDocumentation([existingEvent.doc, item.sourceDoc]);
     }
 }
 
@@ -918,12 +958,14 @@ function applyImportEventMappings(
     resolvedEventMappings: Map<string, ResolvedImportEventMapping>
 ): Set<string> {
     const sourceEventNames = new Map<string, string | undefined>();
+    const sourceEventDocs = new Map<string, string | undefined>();
     const pendingRegistrations: PendingEventRegistration[] = [];
-    collectEventExtraNames(program.rootState!, [], sourceEventNames);
+    collectEventExtraNames(program.rootState!, [], sourceEventNames, sourceEventDocs);
     rewriteImportedStateEventPaths(
         program.rootState!,
         [],
         sourceEventNames,
+        sourceEventDocs,
         resolvedEventMappings,
         pendingRegistrations
     );

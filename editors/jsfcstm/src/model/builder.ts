@@ -89,6 +89,7 @@ interface InheritedForceTransition {
     triggerScope?: 'local' | 'chain' | 'absolute';
     transitionKind: FcstmModelTransition['transitionKind'];
     ast: FcstmAstForcedTransition;
+    doc?: string;
 }
 
 function pathKey(path: Array<string | null>): string {
@@ -353,6 +354,7 @@ class StateMachineModelBuilder {
             name: definition.name,
             type: definition.valueType,
             init: this.buildExpression(definition.initializer),
+            doc: definition.doc,
         };
     }
 
@@ -398,6 +400,7 @@ class StateMachineModelBuilder {
             substate_name_to_id: {},
             extraName: definition.displayName,
             extra_name: definition.displayName,
+            doc: definition.doc,
             isPseudo: definition.pseudo,
             is_pseudo: definition.pseudo,
             isLeafState: definition.substates.length === 0,
@@ -442,6 +445,7 @@ class StateMachineModelBuilder {
                 declared: true,
                 origin: 'declared',
                 extraName: event.displayName,
+                doc: event.doc,
             });
         }
 
@@ -587,6 +591,7 @@ class StateMachineModelBuilder {
                     declaredInStatePath: force.declaredInStatePath,
                     triggerScope: force.triggerScope,
                     ast: force.ast,
+                    doc: force.doc,
                 });
 
                 childInheritedTransitions.push({
@@ -601,6 +606,7 @@ class StateMachineModelBuilder {
                     triggerScope: force.triggerScope,
                     transitionKind: 'exitAll',
                     ast: force.ast,
+                    doc: force.doc,
                 });
             }
         }
@@ -635,6 +641,7 @@ class StateMachineModelBuilder {
                     declaredInStatePath: currentState.path,
                     triggerScope,
                     ast: transition,
+                    doc: transition.doc,
                 });
                 continue;
             }
@@ -720,6 +727,7 @@ class StateMachineModelBuilder {
             triggerScope,
             transitionKind: transition.transitionKind,
             ast: transition,
+            doc: transition.doc,
         };
     }
 
@@ -896,6 +904,7 @@ class StateMachineModelBuilder {
             declared: boolean;
             origin: 'declared' | 'local' | 'chain' | 'absolute';
             extraName?: string;
+            doc?: string;
         }
     ): FcstmModelEvent | undefined {
         const ownerState = this.statesByPath.get(statePathName(statePath));
@@ -921,6 +930,7 @@ class StateMachineModelBuilder {
                 path_name: eventPathName,
                 extraName: options.extraName,
                 extra_name: options.extraName,
+                doc: options.doc,
                 declared: options.declared,
                 origins: [options.origin],
             };
@@ -930,6 +940,7 @@ class StateMachineModelBuilder {
             event.declared = event.declared || options.declared;
             event.extraName = event.extraName || options.extraName;
             event.extra_name = event.extra_name || options.extraName;
+            if (event.doc === undefined && options.doc !== undefined) event.doc = options.doc;
             if (!event.origins.includes(options.origin)) {
                 event.origins.push(options.origin);
             }
@@ -1200,6 +1211,7 @@ class StateMachineModelBuilder {
             declaredInStatePath: currentState.path,
             triggerScope: eventResult.scope,
             ast: first.transition,
+            doc: first.transition.doc,
             comboOriginRefs: alternatives.map(alternative => comboTermRef(
                 alternative.originId,
                 alternative.transition,
@@ -1231,6 +1243,7 @@ class StateMachineModelBuilder {
         declaredInStatePath: string[];
         triggerScope?: FcstmModelTransition['triggerScope'];
         ast?: FcstmAstTransition | FcstmAstForcedTransition;
+        doc?: string;
         comboOriginRefs?: unknown[];
         comboProjectionKey?: unknown[] | null;
         comboProjectionOrderKey?: unknown[] | null;
@@ -1244,6 +1257,7 @@ class StateMachineModelBuilder {
             pyModelType: 'Transition',
             range: params.range,
             text: params.text,
+            doc: params.doc,
             fromState: params.fromState,
             from_state: params.fromState,
             toState: params.toState,

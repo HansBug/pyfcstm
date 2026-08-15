@@ -23,28 +23,32 @@ runPyGeneratedModelCase({
             "init": {
                 "type": "Integer",
                 "value": 0
-            }
+            },
+            "doc": null
         },
         "LeftMotor_limit": {
             "type": "int",
             "init": {
                 "type": "Integer",
                 "value": 3
-            }
+            },
+            "doc": null
         },
         "RightMotor_counter": {
             "type": "int",
             "init": {
                 "type": "Integer",
                 "value": 0
-            }
+            },
+            "doc": null
         },
         "RightMotor_limit": {
             "type": "int",
             "init": {
                 "type": "Integer",
                 "value": 3
-            }
+            },
+            "doc": null
         }
     },
     "root_state": "Fleet",
@@ -78,7 +82,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet"
+                    "parent": "Fleet",
+                    "doc": null
                 },
                 {
                     "from_state": "LeftMotor",
@@ -86,7 +91,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet"
+                    "parent": "Fleet",
+                    "doc": null
                 }
             ],
             "named_functions": {},
@@ -99,6 +105,7 @@ runPyGeneratedModelCase({
                 "RightMotor": 1
             },
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": false,
             "is_root_state": true,
@@ -118,7 +125,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet"
+                    "parent": "Fleet",
+                    "doc": null
                 }
             ],
             "transitions_from": [
@@ -128,7 +136,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": null
+                    "parent": null,
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -138,7 +147,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": null
+                    "parent": null,
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [
@@ -148,7 +158,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet"
+                    "parent": "Fleet",
+                    "doc": null
                 }
             ],
             "transitions_entering_children_simplified": [
@@ -158,7 +169,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet"
+                    "parent": "Fleet",
+                    "doc": null
                 }
             ],
             "list_on_enters": [],
@@ -200,7 +212,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.LeftMotor"
+                    "parent": "Fleet.LeftMotor",
+                    "doc": null
                 },
                 {
                     "from_state": "Idle",
@@ -236,7 +249,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Fleet.LeftMotor"
+                    "parent": "Fleet.LeftMotor",
+                    "doc": null
                 },
                 {
                     "from_state": "Running",
@@ -264,7 +278,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Fleet.LeftMotor"
+                    "parent": "Fleet.LeftMotor",
+                    "doc": null
                 }
             ],
             "named_functions": {},
@@ -277,6 +292,7 @@ runPyGeneratedModelCase({
                 "Running": 1
             },
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": false,
             "is_root_state": false,
@@ -296,7 +312,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.LeftMotor"
+                    "parent": "Fleet.LeftMotor",
+                    "doc": null
                 }
             ],
             "transitions_from": [
@@ -306,7 +323,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet"
+                    "parent": "Fleet",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -316,7 +334,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet"
+                    "parent": "Fleet",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [
@@ -326,7 +345,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.LeftMotor"
+                    "parent": "Fleet.LeftMotor",
+                    "doc": null
                 }
             ],
             "transitions_entering_children_simplified": [
@@ -336,7 +356,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.LeftMotor"
+                    "parent": "Fleet.LeftMotor",
+                    "doc": null
                 }
             ],
             "list_on_enters": [],
@@ -373,6 +394,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -421,7 +443,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Fleet.LeftMotor"
+                    "parent": "Fleet.LeftMotor",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -431,7 +454,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.LeftMotor"
+                    "parent": "Fleet.LeftMotor",
+                    "doc": null
                 },
                 {
                     "from_state": "Running",
@@ -459,7 +483,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Fleet.LeftMotor"
+                    "parent": "Fleet.LeftMotor",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -498,6 +523,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -538,7 +564,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Fleet.LeftMotor"
+                    "parent": "Fleet.LeftMotor",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -576,7 +603,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Fleet.LeftMotor"
+                    "parent": "Fleet.LeftMotor",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -616,7 +644,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.RightMotor"
+                    "parent": "Fleet.RightMotor",
+                    "doc": null
                 },
                 {
                     "from_state": "Idle",
@@ -652,7 +681,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Fleet.RightMotor"
+                    "parent": "Fleet.RightMotor",
+                    "doc": null
                 },
                 {
                     "from_state": "Running",
@@ -680,7 +710,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Fleet.RightMotor"
+                    "parent": "Fleet.RightMotor",
+                    "doc": null
                 }
             ],
             "named_functions": {},
@@ -693,6 +724,7 @@ runPyGeneratedModelCase({
                 "Running": 1
             },
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": false,
             "is_root_state": false,
@@ -712,7 +744,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.RightMotor"
+                    "parent": "Fleet.RightMotor",
+                    "doc": null
                 }
             ],
             "transitions_from": [],
@@ -723,7 +756,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet"
+                    "parent": "Fleet",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [
@@ -733,7 +767,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.RightMotor"
+                    "parent": "Fleet.RightMotor",
+                    "doc": null
                 }
             ],
             "transitions_entering_children_simplified": [
@@ -743,7 +778,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.RightMotor"
+                    "parent": "Fleet.RightMotor",
+                    "doc": null
                 }
             ],
             "list_on_enters": [],
@@ -780,6 +816,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -828,7 +865,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Fleet.RightMotor"
+                    "parent": "Fleet.RightMotor",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -838,7 +876,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.RightMotor"
+                    "parent": "Fleet.RightMotor",
+                    "doc": null
                 },
                 {
                     "from_state": "Running",
@@ -866,7 +905,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Fleet.RightMotor"
+                    "parent": "Fleet.RightMotor",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -905,6 +945,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -945,7 +986,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Fleet.RightMotor"
+                    "parent": "Fleet.RightMotor",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -983,7 +1025,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Fleet.RightMotor"
+                    "parent": "Fleet.RightMotor",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -1015,7 +1058,8 @@ runPyGeneratedModelCase({
                 "expr": {
                     "__class__": "Integer",
                     "raw": "0"
-                }
+                },
+                "doc": null
             },
             {
                 "__class__": "DefAssignment",
@@ -1024,7 +1068,8 @@ runPyGeneratedModelCase({
                 "expr": {
                     "__class__": "Integer",
                     "raw": "3"
-                }
+                },
+                "doc": null
             },
             {
                 "__class__": "DefAssignment",
@@ -1033,7 +1078,8 @@ runPyGeneratedModelCase({
                 "expr": {
                     "__class__": "Integer",
                     "raw": "0"
-                }
+                },
+                "doc": null
             },
             {
                 "__class__": "DefAssignment",
@@ -1042,25 +1088,29 @@ runPyGeneratedModelCase({
                 "expr": {
                     "__class__": "Integer",
                     "raw": "3"
-                }
+                },
+                "doc": null
             }
         ],
         "root_state": {
             "__class__": "StateDefinition",
             "name": "Fleet",
             "extra_name": null,
+            "doc": null,
             "events": [],
             "substates": [
                 {
                     "__class__": "StateDefinition",
                     "name": "LeftMotor",
                     "extra_name": null,
+                    "doc": null,
                     "events": [],
                     "substates": [
                         {
                             "__class__": "StateDefinition",
                             "name": "Idle",
                             "extra_name": null,
+                            "doc": null,
                             "events": [],
                             "substates": [],
                             "transitions": [],
@@ -1074,6 +1124,7 @@ runPyGeneratedModelCase({
                             "__class__": "StateDefinition",
                             "name": "Running",
                             "extra_name": null,
+                            "doc": null,
                             "events": [],
                             "substates": [],
                             "transitions": [],
@@ -1091,7 +1142,8 @@ runPyGeneratedModelCase({
                             "to_state": "Idle",
                             "event_id": null,
                             "condition_expr": null,
-                            "post_operations": []
+                            "post_operations": [],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -1127,7 +1179,8 @@ runPyGeneratedModelCase({
                                         }
                                     }
                                 }
-                            ]
+                            ],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -1155,7 +1208,8 @@ runPyGeneratedModelCase({
                                         "raw": "0"
                                     }
                                 }
-                            ]
+                            ],
+                            "doc": null
                         }
                     ],
                     "enters": [],
@@ -1168,12 +1222,14 @@ runPyGeneratedModelCase({
                     "__class__": "StateDefinition",
                     "name": "RightMotor",
                     "extra_name": null,
+                    "doc": null,
                     "events": [],
                     "substates": [
                         {
                             "__class__": "StateDefinition",
                             "name": "Idle",
                             "extra_name": null,
+                            "doc": null,
                             "events": [],
                             "substates": [],
                             "transitions": [],
@@ -1187,6 +1243,7 @@ runPyGeneratedModelCase({
                             "__class__": "StateDefinition",
                             "name": "Running",
                             "extra_name": null,
+                            "doc": null,
                             "events": [],
                             "substates": [],
                             "transitions": [],
@@ -1204,7 +1261,8 @@ runPyGeneratedModelCase({
                             "to_state": "Idle",
                             "event_id": null,
                             "condition_expr": null,
-                            "post_operations": []
+                            "post_operations": [],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -1240,7 +1298,8 @@ runPyGeneratedModelCase({
                                         }
                                     }
                                 }
-                            ]
+                            ],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -1268,7 +1327,8 @@ runPyGeneratedModelCase({
                                         "raw": "0"
                                     }
                                 }
-                            ]
+                            ],
+                            "doc": null
                         }
                     ],
                     "enters": [],
@@ -1285,7 +1345,8 @@ runPyGeneratedModelCase({
                     "to_state": "LeftMotor",
                     "event_id": null,
                     "condition_expr": null,
-                    "post_operations": []
+                    "post_operations": [],
+                    "doc": null
                 },
                 {
                     "__class__": "TransitionDefinition",
@@ -1293,7 +1354,8 @@ runPyGeneratedModelCase({
                     "to_state": "RightMotor",
                     "event_id": null,
                     "condition_expr": null,
-                    "post_operations": []
+                    "post_operations": [],
+                    "doc": null
                 }
             ],
             "enters": [],

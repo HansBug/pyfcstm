@@ -255,6 +255,86 @@ function tokenize(src: string): Tok[] {
     return tokens;
 }
 
+function canonicalOwnerDocumentation(raw: string, trailingAbstract = false): string | null {
+    const source = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    if (!source.startsWith('/*') || !source.endsWith('*/')) return null;
+    let body = source.slice(2, -2);
+    if (body.startsWith('*') && source.startsWith('/**')) body = body.slice(1);
+    else if (body.startsWith('!') && source.startsWith('/*!')) body = body.slice(1);
+    let lines = body.split('\n');
+    const firstInline = Boolean(lines[0]?.trim());
+    while (lines.length && !lines[0].trim()) lines.shift();
+    while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+    const nonblank = lines.filter(line => line.trim());
+    const remaining = firstInline ? lines.slice(1).filter(line => line.trim()) : nonblank;
+    const margin = source.includes('\n') && nonblank.length > 0
+        && (nonblank.every(line => line.trimStart().startsWith('*'))
+            || (firstInline && remaining.length > 0
+                && remaining.every(line => line.trimStart().startsWith('*'))));
+    if (margin) {
+        lines = lines.map((line, index) => {
+            if (!line.trim()) return '';
+            if (firstInline && index === 0) return line.trimStart();
+            const content = line.trimStart().slice(1);
+            return content.startsWith(' ') || content.startsWith('\t') ? content.slice(1) : content;
+        });
+    }
+    const indent = lines.filter(line => line.trim()).reduce(
+        (min, line) => Math.min(min, line.match(/^\s*/)?.[0].length || 0),
+        Number.POSITIVE_INFINITY,
+    );
+    if (Number.isFinite(indent)) lines = lines.map(line => line.slice(Math.min(indent, line.length)));
+    while (lines.length && !lines[0].trim()) lines.shift();
+    while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+    lines = lines.map(line => line.replace(/[ \t]+$/g, ''));
+    if (lines.length > 0) lines[0] = lines[0].trimStart();
+    if (lines.length > 0) lines[lines.length - 1] = lines[lines.length - 1].trimEnd();
+    if (lines.some(line => line.includes('/*') || line.includes('*/'))) return null;
+    if (lines.length === 0) return trailingAbstract ? '/*\n*/' : '/*\n */';
+    if (trailingAbstract) {
+        return `/*\n${lines.map(line => `    *${line ? ` ${line}` : ''}`).join('\n')}\n*/`;
+    }
+    return `/*\n${lines.map(line => ` *${line ? ` ${line}` : ''}`).join('\n')}\n */`;
+}
+
+function isTrailingAbstractDocumentation(tokens: Tok[], index: number): boolean {
+    const previous: Tok[] = [];
+    for (let i = index - 1; i >= 0 && previous.length < 4; i -= 1) {
+        if (tokens[i].kind !== 'ws' && tokens[i].kind !== 'nl') previous.push(tokens[i]);
+    }
+    return previous.some(item => item.kind === 'ident' && item.text === 'abstract');
+}
+
+function isOwnerDocumentation(tokens: Tok[], index: number): boolean {
+    const previous: Tok[] = [];
+    for (let i = index - 1; i >= 0 && previous.length < 3; i -= 1) {
+        if (tokens[i].kind !== 'ws' && tokens[i].kind !== 'nl') previous.push(tokens[i]);
+    }
+    const next: Tok[] = [];
+    for (let i = index + 1; i < tokens.length && next.length < 4; i += 1) {
+        if (tokens[i].kind !== 'ws' && tokens[i].kind !== 'nl') next.push(tokens[i]);
+    }
+    if (previous.some(item => item.kind === 'ident' && item.text === 'abstract')) return true;
+    const first = next[0]?.text;
+    if (first === 'def' || first === 'state' || first === 'event'
+        || first === 'enter' || first === 'exit' || first === 'during'
+        || first === '>>' || first === '!') return true;
+    if (next[0]?.kind === 'ident' && next[1]?.text === '->') return true;
+    if (next[0]?.text === '[*]' && next[1]?.text === '->') return true;
+    return false;
+}
+
+function canonicalizeOwnerDocumentation(tokens: Tok[]): void {
+    tokens.forEach((token, index) => {
+        if (token.kind !== 'blkCom' || !isOwnerDocumentation(tokens, index)) return;
+        const canonical = canonicalOwnerDocumentation(
+            token.text,
+            isTrailingAbstractDocumentation(tokens, index),
+        );
+        if (canonical !== null) token.text = canonical;
+    });
+}
+
 function findNewline(src: string, start: number): number {
     let j = start;
     while (j < src.length && src[j] !== '\n' && src[j] !== '\r') j += 1;
@@ -457,8 +537,17 @@ function groupLogicalLines(tokens: Tok[]): LogicalChunk[] {
                 // ``enter abstract Foo /* doc */`` raw_doc payload) gets
                 // lifted onto its own chunk one indent level deeper than
                 // the owner statement, so it can be re-aligned cleanly.
-                if (buffer.length > 0) {
+                const isTrailingAbstract = buffer.some(
+                    item => item.kind === 'ident' && item.text === 'abstract'
+                );
+                if (buffer.length > 0 && !isTrailingAbstract) {
                     commit();
+                }
+                if (isTrailingAbstract) {
+                    buffer.push(t);
+                    expectLineTerminator = true;
+                    blankRun = 0;
+                    continue;
                 }
                 chunks.push({
                     kind: 'multilineBlockComment',
@@ -675,7 +764,11 @@ function renderLine(chunk: LogicalChunk, indentSize: number): string {
         }
         const prev = chunk.tokens[i - 1];
         if (tok.kind === 'blkCom') {
-            body += ' ' + tok.text;
+            const blockLines = tok.text.split('\n');
+            body += ' ' + blockLines[0];
+            if (blockLines.length > 1) {
+                body += '\n' + blockLines.slice(1).map(line => indent + line).join('\n');
+            }
             continue;
         }
         if (prev.kind === 'blkCom') {
@@ -728,6 +821,7 @@ export function formatDocumentText(
     const lineEnding = detectLineEnding(originalText);
 
     const tokens = tokenize(originalText);
+    canonicalizeOwnerDocumentation(tokens);
     const chunks = mergeInlinePatterns(
         groupLogicalLines(tokens),
         {elseOnSameLine}

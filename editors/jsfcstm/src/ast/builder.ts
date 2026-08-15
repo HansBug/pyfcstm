@@ -98,12 +98,16 @@ const EXPR_PRECEDENCE: Record<string, number> = {
 };
 
 interface ParseTreeContext extends ParseTreeNode {
+    var_name?: { text?: string };
     from_state?: { text?: string };
     to_state?: { text?: string };
     from_id?: { text?: string };
     func_name?: { text?: string };
     aspect?: { text?: string };
     raw_doc?: { text?: string };
+    leading_doc?: { text?: string };
+    doc?: { text?: string };
+    documentation?: { text?: string };
     target_event?: { getText?: () => string };
     target_text?: { text?: string };
     selector_pattern?: { text?: string };
@@ -223,15 +227,14 @@ function formatMultilineComment(rawDoc: string | undefined): string | undefined 
     }
     /* c8 ignore stop */
 
-    const trimmed = rawDoc.trim();
-    if (/^\s*\/\*+\s*\*\/\s*$/.test(trimmed)) {
-        return '';
-    }
+    const source = rawDoc.trim().replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    if (!source.startsWith('/*') || !source.endsWith('*/')) return undefined;
+    let content = source.slice(2, -2);
+    if (content.startsWith('*') && source.startsWith('/**')) content = content.slice(1);
+    else if (content.startsWith('!') && source.startsWith('/*!')) content = content.slice(1);
 
-    let content = trimmed.replace(/^\s*\/\*+/, '');
-    content = content.replace(/\*+\/\s*$/, '');
-
-    let lines = content.split(/\r?\n/);
+    let lines = content.split('\n');
+    const firstInline = Boolean(lines[0]?.trim());
 
     while (lines.length > 0 && !lines[0].trim()) {
         lines = lines.slice(1);
@@ -240,8 +243,8 @@ function formatMultilineComment(rawDoc: string | undefined): string | undefined 
         lines = lines.slice(0, -1);
     }
 
-    const trailingTrimmed = lines.map(line => line.replace(/\s+$/g, ''));
-    const nonEmptyLines = trailingTrimmed.filter(line => line.trim());
+    const normalizedWhitespaceLines = lines.map(line => (/^[ \t]*$/.test(line) ? '' : line));
+    const nonEmptyLines = normalizedWhitespaceLines.filter(line => line.trim());
     // Defensive: any all-whitespace comment is already short-circuited
     // above by the regex matching empty C-style comments. Reaching this
     // guard would require non-whitespace input that nonetheless has
@@ -253,14 +256,61 @@ function formatMultilineComment(rawDoc: string | undefined): string | undefined 
     }
     /* c8 ignore stop */
 
-    const indent = nonEmptyLines.reduce((minIndent, line) => {
+    const remaining = firstInline
+        ? normalizedWhitespaceLines.slice(1).filter(line => line.trim())
+        : nonEmptyLines;
+    const hasStarMargin = content.includes('\n') && (
+        nonEmptyLines.every(line => line.trimStart().startsWith('*'))
+        || (firstInline && remaining.length > 0
+            && remaining.every(line => line.trimStart().startsWith('*')))
+    );
+    let contentLines = normalizedWhitespaceLines;
+    if (hasStarMargin) {
+        contentLines = normalizedWhitespaceLines.map((line, index) => {
+            if (!line.trim() || (firstInline && index === 0)) return line;
+            const value = line.trimStart().slice(1);
+            return value.startsWith(' ') || value.startsWith('\t') ? value.slice(1) : value;
+        });
+    }
+
+    const contentNonEmpty = contentLines.filter(line => line.trim());
+    const indent = contentNonEmpty.reduce((minIndent, line) => {
         const currentIndent = line.match(/^\s*/)![0].length;
         return Math.min(minIndent, currentIndent);
     }, Number.POSITIVE_INFINITY);
 
-    return trailingTrimmed
+    const normalized = contentLines
         .map(line => line.slice(Math.min(indent, line.length)))
         .join('\n');
+    const normalizedLines = normalized.split('\n');
+    while (normalizedLines.length > 0 && !normalizedLines[0].trim()) normalizedLines.shift();
+    while (normalizedLines.length > 0 && !normalizedLines[normalizedLines.length - 1].trim()) normalizedLines.pop();
+    if (normalizedLines.length > 0) normalizedLines[0] = normalizedLines[0].trimStart();
+    if (normalizedLines.length > 0) normalizedLines[normalizedLines.length - 1] = normalizedLines[normalizedLines.length - 1].trimEnd();
+    return normalizedLines.join('\n');
+}
+
+function nodeDocumentation(node: ParseTreeContext): string | undefined {
+    const token = node.leading_doc || node.doc || node.documentation || node.raw_doc;
+    return token ? formatMultilineComment(tokenText(token)) : undefined;
+}
+
+function declarationRange(node: ParseTreeContext, document: TextDocumentLike, fallbackText?: string): TextRange {
+    const leading = node.leading_doc || node.doc || node.documentation;
+    const range = getNodeRange(node, document, fallbackText || nodeText(node));
+    if (!leading || !node.start || tokenText(node.start) !== tokenText(leading)) return range;
+    const leadingToken = leading as unknown as {line?: number; column?: number; text?: string};
+    const first = terminalChildren(node)
+        .map(item => (item as unknown as {symbol?: {line?: number; column?: number; text?: string}}).symbol)
+        .find(item => {
+            if (!item || !tokenText(item).trim()) return false;
+            if (item.line != null && leadingToken.line != null && item.column != null && leadingToken.column != null) {
+                return item.line !== leadingToken.line || item.column !== leadingToken.column;
+            }
+            return tokenText(item) !== tokenText(leadingToken);
+        });
+    const start = first ? makeTokenRange(first, document) : undefined;
+    return start ? {...range, start: start.start} : range;
 }
 
 function contextChildren(node: ParseTreeNode | undefined): ParseTreeContext[] {
@@ -1213,8 +1263,9 @@ function buildTransitionLikeBase(
         : tokenText(node.to_state);
 
     return {
-        range: getNodeRange(node, document, nodeText(node)),
+        range: declarationRange(node, document, nodeText(node)),
         text: nodeText(node),
+        doc: nodeDocumentation(node),
         sourceStateName: tokenText(node.from_state),
         targetStateName: tokenText(node.to_state),
         sourceKind,
@@ -1294,12 +1345,12 @@ function buildAction(
     const refPath = chainNode ? buildChainPath(chainNode, document) : undefined;
     const operationBlock = statementSet ? buildOperationBlockFromStatementSet(statementSet, document) : undefined;
     const operations = mode === 'operations' ? operationBlock?.statements || [] : undefined;
-    const doc = node.raw_doc ? formatMultilineComment(tokenText(node.raw_doc)) : undefined;
+    const doc = nodeDocumentation(node);
     const name = tokenText(node.func_name) || undefined;
     return {
         kind: 'action',
         pyNodeType: buildActionPyNodeType(stage, mode, isGlobalAspect),
-        range: getNodeRange(node, document, nodeText(node)),
+        range: declarationRange(node, document, nodeText(node)),
         text: nodeText(node),
         stage,
         aspect: (tokenText(node.aspect) || undefined) as 'before' | 'after' | undefined,
@@ -1494,7 +1545,7 @@ function buildEventDefinition(
     return {
         kind: 'eventDefinition',
         pyNodeType: 'EventDefinition',
-        range: getNodeRange(node, document, nodeText(node)),
+        range: declarationRange(node, document, nodeText(node)),
         text: nodeText(node),
         name,
         nameRange: makeTokenRange(node.event_name, document)
@@ -1502,6 +1553,7 @@ function buildEventDefinition(
         displayName: extraName,
         extraName,
         extra_name: extraName,
+        doc: nodeDocumentation(node),
     };
 }
 
@@ -1542,7 +1594,7 @@ function buildStateDefinition(
     return {
         kind: 'stateDefinition',
         pyNodeType: 'StateDefinition',
-        range: getNodeRange(node, document, nodeText(node)),
+        range: declarationRange(node, document, nodeText(node)),
         text: nodeText(node),
         name,
         nameRange: makeTokenRange(node.state_id, document)
@@ -1566,6 +1618,7 @@ function buildStateDefinition(
         during_aspects: duringAspects,
         forceTransitions,
         force_transitions: forceTransitions,
+        doc: nodeDocumentation(node),
     };
 }
 
@@ -1577,17 +1630,25 @@ function buildVariableDefinition(
     const terminals = terminalChildren(node);
     const valueType = tokenText((node as ParseTreeContext).deftype) === 'float' ? 'float' : 'int';
     const initializer = buildExpression(expressionNode as ParseTreeContext, document);
+    const typeToken = (node as ParseTreeContext).deftype;
+    const typeIndex = terminals.findIndex(
+        item => item === typeToken || item.getText?.() === tokenText(typeToken)
+    );
+    const nameToken = typeIndex >= 0
+        ? terminals.slice(typeIndex + 1).find(item => /^[A-Za-z_][A-Za-z0-9_]*$/.test(item.getText?.() || ''))
+        : undefined;
     return {
         kind: 'variableDefinition',
         pyNodeType: 'DefAssignment',
-        range: getNodeRange(node, document, nodeText(node)),
+        range: declarationRange(node, document, nodeText(node)),
         text: nodeText(node),
-        name: terminals[2]?.getText?.() || '',
+        name: tokenText(node.var_name) || nameToken?.getText?.() || '',
         type: valueType,
         valueType,
         deftype: valueType,
         initializer,
         expr: initializer,
+        doc: nodeDocumentation(node),
     };
 }
 

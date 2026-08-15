@@ -40,6 +40,7 @@ from .grammar import GrammarListener, GrammarParser
 from .node import *
 from ..utils import format_multiline_comment
 from ..utils.validate import Span
+from .error import DuplicateModelDocumentation
 
 
 _COND_BINARY_OP_ALIASES = {
@@ -182,6 +183,16 @@ class GrammarParseListener(GrammarListener):
         """
         super().__init__()
         self.nodes: Dict[object, Any] = {}
+        self.errors = []
+
+    def _documentation(self, ctx, *, action: bool = False):
+        leading = getattr(ctx, "leading_doc", None)
+        trailing = getattr(ctx, "raw_doc", None) if action else None
+        if leading is not None and trailing is not None:
+            self.errors.append(DuplicateModelDocumentation(leading, trailing))
+            return None
+        token = leading if leading is not None else trailing
+        return format_multiline_comment(token.text) if token is not None else None
 
     def exitCondition(self, ctx: GrammarParser.ConditionContext) -> None:
         """
@@ -608,6 +619,7 @@ class GrammarParseListener(GrammarListener):
             name=str(ctx.ID()),
             type=ctx.deftype.text,
             expr=self.nodes[ctx.init_expression()],
+            doc=self._documentation(ctx),
         )
         node._span = _ctx_span(ctx)
         self.nodes[ctx] = node
@@ -648,6 +660,7 @@ class GrammarParseListener(GrammarListener):
             durings=[],
             exits=[],
             is_pseudo=bool(ctx.pseudo),
+            doc=self._documentation(ctx),
         )
         node._span = _ctx_span(ctx)
         self.nodes[ctx] = node
@@ -716,6 +729,7 @@ class GrammarParseListener(GrammarListener):
                 and isinstance(self.nodes[item], ForceTransitionDefinition)
             ],
             is_pseudo=bool(ctx.pseudo),
+            doc=self._documentation(ctx),
         )
         node._span = _ctx_span(ctx)
         self.nodes[ctx] = node
@@ -751,6 +765,7 @@ class GrammarParseListener(GrammarListener):
         to_state,
         trigger_ctx,
         post_operations,
+        doc=None,
     ) -> TransitionDefinition:
         combo_trigger = self.nodes[trigger_ctx] if trigger_ctx else None
         event_id = None
@@ -789,6 +804,7 @@ class GrammarParseListener(GrammarListener):
             post_operations=post_operations,
             event_scope=event_scope,
             combo_trigger=stored_combo_trigger,
+            doc=doc,
         )
         return node
 
@@ -809,6 +825,7 @@ class GrammarParseListener(GrammarListener):
             post_operations=self.nodes[ctx.operational_statement_set()]
             if ctx.operational_statement_set()
             else [],
+            doc=self._documentation(ctx),
         )
         node._span = _ctx_span(ctx)
         self.nodes[ctx] = node
@@ -830,6 +847,7 @@ class GrammarParseListener(GrammarListener):
             post_operations=self.nodes[ctx.operational_statement_set()]
             if ctx.operational_statement_set()
             else [],
+            doc=self._documentation(ctx),
         )
         node._span = _ctx_span(ctx)
         self.nodes[ctx] = node
@@ -851,6 +869,7 @@ class GrammarParseListener(GrammarListener):
             post_operations=self.nodes[ctx.operational_statement_set()]
             if ctx.operational_statement_set()
             else [],
+            doc=self._documentation(ctx),
         )
         node._span = _ctx_span(ctx)
         self.nodes[ctx] = node
@@ -1355,6 +1374,7 @@ class GrammarParseListener(GrammarListener):
             operations=self.nodes[ctx.operational_statement_set()]
             if ctx.operational_statement_set()
             else [],
+            doc=self._documentation(ctx),
         )
         node._span = _ctx_span(ctx)
         self.nodes[ctx] = node
@@ -1371,7 +1391,7 @@ class GrammarParseListener(GrammarListener):
         super().exitEnterAbstractFunc(ctx)
         node = EnterAbstractFunction(
             name=ctx.func_name.text if ctx.func_name else None,
-            doc=format_multiline_comment(ctx.raw_doc.text) if ctx.raw_doc else None,
+            doc=self._documentation(ctx, action=True),
         )
         node._span = _ctx_span(ctx)
         self.nodes[ctx] = node
@@ -1387,6 +1407,7 @@ class GrammarParseListener(GrammarListener):
         node = EnterRefFunction(
             name=ctx.func_name.text if ctx.func_name else None,
             ref=self.nodes[ctx.chain_id()],
+            doc=self._documentation(ctx),
         )
         node._span = _ctx_span(ctx)
         self.nodes[ctx] = node
@@ -1404,6 +1425,7 @@ class GrammarParseListener(GrammarListener):
             operations=self.nodes[ctx.operational_statement_set()]
             if ctx.operational_statement_set()
             else [],
+            doc=self._documentation(ctx),
         )
         node._span = _ctx_span(ctx)
         self.nodes[ctx] = node
@@ -1418,7 +1440,7 @@ class GrammarParseListener(GrammarListener):
         super().exitExitAbstractFunc(ctx)
         node = ExitAbstractFunction(
             name=ctx.func_name.text if ctx.func_name else None,
-            doc=format_multiline_comment(ctx.raw_doc.text) if ctx.raw_doc else None,
+            doc=self._documentation(ctx, action=True),
         )
         node._span = _ctx_span(ctx)
         self.nodes[ctx] = node
@@ -1434,6 +1456,7 @@ class GrammarParseListener(GrammarListener):
         node = ExitRefFunction(
             name=ctx.func_name.text if ctx.func_name else None,
             ref=self.nodes[ctx.chain_id()],
+            doc=self._documentation(ctx),
         )
         node._span = _ctx_span(ctx)
         self.nodes[ctx] = node
@@ -1452,6 +1475,7 @@ class GrammarParseListener(GrammarListener):
             operations=self.nodes[ctx.operational_statement_set()]
             if ctx.operational_statement_set()
             else [],
+            doc=self._documentation(ctx),
         )
         node._span = _ctx_span(ctx)
         self.nodes[ctx] = node
@@ -1469,7 +1493,7 @@ class GrammarParseListener(GrammarListener):
         node = DuringAbstractFunction(
             name=ctx.func_name.text if ctx.func_name else None,
             aspect=ctx.aspect.text if ctx.aspect else None,
-            doc=format_multiline_comment(ctx.raw_doc.text) if ctx.raw_doc else None,
+            doc=self._documentation(ctx, action=True),
         )
         node._span = _ctx_span(ctx)
         self.nodes[ctx] = node
@@ -1486,6 +1510,7 @@ class GrammarParseListener(GrammarListener):
             name=ctx.func_name.text if ctx.func_name else None,
             aspect=ctx.aspect.text if ctx.aspect else None,
             ref=self.nodes[ctx.chain_id()],
+            doc=self._documentation(ctx),
         )
         node._span = _ctx_span(ctx)
         self.nodes[ctx] = node
@@ -1520,6 +1545,7 @@ class GrammarParseListener(GrammarListener):
             operations=self.nodes[ctx.operational_statement_set()]
             if ctx.operational_statement_set()
             else [],
+            doc=self._documentation(ctx),
         )
         node._span = _ctx_span(ctx)
         self.nodes[ctx] = node
@@ -1537,7 +1563,7 @@ class GrammarParseListener(GrammarListener):
         node = DuringAspectAbstractFunction(
             name=ctx.func_name.text if ctx.func_name else None,
             aspect=ctx.aspect.text if ctx.aspect else None,
-            doc=format_multiline_comment(ctx.raw_doc.text) if ctx.raw_doc else None,
+            doc=self._documentation(ctx, action=True),
         )
         node._span = _ctx_span(ctx)
         self.nodes[ctx] = node
@@ -1556,6 +1582,7 @@ class GrammarParseListener(GrammarListener):
             name=ctx.func_name.text if ctx.func_name else None,
             aspect=ctx.aspect.text if ctx.aspect else None,
             ref=self.nodes[ctx.chain_id()],
+            doc=self._documentation(ctx),
         )
         node._span = _ctx_span(ctx)
         self.nodes[ctx] = node
@@ -1587,6 +1614,7 @@ class GrammarParseListener(GrammarListener):
             if ctx.cond_expression()
             else None,
             event_scope=event_scope,
+            doc=self._documentation(ctx),
         )
         node._span = _ctx_span(ctx)
         self.nodes[ctx] = node
@@ -1618,6 +1646,7 @@ class GrammarParseListener(GrammarListener):
             if ctx.cond_expression()
             else None,
             event_scope=event_scope,
+            doc=self._documentation(ctx),
         )
         node._span = _ctx_span(ctx)
         self.nodes[ctx] = node
@@ -1646,6 +1675,7 @@ class GrammarParseListener(GrammarListener):
                 if ctx.chain_id()
                 else None
             ),
+            doc=self._documentation(ctx),
         )
         node._span = _ctx_span(ctx)
         self.nodes[ctx] = node
@@ -1674,6 +1704,7 @@ class GrammarParseListener(GrammarListener):
                 if ctx.chain_id()
                 else None
             ),
+            doc=self._documentation(ctx),
         )
         node._span = _ctx_span(ctx)
         self.nodes[ctx] = node
@@ -1691,6 +1722,7 @@ class GrammarParseListener(GrammarListener):
             extra_name=_parse_string_literal(ctx.extra_name.text)
             if ctx.extra_name
             else None,
+            doc=self._documentation(ctx),
         )
         node._span = _ctx_span(ctx)
         self.nodes[ctx] = node

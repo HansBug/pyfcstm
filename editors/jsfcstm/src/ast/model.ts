@@ -87,6 +87,7 @@ export interface FcstmAstVariableDefinition extends FcstmAstNodeBase {
     deftype: 'int' | 'float';
     initializer: FcstmAstExpression;
     expr: FcstmAstExpression;
+    doc?: string;
 }
 
 /**
@@ -124,6 +125,7 @@ export interface FcstmAstStateDefinition extends FcstmAstNodeBase {
      * for states authored in the same file as their parent.
      */
     importedFromFile?: string;
+    doc?: string;
 }
 
 export type FcstmAstStateStatement =
@@ -145,6 +147,7 @@ export interface FcstmAstEventDefinition extends FcstmAstNodeBase {
     displayName?: string;
     extraName?: string;
     extra_name?: string;
+    doc?: string;
 }
 
 /**
@@ -234,6 +237,7 @@ export interface FcstmAstTransitionBase extends FcstmAstNodeBase {
      * disambiguation. This metadata is not part of FCSTM execution semantics.
      */
     transitionIndexRefs?: FcstmAstTransitionIndexRef[];
+    doc?: string;
 }
 
 export interface FcstmAstTransitionIndexRef {

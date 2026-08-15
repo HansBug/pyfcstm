@@ -115,7 +115,7 @@ describe('jsfcstm formatter', () => {
         assert.equal(format(input), expected);
     });
 
-    it('preserves all three comment styles: //, #, and /* */ (with # normalized to //)', () => {
+    it('normalizes comments and owner documentation canonically', () => {
         const input = [
             '// top line comment',
             '# python-style comment',
@@ -129,9 +129,9 @@ describe('jsfcstm formatter', () => {
         assert.ok(out.includes('// top line comment'));
         assert.ok(out.includes('// python-style comment'),
             '"#" must be normalized to "//"');
-        assert.ok(out.includes('/* standalone block comment */'));
-        assert.ok(out.includes('/* raw_doc payload — stays verbatim */'),
-            'raw_doc /* */ must be preserved verbatim');
+        assert.ok(out.includes('/*\n     * standalone block comment\n     */'));
+        assert.ok(out.includes('enter abstract Init /*\n        * raw_doc payload — stays verbatim\n    */'),
+            'owner documentation must use the canonical abstract-action form');
         assert.ok(out.includes('// trailing line comment'));
     });
 
@@ -309,7 +309,7 @@ describe('jsfcstm formatter', () => {
         assert.ok(out.includes('>> during before {\n        counter = counter + 1;\n    }'));
     });
 
-    it('preserves /* */ raw_doc for abstract actions without touching its content', () => {
+    it('canonicalizes /* */ raw_doc for abstract actions while preserving content', () => {
         const input = [
             'state Root {',
             '    enter abstract Init /* Line one of the doc.',
@@ -319,9 +319,11 @@ describe('jsfcstm formatter', () => {
             '}',
         ].join('\n');
         const out = format(input);
-        assert.ok(out.includes('/* Line one of the doc.'));
+        assert.ok(out.includes('enter abstract Init /*'));
+        assert.ok(out.includes('* Line one of the doc.'));
         assert.ok(out.includes('* Line two stays where it is.'));
-        assert.ok(out.includes('* Line three ends. */'));
+        assert.ok(out.includes('* Line three ends.'));
+        assert.ok(out.includes('    */'));
     });
 
     it('runs on a realistic messy document and yields a fully normalized result', () => {

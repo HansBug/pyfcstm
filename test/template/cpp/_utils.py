@@ -94,6 +94,10 @@ def compile_and_run_cpp_wrapper_harness(
 ):
     cmake_executable = artifacts["cmake"]
     if cmake_executable is None:
+        if os.environ.get("PYFCSTM_RUN_NATIVE_TOOLCHAIN", "").strip().lower() in {
+            "1", "true", "yes", "on"
+        }:
+            pytest.fail("explicit native template suites require cmake")
         pytest.skip("cmake is required for generated C++ wrapper tests.")
 
     project_dir = os.path.join(artifacts["output_dir"], stem + "_cmake_project")

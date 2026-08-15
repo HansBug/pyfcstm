@@ -1477,7 +1477,7 @@ def {{ abstract_hook_method_name(item) }}(self, ctx):
     Override this method in a subclass when you want generated code
     extension by inheritance. ``ctx`` contains a read-only snapshot of
     variables at the time the abstract action is executed.
-{% if item.doc %}
+{% if item.doc is not none %}
     DSL documentation::
 
 {{ item.doc | indent(8, true) }}

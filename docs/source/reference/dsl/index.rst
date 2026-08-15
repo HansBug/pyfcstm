@@ -82,13 +82,65 @@ Lexical and comment forms
      - Import paths and ``named`` labels use strings; common escape sequences are lexed.
    * - Comments
      - ``/* ... */``, ``// ...``, ``# ...``
-     - Multiline comments may become abstract-action documentation in specific lifecycle forms.
+     - A multiline block immediately before a supported declaration is its documentation; line comments remain comments.
    * - Keywords
      - ``def``, ``state``, ``pseudo``, ``event``, ``import``, ``enter``, ``during``, ``exit``, ``abstract``, ``ref``
      - Keywords are reserved by lexer rules.
    * - Compact import tokens
      - selector patterns and target templates
      - Compact forms are tokenized in import-specific lexer modes and are whitespace-sensitive.
+
+.. _dsl-documentation-forms:
+
+Declaration documentation
+--------------------------
+
+FCSTM supports one opaque documentation value on each persistent variable
+definition, state (including the root and pseudo states), event, transition,
+and lifecycle action. A block comment immediately before the declaration is
+owned by that declaration and does not become part of its name or source span.
+Import declarations and import mapping entries are not documentation owners.
+
+The source spelling is a multiline block comment. The canonical DSL exporter
+normalizes every non-``None`` value to a block with a star margin, while
+preserving ``None``, the empty string, and the literal ``*`` as distinct values:
+
+.. code-block:: fcstm
+
+   /* Number of retries allowed before entering the fault state. */
+   def int retry_limit = 3;
+
+   /* The module's top-level state. */
+   state Controller {
+       [*] -> Ready;
+
+       /* A request has been accepted and is being processed. */
+       state Ready;
+
+       /* Raised by the external supervisor. */
+       event Reset;
+
+       /* Return to the idle state after a reset. */
+       Ready -> Idle :: Reset;
+
+       /* Called by the generated runtime on entry. */
+       enter abstract OnReady;
+   }
+
+The existing trailing spelling for an abstract lifecycle action remains valid:
+``enter abstract OnReady; /* Called by the generated runtime on entry. */``.
+Leading and trailing documentation normalize to the same owner field; using
+both spellings for one action is rejected. Documentation is metadata: it is
+included in canonical DSL and generated README/source exports, but does not
+change runtime behavior, transition priority, simulation, verification,
+PlantUML, inspect schemas, or hover text.
+
+Documentation blocks are intentionally opaque. They are not Markdown, do not
+define tags or locales, and do not attach to operation statements, guards,
+trigger terms, effect blocks, or individual import mappings. An unterminated
+block at end of file is diagnosed. The parser's deterministic behavior for a
+terminator inside a line comment or string, and for non-EOF import-mode
+swallowing, is not a supported documentation contract.
 
 .. _dsl-top-level-forms:
 

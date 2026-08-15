@@ -132,9 +132,11 @@ class TestModelStateFactory:
     def test_model(self, model):
         assert model.defines == {
             "host_ticks": VarDefine(
-                name="host_ticks", type="int", init=Integer(value=0)
+                name="host_ticks", type="int", init=Integer(value=0), doc=None
             ),
-            "host_load": VarDefine(name="host_load", type="int", init=Integer(value=0)),
+            "host_load": VarDefine(
+                name="host_load", type="int", init=Integer(value=0), doc=None
+            ),
         }
         assert model.root_state.name == "Factory"
         assert model.root_state.path == ("Factory",)
@@ -143,10 +145,10 @@ class TestModelStateFactory:
         ast_node = model.to_ast_node()
         assert ast_node.definitions == [
             dsl_nodes.DefAssignment(
-                name="host_ticks", type="int", expr=dsl_nodes.Integer(raw="0")
+                name="host_ticks", type="int", expr=dsl_nodes.Integer(raw="0"), doc=None
             ),
             dsl_nodes.DefAssignment(
-                name="host_load", type="int", expr=dsl_nodes.Integer(raw="0")
+                name="host_load", type="int", expr=dsl_nodes.Integer(raw="0"), doc=None
             ),
         ]
         assert ast_node.root_state.name == "Factory"
@@ -162,6 +164,7 @@ class TestModelStateFactory:
         assert state_factory.transitions[0].event is None
         assert state_factory.transitions[0].guard is None
         assert state_factory.transitions[0].effects == []
+        assert state_factory.transitions[0].doc is None
         assert state_factory.transitions[0].parent_ref().name == "Factory"
         assert state_factory.transitions[0].parent_ref().path == ("Factory",)
         assert state_factory.named_functions == {}
@@ -173,6 +176,7 @@ class TestModelStateFactory:
         assert state_factory.substate_name_to_id == {"Line": 0}
         assert state_factory.extra_name is None
         assert not state_factory.is_pseudo
+        assert state_factory.doc is None
         assert state_factory.abstract_on_during_aspects == []
         assert state_factory.abstract_on_durings == []
         assert state_factory.abstract_on_enters == []
@@ -183,6 +187,7 @@ class TestModelStateFactory:
         assert state_factory.init_transitions[0].event is None
         assert state_factory.init_transitions[0].guard is None
         assert state_factory.init_transitions[0].effects == []
+        assert state_factory.init_transitions[0].doc is None
         assert state_factory.init_transitions[0].parent_ref().name == "Factory"
         assert state_factory.init_transitions[0].parent_ref().path == ("Factory",)
         assert not state_factory.is_leaf_state
@@ -199,6 +204,7 @@ class TestModelStateFactory:
         assert state_factory.transitions_entering_children[0].event is None
         assert state_factory.transitions_entering_children[0].guard is None
         assert state_factory.transitions_entering_children[0].effects == []
+        assert state_factory.transitions_entering_children[0].doc is None
         assert (
             state_factory.transitions_entering_children[0].parent_ref().name
             == "Factory"
@@ -217,6 +223,7 @@ class TestModelStateFactory:
         assert state_factory.transitions_entering_children_simplified[0].event is None
         assert state_factory.transitions_entering_children_simplified[0].guard is None
         assert state_factory.transitions_entering_children_simplified[0].effects == []
+        assert state_factory.transitions_entering_children_simplified[0].doc is None
         assert (
             state_factory.transitions_entering_children_simplified[0].parent_ref().name
             == "Factory"
@@ -230,6 +237,7 @@ class TestModelStateFactory:
         assert state_factory.transitions_from[0].event is None
         assert state_factory.transitions_from[0].guard is None
         assert state_factory.transitions_from[0].effects == []
+        assert state_factory.transitions_from[0].doc is None
         assert state_factory.transitions_from[0].parent_ref is None
         assert len(state_factory.transitions_to) == 1
         assert state_factory.transitions_to[0].from_state == INIT_STATE
@@ -237,6 +245,7 @@ class TestModelStateFactory:
         assert state_factory.transitions_to[0].event is None
         assert state_factory.transitions_to[0].guard is None
         assert state_factory.transitions_to[0].effects == []
+        assert state_factory.transitions_to[0].doc is None
         assert state_factory.transitions_to[0].parent_ref is None
 
     def test_state_factory_to_ast_node(self, state_factory):
@@ -272,6 +281,7 @@ class TestModelStateFactory:
                                     during_aspects=[],
                                     force_transitions=[],
                                     is_pseudo=False,
+                                    doc=None,
                                 )
                             ],
                             transitions=[
@@ -281,6 +291,7 @@ class TestModelStateFactory:
                                     event_id=None,
                                     condition_expr=None,
                                     post_operations=[],
+                                    doc=None,
                                 ),
                                 dsl_nodes.TransitionDefinition(
                                     from_state="Feeding",
@@ -309,6 +320,7 @@ class TestModelStateFactory:
                                             ),
                                         ),
                                     ],
+                                    doc=None,
                                 ),
                             ],
                             enters=[],
@@ -317,6 +329,7 @@ class TestModelStateFactory:
                             during_aspects=[],
                             force_transitions=[],
                             is_pseudo=False,
+                            doc=None,
                         ),
                         dsl_nodes.StateDefinition(
                             name="Robot",
@@ -337,6 +350,7 @@ class TestModelStateFactory:
                                     during_aspects=[],
                                     force_transitions=[],
                                     is_pseudo=False,
+                                    doc=None,
                                 )
                             ],
                             transitions=[
@@ -346,6 +360,7 @@ class TestModelStateFactory:
                                     event_id=None,
                                     condition_expr=None,
                                     post_operations=[],
+                                    doc=None,
                                 ),
                                 dsl_nodes.TransitionDefinition(
                                     from_state="Picking",
@@ -374,6 +389,7 @@ class TestModelStateFactory:
                                             ),
                                         ),
                                     ],
+                                    doc=None,
                                 ),
                             ],
                             enters=[],
@@ -382,6 +398,7 @@ class TestModelStateFactory:
                             during_aspects=[],
                             force_transitions=[],
                             is_pseudo=False,
+                            doc=None,
                         ),
                     ],
                     transitions=[
@@ -391,6 +408,7 @@ class TestModelStateFactory:
                             event_id=None,
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Conveyor",
@@ -402,6 +420,7 @@ class TestModelStateFactory:
                                 expr2=dsl_nodes.Integer(raw="2"),
                             ),
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Robot",
@@ -413,6 +432,7 @@ class TestModelStateFactory:
                                 expr2=dsl_nodes.Integer(raw="4"),
                             ),
                             post_operations=[],
+                            doc=None,
                         ),
                     ],
                     enters=[],
@@ -421,6 +441,7 @@ class TestModelStateFactory:
                     during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
+                    doc=None,
                 )
             ],
             transitions=[
@@ -430,6 +451,7 @@ class TestModelStateFactory:
                     event_id=None,
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 )
             ],
             enters=[],
@@ -438,6 +460,7 @@ class TestModelStateFactory:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_factory_list_on_enters(self, state_factory):
@@ -507,6 +530,7 @@ class TestModelStateFactory:
         assert state_factory_line.transitions[0].event is None
         assert state_factory_line.transitions[0].guard is None
         assert state_factory_line.transitions[0].effects == []
+        assert state_factory_line.transitions[0].doc is None
         assert state_factory_line.transitions[0].parent_ref().name == "Line"
         assert state_factory_line.transitions[0].parent_ref().path == (
             "Factory",
@@ -519,6 +543,7 @@ class TestModelStateFactory:
             x=Variable(name="host_ticks"), op=">=", y=Integer(value=2)
         )
         assert state_factory_line.transitions[1].effects == []
+        assert state_factory_line.transitions[1].doc is None
         assert state_factory_line.transitions[1].parent_ref().name == "Line"
         assert state_factory_line.transitions[1].parent_ref().path == (
             "Factory",
@@ -531,6 +556,7 @@ class TestModelStateFactory:
             x=Variable(name="host_load"), op=">=", y=Integer(value=4)
         )
         assert state_factory_line.transitions[2].effects == []
+        assert state_factory_line.transitions[2].doc is None
         assert state_factory_line.transitions[2].parent_ref().name == "Line"
         assert state_factory_line.transitions[2].parent_ref().path == (
             "Factory",
@@ -546,6 +572,7 @@ class TestModelStateFactory:
         assert state_factory_line.substate_name_to_id == {"Conveyor": 0, "Robot": 1}
         assert state_factory_line.extra_name == "Assembly Line"
         assert not state_factory_line.is_pseudo
+        assert state_factory_line.doc is None
         assert state_factory_line.abstract_on_during_aspects == []
         assert state_factory_line.abstract_on_durings == []
         assert state_factory_line.abstract_on_enters == []
@@ -556,6 +583,7 @@ class TestModelStateFactory:
         assert state_factory_line.init_transitions[0].event is None
         assert state_factory_line.init_transitions[0].guard is None
         assert state_factory_line.init_transitions[0].effects == []
+        assert state_factory_line.init_transitions[0].doc is None
         assert state_factory_line.init_transitions[0].parent_ref().name == "Line"
         assert state_factory_line.init_transitions[0].parent_ref().path == (
             "Factory",
@@ -580,6 +608,7 @@ class TestModelStateFactory:
         assert state_factory_line.transitions_entering_children[0].event is None
         assert state_factory_line.transitions_entering_children[0].guard is None
         assert state_factory_line.transitions_entering_children[0].effects == []
+        assert state_factory_line.transitions_entering_children[0].doc is None
         assert (
             state_factory_line.transitions_entering_children[0].parent_ref().name
             == "Line"
@@ -606,6 +635,9 @@ class TestModelStateFactory:
             state_factory_line.transitions_entering_children_simplified[0].effects == []
         )
         assert (
+            state_factory_line.transitions_entering_children_simplified[0].doc is None
+        )
+        assert (
             state_factory_line.transitions_entering_children_simplified[0]
             .parent_ref()
             .name
@@ -621,6 +653,7 @@ class TestModelStateFactory:
         assert state_factory_line.transitions_to[0].event is None
         assert state_factory_line.transitions_to[0].guard is None
         assert state_factory_line.transitions_to[0].effects == []
+        assert state_factory_line.transitions_to[0].doc is None
         assert state_factory_line.transitions_to[0].parent_ref().name == "Factory"
         assert state_factory_line.transitions_to[0].parent_ref().path == ("Factory",)
 
@@ -651,6 +684,7 @@ class TestModelStateFactory:
                             during_aspects=[],
                             force_transitions=[],
                             is_pseudo=False,
+                            doc=None,
                         )
                     ],
                     transitions=[
@@ -660,6 +694,7 @@ class TestModelStateFactory:
                             event_id=None,
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Feeding",
@@ -688,6 +723,7 @@ class TestModelStateFactory:
                                     ),
                                 ),
                             ],
+                            doc=None,
                         ),
                     ],
                     enters=[],
@@ -696,6 +732,7 @@ class TestModelStateFactory:
                     during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
+                    doc=None,
                 ),
                 dsl_nodes.StateDefinition(
                     name="Robot",
@@ -716,6 +753,7 @@ class TestModelStateFactory:
                             during_aspects=[],
                             force_transitions=[],
                             is_pseudo=False,
+                            doc=None,
                         )
                     ],
                     transitions=[
@@ -725,6 +763,7 @@ class TestModelStateFactory:
                             event_id=None,
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Picking",
@@ -753,6 +792,7 @@ class TestModelStateFactory:
                                     ),
                                 ),
                             ],
+                            doc=None,
                         ),
                     ],
                     enters=[],
@@ -761,6 +801,7 @@ class TestModelStateFactory:
                     during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
+                    doc=None,
                 ),
             ],
             transitions=[
@@ -770,6 +811,7 @@ class TestModelStateFactory:
                     event_id=None,
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Conveyor",
@@ -781,6 +823,7 @@ class TestModelStateFactory:
                         expr2=dsl_nodes.Integer(raw="2"),
                     ),
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Robot",
@@ -792,6 +835,7 @@ class TestModelStateFactory:
                         expr2=dsl_nodes.Integer(raw="4"),
                     ),
                     post_operations=[],
+                    doc=None,
                 ),
             ],
             enters=[],
@@ -800,6 +844,7 @@ class TestModelStateFactory:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_factory_line_list_on_enters(self, state_factory_line):
@@ -877,6 +922,7 @@ class TestModelStateFactory:
         assert state_factory_line_conveyor.transitions[0].event is None
         assert state_factory_line_conveyor.transitions[0].guard is None
         assert state_factory_line_conveyor.transitions[0].effects == []
+        assert state_factory_line_conveyor.transitions[0].doc is None
         assert (
             state_factory_line_conveyor.transitions[0].parent_ref().name == "Conveyor"
         )
@@ -903,6 +949,7 @@ class TestModelStateFactory:
                 expr=BinaryOp(x=Variable(name="host_load"), op="+", y=Integer(value=1)),
             ),
         ]
+        assert state_factory_line_conveyor.transitions[1].doc is None
         assert (
             state_factory_line_conveyor.transitions[1].parent_ref().name == "Conveyor"
         )
@@ -921,6 +968,7 @@ class TestModelStateFactory:
         assert state_factory_line_conveyor.substate_name_to_id == {"Feeding": 0}
         assert state_factory_line_conveyor.extra_name is None
         assert not state_factory_line_conveyor.is_pseudo
+        assert state_factory_line_conveyor.doc is None
         assert state_factory_line_conveyor.abstract_on_during_aspects == []
         assert state_factory_line_conveyor.abstract_on_durings == []
         assert state_factory_line_conveyor.abstract_on_enters == []
@@ -931,6 +979,7 @@ class TestModelStateFactory:
         assert state_factory_line_conveyor.init_transitions[0].event is None
         assert state_factory_line_conveyor.init_transitions[0].guard is None
         assert state_factory_line_conveyor.init_transitions[0].effects == []
+        assert state_factory_line_conveyor.init_transitions[0].doc is None
         assert (
             state_factory_line_conveyor.init_transitions[0].parent_ref().name
             == "Conveyor"
@@ -967,6 +1016,7 @@ class TestModelStateFactory:
         assert (
             state_factory_line_conveyor.transitions_entering_children[0].effects == []
         )
+        assert state_factory_line_conveyor.transitions_entering_children[0].doc is None
         assert (
             state_factory_line_conveyor.transitions_entering_children[0]
             .parent_ref()
@@ -1011,6 +1061,10 @@ class TestModelStateFactory:
             == []
         )
         assert (
+            state_factory_line_conveyor.transitions_entering_children_simplified[0].doc
+            is None
+        )
+        assert (
             state_factory_line_conveyor.transitions_entering_children_simplified[0]
             .parent_ref()
             .name
@@ -1027,6 +1081,7 @@ class TestModelStateFactory:
             x=Variable(name="host_ticks"), op=">=", y=Integer(value=2)
         )
         assert state_factory_line_conveyor.transitions_from[0].effects == []
+        assert state_factory_line_conveyor.transitions_from[0].doc is None
         assert (
             state_factory_line_conveyor.transitions_from[0].parent_ref().name == "Line"
         )
@@ -1040,6 +1095,7 @@ class TestModelStateFactory:
         assert state_factory_line_conveyor.transitions_to[0].event is None
         assert state_factory_line_conveyor.transitions_to[0].guard is None
         assert state_factory_line_conveyor.transitions_to[0].effects == []
+        assert state_factory_line_conveyor.transitions_to[0].doc is None
         assert state_factory_line_conveyor.transitions_to[0].parent_ref().name == "Line"
         assert state_factory_line_conveyor.transitions_to[0].parent_ref().path == (
             "Factory",
@@ -1052,6 +1108,7 @@ class TestModelStateFactory:
             x=Variable(name="host_load"), op=">=", y=Integer(value=4)
         )
         assert state_factory_line_conveyor.transitions_to[1].effects == []
+        assert state_factory_line_conveyor.transitions_to[1].doc is None
         assert state_factory_line_conveyor.transitions_to[1].parent_ref().name == "Line"
         assert state_factory_line_conveyor.transitions_to[1].parent_ref().path == (
             "Factory",
@@ -1079,6 +1136,7 @@ class TestModelStateFactory:
                     during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
+                    doc=None,
                 )
             ],
             transitions=[
@@ -1088,6 +1146,7 @@ class TestModelStateFactory:
                     event_id=None,
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Feeding",
@@ -1116,6 +1175,7 @@ class TestModelStateFactory:
                             ),
                         ),
                     ],
+                    doc=None,
                 ),
             ],
             enters=[],
@@ -1124,6 +1184,7 @@ class TestModelStateFactory:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_factory_line_conveyor_list_on_enters(
@@ -1229,6 +1290,7 @@ class TestModelStateFactory:
         assert state_factory_line_conveyor_feeding.substate_name_to_id == {}
         assert state_factory_line_conveyor_feeding.extra_name is None
         assert not state_factory_line_conveyor_feeding.is_pseudo
+        assert state_factory_line_conveyor_feeding.doc is None
         assert state_factory_line_conveyor_feeding.abstract_on_during_aspects == []
         assert state_factory_line_conveyor_feeding.abstract_on_durings == []
         assert state_factory_line_conveyor_feeding.abstract_on_enters == []
@@ -1285,6 +1347,7 @@ class TestModelStateFactory:
                 expr=BinaryOp(x=Variable(name="host_load"), op="+", y=Integer(value=1)),
             ),
         ]
+        assert state_factory_line_conveyor_feeding.transitions_from[0].doc is None
         assert (
             state_factory_line_conveyor_feeding.transitions_from[0].parent_ref().name
             == "Conveyor"
@@ -1303,6 +1366,7 @@ class TestModelStateFactory:
         assert state_factory_line_conveyor_feeding.transitions_to[0].event is None
         assert state_factory_line_conveyor_feeding.transitions_to[0].guard is None
         assert state_factory_line_conveyor_feeding.transitions_to[0].effects == []
+        assert state_factory_line_conveyor_feeding.transitions_to[0].doc is None
         assert (
             state_factory_line_conveyor_feeding.transitions_to[0].parent_ref().name
             == "Conveyor"
@@ -1333,6 +1397,7 @@ class TestModelStateFactory:
                 expr=BinaryOp(x=Variable(name="host_load"), op="+", y=Integer(value=1)),
             ),
         ]
+        assert state_factory_line_conveyor_feeding.transitions_to[1].doc is None
         assert (
             state_factory_line_conveyor_feeding.transitions_to[1].parent_ref().name
             == "Conveyor"
@@ -1358,6 +1423,7 @@ class TestModelStateFactory:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_factory_line_conveyor_feeding_list_on_enters(
@@ -1464,6 +1530,7 @@ class TestModelStateFactory:
         assert state_factory_line_robot.transitions[0].event is None
         assert state_factory_line_robot.transitions[0].guard is None
         assert state_factory_line_robot.transitions[0].effects == []
+        assert state_factory_line_robot.transitions[0].doc is None
         assert state_factory_line_robot.transitions[0].parent_ref().name == "Robot"
         assert state_factory_line_robot.transitions[0].parent_ref().path == (
             "Factory",
@@ -1488,6 +1555,7 @@ class TestModelStateFactory:
                 expr=BinaryOp(x=Variable(name="host_load"), op="+", y=Integer(value=1)),
             ),
         ]
+        assert state_factory_line_robot.transitions[1].doc is None
         assert state_factory_line_robot.transitions[1].parent_ref().name == "Robot"
         assert state_factory_line_robot.transitions[1].parent_ref().path == (
             "Factory",
@@ -1504,6 +1572,7 @@ class TestModelStateFactory:
         assert state_factory_line_robot.substate_name_to_id == {"Picking": 0}
         assert state_factory_line_robot.extra_name is None
         assert not state_factory_line_robot.is_pseudo
+        assert state_factory_line_robot.doc is None
         assert state_factory_line_robot.abstract_on_during_aspects == []
         assert state_factory_line_robot.abstract_on_durings == []
         assert state_factory_line_robot.abstract_on_enters == []
@@ -1514,6 +1583,7 @@ class TestModelStateFactory:
         assert state_factory_line_robot.init_transitions[0].event is None
         assert state_factory_line_robot.init_transitions[0].guard is None
         assert state_factory_line_robot.init_transitions[0].effects == []
+        assert state_factory_line_robot.init_transitions[0].doc is None
         assert state_factory_line_robot.init_transitions[0].parent_ref().name == "Robot"
         assert state_factory_line_robot.init_transitions[0].parent_ref().path == (
             "Factory",
@@ -1541,6 +1611,7 @@ class TestModelStateFactory:
         assert state_factory_line_robot.transitions_entering_children[0].event is None
         assert state_factory_line_robot.transitions_entering_children[0].guard is None
         assert state_factory_line_robot.transitions_entering_children[0].effects == []
+        assert state_factory_line_robot.transitions_entering_children[0].doc is None
         assert (
             state_factory_line_robot.transitions_entering_children[0].parent_ref().name
             == "Robot"
@@ -1576,6 +1647,10 @@ class TestModelStateFactory:
             == []
         )
         assert (
+            state_factory_line_robot.transitions_entering_children_simplified[0].doc
+            is None
+        )
+        assert (
             state_factory_line_robot.transitions_entering_children_simplified[0]
             .parent_ref()
             .name
@@ -1592,6 +1667,7 @@ class TestModelStateFactory:
             x=Variable(name="host_load"), op=">=", y=Integer(value=4)
         )
         assert state_factory_line_robot.transitions_from[0].effects == []
+        assert state_factory_line_robot.transitions_from[0].doc is None
         assert state_factory_line_robot.transitions_from[0].parent_ref().name == "Line"
         assert state_factory_line_robot.transitions_from[0].parent_ref().path == (
             "Factory",
@@ -1605,6 +1681,7 @@ class TestModelStateFactory:
             x=Variable(name="host_ticks"), op=">=", y=Integer(value=2)
         )
         assert state_factory_line_robot.transitions_to[0].effects == []
+        assert state_factory_line_robot.transitions_to[0].doc is None
         assert state_factory_line_robot.transitions_to[0].parent_ref().name == "Line"
         assert state_factory_line_robot.transitions_to[0].parent_ref().path == (
             "Factory",
@@ -1632,6 +1709,7 @@ class TestModelStateFactory:
                     during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
+                    doc=None,
                 )
             ],
             transitions=[
@@ -1641,6 +1719,7 @@ class TestModelStateFactory:
                     event_id=None,
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Picking",
@@ -1669,6 +1748,7 @@ class TestModelStateFactory:
                             ),
                         ),
                     ],
+                    doc=None,
                 ),
             ],
             enters=[],
@@ -1677,6 +1757,7 @@ class TestModelStateFactory:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_factory_line_robot_list_on_enters(self, state_factory_line_robot):
@@ -1768,6 +1849,7 @@ class TestModelStateFactory:
         assert state_factory_line_robot_picking.substate_name_to_id == {}
         assert state_factory_line_robot_picking.extra_name is None
         assert not state_factory_line_robot_picking.is_pseudo
+        assert state_factory_line_robot_picking.doc is None
         assert state_factory_line_robot_picking.abstract_on_during_aspects == []
         assert state_factory_line_robot_picking.abstract_on_durings == []
         assert state_factory_line_robot_picking.abstract_on_enters == []
@@ -1820,6 +1902,7 @@ class TestModelStateFactory:
                 expr=BinaryOp(x=Variable(name="host_load"), op="+", y=Integer(value=1)),
             ),
         ]
+        assert state_factory_line_robot_picking.transitions_from[0].doc is None
         assert (
             state_factory_line_robot_picking.transitions_from[0].parent_ref().name
             == "Robot"
@@ -1835,6 +1918,7 @@ class TestModelStateFactory:
         assert state_factory_line_robot_picking.transitions_to[0].event is None
         assert state_factory_line_robot_picking.transitions_to[0].guard is None
         assert state_factory_line_robot_picking.transitions_to[0].effects == []
+        assert state_factory_line_robot_picking.transitions_to[0].doc is None
         assert (
             state_factory_line_robot_picking.transitions_to[0].parent_ref().name
             == "Robot"
@@ -1864,6 +1948,7 @@ class TestModelStateFactory:
                 expr=BinaryOp(x=Variable(name="host_load"), op="+", y=Integer(value=1)),
             ),
         ]
+        assert state_factory_line_robot_picking.transitions_to[1].doc is None
         assert (
             state_factory_line_robot_picking.transitions_to[1].parent_ref().name
             == "Robot"
@@ -1891,6 +1976,7 @@ class TestModelStateFactory:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_factory_line_robot_picking_list_on_enters(

@@ -162,6 +162,7 @@ export interface RawFcstmModelVarDefine extends RawFcstmModelNodeBase {
     name: string;
     type: 'int' | 'float';
     init: RawFcstmModelExpression;
+    doc?: string;
 }
 
 export interface RawFcstmModelEvent extends RawFcstmModelNodeBase {
@@ -177,6 +178,7 @@ export interface RawFcstmModelEvent extends RawFcstmModelNodeBase {
     extra_name?: string;
     declared: boolean;
     origins: Array<'declared' | 'local' | 'chain' | 'absolute'>;
+    doc?: string;
 }
 
 export interface RawFcstmModelActionBase extends RawFcstmModelNodeBase {
@@ -253,6 +255,7 @@ export interface RawFcstmModelTransition extends RawFcstmModelNodeBase {
     combo_reuse_group_id?: string | null;
     combo_priority_run_identity?: unknown[] | null;
     combo_priority_run_index?: number | null;
+    doc?: string;
 }
 
 export interface RawFcstmModelForcedTransition {
@@ -308,6 +311,7 @@ export interface RawFcstmModelState extends RawFcstmModelNodeBase {
     /** Source file this state was imported from (import-root only). */
     importedFromFile?: string;
     imported_from_file?: string;
+    doc?: string;
 }
 
 export interface RawFcstmModelLookups {

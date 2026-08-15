@@ -216,7 +216,7 @@
         "fcstm.format.alignMultilineBlockComments": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "Move multi-line `/* ... */` block comments (typically `abstract` action `raw_doc` payloads) onto their own indented lines and align continuation `*` markers under the opening `/*`."
+          "markdownDescription": "Move documentation and other multi-line `/* ... */` block comments onto their own indented lines and align continuation `*` markers under the opening `/*`."
         },
         "fcstm.diagram.pyfcstmPath": {
           "type": "string",

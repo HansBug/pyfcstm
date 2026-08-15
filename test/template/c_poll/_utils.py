@@ -209,6 +209,10 @@ def build_shared_library(output_dir, model):
     build_files = write_test_build_files(output_dir, model)
     cmake_executable = _find_cmake()
     if cmake_executable is None:
+        if os.environ.get('PYFCSTM_RUN_NATIVE_TOOLCHAIN', '').strip().lower() in {
+            '1', 'true', 'yes', 'on'
+        }:
+            pytest.fail('explicit native template suites require cmake')
         pytest.skip('cmake is required for C template build tests.')
 
     build_dir = os.path.join(output_dir, 'cmake-runtime-build')

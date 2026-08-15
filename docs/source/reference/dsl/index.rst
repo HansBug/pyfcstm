@@ -128,7 +128,7 @@ preserving ``None``, the empty string, and the literal ``*`` as distinct values:
    }
 
 The existing trailing spelling for an abstract lifecycle action remains valid:
-``enter abstract OnReady; /* Called by the generated runtime on entry. */``.
+``enter abstract OnReady /* Called by the generated runtime on entry. */;``.
 Leading and trailing documentation normalize to the same owner field; using
 both spellings for one action is rejected. Documentation is metadata: it is
 included in canonical DSL and generated README/source exports, but does not

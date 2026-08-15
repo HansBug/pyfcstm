@@ -54,7 +54,7 @@ to infer names, scopes, guards, events, or runtime behavior. Do not put a
 documentation block before imports or import mappings, operation statements,
 effect blocks, guard terms, or individual event terms. The existing trailing
 form for abstract lifecycle actions is also accepted, for example:
-`enter abstract OnReady; /* Called by the generated runtime on entry. */`.
+`enter abstract OnReady /* Called by the generated runtime on entry. */;`.
 Do not use both leading and trailing forms for one action.
 
 Keep documentation opaque: it is not Markdown, has no tags or locale syntax,

@@ -267,7 +267,8 @@ function formatMultilineComment(rawDoc: string | undefined): string | undefined 
     let contentLines = normalizedWhitespaceLines;
     if (hasStarMargin) {
         contentLines = normalizedWhitespaceLines.map((line, index) => {
-            if (!line.trim() || (firstInline && index === 0)) return line;
+            if (!line.trim()) return line;
+            if (firstInline && index === 0 && !line.trimStart().startsWith('*')) return line;
             const value = line.trimStart().slice(1);
             return value.startsWith(' ') || value.startsWith('\t') ? value.slice(1) : value;
         });

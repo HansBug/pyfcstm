@@ -138,7 +138,7 @@ FCSTM 支持在每个持久变量定义、状态（包括根状态和伪状态�
        enter abstract OnReady;
    }
 
-抽象生命周期动作原有的尾随写法仍然有效：``enter abstract OnReady; /* Called by the generated runtime on entry. */``。
+抽象生命周期动作原有的尾随写法仍然有效：``enter abstract OnReady /* Called by the generated runtime on entry. */;``。
 前置和尾随文档会归一化到同一个所有者字段；同一个动作同时使用两种写法会被拒绝。文档属于元数据：它会进入 canonical DSL 和已生成 README/源码导出，
 但不会改变运行时行为、转换优先级、仿真、验证、PlantUML、inspect schema 或 hover 文本。
 

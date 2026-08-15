@@ -47,6 +47,22 @@ const MATH_CONSTANTS: Record<string, number> = {
     tau: Math.PI * 2,
 };
 
+function aggregateModelDocumentation(values: Array<string | undefined>): string | undefined {
+    const seen = new Set<string>();
+    const documents: string[] = [];
+    let sawEmpty = false;
+    for (const value of values) {
+        if (value === undefined) continue;
+        if (value.length === 0) {
+            sawEmpty = true;
+        } else if (!seen.has(value)) {
+            seen.add(value);
+            documents.push(value);
+        }
+    }
+    return documents.length > 0 ? documents.join('\n\n') : (sawEmpty ? '' : undefined);
+}
+
 const EXPR_PRECEDENCE: Record<string, number> = {
     'function_call': 90,
     'unary+': 80,
@@ -1211,7 +1227,7 @@ class StateMachineModelBuilder {
             declaredInStatePath: currentState.path,
             triggerScope: eventResult.scope,
             ast: first.transition,
-            doc: first.transition.doc,
+            doc: aggregateModelDocumentation(alternatives.map(alternative => alternative.transition.doc)),
             comboOriginRefs: alternatives.map(alternative => comboTermRef(
                 alternative.originId,
                 alternative.transition,

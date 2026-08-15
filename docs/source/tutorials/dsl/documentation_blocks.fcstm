@@ -1,0 +1,25 @@
+/* DATA-1: persistent pressure sample used by the generated runtime. */
+def int pressure = 0;
+
+/* SYS-1: root model for the documentation-block tutorial. */
+state PumpController {
+    /* SIG-1: command emitted by the supervisory controller. */
+    event Start;
+
+    /* MODE-1: waiting for a start command. */
+    state Idle {
+        /* ACT-1: update the sample whenever Idle is active. */
+        during {
+            pressure = pressure + 1;
+        }
+    }
+
+    /* MODE-2: the pump is running. */
+    state Running;
+
+    /* FLOW-1: enter Idle when the machine starts. */
+    [*] -> Idle;
+
+    /* FLOW-2: Start moves the controller into Running. */
+    Idle -> Running :: Start;
+}

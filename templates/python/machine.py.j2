@@ -124,7 +124,7 @@ Abstract Hook Map:
 
 Canonical Model Export::
 
-{{ (model.to_ast_node() | string) | indent(4, true) }}
+{{ ((model.to_ast_node() | string) | escape_python_docstring) | indent(4, true) }}
 """
 
 import math  # noqa: F401 - rendered DSL math expressions may use this module.
@@ -1480,11 +1480,11 @@ def {{ abstract_hook_method_name(item) }}(self, ctx):
 {% if item.doc is not none %}
     DSL documentation::
 
-{{ item.doc | indent(8, true) }}
+{{ (item.doc | escape_python_docstring) | indent(8, true) }}
 {% endif %}
     DSL fragment::
 
-{{ (item.to_ast_node() | string) | indent(8, true) }}
+{{ ((item.to_ast_node() | string) | escape_python_docstring) | indent(8, true) }}
     """
     return None
 {%- endmacro %}
@@ -1498,7 +1498,7 @@ def {{ action_method_name(state, method_kind, idx) }}(self, vars_=None):
 {% endif %}
     DSL fragment::
 
-{{ (item.to_ast_node() | string) | indent(8, true) }}
+{{ ((item.to_ast_node() | string) | escape_python_docstring) | indent(8, true) }}
     """
 {% if item.operations %}    scope = vars_ if vars_ is not None else self._vars
 
@@ -1518,7 +1518,7 @@ def {{ init_guard_method_name(state, idx) }}(self, vars_=None):
 
     DSL fragment::
 
-{{ (transition.to_ast_node() | string) | indent(8, true) }}
+{{ ((transition.to_ast_node() | string) | escape_python_docstring) | indent(8, true) }}
     """
     scope = vars_ if vars_ is not None else self._vars
     return bool(
@@ -1535,7 +1535,7 @@ def {{ init_effect_method_name(state, idx) }}(self, vars_=None):
 
     DSL fragment::
 
-{{ (transition.to_ast_node() | string) | indent(8, true) }}
+{{ ((transition.to_ast_node() | string) | escape_python_docstring) | indent(8, true) }}
     """
     scope = vars_ if vars_ is not None else self._vars
 
@@ -1553,7 +1553,7 @@ def {{ transition_guard_method_name(state, idx) }}(self, vars_=None):
 
     DSL fragment::
 
-{{ (transition.to_ast_node() | string) | indent(8, true) }}
+{{ ((transition.to_ast_node() | string) | escape_python_docstring) | indent(8, true) }}
     """
     scope = vars_ if vars_ is not None else self._vars
     return bool(
@@ -1570,7 +1570,7 @@ def {{ transition_effect_method_name(state, idx) }}(self, vars_=None):
 
     DSL fragment::
 
-{{ (transition.to_ast_node() | string) | indent(8, true) }}
+{{ ((transition.to_ast_node() | string) | escape_python_docstring) | indent(8, true) }}
     """
     scope = vars_ if vars_ is not None else self._vars
 

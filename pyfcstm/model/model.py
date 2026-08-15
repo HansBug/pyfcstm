@@ -86,7 +86,7 @@ __all__ = [
     "parse_dsl_node_to_state_machine",
 ]
 
-from ..utils import sequence_safe, to_identifier
+from ..utils import aggregate_documentation, sequence_safe, to_identifier
 
 
 def _ast_doc_kwargs(node_type, doc: Optional[str]) -> Dict[str, object]:
@@ -1344,6 +1344,8 @@ class State(AstExportable, PlantUMLExportable):
         relay. This is semantic model data and must not be inferred from the
         reserved state-name prefix by renderers.
     :type is_combo_relay: bool
+    :param doc: Optional opaque documentation attached to this state.
+    :type doc: Optional[str]
 
     Example::
 
@@ -1377,9 +1379,54 @@ class State(AstExportable, PlantUMLExportable):
     substate_name_to_id: Dict[str, int] = None
     extra_name: Optional[str] = None
     is_pseudo: bool = False
-    _span: Optional[Span] = field(default=None, repr=False, compare=False)
     is_combo_relay: bool = False
     doc: Optional[str] = None
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
+
+    def __init__(
+        self,
+        name: str,
+        path: Tuple[str, ...],
+        substates: Dict[str, "State"],
+        events: Dict[str, Event] = None,
+        transitions: List[Transition] = None,
+        named_functions: Dict[str, Union[OnStage, OnAspect]] = None,
+        on_enters: List[OnStage] = None,
+        on_durings: List[OnStage] = None,
+        on_exits: List[OnStage] = None,
+        on_during_aspects: List[OnAspect] = None,
+        parent_ref: Optional[weakref.ReferenceType] = None,
+        substate_name_to_id: Dict[str, int] = None,
+        extra_name: Optional[str] = None,
+        is_pseudo: bool = False,
+        _span: Optional[Span] = None,
+        is_combo_relay: bool = False,
+        doc: Optional[str] = None,
+    ) -> None:
+        """Initialize a state while preserving the legacy positional order.
+
+        doc is in the dataclass public-field section before the private span,
+        but remains the final optional constructor argument so callers using
+        historical positional span/relay arguments do not change meaning.
+        """
+        self.name = name
+        self.path = path
+        self.substates = substates
+        self.events = events
+        self.transitions = transitions
+        self.named_functions = named_functions
+        self.on_enters = on_enters
+        self.on_durings = on_durings
+        self.on_exits = on_exits
+        self.on_during_aspects = on_during_aspects
+        self.parent_ref = parent_ref
+        self.substate_name_to_id = substate_name_to_id
+        self.extra_name = extra_name
+        self.is_pseudo = is_pseudo
+        self.is_combo_relay = is_combo_relay
+        self.doc = doc
+        self._span = _span
+        self.__post_init__()
 
     def __post_init__(self) -> None:
         """
@@ -4709,7 +4756,9 @@ def parse_dsl_node_to_state_machine(
                 priority_run_index=priority_run_index,
                 source_span=_node_span(first_alt.transnode),
                 source_path=getattr(first_alt.transnode, "_source_path", None),
-                doc=getattr(first_alt.transnode, "doc", None),
+                doc=aggregate_documentation(
+                    [getattr(alternative.transnode, "doc", None) for alternative in alternatives]
+                ),
             )
 
         def _expand_combo_alternatives(
@@ -5105,7 +5154,8 @@ def parse_dsl_node_to_state_machine(
                             severity="error",
                             message=(
                                 f"Cannot find named function {segment!r} under "
-                                f"state:\n{state.to_ast_node()}"
+                                "state:\n"
+                                f"{dsl_nodes.render_without_documentation(state.to_ast_node())}"
                             ),
                             span=getattr(node, "_span", None),
                             refs={

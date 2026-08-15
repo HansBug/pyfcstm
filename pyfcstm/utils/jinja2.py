@@ -37,11 +37,57 @@ Example::
 import builtins
 import inspect
 import os
+import re
 import textwrap
 
 import jinja2
 
 from .text import normalize, to_identifier, to_c_identifier
+
+
+def markdown_fence(value: str, marker: str = "`") -> str:
+    """
+    Return a Markdown fence longer than every marker run in ``value``.
+
+    The returned fence is at least three markers long.  This is used by
+    generated README templates around canonical FCSTM text, whose documentation
+    payload is user-controlled and may itself contain backticks.
+
+    :param value: Text that will be placed inside the fenced block.
+    :param marker: Fence marker, normally a single backtick.
+    :return: A safe fence string.
+    :raises TypeError: If ``value`` or ``marker`` is not a string.
+    :raises ValueError: If ``marker`` is empty or contains a newline.
+    """
+    if not isinstance(value, str) or not isinstance(marker, str):
+        raise TypeError("markdown_fence expects string value and marker")
+    if not marker or "\n" in marker or "\r" in marker:
+        raise ValueError("markdown_fence marker must be a non-empty line-safe string")
+    escaped = re.escape(marker)
+    longest = max(
+        (len(match.group(0)) for match in re.finditer(escaped + "+", value)),
+        default=0,
+    )
+    return marker * max(3, longest + 1)
+
+
+def escape_python_docstring(value: str) -> str:
+    """
+    Escape text embedded in a non-raw triple-quoted Python docstring.
+
+    Backslashes are doubled and every double quote is protected.  Escaping each
+    quote (rather than only replacing one triple-quote token) handles arbitrary
+    quote runs such as ``\"\"\"\"``.  At runtime Python resolves these escapes
+    back to the original characters, so this helper changes source
+    representation only and never documentation data.
+
+    :param value: Documentation or canonical DSL text.
+    :return: Python-source-safe text with the same runtime value.
+    :raises TypeError: If ``value`` is not a string.
+    """
+    if not isinstance(value, str):
+        raise TypeError("escape_python_docstring expects a string")
+    return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
 def to_c_path_identifier(segments) -> str:
@@ -283,6 +329,8 @@ def add_settings_for_env(env: jinja2.Environment) -> jinja2.Environment:
     2. Add text-processing filters:
        - ``normalize``: :func:`pyfcstm.utils.text.normalize`
        - ``to_identifier``: :func:`pyfcstm.utils.text.to_identifier`
+       - ``markdown_fence``: :func:`markdown_fence`
+       - ``escape_python_docstring``: :func:`escape_python_docstring`
     3. Add a global helper:
        - ``indent``: :func:`textwrap.indent`
     4. Add operating system environment variables as globals (only if the name
@@ -308,6 +356,8 @@ def add_settings_for_env(env: jinja2.Environment) -> jinja2.Environment:
     env = add_builtins_to_env(env)
     env.filters["normalize"] = normalize
     env.filters["to_identifier"] = to_identifier
+    env.filters["markdown_fence"] = markdown_fence
+    env.filters["escape_python_docstring"] = escape_python_docstring
     env.globals["indent"] = textwrap.indent
     for key, value in os.environ.items():
         if key not in env.globals:

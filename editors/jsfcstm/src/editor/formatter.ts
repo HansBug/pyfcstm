@@ -74,6 +74,7 @@ interface Tok {
     text: string;
     marker?: '//' | '#';
     body?: string;
+    ownerDocumentation?: boolean;
 }
 
 const MULTI_CHAR_OPS = [
@@ -286,7 +287,6 @@ function canonicalOwnerDocumentation(raw: string, trailingAbstract = false): str
     if (Number.isFinite(indent)) lines = lines.map(line => line.slice(Math.min(indent, line.length)));
     while (lines.length && !lines[0].trim()) lines.shift();
     while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
-    lines = lines.map(line => line.replace(/[ \t]+$/g, ''));
     if (lines.length > 0) lines[0] = lines[0].trimStart();
     if (lines.length > 0) lines[lines.length - 1] = lines[lines.length - 1].trimEnd();
     if (lines.some(line => line.includes('/*') || line.includes('*/'))) return null;
@@ -327,6 +327,7 @@ function isOwnerDocumentation(tokens: Tok[], index: number): boolean {
 function canonicalizeOwnerDocumentation(tokens: Tok[]): void {
     tokens.forEach((token, index) => {
         if (token.kind !== 'blkCom' || !isOwnerDocumentation(tokens, index)) return;
+        token.ownerDocumentation = true;
         const canonical = canonicalOwnerDocumentation(
             token.text,
             isTrailingAbstractDocumentation(tokens, index),
@@ -431,6 +432,7 @@ interface LogicalChunk {
     trailing?: Tok;        // trailing line-comment attached to the line
     leadingBlockComments?: Tok[];  // standalone blkCom tokens emitted before the line
     blockCommentText?: string;     // verbatim source for 'multilineBlockComment'
+    blockCommentIsOwnerDocumentation?: boolean;
 }
 
 function groupLogicalLines(tokens: Tok[]): LogicalChunk[] {
@@ -554,6 +556,7 @@ function groupLogicalLines(tokens: Tok[]): LogicalChunk[] {
                     depth: depth + 1,
                     tokens: [],
                     blockCommentText: t.text,
+                    blockCommentIsOwnerDocumentation: t.ownerDocumentation === true,
                 });
                 expectLineTerminator = true;
                 blankRun = 0;
@@ -703,7 +706,8 @@ function mergeInlinePatterns(
 function renderMultilineBlockComment(
     text: string,
     depth: number,
-    indentSize: number
+    indentSize: number,
+    preserveTrailingWhitespace = false,
 ): string {
     const indent = ' '.repeat(depth * indentSize);
     const lines = text.split('\n');
@@ -726,7 +730,10 @@ function renderMultilineBlockComment(
     }
     if (!isFinite(base)) base = 0;
 
-    const firstLine = lines[0].replace(/[ \t]+$/, '');
+    const trimStructuralWhitespace = (line: string): string => (
+        preserveTrailingWhitespace ? line : line.replace(/[ \t]+$/, '')
+    );
+    const firstLine = trimStructuralWhitespace(lines[0]);
     const out: string[] = [indent + firstLine];
     for (const line of continuationLines) {
         if (line.trim().length === 0) {
@@ -738,7 +745,7 @@ function renderMultilineBlockComment(
         // space. Tabs are treated as single spaces for this purpose —
         // block comment bodies almost never mix tabs with ``*`` alignment.
         const stripped = line.length >= base ? line.slice(base) : line.trimStart();
-        out.push(indent + ' ' + stripped.replace(/[ \t]+$/, ''));
+        out.push(indent + ' ' + trimStructuralWhitespace(stripped));
     }
     return out.join('\n');
 }
@@ -772,7 +779,10 @@ function renderLine(chunk: LogicalChunk, indentSize: number): string {
             continue;
         }
         if (prev.kind === 'blkCom') {
-            body += ' ' + tok.text;
+            const separator = isTrailingAbstractDocumentation(chunk.tokens, i - 1) && tok.text === ';'
+                ? ''
+                : ' ';
+            body += separator + tok.text;
             continue;
         }
         body += separatorBetween(prev, tok, chunk.tokens, i) + tok.text;
@@ -880,7 +890,10 @@ export function formatDocumentText(
         if (chunk.kind === 'multilineBlockComment') {
             if (alignMultilineBlockComments && chunk.blockCommentText) {
                 const rendered = renderMultilineBlockComment(
-                    chunk.blockCommentText, chunk.depth, indentSize
+                    chunk.blockCommentText,
+                    chunk.depth,
+                    indentSize,
+                    chunk.blockCommentIsOwnerDocumentation === true,
                 );
                 for (const physicalLine of rendered.split('\n')) {
                     outputLines.push(physicalLine);
@@ -890,9 +903,13 @@ export function formatDocumentText(
                 // line only; keep subsequent lines exactly as in the source.
                 const indent = ' '.repeat(chunk.depth * indentSize);
                 const srcLines = chunk.blockCommentText.split('\n');
-                outputLines.push(indent + srcLines[0].replace(/[ \t]+$/, ''));
+                const preserveTrailingWhitespace = chunk.blockCommentIsOwnerDocumentation === true;
+                const trimStructuralWhitespace = (line: string): string => (
+                    preserveTrailingWhitespace ? line : line.replace(/[ \t]+$/, '')
+                );
+                outputLines.push(indent + trimStructuralWhitespace(srcLines[0]));
                 for (const line of srcLines.slice(1)) {
-                    outputLines.push(line.replace(/[ \t]+$/, ''));
+                    outputLines.push(trimStructuralWhitespace(line));
                 }
             }
             lastEmittedKind = 'line';

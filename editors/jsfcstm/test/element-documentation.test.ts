@@ -90,6 +90,37 @@ describe('element documentation contracts', () => {
             '}',
         ].join('\n'));
         assert.equal(ast.rootState!.enters[0].doc, 'A  \nB');
+        const formatted = format([
+            'state Root {',
+            '    enter abstract Golden /*',
+            '     * A  ',
+            '     * B',
+            '     */;',
+            '}',
+        ].join('\n'));
+        assert.match(formatted, /\* A  \n/);
+    });
+
+    it('preserves owner documentation trailing spaces for leading state and event blocks', () => {
+        const formatted = format([
+            '/*',
+            ' * State line  ',
+            ' * State second line',
+            ' */ state Root {',
+            '    /*',
+            '     * Event line  ',
+            '     * Event second line',
+            '     */ event Tick;',
+            '}',
+        ].join('\n'));
+        assert.match(formatted, /\* State line  \n/);
+        assert.match(formatted, /\* Event line  \n/);
+    });
+
+    it('does not add padding before the semicolon of trailing abstract docs', () => {
+        const formatted = format('state Root { enter abstract Boot /* docs */; }');
+        assert.ok(formatted.includes('*/;'), formatted);
+        assert.ok(!formatted.includes('*/ ;'), formatted);
     });
 
     it('reports malformed documentation through diagnostics instead of throwing', async () => {

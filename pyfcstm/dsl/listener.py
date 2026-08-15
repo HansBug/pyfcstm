@@ -40,7 +40,11 @@ from .grammar import GrammarListener, GrammarParser
 from .node import *
 from ..utils import format_multiline_comment
 from ..utils.validate import Span
-from .error import DuplicateModelDocumentation
+from .error import (
+    DuplicateModelDocumentation,
+    GrammarItemError,
+    MalformedModelDocumentation,
+)
 
 
 _COND_BINARY_OP_ALIASES = {
@@ -192,7 +196,25 @@ class GrammarParseListener(GrammarListener):
             self.errors.append(DuplicateModelDocumentation(leading, trailing))
             return None
         token = leading if leading is not None else trailing
-        return format_multiline_comment(token.text) if token is not None else None
+        if token is None:
+            return None
+        nested_offset = token.text.find("/*", 2)
+        if nested_offset >= 0:
+            self.errors.append(MalformedModelDocumentation(token, nested_offset))
+            return None
+        try:
+            return format_multiline_comment(token.text)
+        except ValueError as error:
+            # The lexer has already isolated one complete block.  A ValueError
+            # here can only describe malformed documentation content such as a
+            # forbidden terminator/body boundary, so report it through parsing.
+            self.errors.append(
+                GrammarItemError(
+                    f"Malformed documentation block at line {token.line}, "
+                    f"column {token.column + 1}: {error}"
+                )
+            )
+            return None
 
     def exitCondition(self, ctx: GrammarParser.ConditionContext) -> None:
         """

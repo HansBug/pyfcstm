@@ -1,5 +1,7 @@
 """Regression tests for the issue-392 documentation boundaries."""
 
+from dataclasses import fields
+
 import pytest
 
 from pyfcstm.bmc import BmcEngine, build_bmc_core_formula, compile_bmc_property
@@ -11,6 +13,7 @@ from pyfcstm.bmc.witness import (
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.dsl.node import render_without_documentation
 from pyfcstm.model import load_state_machine_from_text, parse_dsl_node_to_state_machine
+from pyfcstm.model.model import State
 from pyfcstm.model.plantuml import PlantUMLOptions
 
 
@@ -124,6 +127,32 @@ state Root;
     assert all("duplicate" not in item.message for item in documented_diagnostics)
 
 
+def test_named_function_diagnostic_is_doc_free_recursively():
+    documented = _parse(
+        """state Root {
+    /* child owner docs */
+    state Child {
+        /* existing action docs */
+        enter abstract Existing;
+    }
+    state Caller {
+        enter ref Child.Missing;
+    }
+    [*] -> Caller;
+}
+"""
+    )
+    _, diagnostics = parse_dsl_node_to_state_machine(
+        documented, collect=True
+    )
+    named = [
+        item for item in diagnostics if item.code == "E_NAMED_FUNCTION_REF_NOT_FOUND"
+    ]
+    assert named
+    assert all("child owner docs" not in item.message for item in named)
+    assert all("existing action docs" not in item.message for item in named)
+
+
 def test_concrete_lifecycle_owner_documentation_survives_model_round_trip():
     machine = load_state_machine_from_text(
         """state Root {
@@ -138,6 +167,33 @@ def test_concrete_lifecycle_owner_documentation_survives_model_round_trip():
     action = machine.root_state.on_enters[0]
     assert action.doc == "concrete enter docs"
     assert action.to_ast_node().doc == "concrete enter docs"
+
+
+def test_state_doc_is_public_before_private_span_without_positional_drift():
+    field_names = [field.name for field in fields(State)]
+    assert field_names.index("doc") < field_names.index("_span")
+    state = State(
+        "Root",
+        ("Root",),
+        {},
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        False,
+        "legacy-span",
+        True,
+        "docs",
+    )
+    assert state._span == "legacy-span"
+    assert state.is_combo_relay is True
+    assert state.doc == "docs"
 
 
 def test_bmc_result_witness_and_replay_ignore_documentation():

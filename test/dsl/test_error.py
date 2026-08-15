@@ -47,6 +47,54 @@ state System {
         # The error message should mention missing semicolon
         assert "semicolon" in str(errors[0]).lower()
 
+    @pytest.mark.parametrize(
+        "source",
+        [
+            "state Root { /* unterminated",
+            'state Root { import "./x" as X /* unterminated',
+            'state Root { import "./x" as X { /* unterminated',
+            'state Root { import "./x" as X { def a /* unterminated',
+            'state Root { import "./x" as X { def a -> b /* unterminated',
+        ],
+    )
+    def test_unterminated_documentation_reports_missing_terminator(self, source):
+        with pytest.raises(GrammarParseError) as exc_info:
+            parse_with_grammar_entry(source, "state_machine_dsl")
+        assert len(exc_info.value.errors) == 1
+        assert "missing closing '*/'" in str(exc_info.value.errors[0])
+
+    def test_nested_documentation_reports_outer_and_inner_positions(self):
+        with pytest.raises(GrammarParseError) as exc_info:
+            parse_with_grammar_entry(
+                "state Root { /* outer\n /* inner */ state Child; }",
+                "state_machine_dsl",
+            )
+        message = str(exc_info.value)
+        assert "outer block at line 1, column 14" in message
+        assert "nested '/*' at line 2, column 2" in message
+
+    def test_operation_documentation_has_one_owner_diagnostic(self):
+        with pytest.raises(GrammarParseError) as exc_info:
+            parse_with_grammar_entry(
+                "state Root { enter { /* docs */ x = 1; } }",
+                "state_machine_dsl",
+            )
+        assert len(exc_info.value.errors) == 1
+        assert "operation documentation is not an owner" in str(
+            exc_info.value.errors[0]
+        )
+
+    def test_nested_operation_documentation_suppresses_recovery_cascade(self):
+        with pytest.raises(GrammarParseError) as exc_info:
+            parse_with_grammar_entry(
+                "state Root { enter { if [x > 0] { /* docs */ y = 1; } } }",
+                "state_machine_dsl",
+            )
+        assert len(exc_info.value.errors) == 1
+        assert "operation documentation is not an owner" in str(
+            exc_info.value.errors[0]
+        )
+
     def test_missing_semicolon_after_state_definition(self):
         """Test: Missing semicolon after state definition"""
         code = """def int counter = 0;

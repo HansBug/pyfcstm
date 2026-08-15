@@ -246,3 +246,29 @@ at a time and verify the inspect output after each change.
    * - Repair diagnostics
      - :ref:`dsl-diagnostics-task`
      - Inspect diagnostics include code, severity, source span, refs, and suggested fixes.
+
+Step 8: attach documentation blocks to owners
+-----------------------------------------------
+
+Documentation blocks are opaque model metadata. A block immediately before a
+supported declaration belongs to that declaration, so the variable, root and
+nested states, event, transitions, and lifecycle action in the checked-in
+fixture each keep their own text through AST and Model export.
+
+.. literalinclude:: documentation_blocks.fcstm
+   :language: fcstm
+   :caption: ``docs/source/tutorials/dsl/documentation_blocks.fcstm``
+
+Run the normal parser and inspect entry point against the fixture:
+
+.. code-block:: bash
+
+   pyfcstm inspect -i docs/source/tutorials/dsl/documentation_blocks.fcstm --format human --color never
+
+The canonical export is the round-trip authority. It normalizes each non-empty
+block to a multiline ``/*`` form, while preserving ``None``, an empty string,
+and literal ``*`` as distinct values. ``//`` and ``#`` remain ordinary skipped
+comments; import declarations, mappings, guards, effects, and operation
+statements are not documentation owners. Do not put credentials or other
+secrets in a documentation block because canonical exports may be embedded in
+generated source and README files.

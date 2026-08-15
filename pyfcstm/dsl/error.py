@@ -81,6 +81,27 @@ class DuplicateModelDocumentation(GrammarItemError):
         )
 
 
+class MalformedModelDocumentation(GrammarItemError):
+    """A documentation token contains a nested block opener."""
+
+    def __init__(self, token: Any, nested_offset: int) -> None:
+        self.token = token
+        self.line = token.line
+        self.column = token.column + 1
+        prefix = token.text[:nested_offset]
+        self.nested_line = token.line + prefix.count("\n")
+        if "\n" in prefix:
+            self.nested_column = len(prefix.rsplit("\n", 1)[1]) + 1
+        else:
+            self.nested_column = token.column + nested_offset + 1
+        super().__init__(
+            "Malformed documentation block: the outer block at "
+            f"line {self.line}, column {self.column} contains a nested "
+            f"'/*' at line {self.nested_line}, column {self.nested_column}; "
+            "the outer documentation block is missing its own closing '*/'."
+        )
+
+
 class SyntaxFailError(GrammarItemError):
     """
     Error raised when a syntax error is encountered during parsing.
@@ -128,6 +149,9 @@ class SyntaxFailError(GrammarItemError):
         :rtype: str
         """
         normalized_msg = msg.lower()
+
+        if "unterminated multiline comment" in normalized_msg or "missing '*/'" in normalized_msg:
+            return "Unterminated multiline comment - missing closing '*/'"
 
         # Pattern matching for common errors with actionable suggestions
         if "missing ';'" in normalized_msg or "missing semi" in normalized_msg:
@@ -477,6 +501,54 @@ class CollectingErrorListener(ErrorListener):
         :type e: Exception or None
         """
         offending_text = offendingSymbol.text if offendingSymbol else None
+        symbolic_name = None
+        token_type = getattr(offendingSymbol, "type", None)
+        symbolic_names = getattr(recognizer, "symbolicNames", ())
+        if isinstance(token_type, int) and 0 <= token_type < len(symbolic_names):
+            symbolic_name = symbolic_names[token_type]
+
+        if symbolic_name and "UNTERMINATED_MULTILINE_COMMENT" in symbolic_name:
+            self.errors.append(
+                SyntaxFailError(
+                    line,
+                    column,
+                    offending_text,
+                    "Unterminated multiline comment; missing '*/'",
+                )
+            )
+            return
+
+        in_operation = False
+        context = getattr(recognizer, "_ctx", None)
+        while context is not None:
+            context_name = type(context).__name__
+            if (
+                "Operation" in context_name
+                or context_name in {
+                    "EnterOperationsContext",
+                    "ExitOperationsContext",
+                    "DuringOperationsContext",
+                    "DuringAspectOperationsContext",
+                }
+            ):
+                in_operation = True
+                break
+            context = getattr(context, "parentCtx", None)
+        normalized_msg = msg.lower()
+        if (
+            in_operation
+            and offending_text is not None
+            and offending_text.startswith("/*")
+            and (
+                "missing rbrace" in normalized_msg
+                or "expecting rbrace" in normalized_msg
+                or "extraneous input" in normalized_msg
+            )
+        ):
+            msg = (
+                "operation documentation is not an owner; attach the block "
+                "before the parent lifecycle action"
+            )
         self.errors.append(SyntaxFailError(line, column, offending_text, msg))
 
     def reportAmbiguity(
@@ -637,6 +709,7 @@ class CollectingErrorListener(ErrorListener):
                 "missing semi" in raw_msg or
                 "missing ']'" in raw_msg or
                 "missing '}'" in raw_msg or
+                "missing rbrace" in raw_msg or
                 "missing '{'" in raw_msg or
                 "missing '['" in raw_msg or
                 "missing '->'" in raw_msg or
@@ -644,6 +717,7 @@ class CollectingErrorListener(ErrorListener):
                 "expecting semi" in raw_msg or
                 "expecting ';'" in raw_msg or
                 "token recognition error" in raw_msg
+                or "operation documentation is not an owner" in raw_msg
             )
 
             if is_primary:
@@ -663,6 +737,14 @@ class CollectingErrorListener(ErrorListener):
                 line_diff = cascading.line - primary.line
                 if 0 < line_diff <= 5:
                     # This is likely a cascading error caused by the primary error
+                    is_likely_cascading = True
+                    break
+                if (
+                    line_diff == 0
+                    and cascading.column >= primary.column
+                    and "operation documentation is not an owner"
+                    in getattr(primary, "raw_msg", "").lower()
+                ):
                     is_likely_cascading = True
                     break
 

@@ -42,12 +42,11 @@ Example::
 """
 
 import io
-from contextvars import ContextVar
 import json
 import math
 import os
 from abc import ABC
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, replace
 from textwrap import indent
 from typing import List, Union, Optional, Any
 
@@ -126,35 +125,6 @@ __all__ = [
 ]
 
 
-_INCLUDE_DOCUMENTATION = ContextVar(
-    "pyfcstm_include_documentation", default=True
-)
-
-
-def render_ast(node: "ASTNode", *, include_documentation: bool = True) -> str:
-    """Render an AST node without mutating it or any descendant.
-
-    The context-scoped flag is observed by owner renderers while their normal
-    ``__str__`` implementations recurse through child nodes.  This preserves
-    the public no-argument ``__str__`` contract and makes doc-free rendering
-    safe for diagnostic and display callers.
-    """
-    token = _INCLUDE_DOCUMENTATION.set(include_documentation)
-    try:
-        return str(node)
-    finally:
-        _INCLUDE_DOCUMENTATION.reset(token)
-
-
-def render_without_documentation(node: "ASTNode") -> str:
-    """Render an AST subtree while omitting every owner documentation block."""
-    return render_ast(node, include_documentation=False)
-
-
-def _documentation_enabled() -> bool:
-    return _INCLUDE_DOCUMENTATION.get()
-
-
 @dataclass
 class ASTNode(ABC):
     """
@@ -163,10 +133,79 @@ class ASTNode(ABC):
     This class provides a common ancestor for all nodes in the Abstract Syntax Tree,
     making it convenient to type-check and traverse mixed node collections.
 
+    AST nodes are logically immutable after parser/listener/model assembly.  Code
+    consuming a published tree must not assign semantic fields or mutate child
+    collections.  The construction pipeline may attach private provenance such
+    as ``_span``, ``_source_path``, and ``_source_text`` while assembling a tree.
+    Transformations must return a replacement node (or ``self`` when unchanged)
+    instead of mutating the original object.
+
     :rtype: ASTNode
     """
 
-    pass
+    def without_docs(self, recursive: bool = True) -> "ASTNode":
+        """Return this AST with documentation owners removed.
+
+        The transformation is persistent: the original node and its descendants
+        are never modified.  When no selected documentation exists, ``self`` is
+        returned; otherwise only changed ancestors are rebuilt and unchanged
+        descendants are shared.  Private source metadata is copied to rebuilt
+        nodes so documentation stripping does not affect diagnostics provenance.
+
+        :param recursive: Whether documentation in descendants is removed too.
+        :type recursive: bool
+        :return: The unchanged node or a documentation-free replacement.
+        :rtype: ASTNode
+        """
+        changes = {}
+        node_fields = fields(self)
+
+        for item in node_fields:
+            value = getattr(self, item.name)
+            if item.name == "doc":
+                if value is not None:
+                    changes[item.name] = None
+                continue
+            if recursive:
+                replacement = _without_docs_value(value, recursive=True)
+                if replacement is not value:
+                    changes[item.name] = replacement
+
+        if not changes:
+            return self
+
+        replacement = replace(self, **changes)
+        for attribute in ("_source_path", "_source_text"):
+            if hasattr(self, attribute):
+                setattr(replacement, attribute, getattr(self, attribute))
+        return replacement
+
+
+def _without_docs_value(value: Any, *, recursive: bool) -> Any:
+    """Apply :meth:`ASTNode.without_docs` through AST-owned containers."""
+    if isinstance(value, ASTNode):
+        return value.without_docs(recursive=recursive)
+    if isinstance(value, list):
+        replacement = [_without_docs_value(item, recursive=recursive) for item in value]
+        if all(old is new for old, new in zip(value, replacement)):
+            return value
+        return replacement
+    if isinstance(value, tuple):
+        replacement = tuple(
+            _without_docs_value(item, recursive=recursive) for item in value
+        )
+        if all(old is new for old, new in zip(value, replacement)):
+            return value
+        return replacement
+    if isinstance(value, dict):
+        replacement = {
+            key: _without_docs_value(item, recursive=recursive)
+            for key, item in value.items()
+        }
+        if all(old is new for old, new in zip(value.values(), replacement.values())):
+            return value
+        return replacement
+    return value
 
 
 @dataclass
@@ -731,7 +770,7 @@ def _render_operational_statement_block(
 
 
 def _render_documentation_block(doc: Optional[str]) -> Optional[str]:
-    if doc is None or not _documentation_enabled():
+    if doc is None:
         return None
     validate_documentation_for_export(doc)
     if doc == "":
@@ -746,13 +785,7 @@ def _render_documentation_prefix(doc: Optional[str]) -> str:
 
 
 def _render_abstract_documented(head: str, doc: Optional[str]) -> str:
-    if doc is None or not _documentation_enabled():
-        return head + ";"
-    validate_documentation_for_export(doc)
-    if doc == "":
-        return head + " /*\n*/"
-    body = "\n".join("    *" if line == "" else "    * " + line for line in doc.split("\n"))
-    return head + " /*\n" + body + "\n*/"
+    return _render_documentation_prefix(doc) + head + ";"
 
 
 @dataclass
@@ -2030,10 +2063,8 @@ class EnterAbstractFunction(EnterStatement):
     Example::
 
         >>> enter_func = EnterAbstractFunction("initState", "Initialize the state")
-        >>> print(str(enter_func))
-        enter abstract initState /*
-            * Initialize the state
-        */
+        >>> print(str(enter_func).replace(chr(10), "|"))
+        /*| * Initialize the state| */|enter abstract initState;
     """
 
     name: Optional[str]
@@ -2165,10 +2196,8 @@ class ExitAbstractFunction(ExitStatement):
     Example::
 
         >>> exit_func = ExitAbstractFunction("cleanupState", "Clean up resources")
-        >>> print(str(exit_func))
-        exit abstract cleanupState /*
-            * Clean up resources
-        */
+        >>> print(str(exit_func).replace(chr(10), "|"))
+        /*| * Clean up resources| */|exit abstract cleanupState;
     """
 
     name: Optional[str]
@@ -2310,10 +2339,8 @@ class DuringAbstractFunction(DuringStatement):
     Example::
 
         >>> during_func = DuringAbstractFunction("processData", "do", "Process incoming data")
-        >>> print(str(during_func))
-        during do abstract processData /*
-            * Process incoming data
-        */
+        >>> print(str(during_func).replace(chr(10), "|"))
+        /*| * Process incoming data| */|during do abstract processData;
     """
 
     name: Optional[str]
@@ -2464,10 +2491,8 @@ class DuringAspectAbstractFunction(DuringAspectStatement):
         >>> during_func = DuringAspectAbstractFunction(
         ...     "processData", "before", "Process incoming data"
         ... )
-        >>> print(str(during_func))
-        >> during before abstract processData /*
-            * Process incoming data
-        */
+        >>> print(str(during_func).replace(chr(10), "|"))
+        /*| * Process incoming data| */|>> during before abstract processData;
     """
 
     name: Optional[str]

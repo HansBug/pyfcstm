@@ -129,9 +129,9 @@ describe('jsfcstm formatter', () => {
         assert.ok(out.includes('// top line comment'));
         assert.ok(out.includes('// python-style comment'),
             '"#" must be normalized to "//"');
-        assert.ok(out.includes('/*\n     * standalone block comment\n     */'));
-        assert.ok(out.includes('enter abstract Init /*\n        * raw_doc payload — stays verbatim\n    */'),
-            'owner documentation must use the canonical abstract-action form');
+        assert.ok(out.includes('/*\n * standalone block comment\n */'));
+        assert.ok(out.includes('    /*\n     * raw_doc payload — stays verbatim\n     */\n    enter abstract Init;'),
+            'owner documentation must be emitted before the abstract action');
         assert.ok(out.includes('// trailing line comment'));
     });
 
@@ -319,11 +319,27 @@ describe('jsfcstm formatter', () => {
             '}',
         ].join('\n');
         const out = format(input);
-        assert.ok(out.includes('enter abstract Init /*'));
-        assert.ok(out.includes('* Line one of the doc.'));
-        assert.ok(out.includes('* Line two stays where it is.'));
-        assert.ok(out.includes('* Line three ends.'));
-        assert.ok(out.includes('    */'));
+        assert.ok(out.includes('    /*\n     * Line one of the doc.'));
+        assert.ok(out.includes('     * Line two stays where it is.'));
+        assert.ok(out.includes('     * Line three ends.'));
+        assert.ok(out.includes('     */\n    enter abstract Init;'));
+    });
+
+    it('moves trailing documentation before every abstract action family', () => {
+        const input = [
+            'state Root {',
+            '    exit abstract ExitHook /* exit docs */',
+            '    during before abstract BeforeHook /* before docs */',
+            '    during after abstract /* anonymous docs */',
+            '    >> during before abstract AspectHook /* aspect docs */',
+            '}',
+        ].join('\n');
+        const out = format(input);
+        assert.ok(out.includes('     */\n    exit abstract ExitHook;'));
+        assert.ok(out.includes('     */\n    during before abstract BeforeHook;'));
+        assert.ok(out.includes('     */\n    during after abstract;'));
+        assert.ok(out.includes('     */\n    >> during before abstract AspectHook;'));
+        assert.equal(format(out), out);
     });
 
     it('runs on a realistic messy document and yields a fully normalized result', () => {

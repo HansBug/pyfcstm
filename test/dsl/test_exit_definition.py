@@ -183,13 +183,13 @@ class TestDSLExitDefinition:
                     """
                     exit abstract setupFunc /* Initialize state variables */
                     """,
-                    'exit abstract setupFunc /*\n    * Initialize state variables\n*/'
+                    '/*\n * Initialize state variables\n */\nexit abstract setupFunc;'
             ),  # Exit abstract function with single line documentation
             (
                     """
                     exit abstract /* Setup initial conditions */
                     """,
-                    'exit abstract /*\n    * Setup initial conditions\n*/'
+                    '/*\n * Setup initial conditions\n */\nexit abstract;'
             ),  # Exit abstract function without name but with documentation
             (
                     """

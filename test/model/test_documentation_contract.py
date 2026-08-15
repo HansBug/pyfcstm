@@ -11,7 +11,6 @@ from pyfcstm.bmc.witness import (
     solve_bmc_property,
 )
 from pyfcstm.dsl import parse_with_grammar_entry
-from pyfcstm.dsl.node import render_without_documentation
 from pyfcstm.model import load_state_machine_from_text, parse_dsl_node_to_state_machine
 from pyfcstm.model.model import State
 from pyfcstm.model.plantuml import PlantUMLOptions
@@ -24,7 +23,7 @@ def _parse(text):
     return parse_with_grammar_entry(text, entry_name="state_machine_dsl")
 
 
-def test_recursive_doc_free_render_is_non_mutating_and_matches_no_doc_source():
+def test_recursive_doc_free_ast_is_non_mutating_and_matches_no_doc_source():
     documented = _parse(
         """/* Root docs */
 state Root {
@@ -47,15 +46,52 @@ state Root {
     )
 
     inclusive_before = str(documented)
-    free = render_without_documentation(documented)
+    free = documented.without_docs()
     inclusive_after = str(documented)
 
     assert "Root docs" in inclusive_before
-    assert "Root docs" not in free
-    assert free == str(plain)
+    assert "Root docs" not in str(free)
+    assert str(free) == str(plain)
+    assert free is not documented
     assert inclusive_after == inclusive_before
     assert documented.root_state.doc == "Root docs"
     assert documented.root_state.events[0].doc == "event docs"
+
+
+def test_without_docs_supports_shallow_copy_on_write_and_metadata():
+    documented = _parse(
+        """/* root docs */
+state Root {
+    /* child docs */
+    state Child;
+}
+"""
+    )
+    root = documented.root_state
+    root._source_path = "memory.fcstm"
+    root._source_text = str(documented)
+
+    shallow = root.without_docs(recursive=False)
+    assert shallow is not root
+    assert shallow.doc is None
+    assert shallow.substates[0] is root.substates[0]
+    assert shallow.substates[0].doc == "child docs"
+    assert shallow._source_path == root._source_path
+    assert shallow._source_text == root._source_text
+    assert root.doc == "root docs"
+
+
+def test_without_docs_returns_self_when_tree_has_no_documentation():
+    plain = _parse("state Root { state Child; }")
+    assert plain.without_docs() is plain
+
+
+def test_without_docs_clears_empty_documentation_without_mutating_source():
+    documented = _parse("/* */ state Root;")
+    stripped = documented.without_docs()
+    assert stripped is not documented
+    assert stripped.root_state.doc is None
+    assert documented.root_state.doc == ""
 
 
 def test_plantuml_output_is_identical_for_documented_and_plain_models():

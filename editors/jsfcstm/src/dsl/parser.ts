@@ -324,6 +324,64 @@ class CollectingErrorListener {
     }
 }
 
+interface ParserTokenLike {
+    text?: string;
+    line?: number;
+    column?: number;
+}
+
+function isBlockDocumentationToken(token: ParserTokenLike | undefined): boolean {
+    const text = token?.text || '';
+    return text.startsWith('/*') && text.endsWith('*/');
+}
+
+function collectDuplicateDocumentationErrors(
+    tokens: readonly ParserTokenLike[],
+    errors: ParseError[],
+): void {
+    for (let index = 0; index < tokens.length; index += 1) {
+        if (!isBlockDocumentationToken(tokens[index])) continue;
+        let actionKeyword = false;
+        let abstractKeyword = false;
+        for (let cursor = index + 1; cursor < tokens.length; cursor += 1) {
+            const token = tokens[cursor];
+            const text = token.text || '';
+            if (isBlockDocumentationToken(token)) {
+                if (actionKeyword && abstractKeyword) {
+                    errors.push({
+                        line: Math.max(0, (token.line ?? 1) - 1),
+                        column: Math.max(0, token.column ?? 0),
+                        message: 'Duplicate model documentation: both leading and trailing blocks are attached to one action.',
+                        severity: 'error',
+                    });
+                }
+                break;
+            }
+            if (text === ';' || text === '{' || text === '}') break;
+            if (text === 'enter' || text === 'exit' || text === 'during') {
+                actionKeyword = true;
+            } else if (text === 'abstract' && actionKeyword) {
+                abstractKeyword = true;
+            }
+        }
+    }
+}
+
+function tokenStreamTokens(stream: unknown): ParserTokenLike[] {
+    const candidate = stream as { tokens?: ParserTokenLike[] };
+    return Array.isArray(candidate.tokens) ? candidate.tokens : [];
+}
+
+function reportDuplicateDocumentation(
+    tokenStream: unknown,
+    errors: ParseError[],
+): void {
+    const tokens = tokenStreamTokens(tokenStream);
+    if (tokens.length > 0) {
+        collectDuplicateDocumentationErrors(tokens, errors);
+    }
+}
+
 export class FcstmParser {
     private readonly modules: GeneratedParserModules;
 
@@ -366,6 +424,7 @@ export class FcstmParser {
             parser.addErrorListener(errorListener);
 
             parser.state_machine_dsl();
+            reportDuplicateDocumentation(tokens, errors);
 
             return {
                 success: errors.length === 0,

@@ -34,6 +34,7 @@ ASTNode
 -----------------------------------------------------
 
 .. autoclass:: ASTNode
+    :members: without_docs
 
 
 Identifier
@@ -457,15 +458,3 @@ DuringAspectRefFunction
 
 .. autoclass:: DuringAspectRefFunction
     :members: __str__,name,aspect,ref,doc
-
-
-render\_ast
------------------------------------------------------
-
-.. autofunction:: render_ast
-
-
-render\_without\_documentation
------------------------------------------------------
-
-.. autofunction:: render_without_documentation

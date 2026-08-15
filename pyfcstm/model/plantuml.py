@@ -35,7 +35,6 @@ Example::
 from dataclasses import dataclass
 from typing import Optional, Tuple, TYPE_CHECKING, Union, Dict, List
 
-from ..dsl.node import render_without_documentation
 
 try:
     from typing import Literal
@@ -293,7 +292,7 @@ def format_action_text(action: 'Union[OnStage, OnAspect]', config: 'PlantUMLOpti
     """
     # Convert action to AST node and get text representation
     ast_node = action.to_ast_node()
-    action_text = render_without_documentation(ast_node)
+    action_text = str(ast_node.without_docs())
 
     # Apply abstract marker if needed
     if action.is_abstract:

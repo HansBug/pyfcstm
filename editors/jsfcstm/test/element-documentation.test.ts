@@ -46,17 +46,23 @@ describe('element documentation contracts', () => {
         assert.equal(transition.range.start.character, 35);
     });
 
-    it('accepts leading and trailing documentation on abstract actions', async () => {
-        const ast = await parse([
+    it('reports duplicate leading and trailing documentation on abstract actions', async () => {
+        const source = [
             'state Root {',
             '    /* leading */ enter abstract Before;',
-            '    enter abstract After /* trailing */;',
+            '    /* leading */ enter abstract After /* trailing */',
             '}',
-        ].join('\n'));
+        ].join('\n');
+        const ast = await parse(source);
         assert.equal(ast.rootState!.enters[0].doc, 'leading');
-        assert.equal(ast.rootState!.enters[1].doc, 'trailing');
+        assert.equal(ast.rootState!.enters[1].doc, 'leading');
         assert.equal(ast.rootState!.enters[0].mode, 'abstract');
         assert.equal(ast.rootState!.enters[1].mode, 'abstract');
+        const diagnostics = await packageModule.collectDocumentDiagnostics(
+            createDocument(source, '/tmp/duplicate-documentation.fcstm'),
+        );
+        assert.ok(diagnostics.some((item: {severity?: string; message: string}) =>
+            item.severity === 'error' && /Duplicate model documentation/.test(item.message)));
     });
 
     it('distinguishes absent, empty, and star-prefixed documentation', async () => {
@@ -117,10 +123,32 @@ describe('element documentation contracts', () => {
         assert.match(formatted, /\* Event line  \n/);
     });
 
-    it('does not add padding before the semicolon of trailing abstract docs', () => {
+    it('moves trailing abstract docs before the terminated action', () => {
         const formatted = format('state Root { enter abstract Boot /* docs */; }');
-        assert.ok(formatted.includes('*/;'), formatted);
+        assert.ok(formatted.includes('*/\n    enter abstract Boot;'), formatted);
         assert.ok(!formatted.includes('*/ ;'), formatted);
+    });
+
+    it('does not associate a same-line comment with a preceding abstract action', () => {
+        const formatted = format('state Root { enter abstract Boot; state Child /* state docs */; }');
+        assert.ok(formatted.includes('enter abstract Boot;'), formatted);
+        assert.ok(formatted.indexOf('state Child') < formatted.indexOf('state docs'), formatted);
+        assert.ok(!formatted.includes('state docs */\n    enter abstract Boot;'), formatted);
+    });
+
+    it('terminates a trailing abstract action before a same-line next declaration', () => {
+        const formatted = format('state Root { enter abstract Boot /* docs */ state Child; }');
+        assert.ok(formatted.includes('*/\n    enter abstract Boot;'), formatted);
+        assert.ok(formatted.includes('state Child;'), formatted);
+    });
+
+    it('moves newline-separated trailing abstract docs before the action', () => {
+        const formatted = format([
+            'state Root { enter abstract Boot',
+            '/* docs */ }',
+        ].join('\n'));
+        assert.ok(formatted.includes('    /*\n     * docs\n     */\n    enter abstract Boot;'), formatted);
+        assert.equal(format(formatted), formatted);
     });
 
     it('reports malformed documentation through diagnostics instead of throwing', async () => {

@@ -158,13 +158,13 @@ class TestDSLStagesEnter:
                 """
                 enter abstract /* This function initializes the state */
                 """,
-                "enter abstract /*\n    * This function initializes the state\n*/",
+                "/*\n * This function initializes the state\n */\nenter abstract;",
             ),  # Abstract enter function with multiline comment and no function name
             (
                 """
                 enter abstract setup /* Sets up initial values for the state variables */
                 """,
-                "enter abstract setup /*\n    * Sets up initial values for the state variables\n*/",
+                "/*\n * Sets up initial values for the state variables\n */\nenter abstract setup;",
             ),  # Abstract enter function with name and multiline comment
             (
                 """
@@ -175,7 +175,7 @@ class TestDSLStagesEnter:
                     Returns: none
                 */
                 """,
-                "enter abstract /*\n    * Multi-line documentation\n    * This function initializes all variables\n    * Parameters: none\n    * Returns: none\n*/",
+                "/*\n * Multi-line documentation\n * This function initializes all variables\n * Parameters: none\n * Returns: none\n */\nenter abstract;",
             ),  # Abstract enter function with multi-line comment spanning several lines
         ],
     )
@@ -530,25 +530,25 @@ class TestDSLStagesDuring:
                 """
                 during abstract /* This function processes sensor data and updates the state */
                 """,
-                "during abstract /*\n    * This function processes sensor data and updates the state\n*/",
+                "/*\n * This function processes sensor data and updates the state\n */\nduring abstract;",
             ),  # Abstract during with multiline comment documentation
             (
                 """
                 during abstract processData /* Handles all sensor data processing logic */
                 """,
-                "during abstract processData /*\n    * Handles all sensor data processing logic\n*/",
+                "/*\n * Handles all sensor data processing logic\n */\nduring abstract processData;",
             ),  # Abstract during with function name and multiline comment
             (
                 """
                 during before abstract /* Initialize all sensors before processing */
                 """,
-                "during before abstract /*\n    * Initialize all sensors before processing\n*/",
+                "/*\n * Initialize all sensors before processing\n */\nduring before abstract;",
             ),  # Abstract during with 'before' aspect and multiline comment
             (
                 """
                 during after abstract cleanupResources /* Free all allocated memory */
                 """,
-                "during after abstract cleanupResources /*\n    * Free all allocated memory\n*/",
+                "/*\n * Free all allocated memory\n */\nduring after abstract cleanupResources;",
             ),  # Abstract during with 'after' aspect, function name and multiline comment
             (
                 """
@@ -811,13 +811,13 @@ class TestDSLStagesExit:
                 """
                 exit abstract /* This function initializes the state */
                 """,
-                "exit abstract /*\n    * This function initializes the state\n*/",
+                "/*\n * This function initializes the state\n */\nexit abstract;",
             ),  # Abstract exit function with multiline comment and no function name
             (
                 """
                 exit abstract setup /* Sets up initial values for the state variables */
                 """,
-                "exit abstract setup /*\n    * Sets up initial values for the state variables\n*/",
+                "/*\n * Sets up initial values for the state variables\n */\nexit abstract setup;",
             ),  # Abstract exit function with name and multiline comment
             (
                 """
@@ -828,7 +828,7 @@ class TestDSLStagesExit:
                     Returns: none
                 */
                 """,
-                "exit abstract /*\n    * Multi-line documentation\n    * This function initializes all variables\n    * Parameters: none\n    * Returns: none\n*/",
+                "/*\n * Multi-line documentation\n * This function initializes all variables\n * Parameters: none\n * Returns: none\n */\nexit abstract;",
             ),  # Abstract exit function with multi-line comment spanning several lines
         ],
     )

@@ -11,8 +11,8 @@
  * Key rules the output satisfies:
  *
  * 1. ``#`` line comments are normalized into the canonical ``//`` form so the
- *    file stays in one comment dialect. ``/* *\/`` is NEVER touched because
- *    FCSTM uses it as the ``raw_doc`` payload for ``abstract`` actions.
+ *    file stays in one comment dialect. Owner ``/* *\/`` blocks are emitted
+ *    immediately before their declaration, including abstract actions.
  * 2. Every brace block that contains statements is multi-line:
  *    ``effect{a=0;b=1;}`` becomes
  *    ``effect {\n    a = 0;\n    b = 1;\n}``. Empty ``{}`` stays inline.
@@ -43,12 +43,10 @@ export interface FcstmFormatOptions {
      */
     elseOnSameLine?: boolean;
     /**
-     * When ``true`` (default), a multi-line ``/* *\/`` block comment that
-     * appears inline with code (most commonly as the ``raw_doc`` payload of
-     * an ``abstract`` action) is moved onto its own lines at
-     * ``currentDepth + 1`` indentation, and its continuation lines are
-     * realigned so the ``*`` markers sit one column right of the opening
-     * ``/*``. Relative indentation inside the comment is preserved.
+     * When ``true`` (default), multi-line owner ``/* *\/`` blocks are moved
+     * onto their own lines and their continuation lines are realigned so the
+     * ``*`` markers sit one column right of the opening ``/*``. Relative
+     * indentation inside the comment is preserved.
      */
     alignMultilineBlockComments?: boolean;
 }
@@ -256,7 +254,7 @@ function tokenize(src: string): Tok[] {
     return tokens;
 }
 
-function canonicalOwnerDocumentation(raw: string, trailingAbstract = false): string | null {
+function canonicalOwnerDocumentation(raw: string): string | null {
     const source = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     if (!source.startsWith('/*') || !source.endsWith('*/')) return null;
     let body = source.slice(2, -2);
@@ -290,29 +288,22 @@ function canonicalOwnerDocumentation(raw: string, trailingAbstract = false): str
     if (lines.length > 0) lines[0] = lines[0].trimStart();
     if (lines.length > 0) lines[lines.length - 1] = lines[lines.length - 1].trimEnd();
     if (lines.some(line => line.includes('/*') || line.includes('*/'))) return null;
-    if (lines.length === 0) return trailingAbstract ? '/*\n*/' : '/*\n */';
-    if (trailingAbstract) {
-        return `/*\n${lines.map(line => `    *${line ? ` ${line}` : ''}`).join('\n')}\n*/`;
-    }
+    if (lines.length === 0) return '/*\n */';
     return `/*\n${lines.map(line => ` *${line ? ` ${line}` : ''}`).join('\n')}\n */`;
-}
-
-function isTrailingAbstractDocumentation(tokens: Tok[], index: number): boolean {
-    const previous: Tok[] = [];
-    for (let i = index - 1; i >= 0 && previous.length < 4; i -= 1) {
-        if (tokens[i].kind !== 'ws' && tokens[i].kind !== 'nl') previous.push(tokens[i]);
-    }
-    return previous.some(item => item.kind === 'ident' && item.text === 'abstract');
 }
 
 function isOwnerDocumentation(tokens: Tok[], index: number): boolean {
     const previous: Tok[] = [];
-    for (let i = index - 1; i >= 0 && previous.length < 3; i -= 1) {
-        if (tokens[i].kind !== 'ws' && tokens[i].kind !== 'nl') previous.push(tokens[i]);
+    for (let i = index - 1; i >= 0 && previous.length < 8; i -= 1) {
+        if (tokens[i].kind === 'nl') continue;
+        if (tokens[i].kind === 'punct' && ['{', '}', ';'].includes(tokens[i].text)) break;
+        if (tokens[i].kind !== 'ws') previous.push(tokens[i]);
     }
     const next: Tok[] = [];
     for (let i = index + 1; i < tokens.length && next.length < 4; i += 1) {
-        if (tokens[i].kind !== 'ws' && tokens[i].kind !== 'nl') next.push(tokens[i]);
+        if (tokens[i].kind !== 'ws' && tokens[i].kind !== 'nl' && tokens[i].kind !== 'blkCom') {
+            next.push(tokens[i]);
+        }
     }
     if (previous.some(item => item.kind === 'ident' && item.text === 'abstract')) return true;
     const first = next[0]?.text;
@@ -324,16 +315,93 @@ function isOwnerDocumentation(tokens: Tok[], index: number): boolean {
     return false;
 }
 
+function abstractActionStart(tokens: Tok[], abstractIndex: number): number | null {
+    for (let i = abstractIndex - 1; i >= 0; i -= 1) {
+        const token = tokens[i];
+        if (token.kind === 'nl') break;
+        if (token.kind === 'punct' && ['{', '}', ';'].includes(token.text)) break;
+        if (token.kind === 'ident' && ['enter', 'exit', 'during'].includes(token.text)) {
+            if (token.text === 'during') {
+                for (let j = i - 1; j >= 0; j -= 1) {
+                    if (tokens[j].kind === 'nl') break;
+                    if (tokens[j].kind === 'punct' && ['{', '}', ';'].includes(tokens[j].text)) break;
+                    if (tokens[j].kind === 'punct' && tokens[j].text === '>>') return j;
+                }
+            }
+            return i;
+        }
+    }
+    return null;
+}
+
+function moveTrailingAbstractDocumentation(tokens: Tok[], commentIndex: number): void {
+    const previous: Tok[] = [];
+    for (let i = commentIndex - 1; i >= 0 && previous.length < 8; i -= 1) {
+        if (tokens[i].kind === 'nl') continue;
+        if (tokens[i].kind === 'punct' && ['{', '}', ';'].includes(tokens[i].text)) break;
+        if (tokens[i].kind !== 'ws') previous.push(tokens[i]);
+    }
+    const abstractIndex = previous.findIndex(item => item.kind === 'ident' && item.text === 'abstract');
+    if (abstractIndex < 0) return;
+    const abstractTokenIndex = commentIndex - 1 - abstractIndex;
+    const start = abstractActionStart(tokens, abstractTokenIndex);
+    if (start === null) return;
+
+    // The optional function name is the only token that can extend the
+    // abstract-action head. Keep its identity so insertion remains correct
+    // after moving the documentation token to the front.
+    let actionLastToken = tokens[abstractTokenIndex];
+    for (let i = abstractTokenIndex + 1; i < commentIndex; i += 1) {
+        const token = tokens[i];
+        if (token.kind === 'ws' || token.kind === 'nl') continue;
+        if (token.kind === 'ident') actionLastToken = token;
+        break;
+    }
+
+    const comment = tokens[commentIndex];
+    comment.ownerDocumentation = true;
+    comment.text = canonicalOwnerDocumentation(comment.text) || comment.text;
+    tokens.splice(commentIndex, 1);
+    tokens.splice(start, 0, comment);
+
+    // The legacy trailing spelling omits the semicolon. Canonical output uses
+    // the same terminated action form as the leading spelling. A following
+    // declaration may be on the same line, so stop at this action's head
+    // rather than searching for a later semicolon.
+    const actionEnd = tokens.indexOf(actionLastToken) + 1;
+    let end = actionEnd;
+    let hasTerminator = false;
+    for (; end < tokens.length; end += 1) {
+        const token = tokens[end];
+        if (token.kind === 'ws' || token.kind === 'nl') continue;
+        if (token.kind === 'punct' && token.text === ';') {
+            hasTerminator = true;
+            break;
+        }
+        break;
+    }
+    if (!hasTerminator) tokens.splice(actionEnd, 0, {kind: 'punct', text: ';'});
+}
+
 function canonicalizeOwnerDocumentation(tokens: Tok[]): void {
-    tokens.forEach((token, index) => {
-        if (token.kind !== 'blkCom' || !isOwnerDocumentation(tokens, index)) return;
+    for (let index = 0; index < tokens.length; index += 1) {
+        const token = tokens[index];
+        if (token.kind !== 'blkCom' || !isOwnerDocumentation(tokens, index)) continue;
+        const previous: Tok[] = [];
+        for (let i = index - 1; i >= 0 && previous.length < 8; i -= 1) {
+            if (tokens[i].kind === 'nl') continue;
+            if (tokens[i].kind === 'punct' && ['{', '}', ';'].includes(tokens[i].text)) break;
+            if (tokens[i].kind !== 'ws') previous.push(tokens[i]);
+        }
+        if (previous.some(item => item.kind === 'ident' && item.text === 'abstract')) {
+            moveTrailingAbstractDocumentation(tokens, index);
+            index = Math.max(-1, index - 1);
+            continue;
+        }
         token.ownerDocumentation = true;
-        const canonical = canonicalOwnerDocumentation(
-            token.text,
-            isTrailingAbstractDocumentation(tokens, index),
-        );
+        const canonical = canonicalOwnerDocumentation(token.text);
         if (canonical !== null) token.text = canonical;
-    });
+    }
 }
 
 function findNewline(src: string, start: number): number {
@@ -535,25 +603,14 @@ function groupLogicalLines(tokens: Tok[]): LogicalChunk[] {
         if (t.kind === 'blkCom') {
             const isMultiLine = t.text.includes('\n');
             if (isMultiLine) {
-                // A multi-line block comment inline with code (typical
-                // ``enter abstract Foo /* doc */`` raw_doc payload) gets
-                // lifted onto its own chunk one indent level deeper than
-                // the owner statement, so it can be re-aligned cleanly.
-                const isTrailingAbstract = buffer.some(
-                    item => item.kind === 'ident' && item.text === 'abstract'
-                );
-                if (buffer.length > 0 && !isTrailingAbstract) {
+                // Inline block comments are lifted onto their own chunk so
+                // they can be re-aligned cleanly.
+                if (buffer.length > 0) {
                     commit();
-                }
-                if (isTrailingAbstract) {
-                    buffer.push(t);
-                    expectLineTerminator = true;
-                    blankRun = 0;
-                    continue;
                 }
                 chunks.push({
                     kind: 'multilineBlockComment',
-                    depth: depth + 1,
+                    depth: t.ownerDocumentation === true ? depth : depth + 1,
                     tokens: [],
                     blockCommentText: t.text,
                     blockCommentIsOwnerDocumentation: t.ownerDocumentation === true,
@@ -779,10 +836,7 @@ function renderLine(chunk: LogicalChunk, indentSize: number): string {
             continue;
         }
         if (prev.kind === 'blkCom') {
-            const separator = isTrailingAbstractDocumentation(chunk.tokens, i - 1) && tok.text === ';'
-                ? ''
-                : ' ';
-            body += separator + tok.text;
+            body += ' ' + tok.text;
             continue;
         }
         body += separatorBetween(prev, tok, chunk.tokens, i) + tok.text;

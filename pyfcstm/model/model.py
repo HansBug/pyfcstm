@@ -2209,7 +2209,7 @@ class State(AstExportable, PlantUMLExportable):
                             elif config.transition_effect_mode == "inline":
                                 # Display effects inline on the transition arrow
                                 effect_strs = [
-                                    dsl_nodes.render_without_documentation(operation.to_ast_node())
+                                    str(operation.to_ast_node().without_docs())
                                     for operation in trans.effects
                                 ]
                                 effect_text = "; ".join(effect_strs)
@@ -3196,7 +3196,7 @@ def parse_dsl_node_to_state_machine(
                     severity="error",
                     message=(
                         "Duplicated variable definition - "
-                        f"{dsl_nodes.render_without_documentation(def_item)}."
+                        f"{str(def_item.without_docs())}."
                     ),
                     span=getattr(def_item, "_span", None),
                     refs={
@@ -3300,7 +3300,7 @@ def parse_dsl_node_to_state_machine(
                         message=(
                             f"{unknown_var_message} {unknown_var} "
                             "in transition:\n"
-                            f"{dsl_nodes.render_without_documentation(owner_node)}"
+                            f"{str(owner_node.without_docs())}"
                         ),
                         span=getattr(owner_node, "_span", None),
                         refs={
@@ -3372,7 +3372,7 @@ def parse_dsl_node_to_state_machine(
                             message=(
                                 f"{unknown_var_message} {unknown_var} "
                                 "in transition:\n"
-                                f"{dsl_nodes.render_without_documentation(owner_node)}"
+                                f"{str(owner_node.without_docs())}"
                             ),
                             span=getattr(owner_node, "_span", None),
                             refs={
@@ -3424,7 +3424,7 @@ def parse_dsl_node_to_state_machine(
                         f"State name {node.name!r} uses combo relay reserved "
                         f"prefix {_COMBO_STATE_PREFIX!r} but is not a pseudo "
                         "state:\n"
-                        f"{dsl_nodes.render_without_documentation(node)}"
+                        f"{str(node.without_docs())}"
                     ),
                     span=getattr(node, "_span", None),
                     refs={
@@ -3452,7 +3452,7 @@ def parse_dsl_node_to_state_machine(
                         message=(
                             f"Duplicate state name in namespace "
                             f"{'.'.join(current_path)!r}:\n"
-                            f"{dsl_nodes.render_without_documentation(subnode)}"
+                            f"{str(subnode.without_docs())}"
                         ),
                         span=getattr(subnode, "_span", None),
                         refs={
@@ -3548,7 +3548,7 @@ def parse_dsl_node_to_state_machine(
                                 message=(
                                     f"Duplicate function name {on_stage.name!r} "
                                     "in state:\n"
-                                    f"{dsl_nodes.render_without_documentation(node)}"
+                                    f"{str(node.without_docs())}"
                                 ),
                                 span=getattr(enter_item, "_span", None),
                                 refs={
@@ -3576,7 +3576,7 @@ def parse_dsl_node_to_state_machine(
                         message=(
                             f"For leaf state {node.name!r}, during cannot assign "
                             f"aspect {during_item.aspect!r}:\n"
-                            f"{dsl_nodes.render_without_documentation(during_item)}"
+                            f"{str(during_item.without_docs())}"
                         ),
                         span=getattr(during_item, "_span", None),
                         refs={
@@ -3594,7 +3594,7 @@ def parse_dsl_node_to_state_machine(
                         message=(
                             f"For composite state {node.name!r}, during must "
                             f"assign aspect to either 'before' or 'after':\n"
-                            f"{dsl_nodes.render_without_documentation(during_item)}"
+                            f"{str(during_item.without_docs())}"
                         ),
                         span=getattr(during_item, "_span", None),
                         refs={
@@ -3670,7 +3670,7 @@ def parse_dsl_node_to_state_machine(
                                 message=(
                                     f"Duplicate function name {on_stage.name!r} "
                                     "in state:\n"
-                                    f"{dsl_nodes.render_without_documentation(node)}"
+                                    f"{str(node.without_docs())}"
                                 ),
                                 span=getattr(during_item, "_span", None),
                                 refs={
@@ -3751,7 +3751,7 @@ def parse_dsl_node_to_state_machine(
                                 message=(
                                     f"Duplicate function name {on_stage.name!r} "
                                     "in state:\n"
-                                    f"{dsl_nodes.render_without_documentation(node)}"
+                                    f"{str(node.without_docs())}"
                                 ),
                                 span=getattr(exit_item, "_span", None),
                                 refs={
@@ -3780,7 +3780,7 @@ def parse_dsl_node_to_state_machine(
                             f"For leaf state {node.name!r}, ``>> during "
                             f"{during_aspect_item.aspect}`` aspect actions "
                             f"need at least one descendant leaf:\n"
-                            f"{dsl_nodes.render_without_documentation(during_aspect_item)}"
+                            f"{str(during_aspect_item.without_docs())}"
                         ),
                         span=getattr(during_aspect_item, "_span", None),
                         refs={
@@ -3855,7 +3855,7 @@ def parse_dsl_node_to_state_machine(
                                 message=(
                                     f"Duplicate function name {on_aspect.name!r} "
                                     "in state:\n"
-                                    f"{dsl_nodes.render_without_documentation(node)}"
+                                    f"{str(node.without_docs())}"
                                 ),
                                 span=getattr(during_aspect_item, "_span", None),
                                 refs={
@@ -3908,7 +3908,7 @@ def parse_dsl_node_to_state_machine(
                             f"Pseudo state {node.name!r} uses combo relay "
                             f"reserved prefix {_COMBO_STATE_PREFIX!r} but "
                             "contains lifecycle or aspect actions:\n"
-                            f"{dsl_nodes.render_without_documentation(node)}"
+                            f"{str(node.without_docs())}"
                         ),
                         span=getattr(node, "_span", None),
                         refs={
@@ -3927,7 +3927,7 @@ def parse_dsl_node_to_state_machine(
                     message=(
                         f"Pseudo state {'.'.join(current_path)} must be a leaf "
                         "state:\n"
-                        f"{dsl_nodes.render_without_documentation(node)}"
+                        f"{str(node.without_docs())}"
                     ),
                     span=getattr(node, "_span", None),
                     refs={
@@ -3980,11 +3980,11 @@ def parse_dsl_node_to_state_machine(
                             message=(
                                 f"Unknown from state {from_state!r} of force "
                                 "transition:\n"
-                                f"{dsl_nodes.render_without_documentation(f_transnode)}"
+                                f"{str(f_transnode.without_docs())}"
                             ),
                             span=getattr(f_transnode, "_span", None),
                             refs={
-                                "original_raw": dsl_nodes.render_without_documentation(f_transnode),
+                                "original_raw": str(f_transnode.without_docs()),
                                 "reason": "src_not_found",
                             },
                         )
@@ -4003,11 +4003,11 @@ def parse_dsl_node_to_state_machine(
                             message=(
                                 f"Unknown to state {to_state!r} of force "
                                 "transition:\n"
-                                f"{dsl_nodes.render_without_documentation(f_transnode)}"
+                                f"{str(f_transnode.without_docs())}"
                             ),
                             span=getattr(f_transnode, "_span", None),
                             refs={
-                                "original_raw": dsl_nodes.render_without_documentation(f_transnode),
+                                "original_raw": str(f_transnode.without_docs()),
                                 "reason": "tgt_not_found",
                             },
                         )
@@ -4051,7 +4051,7 @@ def parse_dsl_node_to_state_machine(
                                     f"Cannot find state "
                                     f"{'.'.join((*base_path, *my_event_id.path[:-1]))} "
                                     "for transition:\n"
-                                    f"{dsl_nodes.render_without_documentation(f_transnode)}"
+                                    f"{str(f_transnode.without_docs())}"
                                 ),
                                 span=getattr(f_transnode, "_span", None),
                                 refs={
@@ -4097,7 +4097,7 @@ def parse_dsl_node_to_state_machine(
                                 f"Unknown guard variable "
                                 f"{unknown_var} in force "
                                 "transition:\n"
-                                f"{dsl_nodes.render_without_documentation(f_transnode)}"
+                                f"{str(f_transnode.without_docs())}"
                             ),
                             span=getattr(f_transnode, "_span", None),
                             refs={
@@ -4134,7 +4134,7 @@ def parse_dsl_node_to_state_machine(
                         "guard": str(condition_expr)
                         if condition_expr is not None
                         else None,
-                        "original_raw": dsl_nodes.render_without_documentation(f_transnode),
+                        "original_raw": str(f_transnode.without_docs()),
                         "expansion_count": expansion_count,
                         "span": _node_span(f_transnode),
                     }
@@ -4150,7 +4150,7 @@ def parse_dsl_node_to_state_machine(
                     guard,
                     f_transnode.event_scope,
                     getattr(f_transnode, "source_raw", None)
-                    or dsl_nodes.render_without_documentation(f_transnode),
+                    or str(f_transnode.without_docs()),
                     _node_span(f_transnode),
                     # The file the declaration was written in, carried with its
                     # span.  An expansion lands on states from other files, and a
@@ -4251,7 +4251,7 @@ def parse_dsl_node_to_state_machine(
                             f"Unknown from state {from_state!r} and "
                             f"unknown to state {to_state!r} of "
                             "transition:\n"
-                            f"{dsl_nodes.render_without_documentation(transnode)}"
+                            f"{str(transnode.without_docs())}"
                         ),
                         span=getattr(transnode, "_span", None),
                         refs={
@@ -4269,7 +4269,7 @@ def parse_dsl_node_to_state_machine(
                         message=(
                             f"Unknown from state {from_state!r} of "
                             "transition:\n"
-                            f"{dsl_nodes.render_without_documentation(transnode)}"
+                            f"{str(transnode.without_docs())}"
                         ),
                         span=getattr(transnode, "_span", None),
                         refs={
@@ -4290,7 +4290,7 @@ def parse_dsl_node_to_state_machine(
                         severity="error",
                         message=(
                         f"Unknown to state {to_state!r} of transition:\n"
-                        f"{dsl_nodes.render_without_documentation(transnode)}"
+                        f"{str(transnode.without_docs())}"
                         ),
                         span=getattr(transnode, "_span", None),
                         refs={
@@ -4345,7 +4345,7 @@ def parse_dsl_node_to_state_machine(
                                 f"Cannot find state "
                                 f"{'.'.join((*base_path, *effective_event_id.path[:-1]))} "
                                 "for transition:\n"
-                                f"{dsl_nodes.render_without_documentation(transnode)}"
+                                f"{str(transnode.without_docs())}"
                             ),
                             span=getattr(transnode, "_span", None),
                             refs={
@@ -4416,7 +4416,7 @@ def parse_dsl_node_to_state_machine(
                             f"Unknown guard variable "
                             f"{unknown_var} in "
                         "transition:\n"
-                        f"{dsl_nodes.render_without_documentation(transnode)}"
+                        f"{str(transnode.without_docs())}"
                         ),
                         span=getattr(transnode, "_span", None),
                         refs={
@@ -4496,7 +4496,7 @@ def parse_dsl_node_to_state_machine(
 
         def _combo_effect_signature(transnode) -> Tuple[str, ...]:
             return tuple(
-                dsl_nodes.render_without_documentation(item)
+                str(item.without_docs())
                 for item in transnode.post_operations
             )
 
@@ -5095,7 +5095,7 @@ def parse_dsl_node_to_state_machine(
                     message=(
                         f"At least 1 entry transition should be assigned in "
                         f"non-leaf state {node.name!r}:\n"
-                        f"{dsl_nodes.render_without_documentation(node)}"
+                        f"{str(node.without_docs())}"
                     ),
                     span=getattr(node, "_span", None),
                     refs={
@@ -5155,7 +5155,7 @@ def parse_dsl_node_to_state_machine(
                             message=(
                                 f"Cannot find named function {segment!r} under "
                                 "state:\n"
-                                f"{dsl_nodes.render_without_documentation(state.to_ast_node())}"
+                                f"{str(state.to_ast_node().without_docs())}"
                             ),
                             span=getattr(node, "_span", None),
                             refs={

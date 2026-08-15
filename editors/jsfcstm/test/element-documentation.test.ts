@@ -53,11 +53,7 @@ describe('element documentation contracts', () => {
             '    /* leading */ enter abstract After /* trailing */',
             '}',
         ].join('\n');
-        const ast = await parse(source);
-        assert.equal(ast.rootState!.enters[0].doc, 'leading');
-        assert.equal(ast.rootState!.enters[1].doc, 'leading');
-        assert.equal(ast.rootState!.enters[0].mode, 'abstract');
-        assert.equal(ast.rootState!.enters[1].mode, 'abstract');
+        assert.equal(await parse(source), null);
         const diagnostics = await packageModule.collectDocumentDiagnostics(
             createDocument(source, '/tmp/duplicate-documentation.fcstm'),
         );
@@ -210,5 +206,24 @@ describe('element documentation contracts', () => {
             item.severity === 'error'));
         const ast = await packageModule.parseAstDocument(document);
         assert.equal('doc' in (ast.rootState!.imports[0] as object), false);
+    });
+
+    it('rejects nested documentation delimiters on the AST path', async () => {
+        const source = 'state Root { /* outer /* inner */ state Child; }';
+        const document = createDocument(source, '/tmp/nested-documentation.fcstm');
+        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+        assert.ok(diagnostics.some((item: {severity?: string; message: string}) =>
+            item.severity === 'error' && /Malformed documentation block/.test(item.message)));
+        assert.equal(await parse(source), null);
+    });
+
+    it('keeps documentation before root and nested pseudo states', () => {
+        const formatted = format([
+            '/* root pseudo docs */ pseudo state Root {',
+            '/* child pseudo docs */ pseudo state Child;',
+            '} ',
+        ].join('\n'));
+        assert.ok(formatted.includes('/*\n * root pseudo docs\n */\npseudo state Root {'), formatted);
+        assert.ok(formatted.includes('    /*\n     * child pseudo docs\n     */\n    pseudo state Child;'), formatted);
     });
 });

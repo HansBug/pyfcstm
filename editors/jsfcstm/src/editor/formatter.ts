@@ -310,6 +310,7 @@ function isOwnerDocumentation(tokens: Tok[], index: number): boolean {
     if (first === 'def' || first === 'state' || first === 'event'
         || first === 'enter' || first === 'exit' || first === 'during'
         || first === '>>' || first === '!') return true;
+    if (first === 'pseudo' && next[1]?.text === 'state') return true;
     if (next[0]?.kind === 'ident' && next[1]?.text === '->') return true;
     if (next[0]?.text === '[*]' && next[1]?.text === '->') return true;
     return false;

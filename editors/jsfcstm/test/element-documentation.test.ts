@@ -92,6 +92,17 @@ describe('element documentation contracts', () => {
         assert.equal(ast.rootState!.enters[0].doc, 'first\nsecond');
     });
 
+    it('round-trips inline-first star margins through the formatter', async () => {
+        const source = [
+            'state Root {',
+            '    enter abstract Inline /* * first',
+            '     * second */;',
+            '}',
+        ].join('\n');
+        const ast = await parse(format(source));
+        assert.equal(ast.rootState!.enters[0].doc, 'first\nsecond');
+    });
+
     it('matches the documentation golden for meaningful trailing spaces', async () => {
         const ast = await parse([
             'state Root {',

@@ -58,6 +58,17 @@ def markdown_fence(value: str, marker: str = "`") -> str:
     :return: A safe fence string.
     :raises TypeError: If ``value`` or ``marker`` is not a string.
     :raises ValueError: If ``marker`` is empty or contains a newline.
+
+    Examples::
+
+        >>> markdown_fence("plain text")
+        '```'
+        >>> markdown_fence("already has ``` markers")
+        '````'
+        >>> markdown_fence("~~~", marker="~")
+        '~~~~'
+        >>> markdown_fence("plain text", marker="~")
+        '~~~'
     """
     if not isinstance(value, str) or not isinstance(marker, str):
         raise TypeError("markdown_fence expects string value and marker")
@@ -84,6 +95,17 @@ def escape_python_docstring(value: str) -> str:
     :param value: Documentation or canonical DSL text.
     :return: Python-source-safe text with the same runtime value.
     :raises TypeError: If ``value`` is not a string.
+
+    Examples::
+
+        >>> escaped = escape_python_docstring('say "hello"')
+        >>> escaped == 'say ' + chr(92) + '"hello' + chr(92) + '"'
+        True
+        >>> value = 'quote \"\"\" and slash ' + chr(92)
+        >>> namespace = {}
+        >>> exec('value = \"\"\"%s\"\"\"' % escape_python_docstring(value), namespace)
+        >>> namespace["value"] == value
+        True
     """
     if not isinstance(value, str):
         raise TypeError("escape_python_docstring expects a string")

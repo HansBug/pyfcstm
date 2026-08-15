@@ -273,7 +273,7 @@ function canonicalOwnerDocumentation(raw: string): string | null {
     if (margin) {
         lines = lines.map((line, index) => {
             if (!line.trim()) return '';
-            if (firstInline && index === 0) return line.trimStart();
+            if (firstInline && index === 0 && !line.trimStart().startsWith('*')) return line.trimStart();
             const content = line.trimStart().slice(1);
             return content.startsWith(' ') || content.startsWith('\t') ? content.slice(1) : content;
         });

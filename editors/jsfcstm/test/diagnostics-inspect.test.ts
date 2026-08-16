@@ -1000,6 +1000,25 @@ state Root {
             assert.equal(report.diagnostics.filter(d => d.code === 'W_UNREACHABLE_TRANSITION').length, 1);
         });
 
+        it('preserves explicit parentheses in combo effect provenance', async () => {
+            const report = inspectModel(await buildMachine(`
+def int x = 0;
+state Root {
+    state Orphan;
+    state Done;
+    [*] -> Done;
+    Orphan -> Done :: E1 + E2 effect {
+        x = (x + 1) * 2;
+    }
+}
+`));
+            const diagnostics = report.diagnostics.filter(d => d.code === 'W_UNREACHABLE_TRANSITION');
+            assert.equal(diagnostics.length, 1);
+            assert.deepEqual(diagnostics[0].refs.combo_origin_ids, [
+                'Root:Orphan->Done::: E1 + E2:effect=["x = (x + 1) * 2;"]',
+            ]);
+        });
+
         it('does not reserve pseudo-state names in combo endpoint metadata', async () => {
             const report = inspectModel(await buildMachine(`
 state Root {

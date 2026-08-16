@@ -90,8 +90,10 @@ function canonicalExpressionText(expression: FcstmAstExpression | null | undefin
         case 'identifier':
         case 'mathConst':
             return expression.name;
-        case 'parenthesized':
-            return canonicalExpressionText(expression.expression);
+        case 'parenthesized': {
+            const value = canonicalExpressionText(expression.expression);
+            return value === null ? null : `(${value})`;
+        }
         case 'function': {
             const argument = canonicalExpressionText(expression.argument);
             return argument === null ? null : `${expression.functionName}(${argument})`;

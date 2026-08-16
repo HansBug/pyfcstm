@@ -2,27 +2,17 @@
   "$schema": "https://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/HansBug/pyfcstm/blob/main/pyfcstm/diagnostics/inspect_llm_report_schema.json",
   "title": "FCSTM Inspect LLM Report",
-  "description": "Stable compact inspect report for LLM repair loops. This is a presentation contract and does not replace ModelInspect.to_json().",
+  "description": "Compact inspect report for LLM repair loops. This schema is shipped with the pyfcstm release and does not replace ModelInspect.to_json().",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "diagnostics",
     "input",
     "repair_protocol",
-    "schema_status",
-    "schema_version",
     "status",
     "summary"
   ],
   "properties": {
-    "schema_version": {
-      "type": "string",
-      "const": "pyfcstm.inspect.llm.v2"
-    },
-    "schema_status": {
-      "type": "string",
-      "const": "stable"
-    },
     "status": {
       "type": "string",
       "enum": ["ok", "info", "warning", "error"]

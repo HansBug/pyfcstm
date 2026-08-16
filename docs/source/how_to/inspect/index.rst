@@ -45,9 +45,10 @@ repair prompt.
    pyfcstm inspect -i docs/source/tutorials/inspect/inspect_diagnostics.fcstm --format llm-md
 
 **Expected signal.** ``human`` starts with a checker-style summary, ``json``
-contains ``root_state_path`` and structural arrays, ``llm-json`` starts with
-``schema_version`` ``pyfcstm.inspect.llm.v2``, and ``llm-md`` starts with a
-Markdown heading.
+contains ``root_state_path`` and structural arrays, ``llm-json`` contains
+``status``, ``summary``, and ``diagnostics``, and ``llm-md`` starts with a
+Markdown heading. Validate either JSON report with the schema file shipped
+with the same ``pyfcstm`` release.
 
 **File side effect.** None unless ``-o`` is used; all four commands write to
 stdout by default.
@@ -199,14 +200,15 @@ warning-only policy prints ``warnings: 9`` and exits successfully.
 
    report = json.loads(Path('/tmp/inspect.llm.json').read_text())
    first = report['diagnostics'][0]
-   print(report['schema_version'])
+   print(report['status'])
    print(sorted(first.keys()))
    print(len(first['recommended_actions']), len(first['do_not']))
    PY
 
-**Expected signal.** The schema version is ``pyfcstm.inspect.llm.v2``. The
+**Expected signal.** The packet has no product-level schema version field. Its
 first diagnostic includes ``source_excerpt``, ``refs``, ``recommended_actions``,
-and ``do_not``; the final count line is ``2 1``.
+and ``do_not``; the final count line is ``2 1``. Validate it with the
+``inspect_llm_report_schema.json`` shipped with the same ``pyfcstm`` release.
 
 **File side effect.** ``/tmp/inspect.llm.json`` is created or overwritten.
 
@@ -235,8 +237,6 @@ and ``do_not``; the final count line is ``2 1``.
 
    # FCSTM Inspect Report
 
-   - Schema: `pyfcstm.inspect.llm.v2`
-   - Schema status: `stable`
    - Status: `warning`
    - Input: `docs/source/tutorials/inspect/inspect_diagnostics.fcstm`
    - Diagnostics: 0 errors / 9 warnings / 4 infos

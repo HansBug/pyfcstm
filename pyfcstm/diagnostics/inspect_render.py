@@ -43,7 +43,6 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 from .codes import CODE_REGISTRY
 from ..utils.validate import ModelDiagnostic, Span
 
-INSPECT_LLM_SCHEMA_VERSION = "pyfcstm.inspect.llm.v2"
 _INSPECT_OUTPUT_FORMATS = ("human", "json", "llm-json", "llm-md")
 _SEVERITY_ORDER = ("error", "warning", "info")
 _SEVERITY_HUMAN_LABELS = {
@@ -367,9 +366,9 @@ def render_inspect_llm_json(
 ) -> str:
     """Render an inspect report as a stable compact JSON packet for LLMs.
 
-    The packet is marked with :data:`INSPECT_LLM_SCHEMA_VERSION`. This
-    versioned contract is intended for downstream repair loops that need a
-    compact, source-located, and provenance-aware diagnostic report.
+    The packet follows the inspect LLM report schema shipped with the running
+    ``pyfcstm`` release. It is intended for downstream repair loops that need
+    a compact, source-located, and provenance-aware diagnostic report.
 
     :param report: Inspect report returned by
         :func:`pyfcstm.diagnostics.inspect_model`.
@@ -387,8 +386,8 @@ def render_inspect_llm_json(
         >>> from pyfcstm.diagnostics import inspect_model
         >>> model = load_state_machine_from_text('state Root { state Idle; [*] -> Idle; }')
         >>> text = render_inspect_llm_json(inspect_model(model), 'state Root { state Idle; [*] -> Idle; }')
-        >>> INSPECT_LLM_SCHEMA_VERSION in text
-        True
+        >>> json.loads(text)["status"]
+        'warning'
     """
     packet = _llm_packet(report, source_text, input_path=input_path)
     return json.dumps(packet, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
@@ -420,8 +419,6 @@ def render_inspect_llm_markdown(
     """
     counts = _severity_counts(report.diagnostics)
     lines = ["# FCSTM Inspect Report", ""]
-    lines.append(f"- Schema: `{INSPECT_LLM_SCHEMA_VERSION}`")
-    lines.append("- Schema status: `stable`")
     lines.append(f"- Status: `{_status_from_counts(counts)}`")
     if input_path:
         lines.append(f"- Input: `{input_path}`")
@@ -674,8 +671,6 @@ def _llm_packet(
 ) -> Dict[str, Any]:
     counts = _severity_counts(report.diagnostics)
     return {
-        "schema_version": INSPECT_LLM_SCHEMA_VERSION,
-        "schema_status": "stable",
         "status": _status_from_counts(counts),
         "input": input_path,
         "repair_protocol": {

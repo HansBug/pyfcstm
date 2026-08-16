@@ -12,7 +12,6 @@ from hbutils.testing import isolated_directory, simulate_entry
 
 from pyfcstm.entry import pyfcstmcli
 from pyfcstm.entry.base import ClickErrorException
-from pyfcstm.diagnostics.inspect_render import INSPECT_LLM_SCHEMA_VERSION
 from pyfcstm.entry.inspect import (
     build_inspect_json,
     build_inspect_output,
@@ -340,8 +339,8 @@ class TestEntryInspect:
         assert result.exitcode == 0
         assert not _has_ansi(result.stdout)
         payload = _json_from_stdout(result)
-        assert payload["schema_version"] == INSPECT_LLM_SCHEMA_VERSION
-        assert payload["schema_status"] == "stable"
+        assert "schema_version" not in payload
+        assert "schema_status" not in payload
         assert payload["status"] == "warning"
         assert payload["diagnostics"]
         diagnostic = payload["diagnostics"][0]
@@ -359,10 +358,10 @@ class TestEntryInspect:
         assert result.exitcode == 0
         assert not _has_ansi(result.stdout)
         assert "# FCSTM Inspect Report" in result.stdout
-        assert INSPECT_LLM_SCHEMA_VERSION in result.stdout
+        assert "Schema status:" not in result.stdout
         assert "Recommended actions" in result.stdout
         assert "Repair notes" in result.stdout
-        assert "Schema status: `stable`" in result.stdout
+        assert "Schema status:" not in result.stdout
         assert "|     ^" in result.stdout
 
     def test_inspect_llm_json_can_include_verify_backed_diagnostics(

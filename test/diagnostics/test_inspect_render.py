@@ -13,7 +13,6 @@ import pytest
 from pyfcstm.diagnostics import inspect_model
 from pyfcstm.diagnostics.inspect_render import (
     HumanRenderOptions,
-    INSPECT_LLM_SCHEMA_VERSION,
     inspect_output_suffix_warning,
     render_inspect_human,
     render_inspect_llm_json,
@@ -343,8 +342,8 @@ class TestInspectRender:
     def test_llm_json_renderer_is_stable_and_actionable(self):
         payload = json.loads(render_inspect_llm_json(_report(), SOURCE))
 
-        assert payload["schema_version"] == INSPECT_LLM_SCHEMA_VERSION
-        assert payload["schema_status"] == "stable"
+        assert "schema_version" not in payload
+        assert "schema_status" not in payload
         assert payload["status"] == "warning"
         assert payload["diagnostics"]
         diagnostic = payload["diagnostics"][0]
@@ -367,7 +366,7 @@ class TestInspectRender:
         assert context[1]["caret"].strip("^") == "    "
         assert context[2]["text"] == "    [*] -> Idle;"
 
-    def test_llm_v2_renderers_ignore_verification_metadata(self):
+    def test_llm_renderers_ignore_verification_metadata(self):
         report = _report()
         verification = SimpleNamespace(
             supported=True,
@@ -409,11 +408,10 @@ class TestInspectRender:
         payload = json.loads(render_inspect_llm_json(_report(), SOURCE))
 
         assert schema["title"] == "FCSTM Inspect LLM Report"
-        assert (
-            schema["properties"]["schema_version"]["const"]
-            == INSPECT_LLM_SCHEMA_VERSION
-        )
-        assert schema["properties"]["schema_status"]["const"] == "stable"
+        assert "schema_version" not in schema["properties"]
+        assert "schema_status" not in schema["properties"]
+        assert "schema_version" not in payload
+        assert "schema_status" not in payload
         assert set(schema["required"]).issubset(set(payload.keys()))
         diagnostic_required = set(schema["definitions"]["Diagnostic"]["required"])
         for diagnostic in payload["diagnostics"]:
@@ -423,12 +421,12 @@ class TestInspectRender:
         schema_errors = _schema_errors(schema, schema, payload)
         assert schema_errors == []
 
-    def test_llm_markdown_renderer_contains_stable_schema_and_sections(self):
+    def test_llm_markdown_renderer_contains_sections(self):
         text = render_inspect_llm_markdown(_report(), SOURCE)
 
         assert "# FCSTM Inspect Report" in text
-        assert INSPECT_LLM_SCHEMA_VERSION in text
-        assert "Schema status: `stable`" in text
+        assert "Schema status:" not in text
+        assert "- Schema:" not in text
         assert "## Repair protocol" in text
         assert "## W_" in text
         assert "Recommended actions" in text

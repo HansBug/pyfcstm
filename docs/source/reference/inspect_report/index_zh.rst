@@ -187,14 +187,15 @@ LLM 报告契约
 ----------------------------------------
 
 ``llm-json`` 和 ``llm-md`` 是修复循环使用的表达契约。它们不替代完整报告。
-其稳定的 ``pyfcstm.inspect.llm.v2`` schema 与输出不包含 ``verification`` 执行元数据；需要覆盖率或
-不确定结果的消费者必须使用完整 JSON 报告。
+输出不包含 ``verification`` 执行元数据；需要覆盖率或不确定结果的消费者必须使用完整 JSON 报告。
+请使用与当前 ``pyfcstm`` 发布版本一同提供的 ``inspect_llm_report_schema.json`` 校验
+``llm-json``。公开载荷和 Markdown 表达都不携带产品 schema 版本或状态标记。
 
 结构统计默认只是描述性信息：始终输出原始计数和比例，并记录三项保守的建议阈值。
 超出阈值只把字段名加入 ``exceeded_thresholds``，不会生成 G5 健康告警或综合分数。
 分母为空时返回 ``null``（human/Markdown 显示 ``N/A``）。调用方可以向
 ``inspect_model`` 传入 ``StructureStatisticsPolicy``（或部分映射），单项传
-``None`` 即可关闭。未来若根据带版本的语料库设置 cutoff，必须显式配置，不能从
+``None`` 即可关闭。未来若根据指定语料库设置 cutoff，必须标明语料来源并显式配置，不能从
 本报告自行推断。
 
 默认 ``6.0`` 审查触发线参考 PSMBench/RFC2PSM 的 14 个协议汇总值
@@ -217,10 +218,6 @@ identity 的并集计算，因此同一转换可以出现在多个原因桶中�
 
    * - 字段
      - 含义
-   * - ``schema_version``
-     - 常量 ``pyfcstm.inspect.llm.v2``。
-   * - ``schema_status``
-     - 常量 ``stable``。
    * - ``status``
      - 整体状态：``ok``、``info``、``warning`` 或 ``error``。
    * - ``input``

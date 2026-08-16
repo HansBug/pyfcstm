@@ -60,8 +60,9 @@ Inspect 任务指南
    pyfcstm inspect -i docs/source/tutorials/inspect/inspect_diagnostics.fcstm --format llm-md
 
 预期信号。``human`` 以检查器风格摘要开头，``json`` 包含
-``root_state_path`` 和结构数组，``llm-json`` 带
-``schema_version`` ``pyfcstm.inspect.llm.v2``\ ，``llm-md`` 以 Markdown 标题开头。
+``root_state_path`` 和结构数组，``llm-json`` 包含 ``status``、``summary`` 和
+``diagnostics``，``llm-md`` 以 Markdown 标题开头。两个 JSON 报告都应使用
+与当前 ``pyfcstm`` 发布版本一同提供的模式文件校验。
 
 文件副作用。除非使用 ``-o``\ ，否则四条命令都只写标准输出。
 
@@ -198,13 +199,14 @@ Inspect 任务指南
 
    report = json.loads(Path('/tmp/inspect.llm.json').read_text())
    first = report['diagnostics'][0]
-   print(report['schema_version'])
+   print(report['status'])
    print(sorted(first.keys()))
    print(len(first['recommended_actions']), len(first['do_not']))
    PY
 
-预期信号。结构版本是 ``pyfcstm.inspect.llm.v2``\ 。第一个诊断包含
+预期信号。载荷不包含产品级 schema 版本字段。第一个诊断包含
 ``source_excerpt``、``refs``、``recommended_actions`` 和 ``do_not``\ ；最后一行计数是 ``2 1``\ 。
+请使用与当前 ``pyfcstm`` 发布版本一同提供的 ``inspect_llm_report_schema.json`` 校验。
 
 文件副作用。``/tmp/inspect.llm.json`` 会被创建或覆盖。
 
@@ -231,8 +233,6 @@ Inspect 任务指南
 
    # FCSTM Inspect Report
 
-   - Schema: `pyfcstm.inspect.llm.v2`
-   - Schema status: `stable`
    - Status: `warning`
    - Input: `docs/source/tutorials/inspect/inspect_diagnostics.fcstm`
    - Diagnostics: 0 errors / 9 warnings / 4 infos

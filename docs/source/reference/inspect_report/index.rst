@@ -214,9 +214,12 @@ LLM report contract
 -------------------
 
 ``llm-json`` and ``llm-md`` are presentation contracts for repair loops. They do
-not replace the full report.  Their stable ``pyfcstm.inspect.llm.v2`` schema and
-output do not include ``verification`` execution metadata; consumers that need
-coverage or indeterminate results must use the full JSON report.
+not replace the full report. Their output does not include ``verification``
+execution metadata; consumers that need coverage or indeterminate results must
+use the full JSON report. Validate ``llm-json`` with the
+``inspect_llm_report_schema.json`` shipped with the same ``pyfcstm`` release.
+Neither the public payload nor the Markdown presentation carries a product
+schema version or status marker.
 
 The structure-statistics policy is descriptive by default: all raw counts and
 rates are emitted, and the three conservative advisory defaults are recorded in
@@ -225,7 +228,7 @@ rates are emitted, and the three conservative advisory defaults are recorded in
 an empty denominator is ``null`` (``N/A`` in human/Markdown output). Callers
 may pass ``StructureStatisticsPolicy`` (or a partial mapping) to
 ``inspect_model``; ``None`` disables an individual advisory threshold. Any
-future corpus-derived cutoff must be versioned and explicitly configured.
+future corpus-derived cutoff must identify its corpus and be explicitly configured.
 
 The default ``6.0`` review trigger is an engineering baseline informed by the
 pooled ``T / S = 2.75`` and the observed protocol-level range in the 14-protocol
@@ -253,10 +256,6 @@ may contribute to more than one reason while being counted once in the total.
 
    * - Field
      - Meaning
-   * - ``schema_version``
-     - Constant ``pyfcstm.inspect.llm.v2``.
-   * - ``schema_status``
-     - Constant ``stable``.
    * - ``status``
      - Overall status: ``ok``, ``info``, ``warning``, or ``error``.
    * - ``input``

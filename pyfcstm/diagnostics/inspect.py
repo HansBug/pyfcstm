@@ -350,6 +350,11 @@ class ComboOriginRefInfo:
     term_span: Optional['Span'] = None
     value_span: Optional['Span'] = None
     removal_span: Optional['Span'] = None
+    source_kind: str = 'state'
+    source_path: Optional[str] = None
+    selection_owner_path: Optional[str] = None
+    target_kind: str = 'state'
+    target_path: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -1191,6 +1196,11 @@ def _combo_origin_ref_info(ref: Any) -> ComboOriginRefInfo:
         term_span=ref.term_span,
         value_span=ref.value_span,
         removal_span=ref.removal_span,
+        source_kind=getattr(ref, 'source_kind', 'state'),
+        source_path=getattr(ref, 'source_path', None),
+        selection_owner_path=getattr(ref, 'selection_owner_path', None),
+        target_kind=getattr(ref, 'target_kind', 'state'),
+        target_path=getattr(ref, 'target_path', None),
     )
 
 

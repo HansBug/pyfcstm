@@ -123,6 +123,11 @@ export interface ComboOriginRefInfo {
     term_span: ModelSpanJson | null;
     value_span: ModelSpanJson | null;
     removal_span: ModelSpanJson | null;
+    source_kind: 'init' | 'state';
+    source_path: string | null;
+    selection_owner_path: string | null;
+    target_kind: 'state' | 'exit';
+    target_path: string | null;
 }
 
 export interface ComboOriginTermInfo {
@@ -721,6 +726,11 @@ function comboOriginRefInfo(value: unknown): ComboOriginRefInfo | null {
         term_span: (item.term_span as ModelSpanJson | null | undefined) ?? null,
         value_span: (item.value_span as ModelSpanJson | null | undefined) ?? null,
         removal_span: (item.removal_span as ModelSpanJson | null | undefined) ?? null,
+        source_kind: item.source_kind === 'init' ? 'init' : 'state',
+        source_path: (item.source_path as string | null | undefined) ?? null,
+        selection_owner_path: (item.selection_owner_path as string | null | undefined) ?? null,
+        target_kind: item.target_kind === 'exit' ? 'exit' : 'state',
+        target_path: (item.target_path as string | null | undefined) ?? null,
     };
 }
 

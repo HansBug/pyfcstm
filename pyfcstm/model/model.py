@@ -456,6 +456,11 @@ class ComboOriginRef:
     term_span: Optional[Span] = field(default=None, compare=False)
     value_span: Optional[Span] = field(default=None, compare=False)
     removal_span: Optional[Span] = field(default=None, compare=False)
+    source_kind: str = field(default="state", compare=False)
+    source_path: Optional[str] = field(default=None, compare=False)
+    selection_owner_path: Optional[str] = field(default=None, compare=False)
+    target_kind: str = field(default="state", compare=False)
+    target_path: Optional[str] = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)
@@ -4450,6 +4455,27 @@ def parse_dsl_node_to_state_machine(
             consumes_term: bool,
         ) -> ComboOriginRef:
             term = alternative.terms[term_index]
+            owner_path = ".".join(current_path)
+            source_kind = (
+                "init"
+                if alternative.transnode.from_state is dsl_nodes.INIT_STATE
+                else "state"
+            )
+            source_path = (
+                None
+                if source_kind == "init"
+                else ".".join(list(current_path) + [str(alternative.transnode.from_state)])
+            )
+            target_kind = (
+                "exit"
+                if alternative.transnode.to_state is dsl_nodes.EXIT_STATE
+                else "state"
+            )
+            target_path = (
+                "[*]"
+                if target_kind == "exit"
+                else ".".join(list(current_path) + [str(alternative.transnode.to_state)])
+            )
             return ComboOriginRef(
                 origin_id=alternative.origin_id,
                 term_index=term_index,
@@ -4461,6 +4487,11 @@ def parse_dsl_node_to_state_machine(
                 term_span=getattr(term, "term_span", None),
                 value_span=getattr(term, "value_span", None),
                 removal_span=getattr(term, "removal_span", None),
+                source_kind=source_kind,
+                source_path=source_path,
+                selection_owner_path=owner_path if source_kind == "init" else None,
+                target_kind=target_kind,
+                target_path=target_path,
             )
 
         combo_name_payloads: Dict[str, str] = {}

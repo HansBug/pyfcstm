@@ -115,23 +115,22 @@ function collectUnreachableTransitionDiagnostics(
             for (const originId of comboOriginIds) {
                 if (emittedComboOrigins.has(originId)) continue;
                 emittedComboOrigins.add(originId);
-                const authored = comboOriginEndpoints(originId, statePaths);
-                if (!authored || reachable.has(authored.lookupPath)) continue;
-                const originRef = transition.combo_origin_refs.find(ref => (
-                    ref.origin_id === originId && ref.transition_span !== null
-                ));
+                const originRef = transition.combo_origin_refs.find(ref => ref.origin_id === originId);
+                if (!originRef || !originRef.target_path) continue;
+                const lookupPath = originRef.selection_owner_path ?? originRef.source_path;
+                if (!lookupPath || reachable.has(lookupPath)) continue;
                 out.push({
                     code: 'W_UNREACHABLE_TRANSITION',
                     severity: 'warning',
-                    message: `Transition ${JSON.stringify(authored.fromPath)} -> ${JSON.stringify(authored.toPath)} has a source outside the guard-agnostic root-reachable topology.`,
+                    message: `Transition ${JSON.stringify(originRef.source_path ?? '[*]')} -> ${JSON.stringify(originRef.target_path)} has a source outside the guard-agnostic root-reachable topology.`,
                     span: originRef?.transition_span ?? null,
                     refs: {
                         reason: 'source_unreachable',
                         verification_scope: 'topological_only',
-                        from_path: authored.fromPath,
-                        to_path: authored.toPath,
-                        source_state_path: authored.sourcePath,
-                        selection_owner_path: authored.ownerPath,
+                        from_path: originRef.source_path ?? '[*]',
+                        to_path: originRef.target_path,
+                        source_state_path: originRef.source_path,
+                        selection_owner_path: originRef.selection_owner_path,
                         transition_index: null,
                         forced_origin: null,
                         combo_origin_ids: [originId],
@@ -167,32 +166,6 @@ function collectUnreachableTransitionDiagnostics(
         });
     }
     return out;
-}
-
-function comboOriginEndpoints(
-    originId: string,
-    statePaths: Set<string>,
-): {fromPath: string; toPath: string; sourcePath: string | null; ownerPath: string | null; lookupPath: string} | null {
-    const ownerSeparator = originId.indexOf(':');
-    if (ownerSeparator < 0) return null;
-    const ownerPath = originId.slice(0, ownerSeparator);
-    const endpointText = originId.slice(ownerSeparator + 1);
-    const arrow = endpointText.indexOf('->');
-    if (arrow < 0) return null;
-    const targetSeparator = endpointText.indexOf(':', arrow + 2);
-    if (targetSeparator < 0) return null;
-    const source = endpointText.slice(0, arrow);
-    const target = endpointText.slice(arrow + 2, targetSeparator);
-    const initial = source === '__init__';
-    const lookupPath = initial ? ownerPath : `${ownerPath}.${source}`;
-    if (!statePaths.has(lookupPath)) return null;
-    return {
-        fromPath: initial ? '[*]' : lookupPath,
-        toPath: target === '__exit__' ? '[*]' : `${ownerPath}.${target}`,
-        sourcePath: initial ? null : lookupPath,
-        ownerPath: initial ? ownerPath : null,
-        lookupPath,
-    };
 }
 
 function transitionSelectionPaths(

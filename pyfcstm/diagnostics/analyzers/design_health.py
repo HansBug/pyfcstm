@@ -175,19 +175,22 @@ def _unreachable_transition_diagnostics(
                 if origin_id in emitted_combo_origins:
                     continue
                 emitted_combo_origins.add(origin_id)
-                authored = _combo_origin_endpoints(origin_id, state_paths)
-                if authored is None:
-                    continue
-                source_state_path, selection_owner_path, lookup_path = authored
-                if lookup_path in reachable:
-                    continue
                 origin_ref = next(
                     (
                         ref for ref in transition.combo_origin_refs
-                        if ref.origin_id == origin_id and ref.transition_span is not None
+                        if ref.origin_id == origin_id
                     ),
                     None,
                 )
+                if origin_ref is None or origin_ref.target_path is None:
+                    continue
+                source_state_path = origin_ref.source_path
+                selection_owner_path = origin_ref.selection_owner_path
+                lookup_path = selection_owner_path or source_state_path
+                if lookup_path is None:
+                    continue
+                if lookup_path in reachable:
+                    continue
                 diagnostics.append(ModelDiagnostic(
                     code='W_UNREACHABLE_TRANSITION',
                     severity='warning',
@@ -199,8 +202,8 @@ def _unreachable_transition_diagnostics(
                     refs={
                         'reason': 'source_unreachable',
                         'verification_scope': 'topological_only',
-                        'from_path': '[*]' if source_state_path is None else lookup_path,
-                        'to_path': _combo_target_path(origin_id),
+                        'from_path': '[*]' if source_state_path is None else source_state_path,
+                        'to_path': origin_ref.target_path,
                         'source_state_path': source_state_path,
                         'selection_owner_path': selection_owner_path,
                         'transition_index': None,
@@ -248,35 +251,6 @@ def _unreachable_transition_diagnostics(
             },
         ))
     return diagnostics
-
-
-def _combo_origin_endpoints(origin_id, state_paths):
-    owner, separator, remainder = origin_id.partition(':')
-    source, arrow, remainder = remainder.partition('->') if separator else ('', '', '')
-    target, target_separator, _ = remainder.partition(':') if arrow else ('', '', '')
-    if not separator or not arrow or not target_separator:
-        return None
-    if source == '__init__':
-        lookup_path = owner
-        source_state_path = None
-        selection_owner_path = owner
-    else:
-        lookup_path = f'{owner}.{source}'
-        source_state_path = lookup_path
-        selection_owner_path = None
-    if lookup_path not in state_paths:
-        return None
-    return source_state_path, selection_owner_path, lookup_path
-
-
-def _combo_target_path(origin_id):
-    _, _, remainder = origin_id.partition(':')
-    _, _, remainder = remainder.partition('->')
-    target = remainder.partition(':')[0]
-    if target == '__exit__':
-        return '[*]'
-    owner = origin_id.partition(':')[0]
-    return f'{owner}.{target}'
 
 
 def _transition_selection_paths(transition, state_paths):

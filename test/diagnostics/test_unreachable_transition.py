@@ -303,3 +303,22 @@ def test_code_contract_is_static_and_transition_scoped():
     assert spec.span_object == 'transition'
     assert spec.refs_schema['reason'].enum == ('source_unreachable',)
     assert spec.refs_schema['verification_scope'].enum == ('topological_only',)
+
+
+def test_combo_endpoint_metadata_does_not_reserve_pseudo_state_names():
+    report = _inspect(
+        '''
+        state Root {
+            state __init__;
+            state __exit__;
+            state Done;
+            [*] -> Done;
+            __init__ -> __exit__ :: E1 + E2;
+        }
+        '''
+    )
+
+    diagnostics = _unreachable_transitions(report)
+    assert len(diagnostics) == 1
+    assert diagnostics[0].refs['from_path'] == 'Root.__init__'
+    assert diagnostics[0].refs['to_path'] == 'Root.__exit__'

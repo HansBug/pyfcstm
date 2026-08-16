@@ -914,6 +914,60 @@ state Root {
             ]);
         });
 
+        it('canonicalizes nested combo effects like pyfcstm', async () => {
+            const report = inspectModel(await buildMachine(`
+def int x = 0;
+state Root {
+    state Orphan;
+    state Done;
+    [*] -> Done;
+    Orphan -> Done :: E1 + E2 effect {
+        if [x > 0] { x=1; } else { x = 2; }
+    };
+}
+`));
+            const diagnostics = report.diagnostics.filter(d => d.code === 'W_UNREACHABLE_TRANSITION');
+            assert.equal(diagnostics.length, 1);
+            assert.deepEqual(diagnostics[0].refs.combo_origin_ids, [
+                'Root:Orphan->Done::: E1 + E2:effect=["if [x > 0] {\\n    x = 1;\\n} else {\\n    x = 2;\\n}"]',
+            ]);
+        });
+
+        it('canonicalizes combo effect expression variants', async () => {
+            const report = inspectModel(await buildMachine(`
+def int x = 0;
+state Root {
+    state Orphan;
+    state Done;
+    [*] -> Done;
+    Orphan -> Done :: E1 + E2 effect {
+        x = 0x0F;
+        x = -x;
+        x = sin(x);
+        x = x > 0 ? 1 : 0;
+        if [x > 0] { x = 0b10; } else if [x == 0] { x = 3.0; } else { x = 4; }
+    };
+}
+`));
+            assert.equal(report.diagnostics.filter(d => d.code === 'W_UNREACHABLE_TRANSITION').length, 1);
+        });
+
+        it('does not reserve pseudo-state names in combo endpoint metadata', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state __init__;
+    state __exit__;
+    state Done;
+    [*] -> Done;
+    __init__ -> __exit__ :: E1 + E2;
+}
+`));
+            const diagnostics = report.diagnostics.filter(d => d.code === 'W_UNREACHABLE_TRANSITION');
+            assert.equal(diagnostics.length, 1);
+            assert.equal(diagnostics[0].refs.from_path, 'Root.__init__');
+            assert.equal(diagnostics[0].refs.to_path, 'Root.__exit__');
+        });
+
         it('keeps shared combo prefixes separated by authored origin', async () => {
             const report = inspectModel(await buildMachine(`
 state Root {

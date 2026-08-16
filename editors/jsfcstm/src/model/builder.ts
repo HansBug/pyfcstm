@@ -258,11 +258,20 @@ function stableDigest12(value: string): string {
 
 function comboTermRef(
     originId: string,
+    ownerPath: string[],
     transition: FcstmAstTransition,
     term: FcstmAstComboTriggerTerm,
     termIndex: number,
     role: 'prefix' | 'terminal',
 ): Record<string, unknown> {
+    const sourceKind = transition.sourceKind === 'init' ? 'init' : 'state';
+    const sourcePath = sourceKind === 'init'
+        ? null
+        : statePathName([...ownerPath, transition.sourceStateName ?? '']);
+    const targetKind = transition.targetKind === 'exit' ? 'exit' : 'state';
+    const targetPath = targetKind === 'exit'
+        ? '[*]'
+        : statePathName([...ownerPath, transition.targetStateName ?? '']);
     return {
         origin_id: originId,
         term_index: termIndex,
@@ -274,6 +283,11 @@ function comboTermRef(
         term_span: spanJson(term.range),
         value_span: spanJson(term.valueRange),
         removal_span: spanJson(term.removalRange),
+        source_kind: sourceKind,
+        source_path: sourcePath,
+        selection_owner_path: sourceKind === 'init' ? statePathName(ownerPath) : null,
+        target_kind: targetKind,
+        target_path: targetPath,
     };
 }
 
@@ -1231,6 +1245,7 @@ class StateMachineModelBuilder {
             doc: aggregateModelDocumentation(alternatives.map(alternative => alternative.transition.doc)),
             comboOriginRefs: alternatives.map(alternative => comboTermRef(
                 alternative.originId,
+                currentState.path,
                 alternative.transition,
                 alternative.terms[termIndex],
                 termIndex,

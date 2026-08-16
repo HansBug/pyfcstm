@@ -4072,7 +4072,10 @@ def parse_dsl_node_to_state_machine(
                         start_state.events[suffix_name] = Event(
                             name=suffix_name,
                             state_path=start_state.path,
-                            doc=getattr(f_transnode, "doc", None),
+                            # The event is synthesized from a transition
+                            # trigger, so the source documentation belongs to
+                            # the transition rather than this new owner.
+                            doc=None,
                             origins=[origin],
                             _span=_node_span(f_transnode),
                         )
@@ -4368,7 +4371,9 @@ def parse_dsl_node_to_state_machine(
                 start_state.events[suffix_name] = Event(
                     name=suffix_name,
                     state_path=start_state.path,
-                    doc=getattr(transnode, "doc", None),
+                    # A lazily created event has no declaration in the source;
+                    # keep the transition documentation on its actual owner.
+                    doc=None,
                     origins=[event_scope],
                     _span=_node_span(transnode),
                 )

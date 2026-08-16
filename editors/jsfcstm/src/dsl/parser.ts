@@ -343,13 +343,27 @@ function collectMalformedDocumentationErrors(
         if (!isBlockDocumentationToken(token)) continue;
         const text = token.text || '';
         const body = text.slice(2, -2);
-        if (!body.includes('/*') && !body.includes('*/')) continue;
-        errors.push({
-            line: Math.max(0, (token.line ?? 1) - 1),
-            column: Math.max(0, token.column ?? 0),
-            message: 'Malformed documentation block: nested comment delimiters are not allowed.',
-            severity: 'error',
+        if (body.includes('/*') || body.includes('*/')) {
+            errors.push({
+                line: Math.max(0, (token.line ?? 1) - 1),
+                column: Math.max(0, token.column ?? 0),
+                message: 'Malformed documentation block: nested comment delimiters are not allowed.',
+                severity: 'error',
+            });
+        }
+        const invalidControl = [...body].find((char) => {
+            const code = char.codePointAt(0) || 0;
+            return (code < 0x20 && !['\n', '\r', '\t'].includes(char)) || code === 0x7f;
         });
+        if (invalidControl !== undefined) {
+            const code = invalidControl.codePointAt(0) || 0;
+            errors.push({
+                line: Math.max(0, (token.line ?? 1) - 1),
+                column: Math.max(0, token.column ?? 0),
+                message: `Malformed documentation block: unsupported control character U+${code.toString(16).toUpperCase().padStart(4, '0')}.`,
+                severity: 'error',
+            });
+        }
     }
 }
 

@@ -239,6 +239,15 @@ describe('element documentation contracts', () => {
         assert.equal(await parse(source), null);
     });
 
+    it('rejects unsupported control characters on both parser paths', async () => {
+        const source = '/* invalid\x00documentation */\nstate Root;';
+        const document = createDocument(source, '/tmp/control-documentation.fcstm');
+        const parsed = await packageModule.getParser().parse(source);
+        assert.equal(parsed.success, false);
+        assert.ok(parsed.errors.some((item: {message: string}) => /U\+0000/.test(item.message)));
+        assert.equal(await packageModule.parseAstDocument(document), null);
+    });
+
     it('keeps documentation before root and nested pseudo states', () => {
         const formatted = format([
             '/* root pseudo docs */ pseudo state Root {',

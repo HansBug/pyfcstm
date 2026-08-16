@@ -108,11 +108,19 @@ def test_documentation_helper_errors(raw, error, fragment):
         ("A\n   \nB", "whitespace-only"),
         ("a\rb", "CR"),
         ("text /* more", "/*"),
+        ("bad\x00doc", r"U\+0000"),
+        ("bad\x01doc", r"U\+0001"),
+        ("bad\x7fdoc", r"U\+007F"),
     ),
 )
 def test_documentation_export_errors(doc, fragment):
     with pytest.raises(ValueError, match=fragment):
         validate_documentation_for_export(doc)
+
+
+@pytest.mark.parametrize("doc", ["line\nfeed", "tab\tvalue"])
+def test_documentation_export_allows_supported_whitespace_controls(doc):
+    validate_documentation_for_export(doc)
 
 
 def test_documentation_normalizes_lf_without_unittest(monkeypatch):

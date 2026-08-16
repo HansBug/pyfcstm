@@ -205,6 +205,33 @@ def test_concrete_lifecycle_owner_documentation_survives_model_round_trip():
     assert action.to_ast_node().doc == "concrete enter docs"
 
 
+def test_synthesized_event_does_not_steal_transition_documentation():
+    machine = load_state_machine_from_text(
+        """state Root {
+    state A;
+    state B;
+    [*] -> A;
+    /* transition docs */
+    A -> B :: Go;
+}
+"""
+    )
+
+    transition = next(
+        item for item in machine.root_state.transitions if item.event is not None
+    )
+    event = machine.root_state.substates["A"].events["Go"]
+
+    assert transition.doc == "transition docs"
+    assert event.doc is None
+
+    exported = machine.to_ast_node()
+    exported_text = str(exported)
+    assert exported_text.count("transition docs") == 1
+    assert not exported.root_state.substates[0].events[0].doc
+    _parse(exported_text)
+
+
 @pytest.mark.parametrize(
     ("source", "expected_doc"),
     [

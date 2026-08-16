@@ -109,6 +109,34 @@ def _span_from_tokens(start, stop) -> Span:
     )
 
 
+def _owner_span(ctx) -> Span:
+    """Build a declaration span that excludes an owning leading doc block.
+
+    ``leading_doc`` is part of each owner rule so the listener can attach its
+    value without a line-based heuristic.  ANTLR consequently reports that
+    comment as ``ctx.start``; editor and diagnostic spans, however, identify
+    the declaration rather than its documentation.  The first terminal after
+    the labelled documentation token is the declaration's real start token.
+    """
+    leading = getattr(ctx, "leading_doc", None)
+    if leading is None:
+        return _ctx_span(ctx)
+
+    leading_index = getattr(leading, "tokenIndex", -1)
+    declaration_start = None
+    for child in getattr(ctx, "children", ()) or ():
+        token = getattr(child, "symbol", None)
+        if token is not None and getattr(token, "tokenIndex", -1) > leading_index:
+            declaration_start = token
+            break
+
+    if declaration_start is None:
+        # Error-recovered contexts may not expose terminal children.  Preserve
+        # the old span behavior rather than manufacturing a partial location.
+        return _ctx_span(ctx)
+    return _span_from_tokens(declaration_start, ctx.stop or declaration_start)
+
+
 def _token_start_position(token):
     return token.line, token.column + 1
 
@@ -643,7 +671,7 @@ class GrammarParseListener(GrammarListener):
             expr=self.nodes[ctx.init_expression()],
             doc=self._documentation(ctx),
         )
-        node._span = _ctx_span(ctx)
+        node._span = _owner_span(ctx)
         self.nodes[ctx] = node
 
     def exitState_machine_dsl(
@@ -684,7 +712,7 @@ class GrammarParseListener(GrammarListener):
             is_pseudo=bool(ctx.pseudo),
             doc=self._documentation(ctx),
         )
-        node._span = _ctx_span(ctx)
+        node._span = _owner_span(ctx)
         self.nodes[ctx] = node
 
     def exitCompositeStateDefinition(
@@ -753,7 +781,7 @@ class GrammarParseListener(GrammarListener):
             is_pseudo=bool(ctx.pseudo),
             doc=self._documentation(ctx),
         )
-        node._span = _ctx_span(ctx)
+        node._span = _owner_span(ctx)
         self.nodes[ctx] = node
 
     def _first_combo_event_term(self, trigger: ComboTransitionTrigger):
@@ -849,7 +877,7 @@ class GrammarParseListener(GrammarListener):
             else [],
             doc=self._documentation(ctx),
         )
-        node._span = _ctx_span(ctx)
+        node._span = _owner_span(ctx)
         self.nodes[ctx] = node
 
     def exitNormalTransitionDefinition(
@@ -871,7 +899,7 @@ class GrammarParseListener(GrammarListener):
             else [],
             doc=self._documentation(ctx),
         )
-        node._span = _ctx_span(ctx)
+        node._span = _owner_span(ctx)
         self.nodes[ctx] = node
 
     def exitExitTransitionDefinition(
@@ -893,7 +921,7 @@ class GrammarParseListener(GrammarListener):
             else [],
             doc=self._documentation(ctx),
         )
-        node._span = _ctx_span(ctx)
+        node._span = _owner_span(ctx)
         self.nodes[ctx] = node
 
     def exitEntry_chain_combo_leading_guard(
@@ -1398,7 +1426,7 @@ class GrammarParseListener(GrammarListener):
             else [],
             doc=self._documentation(ctx),
         )
-        node._span = _ctx_span(ctx)
+        node._span = _owner_span(ctx)
         self.nodes[ctx] = node
 
     def exitEnterAbstractFunc(
@@ -1415,7 +1443,7 @@ class GrammarParseListener(GrammarListener):
             name=ctx.func_name.text if ctx.func_name else None,
             doc=self._documentation(ctx, action=True),
         )
-        node._span = _ctx_span(ctx)
+        node._span = _owner_span(ctx)
         self.nodes[ctx] = node
 
     def exitEnterRefFunc(self, ctx: GrammarParser.EnterRefFuncContext) -> None:
@@ -1431,7 +1459,7 @@ class GrammarParseListener(GrammarListener):
             ref=self.nodes[ctx.chain_id()],
             doc=self._documentation(ctx),
         )
-        node._span = _ctx_span(ctx)
+        node._span = _owner_span(ctx)
         self.nodes[ctx] = node
 
     def exitExitOperations(self, ctx: GrammarParser.ExitOperationsContext) -> None:
@@ -1449,7 +1477,7 @@ class GrammarParseListener(GrammarListener):
             else [],
             doc=self._documentation(ctx),
         )
-        node._span = _ctx_span(ctx)
+        node._span = _owner_span(ctx)
         self.nodes[ctx] = node
 
     def exitExitAbstractFunc(self, ctx: GrammarParser.ExitAbstractFuncContext) -> None:
@@ -1464,7 +1492,7 @@ class GrammarParseListener(GrammarListener):
             name=ctx.func_name.text if ctx.func_name else None,
             doc=self._documentation(ctx, action=True),
         )
-        node._span = _ctx_span(ctx)
+        node._span = _owner_span(ctx)
         self.nodes[ctx] = node
 
     def exitExitRefFunc(self, ctx: GrammarParser.ExitRefFuncContext) -> None:
@@ -1480,7 +1508,7 @@ class GrammarParseListener(GrammarListener):
             ref=self.nodes[ctx.chain_id()],
             doc=self._documentation(ctx),
         )
-        node._span = _ctx_span(ctx)
+        node._span = _owner_span(ctx)
         self.nodes[ctx] = node
 
     def exitDuringOperations(self, ctx: GrammarParser.DuringOperationsContext) -> None:
@@ -1499,7 +1527,7 @@ class GrammarParseListener(GrammarListener):
             else [],
             doc=self._documentation(ctx),
         )
-        node._span = _ctx_span(ctx)
+        node._span = _owner_span(ctx)
         self.nodes[ctx] = node
 
     def exitDuringAbstractFunc(
@@ -1517,7 +1545,7 @@ class GrammarParseListener(GrammarListener):
             aspect=ctx.aspect.text if ctx.aspect else None,
             doc=self._documentation(ctx, action=True),
         )
-        node._span = _ctx_span(ctx)
+        node._span = _owner_span(ctx)
         self.nodes[ctx] = node
 
     def exitDuringRefFunc(self, ctx: GrammarParser.DuringRefFuncContext) -> None:
@@ -1534,7 +1562,7 @@ class GrammarParseListener(GrammarListener):
             ref=self.nodes[ctx.chain_id()],
             doc=self._documentation(ctx),
         )
-        node._span = _ctx_span(ctx)
+        node._span = _owner_span(ctx)
         self.nodes[ctx] = node
 
     def exitGeneric_expression(
@@ -1569,7 +1597,7 @@ class GrammarParseListener(GrammarListener):
             else [],
             doc=self._documentation(ctx),
         )
-        node._span = _ctx_span(ctx)
+        node._span = _owner_span(ctx)
         self.nodes[ctx] = node
 
     def exitDuringAspectAbstractFunc(
@@ -1587,7 +1615,7 @@ class GrammarParseListener(GrammarListener):
             aspect=ctx.aspect.text if ctx.aspect else None,
             doc=self._documentation(ctx, action=True),
         )
-        node._span = _ctx_span(ctx)
+        node._span = _owner_span(ctx)
         self.nodes[ctx] = node
 
     def exitDuringAspectRefFunc(
@@ -1606,7 +1634,7 @@ class GrammarParseListener(GrammarListener):
             ref=self.nodes[ctx.chain_id()],
             doc=self._documentation(ctx),
         )
-        node._span = _ctx_span(ctx)
+        node._span = _owner_span(ctx)
         self.nodes[ctx] = node
 
     def exitNormalForceTransitionDefinition(
@@ -1638,7 +1666,7 @@ class GrammarParseListener(GrammarListener):
             event_scope=event_scope,
             doc=self._documentation(ctx),
         )
-        node._span = _ctx_span(ctx)
+        node._span = _owner_span(ctx)
         self.nodes[ctx] = node
 
     def exitExitForceTransitionDefinition(
@@ -1670,7 +1698,7 @@ class GrammarParseListener(GrammarListener):
             event_scope=event_scope,
             doc=self._documentation(ctx),
         )
-        node._span = _ctx_span(ctx)
+        node._span = _owner_span(ctx)
         self.nodes[ctx] = node
 
     def exitNormalAllForceTransitionDefinition(
@@ -1699,7 +1727,7 @@ class GrammarParseListener(GrammarListener):
             ),
             doc=self._documentation(ctx),
         )
-        node._span = _ctx_span(ctx)
+        node._span = _owner_span(ctx)
         self.nodes[ctx] = node
 
     def exitExitAllForceTransitionDefinition(
@@ -1728,7 +1756,7 @@ class GrammarParseListener(GrammarListener):
             ),
             doc=self._documentation(ctx),
         )
-        node._span = _ctx_span(ctx)
+        node._span = _owner_span(ctx)
         self.nodes[ctx] = node
 
     def exitEvent_definition(self, ctx: GrammarParser.Event_definitionContext) -> None:
@@ -1746,7 +1774,7 @@ class GrammarParseListener(GrammarListener):
             else None,
             doc=self._documentation(ctx),
         )
-        node._span = _ctx_span(ctx)
+        node._span = _owner_span(ctx)
         self.nodes[ctx] = node
 
     def exitImport_mapping_statement(

@@ -118,6 +118,19 @@ def validate_documentation_for_export(doc: str) -> None:
         raise ValueError("documentation must not contain '/*'")
     if "*/" in doc:
         raise ValueError("documentation must not contain '*/'")
+    invalid_control = next(
+        (
+            char
+            for char in doc
+            if (ord(char) < 0x20 and char not in "\n\t") or ord(char) == 0x7F
+        ),
+        None,
+    )
+    if invalid_control is not None:
+        raise ValueError(
+            "documentation contains unsupported control character "
+            f"U+{ord(invalid_control):04X}"
+        )
     if doc and (doc[0].isspace() or doc[-1].isspace()):
         raise ValueError("documentation has invalid boundary whitespace")
     if any(line and line.isspace() for line in doc.split("\n")):

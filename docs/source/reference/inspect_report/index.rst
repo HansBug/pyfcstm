@@ -153,7 +153,7 @@ Nested object contracts
        unreachable counts/rates, and guard/effect/eventless rates. ``S`` is the
        non-pseudo state count; rates include numerator and denominator fields
        and are ``null`` when their population is empty. Advisory defaults are
-       ``T / S <= 4.0``, unreachable leaf-state rate ``<= 0.10``, and
+       ``T / S <= 6.0``, unreachable leaf-state rate ``<= 0.10``, and
        unreachable transition rate ``<= 0.10``; exceeded names are metadata,
        not diagnostics.
    * - ``ModelDiagnostic``
@@ -227,14 +227,16 @@ may pass ``StructureStatisticsPolicy`` (or a partial mapping) to
 ``inspect_model``; ``None`` disables an individual advisory threshold. Any
 future corpus-derived cutoff must be versioned and explicitly configured.
 
-The default ``4.0`` density ceiling is an engineering baseline informed by the
-pooled ``T / S = 2.75`` reported by the 14-protocol PSMBench/RFC2PSM cohort
-(`PSMBench DOI <https://doi.org/10.52202/085713-1899>`_); that cohort is flat,
-protocol-specific, and too small to define a universal FCSTM limit. The ``10%``
-unreachable-population defaults are review-budget heuristics, not published
-quality boundaries. UML 2.5.1 models both transition ``guard`` and ``effect``
-as optional, so this report intentionally leaves those style rates without
-default cutoffs (`OMG UML 2.5.1 <https://www.omg.org/spec/UML/2.5.1/PDF>`_).
+The default ``6.0`` review trigger is an engineering baseline informed by the
+pooled ``T / S = 2.75`` and the observed protocol-level range in the 14-protocol
+PSMBench/RFC2PSM cohort (`PSMBench DOI <https://doi.org/10.52202/085713-1899>`_).
+That cohort is flat, protocol-specific, and too small to define a universal
+FCSTM limit; the trigger is intentionally broad enough not to flag ordinary
+high-density protocol machines. The ``10%`` unreachable-population defaults are
+review-budget heuristics, not published quality boundaries. UML 2.5.1 models
+both transition ``guard`` and ``effect`` as optional, so this report
+intentionally leaves those style rates without default cutoffs (`OMG UML 2.5.1
+<https://www.omg.org/spec/UML/2.5.1/PDF>`_).
 
 ``unguarded_rate`` counts authored transitions whose AST has no guard.
 ``missing_effect_rate`` uses non-forced authored transitions as its denominator,

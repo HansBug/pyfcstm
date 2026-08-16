@@ -43,7 +43,9 @@ const BINARY_RADIX = 2;
 export const DEFAULT_DEEP_HIERARCHY_THRESHOLD = 6;
 export const DEFAULT_LARGE_COMPOSITE_THRESHOLD = 12;
 export const DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD = 2.0;
-export const DEFAULT_STRUCTURE_MAX_TRANSITIONS_PER_STATE = 4.0;
+// Keep this broad enough for high-density protocol FSMs while retaining a
+// useful review trigger for unusually dense generated models.
+export const DEFAULT_STRUCTURE_MAX_TRANSITIONS_PER_STATE = 6.0;
 export const DEFAULT_STRUCTURE_MAX_UNREACHABLE_LEAF_STATE_RATE = 0.10;
 export const DEFAULT_STRUCTURE_MAX_UNREACHABLE_TRANSITION_RATE = 0.10;
 

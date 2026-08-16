@@ -506,7 +506,7 @@ state Root {
             assert.equal(DEFAULT_DEEP_HIERARCHY_THRESHOLD, 6);
             assert.equal(DEFAULT_LARGE_COMPOSITE_THRESHOLD, 12);
             assert.equal(DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD, 2.0);
-            assert.equal(DEFAULT_STRUCTURE_MAX_TRANSITIONS_PER_STATE, 4.0);
+            assert.equal(DEFAULT_STRUCTURE_MAX_TRANSITIONS_PER_STATE, 6.0);
             assert.equal(DEFAULT_STRUCTURE_MAX_UNREACHABLE_LEAF_STATE_RATE, 0.10);
             assert.equal(DEFAULT_STRUCTURE_MAX_UNREACHABLE_TRANSITION_RATE, 0.10);
         });
@@ -524,11 +524,15 @@ state Root {
                 A -> A;
                 A -> A;
                 A -> A;
+                A -> A;
+                A -> A;
+                A -> A;
+                A -> A;
             }`;
             const report = inspectModel(await buildMachine(source));
-            assert.equal(report.structure_statistics.transitions_per_state, 4.5);
+            assert.equal(report.structure_statistics.transitions_per_state, 6.5);
             assert.deepEqual(report.structure_statistics.thresholds, {
-                max_transitions_per_state: 4.0,
+                max_transitions_per_state: 6.0,
                 max_unreachable_leaf_state_rate: 0.10,
                 max_unreachable_transition_rate: 0.10,
             });

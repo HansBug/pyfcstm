@@ -73,7 +73,9 @@ if TYPE_CHECKING:  # pragma: no cover - import-time forward refs only
 DEFAULT_DEEP_HIERARCHY_THRESHOLD = 6
 DEFAULT_LARGE_COMPOSITE_THRESHOLD = 12
 DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD = 2.0
-DEFAULT_STRUCTURE_MAX_TRANSITIONS_PER_STATE = 4.0
+# Keep this broad enough for high-density protocol FSMs while retaining a
+# useful review trigger for unusually dense generated models.
+DEFAULT_STRUCTURE_MAX_TRANSITIONS_PER_STATE = 6.0
 DEFAULT_STRUCTURE_MAX_UNREACHABLE_LEAF_STATE_RATE = 0.10
 DEFAULT_STRUCTURE_MAX_UNREACHABLE_TRANSITION_RATE = 0.10
 
@@ -599,10 +601,10 @@ class StructureStatisticsPolicy:
 
     The defaults are deliberately limited to size-normalized topology signals:
     a PSMBench-style pooled transition/state ratio of 2.75 remains below the
-    density ceiling, while 10% unreachable populations provide a useful review
-    trigger without pretending to be a semantic proof. ``None`` disables one
-    advisory threshold. Exceeding a threshold only records metadata; it never
-    creates a diagnostic.
+    broad review trigger, while 10% unreachable populations provide a useful
+    review trigger without pretending to be a semantic proof. ``None``
+    disables one advisory threshold. Exceeding a threshold only records
+    metadata; it never creates a diagnostic.
 
     :param max_transitions_per_state: Maximum advisory ``T / S`` ratio.
     :param max_unreachable_leaf_state_rate: Maximum advisory unreachable leaf

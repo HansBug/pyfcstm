@@ -296,6 +296,9 @@ class TestInspectModelBasic:
         assert DEFAULT_DEEP_HIERARCHY_THRESHOLD == 6
         assert DEFAULT_LARGE_COMPOSITE_THRESHOLD == 12
         assert DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD == 2.0
+        assert DEFAULT_STRUCTURE_MAX_TRANSITIONS_PER_STATE == 6.0
+        assert DEFAULT_STRUCTURE_MAX_UNREACHABLE_LEAF_STATE_RATE == 0.10
+        assert DEFAULT_STRUCTURE_MAX_UNREACHABLE_TRANSITION_RATE == 0.10
 
     def test_structure_statistics_exclude_initial_edges(self, report):
         stats = report.structure_statistics
@@ -2542,6 +2545,10 @@ class TestInspectModelThresholdNamingTypeDiagnostics:
             A -> A;
             A -> A;
             A -> A;
+            A -> A;
+            A -> A;
+            A -> A;
+            A -> A;
         }
         """
         report = inspect_model(_parse(dsl))
@@ -2551,7 +2558,7 @@ class TestInspectModelThresholdNamingTypeDiagnostics:
             max_unreachable_leaf_state_rate=DEFAULT_STRUCTURE_MAX_UNREACHABLE_LEAF_STATE_RATE,
             max_unreachable_transition_rate=DEFAULT_STRUCTURE_MAX_UNREACHABLE_TRANSITION_RATE,
         )
-        assert statistics.transitions_per_state == 4.5
+        assert statistics.transitions_per_state == 6.5
         assert statistics.exceeded_thresholds == (
             'transitions_per_state',
             'unreachable_transition_rate',

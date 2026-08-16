@@ -89,6 +89,8 @@ class _FiniteNonNegativeFloat(click.ParamType):
         try:
             converted = float(value)
         except (TypeError, ValueError):
+            # TypeError is for non-convertible objects; ValueError is for
+            # malformed numeric strings passed through Click.
             self.fail("must be a number", param, ctx)
         if not math.isfinite(converted):
             self.fail("must be finite", param, ctx)

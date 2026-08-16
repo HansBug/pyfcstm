@@ -750,9 +750,7 @@ state Root {
     }
     [*] -> Live;
 }
-`), {
-                enableVerify: true,
-            });
+`));
             assert.equal(report.structure_statistics.authored_transition_count, 0);
             assert.equal(report.structure_statistics.unreachable_transitions, 0);
             assert.deepEqual(report.structure_statistics.unreachable_transition_reasons, {});

@@ -193,7 +193,7 @@ LLM 报告契约
 结构统计默认只是描述性信息：始终输出原始计数和比例，并记录三项保守的建议阈值。
 超出阈值只把字段名加入 ``exceeded_thresholds``，不会生成 G5 健康告警或综合分数。
 分母为空时返回 ``null``（human/Markdown 显示 ``N/A``）。调用方可以向
-``inspect_model`` 传入 ``StructureStatisticsPolicy``（或部分 mapping），单项传
+``inspect_model`` 传入 ``StructureStatisticsPolicy``（或部分映射），单项传
 ``None`` 即可关闭。未来若根据带版本的语料库设置 cutoff，必须显式配置，不能从
 本报告自行推断。
 

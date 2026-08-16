@@ -14,7 +14,7 @@ import {
 } from '../utils/text';
 import {getImportWorkspaceIndex} from '../workspace/imports';
 import {getWorkspaceGraph} from '../workspace';
-import {resolveRangeFromRefsDetailed, spanToRange} from './inspect-ranges';
+import {resolveRangeFromRefsDetailed, spanToRange, statePathIsLocalToDocument} from './inspect-ranges';
 import {suggestedFixDiagnosticRange, suggestedFixIssueRange} from './suggested-fixes';
 
 // Only suppress inspect codes that the semantic analyzer already reports with
@@ -22,7 +22,6 @@ import {suggestedFixDiagnosticRange, suggestedFixIssueRange} from './suggested-f
 // the semantic analyzer only recognizes literal `false`.
 export const SUPPRESSED_FROM_INSPECT_SURFACE = new Set([
     'W_UNREACHABLE_STATE',
-    'W_UNREACHABLE_TRANSITION',
     'W_UNUSED_EVENT',
 ]);
 
@@ -221,6 +220,15 @@ function isSuppressedFromInspectSurface(item: ModelDiagnosticJson): boolean {
     return true;
 }
 
+function inspectItemSourcePath(item: ModelDiagnosticJson): string | null {
+    const refs = item.refs;
+    for (const key of ['source_state_path', 'selection_owner_path', 'from_path']) {
+        const value = refs[key];
+        if (typeof value === 'string' && value !== '[*]') return value;
+    }
+    return null;
+}
+
 export function collectInspectDiagnosticsFromItems(
     document: TextDocumentLike,
     semantic: FcstmSemanticDocument,
@@ -249,7 +257,18 @@ export function collectInspectDiagnosticsFromItems(
             code: item.code,
             data: item.refs,
         };
-        const primarySpanRange = spanToRange(item.span);
+        // Hydrated workspace models retain source spans from imported files.
+        // A span without its owning URI must not be applied to the host file;
+        // the refs/range resolver can still anchor the import boundary or fall
+        // back to the full document while the imported document owns its span.
+        const sourcePath = inspectItemSourcePath(item);
+        const primarySpanRange = sourcePath === null || statePathIsLocalToDocument(
+            document,
+            semantic,
+            sourcePath,
+        )
+            ? spanToRange(item.span)
+            : null;
         const refResolution = resolveRangeFromRefsDetailed(document, semantic, item.refs, seenEffectSelfAssigns);
         const problemRange = primarySpanRange
             ?? refResolution.range
@@ -358,6 +377,23 @@ export async function collectDocumentDiagnostics(
         const localModel = buildStateMachineModel(node.semantic);
         if (localModel) {
             diagnostics.push(...collectInspectModelDiagnostics(document, node.semantic, localModel, diagnostics));
+        }
+        if (node.model && node.model !== localModel) {
+            // The assembled model is needed for mounted import topology, but
+            // imported source ranges belong to their own documents. Keep the
+            // existing local inspect surface stable and add only the new
+            // topology diagnostic for imported transition owners here.
+            const importedUnreachableTransitions = inspectModel(node.model).diagnostics.filter(item => {
+                if (item.code !== 'W_UNREACHABLE_TRANSITION') return false;
+                const sourcePath = inspectItemSourcePath(item);
+                return sourcePath !== null && !statePathIsLocalToDocument(document, node.semantic!, sourcePath);
+            });
+            diagnostics.push(...collectInspectDiagnosticsFromItems(
+                document,
+                node.semantic,
+                importedUnreachableTransitions,
+                diagnostics,
+            ));
         }
     }
     return diagnostics.filter(diagnostic => !shouldSuppressParseRecoveryDiagnostic(diagnostic, parseDiagnostics));

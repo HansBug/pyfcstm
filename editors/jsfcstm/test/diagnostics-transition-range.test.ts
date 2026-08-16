@@ -495,6 +495,48 @@ describe('diagnostics transition body ranges', () => {
         );
     });
 
+    it('reports unreachable transitions from hydrated imported models without host-range corruption', async () => {
+        const dir = trackTempDir('jsfcstm-unreachable-import-range-');
+        const childFile = path.join(dir, 'child.fcstm');
+        const hostFile = path.join(dir, 'main.fcstm');
+        writeFile(childFile, [
+            'state Child {',
+            '    state Reach;',
+            '    state Orphan;',
+            '    state Done;',
+            '    state OrphanGroup {',
+            '        state Nested;',
+            '        [*] -> Nested;',
+            '    }',
+            '    [*] -> Reach;',
+            '    Orphan -> Done;',
+            '}',
+        ].join('\n'));
+        const hostText = [
+            'state Root {',
+            '    import "./child.fcstm" as Imported;',
+            '    [*] -> Imported;',
+            '}',
+        ].join('\n');
+        const document = createDocument(hostText, hostFile);
+        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+        const unreachable = diagnostics.filter(item => item.code === 'W_UNREACHABLE_TRANSITION');
+
+        assert.equal(unreachable.length, 2, JSON.stringify(diagnostics));
+        assert.deepEqual(
+            unreachable.map(item => [item.data?.from_path, item.data?.to_path]).sort(),
+            [
+                ['[*]', 'Root.Imported.OrphanGroup.Nested'],
+                ['Root.Imported.Orphan', 'Root.Imported.Done'],
+            ].sort(),
+        );
+        for (const item of unreachable) {
+            assert.equal(item.data?.verification_scope, 'topological_only');
+            assert.equal(item.data?.__rangeFallback, 'full_document');
+            assert.equal(sliceByRange(hostText, item.range), hostText);
+        }
+    });
+
     it('anchors forced override diagnostics on the forced declaration with related normal transition', async () => {
         const text = [
             'state Root {',

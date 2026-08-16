@@ -144,6 +144,57 @@ def _reachable_state_paths(reachability_graph, root_state_path):
     return reachable
 
 
+def _combo_path_text(value):
+    if isinstance(value, (tuple, list)) and all(isinstance(item, str) for item in value):
+        return '.'.join(value)
+    if isinstance(value, str):
+        return value
+    return None
+
+
+def _combo_projection_endpoints(transition):
+    projection = getattr(transition, 'combo_projection_key', None)
+    if not isinstance(projection, (tuple, list)) or not projection:
+        return (
+            None if transition.from_path == '[*]' else transition.from_path,
+            None,
+            None,
+        )
+    owner_path = _combo_path_text(projection[0])
+    if len(projection) >= 2 and projection[1] == 'entry':
+        return None, owner_path, None
+    source_path = _combo_path_text(projection[2]) if len(projection) >= 3 else None
+    return source_path, None, None
+
+
+def _build_combo_origin_endpoints(transitions):
+    """Recover authored combo endpoints for older provenance payloads."""
+    endpoints = {}
+    for transition in transitions:
+        projection_source, projection_owner, _ = _combo_projection_endpoints(transition)
+        for ref in transition.combo_origin_refs:
+            current = endpoints.setdefault(ref.origin_id, {
+                'source_path': None,
+                'selection_owner_path': None,
+                'target_path': None,
+            })
+            current['source_path'] = (
+                ref.source_path
+                or projection_source
+                or current['source_path']
+            )
+            current['selection_owner_path'] = (
+                ref.selection_owner_path
+                or projection_owner
+                or current['selection_owner_path']
+            )
+            if ref.target_path is not None:
+                current['target_path'] = ref.target_path
+            elif ref.role == 'terminal':
+                current['target_path'] = transition.to_path
+    return endpoints
+
+
 def _unreachable_transition_diagnostics(
         states,
         transitions,
@@ -164,6 +215,7 @@ def _unreachable_transition_diagnostics(
     reachable = _reachable_state_paths(reachability_graph, root_state_path)
     diagnostics: List[ModelDiagnostic] = []
     emitted_combo_origins = set()
+    combo_origin_endpoints = _build_combo_origin_endpoints(transitions)
     for transition in transitions:
         combo_origin_ids = tuple(sorted({
             ref.origin_id
@@ -182,10 +234,11 @@ def _unreachable_transition_diagnostics(
                     ),
                     None,
                 )
-                if origin_ref is None or origin_ref.target_path is None:
+                endpoint = combo_origin_endpoints.get(origin_id)
+                if origin_ref is None or endpoint is None or endpoint['target_path'] is None:
                     continue
-                source_state_path = origin_ref.source_path
-                selection_owner_path = origin_ref.selection_owner_path
+                source_state_path = endpoint['source_path']
+                selection_owner_path = endpoint['selection_owner_path']
                 lookup_path = selection_owner_path or source_state_path
                 if lookup_path is None:
                     continue
@@ -203,7 +256,7 @@ def _unreachable_transition_diagnostics(
                         'reason': 'source_unreachable',
                         'verification_scope': 'topological_only',
                         'from_path': '[*]' if source_state_path is None else source_state_path,
-                        'to_path': origin_ref.target_path,
+                        'to_path': endpoint['target_path'],
                         'source_state_path': source_state_path,
                         'selection_owner_path': selection_owner_path,
                         'transition_index': None,

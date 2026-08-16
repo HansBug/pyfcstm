@@ -59,6 +59,12 @@ def collect_design_health_warnings(
         reachability_graph,
         resolved_root_state_path,
     ))
+    diagnostics.extend(_unreachable_transition_diagnostics(
+        states,
+        transitions,
+        reachability_graph,
+        resolved_root_state_path,
+    ))
     diagnostics.extend(
         collect_const_fold_warnings(machine)
         if machine is not None
@@ -108,8 +114,7 @@ def _resolve_root_state_path(states, root_state_path):
 def _unreachable_state_diagnostics(states, reachability_graph, root_state_path) -> List[ModelDiagnostic]:
     if not states or root_state_path is None:
         return []
-    reachable = set(reachability_graph.get(root_state_path, ()))
-    reachable.add(root_state_path)
+    reachable = _reachable_state_paths(reachability_graph, root_state_path)
     diagnostics: List[ModelDiagnostic] = []
     for state in states:
         if not state.is_leaf or state.is_pseudo or state.path in reachable:
@@ -124,6 +129,158 @@ def _unreachable_state_diagnostics(states, reachability_graph, root_state_path) 
             )
         )
     return diagnostics
+
+
+def _reachable_state_paths(reachability_graph, root_state_path):
+    reachable = set(reachability_graph.get(root_state_path, ()))
+    reachable.add(root_state_path)
+    return reachable
+
+
+def _unreachable_transition_diagnostics(
+        states,
+        transitions,
+        reachability_graph,
+        root_state_path,
+) -> List[ModelDiagnostic]:
+    """Report authored transitions outside the guard-agnostic topology.
+
+    A normal transition is selected from its source state.  An initial
+    transition is selected by the composite that owns its ``[*]`` entry; its
+    owner is recoverable from the direct target path in the inspect payload.
+    Combo relay edges are projected to one warning per authored combo origin so
+    generated edges do not multiply one source finding.
+    """
+    if not states or root_state_path is None:
+        return []
+    state_paths = {state.path for state in states}
+    reachable = _reachable_state_paths(reachability_graph, root_state_path)
+    diagnostics: List[ModelDiagnostic] = []
+    emitted_combo_origins = set()
+    for transition in transitions:
+        combo_origin_ids = tuple(sorted({
+            ref.origin_id
+            for ref in transition.combo_origin_refs
+            if isinstance(ref.origin_id, str)
+        }))
+        if combo_origin_ids:
+            for origin_id in combo_origin_ids:
+                if origin_id in emitted_combo_origins:
+                    continue
+                emitted_combo_origins.add(origin_id)
+                authored = _combo_origin_endpoints(origin_id, state_paths)
+                if authored is None:
+                    continue
+                source_state_path, selection_owner_path, lookup_path = authored
+                if lookup_path in reachable:
+                    continue
+                origin_ref = next(
+                    (
+                        ref for ref in transition.combo_origin_refs
+                        if ref.origin_id == origin_id and ref.transition_span is not None
+                    ),
+                    None,
+                )
+                diagnostics.append(ModelDiagnostic(
+                    code='W_UNREACHABLE_TRANSITION',
+                    severity='warning',
+                    message=(
+                        f'Transition {origin_id!r} has a source outside the '
+                        'guard-agnostic root-reachable topology.'
+                    ),
+                    span=transition.span if origin_ref is None else origin_ref.transition_span,
+                    refs={
+                        'reason': 'source_unreachable',
+                        'verification_scope': 'topological_only',
+                        'from_path': '[*]' if source_state_path is None else lookup_path,
+                        'to_path': '[*]' if origin_id.endswith('->__exit__') else _combo_target_path(origin_id),
+                        'source_state_path': source_state_path,
+                        'selection_owner_path': selection_owner_path,
+                        'transition_index': None,
+                        'forced_origin': None,
+                        'combo_origin_ids': [origin_id],
+                    },
+                ))
+            continue
+
+        source_state_path, selection_owner_path = _transition_selection_paths(
+            transition,
+            state_paths,
+        )
+        if selection_owner_path is None or selection_owner_path not in state_paths:
+            continue
+        if selection_owner_path in reachable:
+            continue
+
+        forced_expansion = transition.is_forced
+        diagnostics.append(ModelDiagnostic(
+            code='W_UNREACHABLE_TRANSITION',
+            severity='warning',
+            message=(
+                (
+                    f'Generated forced transition expansion '
+                    f'{transition.from_path!r} -> {transition.to_path!r} '
+                    'has a source outside the guard-agnostic root-reachable topology.'
+                )
+                if forced_expansion else (
+                    f'Transition {transition.from_path!r} -> {transition.to_path!r} '
+                    'has a source outside the guard-agnostic root-reachable topology.'
+                )
+            ),
+            span=transition.span,
+            refs={
+                'reason': 'source_unreachable',
+                'verification_scope': 'topological_only',
+                'from_path': transition.from_path,
+                'to_path': transition.to_path,
+                'source_state_path': source_state_path,
+                'selection_owner_path': selection_owner_path if transition.from_path == '[*]' else None,
+                'transition_index': transition.transition_index,
+                'forced_origin': transition.forced_origin,
+                'combo_origin_ids': list(combo_origin_ids),
+            },
+        ))
+    return diagnostics
+
+
+def _combo_origin_endpoints(origin_id, state_paths):
+    owner, separator, remainder = origin_id.partition(':')
+    source, arrow, remainder = remainder.partition('->') if separator else ('', '', '')
+    target, target_separator, _ = remainder.partition(':') if arrow else ('', '', '')
+    if not separator or not arrow or not target_separator:
+        return None
+    if source == '__init__':
+        lookup_path = owner
+        source_state_path = None
+        selection_owner_path = owner
+    else:
+        lookup_path = f'{owner}.{source}'
+        source_state_path = lookup_path
+        selection_owner_path = None
+    if lookup_path not in state_paths:
+        return None
+    return source_state_path, selection_owner_path, lookup_path
+
+
+def _combo_target_path(origin_id):
+    _, _, remainder = origin_id.partition(':')
+    _, _, remainder = remainder.partition('->')
+    target = remainder.partition(':')[0]
+    if target == '__exit__':
+        return '[*]'
+    owner = origin_id.partition(':')[0]
+    return f'{owner}.{target}'
+
+
+def _transition_selection_paths(transition, state_paths):
+    if transition.from_path != '[*]':
+        return transition.from_path, transition.from_path
+    if transition.to_path == '[*]' or '.' not in transition.to_path:
+        return None, None
+    owner_path = transition.to_path.rsplit('.', 1)[0]
+    if owner_path not in state_paths:
+        return None, None
+    return None, owner_path
 
 
 def _guard_const_false_diagnostics(transitions) -> List[ModelDiagnostic]:

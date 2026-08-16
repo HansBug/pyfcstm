@@ -22,6 +22,7 @@ import {suggestedFixDiagnosticRange, suggestedFixIssueRange} from './suggested-f
 // the semantic analyzer only recognizes literal `false`.
 export const SUPPRESSED_FROM_INSPECT_SURFACE = new Set([
     'W_UNREACHABLE_STATE',
+    'W_UNREACHABLE_TRANSITION',
     'W_UNUSED_EVENT',
 ]);
 
@@ -210,6 +211,16 @@ function shouldSuppressInspectDiagnostic(
     return Boolean(semanticState && semanticState.ast.imports.length > 0);
 }
 
+function isSuppressedFromInspectSurface(item: ModelDiagnosticJson): boolean {
+    if (!SUPPRESSED_FROM_INSPECT_SURFACE.has(item.code)) return false;
+    // The semantic model does not carry the runtime's canonical forced-origin
+    // text, so generated forced edges remain inspect-backed.
+    if (item.code === 'W_UNREACHABLE_TRANSITION' && typeof item.refs.forced_origin === 'string') {
+        return false;
+    }
+    return true;
+}
+
 export function collectInspectDiagnosticsFromItems(
     document: TextDocumentLike,
     semantic: FcstmSemanticDocument,
@@ -228,7 +239,7 @@ export function collectInspectDiagnosticsFromItems(
     const seenEffectSelfAssigns = new Map<string, number>();
 
     for (const item of items) {
-        if (SUPPRESSED_FROM_INSPECT_SURFACE.has(item.code)) continue;
+        if (isSuppressedFromInspectSurface(item)) continue;
         if (shouldSuppressInspectDiagnostic(semantic, item)) continue;
         const diagnostic: FcstmDiagnostic = {
             range: fullRange,

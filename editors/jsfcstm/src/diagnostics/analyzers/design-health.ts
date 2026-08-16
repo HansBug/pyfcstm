@@ -4,6 +4,7 @@ import type {
     ForcedTransitionInfo,
     ModelDiagnosticJson,
     ModelMetrics,
+    ModelSpanJson,
     StateInfo,
     TransitionInfo,
     VariableInfo,
@@ -41,6 +42,7 @@ export function collectDesignHealthWarnings(
     };
     const diagnostics = [
         ...collectUnreachableStateDiagnostics(states, reachabilityGraph, rootStatePath),
+        ...collectUnreachableTransitionDiagnostics(states, transitions, reachabilityGraph, rootStatePath),
         ...(machine ? collectConstFoldWarnings(machine) : collectGuardConstFalseDiagnostics(transitions)),
         ...(machine ? collectComboWarnings(machine) : []),
         ...collectUnusedEventDiagnostics(events),
@@ -87,6 +89,136 @@ function collectUnreachableStateDiagnostics(
         });
     }
     return out;
+}
+
+function collectUnreachableTransitionDiagnostics(
+    states: StateInfo[],
+    transitions: TransitionInfo[],
+    reachabilityGraph: Record<string, string[]>,
+    rootStatePath?: string,
+): ModelDiagnosticJson[] {
+    if (states.length === 0) return [];
+    const rootPath = rootStatePath ?? states[0].path;
+    const statePaths = new Set(states.map(state => state.path));
+    const reachable = new Set<string>(reachabilityGraph[rootPath] ?? []);
+    reachable.add(rootPath);
+    const emittedComboOrigins = new Set<string>();
+    const out: ModelDiagnosticJson[] = [];
+
+    for (const transition of transitions) {
+        const comboOriginIds = Array.from(new Set(
+            transition.combo_origin_refs
+                .map(ref => ref.origin_id)
+                .filter((originId): originId is string => typeof originId === 'string'),
+        )).sort();
+        if (comboOriginIds.length > 0) {
+            for (const originId of comboOriginIds) {
+                if (emittedComboOrigins.has(originId)) continue;
+                emittedComboOrigins.add(originId);
+                const authored = comboOriginEndpoints(originId, statePaths);
+                if (!authored || reachable.has(authored.lookupPath)) continue;
+                const originRef = transition.combo_origin_refs.find(ref => (
+                    ref.origin_id === originId && ref.transition_span !== null
+                ));
+                out.push({
+                    code: 'W_UNREACHABLE_TRANSITION',
+                    severity: 'warning',
+                    message: `Transition ${JSON.stringify(authored.fromPath)} -> ${JSON.stringify(authored.toPath)} has a source outside the guard-agnostic root-reachable topology.`,
+                    span: originRef?.transition_span ?? null,
+                    refs: {
+                        reason: 'source_unreachable',
+                        verification_scope: 'topological_only',
+                        from_path: authored.fromPath,
+                        to_path: authored.toPath,
+                        source_state_path: authored.sourcePath,
+                        selection_owner_path: authored.ownerPath,
+                        transition_index: null,
+                        forced_origin: null,
+                        combo_origin_ids: [originId],
+                    },
+                });
+            }
+            continue;
+        }
+
+        const selection = transitionSelectionPaths(transition, statePaths);
+        if (!selection.ownerPath || !statePaths.has(selection.ownerPath)) continue;
+        if (reachable.has(selection.ownerPath)) continue;
+
+        const message = transition.is_forced
+            ? `Generated forced transition expansion ${JSON.stringify(transition.from_path)} -> ${JSON.stringify(transition.to_path)} has a source outside the guard-agnostic root-reachable topology.`
+            : `Transition ${JSON.stringify(transition.from_path)} -> ${JSON.stringify(transition.to_path)} has a source outside the guard-agnostic root-reachable topology.`;
+        out.push({
+            code: 'W_UNREACHABLE_TRANSITION',
+            severity: 'warning',
+            message,
+            span: transitionSourceSpan(transition),
+            refs: {
+                reason: 'source_unreachable',
+                verification_scope: 'topological_only',
+                from_path: transition.from_path,
+                to_path: transition.to_path,
+                source_state_path: selection.sourcePath,
+                selection_owner_path: selection.sourcePath === null ? selection.ownerPath : null,
+                transition_index: transition.transition_index,
+                forced_origin: transition.forced_origin,
+                combo_origin_ids: comboOriginIds,
+            },
+        });
+    }
+    return out;
+}
+
+function comboOriginEndpoints(
+    originId: string,
+    statePaths: Set<string>,
+): {fromPath: string; toPath: string; sourcePath: string | null; ownerPath: string | null; lookupPath: string} | null {
+    const ownerSeparator = originId.indexOf(':');
+    if (ownerSeparator < 0) return null;
+    const ownerPath = originId.slice(0, ownerSeparator);
+    const endpointText = originId.slice(ownerSeparator + 1);
+    const arrow = endpointText.indexOf('->');
+    if (arrow < 0) return null;
+    const targetSeparator = endpointText.indexOf(':', arrow + 2);
+    if (targetSeparator < 0) return null;
+    const source = endpointText.slice(0, arrow);
+    const target = endpointText.slice(arrow + 2, targetSeparator);
+    const initial = source === '__init__';
+    const lookupPath = initial ? ownerPath : `${ownerPath}.${source}`;
+    if (!statePaths.has(lookupPath)) return null;
+    return {
+        fromPath: initial ? '[*]' : lookupPath,
+        toPath: target === '__exit__' ? '[*]' : `${ownerPath}.${target}`,
+        sourcePath: initial ? null : lookupPath,
+        ownerPath: initial ? ownerPath : null,
+        lookupPath,
+    };
+}
+
+function transitionSelectionPaths(
+    transition: TransitionInfo,
+    statePaths: Set<string>,
+): {sourcePath: string | null; ownerPath: string | null} {
+    if (transition.from_path !== '[*]') {
+        return {sourcePath: transition.from_path, ownerPath: transition.from_path};
+    }
+    if (transition.to_path === '[*]' || !transition.to_path.includes('.')) {
+        return {sourcePath: null, ownerPath: null};
+    }
+    const ownerPath = transition.to_path.slice(0, transition.to_path.lastIndexOf('.'));
+    if (!statePaths.has(ownerPath)) return {sourcePath: null, ownerPath: null};
+    return {sourcePath: null, ownerPath};
+}
+
+function transitionSourceSpan(transition: TransitionInfo): ModelSpanJson | null {
+    const range = transition.__sourceRange;
+    if (!range) return null;
+    return {
+        line: range.start.line + 1,
+        column: range.start.character + 1,
+        end_line: range.end.line + 1,
+        end_column: range.end.character + 1,
+    };
 }
 
 function collectGuardConstFalseDiagnostics(transitions: TransitionInfo[]): ModelDiagnosticJson[] {

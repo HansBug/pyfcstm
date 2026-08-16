@@ -820,6 +820,143 @@ state Root {
             });
         });
 
+        it('reports only topological unreachable transition sources', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Active;
+    state Orphan;
+    state Done;
+    [*] -> Active;
+    Orphan -> Done : External;
+}
+`));
+            const diagnostics = report.diagnostics.filter(d => d.code === 'W_UNREACHABLE_TRANSITION');
+            assert.equal(diagnostics.length, 1);
+            assert.equal(diagnostics[0].span?.line, 7);
+            assert.deepEqual(diagnostics[0].refs, {
+                reason: 'source_unreachable',
+                verification_scope: 'topological_only',
+                from_path: 'Root.Orphan',
+                to_path: 'Root.Done',
+                source_state_path: 'Root.Orphan',
+                selection_owner_path: null,
+                transition_index: 1,
+                forced_origin: null,
+                combo_origin_ids: [],
+            });
+        });
+
+        it('attributes unreachable initial transitions to their composite owner', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Active;
+    state Orphan {
+        state Child;
+        [*] -> Child;
+    }
+    [*] -> Active;
+}
+`));
+            const diagnostics = report.diagnostics.filter(d => d.code === 'W_UNREACHABLE_TRANSITION');
+            assert.equal(diagnostics.length, 1);
+            assert.equal(diagnostics[0].span?.line, 6);
+            assert.equal(diagnostics[0].refs.selection_owner_path, 'Root.Orphan');
+            assert.equal(diagnostics[0].refs.source_state_path, null);
+            assert.equal(diagnostics[0].refs.from_path, '[*]');
+        });
+
+        it('deduplicates generated combo relay edges to one authored finding', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Orphan;
+    state Done;
+    [*] -> Done;
+    Orphan -> Done :: E1 + E2;
+}
+`));
+            const diagnostics = report.diagnostics.filter(d => d.code === 'W_UNREACHABLE_TRANSITION');
+            assert.equal(diagnostics.length, 1);
+            assert.equal(diagnostics[0].refs.from_path, 'Root.Orphan');
+            assert.equal(diagnostics[0].refs.to_path, 'Root.Done');
+            assert.equal(diagnostics[0].refs.transition_index, null);
+            assert.equal((diagnostics[0].refs.combo_origin_ids as string[]).length, 1);
+        });
+
+        it('canonicalizes combo effect provenance like pyfcstm', async () => {
+            const report = inspectModel(await buildMachine(`
+def int x = 0;
+state Root {
+    state Orphan;
+    state Done;
+    [*] -> Done;
+    Orphan -> Done :: E1 + E2 effect { x=1; };
+}
+`));
+            const diagnostics = report.diagnostics.filter(d => d.code === 'W_UNREACHABLE_TRANSITION');
+            assert.equal(diagnostics.length, 1);
+            assert.deepEqual(diagnostics[0].refs.combo_origin_ids, [
+                'Root:Orphan->Done::: E1 + E2:effect=["x = 1;"]',
+            ]);
+        });
+
+        it('keeps shared combo prefixes separated by authored origin', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Orphan;
+    state Done;
+    state Other;
+    [*] -> Done;
+    Orphan -> Done :: E1 + E2;
+    Orphan -> Other :: E1 + E3;
+}
+`));
+            const diagnostics = report.diagnostics.filter(d => d.code === 'W_UNREACHABLE_TRANSITION');
+            assert.equal(diagnostics.length, 2);
+            assert.deepEqual(
+                diagnostics.map(d => d.refs.to_path).sort(),
+                ['Root.Done', 'Root.Other'],
+            );
+            assert.deepEqual(
+                diagnostics.map(d => d.span?.line).sort(),
+                [7, 8],
+            );
+            assert.deepEqual(
+                diagnostics.map(d => (d.refs.combo_origin_ids as string[])[0]).sort(),
+                [
+                    'Root:Orphan->Done::: E1 + E2',
+                    'Root:Orphan->Other::: E1 + E3',
+                ],
+            );
+        });
+
+        it('reports the concrete unreachable source of a forced expansion', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Group {
+        state Reach;
+        state Lost;
+        state Done;
+        [*] -> Reach;
+        !* -> Done :: Panic;
+    }
+    [*] -> Group;
+}`));
+            const diagnostics = report.diagnostics.filter(d => d.code === 'W_UNREACHABLE_TRANSITION');
+            assert.equal(diagnostics.length, 1);
+            assert.match(diagnostics[0].message, /^Generated forced transition expansion/);
+            assert.deepEqual(diagnostics[0].refs, {
+                reason: 'source_unreachable',
+                verification_scope: 'topological_only',
+                from_path: 'Root.Group.Lost',
+                to_path: 'Root.Group.Done',
+                source_state_path: 'Root.Group.Lost',
+                selection_owner_path: null,
+                transition_index: 2,
+                forced_origin: '! * -> Done :: Panic;',
+                combo_origin_ids: [],
+            });
+        });
+
         it('event emission map only lists used events', async () => {
             const report = inspectModel(await buildMachine(DESIGN_HEALTH_DSL));
             assert.deepEqual(report.event_emission_map, {

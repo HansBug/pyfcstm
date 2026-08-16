@@ -313,6 +313,38 @@ describe('diagnostics transition body ranges', () => {
         );
     });
 
+    it('publishes a forced expansion source-unreachable finding on the declaration', async () => {
+        const text = [
+            'state Root {',
+            '    state Group {',
+            '        state Reach;',
+            '        state Lost;',
+            '        state Done;',
+            '        [*] -> Reach;',
+            '        !* -> Done :: Panic;',
+            '    }',
+            '    [*] -> Group;',
+            '}',
+        ].join('\n');
+        const document = createDocument(text, '/tmp/transition-forced-unreachable-source.fcstm');
+        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+        const unreachable = targetDiagnostics(diagnostics, 'W_UNREACHABLE_TRANSITION');
+
+        assert.equal(unreachable.length, 1, JSON.stringify(diagnostics));
+        assert.equal(sliceByRange(text, unreachable[0].range).trim(), '!* -> Done :: Panic;');
+        assert.deepEqual(unreachable[0].data, {
+            reason: 'source_unreachable',
+            verification_scope: 'topological_only',
+            from_path: 'Root.Group.Lost',
+            to_path: 'Root.Group.Done',
+            source_state_path: 'Root.Group.Lost',
+            selection_owner_path: null,
+            transition_index: 2,
+            forced_origin: '! * -> Done :: Panic;',
+            combo_origin_ids: [],
+        });
+    });
+
     it('anchors forced constant guard diagnostics on the forced guard expression', async () => {
         const text = [
             'state Root {',

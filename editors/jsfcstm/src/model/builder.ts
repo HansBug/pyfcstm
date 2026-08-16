@@ -40,6 +40,7 @@ import type {
     RawFcstmModelVariable as FcstmModelVariable,
 } from './raw';
 import {hydrateStateMachine, type FcstmModelStateMachine as FcstmRuntimeStateMachine} from './runtime';
+import {canonicalComboEffectSignature} from './combo-origin';
 
 const MATH_CONSTANTS: Record<string, number> = {
     E: Math.E,
@@ -182,7 +183,7 @@ function comboOriginId(
     const source = transitionEndpointText(transition, 'source');
     const target = transitionEndpointText(transition, 'target');
     let origin = `${statePathName(ownerPath)}:${source}->${target}:${transition.comboTrigger?.canonicalText ?? transition.text}`;
-    const effects = transition.postOperations.map(item => item.text);
+    const effects = canonicalComboEffectSignature(transition.postOperations);
     if (effects.length > 0) {
         origin = `${origin}:effect=${JSON.stringify(effects)}`;
     }
@@ -233,7 +234,7 @@ function comboAlternativeKey(ownerPath: string[], transition: FcstmAstTransition
         comboProjectionKey(ownerPath, transition),
         transitionEndpointText(transition, 'target'),
         transition.comboTrigger?.terms.map(term => comboTermSemanticKey(transition, term)) ?? [],
-        transition.postOperations.map(item => item.text),
+        canonicalComboEffectSignature(transition.postOperations),
     ]);
 }
 

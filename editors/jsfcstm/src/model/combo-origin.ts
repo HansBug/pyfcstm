@@ -59,57 +59,14 @@ function normalizeDecimalDigits(raw: string): string {
     return normalized.length > 0 ? normalized : '0';
 }
 
-function addSmallDecimal(raw: string, value: number): string {
-    if (value === 0) return raw;
-    let carry = value;
-    const out: string[] = [];
-    for (let index = raw.length - 1; index >= 0; index -= 1) {
-        const total = Number(raw[index]) + carry;
-        out.push(String(total % 10));
-        carry = Math.floor(total / 10);
-    }
-    while (carry > 0) {
-        out.push(String(carry % 10));
-        carry = Math.floor(carry / 10);
-    }
-    return out.reverse().join('');
-}
-
-function multiplySmallDecimal(raw: string, factor: number): string {
-    if (raw === '0' || factor === 0) return '0';
-    let carry = 0;
-    const out: string[] = [];
-    for (let index = raw.length - 1; index >= 0; index -= 1) {
-        const total = Number(raw[index]) * factor + carry;
-        out.push(String(total % 10));
-        carry = Math.floor(total / 10);
-    }
-    while (carry > 0) {
-        out.push(String(carry % 10));
-        carry = Math.floor(carry / 10);
-    }
-    return out.reverse().join('');
-}
-
-function convertRadixDigitsToDecimal(digits: string, radix: number): string {
-    let value = '0';
-    for (const char of digits.toLowerCase()) {
-        const digit = parseInt(char, radix);
-        value = addSmallDecimal(multiplySmallDecimal(value, radix), digit);
-    }
-    return value;
-}
-
 function numericAstText(expression: FcstmAstLiteralExpression): string {
     const raw = expression.valueText.trim();
-    if (/^\d+$/.test(raw)) return normalizeDecimalDigits(raw);
-    if (/^0[xX][0-9a-fA-F]+$/.test(raw)) return convertRadixDigitsToDecimal(raw.slice(2), 16);
-    if (/^0[bB][01]+$/.test(raw)) return convertRadixDigitsToDecimal(raw.slice(2), 2);
-    const value = Number(raw);
-    if (expression.pyNodeType === 'Float') {
-        return Number.isInteger(value) ? `${value}.0` : String(value);
+    if (expression.pyNodeType === 'Float') return raw;
+    if (expression.pyNodeType === 'HexInt') return raw.toLowerCase();
+    if (expression.pyNodeType === 'Integer' && /^\d+$/.test(raw)) {
+        return normalizeDecimalDigits(raw);
     }
-    return String(Math.trunc(value));
+    return raw;
 }
 
 function expressionPrecedence(expression: FcstmAstExpression): number | null {

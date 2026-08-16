@@ -103,6 +103,7 @@ function collectUnreachableTransitionDiagnostics(
     const reachable = new Set<string>(reachabilityGraph[rootPath] ?? []);
     reachable.add(rootPath);
     const emittedComboOrigins = new Set<string>();
+    const comboEndpoints = buildComboOriginEndpoints(transitions);
     const out: ModelDiagnosticJson[] = [];
 
     for (const transition of transitions) {
@@ -116,21 +117,22 @@ function collectUnreachableTransitionDiagnostics(
                 if (emittedComboOrigins.has(originId)) continue;
                 emittedComboOrigins.add(originId);
                 const originRef = transition.combo_origin_refs.find(ref => ref.origin_id === originId);
-                if (!originRef || !originRef.target_path) continue;
-                const lookupPath = originRef.selection_owner_path ?? originRef.source_path;
+                const endpoint = comboEndpoints.get(originId);
+                if (!originRef || !endpoint?.targetPath) continue;
+                const lookupPath = endpoint.selectionOwnerPath ?? endpoint.sourcePath;
                 if (!lookupPath || reachable.has(lookupPath)) continue;
                 out.push({
                     code: 'W_UNREACHABLE_TRANSITION',
                     severity: 'warning',
-                    message: `Transition ${JSON.stringify(originRef.source_path ?? '[*]')} -> ${JSON.stringify(originRef.target_path)} has a source outside the guard-agnostic root-reachable topology.`,
+                    message: `Transition ${JSON.stringify(endpoint.sourcePath ?? '[*]')} -> ${JSON.stringify(endpoint.targetPath)} has a source outside the guard-agnostic root-reachable topology.`,
                     span: originRef?.transition_span ?? null,
                     refs: {
                         reason: 'source_unreachable',
                         verification_scope: 'topological_only',
-                        from_path: originRef.source_path ?? '[*]',
-                        to_path: originRef.target_path,
-                        source_state_path: originRef.source_path,
-                        selection_owner_path: originRef.selection_owner_path,
+                        from_path: endpoint.sourcePath ?? '[*]',
+                        to_path: endpoint.targetPath,
+                        source_state_path: endpoint.sourcePath,
+                        selection_owner_path: endpoint.selectionOwnerPath,
                         transition_index: null,
                         forced_origin: null,
                         combo_origin_ids: [originId],
@@ -166,6 +168,63 @@ function collectUnreachableTransitionDiagnostics(
         });
     }
     return out;
+}
+
+interface ComboOriginEndpoints {
+    sourcePath: string | null;
+    selectionOwnerPath: string | null;
+    targetPath: string | null;
+}
+
+function buildComboOriginEndpoints(
+    transitions: TransitionInfo[],
+): Map<string, ComboOriginEndpoints> {
+    const endpoints = new Map<string, ComboOriginEndpoints>();
+    for (const transition of transitions) {
+        const projection = comboProjectionEndpoints(transition);
+        for (const ref of transition.combo_origin_refs) {
+            const current = endpoints.get(ref.origin_id) ?? {
+                sourcePath: null,
+                selectionOwnerPath: null,
+                targetPath: null,
+            };
+            current.sourcePath = ref.source_path ?? projection.sourcePath ?? current.sourcePath;
+            current.selectionOwnerPath = ref.selection_owner_path
+                ?? projection.selectionOwnerPath
+                ?? current.selectionOwnerPath;
+            if (ref.target_path !== null) {
+                current.targetPath = ref.target_path;
+            } else if (ref.role === 'terminal') {
+                current.targetPath = transition.to_path;
+            }
+            endpoints.set(ref.origin_id, current);
+        }
+    }
+    return endpoints;
+}
+
+function comboProjectionEndpoints(
+    transition: TransitionInfo,
+): ComboOriginEndpoints {
+    const projection = transition.combo_projection_key;
+    if (!Array.isArray(projection) || !Array.isArray(projection[0])) {
+        return {
+            sourcePath: transition.from_path === '[*]' ? null : transition.from_path,
+            selectionOwnerPath: null,
+            targetPath: null,
+        };
+    }
+    const ownerPath = projection[0].every(item => typeof item === 'string')
+        ? (projection[0] as string[]).join('.')
+        : null;
+    if (projection[1] === 'entry') {
+        return {sourcePath: null, selectionOwnerPath: ownerPath, targetPath: null};
+    }
+    const sourcePath = Array.isArray(projection[2])
+        && projection[2].every(item => typeof item === 'string')
+        ? (projection[2] as string[]).join('.')
+        : null;
+    return {sourcePath, selectionOwnerPath: null, targetPath: null};
 }
 
 function transitionSelectionPaths(

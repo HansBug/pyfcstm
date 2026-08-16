@@ -914,6 +914,54 @@ state Root {
             ]);
         });
 
+        it('preserves high-precision float and Python effect-array provenance', async () => {
+            const report = inspectModel(await buildMachine(`
+def float x = 0.0;
+state Root {
+    state Orphan;
+    state Done;
+    [*] -> Done;
+    Orphan -> Done :: E1 + E2 effect {
+        x = 9007199254740993.0;
+        x = 1;
+    }
+}
+`));
+            const diagnostics = report.diagnostics.filter(d => d.code === 'W_UNREACHABLE_TRANSITION');
+            assert.equal(diagnostics.length, 1);
+            assert.deepEqual(diagnostics[0].refs.combo_origin_ids, [
+                'Root:Orphan->Done::: E1 + E2:effect=["x = 9007199254740993.0;", "x = 1;"]',
+            ]);
+        });
+
+        it('recovers legacy combo endpoints from projection and terminal metadata', async () => {
+            const machine = await buildMachine(`
+state Root {
+    state Orphan;
+    state Done;
+    [*] -> Done;
+    Orphan -> Done :: E1 + E2;
+}
+`);
+            for (const transition of machine.allTransitions) {
+                transition.combo_origin_refs = transition.combo_origin_refs.map((value: unknown) => {
+                    if (typeof value !== 'object' || value === null) return value;
+                    const legacy = {...value as Record<string, unknown>};
+                    delete legacy.source_path;
+                    delete legacy.selection_owner_path;
+                    delete legacy.target_path;
+                    return legacy;
+                });
+            }
+
+            const diagnostics = inspectModel(machine).diagnostics.filter(
+                d => d.code === 'W_UNREACHABLE_TRANSITION',
+            );
+            assert.equal(diagnostics.length, 1);
+            assert.equal(diagnostics[0].refs.from_path, 'Root.Orphan');
+            assert.equal(diagnostics[0].refs.to_path, 'Root.Done');
+        });
+
         it('canonicalizes nested combo effects like pyfcstm', async () => {
             const report = inspectModel(await buildMachine(`
 def int x = 0;

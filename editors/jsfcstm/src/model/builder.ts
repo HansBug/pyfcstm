@@ -185,7 +185,7 @@ function comboOriginId(
     let origin = `${statePathName(ownerPath)}:${source}->${target}:${transition.comboTrigger?.canonicalText ?? transition.text}`;
     const effects = canonicalComboEffectSignature(transition.postOperations);
     if (effects.length > 0) {
-        origin = `${origin}:effect=${JSON.stringify(effects)}`;
+        origin = `${origin}:effect=${pythonJsonArray(effects)}`;
     }
     return origin;
 }
@@ -211,6 +211,10 @@ function transitionEndpointText(transition: FcstmAstTransition, endpoint: 'sourc
 
 function stableJsonKey(value: unknown): string {
     return JSON.stringify(value);
+}
+
+function pythonJsonArray(values: string[]): string {
+    return `[${values.map(value => JSON.stringify(value)).join(', ')}]`;
 }
 
 function comboTermSemanticKey(

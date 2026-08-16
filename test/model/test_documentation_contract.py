@@ -10,7 +10,7 @@ from pyfcstm.bmc.witness import (
     replay_bmc_witness,
     solve_bmc_property,
 )
-from pyfcstm.dsl import parse_with_grammar_entry
+from pyfcstm.dsl import GrammarParseError, parse_with_grammar_entry
 from pyfcstm.model import load_state_machine_from_text, parse_dsl_node_to_state_machine
 from pyfcstm.model.model import State
 from pyfcstm.model.plantuml import PlantUMLOptions
@@ -203,6 +203,84 @@ def test_concrete_lifecycle_owner_documentation_survives_model_round_trip():
     action = machine.root_state.on_enters[0]
     assert action.doc == "concrete enter docs"
     assert action.to_ast_node().doc == "concrete enter docs"
+
+
+@pytest.mark.parametrize(
+    ("source", "expected_doc"),
+    [
+        ("state Root { enter abstract /* enter docs */; }", "enter docs"),
+        ("state Root { exit abstract /* exit docs */; }", "exit docs"),
+        ("state Root { during abstract /* during docs */; }", "during docs"),
+        (
+            "state Root { during after abstract /* during-after docs */; }",
+            "during-after docs",
+        ),
+        (
+            "state Root { >> during before abstract /* aspect docs */; }",
+            "aspect docs",
+        ),
+    ],
+)
+def test_anonymous_abstract_documentation_canonicalizes_to_parseable_dsl(
+    source, expected_doc
+):
+    """Leading anonymous abstract documentation must remain round-tripable."""
+    parsed = _parse(source)
+    canonical = str(parsed)
+
+    reparsed = _parse(canonical)
+    actions = [
+        *reparsed.root_state.enters,
+        *reparsed.root_state.exits,
+        *reparsed.root_state.durings,
+        *reparsed.root_state.during_aspects,
+    ]
+
+    assert str(reparsed) == canonical
+    assert len(actions) == 1
+    assert actions[0].doc == expected_doc
+
+
+def test_anonymous_abstract_documentation_survives_model_export_round_trip():
+    source = """state Root {
+    enter abstract /* enter docs */;
+    during before abstract /* before docs */;
+    exit abstract /* exit docs */;
+    >> during after abstract /* aspect docs */;
+    state Child;
+    [*] -> Child;
+}
+"""
+
+    machine = load_state_machine_from_text(source)
+    exported = machine.to_ast_node()
+    canonical = str(exported)
+
+    _parse(canonical)
+    assert [action.doc for action in exported.root_state.enters] == ["enter docs"]
+    assert [action.doc for action in exported.root_state.durings] == ["before docs"]
+    assert [action.doc for action in exported.root_state.exits] == ["exit docs"]
+    assert [action.doc for action in exported.root_state.during_aspects] == [
+        "aspect docs"
+    ]
+    assert "enter abstract;" in canonical
+    assert "during before abstract;" in canonical
+    assert "exit abstract;" in canonical
+    assert ">> during after abstract;" in canonical
+
+
+@pytest.mark.parametrize(
+    "definition",
+    [
+        "enter abstract;",
+        "exit abstract;",
+        "during abstract;",
+        ">> during before abstract;",
+    ],
+)
+def test_bare_anonymous_abstract_without_documentation_remains_invalid(definition):
+    with pytest.raises(GrammarParseError):
+        _parse(f"state Root {{ {definition} }}")
 
 
 def test_state_doc_is_public_before_private_span_without_positional_drift():

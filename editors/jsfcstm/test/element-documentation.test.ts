@@ -51,6 +51,7 @@ describe('element documentation contracts', () => {
             'state Root {',
             '    /* leading */ enter abstract Before;',
             '    /* leading */ enter abstract After /* trailing */',
+            '    /* leading */ exit abstract /* trailing */',
             '}',
         ].join('\n');
         assert.equal(await parse(source), null);

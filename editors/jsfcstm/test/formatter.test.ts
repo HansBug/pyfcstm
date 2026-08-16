@@ -325,7 +325,7 @@ describe('jsfcstm formatter', () => {
         assert.ok(out.includes('     */\n    enter abstract Init;'));
     });
 
-    it('moves trailing documentation before every abstract action family', () => {
+    it('moves trailing documentation before every abstract action family', async () => {
         const input = [
             'state Root {',
             '    exit abstract ExitHook /* exit docs */',
@@ -340,6 +340,21 @@ describe('jsfcstm formatter', () => {
         assert.ok(out.includes('     */\n    during after abstract;'));
         assert.ok(out.includes('     */\n    >> during before abstract AspectHook;'));
         assert.equal(format(out), out);
+
+        const parseResult = await packageModule.getParser().parse(out);
+        assert.equal(
+            parseResult.success,
+            true,
+            parseResult.errors.map(error => error.message).join('; '),
+        );
+    });
+
+    it('keeps bare anonymous abstract actions invalid without documentation', async () => {
+        const result = await packageModule.getParser().parse(
+            'state Root { enter abstract; }',
+        );
+        assert.equal(result.success, false);
+        assert.ok(result.errors.length > 0);
     });
 
     it('runs on a realistic messy document and yields a fully normalized result', () => {

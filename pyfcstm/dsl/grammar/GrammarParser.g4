@@ -150,7 +150,12 @@ transition_force_definition
 enter_definition
     : leading_doc=MULTILINE_COMMENT? ENTER (func_name=ID)? LBRACE operational_statement_set RBRACE
         # enterOperations
-    | leading_doc=MULTILINE_COMMENT? ENTER ABSTRACT func_name=ID SEMI
+    // A leading documentation block is the canonical spelling.  Its optional
+    // name preserves the existing anonymous-abstract form, while the separate
+    // no-document alternative below keeps bare ``enter abstract;`` invalid.
+    | leading_doc=MULTILINE_COMMENT ENTER ABSTRACT (func_name=ID)? SEMI
+        # enterAbstractFunc
+    | ENTER ABSTRACT func_name=ID SEMI
         # enterAbstractFunc
     | leading_doc=MULTILINE_COMMENT? ENTER ABSTRACT (func_name=ID)? raw_doc=MULTILINE_COMMENT
         # enterAbstractFunc
@@ -161,7 +166,9 @@ enter_definition
 exit_definition
     : leading_doc=MULTILINE_COMMENT? EXIT (func_name=ID)? LBRACE operational_statement_set RBRACE
         # exitOperations
-    | leading_doc=MULTILINE_COMMENT? EXIT ABSTRACT func_name=ID SEMI
+    | leading_doc=MULTILINE_COMMENT EXIT ABSTRACT (func_name=ID)? SEMI
+        # exitAbstractFunc
+    | EXIT ABSTRACT func_name=ID SEMI
         # exitAbstractFunc
     | leading_doc=MULTILINE_COMMENT? EXIT ABSTRACT (func_name=ID)? raw_doc=MULTILINE_COMMENT
         # exitAbstractFunc
@@ -172,7 +179,9 @@ exit_definition
 during_definition
     : leading_doc=MULTILINE_COMMENT? DURING aspect=(BEFORE | AFTER)? (func_name=ID)? LBRACE operational_statement_set RBRACE
         # duringOperations
-    | leading_doc=MULTILINE_COMMENT? DURING aspect=(BEFORE | AFTER)? ABSTRACT func_name=ID SEMI
+    | leading_doc=MULTILINE_COMMENT DURING aspect=(BEFORE | AFTER)? ABSTRACT (func_name=ID)? SEMI
+        # duringAbstractFunc
+    | DURING aspect=(BEFORE | AFTER)? ABSTRACT func_name=ID SEMI
         # duringAbstractFunc
     | leading_doc=MULTILINE_COMMENT? DURING aspect=(BEFORE | AFTER)? ABSTRACT (func_name=ID)? raw_doc=MULTILINE_COMMENT
         # duringAbstractFunc
@@ -183,7 +192,9 @@ during_definition
 during_aspect_definition
     : leading_doc=MULTILINE_COMMENT? SHIFT_RIGHT DURING aspect=(BEFORE | AFTER) (func_name=ID)? LBRACE operational_statement_set RBRACE
         # duringAspectOperations
-    | leading_doc=MULTILINE_COMMENT? SHIFT_RIGHT DURING aspect=(BEFORE | AFTER) ABSTRACT func_name=ID SEMI
+    | leading_doc=MULTILINE_COMMENT SHIFT_RIGHT DURING aspect=(BEFORE | AFTER) ABSTRACT (func_name=ID)? SEMI
+        # duringAspectAbstractFunc
+    | SHIFT_RIGHT DURING aspect=(BEFORE | AFTER) ABSTRACT func_name=ID SEMI
         # duringAspectAbstractFunc
     | leading_doc=MULTILINE_COMMENT? SHIFT_RIGHT DURING aspect=(BEFORE | AFTER) ABSTRACT (func_name=ID)? raw_doc=MULTILINE_COMMENT
         # duringAspectAbstractFunc

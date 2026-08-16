@@ -234,6 +234,46 @@ class TestEntryInspect:
         }
         assert statistics["exceeded_thresholds"] == []
 
+    @pytest.mark.parametrize(
+        "option_value",
+        ["-1", "nan", "inf"],
+    )
+    def test_inspect_rejects_invalid_structure_count_threshold(
+        self, inspect_code_file, option_value
+    ):
+        result = _run_inspect(
+            "-i",
+            inspect_code_file,
+            "--format",
+            "json",
+            "--structure-max-transitions-per-state",
+            option_value,
+        )
+
+        assert result.exitcode == 2
+        assert "Error:" in result.stderr
+        assert "Traceback" not in result.stderr
+
+    @pytest.mark.parametrize(
+        "option_value",
+        ["-1", "nan", "inf", "1.1"],
+    )
+    def test_inspect_rejects_invalid_structure_rate_threshold(
+        self, inspect_code_file, option_value
+    ):
+        result = _run_inspect(
+            "-i",
+            inspect_code_file,
+            "--format",
+            "json",
+            "--structure-max-unreachable-leaf-rate",
+            option_value,
+        )
+
+        assert result.exitcode == 2
+        assert "Error:" in result.stderr
+        assert "Traceback" not in result.stderr
+
     def test_inspect_enable_verify_reports_structural_coverage(self, inspect_code_file):
         result = _run_inspect(
             "-i",

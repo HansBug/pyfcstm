@@ -1444,6 +1444,7 @@ function buildStructureStatistics(
         const base = group[0];
         representatives.set(`combo:${origin}`, {
             ...base,
+            __sourceRange: base.__sourceRange,
             guard: group.find(item => item.guard !== null)?.guard ?? null,
             effect: group.find(item => item.effect !== null)?.effect ?? null,
             event: group.find(item => item.event !== null)?.event ?? null,
@@ -1663,12 +1664,6 @@ function buildStructureStatistics(
     if (sourceUnreachableKeys.size > 0) reasons.unreachable_source_state = sourceUnreachableKeys.size;
     if (eventUnreachableKeys.size > 0) reasons.unreachable_event_consumer = eventUnreachableKeys.size;
     for (const [reason, keys] of reasonKeys) reasons[reason] = keys.size;
-    let syntheticEventCount = 0;
-    for (const diagnostic of diagnostics) {
-        if (diagnostic.code !== 'W_EVENT_UNREACHABLE_EMIT') continue;
-        const count = diagnostic.refs.consumer_count;
-        if (typeof count === 'number' && count > 0 && eventUnreachableKeys.size === 0) syntheticEventCount += count;
-    }
     const stateCount = nonPseudo.length;
     const transitionCount = authored.length;
     const unreachableTransitionCount = (() => {
@@ -1676,7 +1671,7 @@ function buildStructureStatistics(
         for (const keys of reasonKeys.values()) {
             for (const key of keys) allKeys.add(key);
         }
-        return allKeys.size + syntheticEventCount;
+        return allKeys.size;
     })();
     const transitionsPerState = rate(transitionCount, stateCount);
     const unreachableLeafStateRate = rate(unreachableLeafPaths.size, leaf.length);

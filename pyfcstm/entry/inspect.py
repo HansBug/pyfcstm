@@ -37,6 +37,7 @@ Examples::
 from __future__ import annotations
 
 import json
+import math
 import os
 import pathlib
 import sys
@@ -74,6 +75,32 @@ _INSPECT_COMPLEXITY_CHOICES = tuple(COMPLEXITY_TIER_ORDER)
 _INSPECT_CALL_COUNT_CHOICES = tuple(CALL_COUNT_SCALING_ORDER)
 _INSPECT_OUTPUT_FORMAT_CHOICES = ("human", "json", "llm-json", "llm-md")
 _INSPECT_COLOR_CHOICES = ("auto", "always", "never")
+
+
+class _FiniteNonNegativeFloat(click.ParamType):
+    """Click type for finite non-negative float policy values."""
+
+    name = "float"
+
+    def __init__(self, maximum: Optional[float] = None) -> None:
+        self.maximum = maximum
+
+    def convert(self, value, param, ctx):
+        try:
+            converted = float(value)
+        except (TypeError, ValueError):
+            self.fail("must be a number", param, ctx)
+        if not math.isfinite(converted):
+            self.fail("must be finite", param, ctx)
+        if converted < 0:
+            self.fail("must be non-negative", param, ctx)
+        if self.maximum is not None and converted > self.maximum:
+            self.fail(f"must be less than or equal to {self.maximum:g}", param, ctx)
+        return converted
+
+
+_STRUCTURE_COUNT_THRESHOLD = _FiniteNonNegativeFloat()
+_STRUCTURE_RATE_THRESHOLD = _FiniteNonNegativeFloat(maximum=1.0)
 
 
 def _read_inspect_source_text(input_code_file: str) -> str:
@@ -748,21 +775,21 @@ def _add_inspect_subcommand(cli: click.Group) -> click.Group:
     )
     @click.option(
         "--structure-max-transitions-per-state",
-        type=float,
+        type=_STRUCTURE_COUNT_THRESHOLD,
         default=DEFAULT_STRUCTURE_MAX_TRANSITIONS_PER_STATE,
         show_default=True,
         help="Advisory maximum authored transitions per non-pseudo state.",
     )
     @click.option(
         "--structure-max-unreachable-leaf-rate",
-        type=click.FloatRange(min=0, max=1),
+        type=_STRUCTURE_RATE_THRESHOLD,
         default=DEFAULT_STRUCTURE_MAX_UNREACHABLE_LEAF_STATE_RATE,
         show_default=True,
         help="Advisory maximum unreachable leaf-state rate.",
     )
     @click.option(
         "--structure-max-unreachable-transition-rate",
-        type=click.FloatRange(min=0, max=1),
+        type=_STRUCTURE_RATE_THRESHOLD,
         default=DEFAULT_STRUCTURE_MAX_UNREACHABLE_TRANSITION_RATE,
         show_default=True,
         help="Advisory maximum unreachable authored-transition rate.",

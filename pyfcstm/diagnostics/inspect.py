@@ -2038,17 +2038,10 @@ def _build_structure_statistics(
         reasons["unreachable_event_consumer"] = len(event_unreachable_keys)
     for reason, keys in reason_keys.items():
         reasons[reason] = len(keys)
-    synthetic_event_count = 0
-    for diagnostic in diagnostics:
-        if diagnostic.code != "W_EVENT_UNREACHABLE_EMIT":
-            continue
-        count = diagnostic.refs.get("consumer_count", 0)
-        if isinstance(count, int) and count > 0 and not event_unreachable_keys:
-            synthetic_event_count += count
     all_unreachable_keys = set(source_unreachable_keys | event_unreachable_keys)
     for keys in reason_keys.values():
         all_unreachable_keys.update(keys)
-    unreachable_transition_count = len(all_unreachable_keys) + synthetic_event_count
+    unreachable_transition_count = len(all_unreachable_keys)
 
     state_count = len(non_pseudo_states)
     transition_count = len(authored_transitions)

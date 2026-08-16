@@ -351,6 +351,25 @@ class TestInspectModelBasic:
         assert stats is not None
         assert stats.authored_transition_count == 0
 
+    def test_structure_statistics_do_not_count_excluded_event_initial_edges(self):
+        report = inspect_model(_parse(
+            """
+            state Root {
+                state Live;
+                state Orphan {
+                    event Boot;
+                    state A;
+                    [*] -> A : Boot;
+                }
+                [*] -> Live;
+            }
+            """
+        ), enable_verify=True)
+        stats = report.structure_statistics
+        assert stats.authored_transition_count == 0
+        assert stats.unreachable_transitions == 0
+        assert stats.unreachable_transition_reasons == {}
+
 
 @pytest.mark.unittest
 class TestInspectModelViews:

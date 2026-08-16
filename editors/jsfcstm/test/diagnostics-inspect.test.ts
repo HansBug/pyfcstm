@@ -739,6 +739,43 @@ state Root {
             });
         });
 
+        it('does not count excluded event-bearing initial edges', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Live;
+    state Orphan {
+        event Boot;
+        state A;
+        [*] -> A : Boot;
+    }
+    [*] -> Live;
+}
+`), {
+                enableVerify: true,
+            });
+            assert.equal(report.structure_statistics.authored_transition_count, 0);
+            assert.equal(report.structure_statistics.unreachable_transitions, 0);
+            assert.deepEqual(report.structure_statistics.unreachable_transition_reasons, {});
+        });
+
+        it('maps duplicate authored combo transitions to the redundant bucket', async () => {
+            const report = inspectModel(await buildMachine(`
+def int x = 1;
+state Root {
+    state A;
+    state B;
+    [*] -> A;
+    A -> B :: E1 + [x > 0] + E2;
+    A -> B :: E1 + [x > 0] + E2;
+}
+`));
+            assert.equal(report.structure_statistics.authored_transition_count, 2);
+            assert.equal(report.structure_statistics.unreachable_transitions, 1);
+            assert.deepEqual(report.structure_statistics.unreachable_transition_reasons, {
+                redundant: 1,
+            });
+        });
+
         it('counts forced declarations with no concrete expansion', async () => {
             const report = inspectModel(await buildMachine(`
 state Root {

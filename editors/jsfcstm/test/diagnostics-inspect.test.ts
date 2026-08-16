@@ -882,6 +882,21 @@ state Root {
             assert.equal((diagnostics[0].refs.combo_origin_ids as string[]).length, 1);
         });
 
+        it('keeps authored combo exit transitions on the exit endpoint', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Active;
+    state Orphan;
+    [*] -> Active;
+    Orphan -> [*] :: E1 + E2;
+}
+`));
+            const diagnostics = report.diagnostics.filter(d => d.code === 'W_UNREACHABLE_TRANSITION');
+            assert.equal(diagnostics.length, 1);
+            assert.equal(diagnostics[0].refs.from_path, 'Root.Orphan');
+            assert.equal(diagnostics[0].refs.to_path, '[*]');
+        });
+
         it('canonicalizes combo effect provenance like pyfcstm', async () => {
             const report = inspectModel(await buildMachine(`
 def int x = 0;

@@ -200,7 +200,7 @@ def _unreachable_transition_diagnostics(
                         'reason': 'source_unreachable',
                         'verification_scope': 'topological_only',
                         'from_path': '[*]' if source_state_path is None else lookup_path,
-                        'to_path': '[*]' if origin_id.endswith('->__exit__') else _combo_target_path(origin_id),
+                        'to_path': _combo_target_path(origin_id),
                         'source_state_path': source_state_path,
                         'selection_owner_path': selection_owner_path,
                         'transition_index': None,

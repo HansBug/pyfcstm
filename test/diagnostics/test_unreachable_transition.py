@@ -157,6 +157,24 @@ def test_combo_relays_emit_one_authored_transition_finding():
     assert len(diagnostics[0].refs['combo_origin_ids']) == 1
 
 
+def test_combo_exit_uses_exit_endpoint_for_authored_transition():
+    report = _inspect(
+        '''
+        state Root {
+            state Active;
+            state Orphan;
+            [*] -> Active;
+            Orphan -> [*] :: E1 + E2;
+        }
+        '''
+    )
+
+    diagnostics = _unreachable_transitions(report)
+    assert len(diagnostics) == 1
+    assert diagnostics[0].refs['from_path'] == 'Root.Orphan'
+    assert diagnostics[0].refs['to_path'] == '[*]'
+
+
 def test_shared_combo_prefix_keeps_each_authored_origin_separate():
     report = _inspect(
         '''

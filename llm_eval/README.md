@@ -155,14 +155,25 @@ fixtures, for 12 total cases.
 The guide metadata recorded with those reports was:
 
 - resource name: `fcstm_grammar_guide.md`
-- guide SHA-256:
+- guide SHA-256 in the historical reports:
   `1508e493b210348b06ec0d4b033c643a1a50e465530b568c701555174e0cb859`
-- guide line count: 338
-- guide chapter count: 15
+- guide line count in the historical reports: 338
+- guide chapter count in the historical reports: 15
 
-If the guide changes, the SHA-256 in new reports should change too. Old reports
-remain useful as historical evidence, but new PR claims should be backed by
-fresh replay or live reports generated from the current guide.
+The current guide is `pyfcstm/llm/fcstm_grammar_guide.md` with SHA-256
+`88ab73d036fd64fc01a22e52c1c10135dd6a32c9664d89b74fca716c901a95bb`, 599
+lines, and 16 chapters. The change adds declaration documentation syntax, so
+the checked-in reports above are retained as historical evidence and are not
+claimed as validation of documentation generation. Fresh replay or live
+reports generated from the current guide are required for any new guide-quality
+claim.
+
+The `llm_eval/fixtures/` corpus currently contains no documentation blocks;
+therefore no fixture or provider output is regenerated for this syntax change.
+This is intentional: the corpus tests model generation tasks, while ownership
+and canonical rendering of documentation are covered by the independent DSL
+and jsfcstm test suites. A future LLM evaluation that exercises documentation
+must add a task-oriented fixture and new reports with the current guide hash.
 
 ## Provider CLI Contract
 

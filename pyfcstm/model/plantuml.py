@@ -35,6 +35,7 @@ Example::
 from dataclasses import dataclass
 from typing import Optional, Tuple, TYPE_CHECKING, Union, Dict, List
 
+
 try:
     from typing import Literal
 except ImportError:
@@ -291,7 +292,7 @@ def format_action_text(action: 'Union[OnStage, OnAspect]', config: 'PlantUMLOpti
     """
     # Convert action to AST node and get text representation
     ast_node = action.to_ast_node()
-    action_text = str(ast_node)
+    action_text = str(ast_node.without_docs())
 
     # Apply abstract marker if needed
     if action.is_abstract:
@@ -1194,4 +1195,3 @@ def assign_event_colors(event_map: Dict[str, List], custom_colors: Optional[dict
             color_index += 1
 
     return event_colors
-

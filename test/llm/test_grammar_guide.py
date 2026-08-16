@@ -285,6 +285,7 @@ def test_grammar_guide_prompt_metadata_is_deterministic():
     metadata = llm.get_grammar_guide_prompt_metadata_for_llm()
     expected_sections = {
         "## Output Contract",
+        "## Documentation Blocks",
         "## Top-Level Structure",
         "## State Definitions",
         "## Transitions",

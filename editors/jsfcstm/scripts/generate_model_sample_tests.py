@@ -180,6 +180,7 @@ def _normalize_transition(transition: Transition) -> Dict[str, Any]:
         "guard": _normalize_expr(transition.guard) if transition.guard is not None else None,
         "effects": [_normalize_statement(item) for item in transition.effects],
         "parent": _path_name(transition.parent.path) if transition.parent is not None else None,
+        "doc": transition.doc,
     }
 
 
@@ -190,6 +191,7 @@ def _normalize_event(event: Event) -> Dict[str, Any]:
         "path": list(event.path),
         "path_name": event.path_name,
         "extra_name": event.extra_name,
+        "doc": event.doc,
     }
 
 
@@ -242,6 +244,7 @@ def _normalize_state(state: State) -> Dict[str, Any]:
         ],
         "substate_name_to_id": dict(state.substate_name_to_id),
         "extra_name": state.extra_name,
+        "doc": state.doc,
         "is_pseudo": state.is_pseudo,
         "is_leaf_state": state.is_leaf_state,
         "is_root_state": state.is_root_state,
@@ -419,6 +422,7 @@ def _normalize_ast_transition(transition: dsl_nodes.TransitionDefinition) -> Dic
         "post_operations": [
             _normalize_ast_operation(item) for item in transition.post_operations
         ],
+        "doc": transition.doc,
     }
 
 
@@ -427,11 +431,13 @@ def _normalize_ast_state(state: dsl_nodes.StateDefinition) -> Dict[str, Any]:
         "__class__": "StateDefinition",
         "name": state.name,
         "extra_name": state.extra_name,
+        "doc": state.doc,
         "events": [
             {
                 "__class__": "EventDefinition",
                 "name": item.name,
                 "extra_name": item.extra_name,
+                "doc": item.doc,
             }
             for item in state.events
         ],
@@ -460,6 +466,7 @@ def _normalize_ast_program(
                 "name": item.name,
                 "type": item.type,
                 "expr": _normalize_ast_expr(item.expr),
+                "doc": item.doc,
             }
             for item in program.definitions
         ],
@@ -481,6 +488,7 @@ def _normalize_model(model) -> Dict[str, Any]:
             name: {
                 "type": definition.type,
                 "init": _normalize_expr(definition.init),
+                "doc": definition.doc,
             }
             for name, definition in sorted(model.defines.items(), key=lambda x: x[0])
         },

@@ -79,8 +79,8 @@ def state_l1_l22(state_l1):
 class TestModelStateL1:
     def test_model(self, model):
         assert model.defines == {
-            "x": VarDefine(name="x", type="int", init=Integer(value=0)),
-            "y": VarDefine(name="y", type="int", init=Integer(value=0)),
+            "x": VarDefine(name="x", type="int", init=Integer(value=0), doc=None),
+            "y": VarDefine(name="y", type="int", init=Integer(value=0), doc=None),
         }
         assert model.root_state.name == "L1"
         assert model.root_state.path == ("L1",)
@@ -89,10 +89,10 @@ class TestModelStateL1:
         ast_node = model.to_ast_node()
         assert ast_node.definitions == [
             dsl_nodes.DefAssignment(
-                name="x", type="int", expr=dsl_nodes.Integer(raw="0")
+                name="x", type="int", expr=dsl_nodes.Integer(raw="0"), doc=None
             ),
             dsl_nodes.DefAssignment(
-                name="y", type="int", expr=dsl_nodes.Integer(raw="0")
+                name="y", type="int", expr=dsl_nodes.Integer(raw="0"), doc=None
             ),
         ]
         assert ast_node.root_state.name == "L1"
@@ -108,6 +108,7 @@ class TestModelStateL1:
         assert state_l1.transitions[0].event is None
         assert state_l1.transitions[0].guard is None
         assert state_l1.transitions[0].effects == []
+        assert state_l1.transitions[0].doc is None
         assert state_l1.transitions[0].parent_ref().name == "L1"
         assert state_l1.transitions[0].parent_ref().path == ("L1",)
         assert state_l1.transitions[1].from_state == "L21"
@@ -117,6 +118,7 @@ class TestModelStateL1:
             x=Variable(name="x"), op=">", y=Integer(value=0)
         )
         assert state_l1.transitions[1].effects == []
+        assert state_l1.transitions[1].doc is None
         assert state_l1.transitions[1].parent_ref().name == "L1"
         assert state_l1.transitions[1].parent_ref().path == ("L1",)
         assert sorted(state_l1.named_functions.keys()) == ["F1", "F12", "F13", "F1x"]
@@ -300,6 +302,7 @@ class TestModelStateL1:
         assert state_l1.substate_name_to_id == {"L21": 0, "L22": 1}
         assert state_l1.extra_name is None
         assert not state_l1.is_pseudo
+        assert state_l1.doc is None
         assert state_l1.abstract_on_during_aspects == []
         assert len(state_l1.abstract_on_durings) == 1
         assert state_l1.abstract_on_durings[0].stage == "during"
@@ -342,6 +345,7 @@ class TestModelStateL1:
         assert state_l1.init_transitions[0].event is None
         assert state_l1.init_transitions[0].guard is None
         assert state_l1.init_transitions[0].effects == []
+        assert state_l1.init_transitions[0].doc is None
         assert state_l1.init_transitions[0].parent_ref().name == "L1"
         assert state_l1.init_transitions[0].parent_ref().path == ("L1",)
         assert not state_l1.is_leaf_state
@@ -446,6 +450,7 @@ class TestModelStateL1:
         assert state_l1.transitions_entering_children[0].event is None
         assert state_l1.transitions_entering_children[0].guard is None
         assert state_l1.transitions_entering_children[0].effects == []
+        assert state_l1.transitions_entering_children[0].doc is None
         assert state_l1.transitions_entering_children[0].parent_ref().name == "L1"
         assert state_l1.transitions_entering_children[0].parent_ref().path == ("L1",)
         assert len(state_l1.transitions_entering_children_simplified) == 1
@@ -457,6 +462,7 @@ class TestModelStateL1:
         assert state_l1.transitions_entering_children_simplified[0].event is None
         assert state_l1.transitions_entering_children_simplified[0].guard is None
         assert state_l1.transitions_entering_children_simplified[0].effects == []
+        assert state_l1.transitions_entering_children_simplified[0].doc is None
         assert (
             state_l1.transitions_entering_children_simplified[0].parent_ref().name
             == "L1"
@@ -470,6 +476,7 @@ class TestModelStateL1:
         assert state_l1.transitions_from[0].event is None
         assert state_l1.transitions_from[0].guard is None
         assert state_l1.transitions_from[0].effects == []
+        assert state_l1.transitions_from[0].doc is None
         assert state_l1.transitions_from[0].parent_ref is None
         assert len(state_l1.transitions_to) == 1
         assert state_l1.transitions_to[0].from_state == INIT_STATE
@@ -477,6 +484,7 @@ class TestModelStateL1:
         assert state_l1.transitions_to[0].event is None
         assert state_l1.transitions_to[0].guard is None
         assert state_l1.transitions_to[0].effects == []
+        assert state_l1.transitions_to[0].doc is None
         assert state_l1.transitions_to[0].parent_ref is None
 
     def test_state_l1_to_ast_node(self, state_l1):
@@ -510,6 +518,7 @@ class TestModelStateL1:
                                 ),
                             ],
                             name="F1",
+                            doc=None,
                         )
                     ],
                     durings=[],
@@ -517,11 +526,13 @@ class TestModelStateL1:
                         dsl_nodes.ExitRefFunction(
                             name=None,
                             ref=dsl_nodes.ChainID(path=["F1x"], is_absolute=True),
+                            doc=None,
                         )
                     ],
                     during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
+                    doc=None,
                 ),
                 dsl_nodes.StateDefinition(
                     name="L22",
@@ -534,6 +545,7 @@ class TestModelStateL1:
                         dsl_nodes.EnterRefFunction(
                             name=None,
                             ref=dsl_nodes.ChainID(path=["F1x"], is_absolute=True),
+                            doc=None,
                         )
                     ],
                     durings=[
@@ -541,11 +553,13 @@ class TestModelStateL1:
                             name=None,
                             aspect=None,
                             ref=dsl_nodes.ChainID(path=["F1x"], is_absolute=True),
+                            doc=None,
                         ),
                         dsl_nodes.DuringRefFunction(
                             name=None,
                             aspect=None,
                             ref=dsl_nodes.ChainID(path=["F1"], is_absolute=False),
+                            doc=None,
                         ),
                     ],
                     exits=[
@@ -564,15 +578,18 @@ class TestModelStateL1:
                                 ),
                             ],
                             name="F1",
+                            doc=None,
                         ),
                         dsl_nodes.ExitRefFunction(
                             name=None,
                             ref=dsl_nodes.ChainID(path=["F1"], is_absolute=True),
+                            doc=None,
                         ),
                     ],
                     during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
+                    doc=None,
                 ),
             ],
             transitions=[
@@ -582,6 +599,7 @@ class TestModelStateL1:
                     event_id=None,
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="L21",
@@ -593,6 +611,7 @@ class TestModelStateL1:
                         expr2=dsl_nodes.Integer(raw="0"),
                     ),
                     post_operations=[],
+                    doc=None,
                 ),
             ],
             enters=[dsl_nodes.EnterAbstractFunction(name="F1", doc=None)],
@@ -605,12 +624,15 @@ class TestModelStateL1:
                         )
                     ],
                     name="F12",
+                    doc=None,
                 ),
                 dsl_nodes.DuringAbstractFunction(name="F13", aspect="after", doc=None),
             ],
             exits=[
                 dsl_nodes.ExitRefFunction(
-                    name="F1x", ref=dsl_nodes.ChainID(path=["F1"], is_absolute=False)
+                    name="F1x",
+                    ref=dsl_nodes.ChainID(path=["F1"], is_absolute=False),
+                    doc=None,
                 )
             ],
             during_aspects=[
@@ -618,15 +640,18 @@ class TestModelStateL1:
                     name=None,
                     aspect="before",
                     ref=dsl_nodes.ChainID(path=["L21", "F1"], is_absolute=False),
+                    doc=None,
                 ),
                 dsl_nodes.DuringAspectRefFunction(
                     name=None,
                     aspect="after",
                     ref=dsl_nodes.ChainID(path=["L22", "F1"], is_absolute=False),
+                    doc=None,
                 ),
             ],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_l1_list_on_enters(self, state_l1):
@@ -1019,6 +1044,7 @@ class TestModelStateL1:
         assert state_l1_l21.substate_name_to_id == {}
         assert state_l1_l21.extra_name is None
         assert not state_l1_l21.is_pseudo
+        assert state_l1_l21.doc is None
         assert state_l1_l21.abstract_on_during_aspects == []
         assert state_l1_l21.abstract_on_durings == []
         assert state_l1_l21.abstract_on_enters == []
@@ -1084,6 +1110,7 @@ class TestModelStateL1:
             x=Variable(name="x"), op=">", y=Integer(value=0)
         )
         assert state_l1_l21.transitions_from[0].effects == []
+        assert state_l1_l21.transitions_from[0].doc is None
         assert state_l1_l21.transitions_from[0].parent_ref().name == "L1"
         assert state_l1_l21.transitions_from[0].parent_ref().path == ("L1",)
         assert len(state_l1_l21.transitions_to) == 1
@@ -1092,6 +1119,7 @@ class TestModelStateL1:
         assert state_l1_l21.transitions_to[0].event is None
         assert state_l1_l21.transitions_to[0].guard is None
         assert state_l1_l21.transitions_to[0].effects == []
+        assert state_l1_l21.transitions_to[0].doc is None
         assert state_l1_l21.transitions_to[0].parent_ref().name == "L1"
         assert state_l1_l21.transitions_to[0].parent_ref().path == ("L1",)
 
@@ -1120,17 +1148,21 @@ class TestModelStateL1:
                         ),
                     ],
                     name="F1",
+                    doc=None,
                 )
             ],
             durings=[],
             exits=[
                 dsl_nodes.ExitRefFunction(
-                    name=None, ref=dsl_nodes.ChainID(path=["F1x"], is_absolute=True)
+                    name=None,
+                    ref=dsl_nodes.ChainID(path=["F1x"], is_absolute=True),
+                    doc=None,
                 )
             ],
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_l1_l21_list_on_enters(self, state_l1_l21):
@@ -1554,6 +1586,7 @@ class TestModelStateL1:
         assert state_l1_l22.substate_name_to_id == {}
         assert state_l1_l22.extra_name is None
         assert not state_l1_l22.is_pseudo
+        assert state_l1_l22.doc is None
         assert state_l1_l22.abstract_on_during_aspects == []
         assert state_l1_l22.abstract_on_durings == []
         assert state_l1_l22.abstract_on_enters == []
@@ -1688,6 +1721,7 @@ class TestModelStateL1:
             x=Variable(name="x"), op=">", y=Integer(value=0)
         )
         assert state_l1_l22.transitions_to[0].effects == []
+        assert state_l1_l22.transitions_to[0].doc is None
         assert state_l1_l22.transitions_to[0].parent_ref().name == "L1"
         assert state_l1_l22.transitions_to[0].parent_ref().path == ("L1",)
 
@@ -1702,7 +1736,9 @@ class TestModelStateL1:
             transitions=[],
             enters=[
                 dsl_nodes.EnterRefFunction(
-                    name=None, ref=dsl_nodes.ChainID(path=["F1x"], is_absolute=True)
+                    name=None,
+                    ref=dsl_nodes.ChainID(path=["F1x"], is_absolute=True),
+                    doc=None,
                 )
             ],
             durings=[
@@ -1710,11 +1746,13 @@ class TestModelStateL1:
                     name=None,
                     aspect=None,
                     ref=dsl_nodes.ChainID(path=["F1x"], is_absolute=True),
+                    doc=None,
                 ),
                 dsl_nodes.DuringRefFunction(
                     name=None,
                     aspect=None,
                     ref=dsl_nodes.ChainID(path=["F1"], is_absolute=False),
+                    doc=None,
                 ),
             ],
             exits=[
@@ -1733,14 +1771,18 @@ class TestModelStateL1:
                         ),
                     ],
                     name="F1",
+                    doc=None,
                 ),
                 dsl_nodes.ExitRefFunction(
-                    name=None, ref=dsl_nodes.ChainID(path=["F1"], is_absolute=True)
+                    name=None,
+                    ref=dsl_nodes.ChainID(path=["F1"], is_absolute=True),
+                    doc=None,
                 ),
             ],
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_l1_l22_list_on_enters(self, state_l1_l22):

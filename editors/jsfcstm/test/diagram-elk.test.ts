@@ -619,7 +619,10 @@ describe('jsfcstm ELK-based diagram pipeline', () => {
         );
     });
 
-    it('routes every non-self arrow into its target border along a visible outward normal', async () => {
+    it('routes every non-self arrow into its target border along a visible outward normal', async function () {
+        // This fixture walks every visual sample and is intentionally allowed
+        // more than Mocha's 2s default under a loaded coverage process.
+        this.timeout(10000);
         const fixtureDir = path.join(__dirname, 'fixtures', 'visual');
         const fixtureNames = fs.readdirSync(fixtureDir)
             .filter(name => name.endsWith('.fcstm'))

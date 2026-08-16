@@ -161,6 +161,43 @@ class TestStateDefinitionSpan:
         assert leaf._span.column == start_idx + 1
         assert _slice_by_span(src, leaf._span) == "state Inner;"
 
+    def test_leading_documentation_is_outside_owner_spans(self):
+        src = (
+            "/* definition docs */\n"
+            "def int counter = 0;\n"
+            "/* root docs */\n"
+            "state Root {\n"
+            "    /* child docs */\n"
+            "    state Child;\n"
+            "    /* event docs */\n"
+            "    event Go;\n"
+            "    /* action docs */\n"
+            "    enter abstract Hook;\n"
+            "    /* transition docs */\n"
+            "    [*] -> Child :: Go;\n"
+            "    /* force docs */\n"
+            "    !* -> Child :: Go;\n"
+            "}"
+        )
+        ast = parse_with_grammar_entry(src, "state_machine_dsl")
+
+        assert _slice_by_span(src, ast.definitions[0]._span) == "def int counter = 0;"
+        assert _slice_by_span(src, ast.root_state._span).startswith("state Root")
+        assert _slice_by_span(src, ast.root_state.substates[0]._span) == "state Child;"
+        assert _slice_by_span(src, ast.root_state.events[0]._span) == "event Go;"
+        assert (
+            _slice_by_span(src, ast.root_state.enters[0]._span)
+            == "enter abstract Hook;"
+        )
+        assert (
+            _slice_by_span(src, ast.root_state.transitions[0]._span)
+            == "[*] -> Child :: Go;"
+        )
+        assert (
+            _slice_by_span(src, ast.root_state.force_transitions[0]._span)
+            == "!* -> Child :: Go;"
+        )
+
 
 @pytest.mark.unittest
 class TestTransitionDefinitionSpan:

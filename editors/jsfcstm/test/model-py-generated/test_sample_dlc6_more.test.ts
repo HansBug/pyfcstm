@@ -4,7 +4,7 @@ import {runPyGeneratedModelCase} from "./support";
 runPyGeneratedModelCase({
     name: "dlc6_more.fcstm",
     relativeSourcePath: "dlc6_more.fcstm",
-    source: "def int x = 0;\ndef int y = 0;\nstate L1 {\n    enter abstract F1;\n    during before F12 {\n        x = 1;\n    }\n    during after abstract F13;\n    exit F1x ref F1;\n    >> during before ref L21.F1;\n    >> during after ref L22.F1;\n    state L21 {\n        enter F1 {\n            x = 0;\n            y = y + 1;\n        }\n        exit ref /F1x;\n        >> during after ref /F1x;\n    }\n    state L22 {\n        enter ref /F1x;\n        during ref /F1x;\n        during ref F1;\n        exit F1 {\n            x = x + 1;\n            y = 0;\n        }\n        exit ref /F1;\n    }\n    [*] -> L21;\n    L21 -> L22 : if [x > 0];\n}",
+    source: "def int x = 0;\ndef int y = 0;\nstate L1 {\n    enter abstract F1;\n    during before F12 {\n        x = 1;\n    }\n    during after abstract F13;\n    exit F1x ref F1;\n    >> during before ref L21.F1;\n    >> during after ref L22.F1;\n    state L21 {\n        enter F1 {\n            x = 0;\n            y = y + 1;\n        }\n        exit ref /F1x;\n    }\n    state L22 {\n        enter ref /F1x;\n        during ref /F1x;\n        during ref F1;\n        exit F1 {\n            x = x + 1;\n            y = 0;\n        }\n        exit ref /F1;\n    }\n    [*] -> L21;\n    L21 -> L22 : if [x > 0];\n}",
     expected: {
     "defines": {
         "x": {
@@ -12,14 +12,16 @@ runPyGeneratedModelCase({
             "init": {
                 "type": "Integer",
                 "value": 0
-            }
+            },
+            "doc": null
         },
         "y": {
             "type": "int",
             "init": {
                 "type": "Integer",
                 "value": 0
-            }
+            },
+            "doc": null
         }
     },
     "root_state": "L1",
@@ -37,7 +39,6 @@ runPyGeneratedModelCase({
         "L1.<unnamed>",
         "L1.<unnamed>",
         "L1.L21.F1",
-        "L1.L21.<unnamed>",
         "L1.L21.<unnamed>",
         "L1.L22.<unnamed>",
         "L1.L22.<unnamed>",
@@ -64,7 +65,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "L1"
+                    "parent": "L1",
+                    "doc": null
                 },
                 {
                     "from_state": "L21",
@@ -83,7 +85,8 @@ runPyGeneratedModelCase({
                         }
                     },
                     "effects": [],
-                    "parent": "L1"
+                    "parent": "L1",
+                    "doc": null
                 }
             ],
             "named_functions": {
@@ -333,6 +336,7 @@ runPyGeneratedModelCase({
                 "L22": 1
             },
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": false,
             "is_root_state": true,
@@ -363,7 +367,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "L1"
+                    "parent": "L1",
+                    "doc": null
                 }
             ],
             "transitions_from": [
@@ -373,7 +378,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": null
+                    "parent": null,
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -383,7 +389,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": null
+                    "parent": null,
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [
@@ -393,7 +400,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "L1"
+                    "parent": "L1",
+                    "doc": null
                 }
             ],
             "transitions_entering_children_simplified": [
@@ -403,7 +411,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "L1"
+                    "parent": "L1",
+                    "doc": null
                 }
             ],
             "list_on_enters": [
@@ -631,34 +640,10 @@ runPyGeneratedModelCase({
                     "ref_target_qualified_name": "L1.F1x"
                 }
             ],
-            "on_during_aspects": [
-                {
-                    "type": "OnAspect",
-                    "stage": "during",
-                    "aspect": "after",
-                    "name": null,
-                    "doc": null,
-                    "operations": [],
-                    "is_abstract": false,
-                    "is_ref": true,
-                    "is_aspect": true,
-                    "state_path": [
-                        "L1",
-                        "L21",
-                        null
-                    ],
-                    "func_name": "L1.L21.<unnamed>",
-                    "parent": "L1.L21",
-                    "ref_state_path": [
-                        "L1",
-                        "F1x"
-                    ],
-                    "ref_resolved": true,
-                    "ref_target_qualified_name": "L1.F1x"
-                }
-            ],
+            "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -674,9 +659,7 @@ runPyGeneratedModelCase({
                 "L1.L21.<unnamed>"
             ],
             "abstract_on_during_aspects": [],
-            "non_abstract_on_during_aspects": [
-                "L1.L21.<unnamed>"
-            ],
+            "non_abstract_on_during_aspects": [],
             "init_transitions": [],
             "transitions_from": [
                 {
@@ -696,7 +679,8 @@ runPyGeneratedModelCase({
                         }
                     },
                     "effects": [],
-                    "parent": "L1"
+                    "parent": "L1",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -706,7 +690,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "L1"
+                    "parent": "L1",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -733,23 +718,12 @@ runPyGeneratedModelCase({
                     "L1.L21.<unnamed>"
                 ]
             ],
-            "list_on_during_aspects": [
-                "L1.L21.<unnamed>"
-            ],
-            "list_on_during_aspects_with_ids": [
-                [
-                    1,
-                    "L1.L21.<unnamed>"
-                ]
-            ],
+            "list_on_during_aspects": [],
+            "list_on_during_aspects_with_ids": [],
             "list_on_during_aspect_recursively": [
                 [
                     "L1",
                     "L1.<unnamed>"
-                ],
-                [
-                    "L1.L21",
-                    "L1.L21.<unnamed>"
                 ],
                 [
                     "L1",
@@ -761,11 +735,6 @@ runPyGeneratedModelCase({
                     1,
                     "L1",
                     "L1.<unnamed>"
-                ],
-                [
-                    1,
-                    "L1.L21",
-                    "L1.L21.<unnamed>"
                 ],
                 [
                     2,
@@ -987,6 +956,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -1027,7 +997,8 @@ runPyGeneratedModelCase({
                         }
                     },
                     "effects": [],
-                    "parent": "L1"
+                    "parent": "L1",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -1128,7 +1099,8 @@ runPyGeneratedModelCase({
                 "expr": {
                     "__class__": "Integer",
                     "raw": "0"
-                }
+                },
+                "doc": null
             },
             {
                 "__class__": "DefAssignment",
@@ -1137,19 +1109,22 @@ runPyGeneratedModelCase({
                 "expr": {
                     "__class__": "Integer",
                     "raw": "0"
-                }
+                },
+                "doc": null
             }
         ],
         "root_state": {
             "__class__": "StateDefinition",
             "name": "L1",
             "extra_name": null,
+            "doc": null,
             "events": [],
             "substates": [
                 {
                     "__class__": "StateDefinition",
                     "name": "L21",
                     "extra_name": null,
+                    "doc": null,
                     "events": [],
                     "substates": [],
                     "transitions": [],
@@ -1205,28 +1180,14 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "during_aspects": [
-                        {
-                            "__class__": "DuringAspectRefFunction",
-                            "name": null,
-                            "aspect": "after",
-                            "doc": null,
-                            "operations": null,
-                            "ref": {
-                                "__class__": "ChainID",
-                                "path": [
-                                    "F1x"
-                                ],
-                                "is_absolute": true
-                            }
-                        }
-                    ],
+                    "during_aspects": [],
                     "is_pseudo": false
                 },
                 {
                     "__class__": "StateDefinition",
                     "name": "L22",
                     "extra_name": null,
+                    "doc": null,
                     "events": [],
                     "substates": [],
                     "transitions": [],
@@ -1336,7 +1297,8 @@ runPyGeneratedModelCase({
                     "to_state": "L21",
                     "event_id": null,
                     "condition_expr": null,
-                    "post_operations": []
+                    "post_operations": [],
+                    "doc": null
                 },
                 {
                     "__class__": "TransitionDefinition",
@@ -1355,7 +1317,8 @@ runPyGeneratedModelCase({
                             "raw": "0"
                         }
                     },
-                    "post_operations": []
+                    "post_operations": [],
+                    "doc": null
                 }
             ],
             "enters": [

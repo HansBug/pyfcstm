@@ -17,6 +17,52 @@ Every generated model must have:
 - one initial transition, `[*] -> Child;`, inside each composite state
 - only declared variables in guards and operation blocks
 
+## Documentation Blocks
+
+Supported declarations may carry one opaque documentation value: variable
+definitions, states (including the root and pseudo states), events,
+transitions, and lifecycle actions (`enter`, `during`, `exit`, and `>> during`
+aspects). Put a `/* ... */` block immediately before the declaration:
+
+```fcstm
+/* Number of retries allowed before entering the fault state. */
+def int retry_limit = 3;
+
+/* The module's top-level state. */
+state Controller {
+    [*] -> Ready;
+
+    /* A request has been accepted. */
+    state Ready;
+
+    state Idle;
+
+    /* Raised by the supervisor. */
+    event Reset;
+
+    /* Return to idle after reset. */
+    Ready -> Idle :: Reset;
+
+    /* Called by the generated runtime on entry. */
+    enter abstract OnReady;
+}
+```
+
+The canonical exporter writes every non-`None` value as a multiline block with
+an unconditional `*` margin. Documentation is metadata and must not be used
+to infer names, scopes, guards, events, or runtime behavior. Do not put a
+documentation block before imports or import mappings, operation statements,
+effect blocks, guard terms, or individual event terms. The existing trailing
+form for abstract lifecycle actions is also accepted, for example:
+`enter abstract OnReady /* Called by the generated runtime on entry. */;`.
+Do not use both leading and trailing forms for one action.
+
+Keep documentation opaque: it is not Markdown, has no tags or locale syntax,
+and should not be used as a second source of model facts. An unterminated
+`/*` at end of file is invalid. Terminators inside line comments or strings,
+and non-EOF swallowing in import lexer modes, are outside the supported guide
+contract.
+
 ## Top-Level Structure
 
 Variable definitions come before the root state:

@@ -31,14 +31,16 @@ runPyGeneratedModelCase({
             "init": {
                 "type": "Integer",
                 "value": 0
-            }
+            },
+            "doc": null
         },
         "host_ticks": {
             "type": "int",
             "init": {
                 "type": "Integer",
                 "value": 0
-            }
+            },
+            "doc": null
         }
     },
     "root_state": "Factory",
@@ -70,7 +72,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Factory"
+                    "parent": "Factory",
+                    "doc": null
                 }
             ],
             "named_functions": {},
@@ -82,6 +85,7 @@ runPyGeneratedModelCase({
                 "Line": 0
             },
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": false,
             "is_root_state": true,
@@ -101,7 +105,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Factory"
+                    "parent": "Factory",
+                    "doc": null
                 }
             ],
             "transitions_from": [
@@ -111,7 +116,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": null
+                    "parent": null,
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -121,7 +127,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": null
+                    "parent": null,
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [
@@ -131,7 +138,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Factory"
+                    "parent": "Factory",
+                    "doc": null
                 }
             ],
             "transitions_entering_children_simplified": [
@@ -141,7 +149,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Factory"
+                    "parent": "Factory",
+                    "doc": null
                 }
             ],
             "list_on_enters": [],
@@ -182,7 +191,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Factory.Line"
+                    "parent": "Factory.Line",
+                    "doc": null
                 },
                 {
                     "from_state": "Conveyor",
@@ -201,7 +211,8 @@ runPyGeneratedModelCase({
                         }
                     },
                     "effects": [],
-                    "parent": "Factory.Line"
+                    "parent": "Factory.Line",
+                    "doc": null
                 },
                 {
                     "from_state": "Robot",
@@ -220,7 +231,8 @@ runPyGeneratedModelCase({
                         }
                     },
                     "effects": [],
-                    "parent": "Factory.Line"
+                    "parent": "Factory.Line",
+                    "doc": null
                 }
             ],
             "named_functions": {},
@@ -233,6 +245,7 @@ runPyGeneratedModelCase({
                 "Robot": 1
             },
             "extra_name": "Assembly Line",
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": false,
             "is_root_state": false,
@@ -252,7 +265,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Factory.Line"
+                    "parent": "Factory.Line",
+                    "doc": null
                 }
             ],
             "transitions_from": [],
@@ -263,7 +277,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Factory"
+                    "parent": "Factory",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [
@@ -273,7 +288,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Factory.Line"
+                    "parent": "Factory.Line",
+                    "doc": null
                 }
             ],
             "transitions_entering_children_simplified": [
@@ -283,7 +299,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Factory.Line"
+                    "parent": "Factory.Line",
+                    "doc": null
                 }
             ],
             "list_on_enters": [],
@@ -323,7 +340,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Factory.Line.Conveyor"
+                    "parent": "Factory.Line.Conveyor",
+                    "doc": null
                 },
                 {
                     "from_state": "Feeding",
@@ -375,7 +393,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Factory.Line.Conveyor"
+                    "parent": "Factory.Line.Conveyor",
+                    "doc": null
                 }
             ],
             "named_functions": {},
@@ -387,6 +406,7 @@ runPyGeneratedModelCase({
                 "Feeding": 0
             },
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": false,
             "is_root_state": false,
@@ -406,7 +426,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Factory.Line.Conveyor"
+                    "parent": "Factory.Line.Conveyor",
+                    "doc": null
                 }
             ],
             "transitions_from": [
@@ -427,7 +448,8 @@ runPyGeneratedModelCase({
                         }
                     },
                     "effects": [],
-                    "parent": "Factory.Line"
+                    "parent": "Factory.Line",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -437,7 +459,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Factory.Line"
+                    "parent": "Factory.Line",
+                    "doc": null
                 },
                 {
                     "from_state": "Robot",
@@ -456,7 +479,8 @@ runPyGeneratedModelCase({
                         }
                     },
                     "effects": [],
-                    "parent": "Factory.Line"
+                    "parent": "Factory.Line",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [
@@ -466,7 +490,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Factory.Line.Conveyor"
+                    "parent": "Factory.Line.Conveyor",
+                    "doc": null
                 }
             ],
             "transitions_entering_children_simplified": [
@@ -476,7 +501,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Factory.Line.Conveyor"
+                    "parent": "Factory.Line.Conveyor",
+                    "doc": null
                 }
             ],
             "list_on_enters": [],
@@ -513,6 +539,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -577,7 +604,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Factory.Line.Conveyor"
+                    "parent": "Factory.Line.Conveyor",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -587,7 +615,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Factory.Line.Conveyor"
+                    "parent": "Factory.Line.Conveyor",
+                    "doc": null
                 },
                 {
                     "from_state": "Feeding",
@@ -639,7 +668,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Factory.Line.Conveyor"
+                    "parent": "Factory.Line.Conveyor",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -679,7 +709,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Factory.Line.Robot"
+                    "parent": "Factory.Line.Robot",
+                    "doc": null
                 },
                 {
                     "from_state": "Picking",
@@ -731,7 +762,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Factory.Line.Robot"
+                    "parent": "Factory.Line.Robot",
+                    "doc": null
                 }
             ],
             "named_functions": {},
@@ -743,6 +775,7 @@ runPyGeneratedModelCase({
                 "Picking": 0
             },
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": false,
             "is_root_state": false,
@@ -762,7 +795,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Factory.Line.Robot"
+                    "parent": "Factory.Line.Robot",
+                    "doc": null
                 }
             ],
             "transitions_from": [
@@ -783,7 +817,8 @@ runPyGeneratedModelCase({
                         }
                     },
                     "effects": [],
-                    "parent": "Factory.Line"
+                    "parent": "Factory.Line",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -804,7 +839,8 @@ runPyGeneratedModelCase({
                         }
                     },
                     "effects": [],
-                    "parent": "Factory.Line"
+                    "parent": "Factory.Line",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [
@@ -814,7 +850,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Factory.Line.Robot"
+                    "parent": "Factory.Line.Robot",
+                    "doc": null
                 }
             ],
             "transitions_entering_children_simplified": [
@@ -824,7 +861,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Factory.Line.Robot"
+                    "parent": "Factory.Line.Robot",
+                    "doc": null
                 }
             ],
             "list_on_enters": [],
@@ -861,6 +899,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -925,7 +964,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Factory.Line.Robot"
+                    "parent": "Factory.Line.Robot",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -935,7 +975,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Factory.Line.Robot"
+                    "parent": "Factory.Line.Robot",
+                    "doc": null
                 },
                 {
                     "from_state": "Picking",
@@ -987,7 +1028,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Factory.Line.Robot"
+                    "parent": "Factory.Line.Robot",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -1019,7 +1061,8 @@ runPyGeneratedModelCase({
                 "expr": {
                     "__class__": "Integer",
                     "raw": "0"
-                }
+                },
+                "doc": null
             },
             {
                 "__class__": "DefAssignment",
@@ -1028,31 +1071,36 @@ runPyGeneratedModelCase({
                 "expr": {
                     "__class__": "Integer",
                     "raw": "0"
-                }
+                },
+                "doc": null
             }
         ],
         "root_state": {
             "__class__": "StateDefinition",
             "name": "Factory",
             "extra_name": null,
+            "doc": null,
             "events": [],
             "substates": [
                 {
                     "__class__": "StateDefinition",
                     "name": "Line",
                     "extra_name": "Assembly Line",
+                    "doc": null,
                     "events": [],
                     "substates": [
                         {
                             "__class__": "StateDefinition",
                             "name": "Conveyor",
                             "extra_name": null,
+                            "doc": null,
                             "events": [],
                             "substates": [
                                 {
                                     "__class__": "StateDefinition",
                                     "name": "Feeding",
                                     "extra_name": null,
+                                    "doc": null,
                                     "events": [],
                                     "substates": [],
                                     "transitions": [],
@@ -1070,7 +1118,8 @@ runPyGeneratedModelCase({
                                     "to_state": "Feeding",
                                     "event_id": null,
                                     "condition_expr": null,
-                                    "post_operations": []
+                                    "post_operations": [],
+                                    "doc": null
                                 },
                                 {
                                     "__class__": "TransitionDefinition",
@@ -1122,7 +1171,8 @@ runPyGeneratedModelCase({
                                                 }
                                             }
                                         }
-                                    ]
+                                    ],
+                                    "doc": null
                                 }
                             ],
                             "enters": [],
@@ -1135,12 +1185,14 @@ runPyGeneratedModelCase({
                             "__class__": "StateDefinition",
                             "name": "Robot",
                             "extra_name": null,
+                            "doc": null,
                             "events": [],
                             "substates": [
                                 {
                                     "__class__": "StateDefinition",
                                     "name": "Picking",
                                     "extra_name": null,
+                                    "doc": null,
                                     "events": [],
                                     "substates": [],
                                     "transitions": [],
@@ -1158,7 +1210,8 @@ runPyGeneratedModelCase({
                                     "to_state": "Picking",
                                     "event_id": null,
                                     "condition_expr": null,
-                                    "post_operations": []
+                                    "post_operations": [],
+                                    "doc": null
                                 },
                                 {
                                     "__class__": "TransitionDefinition",
@@ -1210,7 +1263,8 @@ runPyGeneratedModelCase({
                                                 }
                                             }
                                         }
-                                    ]
+                                    ],
+                                    "doc": null
                                 }
                             ],
                             "enters": [],
@@ -1227,7 +1281,8 @@ runPyGeneratedModelCase({
                             "to_state": "Conveyor",
                             "event_id": null,
                             "condition_expr": null,
-                            "post_operations": []
+                            "post_operations": [],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -1246,7 +1301,8 @@ runPyGeneratedModelCase({
                                     "raw": "2"
                                 }
                             },
-                            "post_operations": []
+                            "post_operations": [],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -1265,7 +1321,8 @@ runPyGeneratedModelCase({
                                     "raw": "4"
                                 }
                             },
-                            "post_operations": []
+                            "post_operations": [],
+                            "doc": null
                         }
                     ],
                     "enters": [],
@@ -1282,7 +1339,8 @@ runPyGeneratedModelCase({
                     "to_state": "Line",
                     "event_id": null,
                     "condition_expr": null,
-                    "post_operations": []
+                    "post_operations": [],
+                    "doc": null
                 }
             ],
             "enters": [],

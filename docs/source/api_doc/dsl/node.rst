@@ -34,6 +34,7 @@ ASTNode
 -----------------------------------------------------
 
 .. autoclass:: ASTNode
+    :members: without_docs
 
 
 Identifier
@@ -168,7 +169,7 @@ DefAssignment
 -----------------------------------------------------
 
 .. autoclass:: DefAssignment
-    :members: __str__,name,type,expr
+    :members: __str__,name,type,expr,doc
 
 
 OperationalDeprecatedAssignment
@@ -299,21 +300,21 @@ TransitionDefinition
 -----------------------------------------------------
 
 .. autoclass:: TransitionDefinition
-    :members: __str__,from_state,to_state,event_id,condition_expr,post_operations,event_scope,combo_trigger
+    :members: __str__,from_state,to_state,event_id,condition_expr,post_operations,event_scope,combo_trigger,doc
 
 
 ForceTransitionDefinition
 -----------------------------------------------------
 
 .. autoclass:: ForceTransitionDefinition
-    :members: __str__,from_state,to_state,event_id,condition_expr,event_scope,source_raw
+    :members: __str__,from_state,to_state,event_id,condition_expr,event_scope,source_raw,doc
 
 
 StateDefinition
 -----------------------------------------------------
 
 .. autoclass:: StateDefinition
-    :members: __post_init__,__str__,name,extra_name,events,imports,substates,transitions,enters,durings,exits,during_aspects,force_transitions,is_pseudo
+    :members: __post_init__,__str__,name,extra_name,events,imports,substates,transitions,enters,durings,exits,during_aspects,force_transitions,is_pseudo,doc
 
 
 OperationAssignment
@@ -341,7 +342,7 @@ EventDefinition
 -----------------------------------------------------
 
 .. autoclass:: EventDefinition
-    :members: __str__,name,extra_name
+    :members: __str__,name,extra_name,doc
 
 
 StateMachineDSLProgram
@@ -361,7 +362,7 @@ EnterOperations
 -----------------------------------------------------
 
 .. autoclass:: EnterOperations
-    :members: __str__,operations,name
+    :members: __str__,operations,name,doc
 
 
 EnterAbstractFunction
@@ -375,7 +376,7 @@ EnterRefFunction
 -----------------------------------------------------
 
 .. autoclass:: EnterRefFunction
-    :members: __str__,name,ref
+    :members: __str__,name,ref,doc
 
 
 ExitStatement
@@ -388,7 +389,7 @@ ExitOperations
 -----------------------------------------------------
 
 .. autoclass:: ExitOperations
-    :members: __str__,operations,name
+    :members: __str__,operations,name,doc
 
 
 ExitAbstractFunction
@@ -402,7 +403,7 @@ ExitRefFunction
 -----------------------------------------------------
 
 .. autoclass:: ExitRefFunction
-    :members: __str__,name,ref
+    :members: __str__,name,ref,doc
 
 
 DuringStatement
@@ -415,7 +416,7 @@ DuringOperations
 -----------------------------------------------------
 
 .. autoclass:: DuringOperations
-    :members: __str__,aspect,operations,name
+    :members: __str__,aspect,operations,name,doc
 
 
 DuringAbstractFunction
@@ -429,7 +430,7 @@ DuringRefFunction
 -----------------------------------------------------
 
 .. autoclass:: DuringRefFunction
-    :members: __str__,name,aspect,ref
+    :members: __str__,name,aspect,ref,doc
 
 
 DuringAspectStatement
@@ -442,7 +443,7 @@ DuringAspectOperations
 -----------------------------------------------------
 
 .. autoclass:: DuringAspectOperations
-    :members: __str__,aspect,operations,name
+    :members: __str__,aspect,operations,name,doc
 
 
 DuringAspectAbstractFunction
@@ -456,4 +457,4 @@ DuringAspectRefFunction
 -----------------------------------------------------
 
 .. autoclass:: DuringAspectRefFunction
-    :members: __str__,name,aspect,ref
+    :members: __str__,name,aspect,ref,doc

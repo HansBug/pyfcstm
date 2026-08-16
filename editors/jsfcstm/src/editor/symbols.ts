@@ -1,6 +1,7 @@
 import {
     createRange,
     ParseTreeNode,
+    TokenLike,
     TextDocumentLike,
     TextRange,
 } from '../utils/text';
@@ -117,8 +118,16 @@ function buildGroupSymbol(
 
 function getNodeRange(node: ParseTreeNode, document: TextDocumentLike): TextRange {
     const safeLineCount = Math.max(1, document.lineCount);
-    const startLine = Math.max(0, (node.start?.line || 1) - 1);
-    const startColumn = Math.max(0, node.start?.column || 0);
+    let startToken = node.start;
+    if (startToken?.text?.trim().startsWith('/*')) {
+        const declarationToken = (node.children || [])
+            .map(child => child.start || (child as unknown as {symbol?: TokenLike}).symbol)
+            .filter((token): token is TokenLike => Boolean(token))
+            .find(token => !token.text?.trim().startsWith('/*') && token.line != null && token.column != null);
+        if (declarationToken) startToken = declarationToken;
+    }
+    const startLine = Math.max(0, (startToken?.line || 1) - 1);
+    const startColumn = Math.max(0, startToken?.column || 0);
     const stopLine = Math.max(0, (node.stop?.line || 1) - 1);
     const stopColumn = Math.max(0, (node.stop?.column || 0) + 1);
 

@@ -3,7 +3,9 @@ from jinja2 import Environment
 
 from pyfcstm.utils import add_builtins_to_env, add_settings_for_env
 from pyfcstm.utils.jinja2 import (
+    escape_python_docstring,
     is_c_public_identifier_reserved,
+    markdown_fence,
     to_c_path_identifier,
     to_c_public_identifier,
     to_c_public_macro_identifier,
@@ -27,6 +29,34 @@ def env_with_settings(base_env):
 
 @pytest.mark.unittest
 class TestJinjaEnvironmentEnhancement:
+    def test_documentation_rendering_helpers_preserve_payload_boundaries(self):
+        text = 'doc ``` and ```` plus ~~~ and \\\""" and \'\'\' and slash\\'
+        assert markdown_fence(text) == "`````"
+        escaped = escape_python_docstring(text)
+        namespace = {}
+        exec('value = """%s"""' % escaped, namespace)
+        assert namespace["value"] == text
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            'four quotes """" stay data',
+            'long quote run """""" stays data',
+            'line-final slash\\\nnext line',
+        ],
+    )
+    def test_python_docstring_escape_handles_arbitrary_quote_runs(self, text):
+        namespace = {}
+        exec('value = """%s"""' % escape_python_docstring(text), namespace)
+        assert namespace["value"] == text
+
+    def test_documentation_rendering_helpers_are_registered(self, env_with_settings):
+        rendered = env_with_settings.from_string(
+            "{{ value|markdown_fence }}|{{ value|escape_python_docstring }}"
+        ).render(value="a```b")
+        assert rendered.startswith("````|")
+        assert "a```b" in rendered
+
     def test_to_c_path_identifier_preserves_finite_domain_identity(self):
         cases = {
             ("Root", "A"): "p4_Root_p1_A",

@@ -227,3 +227,26 @@
    * - 修复诊断
      - :ref:`dsl-diagnostics-task-zh`
      - 检查诊断包含诊断码、严重级别、源码位置、结构化引用和修复建议。
+
+步骤 8：给所有者附加文档块
+--------------------------
+
+文档块是不透明的模型元数据。紧邻受支持声明之前的块属于该声明，因而
+下面夹具中的变量、根状态、嵌套状态、事件和转换在 AST 与 Model 导出时都
+保留各自的正文。
+
+.. literalinclude:: documentation_blocks.fcstm
+   :language: fcstm
+   :caption: ``docs/source/tutorials/dsl/documentation_blocks.fcstm``
+
+对该夹具运行普通解析和检查入口：
+
+.. code-block:: bash
+
+   pyfcstm inspect -i docs/source/tutorials/dsl/documentation_blocks.fcstm --format human --color never
+
+canonical export 是 round-trip 的权威形式。它会把每个非空文档规范化为
+多行 ``/*`` 块，同时保持 ``None``、空字符串和字面量 ``*`` 的区别。``//``
+和 ``#`` 仍是普通跳过注释；导入声明、映射、守卫、效果和操作语句不是文档
+所有者。不要在文档块中写入凭据或其他秘密，因为 canonical export 可能被
+嵌入生成源码和 README。

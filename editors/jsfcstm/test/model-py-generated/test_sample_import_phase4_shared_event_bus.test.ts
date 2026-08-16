@@ -42,7 +42,8 @@ runPyGeneratedModelCase({
                 "Start"
             ],
             "path_name": "Fleet.Start",
-            "extra_name": "Fleet Start"
+            "extra_name": "Fleet Start",
+            "doc": null
         },
         {
             "name": "Stop",
@@ -56,7 +57,8 @@ runPyGeneratedModelCase({
                 "Stop"
             ],
             "path_name": "Fleet.Bus.Stop",
-            "extra_name": null
+            "extra_name": null,
+            "doc": null
         },
         {
             "name": "Alarm",
@@ -70,7 +72,8 @@ runPyGeneratedModelCase({
                 "Alarm"
             ],
             "path_name": "Fleet.Bus.Alarm",
-            "extra_name": "Fleet Alarm"
+            "extra_name": "Fleet Alarm",
+            "doc": null
         }
     ],
     "all_actions": [],
@@ -97,7 +100,8 @@ runPyGeneratedModelCase({
                         "Start"
                     ],
                     "path_name": "Fleet.Start",
-                    "extra_name": "Fleet Start"
+                    "extra_name": "Fleet Start",
+                    "doc": null
                 }
             },
             "transitions": [
@@ -107,7 +111,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet"
+                    "parent": "Fleet",
+                    "doc": null
                 },
                 {
                     "from_state": "LeftMotor",
@@ -115,7 +120,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet"
+                    "parent": "Fleet",
+                    "doc": null
                 }
             ],
             "named_functions": {},
@@ -129,6 +135,7 @@ runPyGeneratedModelCase({
                 "Bus": 2
             },
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": false,
             "is_root_state": true,
@@ -148,7 +155,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet"
+                    "parent": "Fleet",
+                    "doc": null
                 }
             ],
             "transitions_from": [
@@ -158,7 +166,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": null
+                    "parent": null,
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -168,7 +177,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": null
+                    "parent": null,
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [
@@ -178,7 +188,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet"
+                    "parent": "Fleet",
+                    "doc": null
                 }
             ],
             "transitions_entering_children_simplified": [
@@ -188,7 +199,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet"
+                    "parent": "Fleet",
+                    "doc": null
                 }
             ],
             "list_on_enters": [],
@@ -234,7 +246,8 @@ runPyGeneratedModelCase({
                     "event": "Fleet.Bus.Alarm",
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.LeftMotor"
+                    "parent": "Fleet.LeftMotor",
+                    "doc": null
                 },
                 {
                     "from_state": "Running",
@@ -242,7 +255,8 @@ runPyGeneratedModelCase({
                     "event": "Fleet.Bus.Alarm",
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.LeftMotor"
+                    "parent": "Fleet.LeftMotor",
+                    "doc": null
                 },
                 {
                     "from_state": "Error",
@@ -250,7 +264,8 @@ runPyGeneratedModelCase({
                     "event": "Fleet.Bus.Alarm",
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.LeftMotor"
+                    "parent": "Fleet.LeftMotor",
+                    "doc": null
                 },
                 {
                     "from_state": "INIT_STATE",
@@ -258,7 +273,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.LeftMotor"
+                    "parent": "Fleet.LeftMotor",
+                    "doc": null
                 },
                 {
                     "from_state": "Idle",
@@ -266,7 +282,8 @@ runPyGeneratedModelCase({
                     "event": "Fleet.Start",
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.LeftMotor"
+                    "parent": "Fleet.LeftMotor",
+                    "doc": null
                 },
                 {
                     "from_state": "Running",
@@ -274,7 +291,8 @@ runPyGeneratedModelCase({
                     "event": "Fleet.Bus.Stop",
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.LeftMotor"
+                    "parent": "Fleet.LeftMotor",
+                    "doc": null
                 }
             ],
             "named_functions": {},
@@ -288,6 +306,7 @@ runPyGeneratedModelCase({
                 "Error": 2
             },
             "extra_name": "Left Motor",
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": false,
             "is_root_state": false,
@@ -307,7 +326,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.LeftMotor"
+                    "parent": "Fleet.LeftMotor",
+                    "doc": null
                 }
             ],
             "transitions_from": [
@@ -317,7 +337,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet"
+                    "parent": "Fleet",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -327,7 +348,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet"
+                    "parent": "Fleet",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [
@@ -337,7 +359,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.LeftMotor"
+                    "parent": "Fleet.LeftMotor",
+                    "doc": null
                 }
             ],
             "transitions_entering_children_simplified": [
@@ -347,7 +370,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.LeftMotor"
+                    "parent": "Fleet.LeftMotor",
+                    "doc": null
                 }
             ],
             "list_on_enters": [],
@@ -385,6 +409,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -405,7 +430,8 @@ runPyGeneratedModelCase({
                     "event": "Fleet.Bus.Alarm",
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.LeftMotor"
+                    "parent": "Fleet.LeftMotor",
+                    "doc": null
                 },
                 {
                     "from_state": "Idle",
@@ -413,7 +439,8 @@ runPyGeneratedModelCase({
                     "event": "Fleet.Start",
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.LeftMotor"
+                    "parent": "Fleet.LeftMotor",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -423,7 +450,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.LeftMotor"
+                    "parent": "Fleet.LeftMotor",
+                    "doc": null
                 },
                 {
                     "from_state": "Running",
@@ -431,7 +459,8 @@ runPyGeneratedModelCase({
                     "event": "Fleet.Bus.Stop",
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.LeftMotor"
+                    "parent": "Fleet.LeftMotor",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -470,6 +499,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -490,7 +520,8 @@ runPyGeneratedModelCase({
                     "event": "Fleet.Bus.Alarm",
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.LeftMotor"
+                    "parent": "Fleet.LeftMotor",
+                    "doc": null
                 },
                 {
                     "from_state": "Running",
@@ -498,7 +529,8 @@ runPyGeneratedModelCase({
                     "event": "Fleet.Bus.Stop",
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.LeftMotor"
+                    "parent": "Fleet.LeftMotor",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -508,7 +540,8 @@ runPyGeneratedModelCase({
                     "event": "Fleet.Start",
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.LeftMotor"
+                    "parent": "Fleet.LeftMotor",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -547,6 +580,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -567,7 +601,8 @@ runPyGeneratedModelCase({
                     "event": "Fleet.Bus.Alarm",
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.LeftMotor"
+                    "parent": "Fleet.LeftMotor",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -577,7 +612,8 @@ runPyGeneratedModelCase({
                     "event": "Fleet.Bus.Alarm",
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.LeftMotor"
+                    "parent": "Fleet.LeftMotor",
+                    "doc": null
                 },
                 {
                     "from_state": "Running",
@@ -585,7 +621,8 @@ runPyGeneratedModelCase({
                     "event": "Fleet.Bus.Alarm",
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.LeftMotor"
+                    "parent": "Fleet.LeftMotor",
+                    "doc": null
                 },
                 {
                     "from_state": "Error",
@@ -593,7 +630,8 @@ runPyGeneratedModelCase({
                     "event": "Fleet.Bus.Alarm",
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.LeftMotor"
+                    "parent": "Fleet.LeftMotor",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -634,7 +672,8 @@ runPyGeneratedModelCase({
                     "event": "Fleet.Bus.Alarm",
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.RightMotor"
+                    "parent": "Fleet.RightMotor",
+                    "doc": null
                 },
                 {
                     "from_state": "Running",
@@ -642,7 +681,8 @@ runPyGeneratedModelCase({
                     "event": "Fleet.Bus.Alarm",
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.RightMotor"
+                    "parent": "Fleet.RightMotor",
+                    "doc": null
                 },
                 {
                     "from_state": "Error",
@@ -650,7 +690,8 @@ runPyGeneratedModelCase({
                     "event": "Fleet.Bus.Alarm",
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.RightMotor"
+                    "parent": "Fleet.RightMotor",
+                    "doc": null
                 },
                 {
                     "from_state": "INIT_STATE",
@@ -658,7 +699,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.RightMotor"
+                    "parent": "Fleet.RightMotor",
+                    "doc": null
                 },
                 {
                     "from_state": "Idle",
@@ -666,7 +708,8 @@ runPyGeneratedModelCase({
                     "event": "Fleet.Start",
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.RightMotor"
+                    "parent": "Fleet.RightMotor",
+                    "doc": null
                 },
                 {
                     "from_state": "Running",
@@ -674,7 +717,8 @@ runPyGeneratedModelCase({
                     "event": "Fleet.Bus.Stop",
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.RightMotor"
+                    "parent": "Fleet.RightMotor",
+                    "doc": null
                 }
             ],
             "named_functions": {},
@@ -688,6 +732,7 @@ runPyGeneratedModelCase({
                 "Error": 2
             },
             "extra_name": "Right Motor",
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": false,
             "is_root_state": false,
@@ -707,7 +752,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.RightMotor"
+                    "parent": "Fleet.RightMotor",
+                    "doc": null
                 }
             ],
             "transitions_from": [],
@@ -718,7 +764,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet"
+                    "parent": "Fleet",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [
@@ -728,7 +775,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.RightMotor"
+                    "parent": "Fleet.RightMotor",
+                    "doc": null
                 }
             ],
             "transitions_entering_children_simplified": [
@@ -738,7 +786,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.RightMotor"
+                    "parent": "Fleet.RightMotor",
+                    "doc": null
                 }
             ],
             "list_on_enters": [],
@@ -776,6 +825,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -796,7 +846,8 @@ runPyGeneratedModelCase({
                     "event": "Fleet.Bus.Alarm",
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.RightMotor"
+                    "parent": "Fleet.RightMotor",
+                    "doc": null
                 },
                 {
                     "from_state": "Idle",
@@ -804,7 +855,8 @@ runPyGeneratedModelCase({
                     "event": "Fleet.Start",
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.RightMotor"
+                    "parent": "Fleet.RightMotor",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -814,7 +866,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.RightMotor"
+                    "parent": "Fleet.RightMotor",
+                    "doc": null
                 },
                 {
                     "from_state": "Running",
@@ -822,7 +875,8 @@ runPyGeneratedModelCase({
                     "event": "Fleet.Bus.Stop",
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.RightMotor"
+                    "parent": "Fleet.RightMotor",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -861,6 +915,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -881,7 +936,8 @@ runPyGeneratedModelCase({
                     "event": "Fleet.Bus.Alarm",
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.RightMotor"
+                    "parent": "Fleet.RightMotor",
+                    "doc": null
                 },
                 {
                     "from_state": "Running",
@@ -889,7 +945,8 @@ runPyGeneratedModelCase({
                     "event": "Fleet.Bus.Stop",
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.RightMotor"
+                    "parent": "Fleet.RightMotor",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -899,7 +956,8 @@ runPyGeneratedModelCase({
                     "event": "Fleet.Start",
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.RightMotor"
+                    "parent": "Fleet.RightMotor",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -938,6 +996,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -958,7 +1017,8 @@ runPyGeneratedModelCase({
                     "event": "Fleet.Bus.Alarm",
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.RightMotor"
+                    "parent": "Fleet.RightMotor",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -968,7 +1028,8 @@ runPyGeneratedModelCase({
                     "event": "Fleet.Bus.Alarm",
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.RightMotor"
+                    "parent": "Fleet.RightMotor",
+                    "doc": null
                 },
                 {
                     "from_state": "Running",
@@ -976,7 +1037,8 @@ runPyGeneratedModelCase({
                     "event": "Fleet.Bus.Alarm",
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.RightMotor"
+                    "parent": "Fleet.RightMotor",
+                    "doc": null
                 },
                 {
                     "from_state": "Error",
@@ -984,7 +1046,8 @@ runPyGeneratedModelCase({
                     "event": "Fleet.Bus.Alarm",
                     "guard": null,
                     "effects": [],
-                    "parent": "Fleet.RightMotor"
+                    "parent": "Fleet.RightMotor",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -1026,7 +1089,8 @@ runPyGeneratedModelCase({
                         "Alarm"
                     ],
                     "path_name": "Fleet.Bus.Alarm",
-                    "extra_name": "Fleet Alarm"
+                    "extra_name": "Fleet Alarm",
+                    "doc": null
                 },
                 "Stop": {
                     "name": "Stop",
@@ -1040,7 +1104,8 @@ runPyGeneratedModelCase({
                         "Stop"
                     ],
                     "path_name": "Fleet.Bus.Stop",
-                    "extra_name": null
+                    "extra_name": null,
+                    "doc": null
                 }
             },
             "transitions": [],
@@ -1051,6 +1116,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -1092,11 +1158,13 @@ runPyGeneratedModelCase({
             "__class__": "StateDefinition",
             "name": "Fleet",
             "extra_name": null,
+            "doc": null,
             "events": [
                 {
                     "__class__": "EventDefinition",
                     "name": "Start",
-                    "extra_name": "Fleet Start"
+                    "extra_name": "Fleet Start",
+                    "doc": null
                 }
             ],
             "substates": [
@@ -1104,12 +1172,14 @@ runPyGeneratedModelCase({
                     "__class__": "StateDefinition",
                     "name": "LeftMotor",
                     "extra_name": "Left Motor",
+                    "doc": null,
                     "events": [],
                     "substates": [
                         {
                             "__class__": "StateDefinition",
                             "name": "Idle",
                             "extra_name": null,
+                            "doc": null,
                             "events": [],
                             "substates": [],
                             "transitions": [],
@@ -1123,6 +1193,7 @@ runPyGeneratedModelCase({
                             "__class__": "StateDefinition",
                             "name": "Running",
                             "extra_name": null,
+                            "doc": null,
                             "events": [],
                             "substates": [],
                             "transitions": [],
@@ -1136,6 +1207,7 @@ runPyGeneratedModelCase({
                             "__class__": "StateDefinition",
                             "name": "Error",
                             "extra_name": null,
+                            "doc": null,
                             "events": [],
                             "substates": [],
                             "transitions": [],
@@ -1160,7 +1232,8 @@ runPyGeneratedModelCase({
                                 "is_absolute": true
                             },
                             "condition_expr": null,
-                            "post_operations": []
+                            "post_operations": [],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -1175,7 +1248,8 @@ runPyGeneratedModelCase({
                                 "is_absolute": true
                             },
                             "condition_expr": null,
-                            "post_operations": []
+                            "post_operations": [],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -1190,7 +1264,8 @@ runPyGeneratedModelCase({
                                 "is_absolute": true
                             },
                             "condition_expr": null,
-                            "post_operations": []
+                            "post_operations": [],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -1198,7 +1273,8 @@ runPyGeneratedModelCase({
                             "to_state": "Idle",
                             "event_id": null,
                             "condition_expr": null,
-                            "post_operations": []
+                            "post_operations": [],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -1212,7 +1288,8 @@ runPyGeneratedModelCase({
                                 "is_absolute": true
                             },
                             "condition_expr": null,
-                            "post_operations": []
+                            "post_operations": [],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -1227,7 +1304,8 @@ runPyGeneratedModelCase({
                                 "is_absolute": true
                             },
                             "condition_expr": null,
-                            "post_operations": []
+                            "post_operations": [],
+                            "doc": null
                         }
                     ],
                     "enters": [],
@@ -1240,12 +1318,14 @@ runPyGeneratedModelCase({
                     "__class__": "StateDefinition",
                     "name": "RightMotor",
                     "extra_name": "Right Motor",
+                    "doc": null,
                     "events": [],
                     "substates": [
                         {
                             "__class__": "StateDefinition",
                             "name": "Idle",
                             "extra_name": null,
+                            "doc": null,
                             "events": [],
                             "substates": [],
                             "transitions": [],
@@ -1259,6 +1339,7 @@ runPyGeneratedModelCase({
                             "__class__": "StateDefinition",
                             "name": "Running",
                             "extra_name": null,
+                            "doc": null,
                             "events": [],
                             "substates": [],
                             "transitions": [],
@@ -1272,6 +1353,7 @@ runPyGeneratedModelCase({
                             "__class__": "StateDefinition",
                             "name": "Error",
                             "extra_name": null,
+                            "doc": null,
                             "events": [],
                             "substates": [],
                             "transitions": [],
@@ -1296,7 +1378,8 @@ runPyGeneratedModelCase({
                                 "is_absolute": true
                             },
                             "condition_expr": null,
-                            "post_operations": []
+                            "post_operations": [],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -1311,7 +1394,8 @@ runPyGeneratedModelCase({
                                 "is_absolute": true
                             },
                             "condition_expr": null,
-                            "post_operations": []
+                            "post_operations": [],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -1326,7 +1410,8 @@ runPyGeneratedModelCase({
                                 "is_absolute": true
                             },
                             "condition_expr": null,
-                            "post_operations": []
+                            "post_operations": [],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -1334,7 +1419,8 @@ runPyGeneratedModelCase({
                             "to_state": "Idle",
                             "event_id": null,
                             "condition_expr": null,
-                            "post_operations": []
+                            "post_operations": [],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -1348,7 +1434,8 @@ runPyGeneratedModelCase({
                                 "is_absolute": true
                             },
                             "condition_expr": null,
-                            "post_operations": []
+                            "post_operations": [],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -1363,7 +1450,8 @@ runPyGeneratedModelCase({
                                 "is_absolute": true
                             },
                             "condition_expr": null,
-                            "post_operations": []
+                            "post_operations": [],
+                            "doc": null
                         }
                     ],
                     "enters": [],
@@ -1376,16 +1464,19 @@ runPyGeneratedModelCase({
                     "__class__": "StateDefinition",
                     "name": "Bus",
                     "extra_name": null,
+                    "doc": null,
                     "events": [
                         {
                             "__class__": "EventDefinition",
                             "name": "Stop",
-                            "extra_name": null
+                            "extra_name": null,
+                            "doc": null
                         },
                         {
                             "__class__": "EventDefinition",
                             "name": "Alarm",
-                            "extra_name": "Fleet Alarm"
+                            "extra_name": "Fleet Alarm",
+                            "doc": null
                         }
                     ],
                     "substates": [],
@@ -1404,7 +1495,8 @@ runPyGeneratedModelCase({
                     "to_state": "LeftMotor",
                     "event_id": null,
                     "condition_expr": null,
-                    "post_operations": []
+                    "post_operations": [],
+                    "doc": null
                 },
                 {
                     "__class__": "TransitionDefinition",
@@ -1412,7 +1504,8 @@ runPyGeneratedModelCase({
                     "to_state": "RightMotor",
                     "event_id": null,
                     "condition_expr": null,
-                    "post_operations": []
+                    "post_operations": [],
+                    "doc": null
                 }
             ],
             "enters": [],

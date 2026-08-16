@@ -141,22 +141,22 @@ class TestModelStatePlant:
     def test_model(self, model):
         assert model.defines == {
             "shared_counter": VarDefine(
-                name="shared_counter", type="int", init=Integer(value=100)
+                name="shared_counter", type="int", init=Integer(value=100), doc=None
             ),
             "shared_ready": VarDefine(
-                name="shared_ready", type="int", init=Integer(value=1)
+                name="shared_ready", type="int", init=Integer(value=1), doc=None
             ),
             "left_limit": VarDefine(
-                name="left_limit", type="int", init=Integer(value=5)
+                name="left_limit", type="int", init=Integer(value=5), doc=None
             ),
             "right_limit": VarDefine(
-                name="right_limit", type="int", init=Integer(value=6)
+                name="right_limit", type="int", init=Integer(value=6), doc=None
             ),
             "left_result": VarDefine(
-                name="left_result", type="int", init=Integer(value=0)
+                name="left_result", type="int", init=Integer(value=0), doc=None
             ),
             "right_result": VarDefine(
-                name="right_result", type="int", init=Integer(value=0)
+                name="right_result", type="int", init=Integer(value=0), doc=None
             ),
         }
         assert model.root_state.name == "Plant"
@@ -166,22 +166,37 @@ class TestModelStatePlant:
         ast_node = model.to_ast_node()
         assert ast_node.definitions == [
             dsl_nodes.DefAssignment(
-                name="shared_counter", type="int", expr=dsl_nodes.Integer(raw="100")
+                name="shared_counter",
+                type="int",
+                expr=dsl_nodes.Integer(raw="100"),
+                doc=None,
             ),
             dsl_nodes.DefAssignment(
-                name="shared_ready", type="int", expr=dsl_nodes.Integer(raw="1")
+                name="shared_ready",
+                type="int",
+                expr=dsl_nodes.Integer(raw="1"),
+                doc=None,
             ),
             dsl_nodes.DefAssignment(
-                name="left_limit", type="int", expr=dsl_nodes.Integer(raw="5")
+                name="left_limit", type="int", expr=dsl_nodes.Integer(raw="5"), doc=None
             ),
             dsl_nodes.DefAssignment(
-                name="right_limit", type="int", expr=dsl_nodes.Integer(raw="6")
+                name="right_limit",
+                type="int",
+                expr=dsl_nodes.Integer(raw="6"),
+                doc=None,
             ),
             dsl_nodes.DefAssignment(
-                name="left_result", type="int", expr=dsl_nodes.Integer(raw="0")
+                name="left_result",
+                type="int",
+                expr=dsl_nodes.Integer(raw="0"),
+                doc=None,
             ),
             dsl_nodes.DefAssignment(
-                name="right_result", type="int", expr=dsl_nodes.Integer(raw="0")
+                name="right_result",
+                type="int",
+                expr=dsl_nodes.Integer(raw="0"),
+                doc=None,
             ),
         ]
         assert ast_node.root_state.name == "Plant"
@@ -197,6 +212,7 @@ class TestModelStatePlant:
         assert state_plant.transitions[0].event is None
         assert state_plant.transitions[0].guard is None
         assert state_plant.transitions[0].effects == []
+        assert state_plant.transitions[0].doc is None
         assert state_plant.transitions[0].parent_ref().name == "Plant"
         assert state_plant.transitions[0].parent_ref().path == ("Plant",)
         assert state_plant.transitions[1].from_state == "LeftUnit"
@@ -204,6 +220,7 @@ class TestModelStatePlant:
         assert state_plant.transitions[1].event is None
         assert state_plant.transitions[1].guard is None
         assert state_plant.transitions[1].effects == []
+        assert state_plant.transitions[1].doc is None
         assert state_plant.transitions[1].parent_ref().name == "Plant"
         assert state_plant.transitions[1].parent_ref().path == ("Plant",)
         assert state_plant.named_functions == {}
@@ -215,6 +232,7 @@ class TestModelStatePlant:
         assert state_plant.substate_name_to_id == {"LeftUnit": 0, "RightUnit": 1}
         assert state_plant.extra_name is None
         assert not state_plant.is_pseudo
+        assert state_plant.doc is None
         assert state_plant.abstract_on_during_aspects == []
         assert state_plant.abstract_on_durings == []
         assert state_plant.abstract_on_enters == []
@@ -225,6 +243,7 @@ class TestModelStatePlant:
         assert state_plant.init_transitions[0].event is None
         assert state_plant.init_transitions[0].guard is None
         assert state_plant.init_transitions[0].effects == []
+        assert state_plant.init_transitions[0].doc is None
         assert state_plant.init_transitions[0].parent_ref().name == "Plant"
         assert state_plant.init_transitions[0].parent_ref().path == ("Plant",)
         assert not state_plant.is_leaf_state
@@ -241,6 +260,7 @@ class TestModelStatePlant:
         assert state_plant.transitions_entering_children[0].event is None
         assert state_plant.transitions_entering_children[0].guard is None
         assert state_plant.transitions_entering_children[0].effects == []
+        assert state_plant.transitions_entering_children[0].doc is None
         assert state_plant.transitions_entering_children[0].parent_ref().name == "Plant"
         assert state_plant.transitions_entering_children[0].parent_ref().path == (
             "Plant",
@@ -257,6 +277,7 @@ class TestModelStatePlant:
         assert state_plant.transitions_entering_children_simplified[0].event is None
         assert state_plant.transitions_entering_children_simplified[0].guard is None
         assert state_plant.transitions_entering_children_simplified[0].effects == []
+        assert state_plant.transitions_entering_children_simplified[0].doc is None
         assert (
             state_plant.transitions_entering_children_simplified[0].parent_ref().name
             == "Plant"
@@ -270,6 +291,7 @@ class TestModelStatePlant:
         assert state_plant.transitions_from[0].event is None
         assert state_plant.transitions_from[0].guard is None
         assert state_plant.transitions_from[0].effects == []
+        assert state_plant.transitions_from[0].doc is None
         assert state_plant.transitions_from[0].parent_ref is None
         assert len(state_plant.transitions_to) == 1
         assert state_plant.transitions_to[0].from_state == INIT_STATE
@@ -277,6 +299,7 @@ class TestModelStatePlant:
         assert state_plant.transitions_to[0].event is None
         assert state_plant.transitions_to[0].guard is None
         assert state_plant.transitions_to[0].effects == []
+        assert state_plant.transitions_to[0].doc is None
         assert state_plant.transitions_to[0].parent_ref is None
 
     def test_state_plant_to_ast_node(self, state_plant):
@@ -306,6 +329,7 @@ class TestModelStatePlant:
                             during_aspects=[],
                             force_transitions=[],
                             is_pseudo=False,
+                            doc=None,
                         ),
                         dsl_nodes.StateDefinition(
                             name="Busy",
@@ -320,6 +344,7 @@ class TestModelStatePlant:
                             during_aspects=[],
                             force_transitions=[],
                             is_pseudo=False,
+                            doc=None,
                         ),
                     ],
                     transitions=[
@@ -329,6 +354,7 @@ class TestModelStatePlant:
                             event_id=None,
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Idle",
@@ -349,6 +375,7 @@ class TestModelStatePlant:
                                     ),
                                 )
                             ],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Busy",
@@ -373,6 +400,7 @@ class TestModelStatePlant:
                                     expr=dsl_nodes.Name(name="shared_counter"),
                                 ),
                             ],
+                            doc=None,
                         ),
                     ],
                     enters=[],
@@ -381,6 +409,7 @@ class TestModelStatePlant:
                     during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
+                    doc=None,
                 ),
                 dsl_nodes.StateDefinition(
                     name="RightUnit",
@@ -401,6 +430,7 @@ class TestModelStatePlant:
                             during_aspects=[],
                             force_transitions=[],
                             is_pseudo=False,
+                            doc=None,
                         ),
                         dsl_nodes.StateDefinition(
                             name="Busy",
@@ -415,6 +445,7 @@ class TestModelStatePlant:
                             during_aspects=[],
                             force_transitions=[],
                             is_pseudo=False,
+                            doc=None,
                         ),
                     ],
                     transitions=[
@@ -424,6 +455,7 @@ class TestModelStatePlant:
                             event_id=None,
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Idle",
@@ -444,6 +476,7 @@ class TestModelStatePlant:
                                     ),
                                 )
                             ],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Busy",
@@ -468,6 +501,7 @@ class TestModelStatePlant:
                                     expr=dsl_nodes.Name(name="shared_counter"),
                                 ),
                             ],
+                            doc=None,
                         ),
                     ],
                     enters=[],
@@ -476,6 +510,7 @@ class TestModelStatePlant:
                     during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
+                    doc=None,
                 ),
             ],
             transitions=[
@@ -485,6 +520,7 @@ class TestModelStatePlant:
                     event_id=None,
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="LeftUnit",
@@ -492,6 +528,7 @@ class TestModelStatePlant:
                     event_id=None,
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
             ],
             enters=[],
@@ -500,6 +537,7 @@ class TestModelStatePlant:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_plant_list_on_enters(self, state_plant):
@@ -569,6 +607,7 @@ class TestModelStatePlant:
         assert state_plant_leftunit.transitions[0].event is None
         assert state_plant_leftunit.transitions[0].guard is None
         assert state_plant_leftunit.transitions[0].effects == []
+        assert state_plant_leftunit.transitions[0].doc is None
         assert state_plant_leftunit.transitions[0].parent_ref().name == "LeftUnit"
         assert state_plant_leftunit.transitions[0].parent_ref().path == (
             "Plant",
@@ -590,6 +629,7 @@ class TestModelStatePlant:
                 ),
             )
         ]
+        assert state_plant_leftunit.transitions[1].doc is None
         assert state_plant_leftunit.transitions[1].parent_ref().name == "LeftUnit"
         assert state_plant_leftunit.transitions[1].parent_ref().path == (
             "Plant",
@@ -610,6 +650,7 @@ class TestModelStatePlant:
             ),
             Operation(var_name="left_result", expr=Variable(name="shared_counter")),
         ]
+        assert state_plant_leftunit.transitions[2].doc is None
         assert state_plant_leftunit.transitions[2].parent_ref().name == "LeftUnit"
         assert state_plant_leftunit.transitions[2].parent_ref().path == (
             "Plant",
@@ -625,6 +666,7 @@ class TestModelStatePlant:
         assert state_plant_leftunit.substate_name_to_id == {"Idle": 0, "Busy": 1}
         assert state_plant_leftunit.extra_name == "Left Unit"
         assert not state_plant_leftunit.is_pseudo
+        assert state_plant_leftunit.doc is None
         assert state_plant_leftunit.abstract_on_during_aspects == []
         assert state_plant_leftunit.abstract_on_durings == []
         assert state_plant_leftunit.abstract_on_enters == []
@@ -635,6 +677,7 @@ class TestModelStatePlant:
         assert state_plant_leftunit.init_transitions[0].event is None
         assert state_plant_leftunit.init_transitions[0].guard is None
         assert state_plant_leftunit.init_transitions[0].effects == []
+        assert state_plant_leftunit.init_transitions[0].doc is None
         assert state_plant_leftunit.init_transitions[0].parent_ref().name == "LeftUnit"
         assert state_plant_leftunit.init_transitions[0].parent_ref().path == (
             "Plant",
@@ -658,6 +701,7 @@ class TestModelStatePlant:
         assert state_plant_leftunit.transitions_entering_children[0].event is None
         assert state_plant_leftunit.transitions_entering_children[0].guard is None
         assert state_plant_leftunit.transitions_entering_children[0].effects == []
+        assert state_plant_leftunit.transitions_entering_children[0].doc is None
         assert (
             state_plant_leftunit.transitions_entering_children[0].parent_ref().name
             == "LeftUnit"
@@ -687,6 +731,9 @@ class TestModelStatePlant:
             == []
         )
         assert (
+            state_plant_leftunit.transitions_entering_children_simplified[0].doc is None
+        )
+        assert (
             state_plant_leftunit.transitions_entering_children_simplified[0]
             .parent_ref()
             .name
@@ -701,6 +748,7 @@ class TestModelStatePlant:
         assert state_plant_leftunit.transitions_from[0].event is None
         assert state_plant_leftunit.transitions_from[0].guard is None
         assert state_plant_leftunit.transitions_from[0].effects == []
+        assert state_plant_leftunit.transitions_from[0].doc is None
         assert state_plant_leftunit.transitions_from[0].parent_ref().name == "Plant"
         assert state_plant_leftunit.transitions_from[0].parent_ref().path == ("Plant",)
         assert len(state_plant_leftunit.transitions_to) == 1
@@ -709,6 +757,7 @@ class TestModelStatePlant:
         assert state_plant_leftunit.transitions_to[0].event is None
         assert state_plant_leftunit.transitions_to[0].guard is None
         assert state_plant_leftunit.transitions_to[0].effects == []
+        assert state_plant_leftunit.transitions_to[0].doc is None
         assert state_plant_leftunit.transitions_to[0].parent_ref().name == "Plant"
         assert state_plant_leftunit.transitions_to[0].parent_ref().path == ("Plant",)
 
@@ -733,6 +782,7 @@ class TestModelStatePlant:
                     during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
+                    doc=None,
                 ),
                 dsl_nodes.StateDefinition(
                     name="Busy",
@@ -747,6 +797,7 @@ class TestModelStatePlant:
                     during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
+                    doc=None,
                 ),
             ],
             transitions=[
@@ -756,6 +807,7 @@ class TestModelStatePlant:
                     event_id=None,
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Idle",
@@ -776,6 +828,7 @@ class TestModelStatePlant:
                             ),
                         )
                     ],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Busy",
@@ -800,6 +853,7 @@ class TestModelStatePlant:
                             expr=dsl_nodes.Name(name="shared_counter"),
                         ),
                     ],
+                    doc=None,
                 ),
             ],
             enters=[],
@@ -808,6 +862,7 @@ class TestModelStatePlant:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_plant_leftunit_list_on_enters(self, state_plant_leftunit):
@@ -890,6 +945,7 @@ class TestModelStatePlant:
         assert state_plant_leftunit_idle.substate_name_to_id == {}
         assert state_plant_leftunit_idle.extra_name is None
         assert not state_plant_leftunit_idle.is_pseudo
+        assert state_plant_leftunit_idle.doc is None
         assert state_plant_leftunit_idle.abstract_on_during_aspects == []
         assert state_plant_leftunit_idle.abstract_on_durings == []
         assert state_plant_leftunit_idle.abstract_on_enters == []
@@ -929,6 +985,7 @@ class TestModelStatePlant:
                 ),
             )
         ]
+        assert state_plant_leftunit_idle.transitions_from[0].doc is None
         assert (
             state_plant_leftunit_idle.transitions_from[0].parent_ref().name
             == "LeftUnit"
@@ -943,6 +1000,7 @@ class TestModelStatePlant:
         assert state_plant_leftunit_idle.transitions_to[0].event is None
         assert state_plant_leftunit_idle.transitions_to[0].guard is None
         assert state_plant_leftunit_idle.transitions_to[0].effects == []
+        assert state_plant_leftunit_idle.transitions_to[0].doc is None
         assert (
             state_plant_leftunit_idle.transitions_to[0].parent_ref().name == "LeftUnit"
         )
@@ -965,6 +1023,7 @@ class TestModelStatePlant:
             ),
             Operation(var_name="left_result", expr=Variable(name="shared_counter")),
         ]
+        assert state_plant_leftunit_idle.transitions_to[1].doc is None
         assert (
             state_plant_leftunit_idle.transitions_to[1].parent_ref().name == "LeftUnit"
         )
@@ -988,6 +1047,7 @@ class TestModelStatePlant:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_plant_leftunit_idle_list_on_enters(self, state_plant_leftunit_idle):
@@ -1081,6 +1141,7 @@ class TestModelStatePlant:
         assert state_plant_leftunit_busy.substate_name_to_id == {}
         assert state_plant_leftunit_busy.extra_name is None
         assert not state_plant_leftunit_busy.is_pseudo
+        assert state_plant_leftunit_busy.doc is None
         assert state_plant_leftunit_busy.abstract_on_during_aspects == []
         assert state_plant_leftunit_busy.abstract_on_durings == []
         assert state_plant_leftunit_busy.abstract_on_enters == []
@@ -1119,6 +1180,7 @@ class TestModelStatePlant:
             ),
             Operation(var_name="left_result", expr=Variable(name="shared_counter")),
         ]
+        assert state_plant_leftunit_busy.transitions_from[0].doc is None
         assert (
             state_plant_leftunit_busy.transitions_from[0].parent_ref().name
             == "LeftUnit"
@@ -1144,6 +1206,7 @@ class TestModelStatePlant:
                 ),
             )
         ]
+        assert state_plant_leftunit_busy.transitions_to[0].doc is None
         assert (
             state_plant_leftunit_busy.transitions_to[0].parent_ref().name == "LeftUnit"
         )
@@ -1167,6 +1230,7 @@ class TestModelStatePlant:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_plant_leftunit_busy_list_on_enters(self, state_plant_leftunit_busy):
@@ -1255,6 +1319,7 @@ class TestModelStatePlant:
         assert state_plant_rightunit.transitions[0].event is None
         assert state_plant_rightunit.transitions[0].guard is None
         assert state_plant_rightunit.transitions[0].effects == []
+        assert state_plant_rightunit.transitions[0].doc is None
         assert state_plant_rightunit.transitions[0].parent_ref().name == "RightUnit"
         assert state_plant_rightunit.transitions[0].parent_ref().path == (
             "Plant",
@@ -1276,6 +1341,7 @@ class TestModelStatePlant:
                 ),
             )
         ]
+        assert state_plant_rightunit.transitions[1].doc is None
         assert state_plant_rightunit.transitions[1].parent_ref().name == "RightUnit"
         assert state_plant_rightunit.transitions[1].parent_ref().path == (
             "Plant",
@@ -1296,6 +1362,7 @@ class TestModelStatePlant:
             ),
             Operation(var_name="right_result", expr=Variable(name="shared_counter")),
         ]
+        assert state_plant_rightunit.transitions[2].doc is None
         assert state_plant_rightunit.transitions[2].parent_ref().name == "RightUnit"
         assert state_plant_rightunit.transitions[2].parent_ref().path == (
             "Plant",
@@ -1311,6 +1378,7 @@ class TestModelStatePlant:
         assert state_plant_rightunit.substate_name_to_id == {"Idle": 0, "Busy": 1}
         assert state_plant_rightunit.extra_name == "Right Unit"
         assert not state_plant_rightunit.is_pseudo
+        assert state_plant_rightunit.doc is None
         assert state_plant_rightunit.abstract_on_during_aspects == []
         assert state_plant_rightunit.abstract_on_durings == []
         assert state_plant_rightunit.abstract_on_enters == []
@@ -1321,6 +1389,7 @@ class TestModelStatePlant:
         assert state_plant_rightunit.init_transitions[0].event is None
         assert state_plant_rightunit.init_transitions[0].guard is None
         assert state_plant_rightunit.init_transitions[0].effects == []
+        assert state_plant_rightunit.init_transitions[0].doc is None
         assert (
             state_plant_rightunit.init_transitions[0].parent_ref().name == "RightUnit"
         )
@@ -1346,6 +1415,7 @@ class TestModelStatePlant:
         assert state_plant_rightunit.transitions_entering_children[0].event is None
         assert state_plant_rightunit.transitions_entering_children[0].guard is None
         assert state_plant_rightunit.transitions_entering_children[0].effects == []
+        assert state_plant_rightunit.transitions_entering_children[0].doc is None
         assert (
             state_plant_rightunit.transitions_entering_children[0].parent_ref().name
             == "RightUnit"
@@ -1375,6 +1445,10 @@ class TestModelStatePlant:
             == []
         )
         assert (
+            state_plant_rightunit.transitions_entering_children_simplified[0].doc
+            is None
+        )
+        assert (
             state_plant_rightunit.transitions_entering_children_simplified[0]
             .parent_ref()
             .name
@@ -1390,6 +1464,7 @@ class TestModelStatePlant:
         assert state_plant_rightunit.transitions_to[0].event is None
         assert state_plant_rightunit.transitions_to[0].guard is None
         assert state_plant_rightunit.transitions_to[0].effects == []
+        assert state_plant_rightunit.transitions_to[0].doc is None
         assert state_plant_rightunit.transitions_to[0].parent_ref().name == "Plant"
         assert state_plant_rightunit.transitions_to[0].parent_ref().path == ("Plant",)
 
@@ -1414,6 +1489,7 @@ class TestModelStatePlant:
                     during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
+                    doc=None,
                 ),
                 dsl_nodes.StateDefinition(
                     name="Busy",
@@ -1428,6 +1504,7 @@ class TestModelStatePlant:
                     during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
+                    doc=None,
                 ),
             ],
             transitions=[
@@ -1437,6 +1514,7 @@ class TestModelStatePlant:
                     event_id=None,
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Idle",
@@ -1457,6 +1535,7 @@ class TestModelStatePlant:
                             ),
                         )
                     ],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Busy",
@@ -1481,6 +1560,7 @@ class TestModelStatePlant:
                             expr=dsl_nodes.Name(name="shared_counter"),
                         ),
                     ],
+                    doc=None,
                 ),
             ],
             enters=[],
@@ -1489,6 +1569,7 @@ class TestModelStatePlant:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_plant_rightunit_list_on_enters(self, state_plant_rightunit):
@@ -1571,6 +1652,7 @@ class TestModelStatePlant:
         assert state_plant_rightunit_idle.substate_name_to_id == {}
         assert state_plant_rightunit_idle.extra_name is None
         assert not state_plant_rightunit_idle.is_pseudo
+        assert state_plant_rightunit_idle.doc is None
         assert state_plant_rightunit_idle.abstract_on_during_aspects == []
         assert state_plant_rightunit_idle.abstract_on_durings == []
         assert state_plant_rightunit_idle.abstract_on_enters == []
@@ -1611,6 +1693,7 @@ class TestModelStatePlant:
                 ),
             )
         ]
+        assert state_plant_rightunit_idle.transitions_from[0].doc is None
         assert (
             state_plant_rightunit_idle.transitions_from[0].parent_ref().name
             == "RightUnit"
@@ -1625,6 +1708,7 @@ class TestModelStatePlant:
         assert state_plant_rightunit_idle.transitions_to[0].event is None
         assert state_plant_rightunit_idle.transitions_to[0].guard is None
         assert state_plant_rightunit_idle.transitions_to[0].effects == []
+        assert state_plant_rightunit_idle.transitions_to[0].doc is None
         assert (
             state_plant_rightunit_idle.transitions_to[0].parent_ref().name
             == "RightUnit"
@@ -1648,6 +1732,7 @@ class TestModelStatePlant:
             ),
             Operation(var_name="right_result", expr=Variable(name="shared_counter")),
         ]
+        assert state_plant_rightunit_idle.transitions_to[1].doc is None
         assert (
             state_plant_rightunit_idle.transitions_to[1].parent_ref().name
             == "RightUnit"
@@ -1672,6 +1757,7 @@ class TestModelStatePlant:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_plant_rightunit_idle_list_on_enters(
@@ -1775,6 +1861,7 @@ class TestModelStatePlant:
         assert state_plant_rightunit_busy.substate_name_to_id == {}
         assert state_plant_rightunit_busy.extra_name is None
         assert not state_plant_rightunit_busy.is_pseudo
+        assert state_plant_rightunit_busy.doc is None
         assert state_plant_rightunit_busy.abstract_on_during_aspects == []
         assert state_plant_rightunit_busy.abstract_on_durings == []
         assert state_plant_rightunit_busy.abstract_on_enters == []
@@ -1814,6 +1901,7 @@ class TestModelStatePlant:
             ),
             Operation(var_name="right_result", expr=Variable(name="shared_counter")),
         ]
+        assert state_plant_rightunit_busy.transitions_from[0].doc is None
         assert (
             state_plant_rightunit_busy.transitions_from[0].parent_ref().name
             == "RightUnit"
@@ -1839,6 +1927,7 @@ class TestModelStatePlant:
                 ),
             )
         ]
+        assert state_plant_rightunit_busy.transitions_to[0].doc is None
         assert (
             state_plant_rightunit_busy.transitions_to[0].parent_ref().name
             == "RightUnit"
@@ -1863,6 +1952,7 @@ class TestModelStatePlant:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_plant_rightunit_busy_list_on_enters(

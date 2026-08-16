@@ -6,6 +6,18 @@ pyfcstm.utils.jinja2
 .. automodule:: pyfcstm.utils.jinja2
 
 
+markdown\_fence
+-----------------------------------------------------
+
+.. autofunction:: markdown_fence
+
+
+escape\_python\_docstring
+-----------------------------------------------------
+
+.. autofunction:: escape_python_docstring
+
+
 to\_c\_path\_identifier
 -----------------------------------------------------
 

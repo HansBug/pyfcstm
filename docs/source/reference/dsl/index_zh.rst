@@ -97,7 +97,7 @@ DSL 参考
      - 导入路径和 ``named`` 标签使用字符串；常见转义序列由词法器处理。
    * - 注释（comment）
      - ``/* ... */``、``// ...``、``# ...``
-     - 多行注释在特定生命周期形式中可以成为抽象动作文档。
+     - 紧邻受支持声明前的多行块注释属于该声明；行注释仍然只是注释。
    * - 关键字（keyword）
      - ``def``、``state``、``pseudo``、``event``、``import``、``enter``、``during``、``exit``、``abstract``、``ref``
      - 关键字由词法规则保留，不能作为普通标识符使用。
@@ -105,6 +105,45 @@ DSL 参考
      - 选择器模式与目标模板
      - 紧凑形式在导入专用词法模式中切分，对空白敏感；``$0`` /
        ``$1`` / ``${1}`` / ``*`` 模板详见 :ref:`dsl-import-forms-zh`。
+
+.. _dsl-documentation-forms-zh:
+
+声明文档
+------------
+
+FCSTM 支持在每个持久变量定义、状态（包括根状态和伪状态）、事件、转换以及生命周期动作上挂一个不透明的文档值。
+紧邻声明之前的块注释归该声明所有，不会进入名称或声明源码范围。导入声明和导入映射项不是文档所有者。
+
+源码写法是多行块注释。canonical DSL exporter 会把每个非 ``None`` 值规范化为带星号边距的块，同时保持 ``None``、空字符串和字面量 ``*`` 的区别：
+
+.. code-block:: fcstm
+
+   /* Number of retries allowed before entering the fault state. */
+   def int retry_limit = 3;
+
+   /* The module's top-level state. */
+   state Controller {
+       [*] -> Ready;
+
+       /* A request has been accepted and is being processed. */
+       state Ready;
+
+       /* Raised by the external supervisor. */
+       event Reset;
+
+       /* Return to the idle state after a reset. */
+       Ready -> Idle :: Reset;
+
+       /* Called by the generated runtime on entry. */
+       enter abstract OnReady;
+   }
+
+抽象生命周期动作原有的尾随写法仍然有效：``enter abstract OnReady /* Called by the generated runtime on entry. */;``。
+前置和尾随文档会归一化到同一个所有者字段；同一个动作同时使用两种写法会被拒绝。文档属于元数据：它会进入 canonical DSL 和已生成 README/源码导出，
+但不会改变运行时行为、转换优先级、仿真、验证、PlantUML、inspect schema 或 hover 文本。
+
+文档块是有意保持不透明的，不是 Markdown，也不定义 tag 或 locale；操作语句、守卫、触发项、effect block 和单个导入映射都不会成为 owner。
+文件末尾未闭合的块会产生诊断。行注释或字符串中的 terminator，以及非 EOF import-mode swallow 的确定性行为，不属于受支持的文档契约。
 
 .. _dsl-top-level-forms-zh:
 

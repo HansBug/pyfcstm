@@ -136,7 +136,7 @@ class TestModelStateFleet:
         ]
         assert state_fleet.events == {
             "Start": Event(
-                name="Start", state_path=("Fleet",), extra_name="Fleet Start"
+                name="Start", state_path=("Fleet",), extra_name="Fleet Start", doc=None
             )
         }
         assert len(state_fleet.transitions) == 2
@@ -145,6 +145,7 @@ class TestModelStateFleet:
         assert state_fleet.transitions[0].event is None
         assert state_fleet.transitions[0].guard is None
         assert state_fleet.transitions[0].effects == []
+        assert state_fleet.transitions[0].doc is None
         assert state_fleet.transitions[0].parent_ref().name == "Fleet"
         assert state_fleet.transitions[0].parent_ref().path == ("Fleet",)
         assert state_fleet.transitions[1].from_state == "LeftMotor"
@@ -152,6 +153,7 @@ class TestModelStateFleet:
         assert state_fleet.transitions[1].event is None
         assert state_fleet.transitions[1].guard is None
         assert state_fleet.transitions[1].effects == []
+        assert state_fleet.transitions[1].doc is None
         assert state_fleet.transitions[1].parent_ref().name == "Fleet"
         assert state_fleet.transitions[1].parent_ref().path == ("Fleet",)
         assert state_fleet.named_functions == {}
@@ -167,6 +169,7 @@ class TestModelStateFleet:
         }
         assert state_fleet.extra_name is None
         assert not state_fleet.is_pseudo
+        assert state_fleet.doc is None
         assert state_fleet.abstract_on_during_aspects == []
         assert state_fleet.abstract_on_durings == []
         assert state_fleet.abstract_on_enters == []
@@ -177,6 +180,7 @@ class TestModelStateFleet:
         assert state_fleet.init_transitions[0].event is None
         assert state_fleet.init_transitions[0].guard is None
         assert state_fleet.init_transitions[0].effects == []
+        assert state_fleet.init_transitions[0].doc is None
         assert state_fleet.init_transitions[0].parent_ref().name == "Fleet"
         assert state_fleet.init_transitions[0].parent_ref().path == ("Fleet",)
         assert not state_fleet.is_leaf_state
@@ -193,6 +197,7 @@ class TestModelStateFleet:
         assert state_fleet.transitions_entering_children[0].event is None
         assert state_fleet.transitions_entering_children[0].guard is None
         assert state_fleet.transitions_entering_children[0].effects == []
+        assert state_fleet.transitions_entering_children[0].doc is None
         assert state_fleet.transitions_entering_children[0].parent_ref().name == "Fleet"
         assert state_fleet.transitions_entering_children[0].parent_ref().path == (
             "Fleet",
@@ -209,6 +214,7 @@ class TestModelStateFleet:
         assert state_fleet.transitions_entering_children_simplified[0].event is None
         assert state_fleet.transitions_entering_children_simplified[0].guard is None
         assert state_fleet.transitions_entering_children_simplified[0].effects == []
+        assert state_fleet.transitions_entering_children_simplified[0].doc is None
         assert (
             state_fleet.transitions_entering_children_simplified[0].parent_ref().name
             == "Fleet"
@@ -222,6 +228,7 @@ class TestModelStateFleet:
         assert state_fleet.transitions_from[0].event is None
         assert state_fleet.transitions_from[0].guard is None
         assert state_fleet.transitions_from[0].effects == []
+        assert state_fleet.transitions_from[0].doc is None
         assert state_fleet.transitions_from[0].parent_ref is None
         assert len(state_fleet.transitions_to) == 1
         assert state_fleet.transitions_to[0].from_state == INIT_STATE
@@ -229,6 +236,7 @@ class TestModelStateFleet:
         assert state_fleet.transitions_to[0].event is None
         assert state_fleet.transitions_to[0].guard is None
         assert state_fleet.transitions_to[0].effects == []
+        assert state_fleet.transitions_to[0].doc is None
         assert state_fleet.transitions_to[0].parent_ref is None
 
     def test_state_fleet_to_ast_node(self, state_fleet):
@@ -236,7 +244,11 @@ class TestModelStateFleet:
         assert ast_node == dsl_nodes.StateDefinition(
             name="Fleet",
             extra_name=None,
-            events=[dsl_nodes.EventDefinition(name="Start", extra_name="Fleet Start")],
+            events=[
+                dsl_nodes.EventDefinition(
+                    name="Start", extra_name="Fleet Start", doc=None
+                )
+            ],
             imports=[],
             substates=[
                 dsl_nodes.StateDefinition(
@@ -258,6 +270,7 @@ class TestModelStateFleet:
                             during_aspects=[],
                             force_transitions=[],
                             is_pseudo=False,
+                            doc=None,
                         ),
                         dsl_nodes.StateDefinition(
                             name="Running",
@@ -272,6 +285,7 @@ class TestModelStateFleet:
                             during_aspects=[],
                             force_transitions=[],
                             is_pseudo=False,
+                            doc=None,
                         ),
                         dsl_nodes.StateDefinition(
                             name="Error",
@@ -286,6 +300,7 @@ class TestModelStateFleet:
                             during_aspects=[],
                             force_transitions=[],
                             is_pseudo=False,
+                            doc=None,
                         ),
                     ],
                     transitions=[
@@ -297,6 +312,7 @@ class TestModelStateFleet:
                             ),
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Running",
@@ -306,6 +322,7 @@ class TestModelStateFleet:
                             ),
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Error",
@@ -315,6 +332,7 @@ class TestModelStateFleet:
                             ),
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state=INIT_STATE,
@@ -322,6 +340,7 @@ class TestModelStateFleet:
                             event_id=None,
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Idle",
@@ -331,6 +350,7 @@ class TestModelStateFleet:
                             ),
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Running",
@@ -340,6 +360,7 @@ class TestModelStateFleet:
                             ),
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                     ],
                     enters=[],
@@ -348,6 +369,7 @@ class TestModelStateFleet:
                     during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
+                    doc=None,
                 ),
                 dsl_nodes.StateDefinition(
                     name="RightMotor",
@@ -368,6 +390,7 @@ class TestModelStateFleet:
                             during_aspects=[],
                             force_transitions=[],
                             is_pseudo=False,
+                            doc=None,
                         ),
                         dsl_nodes.StateDefinition(
                             name="Running",
@@ -382,6 +405,7 @@ class TestModelStateFleet:
                             during_aspects=[],
                             force_transitions=[],
                             is_pseudo=False,
+                            doc=None,
                         ),
                         dsl_nodes.StateDefinition(
                             name="Error",
@@ -396,6 +420,7 @@ class TestModelStateFleet:
                             during_aspects=[],
                             force_transitions=[],
                             is_pseudo=False,
+                            doc=None,
                         ),
                     ],
                     transitions=[
@@ -407,6 +432,7 @@ class TestModelStateFleet:
                             ),
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Running",
@@ -416,6 +442,7 @@ class TestModelStateFleet:
                             ),
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Error",
@@ -425,6 +452,7 @@ class TestModelStateFleet:
                             ),
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state=INIT_STATE,
@@ -432,6 +460,7 @@ class TestModelStateFleet:
                             event_id=None,
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Idle",
@@ -441,6 +470,7 @@ class TestModelStateFleet:
                             ),
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Running",
@@ -450,6 +480,7 @@ class TestModelStateFleet:
                             ),
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                     ],
                     enters=[],
@@ -458,14 +489,17 @@ class TestModelStateFleet:
                     during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
+                    doc=None,
                 ),
                 dsl_nodes.StateDefinition(
                     name="Bus",
                     extra_name=None,
                     events=[
-                        dsl_nodes.EventDefinition(name="Stop", extra_name=None),
                         dsl_nodes.EventDefinition(
-                            name="Alarm", extra_name="Fleet Alarm"
+                            name="Stop", extra_name=None, doc=None
+                        ),
+                        dsl_nodes.EventDefinition(
+                            name="Alarm", extra_name="Fleet Alarm", doc=None
                         ),
                     ],
                     imports=[],
@@ -477,6 +511,7 @@ class TestModelStateFleet:
                     during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
+                    doc=None,
                 ),
             ],
             transitions=[
@@ -486,6 +521,7 @@ class TestModelStateFleet:
                     event_id=None,
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="LeftMotor",
@@ -493,6 +529,7 @@ class TestModelStateFleet:
                     event_id=None,
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
             ],
             enters=[],
@@ -501,6 +538,7 @@ class TestModelStateFleet:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_fleet_list_on_enters(self, state_fleet):
@@ -572,10 +610,14 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor.transitions[0].from_state == "Idle"
         assert state_fleet_leftmotor.transitions[0].to_state == "Error"
         assert state_fleet_leftmotor.transitions[0].event == Event(
-            name="Alarm", state_path=("Fleet", "Bus"), extra_name="Fleet Alarm"
+            name="Alarm",
+            state_path=("Fleet", "Bus"),
+            extra_name="Fleet Alarm",
+            doc=None,
         )
         assert state_fleet_leftmotor.transitions[0].guard is None
         assert state_fleet_leftmotor.transitions[0].effects == []
+        assert state_fleet_leftmotor.transitions[0].doc is None
         assert state_fleet_leftmotor.transitions[0].parent_ref().name == "LeftMotor"
         assert state_fleet_leftmotor.transitions[0].parent_ref().path == (
             "Fleet",
@@ -584,10 +626,14 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor.transitions[1].from_state == "Running"
         assert state_fleet_leftmotor.transitions[1].to_state == "Error"
         assert state_fleet_leftmotor.transitions[1].event == Event(
-            name="Alarm", state_path=("Fleet", "Bus"), extra_name="Fleet Alarm"
+            name="Alarm",
+            state_path=("Fleet", "Bus"),
+            extra_name="Fleet Alarm",
+            doc=None,
         )
         assert state_fleet_leftmotor.transitions[1].guard is None
         assert state_fleet_leftmotor.transitions[1].effects == []
+        assert state_fleet_leftmotor.transitions[1].doc is None
         assert state_fleet_leftmotor.transitions[1].parent_ref().name == "LeftMotor"
         assert state_fleet_leftmotor.transitions[1].parent_ref().path == (
             "Fleet",
@@ -596,10 +642,14 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor.transitions[2].from_state == "Error"
         assert state_fleet_leftmotor.transitions[2].to_state == "Error"
         assert state_fleet_leftmotor.transitions[2].event == Event(
-            name="Alarm", state_path=("Fleet", "Bus"), extra_name="Fleet Alarm"
+            name="Alarm",
+            state_path=("Fleet", "Bus"),
+            extra_name="Fleet Alarm",
+            doc=None,
         )
         assert state_fleet_leftmotor.transitions[2].guard is None
         assert state_fleet_leftmotor.transitions[2].effects == []
+        assert state_fleet_leftmotor.transitions[2].doc is None
         assert state_fleet_leftmotor.transitions[2].parent_ref().name == "LeftMotor"
         assert state_fleet_leftmotor.transitions[2].parent_ref().path == (
             "Fleet",
@@ -610,6 +660,7 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor.transitions[3].event is None
         assert state_fleet_leftmotor.transitions[3].guard is None
         assert state_fleet_leftmotor.transitions[3].effects == []
+        assert state_fleet_leftmotor.transitions[3].doc is None
         assert state_fleet_leftmotor.transitions[3].parent_ref().name == "LeftMotor"
         assert state_fleet_leftmotor.transitions[3].parent_ref().path == (
             "Fleet",
@@ -618,10 +669,11 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor.transitions[4].from_state == "Idle"
         assert state_fleet_leftmotor.transitions[4].to_state == "Running"
         assert state_fleet_leftmotor.transitions[4].event == Event(
-            name="Start", state_path=("Fleet",), extra_name="Fleet Start"
+            name="Start", state_path=("Fleet",), extra_name="Fleet Start", doc=None
         )
         assert state_fleet_leftmotor.transitions[4].guard is None
         assert state_fleet_leftmotor.transitions[4].effects == []
+        assert state_fleet_leftmotor.transitions[4].doc is None
         assert state_fleet_leftmotor.transitions[4].parent_ref().name == "LeftMotor"
         assert state_fleet_leftmotor.transitions[4].parent_ref().path == (
             "Fleet",
@@ -630,10 +682,11 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor.transitions[5].from_state == "Running"
         assert state_fleet_leftmotor.transitions[5].to_state == "Idle"
         assert state_fleet_leftmotor.transitions[5].event == Event(
-            name="Stop", state_path=("Fleet", "Bus"), extra_name=None
+            name="Stop", state_path=("Fleet", "Bus"), extra_name=None, doc=None
         )
         assert state_fleet_leftmotor.transitions[5].guard is None
         assert state_fleet_leftmotor.transitions[5].effects == []
+        assert state_fleet_leftmotor.transitions[5].doc is None
         assert state_fleet_leftmotor.transitions[5].parent_ref().name == "LeftMotor"
         assert state_fleet_leftmotor.transitions[5].parent_ref().path == (
             "Fleet",
@@ -653,6 +706,7 @@ class TestModelStateFleet:
         }
         assert state_fleet_leftmotor.extra_name == "Left Motor"
         assert not state_fleet_leftmotor.is_pseudo
+        assert state_fleet_leftmotor.doc is None
         assert state_fleet_leftmotor.abstract_on_during_aspects == []
         assert state_fleet_leftmotor.abstract_on_durings == []
         assert state_fleet_leftmotor.abstract_on_enters == []
@@ -663,6 +717,7 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor.init_transitions[0].event is None
         assert state_fleet_leftmotor.init_transitions[0].guard is None
         assert state_fleet_leftmotor.init_transitions[0].effects == []
+        assert state_fleet_leftmotor.init_transitions[0].doc is None
         assert (
             state_fleet_leftmotor.init_transitions[0].parent_ref().name == "LeftMotor"
         )
@@ -688,6 +743,7 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor.transitions_entering_children[0].event is None
         assert state_fleet_leftmotor.transitions_entering_children[0].guard is None
         assert state_fleet_leftmotor.transitions_entering_children[0].effects == []
+        assert state_fleet_leftmotor.transitions_entering_children[0].doc is None
         assert (
             state_fleet_leftmotor.transitions_entering_children[0].parent_ref().name
             == "LeftMotor"
@@ -717,6 +773,10 @@ class TestModelStateFleet:
             == []
         )
         assert (
+            state_fleet_leftmotor.transitions_entering_children_simplified[0].doc
+            is None
+        )
+        assert (
             state_fleet_leftmotor.transitions_entering_children_simplified[0]
             .parent_ref()
             .name
@@ -731,6 +791,7 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor.transitions_from[0].event is None
         assert state_fleet_leftmotor.transitions_from[0].guard is None
         assert state_fleet_leftmotor.transitions_from[0].effects == []
+        assert state_fleet_leftmotor.transitions_from[0].doc is None
         assert state_fleet_leftmotor.transitions_from[0].parent_ref().name == "Fleet"
         assert state_fleet_leftmotor.transitions_from[0].parent_ref().path == ("Fleet",)
         assert len(state_fleet_leftmotor.transitions_to) == 1
@@ -739,6 +800,7 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor.transitions_to[0].event is None
         assert state_fleet_leftmotor.transitions_to[0].guard is None
         assert state_fleet_leftmotor.transitions_to[0].effects == []
+        assert state_fleet_leftmotor.transitions_to[0].doc is None
         assert state_fleet_leftmotor.transitions_to[0].parent_ref().name == "Fleet"
         assert state_fleet_leftmotor.transitions_to[0].parent_ref().path == ("Fleet",)
 
@@ -763,6 +825,7 @@ class TestModelStateFleet:
                     during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
+                    doc=None,
                 ),
                 dsl_nodes.StateDefinition(
                     name="Running",
@@ -777,6 +840,7 @@ class TestModelStateFleet:
                     during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
+                    doc=None,
                 ),
                 dsl_nodes.StateDefinition(
                     name="Error",
@@ -791,6 +855,7 @@ class TestModelStateFleet:
                     during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
+                    doc=None,
                 ),
             ],
             transitions=[
@@ -800,6 +865,7 @@ class TestModelStateFleet:
                     event_id=dsl_nodes.ChainID(path=["Bus", "Alarm"], is_absolute=True),
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Running",
@@ -807,6 +873,7 @@ class TestModelStateFleet:
                     event_id=dsl_nodes.ChainID(path=["Bus", "Alarm"], is_absolute=True),
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Error",
@@ -814,6 +881,7 @@ class TestModelStateFleet:
                     event_id=dsl_nodes.ChainID(path=["Bus", "Alarm"], is_absolute=True),
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state=INIT_STATE,
@@ -821,6 +889,7 @@ class TestModelStateFleet:
                     event_id=None,
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Idle",
@@ -828,6 +897,7 @@ class TestModelStateFleet:
                     event_id=dsl_nodes.ChainID(path=["Start"], is_absolute=True),
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Running",
@@ -835,6 +905,7 @@ class TestModelStateFleet:
                     event_id=dsl_nodes.ChainID(path=["Bus", "Stop"], is_absolute=True),
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
             ],
             enters=[],
@@ -843,6 +914,7 @@ class TestModelStateFleet:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_fleet_leftmotor_list_on_enters(self, state_fleet_leftmotor):
@@ -925,6 +997,7 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor_idle.substate_name_to_id == {}
         assert state_fleet_leftmotor_idle.extra_name is None
         assert not state_fleet_leftmotor_idle.is_pseudo
+        assert state_fleet_leftmotor_idle.doc is None
         assert state_fleet_leftmotor_idle.abstract_on_during_aspects == []
         assert state_fleet_leftmotor_idle.abstract_on_durings == []
         assert state_fleet_leftmotor_idle.abstract_on_enters == []
@@ -952,10 +1025,14 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor_idle.transitions_from[0].from_state == "Idle"
         assert state_fleet_leftmotor_idle.transitions_from[0].to_state == "Error"
         assert state_fleet_leftmotor_idle.transitions_from[0].event == Event(
-            name="Alarm", state_path=("Fleet", "Bus"), extra_name="Fleet Alarm"
+            name="Alarm",
+            state_path=("Fleet", "Bus"),
+            extra_name="Fleet Alarm",
+            doc=None,
         )
         assert state_fleet_leftmotor_idle.transitions_from[0].guard is None
         assert state_fleet_leftmotor_idle.transitions_from[0].effects == []
+        assert state_fleet_leftmotor_idle.transitions_from[0].doc is None
         assert (
             state_fleet_leftmotor_idle.transitions_from[0].parent_ref().name
             == "LeftMotor"
@@ -967,10 +1044,11 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor_idle.transitions_from[1].from_state == "Idle"
         assert state_fleet_leftmotor_idle.transitions_from[1].to_state == "Running"
         assert state_fleet_leftmotor_idle.transitions_from[1].event == Event(
-            name="Start", state_path=("Fleet",), extra_name="Fleet Start"
+            name="Start", state_path=("Fleet",), extra_name="Fleet Start", doc=None
         )
         assert state_fleet_leftmotor_idle.transitions_from[1].guard is None
         assert state_fleet_leftmotor_idle.transitions_from[1].effects == []
+        assert state_fleet_leftmotor_idle.transitions_from[1].doc is None
         assert (
             state_fleet_leftmotor_idle.transitions_from[1].parent_ref().name
             == "LeftMotor"
@@ -985,6 +1063,7 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor_idle.transitions_to[0].event is None
         assert state_fleet_leftmotor_idle.transitions_to[0].guard is None
         assert state_fleet_leftmotor_idle.transitions_to[0].effects == []
+        assert state_fleet_leftmotor_idle.transitions_to[0].doc is None
         assert (
             state_fleet_leftmotor_idle.transitions_to[0].parent_ref().name
             == "LeftMotor"
@@ -996,10 +1075,11 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor_idle.transitions_to[1].from_state == "Running"
         assert state_fleet_leftmotor_idle.transitions_to[1].to_state == "Idle"
         assert state_fleet_leftmotor_idle.transitions_to[1].event == Event(
-            name="Stop", state_path=("Fleet", "Bus"), extra_name=None
+            name="Stop", state_path=("Fleet", "Bus"), extra_name=None, doc=None
         )
         assert state_fleet_leftmotor_idle.transitions_to[1].guard is None
         assert state_fleet_leftmotor_idle.transitions_to[1].effects == []
+        assert state_fleet_leftmotor_idle.transitions_to[1].doc is None
         assert (
             state_fleet_leftmotor_idle.transitions_to[1].parent_ref().name
             == "LeftMotor"
@@ -1024,6 +1104,7 @@ class TestModelStateFleet:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_fleet_leftmotor_idle_list_on_enters(
@@ -1127,6 +1208,7 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor_running.substate_name_to_id == {}
         assert state_fleet_leftmotor_running.extra_name is None
         assert not state_fleet_leftmotor_running.is_pseudo
+        assert state_fleet_leftmotor_running.doc is None
         assert state_fleet_leftmotor_running.abstract_on_during_aspects == []
         assert state_fleet_leftmotor_running.abstract_on_durings == []
         assert state_fleet_leftmotor_running.abstract_on_enters == []
@@ -1154,10 +1236,14 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor_running.transitions_from[0].from_state == "Running"
         assert state_fleet_leftmotor_running.transitions_from[0].to_state == "Error"
         assert state_fleet_leftmotor_running.transitions_from[0].event == Event(
-            name="Alarm", state_path=("Fleet", "Bus"), extra_name="Fleet Alarm"
+            name="Alarm",
+            state_path=("Fleet", "Bus"),
+            extra_name="Fleet Alarm",
+            doc=None,
         )
         assert state_fleet_leftmotor_running.transitions_from[0].guard is None
         assert state_fleet_leftmotor_running.transitions_from[0].effects == []
+        assert state_fleet_leftmotor_running.transitions_from[0].doc is None
         assert (
             state_fleet_leftmotor_running.transitions_from[0].parent_ref().name
             == "LeftMotor"
@@ -1169,10 +1255,11 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor_running.transitions_from[1].from_state == "Running"
         assert state_fleet_leftmotor_running.transitions_from[1].to_state == "Idle"
         assert state_fleet_leftmotor_running.transitions_from[1].event == Event(
-            name="Stop", state_path=("Fleet", "Bus"), extra_name=None
+            name="Stop", state_path=("Fleet", "Bus"), extra_name=None, doc=None
         )
         assert state_fleet_leftmotor_running.transitions_from[1].guard is None
         assert state_fleet_leftmotor_running.transitions_from[1].effects == []
+        assert state_fleet_leftmotor_running.transitions_from[1].doc is None
         assert (
             state_fleet_leftmotor_running.transitions_from[1].parent_ref().name
             == "LeftMotor"
@@ -1185,10 +1272,11 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor_running.transitions_to[0].from_state == "Idle"
         assert state_fleet_leftmotor_running.transitions_to[0].to_state == "Running"
         assert state_fleet_leftmotor_running.transitions_to[0].event == Event(
-            name="Start", state_path=("Fleet",), extra_name="Fleet Start"
+            name="Start", state_path=("Fleet",), extra_name="Fleet Start", doc=None
         )
         assert state_fleet_leftmotor_running.transitions_to[0].guard is None
         assert state_fleet_leftmotor_running.transitions_to[0].effects == []
+        assert state_fleet_leftmotor_running.transitions_to[0].doc is None
         assert (
             state_fleet_leftmotor_running.transitions_to[0].parent_ref().name
             == "LeftMotor"
@@ -1215,6 +1303,7 @@ class TestModelStateFleet:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_fleet_leftmotor_running_list_on_enters(
@@ -1320,6 +1409,7 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor_error.substate_name_to_id == {}
         assert state_fleet_leftmotor_error.extra_name is None
         assert not state_fleet_leftmotor_error.is_pseudo
+        assert state_fleet_leftmotor_error.doc is None
         assert state_fleet_leftmotor_error.abstract_on_during_aspects == []
         assert state_fleet_leftmotor_error.abstract_on_durings == []
         assert state_fleet_leftmotor_error.abstract_on_enters == []
@@ -1347,10 +1437,14 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor_error.transitions_from[0].from_state == "Error"
         assert state_fleet_leftmotor_error.transitions_from[0].to_state == "Error"
         assert state_fleet_leftmotor_error.transitions_from[0].event == Event(
-            name="Alarm", state_path=("Fleet", "Bus"), extra_name="Fleet Alarm"
+            name="Alarm",
+            state_path=("Fleet", "Bus"),
+            extra_name="Fleet Alarm",
+            doc=None,
         )
         assert state_fleet_leftmotor_error.transitions_from[0].guard is None
         assert state_fleet_leftmotor_error.transitions_from[0].effects == []
+        assert state_fleet_leftmotor_error.transitions_from[0].doc is None
         assert (
             state_fleet_leftmotor_error.transitions_from[0].parent_ref().name
             == "LeftMotor"
@@ -1363,10 +1457,14 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor_error.transitions_to[0].from_state == "Idle"
         assert state_fleet_leftmotor_error.transitions_to[0].to_state == "Error"
         assert state_fleet_leftmotor_error.transitions_to[0].event == Event(
-            name="Alarm", state_path=("Fleet", "Bus"), extra_name="Fleet Alarm"
+            name="Alarm",
+            state_path=("Fleet", "Bus"),
+            extra_name="Fleet Alarm",
+            doc=None,
         )
         assert state_fleet_leftmotor_error.transitions_to[0].guard is None
         assert state_fleet_leftmotor_error.transitions_to[0].effects == []
+        assert state_fleet_leftmotor_error.transitions_to[0].doc is None
         assert (
             state_fleet_leftmotor_error.transitions_to[0].parent_ref().name
             == "LeftMotor"
@@ -1378,10 +1476,14 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor_error.transitions_to[1].from_state == "Running"
         assert state_fleet_leftmotor_error.transitions_to[1].to_state == "Error"
         assert state_fleet_leftmotor_error.transitions_to[1].event == Event(
-            name="Alarm", state_path=("Fleet", "Bus"), extra_name="Fleet Alarm"
+            name="Alarm",
+            state_path=("Fleet", "Bus"),
+            extra_name="Fleet Alarm",
+            doc=None,
         )
         assert state_fleet_leftmotor_error.transitions_to[1].guard is None
         assert state_fleet_leftmotor_error.transitions_to[1].effects == []
+        assert state_fleet_leftmotor_error.transitions_to[1].doc is None
         assert (
             state_fleet_leftmotor_error.transitions_to[1].parent_ref().name
             == "LeftMotor"
@@ -1393,10 +1495,14 @@ class TestModelStateFleet:
         assert state_fleet_leftmotor_error.transitions_to[2].from_state == "Error"
         assert state_fleet_leftmotor_error.transitions_to[2].to_state == "Error"
         assert state_fleet_leftmotor_error.transitions_to[2].event == Event(
-            name="Alarm", state_path=("Fleet", "Bus"), extra_name="Fleet Alarm"
+            name="Alarm",
+            state_path=("Fleet", "Bus"),
+            extra_name="Fleet Alarm",
+            doc=None,
         )
         assert state_fleet_leftmotor_error.transitions_to[2].guard is None
         assert state_fleet_leftmotor_error.transitions_to[2].effects == []
+        assert state_fleet_leftmotor_error.transitions_to[2].doc is None
         assert (
             state_fleet_leftmotor_error.transitions_to[2].parent_ref().name
             == "LeftMotor"
@@ -1421,6 +1527,7 @@ class TestModelStateFleet:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_fleet_leftmotor_error_list_on_enters(
@@ -1523,10 +1630,14 @@ class TestModelStateFleet:
         assert state_fleet_rightmotor.transitions[0].from_state == "Idle"
         assert state_fleet_rightmotor.transitions[0].to_state == "Error"
         assert state_fleet_rightmotor.transitions[0].event == Event(
-            name="Alarm", state_path=("Fleet", "Bus"), extra_name="Fleet Alarm"
+            name="Alarm",
+            state_path=("Fleet", "Bus"),
+            extra_name="Fleet Alarm",
+            doc=None,
         )
         assert state_fleet_rightmotor.transitions[0].guard is None
         assert state_fleet_rightmotor.transitions[0].effects == []
+        assert state_fleet_rightmotor.transitions[0].doc is None
         assert state_fleet_rightmotor.transitions[0].parent_ref().name == "RightMotor"
         assert state_fleet_rightmotor.transitions[0].parent_ref().path == (
             "Fleet",
@@ -1535,10 +1646,14 @@ class TestModelStateFleet:
         assert state_fleet_rightmotor.transitions[1].from_state == "Running"
         assert state_fleet_rightmotor.transitions[1].to_state == "Error"
         assert state_fleet_rightmotor.transitions[1].event == Event(
-            name="Alarm", state_path=("Fleet", "Bus"), extra_name="Fleet Alarm"
+            name="Alarm",
+            state_path=("Fleet", "Bus"),
+            extra_name="Fleet Alarm",
+            doc=None,
         )
         assert state_fleet_rightmotor.transitions[1].guard is None
         assert state_fleet_rightmotor.transitions[1].effects == []
+        assert state_fleet_rightmotor.transitions[1].doc is None
         assert state_fleet_rightmotor.transitions[1].parent_ref().name == "RightMotor"
         assert state_fleet_rightmotor.transitions[1].parent_ref().path == (
             "Fleet",
@@ -1547,10 +1662,14 @@ class TestModelStateFleet:
         assert state_fleet_rightmotor.transitions[2].from_state == "Error"
         assert state_fleet_rightmotor.transitions[2].to_state == "Error"
         assert state_fleet_rightmotor.transitions[2].event == Event(
-            name="Alarm", state_path=("Fleet", "Bus"), extra_name="Fleet Alarm"
+            name="Alarm",
+            state_path=("Fleet", "Bus"),
+            extra_name="Fleet Alarm",
+            doc=None,
         )
         assert state_fleet_rightmotor.transitions[2].guard is None
         assert state_fleet_rightmotor.transitions[2].effects == []
+        assert state_fleet_rightmotor.transitions[2].doc is None
         assert state_fleet_rightmotor.transitions[2].parent_ref().name == "RightMotor"
         assert state_fleet_rightmotor.transitions[2].parent_ref().path == (
             "Fleet",
@@ -1561,6 +1680,7 @@ class TestModelStateFleet:
         assert state_fleet_rightmotor.transitions[3].event is None
         assert state_fleet_rightmotor.transitions[3].guard is None
         assert state_fleet_rightmotor.transitions[3].effects == []
+        assert state_fleet_rightmotor.transitions[3].doc is None
         assert state_fleet_rightmotor.transitions[3].parent_ref().name == "RightMotor"
         assert state_fleet_rightmotor.transitions[3].parent_ref().path == (
             "Fleet",
@@ -1569,10 +1689,11 @@ class TestModelStateFleet:
         assert state_fleet_rightmotor.transitions[4].from_state == "Idle"
         assert state_fleet_rightmotor.transitions[4].to_state == "Running"
         assert state_fleet_rightmotor.transitions[4].event == Event(
-            name="Start", state_path=("Fleet",), extra_name="Fleet Start"
+            name="Start", state_path=("Fleet",), extra_name="Fleet Start", doc=None
         )
         assert state_fleet_rightmotor.transitions[4].guard is None
         assert state_fleet_rightmotor.transitions[4].effects == []
+        assert state_fleet_rightmotor.transitions[4].doc is None
         assert state_fleet_rightmotor.transitions[4].parent_ref().name == "RightMotor"
         assert state_fleet_rightmotor.transitions[4].parent_ref().path == (
             "Fleet",
@@ -1581,10 +1702,11 @@ class TestModelStateFleet:
         assert state_fleet_rightmotor.transitions[5].from_state == "Running"
         assert state_fleet_rightmotor.transitions[5].to_state == "Idle"
         assert state_fleet_rightmotor.transitions[5].event == Event(
-            name="Stop", state_path=("Fleet", "Bus"), extra_name=None
+            name="Stop", state_path=("Fleet", "Bus"), extra_name=None, doc=None
         )
         assert state_fleet_rightmotor.transitions[5].guard is None
         assert state_fleet_rightmotor.transitions[5].effects == []
+        assert state_fleet_rightmotor.transitions[5].doc is None
         assert state_fleet_rightmotor.transitions[5].parent_ref().name == "RightMotor"
         assert state_fleet_rightmotor.transitions[5].parent_ref().path == (
             "Fleet",
@@ -1604,6 +1726,7 @@ class TestModelStateFleet:
         }
         assert state_fleet_rightmotor.extra_name == "Right Motor"
         assert not state_fleet_rightmotor.is_pseudo
+        assert state_fleet_rightmotor.doc is None
         assert state_fleet_rightmotor.abstract_on_during_aspects == []
         assert state_fleet_rightmotor.abstract_on_durings == []
         assert state_fleet_rightmotor.abstract_on_enters == []
@@ -1614,6 +1737,7 @@ class TestModelStateFleet:
         assert state_fleet_rightmotor.init_transitions[0].event is None
         assert state_fleet_rightmotor.init_transitions[0].guard is None
         assert state_fleet_rightmotor.init_transitions[0].effects == []
+        assert state_fleet_rightmotor.init_transitions[0].doc is None
         assert (
             state_fleet_rightmotor.init_transitions[0].parent_ref().name == "RightMotor"
         )
@@ -1641,6 +1765,7 @@ class TestModelStateFleet:
         assert state_fleet_rightmotor.transitions_entering_children[0].event is None
         assert state_fleet_rightmotor.transitions_entering_children[0].guard is None
         assert state_fleet_rightmotor.transitions_entering_children[0].effects == []
+        assert state_fleet_rightmotor.transitions_entering_children[0].doc is None
         assert (
             state_fleet_rightmotor.transitions_entering_children[0].parent_ref().name
             == "RightMotor"
@@ -1672,6 +1797,10 @@ class TestModelStateFleet:
             == []
         )
         assert (
+            state_fleet_rightmotor.transitions_entering_children_simplified[0].doc
+            is None
+        )
+        assert (
             state_fleet_rightmotor.transitions_entering_children_simplified[0]
             .parent_ref()
             .name
@@ -1687,6 +1816,7 @@ class TestModelStateFleet:
         assert state_fleet_rightmotor.transitions_to[0].event is None
         assert state_fleet_rightmotor.transitions_to[0].guard is None
         assert state_fleet_rightmotor.transitions_to[0].effects == []
+        assert state_fleet_rightmotor.transitions_to[0].doc is None
         assert state_fleet_rightmotor.transitions_to[0].parent_ref().name == "Fleet"
         assert state_fleet_rightmotor.transitions_to[0].parent_ref().path == ("Fleet",)
 
@@ -1711,6 +1841,7 @@ class TestModelStateFleet:
                     during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
+                    doc=None,
                 ),
                 dsl_nodes.StateDefinition(
                     name="Running",
@@ -1725,6 +1856,7 @@ class TestModelStateFleet:
                     during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
+                    doc=None,
                 ),
                 dsl_nodes.StateDefinition(
                     name="Error",
@@ -1739,6 +1871,7 @@ class TestModelStateFleet:
                     during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
+                    doc=None,
                 ),
             ],
             transitions=[
@@ -1748,6 +1881,7 @@ class TestModelStateFleet:
                     event_id=dsl_nodes.ChainID(path=["Bus", "Alarm"], is_absolute=True),
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Running",
@@ -1755,6 +1889,7 @@ class TestModelStateFleet:
                     event_id=dsl_nodes.ChainID(path=["Bus", "Alarm"], is_absolute=True),
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Error",
@@ -1762,6 +1897,7 @@ class TestModelStateFleet:
                     event_id=dsl_nodes.ChainID(path=["Bus", "Alarm"], is_absolute=True),
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state=INIT_STATE,
@@ -1769,6 +1905,7 @@ class TestModelStateFleet:
                     event_id=None,
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Idle",
@@ -1776,6 +1913,7 @@ class TestModelStateFleet:
                     event_id=dsl_nodes.ChainID(path=["Start"], is_absolute=True),
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Running",
@@ -1783,6 +1921,7 @@ class TestModelStateFleet:
                     event_id=dsl_nodes.ChainID(path=["Bus", "Stop"], is_absolute=True),
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
             ],
             enters=[],
@@ -1791,6 +1930,7 @@ class TestModelStateFleet:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_fleet_rightmotor_list_on_enters(self, state_fleet_rightmotor):
@@ -1873,6 +2013,7 @@ class TestModelStateFleet:
         assert state_fleet_rightmotor_idle.substate_name_to_id == {}
         assert state_fleet_rightmotor_idle.extra_name is None
         assert not state_fleet_rightmotor_idle.is_pseudo
+        assert state_fleet_rightmotor_idle.doc is None
         assert state_fleet_rightmotor_idle.abstract_on_during_aspects == []
         assert state_fleet_rightmotor_idle.abstract_on_durings == []
         assert state_fleet_rightmotor_idle.abstract_on_enters == []
@@ -1900,10 +2041,14 @@ class TestModelStateFleet:
         assert state_fleet_rightmotor_idle.transitions_from[0].from_state == "Idle"
         assert state_fleet_rightmotor_idle.transitions_from[0].to_state == "Error"
         assert state_fleet_rightmotor_idle.transitions_from[0].event == Event(
-            name="Alarm", state_path=("Fleet", "Bus"), extra_name="Fleet Alarm"
+            name="Alarm",
+            state_path=("Fleet", "Bus"),
+            extra_name="Fleet Alarm",
+            doc=None,
         )
         assert state_fleet_rightmotor_idle.transitions_from[0].guard is None
         assert state_fleet_rightmotor_idle.transitions_from[0].effects == []
+        assert state_fleet_rightmotor_idle.transitions_from[0].doc is None
         assert (
             state_fleet_rightmotor_idle.transitions_from[0].parent_ref().name
             == "RightMotor"
@@ -1915,10 +2060,11 @@ class TestModelStateFleet:
         assert state_fleet_rightmotor_idle.transitions_from[1].from_state == "Idle"
         assert state_fleet_rightmotor_idle.transitions_from[1].to_state == "Running"
         assert state_fleet_rightmotor_idle.transitions_from[1].event == Event(
-            name="Start", state_path=("Fleet",), extra_name="Fleet Start"
+            name="Start", state_path=("Fleet",), extra_name="Fleet Start", doc=None
         )
         assert state_fleet_rightmotor_idle.transitions_from[1].guard is None
         assert state_fleet_rightmotor_idle.transitions_from[1].effects == []
+        assert state_fleet_rightmotor_idle.transitions_from[1].doc is None
         assert (
             state_fleet_rightmotor_idle.transitions_from[1].parent_ref().name
             == "RightMotor"
@@ -1933,6 +2079,7 @@ class TestModelStateFleet:
         assert state_fleet_rightmotor_idle.transitions_to[0].event is None
         assert state_fleet_rightmotor_idle.transitions_to[0].guard is None
         assert state_fleet_rightmotor_idle.transitions_to[0].effects == []
+        assert state_fleet_rightmotor_idle.transitions_to[0].doc is None
         assert (
             state_fleet_rightmotor_idle.transitions_to[0].parent_ref().name
             == "RightMotor"
@@ -1944,10 +2091,11 @@ class TestModelStateFleet:
         assert state_fleet_rightmotor_idle.transitions_to[1].from_state == "Running"
         assert state_fleet_rightmotor_idle.transitions_to[1].to_state == "Idle"
         assert state_fleet_rightmotor_idle.transitions_to[1].event == Event(
-            name="Stop", state_path=("Fleet", "Bus"), extra_name=None
+            name="Stop", state_path=("Fleet", "Bus"), extra_name=None, doc=None
         )
         assert state_fleet_rightmotor_idle.transitions_to[1].guard is None
         assert state_fleet_rightmotor_idle.transitions_to[1].effects == []
+        assert state_fleet_rightmotor_idle.transitions_to[1].doc is None
         assert (
             state_fleet_rightmotor_idle.transitions_to[1].parent_ref().name
             == "RightMotor"
@@ -1972,6 +2120,7 @@ class TestModelStateFleet:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_fleet_rightmotor_idle_list_on_enters(
@@ -2080,6 +2229,7 @@ class TestModelStateFleet:
         assert state_fleet_rightmotor_running.substate_name_to_id == {}
         assert state_fleet_rightmotor_running.extra_name is None
         assert not state_fleet_rightmotor_running.is_pseudo
+        assert state_fleet_rightmotor_running.doc is None
         assert state_fleet_rightmotor_running.abstract_on_during_aspects == []
         assert state_fleet_rightmotor_running.abstract_on_durings == []
         assert state_fleet_rightmotor_running.abstract_on_enters == []
@@ -2109,10 +2259,14 @@ class TestModelStateFleet:
         )
         assert state_fleet_rightmotor_running.transitions_from[0].to_state == "Error"
         assert state_fleet_rightmotor_running.transitions_from[0].event == Event(
-            name="Alarm", state_path=("Fleet", "Bus"), extra_name="Fleet Alarm"
+            name="Alarm",
+            state_path=("Fleet", "Bus"),
+            extra_name="Fleet Alarm",
+            doc=None,
         )
         assert state_fleet_rightmotor_running.transitions_from[0].guard is None
         assert state_fleet_rightmotor_running.transitions_from[0].effects == []
+        assert state_fleet_rightmotor_running.transitions_from[0].doc is None
         assert (
             state_fleet_rightmotor_running.transitions_from[0].parent_ref().name
             == "RightMotor"
@@ -2126,10 +2280,11 @@ class TestModelStateFleet:
         )
         assert state_fleet_rightmotor_running.transitions_from[1].to_state == "Idle"
         assert state_fleet_rightmotor_running.transitions_from[1].event == Event(
-            name="Stop", state_path=("Fleet", "Bus"), extra_name=None
+            name="Stop", state_path=("Fleet", "Bus"), extra_name=None, doc=None
         )
         assert state_fleet_rightmotor_running.transitions_from[1].guard is None
         assert state_fleet_rightmotor_running.transitions_from[1].effects == []
+        assert state_fleet_rightmotor_running.transitions_from[1].doc is None
         assert (
             state_fleet_rightmotor_running.transitions_from[1].parent_ref().name
             == "RightMotor"
@@ -2142,10 +2297,11 @@ class TestModelStateFleet:
         assert state_fleet_rightmotor_running.transitions_to[0].from_state == "Idle"
         assert state_fleet_rightmotor_running.transitions_to[0].to_state == "Running"
         assert state_fleet_rightmotor_running.transitions_to[0].event == Event(
-            name="Start", state_path=("Fleet",), extra_name="Fleet Start"
+            name="Start", state_path=("Fleet",), extra_name="Fleet Start", doc=None
         )
         assert state_fleet_rightmotor_running.transitions_to[0].guard is None
         assert state_fleet_rightmotor_running.transitions_to[0].effects == []
+        assert state_fleet_rightmotor_running.transitions_to[0].doc is None
         assert (
             state_fleet_rightmotor_running.transitions_to[0].parent_ref().name
             == "RightMotor"
@@ -2172,6 +2328,7 @@ class TestModelStateFleet:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_fleet_rightmotor_running_list_on_enters(
@@ -2277,6 +2434,7 @@ class TestModelStateFleet:
         assert state_fleet_rightmotor_error.substate_name_to_id == {}
         assert state_fleet_rightmotor_error.extra_name is None
         assert not state_fleet_rightmotor_error.is_pseudo
+        assert state_fleet_rightmotor_error.doc is None
         assert state_fleet_rightmotor_error.abstract_on_during_aspects == []
         assert state_fleet_rightmotor_error.abstract_on_durings == []
         assert state_fleet_rightmotor_error.abstract_on_enters == []
@@ -2304,10 +2462,14 @@ class TestModelStateFleet:
         assert state_fleet_rightmotor_error.transitions_from[0].from_state == "Error"
         assert state_fleet_rightmotor_error.transitions_from[0].to_state == "Error"
         assert state_fleet_rightmotor_error.transitions_from[0].event == Event(
-            name="Alarm", state_path=("Fleet", "Bus"), extra_name="Fleet Alarm"
+            name="Alarm",
+            state_path=("Fleet", "Bus"),
+            extra_name="Fleet Alarm",
+            doc=None,
         )
         assert state_fleet_rightmotor_error.transitions_from[0].guard is None
         assert state_fleet_rightmotor_error.transitions_from[0].effects == []
+        assert state_fleet_rightmotor_error.transitions_from[0].doc is None
         assert (
             state_fleet_rightmotor_error.transitions_from[0].parent_ref().name
             == "RightMotor"
@@ -2320,10 +2482,14 @@ class TestModelStateFleet:
         assert state_fleet_rightmotor_error.transitions_to[0].from_state == "Idle"
         assert state_fleet_rightmotor_error.transitions_to[0].to_state == "Error"
         assert state_fleet_rightmotor_error.transitions_to[0].event == Event(
-            name="Alarm", state_path=("Fleet", "Bus"), extra_name="Fleet Alarm"
+            name="Alarm",
+            state_path=("Fleet", "Bus"),
+            extra_name="Fleet Alarm",
+            doc=None,
         )
         assert state_fleet_rightmotor_error.transitions_to[0].guard is None
         assert state_fleet_rightmotor_error.transitions_to[0].effects == []
+        assert state_fleet_rightmotor_error.transitions_to[0].doc is None
         assert (
             state_fleet_rightmotor_error.transitions_to[0].parent_ref().name
             == "RightMotor"
@@ -2335,10 +2501,14 @@ class TestModelStateFleet:
         assert state_fleet_rightmotor_error.transitions_to[1].from_state == "Running"
         assert state_fleet_rightmotor_error.transitions_to[1].to_state == "Error"
         assert state_fleet_rightmotor_error.transitions_to[1].event == Event(
-            name="Alarm", state_path=("Fleet", "Bus"), extra_name="Fleet Alarm"
+            name="Alarm",
+            state_path=("Fleet", "Bus"),
+            extra_name="Fleet Alarm",
+            doc=None,
         )
         assert state_fleet_rightmotor_error.transitions_to[1].guard is None
         assert state_fleet_rightmotor_error.transitions_to[1].effects == []
+        assert state_fleet_rightmotor_error.transitions_to[1].doc is None
         assert (
             state_fleet_rightmotor_error.transitions_to[1].parent_ref().name
             == "RightMotor"
@@ -2350,10 +2520,14 @@ class TestModelStateFleet:
         assert state_fleet_rightmotor_error.transitions_to[2].from_state == "Error"
         assert state_fleet_rightmotor_error.transitions_to[2].to_state == "Error"
         assert state_fleet_rightmotor_error.transitions_to[2].event == Event(
-            name="Alarm", state_path=("Fleet", "Bus"), extra_name="Fleet Alarm"
+            name="Alarm",
+            state_path=("Fleet", "Bus"),
+            extra_name="Fleet Alarm",
+            doc=None,
         )
         assert state_fleet_rightmotor_error.transitions_to[2].guard is None
         assert state_fleet_rightmotor_error.transitions_to[2].effects == []
+        assert state_fleet_rightmotor_error.transitions_to[2].doc is None
         assert (
             state_fleet_rightmotor_error.transitions_to[2].parent_ref().name
             == "RightMotor"
@@ -2380,6 +2554,7 @@ class TestModelStateFleet:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_fleet_rightmotor_error_list_on_enters(
@@ -2474,9 +2649,14 @@ class TestModelStateFleet:
         assert state_fleet_bus.path == ("Fleet", "Bus")
         assert sorted(state_fleet_bus.substates.keys()) == []
         assert state_fleet_bus.events == {
-            "Stop": Event(name="Stop", state_path=("Fleet", "Bus"), extra_name=None),
+            "Stop": Event(
+                name="Stop", state_path=("Fleet", "Bus"), extra_name=None, doc=None
+            ),
             "Alarm": Event(
-                name="Alarm", state_path=("Fleet", "Bus"), extra_name="Fleet Alarm"
+                name="Alarm",
+                state_path=("Fleet", "Bus"),
+                extra_name="Fleet Alarm",
+                doc=None,
             ),
         }
         assert state_fleet_bus.transitions == []
@@ -2490,6 +2670,7 @@ class TestModelStateFleet:
         assert state_fleet_bus.substate_name_to_id == {}
         assert state_fleet_bus.extra_name is None
         assert not state_fleet_bus.is_pseudo
+        assert state_fleet_bus.doc is None
         assert state_fleet_bus.abstract_on_during_aspects == []
         assert state_fleet_bus.abstract_on_durings == []
         assert state_fleet_bus.abstract_on_enters == []
@@ -2516,8 +2697,10 @@ class TestModelStateFleet:
             name="Bus",
             extra_name=None,
             events=[
-                dsl_nodes.EventDefinition(name="Stop", extra_name=None),
-                dsl_nodes.EventDefinition(name="Alarm", extra_name="Fleet Alarm"),
+                dsl_nodes.EventDefinition(name="Stop", extra_name=None, doc=None),
+                dsl_nodes.EventDefinition(
+                    name="Alarm", extra_name="Fleet Alarm", doc=None
+                ),
             ],
             imports=[],
             substates=[],
@@ -2528,6 +2711,7 @@ class TestModelStateFleet:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_fleet_bus_list_on_enters(self, state_fleet_bus):

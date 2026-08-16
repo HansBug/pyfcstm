@@ -225,19 +225,19 @@ class TestDSLDuringDefinition:
                     """
                     during abstract funcName /* this is documentation */
                     """,
-                    'during abstract funcName /*\n    this is documentation\n*/'
+                    '/*\n * this is documentation\n */\nduring abstract funcName;'
             ),  # Abstract during function with documentation
             (
                     """
                     during before abstract funcName /* before aspect documentation */
                     """,
-                    'during before abstract funcName /*\n    before aspect documentation\n*/'
+                    '/*\n * before aspect documentation\n */\nduring before abstract funcName;'
             ),  # Abstract during function with before aspect and documentation
             (
                     """
                     during after abstract /* after aspect without function name */
                     """,
-                    'during after abstract /*\n    after aspect without function name\n*/'
+                    '/*\n * after aspect without function name\n */\nduring after abstract;'
             ),  # Abstract during function with after aspect, no function name, with documentation
             (
                     """

@@ -26,7 +26,8 @@ runPyGeneratedModelCase({
                 "E1"
             ],
             "path_name": "Root.E1",
-            "extra_name": "事件1"
+            "extra_name": "事件1",
+            "doc": null
         },
         {
             "name": "E1",
@@ -40,7 +41,8 @@ runPyGeneratedModelCase({
                 "E1"
             ],
             "path_name": "Root.state1.E1",
-            "extra_name": "S1 -> 事件1"
+            "extra_name": "S1 -> 事件1",
+            "doc": null
         },
         {
             "name": "E2",
@@ -54,7 +56,8 @@ runPyGeneratedModelCase({
                 "E2"
             ],
             "path_name": "Root.state3.E2",
-            "extra_name": "S3 -> 事件2"
+            "extra_name": "S3 -> 事件2",
+            "doc": null
         }
     ],
     "all_actions": [],
@@ -82,7 +85,8 @@ runPyGeneratedModelCase({
                         "E1"
                     ],
                     "path_name": "Root.E1",
-                    "extra_name": "事件1"
+                    "extra_name": "事件1",
+                    "doc": null
                 }
             },
             "transitions": [
@@ -92,7 +96,8 @@ runPyGeneratedModelCase({
                     "event": "Root.E1",
                     "guard": null,
                     "effects": [],
-                    "parent": "Root"
+                    "parent": "Root",
+                    "doc": null
                 },
                 {
                     "from_state": "state1",
@@ -100,7 +105,8 @@ runPyGeneratedModelCase({
                     "event": "Root.state1.E1",
                     "guard": null,
                     "effects": [],
-                    "parent": "Root"
+                    "parent": "Root",
+                    "doc": null
                 },
                 {
                     "from_state": "state2",
@@ -108,7 +114,8 @@ runPyGeneratedModelCase({
                     "event": "Root.E1",
                     "guard": null,
                     "effects": [],
-                    "parent": "Root"
+                    "parent": "Root",
+                    "doc": null
                 },
                 {
                     "from_state": "state3",
@@ -116,7 +123,8 @@ runPyGeneratedModelCase({
                     "event": "Root.state3.E2",
                     "guard": null,
                     "effects": [],
-                    "parent": "Root"
+                    "parent": "Root",
+                    "doc": null
                 }
             ],
             "named_functions": {},
@@ -131,6 +139,7 @@ runPyGeneratedModelCase({
                 "state4": 3
             },
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": false,
             "is_root_state": true,
@@ -150,7 +159,8 @@ runPyGeneratedModelCase({
                     "event": "Root.E1",
                     "guard": null,
                     "effects": [],
-                    "parent": "Root"
+                    "parent": "Root",
+                    "doc": null
                 }
             ],
             "transitions_from": [
@@ -160,7 +170,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": null
+                    "parent": null,
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -170,7 +181,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": null
+                    "parent": null,
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [
@@ -180,7 +192,8 @@ runPyGeneratedModelCase({
                     "event": "Root.E1",
                     "guard": null,
                     "effects": [],
-                    "parent": "Root"
+                    "parent": "Root",
+                    "doc": null
                 }
             ],
             "transitions_entering_children_simplified": [
@@ -190,7 +203,8 @@ runPyGeneratedModelCase({
                     "event": "Root.E1",
                     "guard": null,
                     "effects": [],
-                    "parent": "Root"
+                    "parent": "Root",
+                    "doc": null
                 },
                 null
             ],
@@ -233,7 +247,8 @@ runPyGeneratedModelCase({
                         "E1"
                     ],
                     "path_name": "Root.state1.E1",
-                    "extra_name": "S1 -> 事件1"
+                    "extra_name": "S1 -> 事件1",
+                    "doc": null
                 }
             },
             "transitions": [],
@@ -244,6 +259,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -264,7 +280,8 @@ runPyGeneratedModelCase({
                     "event": "Root.state1.E1",
                     "guard": null,
                     "effects": [],
-                    "parent": "Root"
+                    "parent": "Root",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -274,7 +291,8 @@ runPyGeneratedModelCase({
                     "event": "Root.E1",
                     "guard": null,
                     "effects": [],
-                    "parent": "Root"
+                    "parent": "Root",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -312,6 +330,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -332,7 +351,8 @@ runPyGeneratedModelCase({
                     "event": "Root.E1",
                     "guard": null,
                     "effects": [],
-                    "parent": "Root"
+                    "parent": "Root",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -342,7 +362,8 @@ runPyGeneratedModelCase({
                     "event": "Root.state1.E1",
                     "guard": null,
                     "effects": [],
-                    "parent": "Root"
+                    "parent": "Root",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -384,7 +405,8 @@ runPyGeneratedModelCase({
                         "E2"
                     ],
                     "path_name": "Root.state3.E2",
-                    "extra_name": "S3 -> 事件2"
+                    "extra_name": "S3 -> 事件2",
+                    "doc": null
                 }
             },
             "transitions": [],
@@ -395,6 +417,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": true,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -415,7 +438,8 @@ runPyGeneratedModelCase({
                     "event": "Root.state3.E2",
                     "guard": null,
                     "effects": [],
-                    "parent": "Root"
+                    "parent": "Root",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -425,7 +449,8 @@ runPyGeneratedModelCase({
                     "event": "Root.E1",
                     "guard": null,
                     "effects": [],
-                    "parent": "Root"
+                    "parent": "Root",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -463,6 +488,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -484,7 +510,8 @@ runPyGeneratedModelCase({
                     "event": "Root.state3.E2",
                     "guard": null,
                     "effects": [],
-                    "parent": "Root"
+                    "parent": "Root",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -513,11 +540,13 @@ runPyGeneratedModelCase({
             "__class__": "StateDefinition",
             "name": "Root",
             "extra_name": null,
+            "doc": null,
             "events": [
                 {
                     "__class__": "EventDefinition",
                     "name": "E1",
-                    "extra_name": "事件1"
+                    "extra_name": "事件1",
+                    "doc": null
                 }
             ],
             "substates": [
@@ -525,11 +554,13 @@ runPyGeneratedModelCase({
                     "__class__": "StateDefinition",
                     "name": "state1",
                     "extra_name": null,
+                    "doc": null,
                     "events": [
                         {
                             "__class__": "EventDefinition",
                             "name": "E1",
-                            "extra_name": "S1 -> 事件1"
+                            "extra_name": "S1 -> 事件1",
+                            "doc": null
                         }
                     ],
                     "substates": [],
@@ -544,6 +575,7 @@ runPyGeneratedModelCase({
                     "__class__": "StateDefinition",
                     "name": "state2",
                     "extra_name": null,
+                    "doc": null,
                     "events": [],
                     "substates": [],
                     "transitions": [],
@@ -557,11 +589,13 @@ runPyGeneratedModelCase({
                     "__class__": "StateDefinition",
                     "name": "state3",
                     "extra_name": null,
+                    "doc": null,
                     "events": [
                         {
                             "__class__": "EventDefinition",
                             "name": "E2",
-                            "extra_name": "S3 -> 事件2"
+                            "extra_name": "S3 -> 事件2",
+                            "doc": null
                         }
                     ],
                     "substates": [],
@@ -576,6 +610,7 @@ runPyGeneratedModelCase({
                     "__class__": "StateDefinition",
                     "name": "state4",
                     "extra_name": null,
+                    "doc": null,
                     "events": [],
                     "substates": [],
                     "transitions": [],
@@ -599,7 +634,8 @@ runPyGeneratedModelCase({
                         "is_absolute": false
                     },
                     "condition_expr": null,
-                    "post_operations": []
+                    "post_operations": [],
+                    "doc": null
                 },
                 {
                     "__class__": "TransitionDefinition",
@@ -614,7 +650,8 @@ runPyGeneratedModelCase({
                         "is_absolute": false
                     },
                     "condition_expr": null,
-                    "post_operations": []
+                    "post_operations": [],
+                    "doc": null
                 },
                 {
                     "__class__": "TransitionDefinition",
@@ -628,7 +665,8 @@ runPyGeneratedModelCase({
                         "is_absolute": false
                     },
                     "condition_expr": null,
-                    "post_operations": []
+                    "post_operations": [],
+                    "doc": null
                 },
                 {
                     "__class__": "TransitionDefinition",
@@ -643,7 +681,8 @@ runPyGeneratedModelCase({
                         "is_absolute": false
                     },
                     "condition_expr": null,
-                    "post_operations": []
+                    "post_operations": [],
+                    "doc": null
                 }
             ],
             "enters": [],

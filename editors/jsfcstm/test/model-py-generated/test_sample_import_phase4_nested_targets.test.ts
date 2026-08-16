@@ -38,7 +38,8 @@ runPyGeneratedModelCase({
                 "GlobalFault"
             ],
             "path_name": "Plant.GlobalFault",
-            "extra_name": "Global Fault"
+            "extra_name": "Global Fault",
+            "doc": null
         },
         {
             "name": "Stop",
@@ -52,7 +53,8 @@ runPyGeneratedModelCase({
                 "Stop"
             ],
             "path_name": "Plant.Bus.Stop",
-            "extra_name": "Plant Stop"
+            "extra_name": "Plant Stop",
+            "doc": null
         },
         {
             "name": "Reset",
@@ -66,7 +68,8 @@ runPyGeneratedModelCase({
                 "Reset"
             ],
             "path_name": "Plant.Bus.Reset",
-            "extra_name": "Local Reset"
+            "extra_name": "Local Reset",
+            "doc": null
         }
     ],
     "all_actions": [],
@@ -92,7 +95,8 @@ runPyGeneratedModelCase({
                         "GlobalFault"
                     ],
                     "path_name": "Plant.GlobalFault",
-                    "extra_name": "Global Fault"
+                    "extra_name": "Global Fault",
+                    "doc": null
                 }
             },
             "transitions": [
@@ -102,7 +106,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant"
+                    "parent": "Plant",
+                    "doc": null
                 }
             ],
             "named_functions": {},
@@ -115,6 +120,7 @@ runPyGeneratedModelCase({
                 "Bus": 1
             },
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": false,
             "is_root_state": true,
@@ -134,7 +140,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant"
+                    "parent": "Plant",
+                    "doc": null
                 }
             ],
             "transitions_from": [
@@ -144,7 +151,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": null
+                    "parent": null,
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -154,7 +162,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": null
+                    "parent": null,
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [
@@ -164,7 +173,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant"
+                    "parent": "Plant",
+                    "doc": null
                 }
             ],
             "transitions_entering_children_simplified": [
@@ -174,7 +184,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant"
+                    "parent": "Plant",
+                    "doc": null
                 }
             ],
             "list_on_enters": [],
@@ -216,7 +227,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant.Worker"
+                    "parent": "Plant.Worker",
+                    "doc": null
                 },
                 {
                     "from_state": "Idle",
@@ -224,7 +236,8 @@ runPyGeneratedModelCase({
                     "event": "Plant.GlobalFault",
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant.Worker"
+                    "parent": "Plant.Worker",
+                    "doc": null
                 },
                 {
                     "from_state": "Failed",
@@ -232,7 +245,8 @@ runPyGeneratedModelCase({
                     "event": "Plant.Bus.Stop",
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant.Worker"
+                    "parent": "Plant.Worker",
+                    "doc": null
                 },
                 {
                     "from_state": "Halted",
@@ -240,7 +254,8 @@ runPyGeneratedModelCase({
                     "event": "Plant.Bus.Reset",
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant.Worker"
+                    "parent": "Plant.Worker",
+                    "doc": null
                 }
             ],
             "named_functions": {},
@@ -254,6 +269,7 @@ runPyGeneratedModelCase({
                 "Halted": 2
             },
             "extra_name": "Mapped Worker",
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": false,
             "is_root_state": false,
@@ -273,7 +289,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant.Worker"
+                    "parent": "Plant.Worker",
+                    "doc": null
                 }
             ],
             "transitions_from": [],
@@ -284,7 +301,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant"
+                    "parent": "Plant",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [
@@ -294,7 +312,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant.Worker"
+                    "parent": "Plant.Worker",
+                    "doc": null
                 }
             ],
             "transitions_entering_children_simplified": [
@@ -304,7 +323,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant.Worker"
+                    "parent": "Plant.Worker",
+                    "doc": null
                 }
             ],
             "list_on_enters": [],
@@ -342,6 +362,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -362,7 +383,8 @@ runPyGeneratedModelCase({
                     "event": "Plant.GlobalFault",
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant.Worker"
+                    "parent": "Plant.Worker",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -372,7 +394,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant.Worker"
+                    "parent": "Plant.Worker",
+                    "doc": null
                 },
                 {
                     "from_state": "Halted",
@@ -380,7 +403,8 @@ runPyGeneratedModelCase({
                     "event": "Plant.Bus.Reset",
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant.Worker"
+                    "parent": "Plant.Worker",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -419,6 +443,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -439,7 +464,8 @@ runPyGeneratedModelCase({
                     "event": "Plant.Bus.Stop",
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant.Worker"
+                    "parent": "Plant.Worker",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -449,7 +475,8 @@ runPyGeneratedModelCase({
                     "event": "Plant.GlobalFault",
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant.Worker"
+                    "parent": "Plant.Worker",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -488,6 +515,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -508,7 +536,8 @@ runPyGeneratedModelCase({
                     "event": "Plant.Bus.Reset",
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant.Worker"
+                    "parent": "Plant.Worker",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -518,7 +547,8 @@ runPyGeneratedModelCase({
                     "event": "Plant.Bus.Stop",
                     "guard": null,
                     "effects": [],
-                    "parent": "Plant.Worker"
+                    "parent": "Plant.Worker",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -560,7 +590,8 @@ runPyGeneratedModelCase({
                         "Reset"
                     ],
                     "path_name": "Plant.Bus.Reset",
-                    "extra_name": "Local Reset"
+                    "extra_name": "Local Reset",
+                    "doc": null
                 },
                 "Stop": {
                     "name": "Stop",
@@ -574,7 +605,8 @@ runPyGeneratedModelCase({
                         "Stop"
                     ],
                     "path_name": "Plant.Bus.Stop",
-                    "extra_name": "Plant Stop"
+                    "extra_name": "Plant Stop",
+                    "doc": null
                 }
             },
             "transitions": [],
@@ -585,6 +617,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -626,11 +659,13 @@ runPyGeneratedModelCase({
             "__class__": "StateDefinition",
             "name": "Plant",
             "extra_name": null,
+            "doc": null,
             "events": [
                 {
                     "__class__": "EventDefinition",
                     "name": "GlobalFault",
-                    "extra_name": "Global Fault"
+                    "extra_name": "Global Fault",
+                    "doc": null
                 }
             ],
             "substates": [
@@ -638,12 +673,14 @@ runPyGeneratedModelCase({
                     "__class__": "StateDefinition",
                     "name": "Worker",
                     "extra_name": "Mapped Worker",
+                    "doc": null,
                     "events": [],
                     "substates": [
                         {
                             "__class__": "StateDefinition",
                             "name": "Idle",
                             "extra_name": null,
+                            "doc": null,
                             "events": [],
                             "substates": [],
                             "transitions": [],
@@ -657,6 +694,7 @@ runPyGeneratedModelCase({
                             "__class__": "StateDefinition",
                             "name": "Failed",
                             "extra_name": null,
+                            "doc": null,
                             "events": [],
                             "substates": [],
                             "transitions": [],
@@ -670,6 +708,7 @@ runPyGeneratedModelCase({
                             "__class__": "StateDefinition",
                             "name": "Halted",
                             "extra_name": null,
+                            "doc": null,
                             "events": [],
                             "substates": [],
                             "transitions": [],
@@ -687,7 +726,8 @@ runPyGeneratedModelCase({
                             "to_state": "Idle",
                             "event_id": null,
                             "condition_expr": null,
-                            "post_operations": []
+                            "post_operations": [],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -701,7 +741,8 @@ runPyGeneratedModelCase({
                                 "is_absolute": true
                             },
                             "condition_expr": null,
-                            "post_operations": []
+                            "post_operations": [],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -716,7 +757,8 @@ runPyGeneratedModelCase({
                                 "is_absolute": true
                             },
                             "condition_expr": null,
-                            "post_operations": []
+                            "post_operations": [],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -731,7 +773,8 @@ runPyGeneratedModelCase({
                                 "is_absolute": true
                             },
                             "condition_expr": null,
-                            "post_operations": []
+                            "post_operations": [],
+                            "doc": null
                         }
                     ],
                     "enters": [],
@@ -744,16 +787,19 @@ runPyGeneratedModelCase({
                     "__class__": "StateDefinition",
                     "name": "Bus",
                     "extra_name": null,
+                    "doc": null,
                     "events": [
                         {
                             "__class__": "EventDefinition",
                             "name": "Stop",
-                            "extra_name": "Plant Stop"
+                            "extra_name": "Plant Stop",
+                            "doc": null
                         },
                         {
                             "__class__": "EventDefinition",
                             "name": "Reset",
-                            "extra_name": "Local Reset"
+                            "extra_name": "Local Reset",
+                            "doc": null
                         }
                     ],
                     "substates": [],
@@ -772,7 +818,8 @@ runPyGeneratedModelCase({
                     "to_state": "Worker",
                     "event_id": null,
                     "condition_expr": null,
-                    "post_operations": []
+                    "post_operations": [],
+                    "doc": null
                 }
             ],
             "enters": [],

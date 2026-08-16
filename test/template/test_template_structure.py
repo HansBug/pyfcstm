@@ -14,6 +14,7 @@ from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.render import StateMachineCodeRenderer
 from pyfcstm.template import extract_template, get_template_info, list_templates
+from pyfcstm.utils import markdown_fence
 
 
 _CURRENT_TEMPLATE_NAMES = tuple(list_templates())
@@ -271,6 +272,25 @@ def _assert_c_runtime_includes_are_self_contained(source):
     assert not (set(include_targets) & set(_BANNED_RUNTIME_DEPENDENCIES))
 
 
+def _documentation_payload_model():
+    source = (
+        "/* Root docs with ```` and ~~~; triple quotes \\\"\\\"\\\" and '''; "
+        "C trigraph ??/; trailing slash\\\n"
+        "*/\n"
+        "state Control {\n"
+        "    /* Hook docs with \\\"\\\"\\\" and a trailing slash\\\n"
+        "     */\n"
+        "    enter abstract Hook;\n"
+        "    /* state docs */\n"
+        "    state Idle;\n"
+        "    /* transition docs */\n"
+        "    [*] -> Idle;\n"
+        "}\n"
+    )
+    ast_node = parse_with_grammar_entry(source, entry_name="state_machine_dsl")
+    return parse_dsl_node_to_state_machine(ast_node)
+
+
 def _assert_rendered_template_contracts(rendered_templates):
     python_source = _read_text(rendered_templates["python"] / "machine.py")
     python_docstring = ast.get_docstring(ast.parse(python_source))
@@ -389,6 +409,43 @@ def test_generated_readmes_keep_generated_guidance(rendered_templates):
             assert "generated files" in lowered or "生成文件" in generated_text
             assert "model text" in lowered or "模型文本" in generated_text
             assert "cycle" in lowered or "周期" in generated_text
+
+
+@pytest.mark.unittest
+def test_documentation_payloads_survive_all_builtin_template_exports():
+    model = _documentation_payload_model()
+    canonical = str(model.to_ast_node())
+    fence = markdown_fence(canonical)
+    with TemporaryDirectory() as extraction_td, TemporaryDirectory() as render_td:
+        template_dirs = _extract_templates(Path(extraction_td))
+        for name, template_dir in template_dirs.items():
+            output_dir = Path(render_td) / name
+            StateMachineCodeRenderer(str(template_dir)).render(
+                model=model,
+                output_dir=str(output_dir),
+            )
+            readme = _read_text(output_dir / "README.md")
+            readme_zh = _read_text(output_dir / "README_zh.md")
+            for generated_readme in (readme, readme_zh):
+                assert fence + "fcstm" in generated_readme
+                assert "Root docs with" in generated_readme
+                assert "password" in generated_readme.lower() or "秘密" in generated_readme
+                assert generated_readme.count(fence) >= 2
+
+            reparsed = parse_dsl_node_to_state_machine(
+                parse_with_grammar_entry(canonical, entry_name="state_machine_dsl")
+            )
+            assert reparsed.root_state.doc == model.root_state.doc
+            assert reparsed.root_state.substates["Idle"].doc == "state docs"
+
+            if name == "python":
+                source = _read_text(output_dir / "machine.py")
+                tree = ast.parse(source)
+                assert "Root docs with" in (ast.get_docstring(tree) or "")
+                assert "Hook docs with" in source
+            elif name in {"c", "c_poll", "cpp", "cpp_poll"}:
+                source = _read_text(output_dir / "machine.c")
+                assert "\\?\\?/" in source
 
 
 @pytest.mark.unittest

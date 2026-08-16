@@ -9,6 +9,32 @@ The built-in template system has two responsibilities:
 
 Generated runtime semantics must stay aligned with the FCSTM model and simulator contracts. For generated implementation files, performance and semantic correctness have priority over human long-term maintainability. Formatter and linter gates exist to keep generated output professional and integration-friendly, not to make implementation readability more important than runtime behavior.
 
+## Documentation metadata contract
+
+The supported FCSTM owners (`State`, `Event`, `Transition`, `VarDefine`,
+`OnStage`, and `OnAspect`) carry one opaque `doc` value. A documentation block
+is consumed by the grammar as a leading block on its owner; abstract lifecycle
+actions also accept the historical trailing spelling, which canonical export
+normalizes to the same field. `None`, an empty string, and literal `*` are
+distinct values. Documentation is metadata: it is preserved by AST/Model
+round-trip and canonical exports, but is excluded from runtime identity,
+diagnostics, PlantUML display, and structured Diagram data.
+
+Template authors should consume `doc` with an explicit `is not none` check and
+must not infer ownership from source lines. The canonical `model.to_ast_node()`
+export is the authoritative source for generated README/source text. It is not a
+secret boundary: generated artifacts may contain the complete documentation,
+so templates and generated READMEs must warn users not to store credentials,
+tokens, passwords, or private keys in a documentation block.
+
+The shared renderer exposes `markdown_fence` for README blocks and
+`escape_python_docstring` for Python triple-quoted docstrings. These helpers
+protect Markdown delimiters and target-language syntax without changing the
+Model `doc` value. C-family canonical strings must also protect C trigraph
+sequences such as `??/`; source templates own that escaping policy, while
+`doc` itself remains unmodified. The value domain still rejects `/*` and `*/`
+so every canonical export remains parseable.
+
 ## Directory roles
 
 | Path | Role | Maintainer notes |

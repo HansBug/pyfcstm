@@ -1,112 +1,132 @@
-from unittest.mock import patch
-
 import pytest
 
-from pyfcstm.utils import format_multiline_comment
+from pyfcstm.utils import (
+    aggregate_documentation,
+    format_multiline_comment,
+    validate_documentation_for_export,
+)
+
+pytestmark = pytest.mark.unittest
 
 
-@pytest.fixture
-def sample_raw_doc():
-    return """
-    /**
-     * This is a sample
-     * multiline comment
-     * with varying indentation
-     */
-    """
+NORMAL_GOLDENS = (
+    ("empty", "/* */", "", "/*\n */"),
+    ("single", "/* text */", "text", "/*\n * text\n */"),
+    ("single_star", "/* * item */", "* item", "/*\n * * item\n */"),
+    ("star_multi", "/*\n * A\n * B\n */", "A\nB", "/*\n * A\n * B\n */"),
+    ("inline_head", "/* A\n * B\n */", "A\nB", "/*\n * A\n * B\n */"),
+    ("plain_indent", "/*\n    A\n      B\n*/", "A\n  B", "/*\n * A\n *   B\n */"),
+    ("star_bullets", "/*\n * * one\n * * two\n */", "* one\n* two", "/*\n * * one\n * * two\n */"),
+    ("tail_spaces", "/*\n * A  \n * B\n */", "A  \nB", "/*\n * A  \n * B\n */"),
+    ("internal_blank_lines", "/*\n * A\n *\n *\n * B\n */", "A\n\n\nB", "/*\n * A\n *\n *\n * B\n */"),
+    ("literal_star", "/*\n * *\n */", "*", "/*\n * *\n */"),
+    ("blank_line_no_margin", "/*\n * A\n\n * B\n */", "A\n\nB", "/*\n * A\n *\n * B\n */"),
+    ("bare_margin_only", "/*\n *\n */", "", "/*\n */"),
+    ("blank_after_margin_strip", "/*\n *\n * A\n */", "A", "/*\n * A\n */"),
+    ("tab_indent", "/*\n\tA\n\t\tB\n*/", "A\n\tB", "/*\n * A\n * \tB\n */"),
+)
 
+RECOVERABLE_GOLDENS = (
+    ("outer_ws", "\n  /* text */ \n", "text", "/*\n * text\n */"),
+    ("crlf", "/*\r\n * A  \r\n * B\r\n */", "A  \nB", "/*\n * A  \n * B\n */"),
+    ("lone_cr", "/*\r * A\r * B\r */", "A\nB", "/*\n * A\n * B\n */"),
+    ("javadoc", "/** text */", "text", "/*\n * text\n */"),
+    ("doxygen", "/*! text */", "text", "/*\n * text\n */"),
+    ("extra_open", "/*** text */", "* text", "/*\n * * text\n */"),
+    ("extra_close", "/* text **/", "text *", "/*\n * text *\n */"),
+    ("extra_open_close", "/*** text ***/", "* text **", "/*\n * * text **\n */"),
+    ("mixed_margin", "/*\n * first\nsecond\n */", "* first\nsecond", "/*\n * * first\n * second\n */"),
+    ("unaligned_margin", "/*\n * A\n     * B\n */", "A\nB", "/*\n * A\n * B\n */"),
+    ("own_line_no_margin", "/*\nA\n * B\n */", "A\n * B", "/*\n * A\n *  * B\n */"),
+)
 
-@pytest.fixture
-def expected_formatted_doc():
-    return "* This is a sample\n* multiline comment\n* with varying indentation"
-
-
-@pytest.fixture
-def sample_raw_doc_2():
-    return """
-    /*
-    This is a sample
-        * multiline comment
-        * with varying indentation
-     */
-    """
-
-
-@pytest.fixture
-def expected_formatted_doc_2():
-    return "This is a sample\n    * multiline comment\n    * with varying indentation"
+AGGREGATE_GOLDENS = (
+    ("empty_input", (), None),
+    ("all_none", (None, None), None),
+    ("all_empty", ("", ""), ""),
+    ("none_then_empty", (None, ""), ""),
+    ("empty_dropped_when_text_present", ("", "A", ""), "A"),
+    ("none_skipped", (None, "A", None, "B"), "A\n\nB"),
+    ("dedup_keeps_first_position", ("A", "A", "B"), "A\n\nB"),
+    ("order_follows_input", ("B", "A"), "B\n\nA"),
+    ("empty_after_text", ("A", ""), "A"),
+)
 
 
 @pytest.mark.unittest
-class TestFormatMultilineComment:
-    def test_basic_formatting(
-            self, sample_raw_doc, expected_formatted_doc, text_aligner
-    ):
-        result = format_multiline_comment(sample_raw_doc)
-        text_aligner.assert_equal(
-            expect=expected_formatted_doc,
-            actual=result,
-        )
+@pytest.mark.parametrize("case_id, raw, expected, canonical", NORMAL_GOLDENS)
+def test_normal_documentation_goldens(case_id, raw, expected, canonical):
+    del case_id
+    assert format_multiline_comment(raw) == expected
+    assert format_multiline_comment(canonical) == expected
 
-    def test_basic_formatting_2(
-            self, sample_raw_doc_2, expected_formatted_doc_2, text_aligner
-    ):
-        result = format_multiline_comment(sample_raw_doc_2)
-        text_aligner.assert_equal(
-            expect=expected_formatted_doc_2,
-            actual=result,
-        )
 
-    def test_empty_comment(self):
-        result = format_multiline_comment("/**/")
-        assert result == ""
+@pytest.mark.unittest
+@pytest.mark.parametrize("case_id, raw, expected, canonical", RECOVERABLE_GOLDENS)
+def test_recoverable_documentation_goldens(case_id, raw, expected, canonical):
+    del case_id
+    assert format_multiline_comment(raw) == expected
+    assert format_multiline_comment(canonical) == expected
 
-    def test_single_line_comment(self):
-        result = format_multiline_comment("/* Single line comment */")
-        assert result == "Single line comment"
 
-    def test_multiple_asterisks(self):
-        result = format_multiline_comment("/*** Multiple asterisks ***/")
-        assert result == "Multiple asterisks"
+@pytest.mark.unittest
+@pytest.mark.parametrize("case_id, docs, expected", AGGREGATE_GOLDENS)
+def test_documentation_aggregation(case_id, docs, expected):
+    del case_id
+    assert aggregate_documentation(docs) == expected
+    if expected is not None:
+        validate_documentation_for_export(expected)
 
-    def test_no_closing_marker(self):
-        result = format_multiline_comment("/* No closing marker")
-        assert result == "No closing marker"
 
-    def test_no_opening_marker(self):
-        result = format_multiline_comment("No opening marker */")
-        assert result == "No opening marker"
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "raw, error, fragment",
+    (
+        ("text */", ValueError, "complete"),
+        ("/* text", ValueError, "complete"),
+        ("/* text */ trailing", ValueError, "terminator"),
+        ("/* outer /* inner */ outer */", ValueError, "terminator"),
+        ("/*\n * a /* b\n */", ValueError, "/*"),
+        (123, TypeError, "str"),
+    ),
+)
+def test_documentation_helper_errors(raw, error, fragment):
+    with pytest.raises(error, match=fragment):
+        format_multiline_comment(raw)
 
-    def test_extra_whitespace(self, text_aligner):
-        raw_doc = """
-        /*
-            Extra
-                Whitespace
-        */
-        """
-        expected = "Extra\n    Whitespace"
-        result = format_multiline_comment(raw_doc)
-        text_aligner.assert_equal(expect=expected, actual=result)
 
-    def test_empty_lines_removal(self):
-        raw_doc = """
-        /*
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "doc, fragment",
+    (
+        (" ", "boundary"),
+        (" text", "boundary"),
+        ("text  ", "boundary"),
+        ("\ntext", "boundary"),
+        ("text\n", "boundary"),
+        ("text */ more", r"\*/"),
+        ("A\n   \nB", "whitespace-only"),
+        ("a\rb", "CR"),
+        ("text /* more", "/*"),
+        ("bad\x00doc", r"U\+0000"),
+        ("bad\x01doc", r"U\+0001"),
+        ("bad\x7fdoc", r"U\+007F"),
+    ),
+)
+def test_documentation_export_errors(doc, fragment):
+    with pytest.raises(ValueError, match=fragment):
+        validate_documentation_for_export(doc)
 
-        Content with empty lines
 
-        */
-        """
-        expected = "Content with empty lines"
-        result = format_multiline_comment(raw_doc)
-        assert result == expected
+@pytest.mark.parametrize("doc", ["line\nfeed", "tab\tvalue"])
+def test_documentation_export_allows_supported_whitespace_controls(doc):
+    validate_documentation_for_export(doc)
 
-    @patch("os.linesep", "\r\n")
-    @patch.dict('os.environ', {'UNITTEST': ''})
-    def test_different_line_separator(self, sample_raw_doc):
-        result = format_multiline_comment(sample_raw_doc)
-        assert "\r\n" in result
 
-    def test_unicode_characters(self):
-        raw_doc = "/* Unicode: áéíóú */"
-        result = format_multiline_comment(raw_doc)
-        assert result == "Unicode: áéíóú"
+def test_documentation_normalizes_lf_without_unittest(monkeypatch):
+    monkeypatch.delenv("UNITTEST", raising=False)
+    assert format_multiline_comment("/*\r\n * A\r * B\r\n */") == "A\nB"
+
+
+def test_unicode_documentation_is_opaque():
+    assert format_multiline_comment("/* Unicode: áéíóú */") == "Unicode: áéíóú"

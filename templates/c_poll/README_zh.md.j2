@@ -74,9 +74,14 @@ export。该文本从已解析 model 重新导出，是 canonical / normalized m
 export，可能不同于用户输入文件中的格式、注释或空行。它适合用于诊断、
 追踪和把当前 generated runtime 的模型语义暴露给上层工具。
 
-```fcstm
-{{ model.to_ast_node() | string }}
-```
+canonical export 会包含模型文档块。不要在 FCSTM 文档中写入密码、token、
+私钥或其他秘密，因为这些文本会进入生成物。
+
+{% set canonical_model = model.to_ast_node() | string -%}
+{% set canonical_fence = canonical_model | markdown_fence -%}
+{{ canonical_fence }}fcstm
+{{ canonical_model }}
+{{ canonical_fence }}
 
 ## Model Summary
 

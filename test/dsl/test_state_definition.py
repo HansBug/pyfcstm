@@ -2259,7 +2259,7 @@ class TestDSLTransition:
                         >> during before abstract TF /* this is a line */
                     }
                     """,
-                "state X {\n    >> during after X {\n        y = 0;\n    }\n    >> during before {\n        x = 1;\n        y = x + 1;\n    }\n    >> during after abstract T;\n    >> during before abstract TF /*\n        this is a line\n    */\n}",
+                "state X {\n    >> during after X {\n        y = 0;\n    }\n    >> during before {\n        x = 1;\n        y = x + 1;\n    }\n    >> during after abstract T;\n    /*\n     * this is a line\n     */\n    >> during before abstract TF;\n}",
             ),  # test for during aspects
             (
                 """

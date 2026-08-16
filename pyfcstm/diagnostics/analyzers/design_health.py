@@ -1,4 +1,11 @@
-"""Design-health diagnostics derived from inspect-surface data."""
+"""Design-health diagnostics derived from inspect-surface data.
+
+The reachability helper keeps the root itself in the result, even when the
+inspect graph only lists outgoing paths:
+
+    >>> sorted(_reachable_state_paths({'Root': ('Root.Active',)}, 'Root'))
+    ['Root', 'Root.Active']
+"""
 
 import re
 from dataclasses import replace

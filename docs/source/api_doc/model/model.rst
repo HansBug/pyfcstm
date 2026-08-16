@@ -16,7 +16,7 @@ ComboOriginRef
 -----------------------------------------------------
 
 .. autoclass:: ComboOriginRef
-    :members: origin_id,term_index,role,consumes_term,term_text,transition_span,trigger_span,term_span,value_span,removal_span
+    :members: origin_id,term_index,role,consumes_term,term_text,transition_span,trigger_span,term_span,value_span,removal_span,source_kind,source_path,selection_owner_path,target_kind,target_path
 
 
 OperationStatement

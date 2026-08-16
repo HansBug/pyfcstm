@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import * as path from 'node:path';
+import {pathToFileURL} from 'node:url';
 
 import {collectRedundancyWarnings} from '../src/diagnostics/analyzers/redundancy';
 import {createDocument, packageModule, sliceByRange, trackTempDir, writeFile} from './support';
@@ -499,7 +500,7 @@ describe('diagnostics transition body ranges', () => {
         const dir = trackTempDir('jsfcstm-unreachable-import-range-');
         const childFile = path.join(dir, 'child.fcstm');
         const hostFile = path.join(dir, 'main.fcstm');
-        writeFile(childFile, [
+        const childText = [
             'state Child {',
             '    state Reach;',
             '    state Orphan;',
@@ -511,7 +512,8 @@ describe('diagnostics transition body ranges', () => {
             '    [*] -> Reach;',
             '    Orphan -> Done;',
             '}',
-        ].join('\n'));
+        ].join('\n');
+        writeFile(childFile, childText);
         const hostText = [
             'state Root {',
             '    import "./child.fcstm" as Imported;',
@@ -519,21 +521,28 @@ describe('diagnostics transition body ranges', () => {
             '}',
         ].join('\n');
         const document = createDocument(hostText, hostFile);
-        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
-        const unreachable = diagnostics.filter(item => item.code === 'W_UNREACHABLE_TRANSITION');
+        const publications = await packageModule.collectDocumentDiagnosticsByUri(document);
+        const diagnostics = publications.get(pathToFileURL(hostFile).toString()) || [];
+        const unreachable = publications.get(pathToFileURL(childFile).toString())
+            ?.filter(item => item.code === 'W_UNREACHABLE_TRANSITION') || [];
 
         assert.equal(unreachable.length, 2, JSON.stringify(diagnostics));
+        assert.equal(
+            diagnostics.filter(item => item.code === 'W_UNREACHABLE_TRANSITION').length,
+            0,
+            JSON.stringify(diagnostics),
+        );
         assert.deepEqual(
             unreachable.map(item => [item.data?.from_path, item.data?.to_path]).sort(),
             [
-                ['[*]', 'Root.Imported.OrphanGroup.Nested'],
-                ['Root.Imported.Orphan', 'Root.Imported.Done'],
+                ['[*]', 'Child.OrphanGroup.Nested'],
+                ['Child.Orphan', 'Child.Done'],
             ].sort(),
         );
         for (const item of unreachable) {
             assert.equal(item.data?.verification_scope, 'topological_only');
-            assert.equal(item.data?.__rangeFallback, 'full_document');
-            assert.equal(sliceByRange(hostText, item.range), hostText);
+            assert.equal(item.data?.__rangeFallback, undefined);
+            assert.notEqual(sliceByRange(childText, item.range), childText);
         }
     });
 

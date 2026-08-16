@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 import {
@@ -32,7 +33,7 @@ import {getJsFcstmPackageInfo} from '../config';
 import {
     collectCodeActions,
     collectCompletionItems,
-    collectDocumentDiagnostics,
+    collectDocumentDiagnosticsByUri,
     collectDocumentHighlights,
     collectDocumentLinks,
     collectDocumentSymbols,
@@ -134,6 +135,10 @@ function uriToFilePath(uri: string): string | undefined {
     }
 }
 
+function normalizeFilePath(filePath: string): string {
+    return path.normalize(path.resolve(filePath));
+}
+
 function toDocumentLike(document: TextDocument): TextDocumentLike {
     const text = document.getText();
     const lines = text.split('\n');
@@ -158,6 +163,17 @@ function shouldCancel(token?: CancellationToken): boolean {
     return Boolean(token?.isCancellationRequested);
 }
 
+function diagnosticContributionKey(diagnostic: Diagnostic): string {
+    return JSON.stringify([
+        diagnostic.code ?? null,
+        diagnostic.severity ?? null,
+        diagnostic.source ?? null,
+        diagnostic.range,
+        diagnostic.data ?? null,
+        diagnostic.relatedInformation ?? null,
+    ]);
+}
+
 /**
  * Protocol-neutral FCSTM language server core.
  *
@@ -166,6 +182,7 @@ function shouldCancel(token?: CancellationToken): boolean {
  */
 export class FcstmLanguageServerCore {
     private readonly documents = new Map<string, TextDocument>();
+    private readonly diagnosticContributions = new Map<string, Map<string, Diagnostic[]>>();
     private readonly diagnosticsTimers = new Map<string, ManagedTimer>();
     private readonly workspaceFolders = new Map<string, WorkspaceFolder>();
     private readonly debounceMs: number;
@@ -255,6 +272,7 @@ export class FcstmLanguageServerCore {
         this.documents.set(textDocument.uri, document);
         this.syncOverlay(document);
         await this.publishDiagnostics(textDocument.uri, document.version, token);
+        await this.scheduleAffectedDiagnostics(textDocument.uri);
     }
 
     async changeTextDocument(
@@ -271,6 +289,7 @@ export class FcstmLanguageServerCore {
         this.documents.set(uri, updatedDocument);
         this.syncOverlay(updatedDocument);
         this.scheduleDiagnostics(uri, version);
+        await this.scheduleAffectedDiagnostics(uri);
     }
 
     async saveTextDocument(uri: string, token?: CancellationToken): Promise<void> {
@@ -290,11 +309,12 @@ export class FcstmLanguageServerCore {
             this.removeOverlay(document.uri);
         }
         this.documents.delete(uri);
-        await this.onDiagnostics({
-            uri,
-            version: 0,
-            diagnostics: [],
-        });
+        const previous = this.diagnosticContributions.get(uri);
+        this.diagnosticContributions.delete(uri);
+        const targets = new Set(previous?.keys() || []);
+        if (targets.size === 0) targets.add(uri);
+        await this.publishDiagnosticTargets(targets);
+        await this.scheduleAffectedDiagnostics(uri);
     }
 
     async setWorkspaceFolders(workspaceFolders: WorkspaceFolder[]): Promise<void> {
@@ -706,6 +726,7 @@ export class FcstmLanguageServerCore {
             this.removeOverlay(document.uri);
         }
         this.documents.clear();
+        this.diagnosticContributions.clear();
         this.workspaceFolders.clear();
     }
 
@@ -763,6 +784,21 @@ export class FcstmLanguageServerCore {
         }
     }
 
+    private async scheduleAffectedDiagnostics(changedUri: string): Promise<void> {
+        const changedFile = uriToFilePath(changedUri);
+        if (!changedFile) return;
+
+        const normalizedChangedFile = normalizeFilePath(changedFile);
+        for (const document of this.documents.values()) {
+            if (document.uri === changedUri) continue;
+
+            const snapshot = await getWorkspaceGraph().buildSnapshotForDocument(toDocumentLike(document));
+            if (!snapshot.order.includes(normalizedChangedFile)) continue;
+
+            this.scheduleDiagnostics(document.uri, document.version);
+        }
+    }
+
     private async publishDiagnostics(
         uri: string,
         expectedVersion: number,
@@ -777,7 +813,7 @@ export class FcstmLanguageServerCore {
             return;
         }
 
-        const diagnostics = await collectDocumentDiagnostics(toDocumentLike(document));
+        const publications = await collectDocumentDiagnosticsByUri(toDocumentLike(document), uri);
         if (shouldCancel(token)) {
             return;
         }
@@ -787,10 +823,36 @@ export class FcstmLanguageServerCore {
             return;
         }
 
-        await this.onDiagnostics({
-            uri,
-            version: expectedVersion,
-            diagnostics: diagnostics.map(item => toLspDiagnostic(item)),
-        });
+        const next = new Map<string, Diagnostic[]>();
+        for (const [targetUri, diagnostics] of publications) {
+            next.set(targetUri, diagnostics.map(item => toLspDiagnostic(item)));
+        }
+        const previous = this.diagnosticContributions.get(uri);
+        const targets = new Set([
+            ...(previous?.keys() || []),
+            ...next.keys(),
+        ]);
+        this.diagnosticContributions.set(uri, next);
+        await this.publishDiagnosticTargets(targets);
+    }
+
+    private async publishDiagnosticTargets(targets: Iterable<string>): Promise<void> {
+        for (const targetUri of targets) {
+            const diagnostics: Diagnostic[] = [];
+            const seen = new Set<string>();
+            for (const contribution of this.diagnosticContributions.values()) {
+                for (const diagnostic of contribution.get(targetUri) || []) {
+                    const key = diagnosticContributionKey(diagnostic);
+                    if (seen.has(key)) continue;
+                    seen.add(key);
+                    diagnostics.push(diagnostic);
+                }
+            }
+            await this.onDiagnostics({
+                uri: targetUri,
+                version: this.documents.get(targetUri)?.version || 0,
+                diagnostics,
+            });
+        }
     }
 }

@@ -363,9 +363,10 @@ export function shouldSuppressParseRecoveryDiagnostic(
     return rangeIsEmptyOrInvalid(diagnostic.range);
 }
 
-export async function collectDocumentDiagnostics(
-    document: TextDocumentLike
-): Promise<FcstmDiagnostic[]> {
+export async function collectDocumentDiagnosticsByUri(
+    document: TextDocumentLike,
+    rootUri = documentUri(document),
+): Promise<Map<string, FcstmDiagnostic[]>> {
     const parseResult = await getParser().parse(document.getText());
     const parseDiagnostics = parseResult.errors.map(error => convertParseErrorToDiagnostic(error, document));
     const diagnostics = [...parseDiagnostics];
@@ -378,23 +379,50 @@ export async function collectDocumentDiagnostics(
         if (localModel) {
             diagnostics.push(...collectInspectModelDiagnostics(document, node.semantic, localModel, diagnostics));
         }
-        if (node.model && node.model !== localModel) {
-            // The assembled model is needed for mounted import topology, but
-            // imported source ranges belong to their own documents. Keep the
-            // existing local inspect surface stable and add only the new
-            // topology diagnostic for imported transition owners here.
-            const importedUnreachableTransitions = inspectModel(node.model).diagnostics.filter(item => {
+    }
+
+    const publications = new Map<string, FcstmDiagnostic[]>();
+    publications.set(
+        rootUri,
+        diagnostics.filter(diagnostic => !shouldSuppressParseRecoveryDiagnostic(diagnostic, parseDiagnostics)),
+    );
+
+    // A hydrated root model carries imported paths in the host namespace. Run
+    // the topology diagnostic against each imported node's own model instead,
+    // so its span and refs are resolved in the file where the transition was
+    // authored. Publishing these buckets separately keeps a host validation
+    // from attaching a child-file transition to the host document.
+    if (node?.model) {
+        for (const filePath of snapshot.order) {
+            if (filePath === snapshot.rootFile) continue;
+            const importedNode = snapshot.nodes[filePath];
+            if (!importedNode?.semantic || !importedNode.model) continue;
+            const items = inspectModel(importedNode.model).diagnostics.filter(item => {
                 if (item.code !== 'W_UNREACHABLE_TRANSITION') return false;
                 const sourcePath = inspectItemSourcePath(item);
-                return sourcePath !== null && !statePathIsLocalToDocument(document, node.semantic!, sourcePath);
+                return sourcePath === null || statePathIsLocalToDocument(
+                    importedNode.document,
+                    importedNode.semantic as FcstmSemanticDocument,
+                    sourcePath,
+                );
             });
-            diagnostics.push(...collectInspectDiagnosticsFromItems(
-                document,
-                node.semantic,
-                importedUnreachableTransitions,
-                diagnostics,
-            ));
+            if (items.length === 0) continue;
+            const importedDiagnostics = collectInspectDiagnosticsFromItems(
+                importedNode.document,
+                importedNode.semantic,
+                items,
+            );
+            if (importedDiagnostics.length > 0) {
+                publications.set(documentUri(importedNode.document), importedDiagnostics);
+            }
         }
     }
-    return diagnostics.filter(diagnostic => !shouldSuppressParseRecoveryDiagnostic(diagnostic, parseDiagnostics));
+    return publications;
+}
+
+export async function collectDocumentDiagnostics(
+    document: TextDocumentLike
+): Promise<FcstmDiagnostic[]> {
+    const publications = await collectDocumentDiagnosticsByUri(document);
+    return publications.get(documentUri(document)) || [];
 }

@@ -40,7 +40,7 @@ import type {
     RawFcstmModelVariable as FcstmModelVariable,
 } from './raw';
 import {hydrateStateMachine, type FcstmModelStateMachine as FcstmRuntimeStateMachine} from './runtime';
-import {canonicalComboEffectSignature} from './combo-origin';
+import {canonicalComboEffectSignature, pythonJsonArray} from './combo-origin';
 
 const MATH_CONSTANTS: Record<string, number> = {
     E: Math.E,
@@ -211,10 +211,6 @@ function transitionEndpointText(transition: FcstmAstTransition, endpoint: 'sourc
 
 function stableJsonKey(value: unknown): string {
     return JSON.stringify(value);
-}
-
-function pythonJsonArray(values: string[]): string {
-    return `[${values.map(value => JSON.stringify(value)).join(', ')}]`;
 }
 
 function comboTermSemanticKey(

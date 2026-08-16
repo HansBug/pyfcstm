@@ -345,6 +345,29 @@ describe('diagnostics transition body ranges', () => {
         });
     });
 
+    it('keeps editor combo origin arrays aligned with inspect origin arrays', async () => {
+        const text = [
+            'def int x = 0;',
+            'state Root {',
+            '    state Orphan;',
+            '    state Done;',
+            '    [*] -> Done;',
+            '    Orphan -> Done :: E1 + E2 effect {',
+            '        x = 2 ** 3 ** 4;',
+            '        x = 1;',
+            '    }',
+            '}',
+        ].join('\n');
+        const document = createDocument(text, '/tmp/transition-combo-origin-parity.fcstm');
+        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+        const unreachable = targetDiagnostics(diagnostics, 'W_UNREACHABLE_TRANSITION');
+
+        assert.equal(unreachable.length, 1, JSON.stringify(diagnostics));
+        assert.deepEqual(unreachable[0].data?.combo_origin_ids, [
+            'Root:Orphan->Done::: E1 + E2:effect=["x = 2 ** 3 ** 4;", "x = 1;"]',
+        ]);
+    });
+
     it('anchors forced constant guard diagnostics on the forced guard expression', async () => {
         const text = [
             'state Root {',

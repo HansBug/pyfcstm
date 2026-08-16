@@ -332,6 +332,17 @@ class ComboOriginRefInfo:
     :type value_span: pyfcstm.utils.validate.Span, optional
     :param removal_span: Source span suitable for removing the term.
     :type removal_span: pyfcstm.utils.validate.Span, optional
+    :param source_kind: Authored source kind, ``'state'`` or ``'init'``.
+    :type source_kind: str
+    :param source_path: Authored source state path, or ``None`` for init.
+    :type source_path: Optional[str]
+    :param selection_owner_path: Composite owner path for an init transition,
+        or ``None`` for a normal transition.
+    :type selection_owner_path: Optional[str]
+    :param target_kind: Authored target kind, ``'state'`` or ``'exit'``.
+    :type target_kind: str
+    :param target_path: Authored target path, or ``'[*]'`` for exit.
+    :type target_path: Optional[str]
 
     Example::
 

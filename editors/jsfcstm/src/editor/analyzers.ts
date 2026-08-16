@@ -20,7 +20,7 @@ import type {FcstmSemanticDocument, FcstmSemanticImport, FcstmSemanticTransition
 import {FcstmDiagnostic, rangeIsEmptyOrInvalid, TextDocumentLike} from '../utils/text';
 import {getWorkspaceGraph} from '../workspace';
 import {findIdentifierRange} from './ranges';
-import {canonicalComboEffectSignature} from '../model/combo-origin';
+import {canonicalComboEffectSignature, pythonJsonArray} from '../model/combo-origin';
 
 /**
  * Diagnostic code constants — single source of truth for jsfcstm
@@ -397,7 +397,7 @@ function comboOriginIdForTransition(transition: FcstmSemanticTransition): string
         : transition.targetStateName ?? '__exit__';
     let origin = `${dottedPath(transition.ownerStatePath)}:${source}->${target}:${transition.ast.comboTrigger.canonicalText ?? transition.ast.text}`;
     const effects = canonicalComboEffectSignature(transition.ast.postOperations);
-    if (effects.length > 0) origin = `${origin}:effect=${JSON.stringify(effects)}`;
+    if (effects.length > 0) origin = `${origin}:effect=${pythonJsonArray(effects)}`;
     return origin;
 }
 

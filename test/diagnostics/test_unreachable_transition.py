@@ -230,6 +230,29 @@ def test_forced_partial_expansion_reports_the_concrete_unreachable_source():
     assert diagnostic.refs['forced_origin'] == '! * -> Done :: Panic;'
 
 
+def test_combo_effect_origin_keeps_right_associative_expression_and_array_spacing():
+    report = _inspect(
+        '''
+        def int x = 0;
+        state Root {
+            state Orphan;
+            state Done;
+            [*] -> Done;
+            Orphan -> Done :: E1 + E2 effect {
+                x = 2 ** 3 ** 4;
+                x = 1;
+            }
+        }
+        '''
+    )
+
+    diagnostics = _unreachable_transitions(report)
+    assert len(diagnostics) == 1
+    assert diagnostics[0].refs['combo_origin_ids'] == [
+        'Root:Orphan->Done::: E1 + E2:effect=["x = 2 ** 3 ** 4;", "x = 1;"]',
+    ]
+
+
 def test_solver_dead_guard_stays_out_of_topological_finding():
     report = inspect_model(
         parse_dsl_node_to_state_machine(

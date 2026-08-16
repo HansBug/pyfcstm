@@ -38,6 +38,8 @@ const EXPR_PRECEDENCE: Record<string, number> = {
     '?:': 5,
 };
 
+const RIGHT_ASSOCIATIVE_BINARY_OPS = new Set(['**', '=>']);
+
 function canonicalBinaryOperator(op: string): string {
     if (op === 'and') return '&&';
     if (op === 'or') return '||';
@@ -114,9 +116,21 @@ function canonicalExpressionText(expression: FcstmAstExpression | null | undefin
             let right = canonicalExpressionText(expression.right);
             if (left === null || right === null) return null;
             const leftPrecedence = expressionPrecedence(expression.left);
-            if (leftPrecedence !== null && leftPrecedence < myPrecedence) left = `(${left})`;
+            if (leftPrecedence !== null) {
+                if (RIGHT_ASSOCIATIVE_BINARY_OPS.has(op)) {
+                    if (leftPrecedence <= myPrecedence) left = `(${left})`;
+                } else if (leftPrecedence < myPrecedence) {
+                    left = `(${left})`;
+                }
+            }
             const rightPrecedence = expressionPrecedence(expression.right);
-            if (rightPrecedence !== null && rightPrecedence <= myPrecedence) right = `(${right})`;
+            if (rightPrecedence !== null) {
+                if (RIGHT_ASSOCIATIVE_BINARY_OPS.has(op)) {
+                    if (rightPrecedence < myPrecedence) right = `(${right})`;
+                } else if (rightPrecedence <= myPrecedence) {
+                    right = `(${right})`;
+                }
+            }
             return `${left} ${op} ${right}`;
         }
         case 'conditional': {
@@ -170,4 +184,9 @@ export function canonicalComboEffectSignature(
     statements: FcstmAstOperationStatement[],
 ): string[] {
     return statements.map(canonicalOperationStatement);
+}
+
+/** Match Python's ``json.dumps(tuple_of_effects)`` spacing in origin IDs. */
+export function pythonJsonArray(values: string[]): string {
+    return `[${values.map(value => JSON.stringify(value)).join(', ')}]`;
 }

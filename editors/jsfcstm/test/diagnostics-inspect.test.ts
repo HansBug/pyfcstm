@@ -1019,6 +1019,26 @@ state Root {
             ]);
         });
 
+        it('keeps right-associative combo effects aligned with pyfcstm', async () => {
+            const report = inspectModel(await buildMachine(`
+def int x = 0;
+state Root {
+    state Orphan;
+    state Done;
+    [*] -> Done;
+    Orphan -> Done :: E1 + E2 effect {
+        x = 2 ** 3 ** 4;
+        x = 1;
+    }
+}
+`));
+            const diagnostics = report.diagnostics.filter(d => d.code === 'W_UNREACHABLE_TRANSITION');
+            assert.equal(diagnostics.length, 1);
+            assert.deepEqual(diagnostics[0].refs.combo_origin_ids, [
+                'Root:Orphan->Done::: E1 + E2:effect=["x = 2 ** 3 ** 4;", "x = 1;"]',
+            ]);
+        });
+
         it('does not reserve pseudo-state names in combo endpoint metadata', async () => {
             const report = inspectModel(await buildMachine(`
 state Root {

@@ -133,7 +133,7 @@ Nested object contracts
    * - ``ComboOriginInfo``
      - ``origin_id``, ``transition_span``, ``trigger_span``, and ordered ``terms``.
    * - ``ComboOriginTermInfo`` / ``ComboOriginRefInfo``
-     - Term index, role, consumed term flag, text, and transition/trigger/term/value/removal spans.
+     - Term index, role, consumed term flag, text, transition/trigger/term/value/removal spans, and authored endpoint provenance: ``source_kind`` (``state``/``init``), ``source_path``, ``selection_owner_path`` for init selections, ``target_kind`` (``state``/``exit``), and ``target_path`` (``[*]`` for exit).
    * - ``VariableInfo``
      - Name, type, initial value, read/write state paths, guard-affect flags, abstract-action scope, and float-literal assignments.
    * - ``EventInfo``

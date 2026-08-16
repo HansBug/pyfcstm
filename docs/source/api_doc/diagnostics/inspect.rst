@@ -140,11 +140,18 @@ InspectVerificationReport
     :members: supported,enabled,provider,reason_code,requested_policy,summary,algorithms
 
 
+StructureStatistics
+-----------------------------------------------------
+
+.. autoclass:: StructureStatistics
+    :members: state_count,leaf_state_count,composite_state_count,authored_transition_count,transitions_per_state,states_per_transition,unreachable_leaf_states,unreachable_transitions,unreachable_transition_reasons,unguarded_transitions,guard_eligible_transitions,unguarded_rate,missing_effect_transitions,effect_eligible_transitions,missing_effect_rate,eventless_unconditional_transitions,behavior_transitions,eventless_unconditional_rate
+
+
 ModelInspect
 -----------------------------------------------------
 
 .. autoclass:: ModelInspect
-    :members: to_json,root_state_path,states,transitions,variables,events,actions,forced_transitions,combo_transitions,combo_origins,metrics,reachability_graph,event_emission_map,var_dataflow,aspect_impact_map,action_ref_graph,diagnostics,verification
+    :members: to_json,root_state_path,states,transitions,variables,events,actions,forced_transitions,combo_transitions,combo_origins,metrics,structure_statistics,reachability_graph,event_emission_map,var_dataflow,aspect_impact_map,action_ref_graph,diagnostics,verification
 
 
 inspect\_model

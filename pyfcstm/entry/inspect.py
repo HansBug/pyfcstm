@@ -45,7 +45,14 @@ from typing import Optional, Tuple
 import click
 
 from .base import CONTEXT_SETTINGS, ClickErrorException
-from ..diagnostics import ModelInspect, inspect_model
+from ..diagnostics import (
+    DEFAULT_STRUCTURE_MAX_TRANSITIONS_PER_STATE,
+    DEFAULT_STRUCTURE_MAX_UNREACHABLE_LEAF_STATE_RATE,
+    DEFAULT_STRUCTURE_MAX_UNREACHABLE_TRANSITION_RATE,
+    ModelInspect,
+    StructureStatisticsPolicy,
+    inspect_model,
+)
 from ..diagnostics.inspect_render import (
     HumanRenderOptions,
     inspect_output_suffix_warning,
@@ -264,6 +271,7 @@ def _build_inspect_json_with_report(
     max_complexity_tier: str = "structural",
     max_call_count_scaling: str = "linear_in_transitions",
     smt_timeout_ms: Optional[int] = None,
+    structure_statistics_policy: Optional[StructureStatisticsPolicy] = None,
 ) -> Tuple[str, "ModelInspect"]:
     """Build stable JSON text and the report object behind it.
 
@@ -325,6 +333,7 @@ def _build_inspect_json_with_report(
             max_complexity_tier=max_complexity_tier,
             max_call_count_scaling=max_call_count_scaling,
             smt_timeout_ms=smt_timeout_ms,
+            structure_statistics_policy=structure_statistics_policy,
             model_diagnostics=model_diagnostics,
         )
     except FileNotFoundError:
@@ -382,6 +391,7 @@ def build_inspect_json(
     max_complexity_tier: str = "structural",
     max_call_count_scaling: str = "linear_in_transitions",
     smt_timeout_ms: Optional[int] = None,
+    structure_statistics_policy: Optional[StructureStatisticsPolicy] = None,
 ) -> str:
     """Build stable JSON text for an inspected FCSTM model.
 
@@ -428,6 +438,7 @@ def build_inspect_json(
         max_complexity_tier=max_complexity_tier,
         max_call_count_scaling=max_call_count_scaling,
         smt_timeout_ms=smt_timeout_ms,
+        structure_statistics_policy=structure_statistics_policy,
     )[0]
 
 
@@ -441,6 +452,7 @@ def _build_inspect_output_with_report(
     max_complexity_tier: str = "structural",
     max_call_count_scaling: str = "linear_in_transitions",
     smt_timeout_ms: Optional[int] = None,
+    structure_statistics_policy: Optional[StructureStatisticsPolicy] = None,
 ) -> Tuple[str, "ModelInspect"]:
     """Build inspect output text and the report object behind it.
 
@@ -498,6 +510,7 @@ def _build_inspect_output_with_report(
             max_complexity_tier=max_complexity_tier,
             max_call_count_scaling=max_call_count_scaling,
             smt_timeout_ms=smt_timeout_ms,
+            structure_statistics_policy=structure_statistics_policy,
         )
     if output_format not in _INSPECT_OUTPUT_FORMAT_CHOICES:
         raise ValueError(f"unsupported inspect output format: {output_format!r}")
@@ -516,6 +529,7 @@ def _build_inspect_output_with_report(
             max_complexity_tier=max_complexity_tier,
             max_call_count_scaling=max_call_count_scaling,
             smt_timeout_ms=smt_timeout_ms,
+            structure_statistics_policy=structure_statistics_policy,
             model_diagnostics=model_diagnostics,
         )
     except FileNotFoundError:
@@ -579,6 +593,7 @@ def build_inspect_output(
     max_complexity_tier: str = "structural",
     max_call_count_scaling: str = "linear_in_transitions",
     smt_timeout_ms: Optional[int] = None,
+    structure_statistics_policy: Optional[StructureStatisticsPolicy] = None,
 ) -> str:
     """Build inspect output text in the requested presentation format.
 
@@ -632,6 +647,7 @@ def build_inspect_output(
         max_complexity_tier=max_complexity_tier,
         max_call_count_scaling=max_call_count_scaling,
         smt_timeout_ms=smt_timeout_ms,
+        structure_statistics_policy=structure_statistics_policy,
     )[0]
 
 
@@ -730,6 +746,32 @@ def _add_inspect_subcommand(cli: click.Group) -> click.Group:
             "0 keeps Z3 without a finite timeout."
         ),
     )
+    @click.option(
+        "--structure-max-transitions-per-state",
+        type=float,
+        default=DEFAULT_STRUCTURE_MAX_TRANSITIONS_PER_STATE,
+        show_default=True,
+        help="Advisory maximum authored transitions per non-pseudo state.",
+    )
+    @click.option(
+        "--structure-max-unreachable-leaf-rate",
+        type=click.FloatRange(min=0, max=1),
+        default=DEFAULT_STRUCTURE_MAX_UNREACHABLE_LEAF_STATE_RATE,
+        show_default=True,
+        help="Advisory maximum unreachable leaf-state rate.",
+    )
+    @click.option(
+        "--structure-max-unreachable-transition-rate",
+        type=click.FloatRange(min=0, max=1),
+        default=DEFAULT_STRUCTURE_MAX_UNREACHABLE_TRANSITION_RATE,
+        show_default=True,
+        help="Advisory maximum unreachable authored-transition rate.",
+    )
+    @click.option(
+        "--no-structure-thresholds",
+        is_flag=True,
+        help="Disable all advisory structure-statistics thresholds.",
+    )
     def inspect_command(
         input_code_file: str,
         output_file: Optional[str],
@@ -740,6 +782,10 @@ def _add_inspect_subcommand(cli: click.Group) -> click.Group:
         max_complexity_tier: str,
         max_call_count_scaling: str,
         smt_timeout_ms: Optional[int],
+        structure_max_transitions_per_state: float,
+        structure_max_unreachable_leaf_rate: float,
+        structure_max_unreachable_transition_rate: float,
+        no_structure_thresholds: bool,
     ) -> None:
         """Inspect a state machine DSL file and emit the selected report format.
 
@@ -797,6 +843,19 @@ def _add_inspect_subcommand(cli: click.Group) -> click.Group:
             max_complexity_tier=max_complexity_tier,
             max_call_count_scaling=max_call_count_scaling,
             smt_timeout_ms=smt_timeout_ms,
+            structure_statistics_policy=(
+                StructureStatisticsPolicy(
+                    max_transitions_per_state=None
+                    if no_structure_thresholds
+                    else structure_max_transitions_per_state,
+                    max_unreachable_leaf_state_rate=None
+                    if no_structure_thresholds
+                    else structure_max_unreachable_leaf_rate,
+                    max_unreachable_transition_rate=None
+                    if no_structure_thresholds
+                    else structure_max_unreachable_transition_rate,
+                )
+            ),
         )
         warning = inspect_output_suffix_warning(output_file, output_format)
         if warning is not None:

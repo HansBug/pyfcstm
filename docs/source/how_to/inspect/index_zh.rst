@@ -61,7 +61,7 @@ Inspect 任务指南
 
 预期信号。``human`` 以检查器风格摘要开头，``json`` 包含
 ``root_state_path`` 和结构数组，``llm-json`` 带
-``schema_version`` ``pyfcstm.inspect.llm.v1``\ ，``llm-md`` 以 Markdown 标题开头。
+``schema_version`` ``pyfcstm.inspect.llm.v2``\ ，``llm-md`` 以 Markdown 标题开头。
 
 文件副作用。除非使用 ``-o``\ ，否则四条命令都只写标准输出。
 
@@ -203,7 +203,7 @@ Inspect 任务指南
    print(len(first['recommended_actions']), len(first['do_not']))
    PY
 
-预期信号。结构版本是 ``pyfcstm.inspect.llm.v1``\ 。第一个诊断包含
+预期信号。结构版本是 ``pyfcstm.inspect.llm.v2``\ 。第一个诊断包含
 ``source_excerpt``、``refs``、``recommended_actions`` 和 ``do_not``\ ；最后一行计数是 ``2 1``\ 。
 
 文件副作用。``/tmp/inspect.llm.json`` 会被创建或覆盖。
@@ -231,7 +231,7 @@ Inspect 任务指南
 
    # FCSTM Inspect Report
 
-   - Schema: `pyfcstm.inspect.llm.v1`
+   - Schema: `pyfcstm.inspect.llm.v2`
    - Schema status: `stable`
    - Status: `warning`
    - Input: `docs/source/tutorials/inspect/inspect_diagnostics.fcstm`

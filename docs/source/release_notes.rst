@@ -35,8 +35,16 @@ Inspect and Diagnostics
   of ANSI escapes.
 - Kept the stable machine report under ``--format json`` and added
   ``--format llm-json`` and ``--format llm-md`` using schema
-  ``pyfcstm.inspect.llm.v1``. LLM reports carry source context, provenance,
+  ``pyfcstm.inspect.llm.v2``. LLM reports carry source context, provenance,
   repair guidance, and explicit do-not notes.
+- Added the descriptive ``summary.structure_statistics`` section to the LLM
+  report and ``ModelInspect.structure_statistics`` to the full report. The
+  v2 migration is additive for consumers that ignore unknown fields; strict
+  consumers must accept the new field and schema version. Rates are raw
+  fractions, use ``null`` for empty denominators, and record conservative
+  advisory defaults for transition density and unreachable populations.
+  Exceeded names are metadata only; no new warning code or health score is
+  inferred. Python callers and the CLI can override or disable the thresholds.
 - Expanded static and verify-backed diagnostics, including numeric and guard
   reasoning, while keeping solver-backed inspect checks behind the existing
   explicit enablement and safety gates.
@@ -44,8 +52,9 @@ Inspect and Diagnostics
   report. Consumers can distinguish disabled verification, policy-excluded
   algorithms, definite results, and indeterminate outcomes without treating
   any of those states as new model diagnostics. The human CLI shows compact
-  coverage and indeterminate reasons; the stable ``pyfcstm.inspect.llm.v1``
-  presentation remains unchanged.
+  coverage and indeterminate reasons; the stable ``pyfcstm.inspect.llm.v2``
+  presentation includes the additive structure statistics section described
+  above.
 - Added isolated multi-provider repair evaluations that test whether a consumer
   can locate, explain, repair, and replay real diagnostics without access to
   hidden repository context.

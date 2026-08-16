@@ -97,6 +97,8 @@ Inspect 报告参考
      - 按稳定来源标识分组的组合触发器来源信息。
    * - ``metrics``
      - 聚合计数、层级深度、比例和清单。
+   * - ``structure_statistics``
+     - 面向 LLM 的描述性结构计数和比例。初始边被排除，生成的组合边和强制展开边按作者写的一条转换折叠；该段不会产生告警或综合健康分数。
    * - ``reachability_graph``
      - 默认检查图：忽略守卫，跟随组合状态初始边。
    * - ``event_emission_map``
@@ -139,6 +141,8 @@ Inspect 报告参考
      - 所属状态、源/目标、触发事实、原始文本和展开数量。
    * - ``ModelMetrics``
      - 状态 / 转换 / 事件 / 变量计数、层级深度、变量到叶状态比例、切面覆盖和抽象动作清单。
+   * - ``StructureStatistics``
+     - 作者写的转换数量、``transitions_per_state``（``T / S``）、不可达数量/比例，以及守卫/效果/无事件无守卫比例。``S`` 是非伪状态数量；每个比例同时给出分子和分母，空总体返回 ``null``。默认只对三项结构信号给出建议阈值：``T / S <= 4.0``、不可达叶状态比例 ``<= 0.10``、不可达转换比例 ``<= 0.10``；超出只记录元数据，不产生诊断。
    * - ``ModelDiagnostic``
      - ``code``、``severity``、``message``、``span``、``refs`` 和可选 ``suggested_fix``。
    * - ``Span``
@@ -183,8 +187,28 @@ LLM 报告契约
 ----------------------------------------
 
 ``llm-json`` 和 ``llm-md`` 是修复循环使用的表达契约。它们不替代完整报告。
-其稳定的 ``pyfcstm.inspect.llm.v1`` schema 与输出不包含 ``verification`` 执行元数据；需要覆盖率或
+其稳定的 ``pyfcstm.inspect.llm.v2`` schema 与输出不包含 ``verification`` 执行元数据；需要覆盖率或
 不确定结果的消费者必须使用完整 JSON 报告。
+
+结构统计默认只是描述性信息：始终输出原始计数和比例，并记录三项保守的建议阈值。
+超出阈值只把字段名加入 ``exceeded_thresholds``，不会生成 G5 健康告警或综合分数。
+分母为空时返回 ``null``（human/Markdown 显示 ``N/A``）。调用方可以向
+``inspect_model`` 传入 ``StructureStatisticsPolicy``（或部分 mapping），单项传
+``None`` 即可关闭。未来若根据带版本的语料库设置 cutoff，必须显式配置，不能从
+本报告自行推断。
+
+默认 ``4.0`` 密度上限参考 PSMBench/RFC2PSM 的 14 个协议汇总值
+``T / S = 2.75``（`PSMBench DOI <https://doi.org/10.52202/085713-1899>`_），
+但该语料是扁平协议状态机且规模较小，不能定义通用 FCSTM 上限。不可达总体的
+``10%`` 默认值是工程审查预算启发式，不是文献给出的质量边界。UML 2.5.1 将
+transition 的 ``guard`` 和 ``effect`` 都定义为可选项，因此这两类风格比例不设
+默认 cutoff（`OMG UML 2.5.1 <https://www.omg.org/spec/UML/2.5.1/PDF>`_）。
+
+``unguarded_rate`` 只统计 AST 中没有 guard 的作者转换。由于 FCSTM 语法不允许
+forced declaration 带 effect，``missing_effect_rate`` 的分母排除 forced 转换。
+``eventless_unconditional_rate`` 统计同时没有 event 和 guard 的转换。这些都是
+语法层观察，不等价于语义不安全。不可达转换的原因桶有意允许重叠：总数按作者转换
+identity 的并集计算，因此同一转换可以出现在多个原因桶中，但总数只计一次。
 
 .. list-table:: LLM 顶层字段
    :header-rows: 1
@@ -193,7 +217,7 @@ LLM 报告契约
    * - 字段
      - 含义
    * - ``schema_version``
-     - 常量 ``pyfcstm.inspect.llm.v1``。
+     - 常量 ``pyfcstm.inspect.llm.v2``。
    * - ``schema_status``
      - 常量 ``stable``。
    * - ``status``
@@ -203,7 +227,7 @@ LLM 报告契约
    * - ``repair_protocol``
      - 含 ``goal`` 和有序 ``rules`` 的安全修复提示协议。
    * - ``summary``
-     - 错误、警告、信息、状态、叶状态、转换、变量和根状态计数。
+     - 错误、警告、信息、状态、叶状态、转换、变量和根状态计数，以及 ``structure_statistics`` 对象。
    * - ``diagnostics``
      - 带源码摘录和注册表指导的紧凑诊断条目。
 

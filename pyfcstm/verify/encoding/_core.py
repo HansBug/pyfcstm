@@ -304,6 +304,28 @@ def _event_name(transition: Transition) -> Optional[str]:
     return transition.event.path_name
 
 
+def _transition_index(transition: Transition) -> Optional[int]:
+    """Return the parent-first model index for ``transition``.
+
+    Verify algorithms receive an individual transition rather than the owning
+    machine.  The parent links still let us recover the root and reproduce the
+    inspect layer's stable traversal order, which is required to distinguish
+    identical source declarations in downstream diagnostics.
+    """
+    owner = getattr(transition, 'parent', None)
+    if owner is None:
+        return None
+    while owner.parent is not None:
+        owner = owner.parent
+    index = 0
+    for state in owner.walk_states():
+        for candidate in state.transitions:
+            if candidate is transition:
+                return index
+            index += 1
+    return None
+
+
 def _transition_payload(transition: Transition) -> dict:
     """Create a stable, diagnostics-layer-free transition payload.
 
@@ -330,6 +352,7 @@ def _transition_payload(transition: Transition) -> dict:
         "event": _event_name(transition),
         "guard": str(transition.guard) if transition.guard is not None else None,
         "is_forced": transition.is_forced,
+        "transition_index": _transition_index(transition),
     }
 
 

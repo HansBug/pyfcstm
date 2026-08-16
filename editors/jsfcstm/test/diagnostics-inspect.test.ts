@@ -5,6 +5,9 @@ import {createDocument, packageModule} from './support';
 const {
     DEFAULT_DEEP_HIERARCHY_THRESHOLD,
     DEFAULT_LARGE_COMPOSITE_THRESHOLD,
+    DEFAULT_STRUCTURE_MAX_TRANSITIONS_PER_STATE,
+    DEFAULT_STRUCTURE_MAX_UNREACHABLE_LEAF_STATE_RATE,
+    DEFAULT_STRUCTURE_MAX_UNREACHABLE_TRANSITION_RATE,
     DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD,
     inspectModel,
 } = packageModule;
@@ -503,6 +506,54 @@ state Root {
             assert.equal(DEFAULT_DEEP_HIERARCHY_THRESHOLD, 6);
             assert.equal(DEFAULT_LARGE_COMPOSITE_THRESHOLD, 12);
             assert.equal(DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD, 2.0);
+            assert.equal(DEFAULT_STRUCTURE_MAX_TRANSITIONS_PER_STATE, 4.0);
+            assert.equal(DEFAULT_STRUCTURE_MAX_UNREACHABLE_LEAF_STATE_RATE, 0.10);
+            assert.equal(DEFAULT_STRUCTURE_MAX_UNREACHABLE_TRANSITION_RATE, 0.10);
+        });
+
+        it('reports advisory structure thresholds without emitting diagnostics', async () => {
+            const source = `state Root {
+                state A;
+                [*] -> A;
+                A -> A;
+                A -> A;
+                A -> A;
+                A -> A;
+                A -> A;
+                A -> A;
+                A -> A;
+                A -> A;
+                A -> A;
+            }`;
+            const report = inspectModel(await buildMachine(source));
+            assert.equal(report.structure_statistics.transitions_per_state, 4.5);
+            assert.deepEqual(report.structure_statistics.thresholds, {
+                max_transitions_per_state: 4.0,
+                max_unreachable_leaf_state_rate: 0.10,
+                max_unreachable_transition_rate: 0.10,
+            });
+            assert.deepEqual(report.structure_statistics.exceeded_thresholds, [
+                'transitions_per_state',
+                'unreachable_transition_rate',
+            ]);
+            assert.equal(
+                report.diagnostics.some(item => item.code.includes('STRUCTURE')),
+                false,
+            );
+        });
+
+        it('supports partial structure threshold overrides', async () => {
+            const report = inspectModel(await buildMachine(SIMPLE_DSL), {
+                structureStatisticsPolicy: {
+                    max_transitions_per_state: null,
+                    max_unreachable_leaf_state_rate: 0,
+                },
+            });
+            assert.deepEqual(report.structure_statistics.thresholds, {
+                max_transitions_per_state: null,
+                max_unreachable_leaf_state_rate: 0,
+                max_unreachable_transition_rate: 0.10,
+            });
         });
     });
 
@@ -606,8 +657,9 @@ state Root {
                 'metrics',
                 'reachability_graph',
                 'root_state_path',
-                'states',
-                'transitions',
+            'states',
+            'structure_statistics',
+            'transitions',
                 'var_dataflow',
                 'variables',
                 'verification',
@@ -631,6 +683,87 @@ state Root {
                     indeterminate: 0,
                 },
                 algorithms: [],
+            });
+            assert.equal(report.structure_statistics.authored_transition_count, 2);
+            assert.equal(report.structure_statistics.state_count, 3);
+            assert.equal(report.structure_statistics.transitions_per_state, 2 / 3);
+            assert.equal(report.structure_statistics.states_per_transition, 3 / 2);
+            assert.equal(report.structure_statistics.unguarded_transitions, 1);
+            assert.equal(report.structure_statistics.missing_effect_transitions, 2);
+        });
+
+        it('scopes identical forced declarations before aggregating unreachable transitions', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Reachable {
+        state X;
+        state Y;
+        [*] -> X;
+        !X -> Y;
+    }
+    state Orphan {
+        state X;
+        state Y;
+        [*] -> X;
+        !X -> Y;
+    }
+    [*] -> Reachable;
+}
+`));
+            assert.equal(report.structure_statistics.unreachable_leaf_states, 2);
+            assert.equal(report.structure_statistics.unreachable_transitions, 1);
+            assert.deepEqual(report.structure_statistics.unreachable_transition_reasons, {
+                unreachable_source_state: 1,
+            });
+        });
+
+        it('marks a transition from a fully unreachable composite source', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Orphan {
+        state A;
+        [*] -> A;
+    }
+    state Live;
+    [*] -> Live;
+    Orphan -> Live;
+}
+`));
+            assert.equal(report.structure_statistics.unreachable_transitions, 1);
+            assert.deepEqual(report.structure_statistics.unreachable_transition_reasons, {
+                unreachable_source_state: 1,
+            });
+        });
+
+        it('counts forced declarations with no concrete expansion', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state A { !* -> [*] :: Never; }
+    [*] -> A;
+}
+`));
+            assert.equal(report.structure_statistics.authored_transition_count, 1);
+            assert.equal(report.structure_statistics.unreachable_transitions, 1);
+            assert.deepEqual(report.structure_statistics.unreachable_transition_reasons, {
+                forced_never_expands: 1,
+            });
+        });
+
+        it('counts every redundant copy after the first authored transition', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state A;
+    state B;
+    [*] -> A;
+    A -> B;
+    A -> B;
+    A -> B;
+}
+`));
+            assert.equal(report.structure_statistics.authored_transition_count, 3);
+            assert.equal(report.structure_statistics.unreachable_transitions, 2);
+            assert.deepEqual(report.structure_statistics.unreachable_transition_reasons, {
+                redundant: 2,
             });
         });
 

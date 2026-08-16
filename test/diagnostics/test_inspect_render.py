@@ -92,6 +92,12 @@ def _schema_type_matches(value, expected):
             and not isinstance(value, bool)
         ):
             return True
+        if (
+            expected_type == "number"
+            and isinstance(value, (int, float))
+            and not isinstance(value, bool)
+        ):
+            return True
         if expected_type == "array" and isinstance(value, list):
             return True
         if (
@@ -326,6 +332,14 @@ class TestInspectRender:
         assert "No diagnostics." in text
         assert ANSI_ESCAPE_RE.search(text) is None
 
+    def test_human_renderer_formats_structure_rates_by_kind(self):
+        text = render_inspect_human(_report(), SOURCE, input_path="case.fcstm")
+
+        assert "  transitions per state: 0.333" in text
+        assert "  states per transition: 3.000" in text
+        assert "  unguarded: 0/1; rate: 0.000 (0.0%)" in text
+        assert "  missing effect: 1/1; rate: 1.000 (100.0%)" in text
+
     def test_llm_json_renderer_is_stable_and_actionable(self):
         payload = json.loads(render_inspect_llm_json(_report(), SOURCE))
 
@@ -336,6 +350,8 @@ class TestInspectRender:
         diagnostic = payload["diagnostics"][0]
         assert {"code", "severity", "message", "refs"} <= set(diagnostic)
         assert payload["repair_protocol"]["rules"]
+        assert payload["summary"]["structure_statistics"]["authored_transition_count"] == 1
+        assert payload["summary"]["structure_statistics"]["transitions_per_state"] == 1 / 3
         assert "recommended_actions" in diagnostic
         assert "do_not" in diagnostic
         assert "provenance" in diagnostic
@@ -351,7 +367,7 @@ class TestInspectRender:
         assert context[1]["caret"].strip("^") == "    "
         assert context[2]["text"] == "    [*] -> Idle;"
 
-    def test_llm_v1_renderers_ignore_verification_metadata(self):
+    def test_llm_v2_renderers_ignore_verification_metadata(self):
         report = _report()
         verification = SimpleNamespace(
             supported=True,
@@ -417,6 +433,8 @@ class TestInspectRender:
         assert "## W_" in text
         assert "Recommended actions" in text
         assert "Repair notes" in text
+        assert "## Structure statistics" in text
+        assert "authored_transition_count" in text
         assert "3 |     state Idle;" in text
         assert "4 |     state Running;" in text
         assert "|     ^^^^^^^^^^^^^^" in text

@@ -47,7 +47,7 @@ Examples::
 """
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from .analyzers import (
@@ -73,6 +73,9 @@ if TYPE_CHECKING:  # pragma: no cover - import-time forward refs only
 DEFAULT_DEEP_HIERARCHY_THRESHOLD = 6
 DEFAULT_LARGE_COMPOSITE_THRESHOLD = 12
 DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD = 2.0
+DEFAULT_STRUCTURE_MAX_TRANSITIONS_PER_STATE = 4.0
+DEFAULT_STRUCTURE_MAX_UNREACHABLE_LEAF_STATE_RATE = 0.10
+DEFAULT_STRUCTURE_MAX_UNREACHABLE_TRANSITION_RATE = 0.10
 
 # Keep policy validation local so a normal structural inspect does not import
 # the verify package merely to construct its disabled execution metadata.
@@ -591,6 +594,133 @@ class ModelMetrics:
 
 
 @dataclass(frozen=True)
+class StructureStatisticsPolicy:
+    """Advisory thresholds for the structure-statistics section.
+
+    The defaults are deliberately limited to size-normalized topology signals:
+    a PSMBench-style pooled transition/state ratio of 2.75 remains below the
+    density ceiling, while 10% unreachable populations provide a useful review
+    trigger without pretending to be a semantic proof. ``None`` disables one
+    advisory threshold. Exceeding a threshold only records metadata; it never
+    creates a diagnostic.
+
+    :param max_transitions_per_state: Maximum advisory ``T / S`` ratio.
+    :param max_unreachable_leaf_state_rate: Maximum advisory unreachable leaf
+        state fraction.
+    :param max_unreachable_transition_rate: Maximum advisory unreachable
+        authored transition fraction.
+    """
+
+    max_transitions_per_state: Optional[float] = DEFAULT_STRUCTURE_MAX_TRANSITIONS_PER_STATE
+    max_unreachable_leaf_state_rate: Optional[float] = DEFAULT_STRUCTURE_MAX_UNREACHABLE_LEAF_STATE_RATE
+    max_unreachable_transition_rate: Optional[float] = DEFAULT_STRUCTURE_MAX_UNREACHABLE_TRANSITION_RATE
+
+
+DEFAULT_STRUCTURE_STATISTICS_POLICY = StructureStatisticsPolicy()
+
+
+@dataclass(frozen=True)
+class StructureStatistics:
+    """Descriptive structure statistics for LLM and human review.
+
+    These values are intentionally observations, not health thresholds.  The
+    transition population is authored behavior: initial edges are excluded,
+    generated combo edges are folded to their origin, and forced expansions
+    are counted once per declaration.
+
+    :param state_count: Non-pseudo state count, including composite states.
+    :param leaf_state_count: Non-pseudo leaf-state count.
+    :param composite_state_count: Non-pseudo composite-state count.
+    :param authored_transition_count: Authored behavior transitions after
+        initial-edge, combo-expansion, and forced-expansion normalization.
+    :param transitions_per_state: ``authored_transition_count / state_count``;
+        ``None`` when there are no states.
+    :param states_per_transition: Inverse ratio; ``None`` when there are no
+        authored transitions.
+    :param unreachable_leaf_states: Leaf states reported as unreachable.
+    :param unreachable_leaf_state_rate: Unreachable leaf states divided by
+        the leaf-state population, or ``None`` when there are no leaves.
+    :param unreachable_transitions: Distinct authored transitions covered by
+        the existing unreachable/dead/shadowed diagnostics.
+    :param unreachable_transition_rate: Unreachable authored transitions
+        divided by authored transitions, or ``None`` when there are none.
+    :param unreachable_transition_reasons: Reason buckets for that count.
+    :param thresholds: Advisory thresholds applied to the rates. These are
+        metadata only and do not emit diagnostics.
+    :param exceeded_thresholds: Names of advisory thresholds exceeded by this
+        report.
+    :param unguarded_transitions: Authored transitions without an AST guard.
+    :param guard_eligible_transitions: Authored transition denominator for
+        ``unguarded_rate``.
+    :param unguarded_rate: ``unguarded_transitions / guard_eligible_transitions``
+        or ``None`` for an empty denominator.
+    :param missing_effect_transitions: Effect-eligible transitions without an
+        AST effect block.
+    :param effect_eligible_transitions: Authored non-forced transition
+        denominator for ``missing_effect_rate``.
+    :param missing_effect_rate: Missing-effect fraction or ``None`` when the
+        denominator is empty.
+    :param eventless_unconditional_transitions: Authored transitions with no
+        event and no guard.
+    :param behavior_transitions: Denominator for the eventless-unconditional
+        rate; currently equal to ``authored_transition_count``.
+    :param eventless_unconditional_rate: Eventless-unconditional fraction or
+        ``None`` when the denominator is empty.
+    """
+
+    state_count: int
+    leaf_state_count: int
+    composite_state_count: int
+    authored_transition_count: int
+    transitions_per_state: Optional[float]
+    states_per_transition: Optional[float]
+    unreachable_leaf_states: int
+    unreachable_leaf_state_rate: Optional[float]
+    unreachable_transitions: int
+    unreachable_transition_rate: Optional[float]
+    unreachable_transition_reasons: Dict[str, int]
+    thresholds: StructureStatisticsPolicy
+    exceeded_thresholds: Tuple[str, ...]
+    unguarded_transitions: int
+    guard_eligible_transitions: int
+    unguarded_rate: Optional[float]
+    missing_effect_transitions: int
+    effect_eligible_transitions: int
+    missing_effect_rate: Optional[float]
+    eventless_unconditional_transitions: int
+    behavior_transitions: int
+    eventless_unconditional_rate: Optional[float]
+
+
+def _empty_structure_statistics() -> StructureStatistics:
+    """Return a schema-valid zero population for hand-built reports."""
+    return StructureStatistics(
+        state_count=0,
+        leaf_state_count=0,
+        composite_state_count=0,
+        authored_transition_count=0,
+        transitions_per_state=None,
+        states_per_transition=None,
+        unreachable_leaf_states=0,
+        unreachable_leaf_state_rate=None,
+        unreachable_transitions=0,
+        unreachable_transition_rate=None,
+        unreachable_transition_reasons={},
+        thresholds=DEFAULT_STRUCTURE_STATISTICS_POLICY,
+        exceeded_thresholds=(),
+        unguarded_transitions=0,
+        guard_eligible_transitions=0,
+        unguarded_rate=None,
+        missing_effect_transitions=0,
+        effect_eligible_transitions=0,
+        missing_effect_rate=None,
+        eventless_unconditional_transitions=0,
+        behavior_transitions=0,
+        eventless_unconditional_rate=None,
+    )
+
+
+@dataclass(frozen=True)
 class InspectVerificationPolicy:
     """Verify policy requested for one model inspection."""
 
@@ -669,6 +799,9 @@ class ModelInspect:
     :type combo_origins: Tuple[ComboOriginInfo, ...]
     :param metrics: Aggregate model metrics.
     :type metrics: ModelMetrics
+    :param structure_statistics: Descriptive authored-structure counts and
+        rates for human and LLM consumers. These are not health thresholds.
+    :type structure_statistics: StructureStatistics
     :param reachability_graph: Mapping from every state path to state paths
         reachable through normal transitions and composite initial edges.
         Guards are ignored; ``[*]`` entry/exit markers are not exposed.
@@ -713,6 +846,9 @@ class ModelInspect:
     verification: InspectVerificationReport = field(default_factory=lambda: (
         _disabled_verification_report()
     ))
+    structure_statistics: StructureStatistics = field(
+        default_factory=_empty_structure_statistics,
+    )
 
     def to_json(self) -> Dict[str, Any]:
         """
@@ -1636,6 +1772,337 @@ def _build_metrics(
     )
 
 
+def _authored_transition_keys(
+        transitions: Sequence[TransitionInfo],
+        forced_transitions: Sequence[ForcedTransitionInfo] = (),
+) -> Tuple[Tuple[Tuple[Any, ...], TransitionInfo], ...]:
+    """Return one representative per authored behavior transition.
+
+    Combo expansion can emit many edges for one source declaration and forced
+    transitions can expand over several concrete states.  Provenance metadata
+    gives both forms a stable origin key; ordinary transitions remain one key
+    each.  Initial edges are structural entry declarations, not behavior
+    transitions, and are excluded from every G5 rate.
+    """
+    representatives: Dict[Tuple[Any, ...], TransitionInfo] = {}
+    combo_groups: Dict[str, List[TransitionInfo]] = {}
+    combo_initial_origins: Set[str] = set()
+    for transition in transitions:
+        if transition.from_path == _INIT_MARK:
+            for ref in transition.combo_origin_refs:
+                combo_initial_origins.add(ref.origin_id)
+            continue
+        if transition.combo_origin_refs:
+            for origin_id in {ref.origin_id for ref in transition.combo_origin_refs}:
+                combo_groups.setdefault(origin_id, []).append(transition)
+            continue
+        if transition.is_forced:
+            continue
+        representatives[("transition", transition.transition_index)] = transition
+    for origin_id, group in combo_groups.items():
+        if origin_id in combo_initial_origins:
+            continue
+        base = group[0]
+        representatives[("combo", origin_id)] = replace(
+            base,
+            guard=next((item.guard for item in group if item.guard is not None), None),
+            effect=next((item.effect for item in group if item.effect is not None), None),
+            event=next((item.event for item in group if item.event is not None), None),
+        )
+    forced_expansions = [item for item in transitions if item.is_forced]
+    for index, declaration in enumerate(forced_transitions):
+        base = next(
+            (
+                item for item in forced_expansions
+                if (
+                    item.forced_origin == declaration.original_raw
+                    and (
+                        not declaration.state_path
+                        or item.from_path == _INIT_MARK
+                        or item.from_path.rsplit('.', 1)[0] == declaration.state_path
+                    )
+                )
+            ),
+            forced_expansions[0]
+            if forced_expansions and not declaration.state_path
+            else None,
+        )
+        if base is None:
+            base = TransitionInfo(
+                from_path=declaration.from_path,
+                to_path=declaration.to_path,
+                event=declaration.event,
+                event_scope=declaration.event_scope,
+                guard=declaration.guard,
+                effect=None,
+                effect_self_assigns=(),
+                is_forced=True,
+                forced_origin=declaration.original_raw,
+                transition_index=None,
+                span=declaration.span,
+            )
+        representatives[("forced", index)] = replace(
+            base,
+            event=declaration.event,
+            guard=declaration.guard,
+            effect=None,
+            is_forced=True,
+        )
+    return tuple(representatives.items())
+
+
+def _rate(numerator: int, denominator: int) -> Optional[float]:
+    return None if denominator == 0 else numerator / denominator
+
+
+def _build_structure_statistics(
+        states: Sequence[StateInfo],
+        transitions: Sequence[TransitionInfo],
+        diagnostics: Sequence[ModelDiagnostic],
+        forced_transitions: Sequence[ForcedTransitionInfo] = (),
+        policy: StructureStatisticsPolicy = DEFAULT_STRUCTURE_STATISTICS_POLICY,
+) -> StructureStatistics:
+    authored = _authored_transition_keys(transitions, forced_transitions)
+    authored_transitions = tuple(item[1] for item in authored)
+    authored_by_key = dict(authored)
+    non_pseudo_states = tuple(state for state in states if not state.is_pseudo)
+    leaf_states = tuple(state for state in non_pseudo_states if state.is_leaf)
+    composite_states = tuple(state for state in non_pseudo_states if state.is_composite)
+
+    unguarded = sum(1 for item in authored_transitions if item.guard is None)
+    effect_eligible = tuple(item for item in authored_transitions if not item.is_forced)
+    missing_effect = sum(1 for item in effect_eligible if item.effect is None)
+    eventless_unconditional = sum(
+        1 for item in authored_transitions
+        if item.event is None and item.guard is None
+    )
+
+    unreachable_paths = {
+        diagnostic.refs.get("state_path")
+        for diagnostic in diagnostics
+        if diagnostic.code == "W_UNREACHABLE_STATE"
+        and isinstance(diagnostic.refs.get("state_path"), str)
+    }
+    unreachable_leaf_paths = {
+        state.path for state in leaf_states if state.path in unreachable_paths
+    }
+    states_by_path = {state.path: state for state in states}
+
+    def source_is_unreachable(path: str) -> bool:
+        if path in unreachable_paths:
+            return True
+        state = states_by_path.get(path)
+        if state is None or not state.is_composite:
+            return False
+        descendant_leaves = {
+            leaf.path for leaf in leaf_states
+            if leaf.path.startswith(path + ".")
+        }
+        return bool(descendant_leaves) and descendant_leaves <= unreachable_leaf_paths
+
+    source_unreachable_keys = {
+        key for key, item in authored
+        if source_is_unreachable(item.from_path)
+    }
+    event_names = {
+        diagnostic.refs.get("event_name")
+        for diagnostic in diagnostics
+        if diagnostic.code == "W_EVENT_UNREACHABLE_EMIT"
+        and isinstance(diagnostic.refs.get("event_name"), str)
+    }
+    event_unreachable_keys = {
+        key for key, item in authored
+        if item.event in event_names
+    }
+    transition_unreachable_codes = {
+        "W_GUARD_CONST_FALSE",
+        "W_DEAD_GUARD",
+        "W_COMBO_GUARD_CONST_FALSE",
+        "W_FORCED_GUARD_UNSAT",
+        "W_FORCED_NEVER_EXPANDS",
+        "W_TRANSITION_SHADOWED",
+        "W_REDUNDANT_TRANSITION",
+    }
+    forced_keys_by_identity = {
+        (declaration.state_path, declaration.original_raw): ("forced", index)
+        for index, declaration in enumerate(forced_transitions)
+    }
+    reason_keys: Dict[str, Set[Tuple[Any, ...]]] = {}
+    for diagnostic in diagnostics:
+        if diagnostic.code not in transition_unreachable_codes:
+            continue
+        refs = diagnostic.refs
+        origin_id = refs.get("origin_id")
+        keys: Set[Tuple[Any, ...]] = set()
+        if isinstance(origin_id, str):
+            keys = {key for key, _ in authored if key == ("combo", origin_id)}
+        if diagnostic.code == "W_FORCED_NEVER_EXPANDS":
+            identity = (refs.get("state_path"), refs.get("original_raw"))
+            key = forced_keys_by_identity.get(identity)
+            if key is not None:
+                keys.add(key)
+        duplicate_spans = refs.get("duplicate_spans")
+        if diagnostic.code == "W_REDUNDANT_TRANSITION" and isinstance(
+                duplicate_spans, (list, tuple)
+        ):
+            matched = [
+                (key, item) for key, item in authored
+                if item.span is not None and item.span in duplicate_spans
+            ]
+            # The first declaration supplies the behavior; later copies are
+            # the unreachable part of a redundant group.
+            keys = {key for key, _ in matched[1:]}
+        if not keys:
+            transition_index = refs.get("transition_index")
+            keys = {
+                key for key, item in authored
+                if isinstance(transition_index, int)
+                and item.transition_index == transition_index
+            }
+        transition_payload = refs.get("transition")
+        if not keys and isinstance(transition_payload, Mapping):
+            parent = transition_payload.get("parent")
+            from_state = transition_payload.get("from_state")
+            to_state = transition_payload.get("to_state")
+            if isinstance(parent, str) and isinstance(from_state, str):
+                payload_from = f"{parent}.{from_state}"
+                payload_to = (
+                    f"{parent}.{to_state}" if isinstance(to_state, str) else None
+                )
+                keys = {
+                    key for key, item in authored
+                    if item.from_path == payload_from
+                    and (payload_to is None or item.to_path == payload_to)
+                }
+                payload_guard = transition_payload.get("guard")
+                payload_event = transition_payload.get("event")
+                payload_forced = transition_payload.get("is_forced")
+                if isinstance(payload_guard, str) or payload_guard is None:
+                    keys = {
+                        key for key in keys
+                        if authored_by_key[key].guard == payload_guard
+                    }
+                if isinstance(payload_event, str):
+                    keys = {
+                        key for key in keys
+                        if authored_by_key[key].event == payload_event
+                        or authored_by_key[key].event is not None
+                        and authored_by_key[key].event.rsplit('.', 1)[-1] == payload_event
+                    }
+                if isinstance(payload_forced, bool):
+                    keys = {
+                        key for key in keys
+                        if authored_by_key[key].is_forced == payload_forced
+                    }
+                payload_index = transition_payload.get('transition_index')
+                if isinstance(payload_index, int) and not isinstance(payload_index, bool):
+                    keys = {
+                        key for key in keys
+                        if authored_by_key[key].transition_index == payload_index
+                    }
+        if not keys and isinstance(duplicate_spans, (list, tuple)):
+            matched = [
+                (key, item) for key, item in authored
+                if item.span is not None and item.span in duplicate_spans
+            ]
+            # The first declaration supplies the behavior; later copies are
+            # the unreachable part of a redundant group.
+            keys = {key for key, _ in matched[1:]}
+        if not keys:
+            from_path = refs.get("from_path")
+            to_path = refs.get("to_path")
+            keys = {
+                key for key, item in authored
+                if isinstance(from_path, str)
+                and isinstance(to_path, str)
+                and item.from_path == from_path
+                and item.to_path == to_path
+            }
+        if not keys:
+            continue
+        reason = (
+            "forced_never_expands"
+            if diagnostic.code == "W_FORCED_NEVER_EXPANDS"
+            else "guard_false"
+            if "GUARD" in diagnostic.code
+            else "shadowed" if "SHADOWED" in diagnostic.code
+            else "redundant"
+        )
+        reason_keys.setdefault(reason, set()).update(keys)
+    reasons: Dict[str, int] = {}
+    if source_unreachable_keys:
+        reasons["unreachable_source_state"] = len(source_unreachable_keys)
+    if event_unreachable_keys:
+        reasons["unreachable_event_consumer"] = len(event_unreachable_keys)
+    for reason, keys in reason_keys.items():
+        reasons[reason] = len(keys)
+    synthetic_event_count = 0
+    for diagnostic in diagnostics:
+        if diagnostic.code != "W_EVENT_UNREACHABLE_EMIT":
+            continue
+        count = diagnostic.refs.get("consumer_count", 0)
+        if isinstance(count, int) and count > 0 and not event_unreachable_keys:
+            synthetic_event_count += count
+    all_unreachable_keys = set(source_unreachable_keys | event_unreachable_keys)
+    for keys in reason_keys.values():
+        all_unreachable_keys.update(keys)
+    unreachable_transition_count = len(all_unreachable_keys) + synthetic_event_count
+
+    state_count = len(non_pseudo_states)
+    transition_count = len(authored_transitions)
+    unreachable_leaf_state_rate = _rate(
+        len(unreachable_leaf_paths),
+        len(leaf_states),
+    )
+    unreachable_transition_rate = _rate(
+        unreachable_transition_count,
+        transition_count,
+    )
+    exceeded_thresholds = []
+    if (
+            policy.max_transitions_per_state is not None
+            and _rate(transition_count, state_count) is not None
+            and _rate(transition_count, state_count) > policy.max_transitions_per_state
+    ):
+        exceeded_thresholds.append("transitions_per_state")
+    if (
+            policy.max_unreachable_leaf_state_rate is not None
+            and unreachable_leaf_state_rate is not None
+            and unreachable_leaf_state_rate > policy.max_unreachable_leaf_state_rate
+    ):
+        exceeded_thresholds.append("unreachable_leaf_state_rate")
+    if (
+            policy.max_unreachable_transition_rate is not None
+            and unreachable_transition_rate is not None
+            and unreachable_transition_rate > policy.max_unreachable_transition_rate
+    ):
+        exceeded_thresholds.append("unreachable_transition_rate")
+    return StructureStatistics(
+        state_count=state_count,
+        leaf_state_count=len(leaf_states),
+        composite_state_count=len(composite_states),
+        authored_transition_count=transition_count,
+        transitions_per_state=_rate(transition_count, state_count),
+        states_per_transition=_rate(state_count, transition_count),
+        unreachable_leaf_states=len(unreachable_leaf_paths),
+        unreachable_leaf_state_rate=unreachable_leaf_state_rate,
+        unreachable_transitions=unreachable_transition_count,
+        unreachable_transition_rate=unreachable_transition_rate,
+        unreachable_transition_reasons=dict(sorted(reasons.items())),
+        thresholds=policy,
+        exceeded_thresholds=tuple(exceeded_thresholds),
+        unguarded_transitions=unguarded,
+        guard_eligible_transitions=transition_count,
+        unguarded_rate=_rate(unguarded, transition_count),
+        missing_effect_transitions=missing_effect,
+        effect_eligible_transitions=len(effect_eligible),
+        missing_effect_rate=_rate(missing_effect, len(effect_eligible)),
+        eventless_unconditional_transitions=eventless_unconditional,
+        behavior_transitions=transition_count,
+        eventless_unconditional_rate=_rate(eventless_unconditional, transition_count),
+    )
+
+
 def _build_reachability_graph(
         states: Tuple[StateInfo, ...],
         transitions: Tuple[TransitionInfo, ...],
@@ -1990,6 +2457,7 @@ def _verify_transition_payload(payload: Any) -> Optional[Dict[str, Any]]:
     event = payload.get('event')
     guard = payload.get('guard')
     is_forced = payload.get('is_forced')
+    transition_index = payload.get('transition_index')
     if not all(isinstance(item, str) for item in (parent, from_state, to_state)):
         return None
     if event is not None and not isinstance(event, str):
@@ -1998,6 +2466,12 @@ def _verify_transition_payload(payload: Any) -> Optional[Dict[str, Any]]:
         return None
     if not isinstance(is_forced, bool):
         return None
+    if transition_index is not None and (
+            isinstance(transition_index, bool)
+            or not isinstance(transition_index, int)
+            or transition_index < 0
+    ):
+        return None
     return {
         'parent': parent,
         'from_state': from_state,
@@ -2005,6 +2479,7 @@ def _verify_transition_payload(payload: Any) -> Optional[Dict[str, Any]]:
         'event': event,
         'guard': guard,
         'is_forced': is_forced,
+        'transition_index': transition_index,
     }
 
 
@@ -2162,7 +2637,9 @@ def _transition_matches_payload(info: TransitionInfo, payload: Mapping[str, Any]
         f'{parent}.{to_state}' if parent else to_state
     )
     return (
-        info.from_path == from_path
+        (transition_payload['transition_index'] is None
+         or info.transition_index == transition_payload['transition_index'])
+        and info.from_path == from_path
         and info.to_path == to_path
         and info.event == transition_payload['event']
         and info.guard == transition_payload['guard']
@@ -3275,6 +3752,7 @@ def inspect_model(
         deep_hierarchy_threshold: int = DEFAULT_DEEP_HIERARCHY_THRESHOLD,
         large_composite_threshold: int = DEFAULT_LARGE_COMPOSITE_THRESHOLD,
         var_to_leaf_ratio_threshold: float = DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD,
+        structure_statistics_policy: Optional[object] = None,
         enable_verify: bool = False,
         max_complexity_tier: str = 'structural',
         max_call_count_scaling: str = 'linear_in_transitions',
@@ -3298,6 +3776,11 @@ def inspect_model(
     :param var_to_leaf_ratio_threshold: Maximum accepted variable to
         non-pseudo leaf-state ratio.
     :type var_to_leaf_ratio_threshold: float
+    :param structure_statistics_policy: Optional advisory structure-statistics
+        thresholds. A mapping may override selected fields; ``None`` uses the
+        general-purpose defaults. Thresholds only appear in report metadata and
+        never emit diagnostics.
+    :type structure_statistics_policy: Optional[object]
     :param enable_verify: Whether to run inspect-eligible
         :mod:`pyfcstm.verify` algorithms and append their diagnostics.
         The default ``False`` preserves the Layer 2 inspect contract.
@@ -3360,6 +3843,9 @@ def inspect_model(
     var_to_leaf_ratio_threshold = _normalize_float_threshold(
         'var_to_leaf_ratio_threshold',
         var_to_leaf_ratio_threshold,
+    )
+    structure_statistics_policy = _normalize_structure_statistics_policy(
+        structure_statistics_policy,
     )
     states = _build_state_infos(machine)
     transitions = _build_transition_infos(machine)
@@ -3425,6 +3911,13 @@ def inspect_model(
         )
     diagnostics = list(_catalog_emittable_diagnostics(diagnostics))
     diagnostics = list(_deduplicate_model_diagnostics(diagnostics))
+    structure_statistics = _build_structure_statistics(
+        states,
+        transitions,
+        diagnostics,
+        forced_transitions,
+        structure_statistics_policy,
+    )
     return ModelInspect(
         root_state_path=root_state_path,
         states=states,
@@ -3443,6 +3936,7 @@ def inspect_model(
         action_ref_graph=_build_action_ref_graph(machine),
         diagnostics=tuple(diagnostics),
         verification=verification,
+        structure_statistics=structure_statistics,
     )
 
 
@@ -3467,6 +3961,68 @@ def _normalize_float_threshold(name: str, value: float) -> float:
             return normalized
         raise ValueError(f'{name} must be a finite numeric threshold, got {value!r}')
     raise TypeError(f'{name} must be a finite numeric threshold, got {type(value).__name__}')
+
+
+def _normalize_structure_statistics_policy(
+        policy: Optional[object],
+) -> StructureStatisticsPolicy:
+    """Validate and merge an optional structure-statistics policy."""
+    if policy is None:
+        return DEFAULT_STRUCTURE_STATISTICS_POLICY
+    if isinstance(policy, Mapping):
+        unknown = set(policy) - {
+            'max_transitions_per_state',
+            'max_unreachable_leaf_state_rate',
+            'max_unreachable_transition_rate',
+        }
+        if unknown:
+            raise TypeError(
+                'unknown structure-statistics policy fields: {fields!r}'.format(
+                    fields=sorted(unknown),
+                )
+            )
+        policy = StructureStatisticsPolicy(
+            max_transitions_per_state=policy.get(
+                'max_transitions_per_state',
+                DEFAULT_STRUCTURE_STATISTICS_POLICY.max_transitions_per_state,
+            ),
+            max_unreachable_leaf_state_rate=policy.get(
+                'max_unreachable_leaf_state_rate',
+                DEFAULT_STRUCTURE_STATISTICS_POLICY.max_unreachable_leaf_state_rate,
+            ),
+            max_unreachable_transition_rate=policy.get(
+                'max_unreachable_transition_rate',
+                DEFAULT_STRUCTURE_STATISTICS_POLICY.max_unreachable_transition_rate,
+            ),
+        )
+    if not isinstance(policy, StructureStatisticsPolicy):
+        raise TypeError(
+            'structure_statistics_policy must be a StructureStatisticsPolicy, '
+            'mapping, or None'
+        )
+    values = {}
+    for name in (
+            'max_transitions_per_state',
+            'max_unreachable_leaf_state_rate',
+            'max_unreachable_transition_rate',
+    ):
+        value = getattr(policy, name)
+        if value is None:
+            values[name] = None
+            continue
+        normalized = _normalize_float_threshold(name, value)
+        if normalized < 0 or (
+                name != 'max_transitions_per_state' and normalized > 1
+        ):
+            raise ValueError(
+                '{name} must be >= 0{suffix}, got {value!r}'.format(
+                    name=name,
+                    suffix=' and <= 1' if name != 'max_transitions_per_state' else '',
+                    value=value,
+                )
+            )
+        values[name] = normalized
+    return StructureStatisticsPolicy(**values)
 
 
 def _to_json_dataclass(obj: Any) -> Any:
@@ -3515,6 +4071,7 @@ def _to_json_inspect(report: ModelInspect) -> Dict[str, Any]:
             _to_json_dataclass(o) for o in report.combo_origins
         ],
         'metrics': _to_json_dataclass(report.metrics),
+        'structure_statistics': _to_json_dataclass(report.structure_statistics),
         'reachability_graph': {k: list(v) for k, v in report.reachability_graph.items()},
         'event_emission_map': {k: list(v) for k, v in report.event_emission_map.items()},
         'var_dataflow': {

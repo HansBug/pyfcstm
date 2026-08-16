@@ -37,13 +37,13 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from .codes import CODE_REGISTRY
 from ..utils.validate import ModelDiagnostic, Span
 
-INSPECT_LLM_SCHEMA_VERSION = "pyfcstm.inspect.llm.v1"
+INSPECT_LLM_SCHEMA_VERSION = "pyfcstm.inspect.llm.v2"
 _INSPECT_OUTPUT_FORMATS = ("human", "json", "llm-json", "llm-md")
 _SEVERITY_ORDER = ("error", "warning", "info")
 _SEVERITY_HUMAN_LABELS = {
@@ -304,6 +304,7 @@ def render_inspect_human(
     )
     lines.append(f"  transitions: {len(report.transitions)}")
     lines.append(f"  variables: {report.metrics.n_variables}")
+    lines.extend(_render_structure_statistics_human(report))
     lines.append(
         "  diagnostics: {error} errors / {warning} warnings / {info} infos".format(
             error=counts["error"],
@@ -432,6 +433,25 @@ def render_inspect_llm_markdown(
         )
     )
     lines.append("")
+    statistics = _structure_statistics_dict(report)
+    if statistics is not None:
+        lines.append("## Structure statistics")
+        lines.append("")
+        lines.append("These are descriptive counts and rates; they do not imply a defect.")
+        for key, value in statistics.items():
+            if key == "unreachable_transition_reasons":
+                value = ", ".join(
+                    f"{reason}={count}" for reason, count in value.items()
+                ) or "none"
+            elif key == "thresholds":
+                value = ", ".join(
+                    f"{name}={threshold if threshold is not None else 'off'}"
+                    for name, threshold in value.items()
+                )
+            elif key == "exceeded_thresholds":
+                value = ", ".join(value) or "none"
+            lines.append(f"- {key}: `{value if value is not None else 'N/A'}`")
+        lines.append("")
     lines.append("## Repair protocol")
     lines.append("")
     for rule in _GLOBAL_REPAIR_RULES:
@@ -512,6 +532,75 @@ def _status_from_counts(counts: Mapping[str, int]) -> str:
         if counts.get(severity, 0):
             return _STATUS_BY_SEVERITY[severity]
     return "ok"
+
+
+def _structure_statistics_dict(report: Any) -> Optional[Dict[str, Any]]:
+    statistics = getattr(report, "structure_statistics", None)
+    if statistics is None:
+        return None
+    if is_dataclass(statistics):
+        return asdict(statistics)
+    return dict(statistics)
+
+
+def _render_structure_statistics_human(report: Any) -> List[str]:
+    statistics = _structure_statistics_dict(report)
+    if statistics is None:
+        return []
+
+    def formatted(name: str) -> str:
+        raw = statistics[name]
+        if raw is None:
+            return "N/A"
+        if name.endswith("_rate"):
+            return f"{raw:.3f} ({raw:.1%})"
+        if name in {"transitions_per_state", "states_per_transition"}:
+            return f"{raw:.3f}"
+        return str(raw)
+
+    return [
+        "Structure statistics",
+        "  states: {total} total / {leaf} leaf / {composite} composite".format(
+            total=statistics["state_count"],
+            leaf=statistics["leaf_state_count"],
+            composite=statistics["composite_state_count"],
+        ),
+        "  authored transitions: {count}".format(
+            count=statistics["authored_transition_count"],
+        ),
+        "  transitions per state: {value}".format(
+            value=formatted("transitions_per_state"),
+        ),
+        "  states per transition: {value}".format(
+            value=formatted("states_per_transition"),
+        ),
+        "  unreachable: {states} leaf states / {transitions} transitions".format(
+            states=statistics["unreachable_leaf_states"],
+            transitions=statistics["unreachable_transitions"],
+        ),
+        "  unreachable rates: {states} leaf states / {transitions} transitions".format(
+            states=formatted("unreachable_leaf_state_rate"),
+            transitions=formatted("unreachable_transition_rate"),
+        ),
+        "  unguarded: {numerator}/{denominator}; rate: {rate}".format(
+            numerator=statistics["unguarded_transitions"],
+            denominator=statistics["guard_eligible_transitions"],
+            rate=formatted("unguarded_rate"),
+        ),
+        "  missing effect: {numerator}/{denominator}; rate: {rate}".format(
+            numerator=statistics["missing_effect_transitions"],
+            denominator=statistics["effect_eligible_transitions"],
+            rate=formatted("missing_effect_rate"),
+        ),
+        "  eventless unconditional: {numerator}/{denominator}; rate: {rate}".format(
+            numerator=statistics["eventless_unconditional_transitions"],
+            denominator=statistics["behavior_transitions"],
+            rate=formatted("eventless_unconditional_rate"),
+        ),
+        "  advisory thresholds exceeded: {value}".format(
+            value=", ".join(statistics["exceeded_thresholds"]) or "none",
+        ),
+    ]
 
 
 def _format_human_severity_label(severity: str, *, options: HumanRenderOptions) -> str:
@@ -602,6 +691,7 @@ def _llm_packet(
             "leaf_states": report.metrics.n_states_leaf,
             "transitions": len(report.transitions),
             "variables": report.metrics.n_variables,
+            "structure_statistics": _structure_statistics_dict(report),
         },
         "diagnostics": [
             _diagnostic_llm_dict(diagnostic, source_text, input_path=input_path)

@@ -46,7 +46,7 @@ repair prompt.
 
 **Expected signal.** ``human`` starts with a checker-style summary, ``json``
 contains ``root_state_path`` and structural arrays, ``llm-json`` starts with
-``schema_version`` ``pyfcstm.inspect.llm.v1``, and ``llm-md`` starts with a
+``schema_version`` ``pyfcstm.inspect.llm.v2``, and ``llm-md`` starts with a
 Markdown heading.
 
 **File side effect.** None unless ``-o`` is used; all four commands write to
@@ -204,7 +204,7 @@ warning-only policy prints ``warnings: 9`` and exits successfully.
    print(len(first['recommended_actions']), len(first['do_not']))
    PY
 
-**Expected signal.** The schema version is ``pyfcstm.inspect.llm.v1``. The
+**Expected signal.** The schema version is ``pyfcstm.inspect.llm.v2``. The
 first diagnostic includes ``source_excerpt``, ``refs``, ``recommended_actions``,
 and ``do_not``; the final count line is ``2 1``.
 
@@ -235,7 +235,7 @@ and ``do_not``; the final count line is ``2 1``.
 
    # FCSTM Inspect Report
 
-   - Schema: `pyfcstm.inspect.llm.v1`
+   - Schema: `pyfcstm.inspect.llm.v2`
    - Schema status: `stable`
    - Status: `warning`
    - Input: `docs/source/tutorials/inspect/inspect_diagnostics.fcstm`

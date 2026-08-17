@@ -20,6 +20,11 @@
 #                        by unit tests and by downstream tooling to
 #                        validate their dispatch paths).
 #
+# Deprecated compatibility aliases use only `alias_of`, `deprecated_in`, and
+# the optional `removed_in`. They remain queryable in the registry but must
+# not be emitted by a current analyzer. Run `make deprecation_check` to audit
+# all versioned deprecation metadata in production YAML and Python code.
+#
 # Allowed `refs.*.type` tokens (must mirror `_ALLOWED_REF_TYPES` in
 # codes.py — that tuple is the single source of truth, this comment block
 # is documentation; a test asserts the two stay aligned):
@@ -1889,7 +1894,7 @@ W_UNUSED_EVENT:
         A -> B :: SomethingElse;
     }
 
-W_DEADLOCK_LEAF:
+W_LEAF_NO_OUTGOING_TRANSITION:
   severity: warning
   span_object: state_identifier
   capability: pure_static
@@ -1899,7 +1904,7 @@ W_DEADLOCK_LEAF:
     state_path:
       type: str
       required: true
-      description: Dotted path of the deadlocking leaf state.
+      description: Dotted path of the leaf state with no outgoing transition.
     parent_path:
       type: str
       required: false
@@ -1909,7 +1914,7 @@ W_DEADLOCK_LEAF:
     reason:
       type: str
       required: true
-      description: Why the leaf is considered a deadlock.
+      description: Why the leaf has no outgoing transition.
       enum: ['no_outgoing_transition']
     suggested_fix:
       type: dict
@@ -1920,26 +1925,36 @@ W_DEADLOCK_LEAF:
     target: deadlock_leaf_exit_transition
     anchor_ref: refs.parent_path
     text_template: "{state_name} -> [*];\n"
-    rationale: Add an exit transition so the leaf can finish its parent state.
+    rationale: Add an exit transition only if the leaf is meant to finish its parent state.
   for_llm:
     summary: >-
-      This leaf state has no outgoing transition, so once the machine
-      enters it there is no modeled way to leave.
+      This leaf state has no authored outgoing transition. A non-root leaf can
+      remain active and execute its during actions; a root leaf instead follows
+      pyfcstm's synthetic root-exit behavior. The warning only reports the
+      missing authored transition for leaving the leaf.
     recommended_actions:
       - kind: add_transition
         target: state
-        rationale: Add a modeled transition to the next intended state.
+        rationale: Add a modeled transition only if a non-root leaf is intended to move to another state.
       - kind: add_exit_transition
         target: state
-        rationale: Add ``State -> [*];`` if the leaf is meant to finish its parent.
+        rationale: Add ``State -> [*];`` only if a non-root leaf is intended to finish its parent; root leaves already follow synthetic root-exit behavior.
     do_not:
-      - "Do not add a self-loop just to silence the warning."
+      - >-
+        Do not add a self-loop just to silence the warning: it has exit/enter
+        semantics and is not a replacement for a leaf's stay-active behavior
+        or a root leaf's synthetic root-exit behavior.
   emit_tier: static_pipeline
   example_dsl: |
     state Root {
         state A;
         [*] -> A;
     }
+
+W_DEADLOCK_LEAF:
+  alias_of: W_LEAF_NO_OUTGOING_TRANSITION
+  deprecated_in: '0.7.0'
+  removed_in: '1.0.0'
 
 W_INITIAL_UNCONDITIONAL_MISSING:
   severity: warning
@@ -3453,11 +3468,13 @@ W_TOPOLOGICAL_NOEXIT:
   for_llm:
     summary: >-
       From the current topology, execution can enter a region that has no
-      structural path to terminate at the root exit.
+      structural path to terminate at the root exit. This is a graph result;
+      a non-pseudo leaf may still legally remain active and execute its during
+      actions.
     recommended_actions:
       - kind: add_exit_transition
         target: topology
-        rationale: Add a route from the stuck state or cycle to an exit-capable path.
+        rationale: Add a route to an exit-capable path only if the model requires leaving or termination.
       - kind: mark_intentional
         target: review_note
         rationale: If the model intentionally never exits, keep the behavior and document it.
@@ -3500,7 +3517,8 @@ I_TOPOLOGICAL_NON_TERMINATING:
   for_llm:
     summary: >-
       The structural graph allows a path that can avoid termination forever.
-      This may be a valid service loop, but it should be reviewed explicitly.
+      This may be a valid service loop or stay-active leaf, but it should be
+      reviewed explicitly rather than repaired with a self-loop.
     recommended_actions:
       - kind: review_nontermination
         target: topology

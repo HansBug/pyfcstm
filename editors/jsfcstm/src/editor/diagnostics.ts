@@ -2,6 +2,7 @@ import {pathToFileURL} from 'node:url';
 
 import {getParser, ParseError} from '../dsl/parser';
 import {inspectModel, type ModelDiagnosticJson} from '../diagnostics';
+import {canonicalizeDiagnosticCode} from '../diagnostics/codes-registry';
 import {buildStateMachineModel} from '../model';
 import type {FcstmSemanticDocument} from '../semantics';
 import {collectSemanticAnalysisDiagnosticsFromSemantic} from './analyzers';
@@ -210,7 +211,7 @@ function shouldSuppressInspectDiagnostic(
     semantic: FcstmSemanticDocument,
     item: ModelDiagnosticJson,
 ): boolean {
-    if (item.code !== 'W_DEADLOCK_LEAF') return false;
+    if (canonicalizeDiagnosticCode(item.code) !== 'W_LEAF_NO_OUTGOING_TRANSITION') return false;
     const statePath = typeof item.refs.state_path === 'string' ? item.refs.state_path : null;
     if (!statePath) return false;
     const semanticState = semantic.lookups.statesByPath[statePath];

@@ -59,7 +59,7 @@ export const FCSTM_DIAGNOSTIC_CODES = {
     guardConstFalse: 'W_GUARD_CONST_FALSE',
     unusedEvent: 'W_UNUSED_EVENT',
     guardConstTrue: 'W_GUARD_CONST_TRUE',
-    deadlockLeaf: 'W_DEADLOCK_LEAF',
+    deadlockLeaf: 'W_LEAF_NO_OUTGOING_TRANSITION',
     initialUnconditionalMissing: 'W_INITIAL_UNCONDITIONAL_MISSING',
     unreferencedVar: 'W_UNREFERENCED_VAR',
     effectSelfAssign: 'W_EFFECT_SELF_ASSIGN',

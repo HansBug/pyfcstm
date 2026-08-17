@@ -587,7 +587,7 @@ Directory entry import:
 
 .. literalinclude:: ../../tutorials/dsl/import_host_directory.fcstm
    :language: fcstm
-   :caption: Directory-style import through an explicit ``main.fcstm`` entry file; expected diagnostics: ``W_UNUSED_EVENT``, ``W_DEADLOCK_LEAF``, and ``W_UNREFERENCED_VAR`` for demonstration-only imported resources.
+   :caption: Directory-style import through an explicit ``main.fcstm`` entry file; expected diagnostics: ``W_UNUSED_EVENT``, ``W_LEAF_NO_OUTGOING_TRANSITION``, and ``W_UNREFERENCED_VAR`` for demonstration-only imported resources.
 
 Mapping facts:
 

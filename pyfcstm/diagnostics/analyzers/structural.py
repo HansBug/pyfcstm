@@ -84,7 +84,7 @@ def _deadlock_leaf_warnings(states, transitions) -> List[ModelDiagnostic]:
         if outgoing.get(state.path, 0) > 0:
             continue
         diagnostics.append(ModelDiagnostic(
-            code='W_DEADLOCK_LEAF',
+            code='W_LEAF_NO_OUTGOING_TRANSITION',
             span=state.span,
             severity='warning',
             message=f'Leaf state {state.path!r} has no outgoing transition.',

@@ -74,7 +74,7 @@ class TestModelDiagnostic:
 
     def test_warning_severity_is_not_error(self):
         diag = ModelDiagnostic(
-            code='W_DEADLOCK_LEAF',
+            code='W_LEAF_NO_OUTGOING_TRANSITION',
             severity='warning',
             message="Deadlock leaf",
         )

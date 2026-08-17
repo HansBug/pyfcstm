@@ -192,7 +192,7 @@ This catalog is synchronized with ``pyfcstm.diagnostics.codes.CODE_REGISTRY``. T
      - ``static_pipeline``
      - ``pure_static``
      - ``event_declaration``
-   * - :ref:`W_DEADLOCK_LEAF <diag-code-w-deadlock-leaf>`
+   * - :ref:`W_LEAF_NO_OUTGOING_TRANSITION <diag-code-w-leaf-no-outgoing-transition>`
      - ``warning``
      - ``static_pipeline``
      - ``pure_static``
@@ -4972,25 +4972,35 @@ A typical repair is ``add_inbound_transition`` on ``state``: Add a transition th
 **Example 3** (``boundary_only``) — anti-pattern boundary for ``W_UNREACHABLE_STATE``.
 Do not add a self-loop to mask the unreachability.
 
-.. _diag-code-w-deadlock-leaf:
+.. _diag-code-w-leaf-no-outgoing-transition:
 
-W_DEADLOCK_LEAF
+W_LEAF_NO_OUTGOING_TRANSITION
 ^^^^^^^^^^^^^^^
 
-.. diagnostics-meta W_DEADLOCK_LEAF severity=warning emit_tier=static_pipeline capability=pure_static span_object=state_identifier
-.. diagnostics-ref W_DEADLOCK_LEAF state_path type=str required=true enum=- item_enum=- exact_values=-
-.. diagnostics-ref W_DEADLOCK_LEAF parent_path type=str required=false enum=- item_enum=- exact_values=-
-.. diagnostics-ref W_DEADLOCK_LEAF reason type=str required=true enum=no_outgoing_transition item_enum=- exact_values=-
-.. diagnostics-ref W_DEADLOCK_LEAF suggested_fix type=dict required=false enum=- item_enum=- exact_values=-
+.. diagnostics-meta W_LEAF_NO_OUTGOING_TRANSITION severity=warning emit_tier=static_pipeline capability=pure_static span_object=state_identifier
+.. diagnostics-ref W_LEAF_NO_OUTGOING_TRANSITION state_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_LEAF_NO_OUTGOING_TRANSITION parent_path type=str required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_LEAF_NO_OUTGOING_TRANSITION reason type=str required=true enum=no_outgoing_transition item_enum=- exact_values=-
+.. diagnostics-ref W_LEAF_NO_OUTGOING_TRANSITION suggested_fix type=dict required=false enum=- item_enum=- exact_values=-
 
 
-.. diagnostics-boundary W_DEADLOCK_LEAF kind=inspect_json
+.. diagnostics-boundary W_LEAF_NO_OUTGOING_TRANSITION kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``state_identifier``.
 
-**Meaning.** A non-pseudo leaf state has no outgoing transition.
+**Meaning.** A non-pseudo leaf state has no authored outgoing transition. This
+is an exit-path fact, not a claim that a non-root leaf cannot continue: it can
+remain active and execute its ``during`` actions when no transition is
+submitted. A root leaf instead follows pyfcstm's synthetic root-exit behavior.
 
-**LLM repair summary.** This leaf state has no outgoing transition, so once the machine enters it there is no modeled way to leave.
+**LLM repair summary.** This leaf state has no authored outgoing transition. A
+non-root leaf can remain active and execute its ``during`` actions; a root leaf
+instead follows pyfcstm's synthetic root-exit behavior. Add a transition only
+when leaving or termination is intended; the ``State -> [*]`` action applies to
+non-root leaves, while root leaves already follow synthetic root-exit behavior.
+A self-loop is a re-entry operation with
+``exit -> transition effect -> enter -> during`` semantics, not a stay-active
+or synthetic-exit placeholder.
 
 .. list-table:: Refs schema
    :header-rows: 1
@@ -5003,7 +5013,7 @@ W_DEADLOCK_LEAF
    * - ``state_path``
      - ``str``
      - yes
-     - Dotted path of the deadlocking leaf state.
+     - Dotted path of the leaf state with no outgoing transition.
    * - ``parent_path``
      - ``str``
      - no
@@ -5011,13 +5021,13 @@ W_DEADLOCK_LEAF
    * - ``reason``
      - ``str``
      - yes
-     - Why the leaf is considered a deadlock. (enum: ``no_outgoing_transition``)
+     - Why the leaf has no outgoing transition. (enum: ``no_outgoing_transition``)
    * - ``suggested_fix``
      - ``dict``
      - no
      - Structured quick-fix payload for adding a parent exit transition.
 
-.. diagnostics-example W_DEADLOCK_LEAF 1 repro_cli
+.. diagnostics-example W_LEAF_NO_OUTGOING_TRANSITION 1 repro_cli
 
 **Example 1** (``repro_cli``) — reproduction boundary.
 This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
@@ -5029,15 +5039,19 @@ This diagnostic can appear in a successful inspect report. Reproduce it with ``p
        [*] -> A;
    }
 
-.. diagnostics-example W_DEADLOCK_LEAF 2 boundary_only
+.. diagnostics-example W_LEAF_NO_OUTGOING_TRANSITION 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction for ``W_DEADLOCK_LEAF``.
-A typical repair is ``add_transition`` on ``state``: Add a modeled transition to the next intended state.
+**Example 2** (``boundary_only``) — repair direction for ``W_LEAF_NO_OUTGOING_TRANSITION``.
+A typical repair is ``add_transition`` on ``state``: Add a modeled transition
+to the next intended state only when the leaf is meant to leave. A root leaf
+already follows the synthetic root-exit behavior.
 
-.. diagnostics-example W_DEADLOCK_LEAF 3 boundary_only
+.. diagnostics-example W_LEAF_NO_OUTGOING_TRANSITION 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_DEADLOCK_LEAF``.
-Do not add a self-loop just to silence the warning.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_LEAF_NO_OUTGOING_TRANSITION``.
+Do not add a self-loop just to silence the warning: it has exit/enter semantics,
+unlike a non-root leaf's normal stay-active semantics; a root leaf already
+follows the synthetic root-exit behavior.
 
 .. _diag-code-w-high-var-to-leaf-ratio:
 

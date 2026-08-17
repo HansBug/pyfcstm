@@ -890,7 +890,7 @@ Every code is reachable from the minimal DSL snippet in the right-hand column; s
 | `W_GUARD_CONST_TRUE` | A transition guard folds to literal `true` via the built-in constant folder — transition always fires. | `state Root { state A; state B; [*] -> A; A -> B : if [(1 + 2) == 3]; }` |
 | `W_DURING_CONST_ASSIGN` | A concrete `during` action assigns a variable to the same literal-only numeric value every cycle. | `def int counter = 0; state Root { state Idle { during { counter = (2 + 3) * 4; } } [*] -> Idle; }` |
 | `W_UNUSED_EVENT` | An `event` declaration is never referenced by any transition. | `state Root { event Unused; state A; state B; [*] -> A; A -> B :: SomethingElse; }` |
-| `W_DEADLOCK_LEAF` | A non-pseudo leaf state has no outgoing transition. | `state Root { state A; [*] -> A; }` |
+| `W_LEAF_NO_OUTGOING_TRANSITION` | A non-pseudo leaf state has no outgoing transition. | `state Root { state A; [*] -> A; }` |
 | `W_INITIAL_UNCONDITIONAL_MISSING` | A composite state has no unconditional `[*] -> child` entry transition. | `def int ready = 0; state Root { state A; [*] -> A : if [ready > 0]; }` |
 | `W_FORCED_NEVER_EXPANDS` | A forced transition declaration has no concrete child state in its scope to expand from. | `state Root { state A { !* -> [*]; } [*] -> A; }` |
 | `W_DEAD_NAMED_ACTION` | A named action belongs to an unreachable state and is not referenced by any reachable action ref. | `state Root { state A; state B { enter Cleanup {} } [*] -> A; }` |
@@ -994,6 +994,9 @@ pyfcstm is an open-source project under the LGPLv3 license, and contributions ar
 - **Report Bugs**: Submit issues on [GitHub Issues](https://github.com/hansbug/pyfcstm/issues)
 - **Submit Pull Requests**: See [CONTRIBUTING.md](https://github.com/hansbug/pyfcstm/blob/main/CONTRIBUTING.md) for
   guidelines
+- **Audit Deprecations**: Run `make deprecation_check` before a release; it audits versioned YAML metadata and
+  `@deprecation.deprecated` declarations across the Python package and CLI, then reports scheduled, actionable, and
+  overdue entries against `pyfcstm.config.meta.__VERSION__`.
 - **Suggest Features**: Discuss feature ideas in the Issues section
 - **Ask Questions**: Open an issue if you need help with the DSL, templates, or simulator
 

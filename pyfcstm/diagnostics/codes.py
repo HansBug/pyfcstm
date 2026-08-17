@@ -21,6 +21,8 @@ The module contains:
 * :class:`CodesSchemaError` - Raised when ``codes.yaml`` is structurally invalid.
 * :data:`CODE_REGISTRY` - Mapping ``code -> CodeSpec`` loaded at import time.
 * :func:`load_codes` - Parse a YAML file path and return the registry.
+* :func:`resolve_diagnostic_code` - Resolve an active or deprecated spelling.
+* :func:`canonicalize_diagnostic_code` - Return the active spelling.
 
 .. note::
    ``_ALLOWED_REF_TYPES`` and ``_ALLOWED_SEVERITIES`` are documentation-level
@@ -42,11 +44,12 @@ Example::
 
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 import yaml
+from packaging.version import InvalidVersion, Version
 
 #: Allowed values for ``severity`` in ``codes.yaml`` entries. Must stay in
 #: sync with the type-token comment block at the top of ``codes.yaml``.
@@ -323,6 +326,15 @@ class CodeSpec:
         diagnostic span. Repository entries declare this to make source-slice
         assertions and downstream UI behavior explicit.
     :type span_object: str, optional
+    :param deprecated_in: Release in which this spelling became a
+        deprecated compatibility alias, or ``None`` for an active code.
+    :type deprecated_in: str, optional
+    :param removed_in: Release in which this compatibility alias is planned
+        for removal, or ``None`` when it has no scheduled removal.
+    :type removed_in: str, optional
+    :param replaced_by: Canonical code that replaces this deprecated alias,
+        or ``None`` for an active code.
+    :type replaced_by: str, optional
     """
 
     code: str
@@ -335,6 +347,30 @@ class CodeSpec:
     emit_tier: str = 'static_pipeline'
     suggested_fix: Optional[SuggestedFixSpec] = None
     span_object: Optional[str] = None
+    deprecated_in: Optional[str] = None
+    removed_in: Optional[str] = None
+    replaced_by: Optional[str] = None
+
+    @property
+    def canonical_code(self) -> str:
+        """Return the active spelling for this code."""
+        return self.replaced_by or self.code
+
+    @property
+    def is_deprecated(self) -> bool:
+        """Return whether this entry is a deprecated compatibility alias."""
+        return self.replaced_by is not None
+
+    @property
+    def deprecated_since(self) -> Optional[str]:
+        """Backward-compatible name for :attr:`deprecated_in`.
+
+        The registry metadata uses the terminology from the ``deprecation``
+        package.  This read-only alias lets older integrations inspect a
+        previously loaded ``CodeSpec`` without keeping the old YAML spelling
+        in the source of truth.
+        """
+        return self.deprecated_in
 
     def required_fields(self) -> List[str]:
         """
@@ -577,6 +613,69 @@ def _validate_code(path: str, code: str, raw: Any) -> CodeSpec:
     )
 
 
+def _validate_alias(
+        path: str,
+        code: str,
+        raw: Mapping[str, Any],
+) -> Tuple[str, str, Optional[str]]:
+    """Validate a compact deprecated-code alias entry.
+
+    Aliases intentionally carry no duplicate diagnostic schema.  The loader
+    resolves them against the canonical entry after all normal entries have
+    been parsed, which keeps the YAML source single-owner for refs and
+    suggested-fix metadata.
+    """
+    allowed = {'alias_of', 'deprecated_in', 'removed_in'}
+    extra = sorted(set(raw) - allowed)
+    if extra:
+        raise CodesSchemaError(_ctx(
+            path,
+            f"code {code!r} alias has unsupported keys {extra!r}.",
+        ))
+    target = raw.get('alias_of')
+    if not isinstance(target, str) or not target.strip():
+        raise CodesSchemaError(_ctx(
+            path,
+            f"code {code!r} alias_of must be a non-empty string.",
+        ))
+    deprecated_in = raw.get('deprecated_in')
+    if not isinstance(deprecated_in, str) or not deprecated_in.strip():
+        raise CodesSchemaError(_ctx(
+            path,
+            f"code {code!r} deprecated_in must be a non-empty string.",
+        ))
+    removed_in = raw.get('removed_in')
+    if removed_in is not None and (
+            not isinstance(removed_in, str) or not removed_in.strip()):
+        raise CodesSchemaError(_ctx(
+            path,
+            f"code {code!r} removed_in must be a non-empty string when present.",
+        ))
+    deprecated_value = deprecated_in.strip()
+    removed_value = removed_in.strip() if isinstance(removed_in, str) else None
+    try:
+        deprecated_version = Version(deprecated_value)
+    except InvalidVersion as err:
+        raise CodesSchemaError(_ctx(
+            path,
+            f"code {code!r} deprecated_in must be a valid PEP 440 version.",
+        )) from err
+    if removed_value is not None:
+        try:
+            removed_version = Version(removed_value)
+        except InvalidVersion as err:
+            raise CodesSchemaError(_ctx(
+                path,
+                f"code {code!r} removed_in must be a valid PEP 440 version.",
+            )) from err
+        if removed_version < deprecated_version:
+            raise CodesSchemaError(_ctx(
+                path,
+                f"code {code!r} removed_in must not precede deprecated_in.",
+            ))
+    return target.strip(), deprecated_value, removed_value
+
+
 def _validate_span_object(path: str, code: str, raw: Any) -> Optional[str]:
     if raw is None:
         return None
@@ -732,14 +831,69 @@ def load_codes(path: str) -> Dict[str, CodeSpec]:
             f"must contain a top-level mapping, got {type(raw).__name__}.",
         ))
     registry: Dict[str, CodeSpec] = {}
+    aliases: Dict[str, Tuple[str, str, Optional[str]]] = {}
     for code, entry in raw.items():
         if not isinstance(code, str):
             raise CodesSchemaError(_ctx(
                 path, f"top-level key {code!r} must be a string."
             ))
-        registry[code] = _validate_code(path, code, entry)
+        if not isinstance(entry, dict):
+            raise CodesSchemaError(_ctx(
+                path,
+                f"code {code!r} must be a mapping, got {type(entry).__name__}.",
+            ))
+        if 'alias_of' in entry:
+            aliases[code] = _validate_alias(path, code, entry)
+        else:
+            registry[code] = _validate_code(path, code, entry)
     if not registry:
         raise CodesSchemaError(_ctx(path, "contains no code definitions."))
+
+    resolving: List[str] = []
+
+    def resolve_alias(code: str) -> CodeSpec:
+        if code in registry:
+            return registry[code]
+        if code not in aliases:
+            raise CodesSchemaError(_ctx(
+                path,
+                f"code {code!r} alias target is not registered.",
+            ))
+        if code in resolving:
+            cycle = ' -> '.join(resolving + [code])
+            raise CodesSchemaError(_ctx(
+                path,
+                f"deprecated code alias cycle detected: {cycle}.",
+            ))
+        resolving.append(code)
+        target, deprecated_in, removed_in = aliases[code]
+        target_spec = resolve_alias(target)
+        if target_spec.is_deprecated:
+            raise CodesSchemaError(_ctx(
+                path,
+                f"code {code!r} may not alias deprecated code {target!r}; "
+                "aliases must point directly to an active code.",
+            ))
+        expected_prefix = _SEVERITY_PREFIX[target_spec.severity]
+        if not code.startswith(expected_prefix):
+            raise CodesSchemaError(_ctx(
+                path,
+                f"code {code!r} aliases severity {target_spec.severity!r} "
+                f"but does not start with the expected prefix {expected_prefix!r}.",
+            ))
+        registry[code] = replace(
+            target_spec,
+            code=code,
+            emit_tier='catalog_only',
+            deprecated_in=deprecated_in,
+            removed_in=removed_in,
+            replaced_by=target,
+        )
+        resolving.pop()
+        return registry[code]
+
+    for alias in aliases:
+        resolve_alias(alias)
     return registry
 
 
@@ -784,3 +938,14 @@ callers cannot mutate the registry by accident.
 
 :meta hide-value:
 """
+
+
+def resolve_diagnostic_code(code: str) -> Optional[CodeSpec]:
+    """Return the registry entry for an active or deprecated code spelling."""
+    return CODE_REGISTRY.get(code)
+
+
+def canonicalize_diagnostic_code(code: str) -> str:
+    """Return the active spelling for a known code, preserving unknown codes."""
+    spec = resolve_diagnostic_code(code)
+    return spec.canonical_code if spec is not None else code

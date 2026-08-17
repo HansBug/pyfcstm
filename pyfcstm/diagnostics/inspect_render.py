@@ -40,7 +40,7 @@ import os
 from dataclasses import asdict, dataclass, is_dataclass
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
-from .codes import CODE_REGISTRY
+from .codes import CODE_REGISTRY, canonicalize_diagnostic_code
 from ..utils.validate import ModelDiagnostic, Span
 
 _INSPECT_OUTPUT_FORMATS = ("human", "json", "llm-json", "llm-md")
@@ -657,8 +657,9 @@ def _render_human_diagnostic(
     lines.append(f"   = source: {_diagnostic_source(spec, diagnostic.refs)}")
     if spec is not None and spec.for_llm is not None:
         lines.append(f"   = why: {spec.for_llm.summary}")
-        if spec.for_llm.recommended_actions:
-            for action in spec.for_llm.recommended_actions:
+        recommended_actions = _recommended_actions_for_diagnostic(diagnostic, spec)
+        if recommended_actions:
+            for action in recommended_actions:
                 lines.append(f"   = fix: {_format_action_for_human(action)}")
         if spec.for_llm.do_not:
             for item in spec.for_llm.do_not:
@@ -722,11 +723,10 @@ def _diagnostic_llm_dict(
         "summary": spec.for_llm.summary
         if spec is not None and spec.for_llm is not None
         else None,
-        "recommended_actions": (
-            [_jsonable(item) for item in spec.for_llm.recommended_actions]
-            if spec is not None and spec.for_llm is not None
-            else []
-        ),
+        "recommended_actions": [
+            _jsonable(item)
+            for item in _recommended_actions_for_diagnostic(diagnostic, spec)
+        ],
         "do_not": (
             list(spec.for_llm.do_not)
             if spec is not None and spec.for_llm is not None
@@ -746,8 +746,29 @@ def _diagnostic_source(spec: Optional[Any], refs: Optional[Mapping[str, Any]] = 
     return "inspect-static"
 
 
+def _recommended_actions_for_diagnostic(
+    diagnostic: ModelDiagnostic, spec: Optional[Any]
+) -> Tuple[Mapping[str, Any], ...]:
+    """Return repair actions applicable to this diagnostic instance.
+
+    ``W_LEAF_NO_OUTGOING_TRANSITION`` has generic non-root repair actions in the registry,
+    but a root leaf has no parent boundary to exit.  Keep those actions out of
+    all presentation formats for the root case so structured consumers cannot
+    mistake them for applicable fixes.
+    """
+    if spec is None or spec.for_llm is None:
+        return ()
+    if (
+        canonicalize_diagnostic_code(diagnostic.code)
+        == "W_LEAF_NO_OUTGOING_TRANSITION"
+        and diagnostic.refs.get("parent_path") is None
+    ):
+        return ()
+    return spec.for_llm.recommended_actions
+
+
 def _repair_guidance_for_code(code: str) -> List[str]:
-    return list(_REPAIR_NOTES_BY_CODE.get(code, ()))
+    return list(_REPAIR_NOTES_BY_CODE.get(canonicalize_diagnostic_code(code), ()))
 
 
 def _source_excerpt(

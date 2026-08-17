@@ -91,7 +91,7 @@ def _expected_with_suggested_fixes(expected):
         enriched = dict(item)
         refs = dict(item['refs'])
         if (
-                item['code'] == 'W_DEADLOCK_LEAF'
+                item['code'] == 'W_LEAF_NO_OUTGOING_TRANSITION'
                 and 'parent_path' not in refs
                 and '.' in refs.get('state_path', '')
         ):
@@ -407,7 +407,7 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
         ]),
         [
             {
-                'code': 'W_DEADLOCK_LEAF',
+                'code': 'W_LEAF_NO_OUTGOING_TRANSITION',
                 'severity': 'warning',
                 'refs': {
                     'state_path': 'Root.Blocked',
@@ -415,7 +415,7 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 },
             },
             {
-                'code': 'W_DEADLOCK_LEAF',
+                'code': 'W_LEAF_NO_OUTGOING_TRANSITION',
                 'severity': 'warning',
                 'refs': {
                     'state_path': 'Root.Orphan',
@@ -471,7 +471,7 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
         ]),
         [
             {
-                'code': 'W_DEADLOCK_LEAF',
+                'code': 'W_LEAF_NO_OUTGOING_TRANSITION',
                 'severity': 'warning',
                 'refs': {
                     'state_path': 'Root.Active',
@@ -529,7 +529,7 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
         ]),
         [
             {
-                'code': 'W_DEADLOCK_LEAF',
+                'code': 'W_LEAF_NO_OUTGOING_TRANSITION',
                 'severity': 'warning',
                 'refs': {
                     'state_path': 'Root.PowerTrue',
@@ -679,7 +679,7 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
         ]),
         [
             {
-                'code': 'W_DEADLOCK_LEAF',
+                'code': 'W_LEAF_NO_OUTGOING_TRANSITION',
                 'severity': 'warning',
                 'refs': {
                     'state_path': 'Root.Wrapper.Active',
@@ -708,7 +708,7 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
         ]),
         [
             {
-                'code': 'W_DEADLOCK_LEAF',
+                'code': 'W_LEAF_NO_OUTGOING_TRANSITION',
                 'severity': 'warning',
                 'refs': {
                     'state_path': 'Root.Active',
@@ -731,7 +731,7 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
         ]),
         [
             {
-                'code': 'W_DEADLOCK_LEAF',
+                'code': 'W_LEAF_NO_OUTGOING_TRANSITION',
                 'severity': 'warning',
                 'refs': {
                     'state_path': 'Root.Done',
@@ -813,7 +813,7 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 },
             },
             {
-                'code': 'W_DEADLOCK_LEAF',
+                'code': 'W_LEAF_NO_OUTGOING_TRANSITION',
                 'severity': 'warning',
                 'refs': {
                     'state_path': 'Root.Orphan',
@@ -821,7 +821,7 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 },
             },
             {
-                'code': 'W_DEADLOCK_LEAF',
+                'code': 'W_LEAF_NO_OUTGOING_TRANSITION',
                 'severity': 'warning',
                 'refs': {
                     'state_path': 'Root.LeafForced',
@@ -1056,7 +1056,7 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 },
             },
             {
-                'code': 'W_DEADLOCK_LEAF',
+                'code': 'W_LEAF_NO_OUTGOING_TRANSITION',
                 'severity': 'warning',
                 'refs': {
                     'state_path': 'Root.Active.Leaf',
@@ -1178,7 +1178,7 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 },
             },
             {
-                'code': 'W_DEADLOCK_LEAF',
+                'code': 'W_LEAF_NO_OUTGOING_TRANSITION',
                 'severity': 'warning',
                 'refs': {
                     'state_path': 'Root.Done',
@@ -1330,7 +1330,7 @@ def test_source_slice_contract_hits_problem_objects_for_pr_e_representatives():
         return matches[0]
 
     checks = [
-        ('W_DEADLOCK_LEAF', lambda d: d.refs.get('state_path') == 'Root.Active.Leaf', 'state Leaf;'),
+        ('W_LEAF_NO_OUTGOING_TRANSITION', lambda d: d.refs.get('state_path') == 'Root.Active.Leaf', 'state Leaf;'),
         ('W_INITIAL_UNCONDITIONAL_MISSING', lambda d: True, 'state Root {'),
         ('W_DEAD_NAMED_ACTION', lambda d: d.refs.get('function_name') == 'Cleanup', 'enter Cleanup'),
         ('W_GUARD_CONST_TRUE', lambda d: d.refs.get('to_path') == 'Root.Done', '(1 + 2) == 3'),

@@ -517,7 +517,7 @@ state Root {
             document,
             semantic,
             [{
-                code: 'W_DEADLOCK_LEAF',
+                code: 'W_LEAF_NO_OUTGOING_TRANSITION',
                 severity: 'warning' as const,
                 message: 'Leaf state has no outgoing transition.',
                 span: null,
@@ -536,7 +536,7 @@ state Root {
         );
 
         assert.equal(diagnostics.length, 1);
-        assert.equal(diagnostics[0].code, 'W_DEADLOCK_LEAF');
+        assert.equal(diagnostics[0].code, 'W_LEAF_NO_OUTGOING_TRANSITION');
     });
 
     it('tolerates workspace snapshots without root node data', async () => {
@@ -648,7 +648,7 @@ state Root {
         }
 
         const checks: Array<[string, (diag: {data?: Record<string, unknown>}) => boolean, string]> = [
-            ['W_DEADLOCK_LEAF', diag => diag.data?.state_path === 'Root.Active.Leaf', 'Leaf'],
+            ['W_LEAF_NO_OUTGOING_TRANSITION', diag => diag.data?.state_path === 'Root.Active.Leaf', 'Leaf'],
             ['W_INITIAL_UNCONDITIONAL_MISSING', () => true, 'Root'],
             ['W_DEAD_NAMED_ACTION', diag => diag.data?.function_name === 'Cleanup', 'Cleanup'],
             ['W_GUARD_CONST_TRUE', diag => diag.data?.to_path === 'Root.Done', '(1 + 2) == 3'],

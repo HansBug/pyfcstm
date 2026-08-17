@@ -1606,15 +1606,16 @@ class TestInspectModelGuardAffectDiagnostics:
         }
         """)
 
-        deadlock_fix = by_code['W_DEADLOCK_LEAF'][0].refs['suggested_fix']
-        assert by_code['W_DEADLOCK_LEAF'][0].refs['parent_path'] == 'Root'
+        deadlock_fix = by_code['W_LEAF_NO_OUTGOING_TRANSITION'][0].refs['suggested_fix']
+        assert by_code['W_LEAF_NO_OUTGOING_TRANSITION'][0].refs['parent_path'] == 'Root'
         assert deadlock_fix == {
             'kind': 'insert',
             'target': 'deadlock_leaf_exit_transition',
             'anchor': {'type': 'ref', 'ref': 'refs.parent_path'},
             'text': 'Idle -> [*];\n',
             'rationale': (
-                'Add an exit transition so the leaf can finish its parent state.'
+                'Add an exit transition only if the leaf is meant to finish its '
+                'parent state.'
             ),
         }
 
@@ -1665,7 +1666,7 @@ class TestInspectModelGuardAffectDiagnostics:
         state Root;
         """)
 
-        deadlock_refs = by_code['W_DEADLOCK_LEAF'][0].refs
+        deadlock_refs = by_code['W_LEAF_NO_OUTGOING_TRANSITION'][0].refs
         assert deadlock_refs == {
             'state_path': 'Root',
             'reason': 'no_outgoing_transition',

@@ -1587,6 +1587,12 @@ jobs:
         # the gate with it.
         run: |
           make resource_ownership_check
+      - name: Check versioned deprecations
+        shell: bash
+        # Keep the deprecation inventory in the always-on lint job so an
+        # overdue removal cannot be hidden by the Python test skip tokens.
+        run: |
+          make deprecation_check
       - name: Check the semantic fixture corpus contract
         shell: bash
         # Same reasoning as the resource-ownership gate above: a couple of

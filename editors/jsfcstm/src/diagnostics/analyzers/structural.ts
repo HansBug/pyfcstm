@@ -44,7 +44,7 @@ function collectDeadlockLeafWarnings(
             refs.parent_path = state.parent_path;
         }
         out.push({
-            code: 'W_DEADLOCK_LEAF',
+            code: 'W_LEAF_NO_OUTGOING_TRANSITION',
             severity: 'warning',
             message: `Leaf state ${JSON.stringify(state.path)} has no outgoing transition.`,
             span: null,

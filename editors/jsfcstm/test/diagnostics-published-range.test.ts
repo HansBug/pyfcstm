@@ -44,7 +44,7 @@ describe('diagnostics published ranges', () => {
         const document = createDocument(text, '/tmp/published-deadlock.fcstm');
         const diagnostics = await packageModule.collectDocumentDiagnostics(document);
         const deadlocks = diagnostics
-            .filter(item => item.code === 'W_DEADLOCK_LEAF')
+            .filter(item => item.code === 'W_LEAF_NO_OUTGOING_TRANSITION')
             .sort((a, b) => String(a.data?.state_path).localeCompare(String(b.data?.state_path)));
 
         assert.equal(deadlocks.length, 2, JSON.stringify(diagnostics));
@@ -278,7 +278,7 @@ describe('diagnostics published ranges', () => {
         ].join('\n');
         const document = createDocument(text, '/tmp/published-deadlock-action-range.fcstm');
         const diagnostics = await packageModule.collectDocumentDiagnostics(document);
-        const diagnostic = diagnostics.find(item => item.code === 'W_DEADLOCK_LEAF');
+        const diagnostic = diagnostics.find(item => item.code === 'W_LEAF_NO_OUTGOING_TRANSITION');
 
         assert.ok(diagnostic, JSON.stringify(diagnostics));
         assert.equal(sliceByRange(text, diagnostic.range), 'Idle');
@@ -310,7 +310,7 @@ describe('diagnostics published ranges', () => {
         assert.ok(diagnostic, JSON.stringify(diagnostics));
         const actions = await packageModule.collectCodeActions(
             document,
-            diagnostics.find(item => item.code === 'W_DEADLOCK_LEAF' && item.data?.state_path === 'Root.Standby')!.range,
+            diagnostics.find(item => item.code === 'W_LEAF_NO_OUTGOING_TRANSITION' && item.data?.state_path === 'Root.Standby')!.range,
             diagnostics,
         );
         assert.equal(

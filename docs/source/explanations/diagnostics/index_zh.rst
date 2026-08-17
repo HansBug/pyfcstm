@@ -138,7 +138,11 @@
 轨迹三：可选拓扑验证反馈
 ------------------------
 
-教程模型里有没有出边的叶状态。默认检查已经能从静态结构报告 ``W_DEADLOCK_LEAF``\ 。当命令增加 ``--enable-verify`` 后，检查适配器还可以运行封闭的结构拓扑算法；同一个模型会额外报告 ``W_TOPOLOGICAL_NOEXIT`` 和 ``I_TOPOLOGICAL_NON_TERMINATING`` 之类事实。
+教程模型里有没有出边的叶状态。默认检查已经能从静态结构报告 ``W_LEAF_NO_OUTGOING_TRANSITION``\ 。当命令增加 ``--enable-verify`` 后，检查适配器还可以运行封闭的结构拓扑算法；同一个模型会额外报告 ``W_TOPOLOGICAL_NOEXIT`` 和 ``I_TOPOLOGICAL_NON_TERMINATING`` 之类事实。
+
+这些诊断描述的是建模出口和图上的终止性，并不是说普通的非根非伪叶不能再执行一个周期。在 pyfcstm 中，一个运行时周期没有转换提交时，非根非伪叶可以保持活动并执行它的 ``during`` 动作；这是合法驻停。根叶状态是特例：pyfcstm 会在下一个活动周期使用合成的根退出行为。显式 self-loop 则不同：它会以 ``exit -> transition effect -> enter -> during`` 的生命周期重新进入状态。``State -> [*]`` 转换会让源状态退出并到达其父状态边界；如果源状态直接挂在 root 下则结束机器，否则由父状态层级的后续转换决定下一步。只有确实需要离开或结束时才添加出口转换；不要仅为消除 ``W_LEAF_NO_OUTGOING_TRANSITION`` 而添加 self-loop。
+
+``W_TOPOLOGICAL_NOEXIT`` 报告图区域没有通向根退出点的结构路径，``I_TOPOLOGICAL_NON_TERMINATING`` 报告拓扑不能保证终止。两者都不会改变普通非根叶的合法驻停 fallback；如果模型必须离开或终止，应使用明确的活性性质，而不是把驻停本身当作错误。
 
 这不等于检查运行了状态空间搜索。适配器遍历注册表元数据，只保留封闭且复杂度和调用次数都在策略内的结构与局部 SMT 算法。inspect 不解析 ``.fbmcq`` 查询，也不加载 :mod:`pyfcstm.bmc`。结果是有用的模型派生反馈，不是对所有事件调度和抽象处理器的完整证明。
 

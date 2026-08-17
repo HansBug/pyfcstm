@@ -265,6 +265,10 @@ class TransitionInfo:
         transitions. Downstream tooling may use this as a best-effort
         source-range disambiguation hint when spans are not available.
     :type transition_index: Optional[int]
+    :param source_path: Source file that authored this transition, when the
+        model carries source metadata. This is distinct from the state paths
+        in the transition endpoints.
+    :type source_path: Optional[str]
     :param combo_origin_refs: Provenance references from a generated combo
         edge back to the original combo trigger terms. Empty for ordinary
         transitions.
@@ -306,6 +310,9 @@ class TransitionInfo:
     combo_reuse_group_id: Optional[str] = None
     combo_priority_run_identity: Optional[Tuple[str, Optional[int]]] = None
     combo_priority_run_index: Optional[int] = None
+    # Keep this new optional field after the pre-existing positional fields so
+    # callers that pass ``span`` positionally retain their binding.
+    source_path: Optional[str] = None
 
 @dataclass(frozen=True)
 class ComboOriginRefInfo:
@@ -332,6 +339,17 @@ class ComboOriginRefInfo:
     :type value_span: pyfcstm.utils.validate.Span, optional
     :param removal_span: Source span suitable for removing the term.
     :type removal_span: pyfcstm.utils.validate.Span, optional
+    :param source_kind: Authored source kind, ``'state'`` or ``'init'``.
+    :type source_kind: str
+    :param source_path: Authored source state path, or ``None`` for init.
+    :type source_path: Optional[str]
+    :param selection_owner_path: Composite owner path for an init transition,
+        or ``None`` for a normal transition.
+    :type selection_owner_path: Optional[str]
+    :param target_kind: Authored target kind, ``'state'`` or ``'exit'``.
+    :type target_kind: str
+    :param target_path: Authored target path, or ``'[*]'`` for exit.
+    :type target_path: Optional[str]
 
     Example::
 
@@ -350,6 +368,11 @@ class ComboOriginRefInfo:
     term_span: Optional['Span'] = None
     value_span: Optional['Span'] = None
     removal_span: Optional['Span'] = None
+    source_kind: str = 'state'
+    source_path: Optional[str] = None
+    selection_owner_path: Optional[str] = None
+    target_kind: str = 'state'
+    target_path: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -1191,6 +1214,11 @@ def _combo_origin_ref_info(ref: Any) -> ComboOriginRefInfo:
         term_span=ref.term_span,
         value_span=ref.value_span,
         removal_span=ref.removal_span,
+        source_kind=getattr(ref, 'source_kind', 'state'),
+        source_path=getattr(ref, 'source_path', None),
+        selection_owner_path=getattr(ref, 'selection_owner_path', None),
+        target_kind=getattr(ref, 'target_kind', 'state'),
+        target_path=getattr(ref, 'target_path', None),
     )
 
 
@@ -1272,6 +1300,7 @@ def _build_transition_infos(machine: 'StateMachine') -> Tuple[TransitionInfo, ..
                 is_forced=is_forced,
                 forced_origin=forced_origin,
                 transition_index=transition_index,
+                source_path=getattr(transition, '_source_path', None),
                 span=getattr(transition, '_span', None),
                 effect_spans=tuple(
                     span

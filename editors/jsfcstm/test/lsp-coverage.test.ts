@@ -667,10 +667,10 @@ describe('jsfcstm lsp coverage support', () => {
         const lateCancelToken = {isCancellationRequested: false};
         await withPatchedProperty(
             diagnosticsModule,
-            'collectDocumentDiagnostics',
+            'collectDocumentDiagnosticsByUri',
             async () => {
                 lateCancelToken.isCancellationRequested = true;
-                return [];
+                return new Map();
             },
             async () => {
                 await (core as unknown as { publishDiagnostics: (uri: string, version: number, token?: unknown) => Promise<void> }).publishDiagnostics(
@@ -683,13 +683,13 @@ describe('jsfcstm lsp coverage support', () => {
 
         await withPatchedProperty(
             diagnosticsModule,
-            'collectDocumentDiagnostics',
+            'collectDocumentDiagnosticsByUri',
             async () => {
                 (core as unknown as { documents: Map<string, TextDocument> }).documents.set(
                     hostUri,
                     TextDocument.create(hostUri, 'fcstm', 2, 'state Root;')
                 );
-                return [];
+                return new Map();
             },
             async () => {
                 await (core as unknown as { publishDiagnostics: (uri: string, version: number) => Promise<void> }).publishDiagnostics(

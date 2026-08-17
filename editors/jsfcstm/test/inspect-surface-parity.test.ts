@@ -4,6 +4,7 @@ import {createDocument, packageModule, sliceByRange, withPatchedProperty} from '
 
 const SUPPRESSED_FROM_INSPECT_SURFACE = new Set([
     'W_UNREACHABLE_STATE',
+    'W_UNREACHABLE_TRANSITION',
     'W_UNUSED_EVENT',
 ]);
 
@@ -381,11 +382,22 @@ state Root {
             createDocument(text, '/tmp/unreachable-float-normalized-guard.fcstm'),
         );
         const diagnostic = diagnostics.find(item => (
-            item.code === 'W_GUARD_CONST_FALSE' && item.data?.from_path === 'Root.Isolated'
+            item.code === 'W_UNREACHABLE_TRANSITION' && item.data?.from_path === 'Root.Isolated'
         ));
 
         assert.ok(diagnostic, 'expected source-unreachable transition diagnostic');
-        assert.equal(diagnostic.data?.guard_text, '2.0 == 2.0');
+        assert.deepEqual(diagnostic.data, {
+            reason: 'source_unreachable',
+            verification_scope: 'topological_only',
+            from_path: 'Root.Isolated',
+            to_path: 'Root.Blocked',
+            source_state_path: 'Root.Isolated',
+            selection_owner_path: null,
+            source_path: '/tmp/unreachable-float-normalized-guard.fcstm',
+            transition_index: 1,
+            forced_origin: null,
+            combo_origin_ids: [],
+        });
     });
 
     it('keeps inspect-only folded false guards when literal false guards share the file', async () => {

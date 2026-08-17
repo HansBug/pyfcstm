@@ -20,6 +20,7 @@ import type {FcstmSemanticDocument, FcstmSemanticImport, FcstmSemanticTransition
 import {FcstmDiagnostic, rangeIsEmptyOrInvalid, TextDocumentLike} from '../utils/text';
 import {getWorkspaceGraph} from '../workspace';
 import {findIdentifierRange} from './ranges';
+import {canonicalComboEffectSignature, pythonJsonArray} from '../model/combo-origin';
 
 /**
  * Diagnostic code constants — single source of truth for jsfcstm
@@ -55,6 +56,7 @@ export const FCSTM_DIAGNOSTIC_CODES = {
     // -------- Layer 2 warnings (W_*) - emit logic kept in place,
     // codes.yaml schema placeholders introduced in PR-A --------
     unreachableState: 'W_UNREACHABLE_STATE',
+    unreachableTransition: 'W_UNREACHABLE_TRANSITION',
     guardConstFalse: 'W_GUARD_CONST_FALSE',
     unusedEvent: 'W_UNUSED_EVENT',
     guardConstTrue: 'W_GUARD_CONST_TRUE',
@@ -290,28 +292,113 @@ function transitionDiagnosticEndpointPaths(
 
 function transitionModelOrderIndex(transition: FcstmSemanticTransition): number | null {
     const rawIndex = transition.ast.transitionIndex;
-    if (typeof rawIndex === 'number' && Number.isInteger(rawIndex)) return rawIndex;
+    if (!transition.forced && typeof rawIndex === 'number' && Number.isInteger(rawIndex)) return rawIndex;
 
     if (!Array.isArray(transition.ast.transitionIndexRefs)) return null;
-    if (transition.forced && transition.expandedTransitions.length === 1) {
-        const [expanded] = transition.expandedTransitions;
-        const match = transition.ast.transitionIndexRefs.find(ref => (
-            typeof ref.index === 'number' &&
-            (typeof ref.fromPath !== 'string' || ref.fromPath === dottedPath(expanded.sourceStatePath)) &&
-            (typeof ref.toPath !== 'string' || ref.toPath === (
-                expanded.targetKind === 'exit' ? '[*]' : dottedPath(expanded.targetStatePath)
-            ))
-        ));
-        return typeof match?.index === 'number' ? match.index : null;
-    }
-
     const endpoints = transitionDiagnosticEndpointPaths(transition);
+    return transitionModelOrderIndexForPaths(
+        transition,
+        endpoints.from_path ?? null,
+        endpoints.to_path ?? null,
+    );
+}
+
+function transitionModelOrderIndexForPaths(
+    transition: FcstmSemanticTransition,
+    fromPath: string | null,
+    toPath: string | null,
+): number | null {
+    if (!Array.isArray(transition.ast.transitionIndexRefs)) return null;
     const match = transition.ast.transitionIndexRefs.find(ref => (
         typeof ref.index === 'number' &&
-        (typeof ref.fromPath !== 'string' || ref.fromPath === endpoints.from_path) &&
-        (typeof ref.toPath !== 'string' || ref.toPath === endpoints.to_path)
+        (typeof ref.fromPath !== 'string' || ref.fromPath === fromPath) &&
+        (typeof ref.toPath !== 'string' || ref.toPath === toPath)
     ));
     return typeof match?.index === 'number' ? match.index : null;
+}
+
+interface TransitionTopologyCandidate {
+    fromPath: string;
+    toPath: string;
+    sourceStatePath: string | null;
+    selectionOwnerPath: string | null;
+    topologyPath: string;
+    selectionStateId: string | null;
+    transitionIndex: number | null;
+}
+
+function transitionTopologyCandidates(
+    transition: FcstmSemanticTransition,
+): TransitionTopologyCandidate[] {
+    if (transition.forced) {
+        const candidates: Array<TransitionTopologyCandidate | null> = transition.expandedTransitions.map(expanded => {
+            const fromPath = dottedPath(expanded.sourceStatePath);
+            const toPath = expanded.targetKind === 'exit'
+                ? '[*]'
+                : dottedPath(expanded.targetStatePath);
+            if (!fromPath || !toPath) return null;
+            return {
+                fromPath,
+                toPath,
+                sourceStatePath: fromPath,
+                selectionOwnerPath: null,
+                topologyPath: fromPath,
+                selectionStateId: expanded.sourceStateId,
+                transitionIndex: transitionModelOrderIndexForPaths(transition, fromPath, toPath),
+            };
+        });
+        return candidates.filter((item): item is TransitionTopologyCandidate => item !== null);
+    }
+
+    if (transition.sourceKind === 'init') {
+        const ownerPath = dottedPath(transition.ownerStatePath);
+        const toPath = transition.targetKind === 'exit'
+            ? '[*]'
+            : dottedPath(transition.targetStatePath) ?? transition.targetStateName;
+        if (!ownerPath || !toPath) return [];
+        return [{
+            fromPath: '[*]',
+            toPath,
+            sourceStatePath: null,
+            selectionOwnerPath: ownerPath,
+            topologyPath: ownerPath,
+            selectionStateId: transition.ownerStateId,
+            transitionIndex: transitionModelOrderIndexForPaths(transition, '[*]', toPath),
+        }];
+    }
+
+    const sourcePath = dottedPath(transition.sourceStatePath);
+    const toPath = transition.targetKind === 'exit'
+        ? '[*]'
+        : dottedPath(transition.targetStatePath) ?? transition.targetStateName;
+    if (!sourcePath || !toPath || !transition.sourceStateId) return [];
+    return [{
+        fromPath: sourcePath,
+        toPath,
+        sourceStatePath: sourcePath,
+        selectionOwnerPath: null,
+        topologyPath: sourcePath,
+        selectionStateId: transition.sourceStateId,
+        transitionIndex: transition.ast.comboTrigger?.isCombo
+            ? null
+            : transitionModelOrderIndex(transition),
+    }];
+}
+
+function comboOriginIdForTransition(transition: FcstmSemanticTransition): string | null {
+    if (transition.forced || transition.ast.kind !== 'transition' || !transition.ast.comboTrigger?.isCombo) {
+        return null;
+    }
+    const source = transition.sourceKind === 'init'
+        ? '__init__'
+        : transition.sourceStateName ?? '__init__';
+    const target = transition.targetKind === 'exit'
+        ? '__exit__'
+        : transition.targetStateName ?? '__exit__';
+    let origin = `${dottedPath(transition.ownerStatePath)}:${source}->${target}:${transition.ast.comboTrigger.canonicalText ?? transition.ast.text}`;
+    const effects = canonicalComboEffectSignature(transition.ast.postOperations);
+    if (effects.length > 0) origin = `${origin}:effect=${pythonJsonArray(effects)}`;
+    return origin;
 }
 
 function toFileUri(document: TextDocumentLike): string {
@@ -485,6 +572,8 @@ function addTransitionDiagnostics(
     diagnostics: FcstmDiagnostic[]
 ): void {
     const reachable = collectReachableStateIds(semantic);
+    const comboOriginCounts = new Map<string, number>();
+    const sourcePath = document.filePath || document.uri?.fsPath || null;
 
     for (const transition of semantic.transitions) {
         // pyfcstm Layer 1 distinction: the source side of a transition
@@ -555,21 +644,51 @@ function addTransitionDiagnostics(
             }
         }
 
-        const sourceUnreachable = Boolean(
-            transition.sourceStateId
-            && !reachable.has(transition.sourceStateId)
-            && transition.sourceStateId !== semantic.machine.rootStateId
-        );
-        if (sourceUnreachable || (transition.guard && isFalseLiteral(transition.guard))) {
+        const comboOriginId = comboOriginIdForTransition(transition);
+        const comboOriginIds = comboOriginId
+            ? (() => {
+                const duplicateIndex = comboOriginCounts.get(comboOriginId) ?? 0;
+                comboOriginCounts.set(comboOriginId, duplicateIndex + 1);
+                return [comboOriginId + (duplicateIndex > 0 ? `#dup${duplicateIndex}` : '')];
+            })()
+            : [];
+        // Forced declarations expand into model transitions whose canonical
+        // origin text is owned by the runtime model. The inspect item remains
+        // authoritative for those generated edges.
+        if (transition.forced) continue;
+        for (const candidate of transitionTopologyCandidates(transition)) {
+            if (
+                !candidate.selectionStateId
+                || reachable.has(candidate.selectionStateId)
+            ) {
+                continue;
+            }
+            diagnostics.push({
+                range: transition.range,
+                message: `Transition ${JSON.stringify(transition.ast.text)} has a source outside the guard-agnostic root-reachable topology.`,
+                severity: 'warning',
+                source: 'fcstm',
+                code: FCSTM_DIAGNOSTIC_CODES.unreachableTransition,
+                data: {
+                    reason: 'source_unreachable',
+                    verification_scope: 'topological_only',
+                    from_path: candidate.fromPath,
+                    to_path: candidate.toPath,
+                    source_state_path: candidate.sourceStatePath,
+                    selection_owner_path: candidate.selectionOwnerPath,
+                    source_path: sourcePath,
+                    transition_index: candidate.transitionIndex,
+                    forced_origin: null,
+                    combo_origin_ids: comboOriginIds,
+                },
+            });
+        }
+
+        if (transition.guard && isFalseLiteral(transition.guard)) {
             const sourceState = semantic.states.find(item => item.identity.id === transition.sourceStateId);
             diagnostics.push({
-                // For forced expansions, ``transition.guard`` still points at
-                // the original forced declaration guard, so this range anchors
-                // literal-false warnings to the authored guard expression.
-                range: !sourceUnreachable && transition.guard ? transition.guard.range : transition.range,
-                message: sourceUnreachable
-                    ? `Transition ${JSON.stringify(transition.ast.text)} is dead because its source state is unreachable.`
-                    : `Transition ${JSON.stringify(transition.ast.text)} is dead because its guard is always false.`,
+                range: transition.guard.range,
+                message: `Transition ${JSON.stringify(transition.ast.text)} is dead because its guard is always false.`,
                 severity: 'warning',
                 source: 'fcstm',
                 code: FCSTM_DIAGNOSTIC_CODES.guardConstFalse,

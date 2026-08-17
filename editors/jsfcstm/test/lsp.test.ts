@@ -245,6 +245,463 @@ describe('jsfcstm lsp core', () => {
         core.dispose();
     });
 
+    it('publishes imported transition diagnostics under the authored source URI', async () => {
+        const dir = trackTempDir('jsfcstm-lsp-imported-diagnostics-');
+        const childFile = path.join(dir, 'child.fcstm');
+        const hostFile = path.join(dir, 'host.fcstm');
+        const childText = [
+            'state Child {',
+            '    state Reach;',
+            '    state Orphan;',
+            '    state Done;',
+            '    state OrphanGroup {',
+            '        state Nested;',
+            '        [*] -> Nested;',
+            '    }',
+            '    [*] -> Reach;',
+            '    Orphan -> Done;',
+            '}',
+        ].join('\n');
+        writeFile(childFile, childText);
+        const hostText = [
+            'state Root {',
+            '    import "./child.fcstm" as Imported;',
+            '    [*] -> Imported;',
+            '}',
+        ].join('\n');
+        const publications: packageModule.FcstmPublishedDiagnostics[] = [];
+        const core = new packageModule.FcstmLanguageServerCore({
+            onDiagnostics(publication) {
+                publications.push(publication);
+            },
+        });
+
+        await core.openTextDocument(makeTextDocumentItem(hostFile, hostText));
+
+        const childPublication = publications.find(item => item.uri === toUri(childFile));
+        assert.ok(childPublication, JSON.stringify(publications));
+        assert.equal(childPublication.version, 0);
+        assert.equal(childPublication.diagnostics.length, 2, JSON.stringify(childPublication));
+        assert.ok(childPublication.diagnostics.every(item => item.code === 'W_UNREACHABLE_TRANSITION'));
+        assert.deepEqual(
+            childPublication.diagnostics.map(item => item.range.start.line).sort((a, b) => a - b),
+            [6, 9],
+        );
+        const hostPublication = publications.find(item => item.uri === toUri(hostFile));
+        assert.ok(hostPublication, JSON.stringify(publications));
+        assert.equal(
+            hostPublication.diagnostics.some(item => item.code === 'W_UNREACHABLE_TRANSITION'),
+            false,
+        );
+
+        await core.openTextDocument(makeTextDocumentItem(childFile, childText));
+        const reopenedChildPublication = publications.at(-1);
+        assert.equal(reopenedChildPublication?.uri, toUri(childFile));
+        assert.equal(
+            reopenedChildPublication?.diagnostics.filter(item => item.code === 'W_UNREACHABLE_TRANSITION').length,
+            2,
+            JSON.stringify(reopenedChildPublication),
+        );
+
+        core.dispose();
+    });
+
+    it('retains host-only assembled diagnostics after opening an imported child', async () => {
+        const dir = trackTempDir('jsfcstm-lsp-host-only-imported-diagnostics-');
+        const childFile = path.join(dir, 'child.fcstm');
+        const hostFile = path.join(dir, 'host.fcstm');
+        const childText = [
+            'state Child {',
+            '    state Reach;',
+            '    state Orphan;',
+            '    state Done;',
+            '    [*] -> Reach;',
+            '    Orphan -> Done;',
+            '}',
+        ].join('\n');
+        writeFile(childFile, childText);
+        const hostText = [
+            'state Root {',
+            '    state Live;',
+            '    state Dead {',
+            '        import "./child.fcstm" as Imported;',
+            '    }',
+            '    [*] -> Live;',
+            '}',
+        ].join('\n');
+        const publications: packageModule.FcstmPublishedDiagnostics[] = [];
+        const core = new packageModule.FcstmLanguageServerCore({
+            onDiagnostics(publication) {
+                publications.push(publication);
+            },
+        });
+
+        await core.openTextDocument(makeTextDocumentItem(hostFile, hostText));
+        const mountedChildPublication = publications.find(item => item.uri === toUri(childFile));
+        assert.equal(
+            mountedChildPublication?.diagnostics.filter(item => item.code === 'W_UNREACHABLE_TRANSITION').length,
+            2,
+            JSON.stringify(publications),
+        );
+        assert.ok(
+            mountedChildPublication?.diagnostics
+                .filter(item => item.code === 'W_UNREACHABLE_TRANSITION')
+                .every(item => typeof item.data?.mount_path === 'string'),
+            JSON.stringify(publications),
+        );
+        await core.openTextDocument(makeTextDocumentItem(childFile, childText));
+
+        const childPublications = publications.filter(item => item.uri === toUri(childFile));
+        const latestChildPublication = childPublications.at(-1);
+        assert.ok(latestChildPublication, JSON.stringify(publications));
+        const unreachable = latestChildPublication.diagnostics.filter(
+            item => item.code === 'W_UNREACHABLE_TRANSITION',
+        );
+        assert.equal(unreachable.length, 2, JSON.stringify(latestChildPublication));
+        assert.ok(
+            unreachable.every(item => String(item.data?.mount_path).includes('Root.Dead.Imported')),
+            JSON.stringify(latestChildPublication),
+        );
+        assert.ok(unreachable.some(item => item.data?.from_path === '[*]'));
+
+        core.dispose();
+    });
+
+    it('publishes root-authored transitions crossing an imported state under the root URI', async () => {
+        const dir = trackTempDir('jsfcstm-lsp-root-imported-transition-');
+        const childFile = path.join(dir, 'child.fcstm');
+        const hostFile = path.join(dir, 'host.fcstm');
+        writeFile(childFile, [
+            'state Child {',
+            '    state Reach;',
+            '    [*] -> Reach;',
+            '}',
+        ].join('\n'));
+        const hostText = [
+            'state Root {',
+            '    import "./child.fcstm" as Imported;',
+            '    state Live;',
+            '    [*] -> Live;',
+            '    Imported -> Live;',
+            '}',
+        ].join('\n');
+        const publications: packageModule.FcstmPublishedDiagnostics[] = [];
+        const core = new packageModule.FcstmLanguageServerCore({
+            onDiagnostics(publication) {
+                publications.push(publication);
+            },
+        });
+
+        await core.openTextDocument(makeTextDocumentItem(hostFile, hostText));
+
+        const hostPublication = publications.find(item => item.uri === toUri(hostFile));
+        assert.ok(hostPublication, JSON.stringify(publications));
+        const unreachable = hostPublication.diagnostics.filter(
+            item => item.code === 'W_UNREACHABLE_TRANSITION',
+        );
+        assert.equal(unreachable.length, 1, JSON.stringify(hostPublication));
+        assert.equal(unreachable[0].range.start.line, 4);
+        assert.equal(unreachable[0].data?.source_path, hostFile);
+        assert.equal(unreachable[0].data?.reason, 'source_unreachable');
+        assert.equal(unreachable[0].data?.verification_scope, 'topological_only');
+
+        core.dispose();
+    });
+
+    it('keeps diagnostics from repeated import aliases distinct', async () => {
+        const dir = trackTempDir('jsfcstm-lsp-repeated-import-aliases-');
+        const childFile = path.join(dir, 'child.fcstm');
+        const hostFile = path.join(dir, 'host.fcstm');
+        writeFile(childFile, [
+            'state Child {',
+            '    state Reach;',
+            '    state Orphan;',
+            '    [*] -> Reach;',
+            '    Orphan -> [*];',
+            '}',
+        ].join('\n'));
+        const hostText = [
+            'state Root {',
+            '    import "./child.fcstm" as First;',
+            '    import "./child.fcstm" as Second;',
+            '    [*] -> First;',
+            '}',
+        ].join('\n');
+        const publications: packageModule.FcstmPublishedDiagnostics[] = [];
+        const core = new packageModule.FcstmLanguageServerCore({
+            onDiagnostics(publication) {
+                publications.push(publication);
+            },
+        });
+
+        await core.openTextDocument(makeTextDocumentItem(hostFile, hostText));
+
+        const childPublication = publications.find(item => item.uri === toUri(childFile));
+        assert.ok(childPublication, JSON.stringify(publications));
+        const unreachable = childPublication.diagnostics.filter(
+            item => item.code === 'W_UNREACHABLE_TRANSITION',
+        );
+        assert.equal(unreachable.length, 3, JSON.stringify(childPublication));
+        const mountPaths = unreachable.map(item => item.data?.mount_path);
+        assert.ok(mountPaths.every(item => typeof item === 'string'), JSON.stringify(childPublication));
+        assert.equal(new Set(mountPaths).size, unreachable.length, JSON.stringify(childPublication));
+        assert.ok(mountPaths.some(item => item?.includes('Root.First')));
+        assert.ok(mountPaths.some(item => item?.includes('Root.Second')));
+
+        core.dispose();
+    });
+
+    it('keeps distinct unreachable forced expansions under one declaration', async () => {
+        const dir = trackTempDir('jsfcstm-lsp-forced-expansion-identity-');
+        const filePath = path.join(dir, 'machine.fcstm');
+        const text = [
+            'state Root {',
+            '    state Group {',
+            '        state Reach;',
+            '        state LostA;',
+            '        state LostB;',
+            '        state Done;',
+            '        [*] -> Reach;',
+            '        !* -> Done :: Panic;',
+            '    }',
+            '    [*] -> Group;',
+            '}',
+        ].join('\n');
+        const publications: packageModule.FcstmPublishedDiagnostics[] = [];
+        const core = new packageModule.FcstmLanguageServerCore({
+            onDiagnostics(publication) {
+                publications.push(publication);
+            },
+        });
+
+        await core.openTextDocument(makeTextDocumentItem(filePath, text));
+
+        const publication = publications.find(item => item.uri === toUri(filePath));
+        assert.ok(publication, JSON.stringify(publications));
+        const unreachable = publication.diagnostics.filter(
+            item => item.code === 'W_UNREACHABLE_TRANSITION',
+        );
+        assert.equal(unreachable.length, 2, JSON.stringify(publication));
+        assert.deepEqual(
+            unreachable.map(item => item.data?.source_state_path).sort(),
+            ['Root.Group.LostA', 'Root.Group.LostB'],
+        );
+
+        core.dispose();
+    });
+
+    it('revalidates importing roots after an imported document changes', async () => {
+        const dir = trackTempDir('jsfcstm-lsp-imported-refresh-');
+        const childFile = path.join(dir, 'child.fcstm');
+        const hostFile = path.join(dir, 'host.fcstm');
+        const childUri = toUri(childFile);
+        const hostUri = toUri(hostFile);
+        const staleChildText = [
+            'state Child {',
+            '    state Reach;',
+            '    state Orphan;',
+            '    state Done;',
+            '    [*] -> Reach;',
+            '    Orphan -> Done;',
+            '}',
+        ].join('\n');
+        const cleanChildText = [
+            'state Child {',
+            '    state Reach;',
+            '    state Done;',
+            '    [*] -> Reach;',
+            '    Reach -> Done;',
+            '}',
+        ].join('\n');
+        const hostText = [
+            'state Root {',
+            '    import "./child.fcstm" as Imported;',
+            '    [*] -> Imported;',
+            '}',
+        ].join('\n');
+        writeFile(childFile, staleChildText);
+
+        const scheduler = new TestScheduler();
+        const publications: packageModule.FcstmPublishedDiagnostics[] = [];
+        const core = new packageModule.FcstmLanguageServerCore({
+            scheduler,
+            onDiagnostics(publication) {
+                publications.push(publication);
+            },
+        });
+
+        await core.openTextDocument(makeTextDocumentItem(hostFile, hostText));
+        await core.openTextDocument(makeTextDocumentItem(childFile, staleChildText));
+        await scheduler.flushAll();
+        assert.ok(publications.some(item => (
+            item.uri === childUri
+            && item.diagnostics.some(diagnostic => diagnostic.code === 'W_UNREACHABLE_TRANSITION')
+        )), JSON.stringify(publications));
+
+        await core.changeTextDocument(childUri, 2, [{text: cleanChildText}]);
+        await scheduler.flushAll();
+
+        const latestHostPublication = [...publications].reverse().find(item => item.uri === hostUri);
+        const latestChildPublication = [...publications].reverse().find(item => item.uri === childUri);
+        assert.ok(latestHostPublication);
+        assert.ok(latestChildPublication);
+        assert.equal(
+            latestHostPublication.diagnostics.some(diagnostic => diagnostic.code === 'W_UNREACHABLE_TRANSITION'),
+            false,
+            JSON.stringify(latestHostPublication),
+        );
+        assert.equal(
+            latestChildPublication.diagnostics.some(diagnostic => diagnostic.code === 'W_UNREACHABLE_TRANSITION'),
+            false,
+            JSON.stringify(latestChildPublication),
+        );
+
+        core.dispose();
+    });
+
+    it('suppresses standalone child topology warnings when assembled authority is empty', async () => {
+        const dir = trackTempDir('jsfcstm-lsp-empty-assembled-authority-');
+        const childFile = path.join(dir, 'child.fcstm');
+        const hostFile = path.join(dir, 'host.fcstm');
+        const childUri = toUri(childFile);
+        const hostUri = toUri(hostFile);
+        const warning: packageModule.FcstmDiagnostic = {
+            range: packageModule.createRange(0, 0, 0, 1),
+            message: 'standalone topology warning',
+            severity: 'warning',
+            source: 'fcstm',
+            code: 'W_UNREACHABLE_TRANSITION',
+            data: {
+                reason: 'source_unreachable',
+                verification_scope: 'topological_only',
+                source_path: childFile,
+                from_path: 'Child.Orphan',
+                to_path: 'Child.Done',
+            },
+        };
+        let hostAuthority = true;
+        const collector = (async (_document: unknown, rootUri: string) => {
+            if (rootUri === hostUri) {
+                const result = new Map<string, packageModule.FcstmDiagnostic[]>([
+                    [hostUri, []],
+                ]) as packageModule.FcstmDiagnosticPublications;
+                result.authoritativeTargets = hostAuthority
+                    ? new Set([childUri])
+                    : new Set();
+                return result;
+            }
+            return new Map<string, packageModule.FcstmDiagnostic[]>([
+                [childUri, [warning]],
+            ]) as packageModule.FcstmDiagnosticPublications;
+        }) as typeof packageModule.collectDocumentDiagnosticsByUri;
+        const publications: packageModule.FcstmPublishedDiagnostics[] = [];
+        const scheduler = new TestScheduler();
+        const core = new packageModule.FcstmLanguageServerCore({
+            scheduler,
+            collectDocumentDiagnostics: collector,
+            onDiagnostics(publication) {
+                publications.push(publication);
+            },
+        });
+
+        await core.openTextDocument(makeTextDocumentItem(hostFile, 'state Root;'));
+        await core.openTextDocument(makeTextDocumentItem(childFile, 'state Child;'));
+        const authoritativeChildPublication = [...publications]
+            .reverse()
+            .find(item => item.uri === childUri);
+        assert.ok(authoritativeChildPublication, JSON.stringify(publications));
+        assert.deepEqual(authoritativeChildPublication.diagnostics, []);
+
+        hostAuthority = false;
+        await core.changeTextDocument(hostUri, 2, [{text: 'state Root;'}]);
+        await scheduler.flushAll();
+        const standaloneChildPublication = [...publications]
+            .reverse()
+            .find(item => item.uri === childUri);
+        assert.ok(standaloneChildPublication, JSON.stringify(publications));
+        assert.equal(standaloneChildPublication.diagnostics.length, 1);
+        assert.equal(standaloneChildPublication.diagnostics[0]?.code, 'W_UNREACHABLE_TRANSITION');
+
+        core.dispose();
+    });
+
+    it('keeps child topology warnings when import assembly falls back to a local model', async () => {
+        const dir = trackTempDir('jsfcstm-lsp-local-assembly-fallback-');
+        const childFile = path.join(dir, 'child.fcstm');
+        const hostFile = path.join(dir, 'host.fcstm');
+        const childText = [
+            'state Child {',
+            '    state Reach;',
+            '    state Orphan;',
+            '    state Done;',
+            '    [*] -> Reach;',
+            '    Orphan -> Done;',
+            '}',
+        ].join('\n');
+        const hostText = [
+            'state Root {',
+            '    state Imported;',
+            '    import "./child.fcstm" as Imported;',
+            '    [*] -> Imported;',
+            '}',
+        ].join('\n');
+        writeFile(childFile, childText);
+        const publications: packageModule.FcstmPublishedDiagnostics[] = [];
+        const core = new packageModule.FcstmLanguageServerCore({
+            onDiagnostics(publication) {
+                publications.push(publication);
+            },
+        });
+
+        await core.openTextDocument(makeTextDocumentItem(hostFile, hostText));
+        await core.openTextDocument(makeTextDocumentItem(childFile, childText));
+        const childPublication = [...publications]
+            .reverse()
+            .find(item => item.uri === toUri(childFile));
+        assert.ok(childPublication, JSON.stringify(publications));
+        assert.equal(
+            childPublication.diagnostics.filter(item => item.code === 'W_UNREACHABLE_TRANSITION').length,
+            1,
+            JSON.stringify(childPublication),
+        );
+
+        core.dispose();
+    });
+
+    it('uses the cached reverse import index before debounced revalidation', async () => {
+        const dir = trackTempDir('jsfcstm-lsp-import-index-');
+        const childFile = path.join(dir, 'child.fcstm');
+        const hostFile = path.join(dir, 'host.fcstm');
+        const childUri = toUri(childFile);
+        writeFile(childFile, 'state Child;');
+        writeFile(hostFile, 'state Root { import "./child.fcstm" as Child; }');
+
+        const graph = packageModule.getWorkspaceGraph();
+        const originalBuildSnapshot = graph.buildSnapshotForDocument.bind(graph);
+        let snapshotCalls = 0;
+        graph.buildSnapshotForDocument = async document => {
+            snapshotCalls += 1;
+            return originalBuildSnapshot(document);
+        };
+        const scheduler = new TestScheduler();
+        const core = new packageModule.FcstmLanguageServerCore({scheduler});
+
+        try {
+            await core.openTextDocument(makeTextDocumentItem(hostFile, 'state Root { import "./child.fcstm" as Child; }'));
+            await core.openTextDocument(makeTextDocumentItem(childFile, 'state Child;'));
+            snapshotCalls = 0;
+
+            await core.changeTextDocument(childUri, 2, [{text: 'state ChangedChild;'}]);
+            await core.changeTextDocument(childUri, 3, [{text: 'state ChangedAgain;'}]);
+
+            assert.equal(snapshotCalls, 0);
+            assert.equal(scheduler.size(), 2);
+        } finally {
+            graph.buildSnapshotForDocument = originalBuildSnapshot;
+            core.dispose();
+        }
+    });
+
     it('debounces diagnostics and only publishes the latest document version', async () => {
         const dir = trackTempDir('jsfcstm-lsp-debounce-');
         const hostFile = path.join(dir, 'host.fcstm');
@@ -282,6 +739,97 @@ describe('jsfcstm lsp core', () => {
         });
 
         core.dispose();
+    });
+
+    it('does not let an older dependency revalidation restore stale diagnostics', async () => {
+        const dir = trackTempDir('jsfcstm-lsp-diagnostic-generation-');
+        const childFile = path.join(dir, 'child.fcstm');
+        const hostFile = path.join(dir, 'host.fcstm');
+        const childUri = toUri(childFile);
+        const hostUri = toUri(hostFile);
+        const staleChildText = [
+            'state Child {',
+            '    state Reach;',
+            '    state Orphan;',
+            '    state Done;',
+            '    [*] -> Reach;',
+            '    Orphan -> Done;',
+            '}',
+        ].join('\n');
+        const cleanChildText = [
+            'state Child {',
+            '    state Reach;',
+            '    state Done;',
+            '    [*] -> Reach;',
+            '    Reach -> Done;',
+            '}',
+        ].join('\n');
+        const hostText = [
+            'state Root {',
+            '    import "./child.fcstm" as Imported;',
+            '    [*] -> Imported;',
+            '}',
+        ].join('\n');
+        writeFile(childFile, staleChildText);
+
+        const staleResult = new Map<string, packageModule.FcstmDiagnostic[]>([
+            [hostUri, [{
+                range: packageModule.createRange(0, 0, 0, 1),
+                message: 'stale imported warning',
+                severity: 'warning',
+                source: 'fcstm',
+                code: 'W_UNREACHABLE_TRANSITION',
+            }]],
+        ]);
+        const emptyResult = new Map<string, packageModule.FcstmDiagnostic[]>([[hostUri, []]]);
+        let hostCalls = 0;
+        let resolveOld: ((value: Map<string, packageModule.FcstmDiagnostic[]>) => void) | undefined;
+        let resolveNew: ((value: Map<string, packageModule.FcstmDiagnostic[]>) => void) | undefined;
+        const oldResult = new Promise<Map<string, packageModule.FcstmDiagnostic[]>>(resolve => {
+            resolveOld = resolve;
+        });
+        const newResult = new Promise<Map<string, packageModule.FcstmDiagnostic[]>>(resolve => {
+            resolveNew = resolve;
+        });
+        const collector = (async (_document: unknown, rootUri: string) => {
+            if (rootUri !== hostUri) return new Map<string, packageModule.FcstmDiagnostic[]>([[rootUri, []]]);
+            hostCalls += 1;
+            if (hostCalls === 1) return emptyResult;
+            if (hostCalls === 2) return oldResult;
+            return newResult;
+        }) as typeof packageModule.collectDocumentDiagnosticsByUri;
+
+        const scheduler = new TestScheduler();
+        const publications: packageModule.FcstmPublishedDiagnostics[] = [];
+        const injectedCore = new packageModule.FcstmLanguageServerCore({
+            scheduler,
+            collectDocumentDiagnostics: collector,
+            onDiagnostics(publication) {
+                publications.push(publication);
+            },
+        });
+
+        await injectedCore.openTextDocument(makeTextDocumentItem(hostFile, hostText));
+        await injectedCore.openTextDocument(makeTextDocumentItem(childFile, staleChildText));
+
+        const oldFlush = scheduler.flushAll();
+        await new Promise<void>(resolve => setImmediate(resolve));
+        assert.equal(hostCalls, 2);
+
+        await injectedCore.changeTextDocument(childUri, 2, [{text: cleanChildText}]);
+        const newFlush = scheduler.flushAll();
+        await new Promise<void>(resolve => setImmediate(resolve));
+        assert.equal(hostCalls, 3);
+
+        resolveNew?.(emptyResult);
+        await newFlush;
+        resolveOld?.(staleResult);
+        await oldFlush;
+
+        const latestHostPublication = [...publications].reverse().find(item => item.uri === hostUri);
+        assert.ok(latestHostPublication, JSON.stringify(publications));
+        assert.deepEqual(latestHostPublication.diagnostics, []);
+        injectedCore.dispose();
     });
 
     it('keeps workspace overlays in sync so import-aware hover sees unsaved target changes', async () => {

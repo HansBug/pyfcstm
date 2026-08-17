@@ -206,6 +206,9 @@ export interface FcstmAstComboTrigger extends FcstmAstNodeBase {
  * Common transition fields shared by normal and forced transitions.
  */
 export interface FcstmAstTransitionBase extends FcstmAstNodeBase {
+    /** Source file that authored this declaration in an assembled workspace model. */
+    sourceFilePath?: string;
+    source_file_path?: string;
     sourceStateName?: string;
     targetStateName?: string;
     sourceKind: 'init' | 'state' | 'all';

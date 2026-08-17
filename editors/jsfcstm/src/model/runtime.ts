@@ -877,6 +877,8 @@ export class Transition extends ModelNode {
     trigger_scope?: 'local' | 'chain' | 'absolute';
     transitionIndex?: number;
     transition_index?: number;
+    sourcePath?: string;
+    source_path?: string;
     combo_origin_refs: unknown[];
     combo_projection_key: unknown[] | null;
     combo_projection_order_key: unknown[] | null;
@@ -911,6 +913,8 @@ export class Transition extends ModelNode {
         this.trigger_scope = raw.trigger_scope;
         this.transitionIndex = raw.transitionIndex;
         this.transition_index = raw.transition_index ?? raw.transitionIndex;
+        this.sourcePath = raw.sourcePath ?? raw.source_path;
+        this.source_path = this.sourcePath;
         this.combo_origin_refs = raw.combo_origin_refs ?? [];
         this.combo_projection_key = raw.combo_projection_key ?? null;
         this.combo_projection_order_key = raw.combo_projection_order_key ?? null;

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import * as path from 'node:path';
+import {pathToFileURL} from 'node:url';
 
 import {collectRedundancyWarnings} from '../src/diagnostics/analyzers/redundancy';
 import {createDocument, packageModule, sliceByRange, trackTempDir, writeFile} from './support';
@@ -313,6 +314,62 @@ describe('diagnostics transition body ranges', () => {
         );
     });
 
+    it('publishes a forced expansion source-unreachable finding on the declaration', async () => {
+        const text = [
+            'state Root {',
+            '    state Group {',
+            '        state Reach;',
+            '        state Lost;',
+            '        state Done;',
+            '        [*] -> Reach;',
+            '        !* -> Done :: Panic;',
+            '    }',
+            '    [*] -> Group;',
+            '}',
+        ].join('\n');
+        const document = createDocument(text, '/tmp/transition-forced-unreachable-source.fcstm');
+        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+        const unreachable = targetDiagnostics(diagnostics, 'W_UNREACHABLE_TRANSITION');
+
+        assert.equal(unreachable.length, 1, JSON.stringify(diagnostics));
+        assert.equal(sliceByRange(text, unreachable[0].range).trim(), '!* -> Done :: Panic;');
+        assert.deepEqual(unreachable[0].data, {
+            reason: 'source_unreachable',
+            verification_scope: 'topological_only',
+            from_path: 'Root.Group.Lost',
+            to_path: 'Root.Group.Done',
+            source_state_path: 'Root.Group.Lost',
+            selection_owner_path: null,
+            source_path: '/tmp/transition-forced-unreachable-source.fcstm',
+            transition_index: 2,
+            forced_origin: '! * -> Done :: Panic;',
+            combo_origin_ids: [],
+        });
+    });
+
+    it('keeps editor combo origin arrays aligned with inspect origin arrays', async () => {
+        const text = [
+            'def int x = 0;',
+            'state Root {',
+            '    state Orphan;',
+            '    state Done;',
+            '    [*] -> Done;',
+            '    Orphan -> Done :: E1 + E2 effect {',
+            '        x = 2 ** 3 ** 4;',
+            '        x = 1;',
+            '    }',
+            '}',
+        ].join('\n');
+        const document = createDocument(text, '/tmp/transition-combo-origin-parity.fcstm');
+        const diagnostics = await packageModule.collectDocumentDiagnostics(document);
+        const unreachable = targetDiagnostics(diagnostics, 'W_UNREACHABLE_TRANSITION');
+
+        assert.equal(unreachable.length, 1, JSON.stringify(diagnostics));
+        assert.deepEqual(unreachable[0].data?.combo_origin_ids, [
+            'Root:Orphan->Done::: E1 + E2:effect=["x = 2 ** 3 ** 4;", "x = 1;"]',
+        ]);
+    });
+
     it('anchors forced constant guard diagnostics on the forced guard expression', async () => {
         const text = [
             'state Root {',
@@ -437,6 +494,182 @@ describe('diagnostics transition body ranges', () => {
         assert.deepEqual(
             transitionDiagnostics.map(item => item.data?.__rangeFallback).filter(Boolean),
             [],
+        );
+    });
+
+    it('reports unreachable transitions from hydrated imported models without host-range corruption', async () => {
+        const dir = trackTempDir('jsfcstm-unreachable-import-range-');
+        const childFile = path.join(dir, 'child.fcstm');
+        const hostFile = path.join(dir, 'main.fcstm');
+        const childText = [
+            'state Child {',
+            '    state Reach;',
+            '    state Orphan;',
+            '    state Done;',
+            '    state OrphanGroup {',
+            '        state Nested;',
+            '        [*] -> Nested;',
+            '    }',
+            '    [*] -> Reach;',
+            '    Orphan -> Done;',
+            '}',
+        ].join('\n');
+        writeFile(childFile, childText);
+        const hostText = [
+            'state Root {',
+            '    import "./child.fcstm" as Imported;',
+            '    [*] -> Imported;',
+            '}',
+        ].join('\n');
+        const document = createDocument(hostText, hostFile);
+        const publications = await packageModule.collectDocumentDiagnosticsByUri(document);
+        const diagnostics = publications.get(pathToFileURL(hostFile).toString()) || [];
+        const unreachable = publications.get(pathToFileURL(childFile).toString())
+            ?.filter(item => item.code === 'W_UNREACHABLE_TRANSITION') || [];
+
+        assert.equal(unreachable.length, 2, JSON.stringify(diagnostics));
+        assert.equal(
+            diagnostics.filter(item => item.code === 'W_UNREACHABLE_TRANSITION').length,
+            0,
+            JSON.stringify(diagnostics),
+        );
+        assert.deepEqual(
+            unreachable.map(item => [item.data?.from_path, item.data?.to_path]).sort(),
+            [
+                ['[*]', 'Child.OrphanGroup.Nested'],
+                ['Child.Orphan', 'Child.Done'],
+            ].sort(),
+        );
+        for (const item of unreachable) {
+            assert.equal(item.data?.verification_scope, 'topological_only');
+            assert.equal(item.data?.__rangeFallback, undefined);
+            assert.notEqual(sliceByRange(childText, item.range), childText);
+        }
+    });
+
+    it('uses assembled topology as the sole authority for imported reachability', async () => {
+        const dir = trackTempDir('jsfcstm-assembled-reachability-authority-');
+        const childFile = path.join(dir, 'child.fcstm');
+        const hostFile = path.join(dir, 'main.fcstm');
+        writeFile(childFile, [
+            'state Child {',
+            '    state Entry;',
+            '    [*] -> Entry;',
+            '}',
+        ].join('\n'));
+        const hostText = [
+            'state Root {',
+            '    import "./child.fcstm" as Imported;',
+            '    state Local;',
+            '    [*] -> Imported;',
+            '    Imported -> Local;',
+            '    Local -> [*];',
+            '}',
+        ].join('\n');
+
+        const publications = await packageModule.collectDocumentDiagnosticsByUri(
+            createDocument(hostText, hostFile),
+        );
+        const hostDiagnostics = publications.get(pathToFileURL(hostFile).toString()) || [];
+
+        assert.deepEqual(
+            hostDiagnostics.filter(item => item.code === 'W_UNREACHABLE_TRANSITION'),
+            [],
+            JSON.stringify(publications),
+        );
+    });
+
+    it('publishes resolved ancestor and global endpoints in document diagnostics', async () => {
+        const filePath = '/tmp/transition-resolved-endpoints.fcstm';
+        const text = [
+            'state Root {',
+            '    state Shared;',
+            '    state Group {',
+            '        state Leaf;',
+            '        state Done;',
+            '        [*] -> Leaf;',
+            '        Shared -> Done :: E1 + E2;',
+            '    }',
+            '    [*] -> Group;',
+            '}',
+        ].join('\n');
+        const publications = await packageModule.collectDocumentDiagnosticsByUri(
+            createDocument(text, filePath),
+        );
+        const diagnostics = publications.get(pathToFileURL(filePath).toString())
+            ?.filter(item => item.code === 'W_UNREACHABLE_TRANSITION') || [];
+
+        assert.equal(diagnostics.length, 1, JSON.stringify(publications));
+        assert.equal(diagnostics[0].data?.from_path, 'Root.Shared');
+        assert.equal(diagnostics[0].data?.to_path, 'Root.Group.Done');
+        assert.deepEqual(diagnostics[0].data?.combo_origin_ids, [
+            'Root.Group:Shared->Done::: E1 + E2',
+        ]);
+    });
+
+    it('does not return duplicate root-authored topology findings from the collector', async () => {
+        const dir = trackTempDir('jsfcstm-assembled-root-diagnostic-dedupe-');
+        const childFile = path.join(dir, 'child.fcstm');
+        const hostFile = path.join(dir, 'main.fcstm');
+        writeFile(childFile, 'state Child;');
+        const hostText = [
+            'state Root {',
+            '    import "./child.fcstm" as Imported;',
+            '    state Orphan;',
+            '    [*] -> Imported;',
+            '    Orphan -> [*];',
+            '}',
+        ].join('\n');
+
+        const publications = await packageModule.collectDocumentDiagnosticsByUri(
+            createDocument(hostText, hostFile),
+        );
+        const hostDiagnostics = publications.get(pathToFileURL(hostFile).toString()) || [];
+        const unreachable = hostDiagnostics.filter(item => item.code === 'W_UNREACHABLE_TRANSITION');
+
+        assert.equal(unreachable.length, 1, JSON.stringify(publications));
+        assert.equal(unreachable[0].data?.source_path, hostFile);
+    });
+
+    it('uses host topology for an imported subtree mounted under an unreachable composite', async () => {
+        const dir = trackTempDir('jsfcstm-unreachable-import-host-topology-');
+        const childFile = path.join(dir, 'child.fcstm');
+        const hostFile = path.join(dir, 'main.fcstm');
+        const childText = [
+            'state Child {',
+            '    state Reach;',
+            '    state Orphan;',
+            '    state Done;',
+            '    [*] -> Reach;',
+            '    Orphan -> Done;',
+            '}',
+        ].join('\n');
+        writeFile(childFile, childText);
+        const hostText = [
+            'state Root {',
+            '    state Live;',
+            '    state Dead {',
+            '        import "./child.fcstm" as Imported;',
+            '    }',
+            '    [*] -> Live;',
+            '}',
+        ].join('\n');
+        const document = createDocument(hostText, hostFile);
+        const publications = await packageModule.collectDocumentDiagnosticsByUri(document);
+        const childDiagnostics = publications.get(pathToFileURL(childFile).toString())
+            ?.filter(item => item.code === 'W_UNREACHABLE_TRANSITION') || [];
+
+        assert.equal(childDiagnostics.length, 2, JSON.stringify(publications));
+        assert.deepEqual(
+            childDiagnostics.map(item => [item.data?.from_path, item.data?.to_path]).sort(),
+            [
+                ['[*]', 'Child.Reach'],
+                ['Child.Orphan', 'Child.Done'],
+            ].sort(),
+        );
+        assert.deepEqual(
+            childDiagnostics.map(item => sliceByRange(childText, item.range).trim()).sort(),
+            ['[*] -> Reach;', 'Orphan -> Done;'].sort(),
         );
     });
 

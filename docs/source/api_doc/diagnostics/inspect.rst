@@ -53,14 +53,14 @@ TransitionInfo
 -----------------------------------------------------
 
 .. autoclass:: TransitionInfo
-    :members: from_path,to_path,event,event_scope,guard,effect,effect_self_assigns,is_forced,forced_origin,transition_index,span,effect_spans,effect_self_assign_spans,combo_origin_refs,combo_projection_key,combo_projection_order_key,combo_reuse_group_id,combo_priority_run_identity,combo_priority_run_index
+    :members: from_path,to_path,event,event_scope,guard,effect,effect_self_assigns,is_forced,forced_origin,transition_index,span,effect_spans,effect_self_assign_spans,combo_origin_refs,combo_projection_key,combo_projection_order_key,combo_reuse_group_id,combo_priority_run_identity,combo_priority_run_index,source_path
 
 
 ComboOriginRefInfo
 -----------------------------------------------------
 
 .. autoclass:: ComboOriginRefInfo
-    :members: origin_id,term_index,role,consumes_term,term_text,transition_span,trigger_span,term_span,value_span,removal_span
+    :members: origin_id,term_index,role,consumes_term,term_text,transition_span,trigger_span,term_span,value_span,removal_span,source_kind,source_path,selection_owner_path,target_kind,target_path
 
 
 ComboOriginTermInfo

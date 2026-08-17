@@ -33,6 +33,7 @@ from pyfcstm.diagnostics import (
 )
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
+from pyfcstm.utils.validate import Span
 
 from ._schema_check import assert_all_diags_match_schema
 
@@ -120,6 +121,17 @@ def _transition_info(
         span=span,
         effect_spans=tuple(effect_spans),
     )
+
+
+@pytest.mark.unittest
+def test_transition_info_preserves_positional_span_binding():
+    span = Span(line=7, column=3)
+    transition = TransitionInfo(
+        'Root.A', 'Root.B', None, None, None, None, (), False, None, 0, span,
+    )
+
+    assert transition.span == span
+    assert transition.source_path is None
 
 
 def _action_info(
@@ -644,6 +656,22 @@ class TestSchemaJsonValidates:
                 node = node[part]
             node['unexpected'] = True
             assert list(validator.iter_errors(invalid))
+
+    def test_schema_accepts_legacy_transition_provenance_payloads(self):
+        jsonschema = pytest.importorskip('jsonschema')
+        schema = self._load_schema()
+        validator = jsonschema.Draft7Validator(schema)
+        payload = inspect_model(_parse(SIMPLE_DSL)).to_json()
+        for transition in payload['transitions'] + payload['combo_transitions']:
+            transition.pop('source_path', None)
+            for ref in transition.get('combo_origin_refs', []):
+                for field in (
+                    'source_kind', 'source_path', 'selection_owner_path',
+                    'target_kind', 'target_path',
+                ):
+                    ref.pop(field, None)
+
+        assert list(validator.iter_errors(payload)) == []
 
     def test_schema_rejects_contradictory_verification_states(self):
         jsonschema = pytest.importorskip('jsonschema')

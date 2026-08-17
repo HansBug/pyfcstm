@@ -1656,6 +1656,92 @@ W_UNREACHABLE_STATE:
         [*] -> Idle;
     }
 
+W_UNREACHABLE_TRANSITION:
+  severity: warning
+  span_object: transition
+  capability: pure_static
+  emit_tier: static_pipeline
+  description: >-
+    An authored transition has a source state or initial-selection owner that
+    is outside the guard-agnostic topology reachable from the root entry.
+    This is a topological fact and does not claim that an external event is
+    unavailable or that a guard is unsatisfiable.
+  refs:
+    reason:
+      type: str
+      required: true
+      description: Stable reason for the topological transition finding.
+      enum: ['source_unreachable']
+    verification_scope:
+      type: str
+      required: true
+      description: Proof boundary of the finding.
+      enum: ['topological_only']
+    from_path:
+      type: str
+      required: true
+      description: Source endpoint path, or ``[*]`` for an initial transition.
+    to_path:
+      type: str
+      required: true
+      description: Target endpoint path, or ``[*]`` for an exit transition.
+    source_state_path:
+      type: str_or_null
+      required: false
+      description: Unreachable normal source or concrete forced-expansion source, or null for initial transitions.
+    selection_owner_path:
+      type: str_or_null
+      required: false
+      description: Unreachable composite that owns an initial selection, or null for normal transitions.
+    source_path:
+      type: str_or_null
+      required: false
+      description: Source file that authored the transition, when source metadata is available.
+    transition_index:
+      type: int_or_null
+      required: false
+      description: Stable model-order transition index when available.
+    forced_origin:
+      type: str_or_null
+      required: false
+      description: Authored forced-transition text when this edge came from a forced declaration.
+    combo_origin_ids:
+      type: list[str]
+      required: true
+      description: Authored combo origin identifiers represented by this finding.
+    mount_path:
+      type: str_or_null
+      required: false
+      description: >-
+        Raw assembled endpoint path used to preserve the identity of one
+        imported mount instance. This value is intentionally not localized to
+        the authored child namespace.
+  for_llm:
+    summary: >-
+      This transition, or this concrete forced-transition expansion, cannot be
+      selected because its source or initial selection owner is not connected
+      to the root entry topology. The proof ignores guards and does not
+      establish event-environment availability.
+    recommended_actions:
+      - kind: add_inbound_transition
+        target: transition_source
+        rationale: Connect the source state or owning composite to the root-reachable topology if the transition is intended to run.
+      - kind: remove_transition
+        target: transition
+        rationale: Remove the transition if it belongs to an intentionally unused state or composite.
+    do_not:
+      - "Do not weaken or remove a guard to silence this topological finding; guard satisfiability is a separate diagnostic."
+      - "Do not invent an external event to silence this finding; external trigger availability is outside the static proof scope."
+      - "For a forced declaration, do not remove the whole declaration solely because one generated expansion is unreachable; inspect the other expansions first."
+  example_dsl: |
+    state Root {
+        state Active;
+        state Orphan;
+        state Done;
+        [*] -> Active;
+        Orphan -> Done;
+    }
+
 W_GUARD_CONST_FALSE:
   severity: warning
   span_object: guard_expression

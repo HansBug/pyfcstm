@@ -14,7 +14,7 @@ import {
 } from '../utils/text';
 import {getImportWorkspaceIndex} from '../workspace/imports';
 import {getWorkspaceGraph} from '../workspace';
-import {resolveRangeFromRefsDetailed, spanToRange} from './inspect-ranges';
+import {resolveRangeFromRefsDetailed, spanToRange, statePathIsLocalToDocument} from './inspect-ranges';
 import {suggestedFixDiagnosticRange, suggestedFixIssueRange} from './suggested-fixes';
 
 // Only suppress inspect codes that the semantic analyzer already reports with
@@ -24,6 +24,13 @@ export const SUPPRESSED_FROM_INSPECT_SURFACE = new Set([
     'W_UNREACHABLE_STATE',
     'W_UNUSED_EVENT',
 ]);
+
+// The map remains the publication shape. This optional metadata lets the LSP
+// distinguish an assembled topology result with no findings from a collector
+// that did not evaluate an imported target.
+export type FcstmDiagnosticPublications = Map<string, FcstmDiagnostic[]> & {
+    authoritativeTargets?: ReadonlySet<string>;
+};
 
 function canonicalDiagnosticData(value: unknown): unknown {
     if (Array.isArray(value)) {
@@ -210,6 +217,128 @@ function shouldSuppressInspectDiagnostic(
     return Boolean(semanticState && semanticState.ast.imports.length > 0);
 }
 
+function isSuppressedFromInspectSurface(item: ModelDiagnosticJson): boolean {
+    if (!SUPPRESSED_FROM_INSPECT_SURFACE.has(item.code)) return false;
+    // The semantic model does not carry the runtime's canonical forced-origin
+    // text, so generated forced edges remain inspect-backed.
+    if (item.code === 'W_UNREACHABLE_TRANSITION' && typeof item.refs.forced_origin === 'string') {
+        return false;
+    }
+    return true;
+}
+
+function inspectItemSourcePath(item: ModelDiagnosticJson): string | null {
+    const refs = item.refs;
+    for (const key of ['source_state_path', 'selection_owner_path', 'from_path']) {
+        const value = refs[key];
+        if (typeof value === 'string' && value !== '[*]') return value;
+    }
+    return null;
+}
+
+function inspectItemAuthoredByDocument(
+    document: TextDocumentLike,
+    item: ModelDiagnosticJson,
+): boolean {
+    const authoredPath = item.refs.source_path;
+    const documentPath = document.filePath || document.uri?.fsPath;
+    return typeof authoredPath === 'string'
+        && typeof documentPath === 'string'
+        && authoredPath === documentPath;
+}
+
+function localizeImportedStatePath(
+    model: Parameters<typeof inspectModel>[0],
+    statePath: string | null,
+    sourceFile: string,
+    authoredRootName: string,
+): string | null {
+    if (!statePath || statePath === '[*]') return statePath;
+    const segments = statePath.split('.');
+    for (let length = segments.length; length >= 1; length -= 1) {
+        const candidate = segments.slice(0, length).join('.');
+        const state = model.lookups.statesByPath[candidate];
+        const importedFromFile = state?.importedFromFile ?? state?.imported_from_file;
+        if (importedFromFile !== sourceFile) continue;
+        return [authoredRootName, ...segments.slice(length)].join('.');
+    }
+    return statePath;
+}
+
+function localizeImportedDiagnostic(
+    item: ModelDiagnosticJson,
+    model: Parameters<typeof inspectModel>[0],
+    sourceFile: string,
+    authoredRootName: string,
+): ModelDiagnosticJson {
+    const refs = {...item.refs};
+    const replacements = new Map<string, string>();
+    for (const key of ['from_path', 'to_path', 'source_state_path', 'selection_owner_path']) {
+        const value = refs[key];
+        if (typeof value !== 'string' || value === '[*]') continue;
+        const localized = localizeImportedStatePath(
+            model,
+            value,
+            sourceFile,
+            authoredRootName,
+        );
+        if (localized === null || localized === value) continue;
+        refs[key] = localized;
+        replacements.set(value, localized);
+    }
+    let message = item.message;
+    for (const [source, target] of [...replacements.entries()].sort((left, right) => right[0].length - left[0].length)) {
+        message = message.split(source).join(target);
+    }
+    const comboOriginIds = refs.combo_origin_ids;
+    if (Array.isArray(comboOriginIds)) {
+        refs.combo_origin_ids = comboOriginIds.map(originId => {
+            if (typeof originId !== 'string') return originId;
+            const separator = originId.indexOf(':');
+            if (separator <= 0) return originId;
+            const ownerPath = originId.slice(0, separator);
+            const localizedOwner = localizeImportedStatePath(
+                model,
+                ownerPath,
+                sourceFile,
+                authoredRootName,
+            );
+            return localizedOwner && localizedOwner !== ownerPath
+                ? `${localizedOwner}${originId.slice(separator)}`
+                : originId;
+        });
+    }
+    return {...item, message, refs};
+}
+
+function assembledMountPath(item: ModelDiagnosticJson): string | null {
+    const refs = item.refs;
+    for (const key of ['from_path', 'to_path', 'source_state_path', 'selection_owner_path']) {
+        const value = refs[key];
+        if (typeof value === 'string' && value !== '[*]') {
+            return value;
+        }
+    }
+    return null;
+}
+
+function withAssembledMountIdentity(
+    item: ModelDiagnosticJson,
+    sourceFile: string,
+    rootFile: string,
+): ModelDiagnosticJson {
+    if (sourceFile === rootFile) return item;
+    const mountPath = assembledMountPath(item);
+    if (!mountPath) return item;
+    return {
+        ...item,
+        refs: {
+            ...item.refs,
+            mount_path: mountPath,
+        },
+    };
+}
+
 export function collectInspectDiagnosticsFromItems(
     document: TextDocumentLike,
     semantic: FcstmSemanticDocument,
@@ -228,7 +357,7 @@ export function collectInspectDiagnosticsFromItems(
     const seenEffectSelfAssigns = new Map<string, number>();
 
     for (const item of items) {
-        if (SUPPRESSED_FROM_INSPECT_SURFACE.has(item.code)) continue;
+        if (isSuppressedFromInspectSurface(item)) continue;
         if (shouldSuppressInspectDiagnostic(semantic, item)) continue;
         const diagnostic: FcstmDiagnostic = {
             range: fullRange,
@@ -238,7 +367,19 @@ export function collectInspectDiagnosticsFromItems(
             code: item.code,
             data: item.refs,
         };
-        const primarySpanRange = spanToRange(item.span);
+        // Hydrated workspace models retain source spans from imported files.
+        // A span without its owning URI must not be applied to the host file;
+        // the refs/range resolver can still anchor the import boundary or fall
+        // back to the full document while the imported document owns its span.
+        const sourcePath = inspectItemSourcePath(item);
+        const primarySpanRange = inspectItemAuthoredByDocument(document, item)
+            || sourcePath === null || statePathIsLocalToDocument(
+                document,
+                semantic,
+                sourcePath,
+            )
+            ? spanToRange(item.span)
+            : null;
         const refResolution = resolveRangeFromRefsDetailed(document, semantic, item.refs, seenEffectSelfAssigns);
         const problemRange = primarySpanRange
             ?? refResolution.range
@@ -333,9 +474,10 @@ export function shouldSuppressParseRecoveryDiagnostic(
     return rangeIsEmptyOrInvalid(diagnostic.range);
 }
 
-export async function collectDocumentDiagnostics(
-    document: TextDocumentLike
-): Promise<FcstmDiagnostic[]> {
+export async function collectDocumentDiagnosticsByUri(
+    document: TextDocumentLike,
+    rootUri = documentUri(document),
+): Promise<FcstmDiagnosticPublications> {
     const parseResult = await getParser().parse(document.getText());
     const parseDiagnostics = parseResult.errors.map(error => convertParseErrorToDiagnostic(error, document));
     const diagnostics = [...parseDiagnostics];
@@ -343,11 +485,89 @@ export async function collectDocumentDiagnostics(
     const snapshot = await getWorkspaceGraph().buildSnapshotForDocument(document);
     const node = snapshot.nodes[snapshot.rootFile];
     if (node?.semantic) {
-        diagnostics.push(...collectSemanticAnalysisDiagnosticsFromSemantic(node.semantic, document));
+        const localSemanticDiagnostics = collectSemanticAnalysisDiagnosticsFromSemantic(node.semantic, document);
+        const localTopologyDiagnostics = node.modelAuthority === 'assembled'
+            ? localSemanticDiagnostics.filter(item => item.code !== 'W_UNREACHABLE_TRANSITION')
+            : localSemanticDiagnostics;
+        diagnostics.push(...localTopologyDiagnostics);
         const localModel = buildStateMachineModel(node.semantic);
         if (localModel) {
-            diagnostics.push(...collectInspectModelDiagnostics(document, node.semantic, localModel, diagnostics));
+            const localInspectDiagnostics = collectInspectModelDiagnostics(
+                document,
+                node.semantic,
+                localModel,
+                diagnostics,
+            );
+            diagnostics.push(...(
+                node.modelAuthority === 'assembled'
+                    ? localInspectDiagnostics.filter(item => item.code !== 'W_UNREACHABLE_TRANSITION')
+                    : localInspectDiagnostics
+            ));
         }
     }
-    return diagnostics.filter(diagnostic => !shouldSuppressParseRecoveryDiagnostic(diagnostic, parseDiagnostics));
+
+    const authoritativeTargets = new Set<string>();
+    const publications = Object.assign(
+        new Map<string, FcstmDiagnostic[]>(),
+        {authoritativeTargets},
+    ) as FcstmDiagnosticPublications;
+    publications.set(
+        rootUri,
+        diagnostics.filter(diagnostic => !shouldSuppressParseRecoveryDiagnostic(diagnostic, parseDiagnostics)),
+    );
+
+    // A hydrated root model carries imported paths in the host namespace, so
+    // topology must be checked against that assembled model. Use the model's
+    // imported-root provenance only to partition the resulting diagnostics by
+    // authored URI; running a child model as a new root would incorrectly make
+    // a subtree mounted under an unreachable host state appear reachable.
+    if (node?.model && node.modelAuthority === 'assembled') {
+        const assembledModel = node.model;
+        const assembledDiagnostics = inspectModel(assembledModel).diagnostics;
+        for (const filePath of snapshot.order) {
+            const authoredNode = snapshot.nodes[filePath];
+            if (!authoredNode?.semantic) continue;
+            const authoredRootName = authoredNode.semantic.summary.rootStateName
+                || authoredNode.ast?.rootState?.name;
+            if (!authoredRootName) continue;
+            const isRootFile = filePath === snapshot.rootFile || filePath === document.filePath;
+            const authoredUri = isRootFile
+                ? rootUri
+                : documentUri(authoredNode.document);
+            authoritativeTargets.add(authoredUri);
+            const items = assembledDiagnostics.filter(item => {
+                if (item.code !== 'W_UNREACHABLE_TRANSITION') return false;
+                return item.refs.source_path === filePath;
+            }).map(item => localizeImportedDiagnostic(
+                withAssembledMountIdentity(item, filePath, snapshot.rootFile),
+                assembledModel,
+                filePath,
+                authoredRootName,
+            ));
+            if (items.length === 0) continue;
+            const authoredDiagnostics = collectInspectDiagnosticsFromItems(
+                authoredNode.document,
+                authoredNode.semantic,
+                items,
+                isRootFile ? diagnostics : [],
+            );
+            if (authoredDiagnostics.length === 0) continue;
+            if (isRootFile) {
+                publications.set(authoredUri, [
+                    ...(publications.get(authoredUri) || []),
+                    ...authoredDiagnostics,
+                ]);
+            } else {
+                publications.set(authoredUri, authoredDiagnostics);
+            }
+        }
+    }
+    return publications;
+}
+
+export async function collectDocumentDiagnostics(
+    document: TextDocumentLike
+): Promise<FcstmDiagnostic[]> {
+    const publications = await collectDocumentDiagnosticsByUri(document);
+    return publications.get(documentUri(document)) || [];
 }

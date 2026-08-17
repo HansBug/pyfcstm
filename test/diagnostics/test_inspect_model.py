@@ -1038,6 +1038,29 @@ state Root {
         assert stats.unreachable_transitions == 2
         assert stats.unreachable_transition_reasons == {"redundant": 2}
 
+    def test_structure_statistics_keeps_overlapping_forced_verify_reasons(self):
+        report = inspect_model(
+            _parse(
+                """
+                state Root {
+                    state X;
+                    state Y;
+                    [*] -> X;
+                    !X -> Y :: Go;
+                    !X -> Y :: Go;
+                }
+                """
+            ),
+            enable_verify=True,
+            max_complexity_tier="smt_linear",
+        )
+        assert any(diagnostic.code == "W_TRANSITION_SHADOWED" for diagnostic in report.diagnostics)
+        assert report.structure_statistics.unreachable_transitions == 1
+        assert report.structure_statistics.unreachable_transition_reasons == {
+            "redundant": 1,
+            "shadowed": 1,
+        }
+
     def test_structure_statistics_maps_nested_verify_dead_guard(self):
         report = inspect_model(
             _parse(

@@ -1451,16 +1451,37 @@ function forcedExpansionGroups(
     forcedTransitions: ForcedTransitionInfo[],
 ): TransitionInfo[][] {
     const forcedExpansions = transitions.filter(item => item.is_forced);
-    return forcedTransitions.map(declaration => forcedExpansions.filter(item =>
-        item.forced_origin === declaration.original_raw &&
-        (
-            declaration.state_path.length === 0 ||
-            item.from_path === INIT_MARK ||
-            (item.from_path.includes('.')
-                ? item.from_path.slice(0, item.from_path.lastIndexOf('.'))
-                : item.from_path) === declaration.state_path
-        ),
-    ));
+    const groups: TransitionInfo[][] = forcedTransitions.map(() => []);
+    const declarationIndexes = new Map<string, number[]>();
+    forcedTransitions.forEach((declaration, index) => {
+        const identity = `${declaration.state_path}\u0000${declaration.original_raw}`;
+        const indexes = declarationIndexes.get(identity) ?? [];
+        indexes.push(index);
+        declarationIndexes.set(identity, indexes);
+    });
+    for (const [identity, indexes] of declarationIndexes) {
+        const separator = identity.indexOf('\u0000');
+        const statePath = identity.slice(0, separator);
+        const originalRaw = identity.slice(separator + 1);
+        let remaining = forcedExpansions.filter(item =>
+            item.forced_origin === originalRaw &&
+            (
+                statePath.length === 0 ||
+                item.from_path === INIT_MARK ||
+                (item.from_path.includes('.')
+                    ? item.from_path.slice(0, item.from_path.lastIndexOf('.'))
+                    : item.from_path) === statePath
+            ),
+        );
+        for (const index of indexes) {
+            const count = forcedTransitions[index].expansion_count;
+            if (count > 0) {
+                groups[index] = remaining.slice(0, count);
+                remaining = remaining.slice(count);
+            }
+        }
+    }
+    return groups;
 }
 
 function buildStructureStatistics(

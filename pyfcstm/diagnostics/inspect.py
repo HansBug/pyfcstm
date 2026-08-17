@@ -1857,18 +1857,40 @@ def _forced_expansion_groups(
     duplicate therefore receives the same matching expansion set.
     """
     forced_expansions = tuple(item for item in transitions if item.is_forced)
-    groups: List[Tuple[TransitionInfo, ...]] = []
-    for declaration in forced_transitions:
+    groups: List[Tuple[TransitionInfo, ...]] = [() for _ in forced_transitions]
+    declaration_indexes: Dict[Tuple[Optional[str], str], List[int]] = {}
+    for index, declaration in enumerate(forced_transitions):
+        declaration_indexes.setdefault(
+            (declaration.state_path, declaration.original_raw),
+            [],
+        ).append(index)
+    for identity, indexes in declaration_indexes.items():
+        state_path, original_raw = identity
         matches = tuple(
             item for item in forced_expansions
-            if item.forced_origin == declaration.original_raw
+            if item.forced_origin == original_raw
             and (
-                not declaration.state_path
+                not state_path
                 or item.from_path == _INIT_MARK
-                or item.from_path.rsplit('.', 1)[0] == declaration.state_path
+                or item.from_path.rsplit('.', 1)[0] == state_path
             )
         )
-        groups.append(matches)
+        remaining = list(matches)
+        for index in indexes:
+            declaration = forced_transitions[index]
+            span_matches = (
+                tuple(item for item in remaining if item.span == declaration.span)
+                if declaration.span is not None
+                else ()
+            )
+            if span_matches:
+                groups[index] = span_matches
+                remaining = [item for item in remaining if item not in span_matches]
+                continue
+            count = declaration.expansion_count
+            if count > 0:
+                groups[index] = tuple(remaining[:count])
+                remaining = remaining[count:]
     return tuple(groups)
 
 

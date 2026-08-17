@@ -33,6 +33,7 @@ from pyfcstm.diagnostics import (
 )
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
+from pyfcstm.utils.validate import Span
 
 from ._schema_check import assert_all_diags_match_schema
 
@@ -120,6 +121,17 @@ def _transition_info(
         span=span,
         effect_spans=tuple(effect_spans),
     )
+
+
+@pytest.mark.unittest
+def test_transition_info_preserves_positional_span_binding():
+    span = Span(line=7, column=3)
+    transition = TransitionInfo(
+        'Root.A', 'Root.B', None, None, None, None, (), False, None, 0, span,
+    )
+
+    assert transition.span == span
+    assert transition.source_path is None
 
 
 def _action_info(

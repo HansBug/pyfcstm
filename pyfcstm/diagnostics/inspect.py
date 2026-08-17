@@ -301,7 +301,6 @@ class TransitionInfo:
     is_forced: bool
     forced_origin: Optional[str]
     transition_index: Optional[int]
-    source_path: Optional[str] = None
     span: Optional['Span'] = None
     effect_spans: Tuple['Span', ...] = field(default_factory=tuple)
     effect_self_assign_spans: Tuple[Optional['Span'], ...] = field(default_factory=tuple)
@@ -311,6 +310,9 @@ class TransitionInfo:
     combo_reuse_group_id: Optional[str] = None
     combo_priority_run_identity: Optional[Tuple[str, Optional[int]]] = None
     combo_priority_run_index: Optional[int] = None
+    # Keep this new optional field after the pre-existing positional fields so
+    # callers that pass ``span`` positionally retain their binding.
+    source_path: Optional[str] = None
 
 @dataclass(frozen=True)
 class ComboOriginRefInfo:

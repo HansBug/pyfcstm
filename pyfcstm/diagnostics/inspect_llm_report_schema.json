@@ -219,7 +219,12 @@
       "required": ["kind", "verify_required"],
       "properties": {
         "kind": { "type": "string", "enum": ["inspect-static", "verify-backed", "unknown"] },
-        "verify_required": { "type": "boolean" }
+        "verify_required": { "type": "boolean" },
+        "source_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Stable algorithm@scope identifiers for contributing verification evidence; omitted when unavailable."
+        }
       }
     }
   }

@@ -1650,11 +1650,54 @@ function buildUnreachableTransitionDiagnostics(
         const descendants = [...leafPaths].filter(item => item.startsWith(`${path}.`));
         return descendants.length > 0 && descendants.every(item => unreachableLeafPaths.has(item));
     };
+    const verificationSourceId = (diagnostic: ModelDiagnosticJson): string | null => {
+        const refs = diagnostic.refs;
+        const algorithm = refs.algorithm_name;
+        const scope = refs.verification_scope;
+        const backed = refs.verify_backed === true ||
+            (typeof algorithm === 'string' && typeof scope === 'string');
+        if (!backed) return null;
+        if (typeof algorithm === 'string' && typeof scope === 'string') return `${algorithm}@${scope}`;
+        if (typeof algorithm === 'string') return algorithm;
+        if (typeof scope === 'string') return `verify-pipeline@${scope}`;
+        return 'verify-pipeline';
+    };
+    const verificationSourcesByUnreachablePath = new Map<string, Set<string>>();
+    diagnostics
+        .filter(item => item.code === 'W_UNREACHABLE_STATE')
+        .forEach(item => {
+            const path = item.refs.state_path;
+            const source = verificationSourceId(item);
+            if (typeof path !== 'string' || source === null) return;
+            const sources = verificationSourcesByUnreachablePath.get(path) ?? new Set<string>();
+            sources.add(source);
+            verificationSourcesByUnreachablePath.set(path, sources);
+        });
+    const sourceVerificationSources = (path: string): Set<string> => {
+        const sources = new Set(verificationSourcesByUnreachablePath.get(path) ?? []);
+        const state = statesByPath.get(path);
+        if (!state || !state.is_composite) return sources;
+        [...leafPaths]
+            .filter(item => item.startsWith(`${path}.`))
+            .forEach(item => {
+                for (const source of verificationSourcesByUnreachablePath.get(item) ?? []) {
+                    sources.add(source);
+                }
+            });
+        return sources;
+    };
     const reasonsByKey = new Map<string, Set<string>>();
+    const verificationSourcesByKey = new Map<string, Set<string>>();
+    const verifyBackedKeys = new Set<string>();
     const addReason = (key: string, reason: string): void => {
         const reasons = reasonsByKey.get(key) ?? new Set<string>();
         reasons.add(reason);
         reasonsByKey.set(key, reasons);
+    };
+    const addVerificationSources = (key: string, sources: Iterable<string>): void => {
+        const bucket = verificationSourcesByKey.get(key) ?? new Set<string>();
+        for (const source of sources) bucket.add(source);
+        if (bucket.size > 0) verificationSourcesByKey.set(key, bucket);
     };
     const forcedGroups = forcedExpansionGroups(transitions, forcedTransitions);
     const forcedKeysByIdentity = new Map<string, string[]>();
@@ -1671,18 +1714,32 @@ function buildUnreachableTransitionDiagnostics(
             const expansions = Number.isInteger(index) ? forcedGroups[index] ?? [] : [];
             if (expansions.length > 0 && expansions.every(item => sourceIsUnreachable(item.from_path))) {
                 addReason(key, 'unreachable_source_state');
+                for (const item of expansions) addVerificationSources(key, sourceVerificationSources(item.from_path));
             }
         } else if (sourceIsUnreachable(transition.from_path)) {
             addReason(key, 'unreachable_source_state');
+            addVerificationSources(key, sourceVerificationSources(transition.from_path));
         }
     });
     const eventNames = new Set(diagnostics
         .filter(item => item.code === 'W_EVENT_UNREACHABLE_EMIT')
         .map(item => item.refs.event_name)
         .filter((name): name is string => typeof name === 'string'));
+    const verificationSourcesByEvent = new Map<string, Set<string>>();
+    diagnostics
+        .filter(item => item.code === 'W_EVENT_UNREACHABLE_EMIT')
+        .forEach(item => {
+            const event = item.refs.event_name;
+            const source = verificationSourceId(item);
+            if (typeof event !== 'string' || source === null) return;
+            const sources = verificationSourcesByEvent.get(event) ?? new Set<string>();
+            sources.add(source);
+            verificationSourcesByEvent.set(event, sources);
+        });
     authored.forEach(([key, transition]) => {
         if (transition.event !== null && eventNames.has(transition.event)) {
             addReason(key, 'unreachable_event_consumer');
+            addVerificationSources(key, verificationSourcesByEvent.get(transition.event) ?? []);
         }
     });
     for (const diagnostic of diagnostics) {
@@ -1748,6 +1805,13 @@ function buildUnreachableTransitionDiagnostics(
         if (keys.length === 0 && typeof refs.from_path === 'string' && typeof refs.to_path === 'string') {
             keys = authored.filter(([, item]) => item.from_path === refs.from_path && item.to_path === refs.to_path).map(([key]) => key);
         }
+        const source = verificationSourceId(diagnostic);
+        if (source !== null) {
+            for (const key of keys) {
+                verifyBackedKeys.add(key);
+                addVerificationSources(key, [source]);
+            }
+        }
         const reason = diagnostic.code === 'W_FORCED_NEVER_EXPANDS'
             ? 'forced_never_expands'
             : diagnostic.code.includes('GUARD')
@@ -1768,6 +1832,10 @@ function buildUnreachableTransitionDiagnostics(
                 to_path: transition.to_path,
                 transition_index: transition.transition_index,
                 reasons: sortedReasons,
+                ...(verifyBackedKeys.has(key) ? {verify_backed: true} : {}),
+                ...(verificationSourcesByKey.has(key)
+                    ? {verification_source_ids: [...verificationSourcesByKey.get(key)!].sort()}
+                    : {}),
             },
         } satisfies ModelDiagnosticJson;
     });

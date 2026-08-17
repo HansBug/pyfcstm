@@ -1,0 +1,149 @@
+[
+  {
+    "name": "baseline-authored-transitions",
+    "dsl": "def int counter = 0;\nstate Root {\n    state Idle;\n    state Active;\n    [*] -> Idle;\n    Idle -> Active :: Go;\n    Active -> Idle effect { counter = counter + 1; };\n}\n",
+    "policy": null,
+    "expected": {
+      "state_count": 3,
+      "leaf_state_count": 2,
+      "composite_state_count": 1,
+      "authored_transition_count": 2,
+      "transitions_per_state": 0.6666666666666666,
+      "states_per_transition": 1.5,
+      "unreachable_leaf_states": 0,
+      "unreachable_leaf_state_rate": 0.0,
+      "unreachable_transitions": 0,
+      "unreachable_transition_rate": 0.0,
+      "unreachable_transition_reasons": {},
+      "thresholds": {
+        "max_transitions_per_state": 6.0,
+        "max_unreachable_leaf_state_rate": 0.1,
+        "max_unreachable_transition_rate": 0.1
+      },
+      "exceeded_thresholds": [],
+      "unguarded_transitions": 2,
+      "guard_eligible_transitions": 2,
+      "unguarded_rate": 1.0,
+      "missing_effect_transitions": 1,
+      "effect_eligible_transitions": 2,
+      "missing_effect_rate": 0.5,
+      "eventless_unconditional_transitions": 1,
+      "behavior_transitions": 2,
+      "eventless_unconditional_rate": 0.5
+    }
+  },
+  {
+    "name": "unreachable-source-transition",
+    "dsl": "state Root {\n    state Live;\n    state Orphan;\n    state Error;\n    [*] -> Live;\n    Orphan -> Error;\n}\n",
+    "policy": null,
+    "expected": {
+      "state_count": 4,
+      "leaf_state_count": 3,
+      "composite_state_count": 1,
+      "authored_transition_count": 1,
+      "transitions_per_state": 0.25,
+      "states_per_transition": 4.0,
+      "unreachable_leaf_states": 2,
+      "unreachable_leaf_state_rate": 0.6666666666666666,
+      "unreachable_transitions": 1,
+      "unreachable_transition_rate": 1.0,
+      "unreachable_transition_reasons": {
+        "unreachable_source_state": 1
+      },
+      "thresholds": {
+        "max_transitions_per_state": 6.0,
+        "max_unreachable_leaf_state_rate": 0.1,
+        "max_unreachable_transition_rate": 0.1
+      },
+      "exceeded_thresholds": [
+        "unreachable_leaf_state_rate",
+        "unreachable_transition_rate"
+      ],
+      "unguarded_transitions": 1,
+      "guard_eligible_transitions": 1,
+      "unguarded_rate": 1.0,
+      "missing_effect_transitions": 1,
+      "effect_eligible_transitions": 1,
+      "missing_effect_rate": 1.0,
+      "eventless_unconditional_transitions": 1,
+      "behavior_transitions": 1,
+      "eventless_unconditional_rate": 1.0
+    }
+  },
+  {
+    "name": "guard-false-reason-bucket",
+    "dsl": "state Root {\n    state A;\n    state B;\n    [*] -> A;\n    A -> B : if [0 < 0];\n    A -> B;\n}\n",
+    "policy": null,
+    "expected": {
+      "state_count": 3,
+      "leaf_state_count": 2,
+      "composite_state_count": 1,
+      "authored_transition_count": 2,
+      "transitions_per_state": 0.6666666666666666,
+      "states_per_transition": 1.5,
+      "unreachable_leaf_states": 0,
+      "unreachable_leaf_state_rate": 0.0,
+      "unreachable_transitions": 1,
+      "unreachable_transition_rate": 0.5,
+      "unreachable_transition_reasons": {
+        "guard_false": 1
+      },
+      "thresholds": {
+        "max_transitions_per_state": 6.0,
+        "max_unreachable_leaf_state_rate": 0.1,
+        "max_unreachable_transition_rate": 0.1
+      },
+      "exceeded_thresholds": [
+        "unreachable_transition_rate"
+      ],
+      "unguarded_transitions": 1,
+      "guard_eligible_transitions": 2,
+      "unguarded_rate": 0.5,
+      "missing_effect_transitions": 2,
+      "effect_eligible_transitions": 2,
+      "missing_effect_rate": 1.0,
+      "eventless_unconditional_transitions": 1,
+      "behavior_transitions": 2,
+      "eventless_unconditional_rate": 0.5
+    }
+  },
+  {
+    "name": "forced-declaration-and-null-policy",
+    "dsl": "state Root {\n    state A {\n        !* -> [*] :: Never;\n    }\n    [*] -> A;\n}\n",
+    "policy": {
+      "max_transitions_per_state": null,
+      "max_unreachable_leaf_state_rate": null,
+      "max_unreachable_transition_rate": null
+    },
+    "expected": {
+      "state_count": 2,
+      "leaf_state_count": 1,
+      "composite_state_count": 1,
+      "authored_transition_count": 1,
+      "transitions_per_state": 0.5,
+      "states_per_transition": 2.0,
+      "unreachable_leaf_states": 0,
+      "unreachable_leaf_state_rate": 0.0,
+      "unreachable_transitions": 1,
+      "unreachable_transition_rate": 1.0,
+      "unreachable_transition_reasons": {
+        "forced_never_expands": 1
+      },
+      "thresholds": {
+        "max_transitions_per_state": null,
+        "max_unreachable_leaf_state_rate": null,
+        "max_unreachable_transition_rate": null
+      },
+      "exceeded_thresholds": [],
+      "unguarded_transitions": 1,
+      "guard_eligible_transitions": 1,
+      "unguarded_rate": 1.0,
+      "missing_effect_transitions": 0,
+      "effect_eligible_transitions": 0,
+      "missing_effect_rate": null,
+      "eventless_unconditional_transitions": 0,
+      "behavior_transitions": 1,
+      "eventless_unconditional_rate": 0.0
+    }
+  }
+]

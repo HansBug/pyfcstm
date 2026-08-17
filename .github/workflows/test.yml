@@ -1596,6 +1596,14 @@ jobs:
         # to, which is not a gate.
         run: |
           make fixture_corpus_check
+      - name: Check inspect structure-statistics parity fixtures
+        shell: bash
+        run: |
+          make inspect_structure_parity_check
+      - name: Check public inspect/BMC payload contract
+        shell: bash
+        run: |
+          make public_payload_contract_check
       - name: Check the generated API RST is current
         shell: bash
         run: |

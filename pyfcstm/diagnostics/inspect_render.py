@@ -703,6 +703,13 @@ def _diagnostic_llm_dict(
 ) -> Dict[str, Any]:
     spec = CODE_REGISTRY.get(diagnostic.code)
     excerpt = _source_excerpt(source_text, diagnostic.span)
+    provenance = {
+        "kind": _diagnostic_source(spec, diagnostic.refs),
+        "verify_required": _diagnostic_source(spec, diagnostic.refs) == "verify-backed",
+    }
+    verification_source_ids = diagnostic.refs.get("verification_source_ids")
+    if isinstance(verification_source_ids, (list, tuple)):
+        provenance["source_ids"] = list(verification_source_ids)
     return {
         "code": diagnostic.code,
         "severity": diagnostic.severity,
@@ -711,10 +718,7 @@ def _diagnostic_llm_dict(
         "source_excerpt": _excerpt_dict(excerpt),
         "refs": _jsonable(diagnostic.refs),
         "source": _diagnostic_source(spec, diagnostic.refs),
-        "provenance": {
-            "kind": _diagnostic_source(spec, diagnostic.refs),
-            "verify_required": _diagnostic_source(spec, diagnostic.refs) == "verify-backed",
-        },
+        "provenance": provenance,
         "summary": spec.for_llm.summary
         if spec is not None and spec.for_llm is not None
         else None,

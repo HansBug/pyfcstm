@@ -1421,6 +1421,7 @@ W_UNREACHABLE_TRANSITION
 .. diagnostics-ref W_UNREACHABLE_TRANSITION transition_index type=int_or_null required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION reasons type=list[str] required=true enum=- item_enum=unreachable_source_state|unreachable_event_consumer|forced_never_expands|guard_false|shadowed|redundant exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION verify_backed type=bool required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION verification_source_ids type=list[str] required=false enum=- item_enum=- exact_values=-
 
 
 .. diagnostics-boundary W_UNREACHABLE_TRANSITION kind=inspect_json
@@ -1429,7 +1430,7 @@ W_UNREACHABLE_TRANSITION
 
 **Meaning.** An authored transition is unreachable under the available analysis evidence. The reason list aggregates source-state reachability, event-consumer reachability, forced expansion, guard, shadowing, and redundancy evidence for that authored declaration.
 
-**LLM repair summary.** Review every entry in ``refs.reasons`` against the transition's source, trigger, guard, and declaration scope before changing behavior. ``verify_backed`` is present only when at least one contributing reason comes from the optional verify pipeline.
+**LLM repair summary.** Review every entry in ``refs.reasons`` against the transition's source, trigger, guard, and declaration scope before changing behavior. ``verify_backed`` is present only when at least one contributing reason comes from the optional verify pipeline. When available, ``verification_source_ids`` lists stable ``algorithm_name@verification_scope`` identifiers for that evidence; these identifiers contain no product or schema version.
 
 .. list-table:: Refs schema
    :header-rows: 1

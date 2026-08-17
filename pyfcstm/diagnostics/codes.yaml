@@ -2389,6 +2389,14 @@ W_UNREACHABLE_TRANSITION:
       description: >-
         True when at least one contributing reason is backed by an optional
         verify-pipeline diagnostic; omitted for static-only evidence.
+    verification_source_ids:
+      type: list[str]
+      required: false
+      description: >-
+        Sorted, deduplicated, version-free identifiers for contributing verify
+        evidence. Each identifier is ``algorithm_name@verification_scope``
+        when both fields are available, or a stable verify-pipeline fallback.
+        Omitted for static-only evidence.
   for_llm:
     summary: >-
       This authored transition is unreachable under the available analysis

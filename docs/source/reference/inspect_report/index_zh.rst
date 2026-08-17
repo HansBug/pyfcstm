@@ -246,7 +246,9 @@ identity 的并集计算，因此同一转换可以出现在多个原因桶中�
    * - ``source``
      - ``inspect-static``、``verify-backed`` 或 ``unknown``。
    * - ``provenance``
-     - ``kind`` 和 ``verify_required`` 标志。
+     - ``kind`` 和 ``verify_required`` 标志；verify-backed 条目还可能带有
+       ``source_ids``，其中是稳定的 ``algorithm_name@verification_scope``
+       标识，不包含产品版本或 schema 版本。
    * - ``summary``
      - 诊断码注册表中的 LLM 摘要。
    * - ``recommended_actions`` / ``do_not``

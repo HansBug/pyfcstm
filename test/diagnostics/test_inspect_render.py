@@ -377,6 +377,7 @@ class TestInspectRender:
             if item.code == "W_UNREACHABLE_TRANSITION"
         )
         assert diagnostic.refs["verify_backed"] is True
+        assert diagnostic.refs["verification_source_ids"] == ["dead_guard@smt_local"]
 
         payload = json.loads(render_inspect_llm_json(report, SOURCE))
         rendered = next(
@@ -387,6 +388,7 @@ class TestInspectRender:
         assert rendered["provenance"] == {
             "kind": "verify-backed",
             "verify_required": True,
+            "source_ids": ["dead_guard@smt_local"],
         }
         assert "verify-backed" in render_inspect_human(report, SOURCE)
 

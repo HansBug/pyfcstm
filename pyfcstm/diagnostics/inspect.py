@@ -1915,6 +1915,7 @@ class _UnreachableTransitionReasonInfo:
 
     reasons: Tuple[str, ...]
     verify_backed: bool
+    verification_source_ids: Tuple[str, ...]
 
 
 _UnreachableTransitionReasonMap = Dict[
@@ -1933,6 +1934,24 @@ def _diagnostic_is_verify_backed(diagnostic: ModelDiagnostic) -> bool:
             and isinstance(diagnostic.refs.get("verification_scope"), str)
         )
     return False
+
+
+def _diagnostic_verification_source_id(
+        diagnostic: ModelDiagnostic,
+) -> Optional[str]:
+    """Return a stable, version-free identifier for verify evidence."""
+    if not _diagnostic_is_verify_backed(diagnostic):
+        return None
+    refs = diagnostic.refs
+    algorithm_name = refs.get("algorithm_name")
+    verification_scope = refs.get("verification_scope")
+    if isinstance(algorithm_name, str) and isinstance(verification_scope, str):
+        return f"{algorithm_name}@{verification_scope}"
+    if isinstance(algorithm_name, str):
+        return algorithm_name
+    if isinstance(verification_scope, str):
+        return f"verify-pipeline@{verification_scope}"
+    return "verify-pipeline"
 
 
 def _unreachable_transition_reason_keys(
@@ -1962,6 +1981,14 @@ def _unreachable_transition_reason_keys(
         and isinstance(diagnostic.refs.get("state_path"), str)
         and _diagnostic_is_verify_backed(diagnostic)
     }
+    verify_sources_by_unreachable_path: Dict[str, Set[str]] = {}
+    for diagnostic in diagnostics:
+        if diagnostic.code != "W_UNREACHABLE_STATE":
+            continue
+        path = diagnostic.refs.get("state_path")
+        source_id = _diagnostic_verification_source_id(diagnostic)
+        if isinstance(path, str) and source_id is not None:
+            verify_sources_by_unreachable_path.setdefault(path, set()).add(source_id)
     unreachable_leaf_paths = {
         state.path for state in leaf_states if state.path in unreachable_paths
     }
@@ -1990,8 +2017,22 @@ def _unreachable_transition_reason_keys(
         }
         return bool(descendant_leaves) and descendant_leaves <= verify_unreachable_paths
 
+    def source_verification_sources(path: str) -> Set[str]:
+        direct = set(verify_sources_by_unreachable_path.get(path, ()))
+        state = states_by_path.get(path)
+        if state is None or not state.is_composite:
+            return direct
+        descendant_leaves = {
+            leaf.path for leaf in leaf_states
+            if leaf.path.startswith(path + ".")
+        }
+        for descendant in descendant_leaves:
+            direct.update(verify_sources_by_unreachable_path.get(descendant, ()))
+        return direct
+
     reasons_by_key: Dict[Tuple[Any, ...], Set[str]] = {}
     verify_backed_keys: Set[Tuple[Any, ...]] = set()
+    verification_sources_by_key: Dict[Tuple[Any, ...], Set[str]] = {}
     forced_groups = _forced_expansion_groups(transitions, forced_transitions)
     forced_keys_by_identity: Dict[
         Tuple[Optional[str], str], Set[Tuple[Any, ...]]
@@ -2017,6 +2058,10 @@ def _unreachable_transition_reason_keys(
                 )
                 if any(source_is_verify_backed(edge.from_path) for edge in expansions):
                     verify_backed_keys.add(key)
+                for edge in expansions:
+                    verification_sources_by_key.setdefault(key, set()).update(
+                        source_verification_sources(edge.from_path),
+                    )
             continue
         if source_is_unreachable(item.from_path):
             reasons_by_key.setdefault(key, set()).add(
@@ -2024,6 +2069,9 @@ def _unreachable_transition_reason_keys(
             )
             if source_is_verify_backed(item.from_path):
                 verify_backed_keys.add(key)
+            verification_sources_by_key.setdefault(key, set()).update(
+                source_verification_sources(item.from_path),
+            )
 
     event_names = {
         diagnostic.refs.get("event_name")
@@ -2038,6 +2086,14 @@ def _unreachable_transition_reason_keys(
         and isinstance(diagnostic.refs.get("event_name"), str)
         and _diagnostic_is_verify_backed(diagnostic)
     }
+    verify_event_sources: Dict[str, Set[str]] = {}
+    for diagnostic in diagnostics:
+        if diagnostic.code != "W_EVENT_UNREACHABLE_EMIT":
+            continue
+        event_name = diagnostic.refs.get("event_name")
+        source_id = _diagnostic_verification_source_id(diagnostic)
+        if isinstance(event_name, str) and source_id is not None:
+            verify_event_sources.setdefault(event_name, set()).add(source_id)
     for key, item in authored:
         if item.event in event_names:
             reasons_by_key.setdefault(key, set()).add(
@@ -2045,6 +2101,9 @@ def _unreachable_transition_reason_keys(
             )
             if item.event in verify_event_names:
                 verify_backed_keys.add(key)
+            verification_sources_by_key.setdefault(key, set()).update(
+                verify_event_sources.get(item.event, ()),
+            )
 
     for diagnostic in diagnostics:
         if diagnostic.code not in _UNREACHABLE_TRANSITION_REASON_CODES:
@@ -2146,6 +2205,10 @@ def _unreachable_transition_reason_keys(
             continue
         if _diagnostic_is_verify_backed(diagnostic):
             verify_backed_keys.update(keys)
+            source_id = _diagnostic_verification_source_id(diagnostic)
+            if source_id is not None:
+                for key in keys:
+                    verification_sources_by_key.setdefault(key, set()).add(source_id)
         reason = (
             "forced_never_expands"
             if diagnostic.code == "W_FORCED_NEVER_EXPANDS"
@@ -2161,6 +2224,7 @@ def _unreachable_transition_reason_keys(
         key: _UnreachableTransitionReasonInfo(
             reasons=tuple(sorted(reasons)),
             verify_backed=key in verify_backed_keys,
+            verification_source_ids=tuple(sorted(verification_sources_by_key.get(key, ()))),
         )
         for key, reasons in reasons_by_key.items()
         if reasons
@@ -2196,6 +2260,10 @@ def _build_unreachable_transition_diagnostics(
         }
         if reason_info.verify_backed:
             refs["verify_backed"] = True
+        if reason_info.verification_source_ids:
+            refs["verification_source_ids"] = list(
+                reason_info.verification_source_ids,
+            )
         emitted.append(ModelDiagnostic(
             code="W_UNREACHABLE_TRANSITION",
             severity="warning",

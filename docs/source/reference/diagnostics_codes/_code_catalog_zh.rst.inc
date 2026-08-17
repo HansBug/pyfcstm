@@ -1421,6 +1421,7 @@ W_UNREACHABLE_TRANSITION
 .. diagnostics-ref W_UNREACHABLE_TRANSITION transition_index type=int_or_null required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION reasons type=list[str] required=true enum=- item_enum=unreachable_source_state|unreachable_event_consumer|forced_never_expands|guard_false|shadowed|redundant exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION verify_backed type=bool required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION verification_source_ids type=list[str] required=false enum=- item_enum=- exact_values=-
 
 
 .. diagnostics-boundary W_UNREACHABLE_TRANSITION kind=inspect_json
@@ -1429,7 +1430,7 @@ W_UNREACHABLE_TRANSITION
 
 **含义。** 在当前可用的分析证据下，一个已声明的转换无法被执行。``reasons`` 聚合源状态不可达、事件消费者不可达、强制展开、守卫、遮蔽和重复等原因。
 
-**面向 LLM 的修复摘要。** 修改前应结合转换的源状态、触发器、守卫和声明作用域逐项核对 ``refs.reasons``。只有至少一个原因来自可选 verify 流程时，才会出现值为 ``true`` 的 ``verify_backed``。
+**面向 LLM 的修复摘要。** 修改前应结合转换的源状态、触发器、守卫和声明作用域逐项核对 ``refs.reasons``。只有至少一个原因来自可选 verify 流程时，才会出现值为 ``true`` 的 ``verify_backed``。如果有来源信息，``verification_source_ids`` 会列出稳定的 ``algorithm_name@verification_scope`` 标识；这些标识不包含产品版本或 schema 版本。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1

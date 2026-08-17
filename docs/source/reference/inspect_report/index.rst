@@ -284,7 +284,9 @@ may contribute to more than one reason while being counted once in the total.
    * - ``source``
      - ``inspect-static``, ``verify-backed``, or ``unknown``.
    * - ``provenance``
-     - ``kind`` plus ``verify_required`` flag.
+     - ``kind`` plus ``verify_required`` flag; verify-backed entries may also
+       carry ``source_ids`` with stable ``algorithm_name@verification_scope``
+       identifiers. These identifiers contain no product or schema version.
    * - ``summary``
      - Registry LLM summary for the diagnostic code.
    * - ``recommended_actions`` / ``do_not``

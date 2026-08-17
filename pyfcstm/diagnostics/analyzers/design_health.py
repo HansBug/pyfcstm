@@ -7,6 +7,7 @@ inspect graph only lists outgoing paths:
     ['Root', 'Root.Active']
 """
 
+import json
 import re
 from dataclasses import replace
 from typing import TYPE_CHECKING, Iterable, List, Optional
@@ -252,9 +253,9 @@ def _unreachable_transition_diagnostics(
                 diagnostics.append(ModelDiagnostic(
                     code='W_UNREACHABLE_TRANSITION',
                     severity='warning',
-                    message=(
-                        f'Transition {origin_id!r} has a source outside the '
-                        'guard-agnostic root-reachable topology.'
+                    message=_unreachable_transition_message(
+                        '[*]' if source_state_path is None else source_state_path,
+                        endpoint['target_path'],
                     ),
                     span=transition.span if origin_ref is None else origin_ref.transition_span,
                     refs={
@@ -285,16 +286,10 @@ def _unreachable_transition_diagnostics(
         diagnostics.append(ModelDiagnostic(
             code='W_UNREACHABLE_TRANSITION',
             severity='warning',
-            message=(
-                (
-                    f'Generated forced transition expansion '
-                    f'{transition.from_path!r} -> {transition.to_path!r} '
-                    'has a source outside the guard-agnostic root-reachable topology.'
-                )
-                if forced_expansion else (
-                    f'Transition {transition.from_path!r} -> {transition.to_path!r} '
-                    'has a source outside the guard-agnostic root-reachable topology.'
-                )
+            message=_unreachable_transition_message(
+                transition.from_path,
+                transition.to_path,
+                forced=forced_expansion,
             ),
             span=transition.span,
             refs={
@@ -311,6 +306,14 @@ def _unreachable_transition_diagnostics(
             },
         ))
     return diagnostics
+
+
+def _unreachable_transition_message(from_path, to_path, forced=False):
+    prefix = 'Generated forced transition expansion ' if forced else 'Transition '
+    return (
+        f'{prefix}{json.dumps(from_path)} -> {json.dumps(to_path)} '
+        'has a source outside the guard-agnostic root-reachable topology.'
+    )
 
 
 def _transition_selection_paths(transition, state_paths):

@@ -139,9 +139,12 @@ function makeCycleKey(files: string[]): string {
 
 export class FcstmWorkspaceGraph {
     private readonly overlays = new Map<string, FcstmWorkspaceOverlay>();
+    private readonly dependenciesByRoot = new Map<string, Set<string>>();
+    private readonly rootsByDependency = new Map<string, Set<string>>();
 
     setOverlay(filePath: string, text: string): void {
         const normalizedFile = normalizeFile(filePath);
+        this.removeDependencyRecord(normalizedFile);
         this.overlays.set(normalizedFile, {
             filePath: normalizedFile,
             text,
@@ -149,11 +152,28 @@ export class FcstmWorkspaceGraph {
     }
 
     removeOverlay(filePath: string): void {
-        this.overlays.delete(normalizeFile(filePath));
+        const normalizedFile = normalizeFile(filePath);
+        this.removeDependencyRecord(normalizedFile);
+        this.overlays.delete(normalizedFile);
     }
 
     clearOverlays(): void {
         this.overlays.clear();
+        this.dependenciesByRoot.clear();
+        this.rootsByDependency.clear();
+    }
+
+    /**
+     * Return roots whose last completed snapshot traversed the given file.
+     * This lets editor invalidation use the graph already built for diagnostics
+     * instead of rebuilding every open root on each keystroke.
+     */
+    dependentRoots(filePath: string): string[] {
+        return [...(this.rootsByDependency.get(normalizeFile(filePath)) || [])];
+    }
+
+    hasDependencyRecord(filePath: string): boolean {
+        return this.dependenciesByRoot.has(normalizeFile(filePath));
     }
 
     getOverlay(filePath: string): FcstmWorkspaceOverlay | undefined {
@@ -187,7 +207,9 @@ export class FcstmWorkspaceGraph {
         const state = this.createTraversalState();
         await this.traverseDocument(document, normalizedFile, state);
         this.hydrateModels(normalizedFile, state);
-        return this.snapshotFromState(normalizedFile, state);
+        const snapshot = this.snapshotFromState(normalizedFile, state);
+        this.recordDependencyRecord(snapshot);
+        return snapshot;
     }
 
     async buildSnapshotForFile(filePath: string): Promise<FcstmWorkspaceGraphSnapshot> {
@@ -195,7 +217,9 @@ export class FcstmWorkspaceGraph {
         const state = this.createTraversalState();
         await this.traverseFile(normalizedFile, state);
         this.hydrateModels(normalizedFile, state);
-        return this.snapshotFromState(normalizedFile, state);
+        const snapshot = this.snapshotFromState(normalizedFile, state);
+        this.recordDependencyRecord(snapshot);
+        return snapshot;
     }
 
     async getSemanticDocument(document: TextDocumentLike): Promise<FcstmSemanticDocument | null> {
@@ -226,6 +250,33 @@ export class FcstmWorkspaceGraph {
             cycleKeys: new Set<string>(),
             stack: [],
         };
+    }
+
+    private recordDependencyRecord(snapshot: FcstmWorkspaceGraphSnapshot): void {
+        this.removeDependencyRecord(snapshot.rootFile);
+        const dependencies = new Set(snapshot.order.map(normalizeFile));
+        this.dependenciesByRoot.set(snapshot.rootFile, dependencies);
+        for (const dependency of dependencies) {
+            let roots = this.rootsByDependency.get(dependency);
+            if (!roots) {
+                roots = new Set<string>();
+                this.rootsByDependency.set(dependency, roots);
+            }
+            roots.add(snapshot.rootFile);
+        }
+    }
+
+    private removeDependencyRecord(rootFile: string): void {
+        const dependencies = this.dependenciesByRoot.get(rootFile);
+        if (!dependencies) return;
+        for (const dependency of dependencies) {
+            const roots = this.rootsByDependency.get(dependency);
+            roots?.delete(rootFile);
+            if (roots?.size === 0) {
+                this.rootsByDependency.delete(dependency);
+            }
+        }
+        this.dependenciesByRoot.delete(rootFile);
     }
 
     private snapshotFromState(

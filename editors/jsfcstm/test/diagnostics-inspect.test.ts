@@ -833,6 +833,10 @@ state Root {
             const diagnostics = report.diagnostics.filter(d => d.code === 'W_UNREACHABLE_TRANSITION');
             assert.equal(diagnostics.length, 1);
             assert.equal(diagnostics[0].span?.line, 7);
+            assert.equal(
+                diagnostics[0].message,
+                'Transition "Root.Orphan" -> "Root.Done" has a source outside the guard-agnostic root-reachable topology.',
+            );
             assert.deepEqual(diagnostics[0].refs, {
                 reason: 'source_unreachable',
                 verification_scope: 'topological_only',

@@ -559,6 +559,40 @@ describe('jsfcstm lsp core', () => {
         core.dispose();
     });
 
+    it('uses the cached reverse import index before debounced revalidation', async () => {
+        const dir = trackTempDir('jsfcstm-lsp-import-index-');
+        const childFile = path.join(dir, 'child.fcstm');
+        const hostFile = path.join(dir, 'host.fcstm');
+        const childUri = toUri(childFile);
+        writeFile(childFile, 'state Child;');
+        writeFile(hostFile, 'state Root { import "./child.fcstm" as Child; }');
+
+        const graph = packageModule.getWorkspaceGraph();
+        const originalBuildSnapshot = graph.buildSnapshotForDocument.bind(graph);
+        let snapshotCalls = 0;
+        graph.buildSnapshotForDocument = async document => {
+            snapshotCalls += 1;
+            return originalBuildSnapshot(document);
+        };
+        const scheduler = new TestScheduler();
+        const core = new packageModule.FcstmLanguageServerCore({scheduler});
+
+        try {
+            await core.openTextDocument(makeTextDocumentItem(hostFile, 'state Root { import "./child.fcstm" as Child; }'));
+            await core.openTextDocument(makeTextDocumentItem(childFile, 'state Child;'));
+            snapshotCalls = 0;
+
+            await core.changeTextDocument(childUri, 2, [{text: 'state ChangedChild;'}]);
+            await core.changeTextDocument(childUri, 3, [{text: 'state ChangedAgain;'}]);
+
+            assert.equal(snapshotCalls, 0);
+            assert.equal(scheduler.size(), 2);
+        } finally {
+            graph.buildSnapshotForDocument = originalBuildSnapshot;
+            core.dispose();
+        }
+    });
+
     it('debounces diagnostics and only publishes the latest document version', async () => {
         const dir = trackTempDir('jsfcstm-lsp-debounce-');
         const hostFile = path.join(dir, 'host.fcstm');

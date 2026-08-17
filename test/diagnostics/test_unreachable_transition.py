@@ -64,6 +64,10 @@ def test_reports_transition_from_unreachable_source_with_transition_refs():
     assert len(diagnostics) == 1
     diagnostic = diagnostics[0]
     assert diagnostic.span is not None
+    assert diagnostic.message == (
+        'Transition "Root.Orphan" -> "Root.Done" has a source outside the '
+        'guard-agnostic root-reachable topology.'
+    )
     assert diagnostic.refs == {
         'reason': 'source_unreachable',
         'verification_scope': 'topological_only',

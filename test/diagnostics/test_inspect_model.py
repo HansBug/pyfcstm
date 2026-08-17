@@ -645,6 +645,22 @@ class TestSchemaJsonValidates:
             node['unexpected'] = True
             assert list(validator.iter_errors(invalid))
 
+    def test_schema_accepts_legacy_transition_provenance_payloads(self):
+        jsonschema = pytest.importorskip('jsonschema')
+        schema = self._load_schema()
+        validator = jsonschema.Draft7Validator(schema)
+        payload = inspect_model(_parse(SIMPLE_DSL)).to_json()
+        for transition in payload['transitions'] + payload['combo_transitions']:
+            transition.pop('source_path', None)
+            for ref in transition.get('combo_origin_refs', []):
+                for field in (
+                    'source_kind', 'source_path', 'selection_owner_path',
+                    'target_kind', 'target_path',
+                ):
+                    ref.pop(field, None)
+
+        assert list(validator.iter_errors(payload)) == []
+
     def test_schema_rejects_contradictory_verification_states(self):
         jsonschema = pytest.importorskip('jsonschema')
         schema = self._load_schema()

@@ -874,10 +874,21 @@ export class FcstmLanguageServerCore {
         if (!changedFile) return;
 
         const normalizedChangedFile = normalizeFilePath(changedFile);
+        const workspaceGraph = getWorkspaceGraph();
+        const dependentRoots = new Set(workspaceGraph.dependentRoots(normalizedChangedFile));
         for (const document of this.documents.values()) {
             if (document.uri === changedUri) continue;
 
-            const snapshot = await getWorkspaceGraph().buildSnapshotForDocument(toDocumentLike(document));
+            const documentFile = uriToFilePath(document.uri);
+            if (!documentFile) continue;
+            const normalizedDocumentFile = normalizeFilePath(documentFile);
+            if (dependentRoots.has(normalizedDocumentFile)) {
+                this.scheduleDiagnostics(document.uri, document.version);
+                continue;
+            }
+            if (workspaceGraph.hasDependencyRecord(normalizedDocumentFile)) continue;
+
+            const snapshot = await workspaceGraph.buildSnapshotForDocument(toDocumentLike(document));
             if (!snapshot.order.includes(normalizedChangedFile)) continue;
 
             this.scheduleDiagnostics(document.uri, document.version);

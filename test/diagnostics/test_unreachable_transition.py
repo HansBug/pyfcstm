@@ -73,6 +73,29 @@ def test_reachable_source_is_not_reported():
     assert _unreachable_transitions(report) == []
 
 
+def test_reports_only_unreachable_leaf_states_under_an_unreachable_composite():
+    report = _inspect(
+        '''
+        state Root {
+            state Live;
+            state Orphan {
+                state Child;
+                [*] -> Child;
+            }
+            [*] -> Live;
+        }
+        '''
+    )
+
+    unreachable = [
+        diagnostic.refs['state_path']
+        for diagnostic in report.diagnostics
+        if diagnostic.code == 'W_UNREACHABLE_STATE'
+    ]
+    assert unreachable == ['Root.Orphan.Child']
+    assert report.structure_statistics.unreachable_leaf_states == 1
+
+
 def test_guard_reason_is_aggregated_and_kept_separate_from_topology():
     report = _inspect(
         '''

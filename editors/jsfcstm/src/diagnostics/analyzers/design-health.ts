@@ -116,7 +116,7 @@ function collectUnreachableStateDiagnostics(
     reachable.add(rootPath);
     const out: ModelDiagnosticJson[] = [];
     for (const state of states) {
-        if (state.is_pseudo || reachable.has(state.path)) continue;
+        if (!state.is_leaf || state.is_pseudo || reachable.has(state.path)) continue;
         out.push({
             code: 'W_UNREACHABLE_STATE',
             severity: 'warning',

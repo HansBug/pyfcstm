@@ -1119,6 +1119,24 @@ state Root {
             });
         });
 
+        it('reports only unreachable leaf states under an unreachable composite', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Live;
+    state Orphan {
+        state Child;
+        [*] -> Child;
+    }
+    [*] -> Live;
+}
+`));
+            const unreachable = report.diagnostics
+                .filter(d => d.code === 'W_UNREACHABLE_STATE')
+                .map(d => d.refs.state_path);
+            assert.deepEqual(unreachable, ['Root.Orphan.Child']);
+            assert.equal(report.structure_statistics.unreachable_leaf_states, 1);
+        });
+
         it('reports only topological unreachable transition sources', async () => {
             const report = inspectModel(await buildMachine(`
 state Root {

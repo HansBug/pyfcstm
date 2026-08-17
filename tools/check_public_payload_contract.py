@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 import sys
 from tempfile import TemporaryDirectory
 from typing import Any, Iterable
@@ -46,6 +47,25 @@ def _assert_clean(payload: Any, label: str) -> None:
         )
 
 
+def _assert_text_clean(text: str, label: str) -> None:
+    """Reject structured version keys in non-JSON inspect renderings."""
+    matches = [
+        field
+        for field in FORBIDDEN_FIELDS
+        if any(
+            re.search(pattern, text)
+            for pattern in (
+                rf'"{re.escape(field)}"',
+                rf"(?m)^\s*-\s+{re.escape(field)}\s:",
+            )
+        )
+    ]
+    if matches:
+        raise SystemExit(
+            f"{label} contains forbidden public version markers: {', '.join(sorted(matches))}",
+        )
+
+
 def _load_json(path: Path) -> Any:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -64,7 +84,7 @@ def main() -> int:
 
     sys.path.insert(0, str(ROOT))
     from pyfcstm.entry.bmc import build_bmc_output
-    from pyfcstm.entry.inspect import build_inspect_json
+    from pyfcstm.entry.inspect import build_inspect_json, build_inspect_output
 
     with TemporaryDirectory(prefix="pyfcstm-public-contract-") as temp_dir:
         temp = Path(temp_dir)
@@ -80,6 +100,22 @@ def main() -> int:
         )
         inspect_payload = json.loads(build_inspect_json(str(model_path)))
         _assert_clean(inspect_payload, "pyfcstm inspect payload")
+        for output_format in ("human", "llm-json", "llm-md"):
+            rendered = build_inspect_output(
+                str(model_path),
+                output_format=output_format,
+                color_enabled=False,
+            )
+            if output_format == "llm-json":
+                _assert_clean(
+                    json.loads(rendered),
+                    "pyfcstm inspect llm-json payload",
+                )
+            else:
+                _assert_text_clean(
+                    rendered,
+                    f"pyfcstm inspect {output_format} output",
+                )
         bmc_text, _exit_code = build_bmc_output(
             str(model_path),
             str(query_path),

@@ -218,7 +218,10 @@ function unreachableTransitionAuthoredKey(diagnostic: Diagnostic): string | null
         return null;
     }
     const data = diagnostic.data as Record<string, unknown>;
-    if (typeof data.reason !== 'string' || typeof data.source_path !== 'string') {
+    if (
+        (typeof data.reason !== 'string' && !Array.isArray(data.reasons))
+        || typeof data.source_path !== 'string'
+    ) {
         return null;
     }
     // This identity deliberately ignores projected paths and mount_path. A
@@ -227,9 +230,8 @@ function unreachableTransitionAuthoredKey(diagnostic: Diagnostic): string | null
     // instances that must remain visible.
     return JSON.stringify([
         diagnostic.code,
-        data.reason,
+        typeof data.reason === 'string' ? data.reason : data.reasons,
         data.source_path,
-        diagnostic.range,
         data.forced_origin ?? null,
         data.combo_origin_ids ?? [],
     ]);

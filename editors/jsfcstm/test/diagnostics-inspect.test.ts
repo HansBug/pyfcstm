@@ -5,6 +5,9 @@ import {createDocument, packageModule} from './support';
 const {
     DEFAULT_DEEP_HIERARCHY_THRESHOLD,
     DEFAULT_LARGE_COMPOSITE_THRESHOLD,
+    DEFAULT_STRUCTURE_MAX_TRANSITIONS_PER_STATE,
+    DEFAULT_STRUCTURE_MAX_UNREACHABLE_LEAF_STATE_RATE,
+    DEFAULT_STRUCTURE_MAX_UNREACHABLE_TRANSITION_RATE,
     DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD,
     inspectModel,
 } = packageModule;
@@ -503,6 +506,91 @@ state Root {
             assert.equal(DEFAULT_DEEP_HIERARCHY_THRESHOLD, 6);
             assert.equal(DEFAULT_LARGE_COMPOSITE_THRESHOLD, 12);
             assert.equal(DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD, 2.0);
+            assert.equal(DEFAULT_STRUCTURE_MAX_TRANSITIONS_PER_STATE, 6.0);
+            assert.equal(DEFAULT_STRUCTURE_MAX_UNREACHABLE_LEAF_STATE_RATE, 0.10);
+            assert.equal(DEFAULT_STRUCTURE_MAX_UNREACHABLE_TRANSITION_RATE, 0.10);
+        });
+
+        it('reports advisory structure thresholds without emitting diagnostics', async () => {
+            const source = `state Root {
+                state A;
+                [*] -> A;
+                A -> A;
+                A -> A;
+                A -> A;
+                A -> A;
+                A -> A;
+                A -> A;
+                A -> A;
+                A -> A;
+                A -> A;
+                A -> A;
+                A -> A;
+                A -> A;
+                A -> A;
+            }`;
+            const report = inspectModel(await buildMachine(source));
+            assert.equal(report.structure_statistics.transitions_per_state, 6.5);
+            assert.deepEqual(report.structure_statistics.thresholds, {
+                max_transitions_per_state: 6.0,
+                max_unreachable_leaf_state_rate: 0.10,
+                max_unreachable_transition_rate: 0.10,
+            });
+            assert.deepEqual(report.structure_statistics.exceeded_thresholds, [
+                'transitions_per_state',
+                'unreachable_transition_rate',
+            ]);
+            assert.equal(
+                report.diagnostics.some(item => item.code.includes('STRUCTURE')),
+                false,
+            );
+        });
+
+        it('supports partial structure threshold overrides', async () => {
+            const report = inspectModel(await buildMachine(SIMPLE_DSL), {
+                structureStatisticsPolicy: {
+                    max_transitions_per_state: null,
+                    max_unreachable_leaf_state_rate: 0,
+                },
+            });
+            assert.deepEqual(report.structure_statistics.thresholds, {
+                max_transitions_per_state: null,
+                max_unreachable_leaf_state_rate: 0,
+                max_unreachable_transition_rate: 0.10,
+            });
+        });
+
+        it('rejects unknown structure threshold policy fields', async () => {
+            const machine = await buildMachine(SIMPLE_DSL);
+            const invalidPolicy = {typo_threshold: 0.5} as unknown as {
+                max_transitions_per_state?: number | null;
+                max_unreachable_leaf_state_rate?: number | null;
+                max_unreachable_transition_rate?: number | null;
+            };
+            assert.throws(
+                () => inspectModel(machine, {
+                    structureStatisticsPolicy: {
+                        ...invalidPolicy,
+                    },
+                }),
+                /unknown structure-statistics policy fields: typo_threshold/,
+            );
+        });
+
+        it('rejects non-record structure threshold policies', async () => {
+            const machine = await buildMachine(SIMPLE_DSL);
+            for (const invalidPolicy of [42, true, [], new Map()]) {
+                assert.throws(
+                    () => inspectModel(machine, {
+                        structureStatisticsPolicy: invalidPolicy as unknown as {
+                            max_transitions_per_state?: number | null;
+                            max_unreachable_leaf_state_rate?: number | null;
+                            max_unreachable_transition_rate?: number | null;
+                        },
+                    }),
+                    /structure-statistics policy must be a plain object/,
+                );
+            }
         });
     });
 
@@ -606,8 +694,9 @@ state Root {
                 'metrics',
                 'reachability_graph',
                 'root_state_path',
-                'states',
-                'transitions',
+            'states',
+            'structure_statistics',
+            'transitions',
                 'var_dataflow',
                 'variables',
                 'verification',
@@ -631,6 +720,216 @@ state Root {
                     indeterminate: 0,
                 },
                 algorithms: [],
+            });
+            assert.equal(report.structure_statistics.authored_transition_count, 2);
+            assert.equal(report.structure_statistics.state_count, 3);
+            assert.equal(report.structure_statistics.transitions_per_state, 2 / 3);
+            assert.equal(report.structure_statistics.states_per_transition, 3 / 2);
+            assert.equal(report.structure_statistics.unguarded_transitions, 1);
+            assert.equal(report.structure_statistics.missing_effect_transitions, 2);
+        });
+
+        it('scopes identical forced declarations before aggregating unreachable transitions', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Reachable {
+        state X;
+        state Y;
+        [*] -> X;
+        !X -> Y;
+    }
+    state Orphan {
+        state X;
+        state Y;
+        [*] -> X;
+        !X -> Y;
+    }
+    [*] -> Reachable;
+}
+`));
+            assert.equal(report.structure_statistics.unreachable_leaf_states, 2);
+            assert.equal(report.structure_statistics.unreachable_transitions, 1);
+            assert.deepEqual(report.structure_statistics.unreachable_transition_reasons, {
+                unreachable_source_state: 1,
+            });
+        });
+
+        for (const stateOrder of [
+            ['Live', 'Orphan', 'Error'],
+            ['Orphan', 'Live', 'Error'],
+        ]) {
+            it(`keeps wildcard forced reachability stable for ${stateOrder.join(', ')}`, async () => {
+                const declarations = stateOrder.map(name => `state ${name};`).join('\n');
+                const report = inspectModel(await buildMachine(`
+state Root {
+    ${declarations}
+    [*] -> Live;
+    !* -> Error :: Panic;
+}
+`));
+                assert.equal(report.structure_statistics.unreachable_transitions, 1);
+                assert.deepEqual(report.structure_statistics.unreachable_transition_reasons, {
+                    unreachable_source_state: 1,
+                });
+            });
+        }
+
+        it('counts a wildcard forced declaration when every expansion source is unreachable', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Live;
+    state Orphan {
+        state A;
+        state B;
+        [*] -> A;
+        !* -> B :: Panic;
+    }
+    [*] -> Live;
+}
+`));
+            assert.equal(report.structure_statistics.unreachable_transitions, 1);
+            assert.deepEqual(report.structure_statistics.unreachable_transition_reasons, {
+                unreachable_source_state: 1,
+            });
+        });
+
+        it('aggregates a partial wildcard forced declaration once', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Live;
+    state OrphanA;
+    state OrphanB;
+    state Done;
+    [*] -> Live;
+    !* -> Done :: Panic;
+}
+`));
+            const diagnostics = report.diagnostics.filter(d => d.code === 'W_UNREACHABLE_TRANSITION');
+            assert.equal(diagnostics.length, 1);
+            assert.equal(diagnostics[0].refs.forced_origin, '! * -> Done :: Panic;');
+            assert.ok(['Root.OrphanA', 'Root.OrphanB'].includes(
+                diagnostics[0].refs.source_state_path as string,
+            ));
+        });
+
+        it('keeps duplicate wildcard declarations tied to their own expansions', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Live;
+    state Orphan;
+    state Error;
+    [*] -> Live;
+    !* -> Error :: Go;
+    !* -> Error :: Go;
+}
+`));
+            assert.equal(report.structure_statistics.authored_transition_count, 2);
+            assert.equal(report.structure_statistics.unreachable_transitions, 2);
+            assert.deepEqual(report.structure_statistics.unreachable_transition_reasons, {
+                redundant: 1,
+                unreachable_source_state: 2,
+            });
+        });
+
+        it('marks a transition from a fully unreachable composite source', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Orphan {
+        state A;
+        [*] -> A;
+    }
+    state Live;
+    [*] -> Live;
+    Orphan -> Live;
+}
+`));
+            assert.equal(report.structure_statistics.unreachable_transitions, 1);
+            assert.deepEqual(report.structure_statistics.unreachable_transition_reasons, {
+                unreachable_source_state: 1,
+            });
+        });
+
+        it('does not count excluded event-bearing initial edges', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Live;
+    state Orphan {
+        event Boot;
+        state A;
+        [*] -> A : Boot;
+    }
+    [*] -> Live;
+}
+`));
+            assert.equal(report.structure_statistics.authored_transition_count, 0);
+            assert.equal(report.structure_statistics.unreachable_transitions, 0);
+            assert.deepEqual(report.structure_statistics.unreachable_transition_reasons, {});
+        });
+
+        it('maps duplicate authored combo transitions to the redundant bucket', async () => {
+            const report = inspectModel(await buildMachine(`
+def int x = 1;
+state Root {
+    state A;
+    state B;
+    [*] -> A;
+    A -> B :: E1 + [x > 0] + E2;
+    A -> B :: E1 + [x > 0] + E2;
+}
+`));
+            assert.equal(report.structure_statistics.authored_transition_count, 2);
+            assert.equal(report.structure_statistics.unreachable_transitions, 1);
+            assert.deepEqual(report.structure_statistics.unreachable_transition_reasons, {
+                redundant: 1,
+            });
+        });
+
+        it('counts forced declarations with no concrete expansion', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state A { !* -> [*] :: Never; }
+    [*] -> A;
+}
+`));
+            assert.equal(report.structure_statistics.authored_transition_count, 1);
+            assert.equal(report.structure_statistics.unreachable_transitions, 1);
+            assert.deepEqual(report.structure_statistics.unreachable_transition_reasons, {
+                forced_never_expands: 1,
+            });
+        });
+
+        it('counts duplicate forced declarations with no concrete expansion', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state A {
+        !* -> [*] :: Never;
+        !* -> [*] :: Never;
+    }
+    [*] -> A;
+}
+`));
+            assert.equal(report.structure_statistics.authored_transition_count, 2);
+            assert.equal(report.structure_statistics.unreachable_transitions, 2);
+            assert.deepEqual(report.structure_statistics.unreachable_transition_reasons, {
+                forced_never_expands: 2,
+            });
+        });
+
+        it('counts every redundant copy after the first authored transition', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state A;
+    state B;
+    [*] -> A;
+    A -> B;
+    A -> B;
+    A -> B;
+}
+`));
+            assert.equal(report.structure_statistics.authored_transition_count, 3);
+            assert.equal(report.structure_statistics.unreachable_transitions, 2);
+            assert.deepEqual(report.structure_statistics.unreachable_transition_reasons, {
+                redundant: 2,
             });
         });
 
@@ -820,6 +1119,24 @@ state Root {
             });
         });
 
+        it('reports only unreachable leaf states under an unreachable composite', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Live;
+    state Orphan {
+        state Child;
+        [*] -> Child;
+    }
+    [*] -> Live;
+}
+`));
+            const unreachable = report.diagnostics
+                .filter(d => d.code === 'W_UNREACHABLE_STATE')
+                .map(d => d.refs.state_path);
+            assert.deepEqual(unreachable, ['Root.Orphan.Child']);
+            assert.equal(report.structure_statistics.unreachable_leaf_states, 1);
+        });
+
         it('reports only topological unreachable transition sources', async () => {
             const report = inspectModel(await buildMachine(`
 state Root {
@@ -835,17 +1152,16 @@ state Root {
             assert.equal(diagnostics[0].span?.line, 7);
             assert.equal(
                 diagnostics[0].message,
-                'Transition "Root.Orphan" -> "Root.Done" has a source outside the guard-agnostic root-reachable topology.',
+                'Authored transition "Root.Orphan" -> "Root.Done" is unreachable for reasons: unreachable_source_state.',
             );
             assert.deepEqual(diagnostics[0].refs, {
-                reason: 'source_unreachable',
-                verification_scope: 'topological_only',
                 from_path: 'Root.Orphan',
                 to_path: 'Root.Done',
+                transition_index: 1,
+                reasons: ['unreachable_source_state'],
+                source_path: '/tmp/inspect.fcstm',
                 source_state_path: 'Root.Orphan',
                 selection_owner_path: null,
-                source_path: '/tmp/inspect.fcstm',
-                transition_index: 1,
                 forced_origin: null,
                 combo_origin_ids: [],
             });
@@ -1173,16 +1489,15 @@ state Root {
 }`));
             const diagnostics = report.diagnostics.filter(d => d.code === 'W_UNREACHABLE_TRANSITION');
             assert.equal(diagnostics.length, 1);
-            assert.match(diagnostics[0].message, /^Generated forced transition expansion/);
+            assert.match(diagnostics[0].message, /^Authored transition/);
             assert.deepEqual(diagnostics[0].refs, {
-                reason: 'source_unreachable',
-                verification_scope: 'topological_only',
                 from_path: 'Root.Group.Lost',
                 to_path: 'Root.Group.Done',
+                transition_index: 2,
+                reasons: ['unreachable_source_state'],
+                source_path: '/tmp/inspect.fcstm',
                 source_state_path: 'Root.Group.Lost',
                 selection_owner_path: null,
-                source_path: '/tmp/inspect.fcstm',
-                transition_index: 2,
                 forced_origin: '! * -> Done :: Panic;',
                 combo_origin_ids: [],
             });
@@ -1481,6 +1796,51 @@ state Root {
                     code: 'W_UNREACHABLE_STATE',
                     severity: 'warning',
                     refs: {state_path: 'Root.Orphan'},
+                },
+                {
+                    code: 'W_UNREACHABLE_TRANSITION',
+                    severity: 'warning',
+                    refs: {
+                        from_path: '*',
+                        to_path: '[*]',
+                        transition_index: null,
+                        reasons: ['forced_never_expands'],
+                        source_path: null,
+                        source_state_path: '*',
+                        selection_owner_path: null,
+                        forced_origin: '! * -> [*] :: Never;',
+                        combo_origin_ids: [],
+                    },
+                },
+                {
+                    code: 'W_UNREACHABLE_TRANSITION',
+                    severity: 'warning',
+                    refs: {
+                        from_path: 'Root.Active',
+                        to_path: 'Root.Trapped',
+                        transition_index: 0,
+                        reasons: ['redundant'],
+                        source_path: '/tmp/inspect.fcstm',
+                        source_state_path: 'Root.Active',
+                        selection_owner_path: null,
+                        forced_origin: '! Active -> Trapped :: Tick;',
+                        combo_origin_ids: [],
+                    },
+                },
+                {
+                    code: 'W_UNREACHABLE_TRANSITION',
+                    severity: 'warning',
+                    refs: {
+                        from_path: 'Root.Idle',
+                        to_path: 'Root.Active',
+                        transition_index: 3,
+                        reasons: ['redundant'],
+                        source_path: '/tmp/inspect.fcstm',
+                        source_state_path: 'Root.Idle',
+                        selection_owner_path: null,
+                        forced_origin: null,
+                        combo_origin_ids: [],
+                    },
                 },
                 {
                     code: 'W_UNREFERENCED_VAR',

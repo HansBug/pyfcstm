@@ -134,6 +134,58 @@ def test_raw_transition_payload_includes_guard_text():
     assert payload["guard"] == "x && True"
 
 
+def test_raw_transition_payload_reflects_mutated_state_order():
+    """Index lookup must not retain topology from an earlier public call."""
+    machine = parse_machine('''
+        state Root {
+            state P {
+                state A;
+                state B;
+                [*] -> A;
+                A -> B;
+            }
+            state Q {
+                state C;
+                state D;
+                [*] -> C;
+                C -> D;
+            }
+            [*] -> P;
+        }
+    ''')
+    transition = next(
+        item for state in machine.walk_states()
+        for item in state.transitions
+        if str(item.from_state) == 'A'
+    )
+    before = encoding_core._transition_payload(transition)['transition_index']
+    items = list(machine.root_state.substates.items())
+    machine.root_state.substates.clear()
+    machine.root_state.substates.update(reversed(items))
+    after = encoding_core._transition_payload(transition)['transition_index']
+    assert before == 2
+    assert after == 4
+
+
+def test_transition_index_scope_does_not_poison_parent_context_on_interrupt(monkeypatch):
+    """Map construction is interrupt-safe before the child ContextVar is set."""
+    machine = parse_machine("state Root;")
+    sentinel = {99: 123}
+    token = encoding_core._TRANSITION_INDEX_SCOPE.set(sentinel)
+
+    def interrupted_map(root):
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(encoding_core, "_transition_index_map", interrupted_map)
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            with encoding_core._transition_index_scope(machine):
+                pass
+        assert encoding_core._TRANSITION_INDEX_SCOPE.get() is sentinel
+    finally:
+        encoding_core._TRANSITION_INDEX_SCOPE.reset(token)
+
+
 def test_expected_expression_translation_failures_are_normalized():
     """Known expression-to-Z3 failures become algorithm results, not crashes."""
     x = Variable("x")

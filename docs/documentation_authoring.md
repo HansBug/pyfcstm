@@ -289,7 +289,7 @@ Minimum capability checklist:
 
 - inspect CLI options, output formats, output file behavior, ANSI/color policy, suffix warning, and invalid-input
   boundaries;
-- `ModelInspect` top-level fields, metrics, diagnostics, summary sections, source metadata, and schema-version facts;
+- `ModelInspect` top-level fields, metrics, diagnostics, summary sections, source metadata, and the release-shipped schema contract;
 - LLM-oriented report fields and their intended repair-guidance boundary;
 - diagnostic-code registry counts or distribution, severity levels, emission context where discoverable, capability
   tiers when verify-specific diagnostics depend on them, and code ownership;
@@ -489,7 +489,7 @@ primary and horizon timing, replay trust, mismatch diagnostics, and bounded
 scope. Terminal color uses an explicit ``auto|always|never`` contract: ``auto``
 requires a suitable TTY and honors ``NO_COLOR``, while ``always`` may force
 color through a pipe. JSON and output files remain ANSI-free. CI, tools, and LLM examples
-consume the versioned JSON schema and never scrape human wording or live
+consume the JSON schema shipped with the running release and never scrape human wording or live
 timing.
 
 ## Page contracts and failure boundaries

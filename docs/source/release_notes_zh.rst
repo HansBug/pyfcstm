@@ -30,14 +30,20 @@ FBMCQ 与有界模型检查
 - 将 ``pyfcstm inspect`` 默认输出改为检查器风格的人类报告，提供对齐的源码范围、
   相邻源码上下文、紧凑严重级别标签和 ``--color auto|always|never``。文件、管道和
   机器格式仍不包含 ANSI 转义序列。
-- 通过 ``--format json`` 保留稳定的机器报告，并新增使用
-  ``pyfcstm.inspect.llm.v1`` 模式的 ``--format llm-json`` 与
-  ``--format llm-md``。大语言模型报告包含源码上下文、来源、修复指导和明确禁止事项。
+- 通过 ``--format json`` 保留机器报告，并新增 ``--format llm-json`` 与
+  ``--format llm-md``。大语言模型报告使用随当前发布版本提供的模式文件，包含源码上下文、
+  来源、修复指导和明确禁止事项；公开载荷不包含产品级 schema 版本或状态字段。
+- 在 LLM 报告的 ``summary.structure_statistics`` 以及完整报告的
+  ``ModelInspect.structure_statistics`` 中新增描述性结构统计。比率以原始小数输出，
+  空分母使用 ``null``，并记录转换密度和不可达总体的保守建议阈值。超出只记录元数据，
+  ``W_UNREACHABLE_TRANSITION`` 会按 authored transition 聚合不可达原因；这些阈值仍只
+  是元数据，不生成综合健康分数；Python API 和 CLI 均可覆盖或关闭这些阈值。
 - 扩展静态与验证支持的诊断，包括数值和守卫推理；求解器支持的检查仍受既有显式启用
   与安全门控约束。
 - 在完整 JSON/API 报告中新增 ``ModelInspect.verification`` 执行元数据，使消费者能够区分
   验证未启用、被策略排除、得到确定结果和无法判定，而不会把这些状态误当成新的模型诊断。
-  human CLI 会显示紧凑的覆盖率及不确定原因；稳定的 ``pyfcstm.inspect.llm.v1`` 表达契约保持不变。
+  human CLI 会显示紧凑的覆盖率及不确定原因；LLM 表达契约包含上述结构统计段。模式文件仍是
+  随发布版本提供的契约，而不是载荷级版本标记。
 - 新增隔离的多提供方修复评测，验证消费者在无法读取隐藏仓库上下文时，是否能定位、
   解释、修复真实诊断并完成重放。
 

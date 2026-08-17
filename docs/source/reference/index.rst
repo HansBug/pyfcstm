@@ -108,7 +108,8 @@ Prerequisites: you need exact command, stream, color, exit-status, JSON,
 witness, replay, timing, diagnostic, or packaging facts.
 
 Outcome: you can distinguish the property verdict from SAT/UNSAT, consume the
-versioned JSON schema, and handle every report-bearing and error branch.
+JSON schema shipped with the running release, and handle every report-bearing
+and error branch.
 
 Non-goal: it does not define FBMCQ syntax or derive the bounded formulas.
 

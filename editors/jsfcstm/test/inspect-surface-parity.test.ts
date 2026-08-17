@@ -387,14 +387,13 @@ state Root {
 
         assert.ok(diagnostic, 'expected source-unreachable transition diagnostic');
         assert.deepEqual(diagnostic.data, {
-            reason: 'source_unreachable',
-            verification_scope: 'topological_only',
             from_path: 'Root.Isolated',
             to_path: 'Root.Blocked',
+            transition_index: 1,
+            reasons: ['unreachable_source_state'],
+            source_path: '/tmp/unreachable-float-normalized-guard.fcstm',
             source_state_path: 'Root.Isolated',
             selection_owner_path: null,
-            source_path: '/tmp/unreachable-float-normalized-guard.fcstm',
-            transition_index: 1,
             forced_origin: null,
             combo_origin_ids: [],
         });

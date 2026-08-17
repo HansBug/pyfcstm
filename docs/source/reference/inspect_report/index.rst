@@ -101,6 +101,10 @@ these required top-level fields.
      - Authored combo trigger provenance grouped by stable origin id.
    * - ``metrics``
      - Aggregate counts, hierarchy depth, ratios, and inventories.
+   * - ``structure_statistics``
+     - Descriptive LLM structure counts and rates. Initial edges are excluded;
+       generated combo edges and forced expansions are folded to authored
+       transitions. This section does not emit warnings or a health score.
    * - ``reachability_graph``
      - Default inspect graph: guards ignored, composite initial edges followed.
    * - ``event_emission_map``
@@ -146,6 +150,14 @@ Nested object contracts
      - Owning state, source/target, trigger facts, original raw text, and expansion count.
    * - ``ModelMetrics``
      - State/transition/event/variable counts, hierarchy depth, var-to-leaf ratio, aspect coverage, and abstract-action inventory.
+   * - ``StructureStatistics``
+     - Authored transition count, ``transitions_per_state`` (``T / S``),
+       unreachable counts/rates, and guard/effect/eventless rates. ``S`` is the
+       non-pseudo state count; rates include numerator and denominator fields
+       and are ``null`` when their population is empty. Advisory defaults are
+       ``T / S <= 6.0``, unreachable leaf-state rate ``<= 0.10``, and
+       unreachable transition rate ``<= 0.10``; exceeded names are metadata,
+       not diagnostics.
    * - ``ModelDiagnostic``
      - ``code``, ``severity``, ``message``, ``span``, ``refs``, and optional ``suggested_fix``.
    * - ``Span``
@@ -204,9 +216,41 @@ LLM report contract
 -------------------
 
 ``llm-json`` and ``llm-md`` are presentation contracts for repair loops. They do
-not replace the full report.  Their stable ``pyfcstm.inspect.llm.v1`` schema and
-output do not include ``verification`` execution metadata; consumers that need
-coverage or indeterminate results must use the full JSON report.
+not replace the full report. Their output does not include ``verification``
+execution metadata; consumers that need coverage or indeterminate results must
+use the full JSON report. Validate ``llm-json`` with the
+``inspect_llm_report_schema.json`` shipped with the same ``pyfcstm`` release.
+Neither the public payload nor the Markdown presentation carries a product
+schema version or status marker.
+
+The structure-statistics policy is descriptive by default: all raw counts and
+rates are emitted, and the three conservative advisory defaults are recorded in
+``thresholds``. A high value only adds its field name to
+``exceeded_thresholds``; no G5 health warning or score is created. A rate with
+an empty denominator is ``null`` (``N/A`` in human/Markdown output). Callers
+may pass ``StructureStatisticsPolicy`` (or a partial mapping) to
+``inspect_model``; ``None`` disables an individual advisory threshold. Any
+future corpus-derived cutoff must identify its corpus and be explicitly configured.
+
+The default ``6.0`` review trigger is an engineering baseline informed by the
+pooled ``T / S = 2.75`` and the observed protocol-level range in the 14-protocol
+PSMBench/RFC2PSM cohort (`PSMBench DOI <https://doi.org/10.52202/085713-1899>`_).
+That cohort is flat, protocol-specific, and too small to define a universal
+FCSTM limit; the trigger is intentionally broad enough not to flag ordinary
+high-density protocol machines. The ``10%`` unreachable-population defaults are
+review-budget heuristics, not published quality boundaries. UML 2.5.1 models
+both transition ``guard`` and ``effect`` as optional, so this report
+intentionally leaves those style rates without default cutoffs (`OMG UML 2.5.1
+<https://www.omg.org/spec/UML/2.5.1/PDF>`_).
+
+``unguarded_rate`` counts authored transitions whose AST has no guard.
+``missing_effect_rate`` uses non-forced authored transitions as its denominator,
+because forced declarations do not accept an effect in the FCSTM grammar.
+``eventless_unconditional_rate`` counts transitions with neither an event nor a
+guard. These are syntax-level observations, not claims that a transition is
+semantically unsafe. Unreachable-transition reason buckets are deliberately
+non-exclusive; the total is the union of authored identities, so one transition
+may contribute to more than one reason while being counted once in the total.
 
 .. list-table:: LLM top-level fields
    :header-rows: 1
@@ -214,10 +258,6 @@ coverage or indeterminate results must use the full JSON report.
 
    * - Field
      - Meaning
-   * - ``schema_version``
-     - Constant ``pyfcstm.inspect.llm.v1``.
-   * - ``schema_status``
-     - Constant ``stable``.
    * - ``status``
      - Overall status: ``ok``, ``info``, ``warning``, or ``error``.
    * - ``input``
@@ -225,7 +265,7 @@ coverage or indeterminate results must use the full JSON report.
    * - ``repair_protocol``
      - Object with ``goal`` and ordered ``rules`` for safe repair prompts.
    * - ``summary``
-     - Counts for errors, warnings, infos, states, leaf states, transitions, variables, and root state.
+     - Counts for errors, warnings, infos, states, leaf states, transitions, variables, and root state, plus the ``structure_statistics`` object.
    * - ``diagnostics``
      - Compact diagnostic entries enriched with source excerpts and registry guidance.
 
@@ -246,7 +286,9 @@ coverage or indeterminate results must use the full JSON report.
    * - ``source``
      - ``inspect-static``, ``verify-backed``, or ``unknown``.
    * - ``provenance``
-     - ``kind`` plus ``verify_required`` flag.
+     - ``kind`` plus ``verify_required`` flag; verify-backed entries may also
+       carry ``source_ids`` with stable ``algorithm_name@verification_scope``
+       identifiers. These identifiers contain no product or schema version.
    * - ``summary``
      - Registry LLM summary for the diagnostic code.
    * - ``recommended_actions`` / ``do_not``

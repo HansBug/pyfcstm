@@ -402,8 +402,7 @@ describe('jsfcstm lsp core', () => {
         assert.equal(unreachable.length, 1, JSON.stringify(hostPublication));
         assert.equal(unreachable[0].range.start.line, 4);
         assert.equal(unreachable[0].data?.source_path, hostFile);
-        assert.equal(unreachable[0].data?.reason, 'source_unreachable');
-        assert.equal(unreachable[0].data?.verification_scope, 'topological_only');
+        assert.deepEqual(unreachable[0].data?.reasons, ['unreachable_source_state']);
 
         core.dispose();
     });
@@ -481,11 +480,10 @@ describe('jsfcstm lsp core', () => {
         const unreachable = publication.diagnostics.filter(
             item => item.code === 'W_UNREACHABLE_TRANSITION',
         );
-        assert.equal(unreachable.length, 2, JSON.stringify(publication));
-        assert.deepEqual(
-            unreachable.map(item => item.data?.source_state_path).sort(),
-            ['Root.Group.LostA', 'Root.Group.LostB'],
-        );
+        assert.equal(unreachable.length, 1, JSON.stringify(publication));
+        assert.ok(['Root.Group.LostA', 'Root.Group.LostB'].includes(
+            unreachable[0].data?.source_state_path as string,
+        ));
 
         core.dispose();
     });

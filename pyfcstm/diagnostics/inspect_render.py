@@ -37,13 +37,12 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from .codes import CODE_REGISTRY, canonicalize_diagnostic_code
 from ..utils.validate import ModelDiagnostic, Span
 
-INSPECT_LLM_SCHEMA_VERSION = "pyfcstm.inspect.llm.v1"
 _INSPECT_OUTPUT_FORMATS = ("human", "json", "llm-json", "llm-md")
 _SEVERITY_ORDER = ("error", "warning", "info")
 _SEVERITY_HUMAN_LABELS = {
@@ -304,6 +303,7 @@ def render_inspect_human(
     )
     lines.append(f"  transitions: {len(report.transitions)}")
     lines.append(f"  variables: {report.metrics.n_variables}")
+    lines.extend(_render_structure_statistics_human(report))
     lines.append(
         "  diagnostics: {error} errors / {warning} warnings / {info} infos".format(
             error=counts["error"],
@@ -366,9 +366,9 @@ def render_inspect_llm_json(
 ) -> str:
     """Render an inspect report as a stable compact JSON packet for LLMs.
 
-    The packet is marked with :data:`INSPECT_LLM_SCHEMA_VERSION`. This
-    versioned contract is intended for downstream repair loops that need a
-    compact, source-located, and provenance-aware diagnostic report.
+    The packet follows the inspect LLM report schema shipped with the running
+    ``pyfcstm`` release. It is intended for downstream repair loops that need
+    a compact, source-located, and provenance-aware diagnostic report.
 
     :param report: Inspect report returned by
         :func:`pyfcstm.diagnostics.inspect_model`.
@@ -386,8 +386,8 @@ def render_inspect_llm_json(
         >>> from pyfcstm.diagnostics import inspect_model
         >>> model = load_state_machine_from_text('state Root { state Idle; [*] -> Idle; }')
         >>> text = render_inspect_llm_json(inspect_model(model), 'state Root { state Idle; [*] -> Idle; }')
-        >>> INSPECT_LLM_SCHEMA_VERSION in text
-        True
+        >>> json.loads(text)["status"]
+        'warning'
     """
     packet = _llm_packet(report, source_text, input_path=input_path)
     return json.dumps(packet, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
@@ -419,8 +419,6 @@ def render_inspect_llm_markdown(
     """
     counts = _severity_counts(report.diagnostics)
     lines = ["# FCSTM Inspect Report", ""]
-    lines.append(f"- Schema: `{INSPECT_LLM_SCHEMA_VERSION}`")
-    lines.append("- Schema status: `stable`")
     lines.append(f"- Status: `{_status_from_counts(counts)}`")
     if input_path:
         lines.append(f"- Input: `{input_path}`")
@@ -432,6 +430,25 @@ def render_inspect_llm_markdown(
         )
     )
     lines.append("")
+    statistics = _structure_statistics_dict(report)
+    if statistics is not None:
+        lines.append("## Structure statistics")
+        lines.append("")
+        lines.append("These are descriptive counts and rates; they do not imply a defect.")
+        for key, value in statistics.items():
+            if key == "unreachable_transition_reasons":
+                value = ", ".join(
+                    f"{reason}={count}" for reason, count in value.items()
+                ) or "none"
+            elif key == "thresholds":
+                value = ", ".join(
+                    f"{name}={threshold if threshold is not None else 'off'}"
+                    for name, threshold in value.items()
+                )
+            elif key == "exceeded_thresholds":
+                value = ", ".join(value) or "none"
+            lines.append(f"- {key}: `{value if value is not None else 'N/A'}`")
+        lines.append("")
     lines.append("## Repair protocol")
     lines.append("")
     for rule in _GLOBAL_REPAIR_RULES:
@@ -514,6 +531,75 @@ def _status_from_counts(counts: Mapping[str, int]) -> str:
     return "ok"
 
 
+def _structure_statistics_dict(report: Any) -> Optional[Dict[str, Any]]:
+    statistics = getattr(report, "structure_statistics", None)
+    if statistics is None:
+        return None
+    if is_dataclass(statistics):
+        return asdict(statistics)
+    return dict(statistics)
+
+
+def _render_structure_statistics_human(report: Any) -> List[str]:
+    statistics = _structure_statistics_dict(report)
+    if statistics is None:
+        return []
+
+    def formatted(name: str) -> str:
+        raw = statistics[name]
+        if raw is None:
+            return "N/A"
+        if name.endswith("_rate"):
+            return f"{raw:.3f} ({raw:.1%})"
+        if name in {"transitions_per_state", "states_per_transition"}:
+            return f"{raw:.3f}"
+        return str(raw)
+
+    return [
+        "Structure statistics",
+        "  states: {total} total / {leaf} leaf / {composite} composite".format(
+            total=statistics["state_count"],
+            leaf=statistics["leaf_state_count"],
+            composite=statistics["composite_state_count"],
+        ),
+        "  authored transitions: {count}".format(
+            count=statistics["authored_transition_count"],
+        ),
+        "  transitions per state: {value}".format(
+            value=formatted("transitions_per_state"),
+        ),
+        "  states per transition: {value}".format(
+            value=formatted("states_per_transition"),
+        ),
+        "  unreachable: {states} leaf states / {transitions} transitions".format(
+            states=statistics["unreachable_leaf_states"],
+            transitions=statistics["unreachable_transitions"],
+        ),
+        "  unreachable rates: {states} leaf states / {transitions} transitions".format(
+            states=formatted("unreachable_leaf_state_rate"),
+            transitions=formatted("unreachable_transition_rate"),
+        ),
+        "  unguarded: {numerator}/{denominator}; rate: {rate}".format(
+            numerator=statistics["unguarded_transitions"],
+            denominator=statistics["guard_eligible_transitions"],
+            rate=formatted("unguarded_rate"),
+        ),
+        "  missing effect: {numerator}/{denominator}; rate: {rate}".format(
+            numerator=statistics["missing_effect_transitions"],
+            denominator=statistics["effect_eligible_transitions"],
+            rate=formatted("missing_effect_rate"),
+        ),
+        "  eventless unconditional: {numerator}/{denominator}; rate: {rate}".format(
+            numerator=statistics["eventless_unconditional_transitions"],
+            denominator=statistics["behavior_transitions"],
+            rate=formatted("eventless_unconditional_rate"),
+        ),
+        "  advisory thresholds exceeded: {value}".format(
+            value=", ".join(statistics["exceeded_thresholds"]) or "none",
+        ),
+    ]
+
+
 def _format_human_severity_label(severity: str, *, options: HumanRenderOptions) -> str:
     text = "[{label}]".format(label=_SEVERITY_HUMAN_LABELS[severity])
     return _style_text(text, _severity_style(severity), options=options)
@@ -568,7 +654,7 @@ def _render_human_diagnostic(
                 lines.append(f"{gutter} {caret}")
         lines.append(gutter)
     spec = CODE_REGISTRY.get(diagnostic.code)
-    lines.append(f"   = source: {_diagnostic_source(spec)}")
+    lines.append(f"   = source: {_diagnostic_source(spec, diagnostic.refs)}")
     if spec is not None and spec.for_llm is not None:
         lines.append(f"   = why: {spec.for_llm.summary}")
         recommended_actions = _recommended_actions_for_diagnostic(diagnostic, spec)
@@ -586,8 +672,6 @@ def _llm_packet(
 ) -> Dict[str, Any]:
     counts = _severity_counts(report.diagnostics)
     return {
-        "schema_version": INSPECT_LLM_SCHEMA_VERSION,
-        "schema_status": "stable",
         "status": _status_from_counts(counts),
         "input": input_path,
         "repair_protocol": {
@@ -603,6 +687,7 @@ def _llm_packet(
             "leaf_states": report.metrics.n_states_leaf,
             "transitions": len(report.transitions),
             "variables": report.metrics.n_variables,
+            "structure_statistics": _structure_statistics_dict(report),
         },
         "diagnostics": [
             _diagnostic_llm_dict(diagnostic, source_text, input_path=input_path)
@@ -619,6 +704,13 @@ def _diagnostic_llm_dict(
 ) -> Dict[str, Any]:
     spec = CODE_REGISTRY.get(diagnostic.code)
     excerpt = _source_excerpt(source_text, diagnostic.span)
+    provenance = {
+        "kind": _diagnostic_source(spec, diagnostic.refs),
+        "verify_required": _diagnostic_source(spec, diagnostic.refs) == "verify-backed",
+    }
+    verification_source_ids = diagnostic.refs.get("verification_source_ids")
+    if isinstance(verification_source_ids, (list, tuple)):
+        provenance["source_ids"] = list(verification_source_ids)
     return {
         "code": diagnostic.code,
         "severity": diagnostic.severity,
@@ -626,11 +718,8 @@ def _diagnostic_llm_dict(
         "location": _span_dict(diagnostic.span, input_path=input_path),
         "source_excerpt": _excerpt_dict(excerpt),
         "refs": _jsonable(diagnostic.refs),
-        "source": _diagnostic_source(spec),
-        "provenance": {
-            "kind": _diagnostic_source(spec),
-            "verify_required": _diagnostic_source(spec) == "verify-backed",
-        },
+        "source": _diagnostic_source(spec, diagnostic.refs),
+        "provenance": provenance,
         "summary": spec.for_llm.summary
         if spec is not None and spec.for_llm is not None
         else None,
@@ -647,7 +736,9 @@ def _diagnostic_llm_dict(
     }
 
 
-def _diagnostic_source(spec: Optional[Any]) -> str:
+def _diagnostic_source(spec: Optional[Any], refs: Optional[Mapping[str, Any]] = None) -> str:
+    if refs is not None and refs.get("verify_backed") is True:
+        return "verify-backed"
     if spec is None:
         return "unknown"
     if getattr(spec, "emit_tier", None) == "verify_pipeline":

@@ -440,6 +440,16 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 },
             },
             {
+                'code': 'W_UNREACHABLE_TRANSITION',
+                'severity': 'warning',
+                'refs': {
+                    'from_path': 'Root.Active',
+                    'to_path': 'Root.Blocked',
+                    'transition_index': 2,
+                    'reasons': ['guard_false'],
+                },
+            },
+            {
                 'code': 'W_UNUSED_EVENT',
                 'severity': 'warning',
                 'refs': {
@@ -476,6 +486,16 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                     'folded_value': False,
                     'from_path': 'Root.Idle',
                     'to_path': 'Root.Active',
+                },
+            },
+            {
+                'code': 'W_UNREACHABLE_TRANSITION',
+                'severity': 'warning',
+                'refs': {
+                    'from_path': 'Root.Idle',
+                    'to_path': 'Root.Active',
+                    'transition_index': 1,
+                    'reasons': ['guard_false'],
                 },
             },
         ],
@@ -551,6 +571,16 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                     'folded_value': False,
                     'from_path': 'Root.Active',
                     'to_path': 'Root.Blocked',
+                },
+            },
+            {
+                'code': 'W_UNREACHABLE_TRANSITION',
+                'severity': 'warning',
+                'refs': {
+                    'from_path': 'Root.Active',
+                    'to_path': 'Root.Blocked',
+                    'transition_index': 2,
+                    'reasons': ['guard_false'],
                 },
             },
             {
@@ -719,6 +749,16 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                 },
             },
             {
+                'code': 'W_UNREACHABLE_TRANSITION',
+                'severity': 'warning',
+                'refs': {
+                    'from_path': 'Root.Idle',
+                    'to_path': 'Root.Active',
+                    'transition_index': 1,
+                    'reasons': ['guard_false'],
+                },
+            },
+            {
                 'code': 'W_GUARD_CONST_TRUE',
                 'severity': 'warning',
                 'refs': {
@@ -870,6 +910,36 @@ DESIGN_HEALTH_INSPECT_FIXTURES = [
                         None,
                         None,
                     ],
+                },
+            },
+            {
+                'code': 'W_UNREACHABLE_TRANSITION',
+                'severity': 'warning',
+                'refs': {
+                    'from_path': '*',
+                    'to_path': '[*]',
+                    'transition_index': None,
+                    'reasons': ['forced_never_expands'],
+                },
+            },
+            {
+                'code': 'W_UNREACHABLE_TRANSITION',
+                'severity': 'warning',
+                'refs': {
+                    'from_path': 'Root.Active',
+                    'to_path': 'Root.Trapped',
+                    'transition_index': 0,
+                    'reasons': ['redundant'],
+                },
+            },
+            {
+                'code': 'W_UNREACHABLE_TRANSITION',
+                'severity': 'warning',
+                'refs': {
+                    'from_path': 'Root.Idle',
+                    'to_path': 'Root.Active',
+                    'transition_index': 3,
+                    'reasons': ['redundant'],
                 },
             },
             {
@@ -1325,13 +1395,32 @@ def test_design_health_inspect_diagnostics_match_inlined_expected(name, dsl, exp
         'W_SELF_TRANSITION_NOP',
         'W_EFFECT_SELF_ASSIGN',
         'I_TRANSITION_NEVER_EVENT_TRIGGERED',
+        'W_UNREACHABLE_TRANSITION',
     }
-    allowed_extra_keys = {'from_path', 'to_path', 'guard_text', 'transition_index', 'transition_span'}
+    aggregate_extra_keys = {
+        'source_path',
+        'source_state_path',
+        'selection_owner_path',
+        'forced_origin',
+        'combo_origin_ids',
+    }
+    allowed_extra_keys = {
+        'from_path',
+        'to_path',
+        'guard_text',
+        'transition_index',
+        'transition_span',
+    }
     for item in unmatched:
         assert item['code'] in pr_b1_enriched_codes, (
             f'{name}: pyfcstm inspect diagnostics mismatch: {py_diags}'
         )
-        variants = [item]
+        aggregate_stripped = {
+            key: value
+            for key, value in item['refs'].items()
+            if key not in aggregate_extra_keys
+        }
+        variants = [item, {**item, 'refs': aggregate_stripped}]
         for _ in range(len(allowed_extra_keys)):
             next_variants = []
             for variant in variants:

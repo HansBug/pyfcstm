@@ -25,6 +25,8 @@ Example::
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import (
     TYPE_CHECKING,
@@ -68,6 +70,11 @@ if TYPE_CHECKING:  # pragma: no cover - imported only for static checkers
 
 _Z3Expr = Union[z3.ArithRef, z3.BoolRef]
 _Z3Vars = Dict[str, _Z3Expr]
+
+_TRANSITION_INDEX_SCOPE: ContextVar[Optional[Dict[int, int]]] = ContextVar(
+    '_pyfcstm_transition_index_scope',
+    default=None,
+)
 
 is_sat = _solver_is_sat
 
@@ -304,6 +311,54 @@ def _event_name(transition: Transition) -> Optional[str]:
     return transition.event.path_name
 
 
+def _transition_index_map(root) -> Dict[int, int]:
+    """Build a parent-first transition index map for one verify run."""
+    index_map: Dict[int, int] = {}
+    index = 0
+    for state in root.walk_states():
+        for candidate in state.transitions:
+            index_map[id(candidate)] = index
+            index += 1
+    return index_map
+
+
+@contextmanager
+def _transition_index_scope(machine: 'StateMachine'):
+    """Reuse one topology snapshot while a verify algorithm is running."""
+    root = machine.root_state
+    token = None
+    try:
+        # Establish the reset handler before installing the per-run value. If
+        # an asynchronous interrupt lands during map construction or set(),
+        # the previous caller's ContextVar value must remain untouched.
+        token = _TRANSITION_INDEX_SCOPE.set(_transition_index_map(root))
+        yield
+    finally:
+        if token is not None:
+            _TRANSITION_INDEX_SCOPE.reset(token)
+
+
+def _transition_index(transition: Transition) -> Optional[int]:
+    """Return the parent-first model index for ``transition``.
+
+    Verify algorithms receive an individual transition rather than the owning
+    machine.  The parent links still let us recover the root and reproduce the
+    inspect layer's stable traversal order, which is required to distinguish
+    identical source declarations in downstream diagnostics.
+    """
+    owner = getattr(transition, 'parent', None)
+    if owner is None:
+        return None
+    while owner.parent is not None:
+        owner = owner.parent
+    index_map = _TRANSITION_INDEX_SCOPE.get()
+    if index_map is None:
+        # Direct public algorithm calls have no enclosing inspect run. Build a
+        # fresh map so mutations to the public model are always reflected.
+        index_map = _transition_index_map(owner)
+    return index_map.get(id(transition))
+
+
 def _transition_payload(transition: Transition) -> dict:
     """Create a stable, diagnostics-layer-free transition payload.
 
@@ -330,6 +385,7 @@ def _transition_payload(transition: Transition) -> dict:
         "event": _event_name(transition),
         "guard": str(transition.guard) if transition.guard is not None else None,
         "is_forced": transition.is_forced,
+        "transition_index": _transition_index(transition),
     }
 
 

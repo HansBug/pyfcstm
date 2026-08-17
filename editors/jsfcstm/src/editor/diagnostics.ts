@@ -396,7 +396,7 @@ export function collectInspectDiagnosticsFromItems(
                 diagnostic.data = {...(diagnostic.data ?? {}), __rangeFallback: 'full_document'};
             }
         }
-        if (refResolution.fallback) {
+        if (refResolution.fallback && primarySpanRange === null) {
             diagnostic.data = {...(diagnostic.data ?? {}), __rangeFallback: refResolution.fallback};
         }
         diagnostic.relatedInformation = relatedInformationFromRefs(document, semantic, item);

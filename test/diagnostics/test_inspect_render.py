@@ -14,7 +14,6 @@ from pyfcstm.diagnostics import inspect_model
 from pyfcstm.diagnostics.codes import CODE_REGISTRY
 from pyfcstm.diagnostics.inspect_render import (
     HumanRenderOptions,
-    INSPECT_LLM_SCHEMA_VERSION,
     inspect_output_suffix_warning,
     render_inspect_human,
     render_inspect_llm_json,
@@ -40,10 +39,14 @@ BOX_DRAWING_RE = re.compile(r"[\u2500-\u257f]")
 SOURCE_EXCERPT_RE = re.compile(r"\s+\d+ \|")
 
 
-def _report():
+def _report(*, enable_verify=False, max_complexity_tier="structural"):
     ast = parse_with_grammar_entry(SOURCE, "state_machine_dsl")
     machine = parse_dsl_node_to_state_machine(ast)
-    return inspect_model(machine)
+    return inspect_model(
+        machine,
+        enable_verify=enable_verify,
+        max_complexity_tier=max_complexity_tier,
+    )
 
 
 def _assert_excerpt_gutters_align(text):
@@ -90,6 +93,12 @@ def _schema_type_matches(value, expected):
         if (
             expected_type == "integer"
             and isinstance(value, int)
+            and not isinstance(value, bool)
+        ):
+            return True
+        if (
+            expected_type == "number"
+            and isinstance(value, (int, float))
             and not isinstance(value, bool)
         ):
             return True
@@ -384,16 +393,26 @@ class TestInspectRender:
         assert "No diagnostics." in text
         assert ANSI_ESCAPE_RE.search(text) is None
 
+    def test_human_renderer_formats_structure_rates_by_kind(self):
+        text = render_inspect_human(_report(), SOURCE, input_path="case.fcstm")
+
+        assert "  transitions per state: 0.333" in text
+        assert "  states per transition: 3.000" in text
+        assert "  unguarded: 0/1; rate: 0.000 (0.0%)" in text
+        assert "  missing effect: 1/1; rate: 1.000 (100.0%)" in text
+
     def test_llm_json_renderer_is_stable_and_actionable(self):
         payload = json.loads(render_inspect_llm_json(_report(), SOURCE))
 
-        assert payload["schema_version"] == INSPECT_LLM_SCHEMA_VERSION
-        assert payload["schema_status"] == "stable"
+        assert "schema_version" not in payload
+        assert "schema_status" not in payload
         assert payload["status"] == "warning"
         assert payload["diagnostics"]
         diagnostic = payload["diagnostics"][0]
         assert {"code", "severity", "message", "refs"} <= set(diagnostic)
         assert payload["repair_protocol"]["rules"]
+        assert payload["summary"]["structure_statistics"]["authored_transition_count"] == 1
+        assert payload["summary"]["structure_statistics"]["transitions_per_state"] == 1 / 3
         assert "recommended_actions" in diagnostic
         assert "do_not" in diagnostic
         assert "provenance" in diagnostic
@@ -416,7 +435,29 @@ class TestInspectRender:
         assert context[1]["caret"].strip("^") == "    "
         assert context[2]["text"] == "    [*] -> Idle;"
 
-    def test_llm_v1_renderers_ignore_verification_metadata(self):
+    def test_unreachable_transition_provenance_survives_verify_rendering(self):
+        report = _report(enable_verify=True, max_complexity_tier="smt_linear")
+        diagnostic = next(
+            item for item in report.diagnostics
+            if item.code == "W_UNREACHABLE_TRANSITION"
+        )
+        assert diagnostic.refs["verify_backed"] is True
+        assert diagnostic.refs["verification_source_ids"] == ["dead_guard@smt_local"]
+
+        payload = json.loads(render_inspect_llm_json(report, SOURCE))
+        rendered = next(
+            item for item in payload["diagnostics"]
+            if item["code"] == "W_UNREACHABLE_TRANSITION"
+        )
+        assert rendered["source"] == "verify-backed"
+        assert rendered["provenance"] == {
+            "kind": "verify-backed",
+            "verify_required": True,
+            "source_ids": ["dead_guard@smt_local"],
+        }
+        assert "verify-backed" in render_inspect_human(report, SOURCE)
+
+    def test_llm_renderers_ignore_verification_metadata(self):
         report = _report()
         verification = SimpleNamespace(
             supported=True,
@@ -458,11 +499,10 @@ class TestInspectRender:
         payload = json.loads(render_inspect_llm_json(_report(), SOURCE))
 
         assert schema["title"] == "FCSTM Inspect LLM Report"
-        assert (
-            schema["properties"]["schema_version"]["const"]
-            == INSPECT_LLM_SCHEMA_VERSION
-        )
-        assert schema["properties"]["schema_status"]["const"] == "stable"
+        assert "schema_version" not in schema["properties"]
+        assert "schema_status" not in schema["properties"]
+        assert "schema_version" not in payload
+        assert "schema_status" not in payload
         assert set(schema["required"]).issubset(set(payload.keys()))
         diagnostic_required = set(schema["definitions"]["Diagnostic"]["required"])
         for diagnostic in payload["diagnostics"]:
@@ -472,16 +512,18 @@ class TestInspectRender:
         schema_errors = _schema_errors(schema, schema, payload)
         assert schema_errors == []
 
-    def test_llm_markdown_renderer_contains_stable_schema_and_sections(self):
+    def test_llm_markdown_renderer_contains_sections(self):
         text = render_inspect_llm_markdown(_report(), SOURCE)
 
         assert "# FCSTM Inspect Report" in text
-        assert INSPECT_LLM_SCHEMA_VERSION in text
-        assert "Schema status: `stable`" in text
+        assert "Schema status:" not in text
+        assert "- Schema:" not in text
         assert "## Repair protocol" in text
         assert "## W_" in text
         assert "Recommended actions" in text
         assert "Repair notes" in text
+        assert "## Structure statistics" in text
+        assert "authored_transition_count" in text
         assert "3 |     state Idle;" in text
         assert "4 |     state Running;" in text
         assert "|     ^^^^^^^^^^^^^^" in text

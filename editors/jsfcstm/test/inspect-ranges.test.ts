@@ -101,4 +101,30 @@ describe('inspect span/range contract', () => {
         assert.equal(resolved.range!.start.character, 19);
     });
 
+    it('uses transition_index to resolve spanless aggregate transition diagnostics', async () => {
+        const text = [
+            'state Root {',
+            '    state A;',
+            '    state B;',
+            '    [*] -> A;',
+            '    A -> B :: Go;',
+        '}',
+        ].join('\n');
+        const document = createDocument(text, '/tmp/unreachable-transition-range.fcstm');
+        const semantic = await packageModule.getWorkspaceGraph().getSemanticDocument(document);
+        assert.ok(semantic, 'expected semantic document');
+
+        const resolved = packageModule.resolveRangeFromRefsDetailed(document, semantic, {
+            from_path: 'Root.A',
+            to_path: 'Root.B',
+            transition_span: null,
+            guard_span: null,
+            transition_index: 1,
+            reasons: ['unreachable_source_state'],
+        });
+
+        assert.equal(sliceByRange(text, resolved.range!).trim(), 'A -> B :: Go;');
+        assert.equal(resolved.fallback, undefined);
+    });
+
 });

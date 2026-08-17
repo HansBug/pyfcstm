@@ -20,7 +20,6 @@ import type {FcstmSemanticDocument, FcstmSemanticImport, FcstmSemanticTransition
 import {FcstmDiagnostic, rangeIsEmptyOrInvalid, TextDocumentLike} from '../utils/text';
 import {getWorkspaceGraph} from '../workspace';
 import {findIdentifierRange} from './ranges';
-import {canonicalComboEffectSignature, pythonJsonArray} from '../model/combo-origin';
 
 /**
  * Diagnostic code constants — single source of truth for jsfcstm
@@ -317,90 +316,6 @@ function transitionModelOrderIndexForPaths(
     return typeof match?.index === 'number' ? match.index : null;
 }
 
-interface TransitionTopologyCandidate {
-    fromPath: string;
-    toPath: string;
-    sourceStatePath: string | null;
-    selectionOwnerPath: string | null;
-    topologyPath: string;
-    selectionStateId: string | null;
-    transitionIndex: number | null;
-}
-
-function transitionTopologyCandidates(
-    transition: FcstmSemanticTransition,
-): TransitionTopologyCandidate[] {
-    if (transition.forced) {
-        const candidates: Array<TransitionTopologyCandidate | null> = transition.expandedTransitions.map(expanded => {
-            const fromPath = dottedPath(expanded.sourceStatePath);
-            const toPath = expanded.targetKind === 'exit'
-                ? '[*]'
-                : dottedPath(expanded.targetStatePath);
-            if (!fromPath || !toPath) return null;
-            return {
-                fromPath,
-                toPath,
-                sourceStatePath: fromPath,
-                selectionOwnerPath: null,
-                topologyPath: fromPath,
-                selectionStateId: expanded.sourceStateId,
-                transitionIndex: transitionModelOrderIndexForPaths(transition, fromPath, toPath),
-            };
-        });
-        return candidates.filter((item): item is TransitionTopologyCandidate => item !== null);
-    }
-
-    if (transition.sourceKind === 'init') {
-        const ownerPath = dottedPath(transition.ownerStatePath);
-        const toPath = transition.targetKind === 'exit'
-            ? '[*]'
-            : dottedPath(transition.targetStatePath) ?? transition.targetStateName;
-        if (!ownerPath || !toPath) return [];
-        return [{
-            fromPath: '[*]',
-            toPath,
-            sourceStatePath: null,
-            selectionOwnerPath: ownerPath,
-            topologyPath: ownerPath,
-            selectionStateId: transition.ownerStateId,
-            transitionIndex: transitionModelOrderIndexForPaths(transition, '[*]', toPath),
-        }];
-    }
-
-    const sourcePath = dottedPath(transition.sourceStatePath);
-    const toPath = transition.targetKind === 'exit'
-        ? '[*]'
-        : dottedPath(transition.targetStatePath) ?? transition.targetStateName;
-    if (!sourcePath || !toPath || !transition.sourceStateId) return [];
-    return [{
-        fromPath: sourcePath,
-        toPath,
-        sourceStatePath: sourcePath,
-        selectionOwnerPath: null,
-        topologyPath: sourcePath,
-        selectionStateId: transition.sourceStateId,
-        transitionIndex: transition.ast.comboTrigger?.isCombo
-            ? null
-            : transitionModelOrderIndex(transition),
-    }];
-}
-
-function comboOriginIdForTransition(transition: FcstmSemanticTransition): string | null {
-    if (transition.forced || transition.ast.kind !== 'transition' || !transition.ast.comboTrigger?.isCombo) {
-        return null;
-    }
-    const source = transition.sourceKind === 'init'
-        ? '__init__'
-        : transition.sourceStateName ?? '__init__';
-    const target = transition.targetKind === 'exit'
-        ? '__exit__'
-        : transition.targetStateName ?? '__exit__';
-    let origin = `${dottedPath(transition.ownerStatePath)}:${source}->${target}:${transition.ast.comboTrigger.canonicalText ?? transition.ast.text}`;
-    const effects = canonicalComboEffectSignature(transition.ast.postOperations);
-    if (effects.length > 0) origin = `${origin}:effect=${pythonJsonArray(effects)}`;
-    return origin;
-}
-
 function toFileUri(document: TextDocumentLike): string {
     const filePath = document.filePath || document.uri?.fsPath;
     return filePath ? pathToFileURL(filePath).toString() : 'untitled:fcstm';
@@ -571,10 +486,6 @@ function addTransitionDiagnostics(
     document: TextDocumentLike,
     diagnostics: FcstmDiagnostic[]
 ): void {
-    const reachable = collectReachableStateIds(semantic);
-    const comboOriginCounts = new Map<string, number>();
-    const sourcePath = document.filePath || document.uri?.fsPath || null;
-
     for (const transition of semantic.transitions) {
         // pyfcstm Layer 1 distinction: the source side of a transition
         // failing to resolve emits E_MISSING_STATE (a "state reference"
@@ -644,45 +555,10 @@ function addTransitionDiagnostics(
             }
         }
 
-        const comboOriginId = comboOriginIdForTransition(transition);
-        const comboOriginIds = comboOriginId
-            ? (() => {
-                const duplicateIndex = comboOriginCounts.get(comboOriginId) ?? 0;
-                comboOriginCounts.set(comboOriginId, duplicateIndex + 1);
-                return [comboOriginId + (duplicateIndex > 0 ? `#dup${duplicateIndex}` : '')];
-            })()
-            : [];
         // Forced declarations expand into model transitions whose canonical
         // origin text is owned by the runtime model. The inspect item remains
         // authoritative for those generated edges.
         if (transition.forced) continue;
-        for (const candidate of transitionTopologyCandidates(transition)) {
-            if (
-                !candidate.selectionStateId
-                || reachable.has(candidate.selectionStateId)
-            ) {
-                continue;
-            }
-            diagnostics.push({
-                range: transition.range,
-                message: `Transition ${JSON.stringify(transition.ast.text)} has a source outside the guard-agnostic root-reachable topology.`,
-                severity: 'warning',
-                source: 'fcstm',
-                code: FCSTM_DIAGNOSTIC_CODES.unreachableTransition,
-                data: {
-                    reason: 'source_unreachable',
-                    verification_scope: 'topological_only',
-                    from_path: candidate.fromPath,
-                    to_path: candidate.toPath,
-                    source_state_path: candidate.sourceStatePath,
-                    selection_owner_path: candidate.selectionOwnerPath,
-                    source_path: sourcePath,
-                    transition_index: candidate.transitionIndex,
-                    forced_origin: null,
-                    combo_origin_ids: comboOriginIds,
-                },
-            });
-        }
 
         if (transition.guard && isFalseLiteral(transition.guard)) {
             const sourceState = semantic.states.find(item => item.identity.id === transition.sourceStateId);

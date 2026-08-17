@@ -334,14 +334,13 @@ describe('diagnostics transition body ranges', () => {
         assert.equal(unreachable.length, 1, JSON.stringify(diagnostics));
         assert.equal(sliceByRange(text, unreachable[0].range).trim(), '!* -> Done :: Panic;');
         assert.deepEqual(unreachable[0].data, {
-            reason: 'source_unreachable',
-            verification_scope: 'topological_only',
             from_path: 'Root.Group.Lost',
             to_path: 'Root.Group.Done',
+            transition_index: 2,
+            reasons: ['unreachable_source_state'],
+            source_path: '/tmp/transition-forced-unreachable-source.fcstm',
             source_state_path: 'Root.Group.Lost',
             selection_owner_path: null,
-            source_path: '/tmp/transition-forced-unreachable-source.fcstm',
-            transition_index: 2,
             forced_origin: '! * -> Done :: Panic;',
             combo_origin_ids: [],
         });
@@ -541,7 +540,7 @@ describe('diagnostics transition body ranges', () => {
             ].sort(),
         );
         for (const item of unreachable) {
-            assert.equal(item.data?.verification_scope, 'topological_only');
+            assert.deepEqual(item.data?.reasons, ['unreachable_source_state']);
             assert.equal(item.data?.__rangeFallback, undefined);
             assert.notEqual(sliceByRange(childText, item.range), childText);
         }

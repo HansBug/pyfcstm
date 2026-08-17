@@ -40,7 +40,7 @@ Inspect and Diagnostics
   schema version or status field.
 - Added the descriptive ``summary.structure_statistics`` section to the LLM
   report and ``ModelInspect.structure_statistics`` to the full report. The
-  Rates are raw
+  rates are raw
   fractions, use ``null`` for empty denominators, and record conservative
   advisory defaults for transition density and unreachable populations.
   Exceeded names are metadata only; no new warning code or health score is

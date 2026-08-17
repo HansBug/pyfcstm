@@ -1811,23 +1811,15 @@ def _authored_transition_keys(
             effect=next((item.effect for item in group if item.effect is not None), None),
             event=next((item.event for item in group if item.event is not None), None),
         )
-    forced_expansions = [item for item in transitions if item.is_forced]
+    forced_groups = _forced_expansion_groups(transitions, forced_transitions)
     for index, declaration in enumerate(forced_transitions):
-        base = next(
-            (
-                item for item in forced_expansions
-                if (
-                    item.forced_origin == declaration.original_raw
-                    and (
-                        not declaration.state_path
-                        or item.from_path == _INIT_MARK
-                        or item.from_path.rsplit('.', 1)[0] == declaration.state_path
-                    )
-                )
-            ),
-            forced_expansions[0]
-            if forced_expansions and not declaration.state_path
-            else None,
+        expansions = forced_groups[index]
+        base = (
+            expansions[0]
+            if expansions
+            else next((item for item in transitions if item.is_forced), None)
+            if not declaration.state_path
+            else None
         )
         if base is None:
             base = TransitionInfo(
@@ -1851,6 +1843,33 @@ def _authored_transition_keys(
             is_forced=True,
         )
     return tuple(representatives.items())
+
+
+def _forced_expansion_groups(
+        transitions: Sequence[TransitionInfo],
+        forced_transitions: Sequence[ForcedTransitionInfo],
+) -> Tuple[Tuple[TransitionInfo, ...], ...]:
+    """Group every concrete forced edge under each authored declaration.
+
+    A wildcard forced declaration can expand to several source states.  The
+    raw origin text is shared by duplicate declarations, so the declaration
+    index remains the only identity available on this inspect surface; each
+    duplicate therefore receives the same matching expansion set.
+    """
+    forced_expansions = tuple(item for item in transitions if item.is_forced)
+    groups: List[Tuple[TransitionInfo, ...]] = []
+    for declaration in forced_transitions:
+        matches = tuple(
+            item for item in forced_expansions
+            if item.forced_origin == declaration.original_raw
+            and (
+                not declaration.state_path
+                or item.from_path == _INIT_MARK
+                or item.from_path.rsplit('.', 1)[0] == declaration.state_path
+            )
+        )
+        groups.append(matches)
+    return tuple(groups)
 
 
 def _rate(numerator: int, denominator: int) -> Optional[float]:
@@ -1902,10 +1921,25 @@ def _build_structure_statistics(
         }
         return bool(descendant_leaves) and descendant_leaves <= unreachable_leaf_paths
 
-    source_unreachable_keys = {
-        key for key, item in authored
-        if source_is_unreachable(item.from_path)
-    }
+    forced_groups = _forced_expansion_groups(transitions, forced_transitions)
+    source_unreachable_keys: Set[Tuple[Any, ...]] = set()
+    for key, item in authored:
+        if key[0] == "forced":
+            expansion_index = key[1]
+            expansions = (
+                forced_groups[expansion_index]
+                if isinstance(expansion_index, int)
+                and expansion_index < len(forced_groups)
+                else ()
+            )
+            # A forced declaration is unreachable only when every concrete
+            # source it expands to is unreachable.  Mixed reachability is a
+            # valid partial application and must not depend on expansion order.
+            if expansions and all(source_is_unreachable(edge.from_path) for edge in expansions):
+                source_unreachable_keys.add(key)
+            continue
+        if source_is_unreachable(item.from_path):
+            source_unreachable_keys.add(key)
     event_names = {
         diagnostic.refs.get("event_name")
         for diagnostic in diagnostics

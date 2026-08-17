@@ -576,6 +576,22 @@ state Root {
                 /unknown structure-statistics policy fields: typo_threshold/,
             );
         });
+
+        it('rejects non-record structure threshold policies', async () => {
+            const machine = await buildMachine(SIMPLE_DSL);
+            for (const invalidPolicy of [42, true, [], new Map()]) {
+                assert.throws(
+                    () => inspectModel(machine, {
+                        structureStatisticsPolicy: invalidPolicy as unknown as {
+                            max_transitions_per_state?: number | null;
+                            max_unreachable_leaf_state_rate?: number | null;
+                            max_unreachable_transition_rate?: number | null;
+                        },
+                    }),
+                    /structure-statistics policy must be a plain object/,
+                );
+            }
+        });
     });
 
     describe('view graphs', () => {
@@ -732,6 +748,43 @@ state Root {
 }
 `));
             assert.equal(report.structure_statistics.unreachable_leaf_states, 2);
+            assert.equal(report.structure_statistics.unreachable_transitions, 1);
+            assert.deepEqual(report.structure_statistics.unreachable_transition_reasons, {
+                unreachable_source_state: 1,
+            });
+        });
+
+        for (const stateOrder of [
+            ['Live', 'Orphan', 'Error'],
+            ['Orphan', 'Live', 'Error'],
+        ]) {
+            it(`keeps wildcard forced reachability stable for ${stateOrder.join(', ')}`, async () => {
+                const declarations = stateOrder.map(name => `state ${name};`).join('\n');
+                const report = inspectModel(await buildMachine(`
+state Root {
+    ${declarations}
+    [*] -> Live;
+    !* -> Error :: Panic;
+}
+`));
+                assert.equal(report.structure_statistics.unreachable_transitions, 0);
+                assert.deepEqual(report.structure_statistics.unreachable_transition_reasons, {});
+            });
+        }
+
+        it('counts a wildcard forced declaration when every expansion source is unreachable', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Live;
+    state Orphan {
+        state A;
+        state B;
+        [*] -> A;
+        !* -> B :: Panic;
+    }
+    [*] -> Live;
+}
+`));
             assert.equal(report.structure_statistics.unreachable_transitions, 1);
             assert.deepEqual(report.structure_statistics.unreachable_transition_reasons, {
                 unreachable_source_state: 1,

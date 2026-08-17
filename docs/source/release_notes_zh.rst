@@ -34,8 +34,7 @@ FBMCQ 与有界模型检查
   ``--format llm-md``。大语言模型报告使用随当前发布版本提供的模式文件，包含源码上下文、
   来源、修复指导和明确禁止事项；公开载荷不包含产品级 schema 版本或状态字段。
 - 在 LLM 报告的 ``summary.structure_statistics`` 以及完整报告的
-  ``ModelInspect.structure_statistics`` 中新增描述性结构统计。对于忽略未知字段的调用方，
-  比率以原始小数输出，
+  ``ModelInspect.structure_statistics`` 中新增描述性结构统计。比率以原始小数输出，
   空分母使用 ``null``，并记录转换密度和不可达总体的保守建议阈值。超出只记录元数据，
   不新增诊断码或综合健康分数；Python API 和 CLI 均可覆盖或关闭这些阈值。
 - 扩展静态与验证支持的诊断，包括数值和守卫推理；求解器支持的检查仍受既有显式启用

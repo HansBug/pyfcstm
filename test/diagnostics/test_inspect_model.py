@@ -932,6 +932,40 @@ state Root {
             "unreachable_source_state": 1,
         }
 
+    @pytest.mark.parametrize("state_order", [
+        ("Live", "Orphan", "Error"),
+        ("Orphan", "Live", "Error"),
+    ])
+    def test_structure_statistics_forced_wildcard_is_order_independent(self, state_order):
+        states = "\n".join(f"state {name};" for name in state_order)
+        report = inspect_model(_parse(f"""
+            state Root {{
+                {states}
+                [*] -> Live;
+                !* -> Error :: Panic;
+            }}
+        """))
+        assert report.structure_statistics.unreachable_transitions == 0
+        assert report.structure_statistics.unreachable_transition_reasons == {}
+
+    def test_structure_statistics_counts_fully_unreachable_forced_expansion(self):
+        report = inspect_model(_parse("""
+            state Root {
+                state Live;
+                state Orphan {
+                    state A;
+                    state B;
+                    [*] -> A;
+                    !* -> B :: Panic;
+                }
+                [*] -> Live;
+            }
+        """))
+        assert report.structure_statistics.unreachable_transitions == 1
+        assert report.structure_statistics.unreachable_transition_reasons == {
+            "unreachable_source_state": 1,
+        }
+
     def test_structure_statistics_marks_fully_unreachable_composite_source(self):
         report = inspect_model(_parse(
             """

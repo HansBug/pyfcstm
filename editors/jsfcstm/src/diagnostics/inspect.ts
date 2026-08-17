@@ -616,6 +616,17 @@ function normalizeStructureStatisticsPolicy(
     value: Partial<StructureStatisticsPolicy> | undefined,
 ): StructureStatisticsPolicy {
     const source = value ?? {};
+    const prototype = typeof source === 'object' && source !== null
+        ? Object.getPrototypeOf(source)
+        : null;
+    if (
+        typeof source !== 'object' ||
+        source === null ||
+        Array.isArray(source) ||
+        (prototype !== Object.prototype && prototype !== null)
+    ) {
+        throw new TypeError('structure-statistics policy must be a plain object');
+    }
     const knownFields = new Set<keyof StructureStatisticsPolicy>([
         'max_transitions_per_state',
         'max_unreachable_leaf_state_rate',
@@ -1435,6 +1446,23 @@ function rate(numerator: number, denominator: number): number | null {
     return denominator === 0 ? null : numerator / denominator;
 }
 
+function forcedExpansionGroups(
+    transitions: TransitionInfo[],
+    forcedTransitions: ForcedTransitionInfo[],
+): TransitionInfo[][] {
+    const forcedExpansions = transitions.filter(item => item.is_forced);
+    return forcedTransitions.map(declaration => forcedExpansions.filter(item =>
+        item.forced_origin === declaration.original_raw &&
+        (
+            declaration.state_path.length === 0 ||
+            item.from_path === INIT_MARK ||
+            (item.from_path.includes('.')
+                ? item.from_path.slice(0, item.from_path.lastIndexOf('.'))
+                : item.from_path) === declaration.state_path
+        ),
+    ));
+}
+
 function buildStructureStatistics(
     states: StateInfo[],
     transitions: TransitionInfo[],
@@ -1473,16 +1501,13 @@ function buildStructureStatistics(
             event: group.find(item => item.event !== null)?.event ?? null,
         });
     }
-    const forcedExpansions = transitions.filter(item => item.is_forced);
+    const forcedGroups = forcedExpansionGroups(transitions, forcedTransitions);
     forcedTransitions.forEach((declaration, index) => {
-        const base = forcedExpansions.find(item =>
-            item.forced_origin === declaration.original_raw &&
-            (
-                declaration.state_path.length === 0 ||
-                item.from_path === INIT_MARK ||
-                item.from_path.slice(0, item.from_path.lastIndexOf('.')) === declaration.state_path
-            )
-        ) ?? (declaration.state_path.length === 0 ? forcedExpansions[0] : undefined) ?? {
+        const base = forcedGroups[index][0] ?? (
+            declaration.state_path.length === 0
+                ? transitions.find(item => item.is_forced)
+                : undefined
+        ) ?? {
             from_path: declaration.from_path,
             to_path: declaration.to_path,
             event: declaration.event,
@@ -1544,11 +1569,20 @@ function buildStructureStatistics(
         return descendantLeaves.size > 0 && [...descendantLeaves].every(item => unreachableLeafPaths.has(item));
     };
 
-    const sourceUnreachableKeys = new Set(
-        authoredEntries
-            .filter(([, item]) => sourceIsUnreachable(item.from_path))
-            .map(([key]) => key),
-    );
+    const sourceUnreachableKeys = new Set<string>();
+    authoredEntries.forEach(([key, item]) => {
+        if (key.startsWith('forced:')) {
+            const index = Number(key.slice('forced:'.length));
+            const expansions = Number.isInteger(index) ? forcedGroups[index] ?? [] : [];
+            // Count an authored forced declaration only when every concrete
+            // source is unreachable, keeping mixed expansion order-independent.
+            if (expansions.length > 0 && expansions.every(edge => sourceIsUnreachable(edge.from_path))) {
+                sourceUnreachableKeys.add(key);
+            }
+            return;
+        }
+        if (sourceIsUnreachable(item.from_path)) sourceUnreachableKeys.add(key);
+    });
     const eventNames = new Set(
         diagnostics
             .filter(item => item.code === 'W_EVENT_UNREACHABLE_EMIT')

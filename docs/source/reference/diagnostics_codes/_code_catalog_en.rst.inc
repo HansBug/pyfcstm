@@ -4881,7 +4881,6 @@ A typical repair is ``add_inbound_transition`` on ``state``: Add a transition th
 **Example 3** (``boundary_only``) — anti-pattern boundary for ``W_UNREACHABLE_STATE``.
 Do not add a self-loop to mask the unreachability.
 
-<<<<<<< HEAD
 .. _diag-code-w-unreachable-transition:
 
 W_UNREACHABLE_TRANSITION

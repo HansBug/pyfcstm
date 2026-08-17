@@ -4881,7 +4881,6 @@ W_UNREACHABLE_STATE
 **示例 3**\ （``boundary_only``）——针对 ``W_UNREACHABLE_STATE`` 的反例边界。
 不要这样处理：针对“从根入口路径出发，无法通过普通或强制转换到达某个状态。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
-<<<<<<< HEAD
 .. _diag-code-w-unreachable-transition-zh:
 
 W_UNREACHABLE_TRANSITION

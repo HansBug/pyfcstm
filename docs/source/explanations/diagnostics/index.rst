@@ -181,6 +181,25 @@ already reports ``W_DEADLOCK_LEAF`` from static structure. When the command adds
 algorithms. The same model then reports facts such as ``W_TOPOLOGICAL_NOEXIT``
 and ``I_TOPOLOGICAL_NON_TERMINATING``.
 
+These are modeled-exit and graph-termination signals, not claims that an
+ordinary non-root leaf cannot execute another cycle. In pyfcstm, when a runtime
+cycle has no submitted transition, a non-root non-pseudo leaf can remain active
+and execute its ``during`` actions; that is legal stoppage. A root leaf is
+special: pyfcstm supplies synthetic root-exit behavior on the next active
+cycle. An explicit self-loop is different: it re-enters the state with
+``exit -> transition effect -> enter -> during`` semantics. A ``State -> [*]``
+transition exits the source state to its parent boundary; if the source is a
+direct child of root, this ends the machine, otherwise parent-level
+continuation determines what happens next. Add an exit transition only when
+leaving or termination is intended; do not add a self-loop merely to silence
+``W_DEADLOCK_LEAF``.
+
+``W_TOPOLOGICAL_NOEXIT`` reports that a graph region has no structural route to
+the root exit, while ``I_TOPOLOGICAL_NON_TERMINATING`` reports that topology
+does not force termination. Neither diagnostic changes the runtime's legal
+ordinary stay-active fallback, and neither is a substitute for an explicit
+liveness property when a model must leave or terminate.
+
 This does not mean inspect ran a state-space search. The adapter iterates
 registry metadata and keeps only closed structural and SMT-local algorithms
 within the selected complexity and call-count policy. Inspect does not parse

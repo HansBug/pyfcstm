@@ -1299,7 +1299,8 @@ class TestInspectModelGuardAffectDiagnostics:
             'anchor': {'type': 'ref', 'ref': 'refs.parent_path'},
             'text': 'Idle -> [*];\n',
             'rationale': (
-                'Add an exit transition so the leaf can finish its parent state.'
+                'Add an exit transition only if the leaf is meant to finish its '
+                'parent state.'
             ),
         }
 

@@ -5003,9 +5003,19 @@ W_DEADLOCK_LEAF
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``state_identifier``.
 
-**Meaning.** A non-pseudo leaf state has no outgoing transition.
+**Meaning.** A non-pseudo leaf state has no authored outgoing transition. This
+is an exit-path fact, not a claim that a non-root leaf cannot continue: it can
+remain active and execute its ``during`` actions when no transition is
+submitted. A root leaf instead follows pyfcstm's synthetic root-exit behavior.
 
-**LLM repair summary.** This leaf state has no outgoing transition, so once the machine enters it there is no modeled way to leave.
+**LLM repair summary.** This leaf state has no authored outgoing transition. A
+non-root leaf can remain active and execute its ``during`` actions; a root leaf
+instead follows pyfcstm's synthetic root-exit behavior. Add a transition only
+when leaving or termination is intended; the ``State -> [*]`` action applies to
+non-root leaves, while root leaves already follow synthetic root-exit behavior.
+A self-loop is a re-entry operation with
+``exit -> transition effect -> enter -> during`` semantics, not a stay-active
+or synthetic-exit placeholder.
 
 .. list-table:: Refs schema
    :header-rows: 1
@@ -5018,7 +5028,7 @@ W_DEADLOCK_LEAF
    * - ``state_path``
      - ``str``
      - yes
-     - Dotted path of the deadlocking leaf state.
+     - Dotted path of the leaf state with no outgoing transition.
    * - ``parent_path``
      - ``str``
      - no
@@ -5026,7 +5036,7 @@ W_DEADLOCK_LEAF
    * - ``reason``
      - ``str``
      - yes
-     - Why the leaf is considered a deadlock. (enum: ``no_outgoing_transition``)
+     - Why the leaf has no outgoing transition. (enum: ``no_outgoing_transition``)
    * - ``suggested_fix``
      - ``dict``
      - no
@@ -5047,12 +5057,16 @@ This diagnostic can appear in a successful inspect report. Reproduce it with ``p
 .. diagnostics-example W_DEADLOCK_LEAF 2 boundary_only
 
 **Example 2** (``boundary_only``) — repair direction for ``W_DEADLOCK_LEAF``.
-A typical repair is ``add_transition`` on ``state``: Add a modeled transition to the next intended state.
+A typical repair is ``add_transition`` on ``state``: Add a modeled transition
+to the next intended state only when the leaf is meant to leave. A root leaf
+already follows the synthetic root-exit behavior.
 
 .. diagnostics-example W_DEADLOCK_LEAF 3 boundary_only
 
 **Example 3** (``boundary_only``) — anti-pattern boundary for ``W_DEADLOCK_LEAF``.
-Do not add a self-loop just to silence the warning.
+Do not add a self-loop just to silence the warning: it has exit/enter semantics,
+unlike a non-root leaf's normal stay-active semantics; a root leaf already
+follows the synthetic root-exit behavior.
 
 .. _diag-code-w-high-var-to-leaf-ratio:
 
@@ -5338,7 +5352,10 @@ W_TOPOLOGICAL_NOEXIT
 
 **Meaning.** A root-reachable leaf or cycle has no guard-agnostic route to the root exit sink.
 
-**LLM repair summary.** From the current topology, execution can enter a region that has no structural path to terminate at the root exit.
+**LLM repair summary.** From the current topology, execution can enter a region
+that has no structural path to terminate at the root exit. This is a topology
+result; it does not by itself mean that a non-pseudo leaf cannot remain active
+or execute ``during`` actions.
 
 .. list-table:: Refs schema
    :header-rows: 1
@@ -5386,7 +5403,9 @@ This diagnostic requires optional verify integration. Reproduce it with ``pyfcst
 .. diagnostics-example W_TOPOLOGICAL_NOEXIT 2 boundary_only
 
 **Example 2** (``boundary_only``) — repair direction for ``W_TOPOLOGICAL_NOEXIT``.
-A typical repair is ``add_exit_transition`` on ``topology``: Add a route from the stuck state or cycle to an exit-capable path.
+A typical repair is ``add_exit_transition`` on ``topology``: Add a route from
+the state or cycle to an exit-capable path only if the model requires leaving
+or termination; otherwise document the intentional stay-active behavior.
 
 .. diagnostics-example W_TOPOLOGICAL_NOEXIT 3 boundary_only
 
@@ -5411,7 +5430,9 @@ I_TOPOLOGICAL_NON_TERMINATING
 
 **Meaning.** The topology does not force all root-reachable executions to eventually reach the root terminator.
 
-**LLM repair summary.** The structural graph allows a path that can avoid termination forever. This may be a valid service loop, but it should be reviewed explicitly.
+**LLM repair summary.** The structural graph allows a path that can avoid
+termination forever. This may be a valid service loop or stay-active leaf, but
+it should be reviewed explicitly rather than repaired with a self-loop.
 
 .. list-table:: Refs schema
    :header-rows: 1

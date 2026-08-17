@@ -5003,9 +5003,14 @@ W_DEADLOCK_LEAF
 
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``state_identifier``。
 
-**含义。** 非伪叶状态没有任何出边转换，进入后无法离开。
+**含义。** 非伪叶状态没有任何作者定义的出边转换。这是没有建模出口的结构事实，
+不是运行时无法继续：没有转换提交时，非根叶状态仍可以保持活动并执行
+``during`` 动作；根叶状态则遵循 pyfcstm 的合成根退出行为。
 
-**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。非伪叶状态没有任何出边转换，进入后无法离开。
+**面向 LLM 的修复摘要。** 非伪叶状态没有任何作者定义的出边转换；非根叶状态仍可以保持活动并执行
+``during`` 动作，根叶状态则遵循 pyfcstm 的合成根退出行为。只有模型确实需要离开或结束时才添加转换；
+``State -> [*]`` 转换只适用于非根叶状态，根叶状态已经遵循合成的根退出行为。self-loop 会执行
+``exit -> transition effect -> enter -> during`` 重入语义，不是驻停或合成退出占位符。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -5018,7 +5023,7 @@ W_DEADLOCK_LEAF
    * - ``state_path``
      - ``str``
      - 是
-     - 字段含义：相关状态的点分路径。
+     - 字段含义：没有出边转换的叶状态点分路径。
    * - ``parent_path``
      - ``str``
      - 否
@@ -5026,7 +5031,7 @@ W_DEADLOCK_LEAF
    * - ``reason``
      - ``str``
      - 是
-     - 字段含义：原因分类标签。
+     - 字段含义：叶状态没有出边转换的原因分类标签。
    * - ``suggested_fix``
      - ``dict``
      - 否
@@ -5047,12 +5052,14 @@ W_DEADLOCK_LEAF
 .. diagnostics-example W_DEADLOCK_LEAF 2 boundary_only
 
 **示例 2**\ （``boundary_only``）——针对 ``W_DEADLOCK_LEAF`` 的修复方向。
-典型修复是对 ``state`` 执行 ``add_transition``：针对“非伪叶状态没有任何出边转换，进入后无法离开。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
+典型修复是对 ``state`` 执行 ``add_transition``：仅当叶状态确实需要离开时，
+结合上方 ``refs`` 定位具体对象，做最小语义保持修改；根叶状态已经遵循合成的根退出行为。如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_DEADLOCK_LEAF 3 boundary_only
 
 **示例 3**\ （``boundary_only``）——针对 ``W_DEADLOCK_LEAF`` 的反例边界。
-不要这样处理：针对“非伪叶状态没有任何出边转换，进入后无法离开。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
+不要这样处理：不要只为消除诊断而添加 self-loop；它会触发退出和重新进入，
+与非根叶状态的正常驻停语义不同；根叶状态已经遵循合成的根退出行为。必须先确认真实控制意图。
 
 .. _diag-code-w-high-var-to-leaf-ratio-zh:
 
@@ -5338,7 +5345,8 @@ W_TOPOLOGICAL_NOEXIT
 
 **含义。** 根可达的叶状态或循环没有守卫无关路径通向根退出汇点。
 
-**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。根可达的叶状态或循环没有守卫无关路径通向根退出汇点。
+**面向 LLM 的修复摘要。** 根可达的叶状态或循环没有守卫无关路径通向根退出汇点。
+这是拓扑结果，不等于非伪叶不能合法驻停或执行 ``during`` 动作。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -5386,7 +5394,8 @@ W_TOPOLOGICAL_NOEXIT
 .. diagnostics-example W_TOPOLOGICAL_NOEXIT 2 boundary_only
 
 **示例 2**\ （``boundary_only``）——针对 ``W_TOPOLOGICAL_NOEXIT`` 的修复方向。
-典型修复是对 ``topology`` 执行 ``add_exit_transition``：针对“根可达的叶状态或循环没有守卫无关路径通向根退出汇点。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
+典型修复是对 ``topology`` 执行 ``add_exit_transition``：仅当模型确实需要离开或结束时，
+才从该状态或循环添加通向出口的路径；如果驻停是有意行为，则记录意图并保留现状。
 
 .. diagnostics-example W_TOPOLOGICAL_NOEXIT 3 boundary_only
 
@@ -5411,7 +5420,8 @@ I_TOPOLOGICAL_NON_TERMINATING
 
 **含义。** 拓扑结构不能保证所有根可达执行最终到达根终止点。
 
-**面向 LLM 的修复摘要。** 这是非阻塞的信息性观察。 查阅时先根据 ``refs`` 定位对象，判断它是否只是需要记录的事实；只有确认模型意图要改变时，才做最小、可解释、保留意图的修改。拓扑结构不能保证所有根可达执行最终到达根终止点。
+**面向 LLM 的修复摘要。** 拓扑结构不能保证所有根可达执行最终到达根终止点。
+这可能是合法的服务循环或驻停叶状态，应显式评审，而不是通过添加 self-loop 修复。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1

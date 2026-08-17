@@ -11,6 +11,7 @@ from typing import Any, List, Mapping
 import pytest
 
 from pyfcstm.diagnostics import inspect_model
+from pyfcstm.diagnostics.codes import CODE_REGISTRY
 from pyfcstm.diagnostics.inspect_render import (
     HumanRenderOptions,
     INSPECT_LLM_SCHEMA_VERSION,
@@ -185,6 +186,9 @@ class TestInspectRender:
         assert "= why:" in text
         assert "= fix:" in text
         assert "= do-not:" in text
+        assert "remain active" in text
+        assert "during actions" in text
+        assert "self-loop" in text
         assert ANSI_ESCAPE_RE.search(text) is None
         assert BOX_DRAWING_RE.search(text) is None
         _assert_excerpt_gutters_align(text)
@@ -229,6 +233,38 @@ class TestInspectRender:
         assert "transition_shadowed_by_predecessor: undecidable_skip" in text
         assert "reason: Runtime shadowing could not be established." in text
         assert "dead_guard: sat" not in text
+
+    def test_topology_guidance_keeps_stay_active_fallback_distinct(self):
+        noexit = CODE_REGISTRY["W_TOPOLOGICAL_NOEXIT"].for_llm
+        nonterminating = CODE_REGISTRY["I_TOPOLOGICAL_NON_TERMINATING"].for_llm
+
+        assert noexit is not None
+        assert "graph result" in noexit.summary
+        assert "during" in noexit.summary
+        assert "only if" in noexit.recommended_actions[0]["rationale"]
+        assert nonterminating is not None
+        assert "stay-active leaf" in nonterminating.summary
+        assert "self-loop" in nonterminating.summary
+
+        deadlock = CODE_REGISTRY["W_DEADLOCK_LEAF"].for_llm
+        assert deadlock is not None
+        assert "non-root leaf" in deadlock.summary
+        assert "synthetic root-exit" in deadlock.summary
+
+    def test_root_leaf_llm_guidance_does_not_offer_parent_exit_repair(self):
+        source = "state Root;"
+        ast = parse_with_grammar_entry(source, "state_machine_dsl")
+        report = inspect_model(parse_dsl_node_to_state_machine(ast))
+        payload = json.loads(render_inspect_llm_json(report, source))
+        deadlock = next(
+            item
+            for item in payload["diagnostics"]
+            if item["code"] == "W_DEADLOCK_LEAF"
+        )
+
+        assert "synthetic root-exit" in deadlock["summary"]
+        assert deadlock["recommended_actions"] == []
+        assert "synthetic root-exit behavior" in deadlock["do_not"][0]
 
     def test_human_renderer_reports_unsupported_provider(self):
         report = _report()
@@ -344,6 +380,13 @@ class TestInspectRender:
         deadlock = next(
             item for item in payload["diagnostics"] if item["code"] == "W_DEADLOCK_LEAF"
         )
+        assert "remain active" in deadlock["summary"]
+        assert "during actions" in deadlock["summary"]
+        assert all(
+            "only if" in action["rationale"]
+            for action in deadlock["recommended_actions"]
+        )
+        assert "exit/enter semantics" in deadlock["do_not"][0]
         context = deadlock["source_excerpt"]["context"]
         assert [line["line"] for line in context] == [3, 4, 5]
         assert context[0]["caret"] is None

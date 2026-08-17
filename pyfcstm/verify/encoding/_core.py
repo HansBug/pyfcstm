@@ -326,11 +326,16 @@ def _transition_index_map(root) -> Dict[int, int]:
 def _transition_index_scope(machine: 'StateMachine'):
     """Reuse one topology snapshot while a verify algorithm is running."""
     root = machine.root_state
-    token = _TRANSITION_INDEX_SCOPE.set(_transition_index_map(root))
+    token = None
     try:
+        # Establish the reset handler before installing the per-run value. If
+        # an asynchronous interrupt lands during map construction or set(),
+        # the previous caller's ContextVar value must remain untouched.
+        token = _TRANSITION_INDEX_SCOPE.set(_transition_index_map(root))
         yield
     finally:
-        _TRANSITION_INDEX_SCOPE.reset(token)
+        if token is not None:
+            _TRANSITION_INDEX_SCOPE.reset(token)
 
 
 def _transition_index(transition: Transition) -> Optional[int]:

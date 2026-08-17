@@ -1909,12 +1909,38 @@ _UNREACHABLE_TRANSITION_REASON_CODES = {
 }
 
 
+@dataclass(frozen=True)
+class _UnreachableTransitionReasonInfo:
+    """Canonical reasons and evidence source for one authored transition."""
+
+    reasons: Tuple[str, ...]
+    verify_backed: bool
+
+
+_UnreachableTransitionReasonMap = Dict[
+    Tuple[Any, ...], _UnreachableTransitionReasonInfo
+]
+
+
+def _diagnostic_is_verify_backed(diagnostic: ModelDiagnostic) -> bool:
+    """Return whether a diagnostic carries verify-pipeline provenance."""
+    spec = CODE_REGISTRY.get(diagnostic.code)
+    if spec is not None and spec.emit_tier == "verify_pipeline":
+        return True
+    if diagnostic.code in VERIFY_SHARED_STATIC_CODES:
+        return (
+            isinstance(diagnostic.refs.get("algorithm_name"), str)
+            and isinstance(diagnostic.refs.get("verification_scope"), str)
+        )
+    return False
+
+
 def _unreachable_transition_reason_keys(
         states: Sequence[StateInfo],
         transitions: Sequence[TransitionInfo],
         diagnostics: Sequence[ModelDiagnostic],
         forced_transitions: Sequence[ForcedTransitionInfo],
-) -> Dict[Tuple[Any, ...], Tuple[str, ...]]:
+) -> _UnreachableTransitionReasonMap:
     """Return canonical unreachable reasons for each authored transition."""
     authored = _authored_transition_keys(transitions, forced_transitions)
     authored_by_key = dict(authored)
@@ -1928,6 +1954,13 @@ def _unreachable_transition_reason_keys(
         for diagnostic in diagnostics
         if diagnostic.code == "W_UNREACHABLE_STATE"
         and isinstance(diagnostic.refs.get("state_path"), str)
+    }
+    verify_unreachable_paths = {
+        diagnostic.refs.get("state_path")
+        for diagnostic in diagnostics
+        if diagnostic.code == "W_UNREACHABLE_STATE"
+        and isinstance(diagnostic.refs.get("state_path"), str)
+        and _diagnostic_is_verify_backed(diagnostic)
     }
     unreachable_leaf_paths = {
         state.path for state in leaf_states if state.path in unreachable_paths
@@ -1945,7 +1978,20 @@ def _unreachable_transition_reason_keys(
         }
         return bool(descendant_leaves) and descendant_leaves <= unreachable_leaf_paths
 
+    def source_is_verify_backed(path: str) -> bool:
+        if path in verify_unreachable_paths:
+            return True
+        state = states_by_path.get(path)
+        if state is None or not state.is_composite:
+            return False
+        descendant_leaves = {
+            leaf.path for leaf in leaf_states
+            if leaf.path.startswith(path + ".")
+        }
+        return bool(descendant_leaves) and descendant_leaves <= verify_unreachable_paths
+
     reasons_by_key: Dict[Tuple[Any, ...], Set[str]] = {}
+    verify_backed_keys: Set[Tuple[Any, ...]] = set()
     forced_groups = _forced_expansion_groups(transitions, forced_transitions)
     forced_keys_by_identity: Dict[
         Tuple[Optional[str], str], Set[Tuple[Any, ...]]
@@ -1969,11 +2015,15 @@ def _unreachable_transition_reason_keys(
                 reasons_by_key.setdefault(key, set()).add(
                     "unreachable_source_state"
                 )
+                if any(source_is_verify_backed(edge.from_path) for edge in expansions):
+                    verify_backed_keys.add(key)
             continue
         if source_is_unreachable(item.from_path):
             reasons_by_key.setdefault(key, set()).add(
                 "unreachable_source_state"
             )
+            if source_is_verify_backed(item.from_path):
+                verify_backed_keys.add(key)
 
     event_names = {
         diagnostic.refs.get("event_name")
@@ -1981,11 +2031,20 @@ def _unreachable_transition_reason_keys(
         if diagnostic.code == "W_EVENT_UNREACHABLE_EMIT"
         and isinstance(diagnostic.refs.get("event_name"), str)
     }
+    verify_event_names = {
+        diagnostic.refs.get("event_name")
+        for diagnostic in diagnostics
+        if diagnostic.code == "W_EVENT_UNREACHABLE_EMIT"
+        and isinstance(diagnostic.refs.get("event_name"), str)
+        and _diagnostic_is_verify_backed(diagnostic)
+    }
     for key, item in authored:
         if item.event in event_names:
             reasons_by_key.setdefault(key, set()).add(
                 "unreachable_event_consumer"
             )
+            if item.event in verify_event_names:
+                verify_backed_keys.add(key)
 
     for diagnostic in diagnostics:
         if diagnostic.code not in _UNREACHABLE_TRANSITION_REASON_CODES:
@@ -2085,6 +2144,8 @@ def _unreachable_transition_reason_keys(
                 }
         if not keys:
             continue
+        if _diagnostic_is_verify_backed(diagnostic):
+            verify_backed_keys.update(keys)
         reason = (
             "forced_never_expands"
             if diagnostic.code == "W_FORCED_NEVER_EXPANDS"
@@ -2097,7 +2158,10 @@ def _unreachable_transition_reason_keys(
         for key in keys:
             reasons_by_key.setdefault(key, set()).add(reason)
     return {
-        key: tuple(sorted(reasons))
+        key: _UnreachableTransitionReasonInfo(
+            reasons=tuple(sorted(reasons)),
+            verify_backed=key in verify_backed_keys,
+        )
         for key, reasons in reasons_by_key.items()
         if reasons
     }
@@ -2108,19 +2172,30 @@ def _build_unreachable_transition_diagnostics(
         transitions: Sequence[TransitionInfo],
         diagnostics: Sequence[ModelDiagnostic],
         forced_transitions: Sequence[ForcedTransitionInfo],
+        reason_by_key: Optional[_UnreachableTransitionReasonMap] = None,
 ) -> List[ModelDiagnostic]:
     """Emit one aggregated warning for every affected authored transition."""
     authored = _authored_transition_keys(transitions, forced_transitions)
     authored_by_key = dict(authored)
-    reason_by_key = _unreachable_transition_reason_keys(
-        states,
-        transitions,
-        diagnostics,
-        forced_transitions,
-    )
+    if reason_by_key is None:
+        reason_by_key = _unreachable_transition_reason_keys(
+            states,
+            transitions,
+            diagnostics,
+            forced_transitions,
+        )
     emitted: List[ModelDiagnostic] = []
-    for key, reasons in reason_by_key.items():
+    for key, reason_info in reason_by_key.items():
         transition = authored_by_key[key]
+        reasons = reason_info.reasons
+        refs = {
+            "from_path": transition.from_path,
+            "to_path": transition.to_path,
+            "transition_index": transition.transition_index,
+            "reasons": list(reasons),
+        }
+        if reason_info.verify_backed:
+            refs["verify_backed"] = True
         emitted.append(ModelDiagnostic(
             code="W_UNREACHABLE_TRANSITION",
             severity="warning",
@@ -2130,12 +2205,7 @@ def _build_unreachable_transition_diagnostics(
                 f"{', '.join(reasons)}."
             ),
             span=transition.span,
-            refs={
-                "from_path": transition.from_path,
-                "to_path": transition.to_path,
-                "transition_index": transition.transition_index,
-                "reasons": list(reasons),
-            },
+            refs=refs,
         ))
     return emitted
 
@@ -2146,10 +2216,10 @@ def _build_structure_statistics(
         diagnostics: Sequence[ModelDiagnostic],
         forced_transitions: Sequence[ForcedTransitionInfo] = (),
         policy: StructureStatisticsPolicy = DEFAULT_STRUCTURE_STATISTICS_POLICY,
+        reason_by_key: Optional[_UnreachableTransitionReasonMap] = None,
 ) -> StructureStatistics:
     authored = _authored_transition_keys(transitions, forced_transitions)
     authored_transitions = tuple(item[1] for item in authored)
-    authored_by_key = dict(authored)
     non_pseudo_states = tuple(state for state in states if not state.is_pseudo)
     leaf_states = tuple(state for state in non_pseudo_states if state.is_leaf)
     composite_states = tuple(state for state in non_pseudo_states if state.is_composite)
@@ -2161,7 +2231,6 @@ def _build_structure_statistics(
         1 for item in authored_transitions
         if item.event is None and item.guard is None
     )
-
     unreachable_paths = {
         diagnostic.refs.get("state_path")
         for diagnostic in diagnostics
@@ -2171,183 +2240,28 @@ def _build_structure_statistics(
     unreachable_leaf_paths = {
         state.path for state in leaf_states if state.path in unreachable_paths
     }
-    states_by_path = {state.path: state for state in states}
 
-    def source_is_unreachable(path: str) -> bool:
-        if path in unreachable_paths:
-            return True
-        state = states_by_path.get(path)
-        if state is None or not state.is_composite:
-            return False
-        descendant_leaves = {
-            leaf.path for leaf in leaf_states
-            if leaf.path.startswith(path + ".")
-        }
-        return bool(descendant_leaves) and descendant_leaves <= unreachable_leaf_paths
-
-    forced_groups = _forced_expansion_groups(transitions, forced_transitions)
-    source_unreachable_keys: Set[Tuple[Any, ...]] = set()
-    for key, item in authored:
-        if key[0] == "forced":
-            expansion_index = key[1]
-            expansions = (
-                forced_groups[expansion_index]
-                if isinstance(expansion_index, int)
-                and expansion_index < len(forced_groups)
-                else ()
-            )
-            # A forced declaration is unreachable only when every concrete
-            # source it expands to is unreachable.  Mixed reachability is a
-            # valid partial application and must not depend on expansion order.
-            if expansions and all(source_is_unreachable(edge.from_path) for edge in expansions):
-                source_unreachable_keys.add(key)
-            continue
-        if source_is_unreachable(item.from_path):
-            source_unreachable_keys.add(key)
-    event_names = {
-        diagnostic.refs.get("event_name")
-        for diagnostic in diagnostics
-        if diagnostic.code == "W_EVENT_UNREACHABLE_EMIT"
-        and isinstance(diagnostic.refs.get("event_name"), str)
-    }
-    event_unreachable_keys = {
-        key for key, item in authored
-        if item.event in event_names
-    }
-    transition_unreachable_codes = {
-        "W_GUARD_CONST_FALSE",
-        "W_DEAD_GUARD",
-        "W_COMBO_GUARD_CONST_FALSE",
-        "W_FORCED_GUARD_UNSAT",
-        "W_FORCED_NEVER_EXPANDS",
-        "W_TRANSITION_SHADOWED",
-        "W_REDUNDANT_TRANSITION",
-    }
-    forced_keys_by_identity: Dict[
-        Tuple[Optional[str], str], Set[Tuple[Any, ...]]
-    ] = {}
-    for index, declaration in enumerate(forced_transitions):
-        identity = (declaration.state_path, declaration.original_raw)
-        forced_keys_by_identity.setdefault(identity, set()).add(("forced", index))
-    reason_keys: Dict[str, Set[Tuple[Any, ...]]] = {}
-    for diagnostic in diagnostics:
-        if diagnostic.code not in transition_unreachable_codes:
-            continue
-        refs = diagnostic.refs
-        origin_id = refs.get("origin_id")
-        keys: Set[Tuple[Any, ...]] = set()
-        if isinstance(origin_id, str):
-            keys = {key for key, _ in authored if key == ("combo", origin_id)}
-        if diagnostic.code == "W_FORCED_NEVER_EXPANDS":
-            identity = (refs.get("state_path"), refs.get("original_raw"))
-            keys.update(forced_keys_by_identity.get(identity, set()))
-        duplicate_spans = refs.get("duplicate_spans")
-        if diagnostic.code == "W_REDUNDANT_TRANSITION" and isinstance(
-                duplicate_spans, (list, tuple)
-        ):
-            matched = [
-                (key, item) for key, item in authored
-                if item.span is not None and item.span in duplicate_spans
-            ]
-            # The first declaration supplies the behavior; later copies are
-            # the unreachable part of a redundant group.
-            keys = {key for key, _ in matched[1:]}
-        if not keys:
-            transition_index = refs.get("transition_index")
-            keys = {
-                key for key, item in authored
-                if isinstance(transition_index, int)
-                and item.transition_index == transition_index
-            }
-        transition_payload = refs.get("transition")
-        if not keys and isinstance(transition_payload, Mapping):
-            parent = transition_payload.get("parent")
-            from_state = transition_payload.get("from_state")
-            to_state = transition_payload.get("to_state")
-            if isinstance(parent, str) and isinstance(from_state, str):
-                payload_from = f"{parent}.{from_state}"
-                payload_to = (
-                    f"{parent}.{to_state}" if isinstance(to_state, str) else None
-                )
-                keys = {
-                    key for key, item in authored
-                    if item.from_path == payload_from
-                    and (payload_to is None or item.to_path == payload_to)
-                }
-                payload_guard = transition_payload.get("guard")
-                payload_event = transition_payload.get("event")
-                payload_forced = transition_payload.get("is_forced")
-                if isinstance(payload_guard, str) or payload_guard is None:
-                    keys = {
-                        key for key in keys
-                        if authored_by_key[key].guard == payload_guard
-                    }
-                if isinstance(payload_event, str):
-                    keys = {
-                        key for key in keys
-                        if authored_by_key[key].event == payload_event
-                        or authored_by_key[key].event is not None
-                        and authored_by_key[key].event.rsplit('.', 1)[-1] == payload_event
-                    }
-                if isinstance(payload_forced, bool):
-                    keys = {
-                        key for key in keys
-                        if authored_by_key[key].is_forced == payload_forced
-                    }
-                payload_index = transition_payload.get('transition_index')
-                if isinstance(payload_index, int) and not isinstance(payload_index, bool):
-                    keys = {
-                        key for key in keys
-                        if authored_by_key[key].transition_index == payload_index
-                    }
-        if not keys and isinstance(duplicate_spans, (list, tuple)):
-            matched = [
-                (key, item) for key, item in authored
-                if item.span is not None and item.span in duplicate_spans
-            ]
-            # The first declaration supplies the behavior; later copies are
-            # the unreachable part of a redundant group.
-            keys = {key for key, _ in matched[1:]}
-        if not keys:
-            from_path = refs.get("from_path")
-            to_path = refs.get("to_path")
-            keys = {
-                key for key, item in authored
-                if isinstance(from_path, str)
-                and isinstance(to_path, str)
-                and item.from_path == from_path
-                and item.to_path == to_path
-            }
-        if not keys:
-            continue
-        reason = (
-            "forced_never_expands"
-            if diagnostic.code == "W_FORCED_NEVER_EXPANDS"
-            else "guard_false"
-            if "GUARD" in diagnostic.code
-            else "shadowed" if "SHADOWED" in diagnostic.code
-            else "redundant"
-        )
-        reason_keys.setdefault(reason, set()).update(keys)
     # Reuse the same identity/reason union that drives the public aggregate
     # warning. This keeps statistics and diagnostics on one canonical mapping.
-    canonical_reason_by_key = _unreachable_transition_reason_keys(
-        states,
-        transitions,
-        diagnostics,
-        forced_transitions,
-    )
+    canonical_reason_by_key = reason_by_key
+    if canonical_reason_by_key is None:
+        canonical_reason_by_key = _unreachable_transition_reason_keys(
+            states,
+            transitions,
+            diagnostics,
+            forced_transitions,
+        )
     source_unreachable_keys = {
-        key for key, reasons_for_key in canonical_reason_by_key.items()
-        if "unreachable_source_state" in reasons_for_key
+        key for key, info in canonical_reason_by_key.items()
+        if "unreachable_source_state" in info.reasons
     }
     event_unreachable_keys = {
-        key for key, reasons_for_key in canonical_reason_by_key.items()
-        if "unreachable_event_consumer" in reasons_for_key
+        key for key, info in canonical_reason_by_key.items()
+        if "unreachable_event_consumer" in info.reasons
     }
     reason_keys = {}
-    for key, reasons_for_key in canonical_reason_by_key.items():
-        for reason in reasons_for_key:
+    for key, info in canonical_reason_by_key.items():
+        for reason in info.reasons:
             if reason in {"unreachable_source_state", "unreachable_event_consumer"}:
                 continue
             reason_keys.setdefault(reason, set()).add(key)
@@ -3602,7 +3516,11 @@ def _structural_verify_diagnostics(
                 diagnostics.append(diagnostic)
     elif result.algorithm_name == 'unreachable_states':
         for state_path in result.raw_result or ():
-            refs = {'state_path': state_path}
+            refs = {
+                'algorithm_name': result.algorithm_name,
+                'verification_scope': result.verification_scope,
+                'state_path': state_path,
+            }
             diagnostic = _make_verify_diagnostic(
                 'W_UNREACHABLE_STATE',
                 refs,
@@ -4225,11 +4143,18 @@ def inspect_model(
             max_call_count_scaling=max_call_count_scaling,
             smt_timeout_ms=smt_timeout_ms,
         )
+    reason_by_key = _unreachable_transition_reason_keys(
+        states,
+        transitions,
+        diagnostics,
+        forced_transitions,
+    )
     diagnostics.extend(_build_unreachable_transition_diagnostics(
         states,
         transitions,
         diagnostics,
         forced_transitions,
+        reason_by_key,
     ))
     diagnostics = list(_catalog_emittable_diagnostics(diagnostics))
     diagnostics = list(_deduplicate_model_diagnostics(diagnostics))
@@ -4239,6 +4164,7 @@ def inspect_model(
         diagnostics,
         forced_transitions,
         structure_statistics_policy,
+        reason_by_key,
     )
     return ModelInspect(
         root_state_path=root_state_path,

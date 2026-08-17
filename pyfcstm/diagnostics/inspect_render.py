@@ -654,7 +654,7 @@ def _render_human_diagnostic(
                 lines.append(f"{gutter} {caret}")
         lines.append(gutter)
     spec = CODE_REGISTRY.get(diagnostic.code)
-    lines.append(f"   = source: {_diagnostic_source(spec)}")
+    lines.append(f"   = source: {_diagnostic_source(spec, diagnostic.refs)}")
     if spec is not None and spec.for_llm is not None:
         lines.append(f"   = why: {spec.for_llm.summary}")
         if spec.for_llm.recommended_actions:
@@ -710,10 +710,10 @@ def _diagnostic_llm_dict(
         "location": _span_dict(diagnostic.span, input_path=input_path),
         "source_excerpt": _excerpt_dict(excerpt),
         "refs": _jsonable(diagnostic.refs),
-        "source": _diagnostic_source(spec),
+        "source": _diagnostic_source(spec, diagnostic.refs),
         "provenance": {
-            "kind": _diagnostic_source(spec),
-            "verify_required": _diagnostic_source(spec) == "verify-backed",
+            "kind": _diagnostic_source(spec, diagnostic.refs),
+            "verify_required": _diagnostic_source(spec, diagnostic.refs) == "verify-backed",
         },
         "summary": spec.for_llm.summary
         if spec is not None and spec.for_llm is not None
@@ -732,7 +732,9 @@ def _diagnostic_llm_dict(
     }
 
 
-def _diagnostic_source(spec: Optional[Any]) -> str:
+def _diagnostic_source(spec: Optional[Any], refs: Optional[Mapping[str, Any]] = None) -> str:
+    if refs is not None and refs.get("verify_backed") is True:
+        return "verify-backed"
     if spec is None:
         return "unknown"
     if getattr(spec, "emit_tier", None) == "verify_pipeline":

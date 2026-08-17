@@ -167,6 +167,25 @@ def test_raw_transition_payload_reflects_mutated_state_order():
     assert after == 4
 
 
+def test_transition_index_scope_does_not_poison_parent_context_on_interrupt(monkeypatch):
+    """Map construction is interrupt-safe before the child ContextVar is set."""
+    machine = parse_machine("state Root;")
+    sentinel = {99: 123}
+    token = encoding_core._TRANSITION_INDEX_SCOPE.set(sentinel)
+
+    def interrupted_map(root):
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(encoding_core, "_transition_index_map", interrupted_map)
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            with encoding_core._transition_index_scope(machine):
+                pass
+        assert encoding_core._TRANSITION_INDEX_SCOPE.get() is sentinel
+    finally:
+        encoding_core._TRANSITION_INDEX_SCOPE.reset(token)
+
+
 def test_expected_expression_translation_failures_are_normalized():
     """Known expression-to-Z3 failures become algorithm results, not crashes."""
     x = Variable("x")

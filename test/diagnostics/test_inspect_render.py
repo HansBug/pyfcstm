@@ -38,10 +38,14 @@ BOX_DRAWING_RE = re.compile(r"[\u2500-\u257f]")
 SOURCE_EXCERPT_RE = re.compile(r"\s+\d+ \|")
 
 
-def _report():
+def _report(*, enable_verify=False, max_complexity_tier="structural"):
     ast = parse_with_grammar_entry(SOURCE, "state_machine_dsl")
     machine = parse_dsl_node_to_state_machine(ast)
-    return inspect_model(machine)
+    return inspect_model(
+        machine,
+        enable_verify=enable_verify,
+        max_complexity_tier=max_complexity_tier,
+    )
 
 
 def _assert_excerpt_gutters_align(text):
@@ -365,6 +369,26 @@ class TestInspectRender:
         assert context[1]["is_anchor"] is True
         assert context[1]["caret"].strip("^") == "    "
         assert context[2]["text"] == "    [*] -> Idle;"
+
+    def test_unreachable_transition_provenance_survives_verify_rendering(self):
+        report = _report(enable_verify=True, max_complexity_tier="smt_linear")
+        diagnostic = next(
+            item for item in report.diagnostics
+            if item.code == "W_UNREACHABLE_TRANSITION"
+        )
+        assert diagnostic.refs["verify_backed"] is True
+
+        payload = json.loads(render_inspect_llm_json(report, SOURCE))
+        rendered = next(
+            item for item in payload["diagnostics"]
+            if item["code"] == "W_UNREACHABLE_TRANSITION"
+        )
+        assert rendered["source"] == "verify-backed"
+        assert rendered["provenance"] == {
+            "kind": "verify-backed",
+            "verify_required": True,
+        }
+        assert "verify-backed" in render_inspect_human(report, SOURCE)
 
     def test_llm_renderers_ignore_verification_metadata(self):
         report = _report()

@@ -3379,7 +3379,14 @@ print(json.dumps(verification, sort_keys=True))
         )
 
         assert [(diag.code, diag.refs) for diag in diagnostics] == [
-            ('W_UNREACHABLE_STATE', {'state_path': 'Root.Orphan'}),
+            (
+                'W_UNREACHABLE_STATE',
+                {
+                    'algorithm_name': 'unreachable_states',
+                    'verification_scope': 'topological_only',
+                    'state_path': 'Root.Orphan',
+                },
+            ),
         ]
         assert diagnostics[0].span == state.span
         assert_all_diags_match_schema(

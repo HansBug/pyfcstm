@@ -1631,6 +1631,16 @@ W_UNREACHABLE_STATE:
     A state is not reachable from the model's root entry path via any
     sequence of normal or forced transitions.
   refs:
+    algorithm_name:
+      type: str
+      required: false
+      description: >-
+        Verify registry algorithm that produced the finding when this shared
+        static code is emitted by the optional verify pipeline.
+    verification_scope:
+      type: str
+      required: false
+      description: Verify scope for a verify-backed occurrence.
     state_path:
       type: str
       required: true
@@ -2373,6 +2383,12 @@ W_UNREACHABLE_TRANSITION:
       description: >-
         One or more canonical reasons that make this authored transition
         unreachable. The list is sorted for stable output.
+    verify_backed:
+      type: bool
+      required: false
+      description: >-
+        True when at least one contributing reason is backed by an optional
+        verify-pipeline diagnostic; omitted for static-only evidence.
   for_llm:
     summary: >-
       This authored transition is unreachable under the available analysis

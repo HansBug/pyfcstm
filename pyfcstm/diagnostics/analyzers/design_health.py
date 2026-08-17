@@ -1,4 +1,11 @@
-"""Design-health diagnostics derived from inspect-surface data."""
+"""Design-health diagnostics derived from inspect-surface data.
+
+The reachability helper keeps the root itself in the result, even when the
+inspect graph only lists outgoing paths:
+
+    >>> sorted(_reachable_state_paths({'Root': ('Root.Active',)}, 'Root'))
+    ['Root', 'Root.Active']
+"""
 
 import re
 from dataclasses import replace
@@ -59,6 +66,12 @@ def collect_design_health_warnings(
         reachability_graph,
         resolved_root_state_path,
     ))
+    diagnostics.extend(_unreachable_initial_transition_diagnostics(
+        states,
+        transitions,
+        reachability_graph,
+        resolved_root_state_path,
+    ))
     diagnostics.extend(
         collect_const_fold_warnings(machine)
         if machine is not None
@@ -108,8 +121,7 @@ def _resolve_root_state_path(states, root_state_path):
 def _unreachable_state_diagnostics(states, reachability_graph, root_state_path) -> List[ModelDiagnostic]:
     if not states or root_state_path is None:
         return []
-    reachable = set(reachability_graph.get(root_state_path, ()))
-    reachable.add(root_state_path)
+    reachable = _reachable_state_paths(reachability_graph, root_state_path)
     diagnostics: List[ModelDiagnostic] = []
     for state in states:
         if not state.is_leaf or state.is_pseudo or state.path in reachable:
@@ -123,6 +135,54 @@ def _unreachable_state_diagnostics(states, reachability_graph, root_state_path) 
                 refs={'state_path': state.path},
             )
         )
+    return diagnostics
+
+
+def _reachable_state_paths(reachability_graph, root_state_path):
+    reachable = set(reachability_graph.get(root_state_path, ()))
+    reachable.add(root_state_path)
+    return reachable
+
+
+def _unreachable_initial_transition_diagnostics(
+        states,
+        transitions,
+        reachability_graph,
+        root_state_path,
+) -> List[ModelDiagnostic]:
+    """Keep owner-level findings for unreachable composite entry selections."""
+    if not states or root_state_path is None:
+        return []
+    state_paths = {state.path for state in states}
+    reachable = _reachable_state_paths(reachability_graph, root_state_path)
+    diagnostics: List[ModelDiagnostic] = []
+    for transition in transitions:
+        if transition.from_path != '[*]' or '.' not in transition.to_path:
+            continue
+        owner_path = transition.to_path.rsplit('.', 1)[0]
+        if owner_path not in state_paths or owner_path in reachable:
+            continue
+        diagnostics.append(ModelDiagnostic(
+            code='W_UNREACHABLE_TRANSITION',
+            severity='warning',
+            message=(
+                f'Authored transition {transition.from_path!r} -> '
+                f'{transition.to_path!r} is unreachable for reasons: '
+                'unreachable_source_state.'
+            ),
+            span=transition.span,
+            refs={
+                'from_path': transition.from_path,
+                'to_path': transition.to_path,
+                'transition_index': transition.transition_index,
+                'reasons': ['unreachable_source_state'],
+                'source_path': transition.source_path,
+                'source_state_path': None,
+                'selection_owner_path': owner_path,
+                'forced_origin': transition.forced_origin,
+                'combo_origin_ids': [],
+            },
+        ))
     return diagnostics
 
 

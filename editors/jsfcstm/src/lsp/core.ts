@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 import {
@@ -32,7 +33,7 @@ import {getJsFcstmPackageInfo} from '../config';
 import {
     collectCodeActions,
     collectCompletionItems,
-    collectDocumentDiagnostics,
+    collectDocumentDiagnosticsByUri,
     collectDocumentHighlights,
     collectDocumentLinks,
     collectDocumentSymbols,
@@ -49,6 +50,7 @@ import {
     resolveHover,
 } from '../editor';
 import type {FcstmFormatOptions} from '../editor/formatter';
+import type {FcstmDiagnosticPublications} from '../editor/diagnostics';
 import type {TextDocumentLike} from '../utils/text';
 import {getWorkspaceGraph} from '../workspace';
 import {
@@ -85,6 +87,7 @@ export interface FcstmLanguageServerCoreOptions {
     debounceMs?: number;
     onDiagnostics?: (publication: FcstmPublishedDiagnostics) => void | Promise<void>;
     scheduler?: FcstmLanguageServerScheduler;
+    collectDocumentDiagnostics?: typeof collectDocumentDiagnosticsByUri;
     formatOptions?: FcstmFormatOptions;
 }
 
@@ -134,6 +137,10 @@ function uriToFilePath(uri: string): string | undefined {
     }
 }
 
+function normalizeFilePath(filePath: string): string {
+    return path.normalize(path.resolve(filePath));
+}
+
 function toDocumentLike(document: TextDocument): TextDocumentLike {
     const text = document.getText();
     const lines = text.split('\n');
@@ -158,6 +165,91 @@ function shouldCancel(token?: CancellationToken): boolean {
     return Boolean(token?.isCancellationRequested);
 }
 
+function diagnosticContributionKey(diagnostic: Diagnostic): string {
+    if (
+        diagnostic.code === 'W_UNREACHABLE_TRANSITION'
+        && diagnostic.data
+        && typeof diagnostic.data === 'object'
+        && !Array.isArray(diagnostic.data)
+    ) {
+        const data = diagnostic.data as Record<string, unknown>;
+        const reason = data.reason;
+        const sourcePath = data.source_path;
+        if (typeof reason === 'string' && typeof sourcePath === 'string') {
+            // Host-assembled and child-local topology findings may differ in
+            // projected paths, messages, and transition indexes. The authored
+            // source span plus authored topology endpoints is their stable
+            // identity, while reason prevents unrelated topology findings on
+            // that span from collapsing. Do not use transition_index here:
+            // assembled and standalone models can number the same transition
+            // differently.
+            return JSON.stringify([
+                diagnostic.code,
+                reason,
+                sourcePath,
+                diagnostic.range,
+                data.from_path ?? null,
+                data.to_path ?? null,
+                data.source_state_path ?? null,
+                data.selection_owner_path ?? null,
+                data.forced_origin ?? null,
+                data.combo_origin_ids ?? [],
+                data.mount_path ?? null,
+            ]);
+        }
+    }
+    return JSON.stringify([
+        diagnostic.code ?? null,
+        diagnostic.severity ?? null,
+        diagnostic.source ?? null,
+        diagnostic.range,
+        diagnostic.data ?? null,
+        diagnostic.relatedInformation ?? null,
+    ]);
+}
+
+function unreachableTransitionAuthoredKey(diagnostic: Diagnostic): string | null {
+    if (
+        diagnostic.code !== 'W_UNREACHABLE_TRANSITION'
+        || !diagnostic.data
+        || typeof diagnostic.data !== 'object'
+        || Array.isArray(diagnostic.data)
+    ) {
+        return null;
+    }
+    const data = diagnostic.data as Record<string, unknown>;
+    if (
+        (typeof data.reason !== 'string' && !Array.isArray(data.reasons))
+        || typeof data.source_path !== 'string'
+    ) {
+        return null;
+    }
+    // This identity deliberately ignores projected paths and mount_path. A
+    // local child result and its assembled host result describe one authored
+    // transition, while distinct mount_path values describe distinct runtime
+    // instances that must remain visible.
+    return JSON.stringify([
+        diagnostic.code,
+        typeof data.reason === 'string' ? data.reason : data.reasons,
+        data.source_path,
+        data.forced_origin ?? null,
+        data.combo_origin_ids ?? [],
+    ]);
+}
+
+function isAssembledMountDiagnostic(diagnostic: Diagnostic): boolean {
+    if (
+        diagnostic.code !== 'W_UNREACHABLE_TRANSITION'
+        || !diagnostic.data
+        || typeof diagnostic.data !== 'object'
+        || Array.isArray(diagnostic.data)
+    ) {
+        return false;
+    }
+    const mountPath = (diagnostic.data as Record<string, unknown>).mount_path;
+    return typeof mountPath === 'string' && mountPath.length > 0;
+}
+
 /**
  * Protocol-neutral FCSTM language server core.
  *
@@ -166,16 +258,21 @@ function shouldCancel(token?: CancellationToken): boolean {
  */
 export class FcstmLanguageServerCore {
     private readonly documents = new Map<string, TextDocument>();
+    private readonly diagnosticContributions = new Map<string, Map<string, Diagnostic[]>>();
+    private readonly diagnosticAuthorities = new Map<string, ReadonlySet<string>>();
+    private readonly diagnosticGenerations = new Map<string, number>();
     private readonly diagnosticsTimers = new Map<string, ManagedTimer>();
     private readonly workspaceFolders = new Map<string, WorkspaceFolder>();
     private readonly debounceMs: number;
     private readonly scheduler: FcstmLanguageServerScheduler;
+    private readonly collectDocumentDiagnostics: typeof collectDocumentDiagnosticsByUri;
     private readonly onDiagnostics: (publication: FcstmPublishedDiagnostics) => void | Promise<void>;
     private formatOptions: FcstmFormatOptions;
 
     constructor(options: FcstmLanguageServerCoreOptions = {}) {
         this.debounceMs = options.debounceMs ?? 300;
         this.scheduler = options.scheduler || createScheduler();
+        this.collectDocumentDiagnostics = options.collectDocumentDiagnostics || collectDocumentDiagnosticsByUri;
         this.onDiagnostics = options.onDiagnostics || (() => undefined);
         this.formatOptions = {...(options.formatOptions || {})};
     }
@@ -255,6 +352,7 @@ export class FcstmLanguageServerCore {
         this.documents.set(textDocument.uri, document);
         this.syncOverlay(document);
         await this.publishDiagnostics(textDocument.uri, document.version, token);
+        await this.scheduleAffectedDiagnostics(textDocument.uri);
     }
 
     async changeTextDocument(
@@ -271,6 +369,7 @@ export class FcstmLanguageServerCore {
         this.documents.set(uri, updatedDocument);
         this.syncOverlay(updatedDocument);
         this.scheduleDiagnostics(uri, version);
+        await this.scheduleAffectedDiagnostics(uri);
     }
 
     async saveTextDocument(uri: string, token?: CancellationToken): Promise<void> {
@@ -285,16 +384,21 @@ export class FcstmLanguageServerCore {
 
     async closeTextDocument(uri: string): Promise<void> {
         this.clearDiagnosticsTimer(uri);
+        this.nextDiagnosticGeneration(uri);
         const document = this.documents.get(uri);
         if (document) {
             this.removeOverlay(document.uri);
         }
         this.documents.delete(uri);
-        await this.onDiagnostics({
-            uri,
-            version: 0,
-            diagnostics: [],
-        });
+        const previous = this.diagnosticContributions.get(uri);
+        this.diagnosticContributions.delete(uri);
+        const previousAuthorities = this.diagnosticAuthorities.get(uri);
+        this.diagnosticAuthorities.delete(uri);
+        const targets = new Set(previous?.keys() || []);
+        for (const target of previousAuthorities || []) targets.add(target);
+        if (targets.size === 0) targets.add(uri);
+        await this.publishDiagnosticTargets(targets);
+        await this.scheduleAffectedDiagnostics(uri);
     }
 
     async setWorkspaceFolders(workspaceFolders: WorkspaceFolder[]): Promise<void> {
@@ -706,6 +810,9 @@ export class FcstmLanguageServerCore {
             this.removeOverlay(document.uri);
         }
         this.documents.clear();
+        this.diagnosticContributions.clear();
+        this.diagnosticAuthorities.clear();
+        this.diagnosticGenerations.clear();
         this.workspaceFolders.clear();
     }
 
@@ -720,10 +827,11 @@ export class FcstmLanguageServerCore {
 
     private scheduleDiagnostics(uri: string, version: number): void {
         this.clearDiagnosticsTimer(uri);
+        const generation = this.nextDiagnosticGeneration(uri);
 
         const handle = this.scheduler.setTimeout(async () => {
             this.diagnosticsTimers.delete(uri);
-            await this.publishDiagnostics(uri, version);
+            await this.publishDiagnostics(uri, version, undefined, generation);
         }, this.debounceMs);
 
         this.diagnosticsTimers.set(uri, {uri, version, handle});
@@ -757,40 +865,146 @@ export class FcstmLanguageServerCore {
         this.diagnosticsTimers.delete(uri);
     }
 
+    private nextDiagnosticGeneration(uri: string): number {
+        const generation = (this.diagnosticGenerations.get(uri) || 0) + 1;
+        this.diagnosticGenerations.set(uri, generation);
+        return generation;
+    }
+
     private async revalidateOpenDocuments(): Promise<void> {
         for (const document of this.documents.values()) {
             await this.publishDiagnostics(document.uri, document.version);
         }
     }
 
+    private async scheduleAffectedDiagnostics(changedUri: string): Promise<void> {
+        const changedFile = uriToFilePath(changedUri);
+        if (!changedFile) return;
+
+        const normalizedChangedFile = normalizeFilePath(changedFile);
+        const workspaceGraph = getWorkspaceGraph();
+        const dependentRoots = new Set(workspaceGraph.dependentRoots(normalizedChangedFile));
+        for (const document of this.documents.values()) {
+            if (document.uri === changedUri) continue;
+
+            const documentFile = uriToFilePath(document.uri);
+            if (!documentFile) continue;
+            const normalizedDocumentFile = normalizeFilePath(documentFile);
+            if (dependentRoots.has(normalizedDocumentFile)) {
+                this.scheduleDiagnostics(document.uri, document.version);
+                continue;
+            }
+            if (workspaceGraph.hasDependencyRecord(normalizedDocumentFile)) continue;
+
+            const snapshot = await workspaceGraph.buildSnapshotForDocument(toDocumentLike(document));
+            if (!snapshot.order.includes(normalizedChangedFile)) continue;
+
+            this.scheduleDiagnostics(document.uri, document.version);
+        }
+    }
+
     private async publishDiagnostics(
         uri: string,
         expectedVersion: number,
-        token?: CancellationToken
+        token?: CancellationToken,
+        expectedGeneration?: number,
     ): Promise<void> {
         if (shouldCancel(token)) {
             return;
         }
+
+        const generation = expectedGeneration ?? this.nextDiagnosticGeneration(uri);
 
         const document = this.documents.get(uri);
         if (!document || document.version !== expectedVersion) {
             return;
         }
 
-        const diagnostics = await collectDocumentDiagnostics(toDocumentLike(document));
+        const publications = await this.collectDocumentDiagnostics(toDocumentLike(document), uri);
         if (shouldCancel(token)) {
             return;
         }
 
         const currentDocument = this.documents.get(uri);
-        if (!currentDocument || currentDocument.version !== expectedVersion) {
+        if (
+            !currentDocument
+            || currentDocument.version !== expectedVersion
+            || this.diagnosticGenerations.get(uri) !== generation
+        ) {
             return;
         }
 
-        await this.onDiagnostics({
-            uri,
-            version: expectedVersion,
-            diagnostics: diagnostics.map(item => toLspDiagnostic(item)),
-        });
+        const next = new Map<string, Diagnostic[]>();
+        for (const [targetUri, diagnostics] of publications) {
+            next.set(targetUri, diagnostics.map(item => toLspDiagnostic(item)));
+        }
+        const previous = this.diagnosticContributions.get(uri);
+        const previousAuthorities = this.diagnosticAuthorities.get(uri);
+        const nextAuthorities = new Set(
+            (publications as FcstmDiagnosticPublications).authoritativeTargets || [],
+        );
+        const existingTargets = new Set(
+            [...this.diagnosticContributions.values()]
+                .flatMap(contribution => [...contribution.keys()]),
+        );
+        const targets = new Set([
+            ...(previous?.keys() || []),
+            ...next.keys(),
+            ...(previousAuthorities || []),
+        ]);
+        for (const target of nextAuthorities) {
+            if (existingTargets.has(target)) targets.add(target);
+        }
+        this.diagnosticContributions.set(uri, next);
+        this.diagnosticAuthorities.set(uri, nextAuthorities);
+        await this.publishDiagnosticTargets(targets);
+    }
+
+    private async publishDiagnosticTargets(targets: Iterable<string>): Promise<void> {
+        for (const targetUri of targets) {
+            const diagnostics: Diagnostic[] = [];
+            const seen = new Set<string>();
+            const contributions = [...this.diagnosticContributions.entries()]
+                .flatMap(([sourceUri, contribution]) => (contribution.get(targetUri) || [])
+                    .map(diagnostic => ({sourceUri, diagnostic})));
+            const authoritativeSources = new Set(
+                [...this.diagnosticAuthorities.entries()]
+                    .filter(([, authoritativeTargets]) => authoritativeTargets.has(targetUri))
+                    .map(([sourceUri]) => sourceUri),
+            );
+            const assembledAuthoredKeys = new Set(
+                contributions
+                    .map(item => item.diagnostic)
+                    .filter(isAssembledMountDiagnostic)
+                    .map(unreachableTransitionAuthoredKey)
+                    .filter((key): key is string => key !== null),
+            );
+            for (const {sourceUri, diagnostic} of contributions) {
+                const authoredKey = unreachableTransitionAuthoredKey(diagnostic);
+                if (
+                    authoredKey !== null
+                    && !isAssembledMountDiagnostic(diagnostic)
+                    && (
+                        assembledAuthoredKeys.has(authoredKey)
+                        || [...authoritativeSources].some(authoritySource => authoritySource !== sourceUri)
+                    )
+                ) {
+                    // An assembled host result is authoritative for every
+                    // imported transition in its target set, even when that
+                    // result contains no positive warning. Keep a standalone
+                    // child result only when no other source owns the target.
+                    continue;
+                }
+                const key = diagnosticContributionKey(diagnostic);
+                if (seen.has(key)) continue;
+                seen.add(key);
+                diagnostics.push(diagnostic);
+            }
+            await this.onDiagnostics({
+                uri: targetUri,
+                version: this.documents.get(targetUri)?.version || 0,
+                diagnostics,
+            });
+        }
     }
 }

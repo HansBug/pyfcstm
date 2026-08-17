@@ -129,8 +129,10 @@ Inspect 报告参考
      - 源/目标、事件、事件作用域、守卫、效果动作、自赋值、强制来源、索引和组合投影 / 来源字段。
    * - ``ComboOriginInfo``
      - ``origin_id``、转换 span、触发器 span 和有序 ``terms``。
-   * - ``ComboOriginTermInfo`` / ``ComboOriginRefInfo``
+   * - ``ComboOriginTermInfo``
      - 项序号、角色、是否消耗触发项、文本，以及转换 / 触发器 / 项 / 值 / 删除 span。
+   * - ``ComboOriginRefInfo``
+     - 项序号、角色、是否消耗触发项、文本、转换 / 触发器 / 项 / 值 / 删除 span，以及 authored endpoint 来源信息：``source_kind``（``state``/``init``）、``source_path``、initial selection 的 ``selection_owner_path``、``target_kind``（``state``/``exit``）和 exit 时为 ``[*]`` 的 ``target_path``。
    * - ``VariableInfo``
      - 名称、类型、初值、读写状态路径、守卫影响标志、抽象动作作用域和浮点字面量赋值。
    * - ``EventInfo``

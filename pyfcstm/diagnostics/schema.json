@@ -435,6 +435,10 @@
           "minimum": 0,
           "description": "Zero-based parent-first model transition order, including forced expansions at their declaring state."
         },
+        "source_path": {
+          "type": ["string", "null"],
+          "description": "Source file that authored this transition, when source metadata is available."
+        },
         "combo_origin_refs": {
           "type": "array",
           "description": "References from this generated combo transition back to original combo trigger terms.",
@@ -490,7 +494,12 @@
         "trigger_span": { "$ref": "#/definitions/NullableSpan" },
         "term_span": { "$ref": "#/definitions/NullableSpan" },
         "value_span": { "$ref": "#/definitions/NullableSpan" },
-        "removal_span": { "$ref": "#/definitions/NullableSpan" }
+        "removal_span": { "$ref": "#/definitions/NullableSpan" },
+        "source_kind": { "type": "string", "enum": ["init", "state"] },
+        "source_path": { "type": ["string", "null"] },
+        "selection_owner_path": { "type": ["string", "null"] },
+        "target_kind": { "type": "string", "enum": ["state", "exit"] },
+        "target_path": { "type": ["string", "null"] }
       }
     },
     "ComboOriginTermInfo": {

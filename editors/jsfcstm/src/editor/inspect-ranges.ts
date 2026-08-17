@@ -237,6 +237,20 @@ function importedBoundaryFileForStatePath(
 ): string | null {
     if (!statePath) return null;
     const segments = statePath.split('.');
+
+    // Imported mounted states are represented in the host semantic model by
+    // an import record rather than by a synthetic semantic state. Resolve the
+    // longest mounted prefix before consulting assembled-state metadata.
+    const mountedImports = [...semantic.imports]
+        .filter(item => item.entryFile && segments.length >= item.mountedStatePath.length)
+        .sort((left, right) => right.mountedStatePath.length - left.mountedStatePath.length);
+    for (const importItem of mountedImports) {
+        const mountedPath = importItem.mountedStatePath;
+        if (mountedPath.every((segment, index) => segments[index] === segment)) {
+            return importItem.entryFile ?? null;
+        }
+    }
+
     for (let length = segments.length; length >= 1; length -= 1) {
         const candidatePath = segments.slice(0, length).join('.');
         const state = semantic.lookups.statesByPath[candidatePath];
@@ -246,7 +260,7 @@ function importedBoundaryFileForStatePath(
     return null;
 }
 
-function statePathIsLocalToDocument(
+export function statePathIsLocalToDocument(
     document: TextDocumentLike,
     semantic: FcstmSemanticDocument,
     statePath: string | null,

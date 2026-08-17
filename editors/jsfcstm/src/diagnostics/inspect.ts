@@ -128,6 +128,11 @@ export interface ComboOriginRefInfo {
     term_span: ModelSpanJson | null;
     value_span: ModelSpanJson | null;
     removal_span: ModelSpanJson | null;
+    source_kind: 'init' | 'state';
+    source_path: string | null;
+    selection_owner_path: string | null;
+    target_kind: 'state' | 'exit';
+    target_path: string | null;
 }
 
 export interface ComboOriginTermInfo {
@@ -165,6 +170,7 @@ export interface TransitionInfo {
     is_forced: boolean;
     forced_origin: string | null;
     transition_index: number | null;
+    source_path: string | null;
     combo_origin_refs: ComboOriginRefInfo[];
     combo_projection_key: unknown[] | null;
     combo_projection_order_key: unknown[] | null;
@@ -870,6 +876,11 @@ function comboOriginRefInfo(value: unknown): ComboOriginRefInfo | null {
         term_span: (item.term_span as ModelSpanJson | null | undefined) ?? null,
         value_span: (item.value_span as ModelSpanJson | null | undefined) ?? null,
         removal_span: (item.removal_span as ModelSpanJson | null | undefined) ?? null,
+        source_kind: item.source_kind === 'init' ? 'init' : 'state',
+        source_path: (item.source_path as string | null | undefined) ?? null,
+        selection_owner_path: (item.selection_owner_path as string | null | undefined) ?? null,
+        target_kind: item.target_kind === 'exit' ? 'exit' : 'state',
+        target_path: (item.target_path as string | null | undefined) ?? null,
     };
 }
 
@@ -881,8 +892,8 @@ function buildTransitionInfos(machine: StateMachine): TransitionInfo[] {
                 .map(comboOriginRefInfo)
                 .filter((item): item is ComboOriginRefInfo => item !== null);
             const info: TransitionInfo = {
-                from_path: transitionEndpoint(state.path, t.fromState, true),
-                to_path: transitionEndpoint(state.path, t.toState, false),
+                from_path: modelTransitionEndpoint(state, t, 'source'),
+                to_path: modelTransitionEndpoint(state, t, 'target'),
                 event: t.event ? t.event.pathName : null,
                 event_scope: t.event ? (t.triggerScope ?? null) : null,
                 guard: exprText(t.guard),
@@ -891,6 +902,7 @@ function buildTransitionInfos(machine: StateMachine): TransitionInfo[] {
                 is_forced: !!t.forced,
                 forced_origin: t.forced ? t.text : null,
                 transition_index: typeof t.transitionIndex === 'number' ? t.transitionIndex : null,
+                source_path: t.sourcePath ?? t.source_path ?? null,
                 combo_origin_refs: comboOriginRefs,
                 combo_projection_key: Array.isArray(t.combo_projection_key) ? [...t.combo_projection_key] : null,
                 combo_projection_order_key: Array.isArray(t.combo_projection_order_key) ? [...t.combo_projection_order_key] : null,
@@ -918,6 +930,29 @@ function transitionEndpoint(
     if (marker === 'INIT_STATE') return INIT_MARK;
     if (marker === 'EXIT_STATE') return EXIT_MARK;
     return resolveSiblingPath(parentPath, marker);
+}
+
+function modelTransitionEndpoint(
+    state: StateMachine['allStates'][number],
+    transition: StateMachine['allTransitions'][number],
+    endpoint: 'source' | 'target',
+): string {
+    if (endpoint === 'source') {
+        if (transition.sourceKind === 'init' || transition.fromState === 'INIT_STATE') {
+            return INIT_MARK;
+        }
+        const resolvedPath = transition.sourceStatePath ?? transition.source_state_path;
+        return resolvedPath
+            ? dottedPath(resolvedPath)
+            : transitionEndpoint(state.path, transition.fromState, true);
+    }
+    if (transition.targetKind === 'exit' || transition.toState === 'EXIT_STATE') {
+        return EXIT_MARK;
+    }
+    const resolvedPath = transition.targetStatePath ?? transition.target_state_path;
+    return resolvedPath
+        ? dottedPath(resolvedPath)
+        : transitionEndpoint(state.path, transition.toState, false);
 }
 
 function buildVariableInfos(machine: StateMachine, states: StateInfo[]): VariableInfo[] {
@@ -960,8 +995,8 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
             }
         }
         for (const t of state.transitions) {
-            const fromPath = transitionEndpoint(state.path, t.fromState, true);
-            const toPath = transitionEndpoint(state.path, t.toState, false);
+            const fromPath = modelTransitionEndpoint(state, t, 'source');
+            const toPath = modelTransitionEndpoint(state, t, 'target');
             if (t.guard) {
                 for (const v of walkExprVariables(t.guard)) {
                     if (v in readGuards) readGuards[v].push([fromPath, toPath]);
@@ -1346,8 +1381,8 @@ function buildEventInfos(machine: StateMachine): EventInfo[] {
         for (const t of state.transitions) {
             if (!t.event) continue;
             const qn = t.event.pathName;
-            const fromPath = transitionEndpoint(state.path, t.fromState, true);
-            const toPath = transitionEndpoint(state.path, t.toState, false);
+            const fromPath = modelTransitionEndpoint(state, t, 'source');
+            const toPath = modelTransitionEndpoint(state, t, 'target');
             if (!users[qn]) users[qn] = [];
             users[qn].push([fromPath, toPath]);
             scopes[qn] = t.triggerScope ?? 'absolute';
@@ -1584,11 +1619,33 @@ function authoredTransitionEntries(
     for (const [origin, group] of comboGroups) {
         if (comboInitialOrigins.has(origin)) continue;
         const base = group[0];
+        const refs = group.flatMap(item => item.combo_origin_refs)
+            .filter(ref => ref.origin_id === origin);
+        const sourceRef = refs.find(ref => ref.source_kind === 'state' && ref.source_path !== null);
+        const terminalRef = refs.find(ref => ref.role === 'terminal');
+        const authoredFrom = sourceRef?.source_path ?? base.from_path;
+        const authoredTo = terminalRef?.target_path
+            ?? [...group].reverse().find(item => item.to_path !== base.from_path)?.to_path
+            ?? base.to_path;
+        const authoredSpan = refs.find(ref => ref.role === 'terminal' && ref.transition_span !== null)?.transition_span
+            ?? refs.find(ref => ref.transition_span !== null)?.transition_span;
+        const authoredEndLine = authoredSpan?.end_line ?? authoredSpan?.line;
+        const authoredEndColumn = authoredSpan?.end_column ?? authoredSpan?.column;
         representatives.set(`combo:${origin}`, {
             ...base,
+            from_path: authoredFrom,
+            to_path: authoredTo,
             guard: group.find(item => item.guard !== null)?.guard ?? null,
             effect: group.find(item => item.effect !== null)?.effect ?? null,
             event: group.find(item => item.event !== null)?.event ?? null,
+            transition_index: null,
+            combo_origin_refs: refs,
+            __sourceRange: authoredSpan === undefined || authoredSpan === null
+                ? base.__sourceRange
+                : {
+                    start: {line: authoredSpan.line - 1, character: authoredSpan.column - 1},
+                    end: {line: authoredEndLine! - 1, character: authoredEndColumn! - 1},
+                },
         });
     }
     const forcedGroups = forcedExpansionGroups(transitions, forcedTransitions);
@@ -1608,6 +1665,7 @@ function authoredTransitionEntries(
             is_forced: true,
             forced_origin: declaration.original_raw,
             transition_index: null,
+            source_path: null,
             combo_origin_refs: [],
             combo_projection_key: null,
             combo_projection_order_key: null,
@@ -1712,7 +1770,7 @@ function buildUnreachableTransitionDiagnostics(
         if (key.startsWith('forced:')) {
             const index = Number(key.slice('forced:'.length));
             const expansions = Number.isInteger(index) ? forcedGroups[index] ?? [] : [];
-            if (expansions.length > 0 && expansions.every(item => sourceIsUnreachable(item.from_path))) {
+            if (expansions.length > 0 && expansions.some(item => sourceIsUnreachable(item.from_path))) {
                 addReason(key, 'unreachable_source_state');
                 for (const item of expansions) addVerificationSources(key, sourceVerificationSources(item.from_path));
             }
@@ -1820,18 +1878,43 @@ function buildUnreachableTransitionDiagnostics(
         for (const key of keys) addReason(key, reason);
     }
     return [...reasonsByKey.entries()].map(([key, reasons]) => {
-        const transition = authoredByKey.get(key)!;
+        let transition = authoredByKey.get(key)!;
+        if (key.startsWith('forced:') && reasons.has('unreachable_source_state')) {
+            const index = Number(key.slice('forced:'.length));
+            const expansions = Number.isInteger(index) ? forcedGroups[index] ?? [] : [];
+            const unreachablePaths = new Set(diagnostics
+                .filter(item => item.code === 'W_UNREACHABLE_STATE')
+                .map(item => item.refs.state_path)
+                .filter((path): path is string => typeof path === 'string'));
+            transition = expansions.find(item => unreachablePaths.has(item.from_path)) ?? transition;
+        }
         const sortedReasons = [...reasons].sort();
         return {
             code: 'W_UNREACHABLE_TRANSITION',
             severity: 'warning',
             message: `Authored transition ${JSON.stringify(transition.from_path)} -> ${JSON.stringify(transition.to_path)} is unreachable for reasons: ${sortedReasons.join(', ')}.`,
-            span: null,
+            span: transition.__sourceRange === undefined
+                ? null
+                : {
+                    line: transition.__sourceRange.start.line + 1,
+                    column: transition.__sourceRange.start.character + 1,
+                    end_line: transition.__sourceRange.end.line + 1,
+                    end_column: transition.__sourceRange.end.character + 1,
+                },
             refs: {
                 from_path: transition.from_path,
                 to_path: transition.to_path,
                 transition_index: transition.transition_index,
                 reasons: sortedReasons,
+                source_path: transition.source_path,
+                source_state_path: transition.from_path === INIT_MARK ? null : transition.from_path,
+                selection_owner_path: null,
+                forced_origin: transition.forced_origin,
+                combo_origin_ids: [...new Set(
+                    transition.combo_origin_refs
+                        .map(ref => ref.origin_id)
+                        .filter((originId): originId is string => typeof originId === 'string'),
+                )].sort(),
                 ...(verifyBackedKeys.has(key) ? {verify_backed: true} : {}),
                 ...(verificationSourcesByKey.has(key)
                     ? {verification_source_ids: [...verificationSourcesByKey.get(key)!].sort()}
@@ -1896,6 +1979,7 @@ function buildStructureStatistics(
             is_forced: true,
             forced_origin: declaration.original_raw,
             transition_index: null,
+            source_path: null,
             combo_origin_refs: [],
             combo_projection_key: null,
             combo_projection_order_key: null,
@@ -1952,9 +2036,9 @@ function buildStructureStatistics(
         if (key.startsWith('forced:')) {
             const index = Number(key.slice('forced:'.length));
             const expansions = Number.isInteger(index) ? forcedGroups[index] ?? [] : [];
-            // Count an authored forced declaration only when every concrete
-            // source is unreachable, keeping mixed expansion order-independent.
-            if (expansions.length > 0 && expansions.every(edge => sourceIsUnreachable(edge.from_path))) {
+            // Count one authored declaration when any concrete expansion is
+            // unreachable; the aggregate warning carries the same identity.
+            if (expansions.length > 0 && expansions.some(edge => sourceIsUnreachable(edge.from_path))) {
                 sourceUnreachableKeys.add(key);
             }
             return;

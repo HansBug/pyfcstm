@@ -55,6 +55,7 @@ export const FCSTM_DIAGNOSTIC_CODES = {
     // -------- Layer 2 warnings (W_*) - emit logic kept in place,
     // codes.yaml schema placeholders introduced in PR-A --------
     unreachableState: 'W_UNREACHABLE_STATE',
+    unreachableTransition: 'W_UNREACHABLE_TRANSITION',
     guardConstFalse: 'W_GUARD_CONST_FALSE',
     unusedEvent: 'W_UNUSED_EVENT',
     guardConstTrue: 'W_GUARD_CONST_TRUE',
@@ -290,26 +291,27 @@ function transitionDiagnosticEndpointPaths(
 
 function transitionModelOrderIndex(transition: FcstmSemanticTransition): number | null {
     const rawIndex = transition.ast.transitionIndex;
-    if (typeof rawIndex === 'number' && Number.isInteger(rawIndex)) return rawIndex;
+    if (!transition.forced && typeof rawIndex === 'number' && Number.isInteger(rawIndex)) return rawIndex;
 
     if (!Array.isArray(transition.ast.transitionIndexRefs)) return null;
-    if (transition.forced && transition.expandedTransitions.length === 1) {
-        const [expanded] = transition.expandedTransitions;
-        const match = transition.ast.transitionIndexRefs.find(ref => (
-            typeof ref.index === 'number' &&
-            (typeof ref.fromPath !== 'string' || ref.fromPath === dottedPath(expanded.sourceStatePath)) &&
-            (typeof ref.toPath !== 'string' || ref.toPath === (
-                expanded.targetKind === 'exit' ? '[*]' : dottedPath(expanded.targetStatePath)
-            ))
-        ));
-        return typeof match?.index === 'number' ? match.index : null;
-    }
-
     const endpoints = transitionDiagnosticEndpointPaths(transition);
+    return transitionModelOrderIndexForPaths(
+        transition,
+        endpoints.from_path ?? null,
+        endpoints.to_path ?? null,
+    );
+}
+
+function transitionModelOrderIndexForPaths(
+    transition: FcstmSemanticTransition,
+    fromPath: string | null,
+    toPath: string | null,
+): number | null {
+    if (!Array.isArray(transition.ast.transitionIndexRefs)) return null;
     const match = transition.ast.transitionIndexRefs.find(ref => (
         typeof ref.index === 'number' &&
-        (typeof ref.fromPath !== 'string' || ref.fromPath === endpoints.from_path) &&
-        (typeof ref.toPath !== 'string' || ref.toPath === endpoints.to_path)
+        (typeof ref.fromPath !== 'string' || ref.fromPath === fromPath) &&
+        (typeof ref.toPath !== 'string' || ref.toPath === toPath)
     ));
     return typeof match?.index === 'number' ? match.index : null;
 }
@@ -484,8 +486,6 @@ function addTransitionDiagnostics(
     document: TextDocumentLike,
     diagnostics: FcstmDiagnostic[]
 ): void {
-    const reachable = collectReachableStateIds(semantic);
-
     for (const transition of semantic.transitions) {
         // pyfcstm Layer 1 distinction: the source side of a transition
         // failing to resolve emits E_MISSING_STATE (a "state reference"
@@ -555,21 +555,16 @@ function addTransitionDiagnostics(
             }
         }
 
-        const sourceUnreachable = Boolean(
-            transition.sourceStateId
-            && !reachable.has(transition.sourceStateId)
-            && transition.sourceStateId !== semantic.machine.rootStateId
-        );
-        if (sourceUnreachable || (transition.guard && isFalseLiteral(transition.guard))) {
+        // Forced declarations expand into model transitions whose canonical
+        // origin text is owned by the runtime model. The inspect item remains
+        // authoritative for those generated edges.
+        if (transition.forced) continue;
+
+        if (transition.guard && isFalseLiteral(transition.guard)) {
             const sourceState = semantic.states.find(item => item.identity.id === transition.sourceStateId);
             diagnostics.push({
-                // For forced expansions, ``transition.guard`` still points at
-                // the original forced declaration guard, so this range anchors
-                // literal-false warnings to the authored guard expression.
-                range: !sourceUnreachable && transition.guard ? transition.guard.range : transition.range,
-                message: sourceUnreachable
-                    ? `Transition ${JSON.stringify(transition.ast.text)} is dead because its source state is unreachable.`
-                    : `Transition ${JSON.stringify(transition.ast.text)} is dead because its guard is always false.`,
+                range: transition.guard.range,
+                message: `Transition ${JSON.stringify(transition.ast.text)} is dead because its guard is always false.`,
                 severity: 'warning',
                 source: 'fcstm',
                 code: FCSTM_DIAGNOSTIC_CODES.guardConstFalse,

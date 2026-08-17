@@ -167,6 +167,11 @@ This catalog is synchronized with ``pyfcstm.diagnostics.codes.CODE_REGISTRY``. T
      - ``static_pipeline``
      - ``pure_static``
      - ``state_identifier``
+   * - :ref:`W_UNREACHABLE_TRANSITION <diag-code-w-unreachable-transition>`
+     - ``warning``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``transition``
    * - :ref:`W_GUARD_CONST_FALSE <diag-code-w-guard-const-false>`
      - ``warning``
      - ``static_pipeline``
@@ -233,11 +238,6 @@ This catalog is synchronized with ``pyfcstm.diagnostics.codes.CODE_REGISTRY``. T
      - ``pure_static``
      - ``variable_declaration``
    * - :ref:`W_REDUNDANT_TRANSITION <diag-code-w-redundant-transition>`
-     - ``warning``
-     - ``static_pipeline``
-     - ``pure_static``
-     - ``transition``
-   * - :ref:`W_UNREACHABLE_TRANSITION <diag-code-w-unreachable-transition>`
      - ``warning``
      - ``static_pipeline``
      - ``pure_static``
@@ -1419,6 +1419,12 @@ W_UNREACHABLE_TRANSITION
 .. diagnostics-ref W_UNREACHABLE_TRANSITION from_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION to_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION transition_index type=int_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION source_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION source_state_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION selection_owner_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION forced_origin type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION combo_origin_ids type=list[str] required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION mount_path type=str_or_null required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION reasons type=list[str] required=true enum=- item_enum=unreachable_source_state|unreachable_event_consumer|forced_never_expands|guard_false|shadowed|redundant exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION verify_backed type=bool required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION verification_source_ids type=list[str] required=false enum=- item_enum=- exact_values=-

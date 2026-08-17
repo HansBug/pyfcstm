@@ -40,6 +40,7 @@ import type {
     RawFcstmModelVariable as FcstmModelVariable,
 } from './raw';
 import {hydrateStateMachine, type FcstmModelStateMachine as FcstmRuntimeStateMachine} from './runtime';
+import {canonicalComboEffectSignature, pythonJsonArray} from './combo-origin';
 
 const MATH_CONSTANTS: Record<string, number> = {
     E: Math.E,
@@ -182,9 +183,9 @@ function comboOriginId(
     const source = transitionEndpointText(transition, 'source');
     const target = transitionEndpointText(transition, 'target');
     let origin = `${statePathName(ownerPath)}:${source}->${target}:${transition.comboTrigger?.canonicalText ?? transition.text}`;
-    const effects = transition.postOperations.map(item => item.text);
+    const effects = canonicalComboEffectSignature(transition.postOperations);
     if (effects.length > 0) {
-        origin = `${origin}:effect=${JSON.stringify(effects)}`;
+        origin = `${origin}:effect=${pythonJsonArray(effects)}`;
     }
     return origin;
 }
@@ -233,7 +234,7 @@ function comboAlternativeKey(ownerPath: string[], transition: FcstmAstTransition
         comboProjectionKey(ownerPath, transition),
         transitionEndpointText(transition, 'target'),
         transition.comboTrigger?.terms.map(term => comboTermSemanticKey(transition, term)) ?? [],
-        transition.postOperations.map(item => item.text),
+        canonicalComboEffectSignature(transition.postOperations),
     ]);
 }
 
@@ -257,11 +258,22 @@ function stableDigest12(value: string): string {
 
 function comboTermRef(
     originId: string,
+    ownerPath: string[],
     transition: FcstmAstTransition,
     term: FcstmAstComboTriggerTerm,
     termIndex: number,
     role: 'prefix' | 'terminal',
+    sourceStatePath?: string[],
+    targetStatePath?: string[],
 ): Record<string, unknown> {
+    const sourceKind = transition.sourceKind === 'init' ? 'init' : 'state';
+    const sourcePath = sourceKind === 'init'
+        ? null
+        : sourceStatePath ? statePathName(sourceStatePath) : null;
+    const targetKind = transition.targetKind === 'exit' ? 'exit' : 'state';
+    const targetPath = targetKind === 'exit'
+        ? '[*]'
+        : targetStatePath ? statePathName(targetStatePath) : null;
     return {
         origin_id: originId,
         term_index: termIndex,
@@ -273,6 +285,11 @@ function comboTermRef(
         term_span: spanJson(term.range),
         value_span: spanJson(term.valueRange),
         removal_span: spanJson(term.removalRange),
+        source_kind: sourceKind,
+        source_path: sourcePath,
+        selection_owner_path: sourceKind === 'init' ? statePathName(ownerPath) : null,
+        target_kind: targetKind,
+        target_path: targetPath,
     };
 }
 
@@ -284,6 +301,7 @@ interface ComboAlternative {
     transition: FcstmAstTransition;
     terms: FcstmAstComboTriggerTerm[];
     originId: string;
+    declaredOwnerPath: string[];
     declarationIndex: number;
     semanticDuplicateDiscriminator: number | null;
 }
@@ -690,6 +708,7 @@ class StateMachineModelBuilder {
                     transition: candidate,
                     terms: candidate.comboTrigger.terms,
                     originId: comboOriginId(currentState.path, candidate) + (duplicateIndex > 0 ? `#dup${duplicateIndex}` : ''),
+                    declaredOwnerPath: [...currentState.path],
                     declarationIndex: runIndex,
                     semanticDuplicateDiscriminator: duplicateIndex > 0 ? duplicateIndex : null,
                 });
@@ -1230,10 +1249,23 @@ class StateMachineModelBuilder {
             doc: aggregateModelDocumentation(alternatives.map(alternative => alternative.transition.doc)),
             comboOriginRefs: alternatives.map(alternative => comboTermRef(
                 alternative.originId,
+                alternative.declaredOwnerPath,
                 alternative.transition,
                 alternative.terms[termIndex],
                 termIndex,
                 role,
+                alternative.transition.sourceKind === 'init'
+                    ? undefined
+                    : this.resolveStateReference(
+                        alternative.declaredOwnerPath,
+                        alternative.transition.sourceStateName ?? '',
+                    )?.path,
+                alternative.transition.targetKind === 'exit'
+                    ? undefined
+                    : this.resolveStateReference(
+                        alternative.declaredOwnerPath,
+                        alternative.transition.targetStateName ?? '',
+                    )?.path,
             )),
             comboProjectionKey: projectionKey,
             comboProjectionOrderKey: projectionOrderKey,
@@ -1305,6 +1337,12 @@ class StateMachineModelBuilder {
             trigger_scope: params.triggerScope,
             transitionIndex,
             transition_index: transitionIndex,
+            sourcePath: params.ast?.sourceFilePath
+                ?? params.ast?.source_file_path
+                ?? this.filePath,
+            source_path: params.ast?.sourceFilePath
+                ?? params.ast?.source_file_path
+                ?? this.filePath,
             combo_origin_refs: params.comboOriginRefs ?? [],
             combo_projection_key: params.comboProjectionKey ?? null,
             combo_projection_order_key: params.comboProjectionOrderKey ?? null,

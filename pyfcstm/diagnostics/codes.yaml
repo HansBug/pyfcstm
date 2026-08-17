@@ -2370,6 +2370,30 @@ W_UNREACHABLE_TRANSITION:
       description: >-
         Stable parent-first transition index when a concrete transition exists;
         null for an authored forced declaration with no expansion.
+    source_path:
+      type: str_or_null
+      required: false
+      description: Source file that authored the transition, when available.
+    source_state_path:
+      type: str_or_null
+      required: false
+      description: Authored source state path, or null for an entry transition.
+    selection_owner_path:
+      type: str_or_null
+      required: false
+      description: Composite owning an authored initial selection, when available.
+    forced_origin:
+      type: str_or_null
+      required: false
+      description: Authored forced-transition text when applicable.
+    combo_origin_ids:
+      type: list[str]
+      required: false
+      description: Authored combo origin identifiers represented by this finding.
+    mount_path:
+      type: str_or_null
+      required: false
+      description: Assembled endpoint path used to distinguish an imported mount instance.
     reasons:
       type: list[str]
       required: true

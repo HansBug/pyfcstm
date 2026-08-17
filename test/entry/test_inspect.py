@@ -12,7 +12,6 @@ from hbutils.testing import isolated_directory, simulate_entry
 
 from pyfcstm.entry import pyfcstmcli
 from pyfcstm.entry.base import ClickErrorException
-from pyfcstm.diagnostics.inspect_render import INSPECT_LLM_SCHEMA_VERSION
 from pyfcstm.entry.inspect import (
     build_inspect_json,
     build_inspect_output,
@@ -189,6 +188,91 @@ class TestEntryInspect:
             "algorithms": [],
         }
 
+    def test_inspect_structure_threshold_options_are_reflected_in_json(
+        self, inspect_code_file
+    ):
+        result = _run_inspect(
+            "-i",
+            inspect_code_file,
+            "--format",
+            "json",
+            "--structure-max-transitions-per-state",
+            "0.2",
+            "--structure-max-unreachable-leaf-rate",
+            "0.3",
+            "--structure-max-unreachable-transition-rate",
+            "0.4",
+        )
+
+        assert result.exitcode == 0
+        statistics = _json_from_stdout(result)["structure_statistics"]
+        assert statistics["thresholds"] == {
+            "max_transitions_per_state": 0.2,
+            "max_unreachable_leaf_state_rate": 0.3,
+            "max_unreachable_transition_rate": 0.4,
+        }
+        assert statistics["exceeded_thresholds"] == ["transitions_per_state"]
+
+    def test_inspect_no_structure_thresholds_disables_all_advisories(
+        self, inspect_code_file
+    ):
+        result = _run_inspect(
+            "-i",
+            inspect_code_file,
+            "--format",
+            "json",
+            "--no-structure-thresholds",
+        )
+
+        assert result.exitcode == 0
+        statistics = _json_from_stdout(result)["structure_statistics"]
+        assert statistics["thresholds"] == {
+            "max_transitions_per_state": None,
+            "max_unreachable_leaf_state_rate": None,
+            "max_unreachable_transition_rate": None,
+        }
+        assert statistics["exceeded_thresholds"] == []
+
+    @pytest.mark.parametrize(
+        "option_value",
+        ["-1", "nan", "inf"],
+    )
+    def test_inspect_rejects_invalid_structure_count_threshold(
+        self, inspect_code_file, option_value
+    ):
+        result = _run_inspect(
+            "-i",
+            inspect_code_file,
+            "--format",
+            "json",
+            "--structure-max-transitions-per-state",
+            option_value,
+        )
+
+        assert result.exitcode == 2
+        assert "Error:" in result.stderr
+        assert "Traceback" not in result.stderr
+
+    @pytest.mark.parametrize(
+        "option_value",
+        ["-1", "nan", "inf", "1.1"],
+    )
+    def test_inspect_rejects_invalid_structure_rate_threshold(
+        self, inspect_code_file, option_value
+    ):
+        result = _run_inspect(
+            "-i",
+            inspect_code_file,
+            "--format",
+            "json",
+            "--structure-max-unreachable-leaf-rate",
+            option_value,
+        )
+
+        assert result.exitcode == 2
+        assert "Error:" in result.stderr
+        assert "Traceback" not in result.stderr
+
     def test_inspect_enable_verify_reports_structural_coverage(self, inspect_code_file):
         result = _run_inspect(
             "-i",
@@ -255,8 +339,8 @@ class TestEntryInspect:
         assert result.exitcode == 0
         assert not _has_ansi(result.stdout)
         payload = _json_from_stdout(result)
-        assert payload["schema_version"] == INSPECT_LLM_SCHEMA_VERSION
-        assert payload["schema_status"] == "stable"
+        assert "schema_version" not in payload
+        assert "schema_status" not in payload
         assert payload["status"] == "warning"
         assert payload["diagnostics"]
         diagnostic = payload["diagnostics"][0]
@@ -274,10 +358,10 @@ class TestEntryInspect:
         assert result.exitcode == 0
         assert not _has_ansi(result.stdout)
         assert "# FCSTM Inspect Report" in result.stdout
-        assert INSPECT_LLM_SCHEMA_VERSION in result.stdout
+        assert "Schema status:" not in result.stdout
         assert "Recommended actions" in result.stdout
         assert "Repair notes" in result.stdout
-        assert "Schema status: `stable`" in result.stdout
+        assert "Schema status:" not in result.stdout
         assert "|     ^" in result.stdout
 
     def test_inspect_llm_json_can_include_verify_backed_diagnostics(

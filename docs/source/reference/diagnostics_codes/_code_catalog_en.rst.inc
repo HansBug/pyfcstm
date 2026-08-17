@@ -1410,6 +1410,87 @@ A typical repair is ``remove_duplicate`` on ``transition``: Keep one transition 
 **Example 3** (``boundary_only``) — anti-pattern boundary for ``W_REDUNDANT_TRANSITION``.
 Do not keep duplicate transitions as comments.
 
+.. _diag-code-w-unreachable-transition:
+
+W_UNREACHABLE_TRANSITION
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta W_UNREACHABLE_TRANSITION severity=warning emit_tier=static_pipeline capability=pure_static span_object=transition
+.. diagnostics-ref W_UNREACHABLE_TRANSITION from_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION to_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION transition_index type=int_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION source_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION source_state_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION selection_owner_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION forced_origin type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION combo_origin_ids type=list[str] required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION mount_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION reasons type=list[str] required=true enum=- item_enum=unreachable_source_state|unreachable_event_consumer|forced_never_expands|guard_false|shadowed|redundant exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION verify_backed type=bool required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION verification_source_ids type=list[str] required=false enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_UNREACHABLE_TRANSITION kind=inspect_json
+
+**Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``transition``.
+
+**Meaning.** An authored transition is unreachable under the available analysis evidence. The reason list aggregates source-state reachability, event-consumer reachability, forced expansion, guard, shadowing, and redundancy evidence for that authored declaration.
+
+**LLM repair summary.** Review every entry in ``refs.reasons`` against the transition's source, trigger, guard, and declaration scope before changing behavior. ``verify_backed`` is present only when at least one contributing reason comes from the optional verify pipeline. When available, ``verification_source_ids`` lists stable ``algorithm_name@verification_scope`` identifiers for that evidence; these identifiers contain no product or schema version.
+
+.. list-table:: Refs schema
+   :header-rows: 1
+   :widths: 22 16 14 48
+
+   * - Field
+     - Type
+     - Required
+     - Meaning
+   * - ``from_path``
+     - ``str``
+     - yes
+     - Dotted source state path, or ``[*]`` for an entry transition.
+   * - ``to_path``
+     - ``str``
+     - yes
+     - Dotted target state path, or ``[*]`` for an exit transition.
+   * - ``transition_index``
+     - ``int_or_null``
+     - no
+     - Parent-first transition index used to disambiguate spanless editor diagnostics.
+   * - ``reasons``
+     - ``list[str]``
+     - yes
+     - Sorted canonical reasons contributing to the aggregate warning.
+   * - ``verify_backed``
+     - ``bool``
+     - no
+     - Present and true when optional verification supplied at least one contributing reason.
+
+.. diagnostics-example W_UNREACHABLE_TRANSITION 1 repro_cli
+
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic appears in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
+
+.. code-block:: fcstm
+
+   state Root {
+       state A;
+       state B;
+       [*] -> A;
+       A -> B : if [false];
+   }
+
+.. diagnostics-example W_UNREACHABLE_TRANSITION 2 boundary_only
+
+**Example 2** (``boundary_only``) — repair direction for ``W_UNREACHABLE_TRANSITION``.
+A typical repair is ``inspect_transition``: confirm the reported reason and intended runtime path before changing the guard, source reachability, or declaration.
+
+.. diagnostics-example W_UNREACHABLE_TRANSITION 3 boundary_only
+
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_UNREACHABLE_TRANSITION``.
+Do not remove a transition solely because this warning is present; static evidence and optional verification evidence still require an intent check.
+
 .. _diag-code-w-self-transition-nop:
 
 W_SELF_TRANSITION_NOP
@@ -4834,6 +4915,8 @@ W_UNREACHABLE_STATE
 ^^^^^^^^^^^^^^^^^^^
 
 .. diagnostics-meta W_UNREACHABLE_STATE severity=warning emit_tier=static_pipeline capability=pure_static span_object=state_identifier
+.. diagnostics-ref W_UNREACHABLE_STATE algorithm_name type=str required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_STATE verification_scope type=str required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREACHABLE_STATE state_path type=str required=true enum=- item_enum=- exact_values=-
 
 
@@ -4853,6 +4936,14 @@ W_UNREACHABLE_STATE
      - Type
      - Required
      - Meaning
+   * - ``algorithm_name``
+     - ``str``
+     - no
+     - Verify algorithm name when the shared code came from optional verification.
+   * - ``verification_scope``
+     - ``str``
+     - no
+     - Verify scope when the shared code came from optional verification.
    * - ``state_path``
      - ``str``
      - yes
@@ -4880,112 +4971,6 @@ A typical repair is ``add_inbound_transition`` on ``state``: Add a transition th
 
 **Example 3** (``boundary_only``) — anti-pattern boundary for ``W_UNREACHABLE_STATE``.
 Do not add a self-loop to mask the unreachability.
-
-.. _diag-code-w-unreachable-transition:
-
-W_UNREACHABLE_TRANSITION
-^^^^^^^^^^^^^^^^^^^^^^^^
-
-.. diagnostics-meta W_UNREACHABLE_TRANSITION severity=warning emit_tier=static_pipeline capability=pure_static span_object=transition
-.. diagnostics-ref W_UNREACHABLE_TRANSITION reason type=str required=true enum=source_unreachable item_enum=- exact_values=-
-.. diagnostics-ref W_UNREACHABLE_TRANSITION verification_scope type=str required=true enum=topological_only item_enum=- exact_values=-
-.. diagnostics-ref W_UNREACHABLE_TRANSITION from_path type=str required=true enum=- item_enum=- exact_values=-
-.. diagnostics-ref W_UNREACHABLE_TRANSITION to_path type=str required=true enum=- item_enum=- exact_values=-
-.. diagnostics-ref W_UNREACHABLE_TRANSITION source_state_path type=str_or_null required=false enum=- item_enum=- exact_values=-
-.. diagnostics-ref W_UNREACHABLE_TRANSITION selection_owner_path type=str_or_null required=false enum=- item_enum=- exact_values=-
-.. diagnostics-ref W_UNREACHABLE_TRANSITION source_path type=str_or_null required=false enum=- item_enum=- exact_values=-
-.. diagnostics-ref W_UNREACHABLE_TRANSITION transition_index type=int_or_null required=false enum=- item_enum=- exact_values=-
-.. diagnostics-ref W_UNREACHABLE_TRANSITION forced_origin type=str_or_null required=false enum=- item_enum=- exact_values=-
-.. diagnostics-ref W_UNREACHABLE_TRANSITION combo_origin_ids type=list[str] required=true enum=- item_enum=- exact_values=-
-.. diagnostics-ref W_UNREACHABLE_TRANSITION mount_path type=str_or_null required=false enum=- item_enum=- exact_values=-
-
-.. diagnostics-boundary W_UNREACHABLE_TRANSITION kind=inspect_json
-
-**Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``transition``.
-
-**Meaning.** An authored transition selects from a state, or an initial transition selects from a composite owner, that is outside the guard-agnostic topology reachable from the root entry. This is a graph fact only; it does not prove a guard unsatisfiable or an event unavailable.
-
-**LLM repair summary.** Connect the source state or initial-selection owner to the root topology, or remove the transition if it belongs to an intentionally unused region. Do not change a guard or invent an external event merely to silence this diagnostic.
-
-.. list-table:: Refs schema
-   :header-rows: 1
-   :widths: 22 16 14 48
-
-   * - Field
-     - Type
-     - Required
-     - Meaning
-   * - ``reason``
-     - ``str``
-     - yes
-     - Stable reason ``source_unreachable``.
-   * - ``verification_scope``
-     - ``str``
-     - yes
-     - Proof boundary ``topological_only``.
-   * - ``from_path``
-     - ``str``
-     - yes
-     - Source endpoint path, or ``[*]`` for an initial transition.
-   * - ``to_path``
-     - ``str``
-     - yes
-     - Target endpoint path, or ``[*]`` for an exit transition.
-   * - ``source_state_path``
-     - ``str_or_null``
-     - no
-     - Unreachable normal source or concrete forced-expansion source, or null for an initial transition.
-   * - ``selection_owner_path``
-     - ``str_or_null``
-     - no
-     - Unreachable composite owning an initial selection, or null for a normal transition.
-   * - ``source_path``
-     - ``str_or_null``
-     - no
-     - Authored source file path when source metadata is available; null otherwise.
-   * - ``transition_index``
-     - ``int_or_null``
-     - no
-     - Stable model-order index when available.
-   * - ``forced_origin``
-     - ``str_or_null``
-     - no
-     - Authored forced-transition text when applicable.
-   * - ``combo_origin_ids``
-     - ``list[str]``
-     - yes
-     - Authored combo origins represented by the finding.
-   * - ``mount_path``
-     - ``str_or_null``
-     - no
-     - Raw assembled endpoint path used to distinguish one imported mount instance; it is not localized to the authored child namespace.
-
-.. diagnostics-example W_UNREACHABLE_TRANSITION 1 repro_cli
-
-**Example 1** (``repro_cli``) — reproduction boundary.
-This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
-
-.. code-block:: fcstm
-
-   state Root {
-       state Active;
-       state Orphan;
-       state Done;
-       [*] -> Active;
-       Orphan -> Done;
-   }
-
-.. diagnostics-example W_UNREACHABLE_TRANSITION 2 boundary_only
-
-**Example 2** (``boundary_only``) — repair direction for ``W_UNREACHABLE_TRANSITION``.
-Connect ``Orphan`` to the root-reachable topology if the transition is intended to run, or remove the unused transition.
-
-.. diagnostics-example W_UNREACHABLE_TRANSITION 3 boundary_only
-
-**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_UNREACHABLE_TRANSITION``.
-Do not weaken a guard, add a fabricated external event, or treat this finding as an SMT guard-unsatisfiability result.
-
-For a forced declaration, do not remove the whole declaration solely because one generated expansion is unreachable; inspect the other expansions first.
 
 .. _diag-code-w-deadlock-leaf:
 

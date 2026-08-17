@@ -16,6 +16,7 @@
     "combo_transitions",
     "combo_origins",
     "metrics",
+    "structure_statistics",
     "reachability_graph",
     "event_emission_map",
     "var_dataflow",
@@ -64,6 +65,7 @@
       "items": { "$ref": "#/definitions/ComboOriginInfo" }
     },
     "metrics": { "$ref": "#/definitions/ModelMetrics" },
+    "structure_statistics": { "$ref": "#/definitions/StructureStatistics" },
     "reachability_graph": {
       "type": "object",
       "description": "Mapping state path -> reachable state paths in the default inspect graph. Guards are ignored; composite initial edges are followed; entry and exit pseudo markers are not exposed.",
@@ -669,6 +671,67 @@
           "type": "array",
           "items": { "type": "string" }
         }
+      }
+    },
+    "StructureStatistics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state_count", "leaf_state_count", "composite_state_count",
+        "authored_transition_count", "transitions_per_state",
+        "states_per_transition", "unreachable_leaf_states",
+        "unreachable_leaf_state_rate", "unreachable_transitions",
+        "unreachable_transition_rate", "unreachable_transition_reasons",
+        "thresholds", "exceeded_thresholds",
+        "unguarded_transitions", "guard_eligible_transitions",
+        "unguarded_rate", "missing_effect_transitions",
+        "effect_eligible_transitions", "missing_effect_rate",
+        "eventless_unconditional_transitions", "behavior_transitions",
+        "eventless_unconditional_rate"
+      ],
+      "properties": {
+        "state_count": { "type": "integer", "minimum": 0 },
+        "leaf_state_count": { "type": "integer", "minimum": 0 },
+        "composite_state_count": { "type": "integer", "minimum": 0 },
+        "authored_transition_count": { "type": "integer", "minimum": 0 },
+        "transitions_per_state": { "type": ["number", "null"] },
+        "states_per_transition": { "type": ["number", "null"] },
+        "unreachable_leaf_states": { "type": "integer", "minimum": 0 },
+        "unreachable_leaf_state_rate": { "type": ["number", "null"] },
+        "unreachable_transitions": { "type": "integer", "minimum": 0 },
+        "unreachable_transition_rate": { "type": ["number", "null"] },
+        "unreachable_transition_reasons": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
+        "thresholds": { "$ref": "#/definitions/StructureStatisticsPolicy" },
+        "exceeded_thresholds": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "unguarded_transitions": { "type": "integer", "minimum": 0 },
+        "guard_eligible_transitions": { "type": "integer", "minimum": 0 },
+        "unguarded_rate": { "type": ["number", "null"] },
+        "missing_effect_transitions": { "type": "integer", "minimum": 0 },
+        "effect_eligible_transitions": { "type": "integer", "minimum": 0 },
+        "missing_effect_rate": { "type": ["number", "null"] },
+        "eventless_unconditional_transitions": { "type": "integer", "minimum": 0 },
+        "behavior_transitions": { "type": "integer", "minimum": 0 },
+        "eventless_unconditional_rate": { "type": ["number", "null"] }
+      }
+    },
+    "StructureStatisticsPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_transitions_per_state",
+        "max_unreachable_leaf_state_rate",
+        "max_unreachable_transition_rate"
+      ],
+      "properties": {
+        "max_transitions_per_state": { "type": ["number", "null"], "minimum": 0 },
+        "max_unreachable_leaf_state_rate": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "max_unreachable_transition_rate": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }
       }
     },
     "SuggestedFixPayload": {

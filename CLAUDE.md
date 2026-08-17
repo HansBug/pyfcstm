@@ -33,6 +33,21 @@ Vibe coding is fine for quick exploration, but once you touch repository code yo
 - After each change, run checks proportional to the risk; nothing that hasn't been verified may be claimed as done.
 - When requirements are unclear, an action is destructive, or you're near a security boundary, stop and surface assumptions and risks before proceeding.
 
+### Public JSON schema discipline
+
+Public ``pyfcstm inspect`` and ``pyfcstm bmc`` JSON payloads must not contain
+``schema_version``, ``schema_status``, product-version fields, or payload-level
+schema dispatch markers. The JSON Schema file is released alongside pyfcstm and
+is the contract for that release; consumers validate against the copy shipped
+with the version they run. ``$schema`` identifies the JSON Schema dialect and
+``$id`` identifies the schema resource; neither is a product payload version.
+Compatibility is maintained through the shipped schema, documented field
+contracts, and tests. Tools-only detector metadata, evaluator manifests, and
+selfcheck protocols may have separate internal contract fields, but those
+fields must not be copied into public model-report payloads. Historical
+evaluation artifacts may retain the fields emitted by the release that created
+them.
+
 References: OpenAI's [AGENTS.md guide](https://developers.openai.com/codex/guides/agents-md), the [agents.md GitHub](https://github.com/openai/agents.md), and Tweag's [Agentic Coding vs Vibe Coding](https://github.com/tweag/agentic-coding-handbook/blob/main/VIBE_CODING.md).
 
 ## Exception Handling Policy (no broad catches)

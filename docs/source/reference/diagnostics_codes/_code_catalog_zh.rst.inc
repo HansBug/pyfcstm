@@ -1410,6 +1410,87 @@ W_REDUNDANT_TRANSITION
 **示例 3**\ （``boundary_only``）——针对 ``W_REDUNDANT_TRANSITION`` 的反例边界。
 不要这样处理：针对“多个转换拥有相同的源、目标、事件、守卫和效果，行为上重复。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
+.. _diag-code-w-unreachable-transition-zh:
+
+W_UNREACHABLE_TRANSITION
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta W_UNREACHABLE_TRANSITION severity=warning emit_tier=static_pipeline capability=pure_static span_object=transition
+.. diagnostics-ref W_UNREACHABLE_TRANSITION from_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION to_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION transition_index type=int_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION source_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION source_state_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION selection_owner_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION forced_origin type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION combo_origin_ids type=list[str] required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION mount_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION reasons type=list[str] required=true enum=- item_enum=unreachable_source_state|unreachable_event_consumer|forced_never_expands|guard_false|shadowed|redundant exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION verify_backed type=bool required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION verification_source_ids type=list[str] required=false enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_UNREACHABLE_TRANSITION kind=inspect_json
+
+**注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``transition``。
+
+**含义。** 在当前可用的分析证据下，一个已声明的转换无法被执行。``reasons`` 聚合源状态不可达、事件消费者不可达、强制展开、守卫、遮蔽和重复等原因。
+
+**面向 LLM 的修复摘要。** 修改前应结合转换的源状态、触发器、守卫和声明作用域逐项核对 ``refs.reasons``。只有至少一个原因来自可选 verify 流程时，才会出现值为 ``true`` 的 ``verify_backed``。如果有来源信息，``verification_source_ids`` 会列出稳定的 ``algorithm_name@verification_scope`` 标识；这些标识不包含产品版本或 schema 版本。
+
+.. list-table:: ``refs`` 字段
+   :header-rows: 1
+   :widths: 22 16 14 48
+
+   * - 字段
+     - 类型
+     - 必填
+     - 含义
+   * - ``from_path``
+     - ``str``
+     - 是
+     - 转换源状态的点分路径；入口转换可写作 ``[*]``。
+   * - ``to_path``
+     - ``str``
+     - 是
+     - 转换目标状态的点分路径；退出转换可写作 ``[*]``。
+   * - ``transition_index``
+     - ``int_or_null``
+     - 否
+     - 父优先转换索引，用于源码范围缺失时在编辑器中消除歧义。
+   * - ``reasons``
+     - ``list[str]``
+     - 是
+     - 参与聚合诊断的稳定排序原因列表。
+   * - ``verify_backed``
+     - ``bool``
+     - 否
+     - 可选 verify 提供至少一个原因时出现且为 ``true``。
+
+.. diagnostics-example W_UNREACHABLE_TRANSITION 1 repro_cli
+
+**示例 1** （``repro_cli``）——复现边界。
+该诊断会出现在成功的 inspect 报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]``。
+
+.. code-block:: fcstm
+
+   state Root {
+       state A;
+       state B;
+       [*] -> A;
+       A -> B : if [false];
+   }
+
+.. diagnostics-example W_UNREACHABLE_TRANSITION 2 boundary_only
+
+**示例 2** （``boundary_only``）——针对 ``W_UNREACHABLE_TRANSITION`` 的修复方向。
+典型修复是执行 ``inspect_transition``：先确认报告原因和预期运行路径，再决定是否调整守卫、可达路径或声明位置。
+
+.. diagnostics-example W_UNREACHABLE_TRANSITION 3 boundary_only
+
+**示例 3** （``boundary_only``）——针对 ``W_UNREACHABLE_TRANSITION`` 的反例边界。
+不要仅因为出现该警告就删除转换；无论是静态证据还是可选验证证据，都必须先核对模型意图。
+
 .. _diag-code-w-self-transition-nop-zh:
 
 W_SELF_TRANSITION_NOP
@@ -4834,6 +4915,8 @@ W_UNREACHABLE_STATE
 ^^^^^^^^^^^^^^^^^^^
 
 .. diagnostics-meta W_UNREACHABLE_STATE severity=warning emit_tier=static_pipeline capability=pure_static span_object=state_identifier
+.. diagnostics-ref W_UNREACHABLE_STATE algorithm_name type=str required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_STATE verification_scope type=str required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREACHABLE_STATE state_path type=str required=true enum=- item_enum=- exact_values=-
 
 
@@ -4853,6 +4936,14 @@ W_UNREACHABLE_STATE
      - 类型
      - 必填
      - 含义
+   * - ``algorithm_name``
+     - ``str``
+     - 否
+     - 可选验证产生共享诊断时的验证算法名称。
+   * - ``verification_scope``
+     - ``str``
+     - 否
+     - 可选验证产生共享诊断时的验证范围。
    * - ``state_path``
      - ``str``
      - 是
@@ -4880,112 +4971,6 @@ W_UNREACHABLE_STATE
 
 **示例 3**\ （``boundary_only``）——针对 ``W_UNREACHABLE_STATE`` 的反例边界。
 不要这样处理：针对“从根入口路径出发，无法通过普通或强制转换到达某个状态。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
-
-.. _diag-code-w-unreachable-transition-zh:
-
-W_UNREACHABLE_TRANSITION
-^^^^^^^^^^^^^^^^^^^^^^^^
-
-.. diagnostics-meta W_UNREACHABLE_TRANSITION severity=warning emit_tier=static_pipeline capability=pure_static span_object=transition
-.. diagnostics-ref W_UNREACHABLE_TRANSITION reason type=str required=true enum=source_unreachable item_enum=- exact_values=-
-.. diagnostics-ref W_UNREACHABLE_TRANSITION verification_scope type=str required=true enum=topological_only item_enum=- exact_values=-
-.. diagnostics-ref W_UNREACHABLE_TRANSITION from_path type=str required=true enum=- item_enum=- exact_values=-
-.. diagnostics-ref W_UNREACHABLE_TRANSITION to_path type=str required=true enum=- item_enum=- exact_values=-
-.. diagnostics-ref W_UNREACHABLE_TRANSITION source_state_path type=str_or_null required=false enum=- item_enum=- exact_values=-
-.. diagnostics-ref W_UNREACHABLE_TRANSITION selection_owner_path type=str_or_null required=false enum=- item_enum=- exact_values=-
-.. diagnostics-ref W_UNREACHABLE_TRANSITION source_path type=str_or_null required=false enum=- item_enum=- exact_values=-
-.. diagnostics-ref W_UNREACHABLE_TRANSITION transition_index type=int_or_null required=false enum=- item_enum=- exact_values=-
-.. diagnostics-ref W_UNREACHABLE_TRANSITION forced_origin type=str_or_null required=false enum=- item_enum=- exact_values=-
-.. diagnostics-ref W_UNREACHABLE_TRANSITION combo_origin_ids type=list[str] required=true enum=- item_enum=- exact_values=-
-.. diagnostics-ref W_UNREACHABLE_TRANSITION mount_path type=str_or_null required=false enum=- item_enum=- exact_values=-
-
-.. diagnostics-boundary W_UNREACHABLE_TRANSITION kind=inspect_json
-
-**注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``transition``。
-
-**含义。** 普通 transition 的 source state，或 initial transition 的 selection owner，不在从根入口出发的、忽略 guard 的拓扑闭包中。这只是图结构事实，不证明 guard 不可满足，也不证明 event 在环境中不可用。
-
-**面向 LLM 的修复摘要。** 如果 transition 本来就应当执行，把 source state 或 initial-selection owner 接入根可达拓扑；如果它属于有意不用的区域，则删除 transition。不要仅为消除该诊断而修改 guard 或凭空添加 external event。
-
-.. list-table:: ``refs`` 字段
-   :header-rows: 1
-   :widths: 22 16 14 48
-
-   * - 字段
-     - 类型
-     - 必填
-     - 含义
-   * - ``reason``
-     - ``str``
-     - 是
-     - 稳定原因 ``source_unreachable``。
-   * - ``verification_scope``
-     - ``str``
-     - 是
-     - 证明边界 ``topological_only``。
-   * - ``from_path``
-     - ``str``
-     - 是
-     - source endpoint 路径；initial transition 时为 ``[*]``。
-   * - ``to_path``
-     - ``str``
-     - 是
-     - target endpoint 路径；exit transition 时为 ``[*]``。
-   * - ``source_state_path``
-     - ``str_or_null``
-     - 否
-     - 不可达的普通 source 或具体 forced expansion source；initial transition 时为 null。
-   * - ``selection_owner_path``
-     - ``str_or_null``
-     - 否
-     - 拥有不可达 initial selection 的 composite；普通 transition 时为 null。
-   * - ``source_path``
-     - ``str_or_null``
-     - 否
-     - 有源码 provenance 时提供 authored source file path；否则为 null。
-   * - ``transition_index``
-     - ``int_or_null``
-     - 否
-     - 可用时提供稳定的模型顺序索引。
-   * - ``forced_origin``
-     - ``str_or_null``
-     - 否
-     - 来自 forced declaration 时提供作者声明文本。
-   * - ``combo_origin_ids``
-     - ``list[str]``
-     - 是
-     - 该 finding 涉及的 authored combo origin 标识。
-   * - ``mount_path``
-     - ``str_or_null``
-     - 否
-     - 用于区分同一 imported child 的不同挂载实例的原始 assembled endpoint 路径；不会被本地化到 authored child namespace。
-
-.. diagnostics-example W_UNREACHABLE_TRANSITION 1 repro_cli
-
-**示例 1**\ （``repro_cli``）——复现边界。
-这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
-
-.. code-block:: fcstm
-
-   state Root {
-       state Active;
-       state Orphan;
-       state Done;
-       [*] -> Active;
-       Orphan -> Done;
-   }
-
-.. diagnostics-example W_UNREACHABLE_TRANSITION 2 boundary_only
-
-**示例 2**\ （``boundary_only``）——针对 ``W_UNREACHABLE_TRANSITION`` 的修复方向。
-如果 transition 设计上应该执行，就把 ``Orphan`` 接入根可达拓扑；否则删除这个未使用的 transition。
-
-.. diagnostics-example W_UNREACHABLE_TRANSITION 3 boundary_only
-
-**示例 3**\ （``boundary_only``）——针对 ``W_UNREACHABLE_TRANSITION`` 的反例边界。
-不要削弱 guard、伪造 external event，也不要把这个诊断理解成 SMT 对 guard 不可满足性的证明。
-
-对于 forced declaration，不要仅因为某个 generated expansion 不可达就删除整个声明；应先检查其他 expansion。
 
 .. _diag-code-w-deadlock-leaf-zh:
 

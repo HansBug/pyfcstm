@@ -705,6 +705,14 @@ def _normalize_algorithm_result(
 
 
 def _run_smt_algorithm(meta: VerifyAlgorithmMeta, machine, smt_timeout_ms):
+    """Run one SMT algorithm inside a verify-run transition index scope."""
+    from .encoding._core import _transition_index_scope
+
+    with _transition_index_scope(machine):
+        return _run_smt_algorithm_scoped(meta, machine, smt_timeout_ms)
+
+
+def _run_smt_algorithm_scoped(meta: VerifyAlgorithmMeta, machine, smt_timeout_ms):
     """Execute one SMT-local algorithm according to its registry scope.
 
     :param meta: Metadata with an implementation callable.

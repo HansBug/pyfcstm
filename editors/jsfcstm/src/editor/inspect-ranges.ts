@@ -443,7 +443,12 @@ export function resolveRangeFromRefsDetailed(
     const localEventRange = eventRange(document, semantic, stringRef(refMap, 'local_path'));
     if (localEventRange) return {range: localEventRange};
 
-    if (refMap.transition_span === null || refMap.guard_span === null || refMap.duplicate_spans !== undefined) {
+    if (
+        refMap.transition_span === null ||
+        refMap.guard_span === null ||
+        refMap.duplicate_spans !== undefined ||
+        hasNumericTransitionIndex(refMap)
+    ) {
         if (refMap.folded_value === true || refMap.folded_value === false || stringRef(refMap, 'guard_text')) {
             const guardResolution = guardRangeResolution(semantic, refMap);
             if (guardResolution.range) return guardResolution;

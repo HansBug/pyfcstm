@@ -22,7 +22,10 @@ function unreachableTransitionAuthoredKey(diagnostic: FcstmDiagnostic): string |
     if (
         diagnostic.code !== 'W_UNREACHABLE_TRANSITION'
         || !diagnostic.data
-        || typeof diagnostic.data.reason !== 'string'
+        || (
+            typeof diagnostic.data.reason !== 'string'
+            && !Array.isArray(diagnostic.data.reasons)
+        )
         || typeof diagnostic.data.source_path !== 'string'
     ) {
         return null;
@@ -32,9 +35,10 @@ function unreachableTransitionAuthoredKey(diagnostic: FcstmDiagnostic): string |
     // suppress its standalone counterpart without merging distinct mounts.
     return JSON.stringify([
         diagnostic.code,
-        diagnostic.data.reason,
+        typeof diagnostic.data.reason === 'string'
+            ? diagnostic.data.reason
+        : diagnostic.data.reasons,
         diagnostic.data.source_path,
-        diagnostic.range,
         diagnostic.data.forced_origin ?? null,
         diagnostic.data.combo_origin_ids ?? [],
     ]);

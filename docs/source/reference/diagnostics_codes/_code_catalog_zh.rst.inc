@@ -4897,6 +4897,7 @@ W_UNREACHABLE_TRANSITION
 .. diagnostics-ref W_UNREACHABLE_TRANSITION transition_index type=int_or_null required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION forced_origin type=str_or_null required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION combo_origin_ids type=list[str] required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION mount_path type=str_or_null required=false enum=- item_enum=- exact_values=-
 
 .. diagnostics-boundary W_UNREACHABLE_TRANSITION kind=inspect_json
 
@@ -4954,6 +4955,10 @@ W_UNREACHABLE_TRANSITION
      - ``list[str]``
      - 是
      - 该 finding 涉及的 authored combo origin 标识。
+   * - ``mount_path``
+     - ``str_or_null``
+     - 否
+     - 用于区分同一 imported child 的不同挂载实例的原始 assembled endpoint 路径；不会被本地化到 authored child namespace。
 
 .. diagnostics-example W_UNREACHABLE_TRANSITION 1 repro_cli
 

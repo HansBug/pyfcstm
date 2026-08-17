@@ -46,6 +46,7 @@ export interface FcstmWorkspaceGraphNode {
     ast: FcstmAstDocument | null;
     semantic: FcstmSemanticDocument | null;
     model: FcstmStateMachineModel | null;
+    modelAuthority: 'assembled' | 'local';
     imports: FcstmImportResolution[];
 }
 
@@ -173,6 +174,7 @@ export class FcstmWorkspaceGraph {
                         ast,
                         semantic,
                         model: buildStateMachineModel(semantic || ast),
+                        modelAuthority: 'local',
                         imports: [],
                     },
                 },
@@ -268,6 +270,7 @@ export class FcstmWorkspaceGraph {
             ast,
             semantic,
             model,
+            modelAuthority: 'local',
             imports: [],
         };
 
@@ -327,13 +330,20 @@ export class FcstmWorkspaceGraph {
         const nodes = Object.fromEntries(state.nodes.entries());
         for (const [filePath, node] of state.nodes.entries()) {
             try {
-                node.model = buildStateMachineModelFromWorkspaceSnapshot(
+                const assembledModel = buildStateMachineModelFromWorkspaceSnapshot(
                     {
                         rootFile,
                         nodes,
                     },
                     filePath
-                ) || buildStateMachineModel(node.semantic || node.ast);
+                );
+                if (assembledModel) {
+                    node.model = assembledModel;
+                    node.modelAuthority = 'assembled';
+                } else {
+                    node.model = buildStateMachineModel(node.semantic || node.ast);
+                    node.modelAuthority = 'local';
+                }
             } catch (err) {
                 // Only ModelAssemblyError (an expected validation failure
                 // inside the workspace-aware assembler — e.g. unknown
@@ -346,6 +356,7 @@ export class FcstmWorkspaceGraph {
                     throw err;
                 }
                 node.model = buildStateMachineModel(node.semantic || node.ast);
+                node.modelAuthority = 'local';
             }
         }
     }

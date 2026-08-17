@@ -547,6 +547,62 @@ describe('diagnostics transition body ranges', () => {
         }
     });
 
+    it('uses assembled topology as the sole authority for imported reachability', async () => {
+        const dir = trackTempDir('jsfcstm-assembled-reachability-authority-');
+        const childFile = path.join(dir, 'child.fcstm');
+        const hostFile = path.join(dir, 'main.fcstm');
+        writeFile(childFile, [
+            'state Child {',
+            '    state Entry;',
+            '    [*] -> Entry;',
+            '}',
+        ].join('\n'));
+        const hostText = [
+            'state Root {',
+            '    import "./child.fcstm" as Imported;',
+            '    state Local;',
+            '    [*] -> Imported;',
+            '    Imported -> Local;',
+            '    Local -> [*];',
+            '}',
+        ].join('\n');
+
+        const publications = await packageModule.collectDocumentDiagnosticsByUri(
+            createDocument(hostText, hostFile),
+        );
+        const hostDiagnostics = publications.get(pathToFileURL(hostFile).toString()) || [];
+
+        assert.deepEqual(
+            hostDiagnostics.filter(item => item.code === 'W_UNREACHABLE_TRANSITION'),
+            [],
+            JSON.stringify(publications),
+        );
+    });
+
+    it('does not return duplicate root-authored topology findings from the collector', async () => {
+        const dir = trackTempDir('jsfcstm-assembled-root-diagnostic-dedupe-');
+        const childFile = path.join(dir, 'child.fcstm');
+        const hostFile = path.join(dir, 'main.fcstm');
+        writeFile(childFile, 'state Child;');
+        const hostText = [
+            'state Root {',
+            '    import "./child.fcstm" as Imported;',
+            '    state Orphan;',
+            '    [*] -> Imported;',
+            '    Orphan -> [*];',
+            '}',
+        ].join('\n');
+
+        const publications = await packageModule.collectDocumentDiagnosticsByUri(
+            createDocument(hostText, hostFile),
+        );
+        const hostDiagnostics = publications.get(pathToFileURL(hostFile).toString()) || [];
+        const unreachable = hostDiagnostics.filter(item => item.code === 'W_UNREACHABLE_TRANSITION');
+
+        assert.equal(unreachable.length, 1, JSON.stringify(publications));
+        assert.equal(unreachable[0].data?.source_path, hostFile);
+    });
+
     it('uses host topology for an imported subtree mounted under an unreachable composite', async () => {
         const dir = trackTempDir('jsfcstm-unreachable-import-host-topology-');
         const childFile = path.join(dir, 'child.fcstm');

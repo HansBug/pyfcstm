@@ -304,6 +304,34 @@ function localizeImportedDiagnostic(
     return {...item, message, refs};
 }
 
+function assembledMountPath(item: ModelDiagnosticJson): string | null {
+    const refs = item.refs;
+    for (const key of ['from_path', 'to_path', 'source_state_path', 'selection_owner_path']) {
+        const value = refs[key];
+        if (typeof value === 'string' && value !== '[*]') {
+            return value;
+        }
+    }
+    return null;
+}
+
+function withAssembledMountIdentity(
+    item: ModelDiagnosticJson,
+    sourceFile: string,
+    rootFile: string,
+): ModelDiagnosticJson {
+    if (sourceFile === rootFile) return item;
+    const mountPath = assembledMountPath(item);
+    if (!mountPath) return item;
+    return {
+        ...item,
+        refs: {
+            ...item.refs,
+            mount_path: mountPath,
+        },
+    };
+}
+
 export function collectInspectDiagnosticsFromItems(
     document: TextDocumentLike,
     semantic: FcstmSemanticDocument,
@@ -450,10 +478,24 @@ export async function collectDocumentDiagnosticsByUri(
     const snapshot = await getWorkspaceGraph().buildSnapshotForDocument(document);
     const node = snapshot.nodes[snapshot.rootFile];
     if (node?.semantic) {
-        diagnostics.push(...collectSemanticAnalysisDiagnosticsFromSemantic(node.semantic, document));
+        const localSemanticDiagnostics = collectSemanticAnalysisDiagnosticsFromSemantic(node.semantic, document);
+        const localTopologyDiagnostics = node.modelAuthority === 'assembled'
+            ? localSemanticDiagnostics.filter(item => item.code !== 'W_UNREACHABLE_TRANSITION')
+            : localSemanticDiagnostics;
+        diagnostics.push(...localTopologyDiagnostics);
         const localModel = buildStateMachineModel(node.semantic);
         if (localModel) {
-            diagnostics.push(...collectInspectModelDiagnostics(document, node.semantic, localModel, diagnostics));
+            const localInspectDiagnostics = collectInspectModelDiagnostics(
+                document,
+                node.semantic,
+                localModel,
+                diagnostics,
+            );
+            diagnostics.push(...(
+                node.modelAuthority === 'assembled'
+                    ? localInspectDiagnostics.filter(item => item.code !== 'W_UNREACHABLE_TRANSITION')
+                    : localInspectDiagnostics
+            ));
         }
     }
 
@@ -481,7 +523,7 @@ export async function collectDocumentDiagnosticsByUri(
                 if (item.code !== 'W_UNREACHABLE_TRANSITION') return false;
                 return item.refs.source_path === filePath;
             }).map(item => localizeImportedDiagnostic(
-                item,
+                withAssembledMountIdentity(item, filePath, snapshot.rootFile),
                 assembledModel,
                 filePath,
                 authoredRootName,

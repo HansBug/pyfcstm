@@ -1709,6 +1709,13 @@ W_UNREACHABLE_TRANSITION:
       type: list[str]
       required: true
       description: Authored combo origin identifiers represented by this finding.
+    mount_path:
+      type: str_or_null
+      required: false
+      description: >-
+        Raw assembled endpoint path used to preserve the identity of one
+        imported mount instance. This value is intentionally not localized to
+        the authored child namespace.
   for_llm:
     summary: >-
       This transition, or this concrete forced-transition expansion, cannot be

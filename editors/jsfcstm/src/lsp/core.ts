@@ -193,6 +193,7 @@ function diagnosticContributionKey(diagnostic: Diagnostic): string {
                 data.selection_owner_path ?? null,
                 data.forced_origin ?? null,
                 data.combo_origin_ids ?? [],
+                data.mount_path ?? null,
             ]);
         }
     }
@@ -204,6 +205,46 @@ function diagnosticContributionKey(diagnostic: Diagnostic): string {
         diagnostic.data ?? null,
         diagnostic.relatedInformation ?? null,
     ]);
+}
+
+function unreachableTransitionAuthoredKey(diagnostic: Diagnostic): string | null {
+    if (
+        diagnostic.code !== 'W_UNREACHABLE_TRANSITION'
+        || !diagnostic.data
+        || typeof diagnostic.data !== 'object'
+        || Array.isArray(diagnostic.data)
+    ) {
+        return null;
+    }
+    const data = diagnostic.data as Record<string, unknown>;
+    if (typeof data.reason !== 'string' || typeof data.source_path !== 'string') {
+        return null;
+    }
+    // This identity deliberately ignores projected paths and mount_path. A
+    // local child result and its assembled host result describe one authored
+    // transition, while distinct mount_path values describe distinct runtime
+    // instances that must remain visible.
+    return JSON.stringify([
+        diagnostic.code,
+        data.reason,
+        data.source_path,
+        diagnostic.range,
+        data.forced_origin ?? null,
+        data.combo_origin_ids ?? [],
+    ]);
+}
+
+function isAssembledMountDiagnostic(diagnostic: Diagnostic): boolean {
+    if (
+        diagnostic.code !== 'W_UNREACHABLE_TRANSITION'
+        || !diagnostic.data
+        || typeof diagnostic.data !== 'object'
+        || Array.isArray(diagnostic.data)
+    ) {
+        return false;
+    }
+    const mountPath = (diagnostic.data as Record<string, unknown>).mount_path;
+    return typeof mountPath === 'string' && mountPath.length > 0;
 }
 
 /**
@@ -891,13 +932,30 @@ export class FcstmLanguageServerCore {
         for (const targetUri of targets) {
             const diagnostics: Diagnostic[] = [];
             const seen = new Set<string>();
-            for (const contribution of this.diagnosticContributions.values()) {
-                for (const diagnostic of contribution.get(targetUri) || []) {
-                    const key = diagnosticContributionKey(diagnostic);
-                    if (seen.has(key)) continue;
-                    seen.add(key);
-                    diagnostics.push(diagnostic);
+            const contributions = [...this.diagnosticContributions.values()]
+                .flatMap(contribution => contribution.get(targetUri) || []);
+            const assembledAuthoredKeys = new Set(
+                contributions
+                    .filter(isAssembledMountDiagnostic)
+                    .map(unreachableTransitionAuthoredKey)
+                    .filter((key): key is string => key !== null),
+            );
+            for (const diagnostic of contributions) {
+                const authoredKey = unreachableTransitionAuthoredKey(diagnostic);
+                if (
+                    authoredKey !== null
+                    && !isAssembledMountDiagnostic(diagnostic)
+                    && assembledAuthoredKeys.has(authoredKey)
+                ) {
+                    // An assembled host result is authoritative for an
+                    // imported transition when it is available. Keep the
+                    // standalone child result only when no mount explains it.
+                    continue;
                 }
+                const key = diagnosticContributionKey(diagnostic);
+                if (seen.has(key)) continue;
+                seen.add(key);
+                diagnostics.push(diagnostic);
             }
             await this.onDiagnostics({
                 uri: targetUri,

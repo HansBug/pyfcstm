@@ -1693,6 +1693,10 @@ W_UNREACHABLE_TRANSITION:
       type: str_or_null
       required: false
       description: Unreachable composite that owns an initial selection, or null for normal transitions.
+    source_path:
+      type: str_or_null
+      required: false
+      description: Source file that authored the transition, when source metadata is available.
     transition_index:
       type: int_or_null
       required: false

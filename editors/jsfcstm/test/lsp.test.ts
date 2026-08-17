@@ -306,6 +306,45 @@ describe('jsfcstm lsp core', () => {
         core.dispose();
     });
 
+    it('keeps distinct unreachable forced expansions under one declaration', async () => {
+        const dir = trackTempDir('jsfcstm-lsp-forced-expansion-identity-');
+        const filePath = path.join(dir, 'machine.fcstm');
+        const text = [
+            'state Root {',
+            '    state Group {',
+            '        state Reach;',
+            '        state LostA;',
+            '        state LostB;',
+            '        state Done;',
+            '        [*] -> Reach;',
+            '        !* -> Done :: Panic;',
+            '    }',
+            '    [*] -> Group;',
+            '}',
+        ].join('\n');
+        const publications: packageModule.FcstmPublishedDiagnostics[] = [];
+        const core = new packageModule.FcstmLanguageServerCore({
+            onDiagnostics(publication) {
+                publications.push(publication);
+            },
+        });
+
+        await core.openTextDocument(makeTextDocumentItem(filePath, text));
+
+        const publication = publications.find(item => item.uri === toUri(filePath));
+        assert.ok(publication, JSON.stringify(publications));
+        const unreachable = publication.diagnostics.filter(
+            item => item.code === 'W_UNREACHABLE_TRANSITION',
+        );
+        assert.equal(unreachable.length, 2, JSON.stringify(publication));
+        assert.deepEqual(
+            unreachable.map(item => item.data?.source_state_path).sort(),
+            ['Root.Group.LostA', 'Root.Group.LostB'],
+        );
+
+        core.dispose();
+    });
+
     it('revalidates importing roots after an imported document changes', async () => {
         const dir = trackTempDir('jsfcstm-lsp-imported-refresh-');
         const childFile = path.join(dir, 'child.fcstm');
@@ -412,6 +451,97 @@ describe('jsfcstm lsp core', () => {
         });
 
         core.dispose();
+    });
+
+    it('does not let an older dependency revalidation restore stale diagnostics', async () => {
+        const dir = trackTempDir('jsfcstm-lsp-diagnostic-generation-');
+        const childFile = path.join(dir, 'child.fcstm');
+        const hostFile = path.join(dir, 'host.fcstm');
+        const childUri = toUri(childFile);
+        const hostUri = toUri(hostFile);
+        const staleChildText = [
+            'state Child {',
+            '    state Reach;',
+            '    state Orphan;',
+            '    state Done;',
+            '    [*] -> Reach;',
+            '    Orphan -> Done;',
+            '}',
+        ].join('\n');
+        const cleanChildText = [
+            'state Child {',
+            '    state Reach;',
+            '    state Done;',
+            '    [*] -> Reach;',
+            '    Reach -> Done;',
+            '}',
+        ].join('\n');
+        const hostText = [
+            'state Root {',
+            '    import "./child.fcstm" as Imported;',
+            '    [*] -> Imported;',
+            '}',
+        ].join('\n');
+        writeFile(childFile, staleChildText);
+
+        const staleResult = new Map<string, packageModule.FcstmDiagnostic[]>([
+            [hostUri, [{
+                range: packageModule.createRange(0, 0, 0, 1),
+                message: 'stale imported warning',
+                severity: 'warning',
+                source: 'fcstm',
+                code: 'W_UNREACHABLE_TRANSITION',
+            }]],
+        ]);
+        const emptyResult = new Map<string, packageModule.FcstmDiagnostic[]>([[hostUri, []]]);
+        let hostCalls = 0;
+        let resolveOld: ((value: Map<string, packageModule.FcstmDiagnostic[]>) => void) | undefined;
+        let resolveNew: ((value: Map<string, packageModule.FcstmDiagnostic[]>) => void) | undefined;
+        const oldResult = new Promise<Map<string, packageModule.FcstmDiagnostic[]>>(resolve => {
+            resolveOld = resolve;
+        });
+        const newResult = new Promise<Map<string, packageModule.FcstmDiagnostic[]>>(resolve => {
+            resolveNew = resolve;
+        });
+        const collector = (async (_document: unknown, rootUri: string) => {
+            if (rootUri !== hostUri) return new Map<string, packageModule.FcstmDiagnostic[]>([[rootUri, []]]);
+            hostCalls += 1;
+            if (hostCalls === 1) return emptyResult;
+            if (hostCalls === 2) return oldResult;
+            return newResult;
+        }) as typeof packageModule.collectDocumentDiagnosticsByUri;
+
+        const scheduler = new TestScheduler();
+        const publications: packageModule.FcstmPublishedDiagnostics[] = [];
+        const injectedCore = new packageModule.FcstmLanguageServerCore({
+            scheduler,
+            collectDocumentDiagnostics: collector,
+            onDiagnostics(publication) {
+                publications.push(publication);
+            },
+        });
+
+        await injectedCore.openTextDocument(makeTextDocumentItem(hostFile, hostText));
+        await injectedCore.openTextDocument(makeTextDocumentItem(childFile, staleChildText));
+
+        const oldFlush = scheduler.flushAll();
+        await new Promise<void>(resolve => setImmediate(resolve));
+        assert.equal(hostCalls, 2);
+
+        await injectedCore.changeTextDocument(childUri, 2, [{text: cleanChildText}]);
+        const newFlush = scheduler.flushAll();
+        await new Promise<void>(resolve => setImmediate(resolve));
+        assert.equal(hostCalls, 3);
+
+        resolveNew?.(emptyResult);
+        await newFlush;
+        resolveOld?.(staleResult);
+        await oldFlush;
+
+        const latestHostPublication = [...publications].reverse().find(item => item.uri === hostUri);
+        assert.ok(latestHostPublication, JSON.stringify(publications));
+        assert.deepEqual(latestHostPublication.diagnostics, []);
+        injectedCore.dispose();
     });
 
     it('keeps workspace overlays in sync so import-aware hover sees unsaved target changes', async () => {

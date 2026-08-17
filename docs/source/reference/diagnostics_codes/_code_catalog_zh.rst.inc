@@ -4893,6 +4893,7 @@ W_UNREACHABLE_TRANSITION
 .. diagnostics-ref W_UNREACHABLE_TRANSITION to_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION source_state_path type=str_or_null required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION selection_owner_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION source_path type=str_or_null required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION transition_index type=int_or_null required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION forced_origin type=str_or_null required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION combo_origin_ids type=list[str] required=true enum=- item_enum=- exact_values=-
@@ -4937,6 +4938,10 @@ W_UNREACHABLE_TRANSITION
      - ``str_or_null``
      - 否
      - 拥有不可达 initial selection 的 composite；普通 transition 时为 null。
+   * - ``source_path``
+     - ``str_or_null``
+     - 否
+     - 有源码 provenance 时提供 authored source file path；否则为 null。
    * - ``transition_index``
      - ``int_or_null``
      - 否

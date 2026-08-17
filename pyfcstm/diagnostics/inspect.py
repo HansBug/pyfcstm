@@ -265,6 +265,10 @@ class TransitionInfo:
         transitions. Downstream tooling may use this as a best-effort
         source-range disambiguation hint when spans are not available.
     :type transition_index: Optional[int]
+    :param source_path: Source file that authored this transition, when the
+        model carries source metadata. This is distinct from the state paths
+        in the transition endpoints.
+    :type source_path: Optional[str]
     :param combo_origin_refs: Provenance references from a generated combo
         edge back to the original combo trigger terms. Empty for ordinary
         transitions.
@@ -297,6 +301,7 @@ class TransitionInfo:
     is_forced: bool
     forced_origin: Optional[str]
     transition_index: Optional[int]
+    source_path: Optional[str] = None
     span: Optional['Span'] = None
     effect_spans: Tuple['Span', ...] = field(default_factory=tuple)
     effect_self_assign_spans: Tuple[Optional['Span'], ...] = field(default_factory=tuple)
@@ -1293,6 +1298,7 @@ def _build_transition_infos(machine: 'StateMachine') -> Tuple[TransitionInfo, ..
                 is_forced=is_forced,
                 forced_origin=forced_origin,
                 transition_index=transition_index,
+                source_path=getattr(transition, '_source_path', None),
                 span=getattr(transition, '_span', None),
                 effect_spans=tuple(
                     span

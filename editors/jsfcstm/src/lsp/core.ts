@@ -86,6 +86,7 @@ export interface FcstmLanguageServerCoreOptions {
     debounceMs?: number;
     onDiagnostics?: (publication: FcstmPublishedDiagnostics) => void | Promise<void>;
     scheduler?: FcstmLanguageServerScheduler;
+    collectDocumentDiagnostics?: typeof collectDocumentDiagnosticsByUri;
     formatOptions?: FcstmFormatOptions;
 }
 
@@ -164,6 +165,37 @@ function shouldCancel(token?: CancellationToken): boolean {
 }
 
 function diagnosticContributionKey(diagnostic: Diagnostic): string {
+    if (
+        diagnostic.code === 'W_UNREACHABLE_TRANSITION'
+        && diagnostic.data
+        && typeof diagnostic.data === 'object'
+        && !Array.isArray(diagnostic.data)
+    ) {
+        const data = diagnostic.data as Record<string, unknown>;
+        const reason = data.reason;
+        const sourcePath = data.source_path;
+        if (typeof reason === 'string' && typeof sourcePath === 'string') {
+            // Host-assembled and child-local topology findings may differ in
+            // projected paths, messages, and transition indexes. The authored
+            // source span plus authored topology endpoints is their stable
+            // identity, while reason prevents unrelated topology findings on
+            // that span from collapsing. Do not use transition_index here:
+            // assembled and standalone models can number the same transition
+            // differently.
+            return JSON.stringify([
+                diagnostic.code,
+                reason,
+                sourcePath,
+                diagnostic.range,
+                data.from_path ?? null,
+                data.to_path ?? null,
+                data.source_state_path ?? null,
+                data.selection_owner_path ?? null,
+                data.forced_origin ?? null,
+                data.combo_origin_ids ?? [],
+            ]);
+        }
+    }
     return JSON.stringify([
         diagnostic.code ?? null,
         diagnostic.severity ?? null,
@@ -183,16 +215,19 @@ function diagnosticContributionKey(diagnostic: Diagnostic): string {
 export class FcstmLanguageServerCore {
     private readonly documents = new Map<string, TextDocument>();
     private readonly diagnosticContributions = new Map<string, Map<string, Diagnostic[]>>();
+    private readonly diagnosticGenerations = new Map<string, number>();
     private readonly diagnosticsTimers = new Map<string, ManagedTimer>();
     private readonly workspaceFolders = new Map<string, WorkspaceFolder>();
     private readonly debounceMs: number;
     private readonly scheduler: FcstmLanguageServerScheduler;
+    private readonly collectDocumentDiagnostics: typeof collectDocumentDiagnosticsByUri;
     private readonly onDiagnostics: (publication: FcstmPublishedDiagnostics) => void | Promise<void>;
     private formatOptions: FcstmFormatOptions;
 
     constructor(options: FcstmLanguageServerCoreOptions = {}) {
         this.debounceMs = options.debounceMs ?? 300;
         this.scheduler = options.scheduler || createScheduler();
+        this.collectDocumentDiagnostics = options.collectDocumentDiagnostics || collectDocumentDiagnosticsByUri;
         this.onDiagnostics = options.onDiagnostics || (() => undefined);
         this.formatOptions = {...(options.formatOptions || {})};
     }
@@ -304,6 +339,7 @@ export class FcstmLanguageServerCore {
 
     async closeTextDocument(uri: string): Promise<void> {
         this.clearDiagnosticsTimer(uri);
+        this.nextDiagnosticGeneration(uri);
         const document = this.documents.get(uri);
         if (document) {
             this.removeOverlay(document.uri);
@@ -727,6 +763,7 @@ export class FcstmLanguageServerCore {
         }
         this.documents.clear();
         this.diagnosticContributions.clear();
+        this.diagnosticGenerations.clear();
         this.workspaceFolders.clear();
     }
 
@@ -741,10 +778,11 @@ export class FcstmLanguageServerCore {
 
     private scheduleDiagnostics(uri: string, version: number): void {
         this.clearDiagnosticsTimer(uri);
+        const generation = this.nextDiagnosticGeneration(uri);
 
         const handle = this.scheduler.setTimeout(async () => {
             this.diagnosticsTimers.delete(uri);
-            await this.publishDiagnostics(uri, version);
+            await this.publishDiagnostics(uri, version, undefined, generation);
         }, this.debounceMs);
 
         this.diagnosticsTimers.set(uri, {uri, version, handle});
@@ -778,6 +816,12 @@ export class FcstmLanguageServerCore {
         this.diagnosticsTimers.delete(uri);
     }
 
+    private nextDiagnosticGeneration(uri: string): number {
+        const generation = (this.diagnosticGenerations.get(uri) || 0) + 1;
+        this.diagnosticGenerations.set(uri, generation);
+        return generation;
+    }
+
     private async revalidateOpenDocuments(): Promise<void> {
         for (const document of this.documents.values()) {
             await this.publishDiagnostics(document.uri, document.version);
@@ -802,24 +846,31 @@ export class FcstmLanguageServerCore {
     private async publishDiagnostics(
         uri: string,
         expectedVersion: number,
-        token?: CancellationToken
+        token?: CancellationToken,
+        expectedGeneration?: number,
     ): Promise<void> {
         if (shouldCancel(token)) {
             return;
         }
+
+        const generation = expectedGeneration ?? this.nextDiagnosticGeneration(uri);
 
         const document = this.documents.get(uri);
         if (!document || document.version !== expectedVersion) {
             return;
         }
 
-        const publications = await collectDocumentDiagnosticsByUri(toDocumentLike(document), uri);
+        const publications = await this.collectDocumentDiagnostics(toDocumentLike(document), uri);
         if (shouldCancel(token)) {
             return;
         }
 
         const currentDocument = this.documents.get(uri);
-        if (!currentDocument || currentDocument.version !== expectedVersion) {
+        if (
+            !currentDocument
+            || currentDocument.version !== expectedVersion
+            || this.diagnosticGenerations.get(uri) !== generation
+        ) {
             return;
         }
 

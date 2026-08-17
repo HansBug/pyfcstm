@@ -340,6 +340,7 @@ describe('diagnostics transition body ranges', () => {
             to_path: 'Root.Group.Done',
             source_state_path: 'Root.Group.Lost',
             selection_owner_path: null,
+            source_path: '/tmp/transition-forced-unreachable-source.fcstm',
             transition_index: 2,
             forced_origin: '! * -> Done :: Panic;',
             combo_origin_ids: [],
@@ -544,6 +545,48 @@ describe('diagnostics transition body ranges', () => {
             assert.equal(item.data?.__rangeFallback, undefined);
             assert.notEqual(sliceByRange(childText, item.range), childText);
         }
+    });
+
+    it('uses host topology for an imported subtree mounted under an unreachable composite', async () => {
+        const dir = trackTempDir('jsfcstm-unreachable-import-host-topology-');
+        const childFile = path.join(dir, 'child.fcstm');
+        const hostFile = path.join(dir, 'main.fcstm');
+        const childText = [
+            'state Child {',
+            '    state Reach;',
+            '    state Orphan;',
+            '    state Done;',
+            '    [*] -> Reach;',
+            '    Orphan -> Done;',
+            '}',
+        ].join('\n');
+        writeFile(childFile, childText);
+        const hostText = [
+            'state Root {',
+            '    state Live;',
+            '    state Dead {',
+            '        import "./child.fcstm" as Imported;',
+            '    }',
+            '    [*] -> Live;',
+            '}',
+        ].join('\n');
+        const document = createDocument(hostText, hostFile);
+        const publications = await packageModule.collectDocumentDiagnosticsByUri(document);
+        const childDiagnostics = publications.get(pathToFileURL(childFile).toString())
+            ?.filter(item => item.code === 'W_UNREACHABLE_TRANSITION') || [];
+
+        assert.equal(childDiagnostics.length, 2, JSON.stringify(publications));
+        assert.deepEqual(
+            childDiagnostics.map(item => [item.data?.from_path, item.data?.to_path]).sort(),
+            [
+                ['[*]', 'Child.Reach'],
+                ['Child.Orphan', 'Child.Done'],
+            ].sort(),
+        );
+        assert.deepEqual(
+            childDiagnostics.map(item => sliceByRange(childText, item.range).trim()).sort(),
+            ['[*] -> Reach;', 'Orphan -> Done;'].sort(),
+        );
     });
 
     it('anchors forced override diagnostics on the forced declaration with related normal transition', async () => {

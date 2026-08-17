@@ -1321,6 +1321,12 @@ class StateMachineModelBuilder {
             trigger_scope: params.triggerScope,
             transitionIndex,
             transition_index: transitionIndex,
+            sourcePath: params.ast?.sourceFilePath
+                ?? params.ast?.source_file_path
+                ?? this.filePath,
+            source_path: params.ast?.sourceFilePath
+                ?? params.ast?.source_file_path
+                ?? this.filePath,
             combo_origin_refs: params.comboOriginRefs ?? [],
             combo_projection_key: params.comboProjectionKey ?? null,
             combo_projection_order_key: params.comboProjectionOrderKey ?? null,

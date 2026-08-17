@@ -4893,6 +4893,7 @@ W_UNREACHABLE_TRANSITION
 .. diagnostics-ref W_UNREACHABLE_TRANSITION to_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION source_state_path type=str_or_null required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION selection_owner_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION source_path type=str_or_null required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION transition_index type=int_or_null required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION forced_origin type=str_or_null required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREACHABLE_TRANSITION combo_origin_ids type=list[str] required=true enum=- item_enum=- exact_values=-
@@ -4937,6 +4938,10 @@ W_UNREACHABLE_TRANSITION
      - ``str_or_null``
      - no
      - Unreachable composite owning an initial selection, or null for a normal transition.
+   * - ``source_path``
+     - ``str_or_null``
+     - no
+     - Authored source file path when source metadata is available; null otherwise.
    * - ``transition_index``
      - ``int_or_null``
      - no

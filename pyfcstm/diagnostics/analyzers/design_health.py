@@ -175,9 +175,14 @@ def _build_combo_origin_endpoints(transitions):
         for ref in transition.combo_origin_refs:
             current = endpoints.setdefault(ref.origin_id, {
                 'source_path': None,
+                'source_file_path': None,
                 'selection_owner_path': None,
                 'target_path': None,
             })
+            current['source_file_path'] = (
+                getattr(transition, 'source_path', None)
+                or current['source_file_path']
+            )
             current['source_path'] = (
                 ref.source_path
                 or projection_source
@@ -259,6 +264,7 @@ def _unreachable_transition_diagnostics(
                         'to_path': endpoint['target_path'],
                         'source_state_path': source_state_path,
                         'selection_owner_path': selection_owner_path,
+                        'source_path': endpoint['source_file_path'],
                         'transition_index': None,
                         'forced_origin': None,
                         'combo_origin_ids': [origin_id],
@@ -298,6 +304,7 @@ def _unreachable_transition_diagnostics(
                 'to_path': transition.to_path,
                 'source_state_path': source_state_path,
                 'selection_owner_path': selection_owner_path if transition.from_path == '[*]' else None,
+                'source_path': transition.source_path,
                 'transition_index': transition.transition_index,
                 'forced_origin': transition.forced_origin,
                 'combo_origin_ids': list(combo_origin_ids),

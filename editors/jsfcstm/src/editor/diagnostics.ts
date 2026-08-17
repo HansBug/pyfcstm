@@ -229,6 +229,70 @@ function inspectItemSourcePath(item: ModelDiagnosticJson): string | null {
     return null;
 }
 
+function localizeImportedStatePath(
+    model: Parameters<typeof inspectModel>[0],
+    statePath: string | null,
+    sourceFile: string,
+    authoredRootName: string,
+): string | null {
+    if (!statePath || statePath === '[*]') return statePath;
+    const segments = statePath.split('.');
+    for (let length = segments.length; length >= 1; length -= 1) {
+        const candidate = segments.slice(0, length).join('.');
+        const state = model.lookups.statesByPath[candidate];
+        const importedFromFile = state?.importedFromFile ?? state?.imported_from_file;
+        if (importedFromFile !== sourceFile) continue;
+        return [authoredRootName, ...segments.slice(length)].join('.');
+    }
+    return statePath;
+}
+
+function localizeImportedDiagnostic(
+    item: ModelDiagnosticJson,
+    model: Parameters<typeof inspectModel>[0],
+    sourceFile: string,
+    authoredRootName: string,
+): ModelDiagnosticJson {
+    const refs = {...item.refs};
+    const replacements = new Map<string, string>();
+    for (const key of ['from_path', 'to_path', 'source_state_path', 'selection_owner_path']) {
+        const value = refs[key];
+        if (typeof value !== 'string' || value === '[*]') continue;
+        const localized = localizeImportedStatePath(
+            model,
+            value,
+            sourceFile,
+            authoredRootName,
+        );
+        if (localized === null || localized === value) continue;
+        refs[key] = localized;
+        replacements.set(value, localized);
+    }
+    let message = item.message;
+    for (const [source, target] of [...replacements.entries()].sort((left, right) => right[0].length - left[0].length)) {
+        message = message.split(source).join(target);
+    }
+    const comboOriginIds = refs.combo_origin_ids;
+    if (Array.isArray(comboOriginIds)) {
+        refs.combo_origin_ids = comboOriginIds.map(originId => {
+            if (typeof originId !== 'string') return originId;
+            const separator = originId.indexOf(':');
+            if (separator <= 0) return originId;
+            const ownerPath = originId.slice(0, separator);
+            const localizedOwner = localizeImportedStatePath(
+                model,
+                ownerPath,
+                sourceFile,
+                authoredRootName,
+            );
+            return localizedOwner && localizedOwner !== ownerPath
+                ? `${localizedOwner}${originId.slice(separator)}`
+                : originId;
+        });
+    }
+    return {...item, message, refs};
+}
+
 export function collectInspectDiagnosticsFromItems(
     document: TextDocumentLike,
     semantic: FcstmSemanticDocument,
@@ -387,25 +451,30 @@ export async function collectDocumentDiagnosticsByUri(
         diagnostics.filter(diagnostic => !shouldSuppressParseRecoveryDiagnostic(diagnostic, parseDiagnostics)),
     );
 
-    // A hydrated root model carries imported paths in the host namespace. Run
-    // the topology diagnostic against each imported node's own model instead,
-    // so its span and refs are resolved in the file where the transition was
-    // authored. Publishing these buckets separately keeps a host validation
-    // from attaching a child-file transition to the host document.
+    // A hydrated root model carries imported paths in the host namespace, so
+    // topology must be checked against that assembled model. Use the model's
+    // imported-root provenance only to partition the resulting diagnostics by
+    // authored URI; running a child model as a new root would incorrectly make
+    // a subtree mounted under an unreachable host state appear reachable.
     if (node?.model) {
+        const assembledModel = node.model;
+        const assembledDiagnostics = inspectModel(assembledModel).diagnostics;
         for (const filePath of snapshot.order) {
-            if (filePath === snapshot.rootFile) continue;
+            if (filePath === snapshot.rootFile || filePath === document.filePath) continue;
             const importedNode = snapshot.nodes[filePath];
-            if (!importedNode?.semantic || !importedNode.model) continue;
-            const items = inspectModel(importedNode.model).diagnostics.filter(item => {
+            if (!importedNode?.semantic) continue;
+            const authoredRootName = importedNode.semantic.summary.rootStateName
+                || importedNode.ast?.rootState?.name;
+            if (!authoredRootName) continue;
+            const items = assembledDiagnostics.filter(item => {
                 if (item.code !== 'W_UNREACHABLE_TRANSITION') return false;
-                const sourcePath = inspectItemSourcePath(item);
-                return sourcePath === null || statePathIsLocalToDocument(
-                    importedNode.document,
-                    importedNode.semantic as FcstmSemanticDocument,
-                    sourcePath,
-                );
-            });
+                return item.refs.source_path === filePath;
+            }).map(item => localizeImportedDiagnostic(
+                item,
+                assembledModel,
+                filePath,
+                authoredRootName,
+            ));
             if (items.length === 0) continue;
             const importedDiagnostics = collectInspectDiagnosticsFromItems(
                 importedNode.document,

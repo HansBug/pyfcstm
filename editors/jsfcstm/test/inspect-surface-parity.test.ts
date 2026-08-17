@@ -393,6 +393,7 @@ state Root {
             to_path: 'Root.Blocked',
             source_state_path: 'Root.Isolated',
             selection_owner_path: null,
+            source_path: '/tmp/unreachable-float-normalized-guard.fcstm',
             transition_index: 1,
             forced_origin: null,
             combo_origin_ids: [],

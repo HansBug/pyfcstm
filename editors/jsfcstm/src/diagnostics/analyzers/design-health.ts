@@ -133,6 +133,7 @@ function collectUnreachableTransitionDiagnostics(
                         to_path: endpoint.targetPath,
                         source_state_path: endpoint.sourcePath,
                         selection_owner_path: endpoint.selectionOwnerPath,
+                        source_path: endpoint.sourceFilePath,
                         transition_index: null,
                         forced_origin: null,
                         combo_origin_ids: [originId],
@@ -161,6 +162,7 @@ function collectUnreachableTransitionDiagnostics(
                 to_path: transition.to_path,
                 source_state_path: selection.sourcePath,
                 selection_owner_path: selection.sourcePath === null ? selection.ownerPath : null,
+                source_path: transition.source_path,
                 transition_index: transition.transition_index,
                 forced_origin: transition.forced_origin,
                 combo_origin_ids: comboOriginIds,
@@ -174,6 +176,7 @@ interface ComboOriginEndpoints {
     sourcePath: string | null;
     selectionOwnerPath: string | null;
     targetPath: string | null;
+    sourceFilePath: string | null;
 }
 
 function buildComboOriginEndpoints(
@@ -187,7 +190,9 @@ function buildComboOriginEndpoints(
                 sourcePath: null,
                 selectionOwnerPath: null,
                 targetPath: null,
+                sourceFilePath: null,
             };
+            current.sourceFilePath = transition.source_path ?? current.sourceFilePath;
             current.sourcePath = ref.source_path ?? projection.sourcePath ?? current.sourcePath;
             current.selectionOwnerPath = ref.selection_owner_path
                 ?? projection.selectionOwnerPath
@@ -212,19 +217,30 @@ function comboProjectionEndpoints(
             sourcePath: transition.from_path === '[*]' ? null : transition.from_path,
             selectionOwnerPath: null,
             targetPath: null,
+            sourceFilePath: transition.source_path,
         };
     }
     const ownerPath = projection[0].every(item => typeof item === 'string')
         ? (projection[0] as string[]).join('.')
         : null;
     if (projection[1] === 'entry') {
-        return {sourcePath: null, selectionOwnerPath: ownerPath, targetPath: null};
+        return {
+            sourcePath: null,
+            selectionOwnerPath: ownerPath,
+            targetPath: null,
+            sourceFilePath: transition.source_path,
+        };
     }
     const sourcePath = Array.isArray(projection[2])
         && projection[2].every(item => typeof item === 'string')
         ? (projection[2] as string[]).join('.')
         : null;
-    return {sourcePath, selectionOwnerPath: null, targetPath: null};
+    return {
+        sourcePath,
+        selectionOwnerPath: null,
+        targetPath: null,
+        sourceFilePath: transition.source_path,
+    };
 }
 
 function transitionSelectionPaths(

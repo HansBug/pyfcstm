@@ -249,6 +249,8 @@ export interface RawFcstmModelTransition extends RawFcstmModelNodeBase {
     trigger_scope?: 'local' | 'chain' | 'absolute';
     transitionIndex?: number;
     transition_index?: number;
+    sourcePath?: string;
+    source_path?: string;
     combo_origin_refs?: unknown[];
     combo_projection_key?: unknown[] | null;
     combo_projection_order_key?: unknown[] | null;

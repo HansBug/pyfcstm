@@ -404,7 +404,7 @@
       "required": [
         "from_path", "to_path", "event", "event_scope",
         "guard", "effect", "effect_self_assigns", "is_forced",
-        "forced_origin", "transition_index", "combo_origin_refs",
+        "forced_origin", "transition_index", "source_path", "combo_origin_refs",
         "combo_projection_key", "combo_projection_order_key",
         "combo_reuse_group_id", "combo_priority_run_identity",
         "combo_priority_run_index"
@@ -432,6 +432,10 @@
           "type": ["integer", "null"],
           "minimum": 0,
           "description": "Zero-based parent-first model transition order, including forced expansions at their declaring state."
+        },
+        "source_path": {
+          "type": ["string", "null"],
+          "description": "Source file that authored this transition, when source metadata is available."
         },
         "combo_origin_refs": {
           "type": "array",

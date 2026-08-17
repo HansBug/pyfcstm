@@ -573,6 +573,7 @@ function addTransitionDiagnostics(
 ): void {
     const reachable = collectReachableStateIds(semantic);
     const comboOriginCounts = new Map<string, number>();
+    const sourcePath = document.filePath || document.uri?.fsPath || null;
 
     for (const transition of semantic.transitions) {
         // pyfcstm Layer 1 distinction: the source side of a transition
@@ -675,6 +676,7 @@ function addTransitionDiagnostics(
                     to_path: candidate.toPath,
                     source_state_path: candidate.sourceStatePath,
                     selection_owner_path: candidate.selectionOwnerPath,
+                    source_path: sourcePath,
                     transition_index: candidate.transitionIndex,
                     forced_origin: null,
                     combo_origin_ids: comboOriginIds,

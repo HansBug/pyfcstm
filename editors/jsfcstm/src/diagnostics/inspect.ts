@@ -165,6 +165,7 @@ export interface TransitionInfo {
     is_forced: boolean;
     forced_origin: string | null;
     transition_index: number | null;
+    source_path: string | null;
     combo_origin_refs: ComboOriginRefInfo[];
     combo_projection_key: unknown[] | null;
     combo_projection_order_key: unknown[] | null;
@@ -752,6 +753,7 @@ function buildTransitionInfos(machine: StateMachine): TransitionInfo[] {
                 is_forced: !!t.forced,
                 forced_origin: t.forced ? t.text : null,
                 transition_index: typeof t.transitionIndex === 'number' ? t.transitionIndex : null,
+                source_path: t.sourcePath ?? t.source_path ?? null,
                 combo_origin_refs: comboOriginRefs,
                 combo_projection_key: Array.isArray(t.combo_projection_key) ? [...t.combo_projection_key] : null,
                 combo_projection_order_key: Array.isArray(t.combo_projection_order_key) ? [...t.combo_projection_order_key] : null,

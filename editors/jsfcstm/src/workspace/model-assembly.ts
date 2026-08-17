@@ -105,6 +105,21 @@ function cloneAstValue<T>(value: T, cache = new Map<object, unknown>()): T {
     return value;
 }
 
+function markAuthoredTransitionFiles(
+    node: FcstmAstStateDefinition,
+    filePath: string,
+): void {
+    for (const transition of [...node.transitions, ...node.forceTransitions]) {
+        if (!transition.sourceFilePath && !transition.source_file_path) {
+            transition.sourceFilePath = filePath;
+            transition.source_file_path = filePath;
+        }
+    }
+    for (const child of node.substates) {
+        markAuthoredTransitionFiles(child, filePath);
+    }
+}
+
 function chainPathText(path: string[], isAbsolute: boolean): string {
     return `${isAbsolute ? '/' : ''}${path.join('.')}`;
 }
@@ -1156,6 +1171,9 @@ function assembleAstDocumentImports(
         visiting.add(filePath);
         try {
             const program = cloneAstValue(node.ast);
+            if (program.rootState) {
+                markAuthoredTransitionFiles(program.rootState, filePath);
+            }
             const hostExplicitDefNames = new Set(program.definitions.map(item => item.name));
             const importLookup = buildImportLookup(node.semantic.imports);
             assembleProgramImports(

@@ -43,8 +43,10 @@ Inspect and Diagnostics
   rates are raw
   fractions, use ``null`` for empty denominators, and record conservative
   advisory defaults for transition density and unreachable populations.
-  Exceeded names are metadata only; no new warning code or health score is
-  inferred. Python callers and the CLI can override or disable the thresholds.
+  The canonical ``W_UNREACHABLE_TRANSITION`` warning aggregates the reason
+  buckets once per authored transition; thresholds remain metadata only and
+  do not create a health score. Python callers and the CLI can override or
+  disable the thresholds.
 - Expanded static and verify-backed diagnostics, including numeric and guard
   reasoning, while keeping solver-backed inspect checks behind the existing
   explicit enablement and safety gates.

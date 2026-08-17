@@ -2185,6 +2185,33 @@ class TestInspectModelRedundancySemantics:
         assert sliced == ['A -> B;', 'A -> B;', 'A -> B;']
         assert [span.line for span in duplicate_spans] == [6, 7, 8]
 
+    def test_unreachable_transition_warning_aggregates_reasons_per_authored_edge(self):
+        dsl = """
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B : if [false];
+            A -> B : if [false];
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        assert_all_diags_match_schema(
+            report.diagnostics,
+            context='unreachable-transition-reasons',
+        )
+        warnings = [
+            item for item in report.diagnostics
+            if item.code == 'W_UNREACHABLE_TRANSITION'
+        ]
+        assert len(warnings) == 2
+        assert warnings[0].refs['reasons'] == ['guard_false']
+        assert warnings[1].refs['reasons'] == ['guard_false', 'redundant']
+        assert report.structure_statistics.unreachable_transition_reasons == {
+            'guard_false': 2,
+            'redundant': 1,
+        }
+
     def test_self_transition_with_lifecycle_action_is_not_noop(self):
         dsl = """
         def int counter = 0;

@@ -2336,6 +2336,68 @@ W_REDUNDANT_TRANSITION:
         A -> B :: Go;
     }
 
+W_UNREACHABLE_TRANSITION:
+  severity: warning
+  span_object: transition
+  capability: pure_static
+  description: >-
+    An authored transition cannot be exercised under the available static or
+    verification reachability evidence. The refs list the contributing
+    reasons; multiple reasons are aggregated into one diagnostic per authored
+    transition.
+  refs:
+    from_path:
+      type: str
+      required: true
+      description: Dotted source state path, or ``[*]`` for an entry transition.
+    to_path:
+      type: str
+      required: true
+      description: Dotted target state path, or ``[*]`` for an exit transition.
+    transition_index:
+      type: int_or_null
+      required: false
+      description: >-
+        Stable parent-first transition index when a concrete transition exists;
+        null for an authored forced declaration with no expansion.
+    reasons:
+      type: list[str]
+      required: true
+      item_enum:
+        - unreachable_source_state
+        - unreachable_event_consumer
+        - forced_never_expands
+        - guard_false
+        - shadowed
+        - redundant
+      description: >-
+        One or more canonical reasons that make this authored transition
+        unreachable. The list is sorted for stable output.
+  for_llm:
+    summary: >-
+      This authored transition is unreachable under the available analysis
+      evidence. The reason list distinguishes source-state reachability,
+      event-consumer reachability, forced expansion, guards, shadowing, and
+      redundancy.
+    recommended_actions:
+      - kind: inspect_transition
+        target: transition
+        rationale: >-
+          Check each entry in ``refs.reasons`` against the transition's source,
+          trigger, guard, and declaration scope before changing behavior.
+    do_not:
+      - >-
+        Do not remove a transition solely because this warning is present;
+        verify that the reported reason matches the intended runtime model.
+  emit_tier: static_pipeline
+  example_dsl: |
+    state Root {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B : if [false];
+    }
+
 W_SELF_TRANSITION_NOP:
   severity: warning
   span_object: transition

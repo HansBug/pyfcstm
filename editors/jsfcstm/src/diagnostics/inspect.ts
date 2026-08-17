@@ -557,6 +557,12 @@ export function inspectModel(machine: StateMachine, options: InspectModelOptions
         },
         machine,
     );
+    diagnostics.push(...buildUnreachableTransitionDiagnostics(
+        states,
+        transitions,
+        diagnostics,
+        forcedTransitions,
+    ));
     return {
         root_state_path: rootStatePath,
         states,
@@ -1540,6 +1546,231 @@ function forcedExpansionGroups(
         cursors.set(identity, cursor + declaration.expansion_count);
     });
     return groups;
+}
+
+const UNREACHABLE_TRANSITION_REASON_CODES = new Set([
+    'W_GUARD_CONST_FALSE',
+    'W_DEAD_GUARD',
+    'W_COMBO_GUARD_CONST_FALSE',
+    'W_FORCED_GUARD_UNSAT',
+    'W_FORCED_NEVER_EXPANDS',
+    'W_TRANSITION_SHADOWED',
+    'W_REDUNDANT_TRANSITION',
+]);
+
+function authoredTransitionEntries(
+    transitions: TransitionInfo[],
+    forcedTransitions: InternalForcedTransitionInfo[],
+): Array<[string, TransitionInfo]> {
+    const representatives = new Map<string, TransitionInfo>();
+    const comboGroups = new Map<string, TransitionInfo[]>();
+    const comboInitialOrigins = new Set<string>();
+    for (const transition of transitions) {
+        if (transition.from_path === INIT_MARK) {
+            for (const ref of transition.combo_origin_refs) comboInitialOrigins.add(ref.origin_id);
+            continue;
+        }
+        if (transition.combo_origin_refs.length > 0) {
+            for (const origin of [...new Set(transition.combo_origin_refs.map(ref => ref.origin_id))]) {
+                const group = comboGroups.get(origin) ?? [];
+                group.push(transition);
+                comboGroups.set(origin, group);
+            }
+            continue;
+        }
+        if (transition.is_forced) continue;
+        representatives.set(`transition:${transition.transition_index ?? representatives.size}`, transition);
+    }
+    for (const [origin, group] of comboGroups) {
+        if (comboInitialOrigins.has(origin)) continue;
+        const base = group[0];
+        representatives.set(`combo:${origin}`, {
+            ...base,
+            guard: group.find(item => item.guard !== null)?.guard ?? null,
+            effect: group.find(item => item.effect !== null)?.effect ?? null,
+            event: group.find(item => item.event !== null)?.event ?? null,
+        });
+    }
+    const forcedGroups = forcedExpansionGroups(transitions, forcedTransitions);
+    forcedTransitions.forEach((declaration, index) => {
+        const base = forcedGroups[index][0] ?? (
+            declaration.state_path.length === 0
+                ? transitions.find(item => item.is_forced)
+                : undefined
+        ) ?? {
+            from_path: declaration.from_path,
+            to_path: declaration.to_path,
+            event: declaration.event,
+            event_scope: declaration.event_scope,
+            guard: declaration.guard,
+            effect: null,
+            effect_self_assigns: [],
+            is_forced: true,
+            forced_origin: declaration.original_raw,
+            transition_index: null,
+            combo_origin_refs: [],
+            combo_projection_key: null,
+            combo_projection_order_key: null,
+            combo_reuse_group_id: null,
+            combo_priority_run_identity: null,
+            combo_priority_run_index: null,
+        } satisfies TransitionInfo;
+        representatives.set(`forced:${index}`, {
+            ...base,
+            event: declaration.event,
+            guard: declaration.guard,
+            effect: null,
+            is_forced: true,
+        });
+    });
+    return [...representatives.entries()];
+}
+
+function buildUnreachableTransitionDiagnostics(
+    states: StateInfo[],
+    transitions: TransitionInfo[],
+    diagnostics: ModelDiagnosticJson[],
+    forcedTransitions: InternalForcedTransitionInfo[],
+): ModelDiagnosticJson[] {
+    const authored = authoredTransitionEntries(transitions, forcedTransitions);
+    const authoredByKey = new Map(authored);
+    const statesByPath = new Map(states.map(state => [state.path, state]));
+    const leafPaths = new Set(states
+        .filter(state => !state.is_pseudo && state.is_leaf)
+        .map(state => state.path));
+    const unreachablePaths = new Set(diagnostics
+        .filter(item => item.code === 'W_UNREACHABLE_STATE')
+        .map(item => item.refs.state_path)
+        .filter((path): path is string => typeof path === 'string'));
+    const unreachableLeafPaths = new Set([...leafPaths].filter(path => unreachablePaths.has(path)));
+    const sourceIsUnreachable = (path: string): boolean => {
+        if (unreachablePaths.has(path)) return true;
+        const state = statesByPath.get(path);
+        if (!state || !state.is_composite) return false;
+        const descendants = [...leafPaths].filter(item => item.startsWith(`${path}.`));
+        return descendants.length > 0 && descendants.every(item => unreachableLeafPaths.has(item));
+    };
+    const reasonsByKey = new Map<string, Set<string>>();
+    const addReason = (key: string, reason: string): void => {
+        const reasons = reasonsByKey.get(key) ?? new Set<string>();
+        reasons.add(reason);
+        reasonsByKey.set(key, reasons);
+    };
+    const forcedGroups = forcedExpansionGroups(transitions, forcedTransitions);
+    const forcedKeysByIdentity = new Map<string, string[]>();
+    forcedTransitions.forEach((declaration, index) => {
+        const identity = `${declaration.state_path}\u0000${declaration.original_raw}`;
+        forcedKeysByIdentity.set(identity, [
+            ...(forcedKeysByIdentity.get(identity) ?? []),
+            `forced:${index}`,
+        ]);
+    });
+    authored.forEach(([key, transition]) => {
+        if (key.startsWith('forced:')) {
+            const index = Number(key.slice('forced:'.length));
+            const expansions = Number.isInteger(index) ? forcedGroups[index] ?? [] : [];
+            if (expansions.length > 0 && expansions.every(item => sourceIsUnreachable(item.from_path))) {
+                addReason(key, 'unreachable_source_state');
+            }
+        } else if (sourceIsUnreachable(transition.from_path)) {
+            addReason(key, 'unreachable_source_state');
+        }
+    });
+    const eventNames = new Set(diagnostics
+        .filter(item => item.code === 'W_EVENT_UNREACHABLE_EMIT')
+        .map(item => item.refs.event_name)
+        .filter((name): name is string => typeof name === 'string'));
+    authored.forEach(([key, transition]) => {
+        if (transition.event !== null && eventNames.has(transition.event)) {
+            addReason(key, 'unreachable_event_consumer');
+        }
+    });
+    for (const diagnostic of diagnostics) {
+        if (!UNREACHABLE_TRANSITION_REASON_CODES.has(diagnostic.code)) continue;
+        const refs = diagnostic.refs;
+        let keys: string[] = [];
+        if (typeof refs.origin_id === 'string') {
+            keys = authored
+                .filter(([key]) => key === `combo:${refs.origin_id}`)
+                .map(([key]) => key);
+        }
+        if (diagnostic.code === 'W_FORCED_NEVER_EXPANDS') {
+            const identity = `${String(refs.state_path)}\u0000${String(refs.original_raw)}`;
+            keys = [...(forcedKeysByIdentity.get(identity) ?? [])];
+        }
+        const duplicateSpans = Array.isArray(refs.duplicate_spans) ? refs.duplicate_spans : null;
+        if (diagnostic.code === 'W_REDUNDANT_TRANSITION' && duplicateSpans !== null) {
+            const spanKeys = new Set(duplicateSpans.map(item => {
+                if (item === null || typeof item !== 'object') return null;
+                const span = item as Record<string, unknown>;
+                return [span.line, span.column, span.end_line, span.end_column].join(':');
+            }).filter((item): item is string => item !== null));
+            keys = authored.filter(([, item]) => item.__sourceRange !== undefined && spanKeys.has([
+                item.__sourceRange.start.line + 1,
+                item.__sourceRange.start.character + 1,
+                item.__sourceRange.end.line + 1,
+                item.__sourceRange.end.character + 1,
+            ].join(':'))).slice(1).map(([key]) => key);
+        }
+        const transitionIndex = refs.transition_index;
+        if (keys.length === 0 && typeof transitionIndex === 'number') {
+            keys = authored.filter(([, item]) => item.transition_index === transitionIndex).map(([key]) => key);
+        }
+        if (keys.length === 0 && refs.transition !== null && typeof refs.transition === 'object') {
+            const payload = refs.transition as Record<string, unknown>;
+            const parent = payload.parent;
+            const fromState = payload.from_state;
+            const toState = payload.to_state;
+            if (typeof parent === 'string' && typeof fromState === 'string') {
+                const payloadFrom = `${parent}.${fromState}`;
+                const payloadTo = typeof toState === 'string' ? `${parent}.${toState}` : null;
+                keys = authored.filter(([, item]) => item.from_path === payloadFrom && (payloadTo === null || item.to_path === payloadTo))
+                    .filter(([, item]) => typeof payload.guard !== 'string' || item.guard === payload.guard)
+                    .filter(([, item]) => typeof payload.event !== 'string' || item.event === payload.event || item.event?.split('.').at(-1) === payload.event)
+                    .filter(([, item]) => typeof payload.is_forced !== 'boolean' || item.is_forced === payload.is_forced)
+                    .filter(([, item]) => typeof payload.transition_index !== 'number' || item.transition_index === payload.transition_index)
+                    .map(([key]) => key);
+            }
+        }
+        if (keys.length === 0 && duplicateSpans !== null) {
+            const spanKeys = new Set(duplicateSpans.map(item => {
+                if (item === null || typeof item !== 'object') return null;
+                const span = item as Record<string, unknown>;
+                return [span.line, span.column, span.end_line, span.end_column].join(':');
+            }).filter((item): item is string => item !== null));
+            keys = authored.filter(([, item]) => item.__sourceRange !== undefined && spanKeys.has([
+                item.__sourceRange.start.line + 1,
+                item.__sourceRange.start.character + 1,
+                item.__sourceRange.end.line + 1,
+                item.__sourceRange.end.character + 1,
+            ].join(':'))).slice(1).map(([key]) => key);
+        }
+        if (keys.length === 0 && typeof refs.from_path === 'string' && typeof refs.to_path === 'string') {
+            keys = authored.filter(([, item]) => item.from_path === refs.from_path && item.to_path === refs.to_path).map(([key]) => key);
+        }
+        const reason = diagnostic.code === 'W_FORCED_NEVER_EXPANDS'
+            ? 'forced_never_expands'
+            : diagnostic.code.includes('GUARD')
+            ? 'guard_false'
+            : diagnostic.code.includes('SHADOWED') ? 'shadowed' : 'redundant';
+        for (const key of keys) addReason(key, reason);
+    }
+    return [...reasonsByKey.entries()].map(([key, reasons]) => {
+        const transition = authoredByKey.get(key)!;
+        const sortedReasons = [...reasons].sort();
+        return {
+            code: 'W_UNREACHABLE_TRANSITION',
+            severity: 'warning',
+            message: `Authored transition ${JSON.stringify(transition.from_path)} -> ${JSON.stringify(transition.to_path)} is unreachable for reasons: ${sortedReasons.join(', ')}.`,
+            span: null,
+            refs: {
+                from_path: transition.from_path,
+                to_path: transition.to_path,
+                transition_index: transition.transition_index,
+                reasons: sortedReasons,
+            },
+        } satisfies ModelDiagnosticJson;
+    });
 }
 
 function buildStructureStatistics(

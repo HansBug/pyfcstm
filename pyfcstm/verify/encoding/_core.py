@@ -25,6 +25,8 @@ Example::
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import (
     TYPE_CHECKING,
@@ -68,6 +70,11 @@ if TYPE_CHECKING:  # pragma: no cover - imported only for static checkers
 
 _Z3Expr = Union[z3.ArithRef, z3.BoolRef]
 _Z3Vars = Dict[str, _Z3Expr]
+
+_TRANSITION_INDEX_SCOPE: ContextVar[Optional[Dict[int, int]]] = ContextVar(
+    '_pyfcstm_transition_index_scope',
+    default=None,
+)
 
 is_sat = _solver_is_sat
 
@@ -304,6 +311,28 @@ def _event_name(transition: Transition) -> Optional[str]:
     return transition.event.path_name
 
 
+def _transition_index_map(root) -> Dict[int, int]:
+    """Build a parent-first transition index map for one verify run."""
+    index_map: Dict[int, int] = {}
+    index = 0
+    for state in root.walk_states():
+        for candidate in state.transitions:
+            index_map[id(candidate)] = index
+            index += 1
+    return index_map
+
+
+@contextmanager
+def _transition_index_scope(machine: 'StateMachine'):
+    """Reuse one topology snapshot while a verify algorithm is running."""
+    root = machine.root_state
+    token = _TRANSITION_INDEX_SCOPE.set(_transition_index_map(root))
+    try:
+        yield
+    finally:
+        _TRANSITION_INDEX_SCOPE.reset(token)
+
+
 def _transition_index(transition: Transition) -> Optional[int]:
     """Return the parent-first model index for ``transition``.
 
@@ -317,13 +346,12 @@ def _transition_index(transition: Transition) -> Optional[int]:
         return None
     while owner.parent is not None:
         owner = owner.parent
-    index = 0
-    for state in owner.walk_states():
-        for candidate in state.transitions:
-            if candidate is transition:
-                return index
-            index += 1
-    return None
+    index_map = _TRANSITION_INDEX_SCOPE.get()
+    if index_map is None:
+        # Direct public algorithm calls have no enclosing inspect run. Build a
+        # fresh map so mutations to the public model are always reflected.
+        index_map = _transition_index_map(owner)
+    return index_map.get(id(transition))
 
 
 def _transition_payload(transition: Transition) -> dict:

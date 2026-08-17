@@ -1392,6 +1392,36 @@ state Root {
                     refs: {state_path: 'Root.Orphan'},
                 },
                 {
+                    code: 'W_UNREACHABLE_TRANSITION',
+                    severity: 'warning',
+                    refs: {
+                        from_path: '*',
+                        to_path: '[*]',
+                        transition_index: null,
+                        reasons: ['forced_never_expands'],
+                    },
+                },
+                {
+                    code: 'W_UNREACHABLE_TRANSITION',
+                    severity: 'warning',
+                    refs: {
+                        from_path: 'Root.Active',
+                        to_path: 'Root.Trapped',
+                        transition_index: 0,
+                        reasons: ['redundant'],
+                    },
+                },
+                {
+                    code: 'W_UNREACHABLE_TRANSITION',
+                    severity: 'warning',
+                    refs: {
+                        from_path: 'Root.Idle',
+                        to_path: 'Root.Active',
+                        transition_index: 3,
+                        reasons: ['redundant'],
+                    },
+                },
+                {
                     code: 'W_UNREFERENCED_VAR',
                     severity: 'warning',
                     refs: {var_name: 'write_only', init_value: '0'},

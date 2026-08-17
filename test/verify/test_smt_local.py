@@ -134,6 +134,39 @@ def test_raw_transition_payload_includes_guard_text():
     assert payload["guard"] == "x && True"
 
 
+def test_raw_transition_payload_reflects_mutated_state_order():
+    """Index lookup must not retain topology from an earlier public call."""
+    machine = parse_machine('''
+        state Root {
+            state P {
+                state A;
+                state B;
+                [*] -> A;
+                A -> B;
+            }
+            state Q {
+                state C;
+                state D;
+                [*] -> C;
+                C -> D;
+            }
+            [*] -> P;
+        }
+    ''')
+    transition = next(
+        item for state in machine.walk_states()
+        for item in state.transitions
+        if str(item.from_state) == 'A'
+    )
+    before = encoding_core._transition_payload(transition)['transition_index']
+    items = list(machine.root_state.substates.items())
+    machine.root_state.substates.clear()
+    machine.root_state.substates.update(reversed(items))
+    after = encoding_core._transition_payload(transition)['transition_index']
+    assert before == 2
+    assert after == 4
+
+
 def test_expected_expression_translation_failures_are_normalized():
     """Known expression-to-Z3 failures become algorithm results, not crashes."""
     x = Variable("x")

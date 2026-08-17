@@ -36,7 +36,8 @@ FBMCQ 与有界模型检查
 - 在 LLM 报告的 ``summary.structure_statistics`` 以及完整报告的
   ``ModelInspect.structure_statistics`` 中新增描述性结构统计。比率以原始小数输出，
   空分母使用 ``null``，并记录转换密度和不可达总体的保守建议阈值。超出只记录元数据，
-  不新增诊断码或综合健康分数；Python API 和 CLI 均可覆盖或关闭这些阈值。
+  ``W_UNREACHABLE_TRANSITION`` 会按 authored transition 聚合不可达原因；这些阈值仍只
+  是元数据，不生成综合健康分数；Python API 和 CLI 均可覆盖或关闭这些阈值。
 - 扩展静态与验证支持的诊断，包括数值和守卫推理；求解器支持的检查仍受既有显式启用
   与安全门控约束。
 - 在完整 JSON/API 报告中新增 ``ModelInspect.verification`` 执行元数据，使消费者能够区分

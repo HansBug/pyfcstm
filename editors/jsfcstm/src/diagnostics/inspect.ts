@@ -1385,37 +1385,39 @@ function buildActionInfos(machine: StateMachine): ActionInfo[] {
     return out;
 }
 
+function ownerPathForTransition(path: string): string {
+    const separator = path.lastIndexOf('.');
+    return separator >= 0 ? path.slice(0, separator) : path;
+}
+
+function textRangeKey(range: TextRange): string {
+    return [
+        range.start.line,
+        range.start.character,
+        range.end.line,
+        range.end.character,
+    ].join(':');
+}
+
 function buildForcedTransitionInfos(
     machine: StateMachine,
     transitions: TransitionInfo[],
 ): InternalForcedTransitionInfo[] {
     const raw = machine.forcedTransitions as RawFcstmModelForcedTransition[];
     const rangesByIdentity = new Map<string, TextRange[]>();
-    for (const declaration of raw) {
-        const statePath = dottedPath(declaration.statePath ?? declaration.state_path);
-        const identity = `${statePath}\u0000${declaration.originalRaw ?? declaration.original_raw}`;
+    const rangeKeysByIdentity = new Map<string, Set<string>>();
+    for (const transition of transitions) {
+        if (transition.forced_origin === null || transition.__sourceRange === undefined) continue;
+        const identity = `${ownerPathForTransition(transition.from_path)}\u0000${transition.forced_origin}`;
         const ranges = rangesByIdentity.get(identity) ?? [];
-        for (const transition of transitions) {
-            if (transition.forced_origin !== (declaration.originalRaw ?? declaration.original_raw)) continue;
-            const separator = transition.from_path.lastIndexOf('.');
-            const ownerPath = separator >= 0 ? transition.from_path.slice(0, separator) : transition.from_path;
-            if (statePath.length > 0 && ownerPath !== statePath) continue;
-            const range = transition.__sourceRange;
-            if (range === undefined) continue;
-            const key = [
-                range.start.line,
-                range.start.character,
-                range.end.line,
-                range.end.character,
-            ].join(':');
-            if (!ranges.some(item => [
-                item.start.line,
-                item.start.character,
-                item.end.line,
-                item.end.character,
-            ].join(':') === key)) ranges.push(range);
+        const rangeKeys = rangeKeysByIdentity.get(identity) ?? new Set<string>();
+        const rangeKey = textRangeKey(transition.__sourceRange);
+        if (!rangeKeys.has(rangeKey)) {
+            ranges.push(transition.__sourceRange);
+            rangeKeys.add(rangeKey);
         }
         rangesByIdentity.set(identity, ranges);
+        rangeKeysByIdentity.set(identity, rangeKeys);
     }
     const occurrences = new Map<string, number>();
     return raw.map(item => {
@@ -1503,53 +1505,40 @@ function forcedExpansionGroups(
     transitions: TransitionInfo[],
     forcedTransitions: InternalForcedTransitionInfo[],
 ): TransitionInfo[][] {
-    const forcedExpansions = transitions.filter(item => item.is_forced);
+    const buckets = new Map<string, {
+        all: TransitionInfo[];
+        byRange: Map<string, TransitionInfo[]>;
+    }>();
+    for (const transition of transitions) {
+        if (!transition.is_forced || transition.forced_origin === null) continue;
+        const identity = `${ownerPathForTransition(transition.from_path)}\u0000${transition.forced_origin}`;
+        const bucket = buckets.get(identity) ?? {all: [], byRange: new Map<string, TransitionInfo[]>()};
+        bucket.all.push(transition);
+        if (transition.__sourceRange !== undefined) {
+            const rangeKey = textRangeKey(transition.__sourceRange);
+            const rangeGroup = bucket.byRange.get(rangeKey) ?? [];
+            rangeGroup.push(transition);
+            bucket.byRange.set(rangeKey, rangeGroup);
+        }
+        buckets.set(identity, bucket);
+    }
     const groups: TransitionInfo[][] = forcedTransitions.map(() => []);
-    const declarationIndexes = new Map<string, number[]>();
+    const cursors = new Map<string, number>();
     forcedTransitions.forEach((declaration, index) => {
         const identity = `${declaration.state_path}\u0000${declaration.original_raw}`;
-        const indexes = declarationIndexes.get(identity) ?? [];
-        indexes.push(index);
-        declarationIndexes.set(identity, indexes);
-    });
-    for (const [identity, indexes] of declarationIndexes) {
-        const separator = identity.indexOf('\u0000');
-        const statePath = identity.slice(0, separator);
-        const originalRaw = identity.slice(separator + 1);
-        let remaining = forcedExpansions.filter(item =>
-            item.forced_origin === originalRaw &&
-            (
-                statePath.length === 0 ||
-                item.from_path === INIT_MARK ||
-                (item.from_path.includes('.')
-                    ? item.from_path.slice(0, item.from_path.lastIndexOf('.'))
-                    : item.from_path) === statePath
-            ),
-        );
-        for (const index of indexes) {
-            const declarationRange = forcedTransitions[index].__sourceRange;
-            if (declarationRange !== undefined) {
-                const rangeMatches = remaining.filter(item => {
-                    const range = item.__sourceRange;
-                    return range !== undefined &&
-                        range.start.line === declarationRange.start.line &&
-                        range.start.character === declarationRange.start.character &&
-                        range.end.line === declarationRange.end.line &&
-                        range.end.character === declarationRange.end.character;
-                });
-                if (rangeMatches.length > 0) {
-                    groups[index] = rangeMatches;
-                    remaining = remaining.filter(item => !rangeMatches.includes(item));
-                    continue;
-                }
-            }
-            const count = forcedTransitions[index].expansion_count;
-            if (count > 0) {
-                groups[index] = remaining.slice(0, count);
-                remaining = remaining.slice(count);
+        const bucket = buckets.get(identity);
+        if (bucket === undefined) return;
+        if (declaration.__sourceRange !== undefined) {
+            const rangeGroup = bucket.byRange.get(textRangeKey(declaration.__sourceRange));
+            if (rangeGroup !== undefined) {
+                groups[index] = rangeGroup;
+                return;
             }
         }
-    }
+        const cursor = cursors.get(identity) ?? 0;
+        groups[index] = bucket.all.slice(cursor, cursor + declaration.expansion_count);
+        cursors.set(identity, cursor + declaration.expansion_count);
+    });
     return groups;
 }
 

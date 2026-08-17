@@ -111,7 +111,7 @@ class TestEntryInspect:
         assert result.exitcode == 0
         assert "[WARN] FCSTM Inspect Report" in result.stdout
         assert "status: warning" in result.stdout
-        assert "W_DEADLOCK_LEAF" in result.stdout
+        assert "W_LEAF_NO_OUTGOING_TRANSITION" in result.stdout
         assert "-->" in result.stdout
         assert "= source: inspect-static" in result.stdout
         assert "= why:" in result.stdout

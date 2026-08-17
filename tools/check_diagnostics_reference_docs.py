@@ -84,6 +84,21 @@ _OLD_ZH_INFO_REPAIR_PREFIX = (
 )
 
 
+def _documented_registry() -> Mapping[str, CodeSpec]:
+    """Return active codes that need full reference-page coverage.
+
+    Deprecated aliases remain in ``CODE_REGISTRY`` so historical reports can
+    be resolved, but they are catalog-only compatibility spellings rather
+    than newly emitted diagnostics. Their replacement and removal schedule is
+    audited by ``make deprecation_check`` instead of duplicating a full
+    bilingual reference section.
+    """
+    return {
+        code: spec for code, spec in CODE_REGISTRY.items()
+        if not spec.is_deprecated
+    }
+
+
 def _format_optional_values(values: Optional[Sequence[str]]) -> str:
     """Return the marker representation for an optional string sequence.
 
@@ -246,7 +261,7 @@ def _compare_code_sets(
     :return: ``None``.
     :rtype: None
     """
-    expected = set(CODE_REGISTRY)
+    expected = set(_documented_registry())
     actual = set(metadata)
     missing = sorted(expected - actual)
     extra = sorted(actual - expected)
@@ -282,7 +297,7 @@ def _check_metadata_fields(
     :return: ``None``.
     :rtype: None
     """
-    for code, spec in CODE_REGISTRY.items():
+    for code, spec in _documented_registry().items():
         actual = metadata.get(code)
         if actual is None:
             continue
@@ -338,7 +353,7 @@ def _check_refs(
     :return: ``None``.
     :rtype: None
     """
-    for code, spec in CODE_REGISTRY.items():
+    for code, spec in _documented_registry().items():
         actual_fields = refs.get(code, {})
         expected_fields = set(spec.refs_schema)
         actual_names = set(actual_fields)
@@ -395,7 +410,7 @@ def _check_examples(
     :return: ``None``.
     :rtype: None
     """
-    for code in CODE_REGISTRY:
+    for code in _documented_registry():
         markers = list(examples.get(code, ()))
         if len(markers) < 3:
             problems.append(
@@ -444,7 +459,7 @@ def _check_boundaries(
     :return: ``None``.
     :rtype: None
     """
-    expected_codes = set(CODE_REGISTRY)
+    expected_codes = set(_documented_registry())
     actual_codes = set(boundaries)
     missing = sorted(expected_codes - actual_codes)
     extra = sorted(actual_codes - expected_codes)
@@ -462,7 +477,7 @@ def _check_boundaries(
                 codes=", ".join(extra),
             )
         )
-    for code, spec in CODE_REGISTRY.items():
+    for code, spec in _documented_registry().items():
         marker = boundaries.get(code)
         if marker is None:
             continue
@@ -595,7 +610,7 @@ def run_check() -> int:
         return 1
     print(
         "diagnostics reference docs cover {count} codes in {langs}".format(
-            count=len(CODE_REGISTRY),
+            count=len(_documented_registry()),
             langs=", ".join(sorted(_LANG_FILES)),
         )
     )

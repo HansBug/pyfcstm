@@ -40,7 +40,7 @@ import os
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
-from .codes import CODE_REGISTRY
+from .codes import CODE_REGISTRY, canonicalize_diagnostic_code
 from ..utils.validate import ModelDiagnostic, Span
 
 INSPECT_LLM_SCHEMA_VERSION = "pyfcstm.inspect.llm.v1"
@@ -660,20 +660,24 @@ def _recommended_actions_for_diagnostic(
 ) -> Tuple[Mapping[str, Any], ...]:
     """Return repair actions applicable to this diagnostic instance.
 
-    ``W_DEADLOCK_LEAF`` has generic non-root repair actions in the registry,
+    ``W_LEAF_NO_OUTGOING_TRANSITION`` has generic non-root repair actions in the registry,
     but a root leaf has no parent boundary to exit.  Keep those actions out of
     all presentation formats for the root case so structured consumers cannot
     mistake them for applicable fixes.
     """
     if spec is None or spec.for_llm is None:
         return ()
-    if diagnostic.code == "W_DEADLOCK_LEAF" and diagnostic.refs.get("parent_path") is None:
+    if (
+        canonicalize_diagnostic_code(diagnostic.code)
+        == "W_LEAF_NO_OUTGOING_TRANSITION"
+        and diagnostic.refs.get("parent_path") is None
+    ):
         return ()
     return spec.for_llm.recommended_actions
 
 
 def _repair_guidance_for_code(code: str) -> List[str]:
-    return list(_REPAIR_NOTES_BY_CODE.get(code, ()))
+    return list(_REPAIR_NOTES_BY_CODE.get(canonicalize_diagnostic_code(code), ()))
 
 
 def _source_excerpt(

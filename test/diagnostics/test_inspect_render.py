@@ -246,7 +246,7 @@ class TestInspectRender:
         assert "stay-active leaf" in nonterminating.summary
         assert "self-loop" in nonterminating.summary
 
-        deadlock = CODE_REGISTRY["W_DEADLOCK_LEAF"].for_llm
+        deadlock = CODE_REGISTRY["W_LEAF_NO_OUTGOING_TRANSITION"].for_llm
         assert deadlock is not None
         assert "non-root leaf" in deadlock.summary
         assert "synthetic root-exit" in deadlock.summary
@@ -259,12 +259,34 @@ class TestInspectRender:
         deadlock = next(
             item
             for item in payload["diagnostics"]
-            if item["code"] == "W_DEADLOCK_LEAF"
+            if item["code"] == "W_LEAF_NO_OUTGOING_TRANSITION"
         )
 
         assert "synthetic root-exit" in deadlock["summary"]
         assert deadlock["recommended_actions"] == []
         assert "synthetic root-exit behavior" in deadlock["do_not"][0]
+
+    def test_historical_leaf_code_still_renders_from_registry_alias(self):
+        from pyfcstm.utils.validate import ModelDiagnostic
+
+        legacy = ModelDiagnostic(
+            code="W_DEADLOCK_LEAF",
+            severity="warning",
+            message="Historical leaf diagnostic.",
+            span=None,
+            refs={"state_path": "Root.Idle", "reason": "no_outgoing_transition"},
+        )
+        payload = json.loads(
+            render_inspect_llm_json(
+                replace(_report(), diagnostics=(legacy,)),
+                SOURCE,
+            )
+        )
+
+        diagnostic = payload["diagnostics"][0]
+        assert diagnostic["code"] == "W_DEADLOCK_LEAF"
+        assert "non-root leaf" in diagnostic["summary"]
+        assert diagnostic["source"] == "inspect-static"
 
     def test_human_renderer_reports_unsupported_provider(self):
         report = _report()
@@ -302,7 +324,7 @@ class TestInspectRender:
 
         report = _report()
         diagnostic = ModelDiagnostic(
-            code="W_DEADLOCK_LEAF",
+            code="W_LEAF_NO_OUTGOING_TRANSITION",
             severity="warning",
             message="Synthetic diagnostic without span.",
             span=None,
@@ -329,7 +351,7 @@ class TestInspectRender:
 
         text = render_inspect_human(report, SOURCE, input_path="case.fcstm")
 
-        assert "[WARN] W_DEADLOCK_LEAF" in text
+        assert "[WARN] W_LEAF_NO_OUTGOING_TRANSITION" in text
         assert "-->" not in text
         assert "= source: inspect-static" in text
         assert "= why:" in text
@@ -378,7 +400,7 @@ class TestInspectRender:
         assert diagnostic["provenance"]["kind"] == diagnostic["source"]
         assert "repair_guidance" in diagnostic
         deadlock = next(
-            item for item in payload["diagnostics"] if item["code"] == "W_DEADLOCK_LEAF"
+            item for item in payload["diagnostics"] if item["code"] == "W_LEAF_NO_OUTGOING_TRANSITION"
         )
         assert "remain active" in deadlock["summary"]
         assert "during actions" in deadlock["summary"]

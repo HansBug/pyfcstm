@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 
 import {packageModule} from './support';
 
-const {loadCodesRegistry, loadInspectModelSchema} = packageModule;
+const {
+    canonicalizeDiagnosticCode,
+    loadCodesRegistry,
+    loadInspectModelSchema,
+    resolveDiagnosticCode,
+} = packageModule;
 
 const numericCodes = [
     'W_NUMERIC_LITERAL_OUT_OF_TARGET_RANGE',
@@ -51,6 +56,26 @@ describe('diagnostics resources (PR-A)', () => {
             const registry = loadCodesRegistry();
             const errorCodes = Object.keys(registry).filter(k => k.startsWith('E_'));
             assert.ok(errorCodes.length >= 14, `expected >= 14 E_* codes, got ${errorCodes.length}`);
+        });
+
+        it('keeps historical diagnostic aliases resolvable without emitting them', () => {
+            const registry = loadCodesRegistry();
+            const legacy = resolveDiagnosticCode('W_DEADLOCK_LEAF');
+            assert.ok(legacy);
+            assert.equal(legacy?.emit_tier, 'catalog_only');
+            assert.equal(legacy?.replaced_by, 'W_LEAF_NO_OUTGOING_TRANSITION');
+            assert.equal(legacy?.deprecated_in, '0.7.0');
+            assert.equal(legacy?.removed_in, '1.0.0');
+            assert.equal(canonicalizeDiagnosticCode('W_DEADLOCK_LEAF'), 'W_LEAF_NO_OUTGOING_TRANSITION');
+            assert.equal(canonicalizeDiagnosticCode('W_LEAF_NO_OUTGOING_TRANSITION'), 'W_LEAF_NO_OUTGOING_TRANSITION');
+            assert.ok(!registry.W_DEADLOCK_LEAF || registry.W_DEADLOCK_LEAF.emit_tier === 'catalog_only');
+            const refs = packageModule.refsWithSuggestedFix('W_DEADLOCK_LEAF', {
+                state_path: 'Root.Idle',
+                parent_path: 'Root',
+                reason: 'no_outgoing_transition',
+            });
+            const fix = refs.suggested_fix as {target?: string} | undefined;
+            assert.equal(fix?.target, 'deadlock_leaf_exit_transition');
         });
 
         it('every entry declares severity and description', () => {

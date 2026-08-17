@@ -20,6 +20,11 @@
 #                        by unit tests and by downstream tooling to
 #                        validate their dispatch paths).
 #
+# Deprecated compatibility aliases use only `alias_of`, `deprecated_in`, and
+# the optional `removed_in`. They remain queryable in the registry but must
+# not be emitted by a current analyzer. Run `make deprecation_check` to audit
+# all versioned deprecation metadata in production YAML and Python code.
+#
 # Allowed `refs.*.type` tokens (must mirror `_ALLOWED_REF_TYPES` in
 # codes.py — that tuple is the single source of truth, this comment block
 # is documentation; a test asserts the two stay aligned):
@@ -1965,7 +1970,7 @@ W_UNUSED_EVENT:
         A -> B :: SomethingElse;
     }
 
-W_DEADLOCK_LEAF:
+W_LEAF_NO_OUTGOING_TRANSITION:
   severity: warning
   span_object: state_identifier
   capability: pure_static
@@ -2021,6 +2026,11 @@ W_DEADLOCK_LEAF:
         state A;
         [*] -> A;
     }
+
+W_DEADLOCK_LEAF:
+  alias_of: W_LEAF_NO_OUTGOING_TRANSITION
+  deprecated_in: '0.7.0'
+  removed_in: '1.0.0'
 
 W_INITIAL_UNCONDITIONAL_MISSING:
   severity: warning

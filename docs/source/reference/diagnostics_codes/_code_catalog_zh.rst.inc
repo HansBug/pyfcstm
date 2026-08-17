@@ -1,7 +1,7 @@
 完整诊断码目录
 ----------------------------------------
 
-本目录以 ``pyfcstm.diagnostics.codes.CODE_REGISTRY`` 为准。源码中的 ``diagnostics-meta`` 和 ``diagnostics-example`` 标记会由 ``python tools/check_diagnostics_reference_docs.py --check`` 检查。
+本目录覆盖 ``pyfcstm.diagnostics.codes.CODE_REGISTRY`` 中的活动条目。弃用别名仍可在注册表中查询，并在参考页中说明。源码中的 ``diagnostics-meta`` 和 ``diagnostics-example`` 标记会由 ``python tools/check_diagnostics_reference_docs.py --check`` 检查。
 
 .. list-table:: 注册表摘要
    :header-rows: 1
@@ -192,7 +192,7 @@
      - ``static_pipeline``
      - ``pure_static``
      - ``event_declaration``
-   * - :ref:`W_DEADLOCK_LEAF <diag-code-w-deadlock-leaf-zh>`
+   * - :ref:`W_LEAF_NO_OUTGOING_TRANSITION <diag-code-w-leaf-no-outgoing-transition-zh>`
      - ``warning``
      - ``static_pipeline``
      - ``pure_static``
@@ -4881,6 +4881,7 @@ W_UNREACHABLE_STATE
 **示例 3**\ （``boundary_only``）——针对 ``W_UNREACHABLE_STATE`` 的反例边界。
 不要这样处理：针对“从根入口路径出发，无法通过普通或强制转换到达某个状态。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
+<<<<<<< HEAD
 .. _diag-code-w-unreachable-transition-zh:
 
 W_UNREACHABLE_TRANSITION
@@ -4987,19 +4988,19 @@ W_UNREACHABLE_TRANSITION
 
 对于 forced declaration，不要仅因为某个 generated expansion 不可达就删除整个声明；应先检查其他 expansion。
 
-.. _diag-code-w-deadlock-leaf-zh:
+.. _diag-code-w-leaf-no-outgoing-transition-zh:
 
-W_DEADLOCK_LEAF
+W_LEAF_NO_OUTGOING_TRANSITION
 ^^^^^^^^^^^^^^^
 
-.. diagnostics-meta W_DEADLOCK_LEAF severity=warning emit_tier=static_pipeline capability=pure_static span_object=state_identifier
-.. diagnostics-ref W_DEADLOCK_LEAF state_path type=str required=true enum=- item_enum=- exact_values=-
-.. diagnostics-ref W_DEADLOCK_LEAF parent_path type=str required=false enum=- item_enum=- exact_values=-
-.. diagnostics-ref W_DEADLOCK_LEAF reason type=str required=true enum=no_outgoing_transition item_enum=- exact_values=-
-.. diagnostics-ref W_DEADLOCK_LEAF suggested_fix type=dict required=false enum=- item_enum=- exact_values=-
+.. diagnostics-meta W_LEAF_NO_OUTGOING_TRANSITION severity=warning emit_tier=static_pipeline capability=pure_static span_object=state_identifier
+.. diagnostics-ref W_LEAF_NO_OUTGOING_TRANSITION state_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_LEAF_NO_OUTGOING_TRANSITION parent_path type=str required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_LEAF_NO_OUTGOING_TRANSITION reason type=str required=true enum=no_outgoing_transition item_enum=- exact_values=-
+.. diagnostics-ref W_LEAF_NO_OUTGOING_TRANSITION suggested_fix type=dict required=false enum=- item_enum=- exact_values=-
 
 
-.. diagnostics-boundary W_DEADLOCK_LEAF kind=inspect_json
+.. diagnostics-boundary W_LEAF_NO_OUTGOING_TRANSITION kind=inspect_json
 
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``state_identifier``。
 
@@ -5037,7 +5038,7 @@ W_DEADLOCK_LEAF
      - 否
      - 字段含义：可选的结构化快速修复载荷。
 
-.. diagnostics-example W_DEADLOCK_LEAF 1 repro_cli
+.. diagnostics-example W_LEAF_NO_OUTGOING_TRANSITION 1 repro_cli
 
 **示例 1**\ （``repro_cli``）——复现边界。
 这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
@@ -5049,15 +5050,15 @@ W_DEADLOCK_LEAF
        [*] -> A;
    }
 
-.. diagnostics-example W_DEADLOCK_LEAF 2 boundary_only
+.. diagnostics-example W_LEAF_NO_OUTGOING_TRANSITION 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——针对 ``W_DEADLOCK_LEAF`` 的修复方向。
+**示例 2**\ （``boundary_only``）——针对 ``W_LEAF_NO_OUTGOING_TRANSITION`` 的修复方向。
 典型修复是对 ``state`` 执行 ``add_transition``：仅当叶状态确实需要离开时，
 结合上方 ``refs`` 定位具体对象，做最小语义保持修改；根叶状态已经遵循合成的根退出行为。如果无法确认意图，先补充模型上下文或保留诊断。
 
-.. diagnostics-example W_DEADLOCK_LEAF 3 boundary_only
+.. diagnostics-example W_LEAF_NO_OUTGOING_TRANSITION 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——针对 ``W_DEADLOCK_LEAF`` 的反例边界。
+**示例 3**\ （``boundary_only``）——针对 ``W_LEAF_NO_OUTGOING_TRANSITION`` 的反例边界。
 不要这样处理：不要只为消除诊断而添加 self-loop；它会触发退出和重新进入，
 与非根叶状态的正常驻停语义不同；根叶状态已经遵循合成的根退出行为。必须先确认真实控制意图。
 

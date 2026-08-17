@@ -53,6 +53,15 @@
    * - ``catalog_only``
      - 只保留兼容契约；当前正常 pyfcstm 路径不应发射。
 
+已弃用的兼容别名
+----------------
+
+历史名称 ``W_DEADLOCK_LEAF`` 仍保留在 ``CODE_REGISTRY`` 中，作为
+``W_LEAF_NO_OUTGOING_TRANSITION`` 的弃用别名。新的分析器只发射规范名称；
+读取历史 JSON 或 LLM 报告的消费者可以通过 ``resolve_diagnostic_code`` 和
+``canonicalize_diagnostic_code`` 继续识别旧名称。该别名计划在 ``1.0.0``
+移除，计划由 ``make deprecation_check`` 自动检查。
+
 示例类型
 --------
 

@@ -120,7 +120,8 @@ class ModelDiagnostic:
     read-only.
 
     :param code: Stable diagnostic code, e.g. ``'E_UNDEFINED_VAR'``,
-        ``'W_DEADLOCK_LEAF'``. Always treated as the public contract.
+        ``'W_LEAF_NO_OUTGOING_TRANSITION'``. Always treated as the public
+        contract. Historical diagnostic spellings remain registry aliases.
     :type code: str
     :param severity: Either ``'error'``, ``'warning'``, or ``'info'``.
     :type severity: str

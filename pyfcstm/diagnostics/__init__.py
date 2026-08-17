@@ -30,7 +30,9 @@ from .codes import (
     CodesSchemaError,
     ForLlmSpec,
     SuggestedFixSpec,
+    canonicalize_diagnostic_code,
     load_codes,
+    resolve_diagnostic_code,
 )
 from .inspect import (
     ActionInfo,
@@ -65,6 +67,7 @@ __all__ = [
     "CodeFieldSpec",
     "CodeSpec",
     "CodesSchemaError",
+    "canonicalize_diagnostic_code",
     "DEFAULT_DEEP_HIERARCHY_THRESHOLD",
     "DEFAULT_LARGE_COMPOSITE_THRESHOLD",
     "DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD",
@@ -84,6 +87,7 @@ __all__ = [
     "VariableInfo",
     "inspect_model",
     "load_codes",
+    "resolve_diagnostic_code",
     "refs_with_suggested_fix",
     "render_suggested_fix",
 ]

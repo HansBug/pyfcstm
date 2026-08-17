@@ -1345,7 +1345,7 @@ state Root {
                     refs: {from_path: 'Root.Active', to_path: 'Root.Idle', transition_span: null, transition_index: 5},
                 },
                 {
-                    code: 'W_DEADLOCK_LEAF',
+                    code: 'W_LEAF_NO_OUTGOING_TRANSITION',
                     severity: 'warning',
                     refs: {
                         state_path: 'Root.LeafForced',
@@ -1354,7 +1354,7 @@ state Root {
                     },
                 },
                 {
-                    code: 'W_DEADLOCK_LEAF',
+                    code: 'W_LEAF_NO_OUTGOING_TRANSITION',
                     severity: 'warning',
                     refs: {
                         state_path: 'Root.Orphan',

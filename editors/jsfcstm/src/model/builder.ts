@@ -263,15 +263,17 @@ function comboTermRef(
     term: FcstmAstComboTriggerTerm,
     termIndex: number,
     role: 'prefix' | 'terminal',
+    sourceStatePath?: string[],
+    targetStatePath?: string[],
 ): Record<string, unknown> {
     const sourceKind = transition.sourceKind === 'init' ? 'init' : 'state';
     const sourcePath = sourceKind === 'init'
         ? null
-        : statePathName([...ownerPath, transition.sourceStateName ?? '']);
+        : sourceStatePath ? statePathName(sourceStatePath) : null;
     const targetKind = transition.targetKind === 'exit' ? 'exit' : 'state';
     const targetPath = targetKind === 'exit'
         ? '[*]'
-        : statePathName([...ownerPath, transition.targetStateName ?? '']);
+        : targetStatePath ? statePathName(targetStatePath) : null;
     return {
         origin_id: originId,
         term_index: termIndex,
@@ -299,6 +301,7 @@ interface ComboAlternative {
     transition: FcstmAstTransition;
     terms: FcstmAstComboTriggerTerm[];
     originId: string;
+    declaredOwnerPath: string[];
     declarationIndex: number;
     semanticDuplicateDiscriminator: number | null;
 }
@@ -705,6 +708,7 @@ class StateMachineModelBuilder {
                     transition: candidate,
                     terms: candidate.comboTrigger.terms,
                     originId: comboOriginId(currentState.path, candidate) + (duplicateIndex > 0 ? `#dup${duplicateIndex}` : ''),
+                    declaredOwnerPath: [...currentState.path],
                     declarationIndex: runIndex,
                     semanticDuplicateDiscriminator: duplicateIndex > 0 ? duplicateIndex : null,
                 });
@@ -1245,11 +1249,23 @@ class StateMachineModelBuilder {
             doc: aggregateModelDocumentation(alternatives.map(alternative => alternative.transition.doc)),
             comboOriginRefs: alternatives.map(alternative => comboTermRef(
                 alternative.originId,
-                currentState.path,
+                alternative.declaredOwnerPath,
                 alternative.transition,
                 alternative.terms[termIndex],
                 termIndex,
                 role,
+                alternative.transition.sourceKind === 'init'
+                    ? undefined
+                    : this.resolveStateReference(
+                        alternative.declaredOwnerPath,
+                        alternative.transition.sourceStateName ?? '',
+                    )?.path,
+                alternative.transition.targetKind === 'exit'
+                    ? undefined
+                    : this.resolveStateReference(
+                        alternative.declaredOwnerPath,
+                        alternative.transition.targetStateName ?? '',
+                    )?.path,
             )),
             comboProjectionKey: projectionKey,
             comboProjectionOrderKey: projectionOrderKey,

@@ -743,8 +743,8 @@ function buildTransitionInfos(machine: StateMachine): TransitionInfo[] {
                 .map(comboOriginRefInfo)
                 .filter((item): item is ComboOriginRefInfo => item !== null);
             const info: TransitionInfo = {
-                from_path: transitionEndpoint(state.path, t.fromState, true),
-                to_path: transitionEndpoint(state.path, t.toState, false),
+                from_path: modelTransitionEndpoint(state, t, 'source'),
+                to_path: modelTransitionEndpoint(state, t, 'target'),
                 event: t.event ? t.event.pathName : null,
                 event_scope: t.event ? (t.triggerScope ?? null) : null,
                 guard: exprText(t.guard),
@@ -781,6 +781,29 @@ function transitionEndpoint(
     if (marker === 'INIT_STATE') return INIT_MARK;
     if (marker === 'EXIT_STATE') return EXIT_MARK;
     return resolveSiblingPath(parentPath, marker);
+}
+
+function modelTransitionEndpoint(
+    state: StateMachine['allStates'][number],
+    transition: StateMachine['allTransitions'][number],
+    endpoint: 'source' | 'target',
+): string {
+    if (endpoint === 'source') {
+        if (transition.sourceKind === 'init' || transition.fromState === 'INIT_STATE') {
+            return INIT_MARK;
+        }
+        const resolvedPath = transition.sourceStatePath ?? transition.source_state_path;
+        return resolvedPath
+            ? dottedPath(resolvedPath)
+            : transitionEndpoint(state.path, transition.fromState, true);
+    }
+    if (transition.targetKind === 'exit' || transition.toState === 'EXIT_STATE') {
+        return EXIT_MARK;
+    }
+    const resolvedPath = transition.targetStatePath ?? transition.target_state_path;
+    return resolvedPath
+        ? dottedPath(resolvedPath)
+        : transitionEndpoint(state.path, transition.toState, false);
 }
 
 function buildVariableInfos(machine: StateMachine, states: StateInfo[]): VariableInfo[] {
@@ -823,8 +846,8 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
             }
         }
         for (const t of state.transitions) {
-            const fromPath = transitionEndpoint(state.path, t.fromState, true);
-            const toPath = transitionEndpoint(state.path, t.toState, false);
+            const fromPath = modelTransitionEndpoint(state, t, 'source');
+            const toPath = modelTransitionEndpoint(state, t, 'target');
             if (t.guard) {
                 for (const v of walkExprVariables(t.guard)) {
                     if (v in readGuards) readGuards[v].push([fromPath, toPath]);
@@ -1209,8 +1232,8 @@ function buildEventInfos(machine: StateMachine): EventInfo[] {
         for (const t of state.transitions) {
             if (!t.event) continue;
             const qn = t.event.pathName;
-            const fromPath = transitionEndpoint(state.path, t.fromState, true);
-            const toPath = transitionEndpoint(state.path, t.toState, false);
+            const fromPath = modelTransitionEndpoint(state, t, 'source');
+            const toPath = modelTransitionEndpoint(state, t, 'target');
             if (!users[qn]) users[qn] = [];
             users[qn].push([fromPath, toPath]);
             scopes[qn] = t.triggerScope ?? 'absolute';

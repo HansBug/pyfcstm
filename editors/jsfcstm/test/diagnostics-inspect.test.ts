@@ -847,6 +847,75 @@ state Root {
             });
         });
 
+        it('uses resolved paths for ancestor and global transition endpoints', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Shared;
+    state Group {
+        state Leaf;
+        state Orphan;
+        state Done;
+        [*] -> Leaf;
+        Shared -> Done;
+        Orphan -> Root;
+    }
+    [*] -> Group;
+}
+`));
+            const diagnostics = report.diagnostics.filter(d => d.code === 'W_UNREACHABLE_TRANSITION');
+            assert.equal(diagnostics.length, 2);
+            assert.deepEqual(
+                diagnostics.map(d => [d.refs.from_path, d.refs.to_path]),
+                [
+                    ['Root.Shared', 'Root.Group.Done'],
+                    ['Root.Group.Orphan', 'Root'],
+                ],
+            );
+        });
+
+        it('uses resolved paths for combo origin endpoints', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Shared;
+    state Group {
+        state Leaf;
+        state Orphan;
+        state Done;
+        [*] -> Leaf;
+        Shared -> Done :: E1 + E2;
+        Orphan -> Root :: E3 + E4;
+    }
+    [*] -> Group;
+}
+`));
+            const diagnostics = report.diagnostics.filter(d => d.code === 'W_UNREACHABLE_TRANSITION');
+            assert.equal(diagnostics.length, 2);
+            assert.deepEqual(
+                diagnostics.map(d => ({
+                    from: d.refs.from_path,
+                    to: d.refs.to_path,
+                    origin: d.refs.combo_origin_ids,
+                })),
+                [
+                    {
+                        from: 'Root.Shared',
+                        to: 'Root.Group.Done',
+                        origin: ['Root.Group:Shared->Done::: E1 + E2'],
+                    },
+                    {
+                        from: 'Root.Group.Orphan',
+                        to: 'Root',
+                        origin: ['Root.Group:Orphan->Root::: E3 + E4'],
+                    },
+                ],
+            );
+            const comboRefs = report.combo_transitions
+                .flatMap(transition => transition.combo_origin_refs)
+                .filter(ref => ref.origin_id.endsWith('E1 + E2') || ref.origin_id.endsWith('E3 + E4'));
+            assert.ok(comboRefs.some(ref => ref.source_path === 'Root.Shared' && ref.target_path === 'Root.Group.Done'));
+            assert.ok(comboRefs.some(ref => ref.source_path === 'Root.Group.Orphan' && ref.target_path === 'Root'));
+        });
+
         it('attributes unreachable initial transitions to their composite owner', async () => {
             const report = inspectModel(await buildMachine(`
 state Root {

@@ -579,6 +579,34 @@ describe('diagnostics transition body ranges', () => {
         );
     });
 
+    it('publishes resolved ancestor and global endpoints in document diagnostics', async () => {
+        const filePath = '/tmp/transition-resolved-endpoints.fcstm';
+        const text = [
+            'state Root {',
+            '    state Shared;',
+            '    state Group {',
+            '        state Leaf;',
+            '        state Done;',
+            '        [*] -> Leaf;',
+            '        Shared -> Done :: E1 + E2;',
+            '    }',
+            '    [*] -> Group;',
+            '}',
+        ].join('\n');
+        const publications = await packageModule.collectDocumentDiagnosticsByUri(
+            createDocument(text, filePath),
+        );
+        const diagnostics = publications.get(pathToFileURL(filePath).toString())
+            ?.filter(item => item.code === 'W_UNREACHABLE_TRANSITION') || [];
+
+        assert.equal(diagnostics.length, 1, JSON.stringify(publications));
+        assert.equal(diagnostics[0].data?.from_path, 'Root.Shared');
+        assert.equal(diagnostics[0].data?.to_path, 'Root.Group.Done');
+        assert.deepEqual(diagnostics[0].data?.combo_origin_ids, [
+            'Root.Group:Shared->Done::: E1 + E2',
+        ]);
+    });
+
     it('does not return duplicate root-authored topology findings from the collector', async () => {
         const dir = trackTempDir('jsfcstm-assembled-root-diagnostic-dedupe-');
         const childFile = path.join(dir, 'child.fcstm');

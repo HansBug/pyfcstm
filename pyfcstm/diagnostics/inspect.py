@@ -1852,9 +1852,9 @@ def _forced_expansion_groups(
     """Group every concrete forced edge under each authored declaration.
 
     A wildcard forced declaration can expand to several source states.  The
-    raw origin text is shared by duplicate declarations, so the declaration
-    index remains the only identity available on this inspect surface; each
-    duplicate therefore receives the same matching expansion set.
+    Raw origin text can be shared by duplicate declarations.  Prefer the
+    declaration span when available and otherwise partition matching edges
+    by each declaration's recorded expansion count.
     """
     forced_expansions = tuple(item for item in transitions if item.is_forced)
     groups: List[Tuple[TransitionInfo, ...]] = [() for _ in forced_transitions]

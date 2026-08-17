@@ -53,7 +53,7 @@ TransitionInfo
 -----------------------------------------------------
 
 .. autoclass:: TransitionInfo
-    :members: from_path,to_path,event,event_scope,guard,effect,effect_self_assigns,is_forced,forced_origin,transition_index,source_path,span,effect_spans,effect_self_assign_spans,combo_origin_refs,combo_projection_key,combo_projection_order_key,combo_reuse_group_id,combo_priority_run_identity,combo_priority_run_index
+    :members: from_path,to_path,event,event_scope,guard,effect,effect_self_assigns,is_forced,forced_origin,transition_index,span,effect_spans,effect_self_assign_spans,combo_origin_refs,combo_projection_key,combo_projection_order_key,combo_reuse_group_id,combo_priority_run_identity,combo_priority_run_index,source_path
 
 
 ComboOriginRefInfo

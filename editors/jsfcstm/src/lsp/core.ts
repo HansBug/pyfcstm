@@ -50,6 +50,7 @@ import {
     resolveHover,
 } from '../editor';
 import type {FcstmFormatOptions} from '../editor/formatter';
+import type {FcstmDiagnosticPublications} from '../editor/diagnostics';
 import type {TextDocumentLike} from '../utils/text';
 import {getWorkspaceGraph} from '../workspace';
 import {
@@ -256,6 +257,7 @@ function isAssembledMountDiagnostic(diagnostic: Diagnostic): boolean {
 export class FcstmLanguageServerCore {
     private readonly documents = new Map<string, TextDocument>();
     private readonly diagnosticContributions = new Map<string, Map<string, Diagnostic[]>>();
+    private readonly diagnosticAuthorities = new Map<string, ReadonlySet<string>>();
     private readonly diagnosticGenerations = new Map<string, number>();
     private readonly diagnosticsTimers = new Map<string, ManagedTimer>();
     private readonly workspaceFolders = new Map<string, WorkspaceFolder>();
@@ -388,7 +390,10 @@ export class FcstmLanguageServerCore {
         this.documents.delete(uri);
         const previous = this.diagnosticContributions.get(uri);
         this.diagnosticContributions.delete(uri);
+        const previousAuthorities = this.diagnosticAuthorities.get(uri);
+        this.diagnosticAuthorities.delete(uri);
         const targets = new Set(previous?.keys() || []);
+        for (const target of previousAuthorities || []) targets.add(target);
         if (targets.size === 0) targets.add(uri);
         await this.publishDiagnosticTargets(targets);
         await this.scheduleAffectedDiagnostics(uri);
@@ -804,6 +809,7 @@ export class FcstmLanguageServerCore {
         }
         this.documents.clear();
         this.diagnosticContributions.clear();
+        this.diagnosticAuthorities.clear();
         this.diagnosticGenerations.clear();
         this.workspaceFolders.clear();
     }
@@ -931,11 +937,24 @@ export class FcstmLanguageServerCore {
             next.set(targetUri, diagnostics.map(item => toLspDiagnostic(item)));
         }
         const previous = this.diagnosticContributions.get(uri);
+        const previousAuthorities = this.diagnosticAuthorities.get(uri);
+        const nextAuthorities = new Set(
+            (publications as FcstmDiagnosticPublications).authoritativeTargets || [],
+        );
+        const existingTargets = new Set(
+            [...this.diagnosticContributions.values()]
+                .flatMap(contribution => [...contribution.keys()]),
+        );
         const targets = new Set([
             ...(previous?.keys() || []),
             ...next.keys(),
+            ...(previousAuthorities || []),
         ]);
+        for (const target of nextAuthorities) {
+            if (existingTargets.has(target)) targets.add(target);
+        }
         this.diagnosticContributions.set(uri, next);
+        this.diagnosticAuthorities.set(uri, nextAuthorities);
         await this.publishDiagnosticTargets(targets);
     }
 
@@ -943,24 +962,35 @@ export class FcstmLanguageServerCore {
         for (const targetUri of targets) {
             const diagnostics: Diagnostic[] = [];
             const seen = new Set<string>();
-            const contributions = [...this.diagnosticContributions.values()]
-                .flatMap(contribution => contribution.get(targetUri) || []);
+            const contributions = [...this.diagnosticContributions.entries()]
+                .flatMap(([sourceUri, contribution]) => (contribution.get(targetUri) || [])
+                    .map(diagnostic => ({sourceUri, diagnostic})));
+            const authoritativeSources = new Set(
+                [...this.diagnosticAuthorities.entries()]
+                    .filter(([, authoritativeTargets]) => authoritativeTargets.has(targetUri))
+                    .map(([sourceUri]) => sourceUri),
+            );
             const assembledAuthoredKeys = new Set(
                 contributions
+                    .map(item => item.diagnostic)
                     .filter(isAssembledMountDiagnostic)
                     .map(unreachableTransitionAuthoredKey)
                     .filter((key): key is string => key !== null),
             );
-            for (const diagnostic of contributions) {
+            for (const {sourceUri, diagnostic} of contributions) {
                 const authoredKey = unreachableTransitionAuthoredKey(diagnostic);
                 if (
                     authoredKey !== null
                     && !isAssembledMountDiagnostic(diagnostic)
-                    && assembledAuthoredKeys.has(authoredKey)
+                    && (
+                        assembledAuthoredKeys.has(authoredKey)
+                        || [...authoritativeSources].some(authoritySource => authoritySource !== sourceUri)
+                    )
                 ) {
-                    // An assembled host result is authoritative for an
-                    // imported transition when it is available. Keep the
-                    // standalone child result only when no mount explains it.
+                    // An assembled host result is authoritative for every
+                    // imported transition in its target set, even when that
+                    // result contains no positive warning. Keep a standalone
+                    // child result only when no other source owns the target.
                     continue;
                 }
                 const key = diagnosticContributionKey(diagnostic);

@@ -559,6 +559,72 @@ describe('jsfcstm lsp core', () => {
         core.dispose();
     });
 
+    it('suppresses standalone child topology warnings when assembled authority is empty', async () => {
+        const dir = trackTempDir('jsfcstm-lsp-empty-assembled-authority-');
+        const childFile = path.join(dir, 'child.fcstm');
+        const hostFile = path.join(dir, 'host.fcstm');
+        const childUri = toUri(childFile);
+        const hostUri = toUri(hostFile);
+        const warning: packageModule.FcstmDiagnostic = {
+            range: packageModule.createRange(0, 0, 0, 1),
+            message: 'standalone topology warning',
+            severity: 'warning',
+            source: 'fcstm',
+            code: 'W_UNREACHABLE_TRANSITION',
+            data: {
+                reason: 'source_unreachable',
+                verification_scope: 'topological_only',
+                source_path: childFile,
+                from_path: 'Child.Orphan',
+                to_path: 'Child.Done',
+            },
+        };
+        let hostAuthority = true;
+        const collector = (async (_document: unknown, rootUri: string) => {
+            if (rootUri === hostUri) {
+                const result = new Map<string, packageModule.FcstmDiagnostic[]>([
+                    [hostUri, []],
+                ]) as packageModule.FcstmDiagnosticPublications;
+                result.authoritativeTargets = hostAuthority
+                    ? new Set([childUri])
+                    : new Set();
+                return result;
+            }
+            return new Map<string, packageModule.FcstmDiagnostic[]>([
+                [childUri, [warning]],
+            ]) as packageModule.FcstmDiagnosticPublications;
+        }) as typeof packageModule.collectDocumentDiagnosticsByUri;
+        const publications: packageModule.FcstmPublishedDiagnostics[] = [];
+        const scheduler = new TestScheduler();
+        const core = new packageModule.FcstmLanguageServerCore({
+            scheduler,
+            collectDocumentDiagnostics: collector,
+            onDiagnostics(publication) {
+                publications.push(publication);
+            },
+        });
+
+        await core.openTextDocument(makeTextDocumentItem(hostFile, 'state Root;'));
+        await core.openTextDocument(makeTextDocumentItem(childFile, 'state Child;'));
+        const authoritativeChildPublication = [...publications]
+            .reverse()
+            .find(item => item.uri === childUri);
+        assert.ok(authoritativeChildPublication, JSON.stringify(publications));
+        assert.deepEqual(authoritativeChildPublication.diagnostics, []);
+
+        hostAuthority = false;
+        await core.changeTextDocument(hostUri, 2, [{text: 'state Root;'}]);
+        await scheduler.flushAll();
+        const standaloneChildPublication = [...publications]
+            .reverse()
+            .find(item => item.uri === childUri);
+        assert.ok(standaloneChildPublication, JSON.stringify(publications));
+        assert.equal(standaloneChildPublication.diagnostics.length, 1);
+        assert.equal(standaloneChildPublication.diagnostics[0]?.code, 'W_UNREACHABLE_TRANSITION');
+
+        core.dispose();
+    });
+
     it('uses the cached reverse import index before debounced revalidation', async () => {
         const dir = trackTempDir('jsfcstm-lsp-import-index-');
         const childFile = path.join(dir, 'child.fcstm');

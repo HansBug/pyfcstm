@@ -25,6 +25,13 @@ export const SUPPRESSED_FROM_INSPECT_SURFACE = new Set([
     'W_UNUSED_EVENT',
 ]);
 
+// The map remains the publication shape. This optional metadata lets the LSP
+// distinguish an assembled topology result with no findings from a collector
+// that did not evaluate an imported target.
+export type FcstmDiagnosticPublications = Map<string, FcstmDiagnostic[]> & {
+    authoritativeTargets?: ReadonlySet<string>;
+};
+
 function canonicalDiagnosticData(value: unknown): unknown {
     if (Array.isArray(value)) {
         return value.map(item => canonicalDiagnosticData(item));
@@ -470,7 +477,7 @@ export function shouldSuppressParseRecoveryDiagnostic(
 export async function collectDocumentDiagnosticsByUri(
     document: TextDocumentLike,
     rootUri = documentUri(document),
-): Promise<Map<string, FcstmDiagnostic[]>> {
+): Promise<FcstmDiagnosticPublications> {
     const parseResult = await getParser().parse(document.getText());
     const parseDiagnostics = parseResult.errors.map(error => convertParseErrorToDiagnostic(error, document));
     const diagnostics = [...parseDiagnostics];
@@ -499,7 +506,11 @@ export async function collectDocumentDiagnosticsByUri(
         }
     }
 
-    const publications = new Map<string, FcstmDiagnostic[]>();
+    const authoritativeTargets = new Set<string>();
+    const publications = Object.assign(
+        new Map<string, FcstmDiagnostic[]>(),
+        {authoritativeTargets},
+    ) as FcstmDiagnosticPublications;
     publications.set(
         rootUri,
         diagnostics.filter(diagnostic => !shouldSuppressParseRecoveryDiagnostic(diagnostic, parseDiagnostics)),
@@ -519,6 +530,11 @@ export async function collectDocumentDiagnosticsByUri(
             const authoredRootName = authoredNode.semantic.summary.rootStateName
                 || authoredNode.ast?.rootState?.name;
             if (!authoredRootName) continue;
+            const isRootFile = filePath === snapshot.rootFile || filePath === document.filePath;
+            const authoredUri = isRootFile
+                ? rootUri
+                : documentUri(authoredNode.document);
+            authoritativeTargets.add(authoredUri);
             const items = assembledDiagnostics.filter(item => {
                 if (item.code !== 'W_UNREACHABLE_TRANSITION') return false;
                 return item.refs.source_path === filePath;
@@ -529,7 +545,6 @@ export async function collectDocumentDiagnosticsByUri(
                 authoredRootName,
             ));
             if (items.length === 0) continue;
-            const isRootFile = filePath === snapshot.rootFile || filePath === document.filePath;
             const authoredDiagnostics = collectInspectDiagnosticsFromItems(
                 authoredNode.document,
                 authoredNode.semantic,
@@ -537,9 +552,6 @@ export async function collectDocumentDiagnosticsByUri(
                 isRootFile ? diagnostics : [],
             );
             if (authoredDiagnostics.length === 0) continue;
-            const authoredUri = isRootFile
-                ? rootUri
-                : documentUri(authoredNode.document);
             if (isRootFile) {
                 publications.set(authoredUri, [
                     ...(publications.get(authoredUri) || []),

@@ -243,6 +243,10 @@ export interface ForcedTransitionInfo {
     expansion_count: number;
 }
 
+type InternalForcedTransitionInfo = ForcedTransitionInfo & {
+    readonly __sourceRange?: TextRange;
+};
+
 /**
  * Aggregate model metrics.
  */
@@ -531,7 +535,7 @@ export function inspectModel(machine: StateMachine, options: InspectModelOptions
     const variables = buildVariableInfos(machine, states);
     const events = buildEventInfos(machine);
     const actions = buildActionInfos(machine);
-    const forcedTransitions = buildForcedTransitionInfos(machine);
+    const forcedTransitions = buildForcedTransitionInfos(machine, transitions);
     const comboTransitions = transitions.filter(item => item.combo_origin_refs.length > 0);
     const comboOrigins = buildComboOriginInfos(comboTransitions);
     const metrics = buildMetrics(states, transitions, variables, events);
@@ -1381,17 +1385,66 @@ function buildActionInfos(machine: StateMachine): ActionInfo[] {
     return out;
 }
 
-function buildForcedTransitionInfos(machine: StateMachine): ForcedTransitionInfo[] {
-    return (machine.forcedTransitions as RawFcstmModelForcedTransition[]).map(item => ({
+function buildForcedTransitionInfos(
+    machine: StateMachine,
+    transitions: TransitionInfo[],
+): InternalForcedTransitionInfo[] {
+    const raw = machine.forcedTransitions as RawFcstmModelForcedTransition[];
+    const rangesByIdentity = new Map<string, TextRange[]>();
+    for (const declaration of raw) {
+        const statePath = dottedPath(declaration.statePath ?? declaration.state_path);
+        const identity = `${statePath}\u0000${declaration.originalRaw ?? declaration.original_raw}`;
+        const ranges = rangesByIdentity.get(identity) ?? [];
+        for (const transition of transitions) {
+            if (transition.forced_origin !== (declaration.originalRaw ?? declaration.original_raw)) continue;
+            const separator = transition.from_path.lastIndexOf('.');
+            const ownerPath = separator >= 0 ? transition.from_path.slice(0, separator) : transition.from_path;
+            if (statePath.length > 0 && ownerPath !== statePath) continue;
+            const range = transition.__sourceRange;
+            if (range === undefined) continue;
+            const key = [
+                range.start.line,
+                range.start.character,
+                range.end.line,
+                range.end.character,
+            ].join(':');
+            if (!ranges.some(item => [
+                item.start.line,
+                item.start.character,
+                item.end.line,
+                item.end.character,
+            ].join(':') === key)) ranges.push(range);
+        }
+        rangesByIdentity.set(identity, ranges);
+    }
+    const occurrences = new Map<string, number>();
+    return raw.map(item => {
+        const statePath = dottedPath(item.statePath ?? item.state_path);
+        const originalRaw = item.originalRaw ?? item.original_raw;
+        const identity = `${statePath}\u0000${originalRaw}`;
+        const occurrence = occurrences.get(identity) ?? 0;
+        occurrences.set(identity, occurrence + 1);
+        const info: ForcedTransitionInfo = {
         state_path: dottedPath(item.statePath ?? item.state_path),
         from_path: item.fromPath ?? item.from_path,
         to_path: item.toPath ?? item.to_path,
         event: item.event ?? null,
         event_scope: item.event ? (item.event_scope ?? null) : null,
         guard: item.guard ?? null,
-        original_raw: item.originalRaw ?? item.original_raw,
+        original_raw: originalRaw,
         expansion_count: item.expansionCount ?? item.expansion_count,
-    }));
+        };
+        const range = rangesByIdentity.get(identity)?.[occurrence];
+        if (range !== undefined) {
+            Object.defineProperty(info, '__sourceRange', {
+                value: range,
+                enumerable: false,
+                configurable: false,
+                writable: false,
+            });
+        }
+        return info;
+    });
 }
 
 function scopeFromEventOrigins(event: Event): 'local' | 'chain' | 'absolute' {
@@ -1448,7 +1501,7 @@ function rate(numerator: number, denominator: number): number | null {
 
 function forcedExpansionGroups(
     transitions: TransitionInfo[],
-    forcedTransitions: ForcedTransitionInfo[],
+    forcedTransitions: InternalForcedTransitionInfo[],
 ): TransitionInfo[][] {
     const forcedExpansions = transitions.filter(item => item.is_forced);
     const groups: TransitionInfo[][] = forcedTransitions.map(() => []);
@@ -1474,6 +1527,22 @@ function forcedExpansionGroups(
             ),
         );
         for (const index of indexes) {
+            const declarationRange = forcedTransitions[index].__sourceRange;
+            if (declarationRange !== undefined) {
+                const rangeMatches = remaining.filter(item => {
+                    const range = item.__sourceRange;
+                    return range !== undefined &&
+                        range.start.line === declarationRange.start.line &&
+                        range.start.character === declarationRange.start.character &&
+                        range.end.line === declarationRange.end.line &&
+                        range.end.character === declarationRange.end.character;
+                });
+                if (rangeMatches.length > 0) {
+                    groups[index] = rangeMatches;
+                    remaining = remaining.filter(item => !rangeMatches.includes(item));
+                    continue;
+                }
+            }
             const count = forcedTransitions[index].expansion_count;
             if (count > 0) {
                 groups[index] = remaining.slice(0, count);
@@ -1488,7 +1557,7 @@ function buildStructureStatistics(
     states: StateInfo[],
     transitions: TransitionInfo[],
     diagnostics: ModelDiagnosticJson[],
-    forcedTransitions: ForcedTransitionInfo[],
+    forcedTransitions: InternalForcedTransitionInfo[],
     policy: StructureStatisticsPolicy,
 ): StructureStatistics {
     const representatives = new Map<string, TransitionInfo>();

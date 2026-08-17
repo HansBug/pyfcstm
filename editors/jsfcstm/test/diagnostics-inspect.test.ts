@@ -791,6 +791,24 @@ state Root {
             });
         });
 
+        it('keeps duplicate wildcard declarations tied to their own expansions', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state Live;
+    state Orphan;
+    state Error;
+    [*] -> Live;
+    !* -> Error :: Go;
+    !* -> Error :: Go;
+}
+`));
+            assert.equal(report.structure_statistics.authored_transition_count, 2);
+            assert.equal(report.structure_statistics.unreachable_transitions, 1);
+            assert.deepEqual(report.structure_statistics.unreachable_transition_reasons, {
+                redundant: 1,
+            });
+        });
+
         it('marks a transition from a fully unreachable composite source', async () => {
             const report = inspectModel(await buildMachine(`
 state Root {

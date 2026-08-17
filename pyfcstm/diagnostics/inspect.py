@@ -1925,10 +1925,12 @@ def _build_structure_statistics(
         "W_TRANSITION_SHADOWED",
         "W_REDUNDANT_TRANSITION",
     }
-    forced_keys_by_identity = {
-        (declaration.state_path, declaration.original_raw): ("forced", index)
-        for index, declaration in enumerate(forced_transitions)
-    }
+    forced_keys_by_identity: Dict[
+        Tuple[Optional[str], str], Set[Tuple[Any, ...]]
+    ] = {}
+    for index, declaration in enumerate(forced_transitions):
+        identity = (declaration.state_path, declaration.original_raw)
+        forced_keys_by_identity.setdefault(identity, set()).add(("forced", index))
     reason_keys: Dict[str, Set[Tuple[Any, ...]]] = {}
     for diagnostic in diagnostics:
         if diagnostic.code not in transition_unreachable_codes:
@@ -1940,9 +1942,7 @@ def _build_structure_statistics(
             keys = {key for key, _ in authored if key == ("combo", origin_id)}
         if diagnostic.code == "W_FORCED_NEVER_EXPANDS":
             identity = (refs.get("state_path"), refs.get("original_raw"))
-            key = forced_keys_by_identity.get(identity)
-            if key is not None:
-                keys.add(key)
+            keys.update(forced_keys_by_identity.get(identity, set()))
         duplicate_spans = refs.get("duplicate_spans")
         if diagnostic.code == "W_REDUNDANT_TRANSITION" and isinstance(
                 duplicate_spans, (list, tuple)

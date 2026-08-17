@@ -967,6 +967,25 @@ state Root {
             "forced_never_expands": 1,
         }
 
+    def test_structure_statistics_count_duplicate_zero_expansion_forced_declarations(self):
+        report = inspect_model(_parse(
+            """
+            state Root {
+                state A {
+                    !* -> [*] :: Never;
+                    !* -> [*] :: Never;
+                }
+                [*] -> A;
+            }
+            """
+        ))
+        stats = report.structure_statistics
+        assert stats.authored_transition_count == 2
+        assert stats.unreachable_transitions == 2
+        assert stats.unreachable_transition_reasons == {
+            "forced_never_expands": 2,
+        }
+
     def test_structure_statistics_counts_each_redundant_copy_after_the_first(self):
         report = inspect_model(_parse(
             """

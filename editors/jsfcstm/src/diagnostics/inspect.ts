@@ -615,9 +615,32 @@ function normalizeNumberThreshold(name: string, value: number): number {
 function normalizeStructureStatisticsPolicy(
     value: Partial<StructureStatisticsPolicy> | undefined,
 ): StructureStatisticsPolicy {
+    const source = value ?? {};
+    const knownFields = new Set<keyof StructureStatisticsPolicy>([
+        'max_transitions_per_state',
+        'max_unreachable_leaf_state_rate',
+        'max_unreachable_transition_rate',
+    ]);
+    const unknown = Object.keys(source).filter(
+        key => !knownFields.has(key as keyof StructureStatisticsPolicy),
+    );
+    if (unknown.length > 0) {
+        throw new Error(
+            `unknown structure-statistics policy fields: ${unknown.sort().join(', ')}`,
+        );
+    }
+    const hasOwn = (name: keyof StructureStatisticsPolicy): boolean =>
+        Object.prototype.hasOwnProperty.call(source, name);
     const policy: StructureStatisticsPolicy = {
-        ...DEFAULT_STRUCTURE_STATISTICS_POLICY,
-        ...(value ?? {}),
+        max_transitions_per_state: hasOwn('max_transitions_per_state')
+            ? source.max_transitions_per_state!
+            : DEFAULT_STRUCTURE_STATISTICS_POLICY.max_transitions_per_state,
+        max_unreachable_leaf_state_rate: hasOwn('max_unreachable_leaf_state_rate')
+            ? source.max_unreachable_leaf_state_rate!
+            : DEFAULT_STRUCTURE_STATISTICS_POLICY.max_unreachable_leaf_state_rate,
+        max_unreachable_transition_rate: hasOwn('max_unreachable_transition_rate')
+            ? source.max_unreachable_transition_rate!
+            : DEFAULT_STRUCTURE_STATISTICS_POLICY.max_unreachable_transition_rate,
     };
     const entries: Array<[keyof StructureStatisticsPolicy, number | null]> = [
         ['max_transitions_per_state', policy.max_transitions_per_state],
@@ -1546,12 +1569,13 @@ function buildStructureStatistics(
         'W_TRANSITION_SHADOWED',
         'W_REDUNDANT_TRANSITION',
     ]);
-    const forcedKeysByIdentity = new Map(
-        forcedTransitions.map((declaration, index) => [
-            `${declaration.state_path}\u0000${declaration.original_raw}`,
-            `forced:${index}`,
-        ]),
-    );
+    const forcedKeysByIdentity = new Map<string, string[]>();
+    forcedTransitions.forEach((declaration, index) => {
+        const identity = `${declaration.state_path}\u0000${declaration.original_raw}`;
+        const keys = forcedKeysByIdentity.get(identity) ?? [];
+        keys.push(`forced:${index}`);
+        forcedKeysByIdentity.set(identity, keys);
+    });
     const reasonKeys = new Map<string, Set<string>>();
     for (const diagnostic of diagnostics) {
         if (!transitionUnreachableCodes.has(diagnostic.code)) continue;
@@ -1561,8 +1585,8 @@ function buildStructureStatistics(
             .map(([key]) => key);
         if (diagnostic.code === 'W_FORCED_NEVER_EXPANDS') {
             const identity = `${String(diagnostic.refs.state_path)}\u0000${String(diagnostic.refs.original_raw)}`;
-            const forcedKey = forcedKeysByIdentity.get(identity);
-            if (forcedKey !== undefined) keys = [forcedKey];
+            const forcedKeys = forcedKeysByIdentity.get(identity);
+            if (forcedKeys !== undefined) keys = [...forcedKeys];
         }
         const duplicateSpans = diagnostic.refs.duplicate_spans;
         if (diagnostic.code === 'W_REDUNDANT_TRANSITION' && Array.isArray(duplicateSpans)) {

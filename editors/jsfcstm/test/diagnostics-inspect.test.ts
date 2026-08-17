@@ -559,6 +559,23 @@ state Root {
                 max_unreachable_transition_rate: 0.10,
             });
         });
+
+        it('rejects unknown structure threshold policy fields', async () => {
+            const machine = await buildMachine(SIMPLE_DSL);
+            const invalidPolicy = {typo_threshold: 0.5} as unknown as {
+                max_transitions_per_state?: number | null;
+                max_unreachable_leaf_state_rate?: number | null;
+                max_unreachable_transition_rate?: number | null;
+            };
+            assert.throws(
+                () => inspectModel(machine, {
+                    structureStatisticsPolicy: {
+                        ...invalidPolicy,
+                    },
+                }),
+                /unknown structure-statistics policy fields: typo_threshold/,
+            );
+        });
     });
 
     describe('view graphs', () => {
@@ -785,6 +802,23 @@ state Root {
             assert.equal(report.structure_statistics.unreachable_transitions, 1);
             assert.deepEqual(report.structure_statistics.unreachable_transition_reasons, {
                 forced_never_expands: 1,
+            });
+        });
+
+        it('counts duplicate forced declarations with no concrete expansion', async () => {
+            const report = inspectModel(await buildMachine(`
+state Root {
+    state A {
+        !* -> [*] :: Never;
+        !* -> [*] :: Never;
+    }
+    [*] -> A;
+}
+`));
+            assert.equal(report.structure_statistics.authored_transition_count, 2);
+            assert.equal(report.structure_statistics.unreachable_transitions, 2);
+            assert.deepEqual(report.structure_statistics.unreachable_transition_reasons, {
+                forced_never_expands: 2,
             });
         });
 

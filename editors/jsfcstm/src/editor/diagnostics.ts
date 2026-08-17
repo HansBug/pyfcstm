@@ -521,7 +521,7 @@ export async function collectDocumentDiagnosticsByUri(
     // imported-root provenance only to partition the resulting diagnostics by
     // authored URI; running a child model as a new root would incorrectly make
     // a subtree mounted under an unreachable host state appear reachable.
-    if (node?.model) {
+    if (node?.model && node.modelAuthority === 'assembled') {
         const assembledModel = node.model;
         const assembledDiagnostics = inspectModel(assembledModel).diagnostics;
         for (const filePath of snapshot.order) {

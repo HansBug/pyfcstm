@@ -625,6 +625,49 @@ describe('jsfcstm lsp core', () => {
         core.dispose();
     });
 
+    it('keeps child topology warnings when import assembly falls back to a local model', async () => {
+        const dir = trackTempDir('jsfcstm-lsp-local-assembly-fallback-');
+        const childFile = path.join(dir, 'child.fcstm');
+        const hostFile = path.join(dir, 'host.fcstm');
+        const childText = [
+            'state Child {',
+            '    state Reach;',
+            '    state Orphan;',
+            '    state Done;',
+            '    [*] -> Reach;',
+            '    Orphan -> Done;',
+            '}',
+        ].join('\n');
+        const hostText = [
+            'state Root {',
+            '    state Imported;',
+            '    import "./child.fcstm" as Imported;',
+            '    [*] -> Imported;',
+            '}',
+        ].join('\n');
+        writeFile(childFile, childText);
+        const publications: packageModule.FcstmPublishedDiagnostics[] = [];
+        const core = new packageModule.FcstmLanguageServerCore({
+            onDiagnostics(publication) {
+                publications.push(publication);
+            },
+        });
+
+        await core.openTextDocument(makeTextDocumentItem(hostFile, hostText));
+        await core.openTextDocument(makeTextDocumentItem(childFile, childText));
+        const childPublication = [...publications]
+            .reverse()
+            .find(item => item.uri === toUri(childFile));
+        assert.ok(childPublication, JSON.stringify(publications));
+        assert.equal(
+            childPublication.diagnostics.filter(item => item.code === 'W_UNREACHABLE_TRANSITION').length,
+            1,
+            JSON.stringify(childPublication),
+        );
+
+        core.dispose();
+    });
+
     it('uses the cached reverse import index before debounced revalidation', async () => {
         const dir = trackTempDir('jsfcstm-lsp-import-index-');
         const childFile = path.join(dir, 'child.fcstm');

@@ -306,6 +306,47 @@ describe('jsfcstm lsp core', () => {
         core.dispose();
     });
 
+    it('publishes root-authored transitions crossing an imported state under the root URI', async () => {
+        const dir = trackTempDir('jsfcstm-lsp-root-imported-transition-');
+        const childFile = path.join(dir, 'child.fcstm');
+        const hostFile = path.join(dir, 'host.fcstm');
+        writeFile(childFile, [
+            'state Child {',
+            '    state Reach;',
+            '    [*] -> Reach;',
+            '}',
+        ].join('\n'));
+        const hostText = [
+            'state Root {',
+            '    import "./child.fcstm" as Imported;',
+            '    state Live;',
+            '    [*] -> Live;',
+            '    Imported -> Live;',
+            '}',
+        ].join('\n');
+        const publications: packageModule.FcstmPublishedDiagnostics[] = [];
+        const core = new packageModule.FcstmLanguageServerCore({
+            onDiagnostics(publication) {
+                publications.push(publication);
+            },
+        });
+
+        await core.openTextDocument(makeTextDocumentItem(hostFile, hostText));
+
+        const hostPublication = publications.find(item => item.uri === toUri(hostFile));
+        assert.ok(hostPublication, JSON.stringify(publications));
+        const unreachable = hostPublication.diagnostics.filter(
+            item => item.code === 'W_UNREACHABLE_TRANSITION',
+        );
+        assert.equal(unreachable.length, 1, JSON.stringify(hostPublication));
+        assert.equal(unreachable[0].range.start.line, 4);
+        assert.equal(unreachable[0].data?.source_path, hostFile);
+        assert.equal(unreachable[0].data?.reason, 'source_unreachable');
+        assert.equal(unreachable[0].data?.verification_scope, 'topological_only');
+
+        core.dispose();
+    });
+
     it('keeps distinct unreachable forced expansions under one declaration', async () => {
         const dir = trackTempDir('jsfcstm-lsp-forced-expansion-identity-');
         const filePath = path.join(dir, 'machine.fcstm');

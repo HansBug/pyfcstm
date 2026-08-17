@@ -229,6 +229,17 @@ function inspectItemSourcePath(item: ModelDiagnosticJson): string | null {
     return null;
 }
 
+function inspectItemAuthoredByDocument(
+    document: TextDocumentLike,
+    item: ModelDiagnosticJson,
+): boolean {
+    const authoredPath = item.refs.source_path;
+    const documentPath = document.filePath || document.uri?.fsPath;
+    return typeof authoredPath === 'string'
+        && typeof documentPath === 'string'
+        && authoredPath === documentPath;
+}
+
 function localizeImportedStatePath(
     model: Parameters<typeof inspectModel>[0],
     statePath: string | null,
@@ -326,11 +337,12 @@ export function collectInspectDiagnosticsFromItems(
         // the refs/range resolver can still anchor the import boundary or fall
         // back to the full document while the imported document owns its span.
         const sourcePath = inspectItemSourcePath(item);
-        const primarySpanRange = sourcePath === null || statePathIsLocalToDocument(
-            document,
-            semantic,
-            sourcePath,
-        )
+        const primarySpanRange = inspectItemAuthoredByDocument(document, item)
+            || sourcePath === null || statePathIsLocalToDocument(
+                document,
+                semantic,
+                sourcePath,
+            )
             ? spanToRange(item.span)
             : null;
         const refResolution = resolveRangeFromRefsDetailed(document, semantic, item.refs, seenEffectSelfAssigns);
@@ -460,11 +472,10 @@ export async function collectDocumentDiagnosticsByUri(
         const assembledModel = node.model;
         const assembledDiagnostics = inspectModel(assembledModel).diagnostics;
         for (const filePath of snapshot.order) {
-            if (filePath === snapshot.rootFile || filePath === document.filePath) continue;
-            const importedNode = snapshot.nodes[filePath];
-            if (!importedNode?.semantic) continue;
-            const authoredRootName = importedNode.semantic.summary.rootStateName
-                || importedNode.ast?.rootState?.name;
+            const authoredNode = snapshot.nodes[filePath];
+            if (!authoredNode?.semantic) continue;
+            const authoredRootName = authoredNode.semantic.summary.rootStateName
+                || authoredNode.ast?.rootState?.name;
             if (!authoredRootName) continue;
             const items = assembledDiagnostics.filter(item => {
                 if (item.code !== 'W_UNREACHABLE_TRANSITION') return false;
@@ -476,13 +487,24 @@ export async function collectDocumentDiagnosticsByUri(
                 authoredRootName,
             ));
             if (items.length === 0) continue;
-            const importedDiagnostics = collectInspectDiagnosticsFromItems(
-                importedNode.document,
-                importedNode.semantic,
+            const isRootFile = filePath === snapshot.rootFile || filePath === document.filePath;
+            const authoredDiagnostics = collectInspectDiagnosticsFromItems(
+                authoredNode.document,
+                authoredNode.semantic,
                 items,
+                isRootFile ? diagnostics : [],
             );
-            if (importedDiagnostics.length > 0) {
-                publications.set(documentUri(importedNode.document), importedDiagnostics);
+            if (authoredDiagnostics.length === 0) continue;
+            const authoredUri = isRootFile
+                ? rootUri
+                : documentUri(authoredNode.document);
+            if (isRootFile) {
+                publications.set(authoredUri, [
+                    ...(publications.get(authoredUri) || []),
+                    ...authoredDiagnostics,
+                ]);
+            } else {
+                publications.set(authoredUri, authoredDiagnostics);
             }
         }
     }

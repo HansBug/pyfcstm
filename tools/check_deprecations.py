@@ -42,6 +42,12 @@ from packaging.version import InvalidVersion, Version
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
+# Running ``python tools/check_deprecations.py`` puts ``tools/`` rather than
+# the repository root on ``sys.path``.  Keep the source checkout runnable
+# without an editable install, as the CI lint job intentionally installs only
+# the declared runtime requirements.
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 _DEFAULT_ROOTS = (
     _REPO_ROOT / "pyfcstm",
     _REPO_ROOT / "pyfcstm_cli.py",

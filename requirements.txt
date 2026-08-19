@@ -16,4 +16,7 @@ prompt_toolkit>=3.0.0
 rich>=13,<14
 tabulate>=0.9.0,<0.10.0
 plantumlcli>=0.2.0
+# plantumlcli pulls lxml through pyquery. lxml 6 dropped Python 3.7 support,
+# and current lxml 6 releases publish no Windows wheel for the Python 3.8 CI cell.
+lxml>=4.9,<6
 z3-solver<=4.15.4

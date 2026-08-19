@@ -1,0 +1,14 @@
+def float a = 2.5;
+def int r = 0;
+
+state Root {
+    state A {
+        during {
+            r = round(a);
+        }
+    }
+    state B;
+
+    [*] -> A;
+    A -> B :: Go;
+}

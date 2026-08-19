@@ -222,6 +222,9 @@ _CONSTANT_FOLD_OPERATORS = {
     "+": lambda left, right: left + right,
     "-": lambda left, right: left - right,
     "*": lambda left, right: left * right,
+    "&": lambda left, right: left & right,
+    "^": lambda left, right: left ^ right,
+    "|": lambda left, right: left | right,
 }
 
 
@@ -282,7 +285,7 @@ def _static_int_literal(expr: dsl_nodes.Expr) -> Optional[int]:
     integer-power helper and the ``double`` :c:func:`pow` form, and whether the
     zero-base check is reachable at all.
 
-    Literals, their signs, and ``+ - *`` over them are folded. Folding the
+    Literals, their signs, and ``+ - * & ^ |`` over them are folded. Folding the
     additive and multiplicative forms is not a convenience: an exponent written
     as ``3 ** (30 + 4)`` is exactly as statically known as ``3 ** 34``, and
     treating it as unknown routes an exact integer power through ``pow()``, which
@@ -320,8 +323,29 @@ def _static_int_literal(expr: dsl_nodes.Expr) -> Optional[int]:
     if isinstance(expr, dsl_nodes.UnaryOp) and expr.op in {"+", "-"}:
         inner = _static_int_literal(expr.expr)
         if inner is None:
+            # ``-9223372036854775808`` is the one signed int64 value whose
+            # magnitude cannot itself fit in int64.  Its unary-minus syntax is
+            # nevertheless the normal spelling of INT64_MIN, so retain it as a
+            # constant when deciding whether a shift count must be masked.  Do
+            # not widen this to arithmetic expressions: their intermediate C
+            # evaluation would already overflow before the unary minus applies.
+            magnitude = _coerce_expr(expr.expr)
+            while True:
+                if isinstance(magnitude, dsl_nodes.Paren):
+                    magnitude = _coerce_expr(magnitude.expr)
+                elif isinstance(magnitude, dsl_nodes.UnaryOp) and magnitude.op == "+":
+                    magnitude = _coerce_expr(magnitude.expr)
+                else:
+                    break
+            if (
+                expr.op == "-"
+                and isinstance(magnitude, (dsl_nodes.Integer, dsl_nodes.HexInt))
+                and magnitude.value == _INT64_MAX + 1
+            ):
+                return _INT64_MIN
             return None
-        return -inner if expr.op == "-" else inner
+        value = -inner if expr.op == "-" else inner
+        return value if _INT64_MIN <= value <= _INT64_MAX else None
     if isinstance(expr, (dsl_nodes.Integer, dsl_nodes.HexInt)):
         # A leaf wider than int64 is range-checked like a fold result: the
         # generated C cannot hold it, so claiming its value would be a lie.
@@ -516,6 +540,41 @@ def _is_static_zero(expr: dsl_nodes.Expr) -> bool:
     return False
 
 
+def _is_static_negative(expr: dsl_nodes.Expr) -> bool:
+    """
+    Return whether an expression folds to a negative integer constant.
+
+    The C runtime emitter uses this narrow check to keep generated code
+    compileable: a negative shift count is undefined behaviour in C
+    (C11 6.5.7p3), which ``-Wshift-count-negative`` reports and the
+    ``-Werror`` command in the generated README turns into a hard failure.
+    This reuses :func:`_static_int_literal`, whose deliberately small folder
+    accepts parentheses, unary signs, and ``+ - * & ^ |`` over int64 literals.  A
+    computed constant such as ``0 - 1`` therefore receives the same compile-
+    safe placeholder as a unary negative literal, while variables and other
+    expressions remain runtime-checked.
+
+    :param expr: Expression to inspect.
+    :type expr: pyfcstm.dsl.node.Expr
+    :return: ``True`` when the expression folds to a negative integer.
+    :rtype: bool
+
+    Example::
+
+        >>> from pyfcstm.dsl import node as dsl_nodes
+        >>> _is_static_negative(dsl_nodes.UnaryOp("-", dsl_nodes.Integer("1")))
+        True
+        >>> _is_static_negative(dsl_nodes.UnaryOp("-", dsl_nodes.UnaryOp("-", dsl_nodes.Integer("1"))))
+        False
+        >>> _is_static_negative(dsl_nodes.Integer("1"))
+        False
+        >>> _is_static_negative(dsl_nodes.BinaryOp(dsl_nodes.Integer("0"), "-", dsl_nodes.Integer("1")))
+        True
+    """
+    value = _static_int_literal(expr)
+    return value is not None and value < 0
+
+
 def _safe_static_zero_result(value_type: Optional[str]) -> str:
     """
     Return a harmless placeholder for a statically failing expression.
@@ -585,6 +644,17 @@ def _render_expr(
             )
         elif expr.func == "cbrt":
             text = "cbrt(%s)" % inner.text
+        elif expr.func == "round":
+            # C's round() breaks ties away from zero regardless of the current
+            # rounding direction, while the simulator uses Python's round(),
+            # which breaks ties toward the even neighbour.  nearbyint() follows
+            # the current rounding direction, whose default (FE_TONEAREST) is
+            # ties-to-even -- the same default every other floating-point
+            # operation in the generated runtime already relies on.
+            # Python's round(-0.5) is the integer 0, which becomes +0.0 when
+            # written to a DSL float. nearbyint(-0.5) is -0.0 instead, so add
+            # a positive zero to retain Python's externally visible zero sign.
+            text = "(nearbyint(%s) + 0.0)" % inner.text
         elif expr.func in _MATH_FUNC_NAMES:
             text = "%s(%s)" % (expr.func, inner.text)
         else:
@@ -595,6 +665,14 @@ def _render_expr(
         right = _render_expr(expr.expr2, known_types, names, state_name_set)
         value_type = _infer_expr_type(expr, known_types)
         if expr.op in {"/", "%"} and _is_static_zero(expr.expr2):
+            text = _safe_static_zero_result(value_type)
+        elif expr.op in {"<<", ">>"} and _is_static_negative(expr.expr2):
+            # Same reason as the static zero denominator above: a negative shift
+            # count is undefined in C and toolchains reject it at compile time
+            # (``-Wshift-count-negative``, fatal under the ``-Werror`` command in
+            # the generated README).  The generated runtime diagnostic emitted by
+            # ``_emit_expr_checks`` already fails the cycle before this
+            # placeholder can be reached.
             text = _safe_static_zero_result(value_type)
         elif expr.op in _INT_OPERATORS and (
             left.value_type == "float" or right.value_type == "float"
@@ -855,6 +933,39 @@ def _emit_expr_checks(
                 )
                 _emit_error(lines, names, indent, level, message)
                 return False
+        if expr.op in {"<<", ">>"}:
+            # Python rejects a negative shift count with ValueError, while C
+            # leaves it undefined (C11 6.5.7p3).  The check runs after the
+            # float-operand check above, which is right for a genuinely float
+            # operand -- the simulator raises TypeError there first.  It is
+            # *not* right for an operand whose inferred type is float only
+            # because it came from ``**``: the simulator evaluates that to an
+            # int and raises ValueError for the negative count, while the
+            # float-operand branch returns early and this check never runs.
+            # That gap belongs to the ``**`` type inference, not to the order
+            # here; see the shift-of-power note in the pull request.
+            if _is_static_negative(expr.expr2):
+                # Do not emit the count even in a guard: INT64_MIN is valid DSL
+                # syntax but its positive magnitude is not a signed C literal.
+                # A static negative count always fails, so the check can be
+                # unconditional and keeps strict C99/C++98 output compileable.
+                _emit_error(
+                    lines,
+                    names,
+                    indent,
+                    level,
+                    "%s evaluation failed: negative shift count" % usage,
+                )
+            else:
+                _line(lines, indent, level, "if ((%s) < 0) {" % right.text)
+                _emit_error(
+                    lines,
+                    names,
+                    indent,
+                    level + 1,
+                    "%s evaluation failed: negative shift count" % usage,
+                )
+                _line(lines, indent, level, "}")
         return safe
     return True
 

@@ -110,6 +110,43 @@ def _first_c_comment_block(source):
     return source[start:end + 2]
 
 
+def _extract_c_code_block(markdown, heading):
+    pattern = r"(?m)^### {heading}\n.*?```c\n(.*?)```".format(
+        heading=re.escape(heading),
+    )
+    match = re.search(pattern, markdown, flags=re.S)
+    assert match is not None, "Cannot find C code block under {!r}.".format(heading)
+    return match.group(1)
+
+
+def _compile_machine_as_documented_cpp98(artifacts, stem):
+    compiler = shutil.which("g++")
+    if compiler is None:
+        if os.environ.get("PYFCSTM_RUN_NATIVE_TOOLCHAIN", "").strip().lower() in {
+            "1", "true", "yes", "on"
+        }:
+            pytest.fail("explicit native template suites require g++")
+        pytest.skip("g++ is required for documented C++98 compile checks.")
+
+    return subprocess.run(
+        [
+            compiler,
+            "-x", "c++",
+            "-std=c++98",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-pedantic-errors",
+            "-c", artifacts["machine_c_file"],
+            "-o", os.path.join(artifacts["output_dir"], stem + ".o"),
+        ],
+        cwd=artifacts["output_dir"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+
 def _assert_generated_c_banner(source, *, template_name, root_name, extra_terms=None):
     banner = _first_c_comment_block(source)
     lower_banner = _normalized_lower_text(banner)
@@ -1159,6 +1196,153 @@ class TestCBuiltinTemplate:
             assert '不适合修改状态机持久变量' in readme_zh
             assert 'RootMachine_vars(&machine)' in readme_zh
 
+    def test_generated_readme_hot_start_reuses_runtime_default_values(self):
+        dsl_code = """
+        def int modulo = -7 % 2;
+        def int rounded = round(2.5);
+        state Root {
+            state A {
+                enter abstract AEnter;
+            }
+            [*] -> A;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            for readme_key in ['readme_file', 'readme_zh_file']:
+                with open(artifacts[readme_key], 'r', encoding='utf-8') as f:
+                    hot_start = _extract_c_code_block(f.read(), '4. Hot Start')
+
+                run = _compile_and_run_c_harness(
+                    artifacts,
+                    'readme_hot_start_runtime_defaults_' + readme_key,
+                    textwrap.dedent(
+                        r'''
+                        #include "machine.h"
+                        #include <stdio.h>
+
+                        static void a_enter_hook(
+                            RootMachine *machine,
+                            const RootMachineExecutionContext *ctx,
+                            void *user_data
+                        )
+                        {
+                            int *call_count = (int *)user_data;
+                            (void)machine;
+                            (void)ctx;
+                            *call_count += 1;
+                        }
+
+                        int main(void)
+                        {
+                            RootMachine machine;
+                            RootMachineHooks hooks = ROOTMACHINE_HOOKS_INIT;
+                            int hook_calls = 0;
+
+                            if (!RootMachine_init(&machine)) {
+                                return 10;
+                            }
+                            hooks.on_p4_Root_p1_A_p6_AEnter = a_enter_hook;
+                            RootMachine_set_hooks(&machine, &hooks, &hook_calls);
+                        '''
+                    )
+                    + hot_start
+                    + textwrap.dedent(
+                        r'''
+                            if (RootMachine_vars(&machine)->modulo != (RootMachineInt)1) {
+                                return 3;
+                            }
+                            if (RootMachine_vars(&machine)->rounded != (RootMachineInt)2) {
+                                return 4;
+                            }
+                            if (!RootMachine_cycle(&machine, NULL, 0u)) {
+                                return 5;
+                            }
+                            if (hook_calls != 1) {
+                                return 6;
+                            }
+                            return 0;
+                        }
+                        '''
+                    ),
+                )
+                assert run.returncode == 0, run.stderr
+
+    def test_generated_machine_normalizes_round_negative_zero(self):
+        dsl_code = """
+        def float rounded = round(-0.5);
+        state Root {
+            state A;
+            [*] -> A;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            run = _compile_and_run_c_harness(
+                artifacts,
+                'round_negative_zero',
+                textwrap.dedent(
+                    r'''
+                    #include "machine.h"
+                    #include <math.h>
+
+                    int main(void)
+                    {
+                        RootMachine machine;
+
+                        if (!RootMachine_init(&machine)) {
+                            return 10;
+                        }
+                        if (RootMachine_vars(&machine)->rounded != 0.0) {
+                            return 11;
+                        }
+                        if (signbit(RootMachine_vars(&machine)->rounded)) {
+                            return 12;
+                        }
+                        return 0;
+                    }
+                    '''
+                ),
+            )
+            assert run.returncode == 0, run.stderr
+
+    def test_generated_machine_rejects_int64_min_negative_shift_initializer(self):
+        dsl_code = """
+        def int value = 1 << -9223372036854775808;
+        state Root {
+            state A;
+            [*] -> A;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            run = _compile_and_run_c_harness(
+                artifacts,
+                'int64_min_negative_shift_initializer',
+                textwrap.dedent(
+                    r'''
+                    #include "machine.h"
+                    #include <string.h>
+
+                    int main(void)
+                    {
+                        RootMachine machine;
+                        const char *message;
+
+                        if (RootMachine_init(&machine)) {
+                            return 10;
+                        }
+                        message = RootMachine_last_error(&machine);
+                        if (message == NULL || strstr(message, "negative shift count") == NULL) {
+                            return 11;
+                        }
+                        return 0;
+                    }
+                    '''
+                ),
+            )
+            assert run.returncode == 0, run.stderr
+
     def test_generated_readme_code_blocks_are_formatter_friendly(self):
         with render_c_artifacts(_representative_gate_dsl()) as artifacts:
             with open(artifacts["readme_file"], "r", encoding="utf-8") as f:
@@ -1603,6 +1787,30 @@ class TestCBuiltinTemplate:
                     }
                     """
                 ),
+            )
+            assert run.returncode == 0, run.stderr
+
+    def test_generated_machine_cpp98_masks_computed_negative_shifts(self):
+        dsl_code = """
+        def int initial = 1 << -9223372036854775808;
+        def int other = 1 >> (0 ^ 0 - 1);
+        state Root {
+            state A {
+                during {
+                    initial = 1 << -9223372036854775808;
+                    other = 1 >> (0 ^ 0 - 1);
+                }
+            }
+            state B;
+            [*] -> A;
+            A -> B : if [1 << -9223372036854775808 == 0 and 1 >> (0 ^ 0 - 1) == 0];
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            run = _compile_machine_as_documented_cpp98(
+                artifacts,
+                "computed_negative_shift_cpp98_gate",
             )
             assert run.returncode == 0, run.stderr
 

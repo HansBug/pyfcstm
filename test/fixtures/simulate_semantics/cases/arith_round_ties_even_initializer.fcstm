@@ -1,0 +1,10 @@
+def float a = 2.5;
+def int x = round(2.5);
+
+state Root {
+    state A;
+    state B;
+
+    [*] -> A;
+    A -> B :: Go;
+}

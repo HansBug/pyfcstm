@@ -4736,9 +4736,9 @@ W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``const_fold``; span object ``expression``.
 
-**Meaning.** A shift count folds to a constant below zero or not less than the default C/C++ target integer width. This is a C/C++ 64-bit deployment-profile portability risk; Python big-integer shifting is not the same target contract.
+**Meaning.** A shift count folds to a constant below zero or not less than the default C/C++ target integer width. Three input shapes reach this code and they differ: a negative integer count is rejected at runtime by the simulator and by every generated runtime, including C/C++ and Python; an integer count at or above the width is a C/C++ 64-bit deployment-profile portability risk that Python big-integer shifting does not share; and a non-integer count is rejected earlier by the operand type check, so neither reason applies to it.
 
-**LLM repair summary.** A shift count is statically outside the C/C++ default 64-bit profile. Treat this as a target-profile portability warning, not as a Python generated-runtime error.
+**LLM repair summary.** A shift count is statically outside the C/C++ default 64-bit profile. A negative count is a runtime error in every generated runtime; a count at or above the width is a target-profile portability warning that Python generated runtimes do not share.
 
 .. list-table:: Refs schema
    :header-rows: 1
@@ -4759,7 +4759,7 @@ W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE
    * - ``runtime_note``
      - ``str``
      - yes
-     - Human-readable note that this is a C/C++ deployment-profile risk and that Python generated runtimes may not have the same fixed-width shift risk.
+     - Human-readable note separating the input shapes: a negative integer count is rejected by every generated runtime, while an integer count at or above the default width is a C/C++-only fixed-width risk.
    * - ``context``
      - ``str``
      - yes
@@ -4803,12 +4803,12 @@ This diagnostic can appear in a successful inspect report. Reproduce it with ``p
 .. diagnostics-example W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE 2 boundary_only
 
 **Example 2** (``boundary_only``) — repair direction for ``W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE``.
-A typical repair is ``bound_shift_count`` on ``expression``: Keep constant shift counts within ``0 <= count < 64`` for the default C/C++ profile.
+For a negative count, do not merely force a numeric range: every generated runtime rejects it, so rewrite or remove the shift according to the model's intended semantics. For an integer count at or above the target width, a typical ``bound_shift_count`` repair keeps the count within ``0 <= count < 64`` for the default C/C++ profile.
 
 .. diagnostics-example W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE 3 boundary_only
 
 **Example 3** (``boundary_only``) — anti-pattern boundary for ``W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE``.
-Do not report dynamic shift counts as proven unsafe from this catalog-only rule.
+Do not replace a negative count only to make it in-range, because that can silently change model behavior. Do not report dynamic shift counts as proven unsafe from this catalog-only rule.
 
 .. _diag-code-w-numeric-float-bitwise:
 

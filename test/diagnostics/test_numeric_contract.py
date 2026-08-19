@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from textwrap import dedent
 
 import pytest
@@ -20,6 +21,7 @@ MIN_SIGNED_INT64_TEXT = "-9223372036854775808"
 MAX_SIGNED_INT64_TEXT = "9223372036854775807"
 TOO_LARGE_SIGNED_INT64_TEXT = "9223372036854775808"
 TOO_SMALL_SIGNED_INT64_TEXT = "-9223372036854775809"
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 pytestmark = pytest.mark.unittest
@@ -903,3 +905,80 @@ def test_numeric_descriptions_are_target_specific(code):
     )
     assert "C/C++" in text
     assert "Python" in text
+
+
+def test_shift_count_reference_repairs_distinguish_negative_and_oversized_counts():
+    reference_files = (
+        _REPO_ROOT
+        / "docs/source/reference/diagnostics_codes/_code_catalog_en.rst.inc",
+        _REPO_ROOT
+        / "docs/source/reference/diagnostics_codes/_code_catalog_zh.rst.inc",
+    )
+    required_text = (
+        (
+            "every generated runtime rejects it",
+            "at or above the target width",
+            "within ``0 <= count < 64``",
+            "Do not replace a negative count only to make it in-range",
+            "a negative integer count is rejected by every generated runtime",
+        ),
+        (
+            "每一个生成运行时都会拒绝它",
+            "不小于目标宽度的整数次数",
+            "``0 <= count < 64``",
+            "不要只为让负移位次数落入范围而替换它",
+        ),
+    )
+
+    for reference_file, required_snippets in zip(reference_files, required_text):
+        reference_text = reference_file.read_text(encoding="utf-8")
+        for snippet in required_snippets:
+            assert snippet in reference_text
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "shift_count, expected_lead",
+    [
+        # A negative integer count is rejected by every generated runtime, so the
+        # message must not present it as a C/C++-only portability concern.
+        ("-1", "Negative shift count:"),
+        # A count at or above the target width stays a C/C++-only fixed-width risk.
+        ("64", "C/C++ default deployment profile risk:"),
+        # A non-integer count is rejected earlier by the operand type check, so
+        # neither of the two reasons above applies and the wording stays neutral.
+        ("-0.5", "Shift count out of the C/C++ default target range:"),
+    ],
+)
+def test_shift_count_message_separates_its_three_input_shapes(
+    shift_count, expected_lead
+):
+    source = dedent(
+        """
+        def int flags = 1;
+        def int result = 0;
+
+        state Root {
+            state A {
+                during {
+                    result = flags << %s;
+                }
+            }
+            state B;
+
+            [*] -> A;
+            A -> B :: Go;
+        }
+        """
+        % shift_count
+    )
+
+    report = inspect_model(_parse(source))
+    emitted = [
+        diag
+        for diag in report.diagnostics
+        if diag.code == "W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE"
+    ]
+
+    assert emitted, [diag.code for diag in report.diagnostics]
+    assert emitted[0].message.startswith(expected_lead), emitted[0].message

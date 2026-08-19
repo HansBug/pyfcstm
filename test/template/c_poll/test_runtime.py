@@ -1072,12 +1072,96 @@ class TestCPollBuiltinTemplate:
                             if (!RootMachine_cycle(&machine)) {
                                 return 5;
                             }
+                            if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P1_A) {
+                                return 6;
+                            }
+                            if (!RootMachine_cycle(&machine)) {
+                                return 7;
+                            }
+                            if (RootMachine_current_state_id(&machine) != ROOT_MACHINE_STATE_P4_ROOT_P1_A) {
+                                return 8;
+                            }
                             return 0;
                         }
                         '''
                     ),
                 )
                 assert run.returncode == 0, run.stderr
+
+    def test_generated_machine_normalizes_round_negative_zero(self):
+        dsl_code = """
+        def float rounded = round(-0.5);
+        state Root {
+            state A;
+            [*] -> A;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            run = _compile_and_run_c_harness(
+                artifacts,
+                'round_negative_zero',
+                textwrap.dedent(
+                    r'''
+                    #include "machine.h"
+                    #include <math.h>
+
+                    int main(void)
+                    {
+                        RootMachine machine;
+
+                        if (!RootMachine_init(&machine)) {
+                            return 10;
+                        }
+                        if (RootMachine_vars(&machine)->rounded != 0.0) {
+                            return 11;
+                        }
+                        if (signbit(RootMachine_vars(&machine)->rounded)) {
+                            return 12;
+                        }
+                        return 0;
+                    }
+                    '''
+                ),
+            )
+            assert run.returncode == 0, run.stderr
+
+    def test_generated_machine_rejects_int64_min_negative_shift_initializer(self):
+        dsl_code = """
+        def int value = 1 << -9223372036854775808;
+        state Root {
+            state A;
+            [*] -> A;
+        }
+        """
+
+        with render_c_artifacts(dsl_code) as artifacts:
+            run = _compile_and_run_c_harness(
+                artifacts,
+                'int64_min_negative_shift_initializer',
+                textwrap.dedent(
+                    r'''
+                    #include "machine.h"
+                    #include <string.h>
+
+                    int main(void)
+                    {
+                        RootMachine machine;
+                        const char *message;
+
+                        if (RootMachine_init(&machine)) {
+                            return 10;
+                        }
+                        message = RootMachine_last_error(&machine);
+                        if (message == NULL || strstr(message, "negative shift count") == NULL) {
+                            return 11;
+                        }
+                        return 0;
+                    }
+                    '''
+                ),
+            )
+            assert run.returncode == 0, run.stderr
 
     def test_generated_machine_clang_format_converges_under_four_space_style(self):
         with render_c_artifacts(_representative_gate_dsl()) as artifacts:

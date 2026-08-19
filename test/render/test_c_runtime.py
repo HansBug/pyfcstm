@@ -209,7 +209,7 @@ class TestCRuntimeRendering:
         assert "negative shift count" in body
         assert "((1) << (scope->offset))" in body
 
-    def test_round_is_emitted_as_nearbyint_for_ties_to_even(self):
+    def test_round_is_emitted_as_nearbyint_for_ties_to_even_and_positive_zero(self):
         statements = parse_with_grammar_entry(
             """
             counter = round(value);
@@ -227,7 +227,7 @@ class TestCRuntimeRendering:
         # C's round() breaks ties away from zero; the simulator breaks them
         # toward the even neighbour, which nearbyint() does under the default
         # FE_TONEAREST rounding direction.
-        assert "nearbyint(scope->value)" in body
+        assert "(nearbyint(scope->value) + 0.0)" in body
         assert "round(scope->value)" not in body
 
     def test_dynamic_zero_division_guard_keeps_runtime_denominator_check(self):

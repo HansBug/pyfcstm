@@ -651,7 +651,10 @@ def _render_expr(
             # the current rounding direction, whose default (FE_TONEAREST) is
             # ties-to-even -- the same default every other floating-point
             # operation in the generated runtime already relies on.
-            text = "nearbyint(%s)" % inner.text
+            # Python's round(-0.5) is the integer 0, which becomes +0.0 when
+            # written to a DSL float. nearbyint(-0.5) is -0.0 instead, so add
+            # a positive zero to retain Python's externally visible zero sign.
+            text = "(nearbyint(%s) + 0.0)" % inner.text
         elif expr.func in _MATH_FUNC_NAMES:
             text = "%s(%s)" % (expr.func, inner.text)
         else:

@@ -617,12 +617,14 @@ export class VarDefine extends ModelNode {
     name: string;
     type: 'int' | 'float';
     init: Expr;
+    doc?: string;
 
     constructor(raw: RawFcstmModelVarDefine, init: Expr) {
         super(raw.kind, raw.pyModelType, raw.range, raw.text);
         this.name = raw.name;
         this.type = raw.type;
         this.init = init;
+        this.doc = raw.doc;
     }
 
     /**
@@ -641,6 +643,7 @@ export class VarDefine extends ModelNode {
             deftype: this.type,
             initializer: expr,
             expr,
+            doc: this.doc,
         };
     }
 }
@@ -659,6 +662,7 @@ export class Event extends ModelNode {
     extra_name?: string;
     declared: boolean;
     origins: Array<'declared' | 'local' | 'chain' | 'absolute'>;
+    doc?: string;
 
     constructor(raw: RawFcstmModelEvent) {
         super(raw.kind, raw.pyModelType, raw.range, raw.text);
@@ -672,6 +676,7 @@ export class Event extends ModelNode {
         this.extra_name = raw.extra_name;
         this.declared = raw.declared;
         this.origins = [...raw.origins];
+        this.doc = raw.doc;
     }
 
     /**
@@ -687,6 +692,7 @@ export class Event extends ModelNode {
             displayName: this.extraName,
             extraName: this.extraName,
             extra_name: this.extra_name,
+            doc: this.doc,
         };
     }
 }
@@ -871,12 +877,15 @@ export class Transition extends ModelNode {
     trigger_scope?: 'local' | 'chain' | 'absolute';
     transitionIndex?: number;
     transition_index?: number;
+    sourcePath?: string;
+    source_path?: string;
     combo_origin_refs: unknown[];
     combo_projection_key: unknown[] | null;
     combo_projection_order_key: unknown[] | null;
     combo_reuse_group_id: string | null;
     combo_priority_run_identity: unknown[] | null;
     combo_priority_run_index: number | null;
+    doc?: string;
     protected parentState?: State;
 
     constructor(raw: RawFcstmModelTransition, event: Event | undefined, guard: Expr | undefined, effects: OperationStatement[]) {
@@ -904,12 +913,15 @@ export class Transition extends ModelNode {
         this.trigger_scope = raw.trigger_scope;
         this.transitionIndex = raw.transitionIndex;
         this.transition_index = raw.transition_index ?? raw.transitionIndex;
+        this.sourcePath = raw.sourcePath ?? raw.source_path;
+        this.source_path = this.sourcePath;
         this.combo_origin_refs = raw.combo_origin_refs ?? [];
         this.combo_projection_key = raw.combo_projection_key ?? null;
         this.combo_projection_order_key = raw.combo_projection_order_key ?? null;
         this.combo_reuse_group_id = raw.combo_reuse_group_id ?? null;
         this.combo_priority_run_identity = raw.combo_priority_run_identity ?? null;
         this.combo_priority_run_index = raw.combo_priority_run_index ?? null;
+        this.doc = raw.doc;
     }
 
     /**
@@ -965,6 +977,7 @@ export class State extends ModelNode {
     isStoppable: boolean;
     importedFromFile?: string;
     imported_from_file?: string;
+    doc?: string;
     protected parentState?: State;
 
     constructor(raw: RawFcstmModelState) {
@@ -999,6 +1012,7 @@ export class State extends ModelNode {
         this.isStoppable = raw.isStoppable;
         this.importedFromFile = raw.importedFromFile;
         this.imported_from_file = raw.importedFromFile;
+        this.doc = raw.doc;
     }
 
     /**
@@ -1345,6 +1359,7 @@ export class State extends ModelNode {
             transitionKind: transition.transitionKind === 'entry' || transition.transitionKind === 'normal' || transition.transitionKind === 'exit'
                 ? transition.transitionKind
                 : 'normal',
+            doc: transition.doc,
         };
     }
 
@@ -1402,6 +1417,7 @@ export class State extends ModelNode {
             forceTransitions: [],
             force_transitions: [],
             importedFromFile: this.importedFromFile,
+            doc: this.doc,
         };
     }
 

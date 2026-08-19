@@ -188,6 +188,26 @@ If this fails before reading the model, check the verify-policy options. Inspect
 parses some higher-cost taxonomy labels only to report that automatic inspect
 runs are not allowed to use them.
 
+Fix every model error in one pass
+---------------------------------
+
+By default a model error aborts the run, so a file with several of them only
+ever reports the first. Add ``--collect-errors`` to get all of them in one
+report:
+
+.. code-block:: bash
+
+   pyfcstm inspect -i machine.fcstm --collect-errors
+
+The command still exits non-zero, so it stays usable as a CI gate. The model
+behind such a report may be internally inconsistent — a transition endpoint that
+does not resolve, for example — so treat the report as a fix list, not as
+evidence that the model is usable.
+
+This covers model errors only. A file that does not parse has no AST to build a
+model from, so a syntax error still stops the run with
+``Failed to parse input DSL file`` and produces no report.
+
 Generate code from a built-in template
 --------------------------------------
 

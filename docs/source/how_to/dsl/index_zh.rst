@@ -547,7 +547,7 @@ JSON 中重点看：
 
 .. literalinclude:: ../../tutorials/dsl/import_host_directory.fcstm
    :language: fcstm
-   :caption: 通过显式 ``main.fcstm`` 入口文件执行目录式导入；预期诊断：``W_UNUSED_EVENT``、``W_DEADLOCK_LEAF`` 和 ``W_UNREFERENCED_VAR``\ ，均来自演示用被导入资源。
+   :caption: 通过显式 ``main.fcstm`` 入口文件执行目录式导入；预期诊断：``W_UNUSED_EVENT``、``W_LEAF_NO_OUTGOING_TRANSITION`` 和 ``W_UNREFERENCED_VAR``\ ，均来自演示用被导入资源。
 
 映射事实：
 

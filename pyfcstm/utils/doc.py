@@ -1,79 +1,166 @@
-"""
-Multiline comment formatting utilities for extracted source documentation.
+"""Normalization and validation helpers for FCSTM documentation blocks.
 
-This module provides a single utility function used to clean and normalize
-multiline comments that are commonly extracted from source code by tools such
-as ANTLR4. It focuses on removing C-style comment delimiters, trimming
-unnecessary whitespace, and normalizing indentation to produce readable text.
+The helpers deliberately keep documentation opaque while making its transport
+through the AST and model deterministic::
 
-The module contains the following main components:
-
-* :func:`format_multiline_comment` - Normalize and clean multiline comment text
-
-.. note::
-   Line separators are normalized to ``'\\n'`` when the ``UNITTEST`` environment
-   variable is set, enabling deterministic behavior in test environments.
-
-Example::
-
-    >>> raw = \"\"\"/* Example
-    ...  *  multiline comment
-    ...  */\"\"\"
-    >>> format_multiline_comment(raw)
-    'Example\\n*  multiline comment'
+    >>> format_multiline_comment('/*\\n * Ready state\\n */')
+    'Ready state'
+    >>> format_multiline_comment('/*\\r\\n * Ready\\r\\n */')
+    'Ready'
+    >>> validate_documentation_for_export('Ready')
+    >>> aggregate_documentation((None, 'Ready', 'Ready', 'Running'))
+    'Ready\\n\\nRunning'
 """
 
-import os
-import re
 import textwrap
+from typing import Iterable, Optional
 
 
 def format_multiline_comment(raw_doc: str) -> str:
+    """Return the canonical opaque body of a ``/* ... */`` block.
+
+    The parser deliberately keeps documentation opaque.  This helper only
+    removes comment framing and one decorative star margin; it does not parse
+    Markdown or otherwise rewrite the body.
+
+    >>> format_multiline_comment('/* text */')
+    'text'
+    >>> format_multiline_comment('/*\\n * A\\n * B\\n */')
+    'A\\nB'
     """
-    Format multiline comments parsed by ANTLR4 by removing comment markers
-    and aligning indentation.
+    if not isinstance(raw_doc, str):
+        raise TypeError("documentation comment must be a str")
 
-    This function takes a raw multiline comment (including ``/* */`` markers)
-    and processes it to produce clean, properly formatted documentation text.
-    It removes comment delimiters, trims unnecessary whitespace, and
-    normalizes indentation.
+    source = raw_doc.strip().replace("\r\n", "\n").replace("\r", "\n")
+    if not source.startswith("/*"):
+        raise ValueError("documentation comment is not a complete block: missing '/*'")
+    close = source.find("*/", 2)
+    if close < 0 or close != len(source) - 2:
+        raise ValueError("documentation comment must have one complete terminator")
 
-    :param raw_doc: Raw comment text including ``/* */`` markers
-    :type raw_doc: str
-    :return: Formatted comment text with markers removed and proper indentation
-    :rtype: str
+    body = source[2:close]
+    # Javadoc/Doxygen opener decoration is recoverable, but only one marker.
+    if body.startswith("*") and source.startswith("/**"):
+        body = body[1:]
+    elif body.startswith("!") and source.startswith("/*!"):
+        body = body[1:]
 
-    Example::
+    has_lf = "\n" in body
+    lines = body.split("\n")
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
 
-        >>> raw = \"\"\"/* This is a
-        ...  *  multiline comment
-        ...  */\"\"\"
-        >>> format_multiline_comment(raw)
-        'This is a\\n*  multiline comment'
+    nonblank = [line for line in lines if line.strip()]
+    margin = False
+    inline_first = False
+    if has_lf and nonblank:
+        margin = all(line.lstrip(" \t").startswith("*") for line in nonblank)
+        # A first body line sharing the opener may omit the decorative star.
+        if not margin and source.startswith("/*") and "\n" in body:
+            original_lines = body.split("\n")
+            first_is_inline = bool(original_lines and original_lines[0].strip())
+            rest = [line for line in original_lines[1:] if line.strip()]
+            margin = first_is_inline and bool(rest) and all(
+                line.lstrip(" \t").startswith("*") for line in rest
+            )
+            inline_first = margin and first_is_inline
+
+    if margin:
+        stripped = []
+        for index, line in enumerate(lines):
+            if not line.strip():
+                stripped.append("")
+                continue
+            content = line.lstrip(" \t")
+            if not (inline_first and index == 0):
+                content = content[1:]
+                if content.startswith((" ", "\t")):
+                    content = content[1:]
+            stripped.append(content)
+        lines = stripped
+
+    lines = [line if line.strip() else "" for line in lines]
+    body = textwrap.dedent("\n".join(lines))
+    body_lines = body.split("\n") if body else []
+    if body_lines:
+        first = next((i for i, line in enumerate(body_lines) if line.strip()), None)
+        last = next((i for i in range(len(body_lines) - 1, -1, -1) if body_lines[i].strip()), None)
+        if first is not None:
+            body_lines[first] = body_lines[first].lstrip(" \t")
+            body_lines[last] = body_lines[last].rstrip(" \t")
+            body_lines = body_lines[first : last + 1]
+            body = "\n".join(body_lines)
+
+    if "/*" in body:
+        raise ValueError("documentation body contains '/*'; a prior comment may be unterminated")
+    if "*/" in body:
+        raise ValueError("documentation body contains '*/'")
+    validate_documentation_for_export(body)
+    return body
+
+
+def validate_documentation_for_export(doc: str) -> None:
+    """Validate a normalized documentation value before canonical export.
+
+    >>> validate_documentation_for_export('A\\nB')
+    >>> validate_documentation_for_export('A /* B')
+    Traceback (most recent call last):
+        ...
+    ValueError: documentation must not contain '/*'
     """
-    if re.fullmatch(r'\s*/\*+/\s*', raw_doc.strip()):
-        return ""
+    if not isinstance(doc, str):
+        raise TypeError("documentation must be a str")
+    if "\r" in doc:
+        raise ValueError("documentation must not contain CR")
+    if "/*" in doc:
+        raise ValueError("documentation must not contain '/*'")
+    if "*/" in doc:
+        raise ValueError("documentation must not contain '*/'")
+    invalid_control = next(
+        (
+            char
+            for char in doc
+            if (ord(char) < 0x20 and char not in "\n\t") or ord(char) == 0x7F
+        ),
+        None,
+    )
+    if invalid_control is not None:
+        raise ValueError(
+            "documentation contains unsupported control character "
+            f"U+{ord(invalid_control):04X}"
+        )
+    if doc and (doc[0].isspace() or doc[-1].isspace()):
+        raise ValueError("documentation has invalid boundary whitespace")
+    if any(line and line.isspace() for line in doc.split("\n")):
+        raise ValueError("documentation contains whitespace-only line")
 
-    # Use regex to remove opening comment markers (/* with one or more asterisks)
-    content = re.sub(r'^\s*/\*+', '', raw_doc.strip())
 
-    # Use regex to remove closing comment markers
-    content = re.sub(r'\*+/\s*$', '', content)
+def aggregate_documentation(docs: Iterable[Optional[str]]) -> Optional[str]:
+    """Stable, ordered aggregation of normalized documentation values.
 
-    # Split into lines
-    lines = content.splitlines()
-
-    i = 0
-    while i < len(lines) and not lines[i].strip():
-        i += 1
-    lines = lines[i:]
-
-    i = len(lines) - 1
-    while i > 0 and not lines[i].strip():
-        i -= 1
-    lines = lines[:i + 1]
-
-    # Use textwrap.dedent to align indentation
-    linesep = '\n' if os.environ.get('UNITTEST') else os.linesep
-    formatted_text = textwrap.dedent(linesep.join(map(str.rstrip, lines)))
-    return formatted_text
+    >>> aggregate_documentation((None, '', 'A', 'A', 'B'))
+    'A\\n\\nB'
+    >>> aggregate_documentation((None, None)) is None
+    True
+    """
+    values = list(docs)
+    if not values or all(value is None for value in values):
+        return None
+    seen = set()
+    nonempty = []
+    saw_empty = False
+    for value in values:
+        if value is None:
+            continue
+        validate_documentation_for_export(value)
+        if value == "":
+            saw_empty = True
+        elif value not in seen:
+            seen.add(value)
+            nonempty.append(value)
+    result = "\n\n".join(nonempty) if nonempty else ("" if saw_empty else None)
+    if result is not None:
+        validate_documentation_for_export(result)
+    return result

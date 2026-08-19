@@ -51,10 +51,11 @@ Example::
 
 import os
 import pathlib
-from typing import Optional, Union
+from typing import List, Optional, Tuple, Union
 
 from ..dsl import parse_state_machine_dsl
 from ..utils import auto_decode
+from ..utils.validate import ModelDiagnostic
 from .model import StateMachine, parse_dsl_node_to_state_machine
 
 __all__ = [
@@ -63,7 +64,14 @@ __all__ = [
 ]
 
 
-def load_state_machine_from_file(path: Union[str, os.PathLike]) -> StateMachine:
+def load_state_machine_from_file(
+    path: Union[str, os.PathLike],
+    *,
+    collect: bool = False,
+) -> Union[
+    StateMachine,
+    Tuple[Optional[StateMachine], List[ModelDiagnostic]],
+]:
     """
     Load a :class:`StateMachine` directly from an FCSTM file.
 
@@ -72,14 +80,27 @@ def load_state_machine_from_file(path: Union[str, os.PathLike]) -> StateMachine:
     the final import-aware model using the file path as the import resolution
     context.
 
+    ``collect`` is forwarded to
+    :func:`pyfcstm.model.parse_dsl_node_to_state_machine` and follows the same
+    contract. In the default **strict** mode the first model error raises. In
+    **collect** mode the return value becomes a
+    ``(model_or_None, diagnostics)`` tuple carrying every detected error, and
+    the model it returns may be internally inconsistent -- for example a
+    transition whose endpoint name does not resolve.
+
     :param path: Path to the input ``.fcstm`` file.
     :type path: Union[str, os.PathLike]
-    :return: Fully constructed state machine model.
-    :rtype: StateMachine
+    :param collect: When ``True``, return ``(model_or_None, diagnostics)``
+        instead of raising on the first model error, defaults to ``False``.
+    :type collect: bool, optional
+    :return: Fully constructed state machine model, or the
+        ``(model_or_None, diagnostics)`` pair when ``collect`` is ``True``.
+    :rtype: Union[StateMachine, Tuple[Optional[StateMachine], List[pyfcstm.utils.validate.ModelDiagnostic]]]
     :raises OSError: If the file cannot be read.
     :raises UnicodeDecodeError: If the file content cannot be decoded.
     :raises pyfcstm.dsl.error.GrammarParseError: If DSL parsing fails.
-    :raises SyntaxError: If model assembly or validation fails.
+    :raises SyntaxError: If model assembly or validation fails and ``collect``
+        is ``False``.
 
     Example::
 
@@ -104,16 +125,23 @@ def load_state_machine_from_file(path: Union[str, os.PathLike]) -> StateMachine:
     # was dead code, which a mutation confirmed: removing it left 7645 tests green.
     ast_node._source_path = os.path.abspath(file_path)
     ast_node._source_text = code
-    machine = parse_dsl_node_to_state_machine(ast_node, path=file_path)
-    machine.source_text = code
-    machine.source_path = file_path
-    return machine
+    built = parse_dsl_node_to_state_machine(ast_node, path=file_path, collect=collect)
+    machine, diagnostics = built if collect else (built, ())
+    if machine is not None:
+        machine.source_text = code
+        machine.source_path = file_path
+    return (machine, diagnostics) if collect else machine
 
 
 def load_state_machine_from_text(
     text: str,
     path: Optional[Union[str, os.PathLike]] = None,
-) -> StateMachine:
+    *,
+    collect: bool = False,
+) -> Union[
+    StateMachine,
+    Tuple[Optional[StateMachine], List[ModelDiagnostic]],
+]:
     """
     Load a :class:`StateMachine` directly from FCSTM DSL source text.
 
@@ -122,15 +150,23 @@ def load_state_machine_from_text(
     the import resolution context; callers may also pass an explicit file path
     or directory path to control import resolution.
 
+    ``collect`` follows the same contract as in
+    :func:`load_state_machine_from_file`.
+
     :param text: FCSTM DSL source text.
     :type text: str
     :param path: Optional path contract for import resolution. Defaults to the
         current working directory when omitted.
     :type path: Optional[Union[str, os.PathLike]]
-    :return: Fully constructed state machine model.
-    :rtype: StateMachine
+    :param collect: When ``True``, return ``(model_or_None, diagnostics)``
+        instead of raising on the first model error, defaults to ``False``.
+    :type collect: bool, optional
+    :return: Fully constructed state machine model, or the
+        ``(model_or_None, diagnostics)`` pair when ``collect`` is ``True``.
+    :rtype: Union[StateMachine, Tuple[Optional[StateMachine], List[pyfcstm.utils.validate.ModelDiagnostic]]]
     :raises pyfcstm.dsl.error.GrammarParseError: If DSL parsing fails.
-    :raises SyntaxError: If model assembly or validation fails.
+    :raises SyntaxError: If model assembly or validation fails and ``collect``
+        is ``False``.
 
     Example::
 
@@ -172,7 +208,11 @@ def load_state_machine_from_text(
     # from one loaded from a file.
     ast_node._source_path = "<memory>"
     ast_node._source_text = text
-    machine = parse_dsl_node_to_state_machine(ast_node, path=effective_path)
-    machine.source_text = text
-    machine.source_path = effective_path
-    return machine
+    built = parse_dsl_node_to_state_machine(
+        ast_node, path=effective_path, collect=collect
+    )
+    machine, diagnostics = built if collect else (built, ())
+    if machine is not None:
+        machine.source_text = text
+        machine.source_path = effective_path
+    return (machine, diagnostics) if collect else machine

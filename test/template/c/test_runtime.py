@@ -15,6 +15,10 @@ _CLANG_FORMAT_STYLE = "{BasedOnStyle: LLVM, IndentWidth: 4, ContinuationIndentWi
 def _format_c_text(text, filename):
     clang_format = shutil.which("clang-format")
     if clang_format is None:
+        if os.environ.get("PYFCSTM_RUN_NATIVE_TOOLCHAIN", "").strip().lower() in {
+            "1", "true", "yes", "on"
+        }:
+            pytest.fail("explicit native template suites require clang-format")
         pytest.skip("clang-format is required for C formatter convergence tests.")
 
     return subprocess.run(
@@ -2227,6 +2231,10 @@ def _compile_and_run_harness_with_cmake(
 ):
     cmake_executable = artifacts['cmake']
     if cmake_executable is None:
+        if os.environ.get('PYFCSTM_RUN_NATIVE_TOOLCHAIN', '').strip().lower() in {
+            '1', 'true', 'yes', 'on'
+        }:
+            pytest.fail('explicit native template suites require cmake')
         pytest.skip('cmake is required for generated C template harness tests.')
 
     source_ext = '.cpp' if language == 'CXX' else '.c'
@@ -2361,6 +2369,10 @@ def _compile_and_run_c_library_consumer(
 ):
     cmake_executable = artifacts['cmake']
     if cmake_executable is None:
+        if os.environ.get('PYFCSTM_RUN_NATIVE_TOOLCHAIN', '').strip().lower() in {
+            '1', 'true', 'yes', 'on'
+        }:
+            pytest.fail('explicit native template suites require cmake')
         pytest.skip('cmake is required for generated C template harness tests.')
 
     project_dir = os.path.join(artifacts['output_dir'], stem + '_cmake_project')

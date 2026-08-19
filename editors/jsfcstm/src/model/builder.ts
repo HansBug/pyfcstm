@@ -40,12 +40,29 @@ import type {
     RawFcstmModelVariable as FcstmModelVariable,
 } from './raw';
 import {hydrateStateMachine, type FcstmModelStateMachine as FcstmRuntimeStateMachine} from './runtime';
+import {canonicalComboEffectSignature, pythonJsonArray} from './combo-origin';
 
 const MATH_CONSTANTS: Record<string, number> = {
     E: Math.E,
     pi: Math.PI,
     tau: Math.PI * 2,
 };
+
+function aggregateModelDocumentation(values: Array<string | undefined>): string | undefined {
+    const seen = new Set<string>();
+    const documents: string[] = [];
+    let sawEmpty = false;
+    for (const value of values) {
+        if (value === undefined) continue;
+        if (value.length === 0) {
+            sawEmpty = true;
+        } else if (!seen.has(value)) {
+            seen.add(value);
+            documents.push(value);
+        }
+    }
+    return documents.length > 0 ? documents.join('\n\n') : (sawEmpty ? '' : undefined);
+}
 
 const EXPR_PRECEDENCE: Record<string, number> = {
     'function_call': 90,
@@ -89,6 +106,7 @@ interface InheritedForceTransition {
     triggerScope?: 'local' | 'chain' | 'absolute';
     transitionKind: FcstmModelTransition['transitionKind'];
     ast: FcstmAstForcedTransition;
+    doc?: string;
 }
 
 function pathKey(path: Array<string | null>): string {
@@ -165,9 +183,9 @@ function comboOriginId(
     const source = transitionEndpointText(transition, 'source');
     const target = transitionEndpointText(transition, 'target');
     let origin = `${statePathName(ownerPath)}:${source}->${target}:${transition.comboTrigger?.canonicalText ?? transition.text}`;
-    const effects = transition.postOperations.map(item => item.text);
+    const effects = canonicalComboEffectSignature(transition.postOperations);
     if (effects.length > 0) {
-        origin = `${origin}:effect=${JSON.stringify(effects)}`;
+        origin = `${origin}:effect=${pythonJsonArray(effects)}`;
     }
     return origin;
 }
@@ -216,7 +234,7 @@ function comboAlternativeKey(ownerPath: string[], transition: FcstmAstTransition
         comboProjectionKey(ownerPath, transition),
         transitionEndpointText(transition, 'target'),
         transition.comboTrigger?.terms.map(term => comboTermSemanticKey(transition, term)) ?? [],
-        transition.postOperations.map(item => item.text),
+        canonicalComboEffectSignature(transition.postOperations),
     ]);
 }
 
@@ -240,11 +258,22 @@ function stableDigest12(value: string): string {
 
 function comboTermRef(
     originId: string,
+    ownerPath: string[],
     transition: FcstmAstTransition,
     term: FcstmAstComboTriggerTerm,
     termIndex: number,
     role: 'prefix' | 'terminal',
+    sourceStatePath?: string[],
+    targetStatePath?: string[],
 ): Record<string, unknown> {
+    const sourceKind = transition.sourceKind === 'init' ? 'init' : 'state';
+    const sourcePath = sourceKind === 'init'
+        ? null
+        : sourceStatePath ? statePathName(sourceStatePath) : null;
+    const targetKind = transition.targetKind === 'exit' ? 'exit' : 'state';
+    const targetPath = targetKind === 'exit'
+        ? '[*]'
+        : targetStatePath ? statePathName(targetStatePath) : null;
     return {
         origin_id: originId,
         term_index: termIndex,
@@ -256,6 +285,11 @@ function comboTermRef(
         term_span: spanJson(term.range),
         value_span: spanJson(term.valueRange),
         removal_span: spanJson(term.removalRange),
+        source_kind: sourceKind,
+        source_path: sourcePath,
+        selection_owner_path: sourceKind === 'init' ? statePathName(ownerPath) : null,
+        target_kind: targetKind,
+        target_path: targetPath,
     };
 }
 
@@ -267,6 +301,7 @@ interface ComboAlternative {
     transition: FcstmAstTransition;
     terms: FcstmAstComboTriggerTerm[];
     originId: string;
+    declaredOwnerPath: string[];
     declarationIndex: number;
     semanticDuplicateDiscriminator: number | null;
 }
@@ -353,6 +388,7 @@ class StateMachineModelBuilder {
             name: definition.name,
             type: definition.valueType,
             init: this.buildExpression(definition.initializer),
+            doc: definition.doc,
         };
     }
 
@@ -398,6 +434,7 @@ class StateMachineModelBuilder {
             substate_name_to_id: {},
             extraName: definition.displayName,
             extra_name: definition.displayName,
+            doc: definition.doc,
             isPseudo: definition.pseudo,
             is_pseudo: definition.pseudo,
             isLeafState: definition.substates.length === 0,
@@ -442,6 +479,7 @@ class StateMachineModelBuilder {
                 declared: true,
                 origin: 'declared',
                 extraName: event.displayName,
+                doc: event.doc,
             });
         }
 
@@ -587,6 +625,7 @@ class StateMachineModelBuilder {
                     declaredInStatePath: force.declaredInStatePath,
                     triggerScope: force.triggerScope,
                     ast: force.ast,
+                    doc: force.doc,
                 });
 
                 childInheritedTransitions.push({
@@ -601,6 +640,7 @@ class StateMachineModelBuilder {
                     triggerScope: force.triggerScope,
                     transitionKind: 'exitAll',
                     ast: force.ast,
+                    doc: force.doc,
                 });
             }
         }
@@ -635,6 +675,7 @@ class StateMachineModelBuilder {
                     declaredInStatePath: currentState.path,
                     triggerScope,
                     ast: transition,
+                    doc: transition.doc,
                 });
                 continue;
             }
@@ -667,6 +708,7 @@ class StateMachineModelBuilder {
                     transition: candidate,
                     terms: candidate.comboTrigger.terms,
                     originId: comboOriginId(currentState.path, candidate) + (duplicateIndex > 0 ? `#dup${duplicateIndex}` : ''),
+                    declaredOwnerPath: [...currentState.path],
                     declarationIndex: runIndex,
                     semanticDuplicateDiscriminator: duplicateIndex > 0 ? duplicateIndex : null,
                 });
@@ -720,6 +762,7 @@ class StateMachineModelBuilder {
             triggerScope,
             transitionKind: transition.transitionKind,
             ast: transition,
+            doc: transition.doc,
         };
     }
 
@@ -896,6 +939,7 @@ class StateMachineModelBuilder {
             declared: boolean;
             origin: 'declared' | 'local' | 'chain' | 'absolute';
             extraName?: string;
+            doc?: string;
         }
     ): FcstmModelEvent | undefined {
         const ownerState = this.statesByPath.get(statePathName(statePath));
@@ -921,6 +965,7 @@ class StateMachineModelBuilder {
                 path_name: eventPathName,
                 extraName: options.extraName,
                 extra_name: options.extraName,
+                doc: options.doc,
                 declared: options.declared,
                 origins: [options.origin],
             };
@@ -930,6 +975,7 @@ class StateMachineModelBuilder {
             event.declared = event.declared || options.declared;
             event.extraName = event.extraName || options.extraName;
             event.extra_name = event.extra_name || options.extraName;
+            if (event.doc === undefined && options.doc !== undefined) event.doc = options.doc;
             if (!event.origins.includes(options.origin)) {
                 event.origins.push(options.origin);
             }
@@ -1200,12 +1246,26 @@ class StateMachineModelBuilder {
             declaredInStatePath: currentState.path,
             triggerScope: eventResult.scope,
             ast: first.transition,
+            doc: aggregateModelDocumentation(alternatives.map(alternative => alternative.transition.doc)),
             comboOriginRefs: alternatives.map(alternative => comboTermRef(
                 alternative.originId,
+                alternative.declaredOwnerPath,
                 alternative.transition,
                 alternative.terms[termIndex],
                 termIndex,
                 role,
+                alternative.transition.sourceKind === 'init'
+                    ? undefined
+                    : this.resolveStateReference(
+                        alternative.declaredOwnerPath,
+                        alternative.transition.sourceStateName ?? '',
+                    )?.path,
+                alternative.transition.targetKind === 'exit'
+                    ? undefined
+                    : this.resolveStateReference(
+                        alternative.declaredOwnerPath,
+                        alternative.transition.targetStateName ?? '',
+                    )?.path,
             )),
             comboProjectionKey: projectionKey,
             comboProjectionOrderKey: projectionOrderKey,
@@ -1231,6 +1291,7 @@ class StateMachineModelBuilder {
         declaredInStatePath: string[];
         triggerScope?: FcstmModelTransition['triggerScope'];
         ast?: FcstmAstTransition | FcstmAstForcedTransition;
+        doc?: string;
         comboOriginRefs?: unknown[];
         comboProjectionKey?: unknown[] | null;
         comboProjectionOrderKey?: unknown[] | null;
@@ -1244,6 +1305,7 @@ class StateMachineModelBuilder {
             pyModelType: 'Transition',
             range: params.range,
             text: params.text,
+            doc: params.doc,
             fromState: params.fromState,
             from_state: params.fromState,
             toState: params.toState,
@@ -1275,6 +1337,12 @@ class StateMachineModelBuilder {
             trigger_scope: params.triggerScope,
             transitionIndex,
             transition_index: transitionIndex,
+            sourcePath: params.ast?.sourceFilePath
+                ?? params.ast?.source_file_path
+                ?? this.filePath,
+            source_path: params.ast?.sourceFilePath
+                ?? params.ast?.source_file_path
+                ?? this.filePath,
             combo_origin_refs: params.comboOriginRefs ?? [],
             combo_projection_key: params.comboProjectionKey ?? null,
             combo_projection_order_key: params.comboProjectionOrderKey ?? null,

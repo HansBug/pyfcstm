@@ -58,6 +58,17 @@ Emission tiers
    * - ``catalog_only``
      - Compatibility contract only; current normal pyfcstm paths should not emit it.
 
+Deprecated compatibility aliases
+---------------------------------
+
+The historical ``W_DEADLOCK_LEAF`` spelling remains present in
+``CODE_REGISTRY`` as a deprecated alias of
+``W_LEAF_NO_OUTGOING_TRANSITION``. New analyzers emit only the canonical
+spelling; consumers that read historical JSON or LLM reports can resolve the
+old spelling through ``resolve_diagnostic_code`` and
+``canonicalize_diagnostic_code``. The alias is scheduled for removal in
+version ``1.0.0`` and its schedule is checked by ``make deprecation_check``.
+
 Example kinds
 -------------
 

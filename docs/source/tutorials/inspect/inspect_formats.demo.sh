@@ -34,7 +34,7 @@ print("diagnostic_count:", len(codes))
 print("diagnostic_codes_sample:", ", ".join(code for code in interesting_codes if code in codes))
 print("first_diagnostic_keys:", ", ".join(sorted(report["diagnostics"][0].keys())))
 for item in report["diagnostics"]:
-    if item["code"] == "W_DEADLOCK_LEAF":
+    if item["code"] == "W_LEAF_NO_OUTGOING_TRANSITION":
         print("suggested_fix_key:", "suggested_fix" in item["refs"])
         break
 for item in report["diagnostics"]:

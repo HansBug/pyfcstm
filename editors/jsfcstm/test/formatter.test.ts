@@ -115,7 +115,7 @@ describe('jsfcstm formatter', () => {
         assert.equal(format(input), expected);
     });
 
-    it('preserves all three comment styles: //, #, and /* */ (with # normalized to //)', () => {
+    it('normalizes comments and owner documentation canonically', () => {
         const input = [
             '// top line comment',
             '# python-style comment',
@@ -129,9 +129,9 @@ describe('jsfcstm formatter', () => {
         assert.ok(out.includes('// top line comment'));
         assert.ok(out.includes('// python-style comment'),
             '"#" must be normalized to "//"');
-        assert.ok(out.includes('/* standalone block comment */'));
-        assert.ok(out.includes('/* raw_doc payload — stays verbatim */'),
-            'raw_doc /* */ must be preserved verbatim');
+        assert.ok(out.includes('/*\n * standalone block comment\n */'));
+        assert.ok(out.includes('    /*\n     * raw_doc payload — stays verbatim\n     */\n    enter abstract Init;'),
+            'owner documentation must be emitted before the abstract action');
         assert.ok(out.includes('// trailing line comment'));
     });
 
@@ -309,7 +309,7 @@ describe('jsfcstm formatter', () => {
         assert.ok(out.includes('>> during before {\n        counter = counter + 1;\n    }'));
     });
 
-    it('preserves /* */ raw_doc for abstract actions without touching its content', () => {
+    it('canonicalizes /* */ raw_doc for abstract actions while preserving content', () => {
         const input = [
             'state Root {',
             '    enter abstract Init /* Line one of the doc.',
@@ -319,9 +319,42 @@ describe('jsfcstm formatter', () => {
             '}',
         ].join('\n');
         const out = format(input);
-        assert.ok(out.includes('/* Line one of the doc.'));
-        assert.ok(out.includes('* Line two stays where it is.'));
-        assert.ok(out.includes('* Line three ends. */'));
+        assert.ok(out.includes('    /*\n     * Line one of the doc.'));
+        assert.ok(out.includes('     * Line two stays where it is.'));
+        assert.ok(out.includes('     * Line three ends.'));
+        assert.ok(out.includes('     */\n    enter abstract Init;'));
+    });
+
+    it('moves trailing documentation before every abstract action family', async () => {
+        const input = [
+            'state Root {',
+            '    exit abstract ExitHook /* exit docs */',
+            '    during before abstract BeforeHook /* before docs */',
+            '    during after abstract /* anonymous docs */',
+            '    >> during before abstract AspectHook /* aspect docs */',
+            '}',
+        ].join('\n');
+        const out = format(input);
+        assert.ok(out.includes('     */\n    exit abstract ExitHook;'));
+        assert.ok(out.includes('     */\n    during before abstract BeforeHook;'));
+        assert.ok(out.includes('     */\n    during after abstract;'));
+        assert.ok(out.includes('     */\n    >> during before abstract AspectHook;'));
+        assert.equal(format(out), out);
+
+        const parseResult = await packageModule.getParser().parse(out);
+        assert.equal(
+            parseResult.success,
+            true,
+            parseResult.errors.map(error => error.message).join('; '),
+        );
+    });
+
+    it('keeps bare anonymous abstract actions invalid without documentation', async () => {
+        const result = await packageModule.getParser().parse(
+            'state Root { enter abstract; }',
+        );
+        assert.equal(result.success, false);
+        assert.ok(result.errors.length > 0);
     });
 
     it('runs on a realistic messy document and yields a fully normalized result', () => {

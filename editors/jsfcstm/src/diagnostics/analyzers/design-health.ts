@@ -4,6 +4,7 @@ import type {
     ForcedTransitionInfo,
     ModelDiagnosticJson,
     ModelMetrics,
+    ModelSpanJson,
     StateInfo,
     TransitionInfo,
     VariableInfo,
@@ -41,6 +42,7 @@ export function collectDesignHealthWarnings(
     };
     const diagnostics = [
         ...collectUnreachableStateDiagnostics(states, reachabilityGraph, rootStatePath),
+        ...collectUnreachableInitialTransitionDiagnostics(states, transitions, reachabilityGraph, rootStatePath),
         ...(machine ? collectConstFoldWarnings(machine) : collectGuardConstFalseDiagnostics(transitions)),
         ...(machine ? collectComboWarnings(machine) : []),
         ...collectUnusedEventDiagnostics(events),
@@ -66,6 +68,43 @@ export function collectDesignHealthWarnings(
     }));
 }
 
+function collectUnreachableInitialTransitionDiagnostics(
+    states: StateInfo[],
+    transitions: TransitionInfo[],
+    reachabilityGraph: Record<string, string[]>,
+    rootStatePath?: string,
+): ModelDiagnosticJson[] {
+    if (states.length === 0) return [];
+    const rootPath = rootStatePath ?? states[0].path;
+    const statePaths = new Set(states.map(state => state.path));
+    const reachable = new Set(reachabilityGraph[rootPath] ?? []);
+    reachable.add(rootPath);
+    const out: ModelDiagnosticJson[] = [];
+    for (const transition of transitions) {
+        if (transition.from_path !== '[*]' || !transition.to_path.includes('.')) continue;
+        const ownerPath = transition.to_path.slice(0, transition.to_path.lastIndexOf('.'));
+        if (!statePaths.has(ownerPath) || reachable.has(ownerPath)) continue;
+        out.push({
+            code: 'W_UNREACHABLE_TRANSITION',
+            severity: 'warning',
+            message: `Authored transition ${JSON.stringify(transition.from_path)} -> ${JSON.stringify(transition.to_path)} is unreachable for reasons: unreachable_source_state.`,
+            span: transitionSourceSpan(transition),
+            refs: {
+                from_path: transition.from_path,
+                to_path: transition.to_path,
+                transition_index: transition.transition_index,
+                reasons: ['unreachable_source_state'],
+                source_path: transition.source_path,
+                source_state_path: null,
+                selection_owner_path: ownerPath,
+                forced_origin: transition.forced_origin,
+                combo_origin_ids: [],
+            },
+        });
+    }
+    return out;
+}
+
 function collectUnreachableStateDiagnostics(
     states: StateInfo[],
     reachabilityGraph: Record<string, string[]>,
@@ -77,7 +116,7 @@ function collectUnreachableStateDiagnostics(
     reachable.add(rootPath);
     const out: ModelDiagnosticJson[] = [];
     for (const state of states) {
-        if (state.is_pseudo || reachable.has(state.path)) continue;
+        if (!state.is_leaf || state.is_pseudo || reachable.has(state.path)) continue;
         out.push({
             code: 'W_UNREACHABLE_STATE',
             severity: 'warning',
@@ -87,6 +126,17 @@ function collectUnreachableStateDiagnostics(
         });
     }
     return out;
+}
+
+function transitionSourceSpan(transition: TransitionInfo): ModelSpanJson | null {
+    const range = transition.__sourceRange;
+    if (!range) return null;
+    return {
+        line: range.start.line + 1,
+        column: range.start.character + 1,
+        end_line: range.end.line + 1,
+        end_column: range.end.character + 1,
+    };
 }
 
 function collectGuardConstFalseDiagnostics(transitions: TransitionInfo[]): ModelDiagnosticJson[] {

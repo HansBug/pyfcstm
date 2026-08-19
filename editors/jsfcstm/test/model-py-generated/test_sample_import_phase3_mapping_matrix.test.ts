@@ -23,56 +23,64 @@ runPyGeneratedModelCase({
             "init": {
                 "type": "Integer",
                 "value": 1
-            }
+            },
+            "doc": null
         },
         "fallback_timeout": {
             "type": "int",
             "init": {
                 "type": "Integer",
                 "value": 5
-            }
+            },
+            "doc": null
         },
         "pair_main_low_a_main_b_low": {
             "type": "int",
             "init": {
                 "type": "Integer",
                 "value": 4
-            }
+            },
+            "doc": null
         },
         "sensor_temp": {
             "type": "int",
             "init": {
                 "type": "Integer",
                 "value": 3
-            }
+            },
+            "doc": null
         },
         "set_a": {
             "type": "int",
             "init": {
                 "type": "Integer",
                 "value": 6
-            }
+            },
+            "doc": null
         },
         "set_b": {
             "type": "int",
             "init": {
                 "type": "Integer",
                 "value": 7
-            }
+            },
+            "doc": null
         },
         "set_c": {
             "type": "int",
             "init": {
                 "type": "Integer",
                 "value": 8
-            }
+            },
+            "doc": null
         },
         "set_status_flag": {
             "type": "int",
             "init": {
                 "type": "Integer",
                 "value": 2
-            }
+            },
+            "doc": null
         }
     },
     "root_state": "Lab",
@@ -105,7 +113,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Lab"
+                    "parent": "Lab",
+                    "doc": null
                 }
             ],
             "named_functions": {},
@@ -117,6 +126,7 @@ runPyGeneratedModelCase({
                 "Worker": 0
             },
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": false,
             "is_root_state": true,
@@ -136,7 +146,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Lab"
+                    "parent": "Lab",
+                    "doc": null
                 }
             ],
             "transitions_from": [
@@ -146,7 +157,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": null
+                    "parent": null,
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -156,7 +168,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": null
+                    "parent": null,
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [
@@ -166,7 +179,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Lab"
+                    "parent": "Lab",
+                    "doc": null
                 }
             ],
             "transitions_entering_children_simplified": [
@@ -176,7 +190,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Lab"
+                    "parent": "Lab",
+                    "doc": null
                 }
             ],
             "list_on_enters": [],
@@ -215,7 +230,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Lab.Worker"
+                    "parent": "Lab.Worker",
+                    "doc": null
                 },
                 {
                     "from_state": "Idle",
@@ -234,7 +250,8 @@ runPyGeneratedModelCase({
                         }
                     },
                     "effects": [],
-                    "parent": "Lab.Worker"
+                    "parent": "Lab.Worker",
+                    "doc": null
                 },
                 {
                     "from_state": "Active",
@@ -270,7 +287,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Lab.Worker"
+                    "parent": "Lab.Worker",
+                    "doc": null
                 }
             ],
             "named_functions": {},
@@ -283,6 +301,7 @@ runPyGeneratedModelCase({
                 "Active": 1
             },
             "extra_name": "Mapping Matrix",
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": false,
             "is_root_state": false,
@@ -302,7 +321,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Lab.Worker"
+                    "parent": "Lab.Worker",
+                    "doc": null
                 }
             ],
             "transitions_from": [],
@@ -313,7 +333,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Lab"
+                    "parent": "Lab",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [
@@ -323,7 +344,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Lab.Worker"
+                    "parent": "Lab.Worker",
+                    "doc": null
                 }
             ],
             "transitions_entering_children_simplified": [
@@ -333,7 +355,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Lab.Worker"
+                    "parent": "Lab.Worker",
+                    "doc": null
                 }
             ],
             "list_on_enters": [],
@@ -458,6 +481,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -491,7 +515,8 @@ runPyGeneratedModelCase({
                         }
                     },
                     "effects": [],
-                    "parent": "Lab.Worker"
+                    "parent": "Lab.Worker",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -501,7 +526,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "Lab.Worker"
+                    "parent": "Lab.Worker",
+                    "doc": null
                 },
                 {
                     "from_state": "Active",
@@ -537,7 +563,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Lab.Worker"
+                    "parent": "Lab.Worker",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -634,6 +661,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -684,7 +712,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "Lab.Worker"
+                    "parent": "Lab.Worker",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -705,7 +734,8 @@ runPyGeneratedModelCase({
                         }
                     },
                     "effects": [],
-                    "parent": "Lab.Worker"
+                    "parent": "Lab.Worker",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -755,7 +785,8 @@ runPyGeneratedModelCase({
                 "expr": {
                     "__class__": "Integer",
                     "raw": "1"
-                }
+                },
+                "doc": null
             },
             {
                 "__class__": "DefAssignment",
@@ -764,7 +795,8 @@ runPyGeneratedModelCase({
                 "expr": {
                     "__class__": "Integer",
                     "raw": "2"
-                }
+                },
+                "doc": null
             },
             {
                 "__class__": "DefAssignment",
@@ -773,7 +805,8 @@ runPyGeneratedModelCase({
                 "expr": {
                     "__class__": "Integer",
                     "raw": "3"
-                }
+                },
+                "doc": null
             },
             {
                 "__class__": "DefAssignment",
@@ -782,7 +815,8 @@ runPyGeneratedModelCase({
                 "expr": {
                     "__class__": "Integer",
                     "raw": "4"
-                }
+                },
+                "doc": null
             },
             {
                 "__class__": "DefAssignment",
@@ -791,7 +825,8 @@ runPyGeneratedModelCase({
                 "expr": {
                     "__class__": "Integer",
                     "raw": "5"
-                }
+                },
+                "doc": null
             },
             {
                 "__class__": "DefAssignment",
@@ -800,7 +835,8 @@ runPyGeneratedModelCase({
                 "expr": {
                     "__class__": "Integer",
                     "raw": "6"
-                }
+                },
+                "doc": null
             },
             {
                 "__class__": "DefAssignment",
@@ -809,7 +845,8 @@ runPyGeneratedModelCase({
                 "expr": {
                     "__class__": "Integer",
                     "raw": "7"
-                }
+                },
+                "doc": null
             },
             {
                 "__class__": "DefAssignment",
@@ -818,25 +855,29 @@ runPyGeneratedModelCase({
                 "expr": {
                     "__class__": "Integer",
                     "raw": "8"
-                }
+                },
+                "doc": null
             }
         ],
         "root_state": {
             "__class__": "StateDefinition",
             "name": "Lab",
             "extra_name": null,
+            "doc": null,
             "events": [],
             "substates": [
                 {
                     "__class__": "StateDefinition",
                     "name": "Worker",
                     "extra_name": "Mapping Matrix",
+                    "doc": null,
                     "events": [],
                     "substates": [
                         {
                             "__class__": "StateDefinition",
                             "name": "Idle",
                             "extra_name": null,
+                            "doc": null,
                             "events": [],
                             "substates": [],
                             "transitions": [],
@@ -924,6 +965,7 @@ runPyGeneratedModelCase({
                             "__class__": "StateDefinition",
                             "name": "Active",
                             "extra_name": null,
+                            "doc": null,
                             "events": [],
                             "substates": [],
                             "transitions": [],
@@ -967,7 +1009,8 @@ runPyGeneratedModelCase({
                             "to_state": "Idle",
                             "event_id": null,
                             "condition_expr": null,
-                            "post_operations": []
+                            "post_operations": [],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -986,7 +1029,8 @@ runPyGeneratedModelCase({
                                     "name": "set_status_flag"
                                 }
                             },
-                            "post_operations": []
+                            "post_operations": [],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -1022,7 +1066,8 @@ runPyGeneratedModelCase({
                                         }
                                     }
                                 }
-                            ]
+                            ],
+                            "doc": null
                         }
                     ],
                     "enters": [],
@@ -1039,7 +1084,8 @@ runPyGeneratedModelCase({
                     "to_state": "Worker",
                     "event_id": null,
                     "condition_expr": null,
-                    "post_operations": []
+                    "post_operations": [],
+                    "doc": null
                 }
             ],
             "enters": [],

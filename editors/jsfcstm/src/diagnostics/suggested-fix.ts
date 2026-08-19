@@ -1,10 +1,8 @@
-import type {CodeRegistry} from './codes';
+import {loadCodesRegistry} from './codes-registry';
 
-// Import the JSON payload directly. In ts-node source tests, resolving
-// ``./codes`` prefers ``codes.json`` over ``codes.ts``; using the explicit
-// filename keeps source and built-package execution aligned.
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const codesContents = require('./codes.json') as CodeRegistry;
+// Use the resolved registry so deprecated aliases inherit the canonical
+// suggested-fix contract while remaining queryable by their historical code.
+const codesContents = loadCodesRegistry();
 
 export interface SuggestedFixPayload {
     kind: 'insert' | 'delete' | 'replace';

@@ -107,10 +107,10 @@ def state_trafficlight_idle_nottobe(state_trafficlight_idle):
 class TestModelStateTrafficLight:
     def test_model(self, model):
         assert model.defines == {
-            "a": VarDefine(name="a", type="int", init=Integer(value=0)),
-            "b": VarDefine(name="b", type="int", init=Integer(value=0)),
+            "a": VarDefine(name="a", type="int", init=Integer(value=0), doc=None),
+            "b": VarDefine(name="b", type="int", init=Integer(value=0), doc=None),
             "round_count": VarDefine(
-                name="round_count", type="int", init=Integer(value=0)
+                name="round_count", type="int", init=Integer(value=0), doc=None
             ),
         }
         assert model.root_state.name == "TrafficLight"
@@ -120,13 +120,16 @@ class TestModelStateTrafficLight:
         ast_node = model.to_ast_node()
         assert ast_node.definitions == [
             dsl_nodes.DefAssignment(
-                name="a", type="int", expr=dsl_nodes.Integer(raw="0")
+                name="a", type="int", expr=dsl_nodes.Integer(raw="0"), doc=None
             ),
             dsl_nodes.DefAssignment(
-                name="b", type="int", expr=dsl_nodes.Integer(raw="0")
+                name="b", type="int", expr=dsl_nodes.Integer(raw="0"), doc=None
             ),
             dsl_nodes.DefAssignment(
-                name="round_count", type="int", expr=dsl_nodes.Integer(raw="0")
+                name="round_count",
+                type="int",
+                expr=dsl_nodes.Integer(raw="0"),
+                doc=None,
             ),
         ]
         assert ast_node.root_state.name == "TrafficLight"
@@ -137,9 +140,14 @@ class TestModelStateTrafficLight:
         assert sorted(state_trafficlight.substates.keys()) == ["Idle", "InService"]
         assert state_trafficlight.events == {
             "GodDamnFuckUp": Event(
-                name="GodDamnFuckUp", state_path=("TrafficLight",), extra_name=None
+                name="GodDamnFuckUp",
+                state_path=("TrafficLight",),
+                extra_name=None,
+                doc=None,
             ),
-            "E2": Event(name="E2", state_path=("TrafficLight",), extra_name=None),
+            "E2": Event(
+                name="E2", state_path=("TrafficLight",), extra_name=None, doc=None
+            ),
         }
         assert len(state_trafficlight.transitions) == 8
         assert state_trafficlight.transitions[0].from_state == "InService"
@@ -148,36 +156,50 @@ class TestModelStateTrafficLight:
             name="ServiceError",
             state_path=("TrafficLight", "InService"),
             extra_name=None,
+            doc=None,
         )
         assert state_trafficlight.transitions[0].guard is None
         assert state_trafficlight.transitions[0].effects == []
+        assert state_trafficlight.transitions[0].doc is None
         assert state_trafficlight.transitions[0].parent_ref().name == "TrafficLight"
         assert state_trafficlight.transitions[0].parent_ref().path == ("TrafficLight",)
         assert state_trafficlight.transitions[1].from_state == "InService"
         assert state_trafficlight.transitions[1].to_state == EXIT_STATE
         assert state_trafficlight.transitions[1].event == Event(
-            name="GodDamnFuckUp", state_path=("TrafficLight",), extra_name=None
+            name="GodDamnFuckUp",
+            state_path=("TrafficLight",),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight.transitions[1].guard is None
         assert state_trafficlight.transitions[1].effects == []
+        assert state_trafficlight.transitions[1].doc is None
         assert state_trafficlight.transitions[1].parent_ref().name == "TrafficLight"
         assert state_trafficlight.transitions[1].parent_ref().path == ("TrafficLight",)
         assert state_trafficlight.transitions[2].from_state == "Idle"
         assert state_trafficlight.transitions[2].to_state == "InService"
         assert state_trafficlight.transitions[2].event == Event(
-            name="GiveUpThinking", state_path=("TrafficLight", "Idle"), extra_name=None
+            name="GiveUpThinking",
+            state_path=("TrafficLight", "Idle"),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight.transitions[2].guard is None
         assert state_trafficlight.transitions[2].effects == []
+        assert state_trafficlight.transitions[2].doc is None
         assert state_trafficlight.transitions[2].parent_ref().name == "TrafficLight"
         assert state_trafficlight.transitions[2].parent_ref().path == ("TrafficLight",)
         assert state_trafficlight.transitions[3].from_state == "Idle"
         assert state_trafficlight.transitions[3].to_state == EXIT_STATE
         assert state_trafficlight.transitions[3].event == Event(
-            name="GodDamnFuckUp", state_path=("TrafficLight",), extra_name=None
+            name="GodDamnFuckUp",
+            state_path=("TrafficLight",),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight.transitions[3].guard is None
         assert state_trafficlight.transitions[3].effects == []
+        assert state_trafficlight.transitions[3].doc is None
         assert state_trafficlight.transitions[3].parent_ref().name == "TrafficLight"
         assert state_trafficlight.transitions[3].parent_ref().path == ("TrafficLight",)
         assert state_trafficlight.transitions[4].from_state == INIT_STATE
@@ -185,24 +207,30 @@ class TestModelStateTrafficLight:
         assert state_trafficlight.transitions[4].event is None
         assert state_trafficlight.transitions[4].guard is None
         assert state_trafficlight.transitions[4].effects == []
+        assert state_trafficlight.transitions[4].doc is None
         assert state_trafficlight.transitions[4].parent_ref().name == "TrafficLight"
         assert state_trafficlight.transitions[4].parent_ref().path == ("TrafficLight",)
         assert state_trafficlight.transitions[5].from_state == "InService"
         assert state_trafficlight.transitions[5].to_state == "Idle"
         assert state_trafficlight.transitions[5].event == Event(
-            name="Maintain", state_path=("TrafficLight", "InService"), extra_name=None
+            name="Maintain",
+            state_path=("TrafficLight", "InService"),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight.transitions[5].guard is None
         assert state_trafficlight.transitions[5].effects == []
+        assert state_trafficlight.transitions[5].doc is None
         assert state_trafficlight.transitions[5].parent_ref().name == "TrafficLight"
         assert state_trafficlight.transitions[5].parent_ref().path == ("TrafficLight",)
         assert state_trafficlight.transitions[6].from_state == "Idle"
         assert state_trafficlight.transitions[6].to_state == "Idle"
         assert state_trafficlight.transitions[6].event == Event(
-            name="E2", state_path=("TrafficLight", "Idle"), extra_name=None
+            name="E2", state_path=("TrafficLight", "Idle"), extra_name=None, doc=None
         )
         assert state_trafficlight.transitions[6].guard is None
         assert state_trafficlight.transitions[6].effects == []
+        assert state_trafficlight.transitions[6].doc is None
         assert state_trafficlight.transitions[6].parent_ref().name == "TrafficLight"
         assert state_trafficlight.transitions[6].parent_ref().path == ("TrafficLight",)
         assert state_trafficlight.transitions[7].from_state == "Idle"
@@ -210,6 +238,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight.transitions[7].event is None
         assert state_trafficlight.transitions[7].guard is None
         assert state_trafficlight.transitions[7].effects == []
+        assert state_trafficlight.transitions[7].doc is None
         assert state_trafficlight.transitions[7].parent_ref().name == "TrafficLight"
         assert state_trafficlight.transitions[7].parent_ref().path == ("TrafficLight",)
         assert state_trafficlight.named_functions == {}
@@ -221,6 +250,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight.substate_name_to_id == {"InService": 0, "Idle": 1}
         assert state_trafficlight.extra_name is None
         assert not state_trafficlight.is_pseudo
+        assert state_trafficlight.doc is None
         assert state_trafficlight.abstract_on_during_aspects == []
         assert state_trafficlight.abstract_on_durings == []
         assert state_trafficlight.abstract_on_enters == []
@@ -231,6 +261,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight.init_transitions[0].event is None
         assert state_trafficlight.init_transitions[0].guard is None
         assert state_trafficlight.init_transitions[0].effects == []
+        assert state_trafficlight.init_transitions[0].doc is None
         assert (
             state_trafficlight.init_transitions[0].parent_ref().name == "TrafficLight"
         )
@@ -255,6 +286,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight.transitions_entering_children[0].event is None
         assert state_trafficlight.transitions_entering_children[0].guard is None
         assert state_trafficlight.transitions_entering_children[0].effects == []
+        assert state_trafficlight.transitions_entering_children[0].doc is None
         assert (
             state_trafficlight.transitions_entering_children[0].parent_ref().name
             == "TrafficLight"
@@ -281,6 +313,9 @@ class TestModelStateTrafficLight:
             state_trafficlight.transitions_entering_children_simplified[0].effects == []
         )
         assert (
+            state_trafficlight.transitions_entering_children_simplified[0].doc is None
+        )
+        assert (
             state_trafficlight.transitions_entering_children_simplified[0]
             .parent_ref()
             .name
@@ -295,6 +330,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight.transitions_from[0].event is None
         assert state_trafficlight.transitions_from[0].guard is None
         assert state_trafficlight.transitions_from[0].effects == []
+        assert state_trafficlight.transitions_from[0].doc is None
         assert state_trafficlight.transitions_from[0].parent_ref is None
         assert len(state_trafficlight.transitions_to) == 1
         assert state_trafficlight.transitions_to[0].from_state == INIT_STATE
@@ -302,6 +338,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight.transitions_to[0].event is None
         assert state_trafficlight.transitions_to[0].guard is None
         assert state_trafficlight.transitions_to[0].effects == []
+        assert state_trafficlight.transitions_to[0].doc is None
         assert state_trafficlight.transitions_to[0].parent_ref is None
 
     def test_state_trafficlight_to_ast_node(self, state_trafficlight):
@@ -310,8 +347,10 @@ class TestModelStateTrafficLight:
             name="TrafficLight",
             extra_name=None,
             events=[
-                dsl_nodes.EventDefinition(name="GodDamnFuckUp", extra_name=None),
-                dsl_nodes.EventDefinition(name="E2", extra_name=None),
+                dsl_nodes.EventDefinition(
+                    name="GodDamnFuckUp", extra_name=None, doc=None
+                ),
+                dsl_nodes.EventDefinition(name="E2", extra_name=None, doc=None),
             ],
             imports=[],
             substates=[
@@ -319,9 +358,15 @@ class TestModelStateTrafficLight:
                     name="InService",
                     extra_name=None,
                     events=[
-                        dsl_nodes.EventDefinition(name="ServiceError", extra_name=None),
-                        dsl_nodes.EventDefinition(name="Start", extra_name=None),
-                        dsl_nodes.EventDefinition(name="Maintain", extra_name=None),
+                        dsl_nodes.EventDefinition(
+                            name="ServiceError", extra_name=None, doc=None
+                        ),
+                        dsl_nodes.EventDefinition(
+                            name="Start", extra_name=None, doc=None
+                        ),
+                        dsl_nodes.EventDefinition(
+                            name="Maintain", extra_name=None, doc=None
+                        ),
                     ],
                     imports=[],
                     substates=[
@@ -338,6 +383,7 @@ class TestModelStateTrafficLight:
                             during_aspects=[],
                             force_transitions=[],
                             is_pseudo=False,
+                            doc=None,
                         ),
                         dsl_nodes.StateDefinition(
                             name="Yellow",
@@ -352,6 +398,7 @@ class TestModelStateTrafficLight:
                             during_aspects=[],
                             force_transitions=[],
                             is_pseudo=False,
+                            doc=None,
                         ),
                         dsl_nodes.StateDefinition(
                             name="Green",
@@ -366,6 +413,7 @@ class TestModelStateTrafficLight:
                             during_aspects=[],
                             force_transitions=[],
                             is_pseudo=False,
+                            doc=None,
                         ),
                     ],
                     transitions=[
@@ -377,6 +425,7 @@ class TestModelStateTrafficLight:
                             ),
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Red",
@@ -386,6 +435,7 @@ class TestModelStateTrafficLight:
                             ),
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Yellow",
@@ -395,6 +445,7 @@ class TestModelStateTrafficLight:
                             ),
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Yellow",
@@ -404,6 +455,7 @@ class TestModelStateTrafficLight:
                             ),
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Green",
@@ -413,6 +465,7 @@ class TestModelStateTrafficLight:
                             ),
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Green",
@@ -422,6 +475,7 @@ class TestModelStateTrafficLight:
                             ),
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state=INIT_STATE,
@@ -435,6 +489,7 @@ class TestModelStateTrafficLight:
                                     name="b", expr=dsl_nodes.Integer(raw="1")
                                 )
                             ],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Red",
@@ -446,6 +501,7 @@ class TestModelStateTrafficLight:
                                     name="b", expr=dsl_nodes.Integer(raw="3")
                                 )
                             ],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Green",
@@ -457,6 +513,7 @@ class TestModelStateTrafficLight:
                                     name="b", expr=dsl_nodes.Integer(raw="2")
                                 )
                             ],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Yellow",
@@ -480,6 +537,7 @@ class TestModelStateTrafficLight:
                                     ),
                                 ),
                             ],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Green",
@@ -489,6 +547,7 @@ class TestModelStateTrafficLight:
                             ),
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Yellow",
@@ -496,6 +555,7 @@ class TestModelStateTrafficLight:
                             event_id=dsl_nodes.ChainID(path=["E2"], is_absolute=True),
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                     ],
                     enters=[],
@@ -504,15 +564,16 @@ class TestModelStateTrafficLight:
                     during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
+                    doc=None,
                 ),
                 dsl_nodes.StateDefinition(
                     name="Idle",
                     extra_name=None,
                     events=[
                         dsl_nodes.EventDefinition(
-                            name="GiveUpThinking", extra_name=None
+                            name="GiveUpThinking", extra_name=None, doc=None
                         ),
-                        dsl_nodes.EventDefinition(name="E2", extra_name=None),
+                        dsl_nodes.EventDefinition(name="E2", extra_name=None, doc=None),
                     ],
                     imports=[],
                     substates=[
@@ -520,7 +581,9 @@ class TestModelStateTrafficLight:
                             name="ToBe",
                             extra_name=None,
                             events=[
-                                dsl_nodes.EventDefinition(name="E1", extra_name=None)
+                                dsl_nodes.EventDefinition(
+                                    name="E1", extra_name=None, doc=None
+                                )
                             ],
                             imports=[],
                             substates=[],
@@ -531,13 +594,18 @@ class TestModelStateTrafficLight:
                             during_aspects=[],
                             force_transitions=[],
                             is_pseudo=False,
+                            doc=None,
                         ),
                         dsl_nodes.StateDefinition(
                             name="NotToBe",
                             extra_name=None,
                             events=[
-                                dsl_nodes.EventDefinition(name="E1", extra_name=None),
-                                dsl_nodes.EventDefinition(name="E2", extra_name=None),
+                                dsl_nodes.EventDefinition(
+                                    name="E1", extra_name=None, doc=None
+                                ),
+                                dsl_nodes.EventDefinition(
+                                    name="E2", extra_name=None, doc=None
+                                ),
                             ],
                             imports=[],
                             substates=[],
@@ -548,6 +616,7 @@ class TestModelStateTrafficLight:
                             during_aspects=[],
                             force_transitions=[],
                             is_pseudo=False,
+                            doc=None,
                         ),
                     ],
                     transitions=[
@@ -559,6 +628,7 @@ class TestModelStateTrafficLight:
                             ),
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="ToBe",
@@ -568,6 +638,7 @@ class TestModelStateTrafficLight:
                             ),
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="NotToBe",
@@ -577,6 +648,7 @@ class TestModelStateTrafficLight:
                             ),
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="NotToBe",
@@ -586,6 +658,7 @@ class TestModelStateTrafficLight:
                             ),
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state=INIT_STATE,
@@ -593,6 +666,7 @@ class TestModelStateTrafficLight:
                             event_id=None,
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="ToBe",
@@ -602,6 +676,7 @@ class TestModelStateTrafficLight:
                             ),
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="NotToBe",
@@ -611,6 +686,7 @@ class TestModelStateTrafficLight:
                             ),
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="NotToBe",
@@ -620,6 +696,7 @@ class TestModelStateTrafficLight:
                             ),
                             condition_expr=None,
                             post_operations=[],
+                            doc=None,
                         ),
                     ],
                     enters=[],
@@ -628,6 +705,7 @@ class TestModelStateTrafficLight:
                     during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
+                    doc=None,
                 ),
             ],
             transitions=[
@@ -639,6 +717,7 @@ class TestModelStateTrafficLight:
                     ),
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="InService",
@@ -648,6 +727,7 @@ class TestModelStateTrafficLight:
                     ),
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Idle",
@@ -657,6 +737,7 @@ class TestModelStateTrafficLight:
                     ),
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Idle",
@@ -666,6 +747,7 @@ class TestModelStateTrafficLight:
                     ),
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state=INIT_STATE,
@@ -673,6 +755,7 @@ class TestModelStateTrafficLight:
                     event_id=None,
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="InService",
@@ -682,6 +765,7 @@ class TestModelStateTrafficLight:
                     ),
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Idle",
@@ -689,6 +773,7 @@ class TestModelStateTrafficLight:
                     event_id=dsl_nodes.ChainID(path=["Idle", "E2"], is_absolute=False),
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Idle",
@@ -696,6 +781,7 @@ class TestModelStateTrafficLight:
                     event_id=None,
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
             ],
             enters=[],
@@ -704,6 +790,7 @@ class TestModelStateTrafficLight:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_trafficlight_list_on_enters(self, state_trafficlight):
@@ -783,14 +870,19 @@ class TestModelStateTrafficLight:
                 name="ServiceError",
                 state_path=("TrafficLight", "InService"),
                 extra_name=None,
+                doc=None,
             ),
             "Start": Event(
-                name="Start", state_path=("TrafficLight", "InService"), extra_name=None
+                name="Start",
+                state_path=("TrafficLight", "InService"),
+                extra_name=None,
+                doc=None,
             ),
             "Maintain": Event(
                 name="Maintain",
                 state_path=("TrafficLight", "InService"),
                 extra_name=None,
+                doc=None,
             ),
         }
         assert len(state_trafficlight_inservice.transitions) == 12
@@ -800,9 +892,11 @@ class TestModelStateTrafficLight:
             name="ServiceError",
             state_path=("TrafficLight", "InService"),
             extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_inservice.transitions[0].guard is None
         assert state_trafficlight_inservice.transitions[0].effects == []
+        assert state_trafficlight_inservice.transitions[0].doc is None
         assert (
             state_trafficlight_inservice.transitions[0].parent_ref().name == "InService"
         )
@@ -813,10 +907,14 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.transitions[1].from_state == "Red"
         assert state_trafficlight_inservice.transitions[1].to_state == EXIT_STATE
         assert state_trafficlight_inservice.transitions[1].event == Event(
-            name="GodDamnFuckUp", state_path=("TrafficLight",), extra_name=None
+            name="GodDamnFuckUp",
+            state_path=("TrafficLight",),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_inservice.transitions[1].guard is None
         assert state_trafficlight_inservice.transitions[1].effects == []
+        assert state_trafficlight_inservice.transitions[1].doc is None
         assert (
             state_trafficlight_inservice.transitions[1].parent_ref().name == "InService"
         )
@@ -830,9 +928,11 @@ class TestModelStateTrafficLight:
             name="ServiceError",
             state_path=("TrafficLight", "InService"),
             extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_inservice.transitions[2].guard is None
         assert state_trafficlight_inservice.transitions[2].effects == []
+        assert state_trafficlight_inservice.transitions[2].doc is None
         assert (
             state_trafficlight_inservice.transitions[2].parent_ref().name == "InService"
         )
@@ -843,10 +943,14 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.transitions[3].from_state == "Yellow"
         assert state_trafficlight_inservice.transitions[3].to_state == EXIT_STATE
         assert state_trafficlight_inservice.transitions[3].event == Event(
-            name="GodDamnFuckUp", state_path=("TrafficLight",), extra_name=None
+            name="GodDamnFuckUp",
+            state_path=("TrafficLight",),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_inservice.transitions[3].guard is None
         assert state_trafficlight_inservice.transitions[3].effects == []
+        assert state_trafficlight_inservice.transitions[3].doc is None
         assert (
             state_trafficlight_inservice.transitions[3].parent_ref().name == "InService"
         )
@@ -860,9 +964,11 @@ class TestModelStateTrafficLight:
             name="ServiceError",
             state_path=("TrafficLight", "InService"),
             extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_inservice.transitions[4].guard is None
         assert state_trafficlight_inservice.transitions[4].effects == []
+        assert state_trafficlight_inservice.transitions[4].doc is None
         assert (
             state_trafficlight_inservice.transitions[4].parent_ref().name == "InService"
         )
@@ -873,10 +979,14 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.transitions[5].from_state == "Green"
         assert state_trafficlight_inservice.transitions[5].to_state == EXIT_STATE
         assert state_trafficlight_inservice.transitions[5].event == Event(
-            name="GodDamnFuckUp", state_path=("TrafficLight",), extra_name=None
+            name="GodDamnFuckUp",
+            state_path=("TrafficLight",),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_inservice.transitions[5].guard is None
         assert state_trafficlight_inservice.transitions[5].effects == []
+        assert state_trafficlight_inservice.transitions[5].doc is None
         assert (
             state_trafficlight_inservice.transitions[5].parent_ref().name == "InService"
         )
@@ -887,12 +997,16 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.transitions[6].from_state == INIT_STATE
         assert state_trafficlight_inservice.transitions[6].to_state == "Red"
         assert state_trafficlight_inservice.transitions[6].event == Event(
-            name="Start", state_path=("TrafficLight", "InService"), extra_name=None
+            name="Start",
+            state_path=("TrafficLight", "InService"),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_inservice.transitions[6].guard is None
         assert state_trafficlight_inservice.transitions[6].effects == [
             Operation(var_name="b", expr=Integer(value=1))
         ]
+        assert state_trafficlight_inservice.transitions[6].doc is None
         assert (
             state_trafficlight_inservice.transitions[6].parent_ref().name == "InService"
         )
@@ -907,6 +1021,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.transitions[7].effects == [
             Operation(var_name="b", expr=Integer(value=3))
         ]
+        assert state_trafficlight_inservice.transitions[7].doc is None
         assert (
             state_trafficlight_inservice.transitions[7].parent_ref().name == "InService"
         )
@@ -921,6 +1036,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.transitions[8].effects == [
             Operation(var_name="b", expr=Integer(value=2))
         ]
+        assert state_trafficlight_inservice.transitions[8].doc is None
         assert (
             state_trafficlight_inservice.transitions[8].parent_ref().name == "InService"
         )
@@ -943,6 +1059,7 @@ class TestModelStateTrafficLight:
                 ),
             ),
         ]
+        assert state_trafficlight_inservice.transitions[9].doc is None
         assert (
             state_trafficlight_inservice.transitions[9].parent_ref().name == "InService"
         )
@@ -953,10 +1070,11 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.transitions[10].from_state == "Green"
         assert state_trafficlight_inservice.transitions[10].to_state == "Yellow"
         assert state_trafficlight_inservice.transitions[10].event == Event(
-            name="E2", state_path=("TrafficLight", "Idle"), extra_name=None
+            name="E2", state_path=("TrafficLight", "Idle"), extra_name=None, doc=None
         )
         assert state_trafficlight_inservice.transitions[10].guard is None
         assert state_trafficlight_inservice.transitions[10].effects == []
+        assert state_trafficlight_inservice.transitions[10].doc is None
         assert (
             state_trafficlight_inservice.transitions[10].parent_ref().name
             == "InService"
@@ -968,10 +1086,11 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.transitions[11].from_state == "Yellow"
         assert state_trafficlight_inservice.transitions[11].to_state == "Yellow"
         assert state_trafficlight_inservice.transitions[11].event == Event(
-            name="E2", state_path=("TrafficLight",), extra_name=None
+            name="E2", state_path=("TrafficLight",), extra_name=None, doc=None
         )
         assert state_trafficlight_inservice.transitions[11].guard is None
         assert state_trafficlight_inservice.transitions[11].effects == []
+        assert state_trafficlight_inservice.transitions[11].doc is None
         assert (
             state_trafficlight_inservice.transitions[11].parent_ref().name
             == "InService"
@@ -994,6 +1113,7 @@ class TestModelStateTrafficLight:
         }
         assert state_trafficlight_inservice.extra_name is None
         assert not state_trafficlight_inservice.is_pseudo
+        assert state_trafficlight_inservice.doc is None
         assert state_trafficlight_inservice.abstract_on_during_aspects == []
         assert state_trafficlight_inservice.abstract_on_durings == []
         assert state_trafficlight_inservice.abstract_on_enters == []
@@ -1002,12 +1122,16 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.init_transitions[0].from_state == INIT_STATE
         assert state_trafficlight_inservice.init_transitions[0].to_state == "Red"
         assert state_trafficlight_inservice.init_transitions[0].event == Event(
-            name="Start", state_path=("TrafficLight", "InService"), extra_name=None
+            name="Start",
+            state_path=("TrafficLight", "InService"),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_inservice.init_transitions[0].guard is None
         assert state_trafficlight_inservice.init_transitions[0].effects == [
             Operation(var_name="b", expr=Integer(value=1))
         ]
+        assert state_trafficlight_inservice.init_transitions[0].doc is None
         assert (
             state_trafficlight_inservice.init_transitions[0].parent_ref().name
             == "InService"
@@ -1037,7 +1161,10 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.transitions_entering_children[
             0
         ].event == Event(
-            name="Start", state_path=("TrafficLight", "InService"), extra_name=None
+            name="Start",
+            state_path=("TrafficLight", "InService"),
+            extra_name=None,
+            doc=None,
         )
         assert (
             state_trafficlight_inservice.transitions_entering_children[0].guard is None
@@ -1045,6 +1172,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.transitions_entering_children[
             0
         ].effects == [Operation(var_name="b", expr=Integer(value=1))]
+        assert state_trafficlight_inservice.transitions_entering_children[0].doc is None
         assert (
             state_trafficlight_inservice.transitions_entering_children[0]
             .parent_ref()
@@ -1073,7 +1201,10 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.transitions_entering_children_simplified[
             0
         ].event == Event(
-            name="Start", state_path=("TrafficLight", "InService"), extra_name=None
+            name="Start",
+            state_path=("TrafficLight", "InService"),
+            extra_name=None,
+            doc=None,
         )
         assert (
             state_trafficlight_inservice.transitions_entering_children_simplified[
@@ -1084,6 +1215,10 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.transitions_entering_children_simplified[
             0
         ].effects == [Operation(var_name="b", expr=Integer(value=1))]
+        assert (
+            state_trafficlight_inservice.transitions_entering_children_simplified[0].doc
+            is None
+        )
         assert (
             state_trafficlight_inservice.transitions_entering_children_simplified[0]
             .parent_ref()
@@ -1106,9 +1241,11 @@ class TestModelStateTrafficLight:
             name="ServiceError",
             state_path=("TrafficLight", "InService"),
             extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_inservice.transitions_from[0].guard is None
         assert state_trafficlight_inservice.transitions_from[0].effects == []
+        assert state_trafficlight_inservice.transitions_from[0].doc is None
         assert (
             state_trafficlight_inservice.transitions_from[0].parent_ref().name
             == "TrafficLight"
@@ -1121,10 +1258,14 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight_inservice.transitions_from[1].to_state == EXIT_STATE
         assert state_trafficlight_inservice.transitions_from[1].event == Event(
-            name="GodDamnFuckUp", state_path=("TrafficLight",), extra_name=None
+            name="GodDamnFuckUp",
+            state_path=("TrafficLight",),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_inservice.transitions_from[1].guard is None
         assert state_trafficlight_inservice.transitions_from[1].effects == []
+        assert state_trafficlight_inservice.transitions_from[1].doc is None
         assert (
             state_trafficlight_inservice.transitions_from[1].parent_ref().name
             == "TrafficLight"
@@ -1137,10 +1278,14 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight_inservice.transitions_from[2].to_state == "Idle"
         assert state_trafficlight_inservice.transitions_from[2].event == Event(
-            name="Maintain", state_path=("TrafficLight", "InService"), extra_name=None
+            name="Maintain",
+            state_path=("TrafficLight", "InService"),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_inservice.transitions_from[2].guard is None
         assert state_trafficlight_inservice.transitions_from[2].effects == []
+        assert state_trafficlight_inservice.transitions_from[2].doc is None
         assert (
             state_trafficlight_inservice.transitions_from[2].parent_ref().name
             == "TrafficLight"
@@ -1152,10 +1297,14 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.transitions_to[0].from_state == "Idle"
         assert state_trafficlight_inservice.transitions_to[0].to_state == "InService"
         assert state_trafficlight_inservice.transitions_to[0].event == Event(
-            name="GiveUpThinking", state_path=("TrafficLight", "Idle"), extra_name=None
+            name="GiveUpThinking",
+            state_path=("TrafficLight", "Idle"),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_inservice.transitions_to[0].guard is None
         assert state_trafficlight_inservice.transitions_to[0].effects == []
+        assert state_trafficlight_inservice.transitions_to[0].doc is None
         assert (
             state_trafficlight_inservice.transitions_to[0].parent_ref().name
             == "TrafficLight"
@@ -1168,6 +1317,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice.transitions_to[1].event is None
         assert state_trafficlight_inservice.transitions_to[1].guard is None
         assert state_trafficlight_inservice.transitions_to[1].effects == []
+        assert state_trafficlight_inservice.transitions_to[1].doc is None
         assert (
             state_trafficlight_inservice.transitions_to[1].parent_ref().name
             == "TrafficLight"
@@ -1184,9 +1334,11 @@ class TestModelStateTrafficLight:
             name="InService",
             extra_name=None,
             events=[
-                dsl_nodes.EventDefinition(name="ServiceError", extra_name=None),
-                dsl_nodes.EventDefinition(name="Start", extra_name=None),
-                dsl_nodes.EventDefinition(name="Maintain", extra_name=None),
+                dsl_nodes.EventDefinition(
+                    name="ServiceError", extra_name=None, doc=None
+                ),
+                dsl_nodes.EventDefinition(name="Start", extra_name=None, doc=None),
+                dsl_nodes.EventDefinition(name="Maintain", extra_name=None, doc=None),
             ],
             imports=[],
             substates=[
@@ -1203,6 +1355,7 @@ class TestModelStateTrafficLight:
                     during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
+                    doc=None,
                 ),
                 dsl_nodes.StateDefinition(
                     name="Yellow",
@@ -1217,6 +1370,7 @@ class TestModelStateTrafficLight:
                     during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
+                    doc=None,
                 ),
                 dsl_nodes.StateDefinition(
                     name="Green",
@@ -1231,6 +1385,7 @@ class TestModelStateTrafficLight:
                     during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
+                    doc=None,
                 ),
             ],
             transitions=[
@@ -1242,6 +1397,7 @@ class TestModelStateTrafficLight:
                     ),
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Red",
@@ -1251,6 +1407,7 @@ class TestModelStateTrafficLight:
                     ),
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Yellow",
@@ -1260,6 +1417,7 @@ class TestModelStateTrafficLight:
                     ),
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Yellow",
@@ -1269,6 +1427,7 @@ class TestModelStateTrafficLight:
                     ),
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Green",
@@ -1278,6 +1437,7 @@ class TestModelStateTrafficLight:
                     ),
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Green",
@@ -1287,6 +1447,7 @@ class TestModelStateTrafficLight:
                     ),
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state=INIT_STATE,
@@ -1298,6 +1459,7 @@ class TestModelStateTrafficLight:
                             name="b", expr=dsl_nodes.Integer(raw="1")
                         )
                     ],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Red",
@@ -1309,6 +1471,7 @@ class TestModelStateTrafficLight:
                             name="b", expr=dsl_nodes.Integer(raw="3")
                         )
                     ],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Green",
@@ -1320,6 +1483,7 @@ class TestModelStateTrafficLight:
                             name="b", expr=dsl_nodes.Integer(raw="2")
                         )
                     ],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Yellow",
@@ -1343,6 +1507,7 @@ class TestModelStateTrafficLight:
                             ),
                         ),
                     ],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Green",
@@ -1350,6 +1515,7 @@ class TestModelStateTrafficLight:
                     event_id=dsl_nodes.ChainID(path=["Idle", "E2"], is_absolute=True),
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Yellow",
@@ -1357,6 +1523,7 @@ class TestModelStateTrafficLight:
                     event_id=dsl_nodes.ChainID(path=["E2"], is_absolute=True),
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
             ],
             enters=[],
@@ -1365,6 +1532,7 @@ class TestModelStateTrafficLight:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_trafficlight_inservice_list_on_enters(
@@ -1466,6 +1634,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice_red.substate_name_to_id == {}
         assert state_trafficlight_inservice_red.extra_name is None
         assert not state_trafficlight_inservice_red.is_pseudo
+        assert state_trafficlight_inservice_red.doc is None
         assert state_trafficlight_inservice_red.abstract_on_during_aspects == []
         assert state_trafficlight_inservice_red.abstract_on_durings == []
         assert state_trafficlight_inservice_red.abstract_on_enters == []
@@ -1503,9 +1672,11 @@ class TestModelStateTrafficLight:
             name="ServiceError",
             state_path=("TrafficLight", "InService"),
             extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_inservice_red.transitions_from[0].guard is None
         assert state_trafficlight_inservice_red.transitions_from[0].effects == []
+        assert state_trafficlight_inservice_red.transitions_from[0].doc is None
         assert (
             state_trafficlight_inservice_red.transitions_from[0].parent_ref().name
             == "InService"
@@ -1518,10 +1689,14 @@ class TestModelStateTrafficLight:
             state_trafficlight_inservice_red.transitions_from[1].to_state == EXIT_STATE
         )
         assert state_trafficlight_inservice_red.transitions_from[1].event == Event(
-            name="GodDamnFuckUp", state_path=("TrafficLight",), extra_name=None
+            name="GodDamnFuckUp",
+            state_path=("TrafficLight",),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_inservice_red.transitions_from[1].guard is None
         assert state_trafficlight_inservice_red.transitions_from[1].effects == []
+        assert state_trafficlight_inservice_red.transitions_from[1].doc is None
         assert (
             state_trafficlight_inservice_red.transitions_from[1].parent_ref().name
             == "InService"
@@ -1536,6 +1711,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice_red.transitions_from[2].effects == [
             Operation(var_name="b", expr=Integer(value=3))
         ]
+        assert state_trafficlight_inservice_red.transitions_from[2].doc is None
         assert (
             state_trafficlight_inservice_red.transitions_from[2].parent_ref().name
             == "InService"
@@ -1549,12 +1725,16 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight_inservice_red.transitions_to[0].to_state == "Red"
         assert state_trafficlight_inservice_red.transitions_to[0].event == Event(
-            name="Start", state_path=("TrafficLight", "InService"), extra_name=None
+            name="Start",
+            state_path=("TrafficLight", "InService"),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_inservice_red.transitions_to[0].guard is None
         assert state_trafficlight_inservice_red.transitions_to[0].effects == [
             Operation(var_name="b", expr=Integer(value=1))
         ]
+        assert state_trafficlight_inservice_red.transitions_to[0].doc is None
         assert (
             state_trafficlight_inservice_red.transitions_to[0].parent_ref().name
             == "InService"
@@ -1578,6 +1758,7 @@ class TestModelStateTrafficLight:
                 ),
             ),
         ]
+        assert state_trafficlight_inservice_red.transitions_to[1].doc is None
         assert (
             state_trafficlight_inservice_red.transitions_to[1].parent_ref().name
             == "InService"
@@ -1604,6 +1785,7 @@ class TestModelStateTrafficLight:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_trafficlight_inservice_red_list_on_enters(
@@ -1718,6 +1900,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice_yellow.substate_name_to_id == {}
         assert state_trafficlight_inservice_yellow.extra_name is None
         assert not state_trafficlight_inservice_yellow.is_pseudo
+        assert state_trafficlight_inservice_yellow.doc is None
         assert state_trafficlight_inservice_yellow.abstract_on_during_aspects == []
         assert state_trafficlight_inservice_yellow.abstract_on_durings == []
         assert state_trafficlight_inservice_yellow.abstract_on_enters == []
@@ -1761,9 +1944,11 @@ class TestModelStateTrafficLight:
             name="ServiceError",
             state_path=("TrafficLight", "InService"),
             extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_inservice_yellow.transitions_from[0].guard is None
         assert state_trafficlight_inservice_yellow.transitions_from[0].effects == []
+        assert state_trafficlight_inservice_yellow.transitions_from[0].doc is None
         assert (
             state_trafficlight_inservice_yellow.transitions_from[0].parent_ref().name
             == "InService"
@@ -1780,10 +1965,14 @@ class TestModelStateTrafficLight:
             == EXIT_STATE
         )
         assert state_trafficlight_inservice_yellow.transitions_from[1].event == Event(
-            name="GodDamnFuckUp", state_path=("TrafficLight",), extra_name=None
+            name="GodDamnFuckUp",
+            state_path=("TrafficLight",),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_inservice_yellow.transitions_from[1].guard is None
         assert state_trafficlight_inservice_yellow.transitions_from[1].effects == []
+        assert state_trafficlight_inservice_yellow.transitions_from[1].doc is None
         assert (
             state_trafficlight_inservice_yellow.transitions_from[1].parent_ref().name
             == "InService"
@@ -1809,6 +1998,7 @@ class TestModelStateTrafficLight:
                 ),
             ),
         ]
+        assert state_trafficlight_inservice_yellow.transitions_from[2].doc is None
         assert (
             state_trafficlight_inservice_yellow.transitions_from[2].parent_ref().name
             == "InService"
@@ -1824,10 +2014,11 @@ class TestModelStateTrafficLight:
             state_trafficlight_inservice_yellow.transitions_from[3].to_state == "Yellow"
         )
         assert state_trafficlight_inservice_yellow.transitions_from[3].event == Event(
-            name="E2", state_path=("TrafficLight",), extra_name=None
+            name="E2", state_path=("TrafficLight",), extra_name=None, doc=None
         )
         assert state_trafficlight_inservice_yellow.transitions_from[3].guard is None
         assert state_trafficlight_inservice_yellow.transitions_from[3].effects == []
+        assert state_trafficlight_inservice_yellow.transitions_from[3].doc is None
         assert (
             state_trafficlight_inservice_yellow.transitions_from[3].parent_ref().name
             == "InService"
@@ -1847,6 +2038,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice_yellow.transitions_to[0].effects == [
             Operation(var_name="b", expr=Integer(value=2))
         ]
+        assert state_trafficlight_inservice_yellow.transitions_to[0].doc is None
         assert (
             state_trafficlight_inservice_yellow.transitions_to[0].parent_ref().name
             == "InService"
@@ -1861,10 +2053,11 @@ class TestModelStateTrafficLight:
             state_trafficlight_inservice_yellow.transitions_to[1].to_state == "Yellow"
         )
         assert state_trafficlight_inservice_yellow.transitions_to[1].event == Event(
-            name="E2", state_path=("TrafficLight", "Idle"), extra_name=None
+            name="E2", state_path=("TrafficLight", "Idle"), extra_name=None, doc=None
         )
         assert state_trafficlight_inservice_yellow.transitions_to[1].guard is None
         assert state_trafficlight_inservice_yellow.transitions_to[1].effects == []
+        assert state_trafficlight_inservice_yellow.transitions_to[1].doc is None
         assert (
             state_trafficlight_inservice_yellow.transitions_to[1].parent_ref().name
             == "InService"
@@ -1879,10 +2072,11 @@ class TestModelStateTrafficLight:
             state_trafficlight_inservice_yellow.transitions_to[2].to_state == "Yellow"
         )
         assert state_trafficlight_inservice_yellow.transitions_to[2].event == Event(
-            name="E2", state_path=("TrafficLight",), extra_name=None
+            name="E2", state_path=("TrafficLight",), extra_name=None, doc=None
         )
         assert state_trafficlight_inservice_yellow.transitions_to[2].guard is None
         assert state_trafficlight_inservice_yellow.transitions_to[2].effects == []
+        assert state_trafficlight_inservice_yellow.transitions_to[2].doc is None
         assert (
             state_trafficlight_inservice_yellow.transitions_to[2].parent_ref().name
             == "InService"
@@ -1908,6 +2102,7 @@ class TestModelStateTrafficLight:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_trafficlight_inservice_yellow_list_on_enters(
@@ -2028,6 +2223,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice_green.substate_name_to_id == {}
         assert state_trafficlight_inservice_green.extra_name is None
         assert not state_trafficlight_inservice_green.is_pseudo
+        assert state_trafficlight_inservice_green.doc is None
         assert state_trafficlight_inservice_green.abstract_on_during_aspects == []
         assert state_trafficlight_inservice_green.abstract_on_durings == []
         assert state_trafficlight_inservice_green.abstract_on_enters == []
@@ -2070,9 +2266,11 @@ class TestModelStateTrafficLight:
             name="ServiceError",
             state_path=("TrafficLight", "InService"),
             extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_inservice_green.transitions_from[0].guard is None
         assert state_trafficlight_inservice_green.transitions_from[0].effects == []
+        assert state_trafficlight_inservice_green.transitions_from[0].doc is None
         assert (
             state_trafficlight_inservice_green.transitions_from[0].parent_ref().name
             == "InService"
@@ -2088,10 +2286,14 @@ class TestModelStateTrafficLight:
             == EXIT_STATE
         )
         assert state_trafficlight_inservice_green.transitions_from[1].event == Event(
-            name="GodDamnFuckUp", state_path=("TrafficLight",), extra_name=None
+            name="GodDamnFuckUp",
+            state_path=("TrafficLight",),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_inservice_green.transitions_from[1].guard is None
         assert state_trafficlight_inservice_green.transitions_from[1].effects == []
+        assert state_trafficlight_inservice_green.transitions_from[1].doc is None
         assert (
             state_trafficlight_inservice_green.transitions_from[1].parent_ref().name
             == "InService"
@@ -2110,6 +2312,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice_green.transitions_from[2].effects == [
             Operation(var_name="b", expr=Integer(value=2))
         ]
+        assert state_trafficlight_inservice_green.transitions_from[2].doc is None
         assert (
             state_trafficlight_inservice_green.transitions_from[2].parent_ref().name
             == "InService"
@@ -2124,10 +2327,11 @@ class TestModelStateTrafficLight:
             state_trafficlight_inservice_green.transitions_from[3].to_state == "Yellow"
         )
         assert state_trafficlight_inservice_green.transitions_from[3].event == Event(
-            name="E2", state_path=("TrafficLight", "Idle"), extra_name=None
+            name="E2", state_path=("TrafficLight", "Idle"), extra_name=None, doc=None
         )
         assert state_trafficlight_inservice_green.transitions_from[3].guard is None
         assert state_trafficlight_inservice_green.transitions_from[3].effects == []
+        assert state_trafficlight_inservice_green.transitions_from[3].doc is None
         assert (
             state_trafficlight_inservice_green.transitions_from[3].parent_ref().name
             == "InService"
@@ -2143,6 +2347,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_inservice_green.transitions_to[0].effects == [
             Operation(var_name="b", expr=Integer(value=3))
         ]
+        assert state_trafficlight_inservice_green.transitions_to[0].doc is None
         assert (
             state_trafficlight_inservice_green.transitions_to[0].parent_ref().name
             == "InService"
@@ -2168,6 +2373,7 @@ class TestModelStateTrafficLight:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_trafficlight_inservice_green_list_on_enters(
@@ -2270,19 +2476,27 @@ class TestModelStateTrafficLight:
                 name="GiveUpThinking",
                 state_path=("TrafficLight", "Idle"),
                 extra_name=None,
+                doc=None,
             ),
             "E2": Event(
-                name="E2", state_path=("TrafficLight", "Idle"), extra_name=None
+                name="E2",
+                state_path=("TrafficLight", "Idle"),
+                extra_name=None,
+                doc=None,
             ),
         }
         assert len(state_trafficlight_idle.transitions) == 8
         assert state_trafficlight_idle.transitions[0].from_state == "ToBe"
         assert state_trafficlight_idle.transitions[0].to_state == EXIT_STATE
         assert state_trafficlight_idle.transitions[0].event == Event(
-            name="GiveUpThinking", state_path=("TrafficLight", "Idle"), extra_name=None
+            name="GiveUpThinking",
+            state_path=("TrafficLight", "Idle"),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_idle.transitions[0].guard is None
         assert state_trafficlight_idle.transitions[0].effects == []
+        assert state_trafficlight_idle.transitions[0].doc is None
         assert state_trafficlight_idle.transitions[0].parent_ref().name == "Idle"
         assert state_trafficlight_idle.transitions[0].parent_ref().path == (
             "TrafficLight",
@@ -2291,10 +2505,14 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle.transitions[1].from_state == "ToBe"
         assert state_trafficlight_idle.transitions[1].to_state == EXIT_STATE
         assert state_trafficlight_idle.transitions[1].event == Event(
-            name="GodDamnFuckUp", state_path=("TrafficLight",), extra_name=None
+            name="GodDamnFuckUp",
+            state_path=("TrafficLight",),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_idle.transitions[1].guard is None
         assert state_trafficlight_idle.transitions[1].effects == []
+        assert state_trafficlight_idle.transitions[1].doc is None
         assert state_trafficlight_idle.transitions[1].parent_ref().name == "Idle"
         assert state_trafficlight_idle.transitions[1].parent_ref().path == (
             "TrafficLight",
@@ -2303,10 +2521,14 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle.transitions[2].from_state == "NotToBe"
         assert state_trafficlight_idle.transitions[2].to_state == EXIT_STATE
         assert state_trafficlight_idle.transitions[2].event == Event(
-            name="GiveUpThinking", state_path=("TrafficLight", "Idle"), extra_name=None
+            name="GiveUpThinking",
+            state_path=("TrafficLight", "Idle"),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_idle.transitions[2].guard is None
         assert state_trafficlight_idle.transitions[2].effects == []
+        assert state_trafficlight_idle.transitions[2].doc is None
         assert state_trafficlight_idle.transitions[2].parent_ref().name == "Idle"
         assert state_trafficlight_idle.transitions[2].parent_ref().path == (
             "TrafficLight",
@@ -2315,10 +2537,14 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle.transitions[3].from_state == "NotToBe"
         assert state_trafficlight_idle.transitions[3].to_state == EXIT_STATE
         assert state_trafficlight_idle.transitions[3].event == Event(
-            name="GodDamnFuckUp", state_path=("TrafficLight",), extra_name=None
+            name="GodDamnFuckUp",
+            state_path=("TrafficLight",),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_idle.transitions[3].guard is None
         assert state_trafficlight_idle.transitions[3].effects == []
+        assert state_trafficlight_idle.transitions[3].doc is None
         assert state_trafficlight_idle.transitions[3].parent_ref().name == "Idle"
         assert state_trafficlight_idle.transitions[3].parent_ref().path == (
             "TrafficLight",
@@ -2329,6 +2555,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle.transitions[4].event is None
         assert state_trafficlight_idle.transitions[4].guard is None
         assert state_trafficlight_idle.transitions[4].effects == []
+        assert state_trafficlight_idle.transitions[4].doc is None
         assert state_trafficlight_idle.transitions[4].parent_ref().name == "Idle"
         assert state_trafficlight_idle.transitions[4].parent_ref().path == (
             "TrafficLight",
@@ -2337,10 +2564,14 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle.transitions[5].from_state == "ToBe"
         assert state_trafficlight_idle.transitions[5].to_state == "NotToBe"
         assert state_trafficlight_idle.transitions[5].event == Event(
-            name="E1", state_path=("TrafficLight", "Idle", "ToBe"), extra_name=None
+            name="E1",
+            state_path=("TrafficLight", "Idle", "ToBe"),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_idle.transitions[5].guard is None
         assert state_trafficlight_idle.transitions[5].effects == []
+        assert state_trafficlight_idle.transitions[5].doc is None
         assert state_trafficlight_idle.transitions[5].parent_ref().name == "Idle"
         assert state_trafficlight_idle.transitions[5].parent_ref().path == (
             "TrafficLight",
@@ -2349,10 +2580,14 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle.transitions[6].from_state == "NotToBe"
         assert state_trafficlight_idle.transitions[6].to_state == "ToBe"
         assert state_trafficlight_idle.transitions[6].event == Event(
-            name="E1", state_path=("TrafficLight", "Idle", "NotToBe"), extra_name=None
+            name="E1",
+            state_path=("TrafficLight", "Idle", "NotToBe"),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_idle.transitions[6].guard is None
         assert state_trafficlight_idle.transitions[6].effects == []
+        assert state_trafficlight_idle.transitions[6].doc is None
         assert state_trafficlight_idle.transitions[6].parent_ref().name == "Idle"
         assert state_trafficlight_idle.transitions[6].parent_ref().path == (
             "TrafficLight",
@@ -2361,10 +2596,14 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle.transitions[7].from_state == "NotToBe"
         assert state_trafficlight_idle.transitions[7].to_state == EXIT_STATE
         assert state_trafficlight_idle.transitions[7].event == Event(
-            name="E2", state_path=("TrafficLight", "Idle", "NotToBe"), extra_name=None
+            name="E2",
+            state_path=("TrafficLight", "Idle", "NotToBe"),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_idle.transitions[7].guard is None
         assert state_trafficlight_idle.transitions[7].effects == []
+        assert state_trafficlight_idle.transitions[7].doc is None
         assert state_trafficlight_idle.transitions[7].parent_ref().name == "Idle"
         assert state_trafficlight_idle.transitions[7].parent_ref().path == (
             "TrafficLight",
@@ -2380,6 +2619,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle.substate_name_to_id == {"ToBe": 0, "NotToBe": 1}
         assert state_trafficlight_idle.extra_name is None
         assert not state_trafficlight_idle.is_pseudo
+        assert state_trafficlight_idle.doc is None
         assert state_trafficlight_idle.abstract_on_during_aspects == []
         assert state_trafficlight_idle.abstract_on_durings == []
         assert state_trafficlight_idle.abstract_on_enters == []
@@ -2390,6 +2630,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle.init_transitions[0].event is None
         assert state_trafficlight_idle.init_transitions[0].guard is None
         assert state_trafficlight_idle.init_transitions[0].effects == []
+        assert state_trafficlight_idle.init_transitions[0].doc is None
         assert state_trafficlight_idle.init_transitions[0].parent_ref().name == "Idle"
         assert state_trafficlight_idle.init_transitions[0].parent_ref().path == (
             "TrafficLight",
@@ -2415,6 +2656,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle.transitions_entering_children[0].event is None
         assert state_trafficlight_idle.transitions_entering_children[0].guard is None
         assert state_trafficlight_idle.transitions_entering_children[0].effects == []
+        assert state_trafficlight_idle.transitions_entering_children[0].doc is None
         assert (
             state_trafficlight_idle.transitions_entering_children[0].parent_ref().name
             == "Idle"
@@ -2448,6 +2690,10 @@ class TestModelStateTrafficLight:
             == []
         )
         assert (
+            state_trafficlight_idle.transitions_entering_children_simplified[0].doc
+            is None
+        )
+        assert (
             state_trafficlight_idle.transitions_entering_children_simplified[0]
             .parent_ref()
             .name
@@ -2460,10 +2706,14 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle.transitions_from[0].from_state == "Idle"
         assert state_trafficlight_idle.transitions_from[0].to_state == "InService"
         assert state_trafficlight_idle.transitions_from[0].event == Event(
-            name="GiveUpThinking", state_path=("TrafficLight", "Idle"), extra_name=None
+            name="GiveUpThinking",
+            state_path=("TrafficLight", "Idle"),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_idle.transitions_from[0].guard is None
         assert state_trafficlight_idle.transitions_from[0].effects == []
+        assert state_trafficlight_idle.transitions_from[0].doc is None
         assert (
             state_trafficlight_idle.transitions_from[0].parent_ref().name
             == "TrafficLight"
@@ -2474,10 +2724,14 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle.transitions_from[1].from_state == "Idle"
         assert state_trafficlight_idle.transitions_from[1].to_state == EXIT_STATE
         assert state_trafficlight_idle.transitions_from[1].event == Event(
-            name="GodDamnFuckUp", state_path=("TrafficLight",), extra_name=None
+            name="GodDamnFuckUp",
+            state_path=("TrafficLight",),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_idle.transitions_from[1].guard is None
         assert state_trafficlight_idle.transitions_from[1].effects == []
+        assert state_trafficlight_idle.transitions_from[1].doc is None
         assert (
             state_trafficlight_idle.transitions_from[1].parent_ref().name
             == "TrafficLight"
@@ -2488,10 +2742,11 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle.transitions_from[2].from_state == "Idle"
         assert state_trafficlight_idle.transitions_from[2].to_state == "Idle"
         assert state_trafficlight_idle.transitions_from[2].event == Event(
-            name="E2", state_path=("TrafficLight", "Idle"), extra_name=None
+            name="E2", state_path=("TrafficLight", "Idle"), extra_name=None, doc=None
         )
         assert state_trafficlight_idle.transitions_from[2].guard is None
         assert state_trafficlight_idle.transitions_from[2].effects == []
+        assert state_trafficlight_idle.transitions_from[2].doc is None
         assert (
             state_trafficlight_idle.transitions_from[2].parent_ref().name
             == "TrafficLight"
@@ -2504,6 +2759,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle.transitions_from[3].event is None
         assert state_trafficlight_idle.transitions_from[3].guard is None
         assert state_trafficlight_idle.transitions_from[3].effects == []
+        assert state_trafficlight_idle.transitions_from[3].doc is None
         assert (
             state_trafficlight_idle.transitions_from[3].parent_ref().name
             == "TrafficLight"
@@ -2515,10 +2771,14 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle.transitions_to[0].from_state == "InService"
         assert state_trafficlight_idle.transitions_to[0].to_state == "Idle"
         assert state_trafficlight_idle.transitions_to[0].event == Event(
-            name="Maintain", state_path=("TrafficLight", "InService"), extra_name=None
+            name="Maintain",
+            state_path=("TrafficLight", "InService"),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_idle.transitions_to[0].guard is None
         assert state_trafficlight_idle.transitions_to[0].effects == []
+        assert state_trafficlight_idle.transitions_to[0].doc is None
         assert (
             state_trafficlight_idle.transitions_to[0].parent_ref().name
             == "TrafficLight"
@@ -2529,10 +2789,11 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle.transitions_to[1].from_state == "Idle"
         assert state_trafficlight_idle.transitions_to[1].to_state == "Idle"
         assert state_trafficlight_idle.transitions_to[1].event == Event(
-            name="E2", state_path=("TrafficLight", "Idle"), extra_name=None
+            name="E2", state_path=("TrafficLight", "Idle"), extra_name=None, doc=None
         )
         assert state_trafficlight_idle.transitions_to[1].guard is None
         assert state_trafficlight_idle.transitions_to[1].effects == []
+        assert state_trafficlight_idle.transitions_to[1].doc is None
         assert (
             state_trafficlight_idle.transitions_to[1].parent_ref().name
             == "TrafficLight"
@@ -2547,31 +2808,18 @@ class TestModelStateTrafficLight:
             name="Idle",
             extra_name=None,
             events=[
-                dsl_nodes.EventDefinition(name="GiveUpThinking", extra_name=None),
-                dsl_nodes.EventDefinition(name="E2", extra_name=None),
+                dsl_nodes.EventDefinition(
+                    name="GiveUpThinking", extra_name=None, doc=None
+                ),
+                dsl_nodes.EventDefinition(name="E2", extra_name=None, doc=None),
             ],
             imports=[],
             substates=[
                 dsl_nodes.StateDefinition(
                     name="ToBe",
                     extra_name=None,
-                    events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
-                    imports=[],
-                    substates=[],
-                    transitions=[],
-                    enters=[],
-                    durings=[],
-                    exits=[],
-                    during_aspects=[],
-                    force_transitions=[],
-                    is_pseudo=False,
-                ),
-                dsl_nodes.StateDefinition(
-                    name="NotToBe",
-                    extra_name=None,
                     events=[
-                        dsl_nodes.EventDefinition(name="E1", extra_name=None),
-                        dsl_nodes.EventDefinition(name="E2", extra_name=None),
+                        dsl_nodes.EventDefinition(name="E1", extra_name=None, doc=None)
                     ],
                     imports=[],
                     substates=[],
@@ -2582,6 +2830,25 @@ class TestModelStateTrafficLight:
                     during_aspects=[],
                     force_transitions=[],
                     is_pseudo=False,
+                    doc=None,
+                ),
+                dsl_nodes.StateDefinition(
+                    name="NotToBe",
+                    extra_name=None,
+                    events=[
+                        dsl_nodes.EventDefinition(name="E1", extra_name=None, doc=None),
+                        dsl_nodes.EventDefinition(name="E2", extra_name=None, doc=None),
+                    ],
+                    imports=[],
+                    substates=[],
+                    transitions=[],
+                    enters=[],
+                    durings=[],
+                    exits=[],
+                    during_aspects=[],
+                    force_transitions=[],
+                    is_pseudo=False,
+                    doc=None,
                 ),
             ],
             transitions=[
@@ -2593,6 +2860,7 @@ class TestModelStateTrafficLight:
                     ),
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="ToBe",
@@ -2602,6 +2870,7 @@ class TestModelStateTrafficLight:
                     ),
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="NotToBe",
@@ -2611,6 +2880,7 @@ class TestModelStateTrafficLight:
                     ),
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="NotToBe",
@@ -2620,6 +2890,7 @@ class TestModelStateTrafficLight:
                     ),
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state=INIT_STATE,
@@ -2627,6 +2898,7 @@ class TestModelStateTrafficLight:
                     event_id=None,
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="ToBe",
@@ -2634,6 +2906,7 @@ class TestModelStateTrafficLight:
                     event_id=dsl_nodes.ChainID(path=["ToBe", "E1"], is_absolute=False),
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="NotToBe",
@@ -2643,6 +2916,7 @@ class TestModelStateTrafficLight:
                     ),
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="NotToBe",
@@ -2652,6 +2926,7 @@ class TestModelStateTrafficLight:
                     ),
                     condition_expr=None,
                     post_operations=[],
+                    doc=None,
                 ),
             ],
             enters=[],
@@ -2660,6 +2935,7 @@ class TestModelStateTrafficLight:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_trafficlight_idle_list_on_enters(self, state_trafficlight_idle):
@@ -2732,7 +3008,10 @@ class TestModelStateTrafficLight:
         assert sorted(state_trafficlight_idle_tobe.substates.keys()) == []
         assert state_trafficlight_idle_tobe.events == {
             "E1": Event(
-                name="E1", state_path=("TrafficLight", "Idle", "ToBe"), extra_name=None
+                name="E1",
+                state_path=("TrafficLight", "Idle", "ToBe"),
+                extra_name=None,
+                doc=None,
             )
         }
         assert state_trafficlight_idle_tobe.transitions == []
@@ -2749,6 +3028,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle_tobe.substate_name_to_id == {}
         assert state_trafficlight_idle_tobe.extra_name is None
         assert not state_trafficlight_idle_tobe.is_pseudo
+        assert state_trafficlight_idle_tobe.doc is None
         assert state_trafficlight_idle_tobe.abstract_on_during_aspects == []
         assert state_trafficlight_idle_tobe.abstract_on_durings == []
         assert state_trafficlight_idle_tobe.abstract_on_enters == []
@@ -2776,10 +3056,14 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle_tobe.transitions_from[0].from_state == "ToBe"
         assert state_trafficlight_idle_tobe.transitions_from[0].to_state == EXIT_STATE
         assert state_trafficlight_idle_tobe.transitions_from[0].event == Event(
-            name="GiveUpThinking", state_path=("TrafficLight", "Idle"), extra_name=None
+            name="GiveUpThinking",
+            state_path=("TrafficLight", "Idle"),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_idle_tobe.transitions_from[0].guard is None
         assert state_trafficlight_idle_tobe.transitions_from[0].effects == []
+        assert state_trafficlight_idle_tobe.transitions_from[0].doc is None
         assert (
             state_trafficlight_idle_tobe.transitions_from[0].parent_ref().name == "Idle"
         )
@@ -2790,10 +3074,14 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle_tobe.transitions_from[1].from_state == "ToBe"
         assert state_trafficlight_idle_tobe.transitions_from[1].to_state == EXIT_STATE
         assert state_trafficlight_idle_tobe.transitions_from[1].event == Event(
-            name="GodDamnFuckUp", state_path=("TrafficLight",), extra_name=None
+            name="GodDamnFuckUp",
+            state_path=("TrafficLight",),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_idle_tobe.transitions_from[1].guard is None
         assert state_trafficlight_idle_tobe.transitions_from[1].effects == []
+        assert state_trafficlight_idle_tobe.transitions_from[1].doc is None
         assert (
             state_trafficlight_idle_tobe.transitions_from[1].parent_ref().name == "Idle"
         )
@@ -2804,10 +3092,14 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle_tobe.transitions_from[2].from_state == "ToBe"
         assert state_trafficlight_idle_tobe.transitions_from[2].to_state == "NotToBe"
         assert state_trafficlight_idle_tobe.transitions_from[2].event == Event(
-            name="E1", state_path=("TrafficLight", "Idle", "ToBe"), extra_name=None
+            name="E1",
+            state_path=("TrafficLight", "Idle", "ToBe"),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_idle_tobe.transitions_from[2].guard is None
         assert state_trafficlight_idle_tobe.transitions_from[2].effects == []
+        assert state_trafficlight_idle_tobe.transitions_from[2].doc is None
         assert (
             state_trafficlight_idle_tobe.transitions_from[2].parent_ref().name == "Idle"
         )
@@ -2821,6 +3113,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle_tobe.transitions_to[0].event is None
         assert state_trafficlight_idle_tobe.transitions_to[0].guard is None
         assert state_trafficlight_idle_tobe.transitions_to[0].effects == []
+        assert state_trafficlight_idle_tobe.transitions_to[0].doc is None
         assert (
             state_trafficlight_idle_tobe.transitions_to[0].parent_ref().name == "Idle"
         )
@@ -2831,10 +3124,14 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle_tobe.transitions_to[1].from_state == "NotToBe"
         assert state_trafficlight_idle_tobe.transitions_to[1].to_state == "ToBe"
         assert state_trafficlight_idle_tobe.transitions_to[1].event == Event(
-            name="E1", state_path=("TrafficLight", "Idle", "NotToBe"), extra_name=None
+            name="E1",
+            state_path=("TrafficLight", "Idle", "NotToBe"),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_idle_tobe.transitions_to[1].guard is None
         assert state_trafficlight_idle_tobe.transitions_to[1].effects == []
+        assert state_trafficlight_idle_tobe.transitions_to[1].doc is None
         assert (
             state_trafficlight_idle_tobe.transitions_to[1].parent_ref().name == "Idle"
         )
@@ -2850,7 +3147,7 @@ class TestModelStateTrafficLight:
         assert ast_node == dsl_nodes.StateDefinition(
             name="ToBe",
             extra_name=None,
-            events=[dsl_nodes.EventDefinition(name="E1", extra_name=None)],
+            events=[dsl_nodes.EventDefinition(name="E1", extra_name=None, doc=None)],
             imports=[],
             substates=[],
             transitions=[],
@@ -2860,6 +3157,7 @@ class TestModelStateTrafficLight:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_trafficlight_idle_tobe_list_on_enters(
@@ -2962,11 +3260,13 @@ class TestModelStateTrafficLight:
                 name="E1",
                 state_path=("TrafficLight", "Idle", "NotToBe"),
                 extra_name=None,
+                doc=None,
             ),
             "E2": Event(
                 name="E2",
                 state_path=("TrafficLight", "Idle", "NotToBe"),
                 extra_name=None,
+                doc=None,
             ),
         }
         assert state_trafficlight_idle_nottobe.transitions == []
@@ -2983,6 +3283,7 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle_nottobe.substate_name_to_id == {}
         assert state_trafficlight_idle_nottobe.extra_name is None
         assert not state_trafficlight_idle_nottobe.is_pseudo
+        assert state_trafficlight_idle_nottobe.doc is None
         assert state_trafficlight_idle_nottobe.abstract_on_during_aspects == []
         assert state_trafficlight_idle_nottobe.abstract_on_durings == []
         assert state_trafficlight_idle_nottobe.abstract_on_enters == []
@@ -3016,10 +3317,14 @@ class TestModelStateTrafficLight:
             state_trafficlight_idle_nottobe.transitions_from[0].to_state == EXIT_STATE
         )
         assert state_trafficlight_idle_nottobe.transitions_from[0].event == Event(
-            name="GiveUpThinking", state_path=("TrafficLight", "Idle"), extra_name=None
+            name="GiveUpThinking",
+            state_path=("TrafficLight", "Idle"),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_idle_nottobe.transitions_from[0].guard is None
         assert state_trafficlight_idle_nottobe.transitions_from[0].effects == []
+        assert state_trafficlight_idle_nottobe.transitions_from[0].doc is None
         assert (
             state_trafficlight_idle_nottobe.transitions_from[0].parent_ref().name
             == "Idle"
@@ -3034,10 +3339,14 @@ class TestModelStateTrafficLight:
             state_trafficlight_idle_nottobe.transitions_from[1].to_state == EXIT_STATE
         )
         assert state_trafficlight_idle_nottobe.transitions_from[1].event == Event(
-            name="GodDamnFuckUp", state_path=("TrafficLight",), extra_name=None
+            name="GodDamnFuckUp",
+            state_path=("TrafficLight",),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_idle_nottobe.transitions_from[1].guard is None
         assert state_trafficlight_idle_nottobe.transitions_from[1].effects == []
+        assert state_trafficlight_idle_nottobe.transitions_from[1].doc is None
         assert (
             state_trafficlight_idle_nottobe.transitions_from[1].parent_ref().name
             == "Idle"
@@ -3050,10 +3359,14 @@ class TestModelStateTrafficLight:
         )
         assert state_trafficlight_idle_nottobe.transitions_from[2].to_state == "ToBe"
         assert state_trafficlight_idle_nottobe.transitions_from[2].event == Event(
-            name="E1", state_path=("TrafficLight", "Idle", "NotToBe"), extra_name=None
+            name="E1",
+            state_path=("TrafficLight", "Idle", "NotToBe"),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_idle_nottobe.transitions_from[2].guard is None
         assert state_trafficlight_idle_nottobe.transitions_from[2].effects == []
+        assert state_trafficlight_idle_nottobe.transitions_from[2].doc is None
         assert (
             state_trafficlight_idle_nottobe.transitions_from[2].parent_ref().name
             == "Idle"
@@ -3068,10 +3381,14 @@ class TestModelStateTrafficLight:
             state_trafficlight_idle_nottobe.transitions_from[3].to_state == EXIT_STATE
         )
         assert state_trafficlight_idle_nottobe.transitions_from[3].event == Event(
-            name="E2", state_path=("TrafficLight", "Idle", "NotToBe"), extra_name=None
+            name="E2",
+            state_path=("TrafficLight", "Idle", "NotToBe"),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_idle_nottobe.transitions_from[3].guard is None
         assert state_trafficlight_idle_nottobe.transitions_from[3].effects == []
+        assert state_trafficlight_idle_nottobe.transitions_from[3].doc is None
         assert (
             state_trafficlight_idle_nottobe.transitions_from[3].parent_ref().name
             == "Idle"
@@ -3083,10 +3400,14 @@ class TestModelStateTrafficLight:
         assert state_trafficlight_idle_nottobe.transitions_to[0].from_state == "ToBe"
         assert state_trafficlight_idle_nottobe.transitions_to[0].to_state == "NotToBe"
         assert state_trafficlight_idle_nottobe.transitions_to[0].event == Event(
-            name="E1", state_path=("TrafficLight", "Idle", "ToBe"), extra_name=None
+            name="E1",
+            state_path=("TrafficLight", "Idle", "ToBe"),
+            extra_name=None,
+            doc=None,
         )
         assert state_trafficlight_idle_nottobe.transitions_to[0].guard is None
         assert state_trafficlight_idle_nottobe.transitions_to[0].effects == []
+        assert state_trafficlight_idle_nottobe.transitions_to[0].doc is None
         assert (
             state_trafficlight_idle_nottobe.transitions_to[0].parent_ref().name
             == "Idle"
@@ -3104,8 +3425,8 @@ class TestModelStateTrafficLight:
             name="NotToBe",
             extra_name=None,
             events=[
-                dsl_nodes.EventDefinition(name="E1", extra_name=None),
-                dsl_nodes.EventDefinition(name="E2", extra_name=None),
+                dsl_nodes.EventDefinition(name="E1", extra_name=None, doc=None),
+                dsl_nodes.EventDefinition(name="E2", extra_name=None, doc=None),
             ],
             imports=[],
             substates=[],
@@ -3116,6 +3437,7 @@ class TestModelStateTrafficLight:
             during_aspects=[],
             force_transitions=[],
             is_pseudo=False,
+            doc=None,
         )
 
     def test_state_trafficlight_idle_nottobe_list_on_enters(

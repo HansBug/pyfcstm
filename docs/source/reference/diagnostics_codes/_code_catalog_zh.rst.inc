@@ -167,6 +167,11 @@
      - ``static_pipeline``
      - ``pure_static``
      - ``state_identifier``
+   * - :ref:`W_UNREACHABLE_TRANSITION <diag-code-w-unreachable-transition-zh>`
+     - ``warning``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``transition``
    * - :ref:`W_GUARD_CONST_FALSE <diag-code-w-guard-const-false-zh>`
      - ``warning``
      - ``static_pipeline``
@@ -187,7 +192,7 @@
      - ``static_pipeline``
      - ``pure_static``
      - ``event_declaration``
-   * - :ref:`W_DEADLOCK_LEAF <diag-code-w-deadlock-leaf-zh>`
+   * - :ref:`W_LEAF_NO_OUTGOING_TRANSITION <diag-code-w-leaf-no-outgoing-transition-zh>`
      - ``warning``
      - ``static_pipeline``
      - ``pure_static``
@@ -1405,6 +1410,87 @@ W_REDUNDANT_TRANSITION
 **示例 3**\ （``boundary_only``）——针对 ``W_REDUNDANT_TRANSITION`` 的反例边界。
 不要这样处理：针对“多个转换拥有相同的源、目标、事件、守卫和效果，行为上重复。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
+.. _diag-code-w-unreachable-transition-zh:
+
+W_UNREACHABLE_TRANSITION
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta W_UNREACHABLE_TRANSITION severity=warning emit_tier=static_pipeline capability=pure_static span_object=transition
+.. diagnostics-ref W_UNREACHABLE_TRANSITION from_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION to_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION transition_index type=int_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION source_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION source_state_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION selection_owner_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION forced_origin type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION combo_origin_ids type=list[str] required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION mount_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION reasons type=list[str] required=true enum=- item_enum=unreachable_source_state|unreachable_event_consumer|forced_never_expands|guard_false|shadowed|redundant exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION verify_backed type=bool required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION verification_source_ids type=list[str] required=false enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_UNREACHABLE_TRANSITION kind=inspect_json
+
+**注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``transition``。
+
+**含义。** 在当前可用的分析证据下，一个已声明的转换无法被执行。``reasons`` 聚合源状态不可达、事件消费者不可达、强制展开、守卫、遮蔽和重复等原因。
+
+**面向 LLM 的修复摘要。** 修改前应结合转换的源状态、触发器、守卫和声明作用域逐项核对 ``refs.reasons``。只有至少一个原因来自可选 verify 流程时，才会出现值为 ``true`` 的 ``verify_backed``。如果有来源信息，``verification_source_ids`` 会列出稳定的 ``algorithm_name@verification_scope`` 标识；这些标识不包含产品版本或 schema 版本。
+
+.. list-table:: ``refs`` 字段
+   :header-rows: 1
+   :widths: 22 16 14 48
+
+   * - 字段
+     - 类型
+     - 必填
+     - 含义
+   * - ``from_path``
+     - ``str``
+     - 是
+     - 转换源状态的点分路径；入口转换可写作 ``[*]``。
+   * - ``to_path``
+     - ``str``
+     - 是
+     - 转换目标状态的点分路径；退出转换可写作 ``[*]``。
+   * - ``transition_index``
+     - ``int_or_null``
+     - 否
+     - 父优先转换索引，用于源码范围缺失时在编辑器中消除歧义。
+   * - ``reasons``
+     - ``list[str]``
+     - 是
+     - 参与聚合诊断的稳定排序原因列表。
+   * - ``verify_backed``
+     - ``bool``
+     - 否
+     - 可选 verify 提供至少一个原因时出现且为 ``true``。
+
+.. diagnostics-example W_UNREACHABLE_TRANSITION 1 repro_cli
+
+**示例 1** （``repro_cli``）——复现边界。
+该诊断会出现在成功的 inspect 报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]``。
+
+.. code-block:: fcstm
+
+   state Root {
+       state A;
+       state B;
+       [*] -> A;
+       A -> B : if [false];
+   }
+
+.. diagnostics-example W_UNREACHABLE_TRANSITION 2 boundary_only
+
+**示例 2** （``boundary_only``）——针对 ``W_UNREACHABLE_TRANSITION`` 的修复方向。
+典型修复是执行 ``inspect_transition``：先确认报告原因和预期运行路径，再决定是否调整守卫、可达路径或声明位置。
+
+.. diagnostics-example W_UNREACHABLE_TRANSITION 3 boundary_only
+
+**示例 3** （``boundary_only``）——针对 ``W_UNREACHABLE_TRANSITION`` 的反例边界。
+不要仅因为出现该警告就删除转换；无论是静态证据还是可选验证证据，都必须先核对模型意图。
+
 .. _diag-code-w-self-transition-nop-zh:
 
 W_SELF_TRANSITION_NOP
@@ -1547,6 +1633,7 @@ W_TRANSITION_SHADOWED
 .. diagnostics-ref W_TRANSITION_SHADOWED transition type=dict required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_TRANSITION_SHADOWED transition_summary type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_TRANSITION_SHADOWED source_state_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_TRANSITION_SHADOWED selection_domain_kind type=str required=false enum=state_outgoing|composite_initial item_enum=- exact_values=-
 .. diagnostics-ref W_TRANSITION_SHADOWED reason type=str required=true enum=guard_shadow|duplicate_event|unconditional_catchall|prior_trigger_cover item_enum=- exact_values=-
 .. diagnostics-ref W_TRANSITION_SHADOWED shadowed_by_count type=int required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_TRANSITION_SHADOWED shadowed_by type=list[str] required=true enum=- item_enum=- exact_values=-
@@ -1556,9 +1643,9 @@ W_TRANSITION_SHADOWED
 
 **注册表事实。** 严重级别 ``warning``；发射层级 ``verify_pipeline``；能力层级 ``requires_solver``；源码对象 ``transition``。
 
-**含义。** 后面的同源出边转换被前面的触发条件完全覆盖，因此不会被选择。
+**含义。** 有序选择域中的后续转换被前面的触发条件完全覆盖，因此不会被选择。
 
-**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。后面的同源出边转换被前面的触发条件完全覆盖，因此不会被选择。
+**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。有序选择域中的前面转换消耗了所有可能到达后续转换的情形。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -1587,7 +1674,11 @@ W_TRANSITION_SHADOWED
    * - ``source_state_path``
      - ``str``
      - 是
-     - 字段含义：产生该诊断的源状态点分路径。
+     - 字段含义：产生该诊断的有序选择域拥有者点分路径。
+   * - ``selection_domain_kind``
+     - ``str``
+     - 否
+     - 字段含义：包含被覆盖转换的有序选择域。（枚举：``state_outgoing``、``composite_initial``）
    * - ``reason``
      - ``str``
      - 是
@@ -1620,12 +1711,12 @@ W_TRANSITION_SHADOWED
 .. diagnostics-example W_TRANSITION_SHADOWED 2 boundary_only
 
 **示例 2**\ （``boundary_only``）——针对 ``W_TRANSITION_SHADOWED`` 的修复方向。
-典型修复是对 ``transition_list`` 执行 ``reorder_transitions``：针对“后面的同源出边转换被前面的触发条件完全覆盖，因此不会被选择。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
+典型修复是对 ``transition_list`` 执行 ``reorder_transitions``：针对“有序选择域中的后续转换被前面的触发条件完全覆盖，因此不会被选择。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example W_TRANSITION_SHADOWED 3 boundary_only
 
 **示例 3**\ （``boundary_only``）——针对 ``W_TRANSITION_SHADOWED`` 的反例边界。
-不要这样处理：针对“后面的同源出边转换被前面的触发条件完全覆盖，因此不会被选择。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
+不要这样处理：针对“有序选择域中的后续转换被前面的触发条件完全覆盖，因此不会被选择。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 事件和作用域
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -4824,6 +4915,8 @@ W_UNREACHABLE_STATE
 ^^^^^^^^^^^^^^^^^^^
 
 .. diagnostics-meta W_UNREACHABLE_STATE severity=warning emit_tier=static_pipeline capability=pure_static span_object=state_identifier
+.. diagnostics-ref W_UNREACHABLE_STATE algorithm_name type=str required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_STATE verification_scope type=str required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREACHABLE_STATE state_path type=str required=true enum=- item_enum=- exact_values=-
 
 
@@ -4843,6 +4936,14 @@ W_UNREACHABLE_STATE
      - 类型
      - 必填
      - 含义
+   * - ``algorithm_name``
+     - ``str``
+     - 否
+     - 可选验证产生共享诊断时的验证算法名称。
+   * - ``verification_scope``
+     - ``str``
+     - 否
+     - 可选验证产生共享诊断时的验证范围。
    * - ``state_path``
      - ``str``
      - 是
@@ -4871,25 +4972,30 @@ W_UNREACHABLE_STATE
 **示例 3**\ （``boundary_only``）——针对 ``W_UNREACHABLE_STATE`` 的反例边界。
 不要这样处理：针对“从根入口路径出发，无法通过普通或强制转换到达某个状态。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
-.. _diag-code-w-deadlock-leaf-zh:
+.. _diag-code-w-leaf-no-outgoing-transition-zh:
 
-W_DEADLOCK_LEAF
+W_LEAF_NO_OUTGOING_TRANSITION
 ^^^^^^^^^^^^^^^
 
-.. diagnostics-meta W_DEADLOCK_LEAF severity=warning emit_tier=static_pipeline capability=pure_static span_object=state_identifier
-.. diagnostics-ref W_DEADLOCK_LEAF state_path type=str required=true enum=- item_enum=- exact_values=-
-.. diagnostics-ref W_DEADLOCK_LEAF parent_path type=str required=false enum=- item_enum=- exact_values=-
-.. diagnostics-ref W_DEADLOCK_LEAF reason type=str required=true enum=no_outgoing_transition item_enum=- exact_values=-
-.. diagnostics-ref W_DEADLOCK_LEAF suggested_fix type=dict required=false enum=- item_enum=- exact_values=-
+.. diagnostics-meta W_LEAF_NO_OUTGOING_TRANSITION severity=warning emit_tier=static_pipeline capability=pure_static span_object=state_identifier
+.. diagnostics-ref W_LEAF_NO_OUTGOING_TRANSITION state_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_LEAF_NO_OUTGOING_TRANSITION parent_path type=str required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_LEAF_NO_OUTGOING_TRANSITION reason type=str required=true enum=no_outgoing_transition item_enum=- exact_values=-
+.. diagnostics-ref W_LEAF_NO_OUTGOING_TRANSITION suggested_fix type=dict required=false enum=- item_enum=- exact_values=-
 
 
-.. diagnostics-boundary W_DEADLOCK_LEAF kind=inspect_json
+.. diagnostics-boundary W_LEAF_NO_OUTGOING_TRANSITION kind=inspect_json
 
 **注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``state_identifier``。
 
-**含义。** 非伪叶状态没有任何出边转换，进入后无法离开。
+**含义。** 非伪叶状态没有任何作者定义的出边转换。这是没有建模出口的结构事实，
+不是运行时无法继续：没有转换提交时，非根叶状态仍可以保持活动并执行
+``during`` 动作；根叶状态则遵循 pyfcstm 的合成根退出行为。
 
-**面向 LLM 的修复摘要。** 这是提示设计风险或可疑结构的警告。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。非伪叶状态没有任何出边转换，进入后无法离开。
+**面向 LLM 的修复摘要。** 非伪叶状态没有任何作者定义的出边转换；非根叶状态仍可以保持活动并执行
+``during`` 动作，根叶状态则遵循 pyfcstm 的合成根退出行为。只有模型确实需要离开或结束时才添加转换；
+``State -> [*]`` 转换只适用于非根叶状态，根叶状态已经遵循合成的根退出行为。self-loop 会执行
+``exit -> transition effect -> enter -> during`` 重入语义，不是驻停或合成退出占位符。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -4902,7 +5008,7 @@ W_DEADLOCK_LEAF
    * - ``state_path``
      - ``str``
      - 是
-     - 字段含义：相关状态的点分路径。
+     - 字段含义：没有出边转换的叶状态点分路径。
    * - ``parent_path``
      - ``str``
      - 否
@@ -4910,13 +5016,13 @@ W_DEADLOCK_LEAF
    * - ``reason``
      - ``str``
      - 是
-     - 字段含义：原因分类标签。
+     - 字段含义：叶状态没有出边转换的原因分类标签。
    * - ``suggested_fix``
      - ``dict``
      - 否
      - 字段含义：可选的结构化快速修复载荷。
 
-.. diagnostics-example W_DEADLOCK_LEAF 1 repro_cli
+.. diagnostics-example W_LEAF_NO_OUTGOING_TRANSITION 1 repro_cli
 
 **示例 1**\ （``repro_cli``）——复现边界。
 这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
@@ -4928,15 +5034,17 @@ W_DEADLOCK_LEAF
        [*] -> A;
    }
 
-.. diagnostics-example W_DEADLOCK_LEAF 2 boundary_only
+.. diagnostics-example W_LEAF_NO_OUTGOING_TRANSITION 2 boundary_only
 
-**示例 2**\ （``boundary_only``）——针对 ``W_DEADLOCK_LEAF`` 的修复方向。
-典型修复是对 ``state`` 执行 ``add_transition``：针对“非伪叶状态没有任何出边转换，进入后无法离开。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
+**示例 2**\ （``boundary_only``）——针对 ``W_LEAF_NO_OUTGOING_TRANSITION`` 的修复方向。
+典型修复是对 ``state`` 执行 ``add_transition``：仅当叶状态确实需要离开时，
+结合上方 ``refs`` 定位具体对象，做最小语义保持修改；根叶状态已经遵循合成的根退出行为。如果无法确认意图，先补充模型上下文或保留诊断。
 
-.. diagnostics-example W_DEADLOCK_LEAF 3 boundary_only
+.. diagnostics-example W_LEAF_NO_OUTGOING_TRANSITION 3 boundary_only
 
-**示例 3**\ （``boundary_only``）——针对 ``W_DEADLOCK_LEAF`` 的反例边界。
-不要这样处理：针对“非伪叶状态没有任何出边转换，进入后无法离开。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
+**示例 3**\ （``boundary_only``）——针对 ``W_LEAF_NO_OUTGOING_TRANSITION`` 的反例边界。
+不要这样处理：不要只为消除诊断而添加 self-loop；它会触发退出和重新进入，
+与非根叶状态的正常驻停语义不同；根叶状态已经遵循合成的根退出行为。必须先确认真实控制意图。
 
 .. _diag-code-w-high-var-to-leaf-ratio-zh:
 

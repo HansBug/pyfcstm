@@ -2,27 +2,17 @@
   "$schema": "https://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/HansBug/pyfcstm/blob/main/pyfcstm/diagnostics/inspect_llm_report_schema.json",
   "title": "FCSTM Inspect LLM Report",
-  "description": "Stable compact inspect report for LLM repair loops. This is a presentation contract and does not replace ModelInspect.to_json().",
+  "description": "Compact inspect report for LLM repair loops. This schema is shipped with the pyfcstm release and does not replace ModelInspect.to_json().",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "diagnostics",
     "input",
     "repair_protocol",
-    "schema_status",
-    "schema_version",
     "status",
     "summary"
   ],
   "properties": {
-    "schema_version": {
-      "type": "string",
-      "const": "pyfcstm.inspect.llm.v1"
-    },
-    "schema_status": {
-      "type": "string",
-      "const": "stable"
-    },
     "status": {
       "type": "string",
       "enum": ["ok", "info", "warning", "error"]
@@ -51,6 +41,7 @@
         "leaf_states",
         "root_state_path",
         "states",
+        "structure_statistics",
         "transitions",
         "variables",
         "warnings"
@@ -63,7 +54,8 @@
         "states": { "type": "integer", "minimum": 0 },
         "leaf_states": { "type": "integer", "minimum": 0 },
         "transitions": { "type": "integer", "minimum": 0 },
-        "variables": { "type": "integer", "minimum": 0 }
+        "variables": { "type": "integer", "minimum": 0 },
+        "structure_statistics": { "$ref": "#/definitions/StructureStatistics" }
       }
     },
     "diagnostics": {
@@ -72,6 +64,67 @@
     }
   },
   "definitions": {
+    "StructureStatistics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state_count", "leaf_state_count", "composite_state_count",
+        "authored_transition_count", "transitions_per_state",
+        "states_per_transition", "unreachable_leaf_states",
+        "unreachable_leaf_state_rate", "unreachable_transitions",
+        "unreachable_transition_rate", "unreachable_transition_reasons",
+        "thresholds", "exceeded_thresholds",
+        "unguarded_transitions", "guard_eligible_transitions",
+        "unguarded_rate", "missing_effect_transitions",
+        "effect_eligible_transitions", "missing_effect_rate",
+        "eventless_unconditional_transitions", "behavior_transitions",
+        "eventless_unconditional_rate"
+      ],
+      "properties": {
+        "state_count": { "type": "integer", "minimum": 0 },
+        "leaf_state_count": { "type": "integer", "minimum": 0 },
+        "composite_state_count": { "type": "integer", "minimum": 0 },
+        "authored_transition_count": { "type": "integer", "minimum": 0 },
+        "transitions_per_state": { "type": ["number", "null"] },
+        "states_per_transition": { "type": ["number", "null"] },
+        "unreachable_leaf_states": { "type": "integer", "minimum": 0 },
+        "unreachable_leaf_state_rate": { "type": ["number", "null"] },
+        "unreachable_transitions": { "type": "integer", "minimum": 0 },
+        "unreachable_transition_rate": { "type": ["number", "null"] },
+        "unreachable_transition_reasons": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
+        "thresholds": { "$ref": "#/definitions/StructureStatisticsPolicy" },
+        "exceeded_thresholds": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "unguarded_transitions": { "type": "integer", "minimum": 0 },
+        "guard_eligible_transitions": { "type": "integer", "minimum": 0 },
+        "unguarded_rate": { "type": ["number", "null"] },
+        "missing_effect_transitions": { "type": "integer", "minimum": 0 },
+        "effect_eligible_transitions": { "type": "integer", "minimum": 0 },
+        "missing_effect_rate": { "type": ["number", "null"] },
+        "eventless_unconditional_transitions": { "type": "integer", "minimum": 0 },
+        "behavior_transitions": { "type": "integer", "minimum": 0 },
+        "eventless_unconditional_rate": { "type": ["number", "null"] }
+      }
+    },
+    "StructureStatisticsPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_transitions_per_state",
+        "max_unreachable_leaf_state_rate",
+        "max_unreachable_transition_rate"
+      ],
+      "properties": {
+        "max_transitions_per_state": { "type": ["number", "null"], "minimum": 0 },
+        "max_unreachable_leaf_state_rate": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "max_unreachable_transition_rate": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }
+      }
+    },
     "Diagnostic": {
       "type": "object",
       "additionalProperties": false,
@@ -166,7 +219,12 @@
       "required": ["kind", "verify_required"],
       "properties": {
         "kind": { "type": "string", "enum": ["inspect-static", "verify-backed", "unknown"] },
-        "verify_required": { "type": "boolean" }
+        "verify_required": { "type": "boolean" },
+        "source_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Stable algorithm@scope identifiers for contributing verification evidence; omitted when unavailable."
+        }
       }
     }
   }

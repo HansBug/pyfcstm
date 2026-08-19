@@ -9,6 +9,28 @@
 
 生成 runtime 的语义必须和 FCSTM model 以及 simulator 契约保持一致。对 generated implementation 文件来说，性能和语义正确性优先于人工长期维护可读性。Formatter / linter gate 的目的只是让生成代码看起来专业、清爽、容易集成，不能让实现可读性反过来压过 runtime 行为。
 
+## 文档元数据合同
+
+受支持的 FCSTM 所有者（`State`、`Event`、`Transition`、`VarDefine`、
+`OnStage` 和 `OnAspect`）各自携带一个不透明的 `doc` 值。文档块由 grammar
+作为所有者前的 leading block 消费；abstract 生命周期动作也兼容历史
+trailing 写法，canonical export 会把两者归一为同一个字段。`None`、空字符
+串和字面量 `*` 是不同的值。文档属于元数据：它会进入 AST/Model round-trip
+和 canonical export，但不会进入 runtime identity、diagnostics、PlantUML
+展示或结构化 Diagram 数据。
+
+模板作者应使用显式的 `is not none` 判断消费 `doc`，不能根据源码行号猜测
+所有者。canonical `model.to_ast_node()` export 是生成 README/源码文本的权威
+来源。它不是秘密边界：生成物可能包含完整文档，因此模板和生成 README 必须
+提醒用户不要在文档块中保存凭据、token、密码或私钥。
+
+共享 renderer 提供 `markdown_fence`（保护 README 代码块）和
+`escape_python_docstring`（保护 Python 三引号 docstring）。这些 helper 只
+保护 Markdown 分隔符和目标语言语法，不改变 Model 的 `doc` 值。C-family
+canonical 字符串还必须保护 `??/` 等 C 三字符组；这是源码模板自己的转义
+策略，`doc` 本身不被修改。值域仍拒绝 `/*` 与 `*/`，以保证每次 canonical
+export 都能重新解析。
+
 ## 目录职责
 
 | 路径 | 职责 | 维护说明 |

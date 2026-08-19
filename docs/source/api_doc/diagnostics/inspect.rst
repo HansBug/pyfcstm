@@ -24,6 +24,24 @@ DEFAULT\_VAR\_TO\_LEAF\_RATIO\_THRESHOLD
 .. autodata:: DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD
 
 
+DEFAULT\_STRUCTURE\_MAX\_TRANSITIONS\_PER\_STATE
+-----------------------------------------------------
+
+.. autodata:: DEFAULT_STRUCTURE_MAX_TRANSITIONS_PER_STATE
+
+
+DEFAULT\_STRUCTURE\_MAX\_UNREACHABLE\_LEAF\_STATE\_RATE
+-------------------------------------------------------
+
+.. autodata:: DEFAULT_STRUCTURE_MAX_UNREACHABLE_LEAF_STATE_RATE
+
+
+DEFAULT\_STRUCTURE\_MAX\_UNREACHABLE\_TRANSITION\_RATE
+------------------------------------------------------
+
+.. autodata:: DEFAULT_STRUCTURE_MAX_UNREACHABLE_TRANSITION_RATE
+
+
 KNOWN\_SPANLESS\_CODES
 -----------------------------------------------------
 
@@ -42,6 +60,12 @@ COMBO\_GUARD\_VERIFY\_REPLACEMENT\_CODES
 .. autodata:: COMBO_GUARD_VERIFY_REPLACEMENT_CODES
 
 
+DEFAULT\_STRUCTURE\_STATISTICS\_POLICY
+-----------------------------------------------------
+
+.. autodata:: DEFAULT_STRUCTURE_STATISTICS_POLICY
+
+
 StateInfo
 -----------------------------------------------------
 
@@ -53,14 +77,14 @@ TransitionInfo
 -----------------------------------------------------
 
 .. autoclass:: TransitionInfo
-    :members: from_path,to_path,event,event_scope,guard,effect,effect_self_assigns,is_forced,forced_origin,transition_index,span,effect_spans,effect_self_assign_spans,combo_origin_refs,combo_projection_key,combo_projection_order_key,combo_reuse_group_id,combo_priority_run_identity,combo_priority_run_index
+    :members: from_path,to_path,event,event_scope,guard,effect,effect_self_assigns,is_forced,forced_origin,transition_index,span,effect_spans,effect_self_assign_spans,combo_origin_refs,combo_projection_key,combo_projection_order_key,combo_reuse_group_id,combo_priority_run_identity,combo_priority_run_index,source_path
 
 
 ComboOriginRefInfo
 -----------------------------------------------------
 
 .. autoclass:: ComboOriginRefInfo
-    :members: origin_id,term_index,role,consumes_term,term_text,transition_span,trigger_span,term_span,value_span,removal_span
+    :members: origin_id,term_index,role,consumes_term,term_text,transition_span,trigger_span,term_span,value_span,removal_span,source_kind,source_path,selection_owner_path,target_kind,target_path
 
 
 ComboOriginTermInfo
@@ -112,11 +136,53 @@ ModelMetrics
     :members: n_states_leaf,n_states_composite,n_states_pseudo,max_hierarchy_depth,n_transitions_normal,n_transitions_forced,n_events,n_variables,var_to_leaf_ratio,aspect_coverage,abstract_action_inventory
 
 
+StructureStatisticsPolicy
+-----------------------------------------------------
+
+.. autoclass:: StructureStatisticsPolicy
+    :members: max_transitions_per_state,max_unreachable_leaf_state_rate,max_unreachable_transition_rate
+
+
+StructureStatistics
+-----------------------------------------------------
+
+.. autoclass:: StructureStatistics
+    :members: state_count,leaf_state_count,composite_state_count,authored_transition_count,transitions_per_state,states_per_transition,unreachable_leaf_states,unreachable_leaf_state_rate,unreachable_transitions,unreachable_transition_rate,unreachable_transition_reasons,thresholds,exceeded_thresholds,unguarded_transitions,guard_eligible_transitions,unguarded_rate,missing_effect_transitions,effect_eligible_transitions,missing_effect_rate,eventless_unconditional_transitions,behavior_transitions,eventless_unconditional_rate
+
+
+InspectVerificationPolicy
+-----------------------------------------------------
+
+.. autoclass:: InspectVerificationPolicy
+    :members: max_complexity_tier,max_call_count_scaling,smt_timeout_ms
+
+
+InspectVerificationSummary
+-----------------------------------------------------
+
+.. autoclass:: InspectVerificationSummary
+    :members: registered,executed,not_run,indeterminate
+
+
+InspectVerificationAlgorithm
+-----------------------------------------------------
+
+.. autoclass:: InspectVerificationAlgorithm
+    :members: algorithm_name,complexity_tier,call_count_scaling,verification_scope,declared_diagnostic_codes,result_kind,reason_code,reason,partial_diagnostic_count
+
+
+InspectVerificationReport
+-----------------------------------------------------
+
+.. autoclass:: InspectVerificationReport
+    :members: supported,enabled,provider,reason_code,requested_policy,summary,algorithms
+
+
 ModelInspect
 -----------------------------------------------------
 
 .. autoclass:: ModelInspect
-    :members: to_json,root_state_path,states,transitions,variables,events,actions,forced_transitions,combo_transitions,combo_origins,metrics,reachability_graph,event_emission_map,var_dataflow,aspect_impact_map,action_ref_graph,diagnostics
+    :members: to_json,root_state_path,states,transitions,variables,events,actions,forced_transitions,combo_transitions,combo_origins,metrics,reachability_graph,event_emission_map,var_dataflow,aspect_impact_map,action_ref_graph,diagnostics,verification,structure_statistics
 
 
 inspect\_model

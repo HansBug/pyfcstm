@@ -23,6 +23,7 @@ import argparse
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 from typing import Callable, Iterable, List, Mapping, MutableMapping, Optional, Sequence
@@ -122,6 +123,25 @@ class TemplateSuiteRunnerError(ValueError):
         >>> TemplateSuiteRunnerError("bad suite").args[0]
         'bad suite'
     """
+
+
+def _require_native_formatter_tools(which=None) -> None:
+    """Fail closed when explicit native runs lack their formatting/build tools.
+
+    Native template runs use the formatter and CMake-backed harness checks as
+    part of their generated-source contract.  Allowing pytest to skip those
+    checks would make an explicitly requested native run appear green.
+
+    :raises TemplateSuiteRunnerError: If CMake or clang-format is unavailable.
+    """
+    which = shutil.which if which is None else which
+    missing = [name for name in ("cmake", "clang-format") if which(name) is None]
+    if missing:
+        raise TemplateSuiteRunnerError(
+            "explicit native template suites require: {0}".format(
+                ", ".join(missing)
+            )
+        )
 
 
 def _repo_root() -> str:
@@ -666,6 +686,27 @@ def _run_self_check_cases() -> None:
         raise TemplateSuiteRunnerError(
             "native toolchain opt-in did not pass pytest's explicit opt-in flag"
         )
+    for missing_tool in ("cmake", "clang-format"):
+        def fake_which(name, missing_tool=missing_tool):
+            if name == missing_tool:
+                return None
+            return shutil.which(name)
+
+        try:
+            _require_native_formatter_tools(which=fake_which)
+        except TemplateSuiteRunnerError as err:
+            if missing_tool not in str(err):
+                raise TemplateSuiteRunnerError(
+                    "native tool failure did not name missing tool: {0}".format(
+                        missing_tool
+                    )
+                )
+        else:
+            raise TemplateSuiteRunnerError(
+                "native tool opt-in did not fail closed for missing {0}".format(
+                    missing_tool
+                )
+            )
     try:
         build_template_pytest_command(["python"], run_native_toolchain=True)
     except TemplateSuiteRunnerError:
@@ -918,6 +959,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         run_native = _native_toolchain_enabled(
             os.environ.get("PYFCSTM_RUN_NATIVE_TOOLCHAIN"), args.run_native_toolchain
         )
+        if run_native:
+            _require_native_formatter_tools()
         pytest_args = _split_pytest_arg_texts(args.pytest_args_option)
         pytest_args.extend(_clean_pytest_args(args.pytest_args))
         command = build_template_pytest_command(

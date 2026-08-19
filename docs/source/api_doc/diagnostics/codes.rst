@@ -43,10 +43,22 @@ CodeSpec
 -----------------------------------------------------
 
 .. autoclass:: CodeSpec
-    :members: required_fields,code,severity,description,refs_schema,example_dsl,capability,for_llm,emit_tier,suggested_fix,span_object
+    :members: canonical_code,is_deprecated,deprecated_since,required_fields,code,severity,description,refs_schema,example_dsl,capability,for_llm,emit_tier,suggested_fix,span_object,deprecated_in,removed_in,replaced_by
 
 
 load\_codes
 -----------------------------------------------------
 
 .. autofunction:: load_codes
+
+
+resolve\_diagnostic\_code
+-----------------------------------------------------
+
+.. autofunction:: resolve_diagnostic_code
+
+
+canonicalize\_diagnostic\_code
+-----------------------------------------------------
+
+.. autofunction:: canonicalize_diagnostic_code

@@ -13,6 +13,7 @@ import os
 import inspect
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -21,17 +22,22 @@ from pyfcstm.diagnostics import (
     ActionInfo,
     DEFAULT_DEEP_HIERARCHY_THRESHOLD,
     DEFAULT_LARGE_COMPOSITE_THRESHOLD,
+    DEFAULT_STRUCTURE_MAX_TRANSITIONS_PER_STATE,
+    DEFAULT_STRUCTURE_MAX_UNREACHABLE_LEAF_STATE_RATE,
+    DEFAULT_STRUCTURE_MAX_UNREACHABLE_TRANSITION_RATE,
     DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD,
     EventInfo,
     ForcedTransitionInfo,
     ModelInspect,
     StateInfo,
+    StructureStatisticsPolicy,
     TransitionInfo,
     VariableInfo,
     inspect_model,
 )
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
+from pyfcstm.utils.validate import Span
 
 from ._schema_check import assert_all_diags_match_schema
 
@@ -119,6 +125,17 @@ def _transition_info(
         span=span,
         effect_spans=tuple(effect_spans),
     )
+
+
+@pytest.mark.unittest
+def test_transition_info_preserves_positional_span_binding():
+    span = Span(line=7, column=3)
+    transition = TransitionInfo(
+        'Root.A', 'Root.B', None, None, None, None, (), False, None, 0, span,
+    )
+
+    assert transition.span == span
+    assert transition.source_path is None
 
 
 def _action_info(
@@ -291,6 +308,79 @@ class TestInspectModelBasic:
         assert DEFAULT_DEEP_HIERARCHY_THRESHOLD == 6
         assert DEFAULT_LARGE_COMPOSITE_THRESHOLD == 12
         assert DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD == 2.0
+        assert DEFAULT_STRUCTURE_MAX_TRANSITIONS_PER_STATE == 6.0
+        assert DEFAULT_STRUCTURE_MAX_UNREACHABLE_LEAF_STATE_RATE == 0.10
+        assert DEFAULT_STRUCTURE_MAX_UNREACHABLE_TRANSITION_RATE == 0.10
+
+    def test_structure_statistics_exclude_initial_edges(self, report):
+        stats = report.structure_statistics
+        assert stats is not None
+        assert stats.state_count == 3
+        assert stats.authored_transition_count == 2
+        assert stats.transitions_per_state == 2 / 3
+        assert stats.unguarded_transitions == 1
+        assert stats.guard_eligible_transitions == 2
+
+    def test_structure_statistics_use_null_for_empty_rate_populations(self):
+        report = inspect_model(_parse("state Root;"))
+        stats = report.structure_statistics
+        assert stats is not None
+        assert stats.authored_transition_count == 0
+        assert stats.transitions_per_state == 0.0
+        assert stats.states_per_transition is None
+        assert stats.unguarded_rate is None
+        assert stats.missing_effect_rate is None
+        assert stats.eventless_unconditional_rate is None
+
+    def test_structure_statistics_fold_combo_chain_properties(self):
+        report = inspect_model(_parse(
+            """
+            def int x = 0;
+            state Root {
+                state A;
+                state B;
+                [*] -> A;
+                A -> B :: E1 + [x > 0] + E2 effect { x = 1; };
+            }
+            """
+        ))
+        stats = report.structure_statistics
+        assert stats is not None
+        assert stats.authored_transition_count == 1
+        assert stats.unguarded_transitions == 0
+        assert stats.missing_effect_transitions == 0
+
+    def test_structure_statistics_exclude_initial_combo_origin(self):
+        report = inspect_model(_parse(
+            """
+            state Root {
+                state A;
+                [*] -> A :: Boot + Ready;
+            }
+            """
+        ))
+        stats = report.structure_statistics
+        assert stats is not None
+        assert stats.authored_transition_count == 0
+
+    def test_structure_statistics_do_not_count_excluded_event_initial_edges(self):
+        report = inspect_model(_parse(
+            """
+            state Root {
+                state Live;
+                state Orphan {
+                    event Boot;
+                    state A;
+                    [*] -> A : Boot;
+                }
+                [*] -> Live;
+            }
+            """
+        ), enable_verify=True)
+        stats = report.structure_statistics
+        assert stats.authored_transition_count == 0
+        assert stats.unreachable_transitions == 0
+        assert stats.unreachable_transition_reasons == {}
 
 
 @pytest.mark.unittest
@@ -479,11 +569,13 @@ class TestInspectModelToJson:
             'combo_transitions',
             'combo_origins',
             'metrics',
+            'structure_statistics',
             'reachability_graph',
             'event_emission_map',
             'var_dataflow',
             'aspect_impact_map',
             'action_ref_graph',
+            'verification',
             'diagnostics',
         }
 
@@ -567,6 +659,128 @@ class TestSchemaJsonValidates:
         assert required.issubset(set(payload.keys())), (
             f'missing keys: {required - set(payload.keys())}'
         )
+
+    def test_schema_strictly_validates_verification_projection(self):
+        jsonschema = pytest.importorskip('jsonschema')
+        schema = self._load_schema()
+        payload = inspect_model(_parse(SIMPLE_DSL)).to_json()
+
+        payload['verification'] = {
+            'supported': True,
+            'enabled': True,
+            'provider': 'pyfcstm.verify',
+            'reason_code': None,
+            'requested_policy': {
+                'max_complexity_tier': 'smt_linear',
+                'max_call_count_scaling': 'linear_in_transitions',
+                'smt_timeout_ms': 1000,
+            },
+            'summary': {
+                'registered': 1,
+                'executed': 1,
+                'not_run': 0,
+                'indeterminate': 1,
+            },
+            'algorithms': [{
+                'algorithm_name': 'dead_guard',
+                'complexity_tier': 'smt_linear',
+                'call_count_scaling': 'linear_in_transitions',
+                'verification_scope': 'smt_local',
+                'declared_diagnostic_codes': ['W_DEAD_GUARD'],
+                'result_kind': 'unknown',
+                'reason_code': None,
+                'reason': 'solver returned unknown',
+                'partial_diagnostic_count': 1,
+            }],
+        }
+
+        jsonschema.Draft7Validator.check_schema(schema)
+        validator = jsonschema.Draft7Validator(schema)
+        errors = list(validator.iter_errors(payload))
+        assert errors == []
+
+        verification_definitions = (
+            'VerificationReport',
+            'VerificationPolicy',
+            'VerificationSummary',
+            'VerificationAlgorithm',
+        )
+        for name in verification_definitions:
+            assert schema['definitions'][name]['additionalProperties'] is False
+
+        algorithm_schema = schema['definitions']['VerificationAlgorithm']
+        assert set(algorithm_schema['required']) == set(
+            algorithm_schema['properties']
+        )
+        assert algorithm_schema['properties']['result_kind']['enum'] == [
+            'not_run',
+            'sat',
+            'unsat',
+            'timeout',
+            'unknown',
+            'undecidable_skip',
+        ]
+
+        extra_property_paths = (
+            ('verification',),
+            ('verification', 'requested_policy'),
+            ('verification', 'summary'),
+            ('verification', 'algorithms', 0),
+        )
+        for path in extra_property_paths:
+            invalid = json.loads(json.dumps(payload))
+            node = invalid
+            for part in path:
+                node = node[part]
+            node['unexpected'] = True
+            assert list(validator.iter_errors(invalid))
+
+    def test_schema_accepts_legacy_transition_provenance_payloads(self):
+        jsonschema = pytest.importorskip('jsonschema')
+        schema = self._load_schema()
+        validator = jsonschema.Draft7Validator(schema)
+        payload = inspect_model(_parse(SIMPLE_DSL)).to_json()
+        for transition in payload['transitions'] + payload['combo_transitions']:
+            transition.pop('source_path', None)
+            for ref in transition.get('combo_origin_refs', []):
+                for field in (
+                    'source_kind', 'source_path', 'selection_owner_path',
+                    'target_kind', 'target_path',
+                ):
+                    ref.pop(field, None)
+
+        assert list(validator.iter_errors(payload)) == []
+
+    def test_schema_rejects_contradictory_verification_states(self):
+        jsonschema = pytest.importorskip('jsonschema')
+        schema = self._load_schema()
+        validator = jsonschema.Draft7Validator(schema)
+        payload = inspect_model(_parse(SIMPLE_DSL)).to_json()
+
+        unsupported_but_enabled = json.loads(json.dumps(payload))
+        unsupported_but_enabled['verification'].update({
+            'supported': False,
+            'enabled': True,
+            'provider': 'pyfcstm.verify',
+            'reason_code': None,
+        })
+        assert list(validator.iter_errors(unsupported_but_enabled))
+
+        invalid_not_run = inspect_model(
+            _parse(SIMPLE_DSL), enable_verify=True
+        ).to_json()
+        invalid_not_run['verification']['algorithms'][0].update({
+            'result_kind': 'not_run',
+            'reason_code': None,
+            'reason': None,
+            'partial_diagnostic_count': 1,
+        })
+        assert list(validator.iter_errors(invalid_not_run))
+
+        for field in ('max_complexity_tier', 'max_call_count_scaling'):
+            invalid_policy = json.loads(json.dumps(payload))
+            invalid_policy['verification']['requested_policy'][field] = None
+            assert list(validator.iter_errors(invalid_policy))
 
     def test_schema_documents_span_contract(self):
         schema = self._load_schema()
@@ -682,6 +896,243 @@ state Root {
         assert len(panic_transitions) >= 1
         assert all(t.is_forced for t in panic_transitions)
         assert all(t.forced_origin for t in panic_transitions)
+
+    def test_structure_statistics_fold_forced_expansion(self, report):
+        stats = report.structure_statistics
+        assert stats is not None
+        forced_count = sum(1 for t in report.transitions if t.is_forced)
+        assert forced_count > 0
+        assert stats.authored_transition_count == (
+            len([t for t in report.transitions if not t.is_forced and t.from_path != '[*]'])
+            + 1
+        )
+        assert stats.effect_eligible_transitions == stats.authored_transition_count - 1
+
+    def test_structure_statistics_keep_identical_forced_declarations_scoped(self):
+        report = inspect_model(_parse(
+            """
+            state Root {
+                state A {
+                    state X;
+                    state Y;
+                    [*] -> X;
+                    !X -> Y;
+                }
+                state B {
+                    state X;
+                    state Y;
+                    [*] -> X;
+                    !X -> Y;
+                }
+                [*] -> A;
+            }
+            """
+        ))
+        stats = report.structure_statistics
+        assert stats is not None
+        assert len(report.forced_transitions) == 2
+        assert stats.authored_transition_count == 2
+
+    def test_structure_statistics_scope_forced_unreachability_to_owner(self):
+        report = inspect_model(_parse(
+            """
+            state Root {
+                state Reachable {
+                    state X;
+                    state Y;
+                    [*] -> X;
+                    !X -> Y;
+                }
+                state Orphan {
+                    state X;
+                    state Y;
+                    [*] -> X;
+                    !X -> Y;
+                }
+                [*] -> Reachable;
+            }
+            """
+        ))
+        stats = report.structure_statistics
+        assert stats.unreachable_leaf_states == 2
+        assert stats.unreachable_transitions == 1
+        assert stats.unreachable_transition_reasons == {
+            "unreachable_source_state": 1,
+        }
+
+    @pytest.mark.parametrize("state_order", [
+        ("Live", "Orphan", "Error"),
+        ("Orphan", "Live", "Error"),
+    ])
+    def test_structure_statistics_forced_wildcard_is_order_independent(self, state_order):
+        states = "\n".join(f"state {name};" for name in state_order)
+        report = inspect_model(_parse(f"""
+            state Root {{
+                {states}
+                [*] -> Live;
+                !* -> Error :: Panic;
+            }}
+        """))
+        assert report.structure_statistics.unreachable_transitions == 1
+        assert report.structure_statistics.unreachable_transition_reasons == {
+            "unreachable_source_state": 1,
+        }
+
+    def test_structure_statistics_counts_fully_unreachable_forced_expansion(self):
+        report = inspect_model(_parse("""
+            state Root {
+                state Live;
+                state Orphan {
+                    state A;
+                    state B;
+                    [*] -> A;
+                    !* -> B :: Panic;
+                }
+                [*] -> Live;
+            }
+        """))
+        assert report.structure_statistics.unreachable_transitions == 1
+        assert report.structure_statistics.unreachable_transition_reasons == {
+            "unreachable_source_state": 1,
+        }
+
+    def test_structure_statistics_marks_fully_unreachable_composite_source(self):
+        report = inspect_model(_parse(
+            """
+            state Root {
+                state Orphan {
+                    state A;
+                    [*] -> A;
+                }
+                state Live;
+                [*] -> Live;
+                Orphan -> Live;
+            }
+            """
+        ))
+        assert report.structure_statistics.unreachable_transitions == 1
+        assert report.structure_statistics.unreachable_transition_reasons == {
+            "unreachable_source_state": 1,
+        }
+
+    def test_structure_statistics_count_zero_expansion_forced_declaration(self):
+        report = inspect_model(_parse(
+            """
+            state Root {
+                state A { !* -> [*] :: Never; }
+                [*] -> A;
+            }
+            """
+        ))
+        stats = report.structure_statistics
+        assert stats.authored_transition_count == 1
+        assert stats.unreachable_transitions == 1
+        assert stats.unreachable_transition_reasons == {
+            "forced_never_expands": 1,
+        }
+
+    def test_structure_statistics_count_duplicate_zero_expansion_forced_declarations(self):
+        report = inspect_model(_parse(
+            """
+            state Root {
+                state A {
+                    !* -> [*] :: Never;
+                    !* -> [*] :: Never;
+                }
+                [*] -> A;
+            }
+            """
+        ))
+        stats = report.structure_statistics
+        assert stats.authored_transition_count == 2
+        assert stats.unreachable_transitions == 2
+        assert stats.unreachable_transition_reasons == {
+            "forced_never_expands": 2,
+        }
+
+    def test_structure_statistics_counts_each_redundant_copy_after_the_first(self):
+        report = inspect_model(_parse(
+            """
+            state Root {
+                state A;
+                state B;
+                [*] -> A;
+                A -> B;
+                A -> B;
+                A -> B;
+            }
+            """
+        ))
+        stats = report.structure_statistics
+        assert stats.authored_transition_count == 3
+        assert stats.unreachable_transitions == 2
+        assert stats.unreachable_transition_reasons == {"redundant": 2}
+
+    def test_structure_statistics_keeps_overlapping_forced_verify_reasons(self):
+        report = inspect_model(
+            _parse(
+                """
+                state Root {
+                    state X;
+                    state Y;
+                    [*] -> X;
+                    !X -> Y :: Go;
+                    !X -> Y :: Go;
+                }
+                """
+            ),
+            enable_verify=True,
+            max_complexity_tier="smt_linear",
+        )
+        assert any(diagnostic.code == "W_TRANSITION_SHADOWED" for diagnostic in report.diagnostics)
+        assert report.structure_statistics.unreachable_transitions == 1
+        assert report.structure_statistics.unreachable_transition_reasons == {
+            "redundant": 1,
+            "shadowed": 1,
+        }
+
+    def test_structure_statistics_maps_nested_verify_dead_guard(self):
+        report = inspect_model(
+            _parse(
+                """
+                def int x = 0;
+                state Root {
+                    state A;
+                    state B;
+                    [*] -> A;
+                    A -> B : if [x > 0 && x < 0];
+                }
+                """
+            ),
+            enable_verify=True,
+            max_complexity_tier="smt_linear",
+        )
+        assert any(diag.code == "W_DEAD_GUARD" for diag in report.diagnostics)
+        assert report.structure_statistics.unreachable_transitions == 1
+        assert report.structure_statistics.unreachable_transition_reasons == {
+            "guard_false": 1,
+        }
+
+    def test_structure_statistics_filters_nested_verify_identity_by_guard(self):
+        report = inspect_model(
+            _parse(
+                """
+                def int x = 0;
+                state Root {
+                    state A;
+                    state B;
+                    [*] -> A;
+                    A -> B : if [x > 0 && x < 0];
+                    A -> B;
+                }
+                """
+            ),
+            enable_verify=True,
+            max_complexity_tier="smt_linear",
+        )
+        assert report.structure_statistics.unreachable_transition_reasons == {
+            "guard_false": 1,
+        }
 
     def test_forced_transition_origin_matches_declaration(self):
         dsl = """
@@ -1155,15 +1606,16 @@ class TestInspectModelGuardAffectDiagnostics:
         }
         """)
 
-        deadlock_fix = by_code['W_DEADLOCK_LEAF'][0].refs['suggested_fix']
-        assert by_code['W_DEADLOCK_LEAF'][0].refs['parent_path'] == 'Root'
+        deadlock_fix = by_code['W_LEAF_NO_OUTGOING_TRANSITION'][0].refs['suggested_fix']
+        assert by_code['W_LEAF_NO_OUTGOING_TRANSITION'][0].refs['parent_path'] == 'Root'
         assert deadlock_fix == {
             'kind': 'insert',
             'target': 'deadlock_leaf_exit_transition',
             'anchor': {'type': 'ref', 'ref': 'refs.parent_path'},
             'text': 'Idle -> [*];\n',
             'rationale': (
-                'Add an exit transition so the leaf can finish its parent state.'
+                'Add an exit transition only if the leaf is meant to finish its '
+                'parent state.'
             ),
         }
 
@@ -1214,7 +1666,7 @@ class TestInspectModelGuardAffectDiagnostics:
         state Root;
         """)
 
-        deadlock_refs = by_code['W_DEADLOCK_LEAF'][0].refs
+        deadlock_refs = by_code['W_LEAF_NO_OUTGOING_TRANSITION'][0].refs
         assert deadlock_refs == {
             'state_path': 'Root',
             'reason': 'no_outgoing_transition',
@@ -1764,6 +2216,33 @@ class TestInspectModelRedundancySemantics:
         assert sliced == ['A -> B;', 'A -> B;', 'A -> B;']
         assert [span.line for span in duplicate_spans] == [6, 7, 8]
 
+    def test_unreachable_transition_warning_aggregates_reasons_per_authored_edge(self):
+        dsl = """
+        state Root {
+            state A;
+            state B;
+            [*] -> A;
+            A -> B : if [false];
+            A -> B : if [false];
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        assert_all_diags_match_schema(
+            report.diagnostics,
+            context='unreachable-transition-reasons',
+        )
+        warnings = [
+            item for item in report.diagnostics
+            if item.code == 'W_UNREACHABLE_TRANSITION'
+        ]
+        assert len(warnings) == 2
+        assert warnings[0].refs['reasons'] == ['guard_false']
+        assert warnings[1].refs['reasons'] == ['guard_false', 'redundant']
+        assert report.structure_statistics.unreachable_transition_reasons == {
+            'guard_false': 2,
+            'redundant': 1,
+        }
+
     def test_self_transition_with_lifecycle_action_is_not_noop(self):
         dsl = """
         def int counter = 0;
@@ -2205,6 +2684,68 @@ class TestInspectModelThresholdNamingTypeDiagnostics:
         assert 'W_LARGE_COMPOSITE' not in codes
         assert 'W_DEEP_HIERARCHY' not in codes
 
+    def test_structure_statistics_have_general_defaults_without_diagnostics(self):
+        dsl = """
+        state Root {
+            state A;
+            [*] -> A;
+            A -> A;
+            A -> A;
+            A -> A;
+            A -> A;
+            A -> A;
+            A -> A;
+            A -> A;
+            A -> A;
+            A -> A;
+            A -> A;
+            A -> A;
+            A -> A;
+            A -> A;
+        }
+        """
+        report = inspect_model(_parse(dsl))
+        statistics = report.structure_statistics
+        assert statistics.thresholds == StructureStatisticsPolicy(
+            max_transitions_per_state=DEFAULT_STRUCTURE_MAX_TRANSITIONS_PER_STATE,
+            max_unreachable_leaf_state_rate=DEFAULT_STRUCTURE_MAX_UNREACHABLE_LEAF_STATE_RATE,
+            max_unreachable_transition_rate=DEFAULT_STRUCTURE_MAX_UNREACHABLE_TRANSITION_RATE,
+        )
+        assert statistics.transitions_per_state == 6.5
+        assert statistics.exceeded_thresholds == (
+            'transitions_per_state',
+            'unreachable_transition_rate',
+        )
+        assert not any('STRUCTURE' in diagnostic.code for diagnostic in report.diagnostics)
+
+    def test_structure_statistics_policy_can_disable_and_override_defaults(self):
+        report = inspect_model(
+            _parse(SIMPLE_DSL),
+            structure_statistics_policy={
+                'max_transitions_per_state': None,
+                'max_unreachable_leaf_state_rate': 0.0,
+            },
+        )
+        assert report.structure_statistics.thresholds == StructureStatisticsPolicy(
+            max_transitions_per_state=None,
+            max_unreachable_leaf_state_rate=0.0,
+            max_unreachable_transition_rate=DEFAULT_STRUCTURE_MAX_UNREACHABLE_TRANSITION_RATE,
+        )
+        assert 'unreachable_leaf_state_rate' not in report.structure_statistics.exceeded_thresholds
+
+    def test_structure_statistics_policy_rejects_invalid_ranges(self):
+        dsl = "state Root;"
+        with pytest.raises(ValueError, match='max_transitions_per_state'):
+            inspect_model(
+                _parse(dsl),
+                structure_statistics_policy={'max_transitions_per_state': -1},
+            )
+        with pytest.raises(ValueError, match='max_unreachable_transition_rate'):
+            inspect_model(
+                _parse(dsl),
+                structure_statistics_policy={'max_unreachable_transition_rate': 1.1},
+            )
+
     def test_named_action_shadows_ancestor(self):
         dsl = """
         state Root {
@@ -2381,6 +2922,15 @@ def test_inspect_guard_text_is_shared_normalized_format():
 class TestInspectModelVerifyIntegration:
     """Optional verify integration for inspect_model."""
 
+    def test_policy_validation_orders_match_verify_taxonomy(self):
+        from pyfcstm.verify.taxonomy import (
+            CALL_COUNT_SCALING_ORDER,
+            COMPLEXITY_TIER_ORDER,
+        )
+
+        assert inspect_module._INSPECT_COMPLEXITY_TIERS == COMPLEXITY_TIER_ORDER
+        assert inspect_module._INSPECT_CALL_COUNT_SCALINGS == CALL_COUNT_SCALING_ORDER
+
     def test_verify_parameters_keep_expected_defaults(self):
         signature = inspect.signature(inspect_model)
 
@@ -2401,10 +2951,78 @@ class TestInspectModelVerifyIntegration:
             '_run_verify_inspect_algorithms',
             fail_if_called,
         )
+        monkeypatch.setattr(
+            inspect_module,
+            '_project_verify_inspect_eligibility',
+            fail_if_called,
+        )
 
         report = inspect_model(_parse(SIMPLE_DSL))
 
         assert isinstance(report, ModelInspect)
+        assert report.verification == inspect_module.InspectVerificationReport(
+            supported=True,
+            enabled=False,
+            provider='pyfcstm.verify',
+            reason_code='verification_disabled',
+            requested_policy=inspect_module.InspectVerificationPolicy(
+                max_complexity_tier='structural',
+                max_call_count_scaling='linear_in_transitions',
+                smt_timeout_ms=None,
+            ),
+            summary=inspect_module.InspectVerificationSummary(
+                registered=None,
+                executed=0,
+                not_run=0,
+                indeterminate=0,
+            ),
+            algorithms=(),
+        )
+
+    def test_default_verification_projection_serializes_without_verify_import(self):
+        script = """
+import json
+import sys
+
+from pyfcstm.diagnostics import inspect_model
+from pyfcstm.dsl import parse_with_grammar_entry
+from pyfcstm.model import parse_dsl_node_to_state_machine
+
+ast = parse_with_grammar_entry('state Root;', 'state_machine_dsl')
+machine = parse_dsl_node_to_state_machine(ast)
+verification = inspect_model(machine).to_json()['verification']
+if any(name == 'pyfcstm.verify' or name.startswith('pyfcstm.verify.')
+       for name in sys.modules):
+    raise SystemExit('verify imported on disabled path')
+print(json.dumps(verification, sort_keys=True))
+"""
+        result = subprocess.run(
+            [sys.executable, '-c', script],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert json.loads(result.stdout) == {
+            'supported': True,
+            'enabled': False,
+            'provider': 'pyfcstm.verify',
+            'reason_code': 'verification_disabled',
+            'requested_policy': {
+                'max_complexity_tier': 'structural',
+                'max_call_count_scaling': 'linear_in_transitions',
+                'smt_timeout_ms': None,
+            },
+            'summary': {
+                'registered': None,
+                'executed': 0,
+                'not_run': 0,
+                'indeterminate': 0,
+            },
+            'algorithms': [],
+        }
 
     def test_default_inspect_path_does_not_call_verify_topology(self, monkeypatch):
         def fail_if_called(*args, **kwargs):
@@ -2529,6 +3147,123 @@ class TestInspectModelVerifyIntegration:
             'System.B',
         ]
 
+    def test_enable_verify_projects_plan_and_results_in_registry_order(self):
+        report = inspect_model(_parse(SIMPLE_DSL), enable_verify=True)
+        verification = report.verification
+
+        assert verification.supported is True
+        assert verification.enabled is True
+        assert verification.provider == 'pyfcstm.verify'
+        assert verification.reason_code is None
+        assert verification.summary.registered == len(verification.algorithms)
+        assert verification.summary.executed + verification.summary.not_run == len(
+            verification.algorithms
+        )
+        assert verification.summary.indeterminate <= verification.summary.executed
+        assert verification.summary.executed > 0
+        assert verification.summary.not_run > 0
+        assert [item.algorithm_name for item in verification.algorithms[:2]] == [
+            'topological_reachable_set',
+            'unreachable_states',
+        ]
+        excluded = next(
+            item for item in verification.algorithms
+            if item.result_kind == 'not_run'
+        )
+        assert excluded.reason_code in {
+            'algorithm_not_closed',
+            'complexity_tier_exceeds_policy',
+            'call_count_scaling_exceeds_policy',
+        }
+        assert isinstance(verification.algorithms, tuple)
+        with pytest.raises(AttributeError):
+            verification.enabled = False
+
+        serialized = report.to_json()['verification']
+        assert isinstance(serialized['algorithms'], list)
+        assert isinstance(
+            serialized['algorithms'][0]['declared_diagnostic_codes'],
+            list,
+        )
+
+    def test_smt_linear_policy_runs_every_registered_algorithm(self):
+        report = inspect_model(
+            _parse(SIMPLE_DSL),
+            enable_verify=True,
+            max_complexity_tier='smt_linear',
+        )
+
+        assert report.verification.summary.registered == 14
+        assert report.verification.summary.executed == 14
+        assert report.verification.summary.not_run == 0
+        assert all(
+            algorithm.result_kind != 'not_run'
+            for algorithm in report.verification.algorithms
+        )
+
+    def test_indeterminate_partial_results_are_projected_not_diagnosed(
+            self,
+            monkeypatch,
+    ):
+        from pyfcstm.verify import InspectRunResult
+
+        meta = SimpleNamespace(
+            name='dead_guard',
+            complexity_tier='smt_linear',
+            call_count_scaling='linear_in_transitions',
+            verification_scope='smt_local',
+            diagnostic_codes=('W_DEAD_GUARD',),
+        )
+        plan = (SimpleNamespace(
+            meta=meta,
+            eligible=True,
+            not_run_reason_code=None,
+        ),)
+        result = InspectRunResult(
+            algorithm_name='dead_guard',
+            complexity_tier='smt_linear',
+            smt_logic='QF_LIRA',
+            verification_scope='smt_local',
+            diagnostic_codes=('W_DEAD_GUARD',),
+            result_kind='timeout',
+            diagnostics=({
+                'code': 'W_DEAD_GUARD',
+                'algorithm_name': 'dead_guard',
+                'data': {},
+            },),
+            reason='solver timeout after partial exploration',
+            raw_result=None,
+        )
+        monkeypatch.setattr(
+            inspect_module,
+            '_project_verify_inspect_eligibility',
+            lambda **kwargs: plan,
+        )
+        monkeypatch.setattr(
+            inspect_module,
+            '_run_verify_inspect_algorithms',
+            lambda machine, **kwargs: (result,),
+        )
+
+        report = inspect_model(
+            _parse(SIMPLE_DSL),
+            enable_verify=True,
+            max_complexity_tier='smt_linear',
+        )
+
+        assert not any(
+            diagnostic.code == 'W_DEAD_GUARD'
+            for diagnostic in report.diagnostics
+        )
+        assert report.verification.summary == inspect_module.InspectVerificationSummary(
+            registered=1,
+            executed=1,
+            not_run=0,
+            indeterminate=1,
+        )
+        assert report.verification.algorithms[0].partial_diagnostic_count == 1
+        assert report.verification.algorithms[0].reason_code is None
+
     def test_enable_verify_reports_deadlock_noexit_with_single_node_scc(self):
         dsl = """
         state System {
@@ -2556,6 +3291,62 @@ class TestInspectModelVerifyIntegration:
         assert_all_diags_match_schema([noexit_diag], context='verify-deadlock')
         _assert_has_span(noexit_diag.span)
         assert 'state B' in _slice_by_span(dsl, noexit_diag.span)
+
+    def test_enable_verify_reports_initial_shadow_refs_and_span(self):
+        dsl = """
+        state Root {
+            event Go;
+            state A;
+            state B;
+            [*] -> A;
+            [*] -> B : Go;
+        }
+        """
+
+        report = inspect_model(
+            _parse(dsl),
+            enable_verify=True,
+            max_complexity_tier='smt_linear',
+        )
+
+        diagnostics = [
+            diag for diag in report.diagnostics
+            if diag.code == 'W_TRANSITION_SHADOWED'
+        ]
+        assert len(diagnostics) == 1
+        diagnostic = diagnostics[0]
+        assert diagnostic.refs['transition_summary'] == 'Root:[*]->B'
+        assert diagnostic.refs['source_state_path'] == 'Root'
+        assert diagnostic.refs['selection_domain_kind'] == 'composite_initial'
+        assert diagnostic.refs['shadowed_by'] == ['Root:[*]->A']
+        assert _slice_by_span(dsl, diagnostic.span) == '[*] -> B : Go;'
+        assert_all_diags_match_schema(
+            diagnostics,
+            context='verify-initial-shadow-public',
+        )
+
+    def test_enable_verify_keeps_initial_shadow_witness(self):
+        dsl = """
+        state Root {
+            event Go;
+            event Later;
+            state A;
+            state B;
+            [*] -> A : Go;
+            [*] -> B : Later;
+        }
+        """
+
+        report = inspect_model(
+            _parse(dsl),
+            enable_verify=True,
+            max_complexity_tier='smt_linear',
+        )
+
+        assert not any(
+            diag.code == 'W_TRANSITION_SHADOWED'
+            for diag in report.diagnostics
+        )
 
     def test_enable_verify_deduplicates_unreachable_state_diagnostics(self):
         dsl = """
@@ -2619,7 +3410,14 @@ class TestInspectModelVerifyIntegration:
         )
 
         assert [(diag.code, diag.refs) for diag in diagnostics] == [
-            ('W_UNREACHABLE_STATE', {'state_path': 'Root.Orphan'}),
+            (
+                'W_UNREACHABLE_STATE',
+                {
+                    'algorithm_name': 'unreachable_states',
+                    'verification_scope': 'topological_only',
+                    'state_path': 'Root.Orphan',
+                },
+            ),
         ]
         assert diagnostics[0].span == state.span
         assert_all_diags_match_schema(
@@ -2742,6 +3540,7 @@ class TestInspectModelVerifyIntegration:
                 'transition': transition,
                 'shadowed_by': (_verify_transition_payload(to_state='C'),),
                 'reason': 'guard_shadow',
+                'selection_domain_kind': 'state_outgoing',
                 'source': 'Root.A',
                 'verification_scope': 'smt_local',
             },
@@ -2780,6 +3579,7 @@ class TestInspectModelVerifyIntegration:
         assert forced_refs['scope'] == 'dsl_def_init_only'
         assert forced_refs['transition_summary'] == 'Root:A->B'
         assert shadowed_refs['source_state_path'] == 'Root.A'
+        assert shadowed_refs['selection_domain_kind'] == 'state_outgoing'
         assert shadowed_refs['shadowed_by_count'] == 1
         assert shadowed_refs['shadowed_by'] == ['Root:A->C']
         assert lifecycle_refs['state_path'] == 'Root.A'
@@ -3092,12 +3892,55 @@ class TestInspectModelVerifyIntegration:
                 'event': None,
                 'guard': 'x > 1 && x < 0',
                 'is_forced': False,
+                'transition_index': 1,
             },
             'transition_summary': 'System:A->B',
         }
         assert_all_diags_match_schema([dead_guard], context='verify-smt')
         _assert_has_span(dead_guard.span)
         assert 'x > 1 && x < 0' in _slice_by_span(dsl, dead_guard.span)
+        assert report.verification.requested_policy == (
+            inspect_module.InspectVerificationPolicy(
+                max_complexity_tier='smt_linear',
+                max_call_count_scaling='linear_in_transitions',
+                smt_timeout_ms=None,
+            )
+        )
+        dead_guard_run = next(
+            algorithm for algorithm in report.verification.algorithms
+            if algorithm.algorithm_name == 'dead_guard'
+        )
+        assert dead_guard_run.result_kind == 'unsat'
+        assert dead_guard_run.reason_code is None
+        assert dead_guard_run.partial_diagnostic_count == 0
+
+    def test_enable_verify_distinguishes_identical_duplicate_transitions(self):
+        report = inspect_model(
+            _parse(
+                """
+                state Root {
+                    state A;
+                    state B;
+                    [*] -> A;
+                    A -> B :: Go;
+                    A -> B :: Go;
+                }
+                """
+            ),
+            enable_verify=True,
+            max_complexity_tier='smt_linear',
+        )
+
+        shadowed = next(
+            diag for diag in report.diagnostics
+            if diag.code == 'W_TRANSITION_SHADOWED'
+        )
+        assert shadowed.refs['transition']['transition_index'] == 2
+        assert report.structure_statistics.unreachable_transitions == 1
+        assert report.structure_statistics.unreachable_transition_reasons == {
+            'redundant': 1,
+            'shadowed': 1,
+        }
 
     @pytest.mark.parametrize(
         'raw_diagnostic',
@@ -3560,6 +4403,33 @@ class TestInspectModelVerifyIntegration:
                 **kwargs,
             )
 
+    @pytest.mark.parametrize(
+        ('kwargs', 'message'),
+        [
+            ({'max_complexity_tier': 'unknown_tier'}, 'unknown inspect complexity tier'),
+            ({'max_call_count_scaling': 'unknown_scaling'}, 'call-count scaling'),
+        ],
+    )
+    def test_invalid_policy_is_rejected_before_disabled_report(self, kwargs, message):
+        from pyfcstm.verify import InspectAccessForbiddenError
+
+        with pytest.raises(InspectAccessForbiddenError, match=message):
+            inspect_model(_parse(SIMPLE_DSL), **kwargs)
+
+    @pytest.mark.parametrize('enable_verify', [False, True])
+    def test_negative_smt_timeout_is_rejected_for_both_execution_states(
+            self,
+            enable_verify,
+    ):
+        from pyfcstm.verify import InspectAccessForbiddenError
+
+        with pytest.raises(InspectAccessForbiddenError, match='non-negative integer'):
+            inspect_model(
+                _parse(SIMPLE_DSL),
+                enable_verify=enable_verify,
+                smt_timeout_ms=-1,
+            )
+
     def test_highest_budget_inspect_model_does_not_load_bmc_in_fresh_process(self):
         script = """
 import sys
@@ -3752,3 +4622,118 @@ def test_implication_guard_keeps_higher_precedence_right_operand_unwrapped():
     )
 
     assert report.transitions[1].guard == 'a > 0 => b > 0 && c > 0'
+
+
+def _parse_collecting(src):
+    """Build a model in collect mode, returning the partially-built model.
+
+    ``parse_dsl_node_to_state_machine`` documents that ``collect=True`` returns
+    the partially-built model alongside the accumulated diagnostics, so callers
+    can hold a model whose transition endpoints do not all resolve.
+    """
+    ast = parse_with_grammar_entry(src, 'state_machine_dsl')
+    machine, diagnostics = parse_dsl_node_to_state_machine(ast, collect=True)
+    return machine, diagnostics
+
+
+@pytest.mark.unittest
+class TestInspectModelOnUnresolvedEndpoints:
+    """A model carrying ``E_DANGLING_TRANSITION`` must not crash inspect.
+
+    ``parse_dsl_node_to_state_machine(collect=True)`` hands back a model whose
+    transition endpoints may not resolve. Feeding that documented result into
+    ``inspect_model`` must produce a report rather than propagate a raw
+    ``KeyError`` out of the topology graph builder.
+    """
+
+    def test_unresolved_source_with_verify_does_not_raise(self):
+        machine, diagnostics = _parse_collecting(
+            'state Root { state A; NoSuch -> A; [*] -> A; }'
+        )
+        assert [d.code for d in diagnostics] == ['E_DANGLING_TRANSITION']
+
+        report = inspect_model(machine, enable_verify=True)
+
+        assert isinstance(report, ModelInspect)
+
+    def test_unresolved_target_with_verify_does_not_raise(self):
+        machine, diagnostics = _parse_collecting(
+            'state Root { state A; A -> Ghost; [*] -> A; }'
+        )
+        assert [d.code for d in diagnostics] == ['E_DANGLING_TRANSITION']
+
+        report = inspect_model(machine, enable_verify=True)
+
+        assert isinstance(report, ModelInspect)
+
+    @pytest.mark.parametrize(
+        ('label', 'source'),
+        [
+            ('unresolved_source', 'state Root { state A; NoSuch -> A; [*] -> A; }'),
+            ('unresolved_target', 'state Root { state A; A -> Ghost; [*] -> A; }'),
+        ],
+    )
+    def test_default_tier_also_survives(self, label, source):
+        """The default (verify-disabled) report was already safe; keep it so."""
+        machine, _ = _parse_collecting(source)
+
+        report = inspect_model(machine)
+
+        assert isinstance(report, ModelInspect)
+
+    def test_model_diagnostics_lead_the_report(self):
+        machine, diagnostics = _parse_collecting(
+            'state Root { state A; state A; [*] -> A; }'
+        )
+
+        report = inspect_model(machine, model_diagnostics=diagnostics)
+
+        assert report.diagnostics[0].code == 'E_DUPLICATE_STATE'
+
+    def test_model_diagnostics_default_keeps_strict_report_shape(self):
+        machine, _ = _parse_collecting(
+            'state Root { state A; state A; [*] -> A; }'
+        )
+
+        without = inspect_model(machine)
+        with_diags = inspect_model(machine, model_diagnostics=())
+
+        assert [d.code for d in without.diagnostics] == [
+            d.code for d in with_diags.diagnostics
+        ]
+
+    def test_forwarded_model_diagnostics_keep_their_span(self):
+        """Spanless diagnostics are dropped by the report builder, so the
+        forwarded model errors must arrive with a span attached."""
+        machine, diagnostics = _parse_collecting(
+            'state Root {\n'
+            '    state A;\n'
+            '    state A;\n'
+            '    NoSuch -> A;\n'
+            '    state Outer { state Inner; }\n'
+            '    [*] -> A;\n'
+            '}'
+        )
+
+        report = inspect_model(machine, model_diagnostics=diagnostics)
+
+        errors = [d for d in report.diagnostics if d.is_error()]
+        assert len(errors) == len(diagnostics)
+        for diagnostic in errors:
+            _assert_has_span(diagnostic.span)
+
+    def test_unresolved_source_on_an_event_transition_does_not_raise(self):
+        """Event-triggered transitions reach a separate lookup.
+
+        ``_event_consumer_reachability`` resolves the source only for transitions
+        that carry an event, so an unresolved source there is a distinct site
+        from the one the plain-transition cases cover.
+        """
+        machine, diagnostics = _parse_collecting(
+            'state Root { event Go; state A; NoSuch -> A : Go; [*] -> A; }'
+        )
+        assert 'E_DANGLING_TRANSITION' in {d.code for d in diagnostics}
+
+        report = inspect_model(machine, enable_verify=True)
+
+        assert isinstance(report, ModelInspect)

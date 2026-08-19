@@ -5,13 +5,13 @@ import subprocess
 import sys
 import textwrap
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 
 import pytest
 from hbutils.testing import isolated_directory, simulate_entry
 
 from pyfcstm.entry import pyfcstmcli
 from pyfcstm.entry.base import ClickErrorException
-from pyfcstm.diagnostics.inspect_render import INSPECT_LLM_SCHEMA_VERSION
 from pyfcstm.entry.inspect import (
     build_inspect_json,
     build_inspect_output,
@@ -110,7 +110,7 @@ class TestEntryInspect:
         assert result.exitcode == 0
         assert "[WARN] FCSTM Inspect Report" in result.stdout
         assert "status: warning" in result.stdout
-        assert "W_DEADLOCK_LEAF" in result.stdout
+        assert "W_LEAF_NO_OUTGOING_TRANSITION" in result.stdout
         assert "-->" in result.stdout
         assert "= source: inspect-static" in result.stdout
         assert "= why:" in result.stdout
@@ -169,6 +169,169 @@ class TestEntryInspect:
         assert "W_DEAD_GUARD" not in {
             diagnostic["code"] for diagnostic in payload["diagnostics"]
         }
+        assert payload["verification"] == {
+            "supported": True,
+            "enabled": False,
+            "provider": "pyfcstm.verify",
+            "reason_code": "verification_disabled",
+            "requested_policy": {
+                "max_complexity_tier": "structural",
+                "max_call_count_scaling": "linear_in_transitions",
+                "smt_timeout_ms": None,
+            },
+            "summary": {
+                "registered": None,
+                "executed": 0,
+                "not_run": 0,
+                "indeterminate": 0,
+            },
+            "algorithms": [],
+        }
+
+    def test_inspect_structure_threshold_options_are_reflected_in_json(
+        self, inspect_code_file
+    ):
+        result = _run_inspect(
+            "-i",
+            inspect_code_file,
+            "--format",
+            "json",
+            "--structure-max-transitions-per-state",
+            "0.2",
+            "--structure-max-unreachable-leaf-rate",
+            "0.3",
+            "--structure-max-unreachable-transition-rate",
+            "0.4",
+        )
+
+        assert result.exitcode == 0
+        statistics = _json_from_stdout(result)["structure_statistics"]
+        assert statistics["thresholds"] == {
+            "max_transitions_per_state": 0.2,
+            "max_unreachable_leaf_state_rate": 0.3,
+            "max_unreachable_transition_rate": 0.4,
+        }
+        assert statistics["exceeded_thresholds"] == ["transitions_per_state"]
+
+    def test_inspect_no_structure_thresholds_disables_all_advisories(
+        self, inspect_code_file
+    ):
+        result = _run_inspect(
+            "-i",
+            inspect_code_file,
+            "--format",
+            "json",
+            "--no-structure-thresholds",
+        )
+
+        assert result.exitcode == 0
+        statistics = _json_from_stdout(result)["structure_statistics"]
+        assert statistics["thresholds"] == {
+            "max_transitions_per_state": None,
+            "max_unreachable_leaf_state_rate": None,
+            "max_unreachable_transition_rate": None,
+        }
+        assert statistics["exceeded_thresholds"] == []
+
+    @pytest.mark.parametrize(
+        "option_value",
+        ["-1", "nan", "inf"],
+    )
+    def test_inspect_rejects_invalid_structure_count_threshold(
+        self, inspect_code_file, option_value
+    ):
+        result = _run_inspect(
+            "-i",
+            inspect_code_file,
+            "--format",
+            "json",
+            "--structure-max-transitions-per-state",
+            option_value,
+        )
+
+        assert result.exitcode == 2
+        assert "Error:" in result.stderr
+        assert "Traceback" not in result.stderr
+
+    @pytest.mark.parametrize(
+        "option_value",
+        ["-1", "nan", "inf", "1.1"],
+    )
+    def test_inspect_rejects_invalid_structure_rate_threshold(
+        self, inspect_code_file, option_value
+    ):
+        result = _run_inspect(
+            "-i",
+            inspect_code_file,
+            "--format",
+            "json",
+            "--structure-max-unreachable-leaf-rate",
+            option_value,
+        )
+
+        assert result.exitcode == 2
+        assert "Error:" in result.stderr
+        assert "Traceback" not in result.stderr
+
+    def test_inspect_enable_verify_reports_structural_coverage(self, inspect_code_file):
+        result = _run_inspect(
+            "-i",
+            inspect_code_file,
+            "--format",
+            "json",
+            "--enable-verify",
+        )
+
+        assert result.exitcode == 0
+        summary = _json_from_stdout(result)["verification"]["summary"]
+        assert summary == {
+            "registered": 14,
+            "executed": 6,
+            "not_run": 8,
+            "indeterminate": 0,
+        }
+
+    def test_inspect_enable_smt_linear_reports_complete_coverage(self, inspect_code_file):
+        result = _run_inspect(
+            "-i",
+            inspect_code_file,
+            "--format",
+            "json",
+            "--enable-verify",
+            "--max-complexity-tier",
+            "smt_linear",
+            "--smt-timeout-ms",
+            "1000",
+        )
+
+        assert result.exitcode == 0
+        verification = _json_from_stdout(result)["verification"]
+        assert verification["summary"] == {
+            "registered": 14,
+            "executed": 14,
+            "not_run": 0,
+            "indeterminate": 0,
+        }
+
+    def test_indeterminate_verification_does_not_change_cli_exit_code(
+        self, monkeypatch, inspect_code_file
+    ):
+        import pyfcstm.entry.inspect as inspect_entry_module
+
+        monkeypatch.setattr(
+            inspect_entry_module,
+            "_build_inspect_output_with_report",
+            lambda *args, **kwargs: (
+                "verification: 1/1 run, 0 not run by policy, 1 indeterminate\n",
+                SimpleNamespace(diagnostics=()),
+            ),
+        )
+
+        result = _run_inspect(
+            "-i", inspect_code_file, "--enable-verify", "--format", "human"
+        )
+
+        assert result.exitcode == 0
 
     def test_inspect_format_llm_json_outputs_stable_packet(self, inspect_code_file):
         result = _run_inspect("-i", inspect_code_file, "--format", "llm-json")
@@ -176,8 +339,8 @@ class TestEntryInspect:
         assert result.exitcode == 0
         assert not _has_ansi(result.stdout)
         payload = _json_from_stdout(result)
-        assert payload["schema_version"] == INSPECT_LLM_SCHEMA_VERSION
-        assert payload["schema_status"] == "stable"
+        assert "schema_version" not in payload
+        assert "schema_status" not in payload
         assert payload["status"] == "warning"
         assert payload["diagnostics"]
         diagnostic = payload["diagnostics"][0]
@@ -195,10 +358,10 @@ class TestEntryInspect:
         assert result.exitcode == 0
         assert not _has_ansi(result.stdout)
         assert "# FCSTM Inspect Report" in result.stdout
-        assert INSPECT_LLM_SCHEMA_VERSION in result.stdout
+        assert "Schema status:" not in result.stdout
         assert "Recommended actions" in result.stdout
         assert "Repair notes" in result.stdout
-        assert "Schema status: `stable`" in result.stdout
+        assert "Schema status:" not in result.stdout
         assert "|     ^" in result.stdout
 
     def test_inspect_llm_json_can_include_verify_backed_diagnostics(
@@ -386,6 +549,19 @@ class TestEntryInspect:
         assert result.exitcode == 0
         payload = _json_from_stdout(result)
         assert payload["root_state_path"] == "Root"
+
+    def test_inspect_rejects_negative_smt_timeout(self, inspect_code_file):
+        result = _run_inspect(
+            "-i",
+            inspect_code_file,
+            "--format",
+            "json",
+            "--smt-timeout-ms",
+            "-1",
+        )
+
+        assert result.exitcode != 0
+        assert "-1 is not in the range x>=0" in (result.stdout + result.stderr)
 
     def test_successful_highest_budget_cli_does_not_load_bmc(self, inspect_code_file):
         script = """
@@ -587,3 +763,177 @@ if loaded:
 
         assert result.exitcode != 0
         assert "Failed to write inspect output file" in (result.stderr or result.stdout)
+
+
+_MULTI_ERROR_DSL = textwrap.dedent("""
+    state Root {
+        state A;
+        state A;
+        NoSuch -> A;
+        state Outer { state Inner; }
+        [*] -> A;
+    }
+""").strip()
+
+
+@pytest.fixture()
+def multi_error_code_file():
+    """A model carrying three distinct ``E_*`` codes in one file."""
+    with TemporaryDirectory() as td:
+        code_file = os.path.join(td, "multi_error.fcstm")
+        with open(code_file, "w", encoding="utf-8") as f:
+            f.write(_MULTI_ERROR_DSL)
+        yield code_file
+
+
+@pytest.mark.unittest
+class TestInspectCollectErrors:
+    """``--collect-errors`` reports every ``E_*`` instead of only the first.
+
+    Strict model building raises on the first error, so an inspect report can
+    never carry more than one. The collecting path accumulates all of them and
+    still finishes with a non-zero exit code.
+    """
+
+    def test_json_reports_every_error_code(self, multi_error_code_file):
+        payload = json.loads(
+            build_inspect_json(multi_error_code_file, collect_errors=True)
+        )
+
+        codes = {item["code"] for item in payload["diagnostics"]}
+        assert {
+            "E_DUPLICATE_STATE",
+            "E_DANGLING_TRANSITION",
+            "E_INITIAL_TRANSITION_INVALID",
+        } <= codes
+
+    def test_cli_reports_every_error_code(self, multi_error_code_file):
+        result = _run_inspect("-i", multi_error_code_file, "--collect-errors")
+
+        assert "E_DUPLICATE_STATE" in result.stdout
+        assert "E_DANGLING_TRANSITION" in result.stdout
+        assert "E_INITIAL_TRANSITION_INVALID" in result.stdout
+
+    def test_cli_still_exits_non_zero(self, multi_error_code_file):
+        result = _run_inspect("-i", multi_error_code_file, "--collect-errors")
+
+        assert result.exitcode != 0
+        # Not a usage error: the report itself was produced and the non-zero
+        # code comes from the error-severity diagnostics inside it.
+        assert "no such option" not in (result.stderr or "").lower()
+        assert "FCSTM Inspect Report" in result.stdout
+
+    def test_cli_exits_zero_on_a_clean_model(self, inspect_code_file):
+        result = _run_inspect("-i", inspect_code_file, "--collect-errors")
+
+        assert result.exitcode == 0
+
+    def test_cli_json_carries_the_errors(self, multi_error_code_file):
+        result = _run_inspect(
+            "-i", multi_error_code_file, "--collect-errors", "--format", "json"
+        )
+
+        payload = json.loads(result.stdout)
+        codes = {item["code"] for item in payload["diagnostics"]}
+        assert {
+            "E_DUPLICATE_STATE",
+            "E_DANGLING_TRANSITION",
+            "E_INITIAL_TRANSITION_INVALID",
+        } <= codes
+
+    def test_default_run_stays_a_controlled_single_error(self, multi_error_code_file):
+        result = _run_inspect("-i", multi_error_code_file)
+
+        assert result.exitcode != 0
+        assert "Invalid state machine model" in (result.stderr or result.stdout)
+        assert "E_DANGLING_TRANSITION" not in (result.stderr or result.stdout)
+
+    @pytest.mark.parametrize('output_format', ['human', 'json', 'llm-json', 'llm-md'])
+    def test_every_format_carries_the_errors(
+        self, multi_error_code_file, output_format
+    ):
+        result = _run_inspect(
+            '-i', multi_error_code_file, '--collect-errors',
+            '--format', output_format,
+        )
+
+        assert result.exitcode != 0
+        assert 'E_DUPLICATE_STATE' in result.stdout
+        assert 'E_DANGLING_TRANSITION' in result.stdout
+
+    @pytest.mark.parametrize('output_format', ['human', 'json', 'llm-json', 'llm-md'])
+    def test_output_file_is_written_before_the_exit_code_is_set(
+        self, multi_error_code_file, output_format
+    ):
+        """The report must survive the non-zero exit, not be skipped by it."""
+        with TemporaryDirectory() as td:
+            out_path = os.path.join(td, f'report.{output_format}')
+
+            result = _run_inspect(
+                '-i', multi_error_code_file, '--collect-errors',
+                '--format', output_format, '-o', out_path,
+            )
+
+            assert result.exitcode != 0
+            assert os.path.exists(out_path)
+            with open(out_path, encoding='utf-8') as f:
+                body = f.read()
+
+        assert 'E_DUPLICATE_STATE' in body
+        assert 'E_DANGLING_TRANSITION' in body
+
+    def test_a_syntax_error_still_fails_before_any_report(self):
+        """Collection covers model errors, not parse errors.
+
+        A file that does not parse has no AST to build a model from, so there is
+        nothing to collect and the run must still stop at the parse failure.
+        """
+        with TemporaryDirectory() as td:
+            code_file = os.path.join(td, 'broken.fcstm')
+            with open(code_file, 'w', encoding='utf-8') as f:
+                f.write('state Root {')
+
+            result = _run_inspect('-i', code_file, '--collect-errors')
+
+        assert result.exitcode != 0
+        assert 'Failed to parse input DSL file' in (result.stderr or result.stdout)
+
+    def test_error_severity_rendering_is_exercised_for_the_first_time(
+        self, multi_error_code_file
+    ):
+        """Collecting errors activates render paths that were unreachable.
+
+        The renderer has always had an ``error`` entry in its severity order,
+        human label, status map and ANSI style table, but an inspect report could
+        never carry an error-severity diagnostic, so none of it ran. These
+        assertions cover that newly reachable path.
+        """
+        text = build_inspect_output(
+            multi_error_code_file,
+            output_format="human",
+            collect_errors=True,
+            color_enabled=False,
+        )
+        colored = build_inspect_output(
+            multi_error_code_file,
+            output_format="human",
+            collect_errors=True,
+            color_enabled=True,
+        )
+
+        assert "[ERROR] FCSTM Inspect Report" in text
+        assert "status: error" in text
+        assert not _has_ansi(text)
+        assert _has_ansi(colored)
+
+    def test_llm_json_counts_the_errors(self, multi_error_code_file):
+        payload = json.loads(
+            build_inspect_output(
+                multi_error_code_file,
+                output_format="llm-json",
+                collect_errors=True,
+            )
+        )
+
+        assert payload["status"] == "error"
+        assert payload["summary"]["errors"] >= 2

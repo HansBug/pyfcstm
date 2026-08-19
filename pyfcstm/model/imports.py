@@ -38,6 +38,7 @@ from ..dsl import node as dsl_nodes
 from ..dsl.error import GrammarParseError
 from ..dsl.parse import parse_state_machine_dsl
 from ..utils import auto_decode
+from ..utils.doc import aggregate_documentation
 from ..utils.validate import ModelDiagnostic, ModelValidationError
 
 __all__ = [
@@ -239,6 +240,7 @@ class _ResolvedImportEventMapping:
     target_event_name: str
     target_event_id_path: Tuple[str, ...]
     extra_name: Optional[str]
+    source_doc: Optional[str]
 
 
 @dataclass
@@ -247,6 +249,7 @@ class _PendingEventRegistration:
     target_event_name: str
     mapping_extra_name: Optional[str]
     source_extra_name: Optional[str]
+    source_doc: Optional[str]
     import_alias: str
     source_path: Tuple[str, ...]
 
@@ -813,6 +816,9 @@ def _resolve_import_event_mappings(
     ]
     resolved = {}
     target_to_source = {}
+    source_event_docs = _collect_event_docs(
+        program.root_state, current_path=(), output={}
+    )
 
     for mapping in event_mappings:
         if not mapping.source_event.is_absolute:
@@ -877,6 +883,7 @@ def _resolve_import_event_mappings(
             target_event_name=target_event_name,
             target_event_id_path=target_event_id_path,
             extra_name=mapping.extra_name,
+            source_doc=_lookup_source_event_doc(source_path, source_event_docs),
         )
         target_to_source[target_key] = source_path
 
@@ -978,10 +985,67 @@ def _apply_import_event_mappings(
         owner_state_path=owner_state_path,
         sink=sink,
     )
+    _aggregate_declared_import_event_docs(
+        host_root=host_program.root_state,
+        mappings=resolved_event_mappings,
+        pending_targets={
+            (*item.target_state_path, item.target_event_name)
+            for item in pending_registrations
+        },
+        import_item=import_item,
+        owner_state_path=owner_state_path,
+        sink=sink,
+    )
     return {
         tuple(item.target_state_path[1:]) + (item.target_event_name,)
         for item in pending_registrations
     }
+
+
+def _aggregate_declared_import_event_docs(
+    host_root: dsl_nodes.StateDefinition,
+    mappings: Dict[Tuple[str, ...], _ResolvedImportEventMapping],
+    pending_targets: Set[Tuple[str, ...]],
+    import_item: dsl_nodes.ImportStatement,
+    owner_state_path: Tuple[str, ...],
+    sink: DiagnosticSink,
+) -> None:
+    """Apply docs from declaration-only mappings without creating events."""
+    for mapping in mappings.values():
+        if (*mapping.target_state_path, mapping.target_event_name) in pending_targets:
+            continue
+        owner_state = _ensure_state_path_exists(
+            root=host_root,
+            state_path=mapping.target_state_path,
+            alias=import_item.alias,
+            owner_state_path=owner_state_path,
+            sink=sink,
+        )
+        if not _state_path_matches(host_root, mapping.target_state_path, owner_state):
+            continue
+        for event in owner_state.events:
+            if event.name == mapping.target_event_name:
+                event.doc = aggregate_documentation((event.doc, mapping.source_doc))
+                break
+
+
+def _state_path_matches(
+    root: dsl_nodes.StateDefinition,
+    state_path: Tuple[str, ...],
+    state: Optional[dsl_nodes.StateDefinition],
+) -> bool:
+    """Distinguish a valid target from collect-mode's diagnostic fallback."""
+    if state is None or not state_path or root.name != state_path[0]:
+        return False
+    current = root
+    for segment in state_path[1:]:
+        current = next(
+            (subnode for subnode in current.substates if subnode.name == segment),
+            None,
+        )
+        if current is None:
+            return False
+    return current is state
 
 
 def _collect_event_extra_names(
@@ -999,6 +1063,34 @@ def _collect_event_extra_names(
 
     for subnode in node.substates:
         _collect_event_extra_names(subnode, current_state_path, output)
+
+
+def _collect_event_docs(
+    node: dsl_nodes.StateDefinition,
+    current_path: Tuple[str, ...],
+    output: Dict[Tuple[str, ...], Optional[str]],
+) -> Dict[Tuple[str, ...], Optional[str]]:
+    """Collect source-event documentation under the same lookup keys as names."""
+    current_state_path = tuple((*current_path, node.name))
+    for event in node.events:
+        keys = (
+            (node.name, event.name),
+            (*current_state_path[1:], event.name),
+            (event.name,),
+        )
+        for key in keys:
+            output[key] = aggregate_documentation((output.get(key), event.doc))
+
+    for subnode in node.substates:
+        _collect_event_docs(subnode, current_state_path, output)
+    return output
+
+
+def _lookup_source_event_doc(
+    source_path: Tuple[str, ...],
+    source_event_docs: Dict[Tuple[str, ...], Optional[str]],
+) -> Optional[str]:
+    return source_event_docs.get(source_path)
 
 
 def _rewrite_imported_state_event_paths(
@@ -1076,6 +1168,7 @@ def _rewrite_transition_event_id(
                 target_event_name=mapping.target_event_name,
                 mapping_extra_name=mapping.extra_name,
                 source_extra_name=source_extra_name,
+                source_doc=mapping.source_doc,
                 import_alias="",
                 source_path=source_path,
             )
@@ -1128,6 +1221,7 @@ def _rewrite_combo_transition_event_ids(
                     target_event_name=mapping.target_event_name,
                     mapping_extra_name=mapping.extra_name,
                     source_extra_name=source_extra_name,
+                    source_doc=mapping.source_doc,
                     import_alias="",
                     source_path=source_path,
                 )
@@ -1231,7 +1325,11 @@ def _synthesize_host_events_for_import(
         )
         if existing_event is None:
             owner_state.events.append(
-                dsl_nodes.EventDefinition(name=event_name, extra_name=final_extra_name)
+                dsl_nodes.EventDefinition(
+                    name=event_name,
+                    extra_name=final_extra_name,
+                    doc=item.source_doc,
+                )
             )
         else:
             if (
@@ -1256,6 +1354,9 @@ def _synthesize_host_events_for_import(
                 )
             if existing_event.extra_name is None and final_extra_name is not None:
                 existing_event.extra_name = final_extra_name
+            existing_event.doc = aggregate_documentation(
+                (existing_event.doc, item.source_doc)
+            )
 
 
 def _ensure_state_path_exists(
@@ -1433,6 +1534,10 @@ def _merge_imported_definitions(
                 )
 
         if def_item.name in host_explicit_def_names:
+            if existing_item.type == def_item.type and existing_item.expr == def_item.expr:
+                existing_item.doc = aggregate_documentation(
+                    (existing_item.doc, def_item.doc)
+                )
             continue
 
         if existing_item.expr != def_item.expr:
@@ -1446,6 +1551,10 @@ def _merge_imported_definitions(
                 duplicated_name=def_item.name,
                 direction="target_duplicated",
                 host_state_path=".".join(owner_state_path),
+            )
+        else:
+            existing_item.doc = aggregate_documentation(
+                (existing_item.doc, def_item.doc)
             )
 
     imported_program.definitions = []
@@ -1653,6 +1762,11 @@ def _render_target_template(
                         reason="template_invalid",
                         detail=template,
                     )
+                    # A collecting sink records instead of raising, so the
+                    # statements below would run on a template that has already
+                    # been rejected. There is no closing brace to slice against,
+                    # so stop rendering this template here.
+                    return template
                 raw_index = template[i + 2 : end_index]
                 if not raw_index.isdigit():
                     _emit_import_diag(
@@ -1667,6 +1781,18 @@ def _render_target_template(
                         reason="template_invalid",
                         detail=template,
                     )
+                    # Same reason as above: under a collecting sink the int()
+                    # conversion below would raise ValueError on the very index
+                    # this diagnostic just rejected as non-numeric.
+                    #
+                    # The unrendered template is returned rather than skipping
+                    # the mapping. It becomes the target variable name, which is
+                    # not a legal identifier but does match the ``detail`` field
+                    # of the diagnostic just emitted, so a reader can connect the
+                    # two. Skipping instead would remove the variable and make
+                    # every later reference to it report a second, misleading
+                    # error about an undefined name.
+                    return template
                 rendered.append(
                     _mapping_placeholder_value(
                         source_name=source_name,

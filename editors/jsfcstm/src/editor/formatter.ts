@@ -11,8 +11,8 @@
  * Key rules the output satisfies:
  *
  * 1. ``#`` line comments are normalized into the canonical ``//`` form so the
- *    file stays in one comment dialect. ``/* *\/`` is NEVER touched because
- *    FCSTM uses it as the ``raw_doc`` payload for ``abstract`` actions.
+ *    file stays in one comment dialect. Owner ``/* *\/`` blocks are emitted
+ *    immediately before their declaration, including abstract actions.
  * 2. Every brace block that contains statements is multi-line:
  *    ``effect{a=0;b=1;}`` becomes
  *    ``effect {\n    a = 0;\n    b = 1;\n}``. Empty ``{}`` stays inline.
@@ -43,12 +43,10 @@ export interface FcstmFormatOptions {
      */
     elseOnSameLine?: boolean;
     /**
-     * When ``true`` (default), a multi-line ``/* *\/`` block comment that
-     * appears inline with code (most commonly as the ``raw_doc`` payload of
-     * an ``abstract`` action) is moved onto its own lines at
-     * ``currentDepth + 1`` indentation, and its continuation lines are
-     * realigned so the ``*`` markers sit one column right of the opening
-     * ``/*``. Relative indentation inside the comment is preserved.
+     * When ``true`` (default), multi-line owner ``/* *\/`` blocks are moved
+     * onto their own lines and their continuation lines are realigned so the
+     * ``*`` markers sit one column right of the opening ``/*``. Relative
+     * indentation inside the comment is preserved.
      */
     alignMultilineBlockComments?: boolean;
 }
@@ -74,6 +72,7 @@ interface Tok {
     text: string;
     marker?: '//' | '#';
     body?: string;
+    ownerDocumentation?: boolean;
 }
 
 const MULTI_CHAR_OPS = [
@@ -255,6 +254,157 @@ function tokenize(src: string): Tok[] {
     return tokens;
 }
 
+function canonicalOwnerDocumentation(raw: string): string | null {
+    const source = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    if (!source.startsWith('/*') || !source.endsWith('*/')) return null;
+    let body = source.slice(2, -2);
+    if (body.startsWith('*') && source.startsWith('/**')) body = body.slice(1);
+    else if (body.startsWith('!') && source.startsWith('/*!')) body = body.slice(1);
+    let lines = body.split('\n');
+    const firstInline = Boolean(lines[0]?.trim());
+    while (lines.length && !lines[0].trim()) lines.shift();
+    while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+    const nonblank = lines.filter(line => line.trim());
+    const remaining = firstInline ? lines.slice(1).filter(line => line.trim()) : nonblank;
+    const margin = source.includes('\n') && nonblank.length > 0
+        && (nonblank.every(line => line.trimStart().startsWith('*'))
+            || (firstInline && remaining.length > 0
+                && remaining.every(line => line.trimStart().startsWith('*'))));
+    if (margin) {
+        lines = lines.map((line, index) => {
+            if (!line.trim()) return '';
+            if (firstInline && index === 0 && !line.trimStart().startsWith('*')) return line.trimStart();
+            const content = line.trimStart().slice(1);
+            return content.startsWith(' ') || content.startsWith('\t') ? content.slice(1) : content;
+        });
+    }
+    const indent = lines.filter(line => line.trim()).reduce(
+        (min, line) => Math.min(min, line.match(/^\s*/)?.[0].length || 0),
+        Number.POSITIVE_INFINITY,
+    );
+    if (Number.isFinite(indent)) lines = lines.map(line => line.slice(Math.min(indent, line.length)));
+    while (lines.length && !lines[0].trim()) lines.shift();
+    while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+    if (lines.length > 0) lines[0] = lines[0].trimStart();
+    if (lines.length > 0) lines[lines.length - 1] = lines[lines.length - 1].trimEnd();
+    if (lines.some(line => line.includes('/*') || line.includes('*/'))) return null;
+    if (lines.length === 0) return '/*\n */';
+    return `/*\n${lines.map(line => ` *${line ? ` ${line}` : ''}`).join('\n')}\n */`;
+}
+
+function isOwnerDocumentation(tokens: Tok[], index: number): boolean {
+    const previous: Tok[] = [];
+    for (let i = index - 1; i >= 0 && previous.length < 8; i -= 1) {
+        if (tokens[i].kind === 'nl') continue;
+        if (tokens[i].kind === 'punct' && ['{', '}', ';'].includes(tokens[i].text)) break;
+        if (tokens[i].kind !== 'ws') previous.push(tokens[i]);
+    }
+    const next: Tok[] = [];
+    for (let i = index + 1; i < tokens.length && next.length < 4; i += 1) {
+        if (tokens[i].kind !== 'ws' && tokens[i].kind !== 'nl' && tokens[i].kind !== 'blkCom') {
+            next.push(tokens[i]);
+        }
+    }
+    if (previous.some(item => item.kind === 'ident' && item.text === 'abstract')) return true;
+    const first = next[0]?.text;
+    if (first === 'def' || first === 'state' || first === 'event'
+        || first === 'enter' || first === 'exit' || first === 'during'
+        || first === '>>' || first === '!') return true;
+    if (first === 'pseudo' && next[1]?.text === 'state') return true;
+    if (next[0]?.kind === 'ident' && next[1]?.text === '->') return true;
+    if (next[0]?.text === '[*]' && next[1]?.text === '->') return true;
+    return false;
+}
+
+function abstractActionStart(tokens: Tok[], abstractIndex: number): number | null {
+    for (let i = abstractIndex - 1; i >= 0; i -= 1) {
+        const token = tokens[i];
+        if (token.kind === 'nl') break;
+        if (token.kind === 'punct' && ['{', '}', ';'].includes(token.text)) break;
+        if (token.kind === 'ident' && ['enter', 'exit', 'during'].includes(token.text)) {
+            if (token.text === 'during') {
+                for (let j = i - 1; j >= 0; j -= 1) {
+                    if (tokens[j].kind === 'nl') break;
+                    if (tokens[j].kind === 'punct' && ['{', '}', ';'].includes(tokens[j].text)) break;
+                    if (tokens[j].kind === 'punct' && tokens[j].text === '>>') return j;
+                }
+            }
+            return i;
+        }
+    }
+    return null;
+}
+
+function moveTrailingAbstractDocumentation(tokens: Tok[], commentIndex: number): void {
+    const previous: Tok[] = [];
+    for (let i = commentIndex - 1; i >= 0 && previous.length < 8; i -= 1) {
+        if (tokens[i].kind === 'nl') continue;
+        if (tokens[i].kind === 'punct' && ['{', '}', ';'].includes(tokens[i].text)) break;
+        if (tokens[i].kind !== 'ws') previous.push(tokens[i]);
+    }
+    const abstractIndex = previous.findIndex(item => item.kind === 'ident' && item.text === 'abstract');
+    if (abstractIndex < 0) return;
+    const abstractTokenIndex = commentIndex - 1 - abstractIndex;
+    const start = abstractActionStart(tokens, abstractTokenIndex);
+    if (start === null) return;
+
+    // The optional function name is the only token that can extend the
+    // abstract-action head. Keep its identity so insertion remains correct
+    // after moving the documentation token to the front.
+    let actionLastToken = tokens[abstractTokenIndex];
+    for (let i = abstractTokenIndex + 1; i < commentIndex; i += 1) {
+        const token = tokens[i];
+        if (token.kind === 'ws' || token.kind === 'nl') continue;
+        if (token.kind === 'ident') actionLastToken = token;
+        break;
+    }
+
+    const comment = tokens[commentIndex];
+    comment.ownerDocumentation = true;
+    comment.text = canonicalOwnerDocumentation(comment.text) || comment.text;
+    tokens.splice(commentIndex, 1);
+    tokens.splice(start, 0, comment);
+
+    // The legacy trailing spelling omits the semicolon. Canonical output uses
+    // the same terminated action form as the leading spelling. A following
+    // declaration may be on the same line, so stop at this action's head
+    // rather than searching for a later semicolon.
+    const actionEnd = tokens.indexOf(actionLastToken) + 1;
+    let end = actionEnd;
+    let hasTerminator = false;
+    for (; end < tokens.length; end += 1) {
+        const token = tokens[end];
+        if (token.kind === 'ws' || token.kind === 'nl') continue;
+        if (token.kind === 'punct' && token.text === ';') {
+            hasTerminator = true;
+            break;
+        }
+        break;
+    }
+    if (!hasTerminator) tokens.splice(actionEnd, 0, {kind: 'punct', text: ';'});
+}
+
+function canonicalizeOwnerDocumentation(tokens: Tok[]): void {
+    for (let index = 0; index < tokens.length; index += 1) {
+        const token = tokens[index];
+        if (token.kind !== 'blkCom' || !isOwnerDocumentation(tokens, index)) continue;
+        const previous: Tok[] = [];
+        for (let i = index - 1; i >= 0 && previous.length < 8; i -= 1) {
+            if (tokens[i].kind === 'nl') continue;
+            if (tokens[i].kind === 'punct' && ['{', '}', ';'].includes(tokens[i].text)) break;
+            if (tokens[i].kind !== 'ws') previous.push(tokens[i]);
+        }
+        if (previous.some(item => item.kind === 'ident' && item.text === 'abstract')) {
+            moveTrailingAbstractDocumentation(tokens, index);
+            index = Math.max(-1, index - 1);
+            continue;
+        }
+        token.ownerDocumentation = true;
+        const canonical = canonicalOwnerDocumentation(token.text);
+        if (canonical !== null) token.text = canonical;
+    }
+}
+
 function findNewline(src: string, start: number): number {
     let j = start;
     while (j < src.length && src[j] !== '\n' && src[j] !== '\r') j += 1;
@@ -351,6 +501,7 @@ interface LogicalChunk {
     trailing?: Tok;        // trailing line-comment attached to the line
     leadingBlockComments?: Tok[];  // standalone blkCom tokens emitted before the line
     blockCommentText?: string;     // verbatim source for 'multilineBlockComment'
+    blockCommentIsOwnerDocumentation?: boolean;
 }
 
 function groupLogicalLines(tokens: Tok[]): LogicalChunk[] {
@@ -453,18 +604,17 @@ function groupLogicalLines(tokens: Tok[]): LogicalChunk[] {
         if (t.kind === 'blkCom') {
             const isMultiLine = t.text.includes('\n');
             if (isMultiLine) {
-                // A multi-line block comment inline with code (typical
-                // ``enter abstract Foo /* doc */`` raw_doc payload) gets
-                // lifted onto its own chunk one indent level deeper than
-                // the owner statement, so it can be re-aligned cleanly.
+                // Inline block comments are lifted onto their own chunk so
+                // they can be re-aligned cleanly.
                 if (buffer.length > 0) {
                     commit();
                 }
                 chunks.push({
                     kind: 'multilineBlockComment',
-                    depth: depth + 1,
+                    depth: t.ownerDocumentation === true ? depth : depth + 1,
                     tokens: [],
                     blockCommentText: t.text,
+                    blockCommentIsOwnerDocumentation: t.ownerDocumentation === true,
                 });
                 expectLineTerminator = true;
                 blankRun = 0;
@@ -614,7 +764,8 @@ function mergeInlinePatterns(
 function renderMultilineBlockComment(
     text: string,
     depth: number,
-    indentSize: number
+    indentSize: number,
+    preserveTrailingWhitespace = false,
 ): string {
     const indent = ' '.repeat(depth * indentSize);
     const lines = text.split('\n');
@@ -637,7 +788,10 @@ function renderMultilineBlockComment(
     }
     if (!isFinite(base)) base = 0;
 
-    const firstLine = lines[0].replace(/[ \t]+$/, '');
+    const trimStructuralWhitespace = (line: string): string => (
+        preserveTrailingWhitespace ? line : line.replace(/[ \t]+$/, '')
+    );
+    const firstLine = trimStructuralWhitespace(lines[0]);
     const out: string[] = [indent + firstLine];
     for (const line of continuationLines) {
         if (line.trim().length === 0) {
@@ -649,7 +803,7 @@ function renderMultilineBlockComment(
         // space. Tabs are treated as single spaces for this purpose —
         // block comment bodies almost never mix tabs with ``*`` alignment.
         const stripped = line.length >= base ? line.slice(base) : line.trimStart();
-        out.push(indent + ' ' + stripped.replace(/[ \t]+$/, ''));
+        out.push(indent + ' ' + trimStructuralWhitespace(stripped));
     }
     return out.join('\n');
 }
@@ -675,7 +829,11 @@ function renderLine(chunk: LogicalChunk, indentSize: number): string {
         }
         const prev = chunk.tokens[i - 1];
         if (tok.kind === 'blkCom') {
-            body += ' ' + tok.text;
+            const blockLines = tok.text.split('\n');
+            body += ' ' + blockLines[0];
+            if (blockLines.length > 1) {
+                body += '\n' + blockLines.slice(1).map(line => indent + line).join('\n');
+            }
             continue;
         }
         if (prev.kind === 'blkCom') {
@@ -728,6 +886,7 @@ export function formatDocumentText(
     const lineEnding = detectLineEnding(originalText);
 
     const tokens = tokenize(originalText);
+    canonicalizeOwnerDocumentation(tokens);
     const chunks = mergeInlinePatterns(
         groupLogicalLines(tokens),
         {elseOnSameLine}
@@ -786,7 +945,10 @@ export function formatDocumentText(
         if (chunk.kind === 'multilineBlockComment') {
             if (alignMultilineBlockComments && chunk.blockCommentText) {
                 const rendered = renderMultilineBlockComment(
-                    chunk.blockCommentText, chunk.depth, indentSize
+                    chunk.blockCommentText,
+                    chunk.depth,
+                    indentSize,
+                    chunk.blockCommentIsOwnerDocumentation === true,
                 );
                 for (const physicalLine of rendered.split('\n')) {
                     outputLines.push(physicalLine);
@@ -796,9 +958,13 @@ export function formatDocumentText(
                 // line only; keep subsequent lines exactly as in the source.
                 const indent = ' '.repeat(chunk.depth * indentSize);
                 const srcLines = chunk.blockCommentText.split('\n');
-                outputLines.push(indent + srcLines[0].replace(/[ \t]+$/, ''));
+                const preserveTrailingWhitespace = chunk.blockCommentIsOwnerDocumentation === true;
+                const trimStructuralWhitespace = (line: string): string => (
+                    preserveTrailingWhitespace ? line : line.replace(/[ \t]+$/, '')
+                );
+                outputLines.push(indent + trimStructuralWhitespace(srcLines[0]));
                 for (const line of srcLines.slice(1)) {
-                    outputLines.push(line.replace(/[ \t]+$/, ''));
+                    outputLines.push(trimStructuralWhitespace(line));
                 }
             }
             lastEmittedKind = 'line';

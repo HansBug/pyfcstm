@@ -319,7 +319,14 @@ def _project_target(parent_state: State, target: object) -> Tuple[str, ...]:
         return _dedupe_sorted(projected)
 
     if isinstance(target, str):
-        target_state = parent_state.substates[target]
+        target_state = parent_state.substates.get(target)
+        if target_state is None:
+            # The target name does not resolve in this scope. Only a model built
+            # in collect mode can hold such a transition -- it carries
+            # E_DANGLING_TRANSITION -- because strict mode raises before the
+            # model is handed out. The transition reaches no leaf, so it projects
+            # to no successor.
+            return ()
         return _initial_leaf_targets(target_state)
 
     raise TypeError(  # pragma: no cover
@@ -370,6 +377,11 @@ def build_leaf_level_macro_graph(machine: StateMachine) -> LeafLevelGraph:
     leaf is treated as root-exit-capable by adding an edge to
     :data:`EXIT_ROOT_SINK`.
 
+    A transition whose source or target name does not resolve in its scope
+    contributes no edge. Only a model built in collect mode can hold one --
+    it carries ``E_DANGLING_TRANSITION`` -- so the projection of a strictly
+    built model is unaffected.
+
     :param machine: State machine to project.
     :type machine: StateMachine
     :return: Leaf-level macro graph.
@@ -410,7 +422,14 @@ def build_leaf_level_macro_graph(machine: StateMachine) -> LeafLevelGraph:
                     f"Unsupported transition source: {transition.from_state!r}."
                 )
 
-            source_state = parent_state.substates[transition.from_state]
+            source_state = parent_state.substates.get(transition.from_state)
+            if source_state is None:
+                # The source name does not resolve in this scope. Only a model
+                # built in collect mode can hold such a transition -- it carries
+                # E_DANGLING_TRANSITION -- because strict mode raises before the
+                # model is handed out. The transition contributes no edge: it has
+                # no source node to attach one to.
+                continue
             if not source_state.is_leaf_state:
                 continue
 
@@ -1054,12 +1073,18 @@ def _event_consumer_reachability(
             if transition.from_state is INIT_STATE:
                 reachable = parent_path in init_sources
             elif isinstance(transition.from_state, str):
-                source_state = parent_state.substates[transition.from_state]
-                source_path = _state_path(source_state)
-                if source_state.is_leaf_state:
-                    reachable = source_path in active_leaves
+                source_state = parent_state.substates.get(transition.from_state)
+                if source_state is None:
+                    # Same unresolved-name case as in the graph builder: only a
+                    # model built in collect mode carries such a transition, and
+                    # it reaches no state, so it consumes the event nowhere.
+                    reachable = False
                 else:
-                    reachable = source_path in boundary_sources
+                    source_path = _state_path(source_state)
+                    if source_state.is_leaf_state:
+                        reachable = source_path in active_leaves
+                    else:
+                        reachable = source_path in boundary_sources
             else:
                 raise TypeError(  # pragma: no cover
                     # Grammar-produced non-init transition sources are strings.
@@ -1085,6 +1110,11 @@ def event_emission_to_consumer_reachable(machine: StateMachine) -> Tuple[str, ..
     ``Leaf -> [*]`` bubble semantics rather than while any descendant leaf is
     merely active. If every consumer source for a used event is outside these
     root-reachable topology points, the event's qualified name is returned.
+
+    A consumer whose source name does not resolve in its scope counts as
+    unreachable, since it reaches no state. Only a model built in collect mode
+    can hold one -- it carries ``E_DANGLING_TRANSITION`` -- so the result for a
+    strictly built model is unaffected.
 
     :param machine: State machine to inspect.
     :type machine: StateMachine

@@ -78,11 +78,14 @@ def _parse_as_element(
     parse_tree = fn_element(parser)
     if force_finished:
         error_listener.check_unfinished_parsing_error(stream)
+    # Do not walk error-recovered trees: listener builders require complete
+    # child nodes and parser diagnostics are already authoritative.
     error_listener.check_errors()
-
     listener = GrammarParseListener()
     walker = ParseTreeWalker()
     walker.walk(listener, parse_tree)
+    error_listener.errors.extend(listener.errors)
+    error_listener.check_errors()
     return listener.nodes[parse_tree]
 
 

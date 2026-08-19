@@ -39,7 +39,8 @@ runPyGeneratedModelCase({
                 "Reset"
             ],
             "path_name": "System.LeftMotor.Reset",
-            "extra_name": null
+            "extra_name": null,
+            "doc": null
         },
         {
             "name": "Start",
@@ -55,7 +56,8 @@ runPyGeneratedModelCase({
                 "Start"
             ],
             "path_name": "System.LeftMotor.Idle.Start",
-            "extra_name": null
+            "extra_name": null,
+            "doc": null
         }
     ],
     "all_actions": [
@@ -79,7 +81,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "System"
+                    "parent": "System",
+                    "doc": null
                 }
             ],
             "named_functions": {},
@@ -91,6 +94,7 @@ runPyGeneratedModelCase({
                 "LeftMotor": 0
             },
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": false,
             "is_root_state": true,
@@ -110,7 +114,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "System"
+                    "parent": "System",
+                    "doc": null
                 }
             ],
             "transitions_from": [
@@ -120,7 +125,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": null
+                    "parent": null,
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -130,7 +136,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": null
+                    "parent": null,
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [
@@ -140,7 +147,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "System"
+                    "parent": "System",
+                    "doc": null
                 }
             ],
             "transitions_entering_children_simplified": [
@@ -150,7 +158,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "System"
+                    "parent": "System",
+                    "doc": null
                 }
             ],
             "list_on_enters": [],
@@ -195,7 +204,8 @@ runPyGeneratedModelCase({
                         "Reset"
                     ],
                     "path_name": "System.LeftMotor.Reset",
-                    "extra_name": null
+                    "extra_name": null,
+                    "doc": null
                 }
             },
             "transitions": [
@@ -205,7 +215,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "System.LeftMotor"
+                    "parent": "System.LeftMotor",
+                    "doc": null
                 },
                 {
                     "from_state": "Idle",
@@ -213,7 +224,8 @@ runPyGeneratedModelCase({
                     "event": "System.LeftMotor.Idle.Start",
                     "guard": null,
                     "effects": [],
-                    "parent": "System.LeftMotor"
+                    "parent": "System.LeftMotor",
+                    "doc": null
                 },
                 {
                     "from_state": "Running",
@@ -221,7 +233,8 @@ runPyGeneratedModelCase({
                     "event": "System.LeftMotor.Reset",
                     "guard": null,
                     "effects": [],
-                    "parent": "System.LeftMotor"
+                    "parent": "System.LeftMotor",
+                    "doc": null
                 }
             ],
             "named_functions": {
@@ -278,6 +291,7 @@ runPyGeneratedModelCase({
                 "Running": 1
             },
             "extra_name": "Left Motor",
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": false,
             "is_root_state": false,
@@ -299,7 +313,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "System.LeftMotor"
+                    "parent": "System.LeftMotor",
+                    "doc": null
                 }
             ],
             "transitions_from": [],
@@ -310,7 +325,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "System"
+                    "parent": "System",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [
@@ -320,7 +336,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "System.LeftMotor"
+                    "parent": "System.LeftMotor",
+                    "doc": null
                 }
             ],
             "transitions_entering_children_simplified": [
@@ -330,7 +347,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "System.LeftMotor"
+                    "parent": "System.LeftMotor",
+                    "doc": null
                 }
             ],
             "list_on_enters": [
@@ -381,7 +399,8 @@ runPyGeneratedModelCase({
                         "Start"
                     ],
                     "path_name": "System.LeftMotor.Idle.Start",
-                    "extra_name": null
+                    "extra_name": null,
+                    "doc": null
                 }
             },
             "transitions": [],
@@ -392,6 +411,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -412,7 +432,8 @@ runPyGeneratedModelCase({
                     "event": "System.LeftMotor.Idle.Start",
                     "guard": null,
                     "effects": [],
-                    "parent": "System.LeftMotor"
+                    "parent": "System.LeftMotor",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -422,7 +443,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "System.LeftMotor"
+                    "parent": "System.LeftMotor",
+                    "doc": null
                 },
                 {
                     "from_state": "Running",
@@ -430,7 +452,8 @@ runPyGeneratedModelCase({
                     "event": "System.LeftMotor.Reset",
                     "guard": null,
                     "effects": [],
-                    "parent": "System.LeftMotor"
+                    "parent": "System.LeftMotor",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -470,7 +493,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "System.LeftMotor.Running"
+                    "parent": "System.LeftMotor.Running",
+                    "doc": null
                 }
             ],
             "named_functions": {},
@@ -482,6 +506,7 @@ runPyGeneratedModelCase({
                 "Spin": 0
             },
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": false,
             "is_root_state": false,
@@ -501,7 +526,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "System.LeftMotor.Running"
+                    "parent": "System.LeftMotor.Running",
+                    "doc": null
                 }
             ],
             "transitions_from": [
@@ -511,7 +537,8 @@ runPyGeneratedModelCase({
                     "event": "System.LeftMotor.Reset",
                     "guard": null,
                     "effects": [],
-                    "parent": "System.LeftMotor"
+                    "parent": "System.LeftMotor",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -521,7 +548,8 @@ runPyGeneratedModelCase({
                     "event": "System.LeftMotor.Idle.Start",
                     "guard": null,
                     "effects": [],
-                    "parent": "System.LeftMotor"
+                    "parent": "System.LeftMotor",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [
@@ -531,7 +559,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "System.LeftMotor.Running"
+                    "parent": "System.LeftMotor.Running",
+                    "doc": null
                 }
             ],
             "transitions_entering_children_simplified": [
@@ -541,7 +570,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "System.LeftMotor.Running"
+                    "parent": "System.LeftMotor.Running",
+                    "doc": null
                 }
             ],
             "list_on_enters": [],
@@ -578,6 +608,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -599,7 +630,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "System.LeftMotor.Running"
+                    "parent": "System.LeftMotor.Running",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -628,17 +660,20 @@ runPyGeneratedModelCase({
             "__class__": "StateDefinition",
             "name": "System",
             "extra_name": null,
+            "doc": null,
             "events": [],
             "substates": [
                 {
                     "__class__": "StateDefinition",
                     "name": "LeftMotor",
                     "extra_name": "Left Motor",
+                    "doc": null,
                     "events": [
                         {
                             "__class__": "EventDefinition",
                             "name": "Reset",
-                            "extra_name": null
+                            "extra_name": null,
+                            "doc": null
                         }
                     ],
                     "substates": [
@@ -646,11 +681,13 @@ runPyGeneratedModelCase({
                             "__class__": "StateDefinition",
                             "name": "Idle",
                             "extra_name": null,
+                            "doc": null,
                             "events": [
                                 {
                                     "__class__": "EventDefinition",
                                     "name": "Start",
-                                    "extra_name": null
+                                    "extra_name": null,
+                                    "doc": null
                                 }
                             ],
                             "substates": [],
@@ -665,12 +702,14 @@ runPyGeneratedModelCase({
                             "__class__": "StateDefinition",
                             "name": "Running",
                             "extra_name": null,
+                            "doc": null,
                             "events": [],
                             "substates": [
                                 {
                                     "__class__": "StateDefinition",
                                     "name": "Spin",
                                     "extra_name": null,
+                                    "doc": null,
                                     "events": [],
                                     "substates": [],
                                     "transitions": [],
@@ -688,7 +727,8 @@ runPyGeneratedModelCase({
                                     "to_state": "Spin",
                                     "event_id": null,
                                     "condition_expr": null,
-                                    "post_operations": []
+                                    "post_operations": [],
+                                    "doc": null
                                 }
                             ],
                             "enters": [],
@@ -705,7 +745,8 @@ runPyGeneratedModelCase({
                             "to_state": "Idle",
                             "event_id": null,
                             "condition_expr": null,
-                            "post_operations": []
+                            "post_operations": [],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -720,7 +761,8 @@ runPyGeneratedModelCase({
                                 "is_absolute": false
                             },
                             "condition_expr": null,
-                            "post_operations": []
+                            "post_operations": [],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -734,7 +776,8 @@ runPyGeneratedModelCase({
                                 "is_absolute": false
                             },
                             "condition_expr": null,
-                            "post_operations": []
+                            "post_operations": [],
+                            "doc": null
                         }
                     ],
                     "enters": [
@@ -760,7 +803,8 @@ runPyGeneratedModelCase({
                     "to_state": "LeftMotor",
                     "event_id": null,
                     "condition_expr": null,
-                    "post_operations": []
+                    "post_operations": [],
+                    "doc": null
                 }
             ],
             "enters": [],

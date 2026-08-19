@@ -4,7 +4,7 @@ import {runPyGeneratedModelCase} from "./support";
 runPyGeneratedModelCase({
     name: "dlc1.fcstm",
     relativeSourcePath: "dlc1.fcstm",
-    source: "def int a = 0;\ndef int b = 0 * 0;\ndef int round_count = 0;\nstate TrafficLight {\n    >> during before {\n        a = 0;\n    }\n    >> during before abstract FFT;\n    >> during before abstract TTT /*\n        this is the line\n    */\n    >> during after {\n        a = 255;\n        b = 1;\n    }\n    state InService {\n        enter {\n            a = 0;\n            b = 0;\n            round_count = 0;\n        }\n        enter abstract InServiceAbstractEnter /*\n            Abstract Operation When Entering State 'InService'\n            TODO: Should be Implemented In Generated Code Framework\n        */\n        during before abstract InServiceBeforeEnterChild /*\n            Abstract Operation Before Entering Child States of State 'InService'\n            TODO: Should be Implemented In Generated Code Framework\n        */\n        during after abstract InServiceAfterEnterChild /*\n            Abstract Operation After Entering Child States of State 'InService'\n            TODO: Should be Implemented In Generated Code Framework\n        */\n        exit abstract InServiceAbstractExit /*\n            Abstract Operation When Leaving State 'InService'\n            TODO: Should be Implemented In Generated Code Framework\n        */\n        state Red {\n            during {\n                a = 1 << 2;\n            }\n        }\n        state Yellow;\n        state Green;\n        event Start;\n        event Maintain;\n        [*] -> Red :: Start effect {\n            b = 1;\n        }\n        Red -> Green effect {\n            b = 3;\n        }\n        Green -> Yellow effect {\n            b = 2;\n        }\n        Yellow -> Red : if [a >= 10] effect {\n            b = 1;\n            round_count = round_count + 1;\n        }\n        Green -> Yellow : /Idle.E2;\n        Yellow -> Yellow : /E2;\n    }\n    state Idle {\n        event E2;\n    }\n    event E2;\n    [*] -> InService;\n    InService -> Idle :: Maintain;\n    Idle -> Idle :: E2;\n    Idle -> [*];\n}",
+    source: "def int a = 0;\ndef int b = 0 * 0;\ndef int round_count = 0;\nstate TrafficLight {\n    >> during before {\n        a = 0;\n    }\n    >> during before abstract FFT;\n    >> during before abstract TTT /*\n        * this is the line\n    */\n    >> during after {\n        a = 255;\n        b = 1;\n    }\n    state InService {\n        enter {\n            a = 0;\n            b = 0;\n            round_count = 0;\n        }\n        enter abstract InServiceAbstractEnter /*\n            * Abstract Operation When Entering State 'InService'\n            * TODO: Should be Implemented In Generated Code Framework\n        */\n        during before abstract InServiceBeforeEnterChild /*\n            * Abstract Operation Before Entering Child States of State 'InService'\n            * TODO: Should be Implemented In Generated Code Framework\n        */\n        during after abstract InServiceAfterEnterChild /*\n            * Abstract Operation After Entering Child States of State 'InService'\n            * TODO: Should be Implemented In Generated Code Framework\n        */\n        exit abstract InServiceAbstractExit /*\n            * Abstract Operation When Leaving State 'InService'\n            * TODO: Should be Implemented In Generated Code Framework\n        */\n        state Red {\n            during {\n                a = 1 << 2;\n            }\n        }\n        state Yellow;\n        state Green;\n        event Start;\n        event Maintain;\n        [*] -> Red :: Start effect {\n            b = 1;\n        }\n        Red -> Green effect {\n            b = 3;\n        }\n        Green -> Yellow effect {\n            b = 2;\n        }\n        Yellow -> Red : if [a >= 10] effect {\n            b = 1;\n            round_count = round_count + 1;\n        }\n        Green -> Yellow : /Idle.E2;\n        Yellow -> Yellow : /E2;\n    }\n    state Idle {\n        event E2;\n    }\n    event E2;\n    [*] -> InService;\n    InService -> Idle :: Maintain;\n    Idle -> Idle :: E2;\n    Idle -> [*];\n}",
     expected: {
     "defines": {
         "a": {
@@ -12,7 +12,8 @@ runPyGeneratedModelCase({
             "init": {
                 "type": "Integer",
                 "value": 0
-            }
+            },
+            "doc": null
         },
         "b": {
             "type": "int",
@@ -27,14 +28,16 @@ runPyGeneratedModelCase({
                     "type": "Integer",
                     "value": 0
                 }
-            }
+            },
+            "doc": null
         },
         "round_count": {
             "type": "int",
             "init": {
                 "type": "Integer",
                 "value": 0
-            }
+            },
+            "doc": null
         }
     },
     "root_state": "TrafficLight",
@@ -57,7 +60,8 @@ runPyGeneratedModelCase({
                 "E2"
             ],
             "path_name": "TrafficLight.E2",
-            "extra_name": null
+            "extra_name": null,
+            "doc": null
         },
         {
             "name": "Start",
@@ -71,7 +75,8 @@ runPyGeneratedModelCase({
                 "Start"
             ],
             "path_name": "TrafficLight.InService.Start",
-            "extra_name": null
+            "extra_name": null,
+            "doc": null
         },
         {
             "name": "Maintain",
@@ -85,7 +90,8 @@ runPyGeneratedModelCase({
                 "Maintain"
             ],
             "path_name": "TrafficLight.InService.Maintain",
-            "extra_name": null
+            "extra_name": null,
+            "doc": null
         },
         {
             "name": "E2",
@@ -99,7 +105,8 @@ runPyGeneratedModelCase({
                 "E2"
             ],
             "path_name": "TrafficLight.Idle.E2",
-            "extra_name": null
+            "extra_name": null,
+            "doc": null
         }
     ],
     "all_actions": [
@@ -136,7 +143,8 @@ runPyGeneratedModelCase({
                         "E2"
                     ],
                     "path_name": "TrafficLight.E2",
-                    "extra_name": null
+                    "extra_name": null,
+                    "doc": null
                 }
             },
             "transitions": [
@@ -146,7 +154,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "TrafficLight"
+                    "parent": "TrafficLight",
+                    "doc": null
                 },
                 {
                     "from_state": "InService",
@@ -154,7 +163,8 @@ runPyGeneratedModelCase({
                     "event": "TrafficLight.InService.Maintain",
                     "guard": null,
                     "effects": [],
-                    "parent": "TrafficLight"
+                    "parent": "TrafficLight",
+                    "doc": null
                 },
                 {
                     "from_state": "Idle",
@@ -162,7 +172,8 @@ runPyGeneratedModelCase({
                     "event": "TrafficLight.Idle.E2",
                     "guard": null,
                     "effects": [],
-                    "parent": "TrafficLight"
+                    "parent": "TrafficLight",
+                    "doc": null
                 },
                 {
                     "from_state": "Idle",
@@ -170,7 +181,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "TrafficLight"
+                    "parent": "TrafficLight",
+                    "doc": null
                 }
             ],
             "named_functions": {
@@ -331,6 +343,7 @@ runPyGeneratedModelCase({
                 "Idle": 1
             },
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": false,
             "is_root_state": true,
@@ -356,7 +369,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "TrafficLight"
+                    "parent": "TrafficLight",
+                    "doc": null
                 }
             ],
             "transitions_from": [
@@ -366,7 +380,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": null
+                    "parent": null,
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -376,7 +391,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": null
+                    "parent": null,
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [
@@ -386,7 +402,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "TrafficLight"
+                    "parent": "TrafficLight",
+                    "doc": null
                 }
             ],
             "transitions_entering_children_simplified": [
@@ -396,7 +413,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "TrafficLight"
+                    "parent": "TrafficLight",
+                    "doc": null
                 }
             ],
             "list_on_enters": [],
@@ -503,7 +521,8 @@ runPyGeneratedModelCase({
                         "Maintain"
                     ],
                     "path_name": "TrafficLight.InService.Maintain",
-                    "extra_name": null
+                    "extra_name": null,
+                    "doc": null
                 },
                 "Start": {
                     "name": "Start",
@@ -517,7 +536,8 @@ runPyGeneratedModelCase({
                         "Start"
                     ],
                     "path_name": "TrafficLight.InService.Start",
-                    "extra_name": null
+                    "extra_name": null,
+                    "doc": null
                 }
             },
             "transitions": [
@@ -536,7 +556,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "TrafficLight.InService"
+                    "parent": "TrafficLight.InService",
+                    "doc": null
                 },
                 {
                     "from_state": "Red",
@@ -553,7 +574,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "TrafficLight.InService"
+                    "parent": "TrafficLight.InService",
+                    "doc": null
                 },
                 {
                     "from_state": "Green",
@@ -570,7 +592,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "TrafficLight.InService"
+                    "parent": "TrafficLight.InService",
+                    "doc": null
                 },
                 {
                     "from_state": "Yellow",
@@ -614,7 +637,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "TrafficLight.InService"
+                    "parent": "TrafficLight.InService",
+                    "doc": null
                 },
                 {
                     "from_state": "Green",
@@ -622,7 +646,8 @@ runPyGeneratedModelCase({
                     "event": "TrafficLight.Idle.E2",
                     "guard": null,
                     "effects": [],
-                    "parent": "TrafficLight.InService"
+                    "parent": "TrafficLight.InService",
+                    "doc": null
                 },
                 {
                     "from_state": "Yellow",
@@ -630,7 +655,8 @@ runPyGeneratedModelCase({
                     "event": "TrafficLight.E2",
                     "guard": null,
                     "effects": [],
-                    "parent": "TrafficLight.InService"
+                    "parent": "TrafficLight.InService",
+                    "doc": null
                 }
             ],
             "named_functions": {
@@ -862,6 +888,7 @@ runPyGeneratedModelCase({
                 "Green": 2
             },
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": false,
             "is_root_state": false,
@@ -899,7 +926,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "TrafficLight.InService"
+                    "parent": "TrafficLight.InService",
+                    "doc": null
                 }
             ],
             "transitions_from": [
@@ -909,7 +937,8 @@ runPyGeneratedModelCase({
                     "event": "TrafficLight.InService.Maintain",
                     "guard": null,
                     "effects": [],
-                    "parent": "TrafficLight"
+                    "parent": "TrafficLight",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -919,7 +948,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "TrafficLight"
+                    "parent": "TrafficLight",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [
@@ -938,7 +968,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "TrafficLight.InService"
+                    "parent": "TrafficLight.InService",
+                    "doc": null
                 }
             ],
             "transitions_entering_children_simplified": [
@@ -957,7 +988,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "TrafficLight.InService"
+                    "parent": "TrafficLight.InService",
+                    "doc": null
                 },
                 null
             ],
@@ -1123,6 +1155,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -1154,7 +1187,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "TrafficLight.InService"
+                    "parent": "TrafficLight.InService",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -1173,7 +1207,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "TrafficLight.InService"
+                    "parent": "TrafficLight.InService",
+                    "doc": null
                 },
                 {
                     "from_state": "Yellow",
@@ -1217,7 +1252,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "TrafficLight.InService"
+                    "parent": "TrafficLight.InService",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -1310,6 +1346,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -1366,7 +1403,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "TrafficLight.InService"
+                    "parent": "TrafficLight.InService",
+                    "doc": null
                 },
                 {
                     "from_state": "Yellow",
@@ -1374,7 +1412,8 @@ runPyGeneratedModelCase({
                     "event": "TrafficLight.E2",
                     "guard": null,
                     "effects": [],
-                    "parent": "TrafficLight.InService"
+                    "parent": "TrafficLight.InService",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -1393,7 +1432,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "TrafficLight.InService"
+                    "parent": "TrafficLight.InService",
+                    "doc": null
                 },
                 {
                     "from_state": "Green",
@@ -1401,7 +1441,8 @@ runPyGeneratedModelCase({
                     "event": "TrafficLight.Idle.E2",
                     "guard": null,
                     "effects": [],
-                    "parent": "TrafficLight.InService"
+                    "parent": "TrafficLight.InService",
+                    "doc": null
                 },
                 {
                     "from_state": "Yellow",
@@ -1409,7 +1450,8 @@ runPyGeneratedModelCase({
                     "event": "TrafficLight.E2",
                     "guard": null,
                     "effects": [],
-                    "parent": "TrafficLight.InService"
+                    "parent": "TrafficLight.InService",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -1486,6 +1528,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -1515,7 +1558,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "TrafficLight.InService"
+                    "parent": "TrafficLight.InService",
+                    "doc": null
                 },
                 {
                     "from_state": "Green",
@@ -1523,7 +1567,8 @@ runPyGeneratedModelCase({
                     "event": "TrafficLight.Idle.E2",
                     "guard": null,
                     "effects": [],
-                    "parent": "TrafficLight.InService"
+                    "parent": "TrafficLight.InService",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -1542,7 +1587,8 @@ runPyGeneratedModelCase({
                             }
                         }
                     ],
-                    "parent": "TrafficLight.InService"
+                    "parent": "TrafficLight.InService",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -1622,7 +1668,8 @@ runPyGeneratedModelCase({
                         "E2"
                     ],
                     "path_name": "TrafficLight.Idle.E2",
-                    "extra_name": null
+                    "extra_name": null,
+                    "doc": null
                 }
             },
             "transitions": [],
@@ -1633,6 +1680,7 @@ runPyGeneratedModelCase({
             "on_during_aspects": [],
             "substate_name_to_id": {},
             "extra_name": null,
+            "doc": null,
             "is_pseudo": false,
             "is_leaf_state": true,
             "is_root_state": false,
@@ -1653,7 +1701,8 @@ runPyGeneratedModelCase({
                     "event": "TrafficLight.Idle.E2",
                     "guard": null,
                     "effects": [],
-                    "parent": "TrafficLight"
+                    "parent": "TrafficLight",
+                    "doc": null
                 },
                 {
                     "from_state": "Idle",
@@ -1661,7 +1710,8 @@ runPyGeneratedModelCase({
                     "event": null,
                     "guard": null,
                     "effects": [],
-                    "parent": "TrafficLight"
+                    "parent": "TrafficLight",
+                    "doc": null
                 }
             ],
             "transitions_to": [
@@ -1671,7 +1721,8 @@ runPyGeneratedModelCase({
                     "event": "TrafficLight.InService.Maintain",
                     "guard": null,
                     "effects": [],
-                    "parent": "TrafficLight"
+                    "parent": "TrafficLight",
+                    "doc": null
                 },
                 {
                     "from_state": "Idle",
@@ -1679,7 +1730,8 @@ runPyGeneratedModelCase({
                     "event": "TrafficLight.Idle.E2",
                     "guard": null,
                     "effects": [],
-                    "parent": "TrafficLight"
+                    "parent": "TrafficLight",
+                    "doc": null
                 }
             ],
             "transitions_entering_children": [],
@@ -1749,7 +1801,8 @@ runPyGeneratedModelCase({
                 "expr": {
                     "__class__": "Integer",
                     "raw": "0"
-                }
+                },
+                "doc": null
             },
             {
                 "__class__": "DefAssignment",
@@ -1766,7 +1819,8 @@ runPyGeneratedModelCase({
                         "__class__": "Integer",
                         "raw": "0"
                     }
-                }
+                },
+                "doc": null
             },
             {
                 "__class__": "DefAssignment",
@@ -1775,18 +1829,21 @@ runPyGeneratedModelCase({
                 "expr": {
                     "__class__": "Integer",
                     "raw": "0"
-                }
+                },
+                "doc": null
             }
         ],
         "root_state": {
             "__class__": "StateDefinition",
             "name": "TrafficLight",
             "extra_name": null,
+            "doc": null,
             "events": [
                 {
                     "__class__": "EventDefinition",
                     "name": "E2",
-                    "extra_name": null
+                    "extra_name": null,
+                    "doc": null
                 }
             ],
             "substates": [
@@ -1794,16 +1851,19 @@ runPyGeneratedModelCase({
                     "__class__": "StateDefinition",
                     "name": "InService",
                     "extra_name": null,
+                    "doc": null,
                     "events": [
                         {
                             "__class__": "EventDefinition",
                             "name": "Start",
-                            "extra_name": null
+                            "extra_name": null,
+                            "doc": null
                         },
                         {
                             "__class__": "EventDefinition",
                             "name": "Maintain",
-                            "extra_name": null
+                            "extra_name": null,
+                            "doc": null
                         }
                     ],
                     "substates": [
@@ -1811,6 +1871,7 @@ runPyGeneratedModelCase({
                             "__class__": "StateDefinition",
                             "name": "Red",
                             "extra_name": null,
+                            "doc": null,
                             "events": [],
                             "substates": [],
                             "transitions": [],
@@ -1850,6 +1911,7 @@ runPyGeneratedModelCase({
                             "__class__": "StateDefinition",
                             "name": "Yellow",
                             "extra_name": null,
+                            "doc": null,
                             "events": [],
                             "substates": [],
                             "transitions": [],
@@ -1863,6 +1925,7 @@ runPyGeneratedModelCase({
                             "__class__": "StateDefinition",
                             "name": "Green",
                             "extra_name": null,
+                            "doc": null,
                             "events": [],
                             "substates": [],
                             "transitions": [],
@@ -1895,7 +1958,8 @@ runPyGeneratedModelCase({
                                         "raw": "1"
                                     }
                                 }
-                            ]
+                            ],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -1912,7 +1976,8 @@ runPyGeneratedModelCase({
                                         "raw": "3"
                                     }
                                 }
-                            ]
+                            ],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -1929,7 +1994,8 @@ runPyGeneratedModelCase({
                                         "raw": "2"
                                     }
                                 }
-                            ]
+                            ],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -1973,7 +2039,8 @@ runPyGeneratedModelCase({
                                         }
                                     }
                                 }
-                            ]
+                            ],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -1988,7 +2055,8 @@ runPyGeneratedModelCase({
                                 "is_absolute": true
                             },
                             "condition_expr": null,
-                            "post_operations": []
+                            "post_operations": [],
+                            "doc": null
                         },
                         {
                             "__class__": "TransitionDefinition",
@@ -2002,7 +2070,8 @@ runPyGeneratedModelCase({
                                 "is_absolute": true
                             },
                             "condition_expr": null,
-                            "post_operations": []
+                            "post_operations": [],
+                            "doc": null
                         }
                     ],
                     "enters": [
@@ -2083,11 +2152,13 @@ runPyGeneratedModelCase({
                     "__class__": "StateDefinition",
                     "name": "Idle",
                     "extra_name": null,
+                    "doc": null,
                     "events": [
                         {
                             "__class__": "EventDefinition",
                             "name": "E2",
-                            "extra_name": null
+                            "extra_name": null,
+                            "doc": null
                         }
                     ],
                     "substates": [],
@@ -2106,7 +2177,8 @@ runPyGeneratedModelCase({
                     "to_state": "InService",
                     "event_id": null,
                     "condition_expr": null,
-                    "post_operations": []
+                    "post_operations": [],
+                    "doc": null
                 },
                 {
                     "__class__": "TransitionDefinition",
@@ -2121,7 +2193,8 @@ runPyGeneratedModelCase({
                         "is_absolute": false
                     },
                     "condition_expr": null,
-                    "post_operations": []
+                    "post_operations": [],
+                    "doc": null
                 },
                 {
                     "__class__": "TransitionDefinition",
@@ -2136,7 +2209,8 @@ runPyGeneratedModelCase({
                         "is_absolute": false
                     },
                     "condition_expr": null,
-                    "post_operations": []
+                    "post_operations": [],
+                    "doc": null
                 },
                 {
                     "__class__": "TransitionDefinition",
@@ -2144,7 +2218,8 @@ runPyGeneratedModelCase({
                     "to_state": "EXIT_STATE",
                     "event_id": null,
                     "condition_expr": null,
-                    "post_operations": []
+                    "post_operations": [],
+                    "doc": null
                 }
             ],
             "enters": [],

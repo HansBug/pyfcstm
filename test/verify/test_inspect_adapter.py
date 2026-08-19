@@ -13,6 +13,10 @@ from pyfcstm.verify import (
     iter_inspect_eligible,
     run_inspect_algorithms,
 )
+from pyfcstm.verify.inspect_adapter import (
+    InspectEligibility,
+    project_inspect_eligibility,
+)
 from pyfcstm.verify.taxonomy import (
     CallCountScaling,
     ComplexityTier,
@@ -189,6 +193,111 @@ def test_iter_inspect_eligible_preserves_registry_order():
         "topological_finite",
         "topological_inevitable_terminator",
         "composite_init_guards_incomplete",
+    )
+
+
+def test_inspect_eligibility_projection_preserves_all_registry_metadata_in_order():
+    projection = project_inspect_eligibility()
+
+    assert isinstance(projection, tuple)
+    assert all(isinstance(item, InspectEligibility) for item in projection)
+    assert tuple(item.meta for item in projection) == tuple(REGISTRY.values())
+    assert tuple(item.meta.name for item in projection) == tuple(REGISTRY)
+
+
+def test_inspect_eligibility_projection_has_expected_policy_coverage():
+    structural = project_inspect_eligibility()
+    smt_linear = project_inspect_eligibility(max_complexity_tier="smt_linear")
+
+    assert len(structural) == 14
+    assert sum(item.eligible for item in structural) == 6
+    assert sum(not item.eligible for item in structural) == 8
+    assert {
+        item.not_run_reason_code for item in structural if not item.eligible
+    } == {"complexity_tier_exceeds_policy"}
+
+    assert len(smt_linear) == 14
+    assert all(item.eligible for item in smt_linear)
+    assert all(item.not_run_reason_code is None for item in smt_linear)
+
+
+def test_inspect_eligibility_projection_exposes_each_exclusion_reason():
+    registry = {
+        "not_closed": _meta(name="not_closed", closedness="queried"),
+        "too_complex": _meta(name="too_complex", complexity_tier="smt_linear"),
+        "too_many_calls": _meta(
+            name="too_many_calls",
+            call_count_scaling="linear_in_transitions",
+        ),
+        "eligible": _meta(name="eligible", call_count_scaling="one"),
+    }
+
+    projection = project_inspect_eligibility(
+        max_call_count_scaling="one",
+        registry=registry,
+    )
+
+    assert tuple(
+        (item.meta.name, item.eligible, item.not_run_reason_code)
+        for item in projection
+    ) == (
+        ("not_closed", False, "algorithm_not_closed"),
+        ("too_complex", False, "complexity_tier_exceeds_policy"),
+        ("too_many_calls", False, "call_count_scaling_exceeds_policy"),
+        ("eligible", True, None),
+    )
+
+
+def test_inspect_eligibility_exclusion_reason_priority_is_stable():
+    all_gates_fail = _meta(
+        closedness="queried",
+        complexity_tier="smt_linear",
+        call_count_scaling="vars_times_transitions",
+    )
+    complexity_and_call_count_fail = _meta(
+        complexity_tier="smt_linear",
+        call_count_scaling="vars_times_transitions",
+    )
+
+    projection = project_inspect_eligibility(
+        max_call_count_scaling="one",
+        registry={
+            "all_gates_fail": all_gates_fail,
+            "complexity_and_call_count_fail": complexity_and_call_count_fail,
+        },
+    )
+
+    assert tuple(item.not_run_reason_code for item in projection) == (
+        "algorithm_not_closed",
+        "complexity_tier_exceeds_policy",
+    )
+
+
+def test_inspect_eligibility_projection_keeps_leaf_linear_budget_exception():
+    lifecycle = project_inspect_eligibility(
+        max_complexity_tier="smt_linear",
+        registry={
+            "enter_postcondition_implies_during_precondition": REGISTRY[
+                "enter_postcondition_implies_during_precondition"
+            ]
+        },
+    )[0]
+    strict_lifecycle = project_inspect_eligibility(
+        max_complexity_tier="smt_linear",
+        max_call_count_scaling="linear_in_states",
+        registry={
+            "enter_postcondition_implies_during_precondition": REGISTRY[
+                "enter_postcondition_implies_during_precondition"
+            ]
+        },
+    )[0]
+
+    assert lifecycle.eligible is True
+    assert lifecycle.not_run_reason_code is None
+    assert strict_lifecycle.eligible is False
+    assert (
+        strict_lifecycle.not_run_reason_code
+        == "call_count_scaling_exceeds_policy"
     )
 
 

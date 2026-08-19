@@ -12,6 +12,20 @@ GrammarItemError
 .. autoclass:: GrammarItemError
 
 
+DuplicateModelDocumentation
+-----------------------------------------------------
+
+.. autoclass:: DuplicateModelDocumentation
+    :members: __init__
+
+
+MalformedModelDocumentation
+-----------------------------------------------------
+
+.. autoclass:: MalformedModelDocumentation
+    :members: __init__
+
+
 SyntaxFailError
 -----------------------------------------------------
 

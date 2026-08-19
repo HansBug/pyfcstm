@@ -101,6 +101,10 @@ these required top-level fields.
      - Authored combo trigger provenance grouped by stable origin id.
    * - ``metrics``
      - Aggregate counts, hierarchy depth, ratios, and inventories.
+   * - ``structure_statistics``
+     - Descriptive LLM structure counts and rates. Initial edges are excluded;
+       generated combo edges and forced expansions are folded to authored
+       transitions. This section does not emit warnings or a health score.
    * - ``reachability_graph``
      - Default inspect graph: guards ignored, composite initial edges followed.
    * - ``event_emission_map``
@@ -111,6 +115,9 @@ these required top-level fields.
      - Composite path to descendant leaves reached by aspect actions.
    * - ``action_ref_graph``
      - Named-action signature to referenced named-action signatures.
+   * - ``verification``
+     - Verification-provider support, requested policy, execution coverage,
+       and one result record per registered algorithm.
    * - ``diagnostics``
      - Array of ``ModelDiagnostic`` objects.
 
@@ -129,8 +136,10 @@ Nested object contracts
      - ``from_path``, ``to_path``, ``event``, ``event_scope``, ``guard``, ``effect``, ``effect_self_assigns``, ``is_forced``, ``forced_origin``, ``transition_index``, and combo projection/provenance fields.
    * - ``ComboOriginInfo``
      - ``origin_id``, ``transition_span``, ``trigger_span``, and ordered ``terms``.
-   * - ``ComboOriginTermInfo`` / ``ComboOriginRefInfo``
+   * - ``ComboOriginTermInfo``
      - Term index, role, consumed term flag, text, and transition/trigger/term/value/removal spans.
+   * - ``ComboOriginRefInfo``
+     - Term index, role, consumed term flag, text, transition/trigger/term/value/removal spans, and authored endpoint provenance: ``source_kind`` (``state``/``init``), ``source_path``, ``selection_owner_path`` for init selections, ``target_kind`` (``state``/``exit``), and ``target_path`` (``[*]`` for exit).
    * - ``VariableInfo``
      - Name, type, initial value, read/write state paths, guard-affect flags, abstract-action scope, and float-literal assignments.
    * - ``EventInfo``
@@ -141,16 +150,107 @@ Nested object contracts
      - Owning state, source/target, trigger facts, original raw text, and expansion count.
    * - ``ModelMetrics``
      - State/transition/event/variable counts, hierarchy depth, var-to-leaf ratio, aspect coverage, and abstract-action inventory.
+   * - ``StructureStatistics``
+     - Authored transition count, ``transitions_per_state`` (``T / S``),
+       unreachable counts/rates, and guard/effect/eventless rates. ``S`` is the
+       non-pseudo state count; rates include numerator and denominator fields
+       and are ``null`` when their population is empty. Advisory defaults are
+       ``T / S <= 6.0``, unreachable leaf-state rate ``<= 0.10``, and
+       unreachable transition rate ``<= 0.10``; exceeded names are metadata,
+       not diagnostics.
    * - ``ModelDiagnostic``
      - ``code``, ``severity``, ``message``, ``span``, ``refs``, and optional ``suggested_fix``.
    * - ``Span``
      - ``line``, ``column``, ``end_line``, and ``end_column``.
 
+Verification execution metadata
+-------------------------------
+
+``verification`` records what verification work was available and executed.
+It is execution metadata, not another diagnostic collection.  An algorithm
+that was disabled, excluded by policy, or returned an indeterminate result does
+not create a diagnostic merely because of that execution outcome.  In
+particular, partial diagnostics from an indeterminate result are counted but
+their payloads are not published.
+
+.. list-table:: Verification report fields
+   :header-rows: 1
+   :widths: 28 72
+
+   * - Field
+     - Meaning
+   * - ``supported`` / ``provider``
+     - Whether this implementation has a verification provider and its stable
+       name.  jsfcstm reports ``supported=false`` and ``provider=null``.
+   * - ``enabled`` / ``reason_code``
+     - Whether verification was requested.  ``verification_disabled`` and
+       ``provider_unsupported`` distinguish the two non-running top-level
+       states.
+   * - ``requested_policy``
+     - Requested maximum complexity tier, call-count scaling, and SMT timeout.
+       An unsupported provider reports all three values as ``null``.
+   * - ``summary``
+     - ``registered``, ``executed``, ``not_run``, and ``indeterminate`` counts.
+       When verification is disabled, the registry stays lazy, so
+       ``registered`` is ``null`` and ``not_run`` is zero rather than a
+       fabricated registry-sized count.
+   * - ``algorithms``
+     - Ordered algorithm-level metadata including the declared diagnostic
+       codes, raw ``result_kind``, exclusion reason, and
+       ``partial_diagnostic_count``.
+
+Algorithm ``result_kind`` preserves ``sat``, ``unsat``, ``timeout``,
+``unknown``, or ``undecidable_skip`` exactly; an algorithm excluded before
+execution uses ``not_run``.  SAT and UNSAT do not mean one uniform "pass" or
+"fail" across algorithms because the polarity depends on the property being
+checked.  The human renderer therefore reports executed and indeterminate
+coverage, and expands only indeterminate algorithms and their reasons.
+
+For structural/topological algorithms, ``sat`` means that the structural
+analysis completed and produced its topology result; it is not a claim that
+the model satisfies every property.  Consumers must read the algorithm's
+diagnostics together with ``result_kind`` rather than treating structural
+``sat`` as a universal pass verdict.
+
 LLM report contract
 -------------------
 
 ``llm-json`` and ``llm-md`` are presentation contracts for repair loops. They do
-not replace the full report.
+not replace the full report. Their output does not include ``verification``
+execution metadata; consumers that need coverage or indeterminate results must
+use the full JSON report. Validate ``llm-json`` with the
+``inspect_llm_report_schema.json`` shipped with the same ``pyfcstm`` release.
+Neither the public payload nor the Markdown presentation carries a product
+schema version or status marker.
+
+The structure-statistics policy is descriptive by default: all raw counts and
+rates are emitted, and the three conservative advisory defaults are recorded in
+``thresholds``. A high value only adds its field name to
+``exceeded_thresholds``; no G5 health warning or score is created. A rate with
+an empty denominator is ``null`` (``N/A`` in human/Markdown output). Callers
+may pass ``StructureStatisticsPolicy`` (or a partial mapping) to
+``inspect_model``; ``None`` disables an individual advisory threshold. Any
+future corpus-derived cutoff must identify its corpus and be explicitly configured.
+
+The default ``6.0`` review trigger is an engineering baseline informed by the
+pooled ``T / S = 2.75`` and the observed protocol-level range in the 14-protocol
+PSMBench/RFC2PSM cohort (`PSMBench DOI <https://doi.org/10.52202/085713-1899>`_).
+That cohort is flat, protocol-specific, and too small to define a universal
+FCSTM limit; the trigger is intentionally broad enough not to flag ordinary
+high-density protocol machines. The ``10%`` unreachable-population defaults are
+review-budget heuristics, not published quality boundaries. UML 2.5.1 models
+both transition ``guard`` and ``effect`` as optional, so this report
+intentionally leaves those style rates without default cutoffs (`OMG UML 2.5.1
+<https://www.omg.org/spec/UML/2.5.1/PDF>`_).
+
+``unguarded_rate`` counts authored transitions whose AST has no guard.
+``missing_effect_rate`` uses non-forced authored transitions as its denominator,
+because forced declarations do not accept an effect in the FCSTM grammar.
+``eventless_unconditional_rate`` counts transitions with neither an event nor a
+guard. These are syntax-level observations, not claims that a transition is
+semantically unsafe. Unreachable-transition reason buckets are deliberately
+non-exclusive; the total is the union of authored identities, so one transition
+may contribute to more than one reason while being counted once in the total.
 
 .. list-table:: LLM top-level fields
    :header-rows: 1
@@ -158,10 +258,6 @@ not replace the full report.
 
    * - Field
      - Meaning
-   * - ``schema_version``
-     - Constant ``pyfcstm.inspect.llm.v1``.
-   * - ``schema_status``
-     - Constant ``stable``.
    * - ``status``
      - Overall status: ``ok``, ``info``, ``warning``, or ``error``.
    * - ``input``
@@ -169,7 +265,7 @@ not replace the full report.
    * - ``repair_protocol``
      - Object with ``goal`` and ordered ``rules`` for safe repair prompts.
    * - ``summary``
-     - Counts for errors, warnings, infos, states, leaf states, transitions, variables, and root state.
+     - Counts for errors, warnings, infos, states, leaf states, transitions, variables, and root state, plus the ``structure_statistics`` object.
    * - ``diagnostics``
      - Compact diagnostic entries enriched with source excerpts and registry guidance.
 
@@ -190,7 +286,9 @@ not replace the full report.
    * - ``source``
      - ``inspect-static``, ``verify-backed``, or ``unknown``.
    * - ``provenance``
-     - ``kind`` plus ``verify_required`` flag.
+     - ``kind`` plus ``verify_required`` flag; verify-backed entries may also
+       carry ``source_ids`` with stable ``algorithm_name@verification_scope``
+       identifiers. These identifiers contain no product or schema version.
    * - ``summary``
      - Registry LLM summary for the diagnostic code.
    * - ``recommended_actions`` / ``do_not``

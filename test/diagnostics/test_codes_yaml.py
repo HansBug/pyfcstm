@@ -162,6 +162,91 @@ class TestLoaderValidation:
         assert field.item_enum is None
         assert field.exact_values is None
 
+    def test_resolves_deprecated_alias_to_active_code(self, tmp_path):
+        path = self._write_yaml(tmp_path, """
+            W_ACTIVE:
+              severity: warning
+              description: active warning.
+              refs:
+                state_path:
+                  type: str
+                  required: true
+                  description: state path.
+            W_LEGACY:
+              alias_of: W_ACTIVE
+              deprecated_in: '0.7.0'
+              removed_in: '1.0.0'
+        """)
+        registry = load_codes(path)
+        alias = registry['W_LEGACY']
+        assert alias.canonical_code == 'W_ACTIVE'
+        assert alias.is_deprecated
+        assert alias.deprecated_in == '0.7.0'
+        assert alias.removed_in == '1.0.0'
+        assert alias.emit_tier == 'catalog_only'
+        assert alias.refs_schema == registry['W_ACTIVE'].refs_schema
+
+    def test_normalizes_alias_target_and_accepts_null_removal(self, tmp_path):
+        path = self._write_yaml(tmp_path, """
+            W_ACTIVE:
+              severity: warning
+              description: active warning.
+              refs:
+                state_path:
+                  type: str
+                  required: true
+                  description: A state path.
+            W_LEGACY:
+              alias_of: "  W_ACTIVE  "
+              deprecated_in: '0.7.0'
+              removed_in: null
+        """)
+        alias = load_codes(path)['W_LEGACY']
+        assert alias.canonical_code == 'W_ACTIVE'
+        assert alias.replaced_by == 'W_ACTIVE'
+        assert alias.removed_in is None
+
+    def test_rejects_alias_without_deprecation_version(self, tmp_path):
+        path = self._write_yaml(tmp_path, """
+            W_ACTIVE:
+              severity: warning
+              description: active warning.
+              refs:
+                state_path:
+                  type: str
+                  required: true
+                  description: state path.
+            W_LEGACY:
+              alias_of: W_ACTIVE
+        """)
+        with pytest.raises(CodesSchemaError, match='deprecated_in'):
+            load_codes(path)
+
+    def test_rejects_alias_with_invalid_schedule(self, tmp_path):
+        path = self._write_yaml(tmp_path, """
+            W_ACTIVE:
+              severity: warning
+              description: active warning.
+            W_LEGACY:
+              alias_of: W_ACTIVE
+              deprecated_in: 'not-a-version'
+              removed_in: '0.6.0'
+        """)
+        with pytest.raises(CodesSchemaError, match='deprecated_in'):
+            load_codes(path)
+
+    def test_rejects_alias_with_missing_target(self, tmp_path):
+        path = self._write_yaml(tmp_path, """
+            W_ACTIVE:
+              severity: warning
+              description: active warning.
+            W_LEGACY:
+              alias_of: W_MISSING
+              deprecated_in: '0.7.0'
+        """)
+        with pytest.raises(CodesSchemaError, match='target is not registered'):
+            load_codes(path)
+
     def test_rejects_unknown_severity(self, tmp_path):
         path = self._write_yaml(tmp_path, """
             E_FOO:

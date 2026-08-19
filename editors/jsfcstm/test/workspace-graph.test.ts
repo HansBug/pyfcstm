@@ -168,7 +168,11 @@ describe('jsfcstm workspace graph', () => {
             '}',
         ].join('\n'));
         writeFile(workerFile, [
+            '/* motor speed documentation */',
+            'def int speed = 0;',
             'state MotorRoot {',
+            '    /* source start documentation */',
+            '    event Start;',
             '    state Idle;',
             '    state Running;',
             '    [*] -> Idle;',
@@ -190,6 +194,8 @@ describe('jsfcstm workspace graph', () => {
             model!.rootState.substates.LeftMotor.transitions[2].event?.path_name,
             'Fleet.Bus.Stop'
         );
+        assert.equal(model!.rootState.events.Start.doc, 'source start documentation');
+        assert.equal(model!.defines.LeftMotor_speed.doc, 'motor speed documentation');
     });
 
     it('covers private graph fallbacks for caching, missing targets, and null semantics', async () => {

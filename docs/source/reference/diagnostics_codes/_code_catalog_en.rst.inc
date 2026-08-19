@@ -167,6 +167,11 @@ This catalog is synchronized with ``pyfcstm.diagnostics.codes.CODE_REGISTRY``. T
      - ``static_pipeline``
      - ``pure_static``
      - ``state_identifier``
+   * - :ref:`W_UNREACHABLE_TRANSITION <diag-code-w-unreachable-transition>`
+     - ``warning``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``transition``
    * - :ref:`W_GUARD_CONST_FALSE <diag-code-w-guard-const-false>`
      - ``warning``
      - ``static_pipeline``
@@ -187,7 +192,7 @@ This catalog is synchronized with ``pyfcstm.diagnostics.codes.CODE_REGISTRY``. T
      - ``static_pipeline``
      - ``pure_static``
      - ``event_declaration``
-   * - :ref:`W_DEADLOCK_LEAF <diag-code-w-deadlock-leaf>`
+   * - :ref:`W_LEAF_NO_OUTGOING_TRANSITION <diag-code-w-leaf-no-outgoing-transition>`
      - ``warning``
      - ``static_pipeline``
      - ``pure_static``
@@ -1405,6 +1410,87 @@ A typical repair is ``remove_duplicate`` on ``transition``: Keep one transition 
 **Example 3** (``boundary_only``) — anti-pattern boundary for ``W_REDUNDANT_TRANSITION``.
 Do not keep duplicate transitions as comments.
 
+.. _diag-code-w-unreachable-transition:
+
+W_UNREACHABLE_TRANSITION
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta W_UNREACHABLE_TRANSITION severity=warning emit_tier=static_pipeline capability=pure_static span_object=transition
+.. diagnostics-ref W_UNREACHABLE_TRANSITION from_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION to_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION transition_index type=int_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION source_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION source_state_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION selection_owner_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION forced_origin type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION combo_origin_ids type=list[str] required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION mount_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION reasons type=list[str] required=true enum=- item_enum=unreachable_source_state|unreachable_event_consumer|forced_never_expands|guard_false|shadowed|redundant exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION verify_backed type=bool required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_TRANSITION verification_source_ids type=list[str] required=false enum=- item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_UNREACHABLE_TRANSITION kind=inspect_json
+
+**Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``transition``.
+
+**Meaning.** An authored transition is unreachable under the available analysis evidence. The reason list aggregates source-state reachability, event-consumer reachability, forced expansion, guard, shadowing, and redundancy evidence for that authored declaration.
+
+**LLM repair summary.** Review every entry in ``refs.reasons`` against the transition's source, trigger, guard, and declaration scope before changing behavior. ``verify_backed`` is present only when at least one contributing reason comes from the optional verify pipeline. When available, ``verification_source_ids`` lists stable ``algorithm_name@verification_scope`` identifiers for that evidence; these identifiers contain no product or schema version.
+
+.. list-table:: Refs schema
+   :header-rows: 1
+   :widths: 22 16 14 48
+
+   * - Field
+     - Type
+     - Required
+     - Meaning
+   * - ``from_path``
+     - ``str``
+     - yes
+     - Dotted source state path, or ``[*]`` for an entry transition.
+   * - ``to_path``
+     - ``str``
+     - yes
+     - Dotted target state path, or ``[*]`` for an exit transition.
+   * - ``transition_index``
+     - ``int_or_null``
+     - no
+     - Parent-first transition index used to disambiguate spanless editor diagnostics.
+   * - ``reasons``
+     - ``list[str]``
+     - yes
+     - Sorted canonical reasons contributing to the aggregate warning.
+   * - ``verify_backed``
+     - ``bool``
+     - no
+     - Present and true when optional verification supplied at least one contributing reason.
+
+.. diagnostics-example W_UNREACHABLE_TRANSITION 1 repro_cli
+
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic appears in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
+
+.. code-block:: fcstm
+
+   state Root {
+       state A;
+       state B;
+       [*] -> A;
+       A -> B : if [false];
+   }
+
+.. diagnostics-example W_UNREACHABLE_TRANSITION 2 boundary_only
+
+**Example 2** (``boundary_only``) — repair direction for ``W_UNREACHABLE_TRANSITION``.
+A typical repair is ``inspect_transition``: confirm the reported reason and intended runtime path before changing the guard, source reachability, or declaration.
+
+.. diagnostics-example W_UNREACHABLE_TRANSITION 3 boundary_only
+
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_UNREACHABLE_TRANSITION``.
+Do not remove a transition solely because this warning is present; static evidence and optional verification evidence still require an intent check.
+
 .. _diag-code-w-self-transition-nop:
 
 W_SELF_TRANSITION_NOP
@@ -1547,6 +1633,7 @@ W_TRANSITION_SHADOWED
 .. diagnostics-ref W_TRANSITION_SHADOWED transition type=dict required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_TRANSITION_SHADOWED transition_summary type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_TRANSITION_SHADOWED source_state_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_TRANSITION_SHADOWED selection_domain_kind type=str required=false enum=state_outgoing|composite_initial item_enum=- exact_values=-
 .. diagnostics-ref W_TRANSITION_SHADOWED reason type=str required=true enum=guard_shadow|duplicate_event|unconditional_catchall|prior_trigger_cover item_enum=- exact_values=-
 .. diagnostics-ref W_TRANSITION_SHADOWED shadowed_by_count type=int required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_TRANSITION_SHADOWED shadowed_by type=list[str] required=true enum=- item_enum=- exact_values=-
@@ -1556,9 +1643,9 @@ W_TRANSITION_SHADOWED
 
 **Registry facts.** Severity ``warning``; emit tier ``verify_pipeline``; capability ``requires_solver``; span object ``transition``.
 
-**Meaning.** A later outgoing transition is fully covered by earlier same-source triggers and therefore cannot be selected.
+**Meaning.** A later transition in an ordered selection domain is fully covered by earlier triggers and therefore cannot be selected.
 
-**LLM repair summary.** Transition ordering means an earlier same-source transition consumes all cases that could have reached this later transition.
+**LLM repair summary.** Transition ordering means earlier transitions in the same ordered selection domain consume all cases that could have reached this later transition.
 
 .. list-table:: Refs schema
    :header-rows: 1
@@ -1587,7 +1674,11 @@ W_TRANSITION_SHADOWED
    * - ``source_state_path``
      - ``str``
      - yes
-     - Dotted source state path whose outgoing order creates the shadowing.
+     - Dotted owner state path whose ordered selection domain creates the shadowing.
+   * - ``selection_domain_kind``
+     - ``str``
+     - no
+     - Ordered selection domain containing the shadowed transition. (enum: ``state_outgoing``, ``composite_initial``)
    * - ``reason``
      - ``str``
      - yes
@@ -4824,6 +4915,8 @@ W_UNREACHABLE_STATE
 ^^^^^^^^^^^^^^^^^^^
 
 .. diagnostics-meta W_UNREACHABLE_STATE severity=warning emit_tier=static_pipeline capability=pure_static span_object=state_identifier
+.. diagnostics-ref W_UNREACHABLE_STATE algorithm_name type=str required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_UNREACHABLE_STATE verification_scope type=str required=false enum=- item_enum=- exact_values=-
 .. diagnostics-ref W_UNREACHABLE_STATE state_path type=str required=true enum=- item_enum=- exact_values=-
 
 
@@ -4843,6 +4936,14 @@ W_UNREACHABLE_STATE
      - Type
      - Required
      - Meaning
+   * - ``algorithm_name``
+     - ``str``
+     - no
+     - Verify algorithm name when the shared code came from optional verification.
+   * - ``verification_scope``
+     - ``str``
+     - no
+     - Verify scope when the shared code came from optional verification.
    * - ``state_path``
      - ``str``
      - yes
@@ -4871,25 +4972,35 @@ A typical repair is ``add_inbound_transition`` on ``state``: Add a transition th
 **Example 3** (``boundary_only``) — anti-pattern boundary for ``W_UNREACHABLE_STATE``.
 Do not add a self-loop to mask the unreachability.
 
-.. _diag-code-w-deadlock-leaf:
+.. _diag-code-w-leaf-no-outgoing-transition:
 
-W_DEADLOCK_LEAF
+W_LEAF_NO_OUTGOING_TRANSITION
 ^^^^^^^^^^^^^^^
 
-.. diagnostics-meta W_DEADLOCK_LEAF severity=warning emit_tier=static_pipeline capability=pure_static span_object=state_identifier
-.. diagnostics-ref W_DEADLOCK_LEAF state_path type=str required=true enum=- item_enum=- exact_values=-
-.. diagnostics-ref W_DEADLOCK_LEAF parent_path type=str required=false enum=- item_enum=- exact_values=-
-.. diagnostics-ref W_DEADLOCK_LEAF reason type=str required=true enum=no_outgoing_transition item_enum=- exact_values=-
-.. diagnostics-ref W_DEADLOCK_LEAF suggested_fix type=dict required=false enum=- item_enum=- exact_values=-
+.. diagnostics-meta W_LEAF_NO_OUTGOING_TRANSITION severity=warning emit_tier=static_pipeline capability=pure_static span_object=state_identifier
+.. diagnostics-ref W_LEAF_NO_OUTGOING_TRANSITION state_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_LEAF_NO_OUTGOING_TRANSITION parent_path type=str required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_LEAF_NO_OUTGOING_TRANSITION reason type=str required=true enum=no_outgoing_transition item_enum=- exact_values=-
+.. diagnostics-ref W_LEAF_NO_OUTGOING_TRANSITION suggested_fix type=dict required=false enum=- item_enum=- exact_values=-
 
 
-.. diagnostics-boundary W_DEADLOCK_LEAF kind=inspect_json
+.. diagnostics-boundary W_LEAF_NO_OUTGOING_TRANSITION kind=inspect_json
 
 **Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``state_identifier``.
 
-**Meaning.** A non-pseudo leaf state has no outgoing transition.
+**Meaning.** A non-pseudo leaf state has no authored outgoing transition. This
+is an exit-path fact, not a claim that a non-root leaf cannot continue: it can
+remain active and execute its ``during`` actions when no transition is
+submitted. A root leaf instead follows pyfcstm's synthetic root-exit behavior.
 
-**LLM repair summary.** This leaf state has no outgoing transition, so once the machine enters it there is no modeled way to leave.
+**LLM repair summary.** This leaf state has no authored outgoing transition. A
+non-root leaf can remain active and execute its ``during`` actions; a root leaf
+instead follows pyfcstm's synthetic root-exit behavior. Add a transition only
+when leaving or termination is intended; the ``State -> [*]`` action applies to
+non-root leaves, while root leaves already follow synthetic root-exit behavior.
+A self-loop is a re-entry operation with
+``exit -> transition effect -> enter -> during`` semantics, not a stay-active
+or synthetic-exit placeholder.
 
 .. list-table:: Refs schema
    :header-rows: 1
@@ -4902,7 +5013,7 @@ W_DEADLOCK_LEAF
    * - ``state_path``
      - ``str``
      - yes
-     - Dotted path of the deadlocking leaf state.
+     - Dotted path of the leaf state with no outgoing transition.
    * - ``parent_path``
      - ``str``
      - no
@@ -4910,13 +5021,13 @@ W_DEADLOCK_LEAF
    * - ``reason``
      - ``str``
      - yes
-     - Why the leaf is considered a deadlock. (enum: ``no_outgoing_transition``)
+     - Why the leaf has no outgoing transition. (enum: ``no_outgoing_transition``)
    * - ``suggested_fix``
      - ``dict``
      - no
      - Structured quick-fix payload for adding a parent exit transition.
 
-.. diagnostics-example W_DEADLOCK_LEAF 1 repro_cli
+.. diagnostics-example W_LEAF_NO_OUTGOING_TRANSITION 1 repro_cli
 
 **Example 1** (``repro_cli``) — reproduction boundary.
 This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
@@ -4928,15 +5039,19 @@ This diagnostic can appear in a successful inspect report. Reproduce it with ``p
        [*] -> A;
    }
 
-.. diagnostics-example W_DEADLOCK_LEAF 2 boundary_only
+.. diagnostics-example W_LEAF_NO_OUTGOING_TRANSITION 2 boundary_only
 
-**Example 2** (``boundary_only``) — repair direction for ``W_DEADLOCK_LEAF``.
-A typical repair is ``add_transition`` on ``state``: Add a modeled transition to the next intended state.
+**Example 2** (``boundary_only``) — repair direction for ``W_LEAF_NO_OUTGOING_TRANSITION``.
+A typical repair is ``add_transition`` on ``state``: Add a modeled transition
+to the next intended state only when the leaf is meant to leave. A root leaf
+already follows the synthetic root-exit behavior.
 
-.. diagnostics-example W_DEADLOCK_LEAF 3 boundary_only
+.. diagnostics-example W_LEAF_NO_OUTGOING_TRANSITION 3 boundary_only
 
-**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_DEADLOCK_LEAF``.
-Do not add a self-loop just to silence the warning.
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_LEAF_NO_OUTGOING_TRANSITION``.
+Do not add a self-loop just to silence the warning: it has exit/enter semantics,
+unlike a non-root leaf's normal stay-active semantics; a root leaf already
+follows the synthetic root-exit behavior.
 
 .. _diag-code-w-high-var-to-leaf-ratio:
 

@@ -14,8 +14,8 @@ Algorithm map:
      - Formula shape
      - Diagnostic
    * - :func:`transition_shadowed_by_predecessor`
-     - Feasibility of a later outgoing trigger while every earlier same-source
-       trigger is disabled.
+     - Feasibility of a later trigger while every earlier trigger in the same
+       ordered selection domain is disabled.
      - ``W_TRANSITION_SHADOWED``
    * - :func:`composite_init_guards_incomplete`
      - Existence of an input valuation not covered by any initial-transition
@@ -47,12 +47,12 @@ def transition_shadowed_by_predecessor(
 ) -> AlgorithmResult:
     r"""Detect outgoing transitions shadowed by earlier transitions.
 
-    FCSTM transition order matters for transitions with the same source state:
-    an earlier enabled transition prevents later outgoing transitions from
-    being selected.  This algorithm groups ordered outgoing transitions by
-    source, translates each event/guard trigger into a predicate, and asks
-    whether a later trigger can ever be enabled after all prior triggers are
-    disabled.
+    FCSTM transition order matters within each ordered selection domain: an
+    earlier enabled transition prevents later transitions from being selected.
+    This algorithm checks both ordinary state outgoing domains and composite
+    initial-transition domains, translating each event/guard trigger into a
+    predicate and asking whether a later trigger can ever be enabled after all
+    prior triggers are disabled.
 
     For a source state with ordered outgoing transitions
     ``t_1, ..., t_n``, let ``H_i(V, E)`` be the trigger predicate for
@@ -139,7 +139,8 @@ def transition_shadowed_by_predecessor(
         _build_type_constraints,
         _definedness_feasibility_or_result,
         _first_indeterminate,
-        _iter_ordered_outgoing,
+        _initial_transition_has_definite_stable_continuation,
+        _iter_ordered_selection_domains,
         _make_diag,
         _state_path,
         _transition_has_definite_stable_continuation,
@@ -153,7 +154,7 @@ def transition_shadowed_by_predecessor(
     diagnostics: List[dict] = []
     first_indeterminate_result: Optional[AlgorithmResult] = None
 
-    for source, outgoing in _iter_ordered_outgoing(machine):
+    for source, outgoing, selection_domain_kind in _iter_ordered_selection_domains(machine):
         z3_vars = _z3_vars(variables)
         event_vars: Dict[str, z3.BoolRef] = {}
         prior_triggers: List[z3.ExprRef] = []
@@ -254,15 +255,23 @@ def transition_shadowed_by_predecessor(
                         )
                         continue
 
-                    unstable_predecessor = (
-                        source.is_stoppable
-                        and not all(
-                            _transition_has_definite_stable_continuation(
+                    if selection_domain_kind == "composite_initial":
+                        unstable_predecessor = not all(
+                            _initial_transition_has_definite_stable_continuation(
                                 source, item
                             )
                             for item in prior_transitions
                         )
-                    )
+                    else:
+                        unstable_predecessor = (
+                            source.is_stoppable
+                            and not all(
+                                _transition_has_definite_stable_continuation(
+                                    source, item
+                                )
+                                for item in prior_transitions
+                            )
+                        )
                     if unstable_predecessor:
                         first_indeterminate_result = _first_indeterminate(
                             first_indeterminate_result,
@@ -305,6 +314,7 @@ def transition_shadowed_by_predecessor(
                                 transition=current_payload,
                                 shadowed_by=tuple(prior_payloads),
                                 reason=reason,
+                                selection_domain_kind=selection_domain_kind,
                                 source=_state_path(source),
                                 verification_scope="smt_local",
                             )

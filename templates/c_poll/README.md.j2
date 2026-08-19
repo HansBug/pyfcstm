@@ -76,9 +76,15 @@ model export, so it may differ from the user's file formatting, comments, or
 blank lines. Use it for diagnostics, traceability, or exposing the generated
 runtime's model semantics to tooling.
 
-```fcstm
-{{ model.to_ast_node() | string }}
-```
+The canonical export includes model documentation blocks. Do not place
+passwords, tokens, private keys, or other secrets in FCSTM documentation: this
+text is embedded in generated artifacts.
+
+{% set canonical_model = model.to_ast_node() | string -%}
+{% set canonical_fence = canonical_model | markdown_fence -%}
+{{ canonical_fence }}fcstm
+{{ canonical_model }}
+{{ canonical_fence }}
 
 ## Model Summary
 

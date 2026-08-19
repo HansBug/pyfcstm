@@ -147,9 +147,10 @@ state TrafficLight {
         a = 0;
     }
     >> during before abstract FFT;
-    >> during before abstract TTT /*
-        this is the line
-    */
+    /*
+     * this is the line
+     */
+    >> during before abstract TTT;
     >> during after {
         a = 255;
         b = 1;
@@ -160,22 +161,26 @@ state TrafficLight {
             b = 0;
             round_count = 0;
         }
-        enter abstract InServiceAbstractEnter /*
-            Abstract Operation When Entering State 'InService'
-            TODO: Should be Implemented In Generated Code Framework
-        */
-        during before abstract InServiceBeforeEnterChild /*
-            Abstract Operation Before Entering Child States of State 'InService'
-            TODO: Should be Implemented In Generated Code Framework
-        */
-        during after abstract InServiceAfterEnterChild /*
-            Abstract Operation After Entering Child States of State 'InService'
-            TODO: Should be Implemented In Generated Code Framework
-        */
-        exit abstract InServiceAbstractExit /*
-            Abstract Operation When Leaving State 'InService'
-            TODO: Should be Implemented In Generated Code Framework
-        */
+        /*
+         * Abstract Operation When Entering State 'InService'
+         * TODO: Should be Implemented In Generated Code Framework
+         */
+        enter abstract InServiceAbstractEnter;
+        /*
+         * Abstract Operation Before Entering Child States of State 'InService'
+         * TODO: Should be Implemented In Generated Code Framework
+         */
+        during before abstract InServiceBeforeEnterChild;
+        /*
+         * Abstract Operation After Entering Child States of State 'InService'
+         * TODO: Should be Implemented In Generated Code Framework
+         */
+        during after abstract InServiceAfterEnterChild;
+        /*
+         * Abstract Operation When Leaving State 'InService'
+         * TODO: Should be Implemented In Generated Code Framework
+         */
+        exit abstract InServiceAbstractExit;
         state Red {
             during {
                 a = 1 << 2;

@@ -13,6 +13,68 @@ from pyfcstm.dsl import parse_state_machine_dsl, parse_with_grammar_entry
 from pyfcstm.model.model import parse_dsl_node_to_state_machine, State, OnStage, OnAspect
 
 
+# Sample assertions intentionally cover the stable model contract.  These
+# fields are runtime/source metadata and are exercised by their dedicated
+# tests; emitting them here makes regenerated samples depend on incidental
+# parser spans and internal expansion bookkeeping.
+_SAMPLE_RUNTIME_FIELDS = {
+    "_span",
+    "declared",
+    "origins",
+    "event_scope",
+    "is_forced",
+    "forced_origin",
+    "combo_origin_refs",
+    "combo_projection_key",
+    "combo_projection_order_key",
+    "combo_reuse_group_id",
+    "combo_priority_run_identity",
+    "combo_priority_run_index",
+    "is_combo_relay",
+}
+
+
+def _sample_dataclass_fields(obj):
+    """Return stable business fields for generated sample assertions."""
+    return [
+        field
+        for field in dataclasses.fields(obj)
+        if field.name not in _SAMPLE_RUNTIME_FIELDS
+    ]
+
+
+def _sample_repr_fields(obj):
+    """Return fields safe to embed in a value repr assertion."""
+    return [
+        field
+        for field in _sample_dataclass_fields(obj)
+        if field.compare and field.name != "parent_ref"
+    ]
+
+
+def _sample_repr(value):
+    """Render generated assertion values without runtime metadata fields."""
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        fields = ", ".join(
+            f"{field.name}={_sample_repr(getattr(value, field.name))}"
+            for field in _sample_repr_fields(value)
+        )
+        return f"{type(value).__name__}({fields})"
+    if isinstance(value, dict):
+        return "{" + ", ".join(
+            f"{_sample_repr(key)}: {_sample_repr(item)}"
+            for key, item in value.items()
+        ) + "}"
+    if isinstance(value, list):
+        return "[" + ", ".join(_sample_repr(item) for item in value) + "]"
+    if isinstance(value, tuple):
+        body = ", ".join(_sample_repr(item) for item in value)
+        return f"({body}{',' if len(value) == 1 else ''})"
+    if isinstance(value, set):
+        return "{" + ", ".join(_sample_repr(item) for item in value) + "}"
+    return repr(value)
+
+
 def _name_safe(name_text):
     return re.sub(r'[\W_]+', '_', name_text).strip('_')
 
@@ -143,7 +205,7 @@ def sample_generation_to_file(
         print(f'@pytest.mark.unittest', file=tf)
         print(f'class TestModel{_state_name_cap(model.root_state)}:', file=tf)
         print(f'    def test_model(self, model):', file=tf)
-        print(f'        assert model.defines == {model.defines!r}', file=tf)
+        print(f'        assert model.defines == {_sample_repr(model.defines)}', file=tf)
         print(f'        assert model.root_state.name == {model.root_state.name!r}', file=tf)
         print(f'        assert model.root_state.path == {model.root_state.path!r}', file=tf)
         print(f'', file=tf)
@@ -161,7 +223,7 @@ def sample_generation_to_file(
             print(f'    def test_{_state_name(state)}(self, {_state_name(state)}):', file=tf)
             # for field in dataclasses.fields(state):
             for field_name in [
-                *map(lambda x: x.name, dataclasses.fields(state)),
+                *map(lambda x: x.name, _sample_dataclass_fields(state)),
                 *get_properties(state),
             ]:
                 obj = getattr(state, field_name)
@@ -188,7 +250,7 @@ def sample_generation_to_file(
                     # print(f'        assert {_state_name(state)}.{field_name} == {obj!r}', file=tf)
                     for j, transition in enumerate(obj):
                         if transition:
-                            for f in dataclasses.fields(transition):
+                            for f in _sample_dataclass_fields(transition):
                                 if getattr(transition, f.name) is None:
                                     print(f'        assert {_state_name(state)}.{field_name}[{j}].{f.name} is None',
                                           file=tf)
@@ -201,7 +263,7 @@ def sample_generation_to_file(
                                         file=tf)
                                 else:
                                     print(
-                                        f'        assert {_state_name(state)}.{field_name}[{j}].{f.name} == {getattr(transition, f.name)!r}',
+                                        f'        assert {_state_name(state)}.{field_name}[{j}].{f.name} == {_sample_repr(getattr(transition, f.name))}',
                                         file=tf)
                         else:
                             print(f'        assert {_state_name(state)}.{field_name}[{j}] is None', file=tf)
@@ -210,7 +272,7 @@ def sample_generation_to_file(
                           file=tf)
                     for oskey, obj_item in obj.items():
                         for os_field_name in [
-                            *map(lambda x: x.name, dataclasses.fields(obj_item)),
+                            *map(lambda x: x.name, _sample_dataclass_fields(obj_item)),
                             *get_properties(obj_item),
                         ]:
                             obj_item_v = getattr(obj_item, os_field_name)
@@ -253,14 +315,14 @@ def sample_generation_to_file(
                                     file=tf)
                             else:
                                 print(
-                                    f'        assert {_state_name(state)}.{field_name}[{oskey!r}].{os_field_name} == {obj_item_v!r}',
+                                    f'        assert {_state_name(state)}.{field_name}[{oskey!r}].{os_field_name} == {_sample_repr(obj_item_v)}',
                                     file=tf)
 
                 elif obj and isinstance(obj, (list, tuple)) and isinstance(obj[0], (OnStage, OnAspect)):
                     print(f'        assert len({_state_name(state)}.{field_name}) == {len(obj)}', file=tf)
                     for osi, obj_item in enumerate(obj):
                         for os_field_name in [
-                            *map(lambda x: x.name, dataclasses.fields(obj_item)),
+                            *map(lambda x: x.name, _sample_dataclass_fields(obj_item)),
                             *get_properties(obj_item),
                         ]:
                             obj_item_v = getattr(obj_item, os_field_name)
@@ -302,10 +364,10 @@ def sample_generation_to_file(
                                     file=tf)
                             else:
                                 print(
-                                    f'        assert {_state_name(state)}.{field_name}[{osi}].{os_field_name} == {obj_item_v!r}',
+                                    f'        assert {_state_name(state)}.{field_name}[{osi}].{os_field_name} == {_sample_repr(obj_item_v)}',
                                     file=tf)
                 else:
-                    print(f'        assert {_state_name(state)}.{field_name} == {obj!r}', file=tf)
+                    print(f'        assert {_state_name(state)}.{field_name} == {_sample_repr(obj)}', file=tf)
             print(f'', file=tf)
 
             ast_node = state.to_ast_node()
@@ -332,7 +394,7 @@ def sample_generation_to_file(
 
                 lst = state.list_on_enters(is_abstract=is_abstract, with_ids=with_ids)
                 if not lst:
-                    print(f'        assert lst == {lst!r}', file=tf)
+                    print(f'        assert lst == {_sample_repr(lst)}', file=tf)
                 else:
                     print(f'        assert len(lst) == {len(lst)!r}', file=tf)
                     for lst_item_id, lst_item in enumerate(lst):
@@ -345,7 +407,7 @@ def sample_generation_to_file(
                             print(f'        on_stage = lst[{lst_item_id!r}]', file=tf)
 
                         for os_field_name in [
-                            *map(lambda x: x.name, dataclasses.fields(on_stage)),
+                            *map(lambda x: x.name, _sample_dataclass_fields(on_stage)),
                             *get_properties(on_stage),
                         ]:
                             on_stage_v = getattr(on_stage, os_field_name)
@@ -387,7 +449,7 @@ def sample_generation_to_file(
                                     file=tf)
                             else:
                                 print(
-                                    f'        assert on_stage.{os_field_name} == {on_stage_v!r}',
+                                    f'        assert on_stage.{os_field_name} == {_sample_repr(on_stage_v)}',
                                     file=tf)
 
                 print(f'', file=tf)
@@ -410,7 +472,7 @@ def sample_generation_to_file(
                     print(f'        lst = {_state_name(state)}.list_on_during_aspects()', file=tf)
                 lst = state.list_on_during_aspects(is_abstract=is_abstract, aspect=aspect)
                 if not lst:
-                    print(f'        assert lst == {lst!r}', file=tf)
+                    print(f'        assert lst == {_sample_repr(lst)}', file=tf)
                 else:
                     print(f'        assert len(lst) == {len(lst)!r}', file=tf)
                     for j, lst_item in enumerate(lst):
@@ -420,7 +482,7 @@ def sample_generation_to_file(
                         # print(f'        assert st.path == {st.path!r}', file=tf)
                         # print(f'        assert on_stage == {on_stage!r}', file=tf)
                         for os_field_name in [
-                            *map(lambda x: x.name, dataclasses.fields(on_stage)),
+                            *map(lambda x: x.name, _sample_dataclass_fields(on_stage)),
                             *get_properties(on_stage),
                         ]:
                             on_stage_v = getattr(on_stage, os_field_name)
@@ -462,7 +524,7 @@ def sample_generation_to_file(
                                     file=tf)
                             else:
                                 print(
-                                    f'        assert on_stage.{os_field_name} == {on_stage_v!r}',
+                                    f'        assert on_stage.{os_field_name} == {_sample_repr(on_stage_v)}',
                                     file=tf)
 
                 print(f'', file=tf)
@@ -474,7 +536,7 @@ def sample_generation_to_file(
                 print(f'        lst = {_state_name(state)}.list_on_during_aspect_recursively()', file=tf)
                 lst = state.list_on_during_aspect_recursively()
                 if not lst:
-                    print(f'        assert lst == {lst!r}', file=tf)
+                    print(f'        assert lst == {_sample_repr(lst)}', file=tf)
                 else:
                     print(f'        assert len(lst) == {len(lst)!r}', file=tf)
                     for j, lst_item in enumerate(lst):
@@ -484,7 +546,7 @@ def sample_generation_to_file(
                         print(f'        assert st.path == {st.path!r}', file=tf)
                         # print(f'        assert on_stage == {on_stage!r}', file=tf)
                         for os_field_name in [
-                            *map(lambda x: x.name, dataclasses.fields(on_stage)),
+                            *map(lambda x: x.name, _sample_dataclass_fields(on_stage)),
                             *get_properties(on_stage),
                         ]:
                             on_stage_v = getattr(on_stage, os_field_name)
@@ -526,7 +588,7 @@ def sample_generation_to_file(
                                     file=tf)
                             else:
                                 print(
-                                    f'        assert on_stage.{os_field_name} == {on_stage_v!r}',
+                                    f'        assert on_stage.{os_field_name} == {_sample_repr(on_stage_v)}',
                                     file=tf)
 
                 print(f'', file=tf)
@@ -534,7 +596,7 @@ def sample_generation_to_file(
                 print(f'        lst = {_state_name(state)}.list_on_during_aspect_recursively(with_ids=True)', file=tf)
                 lst = state.list_on_during_aspect_recursively(with_ids=True)
                 if not lst:
-                    print(f'        assert lst == {lst!r}', file=tf)
+                    print(f'        assert lst == {_sample_repr(lst)}', file=tf)
                 else:
                     print(f'        assert len(lst) == {len(lst)!r}', file=tf)
                     for j, lst_item in enumerate(lst):
@@ -545,7 +607,7 @@ def sample_generation_to_file(
                         print(f'        assert st.path == {st.path!r}', file=tf)
                         # print(f'        assert on_stage == {on_stage!r}', file=tf)
                         for os_field_name in [
-                            *map(lambda x: x.name, dataclasses.fields(on_stage)),
+                            *map(lambda x: x.name, _sample_dataclass_fields(on_stage)),
                             *get_properties(on_stage),
                         ]:
                             on_stage_v = getattr(on_stage, os_field_name)
@@ -587,7 +649,7 @@ def sample_generation_to_file(
                                     file=tf)
                             else:
                                 print(
-                                    f'        assert on_stage.{os_field_name} == {on_stage_v!r}',
+                                    f'        assert on_stage.{os_field_name} == {_sample_repr(on_stage_v)}',
                                     file=tf)
 
                 print(f'', file=tf)

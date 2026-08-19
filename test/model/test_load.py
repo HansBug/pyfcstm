@@ -261,3 +261,149 @@ def test_text_loading_files_the_source_under_the_memory_key(text_aligner) -> Non
 
     text_aligner.assert_equal(source, machine.source_text)
     text_aligner.assert_equal(source, machine._source_documents["<memory>"])
+
+
+@pytest.mark.unittest
+class TestConvenienceLoadersCollectMode:
+    """The convenience loaders can hand back model-build diagnostics.
+
+    Strict mode stays the default so existing callers are unaffected. Collect
+    mode mirrors :func:`pyfcstm.model.parse_dsl_node_to_state_machine`: it
+    returns the partially-built model together with every diagnostic instead of
+    raising on the first error.
+    """
+
+    _MULTI_ERROR = """
+        state Root {
+            state A;
+            state A;
+            NoSuch -> A;
+            state Outer { state Inner; }
+            [*] -> A;
+        }
+    """
+
+    def test_from_file_collect_returns_all_diagnostics(self):
+        with isolated_directory():
+            _write_text_file("multi.fcstm", self._MULTI_ERROR)
+
+            machine, diagnostics = load_state_machine_from_file(
+                "multi.fcstm", collect=True
+            )
+
+        assert machine is not None
+        assert [d.code for d in diagnostics] == [
+            "E_DUPLICATE_STATE",
+            "E_INITIAL_TRANSITION_INVALID",
+            "E_DANGLING_TRANSITION",
+        ]
+
+    def test_from_file_collect_keeps_source_metadata(self):
+        with isolated_directory():
+            _write_text_file("multi.fcstm", self._MULTI_ERROR)
+
+            machine, _ = load_state_machine_from_file("multi.fcstm", collect=True)
+
+            assert machine.source_path == "multi.fcstm"
+        assert "NoSuch -> A;" in machine.source_text
+
+    def test_from_text_collect_returns_all_diagnostics(self):
+        machine, diagnostics = load_state_machine_from_text(
+            textwrap.dedent(self._MULTI_ERROR).strip(), collect=True
+        )
+
+        assert machine is not None
+        assert {d.code for d in diagnostics} == {
+            "E_DUPLICATE_STATE",
+            "E_INITIAL_TRANSITION_INVALID",
+            "E_DANGLING_TRANSITION",
+        }
+
+    def test_strict_mode_stays_the_default(self):
+        from pyfcstm.utils.validate import ModelValidationError
+
+        with pytest.raises(ModelValidationError):
+            load_state_machine_from_text(
+                textwrap.dedent(self._MULTI_ERROR).strip()
+            )
+
+
+@pytest.mark.unittest
+class TestCollectModeKeepsAssemblingAfterAnError:
+    """Emitting a diagnostic must not leave the caller mid-computation.
+
+    Strict mode raises inside the sink, so code after an emit call is never
+    reached. Collect mode keeps going, which turns any such follow-on statement
+    into a crash that only the collecting path can hit.
+    """
+
+    def test_invalid_variable_mapping_template_does_not_raise_value_error(self):
+        with isolated_directory():
+            _write_text_file(
+                "root.fcstm",
+                """
+                state Host {
+                    import "./worker.fcstm" as Worker {
+                        def sensor_* -> left_${x};
+                    }
+                    [*] -> Worker;
+                }
+                """,
+            )
+            _write_text_file(
+                "worker.fcstm",
+                """
+                def int sensor_input = 0;
+                state Worker {
+                    state Idle;
+                    [*] -> Idle;
+                }
+                """,
+            )
+
+            machine, diagnostics = load_state_machine_from_file(
+                "root.fcstm", collect=True
+            )
+
+        assert "E_IMPORT_MAPPING_INVALID" in {d.code for d in diagnostics}
+
+    def test_rejected_template_stays_traceable_without_cascading(self):
+        """The rejected template becomes the variable name on purpose.
+
+        It is not a legal identifier, but it matches the diagnostic's ``detail``
+        so a reader can connect the two. Dropping the variable instead would make
+        every later reference to it report a second, misleading error.
+        """
+        with isolated_directory():
+            _write_text_file(
+                "root.fcstm",
+                """
+                state Host {
+                    import "./worker.fcstm" as Worker {
+                        def sensor_* -> left_${x};
+                    }
+                    [*] -> Worker;
+                }
+                """,
+            )
+            _write_text_file(
+                "worker.fcstm",
+                """
+                def int sensor_input = 0;
+                state Worker {
+                    state Idle;
+                    [*] -> Idle;
+                }
+                """,
+            )
+
+            machine, diagnostics = load_state_machine_from_file(
+                "root.fcstm", collect=True
+            )
+
+        mapping_errors = [
+            d for d in diagnostics if d.code == "E_IMPORT_MAPPING_INVALID"
+        ]
+        assert len(mapping_errors) == 1
+        assert list(machine.defines) == [mapping_errors[0].refs["detail"]]
+        assert "E_UNDEFINED_VAR" not in {d.code for d in diagnostics}

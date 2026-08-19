@@ -264,6 +264,29 @@ function createHydrationRawStateMachine() {
 }
 
 describe('jsfcstm state-machine model', () => {
+    it('preserves declaration documentation on variables, states, events, and transitions', async () => {
+        const document = createDocument([
+            '/* counter documentation */',
+            'def int counter = 0;',
+            '/* root documentation */',
+            'state Root {',
+            '    /* start documentation */',
+            '    event Start;',
+            '    /* transition documentation */',
+            '    [*] -> Root :: Start;',
+            '}',
+        ].join('\n'), '/tmp/model-docs.fcstm');
+
+        const ast = await packageModule.parseAstDocument(document);
+        const model = modelModule.buildStateMachineModel(ast);
+
+        assert.ok(model);
+        assert.equal(model!.defines.counter.doc, 'counter documentation');
+        assert.equal(model!.rootState.doc, 'root documentation');
+        assert.equal(model!.rootState.events.Start.doc, 'start documentation');
+        assert.equal(model!.rootState.transitions[0].doc, 'transition documentation');
+    });
+
     it('builds a pyfcstm-aligned model with implicit events, forced transitions, and refs', async () => {
         const document = createDocument([
             'def int counter = 0;',

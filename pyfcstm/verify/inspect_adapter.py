@@ -34,6 +34,11 @@ Module map:
    * - :class:`InspectRunResult`
      - Carries one normalized inspect-adapter result while preserving the raw
        verification payload.
+   * - :class:`InspectEligibility`
+     - Describes whether one registry algorithm is admitted by inspect policy
+       and, when excluded, exposes a stable reason code.
+   * - :func:`project_inspect_eligibility`
+     - Projects every registry entry in stable order without executing it.
    * - :func:`eligible_for_inspect`
      - Decides whether one metadata entry is allowed by inspect policy.
    * - :func:`iter_inspect_eligible`
@@ -141,6 +146,33 @@ class InspectRunResult:
     diagnostics: Tuple[dict, ...]
     reason: Optional[str]
     raw_result: _RawResult
+
+
+@dataclass(frozen=True)
+class InspectEligibility:
+    """Inspect policy projection for one registry algorithm.
+
+    :param meta: Complete registry metadata for the algorithm.
+    :type meta: VerifyAlgorithmMeta
+    :param eligible: Whether inspect should execute the algorithm under the
+        requested policy.
+    :type eligible: bool
+    :param not_run_reason_code: Stable policy exclusion code, or ``None`` when
+        the algorithm is eligible.
+    :type not_run_reason_code: Optional[str]
+
+    Examples::
+
+        >>> from pyfcstm.verify.registry import REGISTRY
+        >>> item = InspectEligibility(REGISTRY["dead_guard"], False,
+        ...                           "complexity_tier_exceeds_policy")
+        >>> item.meta.name, item.eligible
+        ('dead_guard', False)
+    """
+
+    meta: VerifyAlgorithmMeta
+    eligible: bool
+    not_run_reason_code: Optional[str]
 
 
 class InspectAccessForbiddenError(ValueError):
@@ -260,6 +292,31 @@ def _call_count_allows(value: CallCountScaling, maximum: CallCountScaling) -> bo
     return _order_allows(CALL_COUNT_SCALING_ORDER, value, maximum)
 
 
+def _not_run_reason_code(
+    meta: VerifyAlgorithmMeta,
+    max_complexity_tier: ComplexityTier,
+    max_call_count_scaling: CallCountScaling,
+) -> Optional[str]:
+    """Return the first stable inspect-policy exclusion reason for ``meta``.
+
+    The order is part of the adapter contract: closedness is checked before
+    complexity, and complexity before call-count scaling.  Consequently one
+    registry entry always has at most one exclusion reason even when it fails
+    several gates.
+    """
+    if meta.closedness != "closed":
+        return "algorithm_not_closed"
+    if not _order_allows(
+        COMPLEXITY_TIER_ORDER,
+        meta.complexity_tier,
+        max_complexity_tier,
+    ):
+        return "complexity_tier_exceeds_policy"
+    if not _call_count_allows(meta.call_count_scaling, max_call_count_scaling):
+        return "call_count_scaling_exceeds_policy"
+    return None
+
+
 def eligible_for_inspect(
     meta: VerifyAlgorithmMeta,
     *,
@@ -294,17 +351,69 @@ def eligible_for_inspect(
     """
     _validate_max_complexity_tier(max_complexity_tier)
     _validate_max_call_count_scaling(max_call_count_scaling)
-    if meta.closedness != "closed":
-        return False
-    if not _order_allows(
-        COMPLEXITY_TIER_ORDER,
-        meta.complexity_tier,
-        max_complexity_tier,
-    ):
-        return False
-    if not _call_count_allows(meta.call_count_scaling, max_call_count_scaling):
-        return False
-    return True
+    return (
+        _not_run_reason_code(
+            meta,
+            max_complexity_tier,
+            max_call_count_scaling,
+        )
+        is None
+    )
+
+
+def project_inspect_eligibility(
+    *,
+    max_complexity_tier: ComplexityTier = "structural",
+    max_call_count_scaling: CallCountScaling = "linear_in_transitions",
+    registry: Optional[Mapping[str, VerifyAlgorithmMeta]] = None,
+) -> Tuple[InspectEligibility, ...]:
+    """Project inspect eligibility for every algorithm in registry order.
+
+    This function does not execute algorithms.  It supplies downstream inspect
+    reporting with complete registry metadata, an execution decision, and one
+    stable policy reason for every excluded entry.
+
+    :param max_complexity_tier: Maximum complexity tier accepted by inspect.
+    :type max_complexity_tier: ComplexityTier
+    :param max_call_count_scaling: Maximum inspect call-count scaling.
+    :type max_call_count_scaling: CallCountScaling
+    :param registry: Optional alternate registry. ``None`` uses the built-in
+        verify registry.
+    :type registry: Optional[Mapping[str, VerifyAlgorithmMeta]]
+    :return: Complete policy projection in registry order.
+    :rtype: Tuple[InspectEligibility, ...]
+
+    Examples::
+
+        >>> projection = project_inspect_eligibility()
+        >>> len(projection), sum(item.eligible for item in projection)
+        (14, 6)
+        >>> projection[0].meta.name
+        'topological_reachable_set'
+    """
+    _validate_max_complexity_tier(max_complexity_tier)
+    _validate_max_call_count_scaling(max_call_count_scaling)
+
+    if registry is None:
+        from .registry import REGISTRY
+
+        registry = REGISTRY
+
+    return tuple(
+        InspectEligibility(
+            meta=meta,
+            eligible=(reason_code is None),
+            not_run_reason_code=reason_code,
+        )
+        for meta in registry.values()
+        for reason_code in (
+            _not_run_reason_code(
+                meta,
+                max_complexity_tier,
+                max_call_count_scaling,
+            ),
+        )
+    )
 
 
 def iter_inspect_eligible(
@@ -329,15 +438,12 @@ def iter_inspect_eligible(
         >>> names[:2]
         ['topological_reachable_set', 'unreachable_states']
     """
-    from .registry import REGISTRY
-
-    for meta in REGISTRY.values():
-        if eligible_for_inspect(
-            meta,
-            max_complexity_tier=max_complexity_tier,
-            max_call_count_scaling=max_call_count_scaling,
-        ):
-            yield meta
+    for item in project_inspect_eligibility(
+        max_complexity_tier=max_complexity_tier,
+        max_call_count_scaling=max_call_count_scaling,
+    ):
+        if item.eligible:
+            yield item.meta
 
 
 def _variables_for(machine) -> Tuple[object, ...]:
@@ -599,6 +705,14 @@ def _normalize_algorithm_result(
 
 
 def _run_smt_algorithm(meta: VerifyAlgorithmMeta, machine, smt_timeout_ms):
+    """Run one SMT algorithm inside a verify-run transition index scope."""
+    from .encoding._core import _transition_index_scope
+
+    with _transition_index_scope(machine):
+        return _run_smt_algorithm_scoped(meta, machine, smt_timeout_ms)
+
+
+def _run_smt_algorithm_scoped(meta: VerifyAlgorithmMeta, machine, smt_timeout_ms):
     """Execute one SMT-local algorithm according to its registry scope.
 
     :param meta: Metadata with an implementation callable.
@@ -738,13 +852,14 @@ def run_inspect_algorithms(
         registry = REGISTRY
 
     results = []
-    for meta in registry.values():
-        if not eligible_for_inspect(
-            meta,
-            max_complexity_tier=max_complexity_tier,
-            max_call_count_scaling=max_call_count_scaling,
-        ):
+    for item in project_inspect_eligibility(
+        max_complexity_tier=max_complexity_tier,
+        max_call_count_scaling=max_call_count_scaling,
+        registry=registry,
+    ):
+        if not item.eligible:
             continue
+        meta = item.meta
         if meta.impl is None:
             results.append(_missing_impl_result(meta))
             continue
@@ -754,9 +869,11 @@ def run_inspect_algorithms(
 
 
 __all__ = [
+    "InspectEligibility",
     "InspectRunResult",
     "InspectAccessForbiddenError",
     "eligible_for_inspect",
     "iter_inspect_eligible",
+    "project_inspect_eligibility",
     "run_inspect_algorithms",
 ]

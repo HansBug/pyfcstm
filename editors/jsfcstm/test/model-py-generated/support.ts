@@ -163,6 +163,7 @@ function normalizeTransition(transition: {
     guard?: Parameters<typeof normalizeExpr>[0];
     effects: Array<Parameters<typeof normalizeStatement>[0]>;
     parent?: {path: string[]};
+    doc?: string;
 }): unknown {
     return {
         from_state: transition.from_state,
@@ -171,6 +172,7 @@ function normalizeTransition(transition: {
         guard: transition.guard ? normalizeExpr(transition.guard) : null,
         effects: transition.effects.map(effect => normalizeStatement(effect)),
         parent: transition.parent ? pathName(transition.parent.path) : null,
+        doc: transition.doc ?? null,
     };
 }
 
@@ -180,6 +182,7 @@ function normalizeEvent(event: {
     path: string[];
     path_name: string;
     extra_name?: string;
+    doc?: string;
 }): unknown {
     return {
         name: event.name,
@@ -187,6 +190,7 @@ function normalizeEvent(event: {
         path: event.path,
         path_name: event.path_name,
         extra_name: event.extra_name ?? null,
+        doc: event.doc ?? null,
     };
 }
 
@@ -194,6 +198,7 @@ function normalizeState(state: {
     name: string;
     path: string[];
     parent?: {path: string[]};
+    doc?: string;
     substates: Record<string, unknown>;
     events: Record<string, {
         name: string;
@@ -201,6 +206,7 @@ function normalizeState(state: {
         path: string[];
         path_name: string;
         extra_name?: string;
+        doc?: string;
     }>;
     transitions: Array<Parameters<typeof normalizeTransition>[0]>;
     named_functions: Record<string, Parameters<typeof normalizeAction>[0]>;
@@ -257,6 +263,7 @@ function normalizeState(state: {
         name: state.name,
         path: state.path,
         parent: state.parent ? pathName(state.parent.path) : null,
+        doc: state.doc ?? null,
         substates: Object.keys(state.substates),
         events: Object.fromEntries(
             Object.entries(state.events)
@@ -445,6 +452,7 @@ function normalizeAstTransition(transition: {
     event_id?: {path: string[]; is_absolute: boolean};
     condition_expr?: Parameters<typeof normalizeAstExpr>[0];
     post_operations: Array<Parameters<typeof normalizeAstOperation>[0]>;
+    doc?: string;
 }): unknown {
     return {
         __class__: 'TransitionDefinition',
@@ -453,13 +461,15 @@ function normalizeAstTransition(transition: {
         event_id: transition.event_id ? normalizeAstChainId(transition.event_id) : null,
         condition_expr: transition.condition_expr ? normalizeAstExpr(transition.condition_expr) : null,
         post_operations: transition.post_operations.map(operation => normalizeAstOperation(operation)),
+        doc: transition.doc ?? null,
     };
 }
 
 function normalizeAstState(state: {
     name: string;
     extra_name?: string;
-    events: Array<{name: string; extra_name?: string}>;
+    doc?: string;
+    events: Array<{name: string; extra_name?: string; doc?: string}>;
     substates: Array<Parameters<typeof normalizeAstState>[0]>;
     transitions: Array<Parameters<typeof normalizeAstTransition>[0]>;
     enters: Array<Parameters<typeof normalizeAstAction>[0]>;
@@ -472,10 +482,12 @@ function normalizeAstState(state: {
         __class__: 'StateDefinition',
         name: state.name,
         extra_name: state.extra_name ?? null,
+        doc: state.doc ?? null,
         events: state.events.map(event => ({
             __class__: 'EventDefinition',
             name: event.name,
             extra_name: event.extra_name ?? null,
+            doc: event.doc ?? null,
         })),
         substates: state.substates.map(item => normalizeAstState(item)),
         transitions: state.transitions.map(item => normalizeAstTransition(item)),
@@ -492,6 +504,7 @@ function normalizeAstProgram(program: {
         name: string;
         type: string;
         expr: Parameters<typeof normalizeAstExpr>[0];
+        doc?: string;
     }>;
     root_state: Parameters<typeof normalizeAstState>[0];
 }): unknown {
@@ -502,6 +515,7 @@ function normalizeAstProgram(program: {
             name: definition.name,
             type: definition.type,
             expr: normalizeAstExpr(definition.expr),
+            doc: definition.doc ?? null,
         })),
         root_state: normalizeAstState(program.root_state),
     };
@@ -512,6 +526,7 @@ function normalizeStateMachine(stateMachine: {
         name: string;
         type: string;
         init: Parameters<typeof normalizeExpr>[0];
+        doc?: string;
     }>;
     rootState: {name: string};
     walk_states(): Iterable<Parameters<typeof normalizeState>[0]>;
@@ -522,6 +537,7 @@ function normalizeStateMachine(stateMachine: {
             name: string;
             type: string;
             expr: Parameters<typeof normalizeAstExpr>[0];
+            doc?: string;
         }>;
         root_state: Parameters<typeof normalizeAstState>[0];
     };
@@ -541,6 +557,7 @@ function normalizeStateMachine(stateMachine: {
                 .map(([name, definition]) => [name, {
                     type: definition.type,
                     init: normalizeExpr(definition.init),
+                    doc: definition.doc ?? null,
                 }])
         ),
         root_state: stateMachine.rootState.name,

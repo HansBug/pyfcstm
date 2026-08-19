@@ -43,6 +43,11 @@ const BINARY_RADIX = 2;
 export const DEFAULT_DEEP_HIERARCHY_THRESHOLD = 6;
 export const DEFAULT_LARGE_COMPOSITE_THRESHOLD = 12;
 export const DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD = 2.0;
+// Keep this broad enough for high-density protocol FSMs while retaining a
+// useful review trigger for unusually dense generated models.
+export const DEFAULT_STRUCTURE_MAX_TRANSITIONS_PER_STATE = 6.0;
+export const DEFAULT_STRUCTURE_MAX_UNREACHABLE_LEAF_STATE_RATE = 0.10;
+export const DEFAULT_STRUCTURE_MAX_UNREACHABLE_TRANSITION_RATE = 0.10;
 
 const OP_PRECEDENCE: Record<string, number> = {
     'function_call': 90,
@@ -123,6 +128,11 @@ export interface ComboOriginRefInfo {
     term_span: ModelSpanJson | null;
     value_span: ModelSpanJson | null;
     removal_span: ModelSpanJson | null;
+    source_kind: 'init' | 'state';
+    source_path: string | null;
+    selection_owner_path: string | null;
+    target_kind: 'state' | 'exit';
+    target_path: string | null;
 }
 
 export interface ComboOriginTermInfo {
@@ -160,6 +170,7 @@ export interface TransitionInfo {
     is_forced: boolean;
     forced_origin: string | null;
     transition_index: number | null;
+    source_path: string | null;
     combo_origin_refs: ComboOriginRefInfo[];
     combo_projection_key: unknown[] | null;
     combo_projection_order_key: unknown[] | null;
@@ -196,6 +207,7 @@ export interface InspectModelOptions {
     deepHierarchyThreshold?: number;
     largeCompositeThreshold?: number;
     varToLeafRatioThreshold?: number;
+    structureStatisticsPolicy?: Partial<StructureStatisticsPolicy>;
 }
 
 /**
@@ -237,6 +249,10 @@ export interface ForcedTransitionInfo {
     expansion_count: number;
 }
 
+type InternalForcedTransitionInfo = ForcedTransitionInfo & {
+    readonly __sourceRange?: TextRange;
+};
+
 /**
  * Aggregate model metrics.
  */
@@ -254,6 +270,201 @@ export interface ModelMetrics {
     abstract_action_inventory: string[];
 }
 
+export interface StructureStatistics {
+    /** Non-pseudo state count, including composite states. */
+    state_count: number;
+    /** Non-pseudo leaf-state count. */
+    leaf_state_count: number;
+    /** Non-pseudo composite-state count. */
+    composite_state_count: number;
+    /** Authored behavior transitions after generated-edge folding. */
+    authored_transition_count: number;
+    /** Authored transitions divided by state count, or null when undefined. */
+    transitions_per_state: number | null;
+    /** State count divided by authored transitions, or null when undefined. */
+    states_per_transition: number | null;
+    /** Leaf states reported as unreachable. */
+    unreachable_leaf_states: number;
+    /** Unreachable leaf-state fraction, or null for an empty leaf population. */
+    unreachable_leaf_state_rate: number | null;
+    /** Distinct authored transitions covered by unreachable/dead diagnostics. */
+    unreachable_transitions: number;
+    /** Unreachable authored-transition fraction, or null for no transitions. */
+    unreachable_transition_rate: number | null;
+    /** Reason buckets for unreachable_transitions. */
+    unreachable_transition_reasons: Record<string, number>;
+    /** Advisory thresholds applied to the report. */
+    thresholds: StructureStatisticsPolicy;
+    /** Advisory threshold names exceeded by the report. */
+    exceeded_thresholds: string[];
+    /** Authored transitions without an AST guard. */
+    unguarded_transitions: number;
+    /** Denominator used by unguarded_rate. */
+    guard_eligible_transitions: number;
+    /** Unguarded fraction, or null for an empty denominator. */
+    unguarded_rate: number | null;
+    /** Effect-eligible transitions without an AST effect. */
+    missing_effect_transitions: number;
+    /** Denominator used by missing_effect_rate. */
+    effect_eligible_transitions: number;
+    /** Missing-effect fraction, or null for an empty denominator. */
+    missing_effect_rate: number | null;
+    /** Authored transitions with neither event nor guard. */
+    eventless_unconditional_transitions: number;
+    /** Denominator used by eventless_unconditional_rate. */
+    behavior_transitions: number;
+    /** Eventless-unconditional fraction, or null for an empty denominator. */
+    eventless_unconditional_rate: number | null;
+}
+
+export interface StructureStatisticsPolicy {
+    max_transitions_per_state: number | null;
+    max_unreachable_leaf_state_rate: number | null;
+    max_unreachable_transition_rate: number | null;
+}
+
+export const DEFAULT_STRUCTURE_STATISTICS_POLICY: StructureStatisticsPolicy = {
+    max_transitions_per_state: DEFAULT_STRUCTURE_MAX_TRANSITIONS_PER_STATE,
+    max_unreachable_leaf_state_rate: DEFAULT_STRUCTURE_MAX_UNREACHABLE_LEAF_STATE_RATE,
+    max_unreachable_transition_rate: DEFAULT_STRUCTURE_MAX_UNREACHABLE_TRANSITION_RATE,
+};
+
+export type InspectVerificationResultKind =
+    | 'not_run'
+    | 'sat'
+    | 'unsat'
+    | 'timeout'
+    | 'unknown'
+    | 'undecidable_skip';
+
+export type InspectVerificationComplexityTier =
+    | 'structural'
+    | 'smt_linear'
+    | 'smt_nonlinear_decidable'
+    | 'smt_undecidable_heuristic';
+
+export type InspectVerificationCallCountScaling =
+    | 'none'
+    | 'one'
+    | 'linear_in_states'
+    | 'linear_in_transitions'
+    | 'linear_in_vars'
+    | 'linear_in_leaves'
+    | 'quadratic_in_outgoing_per_state'
+    | 'quadratic_in_states'
+    | 'vars_times_transitions';
+
+export type InspectVerificationAlgorithmNotRunReasonCode =
+    | 'algorithm_not_closed'
+    | 'complexity_tier_exceeds_policy'
+    | 'call_count_scaling_exceeds_policy';
+
+/** Backward-compatible nullable alias for callers that inspect reason codes directly. */
+export type InspectVerificationAlgorithmReasonCode =
+    | InspectVerificationAlgorithmNotRunReasonCode
+    | null;
+
+export interface InspectVerificationPolicy {
+    max_complexity_tier: InspectVerificationComplexityTier;
+    max_call_count_scaling: InspectVerificationCallCountScaling;
+    smt_timeout_ms: number | null;
+}
+
+export interface InspectVerificationUnsupportedPolicy {
+    max_complexity_tier: null;
+    max_call_count_scaling: null;
+    smt_timeout_ms: null;
+}
+
+export interface InspectVerificationSummary {
+    registered: number;
+    executed: number;
+    not_run: number;
+    indeterminate: number;
+}
+
+export interface InspectVerificationEmptySummary {
+    registered: null;
+    executed: 0;
+    not_run: 0;
+    indeterminate: 0;
+}
+
+interface InspectVerificationAlgorithmBase {
+    algorithm_name: string;
+    complexity_tier: InspectVerificationComplexityTier;
+    call_count_scaling: InspectVerificationCallCountScaling;
+    verification_scope: 'topological_only' | 'smt_local' | null;
+    declared_diagnostic_codes: string[];
+}
+
+export interface InspectVerificationNotRunAlgorithm
+    extends InspectVerificationAlgorithmBase {
+    result_kind: 'not_run';
+    reason_code: InspectVerificationAlgorithmNotRunReasonCode;
+    reason: null;
+    partial_diagnostic_count: 0;
+}
+
+export interface InspectVerificationDefiniteAlgorithm
+    extends InspectVerificationAlgorithmBase {
+    result_kind: 'sat' | 'unsat';
+    reason_code: null;
+    reason: string | null;
+    partial_diagnostic_count: 0;
+}
+
+export interface InspectVerificationIndeterminateAlgorithm
+    extends InspectVerificationAlgorithmBase {
+    result_kind: 'timeout' | 'unknown' | 'undecidable_skip';
+    reason_code: null;
+    reason: string | null;
+    partial_diagnostic_count: number;
+}
+
+export type InspectVerificationAlgorithm =
+    | InspectVerificationNotRunAlgorithm
+    | InspectVerificationDefiniteAlgorithm
+    | InspectVerificationIndeterminateAlgorithm;
+
+export interface InspectVerificationUnsupportedReport {
+    supported: false;
+    enabled: false;
+    provider: null;
+    reason_code: 'provider_unsupported';
+    requested_policy: InspectVerificationUnsupportedPolicy;
+    summary: InspectVerificationEmptySummary;
+    algorithms: [];
+}
+
+export interface InspectVerificationDisabledReport {
+    supported: true;
+    enabled: false;
+    provider: 'pyfcstm.verify';
+    reason_code: 'verification_disabled';
+    requested_policy: InspectVerificationPolicy;
+    summary: InspectVerificationEmptySummary;
+    algorithms: [];
+}
+
+export interface InspectVerificationEnabledReport {
+    supported: true;
+    enabled: true;
+    provider: 'pyfcstm.verify';
+    reason_code: null;
+    requested_policy: InspectVerificationPolicy;
+    summary: InspectVerificationSummary;
+    algorithms: [
+        InspectVerificationAlgorithm,
+        ...InspectVerificationAlgorithm[],
+    ];
+}
+
+export type InspectVerificationReport =
+    | InspectVerificationUnsupportedReport
+    | InspectVerificationDisabledReport
+    | InspectVerificationEnabledReport;
+
 /**
  * Top-level structured view of a state machine model.
  */
@@ -268,12 +479,14 @@ export interface ModelInspect {
     combo_transitions: TransitionInfo[];
     combo_origins: ComboOriginInfo[];
     metrics: ModelMetrics;
+    structure_statistics: StructureStatistics;
     reachability_graph: Record<string, string[]>;
     event_emission_map: Record<string, string[]>;
     var_dataflow: Record<string, { reads: string[]; writes: string[] }>;
     aspect_impact_map: Record<string, string[]>;
     action_ref_graph: Record<string, string[]>;
     diagnostics: ModelDiagnosticJson[];
+    verification: InspectVerificationReport;
 }
 
 /**
@@ -319,17 +532,43 @@ export function inspectModel(machine: StateMachine, options: InspectModelOptions
         'varToLeafRatioThreshold',
         options.varToLeafRatioThreshold ?? DEFAULT_VAR_TO_LEAF_RATIO_THRESHOLD,
     );
+    const structureStatisticsPolicy = normalizeStructureStatisticsPolicy(
+        options.structureStatisticsPolicy,
+    );
     const rootStatePath = dottedPath(machine.rootState.path);
     const states = buildStateInfos(machine);
     const transitions = buildTransitionInfos(machine);
     const variables = buildVariableInfos(machine, states);
     const events = buildEventInfos(machine);
     const actions = buildActionInfos(machine);
-    const forcedTransitions = buildForcedTransitionInfos(machine);
+    const forcedTransitions = buildForcedTransitionInfos(machine, transitions);
     const comboTransitions = transitions.filter(item => item.combo_origin_refs.length > 0);
     const comboOrigins = buildComboOriginInfos(comboTransitions);
     const metrics = buildMetrics(states, transitions, variables, events);
     const reachabilityGraph = buildReachabilityGraph(states, transitions);
+    const diagnostics = collectDesignHealthWarnings(
+        states,
+        transitions,
+        variables,
+        events,
+        actions,
+        forcedTransitions,
+        metrics,
+        reachabilityGraph,
+        rootStatePath,
+        {
+            deepHierarchyThreshold,
+            largeCompositeThreshold,
+            varToLeafRatioThreshold,
+        },
+        machine,
+    );
+    diagnostics.push(...buildUnreachableTransitionDiagnostics(
+        states,
+        transitions,
+        diagnostics,
+        forcedTransitions,
+    ));
     return {
         root_state_path: rootStatePath,
         states,
@@ -341,28 +580,37 @@ export function inspectModel(machine: StateMachine, options: InspectModelOptions
         combo_transitions: comboTransitions,
         combo_origins: comboOrigins,
         metrics,
+        structure_statistics: buildStructureStatistics(
+            states,
+            transitions,
+            diagnostics,
+            forcedTransitions,
+            structureStatisticsPolicy,
+        ),
         reachability_graph: reachabilityGraph,
         event_emission_map: buildEventEmissionMap(events),
         var_dataflow: buildVarDataflow(variables),
         aspect_impact_map: buildAspectImpactMap(states),
         action_ref_graph: buildActionRefGraph(machine),
-        diagnostics: collectDesignHealthWarnings(
-            states,
-            transitions,
-            variables,
-            events,
-            actions,
-            forcedTransitions,
-            metrics,
-            reachabilityGraph,
-            rootStatePath,
-            {
-                deepHierarchyThreshold,
-                largeCompositeThreshold,
-                varToLeafRatioThreshold,
+        diagnostics,
+        verification: {
+            supported: false,
+            enabled: false,
+            provider: null,
+            reason_code: 'provider_unsupported',
+            requested_policy: {
+                max_complexity_tier: null,
+                max_call_count_scaling: null,
+                smt_timeout_ms: null,
             },
-            machine,
-        ),
+            summary: {
+                registered: null,
+                executed: 0,
+                not_run: 0,
+                indeterminate: 0,
+            },
+            algorithms: [],
+        },
     };
 }
 
@@ -378,6 +626,68 @@ function normalizeNumberThreshold(name: string, value: number): number {
         throw new Error(`${name} must be a finite numeric threshold, got ${JSON.stringify(value)}`);
     }
     return value;
+}
+
+function normalizeStructureStatisticsPolicy(
+    value: Partial<StructureStatisticsPolicy> | undefined,
+): StructureStatisticsPolicy {
+    const source = value ?? {};
+    const prototype = typeof source === 'object' && source !== null
+        ? Object.getPrototypeOf(source)
+        : null;
+    if (
+        typeof source !== 'object' ||
+        source === null ||
+        Array.isArray(source) ||
+        (prototype !== Object.prototype && prototype !== null)
+    ) {
+        throw new TypeError('structure-statistics policy must be a plain object');
+    }
+    const knownFields = new Set<keyof StructureStatisticsPolicy>([
+        'max_transitions_per_state',
+        'max_unreachable_leaf_state_rate',
+        'max_unreachable_transition_rate',
+    ]);
+    const unknown = Object.keys(source).filter(
+        key => !knownFields.has(key as keyof StructureStatisticsPolicy),
+    );
+    if (unknown.length > 0) {
+        throw new Error(
+            `unknown structure-statistics policy fields: ${unknown.sort().join(', ')}`,
+        );
+    }
+    const hasOwn = (name: keyof StructureStatisticsPolicy): boolean =>
+        Object.prototype.hasOwnProperty.call(source, name);
+    const policy: StructureStatisticsPolicy = {
+        max_transitions_per_state: hasOwn('max_transitions_per_state')
+            ? source.max_transitions_per_state!
+            : DEFAULT_STRUCTURE_STATISTICS_POLICY.max_transitions_per_state,
+        max_unreachable_leaf_state_rate: hasOwn('max_unreachable_leaf_state_rate')
+            ? source.max_unreachable_leaf_state_rate!
+            : DEFAULT_STRUCTURE_STATISTICS_POLICY.max_unreachable_leaf_state_rate,
+        max_unreachable_transition_rate: hasOwn('max_unreachable_transition_rate')
+            ? source.max_unreachable_transition_rate!
+            : DEFAULT_STRUCTURE_STATISTICS_POLICY.max_unreachable_transition_rate,
+    };
+    const entries: Array<[keyof StructureStatisticsPolicy, number | null]> = [
+        ['max_transitions_per_state', policy.max_transitions_per_state],
+        ['max_unreachable_leaf_state_rate', policy.max_unreachable_leaf_state_rate],
+        ['max_unreachable_transition_rate', policy.max_unreachable_transition_rate],
+    ];
+    for (const [name, threshold] of entries) {
+        if (threshold === null) continue;
+        if (typeof threshold !== 'number' || !Number.isFinite(threshold)) {
+            throw new Error(`${name} must be a finite number or null`);
+        }
+        if (threshold < 0 || (
+            name !== 'max_transitions_per_state' && threshold > 1
+        )) {
+            throw new Error(
+                `${name} must be >= 0${name === 'max_transitions_per_state' ? '' : ' and <= 1'}`,
+            );
+        }
+    }
+    return policy;
 }
 
 /**
@@ -566,6 +876,11 @@ function comboOriginRefInfo(value: unknown): ComboOriginRefInfo | null {
         term_span: (item.term_span as ModelSpanJson | null | undefined) ?? null,
         value_span: (item.value_span as ModelSpanJson | null | undefined) ?? null,
         removal_span: (item.removal_span as ModelSpanJson | null | undefined) ?? null,
+        source_kind: item.source_kind === 'init' ? 'init' : 'state',
+        source_path: (item.source_path as string | null | undefined) ?? null,
+        selection_owner_path: (item.selection_owner_path as string | null | undefined) ?? null,
+        target_kind: item.target_kind === 'exit' ? 'exit' : 'state',
+        target_path: (item.target_path as string | null | undefined) ?? null,
     };
 }
 
@@ -577,8 +892,8 @@ function buildTransitionInfos(machine: StateMachine): TransitionInfo[] {
                 .map(comboOriginRefInfo)
                 .filter((item): item is ComboOriginRefInfo => item !== null);
             const info: TransitionInfo = {
-                from_path: transitionEndpoint(state.path, t.fromState, true),
-                to_path: transitionEndpoint(state.path, t.toState, false),
+                from_path: modelTransitionEndpoint(state, t, 'source'),
+                to_path: modelTransitionEndpoint(state, t, 'target'),
                 event: t.event ? t.event.pathName : null,
                 event_scope: t.event ? (t.triggerScope ?? null) : null,
                 guard: exprText(t.guard),
@@ -587,6 +902,7 @@ function buildTransitionInfos(machine: StateMachine): TransitionInfo[] {
                 is_forced: !!t.forced,
                 forced_origin: t.forced ? t.text : null,
                 transition_index: typeof t.transitionIndex === 'number' ? t.transitionIndex : null,
+                source_path: t.sourcePath ?? t.source_path ?? null,
                 combo_origin_refs: comboOriginRefs,
                 combo_projection_key: Array.isArray(t.combo_projection_key) ? [...t.combo_projection_key] : null,
                 combo_projection_order_key: Array.isArray(t.combo_projection_order_key) ? [...t.combo_projection_order_key] : null,
@@ -614,6 +930,29 @@ function transitionEndpoint(
     if (marker === 'INIT_STATE') return INIT_MARK;
     if (marker === 'EXIT_STATE') return EXIT_MARK;
     return resolveSiblingPath(parentPath, marker);
+}
+
+function modelTransitionEndpoint(
+    state: StateMachine['allStates'][number],
+    transition: StateMachine['allTransitions'][number],
+    endpoint: 'source' | 'target',
+): string {
+    if (endpoint === 'source') {
+        if (transition.sourceKind === 'init' || transition.fromState === 'INIT_STATE') {
+            return INIT_MARK;
+        }
+        const resolvedPath = transition.sourceStatePath ?? transition.source_state_path;
+        return resolvedPath
+            ? dottedPath(resolvedPath)
+            : transitionEndpoint(state.path, transition.fromState, true);
+    }
+    if (transition.targetKind === 'exit' || transition.toState === 'EXIT_STATE') {
+        return EXIT_MARK;
+    }
+    const resolvedPath = transition.targetStatePath ?? transition.target_state_path;
+    return resolvedPath
+        ? dottedPath(resolvedPath)
+        : transitionEndpoint(state.path, transition.toState, false);
 }
 
 function buildVariableInfos(machine: StateMachine, states: StateInfo[]): VariableInfo[] {
@@ -656,8 +995,8 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
             }
         }
         for (const t of state.transitions) {
-            const fromPath = transitionEndpoint(state.path, t.fromState, true);
-            const toPath = transitionEndpoint(state.path, t.toState, false);
+            const fromPath = modelTransitionEndpoint(state, t, 'source');
+            const toPath = modelTransitionEndpoint(state, t, 'target');
             if (t.guard) {
                 for (const v of walkExprVariables(t.guard)) {
                     if (v in readGuards) readGuards[v].push([fromPath, toPath]);
@@ -1042,8 +1381,8 @@ function buildEventInfos(machine: StateMachine): EventInfo[] {
         for (const t of state.transitions) {
             if (!t.event) continue;
             const qn = t.event.pathName;
-            const fromPath = transitionEndpoint(state.path, t.fromState, true);
-            const toPath = transitionEndpoint(state.path, t.toState, false);
+            const fromPath = modelTransitionEndpoint(state, t, 'source');
+            const toPath = modelTransitionEndpoint(state, t, 'target');
             if (!users[qn]) users[qn] = [];
             users[qn].push([fromPath, toPath]);
             scopes[qn] = t.triggerScope ?? 'absolute';
@@ -1087,17 +1426,68 @@ function buildActionInfos(machine: StateMachine): ActionInfo[] {
     return out;
 }
 
-function buildForcedTransitionInfos(machine: StateMachine): ForcedTransitionInfo[] {
-    return (machine.forcedTransitions as RawFcstmModelForcedTransition[]).map(item => ({
+function ownerPathForTransition(path: string): string {
+    const separator = path.lastIndexOf('.');
+    return separator >= 0 ? path.slice(0, separator) : path;
+}
+
+function textRangeKey(range: TextRange): string {
+    return [
+        range.start.line,
+        range.start.character,
+        range.end.line,
+        range.end.character,
+    ].join(':');
+}
+
+function buildForcedTransitionInfos(
+    machine: StateMachine,
+    transitions: TransitionInfo[],
+): InternalForcedTransitionInfo[] {
+    const raw = machine.forcedTransitions as RawFcstmModelForcedTransition[];
+    const rangesByIdentity = new Map<string, TextRange[]>();
+    const rangeKeysByIdentity = new Map<string, Set<string>>();
+    for (const transition of transitions) {
+        if (transition.forced_origin === null || transition.__sourceRange === undefined) continue;
+        const identity = `${ownerPathForTransition(transition.from_path)}\u0000${transition.forced_origin}`;
+        const ranges = rangesByIdentity.get(identity) ?? [];
+        const rangeKeys = rangeKeysByIdentity.get(identity) ?? new Set<string>();
+        const rangeKey = textRangeKey(transition.__sourceRange);
+        if (!rangeKeys.has(rangeKey)) {
+            ranges.push(transition.__sourceRange);
+            rangeKeys.add(rangeKey);
+        }
+        rangesByIdentity.set(identity, ranges);
+        rangeKeysByIdentity.set(identity, rangeKeys);
+    }
+    const occurrences = new Map<string, number>();
+    return raw.map(item => {
+        const statePath = dottedPath(item.statePath ?? item.state_path);
+        const originalRaw = item.originalRaw ?? item.original_raw;
+        const identity = `${statePath}\u0000${originalRaw}`;
+        const occurrence = occurrences.get(identity) ?? 0;
+        occurrences.set(identity, occurrence + 1);
+        const info: ForcedTransitionInfo = {
         state_path: dottedPath(item.statePath ?? item.state_path),
         from_path: item.fromPath ?? item.from_path,
         to_path: item.toPath ?? item.to_path,
         event: item.event ?? null,
         event_scope: item.event ? (item.event_scope ?? null) : null,
         guard: item.guard ?? null,
-        original_raw: item.originalRaw ?? item.original_raw,
+        original_raw: originalRaw,
         expansion_count: item.expansionCount ?? item.expansion_count,
-    }));
+        };
+        const range = rangesByIdentity.get(identity)?.[occurrence];
+        if (range !== undefined) {
+            Object.defineProperty(info, '__sourceRange', {
+                value: range,
+                enumerable: false,
+                configurable: false,
+                writable: false,
+            });
+        }
+        return info;
+    });
 }
 
 function scopeFromEventOrigins(event: Event): 'local' | 'chain' | 'absolute' {
@@ -1145,6 +1535,717 @@ function buildMetrics(
         var_to_leaf_ratio: variables.length / Math.max(nLeaf, 1),
         aspect_coverage: aspectCoverage,
         abstract_action_inventory: abstractInventory,
+    };
+}
+
+function rate(numerator: number, denominator: number): number | null {
+    return denominator === 0 ? null : numerator / denominator;
+}
+
+function forcedExpansionGroups(
+    transitions: TransitionInfo[],
+    forcedTransitions: InternalForcedTransitionInfo[],
+): TransitionInfo[][] {
+    const buckets = new Map<string, {
+        all: TransitionInfo[];
+        byRange: Map<string, TransitionInfo[]>;
+    }>();
+    for (const transition of transitions) {
+        if (!transition.is_forced || transition.forced_origin === null) continue;
+        const identity = `${ownerPathForTransition(transition.from_path)}\u0000${transition.forced_origin}`;
+        const bucket = buckets.get(identity) ?? {all: [], byRange: new Map<string, TransitionInfo[]>()};
+        bucket.all.push(transition);
+        if (transition.__sourceRange !== undefined) {
+            const rangeKey = textRangeKey(transition.__sourceRange);
+            const rangeGroup = bucket.byRange.get(rangeKey) ?? [];
+            rangeGroup.push(transition);
+            bucket.byRange.set(rangeKey, rangeGroup);
+        }
+        buckets.set(identity, bucket);
+    }
+    const groups: TransitionInfo[][] = forcedTransitions.map(() => []);
+    const cursors = new Map<string, number>();
+    forcedTransitions.forEach((declaration, index) => {
+        const identity = `${declaration.state_path}\u0000${declaration.original_raw}`;
+        const bucket = buckets.get(identity);
+        if (bucket === undefined) return;
+        if (declaration.__sourceRange !== undefined) {
+            const rangeGroup = bucket.byRange.get(textRangeKey(declaration.__sourceRange));
+            if (rangeGroup !== undefined) {
+                groups[index] = rangeGroup;
+                return;
+            }
+        }
+        const cursor = cursors.get(identity) ?? 0;
+        groups[index] = bucket.all.slice(cursor, cursor + declaration.expansion_count);
+        cursors.set(identity, cursor + declaration.expansion_count);
+    });
+    return groups;
+}
+
+const UNREACHABLE_TRANSITION_REASON_CODES = new Set([
+    'W_GUARD_CONST_FALSE',
+    'W_DEAD_GUARD',
+    'W_COMBO_GUARD_CONST_FALSE',
+    'W_FORCED_GUARD_UNSAT',
+    'W_FORCED_NEVER_EXPANDS',
+    'W_TRANSITION_SHADOWED',
+    'W_REDUNDANT_TRANSITION',
+]);
+
+function authoredTransitionEntries(
+    transitions: TransitionInfo[],
+    forcedTransitions: InternalForcedTransitionInfo[],
+): Array<[string, TransitionInfo]> {
+    const representatives = new Map<string, TransitionInfo>();
+    const comboGroups = new Map<string, TransitionInfo[]>();
+    const comboInitialOrigins = new Set<string>();
+    for (const transition of transitions) {
+        if (transition.from_path === INIT_MARK) {
+            for (const ref of transition.combo_origin_refs) comboInitialOrigins.add(ref.origin_id);
+            continue;
+        }
+        if (transition.combo_origin_refs.length > 0) {
+            for (const origin of [...new Set(transition.combo_origin_refs.map(ref => ref.origin_id))]) {
+                const group = comboGroups.get(origin) ?? [];
+                group.push(transition);
+                comboGroups.set(origin, group);
+            }
+            continue;
+        }
+        if (transition.is_forced) continue;
+        representatives.set(`transition:${transition.transition_index ?? representatives.size}`, transition);
+    }
+    for (const [origin, group] of comboGroups) {
+        if (comboInitialOrigins.has(origin)) continue;
+        const base = group[0];
+        const refs = group.flatMap(item => item.combo_origin_refs)
+            .filter(ref => ref.origin_id === origin);
+        const sourceRef = refs.find(ref => ref.source_kind === 'state' && ref.source_path !== null);
+        const terminalRef = refs.find(ref => ref.role === 'terminal');
+        const authoredFrom = sourceRef?.source_path ?? base.from_path;
+        const authoredTo = terminalRef?.target_path
+            ?? [...group].reverse().find(item => item.to_path !== base.from_path)?.to_path
+            ?? base.to_path;
+        const authoredSpan = refs.find(ref => ref.role === 'terminal' && ref.transition_span !== null)?.transition_span
+            ?? refs.find(ref => ref.transition_span !== null)?.transition_span;
+        const authoredEndLine = authoredSpan?.end_line ?? authoredSpan?.line;
+        const authoredEndColumn = authoredSpan?.end_column ?? authoredSpan?.column;
+        representatives.set(`combo:${origin}`, {
+            ...base,
+            from_path: authoredFrom,
+            to_path: authoredTo,
+            guard: group.find(item => item.guard !== null)?.guard ?? null,
+            effect: group.find(item => item.effect !== null)?.effect ?? null,
+            event: group.find(item => item.event !== null)?.event ?? null,
+            transition_index: null,
+            combo_origin_refs: refs,
+            __sourceRange: authoredSpan === undefined || authoredSpan === null
+                ? base.__sourceRange
+                : {
+                    start: {line: authoredSpan.line - 1, character: authoredSpan.column - 1},
+                    end: {line: authoredEndLine! - 1, character: authoredEndColumn! - 1},
+                },
+        });
+    }
+    const forcedGroups = forcedExpansionGroups(transitions, forcedTransitions);
+    forcedTransitions.forEach((declaration, index) => {
+        const base = forcedGroups[index][0] ?? (
+            declaration.state_path.length === 0
+                ? transitions.find(item => item.is_forced)
+                : undefined
+        ) ?? {
+            from_path: declaration.from_path,
+            to_path: declaration.to_path,
+            event: declaration.event,
+            event_scope: declaration.event_scope,
+            guard: declaration.guard,
+            effect: null,
+            effect_self_assigns: [],
+            is_forced: true,
+            forced_origin: declaration.original_raw,
+            transition_index: null,
+            source_path: null,
+            combo_origin_refs: [],
+            combo_projection_key: null,
+            combo_projection_order_key: null,
+            combo_reuse_group_id: null,
+            combo_priority_run_identity: null,
+            combo_priority_run_index: null,
+        } satisfies TransitionInfo;
+        representatives.set(`forced:${index}`, {
+            ...base,
+            event: declaration.event,
+            guard: declaration.guard,
+            effect: null,
+            is_forced: true,
+        });
+    });
+    return [...representatives.entries()];
+}
+
+function buildUnreachableTransitionDiagnostics(
+    states: StateInfo[],
+    transitions: TransitionInfo[],
+    diagnostics: ModelDiagnosticJson[],
+    forcedTransitions: InternalForcedTransitionInfo[],
+): ModelDiagnosticJson[] {
+    const authored = authoredTransitionEntries(transitions, forcedTransitions);
+    const authoredByKey = new Map(authored);
+    const statesByPath = new Map(states.map(state => [state.path, state]));
+    const leafPaths = new Set(states
+        .filter(state => !state.is_pseudo && state.is_leaf)
+        .map(state => state.path));
+    const unreachablePaths = new Set(diagnostics
+        .filter(item => item.code === 'W_UNREACHABLE_STATE')
+        .map(item => item.refs.state_path)
+        .filter((path): path is string => typeof path === 'string'));
+    const unreachableLeafPaths = new Set([...leafPaths].filter(path => unreachablePaths.has(path)));
+    const sourceIsUnreachable = (path: string): boolean => {
+        if (unreachablePaths.has(path)) return true;
+        const state = statesByPath.get(path);
+        if (!state || !state.is_composite) return false;
+        const descendants = [...leafPaths].filter(item => item.startsWith(`${path}.`));
+        return descendants.length > 0 && descendants.every(item => unreachableLeafPaths.has(item));
+    };
+    const verificationSourceId = (diagnostic: ModelDiagnosticJson): string | null => {
+        const refs = diagnostic.refs;
+        const algorithm = refs.algorithm_name;
+        const scope = refs.verification_scope;
+        const backed = refs.verify_backed === true ||
+            (typeof algorithm === 'string' && typeof scope === 'string');
+        if (!backed) return null;
+        if (typeof algorithm === 'string' && typeof scope === 'string') return `${algorithm}@${scope}`;
+        if (typeof algorithm === 'string') return algorithm;
+        if (typeof scope === 'string') return `verify-pipeline@${scope}`;
+        return 'verify-pipeline';
+    };
+    const verificationSourcesByUnreachablePath = new Map<string, Set<string>>();
+    diagnostics
+        .filter(item => item.code === 'W_UNREACHABLE_STATE')
+        .forEach(item => {
+            const path = item.refs.state_path;
+            const source = verificationSourceId(item);
+            if (typeof path !== 'string' || source === null) return;
+            const sources = verificationSourcesByUnreachablePath.get(path) ?? new Set<string>();
+            sources.add(source);
+            verificationSourcesByUnreachablePath.set(path, sources);
+        });
+    const sourceVerificationSources = (path: string): Set<string> => {
+        const sources = new Set(verificationSourcesByUnreachablePath.get(path) ?? []);
+        const state = statesByPath.get(path);
+        if (!state || !state.is_composite) return sources;
+        [...leafPaths]
+            .filter(item => item.startsWith(`${path}.`))
+            .forEach(item => {
+                for (const source of verificationSourcesByUnreachablePath.get(item) ?? []) {
+                    sources.add(source);
+                }
+            });
+        return sources;
+    };
+    const reasonsByKey = new Map<string, Set<string>>();
+    const verificationSourcesByKey = new Map<string, Set<string>>();
+    const verifyBackedKeys = new Set<string>();
+    const addReason = (key: string, reason: string): void => {
+        const reasons = reasonsByKey.get(key) ?? new Set<string>();
+        reasons.add(reason);
+        reasonsByKey.set(key, reasons);
+    };
+    const addVerificationSources = (key: string, sources: Iterable<string>): void => {
+        const bucket = verificationSourcesByKey.get(key) ?? new Set<string>();
+        for (const source of sources) bucket.add(source);
+        if (bucket.size > 0) verificationSourcesByKey.set(key, bucket);
+    };
+    const forcedGroups = forcedExpansionGroups(transitions, forcedTransitions);
+    const forcedKeysByIdentity = new Map<string, string[]>();
+    forcedTransitions.forEach((declaration, index) => {
+        const identity = `${declaration.state_path}\u0000${declaration.original_raw}`;
+        forcedKeysByIdentity.set(identity, [
+            ...(forcedKeysByIdentity.get(identity) ?? []),
+            `forced:${index}`,
+        ]);
+    });
+    authored.forEach(([key, transition]) => {
+        if (key.startsWith('forced:')) {
+            const index = Number(key.slice('forced:'.length));
+            const expansions = Number.isInteger(index) ? forcedGroups[index] ?? [] : [];
+            if (expansions.length > 0 && expansions.some(item => sourceIsUnreachable(item.from_path))) {
+                addReason(key, 'unreachable_source_state');
+                for (const item of expansions) addVerificationSources(key, sourceVerificationSources(item.from_path));
+            }
+        } else if (sourceIsUnreachable(transition.from_path)) {
+            addReason(key, 'unreachable_source_state');
+            addVerificationSources(key, sourceVerificationSources(transition.from_path));
+        }
+    });
+    const eventNames = new Set(diagnostics
+        .filter(item => item.code === 'W_EVENT_UNREACHABLE_EMIT')
+        .map(item => item.refs.event_name)
+        .filter((name): name is string => typeof name === 'string'));
+    const verificationSourcesByEvent = new Map<string, Set<string>>();
+    diagnostics
+        .filter(item => item.code === 'W_EVENT_UNREACHABLE_EMIT')
+        .forEach(item => {
+            const event = item.refs.event_name;
+            const source = verificationSourceId(item);
+            if (typeof event !== 'string' || source === null) return;
+            const sources = verificationSourcesByEvent.get(event) ?? new Set<string>();
+            sources.add(source);
+            verificationSourcesByEvent.set(event, sources);
+        });
+    authored.forEach(([key, transition]) => {
+        if (transition.event !== null && eventNames.has(transition.event)) {
+            addReason(key, 'unreachable_event_consumer');
+            addVerificationSources(key, verificationSourcesByEvent.get(transition.event) ?? []);
+        }
+    });
+    for (const diagnostic of diagnostics) {
+        if (!UNREACHABLE_TRANSITION_REASON_CODES.has(diagnostic.code)) continue;
+        const refs = diagnostic.refs;
+        let keys: string[] = [];
+        if (typeof refs.origin_id === 'string') {
+            keys = authored
+                .filter(([key]) => key === `combo:${refs.origin_id}`)
+                .map(([key]) => key);
+        }
+        if (diagnostic.code === 'W_FORCED_NEVER_EXPANDS') {
+            const identity = `${String(refs.state_path)}\u0000${String(refs.original_raw)}`;
+            keys = [...(forcedKeysByIdentity.get(identity) ?? [])];
+        }
+        const duplicateSpans = Array.isArray(refs.duplicate_spans) ? refs.duplicate_spans : null;
+        if (diagnostic.code === 'W_REDUNDANT_TRANSITION' && duplicateSpans !== null) {
+            const spanKeys = new Set(duplicateSpans.map(item => {
+                if (item === null || typeof item !== 'object') return null;
+                const span = item as Record<string, unknown>;
+                return [span.line, span.column, span.end_line, span.end_column].join(':');
+            }).filter((item): item is string => item !== null));
+            keys = authored.filter(([, item]) => item.__sourceRange !== undefined && spanKeys.has([
+                item.__sourceRange.start.line + 1,
+                item.__sourceRange.start.character + 1,
+                item.__sourceRange.end.line + 1,
+                item.__sourceRange.end.character + 1,
+            ].join(':'))).slice(1).map(([key]) => key);
+        }
+        const transitionIndex = refs.transition_index;
+        if (keys.length === 0 && typeof transitionIndex === 'number') {
+            keys = authored.filter(([, item]) => item.transition_index === transitionIndex).map(([key]) => key);
+        }
+        if (keys.length === 0 && refs.transition !== null && typeof refs.transition === 'object') {
+            const payload = refs.transition as Record<string, unknown>;
+            const parent = payload.parent;
+            const fromState = payload.from_state;
+            const toState = payload.to_state;
+            if (typeof parent === 'string' && typeof fromState === 'string') {
+                const payloadFrom = `${parent}.${fromState}`;
+                const payloadTo = typeof toState === 'string' ? `${parent}.${toState}` : null;
+                keys = authored.filter(([, item]) => item.from_path === payloadFrom && (payloadTo === null || item.to_path === payloadTo))
+                    .filter(([, item]) => typeof payload.guard !== 'string' || item.guard === payload.guard)
+                    .filter(([, item]) => typeof payload.event !== 'string' || item.event === payload.event || item.event?.split('.').at(-1) === payload.event)
+                    .filter(([, item]) => typeof payload.is_forced !== 'boolean' || item.is_forced === payload.is_forced)
+                    .filter(([, item]) => typeof payload.transition_index !== 'number' || item.transition_index === payload.transition_index)
+                    .map(([key]) => key);
+            }
+        }
+        if (keys.length === 0 && duplicateSpans !== null) {
+            const spanKeys = new Set(duplicateSpans.map(item => {
+                if (item === null || typeof item !== 'object') return null;
+                const span = item as Record<string, unknown>;
+                return [span.line, span.column, span.end_line, span.end_column].join(':');
+            }).filter((item): item is string => item !== null));
+            keys = authored.filter(([, item]) => item.__sourceRange !== undefined && spanKeys.has([
+                item.__sourceRange.start.line + 1,
+                item.__sourceRange.start.character + 1,
+                item.__sourceRange.end.line + 1,
+                item.__sourceRange.end.character + 1,
+            ].join(':'))).slice(1).map(([key]) => key);
+        }
+        if (keys.length === 0 && typeof refs.from_path === 'string' && typeof refs.to_path === 'string') {
+            keys = authored.filter(([, item]) => item.from_path === refs.from_path && item.to_path === refs.to_path).map(([key]) => key);
+        }
+        const source = verificationSourceId(diagnostic);
+        if (source !== null) {
+            for (const key of keys) {
+                verifyBackedKeys.add(key);
+                addVerificationSources(key, [source]);
+            }
+        }
+        const reason = diagnostic.code === 'W_FORCED_NEVER_EXPANDS'
+            ? 'forced_never_expands'
+            : diagnostic.code.includes('GUARD')
+            ? 'guard_false'
+            : diagnostic.code.includes('SHADOWED') ? 'shadowed' : 'redundant';
+        for (const key of keys) addReason(key, reason);
+    }
+    return [...reasonsByKey.entries()].map(([key, reasons]) => {
+        let transition = authoredByKey.get(key)!;
+        if (key.startsWith('forced:') && reasons.has('unreachable_source_state')) {
+            const index = Number(key.slice('forced:'.length));
+            const expansions = Number.isInteger(index) ? forcedGroups[index] ?? [] : [];
+            const unreachablePaths = new Set(diagnostics
+                .filter(item => item.code === 'W_UNREACHABLE_STATE')
+                .map(item => item.refs.state_path)
+                .filter((path): path is string => typeof path === 'string'));
+            transition = expansions.find(item => unreachablePaths.has(item.from_path)) ?? transition;
+        }
+        const sortedReasons = [...reasons].sort();
+        return {
+            code: 'W_UNREACHABLE_TRANSITION',
+            severity: 'warning',
+            message: `Authored transition ${JSON.stringify(transition.from_path)} -> ${JSON.stringify(transition.to_path)} is unreachable for reasons: ${sortedReasons.join(', ')}.`,
+            span: transition.__sourceRange === undefined
+                ? null
+                : {
+                    line: transition.__sourceRange.start.line + 1,
+                    column: transition.__sourceRange.start.character + 1,
+                    end_line: transition.__sourceRange.end.line + 1,
+                    end_column: transition.__sourceRange.end.character + 1,
+                },
+            refs: {
+                from_path: transition.from_path,
+                to_path: transition.to_path,
+                transition_index: transition.transition_index,
+                reasons: sortedReasons,
+                source_path: transition.source_path,
+                source_state_path: transition.from_path === INIT_MARK ? null : transition.from_path,
+                selection_owner_path: null,
+                forced_origin: transition.forced_origin,
+                combo_origin_ids: [...new Set(
+                    transition.combo_origin_refs
+                        .map(ref => ref.origin_id)
+                        .filter((originId): originId is string => typeof originId === 'string'),
+                )].sort(),
+                ...(verifyBackedKeys.has(key) ? {verify_backed: true} : {}),
+                ...(verificationSourcesByKey.has(key)
+                    ? {verification_source_ids: [...verificationSourcesByKey.get(key)!].sort()}
+                    : {}),
+            },
+        } satisfies ModelDiagnosticJson;
+    });
+}
+
+function buildStructureStatistics(
+    states: StateInfo[],
+    transitions: TransitionInfo[],
+    diagnostics: ModelDiagnosticJson[],
+    forcedTransitions: InternalForcedTransitionInfo[],
+    policy: StructureStatisticsPolicy,
+): StructureStatistics {
+    const representatives = new Map<string, TransitionInfo>();
+    const comboGroups = new Map<string, TransitionInfo[]>();
+    const comboInitialOrigins = new Set<string>();
+    for (const transition of transitions) {
+        if (transition.from_path === INIT_MARK) {
+            for (const ref of transition.combo_origin_refs) comboInitialOrigins.add(ref.origin_id);
+            continue;
+        }
+        if (transition.combo_origin_refs.length > 0) {
+            const origins = [...new Set(transition.combo_origin_refs.map(ref => ref.origin_id))];
+            for (const origin of origins) {
+                const group = comboGroups.get(origin) ?? [];
+                group.push(transition);
+                comboGroups.set(origin, group);
+            }
+            continue;
+        }
+        if (transition.is_forced) continue;
+        representatives.set(`transition:${transition.transition_index ?? representatives.size}`, transition);
+    }
+    for (const [origin, group] of comboGroups) {
+        if (comboInitialOrigins.has(origin)) continue;
+        const base = group[0];
+        representatives.set(`combo:${origin}`, {
+            ...base,
+            __sourceRange: base.__sourceRange,
+            guard: group.find(item => item.guard !== null)?.guard ?? null,
+            effect: group.find(item => item.effect !== null)?.effect ?? null,
+            event: group.find(item => item.event !== null)?.event ?? null,
+        });
+    }
+    const forcedGroups = forcedExpansionGroups(transitions, forcedTransitions);
+    forcedTransitions.forEach((declaration, index) => {
+        const base = forcedGroups[index][0] ?? (
+            declaration.state_path.length === 0
+                ? transitions.find(item => item.is_forced)
+                : undefined
+        ) ?? {
+            from_path: declaration.from_path,
+            to_path: declaration.to_path,
+            event: declaration.event,
+            event_scope: declaration.event_scope,
+            guard: declaration.guard,
+            effect: null,
+            effect_self_assigns: [],
+            is_forced: true,
+            forced_origin: declaration.original_raw,
+            transition_index: null,
+            source_path: null,
+            combo_origin_refs: [],
+            combo_projection_key: null,
+            combo_projection_order_key: null,
+            combo_reuse_group_id: null,
+            combo_priority_run_identity: null,
+            combo_priority_run_index: null,
+        } satisfies TransitionInfo;
+        representatives.set(`forced:${index}`, {
+            ...base,
+            event: declaration.event,
+            guard: declaration.guard,
+            effect: null,
+            is_forced: true,
+        });
+    });
+    const authoredEntries = [...representatives.entries()];
+    const authored = authoredEntries.map(([, item]) => item);
+    const nonPseudo = states.filter(state => !state.is_pseudo);
+    const leaf = nonPseudo.filter(state => state.is_leaf);
+    const composite = nonPseudo.filter(state => state.is_composite);
+    const unguarded = authored.filter(transition => transition.guard === null).length;
+    const effectEligible = authored.filter(transition => !transition.is_forced);
+    const missingEffect = effectEligible.filter(transition => transition.effect === null).length;
+    const eventlessUnconditional = authored.filter(
+        transition => transition.event === null && transition.guard === null,
+    ).length;
+    const unreachablePaths = new Set(
+        diagnostics
+            .filter(item => item.code === 'W_UNREACHABLE_STATE')
+            .map(item => item.refs.state_path)
+            .filter((path): path is string => typeof path === 'string'),
+    );
+    const unreachableLeafPaths = new Set(
+        leaf
+            .map(state => state.path)
+            .filter(path => unreachablePaths.has(path)),
+    );
+    const statesByPath = new Map(states.map(state => [state.path, state]));
+
+    const sourceIsUnreachable = (path: string): boolean => {
+        if (unreachablePaths.has(path)) return true;
+        const state = statesByPath.get(path);
+        if (!state || !state.is_composite) return false;
+        const descendantLeaves = new Set(
+            leaf
+                .map(item => item.path)
+                .filter(item => item.startsWith(`${path}.`)),
+        );
+        return descendantLeaves.size > 0 && [...descendantLeaves].every(item => unreachableLeafPaths.has(item));
+    };
+
+    const sourceUnreachableKeys = new Set<string>();
+    authoredEntries.forEach(([key, item]) => {
+        if (key.startsWith('forced:')) {
+            const index = Number(key.slice('forced:'.length));
+            const expansions = Number.isInteger(index) ? forcedGroups[index] ?? [] : [];
+            // Count one authored declaration when any concrete expansion is
+            // unreachable; the aggregate warning carries the same identity.
+            if (expansions.length > 0 && expansions.some(edge => sourceIsUnreachable(edge.from_path))) {
+                sourceUnreachableKeys.add(key);
+            }
+            return;
+        }
+        if (sourceIsUnreachable(item.from_path)) sourceUnreachableKeys.add(key);
+    });
+    const eventNames = new Set(
+        diagnostics
+            .filter(item => item.code === 'W_EVENT_UNREACHABLE_EMIT')
+            .map(item => item.refs.event_name)
+            .filter((name): name is string => typeof name === 'string'),
+    );
+    const eventUnreachableKeys = new Set(
+        authoredEntries
+            .filter(([, item]) => item.event !== null && eventNames.has(item.event))
+            .map(([key]) => key),
+    );
+    const transitionUnreachableCodes = new Set([
+        'W_GUARD_CONST_FALSE',
+        'W_DEAD_GUARD',
+        'W_COMBO_GUARD_CONST_FALSE',
+        'W_FORCED_GUARD_UNSAT',
+        'W_FORCED_NEVER_EXPANDS',
+        'W_TRANSITION_SHADOWED',
+        'W_REDUNDANT_TRANSITION',
+    ]);
+    const forcedKeysByIdentity = new Map<string, string[]>();
+    forcedTransitions.forEach((declaration, index) => {
+        const identity = `${declaration.state_path}\u0000${declaration.original_raw}`;
+        const keys = forcedKeysByIdentity.get(identity) ?? [];
+        keys.push(`forced:${index}`);
+        forcedKeysByIdentity.set(identity, keys);
+    });
+    const reasonKeys = new Map<string, Set<string>>();
+    for (const diagnostic of diagnostics) {
+        if (!transitionUnreachableCodes.has(diagnostic.code)) continue;
+        const originId = diagnostic.refs.origin_id;
+        let keys = authoredEntries
+            .filter(([key]) => typeof originId === 'string' && key === `combo:${originId}`)
+            .map(([key]) => key);
+        if (diagnostic.code === 'W_FORCED_NEVER_EXPANDS') {
+            const identity = `${String(diagnostic.refs.state_path)}\u0000${String(diagnostic.refs.original_raw)}`;
+            const forcedKeys = forcedKeysByIdentity.get(identity);
+            if (forcedKeys !== undefined) keys = [...forcedKeys];
+        }
+        const duplicateSpans = diagnostic.refs.duplicate_spans;
+        if (diagnostic.code === 'W_REDUNDANT_TRANSITION' && Array.isArray(duplicateSpans)) {
+            const spanKeys = new Set(duplicateSpans.map(item => {
+                if (item === null || typeof item !== 'object') return null;
+                const span = item as Record<string, unknown>;
+                return [span.line, span.column, span.end_line, span.end_column].join(':');
+            }).filter((item): item is string => item !== null));
+            const matched = authoredEntries.filter(([, item]) => {
+                const range = item.__sourceRange;
+                if (range === undefined) return false;
+                return spanKeys.has([
+                    range.start.line + 1,
+                    range.start.character + 1,
+                    range.end.line + 1,
+                    range.end.character + 1,
+                ].join(':'));
+            });
+            keys = matched.slice(1).map(([key]) => key);
+        }
+        const transitionIndex = diagnostic.refs.transition_index;
+        if (keys.length === 0 && typeof transitionIndex === 'number') {
+            keys = authoredEntries
+                .filter(([, item]) => item.transition_index === transitionIndex)
+                .map(([key]) => key);
+        }
+        const transitionPayload = diagnostic.refs.transition;
+        if (keys.length === 0 && transitionPayload !== null && typeof transitionPayload === 'object') {
+            const payload = transitionPayload as Record<string, unknown>;
+            const parent = payload.parent;
+            const fromState = payload.from_state;
+            const toState = payload.to_state;
+            if (typeof parent === 'string' && typeof fromState === 'string') {
+                const payloadFrom = `${parent}.${fromState}`;
+                const payloadTo = typeof toState === 'string' ? `${parent}.${toState}` : null;
+                keys = authoredEntries
+                    .filter(([, item]) => item.from_path === payloadFrom &&
+                        (payloadTo === null || item.to_path === payloadTo))
+                    .map(([key]) => key);
+                const payloadGuard = payload.guard;
+                const payloadEvent = payload.event;
+                const payloadForced = payload.is_forced;
+                if (typeof payloadGuard === 'string' || payloadGuard === null) {
+                    keys = keys.filter(key => authoredEntries.find(([candidate]) => candidate === key)![1].guard === payloadGuard);
+                }
+                if (typeof payloadEvent === 'string') {
+                    keys = keys.filter(key => {
+                        const event = authoredEntries.find(([candidate]) => candidate === key)![1].event;
+                        return event === payloadEvent || event?.split('.').at(-1) === payloadEvent;
+                    });
+                }
+                if (typeof payloadForced === 'boolean') {
+                    keys = keys.filter(key => authoredEntries.find(([candidate]) => candidate === key)![1].is_forced === payloadForced);
+                }
+                const payloadIndex = payload.transition_index;
+                if (typeof payloadIndex === 'number' && Number.isInteger(payloadIndex)) {
+                    keys = keys.filter(key => authoredEntries.find(([candidate]) => candidate === key)![1].transition_index === payloadIndex);
+                }
+            }
+        }
+        if (keys.length === 0 && Array.isArray(duplicateSpans)) {
+            const spanKeys = new Set(duplicateSpans.map(item => {
+                if (item === null || typeof item !== 'object') return null;
+                const span = item as Record<string, unknown>;
+                return [span.line, span.column, span.end_line, span.end_column].join(':');
+            }).filter((item): item is string => item !== null));
+            const matched = authoredEntries.filter(([, item]) => {
+                const range = item.__sourceRange;
+                if (range === undefined) return false;
+                return spanKeys.has([
+                    range.start.line + 1,
+                    range.start.character + 1,
+                    range.end.line + 1,
+                    range.end.character + 1,
+                ].join(':'));
+            });
+            keys = matched.slice(1).map(([key]) => key);
+        }
+        if (keys.length === 0) {
+            const fromPath = diagnostic.refs.from_path;
+            const toPath = diagnostic.refs.to_path;
+            if (typeof fromPath === 'string' && typeof toPath === 'string') {
+                keys = authoredEntries
+                    .filter(([, item]) => item.from_path === fromPath && item.to_path === toPath)
+                    .map(([key]) => key);
+            }
+        }
+        if (keys.length === 0) continue;
+        const reason = diagnostic.code === 'W_FORCED_NEVER_EXPANDS'
+            ? 'forced_never_expands'
+            : diagnostic.code.includes('GUARD')
+            ? 'guard_false'
+            : diagnostic.code.includes('SHADOWED') ? 'shadowed' : 'redundant';
+        const bucket = reasonKeys.get(reason) ?? new Set<string>();
+        keys.forEach(key => bucket.add(key));
+        reasonKeys.set(reason, bucket);
+    }
+    const reasons: Record<string, number> = {};
+    if (sourceUnreachableKeys.size > 0) reasons.unreachable_source_state = sourceUnreachableKeys.size;
+    if (eventUnreachableKeys.size > 0) reasons.unreachable_event_consumer = eventUnreachableKeys.size;
+    for (const [reason, keys] of reasonKeys) reasons[reason] = keys.size;
+    const stateCount = nonPseudo.length;
+    const transitionCount = authored.length;
+    const unreachableTransitionCount = (() => {
+        const allKeys = new Set([...sourceUnreachableKeys, ...eventUnreachableKeys]);
+        for (const keys of reasonKeys.values()) {
+            for (const key of keys) allKeys.add(key);
+        }
+        return allKeys.size;
+    })();
+    const transitionsPerState = rate(transitionCount, stateCount);
+    const unreachableLeafStateRate = rate(unreachableLeafPaths.size, leaf.length);
+    const unreachableTransitionRate = rate(unreachableTransitionCount, transitionCount);
+    const exceededThresholds: string[] = [];
+    if (
+        policy.max_transitions_per_state !== null
+        && transitionsPerState !== null
+        && transitionsPerState > policy.max_transitions_per_state
+    ) {
+        exceededThresholds.push('transitions_per_state');
+    }
+    if (
+        policy.max_unreachable_leaf_state_rate !== null
+        && unreachableLeafStateRate !== null
+        && unreachableLeafStateRate > policy.max_unreachable_leaf_state_rate
+    ) {
+        exceededThresholds.push('unreachable_leaf_state_rate');
+    }
+    if (
+        policy.max_unreachable_transition_rate !== null
+        && unreachableTransitionRate !== null
+        && unreachableTransitionRate > policy.max_unreachable_transition_rate
+    ) {
+        exceededThresholds.push('unreachable_transition_rate');
+    }
+    return {
+        state_count: stateCount,
+        leaf_state_count: leaf.length,
+        composite_state_count: composite.length,
+        authored_transition_count: transitionCount,
+        transitions_per_state: transitionsPerState,
+        states_per_transition: rate(stateCount, transitionCount),
+        unreachable_leaf_states: unreachableLeafPaths.size,
+        unreachable_leaf_state_rate: unreachableLeafStateRate,
+        unreachable_transitions: unreachableTransitionCount,
+        unreachable_transition_rate: unreachableTransitionRate,
+        unreachable_transition_reasons: Object.entries(reasons)
+            .sort(([left], [right]) => left.localeCompare(right))
+            .reduce<Record<string, number>>((result, [key, value]) => {
+                result[key] = value;
+                return result;
+            }, {}),
+        thresholds: policy,
+        exceeded_thresholds: exceededThresholds,
+        unguarded_transitions: unguarded,
+        guard_eligible_transitions: transitionCount,
+        unguarded_rate: rate(unguarded, transitionCount),
+        missing_effect_transitions: missingEffect,
+        effect_eligible_transitions: effectEligible.length,
+        missing_effect_rate: rate(missingEffect, effectEligible.length),
+        eventless_unconditional_transitions: eventlessUnconditional,
+        behavior_transitions: transitionCount,
+        eventless_unconditional_rate: rate(eventlessUnconditional, transitionCount),
     };
 }
 

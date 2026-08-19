@@ -379,10 +379,10 @@ describe('jsfcstm analyzers and code actions', () => {
         const document = createDocument(text, filePath);
         const diagnostics = await inspectDiagnosticsAsEditorDiagnostics(text, filePath);
         const diag = diagnostics.find(item => (
-            item.code === 'W_DEADLOCK_LEAF' &&
+            item.code === 'W_LEAF_NO_OUTGOING_TRANSITION' &&
             item.data?.state_path === 'Root.Idle'
         ));
-        assert.ok(diag, 'expected W_DEADLOCK_LEAF suggested fix diagnostic');
+        assert.ok(diag, 'expected W_LEAF_NO_OUTGOING_TRANSITION suggested fix diagnostic');
 
         const actions = await packageModule.collectCodeActions(document, diag.range, [diag]);
         const action = actions.find(item => /exit transition/.test(item.title));
@@ -393,7 +393,7 @@ describe('jsfcstm analyzers and code actions', () => {
         await assertParses(updated, filePath);
         const followup = await inspectDiagnosticsAsEditorDiagnostics(updated, filePath);
         assert.equal(
-            followup.some(item => item.code === 'W_DEADLOCK_LEAF' && item.data?.state_path === 'Root.Idle'),
+            followup.some(item => item.code === 'W_LEAF_NO_OUTGOING_TRANSITION' && item.data?.state_path === 'Root.Idle'),
             false,
         );
     });
@@ -603,8 +603,8 @@ describe('jsfcstm analyzers and code actions', () => {
         const filePath = '/tmp/suggested-forged-real-key-range.fcstm';
         const document = createDocument(text, filePath);
         const diagnostics = await packageModule.collectDocumentDiagnostics(document);
-        const deadlockDiagnostic = diagnostics.find(item => item.code === 'W_DEADLOCK_LEAF');
-        assert.ok(deadlockDiagnostic, `expected W_DEADLOCK_LEAF, got ${JSON.stringify(diagnostics)}`);
+        const deadlockDiagnostic = diagnostics.find(item => item.code === 'W_LEAF_NO_OUTGOING_TRANSITION');
+        assert.ok(deadlockDiagnostic, `expected W_LEAF_NO_OUTGOING_TRANSITION, got ${JSON.stringify(diagnostics)}`);
         const forgedDiagnostic = {
             ...deadlockDiagnostic,
             range: rangeOf(text, 'Root'),
@@ -631,8 +631,8 @@ describe('jsfcstm analyzers and code actions', () => {
         const filePath = '/tmp/suggested-stripped-client-payload.fcstm';
         const document = createDocument(text, filePath);
         const diagnostics = await packageModule.collectDocumentDiagnostics(document);
-        const deadlockDiagnostic = diagnostics.find(item => item.code === 'W_DEADLOCK_LEAF');
-        assert.ok(deadlockDiagnostic, `expected W_DEADLOCK_LEAF, got ${JSON.stringify(diagnostics)}`);
+        const deadlockDiagnostic = diagnostics.find(item => item.code === 'W_LEAF_NO_OUTGOING_TRANSITION');
+        assert.ok(deadlockDiagnostic, `expected W_LEAF_NO_OUTGOING_TRANSITION, got ${JSON.stringify(diagnostics)}`);
         const strippedDiagnostic = {
             ...deadlockDiagnostic,
             data: {...deadlockDiagnostic.data},
@@ -660,7 +660,7 @@ describe('jsfcstm analyzers and code actions', () => {
             message: 'first',
             severity: 'warning' as const,
             source: 'fcstm',
-            code: 'W_DEADLOCK_LEAF',
+            code: 'W_LEAF_NO_OUTGOING_TRANSITION',
             data: {
                 state_path: 'Root.Idle',
                 parent_path: 'Root',
@@ -679,7 +679,7 @@ describe('jsfcstm analyzers and code actions', () => {
             message: 'second',
             severity: 'warning' as const,
             source: 'fcstm',
-            code: 'W_DEADLOCK_LEAF',
+            code: 'W_LEAF_NO_OUTGOING_TRANSITION',
             data: {
                 suggested_fix: {
                     rationale: 'Add new text.',
@@ -765,8 +765,8 @@ describe('jsfcstm analyzers and code actions', () => {
         const filePath = '/tmp/root-deadlock-no-fix.fcstm';
         const document = createDocument(text, filePath);
         const diagnostics = await inspectDiagnosticsAsEditorDiagnostics(text, filePath);
-        const diag = diagnostics.find(item => item.code === 'W_DEADLOCK_LEAF');
-        assert.ok(diag, 'expected W_DEADLOCK_LEAF diagnostic');
+        const diag = diagnostics.find(item => item.code === 'W_LEAF_NO_OUTGOING_TRANSITION');
+        assert.ok(diag, 'expected W_LEAF_NO_OUTGOING_TRANSITION diagnostic');
         assert.equal(packageModule.suggestedFixFromDiagnostic(diag), null);
 
         const actions = await packageModule.collectCodeActions(document, diag.range, [diag]);
@@ -781,8 +781,8 @@ describe('jsfcstm analyzers and code actions', () => {
         const deadlockPath = '/tmp/single-line-deadlock-fix.fcstm';
         const deadlockDocument = createDocument(deadlockText, deadlockPath);
         const deadlockDiagnostics = await inspectDiagnosticsAsEditorDiagnostics(deadlockText, deadlockPath);
-        const deadlock = deadlockDiagnostics.find(item => item.code === 'W_DEADLOCK_LEAF');
-        assert.ok(deadlock, 'expected W_DEADLOCK_LEAF diagnostic');
+        const deadlock = deadlockDiagnostics.find(item => item.code === 'W_LEAF_NO_OUTGOING_TRANSITION');
+        assert.ok(deadlock, 'expected W_LEAF_NO_OUTGOING_TRANSITION diagnostic');
         const deadlockActions = await packageModule.collectCodeActions(
             deadlockDocument,
             deadlock.range,
@@ -836,7 +836,7 @@ describe('jsfcstm analyzers and code actions', () => {
         const document = createDocument(text, filePath);
         const diagnostics = await packageModule.collectDocumentDiagnostics(document);
         assert.equal(
-            diagnostics.some(item => item.code === 'W_UNREFERENCED_VAR' || item.code === 'W_DEADLOCK_LEAF'),
+            diagnostics.some(item => item.code === 'W_UNREFERENCED_VAR' || item.code === 'W_LEAF_NO_OUTGOING_TRANSITION'),
             true,
         );
 
@@ -899,8 +899,8 @@ describe('jsfcstm analyzers and code actions', () => {
         const deadlockPath = '/tmp/editor-design-deadlock-published-range.fcstm';
         const deadlockDocument = createDocument(deadlockText, deadlockPath);
         const deadlockDiagnostics = await packageModule.collectDocumentDiagnostics(deadlockDocument);
-        const deadlockDiagnostic = deadlockDiagnostics.find(item => item.code === 'W_DEADLOCK_LEAF');
-        assert.ok(deadlockDiagnostic, `expected W_DEADLOCK_LEAF, got ${JSON.stringify(deadlockDiagnostics)}`);
+        const deadlockDiagnostic = deadlockDiagnostics.find(item => item.code === 'W_LEAF_NO_OUTGOING_TRANSITION');
+        assert.ok(deadlockDiagnostic, `expected W_LEAF_NO_OUTGOING_TRANSITION, got ${JSON.stringify(deadlockDiagnostics)}`);
 
         const actions = await packageModule.collectCodeActions(
             deadlockDocument,

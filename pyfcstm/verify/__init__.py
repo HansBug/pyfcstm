@@ -60,10 +60,12 @@ from .algorithms import (
     transition_shadowed_by_predecessor,
 )
 from .inspect_adapter import (
+    InspectEligibility,
     InspectRunResult,
     InspectAccessForbiddenError,
     eligible_for_inspect,
     iter_inspect_eligible,
+    project_inspect_eligibility,
     run_inspect_algorithms,
 )
 from .registry import REGISTRY
@@ -92,6 +94,7 @@ __all__ = [
     "FallbackUnknownRisk",
     "FormulaSizeScaling",
     "InspectAccessForbiddenError",
+    "InspectEligibility",
     "InspectRunResult",
     "SMTLogic",
     "ResultKind",
@@ -106,6 +109,7 @@ __all__ = [
     "forced_guard_unsat_under_init",
     "guard_tautology",
     "iter_inspect_eligible",
+    "project_inspect_eligibility",
     "run_inspect_algorithms",
     "transition_shadowed_by_predecessor",
 ]

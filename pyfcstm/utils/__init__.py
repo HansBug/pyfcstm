@@ -53,11 +53,17 @@ Example::
 
 from .binary import is_binary_file
 from .decode import auto_decode
-from .doc import format_multiline_comment
+from .doc import (
+    aggregate_documentation,
+    format_multiline_comment,
+    validate_documentation_for_export,
+)
 from .fixed import Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64
 from .jinja2 import (
     add_builtins_to_env,
     add_settings_for_env,
+    escape_python_docstring,
+    markdown_fence,
     to_c_path_identifier,
     to_c_public_identifier,
     to_c_public_macro_identifier,

@@ -395,7 +395,7 @@ pyfcstm inspect -i buggy.fcstm --format json -o inspect_report.json
 pyfcstm inspect -i buggy.fcstm --format json --enable-verify --max-complexity-tier smt_linear --smt-timeout-ms 1000
 ```
 
-The default CLI path is a checker-style human report and does not run verify-backed checks. Human and stable LLM-oriented formats include a small source context window around each diagnostic so nearby state and transition structure remain visible. Use `--color auto|always|never` to control ANSI color for that human report only; `--format json`, `--format llm-json`, and `--format llm-md` never include ANSI escapes. Pass `--format json` when scripts, CI jobs, or editor tooling need the full `inspect_model(model).to_json()` contract. Stable LLM repair-loop formats are also available as `--format llm-json` and `--format llm-md`; they expose schema `pyfcstm.inspect.llm.v1`, source/provenance, repair guidance, and do-not notes without changing the full JSON contract. Pass `--enable-verify` explicitly to append model-derived structural and SMT-local `pyfcstm.verify` diagnostics. Inspect does not parse `.fbmcq` queries or load `pyfcstm.bmc`. `--smt-timeout-ms 0` is forwarded
+The default CLI path is a checker-style human report and does not run verify-backed checks. Human and LLM-oriented formats include a small source context window around each diagnostic so nearby state and transition structure remain visible. Use `--color auto|always|never` to control ANSI color for that human report only; `--format json`, `--format llm-json`, and `--format llm-md` never include ANSI escapes. Pass `--format json` when scripts, CI jobs, or editor tooling need the full `inspect_model(model).to_json()` contract. LLM repair-loop formats are also available as `--format llm-json` and `--format llm-md`; their contract is the `inspect_llm_report_schema.json` shipped with the running pyfcstm release, and they expose source/provenance, repair guidance, do-not notes, and descriptive `summary.structure_statistics`. Structure statistics use advisory defaults of `T/S <= 6.0`, unreachable leaf-state rate `<= 0.10`, and unreachable transition rate `<= 0.10`; the `6.0` value is a broad review trigger rather than a quality boundary. Use `--structure-max-*` or `--no-structure-thresholds` to configure them. Exceeded thresholds are metadata only and do not create diagnostics. The full JSON contract is extended with `structure_statistics`; consumers must validate against the schema shipped with the same pyfcstm release. Pass `--enable-verify` explicitly to append model-derived structural and SMT-local `pyfcstm.verify` diagnostics. Inspect does not parse `.fbmcq` queries or load `pyfcstm.bmc`. `--smt-timeout-ms 0` is forwarded
 unchanged to the SMT solver layer and follows Z3 semantics, where `0` means no finite timeout is configured.
 
 The human report is plain ASCII when color is disabled or unavailable:
@@ -890,7 +890,7 @@ Every code is reachable from the minimal DSL snippet in the right-hand column; s
 | `W_GUARD_CONST_TRUE` | A transition guard folds to literal `true` via the built-in constant folder — transition always fires. | `state Root { state A; state B; [*] -> A; A -> B : if [(1 + 2) == 3]; }` |
 | `W_DURING_CONST_ASSIGN` | A concrete `during` action assigns a variable to the same literal-only numeric value every cycle. | `def int counter = 0; state Root { state Idle { during { counter = (2 + 3) * 4; } } [*] -> Idle; }` |
 | `W_UNUSED_EVENT` | An `event` declaration is never referenced by any transition. | `state Root { event Unused; state A; state B; [*] -> A; A -> B :: SomethingElse; }` |
-| `W_DEADLOCK_LEAF` | A non-pseudo leaf state has no outgoing transition. | `state Root { state A; [*] -> A; }` |
+| `W_LEAF_NO_OUTGOING_TRANSITION` | A non-pseudo leaf state has no outgoing transition. | `state Root { state A; [*] -> A; }` |
 | `W_INITIAL_UNCONDITIONAL_MISSING` | A composite state has no unconditional `[*] -> child` entry transition. | `def int ready = 0; state Root { state A; [*] -> A : if [ready > 0]; }` |
 | `W_FORCED_NEVER_EXPANDS` | A forced transition declaration has no concrete child state in its scope to expand from. | `state Root { state A { !* -> [*]; } [*] -> A; }` |
 | `W_DEAD_NAMED_ACTION` | A named action belongs to an unreachable state and is not referenced by any reachable action ref. | `state Root { state A; state B { enter Cleanup {} } [*] -> A; }` |
@@ -994,6 +994,9 @@ pyfcstm is an open-source project under the LGPLv3 license, and contributions ar
 - **Report Bugs**: Submit issues on [GitHub Issues](https://github.com/hansbug/pyfcstm/issues)
 - **Submit Pull Requests**: See [CONTRIBUTING.md](https://github.com/hansbug/pyfcstm/blob/main/CONTRIBUTING.md) for
   guidelines
+- **Audit Deprecations**: Run `make deprecation_check` before a release; it audits versioned YAML metadata and
+  `@deprecation.deprecated` declarations across the Python package and CLI, then reports scheduled, actionable, and
+  overdue entries against `pyfcstm.config.meta.__VERSION__`.
 - **Suggest Features**: Discuss feature ideas in the Issues section
 - **Ask Questions**: Open an issue if you need help with the DSL, templates, or simulator
 

@@ -87,6 +87,7 @@ export interface FcstmAstVariableDefinition extends FcstmAstNodeBase {
     deftype: 'int' | 'float';
     initializer: FcstmAstExpression;
     expr: FcstmAstExpression;
+    doc?: string;
 }
 
 /**
@@ -124,6 +125,7 @@ export interface FcstmAstStateDefinition extends FcstmAstNodeBase {
      * for states authored in the same file as their parent.
      */
     importedFromFile?: string;
+    doc?: string;
 }
 
 export type FcstmAstStateStatement =
@@ -145,6 +147,7 @@ export interface FcstmAstEventDefinition extends FcstmAstNodeBase {
     displayName?: string;
     extraName?: string;
     extra_name?: string;
+    doc?: string;
 }
 
 /**
@@ -203,6 +206,9 @@ export interface FcstmAstComboTrigger extends FcstmAstNodeBase {
  * Common transition fields shared by normal and forced transitions.
  */
 export interface FcstmAstTransitionBase extends FcstmAstNodeBase {
+    /** Source file that authored this declaration in an assembled workspace model. */
+    sourceFilePath?: string;
+    source_file_path?: string;
     sourceStateName?: string;
     targetStateName?: string;
     sourceKind: 'init' | 'state' | 'all';
@@ -234,6 +240,7 @@ export interface FcstmAstTransitionBase extends FcstmAstNodeBase {
      * disambiguation. This metadata is not part of FCSTM execution semantics.
      */
     transitionIndexRefs?: FcstmAstTransitionIndexRef[];
+    doc?: string;
 }
 
 export interface FcstmAstTransitionIndexRef {

@@ -324,6 +324,123 @@ class CollectingErrorListener {
     }
 }
 
+interface ParserTokenLike {
+    text?: string;
+    line?: number;
+    column?: number;
+}
+
+function isBlockDocumentationToken(token: ParserTokenLike | undefined): boolean {
+    const text = token?.text || '';
+    return text.startsWith('/*') && text.endsWith('*/');
+}
+
+function collectMalformedDocumentationErrors(
+    tokens: readonly ParserTokenLike[],
+    errors: ParseError[],
+): void {
+    for (const token of tokens) {
+        if (!isBlockDocumentationToken(token)) continue;
+        const text = token.text || '';
+        const body = text.slice(2, -2);
+        if (body.includes('/*') || body.includes('*/')) {
+            errors.push({
+                line: Math.max(0, (token.line ?? 1) - 1),
+                column: Math.max(0, token.column ?? 0),
+                message: 'Malformed documentation block: nested comment delimiters are not allowed.',
+                severity: 'error',
+            });
+        }
+        const invalidControl = [...body].find((char) => {
+            const code = char.codePointAt(0) || 0;
+            return (code < 0x20 && !['\n', '\r', '\t'].includes(char)) || code === 0x7f;
+        });
+        if (invalidControl !== undefined) {
+            const code = invalidControl.codePointAt(0) || 0;
+            errors.push({
+                line: Math.max(0, (token.line ?? 1) - 1),
+                column: Math.max(0, token.column ?? 0),
+                message: `Malformed documentation block: unsupported control character U+${code.toString(16).toUpperCase().padStart(4, '0')}.`,
+                severity: 'error',
+            });
+        }
+    }
+}
+
+function isTrailingAbstractDocumentation(
+    tokens: readonly ParserTokenLike[],
+    index: number,
+): boolean {
+    let actionKeyword = false;
+    let abstractKeyword = false;
+    for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+        const text = tokens[cursor].text || '';
+        if (isBlockDocumentationToken(tokens[cursor])) continue;
+        if (text === ';' || text === '{' || text === '}') break;
+        if (text === 'enter' || text === 'exit' || text === 'during') {
+            actionKeyword = true;
+            break;
+        }
+        if (text === 'abstract') abstractKeyword = true;
+    }
+    return actionKeyword && abstractKeyword;
+}
+
+function collectDuplicateDocumentationErrors(
+    tokens: readonly ParserTokenLike[],
+    errors: ParseError[],
+): void {
+    for (let index = 0; index < tokens.length; index += 1) {
+        if (!isBlockDocumentationToken(tokens[index])
+            || isTrailingAbstractDocumentation(tokens, index)) continue;
+        let actionKeyword = false;
+        let abstractKeyword = false;
+        for (let cursor = index + 1; cursor < tokens.length; cursor += 1) {
+            const token = tokens[cursor];
+            const text = token.text || '';
+            if (isBlockDocumentationToken(token)) {
+                if (actionKeyword && abstractKeyword) {
+                    errors.push({
+                        line: Math.max(0, (token.line ?? 1) - 1),
+                        column: Math.max(0, token.column ?? 0),
+                        message: 'Duplicate model documentation: both leading and trailing blocks are attached to one action.',
+                        severity: 'error',
+                    });
+                }
+                break;
+            }
+            if (text === ';' || text === '{' || text === '}') break;
+            if (text === 'enter' || text === 'exit' || text === 'during') {
+                // A trailing documentation block may omit the action's
+                // semicolon. Once its abstract head was seen, another action
+                // keyword therefore starts a new declaration rather than
+                // forming a duplicate pair with the first block.
+                if (abstractKeyword) break;
+                actionKeyword = true;
+            } else if (text === 'abstract' && actionKeyword) {
+                abstractKeyword = true;
+            }
+        }
+    }
+}
+
+function tokenStreamTokens(stream: unknown): ParserTokenLike[] {
+    const candidate = stream as { tokens?: ParserTokenLike[] };
+    return Array.isArray(candidate.tokens) ? candidate.tokens : [];
+}
+
+function reportDocumentationErrors(
+    tokenStream: unknown,
+    errors: ParseError[],
+): number {
+    const tokens = tokenStreamTokens(tokenStream);
+    if (tokens.length === 0) return 0;
+    const before = errors.length;
+    collectMalformedDocumentationErrors(tokens, errors);
+    collectDuplicateDocumentationErrors(tokens, errors);
+    return errors.length - before;
+}
+
 export class FcstmParser {
     private readonly modules: GeneratedParserModules;
 
@@ -366,6 +483,7 @@ export class FcstmParser {
             parser.addErrorListener(errorListener);
 
             parser.state_machine_dsl();
+            reportDocumentationErrors(tokens, errors);
 
             return {
                 success: errors.length === 0,
@@ -406,7 +524,9 @@ export class FcstmParser {
             parser.removeErrorListeners();
             parser.addErrorListener(errorListener);
 
-            return parser.state_machine_dsl();
+            const tree = parser.state_machine_dsl();
+            const documentationErrors = reportDocumentationErrors(tokens, errors);
+            return documentationErrors > 0 ? null : tree;
         } catch (error) {
             if (!isExpectedAntlrError(error)) {
                 throw error;

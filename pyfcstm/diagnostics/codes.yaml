@@ -20,6 +20,11 @@
 #                        by unit tests and by downstream tooling to
 #                        validate their dispatch paths).
 #
+# Deprecated compatibility aliases use only `alias_of`, `deprecated_in`, and
+# the optional `removed_in`. They remain queryable in the registry but must
+# not be emitted by a current analyzer. Run `make deprecation_check` to audit
+# all versioned deprecation metadata in production YAML and Python code.
+#
 # Allowed `refs.*.type` tokens (must mirror `_ALLOWED_REF_TYPES` in
 # codes.py — that tuple is the single source of truth, this comment block
 # is documentation; a test asserts the two stay aligned):
@@ -1631,6 +1636,16 @@ W_UNREACHABLE_STATE:
     A state is not reachable from the model's root entry path via any
     sequence of normal or forced transitions.
   refs:
+    algorithm_name:
+      type: str
+      required: false
+      description: >-
+        Verify registry algorithm that produced the finding when this shared
+        static code is emitted by the optional verify pipeline.
+    verification_scope:
+      type: str
+      required: false
+      description: Verify scope for a verify-backed occurrence.
     state_path:
       type: str
       required: true
@@ -1879,7 +1894,7 @@ W_UNUSED_EVENT:
         A -> B :: SomethingElse;
     }
 
-W_DEADLOCK_LEAF:
+W_LEAF_NO_OUTGOING_TRANSITION:
   severity: warning
   span_object: state_identifier
   capability: pure_static
@@ -1889,7 +1904,7 @@ W_DEADLOCK_LEAF:
     state_path:
       type: str
       required: true
-      description: Dotted path of the deadlocking leaf state.
+      description: Dotted path of the leaf state with no outgoing transition.
     parent_path:
       type: str
       required: false
@@ -1899,7 +1914,7 @@ W_DEADLOCK_LEAF:
     reason:
       type: str
       required: true
-      description: Why the leaf is considered a deadlock.
+      description: Why the leaf has no outgoing transition.
       enum: ['no_outgoing_transition']
     suggested_fix:
       type: dict
@@ -1910,26 +1925,36 @@ W_DEADLOCK_LEAF:
     target: deadlock_leaf_exit_transition
     anchor_ref: refs.parent_path
     text_template: "{state_name} -> [*];\n"
-    rationale: Add an exit transition so the leaf can finish its parent state.
+    rationale: Add an exit transition only if the leaf is meant to finish its parent state.
   for_llm:
     summary: >-
-      This leaf state has no outgoing transition, so once the machine
-      enters it there is no modeled way to leave.
+      This leaf state has no authored outgoing transition. A non-root leaf can
+      remain active and execute its during actions; a root leaf instead follows
+      pyfcstm's synthetic root-exit behavior. The warning only reports the
+      missing authored transition for leaving the leaf.
     recommended_actions:
       - kind: add_transition
         target: state
-        rationale: Add a modeled transition to the next intended state.
+        rationale: Add a modeled transition only if a non-root leaf is intended to move to another state.
       - kind: add_exit_transition
         target: state
-        rationale: Add ``State -> [*];`` if the leaf is meant to finish its parent.
+        rationale: Add ``State -> [*];`` only if a non-root leaf is intended to finish its parent; root leaves already follow synthetic root-exit behavior.
     do_not:
-      - "Do not add a self-loop just to silence the warning."
+      - >-
+        Do not add a self-loop just to silence the warning: it has exit/enter
+        semantics and is not a replacement for a leaf's stay-active behavior
+        or a root leaf's synthetic root-exit behavior.
   emit_tier: static_pipeline
   example_dsl: |
     state Root {
         state A;
         [*] -> A;
     }
+
+W_DEADLOCK_LEAF:
+  alias_of: W_LEAF_NO_OUTGOING_TRANSITION
+  deprecated_in: '0.7.0'
+  removed_in: '1.0.0'
 
 W_INITIAL_UNCONDITIONAL_MISSING:
   severity: warning
@@ -2334,6 +2359,106 @@ W_REDUNDANT_TRANSITION:
         [*] -> A;
         A -> B :: Go;
         A -> B :: Go;
+    }
+
+W_UNREACHABLE_TRANSITION:
+  severity: warning
+  span_object: transition
+  capability: pure_static
+  description: >-
+    An authored transition cannot be exercised under the available static or
+    verification reachability evidence. The refs list the contributing
+    reasons; multiple reasons are aggregated into one diagnostic per authored
+    transition.
+  refs:
+    from_path:
+      type: str
+      required: true
+      description: Dotted source state path, or ``[*]`` for an entry transition.
+    to_path:
+      type: str
+      required: true
+      description: Dotted target state path, or ``[*]`` for an exit transition.
+    transition_index:
+      type: int_or_null
+      required: false
+      description: >-
+        Stable parent-first transition index when a concrete transition exists;
+        null for an authored forced declaration with no expansion.
+    source_path:
+      type: str_or_null
+      required: false
+      description: Source file that authored the transition, when available.
+    source_state_path:
+      type: str_or_null
+      required: false
+      description: Authored source state path, or null for an entry transition.
+    selection_owner_path:
+      type: str_or_null
+      required: false
+      description: Composite owning an authored initial selection, when available.
+    forced_origin:
+      type: str_or_null
+      required: false
+      description: Authored forced-transition text when applicable.
+    combo_origin_ids:
+      type: list[str]
+      required: false
+      description: Authored combo origin identifiers represented by this finding.
+    mount_path:
+      type: str_or_null
+      required: false
+      description: Assembled endpoint path used to distinguish an imported mount instance.
+    reasons:
+      type: list[str]
+      required: true
+      item_enum:
+        - unreachable_source_state
+        - unreachable_event_consumer
+        - forced_never_expands
+        - guard_false
+        - shadowed
+        - redundant
+      description: >-
+        One or more canonical reasons that make this authored transition
+        unreachable. The list is sorted for stable output.
+    verify_backed:
+      type: bool
+      required: false
+      description: >-
+        True when at least one contributing reason is backed by an optional
+        verify-pipeline diagnostic; omitted for static-only evidence.
+    verification_source_ids:
+      type: list[str]
+      required: false
+      description: >-
+        Sorted, deduplicated, version-free identifiers for contributing verify
+        evidence. Each identifier is ``algorithm_name@verification_scope``
+        when both fields are available, or a stable verify-pipeline fallback.
+        Omitted for static-only evidence.
+  for_llm:
+    summary: >-
+      This authored transition is unreachable under the available analysis
+      evidence. The reason list distinguishes source-state reachability,
+      event-consumer reachability, forced expansion, guards, shadowing, and
+      redundancy.
+    recommended_actions:
+      - kind: inspect_transition
+        target: transition
+        rationale: >-
+          Check each entry in ``refs.reasons`` against the transition's source,
+          trigger, guard, and declaration scope before changing behavior.
+    do_not:
+      - >-
+        Do not remove a transition solely because this warning is present;
+        verify that the reported reason matches the intended runtime model.
+  emit_tier: static_pipeline
+  example_dsl: |
+    state Root {
+        state A;
+        state B;
+        [*] -> A;
+        A -> B : if [false];
     }
 
 W_SELF_TRANSITION_NOP:
@@ -3352,11 +3477,13 @@ W_TOPOLOGICAL_NOEXIT:
   for_llm:
     summary: >-
       From the current topology, execution can enter a region that has no
-      structural path to terminate at the root exit.
+      structural path to terminate at the root exit. This is a graph result;
+      a non-pseudo leaf may still legally remain active and execute its during
+      actions.
     recommended_actions:
       - kind: add_exit_transition
         target: topology
-        rationale: Add a route from the stuck state or cycle to an exit-capable path.
+        rationale: Add a route to an exit-capable path only if the model requires leaving or termination.
       - kind: mark_intentional
         target: review_note
         rationale: If the model intentionally never exits, keep the behavior and document it.
@@ -3399,7 +3526,8 @@ I_TOPOLOGICAL_NON_TERMINATING:
   for_llm:
     summary: >-
       The structural graph allows a path that can avoid termination forever.
-      This may be a valid service loop, but it should be reviewed explicitly.
+      This may be a valid service loop or stay-active leaf, but it should be
+      reviewed explicitly rather than repaired with a self-loop.
     recommended_actions:
       - kind: review_nontermination
         target: topology
@@ -3722,8 +3850,8 @@ W_TRANSITION_SHADOWED:
   capability: requires_solver
   emit_tier: verify_pipeline
   description: >-
-    A later outgoing transition is fully covered by earlier same-source
-    triggers and therefore cannot be selected.
+    A later transition in an ordered selection domain is fully covered by
+    earlier triggers and therefore cannot be selected.
   refs:
     algorithm_name:
       type: str
@@ -3745,7 +3873,12 @@ W_TRANSITION_SHADOWED:
     source_state_path:
       type: str
       required: true
-      description: Dotted source state path whose outgoing order creates the shadowing.
+      description: Dotted owner state path whose ordered selection domain creates the shadowing.
+    selection_domain_kind:
+      type: str
+      required: false
+      description: Ordered selection domain containing the shadowed transition.
+      enum: ['state_outgoing', 'composite_initial']
     reason:
       type: str
       required: true
@@ -3761,8 +3894,9 @@ W_TRANSITION_SHADOWED:
       description: Stable summaries of earlier transitions that shadow this transition.
   for_llm:
     summary: >-
-      Transition ordering means an earlier same-source transition consumes all
-      cases that could have reached this later transition.
+      Transition ordering means earlier transitions in the same ordered
+      selection domain consume all cases that could have reached this later
+      transition.
     recommended_actions:
       - kind: reorder_transitions
         target: transition_list

@@ -4,6 +4,7 @@ import {createDocument, packageModule, sliceByRange, withPatchedProperty} from '
 
 const SUPPRESSED_FROM_INSPECT_SURFACE = new Set([
     'W_UNREACHABLE_STATE',
+    'W_UNREACHABLE_TRANSITION',
     'W_UNUSED_EVENT',
 ]);
 
@@ -381,11 +382,21 @@ state Root {
             createDocument(text, '/tmp/unreachable-float-normalized-guard.fcstm'),
         );
         const diagnostic = diagnostics.find(item => (
-            item.code === 'W_GUARD_CONST_FALSE' && item.data?.from_path === 'Root.Isolated'
+            item.code === 'W_UNREACHABLE_TRANSITION' && item.data?.from_path === 'Root.Isolated'
         ));
 
         assert.ok(diagnostic, 'expected source-unreachable transition diagnostic');
-        assert.equal(diagnostic.data?.guard_text, '2.0 == 2.0');
+        assert.deepEqual(diagnostic.data, {
+            from_path: 'Root.Isolated',
+            to_path: 'Root.Blocked',
+            transition_index: 1,
+            reasons: ['unreachable_source_state'],
+            source_path: '/tmp/unreachable-float-normalized-guard.fcstm',
+            source_state_path: 'Root.Isolated',
+            selection_owner_path: null,
+            forced_origin: null,
+            combo_origin_ids: [],
+        });
     });
 
     it('keeps inspect-only folded false guards when literal false guards share the file', async () => {
@@ -506,7 +517,7 @@ state Root {
             document,
             semantic,
             [{
-                code: 'W_DEADLOCK_LEAF',
+                code: 'W_LEAF_NO_OUTGOING_TRANSITION',
                 severity: 'warning' as const,
                 message: 'Leaf state has no outgoing transition.',
                 span: null,
@@ -525,7 +536,7 @@ state Root {
         );
 
         assert.equal(diagnostics.length, 1);
-        assert.equal(diagnostics[0].code, 'W_DEADLOCK_LEAF');
+        assert.equal(diagnostics[0].code, 'W_LEAF_NO_OUTGOING_TRANSITION');
     });
 
     it('tolerates workspace snapshots without root node data', async () => {
@@ -637,7 +648,7 @@ state Root {
         }
 
         const checks: Array<[string, (diag: {data?: Record<string, unknown>}) => boolean, string]> = [
-            ['W_DEADLOCK_LEAF', diag => diag.data?.state_path === 'Root.Active.Leaf', 'Leaf'],
+            ['W_LEAF_NO_OUTGOING_TRANSITION', diag => diag.data?.state_path === 'Root.Active.Leaf', 'Leaf'],
             ['W_INITIAL_UNCONDITIONAL_MISSING', () => true, 'Root'],
             ['W_DEAD_NAMED_ACTION', diag => diag.data?.function_name === 'Cleanup', 'Cleanup'],
             ['W_GUARD_CONST_TRUE', diag => diag.data?.to_path === 'Root.Done', '(1 + 2) == 3'],

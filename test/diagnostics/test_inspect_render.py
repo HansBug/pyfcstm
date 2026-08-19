@@ -4,14 +4,16 @@ import json
 import os
 import re
 import textwrap
+from dataclasses import replace
+from types import SimpleNamespace
 from typing import Any, List, Mapping
 
 import pytest
 
 from pyfcstm.diagnostics import inspect_model
+from pyfcstm.diagnostics.codes import CODE_REGISTRY
 from pyfcstm.diagnostics.inspect_render import (
     HumanRenderOptions,
-    INSPECT_LLM_SCHEMA_VERSION,
     inspect_output_suffix_warning,
     render_inspect_human,
     render_inspect_llm_json,
@@ -37,10 +39,14 @@ BOX_DRAWING_RE = re.compile(r"[\u2500-\u257f]")
 SOURCE_EXCERPT_RE = re.compile(r"\s+\d+ \|")
 
 
-def _report():
+def _report(*, enable_verify=False, max_complexity_tier="structural"):
     ast = parse_with_grammar_entry(SOURCE, "state_machine_dsl")
     machine = parse_dsl_node_to_state_machine(ast)
-    return inspect_model(machine)
+    return inspect_model(
+        machine,
+        enable_verify=enable_verify,
+        max_complexity_tier=max_complexity_tier,
+    )
 
 
 def _assert_excerpt_gutters_align(text):
@@ -87,6 +93,12 @@ def _schema_type_matches(value, expected):
         if (
             expected_type == "integer"
             and isinstance(value, int)
+            and not isinstance(value, bool)
+        ):
+            return True
+        if (
+            expected_type == "number"
+            and isinstance(value, (int, float))
             and not isinstance(value, bool)
         ):
             return True
@@ -174,6 +186,7 @@ class TestInspectRender:
         assert "[WARN] FCSTM Inspect Report: case.fcstm" in text
         assert "status: warning" in text
         assert "diagnostics: 0 errors" in text
+        assert "verification: disabled" in text
         assert "W_UNWRITTEN_READ_VAR" in text
         assert "--> case.fcstm:" in text
         assert "|" in text
@@ -182,12 +195,124 @@ class TestInspectRender:
         assert "= why:" in text
         assert "= fix:" in text
         assert "= do-not:" in text
+        assert "remain active" in text
+        assert "during actions" in text
+        assert "self-loop" in text
         assert ANSI_ESCAPE_RE.search(text) is None
         assert BOX_DRAWING_RE.search(text) is None
         _assert_excerpt_gutters_align(text)
         assert " 3 |     state Idle;" in text
         assert " 4 |     state Running;" in text
         assert " 5 |     [*] -> Idle;" in text
+
+    def test_human_renderer_summarizes_verification_and_expands_indeterminate(self):
+        report = _report()
+        verification = SimpleNamespace(
+            supported=True,
+            enabled=True,
+            summary=SimpleNamespace(
+                registered=14,
+                executed=14,
+                not_run=0,
+                indeterminate=1,
+            ),
+            algorithms=(
+                SimpleNamespace(
+                    algorithm_name="dead_guard",
+                    result_kind="sat",
+                    reason=None,
+                ),
+                SimpleNamespace(
+                    algorithm_name="transition_shadowed_by_predecessor",
+                    result_kind="undecidable_skip",
+                    reason="Runtime shadowing could not be established.",
+                ),
+            ),
+        )
+
+        text = render_inspect_human(
+            replace(report, verification=verification),
+            SOURCE,
+        )
+
+        assert (
+            "verification: 14/14 run, 0 not run by policy, 1 indeterminate"
+            in text
+        )
+        assert "transition_shadowed_by_predecessor: undecidable_skip" in text
+        assert "reason: Runtime shadowing could not be established." in text
+        assert "dead_guard: sat" not in text
+
+    def test_topology_guidance_keeps_stay_active_fallback_distinct(self):
+        noexit = CODE_REGISTRY["W_TOPOLOGICAL_NOEXIT"].for_llm
+        nonterminating = CODE_REGISTRY["I_TOPOLOGICAL_NON_TERMINATING"].for_llm
+
+        assert noexit is not None
+        assert "graph result" in noexit.summary
+        assert "during" in noexit.summary
+        assert "only if" in noexit.recommended_actions[0]["rationale"]
+        assert nonterminating is not None
+        assert "stay-active leaf" in nonterminating.summary
+        assert "self-loop" in nonterminating.summary
+
+        deadlock = CODE_REGISTRY["W_LEAF_NO_OUTGOING_TRANSITION"].for_llm
+        assert deadlock is not None
+        assert "non-root leaf" in deadlock.summary
+        assert "synthetic root-exit" in deadlock.summary
+
+    def test_root_leaf_llm_guidance_does_not_offer_parent_exit_repair(self):
+        source = "state Root;"
+        ast = parse_with_grammar_entry(source, "state_machine_dsl")
+        report = inspect_model(parse_dsl_node_to_state_machine(ast))
+        payload = json.loads(render_inspect_llm_json(report, source))
+        deadlock = next(
+            item
+            for item in payload["diagnostics"]
+            if item["code"] == "W_LEAF_NO_OUTGOING_TRANSITION"
+        )
+
+        assert "synthetic root-exit" in deadlock["summary"]
+        assert deadlock["recommended_actions"] == []
+        assert "synthetic root-exit behavior" in deadlock["do_not"][0]
+
+    def test_historical_leaf_code_still_renders_from_registry_alias(self):
+        from pyfcstm.utils.validate import ModelDiagnostic
+
+        legacy = ModelDiagnostic(
+            code="W_DEADLOCK_LEAF",
+            severity="warning",
+            message="Historical leaf diagnostic.",
+            span=None,
+            refs={"state_path": "Root.Idle", "reason": "no_outgoing_transition"},
+        )
+        payload = json.loads(
+            render_inspect_llm_json(
+                replace(_report(), diagnostics=(legacy,)),
+                SOURCE,
+            )
+        )
+
+        diagnostic = payload["diagnostics"][0]
+        assert diagnostic["code"] == "W_DEADLOCK_LEAF"
+        assert "non-root leaf" in diagnostic["summary"]
+        assert diagnostic["source"] == "inspect-static"
+
+    def test_human_renderer_reports_unsupported_provider(self):
+        report = _report()
+        verification = replace(
+            report.verification,
+            supported=False,
+            enabled=False,
+            provider=None,
+            reason_code="provider_unsupported",
+        )
+
+        text = render_inspect_human(
+            replace(report, verification=verification),
+            SOURCE,
+        )
+
+        assert "verification: unsupported" in text
 
     def test_human_renderer_color_enabled_adds_ansi_without_losing_text(self):
         text = render_inspect_human(
@@ -208,7 +333,7 @@ class TestInspectRender:
 
         report = _report()
         diagnostic = ModelDiagnostic(
-            code="W_DEADLOCK_LEAF",
+            code="W_LEAF_NO_OUTGOING_TRANSITION",
             severity="warning",
             message="Synthetic diagnostic without span.",
             span=None,
@@ -235,7 +360,7 @@ class TestInspectRender:
 
         text = render_inspect_human(report, SOURCE, input_path="case.fcstm")
 
-        assert "[WARN] W_DEADLOCK_LEAF" in text
+        assert "[WARN] W_LEAF_NO_OUTGOING_TRANSITION" in text
         assert "-->" not in text
         assert "= source: inspect-static" in text
         assert "= why:" in text
@@ -268,30 +393,97 @@ class TestInspectRender:
         assert "No diagnostics." in text
         assert ANSI_ESCAPE_RE.search(text) is None
 
+    def test_human_renderer_formats_structure_rates_by_kind(self):
+        text = render_inspect_human(_report(), SOURCE, input_path="case.fcstm")
+
+        assert "  transitions per state: 0.333" in text
+        assert "  states per transition: 3.000" in text
+        assert "  unguarded: 0/1; rate: 0.000 (0.0%)" in text
+        assert "  missing effect: 1/1; rate: 1.000 (100.0%)" in text
+
     def test_llm_json_renderer_is_stable_and_actionable(self):
         payload = json.loads(render_inspect_llm_json(_report(), SOURCE))
 
-        assert payload["schema_version"] == INSPECT_LLM_SCHEMA_VERSION
-        assert payload["schema_status"] == "stable"
+        assert "schema_version" not in payload
+        assert "schema_status" not in payload
         assert payload["status"] == "warning"
         assert payload["diagnostics"]
         diagnostic = payload["diagnostics"][0]
         assert {"code", "severity", "message", "refs"} <= set(diagnostic)
         assert payload["repair_protocol"]["rules"]
+        assert payload["summary"]["structure_statistics"]["authored_transition_count"] == 1
+        assert payload["summary"]["structure_statistics"]["transitions_per_state"] == 1 / 3
         assert "recommended_actions" in diagnostic
         assert "do_not" in diagnostic
         assert "provenance" in diagnostic
         assert diagnostic["provenance"]["kind"] == diagnostic["source"]
         assert "repair_guidance" in diagnostic
         deadlock = next(
-            item for item in payload["diagnostics"] if item["code"] == "W_DEADLOCK_LEAF"
+            item for item in payload["diagnostics"] if item["code"] == "W_LEAF_NO_OUTGOING_TRANSITION"
         )
+        assert "remain active" in deadlock["summary"]
+        assert "during actions" in deadlock["summary"]
+        assert all(
+            "only if" in action["rationale"]
+            for action in deadlock["recommended_actions"]
+        )
+        assert "exit/enter semantics" in deadlock["do_not"][0]
         context = deadlock["source_excerpt"]["context"]
         assert [line["line"] for line in context] == [3, 4, 5]
         assert context[0]["caret"] is None
         assert context[1]["is_anchor"] is True
         assert context[1]["caret"].strip("^") == "    "
         assert context[2]["text"] == "    [*] -> Idle;"
+
+    def test_unreachable_transition_provenance_survives_verify_rendering(self):
+        report = _report(enable_verify=True, max_complexity_tier="smt_linear")
+        diagnostic = next(
+            item for item in report.diagnostics
+            if item.code == "W_UNREACHABLE_TRANSITION"
+        )
+        assert diagnostic.refs["verify_backed"] is True
+        assert diagnostic.refs["verification_source_ids"] == ["dead_guard@smt_local"]
+
+        payload = json.loads(render_inspect_llm_json(report, SOURCE))
+        rendered = next(
+            item for item in payload["diagnostics"]
+            if item["code"] == "W_UNREACHABLE_TRANSITION"
+        )
+        assert rendered["source"] == "verify-backed"
+        assert rendered["provenance"] == {
+            "kind": "verify-backed",
+            "verify_required": True,
+            "source_ids": ["dead_guard@smt_local"],
+        }
+        assert "verify-backed" in render_inspect_human(report, SOURCE)
+
+    def test_llm_renderers_ignore_verification_metadata(self):
+        report = _report()
+        verification = SimpleNamespace(
+            supported=True,
+            enabled=True,
+            summary=SimpleNamespace(
+                registered=14,
+                executed=14,
+                not_run=0,
+                indeterminate=1,
+            ),
+            algorithms=(
+                SimpleNamespace(
+                    algorithm_name="dead_guard",
+                    result_kind="unknown",
+                    reason="Synthetic indeterminate result.",
+                ),
+            ),
+        )
+        verified_report = replace(report, verification=verification)
+
+        assert render_inspect_llm_json(
+            verified_report, SOURCE
+        ) == render_inspect_llm_json(report, SOURCE)
+        assert render_inspect_llm_markdown(
+            verified_report, SOURCE
+        ) == render_inspect_llm_markdown(report, SOURCE)
 
     def test_llm_json_schema_contract_matches_payload_shape(self):
         schema_path = os.path.join(
@@ -307,11 +499,10 @@ class TestInspectRender:
         payload = json.loads(render_inspect_llm_json(_report(), SOURCE))
 
         assert schema["title"] == "FCSTM Inspect LLM Report"
-        assert (
-            schema["properties"]["schema_version"]["const"]
-            == INSPECT_LLM_SCHEMA_VERSION
-        )
-        assert schema["properties"]["schema_status"]["const"] == "stable"
+        assert "schema_version" not in schema["properties"]
+        assert "schema_status" not in schema["properties"]
+        assert "schema_version" not in payload
+        assert "schema_status" not in payload
         assert set(schema["required"]).issubset(set(payload.keys()))
         diagnostic_required = set(schema["definitions"]["Diagnostic"]["required"])
         for diagnostic in payload["diagnostics"]:
@@ -321,16 +512,18 @@ class TestInspectRender:
         schema_errors = _schema_errors(schema, schema, payload)
         assert schema_errors == []
 
-    def test_llm_markdown_renderer_contains_stable_schema_and_sections(self):
+    def test_llm_markdown_renderer_contains_sections(self):
         text = render_inspect_llm_markdown(_report(), SOURCE)
 
         assert "# FCSTM Inspect Report" in text
-        assert INSPECT_LLM_SCHEMA_VERSION in text
-        assert "Schema status: `stable`" in text
+        assert "Schema status:" not in text
+        assert "- Schema:" not in text
         assert "## Repair protocol" in text
         assert "## W_" in text
         assert "Recommended actions" in text
         assert "Repair notes" in text
+        assert "## Structure statistics" in text
+        assert "authored_transition_count" in text
         assert "3 |     state Idle;" in text
         assert "4 |     state Running;" in text
         assert "|     ^^^^^^^^^^^^^^" in text

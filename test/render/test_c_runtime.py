@@ -121,6 +121,55 @@ class TestCRuntimeRendering:
         assert "scope->c = 0;" in body
         assert "<<" not in body.split("negative shift count")[-1]
 
+    def test_computed_negative_shift_counts_are_masked_in_action_guard_and_initializer(self):
+        action_statements = parse_with_grammar_entry(
+            "counter = 1 << (0 | -1); other = 1 >> (0 ^ 0 - 1);",
+            entry_name="operational_statement_set",
+        )
+        action_body = render_c_action_body(
+            action_statements,
+            {"counter": "int", "other": "int"},
+            "RootMachine",
+            "ROOT_MACHINE",
+        )
+        assert action_body.count("negative shift count") == 2
+        assert "<<" not in action_body
+        assert ">>" not in action_body
+
+        guard = parse_with_grammar_entry(
+            "counter == (1 << (0 | -1)) and other == (1 >> (0 ^ 0 - 1))",
+            entry_name="cond_expression",
+        )
+        guard_body = render_c_condition_body(
+            guard,
+            {"counter": "int", "other": "int"},
+            "RootMachine",
+            "ROOT_MACHINE",
+            "transition guard",
+        )
+        assert guard_body.count("negative shift count") == 2
+        assert "<<" not in guard_body
+        assert ">>" not in guard_body
+
+        model = _model_from_dsl(
+            """
+            def int initial = 1 << (0 | -1);
+            def int other = 1 >> (0 ^ 0 - 1);
+            state Root {
+                state A;
+                [*] -> A;
+            }
+            """
+        )
+        initializer_body = render_c_reset_vars_body(
+            model.defines,
+            "RootMachine",
+            "ROOT_MACHINE",
+        )
+        assert initializer_body.count("negative shift count") == 2
+        assert "<<" not in initializer_body
+        assert ">>" not in initializer_body
+
     def test_dynamic_negative_shift_guard_keeps_runtime_count_check(self):
         statements = parse_with_grammar_entry(
             """

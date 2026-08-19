@@ -222,6 +222,9 @@ _CONSTANT_FOLD_OPERATORS = {
     "+": lambda left, right: left + right,
     "-": lambda left, right: left - right,
     "*": lambda left, right: left * right,
+    "&": lambda left, right: left & right,
+    "^": lambda left, right: left ^ right,
+    "|": lambda left, right: left | right,
 }
 
 
@@ -282,7 +285,7 @@ def _static_int_literal(expr: dsl_nodes.Expr) -> Optional[int]:
     integer-power helper and the ``double`` :c:func:`pow` form, and whether the
     zero-base check is reachable at all.
 
-    Literals, their signs, and ``+ - *`` over them are folded. Folding the
+    Literals, their signs, and ``+ - * & ^ |`` over them are folded. Folding the
     additive and multiplicative forms is not a convenience: an exponent written
     as ``3 ** (30 + 4)`` is exactly as statically known as ``3 ** 34``, and
     treating it as unknown routes an exact integer power through ``pow()``, which
@@ -516,61 +519,23 @@ def _is_static_zero(expr: dsl_nodes.Expr) -> bool:
     return False
 
 
-def _signed_literal_value(expr: dsl_nodes.Expr) -> Optional[Union[int, float]]:
-    """
-    Return the value of a numeric literal behind any chain of unary signs.
-
-    Mirrors the recursion depth of :func:`_is_static_zero`: parentheses and
-    unary ``+`` / ``-`` are folded, but nothing else is. Broader arithmetic
-    reasoning belongs in the inspect/verify layers -- code generation only
-    needs to recognise the literal shift counts that a generated runtime
-    diagnostic already rejects.
-
-    :param expr: Expression to inspect.
-    :type expr: pyfcstm.dsl.node.Expr
-    :return: Literal value, keeping the literal's own numeric type, or
-        ``None`` when the expression is not a signed numeric literal.
-    :rtype: int or float, optional
-
-    Example::
-
-        >>> from pyfcstm.dsl import node as dsl_nodes
-        >>> _signed_literal_value(dsl_nodes.UnaryOp("-", dsl_nodes.Integer("1")))
-        -1
-        >>> _signed_literal_value(dsl_nodes.UnaryOp("+", dsl_nodes.UnaryOp("-", dsl_nodes.Integer("2"))))
-        -2
-        >>> _signed_literal_value(dsl_nodes.Name("x")) is None
-        True
-    """
-    expr = _coerce_expr(expr)
-    if isinstance(expr, dsl_nodes.Paren):
-        return _signed_literal_value(expr.expr)
-    if isinstance(expr, dsl_nodes.UnaryOp) and expr.op in {"+", "-"}:
-        inner = _signed_literal_value(expr.expr)
-        if inner is None:
-            return None
-        return -inner if expr.op == "-" else inner
-    if isinstance(expr, (dsl_nodes.Integer, dsl_nodes.HexInt, dsl_nodes.Float)):
-        return expr.value
-    return None
-
-
 def _is_static_negative(expr: dsl_nodes.Expr) -> bool:
     """
-    Return whether an expression is syntactically a negative numeric literal.
+    Return whether an expression folds to a negative integer constant.
 
     The C runtime emitter uses this narrow check to keep generated code
     compileable: a negative shift count is undefined behaviour in C
     (C11 6.5.7p3), which ``-Wshift-count-negative`` reports and the
     ``-Werror`` command in the generated README turns into a hard failure.
-    Like :func:`_is_static_zero`, it folds only parentheses and unary signs.
-    A computed count such as ``0 - 1`` is therefore not masked and still
-    reaches the generated source, exactly as ``x / (1 - 1)`` does for the
-    sibling helper; both stay compile-time failures under ``-Werror``.
+    This reuses :func:`_static_int_literal`, whose deliberately small folder
+    accepts parentheses, unary signs, and ``+ - * & ^ |`` over int64 literals.  A
+    computed constant such as ``0 - 1`` therefore receives the same compile-
+    safe placeholder as a unary negative literal, while variables and other
+    expressions remain runtime-checked.
 
     :param expr: Expression to inspect.
     :type expr: pyfcstm.dsl.node.Expr
-    :return: ``True`` when the expression is a negative numeric literal.
+    :return: ``True`` when the expression folds to a negative integer.
     :rtype: bool
 
     Example::
@@ -583,9 +548,9 @@ def _is_static_negative(expr: dsl_nodes.Expr) -> bool:
         >>> _is_static_negative(dsl_nodes.Integer("1"))
         False
         >>> _is_static_negative(dsl_nodes.BinaryOp(dsl_nodes.Integer("0"), "-", dsl_nodes.Integer("1")))
-        False
+        True
     """
-    value = _signed_literal_value(expr)
+    value = _static_int_literal(expr)
     return value is not None and value < 0
 
 

@@ -333,6 +333,9 @@ adapter code, confirm the following points in the downstream project:
   BitVec / BMC / fixed-point proof work is tracked in
   <https://github.com/HansBug/pyfcstm/issues/254>, and future codegen numeric
   strategy work is tracked in <https://github.com/HansBug/pyfcstm/issues/255>.
+- Generated `round()` uses `nearbyint()` and therefore assumes that the process
+  floating-point rounding mode remains `FE_TONEAREST` (the default). Do not
+  change that mode around generated machine calls when simulator parity matters.
 - Treat native toolchain matrix results, sanitizer runs, `cppcheck`, and
   `clang-tidy` as engineering evidence only. They do not make this generated
   runtime MISRA, AUTOSAR, DO-178C, IEC 61508, ISO 26262, or other certification
@@ -665,19 +668,33 @@ double value = vars->{{ (model.defines.values() | list)[0].name | to_c_identifie
 
 Hot start restores a full variable snapshot into a generated state id:
 
+Run this after initializing the target machine and installing any required
+hooks or event checks. The separate `default_machine` supplies the DSL defaults
+without resetting the target machine.
+`default_machine` is a full runtime scratch object; use static or
+application-owned storage when its automatic storage would exceed the stack budget.
+Each concurrent hot start needs its own scratch object; serialize access when storage is shared.
+
 ```c
+{{ machine_class_name(model) }} default_machine;
 {{ machine_class_name(model) }}Vars initial_vars;
 
-{{ machine_class_name(model) }}_init(&machine);
-initial_vars = *{{ machine_class_name(model) }}_vars(&machine);
-{% for def_item in model.defines.values() -%}
-initial_vars.{{ def_item.name | to_c_identifier }} = {{ def_item.init.to_ast_node() | expr_render(style='c') }};
-{% endfor %}
-{{ machine_class_name(model) }}_hot_start(
+if (!{{ machine_class_name(model) }}_init(&default_machine)) {
+    fprintf(stderr, "default init failed: %s\n", {{ machine_class_name(model) }}_last_error(&default_machine));
+    return 1;
+}
+initial_vars = *{{ machine_class_name(model) }}_vars(&default_machine);
+
+/* Override initial_vars fields here when restoring a custom checkpoint. */
+
+if (!{{ machine_class_name(model) }}_hot_start(
     &machine,
     {{ machine_macro_name(model) }}_STATE_{{ model.root_state | state_slug }},
     &initial_vars
-);
+)) {
+    fprintf(stderr, "hot start failed: %s\n", {{ machine_class_name(model) }}_last_error(&machine));
+    return 2;
+}
 ```
 
 ### 5. Register Abstract Hooks

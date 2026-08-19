@@ -361,6 +361,7 @@ g++ -x c++ -std=c++17 -Wall -Wextra -Werror -pedantic-errors -c machine.c -o mac
 - 将同一个 `MachineWrapper` / `{{ machine_class_name(model) }}` 实例视为 non-reentrant。ISR、scheduler 或多线程代码可能接触同一实例时，应在外层串行化 `init`、`hot_start`、`cycle`、hook registration 以及 state/variable reads。
 - `volatile` registers、DMA buffers、communication frames 和 device I/O 应放在外层 adapter 中。不要为了直接访问硬件而把它们伪装成 generated persistent variables；应通过 event submission、hooks 或 application-owned adapter code 桥接。
 - C/C++ 部署前运行 `pyfcstm inspect` 并审阅 numeric warnings。这些 diagnostics 描述默认 C/C++ deployment-profile risks；Python generated runtime 的数值和异常语义不同。后续 BitVec / BMC / fixed-point proof 工作见 <https://github.com/HansBug/pyfcstm/issues/254>；未来 codegen numeric strategy 工作见 <https://github.com/HansBug/pyfcstm/issues/255>。
+- 生成的 `round()` 使用 `nearbyint()`，因此要求进程浮点舍入模式保持为 `FE_TONEAREST`（默认值）。如果要求与模拟器一致，请勿在调用生成 machine 前后修改该模式。
 - Native toolchain matrix results、sanitizer runs、`cppcheck` 和 `clang-tidy` 只能作为工程证据。它们本身不会让生成运行时达到 MISRA、AUTOSAR、DO-178C、IEC 61508、ISO 26262 或其他认证 ready。
 
 ### 链接与符号可见性
@@ -711,19 +712,31 @@ double value = vars->{{ (model.defines.values() | list)[0].name | to_c_identifie
 
 hot start 的用法是“完整变量快照 + 生成状态 id”：
 
+请在目标 machine 已完成初始化、并按需安装 hook 或 event-check 后执行下面的代码。
+独立的 `default_machine` 只用于取得 DSL 默认值，不会重置目标 machine。
+`default_machine` 是完整的运行时暂存对象；若自动存储会超出栈预算，请改用静态或应用自有存储。
+并发 hot start 应各自使用暂存对象；若共享存储，则需要串行化访问。
+
 ```c
+{{ machine_class_name(model) }} default_machine;
 {{ machine_class_name(model) }}Vars initial_vars;
 
-{{ machine_class_name(model) }}_init(&machine);
-initial_vars = *{{ machine_class_name(model) }}_vars(&machine);
-{% for def_item in model.defines.values() -%}
-initial_vars.{{ def_item.name | to_c_identifier }} = {{ def_item.init.to_ast_node() | expr_render(style='c') }};
-{% endfor %}
-{{ machine_class_name(model) }}_hot_start(
+if (!{{ machine_class_name(model) }}_init(&default_machine)) {
+    fprintf(stderr, "default init failed: %s\n", {{ machine_class_name(model) }}_last_error(&default_machine));
+    return 1;
+}
+initial_vars = *{{ machine_class_name(model) }}_vars(&default_machine);
+
+/* Override initial_vars fields here when restoring a custom checkpoint. */
+
+if (!{{ machine_class_name(model) }}_hot_start(
     &machine,
     {{ machine_macro_name(model) }}_STATE_{{ model.root_state | state_slug }},
     &initial_vars
-);
+)) {
+    fprintf(stderr, "hot start failed: %s\n", {{ machine_class_name(model) }}_last_error(&machine));
+    return 2;
+}
 ```
 
 ### 5. 注册 Abstract Hook

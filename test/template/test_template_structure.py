@@ -462,6 +462,10 @@ def test_c_family_readmes_document_deployment_safety_boundaries(rendered_templat
             assert "non-reentrant" in text
             assert "volatile" in text
             assert "DMA" in text
+        assert "FE_TONEAREST" in generated_readme
+        assert "nearbyint()" in generated_readme
+        assert "FE_TONEAREST" in generated_readme_zh
+        assert "nearbyint()" in generated_readme_zh
 
         generated_readme_words = " ".join(generated_readme.split())
         generated_readme_zh_words = " ".join(generated_readme_zh.split())
@@ -504,6 +508,32 @@ def test_c_family_readmes_document_deployment_safety_boundaries(rendered_templat
         assert "MachineWrapper" in generated_readme
         assert "wrapper surface" in generated_readme_zh
         assert "MachineWrapper" in generated_readme_zh
+
+
+@pytest.mark.unittest
+def test_c_family_hot_start_readmes_reuse_runtime_default_snapshot(rendered_templates):
+    for name in ["c", "c_poll", "cpp", "cpp_poll"]:
+        for readme_name in ["README.md", "README_zh.md"]:
+            readme = _read_text(rendered_templates[name] / readme_name)
+            heading = re.search(r"(?m)^### [45]\. Hot Start\n", readme)
+            assert heading is not None
+            next_heading = readme.find("\n### ", heading.end())
+            hot_start = readme[heading.end() : next_heading]
+
+            assert re.search(r"(?m)^\w+ default_machine;$", hot_start)
+            assert re.search(r"_init\(&default_machine\)", hot_start)
+            assert re.search(
+                r"initial_vars = \*\w+_vars\(&default_machine\);",
+                hot_start,
+            )
+            assert "default init failed" in hot_start
+            assert re.search(r"if \(!\w+_hot_start\(", hot_start)
+            assert "hot start failed" in hot_start
+            assert (
+                "full runtime scratch object" in hot_start
+                or "完整的运行时暂存对象" in hot_start
+            )
+            assert not re.search(r"initial_vars\.[A-Za-z_]", hot_start)
 
 
 @pytest.mark.unittest

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from textwrap import dedent
 
 import pytest
@@ -20,6 +21,7 @@ MIN_SIGNED_INT64_TEXT = "-9223372036854775808"
 MAX_SIGNED_INT64_TEXT = "9223372036854775807"
 TOO_LARGE_SIGNED_INT64_TEXT = "9223372036854775808"
 TOO_SMALL_SIGNED_INT64_TEXT = "-9223372036854775809"
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 pytestmark = pytest.mark.unittest
@@ -903,6 +905,34 @@ def test_numeric_descriptions_are_target_specific(code):
     )
     assert "C/C++" in text
     assert "Python" in text
+
+
+def test_shift_count_reference_repairs_distinguish_negative_and_oversized_counts():
+    reference_files = (
+        _REPO_ROOT
+        / "docs/source/reference/diagnostics_codes/_code_catalog_en.rst.inc",
+        _REPO_ROOT
+        / "docs/source/reference/diagnostics_codes/_code_catalog_zh.rst.inc",
+    )
+    required_text = (
+        (
+            "every generated runtime rejects it",
+            "at or above the target width",
+            "within ``0 <= count < 64``",
+            "Do not replace a negative count only to make it in-range",
+        ),
+        (
+            "每一个生成运行时都会拒绝它",
+            "不小于目标宽度的整数次数",
+            "``0 <= count < 64``",
+            "不要只为让负移位次数落入范围而替换它",
+        ),
+    )
+
+    for reference_file, required_snippets in zip(reference_files, required_text):
+        reference_text = reference_file.read_text(encoding="utf-8")
+        for snippet in required_snippets:
+            assert snippet in reference_text
 
 
 @pytest.mark.unittest

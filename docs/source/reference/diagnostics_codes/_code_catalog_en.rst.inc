@@ -4803,12 +4803,12 @@ This diagnostic can appear in a successful inspect report. Reproduce it with ``p
 .. diagnostics-example W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE 2 boundary_only
 
 **Example 2** (``boundary_only``) — repair direction for ``W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE``.
-A typical repair is ``bound_shift_count`` on ``expression``: Keep constant shift counts within ``0 <= count < 64`` for the default C/C++ profile.
+For a negative count, do not merely force a numeric range: every generated runtime rejects it, so rewrite or remove the shift according to the model's intended semantics. For an integer count at or above the target width, a typical ``bound_shift_count`` repair keeps the count within ``0 <= count < 64`` for the default C/C++ profile.
 
 .. diagnostics-example W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE 3 boundary_only
 
 **Example 3** (``boundary_only``) — anti-pattern boundary for ``W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE``.
-Do not report dynamic shift counts as proven unsafe from this catalog-only rule.
+Do not replace a negative count only to make it in-range, because that can silently change model behavior. Do not report dynamic shift counts as proven unsafe from this catalog-only rule.
 
 .. _diag-code-w-numeric-float-bitwise:
 

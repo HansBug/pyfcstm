@@ -4803,12 +4803,12 @@ W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE
 .. diagnostics-example W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE 2 boundary_only
 
 **示例 2**\ （``boundary_only``）——针对 ``W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE`` 的修复方向。
-典型修复是对 ``expression`` 执行 ``bound_shift_count``：针对“移位次数折叠为负数，或不小于默认 C/C++ 目标整数宽度。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
+对于负移位次数，不要只把它强行改进数值范围：每一个生成运行时都会拒绝它，应按模型的真实意图重写或移除该移位。对于不小于目标宽度的整数次数，典型的 ``bound_shift_count`` 修复是让次数保持在默认 C/C++ 剖面的 ``0 <= count < 64`` 范围内。
 
 .. diagnostics-example W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE 3 boundary_only
 
 **示例 3**\ （``boundary_only``）——针对 ``W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE`` 的反例边界。
-不要这样处理：针对“移位次数折叠为负数，或不小于默认 C/C++ 目标整数宽度。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
+不要只为让负移位次数落入范围而替换它，这会静默改变模型行为。也不要只依据这条目录规则就把动态移位次数报告为已经证明不安全。
 
 .. _diag-code-w-numeric-float-bitwise-zh:
 

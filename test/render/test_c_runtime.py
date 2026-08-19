@@ -98,6 +98,24 @@ class TestCRuntimeRendering:
         assert "<< ((-1))" not in body
         assert "scope->counter = 0;" in body
 
+    def test_int64_min_shift_count_keeps_generated_c_compileable(self):
+        statements = parse_with_grammar_entry(
+            "counter = 1 << -(+9223372036854775808);",
+            entry_name="operational_statement_set",
+        )
+
+        body = render_c_action_body(
+            statements,
+            {"counter": "int"},
+            "RootMachine",
+            "ROOT_MACHINE",
+        )
+
+        assert "negative shift count" in body
+        assert "return ROOT_MACHINE_FAILURE;" in body
+        assert "9223372036854775808" not in body
+        assert "scope->counter = 0;" in body
+
     def test_sign_folded_negative_shift_counts_are_masked_too(self):
         statements = parse_with_grammar_entry(
             """

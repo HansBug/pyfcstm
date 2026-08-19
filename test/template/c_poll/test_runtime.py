@@ -1543,19 +1543,19 @@ class TestCPollBuiltinTemplate:
 
     def test_generated_machine_strict_c99_masks_computed_negative_shifts(self):
         dsl_code = """
-        def int initial = 1 << (0 | -1);
+        def int initial = 1 << -9223372036854775808;
         def int other = 1 >> (0 ^ 0 - 1);
         state Root {
             event Go;
             state A {
                 during {
-                    initial = 1 << (0 | -1);
+                    initial = 1 << -9223372036854775808;
                     other = 1 >> (0 ^ 0 - 1);
                 }
             }
             state B;
             [*] -> A;
-            A -> B : if [1 << (0 | -1) == 0 and 1 >> (0 ^ 0 - 1) == 0];
+            A -> B : if [1 << -9223372036854775808 == 0 and 1 >> (0 ^ 0 - 1) == 0];
         }
         """
 

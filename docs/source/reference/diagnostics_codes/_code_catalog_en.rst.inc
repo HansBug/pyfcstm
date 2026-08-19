@@ -4759,7 +4759,7 @@ W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE
    * - ``runtime_note``
      - ``str``
      - yes
-     - Human-readable note that this is a C/C++ deployment-profile risk and that Python generated runtimes may not have the same fixed-width shift risk.
+     - Human-readable note separating the input shapes: a negative integer count is rejected by every generated runtime, while an integer count at or above the default width is a C/C++-only fixed-width risk.
    * - ``context``
      - ``str``
      - yes

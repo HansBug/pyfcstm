@@ -920,6 +920,7 @@ def test_shift_count_reference_repairs_distinguish_negative_and_oversized_counts
             "at or above the target width",
             "within ``0 <= count < 64``",
             "Do not replace a negative count only to make it in-range",
+            "a negative integer count is rejected by every generated runtime",
         ),
         (
             "每一个生成运行时都会拒绝它",

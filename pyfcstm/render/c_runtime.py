@@ -323,8 +323,29 @@ def _static_int_literal(expr: dsl_nodes.Expr) -> Optional[int]:
     if isinstance(expr, dsl_nodes.UnaryOp) and expr.op in {"+", "-"}:
         inner = _static_int_literal(expr.expr)
         if inner is None:
+            # ``-9223372036854775808`` is the one signed int64 value whose
+            # magnitude cannot itself fit in int64.  Its unary-minus syntax is
+            # nevertheless the normal spelling of INT64_MIN, so retain it as a
+            # constant when deciding whether a shift count must be masked.  Do
+            # not widen this to arithmetic expressions: their intermediate C
+            # evaluation would already overflow before the unary minus applies.
+            magnitude = _coerce_expr(expr.expr)
+            while True:
+                if isinstance(magnitude, dsl_nodes.Paren):
+                    magnitude = _coerce_expr(magnitude.expr)
+                elif isinstance(magnitude, dsl_nodes.UnaryOp) and magnitude.op == "+":
+                    magnitude = _coerce_expr(magnitude.expr)
+                else:
+                    break
+            if (
+                expr.op == "-"
+                and isinstance(magnitude, (dsl_nodes.Integer, dsl_nodes.HexInt))
+                and magnitude.value == _INT64_MAX + 1
+            ):
+                return _INT64_MIN
             return None
-        return -inner if expr.op == "-" else inner
+        value = -inner if expr.op == "-" else inner
+        return value if _INT64_MIN <= value <= _INT64_MAX else None
     if isinstance(expr, (dsl_nodes.Integer, dsl_nodes.HexInt)):
         # A leaf wider than int64 is range-checked like a fold result: the
         # generated C cannot hold it, so claiming its value would be a lie.
@@ -920,15 +941,28 @@ def _emit_expr_checks(
             # float-operand branch returns early and this check never runs.
             # That gap belongs to the ``**`` type inference, not to the order
             # here; see the shift-of-power note in the pull request.
-            _line(lines, indent, level, "if ((%s) < 0) {" % right.text)
-            _emit_error(
-                lines,
-                names,
-                indent,
-                level + 1,
-                "%s evaluation failed: negative shift count" % usage,
-            )
-            _line(lines, indent, level, "}")
+            if _is_static_negative(expr.expr2):
+                # Do not emit the count even in a guard: INT64_MIN is valid DSL
+                # syntax but its positive magnitude is not a signed C literal.
+                # A static negative count always fails, so the check can be
+                # unconditional and keeps strict C99/C++98 output compileable.
+                _emit_error(
+                    lines,
+                    names,
+                    indent,
+                    level,
+                    "%s evaluation failed: negative shift count" % usage,
+                )
+            else:
+                _line(lines, indent, level, "if ((%s) < 0) {" % right.text)
+                _emit_error(
+                    lines,
+                    names,
+                    indent,
+                    level + 1,
+                    "%s evaluation failed: negative shift count" % usage,
+                )
+                _line(lines, indent, level, "}")
         return safe
     return True
 

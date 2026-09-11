@@ -1697,7 +1697,7 @@ Sphinx toctree page; it is intentionally made discoverable through this `CLAUDE.
 Documentation changes must start from a concrete coverage inventory and must preserve the separation between Tutorials,
 How-to Guides, Explanations, and Reference material. Use real commands, real outputs, explicit failure boundaries,
 traceable generated resources, synchronized language variants where applicable, and the Chinese terminology discipline
-below. Review documentation PRs with the C/I/M criteria in that guide, in addition to the reST, generated-file, and
+below. Review documentation PRs against that guide, in addition to the reST, generated-file, and
 multilingual rules in this section.
 
 The depth gate in [docs/documentation_authoring.md](docs/documentation_authoring.md) is a merge-blocking rule, not a

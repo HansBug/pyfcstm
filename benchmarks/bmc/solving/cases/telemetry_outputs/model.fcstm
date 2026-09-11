@@ -1,0 +1,40 @@
+// Slicing-positive corpus model: four out_* variables are written on every
+// round but never read by a guard, so a cone-of-influence slice can drop them.
+def int phase = 0;
+def int ticks = 0;
+def int out_voltage = 0;
+def int out_current = 0;
+def int out_log_count = 0;
+def int out_checksum = 0;
+
+state Telemetry {
+    [*] -> Idle;
+
+    state Idle {
+        enter {
+            out_voltage = 0;
+            out_current = 0;
+        }
+    }
+    state Sample {
+        enter {
+            ticks = ticks + 1;
+            out_voltage = ticks * 12;
+            out_current = ticks * 3 + phase;
+        }
+    }
+    state Transmit {
+        enter {
+            out_log_count = out_log_count + 1;
+            out_checksum = out_checksum + out_voltage + out_current;
+        }
+    }
+    state Done;
+
+    Idle -> Sample : if [ticks < 6];
+    Sample -> Transmit : if [phase >= 0];
+    Transmit -> Idle : if [ticks < 6] effect {
+        phase = phase + 1;
+    }
+    Transmit -> Done : if [ticks >= 6];
+}

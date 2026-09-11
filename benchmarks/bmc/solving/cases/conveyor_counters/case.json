@@ -1,0 +1,41 @@
+{
+  "name": "conveyor_counters",
+  "source": {
+    "kind": "handwritten"
+  },
+  "role": "slicing_positive",
+  "why": "The stat_* counters are written inside a composite by enter blocks and effects, never read.",
+  "model": "model.fcstm",
+  "queries": [
+    {
+      "file": "reach.fbmcq",
+      "kind": "reach",
+      "expected": {
+        "status": "sat",
+        "property_satisfied": true,
+        "outcome": "witness_found"
+      },
+      "why": "Halted needs four items through the inner loop, about fifteen steps."
+    },
+    {
+      "file": "forbid.fbmcq",
+      "kind": "forbid",
+      "expected": {
+        "status": "unsat",
+        "property_satisfied": true,
+        "outcome": "property_satisfied"
+      },
+      "why": "items is capped by the Halted guard."
+    },
+    {
+      "file": "invariant.fbmcq",
+      "kind": "invariant",
+      "expected": {
+        "status": "unsat",
+        "property_satisfied": true,
+        "outcome": "property_satisfied"
+      },
+      "why": "jam is only set after an item was fed."
+    }
+  ]
+}

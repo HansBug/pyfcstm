@@ -1,0 +1,41 @@
+{
+  "name": "heater_logging",
+  "source": {
+    "kind": "handwritten"
+  },
+  "role": "slicing_positive",
+  "why": "The log_* variables accumulate in during blocks and read only themselves and kept variables.",
+  "model": "model.fcstm",
+  "queries": [
+    {
+      "file": "reach.fbmcq",
+      "kind": "reach",
+      "expected": {
+        "status": "sat",
+        "property_satisfied": true,
+        "outcome": "witness_found"
+      },
+      "why": "Cooling needs temp to climb from 20 past 26."
+    },
+    {
+      "file": "forbid.fbmcq",
+      "kind": "forbid",
+      "expected": {
+        "status": "unsat",
+        "property_satisfied": true,
+        "outcome": "property_satisfied"
+      },
+      "why": "the On state leaves at target + 2."
+    },
+    {
+      "file": "invariant.fbmcq",
+      "kind": "invariant",
+      "expected": {
+        "status": "unsat",
+        "property_satisfied": true,
+        "outcome": "property_satisfied"
+      },
+      "why": "cooling stops at target, above the initial value."
+    }
+  ]
+}

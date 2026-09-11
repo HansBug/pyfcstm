@@ -1,0 +1,1 @@
+check reach <= 10: active("MissionSupervisor.CommandMode.ExecuteDirect");

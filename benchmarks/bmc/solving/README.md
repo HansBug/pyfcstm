@@ -151,7 +151,11 @@ that can be missed.
 
 The manifest binds the input digests, the README digest, the baseline and
 candidate commits, the dirty-state evidence, and the machine and dependency
-facts.  A saved run is never overwritten; a correction creates a new run id.
+facts.  `dirty` is true when any tracked file was modified, or an untracked
+path lies under `pyfcstm/`, `tools/` or this directory, the three places a
+file can reach the measurement from; the verbatim `git status --porcelain`
+listing is recorded either way.  A saved run is never overwritten; a
+correction creates a new run id.
 
 ## Pre-registered thresholds
 

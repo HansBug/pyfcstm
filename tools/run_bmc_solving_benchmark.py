@@ -803,17 +803,51 @@ def _environment() -> Dict[str, Any]:
     }
 
 
+#: Paths an untracked file can reach the measurement through.
+#:
+#: The child imports ``pyfcstm`` from the working tree, the runner is the code
+#: doing the measuring, and the corpus is what gets measured.  An untracked
+#: file anywhere else cannot change a number in the run, so it does not make
+#: the tree dirty; a modified tracked file anywhere does, because the recorded
+#: commit then no longer describes the code that ran.
+_MEASURED_SURFACES = ("pyfcstm/", "tools/", str(_BENCH_ROOT) + "/")
+
+
+def _porcelain_is_dirty(lines: Sequence[str]) -> bool:
+    """Decide whether a ``git status --porcelain`` listing taints a run.
+
+    :param lines: Porcelain lines, each ``XY path``.
+    :type lines: Sequence[str]
+    :return: ``True`` when any tracked file changed, or an untracked path lies
+        under a measured surface.
+    :rtype: bool
+    """
+    for line in lines:
+        if not line.strip():
+            continue
+        status, path = line[:2], line[3:]
+        if status != "??":
+            return True
+        if path.startswith(_MEASURED_SURFACES):
+            return True
+    return False
+
+
 def _dirty_state() -> Dict[str, Any]:
     """Return whether the tree was clean, and the commit it was on.
 
-    :return: ``commit``, ``dirty`` and the porcelain listing when dirty.
+    The full porcelain listing is recorded whatever the verdict, so a reader
+    can see exactly what was untracked or modified at measurement time.
+
+    :return: ``commit``, ``dirty`` and the porcelain listing.
     :rtype: Dict[str, Any]
     """
     porcelain = _git("status", "--porcelain")
+    lines = porcelain.splitlines() if porcelain else []
     return {
         "commit": _git("rev-parse", "HEAD"),
-        "dirty": bool(porcelain),
-        "porcelain": porcelain.splitlines() if porcelain else [],
+        "dirty": _porcelain_is_dirty(lines),
+        "porcelain": lines,
     }
 
 
@@ -1634,6 +1668,23 @@ def _self_test() -> List[str]:
                 )
         finally:
             shutil.rmtree(scratch, ignore_errors=True)
+
+    # The dirty rule: a change that can reach the measurement counts, an
+    # unrelated untracked path does not, and the verbatim listing is kept.
+    for lines, expected, why in (
+        (["?? .omx/"], False, "an untracked directory outside the measured surfaces"),
+        (["?? benchmarks/bmc/solving/cases/extra/"], True, "an untracked case"),
+        (
+            ["?? pyfcstm/bmc/new_module.py"],
+            True,
+            "an untracked module the child would import",
+        ),
+        ([" M tools/run_bmc_solving_benchmark.py"], True, "a modified tracked file"),
+        ([" M README.md"], True, "any modified tracked file"),
+        ([], False, "a clean tree"),
+    ):
+        if _porcelain_is_dirty(lines) is not expected:
+            problems.append("dirty rule: %s should be %s" % (why, expected))
 
     scratch = tempfile.mkdtemp(prefix="pyfcstm-bmc-solving-selftest-")
     try:

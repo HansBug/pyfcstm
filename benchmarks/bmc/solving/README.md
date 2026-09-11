@@ -4,34 +4,43 @@ Every user-visible BMC option changes how the formula is built or how Z3 is
 constructed, never what the property means.  So the question for any such knob
 is the same twice over: does every answer stay identical, and what does it
 cost?  This directory holds the corpus, the arm table, the pre-registered
-thresholds, the schema for a run, and the saved runs that answer it.
+thresholds, an oracle that checks the corpus expectations against the
+simulator, the schema for a run, and the saved runs that answer it.
 
 The first knobs measured here are a solver profile (logic fragment or tactic
 selection) and cone-of-influence slicing.  Later work on iterative deepening
 and unbounded proofs is expected to reuse the same corpus and runner, which is
-why the arm table is data rather than four frozen names.
+why the arm table is data rather than a frozen list of names.
 
 ## Running it
 
 ```bash
 python tools/run_bmc_solving_benchmark.py --check
 python tools/run_bmc_solving_benchmark.py --self-test
+python tools/run_bmc_solving_benchmark.py --oracle
 python tools/run_bmc_solving_benchmark.py --run --repetitions 5 --warmups 1
+python tools/run_bmc_solving_benchmark.py --run --cases telemetry_outputs,ratio_estimator --run-id scratch
 python tools/run_bmc_solving_benchmark.py --rebuild <run-id>
 ```
 
-`make bmc_solving_benchmark_check` runs the first two; `make bmc_solving_benchmark`
-runs all of that and then a measurement.
+`make bmc_solving_benchmark_check` runs `--check` and `--self-test`;
+`make bmc_solving_benchmark` runs those and then a measurement.
 
 `--check` validates the corpus, the arm table, this README's threshold rows,
-`schema.json`, and every saved run, without solving anything.  `--self-test`
-proves each of those gates can fail, by mutating a scratch copy of the corpus
-and expecting `--check` to reject it, and proves a rebuild is a pure function
-of `raw.jsonl`.  `--run` writes a new immutable run under
-`outputs/runs/<run-id>/`.  `--rebuild` regenerates `summary.json` and
-`report.md` from `raw.jsonl`, which is how a reader confirms the aggregation
-is a function of the recorded samples and not of the process that produced
-them.
+`schema.json`, and every saved run, without solving anything; it also says
+when a saved run was measured against a corpus or README that has since
+changed.  `--self-test` proves each of those gates can fail, by mutating a
+scratch copy of the corpus and expecting `--check` to reject it, and proves a
+rebuild is a pure function of `raw.jsonl`.  `--oracle` re-derives every
+enumerable expectation from the simulator (see below).  `--run` writes a new
+immutable run under `outputs/runs/<run-id>/`; `--cases` restricts it to named
+cases and the manifest records the filter, and `--timeout-ms` forwards a solver
+budget to every arm, also recorded.  `--rebuild` recomputes `summary.json` and
+`report.md` from `raw.jsonl` and compares them byte for byte with the saved
+files, which is how a reader confirms the aggregation is a function of the
+recorded samples and not of the process that produced them; it never
+overwrites a saved file, and only writes the two when a run was interrupted
+before they existed.
 
 This is not a pytest suite and must not become one.  Distribution
 measurements are not assertions, and a test that fails because the machine
@@ -40,24 +49,32 @@ was busy teaches nothing.  The API and the invariants are covered by
 
 ## The arms
 
-An arm is one revision plus one set of options forwarded to the child.  The
-child refuses an option key it does not know, so adding an arm without
-teaching the child what it measures fails instead of measuring the default
-under a new name.
+An arm is one commit plus two option sets.  Every arm, including the one for
+the current revision, runs from a detached worktree of its commit; the child
+reports `pyfcstm.__file__` and the parent refuses a sample whose package did
+not come from that worktree.  What sits untracked in the working tree can
+therefore not reach a measurement, and `manifest.json` records the working
+tree listing as evidence rather than as a taint.
+
+The option sets are forwarded unchanged: `compile` becomes
+`BmcOptions(**compile)` and `solve` becomes keyword arguments of
+`solve_bmc_property`.  A key the production API does not know raises
+`TypeError` there, so an arm cannot measure the default under a new name, and
+an arm with empty sets calls the API exactly as an older revision expects.
 
 | Arm | What it isolates |
 |---|---|
-| `baseline-0cc43647` | The umbrella's creation base, `0cc43647ad85c99347fbdd8eab0259279a5f40d0`, checked out into a detached worktree. Separates an overhead the option infrastructure adds on every run from the option itself. |
-| `default` | The working tree with no option set. Every other arm is compared against it under H0. |
+| `baseline-0cc43647` | The last `main` commit before any solving option existed, `0cc43647ad85c99347fbdd8eab0259279a5f40d0`. Separates an overhead the option infrastructure adds on every run from the option itself. |
+| `default` | The current revision with both option sets empty. Every other arm is compared against it under H0. |
 
-Sub-PRs that add an option append their arms here and to `_ARMS` in the
-runner, and evaluate their own T rows.  Without `baseline`, an overhead the
-infrastructure imposes on every run would be invisible.  Without `default`,
-that overhead would be charged to the option.
+The change that adds an option appends its arm to `_ARMS` in the runner and
+to this table, and evaluates its own T row.  Without `baseline`, an overhead
+the infrastructure imposes on every run would be invisible.  Without
+`default`, that overhead would be charged to the option.
 
 ## The corpus
 
-17 cases, 51 queries: 13 `sat` and 38 `unsat`.  12 cases are
+17 cases, 51 queries: 13 `sat` and 38 `unsat`.  Twelve cases are
 LLM-generated models copied from `llm_eval/outputs/` -- copied, not
 referenced, so the benchmark keeps running if that directory changes -- and
 five are handwritten to exercise one shape each.  The LLM models are the
@@ -111,51 +128,68 @@ Roles:
 
 Each `case.json` records what every query returned under `default` when the
 corpus was frozen: `status`, `property_satisfied`, and `outcome`.  Those are
-the expectations H0 reads back.  They protect against drift; they are not a
-claim that the tool was right when they were recorded.
+the expectations H0 reads back.  They protect against drift.  Whether they
+were right when recorded is the oracle's question.
+
+## The oracle
+
+Speed without a correct answer is worthless, and the expectations above come
+from the encoder being measured.  `--oracle` therefore re-derives each one
+with `SimulationRuntime`, the runtime that already replays every witness,
+without touching the encoder: it enumerates the frame-0 assignments the
+query admits, explores every execution up to the bound with every subset of
+events per step, prunes a step whose action is undefined (a division by
+zero, or a non-integer quotient written to an integer variable, exactly the
+steps the encoder's definedness conditions exclude), and decides the query
+from its semantics.  A `reach` or `forbid` is `sat` when some frame satisfies
+the body; an `invariant` is `sat` when some frame violates it.
+
+Its reach is bounded and stated per query.  A model with more than four
+events is explored with the empty step and single events only, an
+under-approximation that can find a witness the encoder missed but cannot
+refute an encoder `sat`.  A `havoc *` initialization is not enumerable and is
+skipped; a `where` clause with only a lower bound is sampled at three values.
+
+Coverage when the corpus was frozen: 34 queries match exactly under
+exhaustive exploration, 11 are consistent under an under-approximation or a
+sampled initialization, and 6 `havoc *` `reach` queries are skipped.  Five of
+those six are `sat` and their witnesses replay on the runtime in every run;
+one, `codex_deepseek_distributed_elevator_can/reach`, is `unsat` and rests on
+the encoder alone.  No query disagrees.
 
 ## Method
 
 Each sample runs in a fresh interpreter.  Z3 keeps state between checks
 within one process, so a second measurement in the same interpreter measures
-a warmed solver rather than the sample.  Running separately also makes peak
-RSS meaningful: it is the child's high-water mark rather than the runner's.
-The baseline arm runs the same child with the detached worktree as its
-working directory, which is what makes `import pyfcstm` resolve to that
-revision; the package is not installed into the interpreter, so the working
-directory decides.
+a warmed solver rather than the sample.  Every child runs with its arm's
+worktree as the working directory, which is what makes `import pyfcstm`
+resolve to that commit; the parent verifies it from the child's own report.
 
-Warmups run first and are discarded, and their count is recorded separately.
+Warmups run once per arm, before the corpus loop, and are discarded.  A
+sample is already a fresh process, so all a warmup can warm is the page
+cache and the worktree's compiled bytecode; one per arm covers that.
 
 Three regions are timed separately in the child: `build_ms` is
-`compile_bmc_query`, the region an encoding knob changes; `solve_ms` is
-`solve_bmc_property`, the region a solver knob changes; `replay_ms` is
+`compile_bmc_query`, the region an encoding option changes; `solve_ms` is
+`solve_bmc_property`, the region a solver option changes; `replay_ms` is
 decoding and replaying the witness, only when the primary status is `sat`.
 `total_elapsed_ms` is the solver's own accounting from the result.
 
-Two size measures do not depend on wall time.  `formula_dag_nodes` counts
-distinct Z3 AST ids reachable from the core formula and the objective, which
-is what a slice shrinks.  `rlimit_count` is Z3's own effort counter, read from one
-plain side check of the same conjunction after every timed region has ended;
-`solve_bmc_property` owns its solver and does not expose statistics, so this
-is the closest honest reading and the report says so.  It is steadier than
-wall time but not identical across processes: in the smoke run two arms
-running identical code differed by about one percent on one `sat` query, so
-read small differences as noise.
+`formula_dag_nodes` counts distinct Z3 AST ids reachable from the core formula
+and the objective.  It is the one size measure here that is stable across
+processes, and it is what a slice shrinks.  A solver-effort counter is not
+published: Z3's `rlimit count` is cumulative per context and the production
+solver does not expose its statistics, so an honest per-solve reading needs
+production support first.
 
-RSS uses `psutil` from the existing development environment.  No runtime
-dependency is added.  When `psutil` is unavailable the metric is reported
-absent, never as zero.  The number is a **sampled maximum, not a kernel
-high-water mark**: the child is polled every 2 ms, so a spike shorter than
-that can be missed.
+Peak memory is `ru_maxrss` read by the child right after replay, before the
+size walk allocates anything, so it is the kernel high-water mark of the
+production path.  It is absent, never zero, where the `resource` module does
+not exist.
 
 The manifest binds the input digests, the README digest, the baseline and
-candidate commits, the dirty-state evidence, and the machine and dependency
-facts.  `dirty` is true when any tracked file was modified, or an untracked
-path lies under `pyfcstm/`, `tools/` or this directory, the three places a
-file can reach the measurement from; the verbatim `git status --porcelain`
-listing is recorded either way.  A saved run is never overwritten; a
-correction creates a new run id.
+candidate commits, the working tree listing, and the machine and dependency
+facts.  A saved run is never overwritten; a correction creates a new run id.
 
 ## Pre-registered thresholds
 
@@ -166,14 +200,15 @@ opt-in with the measured numbers written next to it.
 
 | Id | Applies to | Rule |
 |---|---|---|
-| H0 | every arm other than the baseline | Compared with `default`, query by query, `status`, `property_satisfied`, `outcome`, and replay `ok` are all identical, and `status` equals the `case.json` expectation. A field that varies between repetitions fails. The count of `unknown` and `timeout` answers does not increase. A miss means the option does not merge, whatever it costs or saves. |
+| H0 | every arm other than `default` | Compared with `default`, query by query, `status`, `property_satisfied`, `outcome`, and replay `ok` are all identical, and `status`, `property_satisfied` and `outcome` equal the `case.json` expectation. A field that varies between repetitions fails, and so does any sample that crashed. The count of `unknown` and `timeout` answers does not increase. A miss means the option does not merge, whatever it costs or saves. |
 | T1 | a `solver_profile=logic` arm | The median over queries of the per-query `solve_ms` p50 improves by at least 15% against `default`, and no single query regresses by more than 10%. |
 | T2 | a `solver_profile=tactic` arm | As T1. |
 | T3 | a `cone_slicing` arm | On the queries whose model has at least one variable the slice drops, `formula_dag_nodes` falls by at least 20% and `solve_ms` p50 does not regress by more than 5%. On the queries with nothing to drop, `build_ms` plus `solve_ms` p50 grows by at most 5%. The slice falls back to the full model zero times across the corpus. |
 
-H0 is evaluated by the runner for every run and printed in the report.  T1 to
-T3 are evaluated by the sub-PR that introduces the option, against the run it
-commits, because only that sub-PR knows which queries its option can touch.
+H0 is evaluated by the runner for every run and printed in the report; the
+`default` row itself can only miss the expectation.  T1 to T3 are evaluated
+by the change that introduces the option, against the run it commits,
+because only that change knows which queries its option can touch.
 
 ## What a run settles
 
@@ -181,6 +216,6 @@ A run with only `baseline` and `default` establishes the two reference
 distributions and proves H0 holds between them, which is the precondition
 for reading any later arm.  A run with an option arm answers, per query,
 whether the option changed an answer (it must not) and what it did to solve
-time, build time, formula size, and deterministic effort.  It does not
-settle whether the option should become the default; that is a separate
-decision made with the run as evidence.
+time, build time, formula size and memory.  It does not settle whether the
+option should become the default; that is a separate decision made with the
+run as evidence.

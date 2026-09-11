@@ -61,16 +61,26 @@
           "minLength": 1
         },
         "revision": {
-          "description": "Full commit the child ran from a detached worktree, or null for the working tree.",
-          "type": [
-            "string",
-            "null"
-          ],
+          "description": "Full commit the child ran from a detached worktree.",
+          "type": "string",
           "pattern": "^[0-9a-f]{40}$"
         },
         "options": {
-          "description": "Forwarded to the child verbatim; the child refuses keys it does not know.",
-          "type": "object"
+          "description": "Forwarded unchanged: compile becomes BmcOptions(**compile), solve becomes keyword arguments of solve_bmc_property. An unknown key is a TypeError in production code.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "compile",
+            "solve"
+          ],
+          "properties": {
+            "compile": {
+              "type": "object"
+            },
+            "solve": {
+              "type": "object"
+            }
+          }
         }
       }
     },
@@ -86,6 +96,8 @@
         "reference_arm",
         "repetitions",
         "warmups",
+        "case_filter",
+        "timeout_ms",
         "environment",
         "candidate",
         "inputs",
@@ -142,6 +154,24 @@
           "type": "integer",
           "minimum": 0
         },
+        "case_filter": {
+          "description": "Case names measured, or null for the whole corpus.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "timeout_ms": {
+          "description": "Solver budget forwarded to every arm, or null for the unbounded cost.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
         "environment": {
           "type": "object",
           "required": [
@@ -195,7 +225,8 @@
                 "type": "string"
               }
             }
-          }
+          },
+          "description": "HEAD and the working tree listing at measurement time. The measurement runs from worktrees of the arms' commits, so the listing is evidence, not a taint."
         },
         "inputs": {
           "description": "SHA-256 of every corpus file, keyed by path relative to cases/, line endings normalized.",
@@ -317,7 +348,6 @@
         "replay_ms",
         "total_elapsed_ms",
         "formula_dag_nodes",
-        "rlimit_count",
         "status",
         "property_satisfied",
         "outcome",
@@ -349,9 +379,6 @@
         "formula_dag_nodes": {
           "$ref": "#/$defs/observed"
         },
-        "rlimit_count": {
-          "$ref": "#/$defs/observed"
-        },
         "status": {
           "$ref": "#/$defs/observed"
         },
@@ -368,7 +395,8 @@
           "type": [
             "integer",
             "null"
-          ]
+          ],
+          "description": "Kernel high-water mark of the child (ru_maxrss), read after replay and before the size walk."
         },
         "peak_child_rss_note": {
           "type": "string"
@@ -386,18 +414,18 @@
           ]
         },
         "h0": {
-          "description": "The correctness gate: identical published fields to the reference arm, and the expected status.",
+          "description": "The correctness gate: every published field identical to the reference arm, and status, property_satisfied and outcome equal to case.json. A failed sample fails both.",
           "type": "object",
           "additionalProperties": false,
           "required": [
             "identical_to_reference",
-            "matches_expected_status"
+            "matches_expected"
           ],
           "properties": {
             "identical_to_reference": {
               "type": "boolean"
             },
-            "matches_expected_status": {
+            "matches_expected": {
               "type": "boolean"
             }
           }

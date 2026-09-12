@@ -423,3 +423,24 @@ Reuse retains one complete trace per sliced witness result and copies it on
 default-policy decoding. Explicit event policies and raw-model decoding still
 reconstruct traces. More precise slicing and construction optimization require
 separate changes; this run does not justify changing the default.
+
+### Construction bottlenecks and controlled cache experiments
+
+The [construction diagnosis](outputs/construction_profiles/1aa4315a105e/report.md)
+uses clean merge revision `1aa4315a105e` and records 286 observations, including
+12 separate profiles and 107 successful SAT replays. Across the 51-query phase
+survey, relation lowering is the largest phase on 48 queries; macro partition
+validation dominates the three large VTOL queries. Reusing completed accepted
+condition resolutions reduces VTOL reach's observed call p50 from 36.24 to
+10.23 seconds in a three-repetition experiment. Reusing exact, definite SAT
+feasibility results reduces two traffic reach queries by 27.53% and 22.06% in
+separate three-repetition controls. These caches exist only in isolated diagnostic
+processes; production code and defaults are unchanged.
+
+The report preserves raw records, tool versions, bound/slicing controls, memory
+costs, correctness comparisons and measurement limits. Canonical-key caching
+alone raises VTOL peak RSS from about 138 to 679 MiB, so it is not the recommended
+first intervention. Two multi-solution elevator records choose different legal
+witnesses, with identical formulas and successful ordinary replay. These
+microexperiments identify future construction work; they do not supersede the
+formal T1–T3 failures or demonstrate production readiness.

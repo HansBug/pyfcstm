@@ -2001,3 +2001,94 @@ def test_bmc_macro_import_does_not_load_z3_or_verify_modules():
     )
 
     assert result.stdout.strip() == "[]"
+
+
+@pytest.mark.unittest
+def test_partition_reuses_shared_condition_expansion_per_call(monkeypatch):
+    source = MacroStepSource("entry", "initial", 0, "Root")
+    atom = BoolTemplate.atom("event:Root.Go")
+    shared = BoolTemplate.and_(atom, BoolTemplate.atom("event:Root.Ready"))
+    cases = tuple(
+        CycleCase(
+            "transition",
+            0,
+            "Root",
+            0,
+            "Root",
+            "Root::transition::Root::%d" % index,
+            condition,
+            (),
+        )
+        for index, condition in enumerate((shared, BoolTemplate.not_(shared)))
+    )
+    original = macro_module._resolve_accepted_atoms
+    visits = []
+
+    def observe(condition, *args, **kwargs):
+        if condition is atom:
+            visits.append(condition)
+        return original(condition, *args, **kwargs)
+
+    monkeypatch.setattr(macro_module, "_resolve_accepted_atoms", observe)
+    first = verify_source_partition(source, cases)
+    assert first.assignment_count == 4
+    assert len(visits) == 1
+    assert verify_source_partition(source, cases) == first
+    assert len(visits) == 2
+
+
+@pytest.mark.unittest
+def test_partition_accepted_resolution_uses_current_registry():
+    from concurrent.futures import ThreadPoolExecutor
+
+    source = MacroStepSource("entry", "initial", 0, "Root")
+    label = "Root::transition::Root::0"
+    reference = BoolTemplate.atom("accepted:" + label)
+    fallback = CycleCase(
+        "transition",
+        0,
+        "Root",
+        0,
+        "Root",
+        "Root::transition::Root::1",
+        BoolTemplate.not_(reference),
+        (),
+    )
+
+    def verify(name):
+        case = CycleCase(
+            "transition",
+            0,
+            "Root",
+            0,
+            "Root",
+            label,
+            BoolTemplate.atom(name),
+            (),
+        )
+        return verify_source_partition(source, (case, fallback))
+
+    names = ("event:Root.Go", "event:Root.Stop") * 4
+    sequential = [verify(name) for name in names]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        concurrent = list(pool.map(verify, names))
+    assert concurrent == sequential
+    for name, result in zip(names, sequential):
+        assert result.variables == (name,)
+        assert result.assignment_count == 2
+
+    missing = CycleCase(
+        "transition",
+        0,
+        "Root",
+        0,
+        "Root",
+        label,
+        BoolTemplate.atom("accepted:missing"),
+        (),
+    )
+    with pytest.raises(BmcBuildError, match="unknown case label"):
+        verify_source_partition(source, (missing, fallback))
+    cyclic = CycleCase("transition", 0, "Root", 0, "Root", label, reference, ())
+    with pytest.raises(BmcBuildError, match="cycle detected"):
+        verify_source_partition(source, (cyclic, fallback))

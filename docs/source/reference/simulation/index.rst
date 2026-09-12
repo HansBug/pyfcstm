@@ -203,7 +203,7 @@ Python runtime API
        ``initial_vars``; hot start requires every declared persistent variable.
        ``history_size=None`` keeps unlimited history, while ``history_size=0``
        keeps no entries.
-   * - ``cycle(events=None) -> CycleResult``
+   * - ``cycle(events=None, *, trace=False) -> CycleResult``
      - Executes one cycle, validates candidate paths, commits or rolls back, and
        records history.
    * - ``CycleResult.value``
@@ -218,6 +218,10 @@ Python runtime API
    * - ``CycleResult.delta``
      - ``True`` only for a successful no-progress step; ordinary success,
        errors, and ended no-ops keep it ``False``.
+   * - ``CycleResult.trace``
+     - Tuple of immutable execution entries when ``trace=True``; otherwise
+       empty. Delta and ignored calls also return an empty tuple. Exceptions
+       return no result or partial trace.
    * - ``vars`` / ``cycle_count`` / ``history`` / ``history_size``
      - Public runtime state used by command display, tests, and tooling.  The
        command-layer ``history_size`` setting remaps ``0`` to runtime ``None``;
@@ -249,6 +253,134 @@ Python runtime API
        path, which is what entering a composite state reports.
    * - ``abstract_handler(action_path)``
      - Decorator that marks object methods for bulk handler registration.
+
+Committed execution trace
+-------------------------
+
+``runtime.cycle(trace=True)`` collects observations for that call only.
+Collection excludes speculative validation, rejected candidate transitions,
+and rolled-back Delta attempts. It does not enable collection on subsequent
+calls or add fields to ``history`` and CLI ``export``. Keep the returned
+``CycleResult`` to retain its trace, independently of ``history_size``.
+``trace`` is a keyword-only boolean, defaulting to ``False``. Collection
+allocates one persistent-variable snapshot per entry; it performs no file I/O.
+
+.. list-table:: ``ExecutionTraceEntry`` fields
+   :header-rows: 1
+
+   * - Field
+     - Meaning and boundary
+   * - ``kind``
+     - ``Literal["state_enter", "state_exit", "transition", "action"]``:
+       ``state_enter`` before entry actions; ``state_exit`` after exit actions;
+       ``transition`` after effects; ``action`` after operations or abstract
+       dispatch. Entries follow execution order, including pseudo-state chains.
+   * - ``state_path``
+     - Tuple of strings: immutable path of the state being entered/exited, the transition source
+       (owning composite for initial transitions), or action execution location.
+       An ancestor aspect action records the descendant where it executes.
+   * - ``vars``
+     - Read-only mapping from variable names to ``int``/``float`` values at that boundary. Local temporary
+       variables are excluded. Later cycles cannot change this snapshot.
+   * - ``transition_label``
+     - ``source_path::index::source->target`` in BMC label format; ``None`` for
+       other kinds. The zero-based index addresses the source state's initial
+       or outgoing transition list. Initial sources use ``INIT_STATE``;
+       exit targets use ``[*]``. The synthetic root exit has index zero.
+       Forced and combo declarations address their expanded model edges,
+       including combo relay states. These are model-local addresses, not
+       identifiers that survive editing or reordering the model.
+   * - ``action_path`` / ``resolved_action_path``
+     - Callsite and final ``ref`` target as ``state::collection::index``;
+       ``None`` for other kinds. Collections are ``on_enters``, ``on_durings``,
+       ``on_exits``, and ``on_during_aspects``. Zero-based indices distinguish
+       anonymous actions; addresses refer to the current model, so preserve
+       that model alongside exported traces.
+   * - ``to_dict()``
+     - Detached dictionary with paths as lists and variables as a dictionary,
+       suitable for JSON/YAML serialization. Editing it cannot change the entry.
+   * - ``str(entry)`` / ``print(entry)``
+     - Single-line human-readable summary: operation, state, applicable transition/action
+       addresses, a different final reference target, and variables sorted by name.
+       Large integers use compact digit-count notation. ``repr(entry)`` keeps the
+       dataclass representation; use ``to_dict()`` for complete machine-readable values.
+
+This complete example separates the transition effect from the target's entry
+action. The transition snapshot sees ``x == 1``; the following action sees
+``x == 2``:
+
+.. code-block:: pycon
+
+    >>> import json
+    >>> from pyfcstm.model import load_state_machine_from_text
+    >>> from pyfcstm.simulate import SimulationRuntime
+    >>> model = load_state_machine_from_text('''
+    ... def int x = 0;
+    ... state Root {
+    ...     state Idle;
+    ...     state Done { enter { x = x + 1; } }
+    ...     [*] -> Idle;
+    ...     Idle -> Done :: Go effect { x = x + 1; };
+    ... }
+    ... ''')
+    >>> runtime = SimulationRuntime(model, history_size=0)
+    >>> _ = runtime.cycle()
+    >>> result = runtime.cycle('Root.Idle.Go', trace=True)
+    >>> [(entry.kind, entry.vars['x']) for entry in result.trace]
+    [('state_exit', 0), ('transition', 1), ('state_enter', 1), ('action', 2)]
+    >>> payload = json.dumps([entry.to_dict() for entry in result.trace])
+    >>> json.loads(payload)[1]['transition_label']
+    'Root.Idle::0::Idle->Done'
+    >>> runtime.history
+    []
+    >>> for entry in result.trace:
+    ...     print(entry)
+    State exit Root.Idle | vars={x=0}
+    Transition Root.Idle | transition=Root.Idle::0::Idle->Done | vars={x=1}
+    State enter Root.Done | vars={x=1}
+    Action Root.Done | action=Root.Done::on_enters::0 | vars={x=2}
+
+An empty trace does not by itself mean Delta or termination. A stable state
+without during actions or enabled transitions performs no observable operations:
+
+.. code-block:: pycon
+
+    >>> idle = runtime.cycle(trace=True)
+    >>> (idle.delta, idle.trace, runtime.is_ended)
+    (False, (), False)
+
+Snapshots cannot be edited in place; use ``to_dict()`` for editable data.
+Supply ``trace`` by name rather than as a second positional argument:
+
+.. code-block:: pycon
+
+    >>> result.trace[-1].vars['x'] = 9
+    Traceback (most recent call last):
+        ...
+    TypeError: 'mappingproxy' object does not support item assignment
+    >>> runtime.cycle(None, True)
+    Traceback (most recent call last):
+        ...
+    TypeError: ...
+
+This API serializes entries, not a self-contained replay file. A caller saving
+them must also retain the model, cycle number, input events, and observation
+convention. CLI ``export`` still writes macro-step history.
+
+An ``action`` entry for an abstract action means dispatch was reached. A
+registered handler is not required, and ``abstract_error_mode='log'`` may
+allow a failed handler to complete the cycle. Consult
+``abstract_handler_errors`` for those failures. Hot start records only work
+performed by subsequent cycles, without inventing entry actions that were
+skipped during construction.
+
+See :meth:`pyfcstm.simulate.runtime.SimulationRuntime.cycle` for a complete
+executable example. ``test/simulate/test_execution_trace.py`` checks ordering,
+snapshots, references, rejection, Delta, errors, interruption, hot start, and
+pseudo/forced/combo chains. ``test/simulate/test_execution_trace_semantic_fixtures.py``
+compares trace-enabled and ordinary execution against every runnable shared
+simulation fixture. ``test/bmc/test_execution_trace_alignment.py`` checks edge
+addresses against public BMC expansion.
 
 Public failures and boundaries
 ------------------------------

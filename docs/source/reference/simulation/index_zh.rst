@@ -174,7 +174,7 @@ Python 运行时应用程序接口
    * - ``SimulationRuntime(state_machine, abstract_error_mode='raise', history_size=None, initial_state=None, initial_vars=None)``
      - 创建运行时。默认启动模式可接受部分 ``initial_vars``；热启动要求提供每个声明过的持久变量。
        ``history_size=None``\ 表示历史不设上限，而 ``history_size=0``\ 表示不保留历史记录。
-   * - ``cycle(events=None) -> CycleResult``
+   * - ``cycle(events=None, *, trace=False) -> CycleResult``
      - 执行一个周期，验证候选路径，提交或回滚，并记录历史。
    * - ``CycleResult.value``
      - 兼容旧行为的返回值；当前为 ``None``。
@@ -186,6 +186,9 @@ Python 运行时应用程序接口
      - 已提供但没有对应已执行事件转换的规范事件路径。
    * - ``CycleResult.delta``
      - 成功但没有可提交后继时为 ``True``；普通成功、错误和已结束空操作为 ``False``。
+   * - ``CycleResult.trace``
+     - ``trace=True`` 时返回不可变执行记录组成的元组；默认关闭。
+       Delta 和被忽略的调用也返回空元组。异常不会返回结果或部分执行迹。
    * - ``vars`` / ``cycle_count`` / ``history`` / ``history_size``
      - 命令显示、测试和工具使用的公开运行时状态。命令层 ``history_size`` 设置会把 ``0`` 映射为运行时
        ``None``；直接编写运行时代码时，需要传入 ``None`` 来表示历史不设上限。
@@ -211,6 +214,120 @@ Python 运行时应用程序接口
        宿主状态路径——进入复合状态时报告的就是宿主路径。
    * - ``abstract_handler(action_path)``
      - 装饰器，用于标记可批量注册的对象方法。
+
+已提交执行迹
+------------
+
+``runtime.cycle(trace=True)`` 只收集本次调用的执行记录。
+推测性验证、被拒绝的候选迁移和已回滚的 Delta 尝试不会进入结果。
+后续调用仍需显式开启；``history`` 和命令行 ``export`` 的字段不变。
+保留返回的 ``CycleResult`` 即可保留执行迹，它不受 ``history_size`` 限制。
+``trace`` 是只能按名称传入的布尔参数，默认 ``False``。
+开启后，每条记录都会保存一份持久变量快照；收集过程不读写文件。
+
+.. list-table:: ``ExecutionTraceEntry`` 字段
+   :header-rows: 1
+
+   * - 字段
+     - 含义与边界
+   * - ``kind``
+     - ``Literal["state_enter", "state_exit", "transition", "action"]``：
+       ``state_enter`` 在进入动作前记录；``state_exit`` 在退出动作后记录；
+       ``transition`` 在迁移效果执行后记录；``action`` 在操作块或抽象动作分派完成后记录。
+       条目按执行顺序排列，包括伪状态链。
+   * - ``state_path``
+     - 字符串元组：进入或退出的状态、迁移源状态（初始迁移取所属复合状态），或动作执行位置的不可变路径。
+       祖先切面动作记录其实际作用的后代状态位置。
+   * - ``vars``
+     - 变量名到 ``int``/``float`` 值的只读映射，不含局部临时变量；后续周期不会改变此快照。
+   * - ``transition_label``
+     - 与 BMC 标签格式一致的 ``source_path::index::source->target``；其他条目为 ``None``。
+       从零开始的索引对应源状态的初始迁移或出边列表。
+       初始源使用 ``INIT_STATE``，退出目标使用 ``[*]``，合成根退出的索引为零。
+       强制转换和组合转换使用展开后的模型边地址，包括组合转换的中继状态。
+       这些地址仅对当前模型有效，编辑模型或调整声明顺序后不能继续当作稳定标识。
+   * - ``action_path`` / ``resolved_action_path``
+     - 调用位置与最终 ``ref`` 目标，格式为 ``state::collection::index``；其他条目为 ``None``。
+       集合名称为 ``on_enters``、``on_durings``、``on_exits`` 或 ``on_during_aspects``。
+       从零开始的索引可区分匿名动作。地址对应当前模型，导出执行迹时应同时保存该模型。
+   * - ``to_dict()``
+     - 返回独立字典，其中路径为列表、变量为字典，可交给 JSON/YAML 序列化。
+       修改导出字典不会改变原条目。
+   * - ``str(entry)`` / ``print(entry)``
+     - 返回便于阅读的单行摘要，包含操作、状态、适用的迁移或动作地址、与调用位置不同的最终引用目标，
+       以及按名称排序的变量。大整数以位数简写显示。``repr(entry)`` 保留数据类的表示形式；
+       程序需要完整数值时使用 ``to_dict()``。
+
+下面的完整示例区分迁移效果和目标进入动作：迁移记录看到 ``x == 1``，
+随后的动作记录看到 ``x == 2``：
+
+.. code-block:: pycon
+
+    >>> import json
+    >>> from pyfcstm.model import load_state_machine_from_text
+    >>> from pyfcstm.simulate import SimulationRuntime
+    >>> model = load_state_machine_from_text('''
+    ... def int x = 0;
+    ... state Root {
+    ...     state Idle;
+    ...     state Done { enter { x = x + 1; } }
+    ...     [*] -> Idle;
+    ...     Idle -> Done :: Go effect { x = x + 1; };
+    ... }
+    ... ''')
+    >>> runtime = SimulationRuntime(model, history_size=0)
+    >>> _ = runtime.cycle()
+    >>> result = runtime.cycle('Root.Idle.Go', trace=True)
+    >>> [(entry.kind, entry.vars['x']) for entry in result.trace]
+    [('state_exit', 0), ('transition', 1), ('state_enter', 1), ('action', 2)]
+    >>> payload = json.dumps([entry.to_dict() for entry in result.trace])
+    >>> json.loads(payload)[1]['transition_label']
+    'Root.Idle::0::Idle->Done'
+    >>> runtime.history
+    []
+    >>> for entry in result.trace:
+    ...     print(entry)
+    State exit Root.Idle | vars={x=0}
+    Transition Root.Idle | transition=Root.Idle::0::Idle->Done | vars={x=1}
+    State enter Root.Done | vars={x=1}
+    Action Root.Done | action=Root.Done::on_enters::0 | vars={x=2}
+
+空执行迹本身不代表 Delta 或终止。稳定状态没有周期动作，也没有可执行迁移时，
+这一拍不执行需要记录的操作：
+
+.. code-block:: pycon
+
+    >>> idle = runtime.cycle(trace=True)
+    >>> (idle.delta, idle.trace, runtime.is_ended)
+    (False, (), False)
+
+快照不能原地修改；需要编辑数据时先调用 ``to_dict()``。
+``trace`` 必须按名称传入，不能作为第二个位置参数：
+
+.. code-block:: pycon
+
+    >>> result.trace[-1].vars['x'] = 9
+    Traceback (most recent call last):
+        ...
+    TypeError: 'mappingproxy' object does not support item assignment
+    >>> runtime.cycle(None, True)
+    Traceback (most recent call last):
+        ...
+    TypeError: ...
+
+该接口序列化的是条目，不是自包含的回放文件。保存记录时，调用者还需保留模型、
+周期编号、输入事件和观察约定；命令行 ``export`` 仍然导出宏步历史。
+
+抽象动作的 ``action`` 条目表示执行到该分派位置，不要求存在已注册处理器。
+``abstract_error_mode='log'`` 也允许处理器报错后继续完成周期；此类错误需要查看
+``abstract_handler_errors``。热启动只记录后续周期实际执行的工作，不补记构造时跳过的进入动作。
+
+完整可运行示例见 :meth:`pyfcstm.simulate.runtime.SimulationRuntime.cycle`。
+``test/simulate/test_execution_trace.py`` 核对执行顺序、快照、引用、候选拒绝、
+Delta、异常、中断、热启动，以及伪状态、强制转换和组合转换链。
+``test/simulate/test_execution_trace_semantic_fixtures.py`` 在全部可运行的共享仿真样例上
+对照开启执行迹与普通执行；``test/bmc/test_execution_trace_alignment.py``
+对照公开的有界模型检查展开接口，验证边地址一致。
 
 公开失败和边界
 --------------

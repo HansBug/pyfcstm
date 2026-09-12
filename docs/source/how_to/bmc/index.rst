@@ -843,7 +843,7 @@ See :doc:`../../reference/bmc_results/index` for fields, fallback and budget
 boundaries.
 
 Try conservative slicing for one query
--------------------------------------
+--------------------------------------
 
 Slicing requires an explicit option:
 

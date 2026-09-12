@@ -877,3 +877,8 @@ When enabled, inspect ``result.cone_slicing`` for removals, skip reasons and
 ``fallback``. Disabled results omit this field. ``total_elapsed_ms`` includes
 internal verification and fallback; performance comparisons must also measure
 compilation and external decoding/replay rather than excluding completion cost.
+
+The measured correctness gate passes, but the 6.09% formula reduction misses
+T3's 20% requirement, so slicing remains disabled by default. A query regresses
+131.73% in solve time; compare compilation, solving and external replay costs
+together. See :ref:`sec-bmc-cone-measurements` for the measured results.

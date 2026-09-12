@@ -273,3 +273,46 @@ whether the option changed an answer (it must not) and what it did to solve
 time, build time, formula size and memory.  It does not settle whether the
 option should become the default; that is a separate decision made with the
 run as evidence.
+
+### Conservative slicing measurements
+
+The [five-arm run](outputs/runs/2db089114bb5/report.md) binds clean implementation
+commit `2db089114bb5137aaf5a94d18af9949066f4bb6c` on Linux x86_64, CPython
+3.10.1 and Z3 4.15.4. It contains 1,275 measured samples, zero failures,
+325 successful SAT replays and no slicing fallback. H0 passes every arm and
+query. Of the 51 queries, 32 actually remove variables and 19 do not.
+
+| T3 component | Default | Slicing | Change | Requirement |
+|---|---:|---:|---:|---|
+| Sliced queries: formula DAG p50 | 2,399 nodes | 2,253 nodes | 6.09% fewer | At least 20% fewer: not met |
+| Sliced queries: query solve p50 | 15.650 ms | 15.528 ms | 0.78% faster | At most 5% regression: met |
+| Unsliced queries: query build + solve p50 | 263.482 ms | 262.975 ms | 0.19% faster | At most 5% regression: met |
+| Fallback samples | — | 0 | — | Zero: met |
+
+T3 is **not met**, so slicing remains disabled by default. These aggregates
+use the runner's existing discrete percentile helper: sort the values and
+select index `round(0.5 * (n - 1))`, with a zero-based index. For 32 queries,
+this selects the 17th observation. Five repetitions determine each query's
+p50 before aggregation across queries.
+
+The small aggregate solve change does not promise a speedup on each query.
+The largest solve regression is `codex_traffic_emergency_priority/invariant`:
+10.178 to 23.586 ms (**131.73% slower**). Sliced SAT candidates incur runtime
+verification inside solve, and external decoding/replay is still additional
+work. Among sliced queries with replay, external replay p50 rises from
+11.650 to 17.184 ms. Keep this cost in end-to-end comparisons.
+
+Removing output variables leaves state, event, selector, initial-value and
+control-flow constraints intact. For example, `codex_vtol_mission_supervision/reach`
+removes five of ten variables but DAG size falls only from 13,444 to 13,205
+nodes. Its build p50 is 26,478.520 ms before slicing and 25,873.804 ms after;
+solve p50 is 159.082 and 119.164 ms respectively. Formula construction
+therefore remains the dominant cost on this query. Further performance work
+should first profile construction rather than assume more write removal
+will address the main cost.
+
+The same run again leaves solver profiles opt-in: logic's aggregate solve
+change is a 1.49% regression with a worst query regression of 45.97%; tactic
+improves 5.17% in aggregate but regresses 417.94% on its worst query. T1 and
+T2 remain unmet. Results are specific to the recorded environment and corpus;
+no default option changes follow from this run.

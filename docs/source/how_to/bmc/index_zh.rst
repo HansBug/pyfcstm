@@ -795,3 +795,7 @@ options=BmcOptions(cone_slicing=True))``；文件入口支持
 开启时查看 ``result.cone_slicing`` 中的删除列表、跳过原因和 ``fallback``。
 关闭时 JSON 不增加该字段。``total_elapsed_ms`` 包含内部验证和回退；评估性能时
 同时测量编译、求解和对外解码重放，不能把见证回填成本从总耗时中扣掉。
+
+本次实测正确性门禁通过，但公式规模仅缩减 6.09%，未达到 T3 的 20% 门槛；
+切片默认保持关闭。单例求解最多退化 131.73%，所以应同时比较编译、求解和
+对外重放总成本。详细数字见 :ref:`sec-bmc-cone-measurements-zh`。

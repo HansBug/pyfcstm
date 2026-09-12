@@ -1595,3 +1595,47 @@ Consumer rules
 * Do not parse human tables, depend on live elapsed time, expect raw models or
   formulas, infer a response cause, or assume replay proves behavior beyond the
   decoded bounded trace.
+
+.. _sec-bmc-cone-measurements:
+
+Measured slicing costs
+----------------------
+
+The `five-arm benchmark report <https://github.com/HansBug/pyfcstm/blob/dev/bmc-cone-slicing/benchmarks/bmc/solving/outputs/runs/2db089114bb5/report.md>`_ binds clean commit ``2db08911``
+on Linux x86_64, CPython 3.10.1 and Z3 4.15.4. All 1,275 samples pass H0;
+325 SAT witnesses replay successfully, with zero failures or slicing fallback.
+Of 51 queries, 32 actually slice variables and 19 do not.
+
+.. list-table:: Slicing versus default at the same commit
+   :header-rows: 1
+
+   * - Metric
+     - Default
+     - Slicing
+     - Decision
+   * - Sliced-query formula DAG p50
+     - 2,399 nodes
+     - 2,253 nodes
+     - 6.09% reduction misses the 20% threshold
+   * - Sliced-query solve p50
+     - 15.650 ms
+     - 15.528 ms
+     - 0.78% improvement meets the maximum 5% regression threshold
+   * - Unsliced-query build + solve p50
+     - 263.482 ms
+     - 262.975 ms
+     - 0.19% improvement meets the maximum 5% growth threshold
+
+T3 is not met, so slicing remains disabled by default. These figures use the
+runner's existing discrete p50: sort and select zero-based index
+``round(0.5 * (n - 1))``, which selects the 17th observation for 32 queries.
+Each query's p50 comes from five repetitions before aggregation by actual
+slice partition.
+
+Near-neutral aggregate solve time does not rule out query regressions. The
+largest is ``codex_traffic_emergency_priority/invariant``: 10.178 to 23.586 ms,
+a 131.73% increase. Slicing adds original-runtime verification and witness
+completion; external decode/replay p50 among sliced queries with a witness
+rises from 11.650 to 17.184 ms. Measure your model and the complete call path
+before enabling it. Disabled result JSON omits slicing metadata; the options
+object's ``BmcOptions.to_canonical()`` adds a ``cone_slicing=False`` key.

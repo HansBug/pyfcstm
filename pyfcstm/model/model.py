@@ -5299,6 +5299,37 @@ def parse_dsl_node_to_state_machine(
 
     _validate_action_ref_cycles()
 
+    # Inputs are environment-owned and therefore must never be assignment
+    # targets. Reject this at model validation time rather than deferring it to
+    # inspect or runtime execution.
+    readonly_names = {
+        name for name, item in d_defines.items()
+        if item.role in (VariableRole.INPUT_DYNAMIC, VariableRole.INPUT_STATIC)
+    }
+    def _check_operations(value) -> Iterator[Operation]:
+        if isinstance(value, Operation):
+            yield value
+        elif is_dataclass(value):
+            for item in fields(value):
+                if item.name in {"parent", "ref", "_span"}:
+                    continue
+                yield from _check_operations(getattr(value, item.name))
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                yield from _check_operations(item)
+        elif isinstance(value, dict):
+            for item in value.values():
+                yield from _check_operations(item)
+    for state in root_state.walk_states():
+        for operation in _check_operations(state):
+            if operation.var_name in readonly_names:
+                sink.emit(ModelDiagnostic(
+                    code="E_READONLY_INPUT_WRITE", severity="error",
+                    message=f"Cannot assign to read-only input {operation.var_name!r}.",
+                    span=getattr(operation, "_span", None),
+                    refs={"var_name": operation.var_name, "reason": "input_write"},
+                ))
+
     machine = StateMachine(
         defines=d_defines,
         root_state=root_state,

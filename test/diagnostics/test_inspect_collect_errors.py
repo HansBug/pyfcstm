@@ -25,6 +25,10 @@ from pyfcstm.model import load_state_machine_from_file, parse_dsl_node_to_state_
 
 # Single-file DSL snippets, one per model-build error code.
 SINGLE_FILE_CASES = {
+    'E_DYNAMIC_INPUT_INITIALIZER': 'input int value = 1; state Root;',
+    'E_VARIABLE_INITIALIZER_REQUIRED': 'param int value; state Root;',
+    'E_DYNAMIC_INPUT_WRITE': 'input int value; state Root { during { value = 1; } }',
+    'E_STATIC_INPUT_WRITE': 'param int value = 1; state Root { during { value = 2; } }',
     'E_UNDEFINED_VAR': 'state Root { state A; state B; A -> B : if [zzz > 0]; }',
     'E_DUPLICATE_VAR': 'def int x = 0;\ndef int x = 1;\nstate Root { state A; }',
     'E_MISSING_STATE': (
@@ -163,9 +167,18 @@ class TestEveryBuildErrorSurvivesCollection:
         assert machine is not None
         _assert_code_survives_into_report(code, machine, diagnostics)
 
+    def test_programmatic_initializer_reference_reaches_the_report(self):
+        from pyfcstm.dsl import node as ast
+        program = ast.StateMachineDSLProgram(
+            [ast.DefAssignment('value', 'int', ast.Name('other'))],
+            ast.StateDefinition('Root'),
+        )
+        machine, diagnostics = parse_dsl_node_to_state_machine(program, collect=True)
+        _assert_code_survives_into_report('E_INITIALIZER_VARIABLE_REFERENCE', machine, diagnostics)
+
     def test_every_model_build_error_code_is_covered_or_recorded(self):
         """No build error code may be silently left out of this suite."""
-        covered = set(SINGLE_FILE_CASES) | set(IMPORT_CASES)
+        covered = set(SINGLE_FILE_CASES) | set(IMPORT_CASES) | {'E_INITIALIZER_VARIABLE_REFERENCE'}
         expected = _build_error_codes()
 
         assert covered <= expected, covered - expected

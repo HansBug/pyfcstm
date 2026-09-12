@@ -208,7 +208,7 @@ state System {
         errors = exc_info.value.errors
         assert len(errors) >= 1
         assert isinstance(errors[0], SyntaxFailError)
-        assert "Missing equals sign" in str(errors[0])
+        assert "Unexpected token" in str(errors[0])
 
     def test_unclosed_string_literal(self):
         """Test: Unclosed string literal"""

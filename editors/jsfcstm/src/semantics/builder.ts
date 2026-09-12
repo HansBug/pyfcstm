@@ -209,6 +209,7 @@ class SemanticBuilder {
             name: variable.name,
             valueType: variable.valueType,
             initializer: variable.initializer,
+            role: variable.role ?? 'control',
             ast: variable,
             range: variable.range,
         };

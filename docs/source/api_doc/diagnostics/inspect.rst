@@ -105,7 +105,7 @@ VariableInfo
 -----------------------------------------------------
 
 .. autoclass:: VariableInfo
-    :members: name,type,init_value,read_in_states,written_in_states,read_in_guards,written_in_effects,affects_guard_directly,affects_guard_indirectly,abstract_actions_in_scope,float_literal_assignments,span,float_literal_assignment_spans
+    :members: name,type,init_value,read_in_states,written_in_states,read_in_guards,written_in_effects,affects_guard_directly,affects_guard_indirectly,abstract_actions_in_scope,float_literal_assignments,span,float_literal_assignment_spans,role
 
 
 EventInfo

@@ -39,7 +39,18 @@ state_machine_dsl
 
 // Top-level variable definitions that appear before the root state.
 def_assignment
-    : leading_doc=MULTILINE_COMMENT? DEF deftype=(INT_TYPE | FLOAT_TYPE) ID ASSIGN init_expression SEMI
+    : leading_doc=MULTILINE_COMMENT? variable_declaration deftype=(INT_TYPE | FLOAT_TYPE) var_name=ID
+      (ASSIGN init_expression)? SEMI
+    ;
+
+variable_declaration
+    : DEF
+    | CONTROL
+    | INPUT
+    | INPUT DYNAMIC
+    | INPUT STATIC
+    | PARAM
+    | OUTPUT
     ;
 
 // State-machine structural rules.

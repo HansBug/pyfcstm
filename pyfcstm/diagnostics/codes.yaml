@@ -2951,12 +2951,12 @@ W_NUMERIC_CONSTANT_DIVISION_BY_ZERO:
       - "Do not drop ``refs.operator`` when division and modulo share this code."
   example_dsl: |
     def int result = 0;
-    def int input = 1;
+    def int sensor_value = 1;
     state Root {
         state A;
         state B;
         [*] -> A;
-        A -> B effect { result = input / (1 - 1); };
+        A -> B effect { result = sensor_value / (1 - 1); };
     }
 
 W_NUMERIC_SHIFT_COUNT_OUT_OF_TARGET_RANGE:
@@ -4033,3 +4033,63 @@ W_COMPOSITE_INIT_INCOMPLETE:
         [*] -> A : if [x > 0];
         [*] -> B : if [x < 0];
     }
+
+E_DYNAMIC_INPUT_INITIALIZER:
+  severity: error
+  span_object: variable_declaration
+  description: Dynamic inputs must not have initializers.
+  refs:
+    var_name:
+      type: str
+      required: true
+      description: The declared variable name.
+  example_dsl: |
+    input int value = 1; state Root;
+
+E_VARIABLE_INITIALIZER_REQUIRED:
+  severity: error
+  span_object: variable_declaration
+  description: Control, output, and static input declarations require an initializer.
+  refs:
+    var_name:
+      type: str
+      required: true
+      description: The declared variable name.
+  example_dsl: |
+    param int value; state Root;
+
+E_INITIALIZER_VARIABLE_REFERENCE:
+  severity: error
+  span_object: variable_declaration
+  description: Public model initializers must not reference variables; move derived values into enter actions.
+  refs:
+    var_name:
+      type: str
+      required: true
+      description: The declared variable name.
+  example_dsl: |
+    def int value = 1; state Root;
+
+E_DYNAMIC_INPUT_WRITE:
+  severity: error
+  span_object: effect_statement
+  description: Model operations must not assign dynamic inputs.
+  refs:
+    var_name:
+      type: str
+      required: true
+      description: The declared variable name.
+  example_dsl: |
+    input int value; state Root { during { value = 1; } }
+
+E_STATIC_INPUT_WRITE:
+  severity: error
+  span_object: effect_statement
+  description: Model operations must not assign static inputs.
+  refs:
+    var_name:
+      type: str
+      required: true
+      description: The declared variable name.
+  example_dsl: |
+    param int value = 1; state Root { during { value = 2; } }

@@ -147,7 +147,7 @@ swallowing, is not a supported documentation contract.
 Top-level program forms
 -----------------------
 
-A normal DSL entry has zero or more persistent variable declarations followed by
+A normal DSL entry has zero or more variable declarations followed by
 one root state:
 
 Fragment::
@@ -169,6 +169,47 @@ Facts:
   does not accept runtime variable references or C-style ternary expressions.
 * The root may be leaf or composite, but practical models usually use composite
   root state.
+
+Variable roles
+~~~~~~~~~~~~~~
+
+.. list-table:: Declarations and ownership
+   :header-rows: 1
+
+   * - Declaration
+     - ``role``
+     - Initialization and model assignments
+   * - ``control int count = 0;`` / ``def int count = 0;``
+     - ``control``
+     - Initializer required; model reads and writes allowed.
+   * - ``input dynamic float pressure;`` / ``input float pressure;``
+     - ``input_dynamic``
+     - Initializer forbidden; model reads only.
+   * - ``input static int limit = 2;`` / ``param int limit = 2;``
+     - ``input_static``
+     - Default required; model reads only.
+   * - ``output int command = 0;``
+     - ``output``
+     - Initializer required; model reads and writes allowed, including multiple writers.
+
+``control``, ``input``, ``dynamic``, ``static``, ``param``, and ``output`` are
+reserved keywords, unavailable as variable, state, event, or action names.
+All declarations share one namespace. Initializers cannot reference variables.
+Input/parameter writes are rejected during model construction, including writes
+in lifecycle actions, aspects, effects, and nested conditionals.
+
+AST exports preserve declaration spelling. ``pyfcstm.model.VariableRole`` exposes
+four enum values; ``VarDefine.init`` is ``None`` only for dynamic inputs in valid
+models. ``StateMachine.control_variables``, ``dynamic_inputs``, ``static_inputs``,
+``output_variables``, and ``persistent_variables`` return read-only mappings in
+global declaration order. The last preserves control/output interleaving; values
+are the same objects held in ``defines``. Inspect JSON variable entries require
+``role``; read-only inputs/parameters and write-only outputs do not receive
+ordinary control-variable dead-use warnings.
+
+This section defines the syntax/model contract. Runtime input sources,
+role-aware import merging, BMC input symbols, and generated runtime interfaces
+require their respective integration implementations.
 
 .. _dsl-import-preamble-forms:
 

@@ -616,14 +616,18 @@ export class IfBlock extends OperationStatement {
 export class VarDefine extends ModelNode {
     name: string;
     type: 'int' | 'float';
-    init: Expr;
+    init: Expr | null;
+    role: import('../ast').VariableRole;
+    spelling?: string;
     doc?: string;
 
-    constructor(raw: RawFcstmModelVarDefine, init: Expr) {
+    constructor(raw: RawFcstmModelVarDefine, init: Expr | null) {
         super(raw.kind, raw.pyModelType, raw.range, raw.text);
         this.name = raw.name;
         this.type = raw.type;
         this.init = init;
+        this.role = raw.role ?? 'control';
+        this.spelling = raw.spelling;
         this.doc = raw.doc;
     }
 
@@ -631,7 +635,7 @@ export class VarDefine extends ModelNode {
      * Convert the variable definition back into an AST node.
      */
     to_ast_node(): FcstmAstVariableDefinition {
-        const expr = this.init.to_ast_node();
+        const expr = this.init ? this.init.to_ast_node() : null;
         return {
             kind: 'variableDefinition',
             pyNodeType: 'DefAssignment',
@@ -643,6 +647,8 @@ export class VarDefine extends ModelNode {
             deftype: this.type,
             initializer: expr,
             expr,
+            role: this.role,
+            spelling: this.spelling,
             doc: this.doc,
         };
     }
@@ -1552,6 +1558,26 @@ export class StateMachine extends ModelNode {
         this.lookups = lookups;
     }
 
+    get control_variables(): Readonly<Record<string, VarDefine>> {
+        return Object.freeze(Object.fromEntries(Object.entries(this.defines).filter(([, value]) => value.role === 'control')));
+    }
+
+    get dynamic_inputs(): Readonly<Record<string, VarDefine>> {
+        return Object.freeze(Object.fromEntries(Object.entries(this.defines).filter(([, value]) => value.role === 'input_dynamic')));
+    }
+
+    get static_inputs(): Readonly<Record<string, VarDefine>> {
+        return Object.freeze(Object.fromEntries(Object.entries(this.defines).filter(([, value]) => value.role === 'input_static')));
+    }
+
+    get output_variables(): Readonly<Record<string, VarDefine>> {
+        return Object.freeze(Object.fromEntries(Object.entries(this.defines).filter(([, value]) => value.role === 'output')));
+    }
+
+    get persistent_variables(): Readonly<Record<string, VarDefine>> {
+        return Object.freeze(Object.fromEntries(Object.entries(this.defines).filter(([, value]) => value.role === 'control' || value.role === 'output')));
+    }
+
     /**
      * Convert the full state machine back into an AST document.
      */
@@ -1884,7 +1910,7 @@ export function hydrateStateMachine(raw: RawFcstmModelStateMachine): StateMachin
     context.cache.set(raw as object, stateMachine);
 
     for (const [name, definition] of Object.entries(raw.defines)) {
-        const hydrated = new VarDefine(definition, hydrateExpression(definition.init, context));
+        const hydrated = new VarDefine(definition, definition.init ? hydrateExpression(definition.init, context) : null);
         stateMachine.defines[name] = hydrated;
         lookups.definesByName[name] = hydrated;
     }

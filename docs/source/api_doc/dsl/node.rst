@@ -169,7 +169,7 @@ DefAssignment
 -----------------------------------------------------
 
 .. autoclass:: DefAssignment
-    :members: __str__,name,type,expr,doc
+    :members: __str__,name,type,expr,doc,role,spelling
 
 
 OperationalDeprecatedAssignment

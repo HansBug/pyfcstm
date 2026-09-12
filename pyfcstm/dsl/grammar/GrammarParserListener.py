@@ -33,6 +33,14 @@ class GrammarParserListener(ParseTreeListener):
     def exitDef_assignment(self, ctx: GrammarParser.Def_assignmentContext):
         pass
 
+    # Enter a parse tree produced by GrammarParser#variable_declaration.
+    def enterVariable_declaration(self, ctx: GrammarParser.Variable_declarationContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#variable_declaration.
+    def exitVariable_declaration(self, ctx: GrammarParser.Variable_declarationContext):
+        pass
+
     # Enter a parse tree produced by GrammarParser#leafStateDefinition.
     def enterLeafStateDefinition(self, ctx: GrammarParser.LeafStateDefinitionContext):
         pass

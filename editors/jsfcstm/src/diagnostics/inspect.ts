@@ -193,6 +193,7 @@ export interface VariableInfo {
     name: string;
     type: string;
     init_value: string;
+    role: import('../ast').VariableRole;
     read_in_states: string[];
     written_in_states: string[];
     read_in_guards: Array<[string, string]>;
@@ -1061,6 +1062,7 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
             name,
             type: def.type,
             init_value: exprText(def.init) ?? '',
+            role: def.role,
             read_in_states: readStates,
             written_in_states: writtenStates,
             read_in_guards: readGuardEntries,

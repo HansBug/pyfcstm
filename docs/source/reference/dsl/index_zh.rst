@@ -150,7 +150,7 @@ FCSTM 支持在每个持久变量定义、状态（包括根状态和伪状态�
 顶层程序形式
 --------------
 
-普通 DSL 入口是零个或多个持久变量声明，后面接一个根状态。
+普通 DSL 入口是零个或多个变量声明，后面接一个根状态。
 
 片段：
 
@@ -171,6 +171,43 @@ FCSTM 支持在每个持久变量定义、状态（包括根状态和伪状态�
 * 初始化表达式使用 ``init_expression``。这个子集接受字面量、数学常量、算术、
   位运算符和一元数学函数，但不接受运行时变量引用，也不接受 C 风格三目表达式。
 * 根状态可以是叶状态或复合状态；实际模型通常使用复合根状态。
+
+变量角色
+~~~~~~~~
+
+.. list-table:: 声明与所有权
+   :header-rows: 1
+
+   * - 声明
+     - ``role``
+     - 初始化与模型赋值
+   * - ``control int count = 0;`` / ``def int count = 0;``
+     - ``control``
+     - 必须初始化；模型可读写。
+   * - ``input dynamic float pressure;`` / ``input float pressure;``
+     - ``input_dynamic``
+     - 禁止初始化；模型只读。
+   * - ``input static int limit = 2;`` / ``param int limit = 2;``
+     - ``input_static``
+     - 必须提供默认值；模型只读。
+   * - ``output int command = 0;``
+     - ``output``
+     - 必须初始化；模型可读写，可由多个动作写入。
+
+``control``、``input``、``dynamic``、``static``、``param``、``output``
+是保留字，不能作为变量、状态、事件或动作名。所有声明共享同一个命名空间。
+初始化表达式不能引用任何变量。input/param 的赋值在模型构造时拒绝，
+包括生命周期、aspect、effect 和嵌套条件分支中的写入。
+
+AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供四个枚举值；
+``VarDefine.init`` 在合法模型中仅对 dynamic input 为 ``None``。
+``StateMachine.control_variables``、``dynamic_inputs``、``static_inputs``、
+``output_variables``、``persistent_variables`` 返回保持全局声明顺序的只读映射；
+最后一个按原序合并 control/output，映射值仍是 ``defines`` 中的对象。
+inspect JSON 的变量条目包含必填 ``role``；input/param 只读、output 只写不产生普通 control 的无用变量告警。
+
+本节定义语法与模型契约；运行时输入源、按角色合并导入、BMC 输入符号与生成运行时接口
+仍需各自的集成实现。
 
 .. _dsl-import-preamble-forms-zh:
 

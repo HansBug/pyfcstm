@@ -382,6 +382,32 @@
      - ``verify_pipeline``
      - ``requires_solver``
      - ``composite_block``
+   * - :ref:`E_DYNAMIC_INPUT_INITIALIZER <diag-code-e-dynamic-input-initializer-zh>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``variable_declaration``
+   * - :ref:`E_VARIABLE_INITIALIZER_REQUIRED <diag-code-e-variable-initializer-required-zh>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``variable_declaration``
+   * - :ref:`E_INITIALIZER_VARIABLE_REFERENCE <diag-code-e-initializer-variable-reference-zh>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``variable_declaration``
+   * - :ref:`E_DYNAMIC_INPUT_WRITE <diag-code-e-dynamic-input-write-zh>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``effect_statement``
+   * - :ref:`E_STATIC_INPUT_WRITE <diag-code-e-static-input-write-zh>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``effect_statement``
+
 
 名称、变量、类型和导入
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -4697,12 +4723,12 @@ W_NUMERIC_CONSTANT_DIVISION_BY_ZERO
 .. code-block:: fcstm
 
    def int result = 0;
-   def int input = 1;
+   def int sensor_value = 1;
    state Root {
        state A;
        state B;
        [*] -> A;
-       A -> B effect { result = input / (1 - 1); };
+       A -> B effect { result = sensor_value / (1 - 1); };
    }
 
 .. diagnostics-example W_NUMERIC_CONSTANT_DIVISION_BY_ZERO 2 boundary_only
@@ -5645,3 +5671,166 @@ W_NAMED_ACTION_SHADOWS_ANCESTOR
 
 **示例 3**\ （``boundary_only``）——针对 ``W_NAMED_ACTION_SHADOWS_ANCESTOR`` 的反例边界。
 不要这样处理：针对“命名生命周期动作复用了祖先作用域里的命名动作名称。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
+
+.. _diag-code-e-dynamic-input-initializer-zh:
+
+E_DYNAMIC_INPUT_INITIALIZER
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_DYNAMIC_INPUT_INITIALIZER severity=error emit_tier=static_pipeline capability=pure_static span_object=variable_declaration
+.. diagnostics-ref E_DYNAMIC_INPUT_INITIALIZER var_name type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-boundary E_DYNAMIC_INPUT_INITIALIZER kind=cli_error
+
+动态输入没有模型初值，其值由环境提供。
+
+``refs.var_name`` 标识涉及的声明。严重性为 ``error``，静态校验无需求解器。
+
+.. diagnostics-example E_DYNAMIC_INPUT_INITIALIZER 1 cli_error
+
+.. code-block:: fcstm
+
+   input int sensor = 1; state Root;
+
+加载此源码会在模型构造时失败。``pyfcstm inspect -i model.fcstm --collect-errors --format json`` 会在报告中保留错误。
+
+.. diagnostics-example E_DYNAMIC_INPUT_INITIALIZER 2 boundary_only
+
+移除初始化表达式；固定外部输入应由运行时输入源提供。
+
+.. code-block:: fcstm
+
+   input int sensor; state Root;
+
+.. diagnostics-example E_DYNAMIC_INPUT_INITIALIZER 3 boundary_only
+
+不要靠重命名其他变量隐藏错误；初始化表达式没有“先声明即可引用”的例外。
+
+.. _diag-code-e-variable-initializer-required-zh:
+
+E_VARIABLE_INITIALIZER_REQUIRED
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_VARIABLE_INITIALIZER_REQUIRED severity=error emit_tier=static_pipeline capability=pure_static span_object=variable_declaration
+.. diagnostics-ref E_VARIABLE_INITIALIZER_REQUIRED var_name type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-boundary E_VARIABLE_INITIALIZER_REQUIRED kind=cli_error
+
+control、output 和 static input 必须提供不引用变量的初始值。
+
+``refs.var_name`` 标识涉及的声明。严重性为 ``error``，静态校验无需求解器。
+
+.. diagnostics-example E_VARIABLE_INITIALIZER_REQUIRED 1 cli_error
+
+.. code-block:: fcstm
+
+   param int limit; state Root;
+
+加载此源码会在模型构造时失败。``pyfcstm inspect -i model.fcstm --collect-errors --format json`` 会在报告中保留错误。
+
+.. diagnostics-example E_VARIABLE_INITIALIZER_REQUIRED 2 boundary_only
+
+提供明确默认值，不依赖隐式零值。
+
+.. code-block:: fcstm
+
+   param int limit = 2; state Root;
+
+.. diagnostics-example E_VARIABLE_INITIALIZER_REQUIRED 3 boundary_only
+
+不要靠重命名其他变量隐藏错误；初始化表达式没有“先声明即可引用”的例外。
+
+.. _diag-code-e-initializer-variable-reference-zh:
+
+E_INITIALIZER_VARIABLE_REFERENCE
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_INITIALIZER_VARIABLE_REFERENCE severity=error emit_tier=static_pipeline capability=pure_static span_object=variable_declaration
+.. diagnostics-ref E_INITIALIZER_VARIABLE_REFERENCE var_name type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-boundary E_INITIALIZER_VARIABLE_REFERENCE kind=cli_error
+
+通过公共 AST/model API 提供的初始化表达式包含变量引用。
+
+``refs.var_name`` 标识涉及的声明。严重性为 ``error``，静态校验无需求解器。
+
+.. diagnostics-example E_INITIALIZER_VARIABLE_REFERENCE 1 repro_api
+
+.. code-block:: python
+
+   from pyfcstm.model import VarDefine, Variable, VariableRole
+
+   VarDefine("derived", "int", Variable("source"), role=VariableRole.INPUT_STATIC)
+
+此调用抛出含本诊断码的 ``ModelValidationError``。文本 DSL 初始化表达式中的名称会更早被语法拒绝；复现本诊断码应使用上述 API 示例。
+
+.. diagnostics-example E_INITIALIZER_VARIABLE_REFERENCE 2 boundary_only
+
+将派生初值移入 enter 动作，或提供预先计算的字面量。
+
+.. diagnostics-example E_INITIALIZER_VARIABLE_REFERENCE 3 boundary_only
+
+不要靠重命名其他变量隐藏错误；初始化表达式没有“先声明即可引用”的例外。
+
+.. _diag-code-e-dynamic-input-write-zh:
+
+E_DYNAMIC_INPUT_WRITE
+^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_DYNAMIC_INPUT_WRITE severity=error emit_tier=static_pipeline capability=pure_static span_object=effect_statement
+.. diagnostics-ref E_DYNAMIC_INPUT_WRITE var_name type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-boundary E_DYNAMIC_INPUT_WRITE kind=cli_error
+
+动作、aspect 或 effect 给动态输入赋值。
+
+``refs.var_name`` 标识涉及的声明。严重性为 ``error``，静态校验无需求解器。
+
+.. diagnostics-example E_DYNAMIC_INPUT_WRITE 1 cli_error
+
+.. code-block:: fcstm
+
+   input int sensor; state Root { during { sensor = 1; } }
+
+加载此源码会在模型构造时失败。``pyfcstm inspect -i model.fcstm --collect-errors --format json`` 会在报告中保留错误。
+
+.. diagnostics-example E_DYNAMIC_INPUT_WRITE 2 boundary_only
+
+保持外部输入只读，把计算结果写入 control 或 output。
+
+.. code-block:: fcstm
+
+   input int sensor; output int command = 0; state Root { during { command = sensor; } }
+
+.. diagnostics-example E_DYNAMIC_INPUT_WRITE 3 boundary_only
+
+校验同样适用于嵌套条件分支和编程式构造。output 可以有多个写入者，这不属于错误。
+
+.. _diag-code-e-static-input-write-zh:
+
+E_STATIC_INPUT_WRITE
+^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_STATIC_INPUT_WRITE severity=error emit_tier=static_pipeline capability=pure_static span_object=effect_statement
+.. diagnostics-ref E_STATIC_INPUT_WRITE var_name type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-boundary E_STATIC_INPUT_WRITE kind=cli_error
+
+动作、aspect 或 effect 给静态输入或参数赋值。
+
+``refs.var_name`` 标识涉及的声明。严重性为 ``error``，静态校验无需求解器。
+
+.. diagnostics-example E_STATIC_INPUT_WRITE 1 cli_error
+
+.. code-block:: fcstm
+
+   param int limit = 2; state Root { during { limit = 3; } }
+
+加载此源码会在模型构造时失败。``pyfcstm inspect -i model.fcstm --collect-errors --format json`` 会在报告中保留错误。
+
+.. diagnostics-example E_STATIC_INPUT_WRITE 2 boundary_only
+
+可变状态使用 control；参数在一次运行内保持固定。
+
+.. code-block:: fcstm
+
+   param int limit = 2; control int count = 0; state Root { during { count = limit; } }
+
+.. diagnostics-example E_STATIC_INPUT_WRITE 3 boundary_only
+
+校验同样适用于嵌套条件分支和编程式构造。output 可以有多个写入者，这不属于错误。

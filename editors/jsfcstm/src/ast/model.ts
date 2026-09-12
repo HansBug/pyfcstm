@@ -78,6 +78,8 @@ export interface FcstmAstDocument extends FcstmAstNodeBase {
 /**
  * Variable definition aligned with pyfcstm's ``DefAssignment`` node.
  */
+export type VariableRole = 'control' | 'input_dynamic' | 'input_static' | 'output';
+
 export interface FcstmAstVariableDefinition extends FcstmAstNodeBase {
     kind: 'variableDefinition';
     pyNodeType: 'DefAssignment';
@@ -85,8 +87,10 @@ export interface FcstmAstVariableDefinition extends FcstmAstNodeBase {
     type: 'int' | 'float';
     valueType: 'int' | 'float';
     deftype: 'int' | 'float';
-    initializer: FcstmAstExpression;
-    expr: FcstmAstExpression;
+    role?: VariableRole;
+    spelling?: string;
+    initializer: FcstmAstExpression | null;
+    expr: FcstmAstExpression | null;
     doc?: string;
 }
 

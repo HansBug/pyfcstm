@@ -161,7 +161,9 @@ export interface RawFcstmModelVarDefine extends RawFcstmModelNodeBase {
     pyModelType: 'VarDefine';
     name: string;
     type: 'int' | 'float';
-    init: RawFcstmModelExpression;
+    init: RawFcstmModelExpression | null;
+    role?: import('../ast').VariableRole;
+    spelling?: string;
     doc?: string;
 }
 

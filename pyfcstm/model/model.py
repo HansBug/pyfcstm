@@ -47,6 +47,8 @@ import json
 import os
 import weakref
 from dataclasses import dataclass, field, fields, is_dataclass
+from enum import Enum
+from types import MappingProxyType
 from textwrap import indent
 from typing import Any, Optional, Union, List, Dict, Tuple, Iterator, Set
 
@@ -2585,6 +2587,14 @@ class State(AstExportable, PlantUMLExportable):
         return current_state.events[event_name]
 
 
+class VariableRole(str, Enum):
+    """Ownership role of a top-level model variable."""
+    CONTROL = "control"
+    INPUT_DYNAMIC = "input_dynamic"
+    INPUT_STATIC = "input_static"
+    OUTPUT = "output"
+
+
 @dataclass
 class VarDefine(AstExportable):
     """
@@ -2607,8 +2617,9 @@ class VarDefine(AstExportable):
 
     name: str
     type: str
-    init: Expr
+    init: Optional[Expr]
     doc: Optional[str] = None
+    role: VariableRole = VariableRole.CONTROL
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def to_ast_node(self) -> dsl_nodes.DefAssignment:
@@ -2618,10 +2629,12 @@ class VarDefine(AstExportable):
         :return: A definition assignment AST node
         :rtype: dsl_nodes.DefAssignment
         """
+        role = self.role.value if isinstance(self.role, VariableRole) else self.role
         return dsl_nodes.DefAssignment(
             name=self.name,
             type=self.type,
-            expr=self.init.to_ast_node(),
+            expr=self.init.to_ast_node() if self.init is not None else None,
+            role=role,
             **_ast_doc_kwargs(dsl_nodes.DefAssignment, self.doc),
         )
 
@@ -2683,6 +2696,26 @@ class StateMachine(AstExportable, PlantUMLExportable):
     """
 
     defines: Dict[str, VarDefine]
+
+    @property
+    def control_variables(self):
+        return MappingProxyType({k: v for k, v in self.defines.items() if v.role is VariableRole.CONTROL})
+
+    @property
+    def dynamic_inputs(self):
+        return MappingProxyType({k: v for k, v in self.defines.items() if v.role is VariableRole.INPUT_DYNAMIC})
+
+    @property
+    def static_inputs(self):
+        return MappingProxyType({k: v for k, v in self.defines.items() if v.role is VariableRole.INPUT_STATIC})
+
+    @property
+    def output_variables(self):
+        return MappingProxyType({k: v for k, v in self.defines.items() if v.role is VariableRole.OUTPUT})
+
+    @property
+    def persistent_variables(self):
+        return MappingProxyType({k: v for k, v in self.defines.items() if v.role in (VariableRole.CONTROL, VariableRole.OUTPUT)})
     root_state: State
     forced_transitions: Tuple[Dict[str, object], ...] = field(default_factory=tuple)
     source_text: Optional[str] = field(default=None, compare=False, repr=False)

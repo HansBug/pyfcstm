@@ -1,0 +1,2 @@
+init cold havoc { gap_created } where gap_created >= 0 && gap_created <= 3;
+check invariant <= 10: gap_created <= 3;

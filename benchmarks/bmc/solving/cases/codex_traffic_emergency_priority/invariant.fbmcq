@@ -1,0 +1,2 @@
+init cold havoc { acquisition_count } where acquisition_count >= 0 && acquisition_count <= 3;
+check invariant <= 10: acquisition_count <= 3;

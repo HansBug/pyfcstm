@@ -1,0 +1,488 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/HansBug/pyfcstm/blob/main/benchmarks/bmc/solving/schema.json",
+  "title": "BMC solving benchmark run",
+  "description": "The shape of one immutable run under outputs/runs/<run-id>/. This is benchmark output and is deliberately NOT part of the public BMC result schema: it may change whenever the measurement map changes, and no consumer of pyfcstm results should read it.",
+  "type": "object",
+  "required": [
+    "manifest",
+    "summary"
+  ],
+  "properties": {
+    "manifest": {
+      "$ref": "#/$defs/manifest"
+    },
+    "summary": {
+      "$ref": "#/$defs/summary"
+    }
+  },
+  "$defs": {
+    "expected": {
+      "description": "What case.json says one query should return; the correctness gate reads it back.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "property_satisfied",
+        "outcome"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "sat",
+            "unsat",
+            "unknown",
+            "timeout"
+          ]
+        },
+        "property_satisfied": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "outcome": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "arm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "label",
+        "revision",
+        "options"
+      ],
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "description": "Full commit the child ran from a detached worktree.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "options": {
+          "description": "Forwarded unchanged: compile becomes BmcOptions(**compile), solve becomes keyword arguments of solve_bmc_property. An unknown key is a TypeError in production code.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "compile",
+            "solve"
+          ],
+          "properties": {
+            "compile": {
+              "type": "object"
+            },
+            "solve": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "manifest": {
+      "description": "manifest.json: everything a reader needs to know what was measured, on what, under which thresholds, and whether the tree was clean.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "run_id",
+        "baseline",
+        "arms",
+        "reference_arm",
+        "repetitions",
+        "warmups",
+        "case_filter",
+        "timeout_ms",
+        "environment",
+        "candidate",
+        "inputs",
+        "readme_digest",
+        "roles",
+        "kinds",
+        "expected",
+        "measurement_map"
+      ],
+      "properties": {
+        "schema": {
+          "const": "bmc-solving-benchmark/v1",
+          "description": "Renaming or removing a field requires a new version."
+        },
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "baseline": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "label",
+            "commit"
+          ],
+          "properties": {
+            "label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "commit": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            }
+          }
+        },
+        "arms": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/arm"
+          }
+        },
+        "reference_arm": {
+          "description": "The arm every other arm is compared against under H0.",
+          "type": "string",
+          "minLength": 1
+        },
+        "repetitions": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "warmups": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "case_filter": {
+          "description": "Case names measured, or null for the whole corpus.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "timeout_ms": {
+          "description": "Solver budget forwarded to every arm, or null for the unbounded cost.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "environment": {
+          "type": "object",
+          "required": [
+            "python",
+            "python_implementation",
+            "z3",
+            "platform",
+            "machine",
+            "processor"
+          ],
+          "properties": {
+            "python": {
+              "type": "string"
+            },
+            "python_implementation": {
+              "type": "string"
+            },
+            "z3": {
+              "type": "string"
+            },
+            "platform": {
+              "type": "string"
+            },
+            "machine": {
+              "type": "string"
+            },
+            "processor": {
+              "type": "string"
+            }
+          }
+        },
+        "candidate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "commit",
+            "dirty",
+            "porcelain"
+          ],
+          "properties": {
+            "commit": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "dirty": {
+              "type": "boolean"
+            },
+            "porcelain": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "description": "HEAD and the working tree listing at measurement time. The measurement runs from worktrees of the arms' commits, so the listing is evidence, not a taint."
+        },
+        "inputs": {
+          "description": "SHA-256 of every corpus file, keyed by path relative to cases/, line endings normalized.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "readme_digest": {
+          "description": "SHA-256 of README.md at measurement time, which binds the run to the thresholds it was measured under.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "roles": {
+          "description": "case -> role, copied from case.json so a rebuild does not need the corpus.",
+          "type": "object",
+          "additionalProperties": {
+            "enum": [
+              "llm_generated",
+              "slicing_positive",
+              "definedness_trap",
+              "abstract_skip"
+            ]
+          }
+        },
+        "kinds": {
+          "description": "case -> query -> property kind, copied from case.json.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "expected": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/$defs/expected"
+            }
+          }
+        },
+        "measurement_map": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "metric",
+              "source",
+              "note"
+            ],
+            "properties": {
+              "metric": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "distribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "p50",
+        "p95",
+        "max"
+      ],
+      "properties": {
+        "p50": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "p95": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "max": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      }
+    },
+    "observed": {
+      "description": "One value when every sample agreed, a sorted list of the distinct values otherwise.",
+      "type": [
+        "string",
+        "number",
+        "boolean",
+        "null",
+        "array"
+      ]
+    },
+    "armSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "samples",
+        "failures",
+        "build_ms",
+        "solve_ms",
+        "replay_ms",
+        "total_elapsed_ms",
+        "formula_dag_nodes",
+        "status",
+        "property_satisfied",
+        "outcome",
+        "replay_ok",
+        "peak_child_rss_bytes",
+        "h0"
+      ],
+      "properties": {
+        "samples": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failures": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "build_ms": {
+          "$ref": "#/$defs/distribution"
+        },
+        "solve_ms": {
+          "$ref": "#/$defs/distribution"
+        },
+        "replay_ms": {
+          "$ref": "#/$defs/distribution"
+        },
+        "total_elapsed_ms": {
+          "$ref": "#/$defs/distribution"
+        },
+        "formula_dag_nodes": {
+          "$ref": "#/$defs/observed"
+        },
+        "status": {
+          "$ref": "#/$defs/observed"
+        },
+        "property_satisfied": {
+          "$ref": "#/$defs/observed"
+        },
+        "outcome": {
+          "$ref": "#/$defs/observed"
+        },
+        "replay_ok": {
+          "$ref": "#/$defs/observed"
+        },
+        "peak_child_rss_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Kernel high-water mark of the child (ru_maxrss), read after replay and before the size walk."
+        },
+        "peak_child_rss_note": {
+          "type": "string"
+        },
+        "unstable_fields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "first_error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "h0": {
+          "description": "The correctness gate: every published field identical to the reference arm, and status, property_satisfied and outcome equal to case.json. A failed sample fails both.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "identical_to_reference",
+            "matches_expected"
+          ],
+          "properties": {
+            "identical_to_reference": {
+              "type": "boolean"
+            },
+            "matches_expected": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "querySummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "expected",
+        "arms"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "expected": {
+          "$ref": "#/$defs/expected"
+        },
+        "arms": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/armSummary"
+          }
+        }
+      }
+    },
+    "summary": {
+      "description": "summary.json: one entry per case, one per query under it, one per arm under that. Reproducible from raw.jsonl with --rebuild.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "role",
+          "queries"
+        ],
+        "properties": {
+          "role": {
+            "enum": [
+              "llm_generated",
+              "slicing_positive",
+              "definedness_trap",
+              "abstract_skip",
+              "unknown"
+            ]
+          },
+          "queries": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/$defs/querySummary"
+            }
+          }
+        }
+      }
+    }
+  }
+}

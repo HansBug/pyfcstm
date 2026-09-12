@@ -1,0 +1,41 @@
+{
+  "name": "pump_supervisor_hooks",
+  "source": {
+    "kind": "handwritten"
+  },
+  "role": "abstract_skip",
+  "why": "Abstract enter/during/exit hooks observe the whole environment, so a slice must skip this model.",
+  "model": "model.fcstm",
+  "queries": [
+    {
+      "file": "reach.fbmcq",
+      "kind": "reach",
+      "expected": {
+        "status": "sat",
+        "property_satisfied": true,
+        "outcome": "witness_found"
+      },
+      "why": "three Running cycles raise pressure to six."
+    },
+    {
+      "file": "forbid.fbmcq",
+      "kind": "forbid",
+      "expected": {
+        "status": "unsat",
+        "property_satisfied": true,
+        "outcome": "property_satisfied"
+      },
+      "why": "the Alarm exit guard stops at three alarms."
+    },
+    {
+      "file": "invariant.fbmcq",
+      "kind": "invariant",
+      "expected": {
+        "status": "unsat",
+        "property_satisfied": true,
+        "outcome": "property_satisfied"
+      },
+      "why": "pressure is reset at each alarm."
+    }
+  ]
+}

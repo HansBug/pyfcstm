@@ -1,4 +1,4 @@
-.PHONY: docs docs_en docs_zh docs_pdf docs_pdf_en docs_pdf_zh test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build build_info build_info_cli package clean rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check test_boundary_check resource_ownership_check deprecation_check fixture_corpus_check inspect_structure_parity_check public_payload_contract_check api_doc_toctree_check bmc_docs_check bmc_benchmark_check bmc_benchmark build_assets build_assets_clean diagram_assets_check diagram_rendering_check diagram_browser_check diagram_contract_check diagram_data_check diagram_options_check diagram_csp_check diagram_parity_check diagram_reference_check diagram_export_limits_check diagram_headless_check diagram_notebooks_check diagram_browser_headless_check diagram_engine_floor diagram_provenance_check diagram_viewer_gate_check diagram_webview_expander_check diagram_assets_verify diagram_package_check diagram_corpus diagram_viewer_option_flow_check doctest
+.PHONY: docs docs_en docs_zh docs_pdf docs_pdf_en docs_pdf_zh test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build build_info build_info_cli package clean rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check test_boundary_check resource_ownership_check deprecation_check fixture_corpus_check inspect_structure_parity_check public_payload_contract_check api_doc_toctree_check bmc_docs_check bmc_benchmark_check bmc_benchmark bmc_solving_benchmark_check bmc_solving_benchmark build_assets build_assets_clean diagram_assets_check diagram_rendering_check diagram_browser_check diagram_contract_check diagram_data_check diagram_options_check diagram_csp_check diagram_parity_check diagram_reference_check diagram_export_limits_check diagram_headless_check diagram_notebooks_check diagram_browser_headless_check diagram_engine_floor diagram_provenance_check diagram_viewer_gate_check diagram_webview_expander_check diagram_assets_verify diagram_package_check diagram_corpus diagram_viewer_option_flow_check doctest
 
 PYTHON := $(shell which python)
 
@@ -154,6 +154,8 @@ help:
 	@echo "  make bmc_docs_check - Validate the BMC documentation contracts"
 	@echo "  make bmc_benchmark_check - Validate the BMC infeasibility benchmark corpus"
 	@echo "  make bmc_benchmark - Measure explanation cost across baseline/none/formal/proof"
+	@echo "  make bmc_solving_benchmark_check - Validate the BMC solving benchmark corpus, thresholds and saved runs"
+	@echo "  make bmc_solving_benchmark - Measure BMC solving cost across the option arms"
 	@echo ""
 	@echo "Sample Tests:"
 	@echo "  make sample       - Generate test files from sample DSL files"
@@ -418,6 +420,14 @@ bmc_benchmark_check:
 
 bmc_benchmark: bmc_benchmark_check
 	$(PYTHON) tools/run_bmc_infeasibility_benchmark.py --run \
+		--repetitions ${BMC_BENCHMARK_REPETITIONS} --warmups ${BMC_BENCHMARK_WARMUPS}
+
+bmc_solving_benchmark_check:
+	$(PYTHON) tools/run_bmc_solving_benchmark.py --check
+	$(PYTHON) tools/run_bmc_solving_benchmark.py --self-test
+
+bmc_solving_benchmark: bmc_solving_benchmark_check
+	$(PYTHON) tools/run_bmc_solving_benchmark.py --run \
 		--repetitions ${BMC_BENCHMARK_REPETITIONS} --warmups ${BMC_BENCHMARK_WARMUPS}
 
 

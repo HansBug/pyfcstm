@@ -514,3 +514,10 @@ python tools/run_bmc_resolution_benchmark.py \
   --followup-from benchmarks/bmc/solving/outputs/resolution_runs/<run-id> \
   --output benchmarks/bmc/solving/outputs/resolution_runs/<run-id>-followup
 ```
+
+
+The [production condition-resolution assessment](outputs/resolution_runs/235d29cf/review.md)
+records the primary round, its one retained 5.51% guard failure, the registered
+0.19% follow-up, normal CLI measurements and independent formula/partition
+checks. The hotspot API improvement is about 73%; this does not turn the
+first-round guard failure or historical T1–T3 failures into passes.

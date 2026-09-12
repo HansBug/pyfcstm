@@ -13,8 +13,8 @@ to name the workload from the original diagnostic records explicitly. The other
 input, revision, sampling order, warmup, repetition or measured record changed.
 
 The immutable manifest and raw samples describe the original sampling program.
-The sampling helper itself is unchanged. The original derived analysis will be
-retained separately; the corrected report is rebuilt from exactly the same raw
+The sampling helper itself is unchanged. The original derived analysis is
+retained in `initial-analysis/`; the corrected report is rebuilt from exactly the same raw
 samples. Analysis provenance records the corrected analyzer hash separately
 from the manifest's original program hash. This is an analyzer identifier error,
 not an observed production regression or a replacement measurement round.

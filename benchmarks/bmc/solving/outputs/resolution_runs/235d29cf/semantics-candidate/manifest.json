@@ -1,0 +1,267 @@
+{
+  "commit": "235d29cf8a832848135a58a69e45949321c6f847",
+  "dirty": false,
+  "machine": "x86_64",
+  "platform": "Linux-6.8.0-137-generic-x86_64-with-glibc2.39",
+  "processor": "x86_64",
+  "python_hash_seed": "random",
+  "specs": [
+    {
+      "arm": "baseline",
+      "case": "claude_distributed_elevator_can",
+      "query": "reach"
+    },
+    {
+      "arm": "baseline",
+      "case": "claude_distributed_elevator_can",
+      "query": "forbid"
+    },
+    {
+      "arm": "baseline",
+      "case": "claude_distributed_elevator_can",
+      "query": "invariant"
+    },
+    {
+      "arm": "baseline",
+      "case": "claude_platooning_join_protocol",
+      "query": "reach"
+    },
+    {
+      "arm": "baseline",
+      "case": "claude_platooning_join_protocol",
+      "query": "forbid"
+    },
+    {
+      "arm": "baseline",
+      "case": "claude_platooning_join_protocol",
+      "query": "invariant"
+    },
+    {
+      "arm": "baseline",
+      "case": "claude_traffic_emergency_priority",
+      "query": "reach"
+    },
+    {
+      "arm": "baseline",
+      "case": "claude_traffic_emergency_priority",
+      "query": "forbid"
+    },
+    {
+      "arm": "baseline",
+      "case": "claude_traffic_emergency_priority",
+      "query": "invariant"
+    },
+    {
+      "arm": "baseline",
+      "case": "claude_vtol_mission_supervision",
+      "query": "reach"
+    },
+    {
+      "arm": "baseline",
+      "case": "claude_vtol_mission_supervision",
+      "query": "forbid"
+    },
+    {
+      "arm": "baseline",
+      "case": "claude_vtol_mission_supervision",
+      "query": "invariant"
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_deepseek_distributed_elevator_can",
+      "query": "reach"
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_deepseek_distributed_elevator_can",
+      "query": "forbid"
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_deepseek_distributed_elevator_can",
+      "query": "invariant"
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_deepseek_platooning_join_protocol",
+      "query": "reach"
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_deepseek_platooning_join_protocol",
+      "query": "forbid"
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_deepseek_platooning_join_protocol",
+      "query": "invariant"
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_deepseek_traffic_emergency_priority",
+      "query": "reach"
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_deepseek_traffic_emergency_priority",
+      "query": "forbid"
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_deepseek_traffic_emergency_priority",
+      "query": "invariant"
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_deepseek_vtol_mission_supervision",
+      "query": "reach"
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_deepseek_vtol_mission_supervision",
+      "query": "forbid"
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_deepseek_vtol_mission_supervision",
+      "query": "invariant"
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_distributed_elevator_can",
+      "query": "reach"
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_distributed_elevator_can",
+      "query": "forbid"
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_distributed_elevator_can",
+      "query": "invariant"
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_platooning_join_protocol",
+      "query": "reach"
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_platooning_join_protocol",
+      "query": "forbid"
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_platooning_join_protocol",
+      "query": "invariant"
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_traffic_emergency_priority",
+      "query": "reach"
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_traffic_emergency_priority",
+      "query": "forbid"
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_traffic_emergency_priority",
+      "query": "invariant"
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_vtol_mission_supervision",
+      "query": "reach"
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_vtol_mission_supervision",
+      "query": "forbid"
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_vtol_mission_supervision",
+      "query": "invariant"
+    },
+    {
+      "arm": "baseline",
+      "case": "conveyor_counters",
+      "query": "reach"
+    },
+    {
+      "arm": "baseline",
+      "case": "conveyor_counters",
+      "query": "forbid"
+    },
+    {
+      "arm": "baseline",
+      "case": "conveyor_counters",
+      "query": "invariant"
+    },
+    {
+      "arm": "baseline",
+      "case": "heater_logging",
+      "query": "reach"
+    },
+    {
+      "arm": "baseline",
+      "case": "heater_logging",
+      "query": "forbid"
+    },
+    {
+      "arm": "baseline",
+      "case": "heater_logging",
+      "query": "invariant"
+    },
+    {
+      "arm": "baseline",
+      "case": "pump_supervisor_hooks",
+      "query": "reach"
+    },
+    {
+      "arm": "baseline",
+      "case": "pump_supervisor_hooks",
+      "query": "forbid"
+    },
+    {
+      "arm": "baseline",
+      "case": "pump_supervisor_hooks",
+      "query": "invariant"
+    },
+    {
+      "arm": "baseline",
+      "case": "ratio_estimator",
+      "query": "reach"
+    },
+    {
+      "arm": "baseline",
+      "case": "ratio_estimator",
+      "query": "forbid"
+    },
+    {
+      "arm": "baseline",
+      "case": "ratio_estimator",
+      "query": "invariant"
+    },
+    {
+      "arm": "baseline",
+      "case": "telemetry_outputs",
+      "query": "reach"
+    },
+    {
+      "arm": "baseline",
+      "case": "telemetry_outputs",
+      "query": "forbid"
+    },
+    {
+      "arm": "baseline",
+      "case": "telemetry_outputs",
+      "query": "invariant"
+    }
+  ],
+  "timing_contract": "Fresh processes; pre-imported dependencies; public file API including serialization. Low-frequency phase observers are shared by all arms; SAT request observers run only with sat_probe. Input preparation and fingerprints excluded. cProfile runs separate from ordinary wall measurements; inclusive function times overlap. Caches exist only for one call, retain object identities, and are experimental. Formula/partition/probe fingerprints must match exactly. Witnesses are retained and their equality recorded separately: a SAT formula can admit multiple valid witnesses, each of which must pass ordinary replay.",
+  "tool_sha256": "6469c97372b8ec311365e0f75eaa7a2bda666afc157f625f0e8c22b0d517b277"
+}

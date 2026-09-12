@@ -128,9 +128,7 @@ def test_structured_diagram_data_is_doc_free():
     documented = load_state_machine_from_text(
         "/* Root docs */\nstate Root { /* child docs */ state Child; [*] -> Child; }\n"
     )
-    plain = load_state_machine_from_text(
-        "state Root { state Child; [*] -> Child; }\n"
-    )
+    plain = load_state_machine_from_text("state Root { state Child; [*] -> Child; }\n")
 
     documented_data = documented.diagram().to_dict()
     plain_data = plain.diagram().to_dict()
@@ -178,9 +176,7 @@ def test_named_function_diagnostic_is_doc_free_recursively():
 }
 """
     )
-    _, diagnostics = parse_dsl_node_to_state_machine(
-        documented, collect=True
-    )
+    _, diagnostics = parse_dsl_node_to_state_machine(documented, collect=True)
     named = [
         item for item in diagnostics if item.code == "E_NAMED_FUNCTION_REF_NOT_FOUND"
     ]
@@ -368,10 +364,11 @@ state Root {
     documented_result, documented_witness, documented_replay = run(documented)
     plain_result, plain_witness, plain_replay = run(plain)
 
-    # Solver wall-clock measurements are intentionally non-semantic.
+    # Solver timings and context-wide statistics are intentionally non-semantic.
     for result in (documented_result, plain_result):
         result["elapsed_ms"] = None
         result["total_elapsed_ms"] = None
+        result["solver_statistics"] = {}
     assert documented_result == plain_result
     assert documented_witness == plain_witness
     assert documented_replay == plain_replay

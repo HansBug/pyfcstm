@@ -45,10 +45,11 @@ state Root {
     documented_result, documented_witness, documented_replay = run(documented)
     plain_result, plain_witness, plain_replay = run(plain)
 
-    # Solver wall-clock measurements are intentionally non-semantic.
+    # Solver timing and context-wide statistics are intentionally non-semantic.
     for result in (documented_result, plain_result):
         result["elapsed_ms"] = None
         result["total_elapsed_ms"] = None
+        result["solver_statistics"] = None
     assert documented_result == plain_result
     assert documented_witness == plain_witness
     assert documented_replay == plain_replay

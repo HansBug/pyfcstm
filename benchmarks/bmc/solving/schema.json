@@ -295,6 +295,21 @@
               }
             }
           }
+        },
+        "solver_thresholds": {
+          "description": "Frozen numeric T1/T2 thresholds. Optional only for older baseline runs.",
+          "const": {
+            "logic": {
+              "id": "T1",
+              "minimum_median_improvement": 0.15,
+              "maximum_query_regression": 0.1
+            },
+            "tactic": {
+              "id": "T2",
+              "minimum_median_improvement": 0.15,
+              "maximum_query_regression": 0.1
+            }
+          }
         }
       }
     },
@@ -428,6 +443,32 @@
             "matches_expected": {
               "type": "boolean"
             }
+          }
+        },
+        "solver_statistics": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/distribution"
+          }
+        },
+        "solver_profile": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "default",
+              "logic",
+              "tactic",
+              null
+            ]
+          }
+        },
+        "solver_logic": {
+          "type": "array",
+          "items": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       }

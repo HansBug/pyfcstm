@@ -44,6 +44,7 @@ JSON 类型和必需键以模式为准；执行顺序、标准输出/标准错�
 .. cli-ref-option: command=bmc option=--json
 .. cli-ref-option: command=bmc option=--timeout-ms
 .. cli-ref-option: command=bmc option=--max-bound
+.. cli-ref-option: command=bmc option=--solver-profile choices=default,logic,tactic default=default
 .. cli-ref-option: command=bmc option=--explain-infeasibility choices=none,formal,proof default=none
 .. cli-ref-option: command=bmc option=--color choices=auto,always,never default=auto
 .. cli-ref-option: command=bmc option=--help
@@ -95,6 +96,11 @@ JSON 类型和必需键以模式为准；执行顺序、标准输出/标准错�
      - 未设置；无 CLI 上限
      - 构造 ``BmcOptions(max_bound=N)``。查询边界大于 ``N`` 时，在关系
        构造前作为受控编译错误拒绝；不会改写或截断查询边界。
+   * - ``--solver-profile``
+     - ``default``、``logic`` 或 ``tactic``
+     - ``default``
+     - 选择主求解器及其分阶段检查的构造方式；不可行解释、冲突核和证明检查始终
+       使用默认求解器。语法区分大小写；未知值退出 ``2``。
    * - ``--explain-infeasibility``
      - ``none``、``formal`` 或 ``proof``
      - ``none``
@@ -118,6 +124,28 @@ JSON 类型和必需键以模式为准；执行顺序、标准输出/标准错�
 两个数值选项的零值和负值都是 Click 用法错误（usage error）。缺少必需选项和未知选项
 同样是用法错误，均退出 ``2``。路径按用户提供的字符串传递，JSON 也原样记录；CLI 不会
 把它们规范化为绝对路径。
+
+求解器配置与回退
+----------------
+
+``default`` 使用通用 ``z3.Solver()``，保持原有检查顺序和人类可读默认输出。
+``logic`` 按 ``is-qflia``、``is-qflra``、``is-qflira``、``is-qfnia``、
+``is-qfnra``、``is-nira`` 的顺序，用 Z3 探针识别完整查询涉及的算术片段，
+包括初始化、环境约束和 response 后缀。命中后使用 ``SolverFor``，没有命中则
+回退通用求解器；例如整数表达式 ``x / 3`` 可能没有探针命中。
+
+``tactic`` 使用 ``simplify``、``propagate-values``、``solve-eqs``、``smt``
+组合。它可改变搜索顺序和选出的见证，但见证仍须通过运行时重放。该组合不提供本项目
+解释路径要求的假设冲突核，因此所有解释与证明检查均保留通用求解器。
+
+Python 使用 ``solve_bmc_property(formula, solver_profile="logic")``；文件入口
+``build_bmc_output`` 也接受同名参数。非法值在求解 API 中抛出 ``BmcBuildError``，
+在文件入口中抛出 ``ClickErrorException``。配置不改变性质语义；不同求解策略仍可能
+产生不同的耗时或不确定结果。遇到 ``unknown`` 或 ``timeout`` 时检查原因，并用
+``default`` 对照重跑，不能把不确定结果当成安全证明。
+
+新增三个结果字段属于本发行版的 JSON 契约；既有结论、见证和重放字段语义不变。
+比较结果时应单独处理耗时与统计，不能要求它们逐字节相同。
 
 执行与输出事务
 --------------
@@ -933,6 +961,18 @@ JSON 使用 UTF-8、两空格缩进、递归键排序、保留非 ASCII 字符�
    * - ``reason``
      - 字符串或 ``null``
      - 仅主目标 ``unknown``/``timeout`` 时保存原始原因；SAT/UNSAT 时为 ``null``。
+   * - ``solver_profile``
+     - ``default``、``logic`` 或 ``tactic``
+     - 请求的主求解器配置；默认是 ``default``。
+   * - ``solver_logic``
+     - ``QF_LIA``、``QF_LRA``、``QF_LIRA``、``QF_NIA``、``QF_NRA``、``NIRA`` 或 null
+     - ``logic`` 实际选中的片段。未识别片段时回退默认求解器并记录 null；
+       ``default`` 和 ``tactic`` 始终为 null。
+   * - ``solver_statistics``
+     - 非空字符串键到有限非负数的对象
+     - 主检查刚完成时读取的 Z3 统计；未开始检查时为空对象。键随 Z3 版本与配置变化，
+       缺项不代表零。``rlimit count`` 和 ``num allocs`` 是上下文累计值，不能当成
+       本次查询的工作量。手动构造结果时默认空对象。
    * - ``elapsed_ms``
      - 有限数值，``>= 0``
      - 主检查墙钟时间；本质上不确定。

@@ -192,6 +192,53 @@ def test_build_bmc_output_public_helper_returns_json_report(bmc_files) -> None:
     assert output.endswith("\n")
 
 
+@pytest.mark.parametrize("profile", ["default", "logic", "tactic"])
+def test_bmc_solver_profile_roundtrips_through_cli_and_schema(bmc_files, profile):
+    """The CLI forwards each choice and publishes schema-valid metadata."""
+    jsonschema = pytest.importorskip("jsonschema")
+    model, query = bmc_files
+    result, payload = _json_result(
+        model, query('check reach <= 1: active("Root");'), "--solver-profile", profile
+    )
+    assert result.exit_code == 0
+    assert payload["result"]["solver_profile"] == profile
+    assert payload["replay"]["ok"] is True
+    schema = json.loads(
+        (
+            Path(__file__).resolve().parents[2]
+            / "docs/source/reference/bmc_results/bmc_cli.schema.json"
+        ).read_text()
+    )
+    validator = jsonschema.Draft202012Validator(schema)
+    validator.validate(payload)
+    for field in ("solver_profile", "solver_logic", "solver_statistics"):
+        mutated = deepcopy(payload)
+        del mutated["result"][field]
+        assert list(validator.iter_errors(mutated)), field
+    for field, value in (
+        ("solver_profile", "fast"),
+        ("solver_logic", "wrong"),
+        ("solver_statistics", {"conflicts": True}),
+        ("solver_statistics", {"conflicts": -1}),
+    ):
+        mutated = deepcopy(payload)
+        mutated["result"][field] = value
+        assert list(validator.iter_errors(mutated)), (field, value)
+
+
+def test_invalid_solver_profile_is_a_controlled_cli_error(bmc_files):
+    from pyfcstm.entry.bmc import build_bmc_output
+
+    model, query = bmc_files
+    path = query('check reach <= 1: active("Root");')
+    assert (
+        _run("-i", str(model), "-q", str(path), "--solver-profile", "fast").exit_code
+        == 2
+    )
+    with pytest.raises(ClickErrorException, match="solver_profile"):
+        build_bmc_output(str(model), str(path), solver_profile="fast")
+
+
 @pytest.mark.parametrize(
     ("option", "value"),
     [
@@ -1479,6 +1526,9 @@ def test_bmc_schema_accepts_legacy_shape_envelope(bmc_files) -> None:
 
     legacy = deepcopy(payload)
     for key in (
+        "solver_profile",
+        "solver_logic",
+        "solver_statistics",
         "incomplete_elapsed_ms",
         "total_elapsed_ms",
         "feasibility",

@@ -194,6 +194,7 @@ def _compile_query(
     query_text: str,
     max_bound: Optional[int],
     query_source_path: Optional[str] = None,
+    cone_slicing: bool = False,
 ) -> BmcPropertyFormula:
     from ..bmc import (
         BmcError,
@@ -203,7 +204,11 @@ def _compile_query(
         UnsupportedBmcQuery,
     )
 
-    options = BmcOptions(max_bound=max_bound) if max_bound is not None else None
+    options = (
+        BmcOptions(max_bound=max_bound, cone_slicing=cone_slicing)
+        if max_bound is not None or cone_slicing
+        else None
+    )
     try:
         query = _parse_bmc_query(query_text, source_path=query_source_path)
     except (BmcQueryParseError, InvalidBmcQuery) as err:
@@ -243,6 +248,7 @@ def _execute_bmc(
     max_bound: Optional[int],
     infeasibility_explanation: str = "none",
     solver_profile: str = "default",
+    cone_slicing: bool = False,
 ) -> _BmcExecution:
     from ..bmc import BmcBuildError
 
@@ -253,6 +259,7 @@ def _execute_bmc(
         query_text,
         max_bound,
         query_source_path=query_file,
+        **({"cone_slicing": cone_slicing} if cone_slicing is not False else {}),
     )
     try:
         options = {}
@@ -611,6 +618,7 @@ def build_bmc_output(
     max_bound: Optional[int] = None,
     infeasibility_explanation: str = "none",
     solver_profile: str = "default",
+    cone_slicing: bool = False,
 ) -> Tuple[str, int]:
     """Run one bounded query and build its complete CLI report.
 
@@ -635,6 +643,8 @@ def build_bmc_output(
     :param solver_profile: Main solver choice: ``default``, ``logic`` or
         ``tactic``. Explanation and proof checks retain the default solver.
     :type solver_profile: str, optional
+    :param cone_slicing: Enable conservative cone slicing, defaults to ``False``.
+    :type cone_slicing: bool, optional
     :return: Completed report text and matching process exit status.
     :rtype: Tuple[str, int]
     :raises pyfcstm.entry.base.ClickErrorException: If model/query input is
@@ -657,6 +667,7 @@ def build_bmc_output(
         max_bound=max_bound,
         infeasibility_explanation=infeasibility_explanation,
         solver_profile=solver_profile,
+        **({"cone_slicing": cone_slicing} if cone_slicing is not False else {}),
     )
     return text, exit_code
 
@@ -670,6 +681,7 @@ def _build_bmc_report(
     max_bound: Optional[int],
     infeasibility_explanation: str = "none",
     solver_profile: str = "default",
+    cone_slicing: bool = False,
 ) -> Tuple[str, int, str]:
     """Build one report and retain presentation severity for terminal color."""
     for option_name, option_value in (
@@ -702,6 +714,8 @@ def _build_bmc_report(
         raise ClickErrorException(
             "solver_profile must be one of default, logic, tactic."
         )
+    if not isinstance(cone_slicing, bool):
+        raise ClickErrorException("cone_slicing must be bool.")
     execution = _execute_bmc(
         input_code_file,
         query_file,
@@ -709,6 +723,7 @@ def _build_bmc_report(
         max_bound,
         infeasibility_explanation,
         solver_profile,
+        **({"cone_slicing": cone_slicing} if cone_slicing is not False else {}),
     )
     if json_output:
         return (
@@ -896,6 +911,7 @@ def _run_bmc_command(
     color_mode: str,
     infeasibility_explanation: str = "none",
     solver_profile: str = "default",
+    cone_slicing: bool = False,
 ) -> int:
     """Build and publish one report behind the CLI exception boundary."""
     text, exit_code, severity = _build_bmc_report(
@@ -906,6 +922,7 @@ def _run_bmc_command(
         max_bound=max_bound,
         infeasibility_explanation=infeasibility_explanation,
         solver_profile=solver_profile,
+        **({"cone_slicing": cone_slicing} if cone_slicing is not False else {}),
     )
     if output_file is None:
         color_enabled = _resolve_bmc_color_enabled(
@@ -992,6 +1009,11 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
         help="Reject queries whose bound exceeds this value.",
     )
     @click.option(
+        "--cone-slicing",
+        is_flag=True,
+        help="Conservatively slice unobserved writes; default is off.",
+    )
+    @click.option(
         "--solver-profile",
         type=click.Choice(("default", "logic", "tactic"), case_sensitive=True),
         default="default",
@@ -1029,6 +1051,7 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
         color_mode: str,
         infeasibility_explanation: str,
         solver_profile: str,
+        cone_slicing: bool,
     ) -> None:
         """Run a bounded model checking query.
 
@@ -1055,6 +1078,8 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
         :param solver_profile: Main solver choice, one of ``default``, ``logic``
             or ``tactic``.
         :type solver_profile: str
+        :param cone_slicing: Enable conservative query-specific cone slicing.
+        :type cone_slicing: bool
         :return: ``None``.
         :rtype: None
 
@@ -1075,6 +1100,7 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
             color_mode,
             infeasibility_explanation=infeasibility_explanation,
             solver_profile=solver_profile,
+            **({"cone_slicing": cone_slicing} if cone_slicing is not False else {}),
         )
         ctx.exit(exit_code)
 

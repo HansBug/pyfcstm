@@ -767,3 +767,35 @@ assumptions_self_conflict``。
 可与任一配置组合，解释路径仍使用默认求解器。
 
 字段、回退和预算边界见 :doc:`../../reference/bmc_results/index_zh`。
+
+按查询尝试保守切片
+------------------
+
+只有显式传入开关才启用切片：
+
+.. code-block:: bash
+
+   python -m pyfcstm bmc -i bmc_tasks.fcstm -q reach.fbmcq --cone-slicing --json
+
+Python 编译入口使用 ``compile_bmc_query(model, query,
+options=BmcOptions(cone_slicing=True))``；文件入口支持
+``build_bmc_output(..., cone_slicing=True)``。该参数只接受 bool。
+
+切片保留查询引用、guard、操作分支条件及其依赖。除法、取模、幂、函数和浮点计算等
+不能证明安全的赋值也保留；声明为 int 的变量若在动作内部暂存非整数值，相关计算
+同样保留。任意 abstract 动作会让整个模型跳过切片。此策略保证未读取输出中的
+危险运算不会被删掉而改变场景可行性，包括没有 SAT 见证可供重放的 UNSAT 结果。
+
+初始帧和全部变量符号保持完整。解码时使用原始运行时回填被切变量，因此每帧仍有
+全部变量；固定初值和事件的确定轨迹保持一致，多解查询可能选择另一条合法路径。
+主见证及 response 的 incomplete suffix 都会在求解返回前验证。验证失败时，最多
+使用完整模型重跑一次，并共享剩余求解预算；不会重新获得一份 timeout。验证与重建
+会消耗剩余时间，但 timeout 不是强制打断这些 Python 操作的墙钟期限。
+
+开启时查看 ``result.cone_slicing`` 中的删除列表、跳过原因和 ``fallback``。
+关闭时 JSON 不增加该字段。``total_elapsed_ms`` 包含内部验证和回退；评估性能时
+同时测量编译、求解和对外解码重放，不能把见证回填成本从总耗时中扣掉。
+
+本次实测正确性门禁通过，但公式规模仅缩减 6.09%，未达到 T3 的 20% 门槛；
+切片默认保持关闭。单例求解最多退化 131.73%，所以应同时比较编译、求解和
+对外重放总成本。详细数字见 :ref:`sec-bmc-cone-measurements-zh`。

@@ -310,6 +310,16 @@
               "maximum_query_regression": 0.1
             }
           }
+        },
+        "slicing_thresholds": {
+          "description": "Frozen T3 thresholds; absent in historical runs.",
+          "const": {
+            "id": "T3",
+            "minimum_dag_reduction": 0.2,
+            "maximum_solve_regression": 0.05,
+            "maximum_unsliced_regression": 0.05,
+            "maximum_fallbacks": 0
+          }
         }
       }
     },
@@ -470,6 +480,31 @@
               "null"
             ]
           }
+        },
+        "build_solve_ms": {
+          "$ref": "#/$defs/distribution"
+        },
+        "pipeline_ms": {
+          "$ref": "#/$defs/distribution"
+        },
+        "api_total_ms": {
+          "$ref": "#/$defs/distribution"
+        },
+        "suffix_replay_ok": {
+          "$ref": "#/$defs/observed"
+        },
+        "cone_slicing": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/coneSlice"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/coneSlice"
+              }
+            }
+          ]
         }
       }
     },
@@ -524,6 +559,63 @@
           }
         }
       }
+    },
+    "coneSlice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "retained_count",
+        "dropped_variables",
+        "skipped_reason",
+        "fallback"
+      ],
+      "properties": {
+        "enabled": {
+          "const": true,
+          "type": "boolean"
+        },
+        "retained_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "dropped_variables": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "skipped_reason": {
+          "enum": [
+            null,
+            "abstract_actions",
+            "no_removable_variables"
+          ]
+        },
+        "fallback": {
+          "type": "boolean"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "skipped_reason": {
+                "type": "string"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "dropped_variables": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      ]
     }
   }
 }

@@ -50,6 +50,8 @@ lines.
 .. cli-ref-option: command=bmc option=--json
 .. cli-ref-option: command=bmc option=--timeout-ms
 .. cli-ref-option: command=bmc option=--max-bound
+.. cli-ref-option: command=bmc option=--cone-slicing
+
 .. cli-ref-option: command=bmc option=--solver-profile choices=default,logic,tactic default=default
 .. cli-ref-option: command=bmc option=--explain-infeasibility choices=none,formal,proof default=none
 .. cli-ref-option: command=bmc option=--color choices=auto,always,never default=auto
@@ -107,6 +109,11 @@ Both installed entry forms have the same behavior:
      - Creates ``BmcOptions(max_bound=N)``.  A query bound above ``N`` is
        rejected before relation construction as a controlled compile error.
        It does not rewrite or clamp the query bound.
+   * - ``--cone-slicing``
+     - Boolean flag
+     - Disabled
+     - Remove unobserved integer writes whose evaluation is known total;
+       preserve control flow, initial values and dependencies of partial arithmetic.
    * - ``--solver-profile``
      - ``default``, ``logic``, or ``tactic``
      - ``default``
@@ -1151,6 +1158,13 @@ is a positive integer for response and null for other kinds.
    * - ``reason``
      - string or null
      - Raw reason only for primary unknown/timeout; null for SAT/UNSAT.
+   * - ``cone_slicing``
+     - Object; present only when slicing was requested
+     - ``enabled`` is true; ``retained_count`` counts retained persistent variables;
+       ``dropped_variables`` lists the attempted removals; ``skipped_reason`` is
+       null, ``abstract_actions`` or ``no_removable_variables``; ``fallback``
+       reports a full-model retry. Skips have no dropped variables. The entire
+       field is absent when slicing is disabled.
    * - ``solver_profile``
      - ``default``, ``logic``, or ``tactic``
      - Requested main solver profile; defaults to ``default``.
@@ -1581,3 +1595,114 @@ Consumer rules
 * Do not parse human tables, depend on live elapsed time, expect raw models or
   formulas, infer a response cause, or assume replay proves behavior beyond the
   decoded bounded trace.
+
+.. _sec-bmc-cone-measurements:
+
+Measured slicing costs
+----------------------
+
+For default-policy result decoding, sliced solves retain the complete witness
+already verified before returning. Each decode receives an independent copy;
+explicit event policies decode afresh. The CLI still performs ordinary runtime
+replay of the output witness. This reuse applies to both primary witnesses and
+response incomplete suffixes and does not change the JSON contract.
+
+The initial `five-arm benchmark report <https://github.com/HansBug/pyfcstm/blob/7f8c88d3/benchmarks/bmc/solving/outputs/runs/2db089114bb5/report.md>`_ binds clean commit ``2db08911``
+on Linux x86_64, CPython 3.10.1 and Z3 4.15.4. All 1,275 samples pass H0;
+325 SAT witnesses replay successfully, with zero failures or slicing fallback.
+Of 51 queries, 32 actually slice variables and 19 do not.
+
+.. list-table:: Slicing versus default at the same commit
+   :header-rows: 1
+
+   * - Metric
+     - Default
+     - Slicing
+     - Decision
+   * - Sliced-query formula DAG p50
+     - 2,399 nodes
+     - 2,253 nodes
+     - 6.09% reduction misses the 20% threshold
+   * - Sliced-query solve p50
+     - 15.650 ms
+     - 15.528 ms
+     - 0.78% improvement meets the maximum 5% regression threshold
+   * - Unsliced-query build + solve p50
+     - 263.482 ms
+     - 262.975 ms
+     - 0.19% improvement meets the maximum 5% growth threshold
+
+T3 is not met, so slicing remains disabled by default. These figures use the
+runner's existing discrete p50: sort and select zero-based index
+``round(0.5 * (n - 1))``, which selects the 17th observation for 32 queries.
+Each query's p50 comes from five repetitions before aggregation by actual
+slice partition.
+
+Near-neutral aggregate solve time does not rule out query regressions. The
+largest is ``codex_traffic_emergency_priority/invariant``: 10.178 to 23.586 ms,
+a 131.73% increase. Slicing adds original-runtime verification and witness
+completion; external decode/replay p50 among sliced queries with a witness
+rises from 11.650 to 17.184 ms. Measure your model and the complete call path
+before enabling it. Disabled result JSON omits slicing metadata; the options
+object's ``BmcOptions.to_canonical()`` adds a ``cone_slicing=False`` key.
+
+The subsequent `six-arm run <https://github.com/HansBug/pyfcstm/blob/4d9bd08f/benchmarks/bmc/solving/outputs/runs/9e68e7458e79/report.md>`_
+measures verified-witness reuse at clean commit ``9e68e745``, including the
+initial slicing implementation as a same-round control. All 1,530 samples pass
+H0, with 390 successful SAT replays, zero failures and zero fallback. DAG sizes
+are unchanged by reuse. T3 still fails: sliced DAG p50 falls only 6.09%;
+sliced solve p50 grows 4.47% (within 5%), while unsliced build + solve p50 grows
+6.87% (exceeding 5%). Slicing remains off by default.
+
+.. list-table:: API time from model loading through final replay, query p50 aggregate
+   :header-rows: 1
+
+   * - Group
+     - Default
+     - Initial slicing
+     - Reused witness
+   * - All 51 queries
+     - 431.160 ms
+     - 433.596 ms
+     - 430.809 ms
+   * - 13 SAT queries
+     - 585.459 ms
+     - 617.659 ms
+     - 617.733 ms
+   * - 38 UNSAT queries
+     - 388.716 ms
+     - 390.939 ms
+     - 411.468 ms
+   * - Six actually sliced SAT queries
+     - 322.510 ms
+     - 287.274 ms
+     - 276.408 ms
+
+These API times exclude pre-call imports, interpreter startup and JSON report
+serialization. Within actually sliced SAT queries, external decode/replay p50
+falls from 16.997 to 4.415 ms against the initial implementation, but complete
+API p50 improves only 3.78%; across all queries it improves 0.64%. Independent
+output replay and internal completion/validation remain. The worst solve
+regression against default is still traffic invariant, 10.331 to 24.089 ms
+(+133.18%), even though its complete API time improves from 1,254.490 to
+1,155.686 ms. Construction remains dominant on large models: VTOL reach takes
+26,869 ms building and 126 ms solving.
+
+The worst complete-API regression is an unsliced query,
+``claude_vtol_mission_supervision/reach`` (+5.85% against default, +5.25%
+against initial slicing). It also determines the failing unsliced timing
+median. A `90-sample diagnostic rerun <https://github.com/HansBug/pyfcstm/blob/4d9bd08f/benchmarks/bmc/solving/outputs/runs/9e68e7458e79-unsliced-control/report.md>`_
+did not reproduce the larger regression: build + solve grew 0.42%, complete
+API time 0.89%, against default. This path does not enter witness reuse, and
+construction code is unchanged by reuse. The observation supports timing
+variability but does not establish its environmental cause or override the
+full run's failed gate.
+
+A separate `complete API/CLI profile <https://github.com/HansBug/pyfcstm/blob/4d9bd08f/benchmarks/bmc/solving/outputs/witness_profiles/9e68e7458e79/report.md>`_
+includes report serialization and separates instrumented phase diagnostics
+from uninstrumented timings. Actual sliced SAT calls go from two decodes and
+three replays to one decode and two replays. Enabled SAT CLI changes range
+from a 3.97% improvement to a 1.31% regression in these cases; unchanged
+controls also vary. Reuse retains one complete trace per result and copies
+it for callers. These measurements establish reduced repeated work, not a
+universal speedup; measure the complete path on your own model.

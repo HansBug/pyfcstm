@@ -7,7 +7,12 @@ from typing import Iterable, List, Sequence, Tuple
 
 import pytest
 
-from pyfcstm.bmc import BmcEngine, build_bmc_core_formula, compile_bmc_property
+from pyfcstm.bmc import (
+    BmcEngine,
+    BmcOptions,
+    build_bmc_core_formula,
+    compile_bmc_property,
+)
 from pyfcstm.bmc.witness import (
     BmcRuntimeFrame,
     BmcRuntimeStep,
@@ -177,14 +182,19 @@ def _hard_pass_cases():
 
 
 @pytest.mark.parametrize("case", _hard_pass_cases(), ids=lambda case: case.id)
-def test_bmc_witness_replay_matches_full_semantic_fixture_trace(case) -> None:
+@pytest.mark.parametrize("cone_slicing", [False, True])
+def test_bmc_witness_replay_matches_full_semantic_fixture_trace(
+    case, cone_slicing
+) -> None:
     """Hard-pass fixtures match fully except the registered zero-cycle case."""
     expected_trace, event_inputs = collect_simulation_trace_for_bmc_fixture(case)
     assert all(len(inputs) == len(set(inputs)) for inputs in event_inputs)
     model = build_state_machine_from_case(case)
     query = _query_with_fixture_events(case, model, len(event_inputs), event_inputs)
     formula = compile_bmc_property(
-        build_bmc_core_formula(BmcEngine(model).prepare(query))
+        build_bmc_core_formula(
+            BmcEngine(model, BmcOptions(cone_slicing=cone_slicing)).prepare(query)
+        )
     )
     result = solve_bmc_property(formula)
     assert result.status == "sat"

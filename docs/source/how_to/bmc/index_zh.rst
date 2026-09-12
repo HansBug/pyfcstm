@@ -738,3 +738,32 @@ assumptions_self_conflict``。
 比较，而不是匹配打印出来的短语。
 
 **参考。** JSON 可空性与 schema 见 :doc:`../../reference/bmc_results/index_zh`。
+
+选择并比较求解器配置
+--------------------
+
+使用本页的 ``bmc_tasks.fcstm`` 和 ``reach.fbmcq``，在同一目录分别运行三个配置：
+
+.. code-block:: bash
+
+   python -m pyfcstm bmc -i bmc_tasks.fcstm -q reach.fbmcq --solver-profile default --json
+   python -m pyfcstm bmc -i bmc_tasks.fcstm -q reach.fbmcq --solver-profile logic --json
+   python -m pyfcstm bmc -i bmc_tasks.fcstm -q reach.fbmcq --solver-profile tactic --json
+
+三个命令均退出 ``0``，输出 ``result.status="sat"``、
+``result.property_satisfied=true`` 和 ``replay.ok=true``；配置名分别记录在
+``result.solver_profile``。未指定 ``-o``，所以只写标准输出，不生成文件。
+查看 ``result.solver_logic`` 可以分辨逻辑片段选择与未命中后的回退。
+
+先比较结论与重放，再比较耗时。不同策略可能选出不同的合法见证；
+``solver_statistics`` 中的上下文累计计数不能当成单次查询的工作量。
+要测量自己的模型，应固定输入、Python/Z3 版本，在独立进程中重复运行；
+单次更快不足以支持更换默认配置。仓库中的 ``benchmarks/bmc/solving/``
+提供四组对照、不可变原始记录和预先登记的性能阈值。
+
+输入 ``--solver-profile fast`` 会退出 ``2``；使用列出的三个小写值之一。
+如果可选配置返回不确定结果，先用 ``default`` 重跑并检查 ``reason``，
+不要把它计为性质通过。``--explain-infeasibility formal`` 或 ``proof``
+可与任一配置组合，解释路径仍使用默认求解器。
+
+字段、回退和预算边界见 :doc:`../../reference/bmc_results/index_zh`。

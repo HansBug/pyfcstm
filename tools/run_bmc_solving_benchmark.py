@@ -80,7 +80,31 @@ _ARMS: Tuple[Dict[str, Any], ...] = (
         "revision": None,
         "options": {"compile": {}, "solve": {}},
     },
+    {
+        "label": "logic",
+        "revision": None,
+        "options": {"compile": {}, "solve": {"solver_profile": "logic"}},
+    },
+    {
+        "label": "tactic",
+        "revision": None,
+        "options": {"compile": {}, "solve": {"solver_profile": "tactic"}},
+    },
 )
+
+#: Numeric form of the pre-registered solver thresholds, copied into each run.
+_SOLVER_THRESHOLDS = {
+    "logic": {
+        "id": "T1",
+        "minimum_median_improvement": 0.15,
+        "maximum_query_regression": 0.10,
+    },
+    "tactic": {
+        "id": "T2",
+        "minimum_median_improvement": 0.15,
+        "maximum_query_regression": 0.10,
+    },
+}
 
 #: Threshold ids the README must pre-register before the first run.
 _THRESHOLD_IDS = ("H0", "T1", "T2", "T3")
@@ -133,6 +157,12 @@ _MEASUREMENT_MAP: Tuple[Tuple[str, str, str], ...] = (
         "after replay",
         "the kernel high-water mark of the production path; absent where the "
         "resource module is unavailable, never zero",
+    ),
+    (
+        "solver_statistics",
+        "result.solver_statistics immediately after the primary check",
+        "actual Z3 statistics; keys vary by profile/version. rlimit count and "
+        "num allocs are context-wide, not per-query work and not adoption gates",
     ),
     (
         "pyfcstm_file",
@@ -714,7 +744,13 @@ def dag_nodes(*roots):
     return len(seen)
 
 
+metadata = {}
+if hasattr(result, "solver_statistics"):
+    metadata = {"solver_statistics": dict(result.solver_statistics),
+                "solver_profile": result.solver_profile,
+                "solver_logic": result.solver_logic}
 print(json.dumps({
+    **metadata,
     "pyfcstm_file": pyfcstm.__file__,
     "build_ms": build_ms,
     "solve_ms": solve_ms,
@@ -981,6 +1017,22 @@ def _summarize(samples: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     summary["peak_child_rss_bytes"] = max(rss) if rss else None
     if not rss:
         summary["peak_child_rss_note"] = "unavailable on this run; not reported as zero"
+    if any("solver_statistics" in item for item in good):
+        keys = sorted(
+            {key for item in good for key in item.get("solver_statistics", {})}
+        )
+        summary["solver_statistics"] = {
+            key: _distribution(
+                [
+                    item["solver_statistics"][key]
+                    for item in good
+                    if key in item.get("solver_statistics", {})
+                ]
+            )
+            for key in keys
+        }
+        for key in ("solver_profile", "solver_logic"):
+            summary[key] = sorted({item.get(key) for item in good}, key=str)
     errors = [item["error"] for item in samples if item.get("error")]
     if errors:
         summary["first_error"] = errors[0]
@@ -1012,6 +1064,8 @@ def _h0(
         and arm_summary.get("failures", 0) == 0
         and reference.get("samples", 0) > 0
         and reference.get("failures", 0) == 0
+        and (arm_summary.get("status") != "sat" or arm_summary.get("replay_ok") is True)
+        and (reference.get("status") != "sat" or reference.get("replay_ok") is True)
     )
     unstable = set(arm_summary.get("unstable_fields", ())) | set(
         reference.get("unstable_fields", ())
@@ -1067,6 +1121,52 @@ def _aggregate(
                 "arms": arm_summaries,
             }
     return summary
+
+
+def _solver_comparison(summary, arm, reference, threshold):
+    """Apply a run's frozen solver adoption threshold to every measured query.
+
+    :param summary: Aggregated query measurements.
+    :param arm: Candidate arm label.
+    :param reference: Default arm label.
+    :param threshold: Numeric threshold copied into the run manifest.
+    :return: Median improvement, worst regression, H0 and adoption decisions.
+    :rtype: Dict[str, Any]
+    """
+    candidates, references, regressions = [], [], []
+    h0 = True
+    for case in summary.values():
+        for query in case["queries"].values():
+            candidate = query["arms"].get(arm, {})
+            baseline = query["arms"].get(reference, {})
+            a = candidate.get("solve_ms", {}).get("p50")
+            b = baseline.get("solve_ms", {}).get("p50")
+            h0 = h0 and candidate.get("h0", {}).get("identical_to_reference", False)
+            h0 = h0 and candidate.get("h0", {}).get("matches_expected", False)
+            if a is None or b is None or b <= 0:
+                h0 = False
+                continue
+            candidates.append(a)
+            references.append(b)
+            regressions.append(a / b - 1.0)
+    improvement = (
+        1.0 - _percentile(candidates, 0.5) / _percentile(references, 0.5)
+        if candidates
+        else None
+    )
+    worst = max(regressions) if regressions else None
+    accepted = bool(
+        h0
+        and improvement is not None
+        and 1.0 - improvement <= 1.0 - threshold["minimum_median_improvement"]
+        and 1.0 + worst <= 1.0 + threshold["maximum_query_regression"]
+    )
+    return {
+        "median_improvement": improvement,
+        "worst_regression": worst,
+        "h0": bool(h0 and candidates),
+        "accepted": accepted,
+    }
 
 
 def _group_raw(raw: Path) -> Dict[str, Dict[str, Dict[str, List[Dict[str, Any]]]]]:
@@ -1171,6 +1271,7 @@ def _run(
         "baseline": {"label": _BASELINE_LABEL, "commit": _BASELINE_COMMIT},
         "arms": arms,
         "reference_arm": _REFERENCE_ARM,
+        "solver_thresholds": copy.deepcopy(_SOLVER_THRESHOLDS),
         "repetitions": repetitions,
         "warmups": warmups,
         "case_filter": sorted(case_filter) if case_filter is not None else None,
@@ -1531,15 +1632,48 @@ def _report(manifest: Dict[str, Any], summary: Dict[str, Any]) -> str:
             else "**FAIL** at %s" % ", ".join(h0_failures)
         )
     )
+    if manifest.get("solver_thresholds"):
+        lines += [
+            "",
+            "| Gate | Arm | Median p50 improvement | Worst query regression | H0 | Adopt |",
+            "|---|---|---|---|---|---|",
+        ]
+        for arm in manifest["arms"]:
+            profile = arm["options"].get("solve", {}).get("solver_profile")
+            threshold = manifest["solver_thresholds"].get(profile)
+            if threshold is None:
+                continue
+            comparison = _solver_comparison(summary, arm["label"], reference, threshold)
+            lines.append(
+                "| %s | `%s` | %s | %s | %s | %s |"
+                % (
+                    threshold["id"],
+                    arm["label"],
+                    "n/a"
+                    if comparison["median_improvement"] is None
+                    else "%.2f%%" % (100 * comparison["median_improvement"]),
+                    "n/a"
+                    if comparison["worst_regression"] is None
+                    else "%.2f%%" % (100 * comparison["worst_regression"]),
+                    "pass" if comparison["h0"] else "FAIL",
+                    "pass" if comparison["accepted"] else "NOT MET",
+                )
+            )
+        lines += [
+            "",
+            "Median improvement compares medians of per-query solve p50; "
+            "worst regression compares each query with its own default p50. "
+            "Missing measurements or H0 failures prevent adoption.",
+        ]
     option_arms = [arm for arm in manifest["arms"] if any(arm["options"].values())]
-    if option_arms:
+    if option_arms and not manifest.get("solver_thresholds"):
         lines.append(
             "T1-T3 apply to the option arms %s and are evaluated against the "
             "pre-registered rows in README.md by the change that adds each option; "
             "the p50 and size columns above are their inputs."
             % ", ".join("`%s`" % arm["label"] for arm in option_arms)
         )
-    else:
+    elif not option_arms:
         lines.append(
             "T1-T3 are not evaluated: no arm sets an option, so this run only "
             "establishes the baseline and default distributions."
@@ -2024,7 +2158,7 @@ def _synthetic_run(root: Path, run_id: str) -> None:
                         "total_elapsed_ms": solve_ms + 0.5,
                         "formula_dag_nodes": 100,
                         "status": expected,
-                        "property_satisfied": expected == "sat",
+                        "property_satisfied": True,
                         "outcome": "witness_found"
                         if expected == "sat"
                         else "property_satisfied",
@@ -2049,6 +2183,7 @@ def _synthetic_run(root: Path, run_id: str) -> None:
         "baseline": {"label": _BASELINE_LABEL, "commit": _BASELINE_COMMIT},
         "arms": arms,
         "reference_arm": _REFERENCE_ARM,
+        "solver_thresholds": copy.deepcopy(_SOLVER_THRESHOLDS),
         "repetitions": 3,
         "warmups": 0,
         "case_filter": None,
@@ -2146,6 +2281,36 @@ def _self_test() -> List[str]:
             "matches_expected": True,
         }:
             problems.append("H0 verdict for an identical arm is not the passing one")
+        broken_replay = dict(alpha[_REFERENCE_ARM], replay_ok=False)
+        if _h0(
+            broken_replay,
+            broken_replay,
+            summary["alpha"]["queries"]["reach"]["expected"],
+        )["identical_to_reference"]:
+            problems.append("H0 accepted two SAT arms whose witnesses both fail replay")
+        for timings, passed in (
+            ((3.4, 3.4), True),
+            ((3.5, 3.5), False),
+            ((2.0, 4.4), True),
+            ((2.0, 4.41), False),
+        ):
+            trial = copy.deepcopy(summary)
+            for case, timing in zip(sorted(trial), timings):
+                for query in trial[case]["queries"].values():
+                    query["arms"]["logic"]["solve_ms"]["p50"] = timing
+            decision = _solver_comparison(
+                trial, "logic", _REFERENCE_ARM, _SOLVER_THRESHOLDS["logic"]
+            )
+            if decision["accepted"] != passed:
+                problems.append(
+                    "solver adoption gate misclassified p50 values %r" % (timings,)
+                )
+        missing = copy.deepcopy(summary)
+        missing["alpha"]["queries"]["reach"]["arms"].pop("logic")
+        if _solver_comparison(
+            missing, "logic", _REFERENCE_ARM, _SOLVER_THRESHOLDS["logic"]
+        )["accepted"]:
+            problems.append("solver adoption gate accepted a missing measurement")
         beta = summary["beta"]["queries"]["forbid"]["arms"]
         if (
             beta[_BASELINE_LABEL]["h0"]["identical_to_reference"]

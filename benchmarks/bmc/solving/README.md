@@ -66,6 +66,8 @@ an arm with empty sets calls the API exactly as an older revision expects.
 |---|---|
 | `baseline-0cc43647` | The last `main` commit before any solving option existed, `0cc43647ad85c99347fbdd8eab0259279a5f40d0`. Separates an overhead the option infrastructure adds on every run from the option itself. |
 | `default` | The current revision with both option sets empty. Every other arm is compared against it under H0. |
+| `logic` | The current revision with `solver_profile=logic`; probes choose a fragment or fall back to default. |
+| `tactic` | The current revision with `solver_profile=tactic`; the simplify/propagate-values/solve-eqs/smt pipeline is used for main staged checks. |
 
 The change that adds an option appends its arm to `_ARMS` in the runner and
 to this table, and evaluates its own T row.  Without `baseline`, an overhead
@@ -177,10 +179,15 @@ decoding and replaying the witness, only when the primary status is `sat`.
 
 `formula_dag_nodes` counts distinct Z3 AST ids reachable from the core formula
 and the objective.  It is the one size measure here that is stable across
-processes, and it is what a slice shrinks.  A solver-effort counter is not
-published: Z3's `rlimit count` is cumulative per context and the production
-solver does not expose its statistics, so an honest per-solve reading needs
-production support first.
+processes, and it is what a slice shrinks.  New runs also record `BmcSolveResult.solver_statistics`, captured directly
+from the production solver after the primary check. Each available statistic
+has a distribution in `summary.json`; missing keys stay absent. Keys depend
+on the Z3 version and solver profile. In particular, `rlimit count` and
+`num allocs` are context-wide counters, including earlier compilation work;
+they must not be read as per-query work or compared as adoption gates.
+The older baseline release does not publish statistics and is left absent.
+`solver_profile` and `solver_logic` record what actually ran; a `logic` arm
+with a null logic used the default solver after no probe matched.
 
 Peak memory is `ru_maxrss` read by the child right after replay, before the
 size walk allocates anything, so it is the kernel high-water mark of the
@@ -205,12 +212,39 @@ opt-in with the measured numbers written next to it.
 | T2 | a `solver_profile=tactic` arm | As T1. |
 | T3 | a `cone_slicing` arm | On the queries whose model has at least one variable the slice drops, `formula_dag_nodes` falls by at least 20% and `solve_ms` p50 does not regress by more than 5%. On the queries with nothing to drop, `build_ms` plus `solve_ms` p50 grows by at most 5%. The slice falls back to the full model zero times across the corpus. |
 
-H0 is evaluated by the runner for every run and printed in the report; the
-`default` row itself can only miss the expectation.  T1 to T3 are evaluated
-by the change that introduces the option, against the run it commits,
-because only that change knows which queries its option can touch.
+H0 is evaluated by the runner for every run and printed in the report; a
+SAT sample must replay successfully even if both arms would otherwise agree
+on a failed replay. The `default` row itself must match the expectation.
+
+The numeric T1/T2 thresholds are copied from `_SOLVER_THRESHOLDS` into each
+new `manifest.json` as `solver_thresholds`, and the run schema pins their
+values to the table above. The report computes both gates from those frozen
+values: median improvement is `1 - median(candidate p50) / median(default
+p50)`, while worst regression is the maximum per-query ratio minus one.
+Missing measurements or failed H0 prevent adoption. Ratios in the report
+are percentages. Historical manifests without these fields
+remain byte-for-byte rebuildable. T3 will be evaluated when a slicing arm
+exists; there is none in a solver-profile run.
 
 ## What a run settles
+
+The [solver-profile run](outputs/runs/cd24a68e137b/report.md) measures commit
+`36ae48d5` with a clean manifest on Linux x86_64, CPython 3.10.1 and Z3
+4.15.4: 1,020 samples, zero failures, 260 successful SAT replays and H0
+passing for all 51 queries in every arm. Median query p50 is 11.950 ms for
+the old baseline and 12.036 ms for default (0.72% higher).
+
+| Profile | Median query p50 | Improvement against default | Worst regression | Adoption gate |
+|---|---:|---:|---:|---|
+| `logic` | 11.730 ms | 2.54% | 46.88% | T1 not met |
+| `tactic` | 11.105 ms | 7.74% | 409.44% | T2 not met |
+
+Logic's worst regression is `pump_supervisor_hooks/forbid` (4.245 to
+6.235 ms); tactic's is `ratio_estimator/reach` (5.711 to 29.092 ms).
+Both remain opt-in. These measurements describe one environment and do
+not guarantee a speedup for another workload. H0 here verifies semantic
+verdicts and successful replay, not equality of the particular valid
+witness selected by each solver strategy.
 
 A run with only `baseline` and `default` establishes the two reference
 distributions and proves H0 holds between them, which is the precondition

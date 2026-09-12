@@ -1023,6 +1023,10 @@ class _SolverSpy:
     def model(self):
         return self.model_value
 
+    def statistics(self):
+        # This spy scripts verdicts without performing real solver work.
+        return ()
+
     def reason_unknown(self):
         return self.reason_value
 

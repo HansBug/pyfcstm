@@ -806,3 +806,38 @@ printed phrase.
 
 **Reference.** See :doc:`../../reference/bmc_results/index` for JSON nullability
 and the schema.
+
+Choose and compare a solver profile
+-----------------------------------
+
+Use this page's ``bmc_tasks.fcstm`` and ``reach.fbmcq`` from the same
+directory. Run each choice explicitly:
+
+.. code-block:: bash
+
+   python -m pyfcstm bmc -i bmc_tasks.fcstm -q reach.fbmcq --solver-profile default --json
+   python -m pyfcstm bmc -i bmc_tasks.fcstm -q reach.fbmcq --solver-profile logic --json
+   python -m pyfcstm bmc -i bmc_tasks.fcstm -q reach.fbmcq --solver-profile tactic --json
+
+Each command exits ``0`` and prints ``result.status="sat"``,
+``result.property_satisfied=true`` and ``replay.ok=true``. The requested
+choice appears in ``result.solver_profile``. With no ``-o``, only stdout is
+written; no file is created. Inspect ``result.solver_logic`` to distinguish
+fragment selection from a fallback after no probe matched.
+
+Compare verdicts and replay before comparing cost. Different strategies can
+choose different valid witnesses. Context-wide counters in
+``solver_statistics`` are not per-query work. To measure your own model,
+keep inputs and Python/Z3 versions fixed and repeat in fresh processes;
+one faster invocation is not enough to change a default. The repository's
+``benchmarks/bmc/solving/`` supplies four comparison arms, immutable raw
+records and pre-registered performance thresholds.
+
+``--solver-profile fast`` exits ``2``; use one of the three lowercase
+choices. If an optional profile returns an inconclusive answer, rerun with
+``default`` and inspect ``reason`` rather than counting it as a property
+pass. ``--explain-infeasibility formal`` or ``proof`` can accompany any
+profile; explanation checks still use the default solver.
+
+See :doc:`../../reference/bmc_results/index` for fields, fallback and budget
+boundaries.

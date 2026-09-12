@@ -50,6 +50,7 @@ lines.
 .. cli-ref-option: command=bmc option=--json
 .. cli-ref-option: command=bmc option=--timeout-ms
 .. cli-ref-option: command=bmc option=--max-bound
+.. cli-ref-option: command=bmc option=--solver-profile choices=default,logic,tactic default=default
 .. cli-ref-option: command=bmc option=--explain-infeasibility choices=none,formal,proof default=none
 .. cli-ref-option: command=bmc option=--color choices=auto,always,never default=auto
 .. cli-ref-option: command=bmc option=--help
@@ -106,6 +107,12 @@ Both installed entry forms have the same behavior:
      - Creates ``BmcOptions(max_bound=N)``.  A query bound above ``N`` is
        rejected before relation construction as a controlled compile error.
        It does not rewrite or clamp the query bound.
+   * - ``--solver-profile``
+     - ``default``, ``logic``, or ``tactic``
+     - ``default``
+     - Selects the solver for the main staged checks. Explanation, conflict
+       cores and proof checks always use default. Case-sensitive; unknown
+       values exit ``2``.
    * - ``--explain-infeasibility``
      - ``none``, ``formal``, or ``proof``
      - ``none``
@@ -134,6 +141,75 @@ Zero and negative values for either numeric option are Click usage errors.
 Missing required options and unknown options are also usage errors; all exit
 ``2``.  Paths are passed through as supplied and are also reproduced as
 strings in JSON; the CLI does not canonicalize them to absolute paths.
+
+Solver profiles and fallback
+----------------------------
+
+``default`` uses the generic ``z3.Solver()``, preserving the existing check
+order and default human-readable output. ``logic`` applies Z3 probes in order:
+``is-qflia``, ``is-qflra``, ``is-qflira``, ``is-qfnia``, ``is-qfnra``,
+``is-nira``. Classification includes initialization, environment constraints
+and the response suffix. A match selects ``SolverFor``; no match falls back
+to the generic solver. Integer ``x / 3``, for example, may match no probe.
+
+``tactic`` combines ``simplify``, ``propagate-values``, ``solve-eqs`` and
+``smt``. It can change search order and the witness chosen, which still must
+pass runtime replay. This combination does not supply the assumption cores
+required by this project's explanation path, so all explanation and proof
+checks keep the generic solver.
+
+Python callers use ``solve_bmc_property(formula, solver_profile="logic")``;
+``build_bmc_output`` accepts the same keyword. Invalid values raise
+``BmcBuildError`` in the solve API or ``ClickErrorException`` in the file
+entry point. Profiles do not change property semantics, but strategies can
+have different costs or inconclusive outcomes. For ``unknown`` or ``timeout``,
+inspect the reason and rerun with ``default`` for comparison; an inconclusive
+answer is never a safety proof.
+
+The three additional result fields belong to this release's JSON contract;
+existing verdict, witness and replay fields keep their meaning. Timings and
+statistics must be treated separately when comparing results, rather than
+requiring byte-identical measurements.
+
+Measured comparison
+~~~~~~~~~~~~~~~~~~~
+
+The repository's `recorded solver comparison
+<https://github.com/HansBug/pyfcstm/blob/dev/bmc-solver-profile/benchmarks/bmc/solving/outputs/runs/cd24a68e137b/report.md>`_
+uses Linux x86_64, CPython 3.10.1 and Z3 4.15.4, with 51 queries, four
+arms and five fresh-process repetitions (1,020 samples). Every arm agrees
+on verdicts, with all 260 SAT samples passing replay and no unknown or
+timeout answers. Different strategies may still select different valid
+witnesses.
+
+.. list-table:: Solve-time comparison against default
+   :header-rows: 1
+
+   * - Profile
+     - Median of query p50 times
+     - Median improvement
+     - Worst query regression
+   * - ``default``
+     - 12.036 ms
+     - Reference
+     - Reference
+   * - ``logic``
+     - 11.730 ms
+     - 2.54%
+     - 46.88%
+   * - ``tactic``
+     - 11.105 ms
+     - 7.74%
+     - 409.44%
+
+Neither optional profile meets both pre-registered adoption criteria:
+at least 15% median improvement and at most 10% regression on every query.
+Both remain opt-in; benchmark your own workload before selecting either.
+The worst regressions were ``pump_supervisor_hooks/forbid`` for logic
+(4.245 to 6.235 ms) and ``ratio_estimator/reach`` for tactic
+(5.711 to 29.092 ms). The current default median was 0.72% above the older
+baseline's 11.950 ms. These are observations from one environment, not
+performance guarantees; timings include solver setup and staged checks.
 
 Execution and output transaction
 --------------------------------
@@ -1075,6 +1151,19 @@ is a positive integer for response and null for other kinds.
    * - ``reason``
      - string or null
      - Raw reason only for primary unknown/timeout; null for SAT/UNSAT.
+   * - ``solver_profile``
+     - ``default``, ``logic``, or ``tactic``
+     - Requested main solver profile; defaults to ``default``.
+   * - ``solver_logic``
+     - ``QF_LIA``, ``QF_LRA``, ``QF_LIRA``, ``QF_NIA``, ``QF_NRA``, ``NIRA``, or null
+     - Fragment selected by ``logic``. Null means fallback to default when
+       no probe matches; always null for ``default`` and ``tactic``.
+   * - ``solver_statistics``
+     - Object from non-empty string keys to finite non-negative numbers
+     - Z3 statistics immediately after the primary check; empty if it did
+       not start. Keys vary by version/profile; absence is not zero.
+       ``rlimit count`` and ``num allocs`` are context-wide cumulative values,
+       not this query's work. Manual result constructors default to an empty object.
    * - ``elapsed_ms``
      - finite number, ``>= 0``
      - Primary check wall time; inherently nondeterministic.

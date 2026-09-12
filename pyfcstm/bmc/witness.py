@@ -47,6 +47,7 @@ import time
 from collections.abc import Iterable as IterableABC
 from dataclasses import dataclass, field, replace
 from fractions import Fraction
+from functools import partial
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -85,7 +86,14 @@ from .explanation import (
 from .properties import BmcPropertyFormula, _lower_predicate
 from .query import EventAssumption
 from .relation import BmcCaseRelation
-from .solver import BmcSolveStatus, _SolveBudget, _check_with_budget
+from .solver import (
+    SOLVER_PROFILES,
+    _LOGIC_PROBES,
+    BmcSolveStatus,
+    _SolveBudget,
+    _check_with_budget,
+    _solver_for_profile,
+)
 from pyfcstm.model import OnAspect, OnStage, StateMachine
 from pyfcstm.simulate import ReadOnlyExecutionContext, SimulationRuntime
 
@@ -1278,7 +1286,14 @@ def _render_replay_result(result: "BmcReplayResult", **kwargs: Any) -> str:
 
 def _canonical_for_pretty(obj: Any) -> Mapping[str, Any]:
     if isinstance(obj, BmcSolveResult):
-        return obj.to_canonical()
+        result = obj.to_canonical()
+        # Detailed statistics belong in the machine report, not the verdict
+        # table. Preserve the established default human-readable output.
+        result.pop("solver_statistics")
+        if obj.solver_profile == "default":
+            result.pop("solver_profile")
+            result.pop("solver_logic")
+        return result
     if isinstance(obj, BmcFeasibilityCheck):
         return obj.to_canonical()
     if isinstance(obj, BmcFeasibilityRefinementCheck):
@@ -2056,7 +2071,7 @@ def _solve(
         >>> _solve(z3.BoolVal(True), None)[0]
         'sat'
     """
-    solver = z3.Solver()
+    solver, _ = _solver_for_profile("default")
     solver.add(expr)
     status, model, reason, elapsed_ms, _ = _check_with_budget(
         solver, _SolveBudget(timeout_ms)
@@ -2971,6 +2986,16 @@ class BmcSolveResult(_PrettyPrintableMixin):
     :param feasibility: Staged scenario-feasibility evidence, defaults to
         ``None`` for SAT and inconclusive direct constructors.
     :type feasibility: BmcFeasibilityResult, optional
+    :param solver_profile: Requested solver profile, defaults to ``default``.
+    :type solver_profile: str, optional
+    :param solver_logic: Selected logic, or ``None`` for default/tactic and
+        when logic classification fell back to the default solver.
+    :type solver_logic: str, optional
+    :param solver_statistics: Z3 statistics captured immediately after the
+        primary check, defaults to an empty mapping for manually built results.
+        Keys vary with Z3 and the selected solver. ``rlimit count`` and
+        ``num allocs`` are context-wide counters, not per-query measurements.
+    :type solver_statistics: Mapping[str, Union[int, float]], optional
     :raises pyfcstm.bmc.errors.BmcBuildError: If the solve result payload is
         malformed.
 
@@ -3001,8 +3026,29 @@ class BmcSolveResult(_PrettyPrintableMixin):
     incomplete_elapsed_ms: Optional[float] = None
     total_elapsed_ms: Optional[float] = None
     feasibility: Optional[BmcFeasibilityResult] = None
+    solver_profile: str = "default"
+    solver_logic: Optional[str] = None
+    solver_statistics: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        if (
+            not isinstance(self.solver_profile, str)
+            or self.solver_profile not in SOLVER_PROFILES
+        ):
+            raise BmcBuildError("solver_profile must be default, logic, or tactic.")
+        if self.solver_logic is not None and (
+            self.solver_profile != "logic"
+            or self.solver_logic not in tuple(logic for logic, _ in _LOGIC_PROBES)
+        ):
+            raise BmcBuildError(
+                "solver_logic requires a supported logic profile fragment."
+            )
+        statistics = _coerce_public_value_mapping(
+            "solver_statistics", self.solver_statistics
+        )
+        if any(value < 0 for value in statistics.values()):
+            raise BmcBuildError("solver_statistics values must be non-negative.")
+        object.__setattr__(self, "solver_statistics", statistics)
         _require_formula(self.formula)
         if self.status not in {"sat", "unsat", "unknown", "timeout"}:
             raise BmcBuildError("status must be sat, unsat, unknown, or timeout.")
@@ -3469,6 +3515,9 @@ class BmcSolveResult(_PrettyPrintableMixin):
             "incomplete": self.incomplete,
             "outcome": self.outcome,
             "reason": self.reason,
+            "solver_profile": self.solver_profile,
+            "solver_logic": self.solver_logic,
+            "solver_statistics": dict(self.solver_statistics),
             "elapsed_ms": self.elapsed_ms,
             "timeout_ms": self.timeout_ms,
             "has_model": self.model is not None,
@@ -4993,6 +5042,9 @@ def _make_solve_result(
     diagnostics: Sequence[str],
     feasibility: BmcFeasibilityResult,
     started_at: float,
+    solver_profile: str,
+    solver_logic: Optional[str],
+    solver_statistics: Mapping[str, Any],
 ) -> BmcSolveResult:
     return BmcSolveResult(
         formula=formula,
@@ -5008,6 +5060,9 @@ def _make_solve_result(
         incomplete_elapsed_ms=incomplete_elapsed_ms,
         total_elapsed_ms=(time.monotonic() - started_at) * 1000.0,
         feasibility=feasibility,
+        solver_profile=solver_profile,
+        solver_logic=solver_logic,
+        solver_statistics=solver_statistics,
     )
 
 
@@ -5017,6 +5072,7 @@ def solve_bmc_property(
     timeout_ms: Optional[int] = None,
     check_incomplete: bool = True,
     infeasibility_explanation: str = "none",
+    solver_profile: str = "default",
 ) -> BmcSolveResult:
     """Solve a compiled BMC property formula.
 
@@ -5039,6 +5095,12 @@ def solve_bmc_property(
         stage has been localized: ``none``, ``formal`` or ``proof``, defaults
         to ``'none'``.  The default runs no additional solver check at all.
     :type infeasibility_explanation: str, optional
+    :param solver_profile: ``default`` preserves the generic solver; ``logic``
+        selects a fragment recognized by Z3 probes, falling back to default
+        otherwise; ``tactic`` uses simplify/propagate-values/solve-eqs/smt.
+        Only the staged main checks use this choice. Explanation and proof
+        checks always use the default solver to preserve assumption cores.
+    :type solver_profile: str, optional
     :return: Structured solve result.
     :rtype: BmcSolveResult
     :raises pyfcstm.bmc.errors.BmcBuildError: If arguments are malformed, or
@@ -5065,7 +5127,17 @@ def solve_bmc_property(
             "Unsupported infeasibility_explanation: %r." % (infeasibility_explanation,)
         )
     core = checked.core
-    solver = z3.Solver()
+    solver, solver_logic = _solver_for_profile(
+        solver_profile,
+        (
+            core.domain_formula,
+            core.transition_formula,
+            core.initial_formula,
+            core.environment_formula,
+            checked.objective_formula,
+            checked.incomplete_formula,
+        ),
+    )
     solver.add(core.domain_formula, core.transition_formula)
     solver.push()
     solver.add(core.initial_formula)
@@ -5077,11 +5149,19 @@ def solve_bmc_property(
     # Start the shared check budget after solver construction, so a very small
     # user budget is spent on Z3 checks rather than Python-side setup.
     budget = _SolveBudget(timeout_ms)
-    status, model, reason, elapsed_ms, _ = _check_with_budget(solver, budget)
+    status, model, reason, elapsed_ms, primary_started = _check_with_budget(
+        solver, budget
+    )
+    finish = partial(
+        _make_solve_result,
+        solver_profile=solver_profile,
+        solver_logic=solver_logic,
+        solver_statistics=dict(iter(solver.statistics())) if primary_started else {},
+    )
     diagnostics = list(checked.diagnostics)
     if status == "sat":
         feasibility = _inferred_feasibility()
-        return _make_solve_result(
+        return finish(
             checked,
             status=status,
             model=model,
@@ -5099,7 +5179,7 @@ def solve_bmc_property(
     if status in {"unknown", "timeout"}:
         feasibility = _not_checked_feasibility()
         diagnostics.append("feasibility_%s:primary" % status)
-        return _make_solve_result(
+        return finish(
             checked,
             status=status,
             model=model,
@@ -5138,7 +5218,7 @@ def solve_bmc_property(
             refinement_status="not_needed",
         )
         diagnostics.append(_FEASIBILITY_TIMEOUT_BEFORE_ASSUMPTIONS)
-        return _make_solve_result(
+        return finish(
             checked,
             status=status,
             model=None,
@@ -5162,7 +5242,7 @@ def solve_bmc_property(
             refinement_status="not_needed",
         )
         diagnostics.append("feasibility_%s:assumptions" % assumptions_status)
-        return _make_solve_result(
+        return finish(
             checked,
             status=status,
             model=None,
@@ -5216,7 +5296,7 @@ def solve_bmc_property(
             else:
                 incomplete_reason = "incomplete check disabled"
                 diagnostics.append("incomplete_check=disabled")
-        return _make_solve_result(
+        return finish(
             checked,
             status=status,
             model=None,
@@ -5259,7 +5339,7 @@ def solve_bmc_property(
         diagnostics.append(
             "feasibility_timeout:deadline_exhausted_before_initialization_check"
         )
-        return _make_solve_result(
+        return finish(
             checked,
             status=status,
             model=None,
@@ -5283,7 +5363,7 @@ def solve_bmc_property(
             refinement_status="not_requested",
         )
         diagnostics.append("feasibility_%s:initialization" % initialization_status)
-        return _make_solve_result(
+        return finish(
             checked,
             status=status,
             model=None,
@@ -5312,7 +5392,7 @@ def solve_bmc_property(
         feasibility = _attach_explanation(
             feasibility, core, budget, infeasibility_explanation
         )
-        return _make_solve_result(
+        return finish(
             checked,
             status=status,
             model=None,
@@ -5348,7 +5428,7 @@ def solve_bmc_property(
             refinement_status="not_requested",
         )
         diagnostics.append("feasibility_timeout:deadline_exhausted_before_kernel_check")
-        return _make_solve_result(
+        return finish(
             checked,
             status=status,
             model=None,
@@ -5385,7 +5465,7 @@ def solve_bmc_property(
         )
     if kernel_status in {"unknown", "timeout"}:
         diagnostics.append("feasibility_%s:kernel" % kernel_status)
-    return _make_solve_result(
+    return finish(
         checked,
         status=status,
         model=None,

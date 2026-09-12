@@ -24,11 +24,18 @@ SimulationRuntimeEventError
 .. autoclass:: SimulationRuntimeEventError
 
 
+ExecutionTraceEntry
+-----------------------------------------------------
+
+.. autoclass:: ExecutionTraceEntry
+    :members: __post_init__,to_dict,kind,state_path,vars,transition_label,action_path,resolved_action_path
+
+
 CycleResult
 -----------------------------------------------------
 
 .. autoclass:: CycleResult
-    :members: value,input_events,consumed_events,unconsumed_events,delta
+    :members: value,input_events,consumed_events,unconsumed_events,delta,trace
 
 
 SimulationRuntimeExpressionError

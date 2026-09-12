@@ -3110,6 +3110,63 @@
             "type": "number",
             "minimum": 0
           }
+        },
+        "cone_slicing": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled",
+            "retained_count",
+            "dropped_variables",
+            "skipped_reason",
+            "fallback"
+          ],
+          "properties": {
+            "enabled": {
+              "const": true,
+              "type": "boolean"
+            },
+            "retained_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "dropped_variables": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "skipped_reason": {
+              "enum": [
+                null,
+                "abstract_actions",
+                "no_removable_variables"
+              ]
+            },
+            "fallback": {
+              "type": "boolean"
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "skipped_reason": {
+                    "type": "string"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "dropped_variables": {
+                    "maxItems": 0
+                  }
+                }
+              }
+            }
+          ]
         }
       },
       "allOf": [

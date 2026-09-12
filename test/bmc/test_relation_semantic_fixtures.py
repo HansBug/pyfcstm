@@ -12,6 +12,7 @@ import z3
 from pyfcstm.bmc import (
     BmcBuildError,
     BmcEngine,
+    BmcOptions,
     STATE_INIT_ID,
     STATE_TERMINATE_ID,
     UnsupportedBmcQuery,
@@ -555,7 +556,7 @@ def _assert_semantic_fixture_matches_bmc_core(case, ignored_fields: Sequence[str
     )
 
 
-def _assert_expected_unsupported(case) -> None:
+def _assert_expected_unsupported(case, cone_slicing=False) -> None:
     bound = sum(
         _effective_cycle_count(step, case.id, case.yaml_path, "steps[%d]" % index)
         for index, step in enumerate(case.data.get("steps") or [])
@@ -563,7 +564,9 @@ def _assert_expected_unsupported(case) -> None:
     model = build_state_machine_from_case(case)
     query_text = _query_text_for_case(case, model, bound)
     with pytest.raises(UnsupportedBmcQuery, match="unsupported_bmc_core"):
-        build_bmc_core_formula(BmcEngine(model).prepare(query_text))
+        build_bmc_core_formula(
+            BmcEngine(model, BmcOptions(cone_slicing=cone_slicing)).prepare(query_text)
+        )
 
 
 @pytest.mark.unittest
@@ -616,3 +619,17 @@ def test_bmc_core_matches_semantic_fixture_public_observations(case) -> None:
         _assert_expected_unsupported(case)
         return
     _assert_semantic_fixture_matches_bmc_core(case, policy.ignored_expect_fields)
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "case",
+    [
+        case
+        for case in iter_semantic_cases()
+        if policy_for_case(case.id).mode == "expected_unsupported"
+    ],
+    ids=lambda case: case.id,
+)
+def test_cone_slicing_preserves_unsupported_semantic_fixtures(case):
+    _assert_expected_unsupported(case, cone_slicing=True)

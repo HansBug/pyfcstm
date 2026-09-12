@@ -47,7 +47,7 @@ state Root {
 
 
 def test_unread_outputs_are_removed_and_public_decoders_fill_every_frame():
-    query = "check reach <= 4: ticks == 4;"
+    query = "check reach <= 4: ticks == 2;"
     machine, full = _compile(_OUTPUTS, query, False)
     _, sliced = _compile(_OUTPUTS, query)
     assert sliced.core.cone_slice.dropped_variables == ("output", "other")
@@ -152,3 +152,140 @@ def test_cone_option_requires_boolean(value):
 
 def test_cone_option_is_off_by_default():
     assert BmcOptions().to_canonical()["cone_slicing"] is False
+
+
+@pytest.mark.parametrize("profile", ["default", "logic", "tactic"])
+def test_response_suffix_is_completed_before_exposing_result(profile):
+    machine, formula = _compile(
+        _OUTPUTS, "check response <= 1: trigger true -> within 2 false;"
+    )
+    result = solve_bmc_property(formula, solver_profile=profile)
+    assert result.status == "unsat"
+    assert result.incomplete_status == "sat"
+    trace = decode_bmc_result_trace(result, source="incomplete_suffix")
+    assert replay_bmc_witness(machine, trace).ok
+    assert trace.frames[1].vars["output"] == 19
+
+
+def test_failed_slice_replays_once_then_solves_full_model_with_same_budget(monkeypatch):
+    import pyfcstm.bmc.witness as witness_module
+
+    _, formula = _compile(_OUTPUTS, "check reach <= 4: ticks == 2;")
+    checks, validations = [], []
+    original_check = witness_module._check_with_budget
+
+    def record_check(solver, budget):
+        checks.append(budget)
+        return original_check(solver, budget)
+
+    def reject_candidate(formula, trace):
+        validations.append(trace)
+        raise witness_module._ConeReplayFailure("injected replay mismatch")
+
+    # Injection instruments the public solve contract: a rejected candidate
+    # must not escape, loop, or acquire a fresh complete timeout allowance.
+    monkeypatch.setattr(witness_module, "_check_with_budget", record_check)
+    monkeypatch.setattr(witness_module, "_fill_cone_trace", reject_candidate)
+    result = solve_bmc_property(formula, timeout_ms=10000)
+    assert result.status == "sat"
+    assert len(validations) == 1
+    assert len(checks) == 2 and checks[0] is checks[1]
+    assert result.formula.core.context.options.cone_slicing is False
+    assert result.to_canonical()["cone_slicing"]["fallback"] is True
+    assert "slicing_fallback" in result.diagnostics
+    assert decode_bmc_result_trace(result).frames[1].vars["output"] == 19
+
+
+def test_slicing_disabled_keeps_core_and_result_payload_unchanged():
+    machine = load_state_machine_from_text(_OUTPUTS)
+    query = "check reach <= 4: ticks == 2;"
+    implicit = compile_bmc_query(machine, query)
+    explicit = compile_bmc_query(machine, query, options=BmcOptions(cone_slicing=False))
+    assert implicit.core.to_canonical() == explicit.core.to_canonical()
+    assert "cone_slicing" not in solve_bmc_property(explicit).to_canonical()
+
+
+@pytest.mark.parametrize(
+    "retained,dropped,reason",
+    [
+        (("x",), ("x",), None),
+        ((), ("x", "x"), None),
+        ((), ("x",), "abstract_actions"),
+        ((), (), "unknown"),
+        (("x",), ("",), None),
+    ],
+)
+def test_slice_metadata_rejects_inconsistent_partitions(retained, dropped, reason):
+    from pyfcstm.bmc.slicing import ConeSlice
+
+    with pytest.raises(BmcBuildError):
+        ConeSlice(retained, dropped, reason)
+
+
+def test_float_and_unknown_arithmetic_remain_in_the_model():
+    source = """
+    def float value = 1.0;
+    def float output = 0.0;
+    def int integer_output = 0;
+    state Root { enter { output = sqrt(value); integer_output = 17; } }
+    """
+    machine, formula = _compile(source, 'check reach <= 1: active("Root");')
+    assert formula.core.cone_slice.dropped_variables == ("integer_output",)
+    result = solve_bmc_property(formula)
+    assert replay_bmc_witness(machine, decode_bmc_result_trace(result)).ok
+
+
+def test_temporary_float_in_integer_variable_preserves_dependent_writes():
+    source = """
+    def int temporary = 0;
+    def int output = 0;
+    def int telemetry = 0;
+    state Root {
+        enter {
+            temporary = 0.5;
+            output = temporary + 1;
+            temporary = 0;
+            output = 0;
+            telemetry = 17;
+        }
+    }
+    """
+    query = "check reach <= 1: true;"
+    machine, sliced = _compile(source, query)
+    _, full = _compile(source, query, False)
+    assert sliced.core.cone_slice.dropped_variables == ("telemetry",)
+    result = solve_bmc_property(sliced)
+    baseline = solve_bmc_property(full)
+    assert (result.status, result.outcome) == (baseline.status, baseline.outcome)
+    trace = decode_bmc_result_trace(result)
+    assert replay_bmc_witness(machine, trace).ok
+    assert [frame.vars for frame in trace.frames] == [
+        frame.vars for frame in decode_bmc_result_trace(baseline).frames
+    ]
+
+
+@pytest.mark.parametrize(
+    "property_text",
+    [
+        "check reach <= 3: ticks == 2;",
+        "check invariant <= 3: ticks >= 0;",
+        "check forbid <= 3: ticks < 0;",
+        "check must_reach <= 3: ticks == 2;",
+        "check exists_always <= 3: ticks >= 0;",
+        'check cover <= 3: case("Root::transition::__terminate__::0");',
+        "check response <= 3: trigger ticks == 1 -> within 1 ticks == 2;",
+    ],
+)
+def test_property_verdicts_match_full_model(property_text):
+    _, full = _compile(_OUTPUTS, property_text, False)
+    machine, sliced = _compile(_OUTPUTS, property_text)
+    assert sliced.core.cone_slice.dropped_variables
+    baseline, result = solve_bmc_property(full), solve_bmc_property(sliced)
+    for field in ("status", "property_satisfied", "outcome", "incomplete_status"):
+        assert getattr(result, field) == getattr(baseline, field)
+    if result.model is not None:
+        assert replay_bmc_witness(machine, decode_bmc_result_trace(result)).ok
+    if result.incomplete_model is not None:
+        assert replay_bmc_witness(
+            machine, decode_bmc_result_trace(result, source="incomplete_suffix")
+        ).ok

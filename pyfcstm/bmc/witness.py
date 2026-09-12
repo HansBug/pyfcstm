@@ -86,6 +86,7 @@ from .explanation import (
 from .properties import BmcPropertyFormula, _lower_predicate
 from .query import EventAssumption
 from .relation import BmcCaseRelation
+from .slicing import ConeSlice
 from .solver import (
     SOLVER_PROFILES,
     _LOGIC_PROBES,
@@ -95,7 +96,11 @@ from .solver import (
     _solver_for_profile,
 )
 from pyfcstm.model import OnAspect, OnStage, StateMachine
-from pyfcstm.simulate import ReadOnlyExecutionContext, SimulationRuntime
+from pyfcstm.simulate import (
+    ReadOnlyExecutionContext,
+    SimulationRuntime,
+    SimulationRuntimeExpressionError,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - annotation-only imports
     from .explanation import BmcInfeasibilityExplanation
@@ -3029,6 +3034,9 @@ class BmcSolveResult(_PrettyPrintableMixin):
     solver_profile: str = "default"
     solver_logic: Optional[str] = None
     solver_statistics: Mapping[str, Any] = field(default_factory=dict)
+    _attempted_slice: Optional[ConeSlice] = field(
+        default=None, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         if (
@@ -3518,6 +3526,7 @@ class BmcSolveResult(_PrettyPrintableMixin):
             "solver_profile": self.solver_profile,
             "solver_logic": self.solver_logic,
             "solver_statistics": dict(self.solver_statistics),
+            **self._cone_metadata(),
             "elapsed_ms": self.elapsed_ms,
             "timeout_ms": self.timeout_ms,
             "has_model": self.model is not None,
@@ -3530,6 +3539,14 @@ class BmcSolveResult(_PrettyPrintableMixin):
             "available_model_roles": list(self.available_model_roles),
             "diagnostics": list(self.diagnostics),
         }
+
+    def _cone_metadata(self):
+        cone = self._attempted_slice or self.formula.core.cone_slice
+        if cone is None:
+            return {}
+        metadata = cone.to_canonical()
+        metadata["fallback"] = self._attempted_slice is not None
+        return {"cone_slicing": metadata}
 
     @property
     def available_model_roles(self) -> Tuple[str, ...]:
@@ -5083,6 +5100,12 @@ def solve_bmc_property(
     run only after ``S_assume`` is SAT.  All staged checks share one optional
     deadline; ``timeout_ms=None`` leaves Z3's timeout unset.
 
+    When cone slicing removed writes, primary and incomplete-suffix models
+    are completed and verified against the original runtime before returning.
+    A replay disagreement retries the full model at most once using the same
+    deadline; the returned ``formula`` then describes that full model.
+    ``total_elapsed_ms`` includes verification and any rebuild and retry.
+
     :param formula: Compiled BMC property formula.
     :type formula: pyfcstm.bmc.properties.BmcPropertyFormula
     :param timeout_ms: Optional Z3 timeout in milliseconds, defaults to
@@ -5115,6 +5138,67 @@ def solve_bmc_property(
         >>> solve_bmc_property(formula).status
         'sat'
     """
+    cone = _require_formula(formula).core.cone_slice
+    if cone is None or not cone.dropped_variables:
+        return _solve_property(
+            formula,
+            timeout_ms,
+            check_incomplete,
+            infeasibility_explanation,
+            solver_profile,
+        )
+    started = time.monotonic()
+    budget = _SolveBudget(timeout_ms)
+    result = _solve_property(
+        formula,
+        timeout_ms,
+        check_incomplete,
+        infeasibility_explanation,
+        solver_profile,
+        budget,
+    )
+    try:
+        if result.model is not None:
+            decode_bmc_result_trace(result)
+        if result.incomplete_model is not None:
+            decode_bmc_result_trace(result, source="incomplete_suffix")
+    except _ConeReplayFailure:
+        # _ConeReplayFailure: replay of the sliced candidate disagrees with the
+        # original runtime or hits a documented expression evaluation failure.
+        # Recompile with slicing disabled and reuse the same deadline once.
+        from .pipeline import compile_bmc_query
+
+        context = formula.core.context
+        full = compile_bmc_query(
+            context.model,
+            context.source_text if context.source_text is not None else context.query,
+            options=replace(context.options, cone_slicing=False),
+            query_source_path=context.query_source_path,
+        )
+        result = _solve_property(
+            full,
+            timeout_ms,
+            check_incomplete,
+            infeasibility_explanation,
+            solver_profile,
+            budget,
+        )
+        result = replace(
+            result,
+            _attempted_slice=cone,
+            diagnostics=(*result.diagnostics, "slicing_fallback"),
+        )
+    return replace(result, total_elapsed_ms=(time.monotonic() - started) * 1000.0)
+
+
+def _solve_property(
+    formula,
+    timeout_ms,
+    check_incomplete,
+    infeasibility_explanation,
+    solver_profile,
+    budget=None,
+):
     checked = _require_formula(formula)
     if not isinstance(check_incomplete, bool):
         raise BmcBuildError("check_incomplete must be bool.")
@@ -5148,7 +5232,7 @@ def solve_bmc_property(
 
     # Start the shared check budget after solver construction, so a very small
     # user budget is spent on Z3 checks rather than Python-side setup.
-    budget = _SolveBudget(timeout_ms)
+    budget = budget if budget is not None else _SolveBudget(timeout_ms)
     status, model, reason, elapsed_ms, primary_started = _check_with_budget(
         solver, budget
     )
@@ -5854,7 +5938,7 @@ def _decode_witness_trace(
         "case_label": checked.case_label,
         "response_window": checked.response_window,
     }
-    return BmcWitnessTrace(
+    trace = BmcWitnessTrace(
         property=prop,
         solver=solver_metadata,
         initial=_initial_metadata(checked, frames),
@@ -5864,6 +5948,45 @@ def _decode_witness_trace(
         model_role=model_role,
         verdict=verdict,
     )
+    cone = checked.core.cone_slice
+    return (
+        _fill_cone_trace(checked, trace)
+        if cone is not None and cone.dropped_variables
+        else trace
+    )
+
+
+class _ConeReplayFailure(BmcBuildError):
+    """A sliced candidate cannot be completed by the original runtime."""
+
+
+def _fill_cone_trace(formula, trace):
+    dropped = formula.core.cone_slice.dropped_variables
+    try:
+        replay = replay_bmc_witness(formula.core.context.model, trace)
+    except SimulationRuntimeExpressionError as err:
+        # SimulationRuntimeExpressionError: evaluating original DSL actions or
+        # guards during candidate replay fails, e.g. division by zero.
+        raise _ConeReplayFailure(str(err)) from err
+    replaced_paths = {
+        "frames[%d].vars.%s" % (frame.index, name)
+        for frame in trace.frames[1:]
+        for name in dropped
+    }
+    failures = [item for item in replay.mismatches if item.path not in replaced_paths]
+    if failures:
+        raise _ConeReplayFailure(
+            "Sliced witness disagrees with runtime: %s" % failures[0].path
+        )
+    frames = tuple(
+        replace(
+            frame, vars={**frame.vars, **{name: runtime.vars[name] for name in dropped}}
+        )
+        if frame.index > 0
+        else frame
+        for frame, runtime in zip(trace.frames, replay.runtime_trace.frames)
+    )
+    return replace(trace, frames=frames)
 
 
 def decode_bmc_witness(
@@ -5877,7 +6000,9 @@ def decode_bmc_witness(
     The decoder consumes selected case relations and trace symbols produced by
     earlier BMC layers.  It does not re-expand macro paths, and it intentionally
     emits only sparse replay input events instead of every true event Boolean in
-    the Z3 model.
+    the Z3 model. With cone slicing enabled, the original runtime supplies
+    removed variable values so every frame still contains the full variable
+    set. A candidate that disagrees with retained observations is rejected.
 
     :param formula: Compiled BMC property formula whose solve formula was SAT.
     :type formula: pyfcstm.bmc.properties.BmcPropertyFormula

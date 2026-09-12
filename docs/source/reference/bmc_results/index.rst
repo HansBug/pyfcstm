@@ -50,6 +50,8 @@ lines.
 .. cli-ref-option: command=bmc option=--json
 .. cli-ref-option: command=bmc option=--timeout-ms
 .. cli-ref-option: command=bmc option=--max-bound
+.. cli-ref-option: command=bmc option=--cone-slicing
+
 .. cli-ref-option: command=bmc option=--solver-profile choices=default,logic,tactic default=default
 .. cli-ref-option: command=bmc option=--explain-infeasibility choices=none,formal,proof default=none
 .. cli-ref-option: command=bmc option=--color choices=auto,always,never default=auto
@@ -107,6 +109,11 @@ Both installed entry forms have the same behavior:
      - Creates ``BmcOptions(max_bound=N)``.  A query bound above ``N`` is
        rejected before relation construction as a controlled compile error.
        It does not rewrite or clamp the query bound.
+   * - ``--cone-slicing``
+     - Boolean flag
+     - Disabled
+     - Remove unobserved integer writes whose evaluation is known total;
+       preserve control flow, initial values and dependencies of partial arithmetic.
    * - ``--solver-profile``
      - ``default``, ``logic``, or ``tactic``
      - ``default``
@@ -1151,6 +1158,13 @@ is a positive integer for response and null for other kinds.
    * - ``reason``
      - string or null
      - Raw reason only for primary unknown/timeout; null for SAT/UNSAT.
+   * - ``cone_slicing``
+     - Object; present only when slicing was requested
+     - ``enabled`` is true; ``retained_count`` counts retained persistent variables;
+       ``dropped_variables`` lists the attempted removals; ``skipped_reason`` is
+       null, ``abstract_actions`` or ``no_removable_variables``; ``fallback``
+       reports a full-model retry. Skips have no dropped variables. The entire
+       field is absent when slicing is disabled.
    * - ``solver_profile``
      - ``default``, ``logic``, or ``tactic``
      - Requested main solver profile; defaults to ``default``.

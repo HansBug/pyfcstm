@@ -3474,3 +3474,61 @@ def test_write_bmc_output_leaves_no_descriptor_or_temporary_file(
     )
     assert report.points_reached > 0
     assert not report.body_windows, report.describe()
+
+
+def test_cone_slicing_cli_and_schema_preserve_complete_witness(bmc_files):
+    jsonschema = pytest.importorskip("jsonschema")
+    model, query = bmc_files
+    model.write_text("def int output = 3; state Root { enter { output = 17; } }")
+    command, payload = _json_result(
+        model, query('check reach <= 1: active("Root");'), "--cone-slicing"
+    )
+    assert command.exit_code == 0, command.output
+    metadata = payload["result"]["cone_slicing"]
+    assert metadata == dict(
+        enabled=True,
+        retained_count=0,
+        dropped_variables=["output"],
+        skipped_reason=None,
+        fallback=False,
+    )
+    assert payload["witness"]["frames"][1]["vars"]["output"] == 17
+    assert payload["replay"]["ok"] is True
+    schema = json.loads(
+        (
+            Path(__file__).resolve().parents[2]
+            / "docs/source/reference/bmc_results/bmc_cli.schema.json"
+        ).read_text()
+    )
+    validator = jsonschema.Draft202012Validator(schema)
+    validator.validate(payload)
+    for field in metadata:
+        bad = deepcopy(payload)
+        del bad["result"]["cone_slicing"][field]
+        assert list(validator.iter_errors(bad)), field
+    for field, value in [
+        ("enabled", False),
+        ("retained_count", -1),
+        ("retained_count", True),
+        ("dropped_variables", ["x", "x"]),
+        ("skipped_reason", "unknown"),
+        ("fallback", 1),
+    ]:
+        bad = deepcopy(payload)
+        bad["result"]["cone_slicing"][field] = value
+        assert list(validator.iter_errors(bad)), (field, value)
+    schema["$defs"]["currentResult"]["properties"]["cone_slicing"]["properties"][
+        "retained_count"
+    ]["type"] = "string"
+    assert list(jsonschema.Draft202012Validator(schema).iter_errors(payload))
+
+
+@pytest.mark.parametrize("value", [None, 0, 1, "true", []])
+def test_cone_slicing_public_report_rejects_non_boolean(bmc_files, value):
+    from pyfcstm.entry.bmc import build_bmc_output
+
+    model, query = bmc_files
+    with pytest.raises(ClickErrorException, match="cone_slicing"):
+        build_bmc_output(
+            str(model), str(query("check reach <= 1: true;")), cone_slicing=value
+        )

@@ -841,3 +841,39 @@ profile; explanation checks still use the default solver.
 
 See :doc:`../../reference/bmc_results/index` for fields, fallback and budget
 boundaries.
+
+Try conservative slicing for one query
+-------------------------------------
+
+Slicing requires an explicit option:
+
+.. code-block:: bash
+
+   python -m pyfcstm bmc -i bmc_tasks.fcstm -q reach.fbmcq --cone-slicing --json
+
+Python compilation uses ``compile_bmc_query(model, query,
+options=BmcOptions(cone_slicing=True))``; the file API accepts
+``build_bmc_output(..., cone_slicing=True)``. Only bool values are accepted.
+
+Slicing retains query references, guards, ordered operation conditions and
+their dependencies. Assignments whose evaluation is not known total remain,
+including division, modulo, powers, functions and floating-point arithmetic.
+An integer declaration does not justify removing calculations that depend on
+a temporary non-integer value inside an action. Any abstract action skips the
+whole model. Unread outputs therefore cannot erase a dangerous calculation
+and change scenario feasibility, including UNSAT results with no SAT witness
+to replay.
+
+Initial values and all variable symbols remain intact. Decoding completes
+removed values through the original runtime, so every frame still contains
+all variables. Deterministic traces with fixed initial values and events stay
+equal; queries with multiple solutions may select another legal path. Both
+the primary witness and a response incomplete suffix are verified before
+solving returns. Verification failure retries the full model at most once
+using the same remaining solver budget. Verification and rebuilding consume
+that budget, but timeout does not forcibly interrupt those Python operations.
+
+When enabled, inspect ``result.cone_slicing`` for removals, skip reasons and
+``fallback``. Disabled results omit this field. ``total_elapsed_ms`` includes
+internal verification and fallback; performance comparisons must also measure
+compilation and external decoding/replay rather than excluding completion cost.

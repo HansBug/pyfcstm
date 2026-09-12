@@ -44,6 +44,8 @@ JSON 类型和必需键以模式为准；执行顺序、标准输出/标准错�
 .. cli-ref-option: command=bmc option=--json
 .. cli-ref-option: command=bmc option=--timeout-ms
 .. cli-ref-option: command=bmc option=--max-bound
+.. cli-ref-option: command=bmc option=--cone-slicing
+
 .. cli-ref-option: command=bmc option=--solver-profile choices=default,logic,tactic default=default
 .. cli-ref-option: command=bmc option=--explain-infeasibility choices=none,formal,proof default=none
 .. cli-ref-option: command=bmc option=--color choices=auto,always,never default=auto
@@ -96,6 +98,10 @@ JSON 类型和必需键以模式为准；执行顺序、标准输出/标准错�
      - 未设置；无 CLI 上限
      - 构造 ``BmcOptions(max_bound=N)``。查询边界大于 ``N`` 时，在关系
        构造前作为受控编译错误拒绝；不会改写或截断查询边界。
+   * - ``--cone-slicing``
+     - 布尔开关
+     - 关闭
+     - 删除与当前查询无关且可证明计算安全的整数赋值；保留控制流、初值及危险运算的依赖。
    * - ``--solver-profile``
      - ``default``、``logic`` 或 ``tactic``
      - ``default``
@@ -997,6 +1003,12 @@ JSON 使用 UTF-8、两空格缩进、递归键排序、保留非 ASCII 字符�
    * - ``reason``
      - 字符串或 ``null``
      - 仅主目标 ``unknown``/``timeout`` 时保存原始原因；SAT/UNSAT 时为 ``null``。
+   * - ``cone_slicing``
+     - 对象；仅开启切片时出现
+     - ``enabled`` 固定为 true；``retained_count`` 是保留的持久变量数；
+       ``dropped_variables`` 是尝试删除的变量名列表；``skipped_reason`` 为 null、
+       ``abstract_actions`` 或 ``no_removable_variables``；``fallback`` 表示是否已
+       使用完整模型重跑。跳过时删除列表为空；关闭时整个字段不存在。
    * - ``solver_profile``
      - ``default``、``logic`` 或 ``tactic``
      - 请求的主求解器配置；默认是 ``default``。

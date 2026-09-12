@@ -68,6 +68,7 @@ an arm with empty sets calls the API exactly as an older revision expects.
 | `default` | The current revision with both option sets empty. Every other arm is compared against it under H0. |
 | `logic` | The current revision with `solver_profile=logic`; probes choose a fragment or fall back to default. |
 | `tactic` | The current revision with `solver_profile=tactic`; the simplify/propagate-values/solve-eqs/smt pipeline is used for main staged checks. |
+| `cone_slicing` | The current revision with `cone_slicing=True`; conservative write elimination, complete witness reconstruction and at most one full-model retry. |
 
 The change that adds an option appends its arm to `_ARMS` in the runner and
 to this table, and evaluates its own T row.  Without `baseline`, an overhead
@@ -223,8 +224,27 @@ values: median improvement is `1 - median(candidate p50) / median(default
 p50)`, while worst regression is the maximum per-query ratio minus one.
 Missing measurements or failed H0 prevent adoption. Ratios in the report
 are percentages. Historical manifests without these fields
-remain byte-for-byte rebuildable. T3 will be evaluated when a slicing arm
-exists; there is none in a solver-profile run.
+remain byte-for-byte rebuildable.
+
+The slicing arm enables `BmcOptions(cone_slicing=True)`. Its T3 numbers are
+frozen in `slicing_thresholds`. Queries are partitioned by the actual
+`dropped_variables`, including any attempted slice that falls back. DAG and
+solve ratios compare medians across the per-query measurements in the sliced
+partition. The unsliced ratio compares medians of per-query p50s of each
+sample's `build_ms + solve_ms`. Both partitions must be represented; missing
+measurements or failed H0 prevent adoption. Fallback must be zero in every
+sample, not merely at the median.
+
+Slicing preserves guards, ordered branch conditions, abstract models and
+potentially partial arithmetic, including their dependencies. The
+`definedness_trap` case must retain the dangerous assignment; it does not
+need to trigger fallback. Unit tests exercise fallback independently.
+`solve_ms` includes the production slice verification and any full-model
+rebuild and retry. External decoding and replay are additionally measured
+in `replay_ms`, including response incomplete suffixes. A failed suffix
+replay fails H0, even when the primary result has no SAT witness. Complete
+witness values are checked against the ordinary simulator in semantic tests;
+queries with multiple legal solutions need not choose the same path.
 
 ## What a run settles
 

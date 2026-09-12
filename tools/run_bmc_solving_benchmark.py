@@ -33,6 +33,7 @@ import argparse
 import copy
 import hashlib
 import json
+import math
 import platform
 import shutil
 import subprocess
@@ -90,6 +91,11 @@ _ARMS: Tuple[Dict[str, Any], ...] = (
         "revision": None,
         "options": {"compile": {}, "solve": {"solver_profile": "tactic"}},
     },
+    {
+        "label": "cone_slicing",
+        "revision": None,
+        "options": {"compile": {"cone_slicing": True}, "solve": {}},
+    },
 )
 
 #: Numeric form of the pre-registered solver thresholds, copied into each run.
@@ -104,6 +110,15 @@ _SOLVER_THRESHOLDS = {
         "minimum_median_improvement": 0.15,
         "maximum_query_regression": 0.10,
     },
+}
+
+# Frozen T3 thresholds, separate from the historical solver-only manifests.
+_SLICING_THRESHOLDS = {
+    "id": "T3",
+    "minimum_dag_reduction": 0.20,
+    "maximum_solve_regression": 0.05,
+    "maximum_unsliced_regression": 0.05,
+    "maximum_fallbacks": 0,
 }
 
 #: Threshold ids the README must pre-register before the first run.
@@ -127,13 +142,12 @@ _MEASUREMENT_MAP: Tuple[Tuple[str, str, str], ...] = (
     (
         "solve_ms",
         "solve_bmc_property wall time in the child",
-        "the staged primary solve including its verdict; the region a solver "
-        "option changes",
+        "staged solving plus internal slicing verification and any full-model retry",
     ),
     (
         "replay_ms",
         "decode_bmc_result_trace + replay_bmc_witness wall time in the child",
-        "only when the primary status is sat; absent otherwise",
+        "primary SAT witness and response incomplete suffix, when present",
     ),
     (
         "total_elapsed_ms",
@@ -716,6 +730,13 @@ if result.status == "sat":
     replay_ok = replay_bmc_witness(model, witness).ok
     replay_ms = (time.perf_counter() - started) * 1000.0
 
+suffix_replay_ok = None
+if result.incomplete_model is not None:
+    started = time.perf_counter()
+    suffix = decode_bmc_result_trace(result, source="incomplete_suffix")
+    suffix_replay_ok = replay_bmc_witness(model, suffix).ok
+    replay_ms = (replay_ms or 0.0) + (time.perf_counter() - started) * 1000.0
+
 # Peak memory is read here, before the size walk below allocates anything, so
 # it describes the production path alone.
 try:
@@ -749,8 +770,13 @@ if hasattr(result, "solver_statistics"):
     metadata = {"solver_statistics": dict(result.solver_statistics),
                 "solver_profile": result.solver_profile,
                 "solver_logic": result.solver_logic}
+cone = result.to_canonical().get("cone_slicing")
+if cone is not None:
+    metadata["cone_slicing"] = cone
 print(json.dumps({
     **metadata,
+    "build_solve_ms": build_ms + solve_ms,
+    "suffix_replay_ok": suffix_replay_ok,
     "pyfcstm_file": pyfcstm.__file__,
     "build_ms": build_ms,
     "solve_ms": solve_ms,
@@ -1033,6 +1059,23 @@ def _summarize(samples: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         }
         for key in ("solver_profile", "solver_logic"):
             summary[key] = sorted({item.get(key) for item in good}, key=str)
+    # Optional fields keep historical summaries byte-for-byte rebuildable.
+    if any("build_solve_ms" in item for item in good):
+        summary["build_solve_ms"] = _distribution(
+            [item["build_solve_ms"] for item in good if "build_solve_ms" in item]
+        )
+    for field in ("cone_slicing", "suffix_replay_ok"):
+        if any(field in item for item in good):
+            observed = sorted(
+                {json.dumps(item.get(field), sort_keys=True) for item in good}
+            )
+            summary[field] = (
+                json.loads(observed[0])
+                if len(observed) == 1
+                else [json.loads(value) for value in observed]
+            )
+            if len(observed) != 1:
+                summary.setdefault("unstable_fields", []).append(field)
     errors = [item["error"] for item in samples if item.get("error")]
     if errors:
         summary["first_error"] = errors[0]
@@ -1064,6 +1107,8 @@ def _h0(
         and arm_summary.get("failures", 0) == 0
         and reference.get("samples", 0) > 0
         and reference.get("failures", 0) == 0
+        and arm_summary.get("suffix_replay_ok") in (None, True)
+        and reference.get("suffix_replay_ok") in (None, True)
         and (arm_summary.get("status") != "sat" or arm_summary.get("replay_ok") is True)
         and (reference.get("status") != "sat" or reference.get("replay_ok") is True)
     )
@@ -1165,6 +1210,89 @@ def _solver_comparison(summary, arm, reference, threshold):
         "median_improvement": improvement,
         "worst_regression": worst,
         "h0": bool(h0 and candidates),
+        "accepted": accepted,
+    }
+
+
+def _slicing_comparison(summary, arm, reference, threshold):
+    """Compare medians of query p50s within the actually sliced/unsliced sets."""
+    groups = {"sliced": [], "unsliced": []}
+    fallbacks = 0
+    complete = True
+    for case in summary.values():
+        for query in case["queries"].values():
+            candidate = query["arms"].get(arm, {})
+            baseline = query["arms"].get(reference, {})
+            cone = candidate.get("cone_slicing")
+            if not isinstance(cone, dict) or cone.get("enabled") is not True:
+                complete = False
+                continue
+            if not all(
+                candidate.get("h0", {}).get(key, False)
+                for key in ("identical_to_reference", "matches_expected")
+            ):
+                complete = False
+            if "cone_slicing" in candidate.get("unstable_fields", ()):
+                complete = False
+            if not isinstance(cone.get("fallback"), bool):
+                complete = False
+            fallbacks += candidate.get("samples", 0) if cone.get("fallback") else 0
+            dropped = cone.get("dropped_variables")
+            if not isinstance(dropped, list):
+                complete = False
+                continue
+            group = "sliced" if dropped else "unsliced"
+            metrics = (
+                ("formula_dag_nodes", "solve_ms") if dropped else ("build_solve_ms",)
+            )
+            row = []
+            for metric in metrics:
+                a, b = candidate.get(metric), baseline.get(metric)
+                if metric.endswith("_ms"):
+                    a = a.get("p50") if isinstance(a, dict) else None
+                    b = b.get("p50") if isinstance(b, dict) else None
+                if any(
+                    isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or not math.isfinite(value)
+                    or value <= 0
+                    for value in (a, b)
+                ):
+                    complete = False
+                    break
+                row.append((a, b))
+            else:
+                groups[group].append(row)
+
+    def ratio(group, index):
+        rows = groups[group]
+        if not rows:
+            return None
+        return _percentile([row[index][0] for row in rows], 0.5) / _percentile(
+            [row[index][1] for row in rows], 0.5
+        )
+
+    dag = ratio("sliced", 0)
+    solve = ratio("sliced", 1)
+    unsliced = ratio("unsliced", 0)
+    accepted = bool(
+        complete
+        and dag is not None
+        and solve is not None
+        and unsliced is not None
+        and dag <= 1.0 - threshold["minimum_dag_reduction"]
+        and solve <= 1.0 + threshold["maximum_solve_regression"]
+        and unsliced <= 1.0 + threshold["maximum_unsliced_regression"]
+        and fallbacks <= threshold["maximum_fallbacks"]
+    )
+    return {
+        "sliced_queries": len(groups["sliced"]),
+        "unsliced_queries": len(groups["unsliced"]),
+        "dag_reduction": None if dag is None else 1.0 - dag,
+        "solve_regression": None if solve is None else solve - 1.0,
+        "unsliced_regression": None if unsliced is None else unsliced - 1.0,
+        "fallback_samples": fallbacks,
+        "complete": complete,
         "accepted": accepted,
     }
 
@@ -1272,6 +1400,7 @@ def _run(
         "arms": arms,
         "reference_arm": _REFERENCE_ARM,
         "solver_thresholds": copy.deepcopy(_SOLVER_THRESHOLDS),
+        "slicing_thresholds": copy.deepcopy(_SLICING_THRESHOLDS),
         "repetitions": repetitions,
         "warmups": warmups,
         "case_filter": sorted(case_filter) if case_filter is not None else None,
@@ -1665,6 +1794,27 @@ def _report(manifest: Dict[str, Any], summary: Dict[str, Any]) -> str:
             "worst regression compares each query with its own default p50. "
             "Missing measurements or H0 failures prevent adoption.",
         ]
+    if manifest.get("slicing_thresholds"):
+        for arm in manifest["arms"]:
+            if arm["options"].get("compile", {}).get("cone_slicing") is not True:
+                continue
+            comparison = _slicing_comparison(
+                summary, arm["label"], reference, manifest["slicing_thresholds"]
+            )
+            lines += ["", "### T3: conservative cone slicing", ""]
+            for key, value in comparison.items():
+                if key.endswith(("reduction", "regression")) and value is not None:
+                    value = "%.2f%%" % (100 * value)
+                lines.append("- %s: %s" % (key, value))
+            lines += [
+                "",
+                "T3: **%s**. Ratios compare medians of per-query "
+                "measurements within each actual slice partition. The unsliced "
+                "metric is the p50 of each sample's build plus solve time. "
+                "Solve time includes internal replay and any fallback. Missing "
+                "measurements, an empty partition, or H0 failure prevent adoption."
+                % ("pass" if comparison["accepted"] else "NOT MET"),
+            ]
     option_arms = [arm for arm in manifest["arms"] if any(arm["options"].values())]
     if option_arms and not manifest.get("solver_thresholds"):
         lines.append(
@@ -2165,6 +2315,20 @@ def _synthetic_run(root: Path, run_id: str) -> None:
                         "replay_ok": True if expected == "sat" else None,
                         "peak_rss_bytes": 50_000_000,
                     }
+                if not record.get("error"):
+                    record["build_solve_ms"] = record["build_ms"] + record["solve_ms"]
+                    if arm["label"] == "cone_slicing":
+                        record["cone_slicing"] = {
+                            "enabled": True,
+                            "retained_count": 1,
+                            "dropped_variables": ["output"] if case == "alpha" else [],
+                            "skipped_reason": None
+                            if case == "alpha"
+                            else "no_removable_variables",
+                            "fallback": False,
+                        }
+                        if case == "alpha":
+                            record["formula_dag_nodes"] = 80
                 lines.append(
                     json.dumps(
                         {
@@ -2184,6 +2348,7 @@ def _synthetic_run(root: Path, run_id: str) -> None:
         "arms": arms,
         "reference_arm": _REFERENCE_ARM,
         "solver_thresholds": copy.deepcopy(_SOLVER_THRESHOLDS),
+        "slicing_thresholds": copy.deepcopy(_SLICING_THRESHOLDS),
         "repetitions": 3,
         "warmups": 0,
         "case_filter": None,
@@ -2311,6 +2476,48 @@ def _self_test() -> List[str]:
             missing, "logic", _REFERENCE_ARM, _SOLVER_THRESHOLDS["logic"]
         )["accepted"]:
             problems.append("solver adoption gate accepted a missing measurement")
+        for metric, value, passed in (
+            ("formula_dag_nodes", 80, True),
+            ("formula_dag_nodes", 81, False),
+            ("solve_ms", 4.2, True),
+            ("solve_ms", 4.201, False),
+            ("build_solve_ms", 16.8, True),
+            ("build_solve_ms", 16.801, False),
+            ("fallback", True, False),
+            ("missing", None, False),
+            ("h0", False, False),
+        ):
+            trial = copy.deepcopy(summary)
+            case, query = (
+                ("beta", "forbid") if metric == "build_solve_ms" else ("alpha", "reach")
+            )
+            candidate = trial[case]["queries"][query]["arms"]["cone_slicing"]
+            if metric in ("solve_ms", "build_solve_ms"):
+                candidate[metric]["p50"] = value
+            elif metric == "formula_dag_nodes":
+                candidate[metric] = value
+            elif metric == "fallback":
+                candidate["cone_slicing"]["fallback"] = value
+            elif metric == "missing":
+                candidate.pop("cone_slicing")
+            else:
+                candidate["h0"]["identical_to_reference"] = value
+            if (
+                _slicing_comparison(
+                    trial, "cone_slicing", _REFERENCE_ARM, _SLICING_THRESHOLDS
+                )["accepted"]
+                != passed
+            ):
+                problems.append(
+                    "slicing adoption gate misclassified %s=%r" % (metric, value)
+                )
+        failed_suffix = dict(alpha[_REFERENCE_ARM], suffix_replay_ok=False)
+        if _h0(
+            failed_suffix,
+            failed_suffix,
+            summary["alpha"]["queries"]["reach"]["expected"],
+        )["identical_to_reference"]:
+            problems.append("H0 accepted a failed incomplete suffix replay")
         beta = summary["beta"]["queries"]["forbid"]["arms"]
         if (
             beta[_BASELINE_LABEL]["h0"]["identical_to_reference"]

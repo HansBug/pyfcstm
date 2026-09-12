@@ -29,6 +29,7 @@ pyfcstm.bmc
     provenance
     query
     relation
+    slicing
     solver
     source
     witness

@@ -3239,6 +3239,21 @@ def parse_dsl_node_to_state_machine(
                 _span=_node_span(def_item),
             )
             d_define_spans[def_item.name] = _node_span(def_item)
+            role = VariableRole(getattr(def_item, "role", "control"))
+            if role is VariableRole.INPUT_DYNAMIC and def_item.expr is not None:
+                sink.emit(ModelDiagnostic(
+                    code="E_DYNAMIC_INPUT_INITIALIZER", severity="error",
+                    message=f"Dynamic input {def_item.name!r} cannot have an initializer.",
+                    span=getattr(def_item, "_span", None),
+                    refs={"var_name": def_item.name, "reason": "dynamic_input_initializer"},
+                ))
+            if role is not VariableRole.INPUT_DYNAMIC and def_item.expr is None:
+                sink.emit(ModelDiagnostic(
+                    code="E_VARIABLE_INITIALIZER_REQUIRED", severity="error",
+                    message=f"Variable {def_item.name!r} requires an initializer.",
+                    span=getattr(def_item, "_span", None),
+                    refs={"var_name": def_item.name, "reason": "missing_initializer"},
+                ))
         else:
             sink.emit(
                 ModelDiagnostic(

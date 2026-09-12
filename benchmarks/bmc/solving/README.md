@@ -228,6 +228,24 @@ exists; there is none in a solver-profile run.
 
 ## What a run settles
 
+The [solver-profile run](outputs/runs/cd24a68e137b/report.md) measures commit
+`36ae48d5` with a clean manifest on Linux x86_64, CPython 3.10.1 and Z3
+4.15.4: 1,020 samples, zero failures, 260 successful SAT replays and H0
+passing for all 51 queries in every arm. Median query p50 is 11.950 ms for
+the old baseline and 12.036 ms for default (0.72% higher).
+
+| Profile | Median query p50 | Improvement against default | Worst regression | Adoption gate |
+|---|---:|---:|---:|---|
+| `logic` | 11.730 ms | 2.54% | 46.88% | T1 not met |
+| `tactic` | 11.105 ms | 7.74% | 409.44% | T2 not met |
+
+Logic's worst regression is `pump_supervisor_hooks/forbid` (4.245 to
+6.235 ms); tactic's is `ratio_estimator/reach` (5.711 to 29.092 ms).
+Both remain opt-in. These measurements describe one environment and do
+not guarantee a speedup for another workload. H0 here verifies semantic
+verdicts and successful replay, not equality of the particular valid
+witness selected by each solver strategy.
+
 A run with only `baseline` and `default` establishes the two reference
 distributions and proves H0 holds between them, which is the precondition
 for reading any later arm.  A run with an option arm answers, per query,

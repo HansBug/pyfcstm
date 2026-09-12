@@ -147,6 +147,42 @@ Python 使用 ``solve_bmc_property(formula, solver_profile="logic")``；文件�
 新增三个结果字段属于本发行版的 JSON 契约；既有结论、见证和重放字段语义不变。
 比较结果时应单独处理耗时与统计，不能要求它们逐字节相同。
 
+实测对比
+~~~~~~~~
+
+仓库的 `求解器对比记录
+<https://github.com/HansBug/pyfcstm/blob/dev/bmc-solver-profile/benchmarks/bmc/solving/outputs/runs/cd24a68e137b/report.md>`_
+在 Linux x86_64、CPython 3.10.1、Z3 4.15.4 上运行，覆盖 51 条查询、四个对照臂，
+每组用新进程重复五次，共 1,020 个样本。所有对照臂结论一致，260 个 SAT 样本均通过
+重放，没有 ``unknown`` 或 ``timeout``。不同策略仍可能选择不同的合法见证。
+
+.. list-table:: 相对默认配置的求解耗时
+   :header-rows: 1
+
+   * - 配置
+     - 各查询 p50 的中位数
+     - 中位改善
+     - 最差单例退化
+   * - ``default``
+     - 12.036 ms
+     - 对照
+     - 对照
+   * - ``logic``
+     - 11.730 ms
+     - 2.54%
+     - 46.88%
+   * - ``tactic``
+     - 11.105 ms
+     - 7.74%
+     - 409.44%
+
+两个可选配置均未同时满足事前登记的采纳条件：中位改善至少 15%，且每条查询的退化
+不超过 10%。因此均保留为显式选项，默认配置不变；选用前应测量自己的模型。
+``logic`` 的最差单例为 ``pump_supervisor_hooks/forbid``，从 4.245 ms 增至
+6.235 ms；``tactic`` 的最差单例为 ``ratio_estimator/reach``，从 5.711 ms
+增至 29.092 ms。当前默认配置的中位耗时比旧基线的 11.950 ms 高 0.72%。
+这些数字只代表本次环境，不是性能保证；测量包含求解器准备和分阶段检查。
+
 执行与输出事务
 --------------
 

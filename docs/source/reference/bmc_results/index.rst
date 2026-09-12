@@ -171,6 +171,46 @@ existing verdict, witness and replay fields keep their meaning. Timings and
 statistics must be treated separately when comparing results, rather than
 requiring byte-identical measurements.
 
+Measured comparison
+~~~~~~~~~~~~~~~~~~~
+
+The repository's `recorded solver comparison
+<https://github.com/HansBug/pyfcstm/blob/dev/bmc-solver-profile/benchmarks/bmc/solving/outputs/runs/cd24a68e137b/report.md>`_
+uses Linux x86_64, CPython 3.10.1 and Z3 4.15.4, with 51 queries, four
+arms and five fresh-process repetitions (1,020 samples). Every arm agrees
+on verdicts, with all 260 SAT samples passing replay and no unknown or
+timeout answers. Different strategies may still select different valid
+witnesses.
+
+.. list-table:: Solve-time comparison against default
+   :header-rows: 1
+
+   * - Profile
+     - Median of query p50 times
+     - Median improvement
+     - Worst query regression
+   * - ``default``
+     - 12.036 ms
+     - Reference
+     - Reference
+   * - ``logic``
+     - 11.730 ms
+     - 2.54%
+     - 46.88%
+   * - ``tactic``
+     - 11.105 ms
+     - 7.74%
+     - 409.44%
+
+Neither optional profile meets both pre-registered adoption criteria:
+at least 15% median improvement and at most 10% regression on every query.
+Both remain opt-in; benchmark your own workload before selecting either.
+The worst regressions were ``pump_supervisor_hooks/forbid`` for logic
+(4.245 to 6.235 ms) and ``ratio_estimator/reach`` for tactic
+(5.711 to 29.092 ms). The current default median was 0.72% above the older
+baseline's 11.950 ms. These are observations from one environment, not
+performance guarantees; timings include solver setup and staged checks.
+
 Execution and output transaction
 --------------------------------
 

@@ -1,0 +1,2 @@
+init cold havoc { current_floor } where current_floor >= 0 && current_floor <= 3;
+check invariant <= 10: current_floor <= 3;

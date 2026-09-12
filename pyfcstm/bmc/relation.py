@@ -81,6 +81,7 @@ from .ast import (
     Terminated,
     UFuncCall,
 )
+from .slicing import ConeSlice, build_cone_slice, slice_operations
 from .binding import BoundAssumption
 from .domain import (
     STATE_INIT_ID,
@@ -1476,11 +1477,12 @@ class BmcCoreFormula:
     :type core: z3.BoolRef
     :param steps: Lowered step relations.
     :type steps: Tuple[BmcStepRelation, ...]
-    :param diagnostics: Reserved build-time diagnostics, defaults to ``()``.
-        Relation-level semantic-delta information is currently exposed through
-        case metadata, so this tuple is empty in the initial core-relation
-        builder.
+    :param diagnostics: Build-time diagnostics, including reasons requested
+        slicing was skipped, defaults to ``()``.
     :type diagnostics: Tuple[str, ...], optional
+    :param cone_slice: Conservative variable partition when slicing was
+        requested; ``None`` when disabled.
+    :type cone_slice: pyfcstm.bmc.slicing.ConeSlice, optional
 
     Example::
 
@@ -1501,6 +1503,7 @@ class BmcCoreFormula:
     core: z3.BoolRef
     steps: Tuple[BmcStepRelation, ...]
     diagnostics: Tuple[str, ...] = ()
+    cone_slice: Optional[ConeSlice] = None
     _tracked_groups: Tuple[BmcTrackedConstraint, ...] = field(
         default_factory=tuple, repr=False, compare=False
     )
@@ -1510,6 +1513,16 @@ class BmcCoreFormula:
 
     def __post_init__(self) -> None:
         _require_context(self.context)
+        if self.cone_slice is not None:
+            if not isinstance(self.cone_slice, ConeSlice):
+                raise BmcBuildError("cone_slice must be ConeSlice or None.")
+            partition = set(self.cone_slice.retained_variables) | set(
+                self.cone_slice.dropped_variables
+            )
+            if partition != {var.name for var in self.context.domain.variables}:
+                raise BmcBuildError(
+                    "cone_slice must partition the persistent variables."
+                )
         if not isinstance(self.symbols, BmcTraceSymbols):
             raise BmcBuildError("symbols must be BmcTraceSymbols.")
         for name in (
@@ -2195,6 +2208,7 @@ def _execute_action_block(
     block: ActionBlock,
     env: Mapping[str, _Z3Expr],
     case_label: str,
+    cone_slice: Optional[ConeSlice] = None,
 ) -> Tuple[
     Mapping[str, z3.ArithRef],
     Tuple[DomainConstraint, ...],
@@ -2223,7 +2237,11 @@ def _execute_action_block(
         )
         return dict(env), (), (record,)
     execution = execute_operations_domain(
-        list(block.operations),
+        list(
+            slice_operations(block.operations, cone_slice)
+            if cone_slice is not None
+            else block.operations
+        ),
         dict(env),
         source=DomainSource(
             label="action block %s in case %s" % (block.runtime_role, case_label)
@@ -2242,7 +2260,9 @@ def _execute_action_block(
 
 
 def _prepare_case_lowering(
-    case: CycleCase, pre_env: Mapping[str, _Z3Expr]
+    case: CycleCase,
+    pre_env: Mapping[str, _Z3Expr],
+    cone_slice: Optional[ConeSlice] = None,
 ) -> _CaseLowering:
     guards_by_anchor: Dict[int, List[GuardRequirement]] = {}
     for guard in case.guard_requirements:
@@ -2264,7 +2284,7 @@ def _prepare_case_lowering(
             definedness = list(new_definedness)
         if anchor < len(case.action_blocks):
             env, block_definedness, block_call_records = _execute_action_block(
-                case.action_blocks[anchor], env, case.label
+                case.action_blocks[anchor], env, case.label, cone_slice
             )
             definedness.extend(block_definedness)
             for record in block_call_records:
@@ -2385,6 +2405,7 @@ def _build_case_relation(
     symbols: BmcTraceSymbols,
     lowering: _CaseLowering,
     antecedents: Mapping[str, _LoweredBoolTemplate],
+    cone_slice: Optional[ConeSlice] = None,
 ) -> BmcCaseRelation:
     case = lowering.case
     selector = symbols.case_selector(step_index, case.label)
@@ -2401,6 +2422,8 @@ def _build_case_relation(
         )
     post_var_exprs = {}
     for var in symbols.domain.variables:
+        if cone_slice is not None and var.name in cone_slice.dropped_variables:
+            continue
         try:
             value = lowering.final_env[var.name]
         except (
@@ -2446,6 +2469,7 @@ def _build_step_relation(
     step_index: int,
     symbols: BmcTraceSymbols,
     formals: Sequence[MacroStepFormal],
+    cone_slice: Optional[ConeSlice] = None,
 ) -> BmcStepRelation:
     case_list = [case for formal in formals for case in formal.cases]
     if len({case.label for case in case_list}) != len(
@@ -2457,7 +2481,8 @@ def _build_step_relation(
         for var in symbols.domain.variables
     }
     lowerings = {
-        case.label: _prepare_case_lowering(case, pre_env) for case in case_list
+        case.label: _prepare_case_lowering(case, pre_env, cone_slice)
+        for case in case_list
     }
     condition_cache: Dict[str, _LoweredBoolTemplate] = {}
 
@@ -2509,7 +2534,7 @@ def _build_step_relation(
 
     relations = tuple(
         _build_case_relation(
-            step_index, symbols, lowerings[case.label], condition_cache
+            step_index, symbols, lowerings[case.label], condition_cache, cone_slice
         )
         for case in case_list
     )
@@ -2876,6 +2901,10 @@ def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
         'Bool'
     """
     prepared = _require_context(context)
+    cone_slice = build_cone_slice(prepared) if prepared.options.cone_slicing else None
+    effective_slice = (
+        cone_slice if cone_slice is not None and cone_slice.dropped_variables else None
+    )
     frame_domain = _relation_frame_domain(prepared)
     formals_by_step = _formals_by_step(prepared, frame_domain)
     case_labels_by_step = {
@@ -2885,7 +2914,7 @@ def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
     symbols = BmcTraceSymbols.allocate(prepared.domain, case_labels_by_step)
     groups: List[BmcTrackedConstraint] = []
     steps = tuple(
-        _build_step_relation(step_index, symbols, formals)
+        _build_step_relation(step_index, symbols, formals, effective_slice)
         for step_index, formals in enumerate(formals_by_step)
     )
     generated_ref = prepared._source_registry.reference("generated", None, None)
@@ -2958,7 +2987,12 @@ def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
         environment_formula=environment_formula,
         core=core,
         steps=steps,
-        diagnostics=(),
+        diagnostics=(
+            ("slicing_skipped:" + cone_slice.skipped_reason,)
+            if cone_slice is not None and cone_slice.skipped_reason
+            else ()
+        ),
+        cone_slice=cone_slice,
         _tracked_groups=tuple(groups),
         _tracked_case_groups=tuple(case_groups),
     )

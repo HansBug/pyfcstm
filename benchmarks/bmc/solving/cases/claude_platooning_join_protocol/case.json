@@ -1,0 +1,44 @@
+{
+  "name": "claude_platooning_join_protocol",
+  "source": {
+    "kind": "llm_eval",
+    "path": "llm_eval/outputs/claude/platooning_join_protocol/model.fcstm",
+    "provider": "claude",
+    "scenario": "platooning_join_protocol"
+  },
+  "role": "llm_generated",
+  "why": "LLM-generated model from the evaluation corpus; the population the benchmark is for.",
+  "model": "model.fcstm",
+  "queries": [
+    {
+      "file": "reach.fbmcq",
+      "kind": "reach",
+      "expected": {
+        "status": "unsat",
+        "property_satisfied": false,
+        "outcome": "no_witness"
+      },
+      "why": "can the Joined leaf be reached from the declared initial values"
+    },
+    {
+      "file": "forbid.fbmcq",
+      "kind": "forbid",
+      "expected": {
+        "status": "unsat",
+        "property_satisfied": true,
+        "outcome": "property_satisfied"
+      },
+      "why": "gap_created must never go negative"
+    },
+    {
+      "file": "invariant.fbmcq",
+      "kind": "invariant",
+      "expected": {
+        "status": "unsat",
+        "property_satisfied": true,
+        "outcome": "property_satisfied"
+      },
+      "why": "does gap_created stay within its relaxed initial range"
+    }
+  ]
+}

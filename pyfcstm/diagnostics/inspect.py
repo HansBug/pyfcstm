@@ -505,6 +505,7 @@ class VariableInfo:
     affects_guard_directly: bool
     affects_guard_indirectly: bool
     abstract_actions_in_scope: Tuple[str, ...]
+    role: str = "control"
     float_literal_assignments: Tuple[str, ...] = field(default_factory=tuple)
     span: Optional['Span'] = None
     float_literal_assignment_spans: Tuple[Optional['Span'], ...] = field(default_factory=tuple)
@@ -1615,6 +1616,7 @@ def _build_variable_infos(
             name=name,
             type=var_define.type,
             init_value=_expr_text(var_define.init) or '',
+            role=getattr(getattr(var_define, 'role', None), 'value', getattr(var_define, 'role', 'control')),
             read_in_states=read_states,
             written_in_states=written_states,
             read_in_guards=read_guards,

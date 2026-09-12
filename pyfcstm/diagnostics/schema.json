@@ -540,7 +540,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "name", "type", "init_value",
+        "name", "type", "init_value", "role",
         "read_in_states", "written_in_states",
         "read_in_guards", "written_in_effects",
         "affects_guard_directly", "affects_guard_indirectly",
@@ -550,6 +550,7 @@
         "name": { "type": "string" },
         "type": { "type": "string" },
         "init_value": { "type": "string" },
+        "role": { "enum": ["control", "input_dynamic", "input_static", "output"] },
         "read_in_states": { "type": "array", "items": { "type": "string" } },
         "written_in_states": { "type": "array", "items": { "type": "string" } },
         "read_in_guards": {

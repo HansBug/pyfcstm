@@ -345,3 +345,81 @@ change is a 1.49% regression with a worst query regression of 45.97%; tactic
 improves 5.17% in aggregate but regresses 417.94% on its worst query. T1 and
 T2 remain unmet. Results are specific to the recorded environment and corpus;
 no default option changes follow from this run.
+
+### Verified witness reuse measurements
+
+The [six-arm run](outputs/runs/9e68e7458e79/report.md) binds clean implementation
+`9e68e7458e79095ef5ee5267bdb65da41bb41761`. All 1,530 samples (306 combinations,
+five repetitions each) pass H0, including 390 successful SAT replays; there are
+zero failures or slicing fallbacks. The pinned `slicing-2db08911` arm measures
+the initial implementation in the same round. Slice partitions and DAG sizes
+are identical between the two slicing implementations.
+
+| T3 component | Default | Current slicing | Decision |
+|---|---:|---:|---|
+| Sliced queries: formula DAG p50 | 2,399 nodes | 2,253 nodes | 6.09% reduction: misses 20% |
+| Sliced queries: solve p50 | 17.383 ms | 18.160 ms | 4.47% regression: within 5% |
+| Unsliced queries: build + solve p50 | 338.066 ms | 361.302 ms | 6.87% regression: exceeds 5% |
+| Fallback samples | — | 0 | Pass |
+
+**T3 remains unmet and slicing remains off by default.** The unsliced timing
+gate also fails in this run; the original thresholds and corpus are unchanged.
+The following values are discrete p50s of query p50s, not averages of speedups.
+SAT/UNSAT groups use the default arm's solver status.
+
+| Group | Queries | Default API ms | Initial slicing API ms | Current slicing API ms | Current vs initial |
+|---|---:|---:|---:|---:|---:|
+| All | 51 | 431.160 | 433.596 | 430.809 | -0.64% |
+| SAT | 13 | 585.459 | 617.659 | 617.733 | +0.01% |
+| UNSAT | 38 | 388.716 | 390.939 | 411.468 | +5.25% |
+| Actually sliced SAT | 6 | 322.510 | 287.274 | 276.408 | -3.78% |
+| Actually sliced UNSAT | 26 | 462.590 | 435.004 | 438.697 | +0.85% |
+| Unsliced | 19 | 388.716 | 390.939 | 411.468 | +5.25% |
+
+`api_total_ms` includes file/model loading through final replay, but excludes
+pre-call imports, interpreter startup and report serialization. `pipeline_ms`
+is the per-sample build + solve + external replay sum. Across all queries its
+p50 is 374.327 / 380.671 / 372.229 ms for default / initial / current slicing;
+within actually sliced SAT queries it is 284.566 / 247.005 / 236.118 ms.
+The initial historical run's reconstructed pipeline p50 was 312.587 ms for
+default and 304.216 ms for slicing. Both are lower than this round, so the
+same-round pinned arm is the useful comparison for attributing the change;
+cross-run wall-time differences alone are not implementation effects.
+
+Actual sliced SAT queries reduce external decode/replay p50 from 16.997 to
+4.415 ms against the pinned initial implementation (74.03%). Their solve p50
+still rises from 10.605 ms without slicing to 23.662 ms with slicing: internal
+completion and validation remain mandatory. The largest solve regression
+against default is still `codex_traffic_emergency_priority/invariant`,
+10.331 to 24.089 ms (+133.18%); its full API call improves from 1,254.490 to
+1,155.686 ms. The largest full-API regression is an unsliced query,
+`claude_vtol_mission_supervision/reach`: 388.716 to 411.468 ms (+5.85%), or
++5.25% against initial slicing. The report lists all per-query timings.
+
+That unsliced query also determines the failing unsliced T3 median. A single
+[bounded diagnostic rerun](outputs/runs/9e68e7458e79-unsliced-control/report.md)
+retains all six arms and all three queries for this model: 90 samples, H0 pass.
+Its reach build + solve is 274.074 / 271.656 / 275.221 ms for default / initial /
+current slicing (+0.42% against default), and full API is 315.150 / 314.178 /
+317.960 ms (+0.89% against default). The larger regression did not reproduce.
+Build code is unchanged by witness reuse, and an unsliced solve returns before
+the reuse branch. This supports timing variability rather than a demonstrated
+stable reuse regression, but does not prove its environmental cause. This
+filtered run does not replace the full run or turn its failed T3 gate green.
+
+The [complete API/CLI profile](outputs/witness_profiles/9e68e7458e79/report.md)
+adds 352 records from clean before/after checkouts: 160 API calls, 160 real
+Click calls and 32 separate instrumented profiles. Sliced SAT paths drop from
+two decodes/three replays to one decode/two replays; ordinary public replay
+remains independent. Complete CLI changes on enabled SAT cases range from
+-3.97% to +1.31%, with small changes also on unchanged controls. Profiles
+partition build, Z3 checks, solve bookkeeping, internal completion/validation,
+external decode, external replay and other work without double-counting.
+They show why removed witness work is only a small part of complete-call cost.
+For the large VTOL reach query, current build still takes 26,869 ms versus
+126 ms solving. No universal speedup or statistical significance is claimed.
+
+Reuse retains one complete trace per sliced witness result and copies it on
+default-policy decoding. Explicit event policies and raw-model decoding still
+reconstruct traces. More precise slicing and construction optimization require
+separate changes; this run does not justify changing the default.

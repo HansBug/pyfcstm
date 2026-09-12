@@ -881,6 +881,7 @@ class DefAssignment(Statement):
     type: str
     expr: Expr
     doc: Optional[str] = None
+    role: str = "control"
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
@@ -890,7 +891,15 @@ class DefAssignment(Statement):
         :return: String representation of the definition assignment
         :rtype: str
         """
-        return _render_documentation_prefix(self.doc) + f"def {self.type} {self.name} = {self.expr};"
+        keyword = {
+            "control": "control",
+            "input_dynamic": "input dynamic",
+            "input_static": "input static",
+            "output": "output",
+            "param": "param",
+        }.get(self.role, "def")
+        initializer = "" if self.expr is None else f" = {self.expr}"
+        return _render_documentation_prefix(self.doc) + f"{keyword} {self.type} {self.name}{initializer};"
 
 
 @dataclass

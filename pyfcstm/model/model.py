@@ -3200,7 +3200,8 @@ def parse_dsl_node_to_state_machine(
             d_defines[def_item.name] = VarDefine(
                 name=def_item.name,
                 type=def_item.type,
-                init=parse_expr_node_to_expr(def_item.expr),
+                init=(parse_expr_node_to_expr(def_item.expr) if def_item.expr is not None else None),
+                role=VariableRole(getattr(def_item, "role", "control")),
                 doc=getattr(def_item, "doc", None),
                 _span=_node_span(def_item),
             )

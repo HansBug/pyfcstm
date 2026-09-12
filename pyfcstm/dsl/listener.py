@@ -520,7 +520,7 @@ class GrammarParseListener(GrammarListener):
         super().exitInitial_assignment(ctx)
         self.nodes[ctx] = InitialAssignment(
             name=str(ctx.ID()),
-            expr=self.nodes[ctx.init_expression()],
+            expr=(self.nodes[ctx.init_expression()] if ctx.init_expression() is not None else None),
         )
 
     def exitConstant_definition(
@@ -535,7 +535,7 @@ class GrammarParseListener(GrammarListener):
         super().exitConstant_definition(ctx)
         self.nodes[ctx] = ConstantDefinition(
             name=str(ctx.ID()),
-            expr=self.nodes[ctx.init_expression()],
+            expr=(self.nodes[ctx.init_expression()] if ctx.init_expression() is not None else None),
         )
 
     def exitOperational_assignment(
@@ -665,11 +665,21 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.Def_assignmentContext
         """
         super().exitDef_assignment(ctx)
+        role = "control"
+        if ctx.CONTROL():
+            role = "control"
+        elif ctx.OUTPUT():
+            role = "output"
+        elif ctx.PARAM():
+            role = "input_static"
+        elif ctx.INPUT():
+            role = "input_dynamic" if ctx.DYNAMIC() else "input_static"
         node = DefAssignment(
             name=str(ctx.ID()),
             type=ctx.deftype.text,
-            expr=self.nodes[ctx.init_expression()],
+            expr=(self.nodes[ctx.init_expression()] if ctx.init_expression() is not None else None),
             doc=self._documentation(ctx),
+            role=role,
         )
         node._span = _owner_span(ctx)
         self.nodes[ctx] = node

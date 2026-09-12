@@ -892,7 +892,7 @@ class DefAssignment(Statement):
         :rtype: str
         """
         keyword = {
-            "control": "control",
+            "control": "def",
             "input_dynamic": "input dynamic",
             "input_static": "input static",
             "output": "output",

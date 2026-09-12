@@ -1404,7 +1404,7 @@ UNSAT。``origin == "inferred"`` 只能表示可信的更强结果已经蕴含�
 每次解码返回独立副本；显式指定事件策略时重新解码。CLI 仍对输出见证执行普通的
 运行时重放。复用同时覆盖主见证与 response 不完整后缀，不改变 JSON 契约。
 
-`五臂基准报告 <https://github.com/HansBug/pyfcstm/blob/dev/bmc-cone-slicing/benchmarks/bmc/solving/outputs/runs/2db089114bb5/report.md>`_ 绑定干净提交 ``2db08911``，在 Linux x86_64、
+首轮 `五臂基准报告 <https://github.com/HansBug/pyfcstm/blob/7f8c88d3/benchmarks/bmc/solving/outputs/runs/2db089114bb5/report.md>`_ 绑定干净提交 ``2db08911``，在 Linux x86_64、
 CPython 3.10.1、Z3 4.15.4 上完成 1,275 个样本。51 条查询中 32 条实际切片、
 19 条未切片；H0 全部通过，325 个 SAT 见证重放成功，零失败、零切片回退。
 
@@ -1438,3 +1438,55 @@ p50，再按实际切片分组汇总。
 对外解码重放 p50 从 11.650 增至 17.184 ms。选择开关时应测量自己的模型与完整
 调用路径。关闭时结果 JSON 不增加切片字段；选项对象
 ``BmcOptions.to_canonical()`` 新增 ``cone_slicing=False`` 键。
+
+后续 `六臂正式 run <https://github.com/HansBug/pyfcstm/blob/4d9bd08f/benchmarks/bmc/solving/outputs/runs/9e68e7458e79/report.md>`_
+绑定干净实现提交 ``9e68e745``，并把首轮切片实现纳入同轮对照。
+1,530 个样本 H0 全通过，390 个 SAT 见证重放成功，零失败、零回退。
+见证复用没有改变 DAG 大小。T3 仍未达标：可切子集 DAG p50 仅缩减 6.09%；
+求解 p50 增长 4.47%，在 5% 限制内；未切子集构建＋求解 p50 增长 6.87%，
+超过 5% 门槛。切片仍默认关闭。
+
+.. list-table:: 从模型加载到最终回放的 API 时间，按查询 p50 汇总
+   :header-rows: 1
+
+   * - 分组
+     - default
+     - 首轮切片
+     - 见证复用
+   * - 全部 51 条查询
+     - 431.160 ms
+     - 433.596 ms
+     - 430.809 ms
+   * - 13 条 SAT 查询
+     - 585.459 ms
+     - 617.659 ms
+     - 617.733 ms
+   * - 38 条 UNSAT 查询
+     - 388.716 ms
+     - 390.939 ms
+     - 411.468 ms
+   * - 6 条实际切片的 SAT 查询
+     - 322.510 ms
+     - 287.274 ms
+     - 276.408 ms
+
+这里的 API 时间不含调用前导入、解释器启动及 JSON 报告序列化。实际切片的 SAT
+查询中，对外解码回放 p50 相对首轮实现从 16.997 降到 4.415 ms，但完整 API p50
+仅改善 3.78%，全部查询汇总仅改善 0.64%。内部回填验证与独立输出回放仍保留。
+相对 default 的最差求解退化仍是 traffic invariant：10.331 → 24.089 ms，增长
+133.18%，但其完整 API 时间由 1,254.490 降至 1,155.686 ms。大模型仍由构造成本
+主导，例如 VTOL reach 构造约 26,869 ms，求解约 126 ms。
+
+完整 API 最大退化发生在未切片查询 ``claude_vtol_mission_supervision/reach``：
+相对 default 增长 5.85%，相对首轮切片增长 5.25%；它也决定了未切子集计时中位数。
+一次 `90 样本诊断复测 <https://github.com/HansBug/pyfcstm/blob/4d9bd08f/benchmarks/bmc/solving/outputs/runs/9e68e7458e79-unsliced-control/report.md>`_
+未复现该幅度：相对 default，构建＋求解增长 0.42%，完整 API 增长 0.89%。
+此路径不会进入见证复用，构造代码也未因复用而改变。这支持计时波动的解释，但没有
+证明具体环境原因，更不能覆盖正式 run 的门槛失败结果。
+
+独立的 `完整 API／CLI profiling <https://github.com/HansBug/pyfcstm/blob/4d9bd08f/benchmarks/bmc/solving/outputs/witness_profiles/9e68e7458e79/report.md>`_
+计入报告序列化，并将带插桩的阶段诊断与无插桩计时分开。实际切片 SAT 调用从两次
+解码、三次回放降到一次解码、两次回放。本组开启切片的 SAT CLI 完整调用变化介于
+改善 3.97% 与退化 1.31% 之间，未改路径的对照也有波动。复用为每个结果保留一份
+完整轨迹，并向调用方返回副本。这些数据证实重复工作减少，不代表普遍提速；
+是否开启应测量自己的模型及完整调用路径。

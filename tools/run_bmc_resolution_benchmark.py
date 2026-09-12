@@ -73,10 +73,13 @@ def rebuild(output):
         }:
             raise ValueError("Formula DAG sizes changed")
         comparisons.append(comparison)
-    vtol = "claude_vtol_mission_supervision"
+    vtol = "codex_vtol_mission_supervision"
     reach = next(
-        row for row in comparisons if row["case"] == vtol and row["query"] == "reach"
+        (row for row in comparisons if row["case"] == vtol and row["query"] == "reach"),
+        None,
     )
+    if reach is None and not manifest.get("followup_of"):
+        raise ValueError("The full comparison must contain the registered VTOL query")
     regression = [
         row
         for row in comparisons
@@ -98,13 +101,24 @@ def rebuild(output):
     ]
     summary = {
         "comparisons": comparisons,
-        "vtol_reach_pass": reach["api_total_ms"]["change_percent"] <= -50,
+        "vtol_reach_pass": None
+        if reach is None
+        else reach["api_total_ms"]["change_percent"] <= -50,
         "api_regressions": regression,
         "memory_regressions": memory,
         "borderline_queries": borderline,
         "sat_replays": sum(row["status"] == "sat" for row in rows if not row["warmup"]),
         "measured_samples": sum(not row["warmup"] for row in rows),
         "correctness_pass": True,
+        "analysis_provenance": {
+            "analyzer_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+            "manifest_sha256": hashlib.sha256(
+                (output / "manifest.json").read_bytes()
+            ).hexdigest(),
+            "raw_sha256": hashlib.sha256(
+                (output / "raw.jsonl").read_bytes()
+            ).hexdigest(),
+        },
     }
     (output / "summary.json").write_text(_dump(summary), encoding="utf-8")
     lines = [
@@ -140,7 +154,7 @@ def rebuild(output):
     lines.extend(
         [
             "",
-            "VTOL reach target: %s. Non-VTOL API failures: %d. RSS failures: %d. Borderline queries requiring the registered follow-up: %d."
+            "VTOL reach target: %s. Other-query API failures: %d. RSS failures: %d. Borderline queries requiring the registered follow-up: %d."
             % (
                 summary["vtol_reach_pass"],
                 len(regression),
@@ -152,6 +166,14 @@ def rebuild(output):
             "",
         ]
     )
+    if (output / "analysis-note.md").is_file():
+        lines.extend(
+            [
+                "",
+                "See [analysis identifier correction](analysis-note.md) for the preserved initial analysis and unchanged sampling record.",
+                "",
+            ]
+        )
     (output / "report.md").write_text("\n".join(lines), encoding="utf-8")
     return summary
 
@@ -165,7 +187,7 @@ def self_check():
         }
         expected = {}
         rows, specs = [], []
-        for case in ("claude_vtol_mission_supervision", "small"):
+        for case in ("codex_vtol_mission_supervision", "small"):
             expected[case + "/reach"] = {
                 "status": "sat",
                 "outcome": "witness",
@@ -245,6 +267,22 @@ def self_check():
             len(summary["api_regressions"]) == len(summary["memory_regressions"]) == 1
         )
         assert summary["borderline_queries"] == [{"case": "small", "query": "reach"}]
+        subset = [row for row in rows if row["case"] == "small"]
+        subset_specs = [row for row in specs if row["case"] == "small"]
+        (output / "manifest.json").write_text(
+            _dump(
+                {
+                    "arms": arms,
+                    "samples": subset_specs,
+                    "expected": expected,
+                    "followup_of": {"path": "first-round"},
+                }
+            )
+        )
+        write(subset)
+        summary = rebuild(output)
+        assert summary["vtol_reach_pass"] is None
+        assert len(summary["api_regressions"]) == 1
     print(
         "Resolution benchmark rejects invalid records and preserves threshold failures."
     )
@@ -257,6 +295,7 @@ def main():
     parser.add_argument("--output", type=Path)
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--rebuild", action="store_true")
+    parser.add_argument("--followup-from", type=Path)
     args = parser.parse_args()
     if args.check:
         self_check()
@@ -272,6 +311,32 @@ def main():
         name: revision(path)
         for name, path in (("baseline", args.baseline), ("candidate", args.candidate))
     }
+    selected, followup = None, None
+    repetitions = 5
+    if args.followup_from is not None:
+        parent = args.followup_from
+        parent_manifest = json.loads((parent / "manifest.json").read_text())
+        if parent_manifest.get("followup_of"):
+            parser.error("The protocol permits one follow-up round only")
+        for arm in arms:
+            if arms[arm]["commit"] != parent_manifest["arms"][arm]["commit"]:
+                parser.error("Follow-up revisions must match the first round")
+        parent_summary = rebuild(parent)
+        selected = {
+            (row["case"], row["query"]) for row in parent_summary["borderline_queries"]
+        }
+        if not selected:
+            parser.error("No borderline queries require a follow-up")
+        repetitions = 10
+        followup = {
+            "path": str(parent.resolve()),
+            "manifest_sha256": hashlib.sha256(
+                (parent / "manifest.json").read_bytes()
+            ).hexdigest(),
+            "raw_sha256": hashlib.sha256(
+                (parent / "raw.jsonl").read_bytes()
+            ).hexdigest(),
+        }
     corpus = args.baseline.resolve() / "benchmarks/bmc/solving/cases"
     specs, expected, inputs = [], {}, {}
     for case in sorted(corpus.iterdir()):
@@ -287,8 +352,10 @@ def main():
                     raise ValueError("Revision corpus mismatch: %s" % relative)
                 inputs[str(relative)] = digest
         for query in metadata["queries"]:
+            if selected is not None and (case.name, query["kind"]) not in selected:
+                continue
             expected[case.name + "/" + query["kind"]] = query["expected"]
-            for repetition in range(6):
+            for repetition in range(repetitions + 1):
                 order = (
                     ("baseline", "candidate")
                     if repetition % 2 == 0
@@ -317,11 +384,12 @@ def main():
         ).hexdigest(),
         "thresholds": {
             "vtol_reach_improvement": 0.50,
-            "non_vtol_api_regression": 0.05,
+            "other_query_api_regression": 0.05,
             "rss_regression": 0.10,
         },
         "warmups": 1,
-        "repetitions": 5,
+        "repetitions": repetitions,
+        "followup_of": followup,
     }
     args.output.mkdir(parents=True, exist_ok=False)
     (args.output / "manifest.json").write_text(_dump(manifest), encoding="utf-8")

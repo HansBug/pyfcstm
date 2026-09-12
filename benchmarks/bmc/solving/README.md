@@ -457,9 +457,9 @@ unchanged. Cross-call, canonical-key and SAT-result caches are out of scope.
 
 Acceptance was registered before implementation or measurement:
 
-- VTOL `reach` complete API p50 must improve by at least 50%; also report its
+- `codex_vtol_mission_supervision/reach` complete API p50 must improve by at least 50%; also report its
   other two queries.
-- Each of the other 48 queries must regress by no more than 5% in API p50.
+- Each of the other 48 queries (including the distinct Claude VTOL model) must regress by no more than 5% in API p50.
 - Each query's peak RSS median must grow by no more than 10%; preserve individual
   high-water marks, including outliers.
 - Correctness, ordinary SAT replay, deterministic goldens, full regression and
@@ -501,3 +501,16 @@ arrive. Rebuild rejects incomplete runs, mismatched corpus expectations, failed
 replays, incorrect imports and differing formula DAG sizes. It preserves all
 per-query failures; its self-check exercises those rejection paths and numeric
 thresholds. This comparison adds no production options or diagnostic patches.
+
+If the first report identifies borderline queries, run the single registered
+follow-up round. It selects every borderline query from the first report,
+requires the same two revisions, and uses one warmup plus ten measured samples
+per arm. It cannot follow up another follow-up or change the first-round verdict:
+
+```bash
+python tools/run_bmc_resolution_benchmark.py \
+  --baseline /tmp/bmc-resolution-baseline \
+  --candidate /tmp/bmc-resolution-candidate \
+  --followup-from benchmarks/bmc/solving/outputs/resolution_runs/<run-id> \
+  --output benchmarks/bmc/solving/outputs/resolution_runs/<run-id>-followup
+```

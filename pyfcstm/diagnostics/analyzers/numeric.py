@@ -134,6 +134,8 @@ def _diagnostics_for_expr(
     context: _Context,
     var_types: Dict[str, str],
 ) -> List[ModelDiagnostic]:
+    if context.expr is None:
+        return []
     diagnostics: List[ModelDiagnostic] = []
     signed_literal_children = _signed_literal_child_ids(context.expr)
     for expr in _walk_expressions(context.expr):

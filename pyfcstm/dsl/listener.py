@@ -673,7 +673,7 @@ class GrammarParseListener(GrammarListener):
         elif ctx.PARAM():
             role = "input_static"
         elif ctx.INPUT():
-            role = "input_dynamic" if any(item.text == "dynamic" for item in ctx.ID()) else "input_static"
+            role = "input_dynamic" if any(item.getText() == "dynamic" for item in ctx.ID()) else "input_static"
         ids = ctx.ID()
         if not isinstance(ids, list):
             ids = [ids]

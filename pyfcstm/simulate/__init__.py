@@ -25,6 +25,10 @@ and variables roll back to the previous stable state. Each successful
 :class:`SimulationRuntime` cycle returns :class:`CycleResult`, an immutable value
 object that preserves the legacy ``None`` value while exposing canonical input,
 consumed, and unconsumed event paths.
+Passing ``trace=True`` to ``cycle`` also collects immutable
+:class:`ExecutionTraceEntry` observations of committed state boundaries,
+transitions, and action dispatches. Each entry supports ``to_dict()`` for
+serialization; retained history keeps its existing summary format.
 
 Abstract actions can be implemented by registering Python handlers that receive
 read-only execution context. The runtime validates handler targets, rejects
@@ -45,6 +49,8 @@ Public API map:
    * - :class:`ReadOnlyExecutionContext`
      - Expose immutable state, variable, and action metadata to abstract
        handlers.
+   * - :class:`ExecutionTraceEntry`
+     - Inspect and serialize a committed execution observation.
    * - :func:`abstract_handler`
      - Mark object methods for bulk abstract-handler registration.
    * - Runtime exceptions
@@ -104,6 +110,7 @@ from .context import ReadOnlyExecutionContext
 from .decorators import abstract_handler
 from .runtime import (
     CycleResult,
+    ExecutionTraceEntry,
     SimulationRuntime,
     SimulationRuntimeActionReferenceError,
     SimulationRuntimeDfsError,
@@ -115,6 +122,7 @@ from .utils import is_state_resolve_event_path
 
 __all__ = [
     "CycleResult",
+    "ExecutionTraceEntry",
     "ReadOnlyExecutionContext",
     "SimulationRuntime",
     "SimulationRuntimeActionReferenceError",

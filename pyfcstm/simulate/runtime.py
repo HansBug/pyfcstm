@@ -107,8 +107,8 @@ import math
 import types
 import warnings
 from collections import Counter
-from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
 
 try:
     from typing import Literal
@@ -118,7 +118,7 @@ except ImportError:
 from ..utils.logging import get_logger
 from ..utils.validate import ModelLookupError, ModelValueError
 
-from ..dsl import EXIT_STATE
+from ..dsl import INIT_STATE, EXIT_STATE
 from ..model import (
     Event,
     IfBlock,
@@ -328,6 +328,126 @@ class SimulationRuntimeEventError(ValueError):
 
 
 @dataclass(frozen=True)
+class ExecutionTraceEntry:
+    """
+    Immutable observation from a committed simulation cycle.
+
+    Entries appear in execution order. State entry is recorded before entry
+    actions, state exit after exit actions, transitions after their effects,
+    and actions after their operation block or abstract dispatch completes.
+    Abstract dispatch entries do not imply that a handler was registered or
+    succeeded; handler diagnostics retain that information.
+
+    :param kind: ``state_enter``, ``state_exit``, ``transition``, or ``action``.
+    :type kind: Literal["state_enter", "state_exit", "transition", "action"]
+    :param state_path: State being entered/exited, transition source (owning
+        composite for initial transitions), or action execution location.
+    :type state_path: Tuple[str, ...]
+    :param vars: Persistent variable snapshot at the observation boundary.
+    :type vars: Mapping[str, Union[int, float]]
+    :param transition_label: BMC-compatible transition label, or ``None``.
+        Indices identify the source state's initial/outgoing transition list.
+    :type transition_label: Optional[str]
+    :param action_path: Action callsite as ``state::collection::index``, or
+        ``None``. Collections are ``on_enters``, ``on_durings``, ``on_exits``,
+        and ``on_during_aspects``; indices are zero-based. These addresses
+        distinguish anonymous actions and refer to the current model.
+    :type action_path: Optional[str]
+    :param resolved_action_path: Final action address after following ``ref``
+        chains, or ``None`` for non-action entries.
+    :type resolved_action_path: Optional[str]
+
+    Example::
+
+        >>> entry = ExecutionTraceEntry('state_enter', ('Root', 'Idle'), {'x': 0})
+        >>> entry.to_dict()['state_path']
+        ['Root', 'Idle']
+        >>> entry.vars['x']
+        0
+    """
+
+    #: Operation boundary: state_enter, state_exit, transition, or action.
+    kind: Literal["state_enter", "state_exit", "transition", "action"]
+    #: Model state path where the observation occurred.
+    state_path: Tuple[str, ...]
+    #: Detached, read-only persistent-variable snapshot.
+    vars: Mapping[str, Union[int, float]]
+    #: Source-local BMC edge address for transition entries, otherwise None.
+    transition_label: Optional[str] = None
+    #: Model-local action callsite address, otherwise None.
+    action_path: Optional[str] = None
+    #: Final action address after following references, otherwise None.
+    resolved_action_path: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        """Detach paths and variable values from mutable execution state."""
+        object.__setattr__(self, "state_path", tuple(self.state_path))
+        object.__setattr__(self, "vars", types.MappingProxyType(dict(self.vars)))
+
+    def __str__(self) -> str:
+        """
+        Format the observation for human-readable logs or terminal output.
+
+        Show the operation, execution location, applicable model addresses,
+        and variables sorted by name. Large integers use the runtime's compact
+        diagnostic notation; :meth:`to_dict` retains the complete values.
+        The dataclass-generated ``repr`` remains available for debugging.
+
+        :return: A single-line summary of this execution observation.
+        :rtype: str
+
+        Example::
+
+            >>> entry = ExecutionTraceEntry('state_enter', ('Root', 'Idle'), {'x': 0})
+            >>> print(entry)
+            State enter Root.Idle | vars={x=0}
+        """
+        parts = [
+            "%s %s"
+            % (self.kind.replace("_", " ").capitalize(), ".".join(self.state_path))
+        ]
+        if self.transition_label is not None:
+            parts.append("transition=%s" % self.transition_label)
+        if self.action_path is not None:
+            parts.append("action=%s" % self.action_path)
+        if (
+            self.resolved_action_path is not None
+            and self.resolved_action_path != self.action_path
+        ):
+            parts.append("ref=%s" % self.resolved_action_path)
+        parts.append(
+            "vars={%s}"
+            % ", ".join(
+                "%s=%s" % (name, _safe_runtime_repr(value))
+                for name, value in sorted(self.vars.items())
+            )
+        )
+        return " | ".join(parts)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Return detached data suitable for JSON or YAML serialization.
+
+        :return: Entry fields with paths as lists and variables as a dictionary.
+        :rtype: Dict[str, Any]
+
+        Example::
+
+            >>> entry = ExecutionTraceEntry('state_exit', ('Root', 'Idle'), {})
+            >>> entry.to_dict()['kind']
+            'state_exit'
+        """
+        return {
+            "kind": self.kind,
+            "state_path": list(self.state_path),
+            "vars": dict(self.vars),
+            "transition_label": self.transition_label,
+            "action_path": self.action_path,
+            "resolved_action_path": self.resolved_action_path,
+        }
+
+
+@dataclass(frozen=True)
 class CycleResult:
     """
     Immutable result returned by one :meth:`SimulationRuntime.cycle` call.
@@ -351,6 +471,10 @@ class CycleResult:
     :type unconsumed_events: Tuple[str, ...]
     :param delta: Whether this cycle was a successful no-progress Delta step.
     :type delta: bool
+    :param trace: Committed execution observations when ``cycle(trace=True)``
+        was requested. Empty when disabled, on Delta, or on an ignored call.
+        Failed cycles raise without returning a partial trace.
+    :type trace: Tuple[ExecutionTraceEntry, ...]
 
     Example::
 
@@ -372,6 +496,8 @@ class CycleResult:
     consumed_events: Tuple[str, ...] = ()
     unconsumed_events: Tuple[str, ...] = ()
     delta: bool = False
+    #: Ordered committed observations from a call with trace=True.
+    trace: Tuple[ExecutionTraceEntry, ...] = field(default=(), repr=False)
 
 
 class SimulationRuntimeExpressionError(ValueError, ArithmeticError):
@@ -722,6 +848,7 @@ class SimulationRuntime:
             history_size  # Maximum history entries (None = unlimited)
         )
         self.history: List[Dict] = []  # Execution history
+        self._cycle_trace: Optional[List[ExecutionTraceEntry]] = None
 
         # Initialize logger
         self.logger = get_logger("pyfcstm.simulate")
@@ -904,7 +1031,7 @@ class SimulationRuntime:
             ... )
             >>> runtime = SimulationRuntime(sm)
             >>> # Assuming we have a state from the state machine
-            
+
             >>> runtime._state_belongs_to_machine(sm.root_state.substates['Active'])
             True
         """
@@ -1449,6 +1576,93 @@ class SimulationRuntime:
                 unconsumed.append(event_name)
         return tuple(unconsumed)
 
+    def _record_state_trace(
+        self,
+        kind: Literal["state_enter", "state_exit"],
+        state: State,
+        vars_: Dict[str, Union[int, float]],
+        is_validation_mode: bool,
+    ) -> None:
+        """Record a state boundary only while collecting committed execution."""
+        if self._cycle_trace is not None and not is_validation_mode:
+            self._cycle_trace.append(ExecutionTraceEntry(kind, state.path, vars_))
+
+    def _record_transition_trace(
+        self,
+        state: State,
+        transition: Transition,
+        vars_: Dict[str, Union[int, float]],
+        is_validation_mode: bool,
+    ) -> None:
+        """Record a completed effect using the BMC source-local edge address."""
+        if self._cycle_trace is None or is_validation_mode:
+            return
+        transitions = (
+            state.init_transitions
+            if transition.from_state == INIT_STATE
+            else state.transitions_from
+        )
+        # Root exits are synthesized anew by ``transitions_from`` on each read.
+        index = (
+            0
+            if state.is_root_state and transition.from_state != INIT_STATE
+            else next(i for i, item in enumerate(transitions) if item is transition)
+        )
+        target = "[*]" if transition.to_state == EXIT_STATE else transition.to_state
+        label = "%s::%d::%s->%s" % (
+            ".".join(state.path),
+            index,
+            transition.from_state,
+            target,
+        )
+        self._cycle_trace.append(
+            ExecutionTraceEntry(
+                "transition",
+                state.path,
+                vars_,
+                transition_label=label,
+            )
+        )
+
+    @staticmethod
+    def _trace_action_path(action: Union[OnStage, OnAspect]) -> str:
+        """Address a model action without conflating anonymous callsites."""
+        collection = (
+            "on_during_aspects"
+            if action.is_aspect
+            else {
+                "enter": "on_enters",
+                "during": "on_durings",
+                "exit": "on_exits",
+            }[action.stage]
+        )
+        index = next(
+            i
+            for i, item in enumerate(getattr(action.parent, collection))
+            if item is action
+        )
+        return "%s::%s::%d" % (".".join(action.parent.path), collection, index)
+
+    def _record_action_trace(
+        self,
+        callsite: Union[OnStage, OnAspect],
+        resolved: Union[OnStage, OnAspect],
+        state_path: Tuple[str, ...],
+        vars_: Dict[str, Union[int, float]],
+        is_validation_mode: bool,
+    ) -> None:
+        """Record a completed action dispatch with callsite and ref target."""
+        if self._cycle_trace is not None and not is_validation_mode:
+            self._cycle_trace.append(
+                ExecutionTraceEntry(
+                    "action",
+                    state_path,
+                    vars_,
+                    action_path=self._trace_action_path(callsite),
+                    resolved_action_path=self._trace_action_path(resolved),
+                )
+            )
+
     def _execute_transition_effect(
         self,
         transition: Transition,
@@ -1879,6 +2093,7 @@ class SimulationRuntime:
         """
         # Preserve the caller state before resolving ``ref`` chains.
         # Model construction assigns a parent state for lifecycle actions.
+        callsite = func
         calling_state_path = func.parent.path
         if execution_state_path is None:
             execution_state_path = calling_state_path
@@ -1937,6 +2152,9 @@ class SimulationRuntime:
                 self.logger.info(
                     f"Execute anonymous abstract function {func_path} (no handlers supported)"
                 )
+                self._record_action_trace(
+                    callsite, func, execution_state_path, vars_, is_validation_mode
+                )
                 return
 
             # Named abstract - check for handlers
@@ -1959,6 +2177,9 @@ class SimulationRuntime:
             if not handlers:
                 self.logger.info(
                     f"Skip abstract function {func_path} (no handlers registered)"
+                )
+                self._record_action_trace(
+                    callsite, func, execution_state_path, vars_, is_validation_mode
                 )
                 return
 
@@ -2023,6 +2244,10 @@ class SimulationRuntime:
                 execute_message=f"Execute function {func.func_name}",
                 is_validation_mode=is_validation_mode,
             )
+
+        self._record_action_trace(
+            callsite, func, execution_state_path, vars_, is_validation_mode
+        )
 
     def _transition_matches_event(
         self, transition: Transition, d_events: Dict[str, Event]
@@ -2208,6 +2433,7 @@ class SimulationRuntime:
             exceeds runtime safety limits.
         """
         stack.append(_Frame(state, "active"))
+        self._record_state_trace("state_enter", state, vars_, is_validation_mode)
         if self._is_no_outgoing_pseudo(state):
             # This source has no control edge to execute. Keep the frame so the
             # public cycle can report a stuttering Delta, but do not run any
@@ -2348,6 +2574,7 @@ class SimulationRuntime:
             vars_,
             is_validation_mode=is_validation_mode,
         )
+        self._record_transition_trace(state, transition, vars_, is_validation_mode)
         target_state = state.substates[transition.to_state]
         if not target_state.is_pseudo:
             self._consume_plain_before_if_pending(
@@ -2504,6 +2731,7 @@ class SimulationRuntime:
                     vars_,
                     is_validation_mode=is_validation_mode,
                 )
+            self._record_state_trace("state_exit", parent, vars_, is_validation_mode)
             stack.clear()
             return True
 
@@ -2575,9 +2803,13 @@ class SimulationRuntime:
 
         for on_exit in current_state.on_exits:
             self._execute_func(on_exit, vars_, is_validation_mode=is_validation_mode)
+        self._record_state_trace("state_exit", current_state, vars_, is_validation_mode)
 
         self._execute_transition_effect(
             transition, vars_, is_validation_mode=is_validation_mode
+        )
+        self._record_transition_trace(
+            current_state, transition, vars_, is_validation_mode
         )
         stack.pop()
 
@@ -3201,7 +3433,7 @@ class SimulationRuntime:
 
         return True, True
 
-    def cycle(self, events: Any = None) -> CycleResult:
+    def cycle(self, events: Any = None, *, trace: bool = False) -> CycleResult:
         """
         Execute a full runtime cycle until reaching a stable boundary.
 
@@ -3273,8 +3505,13 @@ class SimulationRuntime:
             model-owned event object, a dot-separated path string, or an
             iterable containing event objects and path strings.
         :type events: Any, optional
+        :param trace: Collect immutable committed execution entries in
+            :attr:`CycleResult.trace`, defaults to ``False``. Collection is
+            local to this call and does not add fields to retained history.
+            Speculative paths and Delta attempts produce no trace entries.
+        :type trace: bool, optional
         :return: A cycle result containing legacy value and event-accounting
-            metadata for this cycle.
+            metadata, plus the optional execution trace for this cycle.
         :rtype: CycleResult
         :raises ValueError: If operation, effect, or lifecycle action writeback
             produces a value that cannot be normalized to the declared
@@ -3286,6 +3523,21 @@ class SimulationRuntime:
             DFS safety limits while searching for a stoppable state.
         :raises Exception: If an abstract handler raises while
             ``abstract_error_mode`` is ``'raise'``.
+
+        Example - Collect and serialize one cycle::
+
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+            >>> from pyfcstm.simulate import SimulationRuntime
+            >>> model = parse_dsl_node_to_state_machine(parse_with_grammar_entry(
+            ...     'state Root { state Idle; [*] -> Idle; }', 'state_machine_dsl'))
+            >>> result = SimulationRuntime(model).cycle(trace=True)
+            >>> [entry.kind for entry in result.trace]
+            ['state_enter', 'transition', 'state_enter']
+            >>> import json
+            >>> payload = json.dumps([entry.to_dict() for entry in result.trace])
+            >>> json.loads(payload)[-1]['state_path']
+            ['Root', 'Idle']
 
         Example - Basic cycle execution::
 
@@ -3466,6 +3718,7 @@ class SimulationRuntime:
             return CycleResult()
 
         event_objects, d_events = self._normalize_events(events)
+        trace_entries: Optional[List[ExecutionTraceEntry]] = [] if trace else None
 
         # Log cycle start
         event_names = [event.path_name for event in event_objects]
@@ -3516,7 +3769,9 @@ class SimulationRuntime:
             sim_ended = snapshot_ended
 
             metadata_committed = False
+            previous_trace = self._cycle_trace
             try:
+                self._cycle_trace = trace_entries
                 if not sim_initialized:
                     sim_ended = self._initialize_context(
                         sim_stack,
@@ -3535,6 +3790,7 @@ class SimulationRuntime:
                 )
                 metadata_committed = True
             finally:
+                self._cycle_trace = previous_trace
                 if not metadata_committed:
                     self._warned_anonymous_abstracts = snapshot_warned_anonymous
                     self._abstract_handler_errors = snapshot_handler_errors
@@ -3627,6 +3883,7 @@ class SimulationRuntime:
                 event_names, consumed_event_names
             ),
             delta=delta,
+            trace=tuple(trace_entries or ()) if not delta else (),
         )
         return result
 

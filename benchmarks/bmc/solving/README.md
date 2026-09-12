@@ -444,3 +444,23 @@ first intervention. Two multi-solution elevator records choose different legal
 witnesses, with identical formulas and successful ordinary replay. These
 microexperiments identify future construction work; they do not supersede the
 formal T1–T3 failures or demonstrate production readiness.
+
+
+## Accepted-condition resolution benchmark protocol
+
+### Scope and acceptance
+
+维护者已授权实施至 ready for review，暂不合并。基线 `df5416b18b00497dd2fe5820b092d814dba4343c`；分支 `dev/bmc-accepted-condition-reuse`，base 为伞分支。
+
+范围为 `pyfcstm/bmc/macro.py`、现有宏契约测试及必要基准证据；先记录失败测试，再实现。循环／缺失引用拒绝、规范化输出、变量集合、结构兜底、枚举预算必须保留；覆盖重复调用、模型隔离和并发构建。
+
+### Measurement protocol
+
+- 实际完整 API 调用（包括正常缓存释放）VTOL reach 同轮 p50 改善至少 50%；另外两条 VTOL 查询一并报告。
+- 其余 48 条查询逐例 API p50 退化不得超过 5%；全部查询逐例峰值 RSS 中位数增长不得超过 10%，记录所有单次峰值。
+- baseline 与 candidate 都从干净 detached worktree 运行；每查询每臂 1 次预热、5 次正式测量，新进程串行运行，轮次交替两臂先后；记录环境、提交、原始数据及 API／CLI 口径。CLI 另做代表性对照。
+- 第一轮为正式结果，不因失败而覆盖。若任一查询 API 或 RSS 距门槛不超过 2 个百分点，允许且必须对这些查询双方各补 10 次，完整公布并分别报告首轮和复测；不能选择有利轮次替代首轮。其他失败先诊断，变更后视为新候选完整重跑。
+- 性质结果、普通 SAT replay、确定性 golden 和完整回归／CI 为硬门。原 T1–T3 失败记录及阈值不改。
+- 不满足上述新门槛时如实记录，暂停进入 ready，交维护者决定，不扩展缓存范围或放宽校验。
+
+

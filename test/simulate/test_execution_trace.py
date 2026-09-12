@@ -654,6 +654,69 @@ def test_direct_trace_entry_freezes_caller_data_and_serializes_all_fields():
     }
 
 
+@pytest.mark.parametrize(
+    "kind, addresses, expected",
+    [
+        ("state_enter", {}, "State enter Root.A"),
+        ("state_exit", {}, "State exit Root.A"),
+        (
+            "transition",
+            {"transition_label": "Root.A::0::A->B"},
+            "Transition Root.A | transition=Root.A::0::A->B",
+        ),
+        (
+            "action",
+            {
+                "action_path": "Root.A::on_durings::0",
+                "resolved_action_path": "Root.A::on_durings::0",
+            },
+            "Action Root.A | action=Root.A::on_durings::0",
+        ),
+        (
+            "action",
+            {
+                "action_path": "Root::on_during_aspects::0",
+                "resolved_action_path": "Root.Library::on_enters::1",
+            },
+            "Action Root.A | action=Root::on_during_aspects::0"
+            " | ref=Root.Library::on_enters::1",
+        ),
+    ],
+    ids=["enter", "exit", "transition", "direct-action", "referenced-aspect"],
+)
+def test_trace_entry_string_shows_location_addresses_and_sorted_variables(
+    kind, addresses, expected
+):
+    entry = ExecutionTraceEntry(kind, ("Root", "A"), {"z": -0.25, "x": 2}, **addresses)
+    assert str(entry) == expected + " | vars={x=2, z=-0.25}"
+
+
+def test_trace_entry_string_handles_empty_variables_and_preserves_dataclass_repr():
+    entry = ExecutionTraceEntry("state_enter", ("Root", "Idle"), {})
+    assert str(entry) == "State enter Root.Idle | vars={}"
+    assert repr(entry) == (
+        "ExecutionTraceEntry(kind='state_enter', state_path=('Root', 'Idle'), "
+        "vars=mappingproxy({}), transition_label=None, action_path=None, "
+        "resolved_action_path=None)"
+    )
+
+
+def test_runtime_trace_string_compacts_large_integers_without_changing_values():
+    runtime = _runtime("""
+        def int x = 0;
+        state Root {
+            state Active { during { x = -(10 ** 5000); } }
+            [*] -> Active;
+        }
+    """)
+    entry = runtime.cycle(trace=True).trace[-1]
+    assert str(entry) == (
+        "Action Root.Active | action=Root.Active::on_durings::0"
+        " | vars={x=-int<5001 digits>}"
+    )
+    assert entry.vars["x"] == entry.to_dict()["vars"]["x"] == -(10**5000)
+
+
 @pytest.mark.parametrize("history_size", [0, 1, None])
 def test_trace_switch_is_per_call_and_independent_of_history_retention(history_size):
     runtime = _runtime(

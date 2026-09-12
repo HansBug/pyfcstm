@@ -271,7 +271,8 @@ allocates one persistent-variable snapshot per entry; it performs no file I/O.
    * - Field
      - Meaning and boundary
    * - ``kind``
-     - String: ``state_enter`` before entry actions; ``state_exit`` after exit actions;
+     - ``Literal["state_enter", "state_exit", "transition", "action"]``:
+       ``state_enter`` before entry actions; ``state_exit`` after exit actions;
        ``transition`` after effects; ``action`` after operations or abstract
        dispatch. Entries follow execution order, including pseudo-state chains.
    * - ``state_path``
@@ -298,6 +299,11 @@ allocates one persistent-variable snapshot per entry; it performs no file I/O.
    * - ``to_dict()``
      - Detached dictionary with paths as lists and variables as a dictionary,
        suitable for JSON/YAML serialization. Editing it cannot change the entry.
+   * - ``str(entry)`` / ``print(entry)``
+     - Single-line human-readable summary: operation, state, applicable transition/action
+       addresses, a different final reference target, and variables sorted by name.
+       Large integers use compact digit-count notation. ``repr(entry)`` keeps the
+       dataclass representation; use ``to_dict()`` for complete machine-readable values.
 
 This complete example separates the transition effect from the target's entry
 action. The transition snapshot sees ``x == 1``; the following action sees
@@ -327,6 +333,12 @@ action. The transition snapshot sees ``x == 1``; the following action sees
     'Root.Idle::0::Idle->Done'
     >>> runtime.history
     []
+    >>> for entry in result.trace:
+    ...     print(entry)
+    State exit Root.Idle | vars={x=0}
+    Transition Root.Idle | transition=Root.Idle::0::Idle->Done | vars={x=1}
+    State enter Root.Done | vars={x=1}
+    Action Root.Done | action=Root.Done::on_enters::0 | vars={x=2}
 
 An empty trace does not by itself mean Delta or termination. A stable state
 without during actions or enabled transitions performs no observable operations:

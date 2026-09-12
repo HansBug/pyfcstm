@@ -28,7 +28,7 @@ ExecutionTraceEntry
 -----------------------------------------------------
 
 .. autoclass:: ExecutionTraceEntry
-    :members: __post_init__,to_dict,kind,state_path,vars,transition_label,action_path,resolved_action_path
+    :members: __post_init__,__str__,to_dict,kind,state_path,vars,transition_label,action_path,resolved_action_path
 
 
 CycleResult

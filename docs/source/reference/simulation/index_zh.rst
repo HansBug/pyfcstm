@@ -231,7 +231,8 @@ Python 运行时应用程序接口
    * - 字段
      - 含义与边界
    * - ``kind``
-     - 字符串：``state_enter`` 在进入动作前记录；``state_exit`` 在退出动作后记录；
+     - ``Literal["state_enter", "state_exit", "transition", "action"]``：
+       ``state_enter`` 在进入动作前记录；``state_exit`` 在退出动作后记录；
        ``transition`` 在迁移效果执行后记录；``action`` 在操作块或抽象动作分派完成后记录。
        条目按执行顺序排列，包括伪状态链。
    * - ``state_path``
@@ -252,6 +253,10 @@ Python 运行时应用程序接口
    * - ``to_dict()``
      - 返回独立字典，其中路径为列表、变量为字典，可交给 JSON/YAML 序列化。
        修改导出字典不会改变原条目。
+   * - ``str(entry)`` / ``print(entry)``
+     - 返回便于阅读的单行摘要，包含操作、状态、适用的迁移或动作地址、与调用位置不同的最终引用目标，
+       以及按名称排序的变量。大整数以位数简写显示。``repr(entry)`` 保留数据类的表示形式；
+       程序需要完整数值时使用 ``to_dict()``。
 
 下面的完整示例区分迁移效果和目标进入动作：迁移记录看到 ``x == 1``，
 随后的动作记录看到 ``x == 2``：
@@ -280,6 +285,12 @@ Python 运行时应用程序接口
     'Root.Idle::0::Idle->Done'
     >>> runtime.history
     []
+    >>> for entry in result.trace:
+    ...     print(entry)
+    State exit Root.Idle | vars={x=0}
+    Transition Root.Idle | transition=Root.Idle::0::Idle->Done | vars={x=1}
+    State enter Root.Done | vars={x=1}
+    Action Root.Done | action=Root.Done::on_enters::0 | vars={x=2}
 
 空执行迹本身不代表 Delta 或终止。稳定状态没有周期动作，也没有可执行迁移时，
 这一拍不执行需要记录的操作：

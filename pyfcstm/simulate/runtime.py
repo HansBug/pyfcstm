@@ -339,7 +339,7 @@ class ExecutionTraceEntry:
     succeeded; handler diagnostics retain that information.
 
     :param kind: ``state_enter``, ``state_exit``, ``transition``, or ``action``.
-    :type kind: str
+    :type kind: Literal["state_enter", "state_exit", "transition", "action"]
     :param state_path: State being entered/exited, transition source (owning
         composite for initial transitions), or action execution location.
     :type state_path: Tuple[str, ...]
@@ -367,7 +367,7 @@ class ExecutionTraceEntry:
     """
 
     #: Operation boundary: state_enter, state_exit, transition, or action.
-    kind: str
+    kind: Literal["state_enter", "state_exit", "transition", "action"]
     #: Model state path where the observation occurred.
     state_path: Tuple[str, ...]
     #: Detached, read-only persistent-variable snapshot.
@@ -383,6 +383,46 @@ class ExecutionTraceEntry:
         """Detach paths and variable values from mutable execution state."""
         object.__setattr__(self, "state_path", tuple(self.state_path))
         object.__setattr__(self, "vars", types.MappingProxyType(dict(self.vars)))
+
+    def __str__(self) -> str:
+        """
+        Format the observation for human-readable logs or terminal output.
+
+        Show the operation, execution location, applicable model addresses,
+        and variables sorted by name. Large integers use the runtime's compact
+        diagnostic notation; :meth:`to_dict` retains the complete values.
+        The dataclass-generated ``repr`` remains available for debugging.
+
+        :return: A single-line summary of this execution observation.
+        :rtype: str
+
+        Example::
+
+            >>> entry = ExecutionTraceEntry('state_enter', ('Root', 'Idle'), {'x': 0})
+            >>> print(entry)
+            State enter Root.Idle | vars={x=0}
+        """
+        parts = [
+            "%s %s"
+            % (self.kind.replace("_", " ").capitalize(), ".".join(self.state_path))
+        ]
+        if self.transition_label is not None:
+            parts.append("transition=%s" % self.transition_label)
+        if self.action_path is not None:
+            parts.append("action=%s" % self.action_path)
+        if (
+            self.resolved_action_path is not None
+            and self.resolved_action_path != self.action_path
+        ):
+            parts.append("ref=%s" % self.resolved_action_path)
+        parts.append(
+            "vars={%s}"
+            % ", ".join(
+                "%s=%s" % (name, _safe_runtime_repr(value))
+                for name, value in sorted(self.vars.items())
+            )
+        )
+        return " | ".join(parts)
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -1538,7 +1578,7 @@ class SimulationRuntime:
 
     def _record_state_trace(
         self,
-        kind: str,
+        kind: Literal["state_enter", "state_exit"],
         state: State,
         vars_: Dict[str, Union[int, float]],
         is_validation_mode: bool,

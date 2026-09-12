@@ -46,7 +46,6 @@ DEF: 'def';
 CONTROL: 'control';
 INPUT: 'input';
 STATIC: 'static';
-DYNAMIC: 'dynamic';
 OUTPUT: 'output';
 PARAM: 'param';
 EVENT: 'event';

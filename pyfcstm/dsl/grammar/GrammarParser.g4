@@ -43,7 +43,7 @@ def_assignment
       | CONTROL deftype=(INT_TYPE | FLOAT_TYPE) ID ASSIGN init_expression
       | OUTPUT deftype=(INT_TYPE | FLOAT_TYPE) ID ASSIGN init_expression
       | PARAM deftype=(INT_TYPE | FLOAT_TYPE) ID ASSIGN init_expression
-      | INPUT (DYNAMIC | STATIC)? deftype=(INT_TYPE | FLOAT_TYPE) ID (ASSIGN init_expression)?) SEMI
+      | INPUT (ID | STATIC)? deftype=(INT_TYPE | FLOAT_TYPE) ID (ASSIGN init_expression)?) SEMI
     ;
 
 // State-machine structural rules.

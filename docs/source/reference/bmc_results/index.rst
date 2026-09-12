@@ -1601,6 +1601,12 @@ Consumer rules
 Measured slicing costs
 ----------------------
 
+For default-policy result decoding, sliced solves retain the complete witness
+already verified before returning. Each decode receives an independent copy;
+explicit event policies decode afresh. The CLI still performs ordinary runtime
+replay of the output witness. This reuse applies to both primary witnesses and
+response incomplete suffixes and does not change the JSON contract.
+
 The `five-arm benchmark report <https://github.com/HansBug/pyfcstm/blob/dev/bmc-cone-slicing/benchmarks/bmc/solving/outputs/runs/2db089114bb5/report.md>`_ binds clean commit ``2db08911``
 on Linux x86_64, CPython 3.10.1 and Z3 4.15.4. All 1,275 samples pass H0;
 325 SAT witnesses replay successfully, with zero failures or slicing fallback.

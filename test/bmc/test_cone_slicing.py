@@ -5,6 +5,7 @@ import z3
 
 from pyfcstm.bmc import (
     BmcBuildError,
+    BmcEventDecodePolicy,
     BmcOptions,
     compile_bmc_query,
     decode_bmc_result_trace,
@@ -165,6 +166,81 @@ def test_response_suffix_is_completed_before_exposing_result(profile):
     trace = decode_bmc_result_trace(result, source="incomplete_suffix")
     assert replay_bmc_witness(machine, trace).ok
     assert trace.frames[1].vars["output"] == 19
+
+
+@pytest.mark.parametrize(
+    "query,source",
+    [
+        ("check reach <= 4: ticks == 2;", "primary"),
+        (
+            "check response <= 1: trigger true -> within 2 false;",
+            "incomplete_suffix",
+        ),
+    ],
+)
+def test_result_decoding_reuses_validation_without_sharing_mutable_traces(
+    monkeypatch, query, source
+):
+    import pyfcstm.bmc.witness as witness_module
+
+    machine, formula = _compile(_OUTPUTS, query)
+    calls = []
+    original_replay = witness_module.replay_bmc_witness
+
+    def record_replay(*args, **kwargs):
+        calls.append(1)
+        return original_replay(*args, **kwargs)
+
+    # Observe real public solves without replacing their validation behavior.
+    monkeypatch.setattr(witness_module, "replay_bmc_witness", record_replay)
+    result = solve_bmc_property(formula)
+    assert len(calls) == 1
+    first = decode_bmc_result_trace(result, source=source)
+    expected = first.to_canonical()
+    first.frames[1].vars["output"] = -999
+    first.initial["vars"]["output"] = -999
+    first.solver["primary_status"] = "changed"
+    second = decode_bmc_result_trace(result, source=source)
+    assert second.to_canonical() == expected
+    assert len(calls) == 1
+    assert not replay_bmc_witness(machine, first).ok
+    assert replay_bmc_witness(machine, second).ok
+    # A valid dataclass variant must derive its own metadata, not reuse an old
+    # result's decoded witness. This is also how callers construct variants.
+    from dataclasses import replace
+
+    variant = replace(result, elapsed_ms=result.elapsed_ms + 1)
+    assert (
+        decode_bmc_result_trace(variant, source=source).solver["primary_elapsed_ms"]
+        == variant.elapsed_ms
+    )
+
+
+def test_result_reuse_preserves_explicit_event_policy_and_channel_validation():
+    machine, formula = _compile(
+        """
+        def int output = 0;
+        state Root {
+            state A { event go; during { output = output + 1; } }
+            state B;
+            [*] -> A;
+            A -> B :: go;
+        }
+        """,
+        'init state("Root.A"); assume event("Root.A.go", 0) == false; '
+        'check reach <= 1: active("Root.A");',
+    )
+    result = solve_bmc_property(formula)
+    assert decode_bmc_result_trace(result).steps[0].event_reads
+    quiet = decode_bmc_result_trace(
+        result, event_policy=BmcEventDecodePolicy(include_debug_reads=False)
+    )
+    assert quiet.steps[0].event_reads == ()
+    assert replay_bmc_witness(machine, quiet).ok
+    with pytest.raises(BmcBuildError, match="event_policy"):
+        decode_bmc_result_trace(result, event_policy="quiet")
+    with pytest.raises(BmcBuildError, match="response"):
+        decode_bmc_result_trace(result, source="incomplete_suffix")
 
 
 def test_failed_slice_replays_once_then_solves_full_model_with_same_budget(monkeypatch):

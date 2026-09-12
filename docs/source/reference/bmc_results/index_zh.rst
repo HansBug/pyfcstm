@@ -1400,6 +1400,10 @@ UNSAT。``origin == "inferred"`` 只能表示可信的更强结果已经蕴含�
 切片性能实测
 ------------
 
+采用默认事件策略解码结果时，切片求解会复用返回前已经验证的完整见证。
+每次解码返回独立副本；显式指定事件策略时重新解码。CLI 仍对输出见证执行普通的
+运行时重放。复用同时覆盖主见证与 response 不完整后缀，不改变 JSON 契约。
+
 `五臂基准报告 <https://github.com/HansBug/pyfcstm/blob/dev/bmc-cone-slicing/benchmarks/bmc/solving/outputs/runs/2db089114bb5/report.md>`_ 绑定干净提交 ``2db08911``，在 Linux x86_64、
 CPython 3.10.1、Z3 4.15.4 上完成 1,275 个样本。51 条查询中 32 条实际切片、
 19 条未切片；H0 全部通过，325 个 SAT 见证重放成功，零失败、零切片回退。

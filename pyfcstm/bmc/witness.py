@@ -45,6 +45,7 @@ import math
 import sys
 import time
 from collections.abc import Iterable as IterableABC
+from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from fractions import Fraction
 from functools import partial
@@ -3037,6 +3038,11 @@ class BmcSolveResult(_PrettyPrintableMixin):
     _attempted_slice: Optional[ConeSlice] = field(
         default=None, repr=False, compare=False
     )
+    # Only solve_bmc_property installs a verified default-policy trace. Valid
+    # dataclasses.replace variants discard it instead of carrying stale data.
+    _verified_trace: Optional[BmcWitnessTrace] = field(
+        default=None, init=False, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         if (
@@ -5157,11 +5163,12 @@ def solve_bmc_property(
         solver_profile,
         budget,
     )
+    verified_trace = None
     try:
         if result.model is not None:
-            decode_bmc_result_trace(result)
+            verified_trace = decode_bmc_result_trace(result)
         if result.incomplete_model is not None:
-            decode_bmc_result_trace(result, source="incomplete_suffix")
+            verified_trace = decode_bmc_result_trace(result, source="incomplete_suffix")
     except _ConeReplayFailure:
         # _ConeReplayFailure: replay of the sliced candidate disagrees with the
         # original runtime or hits a documented expression evaluation failure.
@@ -5188,7 +5195,10 @@ def solve_bmc_property(
             _attempted_slice=cone,
             diagnostics=(*result.diagnostics, "slicing_fallback"),
         )
-    return replace(result, total_elapsed_ms=(time.monotonic() - started) * 1000.0)
+        verified_trace = None
+    result = replace(result, total_elapsed_ms=(time.monotonic() - started) * 1000.0)
+    object.__setattr__(result, "_verified_trace", verified_trace)
+    return result
 
 
 def _solve_property(
@@ -6050,6 +6060,11 @@ def decode_bmc_result_trace(
 ) -> BmcWitnessTrace:
     """Decode one model channel from a structured BMC solve result.
 
+    With the default event policy, sliced solve results reuse their verified
+    complete trace. Each call returns an independent copy, so editing a trace
+    does not affect later decodes. Explicit event policies decode afresh;
+    :func:`replay_bmc_witness` always performs an independent runtime replay.
+
     :param result: Structured result returned by :func:`solve_bmc_property`.
     :type result: BmcSolveResult
     :param source: Model channel, either ``"primary"`` or
@@ -6079,6 +6094,14 @@ def decode_bmc_result_trace(
         raise BmcBuildError(
             "source must be primary or incomplete_suffix, got %r." % source
         )
+    verified = result._verified_trace
+    if (
+        event_policy is None
+        and verified is not None
+        and (source == "incomplete_suffix")
+        == (verified.model_role == "incomplete_suffix")
+    ):
+        return deepcopy(verified)
     if source == "primary":
         if result.status != "sat" or result.model is None:
             raise BmcBuildError(

@@ -69,6 +69,7 @@ an arm with empty sets calls the API exactly as an older revision expects.
 | `logic` | The current revision with `solver_profile=logic`; probes choose a fragment or fall back to default. |
 | `tactic` | The current revision with `solver_profile=tactic`; the simplify/propagate-values/solve-eqs/smt pipeline is used for main staged checks. |
 | `cone_slicing` | The current revision with `cone_slicing=True`; conservative write elimination, complete witness reconstruction and at most one full-model retry. |
+| `slicing-2db08911` | The initial slicing implementation at `2db089114bb5137aaf5a94d18af9949066f4bb6c`, with `cone_slicing=True`. Measures witness reuse against the same corpus, timer and environment instead of attributing cross-run noise to the change. |
 
 The change that adds an option appends its arm to `_ARMS` in the runner and
 to this table, and evaluates its own T row.  Without `baseline`, an overhead
@@ -245,6 +246,34 @@ in `replay_ms`, including response incomplete suffixes. A failed suffix
 replay fails H0, even when the primary result has no SAT witness. Complete
 witness values are checked against the ordinary simulator in semantic tests;
 queries with multiple legal solutions need not choose the same path.
+
+Complete-path measurements additionally publish `pipeline_ms`, the per-sample
+sum of build, solve and external decode/replay, and `api_total_ms`, wall time
+from loading model/query files through the last replay. The latter excludes
+interpreter startup, imports, JSON report serialization and benchmark diagnostics.
+Both retain all validation costs. Their SAT/UNSAT report groups use the default
+arm's status and include the worst per-query change. These optional fields do
+not change the frozen thresholds or historical run reconstruction.
+
+For a separate attribution experiment over the three positive slicing models
+and the traffic model with the largest observed solve regression, run:
+
+```bash
+python tools/profile_bmc_witness.py --checkout /path/to/clean/checkout --output /tmp/witness-profile.json
+```
+
+The supplied checkout is measured with the current interpreter and installed
+dependencies; every sample checks the imported package path and corpus verdict.
+The file API (`build_bmc_output`) and actual Click CLI each run five times in
+fresh interpreters, including JSON report serialization. `call_ms` excludes
+imports/startup; `process_ms` includes the profiling-tool transport overhead
+and must not be presented as bare CLI startup latency. A separate cProfile call
+attributes disjoint build, core solve, internal decode, external decode/replay
+and remaining report costs. Its inclusive function diagnostics overlap and must
+not be summed or compared with uninstrumented wall times. Compare the same
+tool, cases and environment against clean before/after revisions, with no local
+test or benchmark workers competing for CPU. Existing output files are never
+overwritten.
 
 ## What a run settles
 

@@ -96,6 +96,11 @@ _ARMS: Tuple[Dict[str, Any], ...] = (
         "revision": None,
         "options": {"compile": {"cone_slicing": True}, "solve": {}},
     },
+    {
+        "label": "slicing-2db08911",
+        "revision": "2db089114bb5137aaf5a94d18af9949066f4bb6c",
+        "options": {"compile": {"cone_slicing": True}, "solve": {}},
+    },
 )
 
 #: Numeric form of the pre-registered solver thresholds, copied into each run.
@@ -148,6 +153,18 @@ _MEASUREMENT_MAP: Tuple[Tuple[str, str, str], ...] = (
         "replay_ms",
         "decode_bmc_result_trace + replay_bmc_witness wall time in the child",
         "primary SAT witness and response incomplete suffix, when present",
+    ),
+    (
+        "api_total_ms",
+        "wall time from loading the model/query through final witness replay",
+        "fresh-process public API path; excludes interpreter startup, imports, "
+        "JSON serialization and benchmark diagnostics",
+    ),
+    (
+        "pipeline_ms",
+        "build_ms + solve_ms + (replay_ms or zero), per sample",
+        "includes internal verification and external replay without "
+        "double-counting; excludes model/query file loading",
     ),
     (
         "total_elapsed_ms",
@@ -709,6 +726,7 @@ solve_options = options.get("solve") or {}
 # new name, and an empty set calls the API exactly as an older revision expects.
 bmc_options = BmcOptions(**compile_options) if compile_options else None
 
+api_started = time.perf_counter()
 model = load_state_machine_from_file(model_path)
 query_text = open(query_path, encoding="utf-8").read()
 
@@ -736,6 +754,8 @@ if result.incomplete_model is not None:
     suffix = decode_bmc_result_trace(result, source="incomplete_suffix")
     suffix_replay_ok = replay_bmc_witness(model, suffix).ok
     replay_ms = (replay_ms or 0.0) + (time.perf_counter() - started) * 1000.0
+
+api_total_ms = (time.perf_counter() - api_started) * 1000.0
 
 # Peak memory is read here, before the size walk below allocates anything, so
 # it describes the production path alone.
@@ -776,6 +796,8 @@ if cone is not None:
 print(json.dumps({
     **metadata,
     "build_solve_ms": build_ms + solve_ms,
+    "pipeline_ms": build_ms + solve_ms + (replay_ms or 0.0),
+    "api_total_ms": api_total_ms,
     "suffix_replay_ok": suffix_replay_ok,
     "pyfcstm_file": pyfcstm.__file__,
     "build_ms": build_ms,
@@ -1060,10 +1082,11 @@ def _summarize(samples: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         for key in ("solver_profile", "solver_logic"):
             summary[key] = sorted({item.get(key) for item in good}, key=str)
     # Optional fields keep historical summaries byte-for-byte rebuildable.
-    if any("build_solve_ms" in item for item in good):
-        summary["build_solve_ms"] = _distribution(
-            [item["build_solve_ms"] for item in good if "build_solve_ms" in item]
-        )
+    for field in ("build_solve_ms", "pipeline_ms", "api_total_ms"):
+        if any(field in item for item in good):
+            summary[field] = _distribution(
+                [item[field] for item in good if field in item]
+            )
     for field in ("cone_slicing", "suffix_replay_ok"):
         if any(field in item for item in good):
             observed = sorted(
@@ -1690,11 +1713,18 @@ def _report(manifest: Dict[str, Any], summary: Dict[str, Any]) -> str:
         h0_rows,
     )
 
-    for title, field in (
+    timing_tables = [
         ("Solve time by arm (p50 ms)", "solve_ms"),
         ("Build time by arm (p50 ms)", "build_ms"),
         ("Replay time by arm (p50 ms, sat only)", "replay_ms"),
+    ]
+    for title, field in (
+        ("Complete API path by arm (p50 ms)", "api_total_ms"),
+        ("Build, solve and replay by arm (p50 ms)", "pipeline_ms"),
     ):
+        if any(field in arm for _, _, entry in rows for arm in entry["arms"].values()):
+            timing_tables.append((title, field))
+    for title, field in timing_tables:
         lines += ["", "## %s" % title, ""]
         lines += _table(
             ["Case", "Query"] + ["`%s`" % arm for arm in arms],
@@ -1707,6 +1737,65 @@ def _report(manifest: Dict[str, Any], summary: Dict[str, Any]) -> str:
                 for case, query, entry in rows
             ],
         )
+
+    if any(
+        "api_total_ms" in arm for _, _, entry in rows for arm in entry["arms"].values()
+    ):
+        lines += ["", "## Complete paths by reference SAT/UNSAT status", ""]
+        grouped = []
+        for status in ("sat", "unsat"):
+            for field in ("api_total_ms", "pipeline_ms"):
+                for arm in arms:
+                    pairs = [
+                        (
+                            case,
+                            query,
+                            entry["arms"][_REFERENCE_ARM][field]["p50"],
+                            entry["arms"][arm][field]["p50"],
+                        )
+                        for case, query, entry in rows
+                        if entry["arms"][_REFERENCE_ARM].get("status") == status
+                        and field in entry["arms"].get(arm, {})
+                        and field in entry["arms"][_REFERENCE_ARM]
+                    ]
+                    if not pairs:
+                        continue
+                    default = _percentile([item[2] for item in pairs], 0.5)
+                    candidate = _percentile([item[3] for item in pairs], 0.5)
+                    worst = max(pairs, key=lambda item: item[3] / item[2])
+                    grouped.append(
+                        [
+                            status,
+                            field,
+                            arm,
+                            str(len(pairs)),
+                            _cell(default),
+                            _cell(candidate),
+                            "%.2f%%" % ((candidate / default - 1) * 100),
+                            "%.2f%%" % ((worst[3] / worst[2] - 1) * 100),
+                            "%s/%s" % worst[:2],
+                        ]
+                    )
+        lines += _table(
+            [
+                "Reference status",
+                "Metric",
+                "Arm",
+                "Queries",
+                "Default p50 ms",
+                "Arm p50 ms",
+                "Change",
+                "Worst change",
+                "Worst query",
+            ],
+            grouped,
+        )
+        lines += [
+            "",
+            "Groups use the default arm's status. Medians aggregate per-query "
+            "p50s; worst change compares each query with its own default. Positive "
+            "change means slower. These diagnostic groups do not alter H0 or T3.",
+        ]
 
     lines += ["", "## Formula size (distinct Z3 AST nodes)", ""]
     lines += _table(
@@ -2317,6 +2406,10 @@ def _synthetic_run(root: Path, run_id: str) -> None:
                     }
                 if not record.get("error"):
                     record["build_solve_ms"] = record["build_ms"] + record["solve_ms"]
+                    record["pipeline_ms"] = record["build_solve_ms"] + (
+                        record["replay_ms"] or 0.0
+                    )
+                    record["api_total_ms"] = record["pipeline_ms"] + 2.0
                     if arm["label"] == "cone_slicing":
                         record["cone_slicing"] = {
                             "enabled": True,
@@ -2441,6 +2534,10 @@ def _self_test() -> List[str]:
         alpha = summary["alpha"]["queries"]["reach"]["arms"]
         if alpha[_REFERENCE_ARM]["solve_ms"]["p50"] != 4.0:
             problems.append("summary p50 of (3, 5, 4) is not 4.0")
+        if alpha[_REFERENCE_ARM]["pipeline_ms"]["p50"] != 17.0:
+            problems.append("pipeline p50 must aggregate per-sample phase sums")
+        if alpha[_REFERENCE_ARM]["api_total_ms"]["p50"] != 19.0:
+            problems.append("API p50 must include loading before the pipeline")
         if alpha[_BASELINE_LABEL]["h0"] != {
             "identical_to_reference": True,
             "matches_expected": True,

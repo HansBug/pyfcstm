@@ -3532,3 +3532,38 @@ def test_cone_slicing_public_report_rejects_non_boolean(bmc_files, value):
         build_bmc_output(
             str(model), str(query("check reach <= 1: true;")), cone_slicing=value
         )
+
+
+@pytest.mark.parametrize(
+    "query_text,expected_exit",
+    [
+        ("check reach <= 1: true;", 0),
+        ("check response <= 1: trigger true -> within 2 false;", 3),
+    ],
+)
+def test_cone_cli_reuses_completed_trace_and_still_replays_output(
+    bmc_files, monkeypatch, query_text, expected_exit
+):
+    import pyfcstm.bmc as bmc_api
+    import pyfcstm.bmc.witness as witness_module
+
+    model, query = bmc_files
+    model.write_text("def int output = 3; state Root { enter { output = 17; } }")
+    calls = []
+    original = witness_module.replay_bmc_witness
+
+    def observe(*args, **kwargs):
+        result = original(*args, **kwargs)
+        calls.append(result)
+        return result
+
+    # Resolve the lazy public export before patching its implementation, so
+    # teardown cannot leave the observer cached as the public function.
+    monkeypatch.setattr(bmc_api, "replay_bmc_witness", observe)
+    monkeypatch.setattr(witness_module, "replay_bmc_witness", observe)
+    command, payload = _json_result(model, query(query_text), "--cone-slicing")
+    assert command.exit_code == expected_exit, command.output
+    assert len(calls) == 2  # Internal completion plus independent output replay.
+    assert calls[-1].ok
+    assert payload["replay"]["ok"] is True
+    assert payload["witness"]["frames"][1]["vars"]["output"] == 17

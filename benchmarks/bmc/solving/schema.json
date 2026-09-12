@@ -484,6 +484,12 @@
         "build_solve_ms": {
           "$ref": "#/$defs/distribution"
         },
+        "pipeline_ms": {
+          "$ref": "#/$defs/distribution"
+        },
+        "api_total_ms": {
+          "$ref": "#/$defs/distribution"
+        },
         "suffix_replay_ok": {
           "$ref": "#/$defs/observed"
         },

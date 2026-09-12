@@ -444,3 +444,80 @@ first intervention. Two multi-solution elevator records choose different legal
 witnesses, with identical formulas and successful ordinary replay. These
 microexperiments identify future construction work; they do not supersede the
 formal T1–T3 failures or demonstrate production readiness.
+
+
+## Accepted-condition resolution benchmark protocol
+
+The [accepted-condition reuse change](https://github.com/HansBug/pyfcstm/pull/485)
+compares normal production calls against the pre-change umbrella commit
+`df5416b18b00497dd2fe5820b092d814dba4343c`. It reuses completed condition
+resolution only within one `verify_source_partition` call. Public options,
+canonical conditions, validation, assignment budgets and error rejection remain
+unchanged. Cross-call, canonical-key and SAT-result caches are out of scope.
+
+Acceptance was registered before implementation or measurement:
+
+- `codex_vtol_mission_supervision/reach` complete API p50 must improve by at least 50%; also report its
+  other two queries.
+- Each of the other 48 queries (including the distinct Claude VTOL model) must regress by no more than 5% in API p50.
+- Each query's peak RSS median must grow by no more than 10%; preserve individual
+  high-water marks, including outliers.
+- Correctness, ordinary SAT replay, deterministic goldens, full regression and
+  applicable CI remain hard gates. Different legal witnesses for multi-solution
+  queries are permitted. The historical T1–T3 failures remain unchanged.
+
+Use clean detached baseline and candidate worktrees, independent serial child
+processes, one warmup and five measured repetitions per query and arm. Alternate
+arm order between repetitions. Record revisions, input hashes, environment and
+raw samples. API timing uses the existing solving benchmark's load/compile/solve/
+replay sampler: imports and report serialization are excluded; production cache
+release is included. Measure representative public CLI calls separately using
+the existing witness profiler, without experimental caches or retained formulas.
+
+The first round remains the formal result. If any query's API or RSS change is
+within two percentage points of its applicable threshold, measure ten additional
+samples per arm for that query, publishing both rounds independently. Do not
+select favorable rounds or overwrite a failure. Other failures require diagnosis;
+a revised candidate requires a new complete round. If the small scoped change
+fails these gates, report it before expanding scope or changing the acceptance
+criteria; do not mark it ready automatically.
+
+Run the two-revision comparison after checking out both commits into clean
+worktrees (do not use a dirty development checkout):
+
+```bash
+python tools/run_bmc_resolution_benchmark.py --check
+python tools/run_bmc_resolution_benchmark.py \
+  --baseline /tmp/bmc-resolution-baseline \
+  --candidate /tmp/bmc-resolution-candidate \
+  --output benchmarks/bmc/solving/outputs/resolution_runs/<run-id>
+python tools/run_bmc_resolution_benchmark.py --rebuild \
+  --output benchmarks/bmc/solving/outputs/resolution_runs/<run-id>
+```
+
+The manifest fixes all 612 invocations before measurement: 51 queries, two
+revisions, one warmup and five measured samples. Raw records are flushed as they
+arrive. Rebuild rejects incomplete runs, mismatched corpus expectations, failed
+replays, incorrect imports and differing formula DAG sizes. It preserves all
+per-query failures; its self-check exercises those rejection paths and numeric
+thresholds. This comparison adds no production options or diagnostic patches.
+
+If the first report identifies borderline queries, run the single registered
+follow-up round. It selects every borderline query from the first report,
+requires the same two revisions, and uses one warmup plus ten measured samples
+per arm. It cannot follow up another follow-up or change the first-round verdict:
+
+```bash
+python tools/run_bmc_resolution_benchmark.py \
+  --baseline /tmp/bmc-resolution-baseline \
+  --candidate /tmp/bmc-resolution-candidate \
+  --followup-from benchmarks/bmc/solving/outputs/resolution_runs/<run-id> \
+  --output benchmarks/bmc/solving/outputs/resolution_runs/<run-id>-followup
+```
+
+
+The [production condition-resolution assessment](outputs/resolution_runs/235d29cf/review.md)
+records the primary round, its one retained 5.51% guard failure, the registered
+0.19% follow-up, normal CLI measurements and independent formula/partition
+checks. The hotspot API improvement is about 73%; this does not turn the
+first-round guard failure or historical T1–T3 failures into passes.

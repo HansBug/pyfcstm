@@ -56,7 +56,7 @@ def _install_caches(stack, arm):
             counts["key_hits"] += 1
         return keys[ident][1]
 
-    def resolve(condition, registry, active=None):
+    def resolve(condition, registry, active=None, *args, **kwargs):
         registry_id = id(registry)
         if registry_id not in registries:
             registries[registry_id] = (registry, {})
@@ -66,7 +66,10 @@ def _install_caches(stack, arm):
             # Only completed resolutions enter the cache. Original recursion
             # still validates missing references and cycles; registries are
             # fixed for each source partition produced by the real compiler.
-            cache[ident] = (condition, original_resolve(condition, registry, active))
+            cache[ident] = (
+                condition,
+                original_resolve(condition, registry, active, *args, **kwargs),
+            )
         else:
             counts["resolve_hits"] += 1
         return cache[ident][1]

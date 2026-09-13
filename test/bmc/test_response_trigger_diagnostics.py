@@ -1,4 +1,5 @@
 import pytest
+from dataclasses import replace
 from pathlib import Path
 import time
 import z3
@@ -168,3 +169,18 @@ def test_unknown_trigger_diagnostic_is_not_called_unreachable(monkeypatch):
     diagnosed = _diagnose_response_trigger(result, True, _SolveBudget(None))
     assert diagnosed.trigger_diagnostic_status == "unknown"
     assert diagnosed.trigger_diagnostic_reason == "incomplete arithmetic"
+
+
+def test_trigger_diagnostic_payload_validation_rejects_inconsistent_states():
+    result = _solve(
+        "check response <= 8: trigger temperature > 80 -> within 2 false;",
+        enabled=False,
+    )
+    with pytest.raises(BmcBuildError, match="status is invalid"):
+        replace(result, trigger_diagnostic_status="bogus")
+    with pytest.raises(BmcBuildError, match="reason must be a string"):
+        replace(result, trigger_diagnostic_reason=1)
+    with pytest.raises(BmcBuildError, match="reason is only valid"):
+        replace(result, trigger_diagnostic_status="sat", trigger_diagnostic_reason="x")
+    with pytest.raises(BmcBuildError, match="reason is required"):
+        replace(result, trigger_diagnostic_status="timeout")

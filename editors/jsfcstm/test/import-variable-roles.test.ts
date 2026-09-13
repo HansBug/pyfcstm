@@ -266,6 +266,8 @@ describe('rendered variable names', () => {
     for (const [name, selector, target] of [
         ['value', 'value', 'var'],
         ['value', 'value', 'param'],
+        ['value', 'value', 'state'],
+        ['x_', 'x_*', '*$state'],
         ['prefix_input', 'prefix_*', '$1'],
         ['prefix_1', 'prefix_*', '$1'],
         ['value', 'value*', '$1'],

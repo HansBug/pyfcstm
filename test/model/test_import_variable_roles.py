@@ -322,6 +322,8 @@ def test_duplicate_source_declarations_cannot_bypass_binding_checks(
     [
         ("value", "value", "var"),
         ("value", "value", "param"),
+        ("value", "value", "state"),
+        ("x_", "x_*", "*$state"),
         ("prefix_input", "prefix_*", "$1"),
         ("prefix_1", "prefix_*", "$1"),
         ("value", "value*", "$1"),

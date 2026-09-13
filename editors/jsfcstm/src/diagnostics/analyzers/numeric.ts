@@ -121,6 +121,7 @@ function diagnosticsForExpression(
 
 function* expressionContexts(machine: StateMachine): Generator<ExpressionContext, void, void> {
     for (const [varName, definition] of Object.entries(machine.defines)) {
+        if (!definition.init) continue;
         yield {
             expr: definition.init,
             context: 'var_initializer',

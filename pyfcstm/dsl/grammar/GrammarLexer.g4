@@ -43,6 +43,12 @@ lexer grammar GrammarLexer;
 // Core FCSTM keywords, including the import entry point that switches modes.
 IMPORT: 'import' -> mode(IMPORT_HEADER_MODE);
 DEF: 'def';
+CONTROL: 'control';
+INPUT: 'input';
+DYNAMIC: 'dynamic';
+STATIC: 'static';
+PARAM: 'param';
+OUTPUT: 'output';
 EVENT: 'event';
 AS: 'as';
 NAMED: 'named';

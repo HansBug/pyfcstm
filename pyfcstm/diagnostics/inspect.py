@@ -508,6 +508,7 @@ class VariableInfo:
     float_literal_assignments: Tuple[str, ...] = field(default_factory=tuple)
     span: Optional['Span'] = None
     float_literal_assignment_spans: Tuple[Optional['Span'], ...] = field(default_factory=tuple)
+    role: str = 'control'
 
 
 @dataclass(frozen=True)
@@ -1615,6 +1616,7 @@ def _build_variable_infos(
             name=name,
             type=var_define.type,
             init_value=_expr_text(var_define.init) or '',
+            role=var_define.role.value,
             read_in_states=read_states,
             written_in_states=written_states,
             read_in_guards=read_guards,

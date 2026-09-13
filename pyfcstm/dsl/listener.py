@@ -45,6 +45,7 @@ from .error import (
     GrammarItemError,
     MalformedModelDocumentation,
 )
+from .role import _DECLARATION_ROLES
 
 
 _COND_BINARY_OP_ALIASES = {
@@ -125,7 +126,7 @@ def _owner_span(ctx) -> Span:
     leading_index = getattr(leading, "tokenIndex", -1)
     declaration_start = None
     for child in getattr(ctx, "children", ()) or ():
-        token = getattr(child, "symbol", None)
+        token = getattr(child, "symbol", None) or getattr(child, "start", None)
         if token is not None and getattr(token, "tokenIndex", -1) > leading_index:
             declaration_start = token
             break
@@ -665,11 +666,15 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.Def_assignmentContext
         """
         super().exitDef_assignment(ctx)
+        declaration = ctx.variable_declaration()
+        spelling = " ".join(child.getText() for child in declaration.children)
         node = DefAssignment(
-            name=str(ctx.ID()),
+            name=ctx.var_name.text,
             type=ctx.deftype.text,
-            expr=self.nodes[ctx.init_expression()],
+            expr=self.nodes.get(ctx.init_expression()),
             doc=self._documentation(ctx),
+            role=_DECLARATION_ROLES[spelling],
+            spelling=spelling,
         )
         node._span = _owner_span(ctx)
         self.nodes[ctx] = node

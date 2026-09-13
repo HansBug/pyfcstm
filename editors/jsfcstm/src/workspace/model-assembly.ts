@@ -648,7 +648,9 @@ function applyImportDefMappings(
     }
 
     for (const definition of program.definitions) {
-        rewriteExpressionVariables(definition.initializer, sourceToTarget);
+        if (definition.initializer) {
+            rewriteExpressionVariables(definition.initializer, sourceToTarget);
+        }
         definition.name = sourceToTarget[definition.name];
     }
 

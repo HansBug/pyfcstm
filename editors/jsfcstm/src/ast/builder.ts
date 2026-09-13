@@ -301,8 +301,11 @@ function declarationRange(node: ParseTreeContext, document: TextDocumentLike, fa
     const range = getNodeRange(node, document, fallbackText || nodeText(node));
     if (!leading || !node.start || tokenText(node.start) !== tokenText(leading)) return range;
     const leadingToken = leading as unknown as {line?: number; column?: number; text?: string};
-    const first = terminalChildren(node)
-        .map(item => (item as unknown as {symbol?: {line?: number; column?: number; text?: string}}).symbol)
+    const first = node.children!
+        .map(item => {
+            const child = item as ParseTreeContext & {symbol?: {line?: number; column?: number; text?: string}};
+            return child.symbol || child.start;
+        })
         .find(item => {
             if (!item || !tokenText(item).trim()) return false;
             if (item.line != null && leadingToken.line != null && item.column != null && leadingToken.column != null) {
@@ -1630,7 +1633,14 @@ function buildVariableDefinition(
     const expressionNode = contextChildren(node).find(child => /InitContext$/.test(child.constructor?.name || ''));
     const terminals = terminalChildren(node);
     const valueType = tokenText((node as ParseTreeContext).deftype) === 'float' ? 'float' : 'int';
-    const initializer = buildExpression(expressionNode as ParseTreeContext, document);
+    const initializer = expressionNode ? buildExpression(expressionNode as ParseTreeContext, document) : null;
+    const declaration = contextChildren(node).find(child => child.constructor!.name === 'Variable_declarationContext')!;
+    const spelling = terminalChildren(declaration).map(child => child.getText!()).join(' ');
+    const roles: Record<string, import('./model').VariableRole> = {
+        def: 'control', control: 'control', input: 'input_dynamic',
+        'input dynamic': 'input_dynamic', param: 'input_static',
+        'input static': 'input_static', output: 'output',
+    };
     const typeToken = (node as ParseTreeContext).deftype;
     const typeIndex = terminals.findIndex(
         item => item === typeToken || item.getText?.() === tokenText(typeToken)
@@ -1649,6 +1659,8 @@ function buildVariableDefinition(
         deftype: valueType,
         initializer,
         expr: initializer,
+        role: roles[spelling],
+        spelling,
         doc: nodeDocumentation(node),
     };
 }

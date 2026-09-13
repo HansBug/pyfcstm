@@ -85,14 +85,14 @@ VarDefine
 -----------------------------------------------------
 
 .. autoclass:: VarDefine
-    :members: to_ast_node,name_ast_node,name,type,init,doc
+    :members: __post_init__,to_ast_node,name_ast_node,name,type,init,doc,role
 
 
 StateMachine
 -----------------------------------------------------
 
 .. autoclass:: StateMachine
-    :members: to_ast_node,to_plantuml,walk_states,diagram,show,resolve_event,defines,root_state,forced_transitions,source_text,source_path
+    :members: __post_init__,control_variables,dynamic_inputs,static_inputs,output_variables,persistent_variables,to_ast_node,to_plantuml,walk_states,diagram,show,resolve_event,defines,root_state,forced_transitions,source_text,source_path
 
 
 parse\_dsl\_node\_to\_state\_machine

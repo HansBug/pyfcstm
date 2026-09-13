@@ -1,3 +1,4 @@
+import {collectVariableRoleDiagnostics} from '../ast/variable-roles';
 import type {
     FcstmAstAction,
     FcstmAstChainPath,
@@ -387,7 +388,9 @@ class StateMachineModelBuilder {
             text: definition.text,
             name: definition.name,
             type: definition.valueType,
-            init: this.buildExpression(definition.initializer),
+            init: definition.initializer ? this.buildExpression(definition.initializer) : null,
+            role: definition.role ?? 'control',
+            spelling: definition.spelling,
             doc: definition.doc,
         };
     }
@@ -1599,6 +1602,7 @@ export function buildStateMachineModelFromAst(
         return null;
     }
 
+    if (collectVariableRoleDiagnostics(ast).length > 0) return null;
     return new StateMachineModelBuilder(ast).build();
 }
 

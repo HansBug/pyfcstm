@@ -382,6 +382,32 @@ This catalog is synchronized with ``pyfcstm.diagnostics.codes.CODE_REGISTRY``. T
      - ``verify_pipeline``
      - ``requires_solver``
      - ``composite_block``
+   * - :ref:`E_DYNAMIC_INPUT_INITIALIZER <diag-code-e-dynamic-input-initializer>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``variable_declaration``
+   * - :ref:`E_VARIABLE_INITIALIZER_REQUIRED <diag-code-e-variable-initializer-required>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``variable_declaration``
+   * - :ref:`E_INITIALIZER_VARIABLE_REFERENCE <diag-code-e-initializer-variable-reference>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``variable_declaration``
+   * - :ref:`E_DYNAMIC_INPUT_WRITE <diag-code-e-dynamic-input-write>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``effect_statement``
+   * - :ref:`E_STATIC_INPUT_WRITE <diag-code-e-static-input-write>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``effect_statement``
+
 
 Names, variables, types, and imports
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -4697,12 +4723,12 @@ This diagnostic can appear in a successful inspect report. Reproduce it with ``p
 .. code-block:: fcstm
 
    def int result = 0;
-   def int input = 1;
+   def int sensor_value = 1;
    state Root {
        state A;
        state B;
        [*] -> A;
-       A -> B effect { result = input / (1 - 1); };
+       A -> B effect { result = sensor_value / (1 - 1); };
    }
 
 .. diagnostics-example W_NUMERIC_CONSTANT_DIVISION_BY_ZERO 2 boundary_only
@@ -5652,3 +5678,166 @@ A typical repair is ``rename_inner_action`` on ``named_action``: Give the nested
 
 **Example 3** (``boundary_only``) — anti-pattern boundary for ``W_NAMED_ACTION_SHADOWS_ANCESTOR``.
 Do not leave the shadowing name in place unless the scope distinction is intentional and documented outside the DSL.
+
+.. _diag-code-e-dynamic-input-initializer:
+
+E_DYNAMIC_INPUT_INITIALIZER
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_DYNAMIC_INPUT_INITIALIZER severity=error emit_tier=static_pipeline capability=pure_static span_object=variable_declaration
+.. diagnostics-ref E_DYNAMIC_INPUT_INITIALIZER var_name type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-boundary E_DYNAMIC_INPUT_INITIALIZER kind=cli_error
+
+Dynamic inputs have no model initializer; their values come from the environment.
+
+``refs.var_name`` identifies the affected declaration. Severity is ``error``; validation is static and needs no solver.
+
+.. diagnostics-example E_DYNAMIC_INPUT_INITIALIZER 1 cli_error
+
+.. code-block:: fcstm
+
+   input int sensor = 1; state Root;
+
+Loading this source fails during model construction. ``pyfcstm inspect -i model.fcstm --collect-errors --format json`` retains the error in its report.
+
+.. diagnostics-example E_DYNAMIC_INPUT_INITIALIZER 2 boundary_only
+
+Remove the initializer. A fixed external input belongs in the runtime input source.
+
+.. code-block:: fcstm
+
+   input int sensor; state Root;
+
+.. diagnostics-example E_DYNAMIC_INPUT_INITIALIZER 3 boundary_only
+
+Do not hide the error by renaming another variable. Initializers have no declaration-order dependency exception.
+
+.. _diag-code-e-variable-initializer-required:
+
+E_VARIABLE_INITIALIZER_REQUIRED
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_VARIABLE_INITIALIZER_REQUIRED severity=error emit_tier=static_pipeline capability=pure_static span_object=variable_declaration
+.. diagnostics-ref E_VARIABLE_INITIALIZER_REQUIRED var_name type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-boundary E_VARIABLE_INITIALIZER_REQUIRED kind=cli_error
+
+Control, output, and static input declarations require a name-free initial value.
+
+``refs.var_name`` identifies the affected declaration. Severity is ``error``; validation is static and needs no solver.
+
+.. diagnostics-example E_VARIABLE_INITIALIZER_REQUIRED 1 cli_error
+
+.. code-block:: fcstm
+
+   param int limit; state Root;
+
+Loading this source fails during model construction. ``pyfcstm inspect -i model.fcstm --collect-errors --format json`` retains the error in its report.
+
+.. diagnostics-example E_VARIABLE_INITIALIZER_REQUIRED 2 boundary_only
+
+Supply an explicit default instead of relying on an implicit zero.
+
+.. code-block:: fcstm
+
+   param int limit = 2; state Root;
+
+.. diagnostics-example E_VARIABLE_INITIALIZER_REQUIRED 3 boundary_only
+
+Do not hide the error by renaming another variable. Initializers have no declaration-order dependency exception.
+
+.. _diag-code-e-initializer-variable-reference:
+
+E_INITIALIZER_VARIABLE_REFERENCE
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_INITIALIZER_VARIABLE_REFERENCE severity=error emit_tier=static_pipeline capability=pure_static span_object=variable_declaration
+.. diagnostics-ref E_INITIALIZER_VARIABLE_REFERENCE var_name type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-boundary E_INITIALIZER_VARIABLE_REFERENCE kind=cli_error
+
+An initializer supplied through the public AST/model API contains a variable reference.
+
+``refs.var_name`` identifies the affected declaration. Severity is ``error``; validation is static and needs no solver.
+
+.. diagnostics-example E_INITIALIZER_VARIABLE_REFERENCE 1 repro_api
+
+.. code-block:: python
+
+   from pyfcstm.model import VarDefine, Variable, VariableRole
+
+   VarDefine("derived", "int", Variable("source"), role=VariableRole.INPUT_STATIC)
+
+This raises ``ModelValidationError`` with this code. A textual DSL initializer containing a name is rejected earlier by the grammar; use the API example to reproduce this particular code.
+
+.. diagnostics-example E_INITIALIZER_VARIABLE_REFERENCE 2 boundary_only
+
+Move derived initialization into an enter action, or supply an already computed literal.
+
+.. diagnostics-example E_INITIALIZER_VARIABLE_REFERENCE 3 boundary_only
+
+Do not hide the error by renaming another variable. Initializers have no declaration-order dependency exception.
+
+.. _diag-code-e-dynamic-input-write:
+
+E_DYNAMIC_INPUT_WRITE
+^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_DYNAMIC_INPUT_WRITE severity=error emit_tier=static_pipeline capability=pure_static span_object=effect_statement
+.. diagnostics-ref E_DYNAMIC_INPUT_WRITE var_name type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-boundary E_DYNAMIC_INPUT_WRITE kind=cli_error
+
+An action, aspect, or effect assigns a dynamic input.
+
+``refs.var_name`` identifies the affected declaration. Severity is ``error``; validation is static and needs no solver.
+
+.. diagnostics-example E_DYNAMIC_INPUT_WRITE 1 cli_error
+
+.. code-block:: fcstm
+
+   input int sensor; state Root { during { sensor = 1; } }
+
+Loading this source fails during model construction. ``pyfcstm inspect -i model.fcstm --collect-errors --format json`` retains the error in its report.
+
+.. diagnostics-example E_DYNAMIC_INPUT_WRITE 2 boundary_only
+
+Write a control or output variable while keeping the external input read-only.
+
+.. code-block:: fcstm
+
+   input int sensor; output int command = 0; state Root { during { command = sensor; } }
+
+.. diagnostics-example E_DYNAMIC_INPUT_WRITE 3 boundary_only
+
+Validation also applies to nested conditional branches and programmatic construction. Output variables may have multiple writers; that is not an error.
+
+.. _diag-code-e-static-input-write:
+
+E_STATIC_INPUT_WRITE
+^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_STATIC_INPUT_WRITE severity=error emit_tier=static_pipeline capability=pure_static span_object=effect_statement
+.. diagnostics-ref E_STATIC_INPUT_WRITE var_name type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-boundary E_STATIC_INPUT_WRITE kind=cli_error
+
+An action, aspect, or effect assigns a static input or parameter.
+
+``refs.var_name`` identifies the affected declaration. Severity is ``error``; validation is static and needs no solver.
+
+.. diagnostics-example E_STATIC_INPUT_WRITE 1 cli_error
+
+.. code-block:: fcstm
+
+   param int limit = 2; state Root { during { limit = 3; } }
+
+Loading this source fails during model construction. ``pyfcstm inspect -i model.fcstm --collect-errors --format json`` retains the error in its report.
+
+.. diagnostics-example E_STATIC_INPUT_WRITE 2 boundary_only
+
+Use a control variable for mutable state; keep the parameter fixed within the run.
+
+.. code-block:: fcstm
+
+   param int limit = 2; control int count = 0; state Root { during { count = limit; } }
+
+.. diagnostics-example E_STATIC_INPUT_WRITE 3 boundary_only
+
+Validation also applies to nested conditional branches and programmatic construction. Output variables may have multiple writers; that is not an error.

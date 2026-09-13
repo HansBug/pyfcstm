@@ -54,6 +54,7 @@ from hbutils.design import SingletonMark
 
 from ..utils.validate import Span
 from ..utils.doc import validate_documentation_for_export
+from .role import VariableRole, _DEFAULT_DECLARATIONS
 
 __all__ = [
     "ASTNode",
@@ -866,7 +867,13 @@ class DefAssignment(Statement):
     :param type: The type of the variable
     :type type: str
     :param expr: The expression defining the variable's value
-    :type expr: Expr
+    :type expr: Optional[Expr]
+    :param role: Variable ownership, defaulting to legacy control state.
+    :type role: pyfcstm.dsl.role.VariableRole
+    :param spelling: Original declaration prefix, or ``None`` for the default
+        spelling of the role. Legacy control declarations default to ``def``.
+        Dynamic and static inputs default to ``input`` and ``param`` respectively.
+    :type spelling: Optional[str]
 
     :rtype: DefAssignment
 
@@ -879,8 +886,10 @@ class DefAssignment(Statement):
 
     name: str
     type: str
-    expr: Expr
+    expr: Optional[Expr]
     doc: Optional[str] = None
+    role: VariableRole = VariableRole.CONTROL
+    spelling: Optional[str] = field(default=None, compare=False)
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
@@ -890,7 +899,9 @@ class DefAssignment(Statement):
         :return: String representation of the definition assignment
         :rtype: str
         """
-        return _render_documentation_prefix(self.doc) + f"def {self.type} {self.name} = {self.expr};"
+        keyword = self.spelling or _DEFAULT_DECLARATIONS[self.role]
+        initializer = f" = {self.expr}" if self.expr is not None else ""
+        return _render_documentation_prefix(self.doc) + f"{keyword} {self.type} {self.name}{initializer};"
 
 
 @dataclass

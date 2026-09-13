@@ -247,6 +247,13 @@ ImportDefTargetTemplate
     :members: __str__,template
 
 
+ImportVariableMapping
+-----------------------------------------------------
+
+.. autoclass:: ImportVariableMapping
+    :members: __str__,selector,target_template,spelling
+
+
 ImportDefMapping
 -----------------------------------------------------
 

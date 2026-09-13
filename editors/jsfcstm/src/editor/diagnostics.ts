@@ -517,6 +517,12 @@ export async function collectDocumentDiagnosticsByUri(
         diagnostics.filter(diagnostic => !shouldSuppressParseRecoveryDiagnostic(diagnostic, parseDiagnostics)),
     );
 
+    if (node?.bindingDiagnostic) {
+        const {filePath, diagnostic} = node.bindingDiagnostic;
+        const uri = filePath === snapshot.rootFile ? rootUri : pathToFileURL(filePath).href;
+        publications.set(uri, [...(publications.get(uri) || []), diagnostic]);
+    }
+
     // A hydrated root model carries imported paths in the host namespace, so
     // topology must be checked against that assembled model. Use the model's
     // imported-root provenance only to partition the resulting diagnostics by

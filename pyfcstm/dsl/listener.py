@@ -1792,8 +1792,8 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.Import_mapping_statementContext
         """
         super().exitImport_mapping_statement(ctx)
-        if ctx.import_def_mapping():
-            self.nodes[ctx] = self.nodes[ctx.import_def_mapping()]
+        if ctx.import_variable_mapping():
+            self.nodes[ctx] = self.nodes[ctx.import_variable_mapping()]
         elif ctx.import_event_mapping():
             self.nodes[ctx] = self.nodes[ctx.import_event_mapping()]
 
@@ -1806,6 +1806,7 @@ class GrammarParseListener(GrammarListener):
         """
         super().exitImport_statement(ctx)
         self.nodes[ctx] = ImportStatement(
+            _span=_ctx_span(ctx),
             source_path=_parse_string_literal(ctx.import_path.text),
             alias=ctx.state_alias.text,
             extra_name=_parse_string_literal(ctx.extra_name.text)
@@ -1868,17 +1869,21 @@ class GrammarParseListener(GrammarListener):
         super().exitImportDefFallbackSelector(ctx)
         self.nodes[ctx] = ImportDefFallbackSelector()
 
-    def exitImport_def_mapping(
-        self, ctx: GrammarParser.Import_def_mappingContext
+    def exitImport_variable_mapping(
+        self, ctx: GrammarParser.Import_variable_mappingContext
     ) -> None:
         """
         Build a variable mapping rule inside an import block.
 
-        :param ctx: Parse context for the import ``def`` mapping.
-        :type ctx: GrammarParser.Import_def_mappingContext
+        :param ctx: Parse context for the import variable mapping.
+        :type ctx: GrammarParser.Import_variable_mappingContext
         """
-        super().exitImport_def_mapping(ctx)
-        self.nodes[ctx] = ImportDefMapping(
+        super().exitImport_variable_mapping(ctx)
+        mapping_class = (
+            ImportDefMapping if ctx.keyword.text == "def" else ImportVariableMapping
+        )
+        self.nodes[ctx] = mapping_class(
+            _span=_ctx_span(ctx),
             selector=self.nodes[ctx.import_def_selector()],
             target_template=ImportDefTargetTemplate(
                 template=ctx.import_def_target_template().target_text.text

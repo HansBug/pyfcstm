@@ -614,6 +614,7 @@ export class IfBlock extends OperationStatement {
  * Variable definition aligned with ``pyfcstm.model.model.VarDefine``.
  */
 export class VarDefine extends ModelNode {
+    sourceDeclarations?: import('../ast').FcstmVariableDeclarationSource[];
     name: string;
     type: 'int' | 'float';
     init: Expr | null;
@@ -626,6 +627,7 @@ export class VarDefine extends ModelNode {
         this.name = raw.name;
         this.type = raw.type;
         this.init = init;
+        this.sourceDeclarations = raw.sourceDeclarations;
         this.role = raw.role ?? 'control';
         this.spelling = raw.spelling;
         this.doc = raw.doc;

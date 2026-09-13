@@ -188,6 +188,7 @@ def _attach_model_source_metadata(
     for name, definition in machine.defines.items():
         matched = ast_definitions.get(name)
         attach(definition, getattr(matched, "_source_path", None))
+        definition._source_declarations = getattr(matched, "_source_declarations", ())
 
     def attach_operation(operation: Any, source: Optional[str]) -> None:
         """Give an operation and everything nested inside it the same owner.

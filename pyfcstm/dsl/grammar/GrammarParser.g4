@@ -225,13 +225,13 @@ import_statement
     ;
 
 import_mapping_statement
-    : import_def_mapping
+    : import_variable_mapping
     | import_event_mapping
     | SEMI
     ;
 
-import_def_mapping
-    : DEF import_def_selector ARROW import_def_target_template SEMI
+import_variable_mapping
+    : keyword=(VAR | DEF) import_def_selector ARROW import_def_target_template SEMI
     ;
 
 import_def_selector

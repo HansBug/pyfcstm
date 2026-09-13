@@ -490,6 +490,7 @@ E_DUPLICATE_VAR
 .. diagnostics-meta E_DUPLICATE_VAR severity=error emit_tier=static_pipeline capability=pure_static span_object=variable_declaration
 .. diagnostics-ref E_DUPLICATE_VAR var_name type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_DUPLICATE_VAR previous_span type=Span required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_DUPLICATE_VAR source_path type=str required=false enum=- item_enum=- exact_values=-
 
 
 .. diagnostics-boundary E_DUPLICATE_VAR kind=cli_error
@@ -516,6 +517,11 @@ E_DUPLICATE_VAR
      - ``Span``
      - no
      - Source position of the first declaration.
+
+   * - ``source_path``
+     - ``str``
+     - no
+     - Authored file containing duplicate imported declarations.
 
 .. diagnostics-example E_DUPLICATE_VAR 1 cli_error
 
@@ -996,15 +1002,18 @@ E_IMPORT_DUPLICATE_MAPPING
 .. diagnostics-ref E_IMPORT_DUPLICATE_MAPPING duplicated_name type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_IMPORT_DUPLICATE_MAPPING direction type=str required=true enum=source_duplicated|target_duplicated item_enum=- exact_values=-
 .. diagnostics-ref E_IMPORT_DUPLICATE_MAPPING host_state_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_IMPORT_DUPLICATE_MAPPING source_path type=str required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_IMPORT_DUPLICATE_MAPPING binding_reason type=str required=false enum=role_mismatch|type_mismatch|implicit_input_sharing|initializer_mismatch item_enum=- exact_values=-
+.. diagnostics-ref E_IMPORT_DUPLICATE_MAPPING binding type=dict required=false enum=- item_enum=- exact_values=-
 
 
 .. diagnostics-boundary E_IMPORT_DUPLICATE_MAPPING kind=cli_error
 
 **Registry facts.** Severity ``error``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``import_statement``.
 
-**Meaning.** Two or more mapping clauses under the same ``import { ... }`` block target the same source name (event or variable), or two source names target the same host name.
+**Meaning.** A mapping duplicates a source or target within one import, or an imported variable conflicts with an existing declaration in role, numeric type, input ownership, or initializer.
 
-**LLM repair summary.** An import-mapping block contains a duplicate source or target name. Each source identifier can be mapped at most once; each target host slot can receive at most one source.
+**LLM repair summary.** Within one import, each target receives at most one source. Across imports, shared targets require matching roles and numeric types; dynamic inputs require an explicit host declaration. Use ``binding_reason`` to identify conflicts, preserving the authored roles.
 
 .. list-table:: Refs schema
    :header-rows: 1
@@ -1035,6 +1044,19 @@ E_IMPORT_DUPLICATE_MAPPING
      - yes
      - Dotted path of the composite state hosting the import.
 
+   * - ``source_path``
+     - ``str``
+     - no
+     - Authored file containing the conflicting import statement.
+   * - ``binding_reason``
+     - ``str``
+     - no
+     - Why merging an imported variable into an existing declaration failed.
+   * - ``binding``
+     - ``dict``
+     - no
+     - Source and target declaration lists. Each entry retains its authored name, role, numeric type, source_path and declaration span, including every contributing declaration behind a recursively merged variable.
+
 .. diagnostics-example E_IMPORT_DUPLICATE_MAPPING 1 cli_error
 
 **Example 1** (``cli_error``) — reproduction boundary.
@@ -1044,8 +1066,8 @@ This source shape reproduces a controlled model-validation failure through ``pyf
 
    state System {
        import "sub.fcstm" as Sub {
-           def x = a;
-           def x = b;
+           var x -> a;
+           var x -> b;
        }
    }
 
@@ -1070,6 +1092,7 @@ E_IMPORT_MAPPING_INVALID
 .. diagnostics-ref E_IMPORT_MAPPING_INVALID host_state_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_IMPORT_MAPPING_INVALID reason type=str required=true enum=source_not_found|target_invalid|selector_invalid|template_invalid|empty_path|host_root_mismatch item_enum=- exact_values=-
 .. diagnostics-ref E_IMPORT_MAPPING_INVALID detail type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_IMPORT_MAPPING_INVALID source_path type=str required=false enum=- item_enum=- exact_values=-
 
 
 .. diagnostics-boundary E_IMPORT_MAPPING_INVALID kind=cli_error
@@ -1108,6 +1131,11 @@ E_IMPORT_MAPPING_INVALID
      - ``str``
      - yes
      - Human-readable specifics of the mapping failure (mapping text, selector / template literal, or path that failed to resolve).
+
+   * - ``source_path``
+     - ``str``
+     - no
+     - Authored file containing the invalid import mapping.
 
 .. diagnostics-example E_IMPORT_MAPPING_INVALID 1 cli_error
 
@@ -5686,11 +5714,17 @@ E_DYNAMIC_INPUT_INITIALIZER
 
 .. diagnostics-meta E_DYNAMIC_INPUT_INITIALIZER severity=error emit_tier=static_pipeline capability=pure_static span_object=variable_declaration
 .. diagnostics-ref E_DYNAMIC_INPUT_INITIALIZER var_name type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_DYNAMIC_INPUT_INITIALIZER source_path type=str required=false enum=- item_enum=- exact_values=-
 .. diagnostics-boundary E_DYNAMIC_INPUT_INITIALIZER kind=cli_error
 
 Dynamic inputs have no model initializer; their values come from the environment.
 
 ``refs.var_name`` identifies the affected declaration. Severity is ``error``; validation is static and needs no solver.
+
+   * - ``source_path``
+     - ``str``
+     - no
+     - Authored file containing an invalid imported declaration or assignment.
 
 .. diagnostics-example E_DYNAMIC_INPUT_INITIALIZER 1 cli_error
 
@@ -5719,11 +5753,17 @@ E_VARIABLE_INITIALIZER_REQUIRED
 
 .. diagnostics-meta E_VARIABLE_INITIALIZER_REQUIRED severity=error emit_tier=static_pipeline capability=pure_static span_object=variable_declaration
 .. diagnostics-ref E_VARIABLE_INITIALIZER_REQUIRED var_name type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_VARIABLE_INITIALIZER_REQUIRED source_path type=str required=false enum=- item_enum=- exact_values=-
 .. diagnostics-boundary E_VARIABLE_INITIALIZER_REQUIRED kind=cli_error
 
 Control, output, and static input declarations require a name-free initial value.
 
 ``refs.var_name`` identifies the affected declaration. Severity is ``error``; validation is static and needs no solver.
+
+   * - ``source_path``
+     - ``str``
+     - no
+     - Authored file containing an invalid imported declaration or assignment.
 
 .. diagnostics-example E_VARIABLE_INITIALIZER_REQUIRED 1 cli_error
 
@@ -5752,11 +5792,17 @@ E_INITIALIZER_VARIABLE_REFERENCE
 
 .. diagnostics-meta E_INITIALIZER_VARIABLE_REFERENCE severity=error emit_tier=static_pipeline capability=pure_static span_object=variable_declaration
 .. diagnostics-ref E_INITIALIZER_VARIABLE_REFERENCE var_name type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_INITIALIZER_VARIABLE_REFERENCE source_path type=str required=false enum=- item_enum=- exact_values=-
 .. diagnostics-boundary E_INITIALIZER_VARIABLE_REFERENCE kind=cli_error
 
 An initializer supplied through the public AST/model API contains a variable reference.
 
 ``refs.var_name`` identifies the affected declaration. Severity is ``error``; validation is static and needs no solver.
+
+   * - ``source_path``
+     - ``str``
+     - no
+     - Authored file containing an invalid imported declaration or assignment.
 
 .. diagnostics-example E_INITIALIZER_VARIABLE_REFERENCE 1 repro_api
 
@@ -5783,11 +5829,17 @@ E_DYNAMIC_INPUT_WRITE
 
 .. diagnostics-meta E_DYNAMIC_INPUT_WRITE severity=error emit_tier=static_pipeline capability=pure_static span_object=effect_statement
 .. diagnostics-ref E_DYNAMIC_INPUT_WRITE var_name type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_DYNAMIC_INPUT_WRITE source_path type=str required=false enum=- item_enum=- exact_values=-
 .. diagnostics-boundary E_DYNAMIC_INPUT_WRITE kind=cli_error
 
 An action, aspect, or effect assigns a dynamic input.
 
 ``refs.var_name`` identifies the affected declaration. Severity is ``error``; validation is static and needs no solver.
+
+   * - ``source_path``
+     - ``str``
+     - no
+     - Authored file containing an invalid imported declaration or assignment.
 
 .. diagnostics-example E_DYNAMIC_INPUT_WRITE 1 cli_error
 
@@ -5816,11 +5868,17 @@ E_STATIC_INPUT_WRITE
 
 .. diagnostics-meta E_STATIC_INPUT_WRITE severity=error emit_tier=static_pipeline capability=pure_static span_object=effect_statement
 .. diagnostics-ref E_STATIC_INPUT_WRITE var_name type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_STATIC_INPUT_WRITE source_path type=str required=false enum=- item_enum=- exact_values=-
 .. diagnostics-boundary E_STATIC_INPUT_WRITE kind=cli_error
 
 An action, aspect, or effect assigns a static input or parameter.
 
 ``refs.var_name`` identifies the affected declaration. Severity is ``error``; validation is static and needs no solver.
+
+   * - ``source_path``
+     - ``str``
+     - no
+     - Authored file containing an invalid imported declaration or assignment.
 
 .. diagnostics-example E_STATIC_INPUT_WRITE 1 cli_error
 

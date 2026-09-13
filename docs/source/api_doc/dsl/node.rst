@@ -251,14 +251,14 @@ ImportVariableMapping
 -----------------------------------------------------
 
 .. autoclass:: ImportVariableMapping
-    :members: __str__,selector,target_template,spelling
+    :members: __post_init__,__str__,selector,target_template,spelling
 
 
 ImportDefMapping
 -----------------------------------------------------
 
 .. autoclass:: ImportDefMapping
-    :members: __str__,selector,target_template
+    :members: spelling
 
 
 ImportEventMapping

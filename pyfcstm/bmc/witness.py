@@ -5165,16 +5165,14 @@ def solve_bmc_property(
     """
     cone = _require_formula(formula).core.cone_slice
     if cone is None or not cone.dropped_variables:
-        budget = _SolveBudget(timeout_ms)
-        result = _solve_property(
+        return _solve_property(
             formula,
             timeout_ms,
             check_incomplete,
             infeasibility_explanation,
             solver_profile,
-            budget,
+            diagnose_response_trigger=diagnose_response_trigger,
         )
-        return _diagnose_response_trigger(result, diagnose_response_trigger, budget)
     started = time.monotonic()
     budget = _SolveBudget(timeout_ms)
     result = _solve_property(
@@ -5269,6 +5267,7 @@ def _solve_property(
     infeasibility_explanation,
     solver_profile,
     budget=None,
+    diagnose_response_trigger=False,
 ):
     checked = _require_formula(formula)
     if not isinstance(check_incomplete, bool):
@@ -5307,12 +5306,18 @@ def _solve_property(
     status, model, reason, elapsed_ms, primary_started = _check_with_budget(
         solver, budget
     )
-    finish = partial(
+    make_result = partial(
         _make_solve_result,
         solver_profile=solver_profile,
         solver_logic=solver_logic,
         solver_statistics=dict(iter(solver.statistics())) if primary_started else {},
     )
+
+    def finish(*args, **kwargs):
+        return _diagnose_response_trigger(
+            make_result(*args, **kwargs), diagnose_response_trigger, budget
+        )
+
     diagnostics = list(checked.diagnostics)
     if status == "sat":
         feasibility = _inferred_feasibility()

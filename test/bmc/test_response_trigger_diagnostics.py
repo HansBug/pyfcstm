@@ -184,3 +184,25 @@ def test_trigger_diagnostic_payload_validation_rejects_inconsistent_states():
         replace(result, trigger_diagnostic_status="sat", trigger_diagnostic_reason="x")
     with pytest.raises(BmcBuildError, match="reason is required"):
         replace(result, trigger_diagnostic_status="timeout")
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_solver_setup_does_not_spend_the_primary_check_budget(monkeypatch, enabled):
+    import pyfcstm.bmc.witness as witness
+
+    formula = compile_bmc_query(
+        load_state_machine_from_text("def int temperature = 20; state Root;"),
+        "check response <= 8: trigger temperature > 80 -> within 2 false;",
+    )
+    original = witness._solver_for_profile
+
+    def slow_setup(*args, **kwargs):
+        time.sleep(0.05)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(witness, "_solver_for_profile", slow_setup)
+    result = solve_bmc_property(
+        formula, timeout_ms=20, diagnose_response_trigger=enabled
+    )
+    assert result.outcome == "property_satisfied"
+    assert result.reason != "deadline_exhausted_before_check"

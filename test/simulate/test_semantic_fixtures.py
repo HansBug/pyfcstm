@@ -42,7 +42,7 @@ EXPECTED_DELTA_STEP_SEQUENCES = {
 def test_all_semantic_fixtures_load():
     cases = iter_semantic_cases()
 
-    assert len(cases) == 205
+    assert len(cases) == 206
     assert {case.id for case in cases}
 
 
@@ -59,8 +59,8 @@ def test_full_fixture_runtime_scan_finds_exact_delta_cohort():
         original_cycle = runtime.cycle
         observed_deltas = []
 
-        def cycle(events=None):
-            result = original_cycle(events)
+        def cycle(events=None, **kwargs):
+            result = original_cycle(events, **kwargs)
             observed_deltas.append(result.delta)
             return result
 
@@ -1186,7 +1186,7 @@ def test_shared_fixture_corpus_uses_public_observation_fields():
     assert top_level_hits == set()
     assert observation_hits == set()
     assert initial_hits == set()
-    assert [case.id for case in cases if case.runners == ("simulation",)] == []
+    assert [case.id for case in cases if case.runners == ("simulation",)] == ["dynamic_input_overrides"]
 
 
 @pytest.mark.unittest
@@ -1202,10 +1202,15 @@ def test_shared_fixture_corpus_satisfies_current_contract():
     assert all("source" not in case.data for case in cases)
     assert all("runners" not in case.data for case in cases)
     assert all(
-        case.runners == ("simulation", "generated_python_alignment") for case in cases
+        case.runners == (("simulation",) if case.id == "dynamic_input_overrides"
+                         else ("simulation", "generated_python_alignment"))
+        for case in cases
     )
     assert all(
-        set(case.data.get("exclude_runners") or ()) <= {BMC_CORE_RUNNER}
+        set(case.data.get("exclude_runners") or ()) <= (
+            {BMC_CORE_RUNNER, "generated_python_alignment"}
+            if case.id == "dynamic_input_overrides" else {BMC_CORE_RUNNER}
+        )
         for case in cases
     )
 
@@ -1243,3 +1248,24 @@ def test_semantic_fixture_schema_reports_case_id_and_path(tmp_path):
     message = str(exc_info.value)
     assert "bad" in message
     assert os.path.abspath(yaml_path) in message
+
+
+@pytest.mark.unittest
+def test_numeric_input_fixture_runs_parameters_and_repeated_overrides(tmp_path):
+    data = {
+        'title': 'Sample external values with fixed parameters',
+        'origin': {'files': ['test/simulate/test_runtime_inputs.py']},
+        'categories': ['runtime'],
+        'exclude_runners': ['generated_python_alignment', 'bmc_core'],
+        'initial': {'parameters': {'gain': 3}},
+        'steps': [
+            {'cycle': [], 'inputs': {'sensor': 2}, 'cycle_count': 2,
+             'expect': {'inputs': {'sensor': 2}, 'vars': {'result': 6}}},
+            {'cycle': [], 'inputs': {'sensor': 4},
+             'expect': {'inputs': {'sensor': 4}, 'vars': {'result': 12}}},
+        ],
+    }
+    path = _write_fixture(tmp_path, data, '''input int sensor; param int gain = 2;
+    output int result = 0;
+    state Root { state Ready { during { result = sensor * gain; } } [*] -> Ready; }''')
+    run_simulation_case(load_semantic_case(path))

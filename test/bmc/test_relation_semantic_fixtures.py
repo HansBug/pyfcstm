@@ -571,7 +571,7 @@ def test_bmc_semantic_fixture_policy_covers_known_gap_inventory() -> None:
     cases = {case.id: case for case in iter_semantic_cases()}
     assert len(cases) >= 194
     assert BMC_CORE_FIXTURE_LEDGER_CASES <= set(cases)
-    assert len(BMC_CORE_FIXTURE_LEDGER_CASES) == 60
+    assert len(BMC_CORE_FIXTURE_LEDGER_CASES) == 61
 
     excluded_in_yaml = {
         case.id for case in cases.values() if is_runner_excluded(case, BMC_CORE_RUNNER)
@@ -593,7 +593,7 @@ def test_bmc_semantic_fixture_policy_covers_known_gap_inventory() -> None:
         "hard_pass": 168,
         "partial": 0,
         "expected_unsupported": 10,
-        "temporary_exclude": 23,
+        "temporary_exclude": 24,
         "long_term_exclude": 4,
     }
 

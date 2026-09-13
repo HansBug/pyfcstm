@@ -81,6 +81,7 @@ _DEFAULT_SHARED_RUNNERS = ("simulation", "generated_python_alignment")
 BMC_CORE_RUNNER = "bmc_core"
 _ALLOWED_EXCLUDE_RUNNERS = set(_DEFAULT_SHARED_RUNNERS) | {BMC_CORE_RUNNER}
 _ALLOWED_EXPECT_FIELDS = {
+    "inputs",
     "state",
     "vars",
     "vars_exact",
@@ -91,7 +92,7 @@ _ALLOWED_EXPECT_FIELDS = {
     "raises",
     "handler_calls",
 }
-_ALLOWED_INITIAL_FIELDS = {"state", "vars", "expect"}
+_ALLOWED_INITIAL_FIELDS = {"state", "vars", "expect", "parameters"}
 _ALLOWED_INITIAL_CONSTRUCTOR_EXPECT_FIELDS = {"raises"}
 _ALLOWED_RAISES_FIELDS = {
     "type",
@@ -111,6 +112,7 @@ _ALLOWED_HANDLER_CALL_FIELDS = _REQUIRED_HANDLER_CALL_FIELDS | {
     "named_ref",
 }
 _PUBLIC_EXPECT_FIELDS = {
+    "inputs",
     "state",
     "vars",
     "vars_exact",
@@ -531,6 +533,9 @@ def _assert_runtime_expectation(
                 actual_vars,
             )
 
+    if "inputs" in expect:
+        assert cycle_result is not None
+        assert dict(cycle_result.inputs) == expect["inputs"], "%s input snapshot mismatch" % field_path
     _assert_handler_calls(expect, handler_calls, case, field_path)
 
 
@@ -800,9 +805,10 @@ def _run_step(
     cycle_input = _cycle_input_for_step(step, case.id, case.yaml_path, field_path)
     events = _step_events(cycle_input, runtime, case, field_path)
     cycle_results = []
+    input_kwargs = {"inputs": step["inputs"]} if "inputs" in step else {}
     if "raises" in expect:
         try:
-            runtime.cycle(events)
+            runtime.cycle(events, **input_kwargs)
         except Exception as err:
             # Runtime/generator errors intentionally propagate through the
             # fixture contract; expected semantic errors are matched here.
@@ -813,7 +819,7 @@ def _run_step(
             )
     else:
         for _ in range(cycle_count):
-            cycle_result = runtime.cycle(events)
+            cycle_result = runtime.cycle(events, **input_kwargs)
             cycle_results.append(cycle_result)
             # A repeated step keeps its final state/vars expectation, but a
             # Delta expectation describes every public cycle call. This avoids
@@ -1328,9 +1334,20 @@ def _build_generated_runtime(
 
 
 def _build_simulation_runtime(case: SemanticCase) -> SimulationRuntime:
-    return SimulationRuntime(
-        build_state_machine_from_case(case), **_simulation_kwargs(case)
-    )
+    from pyfcstm.simulate import ReplayInputPattern
+
+    model = build_state_machine_from_case(case)
+    kwargs = _simulation_kwargs(case)
+    initial = case.data.get("initial") or {}
+    if "parameters" in initial:
+        kwargs["parameters"] = initial["parameters"]
+    if model.dynamic_inputs:
+        snapshots = []
+        for index, step in enumerate(case.data["steps"]):
+            count = _effective_cycle_count(step, case.id, case.yaml_path, "steps[%d]" % index)
+            snapshots.extend(dict(step.get("inputs", {})) for _ in range(count))
+        kwargs["input_source"] = ReplayInputPattern(snapshots, input_names=tuple(model.dynamic_inputs))
+    return SimulationRuntime(model, **kwargs)
 
 
 def run_simulation_case(case: SemanticCase) -> None:
@@ -1634,7 +1651,7 @@ def _validate_expect(
         _validate_dot_state_path(
             expect["state"], case_id, yaml_path, field_path + ".state"
         )
-    for vars_field in ("vars", "vars_exact"):
+    for vars_field in ("vars", "vars_exact", "inputs"):
         if vars_field in expect:
             _validate_vars_mapping(
                 expect[vars_field], case_id, yaml_path, field_path + "." + vars_field
@@ -1710,6 +1727,8 @@ def _validate_initial(
         )
     if initial.get("vars") is not None:
         _validate_vars_mapping(initial.get("vars"), case_id, yaml_path, "initial.vars")
+    if "parameters" in initial:
+        _validate_vars_mapping(initial["parameters"], case_id, yaml_path, "initial.parameters")
     if "expect" not in initial:
         return
     if "state" not in initial:
@@ -1981,7 +2000,7 @@ def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
                     case_id, yaml_path, "steps[%d] must be a mapping" % index
                 )
             field_path = "steps[%d]" % index
-            unknown_step = set(step.keys()) - {"cycle", "cycle_count", "expect"}
+            unknown_step = set(step.keys()) - {"cycle", "cycle_count", "expect", "inputs"}
             if unknown_step:
                 raise _case_error(
                     case_id,
@@ -1996,6 +2015,8 @@ def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
                 raise _case_error(
                     case_id, yaml_path, "%s.expect is required" % field_path
                 )
+            if "inputs" in step:
+                _validate_vars_mapping(step["inputs"], case_id, yaml_path, field_path + ".inputs")
             _validate_step_cycle_shape(step, case_id, yaml_path, field_path)
             _validate_expect(
                 step["expect"], case_id, yaml_path, field_path + ".expect", runners

@@ -106,6 +106,25 @@ Abstract handler registration::
     runtime.register_handlers_from_object(handlers)
 """
 
+from .inputs import (
+    ScalarInputPattern,
+    IntegratedInputPattern,
+    InputSourceSpec,
+    BaseScalarInputPattern,
+    BaseIntegratedInputPattern,
+    ConstantIntInput,
+    ConstantFloatInput,
+    SequenceInput,
+    UniformIntInput,
+    UniformFloatInput,
+    NormalIntInput,
+    NormalFloatInput,
+    CallableInput,
+    IntegratedCallableInput,
+    IntegratedSequenceInput,
+    ReplayInputPattern,
+    SimulationRuntimeInputSourceError,
+)
 from .context import ReadOnlyExecutionContext
 from .decorators import abstract_handler
 from .runtime import (
@@ -121,6 +140,24 @@ from .runtime import (
 from .utils import is_state_resolve_event_path
 
 __all__ = [
+    "ScalarInputPattern",
+    "IntegratedInputPattern",
+    "InputSourceSpec",
+    "BaseScalarInputPattern",
+    "BaseIntegratedInputPattern",
+    "ConstantIntInput",
+    "ConstantFloatInput",
+    "SequenceInput",
+    "UniformIntInput",
+    "UniformFloatInput",
+    "NormalIntInput",
+    "NormalFloatInput",
+    "CallableInput",
+    "IntegratedCallableInput",
+    "IntegratedSequenceInput",
+    "ReplayInputPattern",
+    "SimulationRuntimeInputSourceError",
+
     "CycleResult",
     "ExecutionTraceEntry",
     "ReadOnlyExecutionContext",

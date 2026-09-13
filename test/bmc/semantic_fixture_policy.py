@@ -93,6 +93,8 @@ HANDLER_CALL_ALIGNMENT_CASES = {
 }
 
 TEMPORARY_BMC_CORE_EXCLUDE_CASES = {
+    # Dynamic input lowering and witness snapshots are not implemented yet.
+    "dynamic_input_overrides",
     # Arithmetic alignment fixtures whose values the current encoder computes
     # differently, or whose step-level exception expectations it cannot build.
     "arith_div_by_zero_raises",
@@ -140,6 +142,12 @@ BMC_CORE_FIXTURE_LEDGER_CASES = (
 
 
 def _temporary_policy(case_id: str) -> BmcSemanticFixturePolicy:
+    if case_id == "dynamic_input_overrides":
+        return BmcSemanticFixturePolicy(
+            mode="temporary_exclude",
+            bucket="dynamic_inputs",
+            reason="Dynamic input symbols, parameter bindings and witness snapshots require role-aware BMC lowering.",
+        )
     return BmcSemanticFixturePolicy(
         mode="temporary_exclude",
         bucket="runtime_step_error",

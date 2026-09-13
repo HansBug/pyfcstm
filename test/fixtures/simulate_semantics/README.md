@@ -181,3 +181,26 @@ Reviewers can use this fixed template when checking a migrated case:
 | Original test | Fixture id | DSL equivalent? | Cycle/events equivalent? | Assertions preserved? | Notes |
 |---|---|---|---|---|---|
 | `path::Class::test_name` | `case_id` | yes/no | yes/no | yes/no | Missing or changed assertions. |
+
+## Numeric input snapshots
+
+Role-aware simulator cases may set `initial.parameters`, `steps[].inputs`, and
+`steps[].expect.inputs`. Parameters are construction-time overrides; each step's
+inputs are a complete dynamic-input snapshot and are passed as explicit cycle
+overrides. Repeated cycles use that same snapshot each time. The simulation
+adapter binds a copied `ReplayInputPattern` built from these snapshots, so it
+still exercises normal source binding and advancement instead of bypassing the
+production input manager. Generator-specific behavior belongs in the ordinary
+Python input-pattern tests.
+
+The `dynamic_input_overrides` case exercises fixed parameters, changing inputs,
+persistent controls and outputs. It explicitly excludes generated Python and
+BMC runners until they support these role semantics. The BMC fixture policy
+ledger records that exclusion as `dynamic_inputs`; existing hard-pass cases
+remain required. When those backends implement input snapshots, remove the
+exclusions and add their adapter support rather than duplicating this scenario.
+
+The C/C-poll/C++/C++-poll corpus tests consume the same generated-runtime-ready
+subset selected by `generated_python_alignment`, rather than the unfiltered
+simulator corpus. This keeps the existing shared template baseline while
+allowing explicitly simulator-only input fixtures until template support lands.

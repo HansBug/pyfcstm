@@ -37,7 +37,7 @@ _DECLARATION_ROLES = {
 }
 _DEFAULT_DECLARATIONS = {
     VariableRole.CONTROL: "def",
-    VariableRole.INPUT_DYNAMIC: "input dynamic",
-    VariableRole.INPUT_STATIC: "input static",
+    VariableRole.INPUT_DYNAMIC: "input",
+    VariableRole.INPUT_STATIC: "param",
     VariableRole.OUTPUT: "output",
 }

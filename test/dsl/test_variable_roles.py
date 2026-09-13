@@ -4,7 +4,18 @@ import pytest
 
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.dsl.error import GrammarParseError
-from pyfcstm.dsl.node import DefAssignment, Integer
+from pyfcstm.dsl.node import (
+    BinaryOp,
+    Constant,
+    DefAssignment,
+    Float,
+    HexInt,
+    Integer,
+    Paren,
+    UnaryOp,
+    UFunc,
+)
+from pyfcstm.utils.validate import Span
 from pyfcstm.dsl.role import VariableRole
 
 pytestmark = pytest.mark.unittest
@@ -75,8 +86,8 @@ def test_unknown_declaration_prefix_rejected_by_grammar(prefix):
     "role,prefix,expr",
     [
         (VariableRole.CONTROL, "def", Integer("1")),
-        (VariableRole.INPUT_DYNAMIC, "input dynamic", None),
-        (VariableRole.INPUT_STATIC, "input static", Integer("1")),
+        (VariableRole.INPUT_DYNAMIC, "input", None),
+        (VariableRole.INPUT_STATIC, "param", Integer("1")),
         (VariableRole.OUTPUT, "output", Integer("1")),
     ],
 )
@@ -145,3 +156,123 @@ def test_invalid_declaration_rule_reports_a_grammar_error():
     parser.variable_declaration()
     with pytest.raises(GrammarParseError):
         errors.check_errors()
+
+
+@pytest.mark.parametrize(
+    "role,prefix,expr",
+    [
+        (VariableRole.INPUT_DYNAMIC, "input", None),
+        (VariableRole.INPUT_STATIC, "param", Integer("1")),
+    ],
+)
+def test_declaration_positional_fields_end_with_span(role, prefix, expr):
+    span = Span(line=2, column=3)
+    node = DefAssignment("value", "int", expr, None, role, prefix, span)
+    assert node.role is role
+    assert node.spelling == prefix
+    assert node._span is span
+    assert str(node).startswith(prefix + " int value")
+
+
+@pytest.mark.parametrize(
+    "prefix,role",
+    [
+        ("def", VariableRole.CONTROL),
+        ("control", VariableRole.CONTROL),
+        ("input", VariableRole.INPUT_DYNAMIC),
+        ("input dynamic", VariableRole.INPUT_DYNAMIC),
+        ("param", VariableRole.INPUT_STATIC),
+        ("input static", VariableRole.INPUT_STATIC),
+        ("output", VariableRole.OUTPUT),
+    ],
+)
+class TestDSLVariableDeclaration:
+    @pytest.mark.parametrize(
+        "type_name,initializer,expression",
+        [
+            ("int", "", None),
+            ("float", "", None),
+            ("int", " = 42", Integer(raw="42")),
+            ("int", " = 0x2a", HexInt(raw="0x2a")),
+            ("float", " = 1.25e-3", Float(raw="1.25e-3")),
+            ("float", " = pi", Constant(raw="pi")),
+            ("float", " = sin(pi)", UFunc(func="sin", expr=Constant(raw="pi"))),
+            ("int", " = -2", UnaryOp(op="-", expr=Integer(raw="2"))),
+            (
+                "int",
+                " = 1 + 2 * 3",
+                BinaryOp(
+                    expr1=Integer(raw="1"),
+                    op="+",
+                    expr2=BinaryOp(
+                        expr1=Integer(raw="2"), op="*", expr2=Integer(raw="3")
+                    ),
+                ),
+            ),
+            (
+                "int",
+                " = (1 + 2) * 3",
+                BinaryOp(
+                    expr1=Paren(
+                        expr=BinaryOp(
+                            expr1=Integer(raw="1"), op="+", expr2=Integer(raw="2")
+                        )
+                    ),
+                    op="*",
+                    expr2=Integer(raw="3"),
+                ),
+            ),
+        ],
+    )
+    @pytest.mark.parametrize("doc", [None, "measured value"])
+    def test_positive_cases(
+        self, prefix, role, type_name, initializer, expression, doc
+    ):
+        # Syntax accepts optional initializers for every role. Model validation
+        # separately rejects a dynamic initializer or a missing required value.
+        source = ("/* measured value */\n" if doc else "") + "%s %s value%s;" % (
+            prefix,
+            type_name,
+            initializer,
+        )
+        expected = DefAssignment(
+            name="value",
+            type=type_name,
+            expr=expression,
+            doc=doc,
+            role=role,
+            spelling=prefix,
+        )
+        actual = parse_with_grammar_entry(source, entry_name="def_assignment")
+        assert actual == expected
+        assert actual.spelling == expected.spelling
+
+    @pytest.mark.parametrize(
+        "declaration",
+        [
+            "value = 1;",  # Missing type.
+            "bool value = True;",  # Unsupported type.
+            "int = 1;",  # Missing name.
+            "int value",  # Missing terminator.
+            "int value 1;",  # Missing assignment operator.
+            "int value := 1;",  # Operation syntax is not a declaration.
+            "int value = ;",  # Missing initializer expression.
+            "int value = 1 + ;",  # Missing operand.
+            "int value = other;",  # Initializers are name-free.
+            "int value = 1 + other;",  # Nested variable references are forbidden.
+            "int value = 1 > 0;",  # Comparisons are not initializer syntax.
+            "int value = True && False;",  # Boolean expressions are not initializers.
+            "int value = (1 > 0) ? 1 : 0;",  # Conditional initializers are unsupported.
+            "float value = sin();",  # A unary function requires an argument.
+            "float value = sin(1, 2);",  # A unary function takes only one argument.
+            'float value = "text";',  # Only numeric expressions are accepted.
+            "int value = 1, second = 2;",  # One name per declaration.
+            "int value = 1; state Extra;",  # The declaration entry consumes all input.
+        ],
+    )
+    def test_negative_cases(self, prefix, role, declaration):
+        with pytest.raises(GrammarParseError) as error:
+            parse_with_grammar_entry(
+                prefix + " " + declaration, entry_name="def_assignment"
+            )
+        assert error.value.errors

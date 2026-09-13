@@ -872,6 +872,7 @@ class DefAssignment(Statement):
     :type role: pyfcstm.dsl.role.VariableRole
     :param spelling: Original declaration prefix, or ``None`` for the default
         spelling of the role. Legacy control declarations default to ``def``.
+        Dynamic and static inputs default to ``input`` and ``param`` respectively.
     :type spelling: Optional[str]
 
     :rtype: DefAssignment
@@ -887,9 +888,9 @@ class DefAssignment(Statement):
     type: str
     expr: Optional[Expr]
     doc: Optional[str] = None
-    _span: Optional[Span] = field(default=None, repr=False, compare=False)
     role: VariableRole = VariableRole.CONTROL
     spelling: Optional[str] = field(default=None, compare=False)
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __str__(self) -> str:
         """

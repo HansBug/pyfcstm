@@ -143,8 +143,8 @@ def test_programmatic_roles_and_legacy_positional_documentation():
     assert legacy.doc == "legacy documentation"
     assert str(legacy.to_ast_node()).endswith("def int x = 1;")
     for role, keyword, initializer in [
-        ("input_dynamic", "input dynamic", None),
-        ("input_static", "input static", Integer(1)),
+        ("input_dynamic", "input", None),
+        ("input_static", "param", Integer(1)),
         ("output", "output", Integer(1)),
     ]:
         definition = VarDefine("x", "int", initializer, role=role)

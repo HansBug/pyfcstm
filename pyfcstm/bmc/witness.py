@@ -5233,7 +5233,7 @@ def _diagnose_response_trigger(
     if result.outcome != "property_satisfied":
         return replace(result, trigger_diagnostic_reason="not_applicable")
     formula = result.formula.trigger_reachability_formula
-    if formula is None:  # pragma: no cover - formula validates this invariant.
+    if formula is None:
         raise _internal_error("response trigger reachability formula is missing.")
     solver = z3.Solver()
     solver.add(formula)

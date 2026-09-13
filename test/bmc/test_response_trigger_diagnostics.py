@@ -206,3 +206,34 @@ def test_solver_setup_does_not_spend_the_primary_check_budget(monkeypatch, enabl
     )
     assert result.outcome == "property_satisfied"
     assert result.reason != "deadline_exhausted_before_check"
+
+
+def test_response_diagnosis_rejects_a_missing_trigger_formula():
+    formula = compile_bmc_query(
+        load_state_machine_from_text("def int temperature = 20; state Root;"),
+        "check response <= 8: trigger temperature > 80 -> within 2 false;",
+    )
+    with pytest.raises(BmcBuildError, match="reachability formula is missing"):
+        solve_bmc_property(
+            replace(formula, trigger_reachability_formula=None),
+            diagnose_response_trigger=True,
+        )
+
+
+@pytest.mark.parametrize("status", ["unknown", "timeout"])
+def test_human_report_explains_an_inconclusive_diagnosis(status):
+    from pyfcstm.entry.bmc import _BmcExecution, _human_presentation
+
+    result = _solve(
+        "check response <= 8: trigger temperature > 80 -> within 2 false;",
+        enabled=False,
+    )
+    result = replace(
+        result, trigger_diagnostic_status=status,
+        trigger_diagnostic_reason="solver could not conclude",
+    )
+    presentation = _human_presentation(
+        _BmcExecution(result.formula, result, None, None, 0)
+    )
+    assert any("diagnosis %s" % status in line for line in presentation.evidence)
+    assert any("solver could not conclude" in line for line in presentation.evidence)

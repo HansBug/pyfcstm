@@ -1110,6 +1110,10 @@ counterexample, and the evidence that should be inspected after the run.
      - Explicitly enable conservative slicing; disabled by default.
      - Potentially partial arithmetic and dependencies remain; abstract models skip slicing. More variables do not guarantee a removable cone.
      - Inspect ``result.cone_slicing`` when enabled; witnesses retain all variables, and skips or fallback are reported.
+   * - ``--diagnose-response-trigger``
+     - For a satisfied response, report whether its trigger is reachable within the bounded scenario; disabled by default.
+     - No additional property verdict; ``sat`` means reachable and ``unsat`` means the trigger is unreachable in the bounded scenario.
+     - Inspect ``trigger_diagnostic_status`` and ``trigger_diagnostic_reason`` in the result.
    * - ``--solver-profile``
      - ``default`` keeps the generic solver; ``logic`` detects arithmetic fragments; ``tactic`` uses the fixed simplification pipeline. Default: ``default``.
      - ``--solver-profile fast`` is a usage error (exit ``2``); explanations and proofs always use the default solver.

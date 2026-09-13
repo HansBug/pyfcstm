@@ -3111,6 +3111,12 @@
             "minimum": 0
           }
         },
+        "trigger_diagnostic_status": {
+          "enum": ["sat", "unsat", "unknown", "timeout", null]
+        },
+        "trigger_diagnostic_reason": {
+          "type": ["string", "null"]
+        },
         "cone_slicing": {
           "type": "object",
           "additionalProperties": false,

@@ -31,13 +31,13 @@ def test_trace_preserves_semantic_fixture(case, monkeypatch):
     traced_results = []
     snapshots = []
 
-    def without_trace(events=None):
-        result = plain_cycle(events)
+    def without_trace(events=None, **kwargs):
+        result = plain_cycle(events, **kwargs)
         plain_results.append(result)
         return result
 
-    def with_trace(events=None):
-        result = traced_cycle(events, trace=True)
+    def with_trace(events=None, **kwargs):
+        result = traced_cycle(events, trace=True, **kwargs)
         traced_results.append(result)
         snapshots.append([entry.to_dict() for entry in result.trace])
         if result.delta:

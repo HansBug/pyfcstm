@@ -105,3 +105,10 @@ material.  The main topics now live here:
 The legacy example resources remain in this directory so old links and
 source-output pairs stay stable. The migration log records each resource and
 the final cleanup audit explains why these compatibility resources remain.
+
+Custom numeric input generators
+-------------------------------
+
+For models that read environment values each cycle, follow the executable
+construction and subclass examples in :doc:`../../reference/simulation/inputs`.
+They cover explicit overrides, correlated vectors, and failure-safe advancement.

@@ -111,10 +111,6 @@ _FBMCQ_RESERVED_VAR_NAMES = {
 }
 
 
-class _StaticFalseExpectation(Exception):
-    """Internal marker for fixture expectations that are statically false."""
-
-
 def _solver(*constraints: z3.ExprRef) -> z3.Solver:
     solver = z3.Solver()
     solver.add(*constraints)
@@ -238,27 +234,6 @@ def _expect_vars(core, frame_index: int, values: Mapping[str, Any]) -> z3.BoolRe
             for name, value in sorted(values.items())
         ]
     )
-
-
-def _expect_vars_exact(core, frame_index: int, values: Mapping[str, Any]) -> z3.BoolRef:
-    variable_names = {var.name for var in core.context.domain.variables}
-    if set(values) != variable_names:
-        raise _StaticFalseExpectation
-    return _expect_vars(core, frame_index, values)
-
-
-def _expect_vars_keys(core, names: Sequence[str]) -> z3.BoolRef:
-    variable_names = {var.name for var in core.context.domain.variables}
-    if set(names) != variable_names:
-        raise _StaticFalseExpectation
-    return z3.BoolVal(True)
-
-
-def _expect_vars_absent(core, names: Sequence[str]) -> z3.BoolRef:
-    variable_names = {var.name for var in core.context.domain.variables}
-    if variable_names.intersection(names):
-        raise _StaticFalseExpectation
-    return z3.BoolVal(True)
 
 
 def _expected_handler_call_value(item: Mapping[str, Any], field_name: str) -> Any:
@@ -398,9 +373,6 @@ def _expectation_expr(core, case, ignored_fields: Sequence[str]) -> z3.BoolRef:
     public_fields = {
         "state",
         "vars",
-        "vars_exact",
-        "vars_keys",
-        "vars_absent",
         "ended",
         "delta",
         "handler_calls",
@@ -411,41 +383,27 @@ def _expectation_expr(core, case, ignored_fields: Sequence[str]) -> z3.BoolRef:
         expect = step.get("expect") or {}
         start_frame_index = frame_index
         frame_index += _effective_cycle_count(step, case.id, case.yaml_path, field_path)
-        try:
-            if "handler_calls" in expect and "handler_calls" not in ignored:
-                observed_public_fields += 1
+        if "handler_calls" in expect and "handler_calls" not in ignored:
+            observed_public_fields += 1
+            constraints.append(
+                _expect_handler_calls(core, frame_index, expect["handler_calls"])
+            )
+        if "state" in expect:
+            observed_public_fields += 1
+            constraints.append(_expect_state(core, frame_index, expect["state"]))
+        if "ended" in expect:
+            observed_public_fields += 1
+            constraints.append(_expect_ended(core, frame_index, expect["ended"]))
+        if "vars" in expect:
+            observed_public_fields += 1
+            constraints.append(_expect_vars(core, frame_index, expect["vars"]))
+        if "delta" in expect and "delta" not in ignored:
+            observed_public_fields += 1
+            for step_index in range(start_frame_index, frame_index):
                 constraints.append(
-                    _expect_handler_calls(core, frame_index, expect["handler_calls"])
+                    core.symbols.delta_flag(step_index)
+                    == z3.BoolVal(expect["delta"])
                 )
-            if "state" in expect:
-                observed_public_fields += 1
-                constraints.append(_expect_state(core, frame_index, expect["state"]))
-            if "ended" in expect:
-                observed_public_fields += 1
-                constraints.append(_expect_ended(core, frame_index, expect["ended"]))
-            if "vars" in expect:
-                observed_public_fields += 1
-                constraints.append(_expect_vars(core, frame_index, expect["vars"]))
-            if "vars_exact" in expect:
-                observed_public_fields += 1
-                constraints.append(
-                    _expect_vars_exact(core, frame_index, expect["vars_exact"])
-                )
-            if "vars_keys" in expect:
-                observed_public_fields += 1
-                constraints.append(_expect_vars_keys(core, expect["vars_keys"]))
-            if "vars_absent" in expect:
-                observed_public_fields += 1
-                constraints.append(_expect_vars_absent(core, expect["vars_absent"]))
-            if "delta" in expect and "delta" not in ignored:
-                observed_public_fields += 1
-                for step_index in range(start_frame_index, frame_index):
-                    constraints.append(
-                        core.symbols.delta_flag(step_index)
-                        == z3.BoolVal(expect["delta"])
-                    )
-        except _StaticFalseExpectation:
-            constraints.append(z3.BoolVal(False))
         unknown_unignored = (set(expect) - public_fields - ignored) - {"raises"}
         if unknown_unignored:
             raise BmcBuildError(
@@ -497,9 +455,6 @@ def _expectation_query_predicate(case, ignored_fields: Sequence[str]) -> str:
         if "vars" in expect:
             observed_public_fields += 1
             terms.append(_expect_vars_query(expect["vars"]))
-        if "vars_exact" in expect:
-            observed_public_fields += 1
-            terms.append(_expect_vars_query(expect["vars_exact"]))
         if "handler_calls" in expect and "handler_calls" not in ignored:
             observed_public_fields += 1
             terms.append(
@@ -579,6 +534,7 @@ def test_bmc_semantic_fixture_policy_covers_known_gap_inventory() -> None:
     assert (
         excluded_in_yaml
         == TEMPORARY_BMC_CORE_EXCLUDE_CASES | CONSTRUCTOR_DIAGNOSTIC_EXCLUDE_CASES
+        | {case.id for case in cases.values() if "variable_roles" in case.data["categories"]}
     )
     assert not (NUMERIC_UNSUPPORTED_CASES & excluded_in_yaml)
     assert not (FLOAT_MODULO_UNSUPPORTED_CASES & excluded_in_yaml)
@@ -593,7 +549,7 @@ def test_bmc_semantic_fixture_policy_covers_known_gap_inventory() -> None:
         "hard_pass": 168,
         "partial": 0,
         "expected_unsupported": 10,
-        "temporary_exclude": 23,
+        "temporary_exclude": 23 + sum("variable_roles" in case.data["categories"] for case in cases.values()),
         "long_term_exclude": 4,
     }
 
@@ -616,3 +572,24 @@ def test_bmc_core_matches_semantic_fixture_public_observations(case) -> None:
         _assert_expected_unsupported(case)
         return
     _assert_semantic_fixture_matches_bmc_core(case, policy.ignored_expect_fields)
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("excluded", [True, False])
+def test_role_fixture_policy_uses_category_and_explicit_exclusion(tmp_path, excluded):
+    import yaml
+
+    data = {
+        "title": "Custom named role case",
+        "origin": {"files": ["test/bmc/test_relation_semantic_fixtures.py"]},
+        "categories": ["variable_roles"],
+        "steps": [{"cycle": [], "expect": {"vars": {"count": 0}}}],
+    }
+    if excluded:
+        data["exclude_runners"] = ["bmc_core"]
+    yaml_path = tmp_path / "custom_model_behavior.yaml"
+    yaml_path.write_text(yaml.safe_dump(data), encoding="utf-8")
+    yaml_path.with_suffix(".fcstm").write_text("control int count = 0; state Root;", encoding="utf-8")
+    policy = policy_for_case(str(yaml_path))
+    assert policy.mode == ("temporary_exclude" if excluded else "hard_pass")
+    assert policy.bucket == ("variable_roles" if excluded else "baseline")

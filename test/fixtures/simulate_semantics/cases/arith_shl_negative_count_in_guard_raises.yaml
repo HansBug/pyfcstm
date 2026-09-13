@@ -28,6 +28,6 @@ steps:
       cause_type: ValueError
       cause_match: negative shift count
       cause_match_kind: substring
-    vars_exact:
+    vars:
       n: -1
       hit: 0

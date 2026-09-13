@@ -1,0 +1,35 @@
+title: dynamic input unblocks hot composite
+origin:
+  files:
+  - test/simulate/test_runtime_inputs.py
+categories:
+- runtime
+- variable_roles
+- dynamic_inputs
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+parameters:
+  gain: 4
+initial:
+  state: Root.Group
+  vars: {}
+  outputs:
+    result: 7
+steps:
+- cycle: []
+  inputs:
+    permit: 0
+  expect:
+    outputs:
+      result: 7
+    delta: true
+    state: Root.Group
+- cycle: []
+  inputs:
+    permit: 3
+  expect:
+    outputs:
+      result: 12
+    delta: false
+    state: Root.Group.Ready

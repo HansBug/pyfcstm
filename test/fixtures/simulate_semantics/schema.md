@@ -34,10 +34,11 @@ The shared corpus may assert only public observations:
 - construction or hot-start outcome through `initial`
 - cycle inputs and post-cycle state/vars through `steps`
 - successful no-progress classification through `expect.delta`
+- the frozen input snapshot returned by a successful cycle through `expect.inputs`
 - abstract hook call behavior through `handlers` plus `handler_calls`
 
-`delta` is the only cycle-return observation promoted into this shared contract.
-It is a required-in-context boolean classification of the immediately preceding
+`delta` and `inputs` are the cycle-return observations in this contract.
+`delta` is a required-in-context boolean classification of the immediately preceding
 successful public `cycle()` call. The simulator reads `CycleResult.delta`;
 generated/native adapters read their public `last_cycle_was_delta` observation.
 All other cycle-return metadata remains simulator-only debug / introspection:
@@ -50,7 +51,7 @@ ordinary pytest coverage instead of shared YAML: CLI/REPL command transcripts,
 model-construction diagnostics, simulator runtime options, stack snapshots,
 cycle counters, history records, logs, warnings, abstract handler error lists,
 error-state metadata, anonymous-warning dedupe metadata, cycle return metadata
-other than `delta`, event accounting, and top-level expected-failure markers.
+other than `delta` and `inputs`, event accounting, and top-level expected-failure markers.
 
 ## Top-level fields
 
@@ -62,7 +63,7 @@ other than `delta`, event accounting, and top-level expected-failure markers.
 | `origin.notes` | no | Optional equivalence or provenance notes. |
 | `categories` | yes | Non-empty list from the allowed category set. |
 | `exclude_runners` | no | Non-empty list of current shared runners to exclude. Omit for all shared runners. |
-| `initial` | no | Optional runtime construction state and variables. Omit for normal cold start. |
+| `initial` | no | Optional runtime construction state, persistent variables, and parameters. Omit for normal cold start. |
 | `handlers` | no | Abstract-handler fixtures for public hook-call records. |
 | `steps` | yes | Runtime checkpoints. Use `[]` only when `initial.expect.raises` asserts constructor failure. |
 
@@ -98,7 +99,9 @@ initial:
 Allowed fields:
 
 - `initial.state`: dot-separated state path string or `null`
-- `initial.vars`: full variable snapshot mapping or `null`
+- `initial.vars`: full persistent-variable snapshot mapping or `null`
+- `initial.parameters`: parameter-value mapping passed to the simulator constructor;
+  cold starts may override defaults, while hot starts require a complete snapshot
 - `initial.expect.raises`: constructor exception expectation
 
 Omitting `initial` is the preferred cold-start spelling. `initial.state: null`
@@ -190,6 +193,17 @@ omitted or `cycle: []`; non-empty cycle input with `cycle_count: 0` is rejected.
 `cycle: []` with `cycle_count: N` where `N > 0` is legal but usually less clear
 than just writing `cycle_count: N`.
 
+`steps[].inputs` supplies a numeric input mapping to each cycle in that step.
+For a dynamic-input model, the simulator adapter also constructs a
+`ReplayInputPattern` from these mappings, repeating each snapshot `cycle_count`
+times. Each executed step must therefore provide all dynamic input names;
+zero-cycle checkpoints contribute no replay entry. Runtime unit tests cover
+partial overrides and custom source behavior separately.
+
+Dynamic-input cases currently exclude `generated_python_alignment` and
+`bmc_core` because those runners do not yet support this contract. Existing
+alignment cases retain their runner coverage.
+
 When `expect.delta` is present with `cycle_count > 1`, the same boolean is
 checked after every individual `cycle()` call, not only after the final call.
 Use separate steps to describe a mixed ordinary/Delta sequence.
@@ -209,6 +223,7 @@ and event-object descriptors such as
 | `vars_absent` | Variables that must not be present. |
 | `ended` | Expected `runtime.is_ended`. |
 | `delta` | Exact boolean classification of the immediately preceding successful cycle: `true` for no-progress Delta, `false` for ordinary progress. |
+| `inputs` | Exact frozen `CycleResult.inputs` mapping from the immediately preceding successful cycle. |
 | `raises` | Expected exception class name and optional message/cause match. |
 | `handler_calls` | Exact accumulated fixture-handler call records. |
 
@@ -225,6 +240,8 @@ Rules:
 - `raises` and `delta` are mutually exclusive: an exception has no successful
   cycle result to classify. Split the behavior into separate steps when both
   outcomes need coverage.
+- `inputs` requires a successful cycle result and compares its complete mapping;
+  repeated steps compare the final successful cycle in that step.
 - `vars` and `vars_exact` are mutually exclusive.
 - `vars_exact` is mutually exclusive with `vars_keys` and `vars_absent`, because
   a full snapshot already fixes the variable key set.
@@ -236,7 +253,7 @@ Rules:
 - `return`, `cycle_result`, event accounting, stack, history, logs, warnings,
   error-state metadata, anonymous-warning counters, and generated-template
   private state IDs remain rejected. Runtime count/history and event-ledger
-  fields remain simulator-only; only `delta` is shared.
+  fields remain simulator-only; only `delta` and `inputs` are shared.
 
 ## Exceptions
 
@@ -328,5 +345,5 @@ alignment runner checks construction outcomes and, after every step:
 - public handler call records
 
 It must not depend on private stack shape, cycle counters, history records,
-cycle-return metadata other than `delta`, event accounting, or other simulator
+cycle-return metadata other than `delta` and `inputs`, event accounting, or other simulator
 internals.

@@ -54,6 +54,7 @@ FIXTURE_ROOT = os.path.abspath(
 )
 CASE_DIR = os.path.join(FIXTURE_ROOT, "cases")
 _ALLOWED_TOP_LEVEL_FIELDS = {
+    "parameters",
     "title",
     "origin",
     "categories",
@@ -64,6 +65,8 @@ _ALLOWED_TOP_LEVEL_FIELDS = {
 }
 _ALLOWED_ORIGIN_FIELDS = {"files", "docs", "notes"}
 _ALLOWED_CATEGORIES = {
+    "variable_roles",
+    "dynamic_inputs",
     "runtime",
     "template_alignment",
     "design_example",
@@ -81,18 +84,15 @@ _DEFAULT_SHARED_RUNNERS = ("simulation", "generated_python_alignment")
 BMC_CORE_RUNNER = "bmc_core"
 _ALLOWED_EXCLUDE_RUNNERS = set(_DEFAULT_SHARED_RUNNERS) | {BMC_CORE_RUNNER}
 _ALLOWED_EXPECT_FIELDS = {
-    "inputs",
+    "outputs",
     "state",
     "vars",
-    "vars_exact",
-    "vars_keys",
-    "vars_absent",
     "ended",
     "delta",
     "raises",
     "handler_calls",
 }
-_ALLOWED_INITIAL_FIELDS = {"state", "vars", "expect", "parameters"}
+_ALLOWED_INITIAL_FIELDS = {"state", "vars", "outputs", "expect"}
 _ALLOWED_INITIAL_CONSTRUCTOR_EXPECT_FIELDS = {"raises"}
 _ALLOWED_RAISES_FIELDS = {
     "type",
@@ -112,12 +112,9 @@ _ALLOWED_HANDLER_CALL_FIELDS = _REQUIRED_HANDLER_CALL_FIELDS | {
     "named_ref",
 }
 _PUBLIC_EXPECT_FIELDS = {
-    "inputs",
+    "outputs",
     "state",
     "vars",
-    "vars_exact",
-    "vars_keys",
-    "vars_absent",
     "ended",
     "delta",
     "raises",
@@ -492,50 +489,15 @@ def _assert_runtime_expectation(
             expected_path,
         )
 
-    actual_vars = _vars_dict(runtime)
-    if "vars_exact" in expect:
-        assert actual_vars == dict(expect["vars_exact"]), (
-            "%s %s vars_exact mismatch: %r != %r"
-            % (
-                case.id,
-                field_path,
-                actual_vars,
-                expect["vars_exact"],
+    model = build_state_machine_from_case(case)
+    for field, declarations in (("vars", model.control_variables), ("outputs", model.output_variables)):
+        actual_values = _vars_dict(runtime)
+        for name, expected_value in expect.get(field, {}).items():
+            assert name in declarations, "%s %s %s is not a %s variable" % (case.id, field_path, name, field)
+            assert name in actual_values and actual_values[name] == expected_value, (
+                "%s %s %s %s mismatch: %r != %r"
+                % (case.id, field_path, field, name, actual_values.get(name), expected_value)
             )
-        )
-    if "vars" in expect:
-        for name, expected_value in dict(expect["vars"]).items():
-            assert actual_vars.get(name) == expected_value, (
-                "%s %s var %s mismatch: %r != %r"
-                % (
-                    case.id,
-                    field_path,
-                    name,
-                    actual_vars.get(name),
-                    expected_value,
-                )
-            )
-    if "vars_keys" in expect:
-        expected_keys = set(expect["vars_keys"])
-        actual_keys = set(actual_vars.keys())
-        assert actual_keys == expected_keys, "%s %s vars_keys mismatch: %r != %r" % (
-            case.id,
-            field_path,
-            sorted(actual_keys),
-            sorted(expected_keys),
-        )
-    if "vars_absent" in expect:
-        for name in expect["vars_absent"]:
-            assert name not in actual_vars, "%s %s unexpected var %s in %r" % (
-                case.id,
-                field_path,
-                name,
-                actual_vars,
-            )
-
-    if "inputs" in expect:
-        assert cycle_result is not None
-        assert dict(cycle_result.inputs) == expect["inputs"], "%s input snapshot mismatch" % field_path
     _assert_handler_calls(expect, handler_calls, case, field_path)
 
 
@@ -805,10 +767,14 @@ def _run_step(
     cycle_input = _cycle_input_for_step(step, case.id, case.yaml_path, field_path)
     events = _step_events(cycle_input, runtime, case, field_path)
     cycle_results = []
-    input_kwargs = {"inputs": step["inputs"]} if "inputs" in step else {}
+    if hasattr(runtime, "_fixture_input_source"):
+        source = runtime._fixture_input_source
+        source.snapshot = dict(step.get("inputs", {}))
+        if cycle_count and set(source.snapshot) != set(source.input_names):
+            raise _case_error(case.id, case.yaml_path, "%s.inputs must provide exactly the model dynamic inputs" % field_path)
     if "raises" in expect:
         try:
-            runtime.cycle(events, **input_kwargs)
+            runtime.cycle(events)
         except Exception as err:
             # Runtime/generator errors intentionally propagate through the
             # fixture contract; expected semantic errors are matched here.
@@ -819,7 +785,7 @@ def _run_step(
             )
     else:
         for _ in range(cycle_count):
-            cycle_result = runtime.cycle(events, **input_kwargs)
+            cycle_result = runtime.cycle(events)
             cycle_results.append(cycle_result)
             # A repeated step keeps its final state/vars expectation, but a
             # Delta expectation describes every public cycle call. This avoids
@@ -1015,8 +981,10 @@ def _initial_kwargs(case: SemanticCase) -> Dict[str, Any]:
     kwargs = {}
     if initial.get("state") is not None:
         kwargs["initial_state"] = initial["state"]
-    if initial.get("vars") is not None:
-        kwargs["initial_vars"] = dict(initial["vars"])
+    if initial.get("vars") is not None or initial.get("outputs") is not None:
+        values = dict(initial.get("vars") or {})
+        values.update(initial.get("outputs") or {})
+        kwargs["initial_vars"] = values
     return kwargs
 
 
@@ -1333,21 +1301,36 @@ def _build_generated_runtime(
             return machine_cls(**_initial_kwargs(case))
 
 
-def _build_simulation_runtime(case: SemanticCase) -> SimulationRuntime:
-    from pyfcstm.simulate import ReplayInputPattern
+class _FixtureInputSource:
+    """Expose the current model-input frame without provider-specific behavior."""
 
+    def __init__(self, input_names):
+        self.input_names = tuple(input_names)
+        self.snapshot = {}
+
+    def get(self):
+        return dict(self.snapshot)
+
+    def cycle(self):
+        pass
+
+
+def _build_simulation_runtime(case: SemanticCase) -> SimulationRuntime:
     model = build_state_machine_from_case(case)
-    kwargs = _simulation_kwargs(case)
     initial = case.data.get("initial") or {}
-    if "parameters" in initial:
-        kwargs["parameters"] = initial["parameters"]
+    for field, declarations in (("vars", model.control_variables), ("outputs", model.output_variables)):
+        unknown = set(initial.get(field) or {}) & (set(model.persistent_variables) - set(declarations))
+        if unknown:
+            raise _case_error(case.id, case.yaml_path, "initial.%s has wrong-role or unknown names: %r" % (field, sorted(unknown)))
+    kwargs = _simulation_kwargs(case)
+    if "parameters" in case.data:
+        kwargs["parameters"] = case.data["parameters"]
+    source = _FixtureInputSource(model.dynamic_inputs)
     if model.dynamic_inputs:
-        snapshots = []
-        for index, step in enumerate(case.data["steps"]):
-            count = _effective_cycle_count(step, case.id, case.yaml_path, "steps[%d]" % index)
-            snapshots.extend(dict(step.get("inputs", {})) for _ in range(count))
-        kwargs["input_source"] = ReplayInputPattern(snapshots, input_names=tuple(model.dynamic_inputs))
-    return SimulationRuntime(model, **kwargs)
+        kwargs["input_source"] = source
+    runtime = SimulationRuntime(model, **kwargs)
+    runtime._fixture_input_source = source
+    return runtime
 
 
 def run_simulation_case(case: SemanticCase) -> None:
@@ -1452,41 +1435,6 @@ def run_generated_python_alignment_case(case: SemanticCase) -> None:
             "%s steps[%d] handler call mismatch: simulation=%r, generated=%r"
             % (case.id, index, simulation_calls, generated_calls)
         )
-
-
-def _validate_vars_contract(
-    expect: Mapping[str, Any], case_id: str, yaml_path: str, field_path: str
-) -> None:
-    if "vars" in expect and "vars_exact" in expect:
-        raise _case_error(
-            case_id,
-            yaml_path,
-            "%s vars and vars_exact conflict" % field_path,
-        )
-    if "vars_exact" in expect and "vars_keys" in expect:
-        raise _case_error(
-            case_id,
-            yaml_path,
-            "%s vars_exact and vars_keys conflict" % field_path,
-        )
-    if "vars_exact" in expect and "vars_absent" in expect:
-        raise _case_error(
-            case_id,
-            yaml_path,
-            "%s vars_exact and vars_absent conflict" % field_path,
-        )
-    if "vars_keys" in expect and "vars_absent" in expect:
-        overlap = set(expect["vars_keys"]) & set(expect["vars_absent"])
-        if overlap:
-            raise _case_error(
-                case_id,
-                yaml_path,
-                "%s vars_keys and vars_absent overlap: %r"
-                % (
-                    field_path,
-                    sorted(overlap),
-                ),
-            )
 
 
 def _validate_raises(
@@ -1651,15 +1599,10 @@ def _validate_expect(
         _validate_dot_state_path(
             expect["state"], case_id, yaml_path, field_path + ".state"
         )
-    for vars_field in ("vars", "vars_exact", "inputs"):
+    for vars_field in ("vars", "outputs"):
         if vars_field in expect:
             _validate_vars_mapping(
                 expect[vars_field], case_id, yaml_path, field_path + "." + vars_field
-            )
-    for list_field in ("vars_keys", "vars_absent"):
-        if list_field in expect:
-            _validate_string_list(
-                expect[list_field], case_id, yaml_path, field_path + "." + list_field
             )
     if "ended" in expect and not isinstance(expect["ended"], bool):
         raise _case_error(case_id, yaml_path, "%s.ended must be a boolean" % field_path)
@@ -1678,7 +1621,6 @@ def _validate_expect(
                 yaml_path,
                 "%s state and ended conflict" % field_path,
             )
-    _validate_vars_contract(expect, case_id, yaml_path, field_path)
     _validate_raises(expect, case_id, yaml_path, field_path)
     _validate_handler_calls(expect, case_id, yaml_path, field_path)
 
@@ -1727,8 +1669,8 @@ def _validate_initial(
         )
     if initial.get("vars") is not None:
         _validate_vars_mapping(initial.get("vars"), case_id, yaml_path, "initial.vars")
-    if "parameters" in initial:
-        _validate_vars_mapping(initial["parameters"], case_id, yaml_path, "initial.parameters")
+    if "outputs" in initial:
+        _validate_vars_mapping(initial["outputs"], case_id, yaml_path, "initial.outputs")
     if "expect" not in initial:
         return
     if "state" not in initial:
@@ -1737,11 +1679,11 @@ def _validate_initial(
             yaml_path,
             "initial.expect requires initial.state",
         )
-    if "vars" not in initial:
+    if "vars" not in initial and "outputs" not in initial:
         raise _case_error(
             case_id,
             yaml_path,
-            "initial.expect requires initial.vars",
+            "initial.expect requires initial.vars or initial.outputs",
         )
     expect = initial["expect"]
     if not isinstance(expect, dict):
@@ -1976,6 +1918,8 @@ def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
             case_id, yaml_path, "unknown categories: %r" % sorted(unknown_categories)
         )
     runners = _effective_runners_from_data(data, case_id, yaml_path)
+    if "parameters" in data:
+        _validate_vars_mapping(data["parameters"], case_id, yaml_path, "parameters")
     _validate_initial(data.get("initial"), case_id, yaml_path, runners)
     _validate_handlers(data.get("handlers"), case_id, yaml_path, runners)
     has_steps = "steps" in data
@@ -2017,6 +1961,8 @@ def _validate_case_data(data: Mapping[str, Any], yaml_path: str) -> None:
                 )
             if "inputs" in step:
                 _validate_vars_mapping(step["inputs"], case_id, yaml_path, field_path + ".inputs")
+                if _effective_cycle_count(step, case_id, yaml_path, field_path) == 0:
+                    raise _case_error(case_id, yaml_path, "zero-cycle checkpoints cannot supply inputs")
             _validate_step_cycle_shape(step, case_id, yaml_path, field_path)
             _validate_expect(
                 step["expect"], case_id, yaml_path, field_path + ".expect", runners

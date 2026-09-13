@@ -1,0 +1,27 @@
+title: dynamic input termination effect
+origin:
+  files:
+  - test/simulate/test_runtime_inputs.py
+categories:
+- runtime
+- variable_roles
+- dynamic_inputs
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  inputs:
+    finish: 0
+  expect:
+    outputs:
+      result: 0
+    state: Root.Ready
+- cycle: []
+  inputs:
+    finish: 5
+  expect:
+    outputs:
+      result: 5
+    ended: true
+    state: null

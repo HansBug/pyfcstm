@@ -1,0 +1,38 @@
+title: dynamic input error retry
+origin:
+  files:
+  - test/simulate/test_runtime_inputs.py
+categories:
+- runtime
+- variable_roles
+- dynamic_inputs
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+steps:
+- cycle: []
+  inputs:
+    divisor: 2
+  expect:
+    vars:
+      attempts: 1
+    outputs:
+      result: 4
+- cycle: []
+  inputs:
+    divisor: 0
+  expect:
+    vars:
+      attempts: 1
+    outputs:
+      result: 4
+    raises:
+      type: SimulationRuntimeExpressionError
+- cycle: []
+  inputs:
+    divisor: 4
+  expect:
+    vars:
+      attempts: 2
+    outputs:
+      result: 2

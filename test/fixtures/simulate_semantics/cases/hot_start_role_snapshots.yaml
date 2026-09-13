@@ -1,0 +1,35 @@
+title: hot start role snapshots
+origin:
+  files:
+  - test/simulate/test_runtime_inputs.py
+categories:
+- runtime
+- variable_roles
+- dynamic_inputs
+exclude_runners:
+- generated_python_alignment
+- bmc_core
+parameters:
+  gain: 3
+initial:
+  state: Root.Ready
+  vars:
+    count: 7
+  outputs:
+    reading: 11
+steps:
+- cycle_count: 0
+  expect:
+    state: Root.Ready
+    vars:
+      count: 7
+    outputs:
+      reading: 11
+- cycle: []
+  inputs:
+    sensor: 5
+  expect:
+    vars:
+      count: 8
+    outputs:
+      reading: 15

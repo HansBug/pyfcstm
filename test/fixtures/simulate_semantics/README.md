@@ -51,8 +51,7 @@ SKIP_SLOW_TESTS=1 make unittest
    PR links that supplied the behavior.
 5. Omit `exclude_runners` unless a current shared runner has a documented
    capability gap for this otherwise shared behavior.
-6. Use only the public observation surface: `state`, `vars`, `vars_exact`,
-   `vars_keys`, `vars_absent`, `ended`, `delta`, `raises`, and `handler_calls`.
+6. Use only the public observation surface: `state`, `vars`, `outputs`, `ended`, `delta`, `raises`, and `handler_calls`.
    `delta` must be a boolean on a successful cycle step; it is rejected on
    `cycle_count: 0` checkpoints and exception steps.
 7. Keep `expect` sparse: omitted fields mean “do not assert this observation,”
@@ -160,8 +159,8 @@ Use this checklist before deleting or replacing any inline original test:
 - Runtime log assertions, Python warning assertions, stack snapshots, cycle
   counters, history records, cycle return metadata other than `delta`, event
   accounting, and CLI output stay outside this shared corpus.
-- `set(runtime.vars.keys())` and temporary-variable non-leakage use `vars_keys`
-  and/or `vars_absent`.
+- Full variable-key-set and temporary-variable non-leakage assertions stay in
+  dedicated runtime/template unit tests; fixture mappings assert named values only.
 - Exception tests keep class and message assertions under `raises` and keep
   rollback state/vars assertions when the original checked them.
 - CLI tests stay as ordinary pytest coverage instead of shared fixture YAML.
@@ -184,21 +183,20 @@ Reviewers can use this fixed template when checking a migrated case:
 
 ## Numeric input snapshots
 
-Role-aware simulator cases may set `initial.parameters`, `steps[].inputs`, and
-`steps[].expect.inputs`. Parameters are construction-time overrides; each step's
-inputs are a complete dynamic-input snapshot and are passed as explicit cycle
-overrides. Repeated cycles use that same snapshot each time. The simulation
-adapter binds a copied `ReplayInputPattern` built from these snapshots, so it
-still exercises normal source binding and advancement instead of bypassing the
-production input manager. Generator-specific behavior belongs in the ordinary
-Python input-pattern tests.
+Role-aware cases set fixed top-level `parameters`, optional `initial.vars` and
+`initial.outputs`, and complete `steps[].inputs` frames. Expectations use only
+sparse `vars` (control) and `outputs` mappings for values; inputs and parameters
+have no expectation fields. The simulator adapter feeds each frame through a
+structural input source without encoding generator or override behavior in YAML.
 
-The `dynamic_input_overrides` case exercises fixed parameters, changing inputs,
-persistent controls and outputs. It explicitly excludes generated Python and
-BMC runners until they support these role semantics. The BMC fixture policy
-ledger records that exclusion as `dynamic_inputs`; existing hard-pass cases
-remain required. When those backends implement input snapshots, remove the
-exclusions and add their adapter support rather than duplicating this scenario.
+The role corpus covers parameter defaults, partial cold initial values, hot
+snapshots, changing and repeated multi-input frames, output latching, lifecycle
+and transition effects, Delta, termination and recovery after runtime errors.
+Cases declare `variable_roles` and, where applicable, `dynamic_inputs`, with
+explicit exclusions for generated-runtime and BMC adapters until supported.
+Policy reasons derive from categories rather than individual case names.
+Existing backend cases remain required. See [schema.md](schema.md) for the full
+construction and cycle contract.
 
 The C/C-poll/C++/C++-poll corpus tests consume the same generated-runtime-ready
 subset selected by `generated_python_alignment`, rather than the unfiltered

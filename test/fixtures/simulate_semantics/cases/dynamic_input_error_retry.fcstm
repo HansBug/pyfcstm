@@ -1,0 +1,2 @@
+input int divisor; control int attempts = 0; output int result = 0;
+state Root { state Ready { during { attempts = attempts + 1; result = 8 / divisor; } } [*] -> Ready; }

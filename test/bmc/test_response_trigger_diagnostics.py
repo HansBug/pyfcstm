@@ -196,13 +196,16 @@ def test_solver_setup_does_not_spend_the_primary_check_budget(monkeypatch, enabl
     )
     original = witness._solver_for_profile
 
-    def slow_setup(*args, **kwargs):
-        time.sleep(0.05)
+    clock = [0.0]
+
+    def advance_clock_during_setup(*args, **kwargs):
+        clock[0] += 2.0
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(witness, "_solver_for_profile", slow_setup)
+    monkeypatch.setattr(witness.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(witness, "_solver_for_profile", advance_clock_during_setup)
     result = solve_bmc_property(
-        formula, timeout_ms=20, diagnose_response_trigger=enabled
+        formula, timeout_ms=1000, diagnose_response_trigger=enabled
     )
     assert result.outcome == "property_satisfied"
     assert result.reason != "deadline_exhausted_before_check"

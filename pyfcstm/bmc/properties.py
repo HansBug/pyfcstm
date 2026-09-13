@@ -181,6 +181,7 @@ class BmcPropertyFormula:
     diagnostics: Tuple[str, ...] = ()
     case_label: Optional[str] = None
     response_window: Optional[int] = None
+    trigger_reachability_formula: Optional[z3.BoolRef] = None
 
     def __post_init__(self) -> None:
         _require_core(self.core)
@@ -203,6 +204,12 @@ class BmcPropertyFormula:
         ):
             if not z3.is_bool(getattr(self, field_name)):
                 raise BmcBuildError("%s must be a Z3 Boolean expression." % field_name)
+        if self.trigger_reachability_formula is not None and not z3.is_bool(
+            self.trigger_reachability_formula
+        ):
+            raise BmcBuildError("trigger_reachability_formula must be Boolean or None.")
+        if self.kind != "response" and self.trigger_reachability_formula is not None:
+            raise BmcBuildError("trigger reachability formula is response-only.")
         if isinstance(self.diagnostics, str) or not isinstance(
             self.diagnostics, IterableABC
         ):
@@ -838,6 +845,24 @@ def compile_bmc_property(core: BmcCoreFormula) -> BmcPropertyFormula:
         raise BmcBuildError("Unsupported property kind: %r." % kind)
     solve_formula = z3.And(checked_core.core, objective)
     incomplete_solve_formula = z3.And(checked_core.core, incomplete_formula)
+    trigger_reachability_formula = None
+    if kind == "response":
+        trigger_reachability_formula = z3.Or(
+            *[
+                _lower_predicate(
+                    checked_core,
+                    prop.trigger,
+                    frame_index=step,
+                    step_index=step,
+                    context="response_trigger",
+                    path="property.trigger",
+                ).good
+                for step in range(checked_core.context.bound)
+            ]
+        )
+        trigger_reachability_formula = z3.And(
+            checked_core.core, trigger_reachability_formula
+        )
     return BmcPropertyFormula(
         core=checked_core,
         kind=kind,
@@ -849,6 +874,7 @@ def compile_bmc_property(core: BmcCoreFormula) -> BmcPropertyFormula:
         diagnostics=(),
         case_label=case_label,
         response_window=response_window,
+        trigger_reachability_formula=trigger_reachability_formula,
     )
 
 

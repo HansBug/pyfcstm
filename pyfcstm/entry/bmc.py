@@ -249,6 +249,7 @@ def _execute_bmc(
     infeasibility_explanation: str = "none",
     solver_profile: str = "default",
     cone_slicing: bool = False,
+    diagnose_response_trigger: bool = False,
 ) -> _BmcExecution:
     from ..bmc import BmcBuildError
 
@@ -267,6 +268,8 @@ def _execute_bmc(
             options["infeasibility_explanation"] = infeasibility_explanation
         if solver_profile != "default":
             options["solver_profile"] = solver_profile
+        if diagnose_response_trigger:
+            options["diagnose_response_trigger"] = True
         result = _solve_bmc_property(formula, timeout_ms=timeout_ms, **options)
     except BmcBuildError as err:
         # solve_bmc_property receives validated CLI arguments and a compiled
@@ -317,6 +320,20 @@ def _property_payload(formula: BmcPropertyFormula) -> dict:
 def _human_presentation(execution: _BmcExecution) -> _BmcPresentation:
     base = _solve_presentation(execution.result)
     evidence = list(base.evidence)
+    trigger_status = execution.result.trigger_diagnostic_status
+    trigger_reason = execution.result.trigger_diagnostic_reason
+    if trigger_status == "unsat":
+        evidence.append(
+            "Response trigger: unreachable within the bounded scenario "
+            "(satisfied result may be vacuous)."
+        )
+    elif trigger_status == "sat":
+        evidence.append("Response trigger: reachable within the bounded scenario.")
+    elif trigger_status in {"unknown", "timeout"}:
+        evidence.append(
+            "Response trigger: diagnosis %s (%s)."
+            % (trigger_status, trigger_reason)
+        )
     if execution.replay is not None and not execution.replay.ok:
         headline = "EVIDENCE/REPLAY MISMATCH; RESULT UNTRUSTED"
         property_verdict = "INCONCLUSIVE (EVIDENCE/REPLAY MISMATCH)"
@@ -619,6 +636,7 @@ def build_bmc_output(
     infeasibility_explanation: str = "none",
     solver_profile: str = "default",
     cone_slicing: bool = False,
+    diagnose_response_trigger: bool = False,
 ) -> Tuple[str, int]:
     """Run one bounded query and build its complete CLI report.
 
@@ -668,6 +686,7 @@ def build_bmc_output(
         infeasibility_explanation=infeasibility_explanation,
         solver_profile=solver_profile,
         **({"cone_slicing": cone_slicing} if cone_slicing is not False else {}),
+        **({"diagnose_response_trigger": True} if diagnose_response_trigger else {}),
     )
     return text, exit_code
 
@@ -682,6 +701,7 @@ def _build_bmc_report(
     infeasibility_explanation: str = "none",
     solver_profile: str = "default",
     cone_slicing: bool = False,
+    diagnose_response_trigger: bool = False,
 ) -> Tuple[str, int, str]:
     """Build one report and retain presentation severity for terminal color."""
     for option_name, option_value in (
@@ -724,6 +744,7 @@ def _build_bmc_report(
         infeasibility_explanation,
         solver_profile,
         **({"cone_slicing": cone_slicing} if cone_slicing is not False else {}),
+        **({"diagnose_response_trigger": True} if diagnose_response_trigger else {}),
     )
     if json_output:
         return (
@@ -912,6 +933,7 @@ def _run_bmc_command(
     infeasibility_explanation: str = "none",
     solver_profile: str = "default",
     cone_slicing: bool = False,
+    diagnose_response_trigger: bool = False,
 ) -> int:
     """Build and publish one report behind the CLI exception boundary."""
     text, exit_code, severity = _build_bmc_report(
@@ -923,6 +945,7 @@ def _run_bmc_command(
         infeasibility_explanation=infeasibility_explanation,
         solver_profile=solver_profile,
         **({"cone_slicing": cone_slicing} if cone_slicing is not False else {}),
+        **({"diagnose_response_trigger": True} if diagnose_response_trigger else {}),
     )
     if output_file is None:
         color_enabled = _resolve_bmc_color_enabled(
@@ -1021,6 +1044,11 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
         help="Select the main solver; explanation and proof checks use default.",
     )
     @click.option(
+        "--diagnose-response-trigger",
+        is_flag=True,
+        help="Report whether a satisfied response trigger is reachable within the bound.",
+    )
+    @click.option(
         "--explain-infeasibility",
         "infeasibility_explanation",
         type=click.Choice(("none", "formal", "proof"), case_sensitive=True),
@@ -1052,6 +1080,7 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
         infeasibility_explanation: str,
         solver_profile: str,
         cone_slicing: bool,
+        diagnose_response_trigger: bool,
     ) -> None:
         """Run a bounded model checking query.
 
@@ -1101,6 +1130,7 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
             infeasibility_explanation=infeasibility_explanation,
             solver_profile=solver_profile,
             **({"cone_slicing": cone_slicing} if cone_slicing is not False else {}),
+            **({"diagnose_response_trigger": True} if diagnose_response_trigger else {}),
         )
         ctx.exit(exit_code)
 

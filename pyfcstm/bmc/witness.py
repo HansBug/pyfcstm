@@ -3035,6 +3035,8 @@ class BmcSolveResult(_PrettyPrintableMixin):
     solver_profile: str = "default"
     solver_logic: Optional[str] = None
     solver_statistics: Mapping[str, Any] = field(default_factory=dict)
+    trigger_diagnostic_status: Optional[BmcSolveStatus] = None
+    trigger_diagnostic_reason: Optional[str] = None
     _attempted_slice: Optional[ConeSlice] = field(
         default=None, repr=False, compare=False
     )
@@ -3092,6 +3094,18 @@ class BmcSolveResult(_PrettyPrintableMixin):
         _validate_optional_elapsed_ms(
             "incomplete_elapsed_ms", self.incomplete_elapsed_ms
         )
+        if self.trigger_diagnostic_status is not None and self.trigger_diagnostic_status not in {
+            "sat", "unsat", "unknown", "timeout"
+        }:
+            raise BmcBuildError("trigger_diagnostic_status is invalid.")
+        if self.trigger_diagnostic_reason is not None and not isinstance(
+            self.trigger_diagnostic_reason, str
+        ):
+            raise BmcBuildError("trigger_diagnostic_reason must be a string or None.")
+        if self.trigger_diagnostic_status in {"sat", "unsat"} and self.trigger_diagnostic_reason is not None:
+            raise BmcBuildError("trigger diagnostic reason is only valid for unknown/timeout.")
+        if self.trigger_diagnostic_status in {"unknown", "timeout"} and not self.trigger_diagnostic_reason:
+            raise BmcBuildError("trigger diagnostic reason is required for unknown/timeout.")
         _validate_optional_elapsed_ms("total_elapsed_ms", self.total_elapsed_ms)
         if self.timeout_ms is not None and (
             isinstance(self.timeout_ms, bool)
@@ -3518,7 +3532,7 @@ class BmcSolveResult(_PrettyPrintableMixin):
             'unsat'
         """
         feasibility = self._validated_feasibility()
-        return {
+        result = {
             "node": "bmc_solve_result",
             "kind": self.kind,
             "polarity": self.polarity,
@@ -3545,6 +3559,10 @@ class BmcSolveResult(_PrettyPrintableMixin):
             "available_model_roles": list(self.available_model_roles),
             "diagnostics": list(self.diagnostics),
         }
+        if self.trigger_diagnostic_status is not None or self.trigger_diagnostic_reason is not None:
+            result["trigger_diagnostic_status"] = self.trigger_diagnostic_status
+            result["trigger_diagnostic_reason"] = self.trigger_diagnostic_reason
+        return result
 
     def _cone_metadata(self):
         cone = self._attempted_slice or self.formula.core.cone_slice
@@ -5096,6 +5114,7 @@ def solve_bmc_property(
     check_incomplete: bool = True,
     infeasibility_explanation: str = "none",
     solver_profile: str = "default",
+    diagnose_response_trigger: bool = False,
 ) -> BmcSolveResult:
     """Solve a compiled BMC property formula.
 
@@ -5152,6 +5171,7 @@ def solve_bmc_property(
             check_incomplete,
             infeasibility_explanation,
             solver_profile,
+            diagnose_response_trigger=diagnose_response_trigger,
         )
     started = time.monotonic()
     budget = _SolveBudget(timeout_ms)
@@ -5197,8 +5217,47 @@ def solve_bmc_property(
         )
         verified_trace = None
     result = replace(result, total_elapsed_ms=(time.monotonic() - started) * 1000.0)
+    result = _diagnose_response_trigger(result, diagnose_response_trigger, budget)
     object.__setattr__(result, "_verified_trace", verified_trace)
     return result
+
+
+def _diagnose_response_trigger(
+    result: BmcSolveResult, enabled: bool, budget: "_SolveBudget"
+) -> BmcSolveResult:
+    """Run the opt-in bounded response-trigger reachability probe."""
+    if not isinstance(enabled, bool):
+        raise BmcBuildError("diagnose_response_trigger must be bool.")
+    if not enabled or result.kind != "response":
+        return result
+    if result.outcome != "property_satisfied":
+        return replace(result, trigger_diagnostic_reason="not_applicable")
+    formula = result.formula.trigger_reachability_formula
+    if formula is None:
+        raise _internal_error("response trigger reachability formula is missing.")
+    solver = z3.Solver()
+    solver.add(formula)
+    status, _model, reason, _elapsed, started = _check_with_budget(solver, budget)
+    if not started:
+        return replace(
+            result,
+            trigger_diagnostic_status="timeout",
+            trigger_diagnostic_reason="feedback budget exhausted before trigger check",
+        )
+    if status == "sat":
+        value = "sat"
+        reason = None
+    elif status == "unsat":
+        value = "unsat"
+        reason = None
+    else:
+        value = status
+        reason = reason or "solver returned unknown"
+    return replace(
+        result,
+        trigger_diagnostic_status=value,
+        trigger_diagnostic_reason=reason,
+    )
 
 
 def _solve_property(
@@ -5208,6 +5267,7 @@ def _solve_property(
     infeasibility_explanation,
     solver_profile,
     budget=None,
+    diagnose_response_trigger=False,
 ):
     checked = _require_formula(formula)
     if not isinstance(check_incomplete, bool):
@@ -5246,12 +5306,18 @@ def _solve_property(
     status, model, reason, elapsed_ms, primary_started = _check_with_budget(
         solver, budget
     )
-    finish = partial(
+    make_result = partial(
         _make_solve_result,
         solver_profile=solver_profile,
         solver_logic=solver_logic,
         solver_statistics=dict(iter(solver.statistics())) if primary_started else {},
     )
+
+    def finish(*args, **kwargs):
+        return _diagnose_response_trigger(
+            make_result(*args, **kwargs), diagnose_response_trigger, budget
+        )
+
     diagnostics = list(checked.diagnostics)
     if status == "sat":
         feasibility = _inferred_feasibility()

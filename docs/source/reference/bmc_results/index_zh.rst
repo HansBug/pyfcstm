@@ -45,6 +45,7 @@ JSON 类型和必需键以模式为准；执行顺序、标准输出/标准错�
 .. cli-ref-option: command=bmc option=--timeout-ms
 .. cli-ref-option: command=bmc option=--max-bound
 .. cli-ref-option: command=bmc option=--cone-slicing
+.. cli-ref-option: command=bmc option=--diagnose-response-trigger
 
 .. cli-ref-option: command=bmc option=--solver-profile choices=default,logic,tactic default=default
 .. cli-ref-option: command=bmc option=--explain-infeasibility choices=none,formal,proof default=none

@@ -1055,6 +1055,10 @@ JSON 写入标准输出；HTML 写到请求路径。使用 ``--open`` 且省略�
      - 显式启用保守切片；默认关闭。
      - 危险运算及其依赖保留；含 abstract 动作的模型跳过切片。变量多不代表一定可切。
      - 开启后检查 ``result.cone_slicing``；见证仍包含全部变量，回退与跳过原因可见。
+   * - ``--diagnose-response-trigger``
+     - 对已成立的 response 报告触发条件在当前 bound 场景内是否可达；默认关闭。
+     - 不改变性质结论；``sat`` 表示可达，``unsat`` 表示当前 bound 场景内不可达。
+     - 检查结果中的 ``trigger_diagnostic_status`` 和 ``trigger_diagnostic_reason``。
    * - ``--solver-profile``
      - ``default`` 保留通用求解器；``logic`` 识别算术片段；``tactic`` 使用固定化简组合。默认是 ``default``。
      - ``--solver-profile fast`` 是用法错误，退出 ``2``；不可行解释和证明始终使用默认求解器。

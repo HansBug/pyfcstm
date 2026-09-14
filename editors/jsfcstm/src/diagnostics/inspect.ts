@@ -23,6 +23,7 @@ import {
     OnStage,
     Operation,
     OperationStatement,
+    State,
     StateMachine,
     Transition,
     UFunc,
@@ -187,13 +188,29 @@ export interface TransitionInfo {
 
 
 /**
- * Per-variable structural summary plus participation flags.
+ * Static access location in the expanded model, retaining the authored range.
  */
+export interface VariableAccessSite {
+    kind: 'action' | 'guard' | 'effect';
+    state_path: string;
+    action: string | null;
+    action_index: number | null;
+    transition_index: number | null;
+    statement_path: number[];
+    source_path: string | null;
+    span: ModelSpanJson | null;
+}
+
+/** Per-variable structural summary plus role-specific diagnostic applicability. */
 export interface VariableInfo {
     name: string;
     type: string;
     init_value: string;
     role: import('../ast').VariableRole;
+    external_supply: 'none' | 'cycle' | 'construction';
+    diagnostic_policy: {unused: boolean; unwritten: boolean; write_only: boolean; constant_guard: boolean};
+    read_sites: VariableAccessSite[];
+    write_sites: VariableAccessSite[];
     read_in_states: string[];
     written_in_states: string[];
     read_in_guards: Array<[string, string]>;
@@ -956,7 +973,77 @@ function modelTransitionEndpoint(
         : transitionEndpoint(state.path, transition.toState, false);
 }
 
+function variableAccessSites(machine: StateMachine): Map<string, {reads: VariableAccessSite[]; writes: VariableAccessSite[]}> {
+    const sites = new Map<string, {reads: VariableAccessSite[]; writes: VariableAccessSite[]}>(
+        Object.keys(machine.defines).map(name => [name, {reads: [], writes: []}]),
+    );
+    const record = (names: string[], mode: 'reads' | 'writes', site: VariableAccessSite): void => {
+        for (const name of new Set(names)) {
+            const entry = sites.get(name);
+            if (entry) entry[mode].push(site);
+        }
+    };
+    const span = (range: TextRange): ModelSpanJson | null => {
+        // Programmatic model nodes use a zero-width range when no source exists.
+        if (range.start.line === range.end.line && range.start.character === range.end.character) return null;
+        return {
+            line: range.start.line + 1, column: range.start.character + 1,
+            end_line: range.end.line + 1, end_column: range.end.character + 1,
+        };
+    };
+    const statements = (items: OperationStatement[], owner: VariableAccessSite, prefix: number[] = []): void => {
+        items.forEach((statement, index) => {
+            const path = [...prefix, index];
+            const site = {...owner, statement_path: path, span: span(statement.range)};
+            if (statement instanceof Operation) {
+                record([statement.varName], 'writes', site);
+                record(walkExprVariables(statement.expr), 'reads', site);
+            } else {
+                (statement as IfBlock).branches.forEach((branch, branchIndex) => {
+                    const branchPath = [...path, branchIndex];
+                    record(walkExprVariables(branch.condition), 'reads', {
+                        ...owner, statement_path: branchPath, span: span(branch.range),
+                    });
+                    statements(branch.statements, owner, branchPath);
+                });
+            }
+        });
+    };
+    let transitionIndex = 0;
+    let actionIndex = 0;
+    for (const state of machine.allStates) {
+        let sourceState: State | undefined = state;
+        while (sourceState && !sourceState.importedFromFile) sourceState = sourceState.parent;
+        const sourcePath = (sourceState?.importedFromFile ?? machine.filePath) || null;
+        const statePath = dottedPath(state.path);
+        for (const collection of [state.onEnters, state.onDurings, state.onExits, state.onDuringAspects]) {
+            for (const action of collection) {
+                const owner: VariableAccessSite = {
+                    kind: 'action', state_path: statePath,
+                    action: functionSignature(state.path, action), action_index: actionIndex,
+                    transition_index: null, statement_path: [], source_path: sourcePath,
+                    span: span(action.range),
+                };
+                statements(action.operations, owner);
+                actionIndex += 1;
+            }
+        }
+        for (const transition of state.transitions) {
+            const owner: VariableAccessSite = {
+                kind: 'guard', state_path: statePath, action: null, action_index: null,
+                transition_index: transitionIndex, statement_path: [],
+                source_path: transition.sourcePath ?? null, span: span(transition.range),
+            };
+            record(walkExprVariables(transition.guard), 'reads', owner);
+            statements(transition.effects, {...owner, kind: 'effect'});
+            transitionIndex += 1;
+        }
+    }
+    return sites;
+}
+
 function buildVariableInfos(machine: StateMachine, states: StateInfo[]): VariableInfo[] {
+    const accessSites = variableAccessSites(machine);
     const readsByState: Record<string, string[]> = {};
     const writesByState: Record<string, string[]> = {};
     const readGuards: Record<string, Array<[string, string]>> = {};
@@ -1063,6 +1150,13 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
             type: def.type,
             init_value: exprText(def.init) ?? '',
             role: def.role,
+            external_supply: def.role === 'input_dynamic' ? 'cycle' : def.role === 'input_static' ? 'construction' : 'none',
+            diagnostic_policy: {
+                unused: def.role === 'control', unwritten: def.role === 'control',
+                write_only: def.role === 'control', constant_guard: def.role === 'control',
+            },
+            read_sites: accessSites.get(name)!.reads,
+            write_sites: accessSites.get(name)!.writes,
             read_in_states: readStates,
             written_in_states: writtenStates,
             read_in_guards: readGuardEntries,

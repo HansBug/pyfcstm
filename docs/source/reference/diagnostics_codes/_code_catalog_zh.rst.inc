@@ -490,6 +490,7 @@ E_DUPLICATE_VAR
 .. diagnostics-meta E_DUPLICATE_VAR severity=error emit_tier=static_pipeline capability=pure_static span_object=variable_declaration
 .. diagnostics-ref E_DUPLICATE_VAR var_name type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_DUPLICATE_VAR previous_span type=Span required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_DUPLICATE_VAR source_path type=str required=false enum=- item_enum=- exact_values=-
 
 
 .. diagnostics-boundary E_DUPLICATE_VAR kind=cli_error
@@ -516,6 +517,11 @@ E_DUPLICATE_VAR
      - ``Span``
      - 否
      - 字段含义：第一次声明的源码位置。
+
+   * - ``source_path``
+     - ``str``
+     - 否
+     - 包含相关声明、赋值或 import 语句的原始源文件路径。
 
 .. diagnostics-example E_DUPLICATE_VAR 1 cli_error
 
@@ -996,15 +1002,18 @@ E_IMPORT_DUPLICATE_MAPPING
 .. diagnostics-ref E_IMPORT_DUPLICATE_MAPPING duplicated_name type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_IMPORT_DUPLICATE_MAPPING direction type=str required=true enum=source_duplicated|target_duplicated item_enum=- exact_values=-
 .. diagnostics-ref E_IMPORT_DUPLICATE_MAPPING host_state_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_IMPORT_DUPLICATE_MAPPING source_path type=str required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_IMPORT_DUPLICATE_MAPPING binding_reason type=str required=false enum=role_mismatch|type_mismatch|implicit_input_sharing|initializer_mismatch item_enum=- exact_values=-
+.. diagnostics-ref E_IMPORT_DUPLICATE_MAPPING binding type=dict required=false enum=- item_enum=- exact_values=-
 
 
 .. diagnostics-boundary E_IMPORT_DUPLICATE_MAPPING kind=cli_error
 
 **注册表事实。** 严重级别 ``error``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``import_statement``。
 
-**含义。** 同一个 ``import { ... }`` 映射块里存在重复源名或重复宿主名。
+**含义。** 同一次导入内存在重复源名或目标名，或者导入变量与已有声明的角色、数值类型、输入所有权或初始值冲突。跨导入共享目标必须保持角色和类型一致，共享动态输入还必须由宿主显式声明；根据 ``binding_reason`` 定位冲突，不隐式改变角色。
 
-**面向 LLM 的修复摘要。** 这是会阻塞模型构建或目标 API 解析的错误。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。同一个 ``import { ... }`` 映射块里存在重复源名或重复宿主名。
+**面向 LLM 的修复摘要。** 这是会阻塞模型构建或目标 API 解析的错误。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。同一次导入内存在重复源名或目标名，或者导入变量与已有声明的角色、数值类型、输入所有权或初始值冲突。跨导入共享目标必须保持角色和类型一致，共享动态输入还必须由宿主显式声明；根据 ``binding_reason`` 定位冲突，不隐式改变角色。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -1035,6 +1044,19 @@ E_IMPORT_DUPLICATE_MAPPING
      - 是
      - 字段含义：承载导入语句或导入别名的组合状态路径。
 
+   * - ``source_path``
+     - ``str``
+     - 否
+     - 包含相关声明、赋值或 import 语句的原始源文件路径。
+   * - ``binding_reason``
+     - ``str``
+     - 否
+     - 绑定失败原因：角色不一致、数值类型不一致、动态输入隐式共享或初始值冲突。
+   * - ``binding``
+     - ``dict``
+     - 否
+     - 源与目标的原始声明列表，保留名称、角色、数值类型、文件路径和位置，包含递归合并前的各项声明。
+
 .. diagnostics-example E_IMPORT_DUPLICATE_MAPPING 1 cli_error
 
 **示例 1**\ （``cli_error``）——复现边界。
@@ -1044,20 +1066,20 @@ E_IMPORT_DUPLICATE_MAPPING
 
    state System {
        import "sub.fcstm" as Sub {
-           def x = a;
-           def x = b;
+           var x -> a;
+           var x -> b;
        }
    }
 
 .. diagnostics-example E_IMPORT_DUPLICATE_MAPPING 2 boundary_only
 
 **示例 2**\ （``boundary_only``）——针对 ``E_IMPORT_DUPLICATE_MAPPING`` 的修复方向。
-典型修复是对 ``mapping_clause`` 执行 ``drop_duplicate``：针对“同一个 ``import { ... }`` 映射块里存在重复源名或重复宿主名。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
+典型修复是对 ``mapping_clause`` 执行 ``drop_duplicate``：针对“同一次导入内存在重复源名或目标名，或者导入变量与已有声明的角色、数值类型、输入所有权或初始值冲突。跨导入共享目标必须保持角色和类型一致，共享动态输入还必须由宿主显式声明；根据 ``binding_reason`` 定位冲突，不隐式改变角色。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example E_IMPORT_DUPLICATE_MAPPING 3 boundary_only
 
 **示例 3**\ （``boundary_only``）——针对 ``E_IMPORT_DUPLICATE_MAPPING`` 的反例边界。
-不要这样处理：针对“同一个 ``import { ... }`` 映射块里存在重复源名或重复宿主名。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
+不要这样处理：针对“同一次导入内存在重复源名或目标名，或者导入变量与已有声明的角色、数值类型、输入所有权或初始值冲突。跨导入共享目标必须保持角色和类型一致，共享动态输入还必须由宿主显式声明；根据 ``binding_reason`` 定位冲突，不隐式改变角色。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-e-import-mapping-invalid-zh:
 
@@ -1070,6 +1092,7 @@ E_IMPORT_MAPPING_INVALID
 .. diagnostics-ref E_IMPORT_MAPPING_INVALID host_state_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_IMPORT_MAPPING_INVALID reason type=str required=true enum=source_not_found|target_invalid|selector_invalid|template_invalid|empty_path|host_root_mismatch item_enum=- exact_values=-
 .. diagnostics-ref E_IMPORT_MAPPING_INVALID detail type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_IMPORT_MAPPING_INVALID source_path type=str required=false enum=- item_enum=- exact_values=-
 
 
 .. diagnostics-boundary E_IMPORT_MAPPING_INVALID kind=cli_error
@@ -1108,6 +1131,11 @@ E_IMPORT_MAPPING_INVALID
      - ``str``
      - 是
      - 字段含义：映射失败的可读细节。
+
+   * - ``source_path``
+     - ``str``
+     - 否
+     - 包含相关声明、赋值或 import 语句的原始源文件路径。
 
 .. diagnostics-example E_IMPORT_MAPPING_INVALID 1 cli_error
 
@@ -5679,11 +5707,17 @@ E_DYNAMIC_INPUT_INITIALIZER
 
 .. diagnostics-meta E_DYNAMIC_INPUT_INITIALIZER severity=error emit_tier=static_pipeline capability=pure_static span_object=variable_declaration
 .. diagnostics-ref E_DYNAMIC_INPUT_INITIALIZER var_name type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_DYNAMIC_INPUT_INITIALIZER source_path type=str required=false enum=- item_enum=- exact_values=-
 .. diagnostics-boundary E_DYNAMIC_INPUT_INITIALIZER kind=cli_error
 
 动态输入没有模型初值，其值由环境提供。
 
 ``refs.var_name`` 标识涉及的声明。严重性为 ``error``，静态校验无需求解器。
+
+   * - ``source_path``
+     - ``str``
+     - 否
+     - 包含相关声明、赋值或 import 语句的原始源文件路径。
 
 .. diagnostics-example E_DYNAMIC_INPUT_INITIALIZER 1 cli_error
 
@@ -5712,11 +5746,17 @@ E_VARIABLE_INITIALIZER_REQUIRED
 
 .. diagnostics-meta E_VARIABLE_INITIALIZER_REQUIRED severity=error emit_tier=static_pipeline capability=pure_static span_object=variable_declaration
 .. diagnostics-ref E_VARIABLE_INITIALIZER_REQUIRED var_name type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_VARIABLE_INITIALIZER_REQUIRED source_path type=str required=false enum=- item_enum=- exact_values=-
 .. diagnostics-boundary E_VARIABLE_INITIALIZER_REQUIRED kind=cli_error
 
 control、output 和 static input 必须提供不引用变量的初始值。
 
 ``refs.var_name`` 标识涉及的声明。严重性为 ``error``，静态校验无需求解器。
+
+   * - ``source_path``
+     - ``str``
+     - 否
+     - 包含相关声明、赋值或 import 语句的原始源文件路径。
 
 .. diagnostics-example E_VARIABLE_INITIALIZER_REQUIRED 1 cli_error
 
@@ -5745,11 +5785,17 @@ E_INITIALIZER_VARIABLE_REFERENCE
 
 .. diagnostics-meta E_INITIALIZER_VARIABLE_REFERENCE severity=error emit_tier=static_pipeline capability=pure_static span_object=variable_declaration
 .. diagnostics-ref E_INITIALIZER_VARIABLE_REFERENCE var_name type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_INITIALIZER_VARIABLE_REFERENCE source_path type=str required=false enum=- item_enum=- exact_values=-
 .. diagnostics-boundary E_INITIALIZER_VARIABLE_REFERENCE kind=cli_error
 
 通过公共 AST/model API 提供的初始化表达式包含变量引用。
 
 ``refs.var_name`` 标识涉及的声明。严重性为 ``error``，静态校验无需求解器。
+
+   * - ``source_path``
+     - ``str``
+     - 否
+     - 包含相关声明、赋值或 import 语句的原始源文件路径。
 
 .. diagnostics-example E_INITIALIZER_VARIABLE_REFERENCE 1 repro_api
 
@@ -5776,11 +5822,17 @@ E_DYNAMIC_INPUT_WRITE
 
 .. diagnostics-meta E_DYNAMIC_INPUT_WRITE severity=error emit_tier=static_pipeline capability=pure_static span_object=effect_statement
 .. diagnostics-ref E_DYNAMIC_INPUT_WRITE var_name type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_DYNAMIC_INPUT_WRITE source_path type=str required=false enum=- item_enum=- exact_values=-
 .. diagnostics-boundary E_DYNAMIC_INPUT_WRITE kind=cli_error
 
 动作、aspect 或 effect 给动态输入赋值。
 
 ``refs.var_name`` 标识涉及的声明。严重性为 ``error``，静态校验无需求解器。
+
+   * - ``source_path``
+     - ``str``
+     - 否
+     - 包含相关声明、赋值或 import 语句的原始源文件路径。
 
 .. diagnostics-example E_DYNAMIC_INPUT_WRITE 1 cli_error
 
@@ -5809,11 +5861,17 @@ E_STATIC_INPUT_WRITE
 
 .. diagnostics-meta E_STATIC_INPUT_WRITE severity=error emit_tier=static_pipeline capability=pure_static span_object=effect_statement
 .. diagnostics-ref E_STATIC_INPUT_WRITE var_name type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_STATIC_INPUT_WRITE source_path type=str required=false enum=- item_enum=- exact_values=-
 .. diagnostics-boundary E_STATIC_INPUT_WRITE kind=cli_error
 
 动作、aspect 或 effect 给静态输入或参数赋值。
 
 ``refs.var_name`` 标识涉及的声明。严重性为 ``error``，静态校验无需求解器。
+
+   * - ``source_path``
+     - ``str``
+     - 否
+     - 包含相关声明、赋值或 import 语句的原始源文件路径。
 
 .. diagnostics-example E_STATIC_INPUT_WRITE 1 cli_error
 

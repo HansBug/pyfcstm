@@ -367,13 +367,8 @@ class TestCollectModeKeepsAssemblingAfterAnError:
 
         assert "E_IMPORT_MAPPING_INVALID" in {d.code for d in diagnostics}
 
-    def test_rejected_template_stays_traceable_without_cascading(self):
-        """The rejected template becomes the variable name on purpose.
-
-        It is not a legal identifier, but it matches the diagnostic's ``detail``
-        so a reader can connect the two. Dropping the variable instead would make
-        every later reference to it report a second, misleading error.
-        """
+    def test_rejected_template_is_reported_without_committing_the_import(self):
+        """Invalid mappings retain diagnostic details, not invalid declarations."""
         with isolated_directory():
             _write_text_file(
                 "root.fcstm",
@@ -405,5 +400,7 @@ class TestCollectModeKeepsAssemblingAfterAnError:
             d for d in diagnostics if d.code == "E_IMPORT_MAPPING_INVALID"
         ]
         assert len(mapping_errors) == 1
-        assert list(machine.defines) == [mapping_errors[0].refs["detail"]]
+        assert mapping_errors[0].refs["detail"] == "left_${x}"
+        assert not machine.defines
+        assert not machine.root_state.substates
         assert "E_UNDEFINED_VAR" not in {d.code for d in diagnostics}

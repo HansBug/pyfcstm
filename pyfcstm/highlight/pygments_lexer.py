@@ -187,7 +187,7 @@ class FcstmLexer(RegexLexer):
         'abstract', 'after', 'as', 'before', 'def', 'during', 'effect', 'enter',
         'else', 'event', 'exit', 'float', 'if', 'import', 'int', 'named',
         'implies', 'iff', 'pseudo', 'ref', 'state', 'xor',
-        'control', 'input', 'dynamic', 'static', 'param', 'output',
+        'control', 'input', 'dynamic', 'static', 'param', 'output', 'var',
     ))
     _ANALYSIS_LIFECYCLE_KEYWORDS = frozenset(('enter', 'during', 'exit'))
 
@@ -201,7 +201,7 @@ class FcstmLexer(RegexLexer):
             # Keywords - state machine structure
             (words((
                 'state', 'pseudo', 'named', 'def', 'event', 'as',
-                'control', 'input', 'dynamic', 'static', 'param', 'output',
+                'control', 'input', 'dynamic', 'static', 'param', 'output', 'var',
             ), suffix=r'\b'), Keyword.Declaration),
 
             # Keywords - lifecycle actions
@@ -321,7 +321,7 @@ class FcstmLexer(RegexLexer):
         'import-block': [
             include('whitespace'),
             include('comments'),
-            (r'\bdef\b', Keyword.Declaration, 'import-def-selector'),
+            (r'\b(?:var|def)\b', Keyword.Declaration, 'import-def-selector'),
             (r'\bevent\b', Keyword.Declaration),
             (r'\bnamed\b', Keyword.Declaration),
             (r'->', Operator),
@@ -574,11 +574,11 @@ class FcstmLexer(RegexLexer):
 
     @classmethod
     def _analysis_collect_import_def_mapping_spans(cls, tokens: List[str]) -> List[Tuple[int, int]]:
-        """Collect shallow spans for ``def ... -> ...;`` mappings inside import blocks."""
+        """Collect shallow spans for ``var ... -> ...;`` and legacy ``def`` mappings inside import blocks."""
         spans = []
 
         for index, token in enumerate(tokens):
-            if token != 'def':
+            if token not in {'var', 'def'}:
                 continue
 
             arrow_index = index + 1

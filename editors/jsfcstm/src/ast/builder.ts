@@ -98,6 +98,7 @@ const EXPR_PRECEDENCE: Record<string, number> = {
 };
 
 interface ParseTreeContext extends ParseTreeNode {
+    keyword?: { text: 'var' | 'def' };
     var_name?: { text?: string };
     from_state?: { text?: string };
     to_state?: { text?: string };
@@ -1442,13 +1443,14 @@ function buildImportMapping(
     const inner = firstContextChild(node) || node;
     const nodeName = inner.constructor?.name || '';
 
-    if (nodeName === 'Import_def_mappingContext') {
+    if (nodeName === 'Import_variable_mappingContext') {
         const selectorNode = contextChildren(inner).find(child => /ImportDef.*SelectorContext$/.test(child.constructor?.name || ''));
         const templateNode = contextChildren(inner).find(child => child.constructor?.name === 'Import_def_target_templateContext');
         const targetTemplateNode = buildImportDefTargetTemplate(templateNode as ParseTreeContext, document);
         return {
             kind: 'importDefMapping',
-            pyNodeType: 'ImportDefMapping',
+            pyNodeType: inner.keyword!.text === 'var' ? 'ImportVariableMapping' : 'ImportDefMapping',
+            spelling: inner.keyword!.text,
             range: getNodeRange(inner, document, nodeText(inner)),
             text: nodeText(inner),
             selector: buildImportDefSelector(selectorNode as ParseTreeContext, document),

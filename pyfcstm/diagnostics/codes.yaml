@@ -124,6 +124,10 @@ E_DUPLICATE_VAR:
       type: Span
       required: false
       description: Source position of the first declaration.
+    source_path:
+      type: str
+      required: false
+      description: Authored file containing duplicate imported declarations.
   for_llm:
     summary: >-
       Two ``def`` declarations at the file top use the same variable
@@ -1501,7 +1505,9 @@ E_IMPORT_DUPLICATE_MAPPING:
   description: >-
     Two or more mapping clauses under the same ``import { ... }`` block
     target the same source name (event or variable), or two source names
-    target the same host name.
+    target the same host name, or an imported variable cannot bind to an
+    existing declaration because its role, numeric type, ownership, or
+    initializer conflicts.
   refs:
     alias:
       type: str
@@ -1528,16 +1534,37 @@ E_IMPORT_DUPLICATE_MAPPING:
       type: str
       required: true
       description: Dotted path of the composite state hosting the import.
+    binding_reason:
+      type: str
+      required: false
+      description: Why merging an imported variable into an existing declaration failed.
+      enum: ['role_mismatch', 'type_mismatch', 'implicit_input_sharing', 'initializer_mismatch']
+    source_path:
+      type: str
+      required: false
+      description: Authored file containing the conflicting import statement.
+    binding:
+      type: dict
+      required: false
+      description: >-
+        Source and target declaration lists. Each entry retains its authored
+        name, role, numeric type, source_path and declaration span, including
+        every contributing declaration behind a recursively merged variable.
+
   for_llm:
     summary: >-
-      An import-mapping block contains a duplicate source or target name.
-      Each source identifier can be mapped at most once; each target host
-      slot can receive at most one source.
+      An import-mapping block duplicates a source or target, or a variable
+      binding conflicts with an existing declaration. Within one import each
+      target receives at most one source. Across imports, sharing requires
+      matching roles and numeric types; dynamic inputs additionally require
+      an explicit host input declaration. Consult binding_reason when present.
     recommended_actions:
       - kind: drop_duplicate
         target: mapping_clause
         rationale: >-
-          Delete the duplicated mapping line — keep the intended one.
+          For duplicate clauses within one import, delete the duplicate and
+          keep the intended mapping. Do not drop a required binding to hide
+          a role, type, or initializer conflict.
       - kind: rename_target
         target: mapping_clause
         rationale: >-
@@ -1546,11 +1573,12 @@ E_IMPORT_DUPLICATE_MAPPING:
     do_not:
       - "Do not merge mappings by concatenating their values."
       - "Do not introduce wildcard selectors to mask the duplicate."
+      - "Do not change an imported declaration's role or numeric type implicitly."
   example_dsl: |
     state System {
         import "sub.fcstm" as Sub {
-            def x = a;
-            def x = b;
+            var x -> a;
+            var x -> b;
         }
     }
 
@@ -1593,6 +1621,10 @@ E_IMPORT_MAPPING_INVALID:
       description: >-
         Human-readable specifics of the mapping failure (mapping text,
         selector / template literal, or path that failed to resolve).
+    source_path:
+      type: str
+      required: false
+      description: Authored file containing the invalid import mapping.
   for_llm:
     summary: >-
       An ``import { ... }`` mapping clause is malformed or points at a
@@ -4043,6 +4075,10 @@ E_DYNAMIC_INPUT_INITIALIZER:
       type: str
       required: true
       description: The declared variable name.
+    source_path:
+      type: str
+      required: false
+      description: Authored file containing an invalid imported declaration or assignment.
   example_dsl: |
     input int value = 1; state Root;
 
@@ -4055,6 +4091,10 @@ E_VARIABLE_INITIALIZER_REQUIRED:
       type: str
       required: true
       description: The declared variable name.
+    source_path:
+      type: str
+      required: false
+      description: Authored file containing an invalid imported declaration or assignment.
   example_dsl: |
     param int value; state Root;
 
@@ -4067,6 +4107,10 @@ E_INITIALIZER_VARIABLE_REFERENCE:
       type: str
       required: true
       description: The declared variable name.
+    source_path:
+      type: str
+      required: false
+      description: Authored file containing an invalid imported declaration or assignment.
   example_dsl: |
     def int value = 1; state Root;
 
@@ -4079,6 +4123,10 @@ E_DYNAMIC_INPUT_WRITE:
       type: str
       required: true
       description: The declared variable name.
+    source_path:
+      type: str
+      required: false
+      description: Authored file containing an invalid imported declaration or assignment.
   example_dsl: |
     input int value; state Root { during { value = 1; } }
 
@@ -4091,5 +4139,9 @@ E_STATIC_INPUT_WRITE:
       type: str
       required: true
       description: The declared variable name.
+    source_path:
+      type: str
+      required: false
+      description: Authored file containing an invalid imported declaration or assignment.
   example_dsl: |
     param int value = 1; state Root { during { value = 2; } }

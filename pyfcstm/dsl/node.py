@@ -84,6 +84,7 @@ __all__ = [
     "ImportDefPatternSelector",
     "ImportDefFallbackSelector",
     "ImportDefTargetTemplate",
+    "ImportVariableMapping",
     "ImportDefMapping",
     "ImportEventMapping",
     "ImportStatement",
@@ -1230,7 +1231,7 @@ class ImportDefTargetTemplate(ASTNode):
 
 
 @dataclass
-class ImportDefMapping(ImportMappingStatement):
+class ImportVariableMapping(ImportMappingStatement):
     """
     Represents a variable mapping rule inside an import block.
 
@@ -1239,11 +1240,20 @@ class ImportDefMapping(ImportMappingStatement):
     :param target_template: Target template of the mapping rule
     :type target_template: ImportDefTargetTemplate
 
-    :rtype: ImportDefMapping
+    :param spelling: Explicit mapping keyword, ``var`` or legacy ``def``.
+    :type spelling: str
+
+    :rtype: ImportVariableMapping
     """
 
     selector: ImportDefSelector
     target_template: ImportDefTargetTemplate
+    spelling: str = "var"
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        if self.spelling not in ("var", "def"):
+            raise ValueError("Import mapping spelling must be var or def.")
 
     def __str__(self) -> str:
         """
@@ -1252,7 +1262,14 @@ class ImportDefMapping(ImportMappingStatement):
         :return: String representation of the mapping rule
         :rtype: str
         """
-        return f"def {self.selector} -> {self.target_template};"
+        return f"{self.spelling} {self.selector} -> {self.target_template};"
+
+
+@dataclass
+class ImportDefMapping(ImportVariableMapping):
+    """Legacy construction spelling for an import variable mapping."""
+
+    spelling: str = "def"
 
 
 @dataclass
@@ -1310,6 +1327,7 @@ class ImportStatement(ASTNode):
     alias: str
     extra_name: Optional[str] = None
     mappings: List[ImportMappingStatement] = None
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         """

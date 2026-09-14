@@ -591,19 +591,37 @@ Directory entry import:
 
 Mapping facts:
 
-* ``def speed -> plant_speed;`` maps one imported variable to one host variable.
-* ``def sensor_* -> left_$1;`` captures the wildcard suffix and inserts it into
+* ``var speed -> plant_speed;`` maps one imported variable to one host variable.
+* ``var sensor_* -> left_$1;`` captures the wildcard suffix and inserts it into
   the target template.
-* ``def * -> prefix_$0;`` is a fallback mapping; ``$0`` is the whole imported
+* ``var * -> prefix_$0;`` is a fallback mapping; ``$0`` is the whole imported
   variable name.
 * ``event /Start -> Start;`` maps an imported root event to a host event.
 * Directory projects must import a concrete entry file such as
   ``./import_line/main.fcstm``; a bare directory is not a DSL file.
 
 Common mistakes: a bare directory path is not loaded as DSL source; an out-of-range
-placeholder such as ``$2`` in ``def sensor_* -> left_$2;`` reports an import
+placeholder such as ``$2`` in ``var sensor_* -> left_$2;`` reports an import
 mapping validation error. Use ``$0`` for the whole imported name and ``$1`` /
 ``${1}`` for the first wildcard capture.
+The rendered target must be a valid DSL identifier, not an empty capture,
+a numeric name, or a reserved keyword such as ``input`` or ``param``.
+
+``var`` is the canonical import mapping keyword; ``def`` remains an explicit
+legacy spelling. Mapping preserves the declaration role: control binds to
+control, input to input, param to param, and output to output. Numeric types
+must also match exactly, including ``int`` versus ``float``. A missing target
+is created with the imported role, type and default; an explicit host target
+keeps its own default. Without an explicit host declaration, imported defaults
+must agree, and dynamic inputs cannot implicitly share a target. Declare the
+shared input in the host to bind multiple imports to one input source.
+
+These rules apply at every recursive import boundary. Import mappings do not
+connect an output to an input or convert a parameter into mutable state. Such
+connections require separate execution semantics. Multiple output or control
+writers introduce no additional import restriction. In collecting mode, an
+invalid variable binding excludes the affected import from the partial model;
+its diagnostic records the original declarations and import location.
 
 Preamble forms such as ``name = value;`` and ``name := value;`` are parser-helper
 entry points used by import assembly tests and helpers. They are not ordinary

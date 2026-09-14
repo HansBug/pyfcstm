@@ -750,16 +750,16 @@ AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供四个枚举
      - ``import "file.fcstm" as Alias { ... }``
      - 包含映射语句。
    * - 变量兜底选择器
-     - ``def * -> target;``
+     - ``var * -> target;``
      - 兜底变量映射。
    * - 变量集合选择器
-     - ``def {a, b} -> target;``
+     - ``var {a, b} -> target;``
      - 映射一组变量。
    * - 变量模式选择器
-     - ``def sensor_* -> sensor_$1;``
+     - ``var sensor_* -> sensor_$1;``
      - 模式选择器是紧凑且空白敏感的；``$1`` 表示第一个通配捕获。
    * - 变量精确选择器
-     - ``def value -> renamed;``
+     - ``var value -> renamed;``
      - 映射一个变量。
    * - 目标模板
      - ``ID``、紧凑模板或 ``*``
@@ -972,11 +972,11 @@ AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供四个枚举
      - 保存显示元数据。
      - 不改变路径解析。
    * - 变量映射
-     - ``def sensor_* -> left_$1;``
+     - ``var sensor_* -> left_$1;``
      - 用通配捕获重写变量名。
      - ``$1`` 只能引用存在的捕获组。
    * - 兜底映射
-     - ``def * -> *;``
+     - ``var * -> *;``
      - 保留未被更具体规则命中的名称。
      - 规则优先级必须可审计。
    * - 事件映射
@@ -1247,7 +1247,7 @@ DSL 覆盖矩阵
      - 已同步
    * - ``dsl-import-mapping``
      - 导入
-     - ``def_mapping_statement`` / ``event_mapping_statement``
+     - ``import_variable_mapping`` / ``import_event_mapping``
      - N/A：教程不展开导入
      - :ref:`dsl-import-task-zh`
      - :ref:`dsl-import-forms-zh`

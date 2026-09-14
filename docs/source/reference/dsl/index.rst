@@ -725,17 +725,17 @@ Import forms
    * - Import block
      - ``import "file.fcstm" as Alias { ... }``
      - Contains mapping statements.
-   * - Def fallback selector
-     - ``def * -> target;``
+   * - Variable fallback selector
+     - ``var * -> target;``
      - Fallback variable mapping.
-   * - Def set selector
-     - ``def {a, b} -> target;``
+   * - Variable set selector
+     - ``var {a, b} -> target;``
      - Maps a set of variables.
-   * - Def pattern selector
-     - ``def sensor_* -> sensor_$1;``
+   * - Variable pattern selector
+     - ``var sensor_* -> sensor_$1;``
      - Pattern selector is compact and whitespace-sensitive; ``$1`` is the first wildcard capture.
-   * - Def exact selector
-     - ``def value -> renamed;``
+   * - Variable exact selector
+     - ``var value -> renamed;``
      - Maps one variable.
    * - Target template
      - ``ID``, compact template, or ``*``
@@ -746,6 +746,10 @@ Import forms
    * - Directory entry
      - ``import "./dir/main.fcstm" as Subsystem;``
      - Use an explicit file; bare directory import is unsupported.
+
+``var`` is the canonical mapping keyword; ``def`` is also accepted explicitly.
+All variable roles use this mapping syntax. Bindings preserve both role and
+numeric type, including at recursive import boundaries.
 
 File resolution, recursive loading, conflict detection, mapping precedence, and
 model assembly are implemented after parsing in Python import/model code.
@@ -1017,7 +1021,7 @@ Every row still has a reference or explanation landing point.
      - synced
    * - ``dsl-import-mapping``
      - import
-     - ``def_mapping_statement`` / ``event_mapping_statement``
+     - ``import_variable_mapping`` / ``import_event_mapping``
      - N/A: tutorial skips imports
      - :ref:`dsl-import-task`
      - :ref:`dsl-import-forms`

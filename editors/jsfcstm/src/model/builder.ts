@@ -384,6 +384,7 @@ class StateMachineModelBuilder {
         return {
             kind: 'varDefine',
             pyModelType: 'VarDefine',
+            sourceDeclarations: definition.sourceDeclarations,
             range: definition.range,
             text: definition.text,
             name: definition.name,

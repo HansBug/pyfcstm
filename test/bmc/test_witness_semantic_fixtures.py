@@ -21,9 +21,13 @@ from pyfcstm.bmc.witness import (
     solve_bmc_property,
 )
 from test.bmc.semantic_fixture_policy import policy_for_case
-from test.bmc.test_relation_semantic_fixtures import _query_text_for_case
+from test.bmc.test_relation_semantic_fixtures import (
+    _query_text_for_case,
+    _input_assumption_lines,
+)
 from test.testings.simulate_semantics import (
     BMC_CORE_RUNNER,
+    _build_simulation_runtime,
     _cycle_input_for_step,
     _effective_cycle_count,
     _register_fixture_handlers,
@@ -66,7 +70,7 @@ def collect_simulation_trace_for_bmc_fixture(
     model = build_state_machine_from_case(case)
     from pyfcstm.simulate import SimulationRuntime
 
-    runtime = SimulationRuntime(model, **_simulation_kwargs(case))
+    runtime = _build_simulation_runtime(case)
     _register_fixture_handlers(runtime, case)
     recorder = _HandlerCallRecorder(_abstract_call_role_resolver(model))
     _register_recorder(runtime, recorder, None)
@@ -85,6 +89,8 @@ def collect_simulation_trace_for_bmc_fixture(
         cycle_input = _bmc_presence_cycle_input(
             _cycle_input_for_step(step, case.id, case.yaml_path, field_path)
         )
+        if hasattr(runtime, "_fixture_input_source"):
+            runtime._fixture_input_source.snapshot = dict(step.get("inputs") or {})
         for _ in range(cycle_count):
             before = len(recorder.calls)
             result = runtime.cycle(cycle_input)
@@ -111,6 +117,7 @@ def collect_simulation_trace_for_bmc_fixture(
                     unconsumed_events=result.unconsumed_events,
                     abstract_calls=new_calls,
                     delta=result.delta,
+                    inputs=dict(result.inputs),
                 )
             )
             frames.append(_runtime_frame(runtime, len(frames)))
@@ -147,7 +154,9 @@ def _event_assumption_lines(
     return lines
 
 
-def _query_with_fixture_events(case, model, bound: int, event_inputs) -> str:
+def _query_with_fixture_events(
+    case, model, bound: int, event_inputs, input_frames
+) -> str:
     query = _query_text_for_case(
         case,
         model,
@@ -160,6 +169,7 @@ def _query_with_fixture_events(case, model, bound: int, event_inputs) -> str:
     return "\n".join(
         prefix
         + _event_assumption_lines(_model_event_paths(model), event_inputs)
+        + _input_assumption_lines(model, input_frames)
         + [check_line]
     )
 
@@ -180,9 +190,12 @@ def _hard_pass_cases():
 def test_bmc_witness_replay_matches_full_semantic_fixture_trace(case) -> None:
     """Hard-pass fixtures match fully except the registered zero-cycle case."""
     expected_trace, event_inputs = collect_simulation_trace_for_bmc_fixture(case)
+    input_frames = tuple(dict(step.inputs) for step in expected_trace.steps)
     assert all(len(inputs) == len(set(inputs)) for inputs in event_inputs)
     model = build_state_machine_from_case(case)
-    query = _query_with_fixture_events(case, model, len(event_inputs), event_inputs)
+    query = _query_with_fixture_events(
+        case, model, len(event_inputs), event_inputs, input_frames
+    )
     formula = compile_bmc_property(
         build_bmc_core_formula(BmcEngine(model).prepare(query))
     )
@@ -211,12 +224,18 @@ def test_bmc_witness_fixture_runner_keeps_policy_counts_auditable() -> None:
         policy = policy_for_case(case.id)
         mode_counts[policy.mode] = mode_counts.get(policy.mode, 0) + 1
     assert mode_counts == {
-        "hard_pass": 168,
+        "hard_pass": 175,
         "expected_unsupported": 10,
-        "temporary_exclude": 23 + sum("variable_roles" in case.data["categories"] for case in iter_semantic_cases()),
+        "temporary_exclude": 23
+        + sum(
+            1
+            for case in iter_semantic_cases()
+            if "variable_roles" in case.data["categories"]
+            and is_runner_excluded(case, BMC_CORE_RUNNER)
+        ),
         "long_term_exclude": 4,
     }
-    assert len(_hard_pass_cases()) == 168
+    assert len(_hard_pass_cases()) == 175
     zero_step_ids = set()
     for case in _hard_pass_cases():
         cycle_count = 0
@@ -289,6 +308,7 @@ def test_duplicate_event_fixture_uses_boolean_presence_without_exclusion() -> No
     assert raw_result.unconsumed_events == ("Root.A.Noise", "Root.A.Tick")
 
     expected_trace, event_inputs = collect_simulation_trace_for_bmc_fixture(case)
+    input_frames = tuple(dict(step.inputs) for step in expected_trace.steps)
 
     assert event_inputs == ((), ("Root.A.Tick", "Root.A.Noise"))
     assert expected_trace.steps[1].to_canonical() == {
@@ -298,10 +318,13 @@ def test_duplicate_event_fixture_uses_boolean_presence_without_exclusion() -> No
         "unconsumed_events": ["Root.A.Noise"],
         "abstract_calls": [],
         "delta": False,
+        "inputs": {},
     }
 
     model = build_state_machine_from_case(case)
-    query = _query_with_fixture_events(case, model, len(event_inputs), event_inputs)
+    query = _query_with_fixture_events(
+        case, model, len(event_inputs), event_inputs, input_frames
+    )
     formula = compile_bmc_property(
         build_bmc_core_formula(BmcEngine(model).prepare(query))
     )

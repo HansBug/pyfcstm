@@ -2500,8 +2500,11 @@ def test_internal_z3_decode_guards_are_loud() -> None:
         assert "https://github.com/HansBug/pyfcstm/issues/new" in str(error_info.value)
 
     _, formula = _compile("state Root;", 'check reach <= 1: active("Root");')
+    solver = z3.Solver()
+    solver.add(z3.BoolVal(True))
+    assert solver.check() == z3.sat
     with pytest.raises(BmcBuildError, match="no frames") as error_info:
-        witness_module._initial_metadata(formula, ())
+        witness_module._initial_metadata(formula, solver.model(), ())
     assert "internal BMC witness consistency error" in str(error_info.value)
     assert "https://github.com/HansBug/pyfcstm/issues/new" in str(error_info.value)
 
@@ -3459,6 +3462,8 @@ def test_witness_step_contract_includes_complete_event_accounting() -> None:
             "abstract_calls": [],
             "consumed_events": ["Root.Go", "Root.Go"],
             "unconsumed_events": ["Root.Noise"],
+            "inputs": {},
+            "input_reads": [],
         }
     ]
     rendered = trace.to_text(max_events=1)
@@ -3906,3 +3911,54 @@ def test_event_decode_policy_can_drop_debug_reads_without_changing_replay_inputs
     )
     assert quiet.steps[0].input_events == ()
     assert quiet.steps[0].event_reads == ()
+
+
+@pytest.mark.unittest
+def test_witness_step_input_payload_validation() -> None:
+    """Witness step input snapshots reject malformed payloads loudly."""
+    base = dict(
+        index=0,
+        source_frame=0,
+        target_frame=1,
+        case_label="case",
+        case_kind="fallback",
+        progress="fallback_gamma",
+        source_state="Root",
+        target_state="Root",
+        delta=False,
+        gamma=True,
+    )
+
+    valid = BmcWitnessStep(**base, inputs={"sensor": 5}, input_reads=("sensor",))
+    assert valid.to_canonical()["inputs"] == {"sensor": 5}
+    assert valid.to_canonical()["input_reads"] == ["sensor"]
+    assert BmcWitnessStep(**base).to_canonical()["inputs"] == {}
+
+    with pytest.raises(
+        BmcBuildError, match="inputs.sensor must be a finite int or float"
+    ):
+        BmcWitnessStep(**base, inputs={"sensor": True})
+    with pytest.raises(BmcBuildError, match="input_reads must not contain duplicates"):
+        BmcWitnessStep(**base, inputs={"sensor": 5}, input_reads=("sensor", "sensor"))
+    with pytest.raises(BmcBuildError, match="input_reads must reference decoded"):
+        BmcWitnessStep(**base, inputs={"sensor": 5}, input_reads=("other",))
+
+
+@pytest.mark.unittest
+def test_runtime_step_input_payload_validation() -> None:
+    """Runtime step input snapshots reject non-numeric values."""
+    assert BmcRuntimeStep(0, (), (), (), (), inputs={"sensor": 1}).to_canonical()[
+        "inputs"
+    ] == {"sensor": 1}
+    with pytest.raises(
+        BmcBuildError, match="inputs.sensor must be a finite int or float"
+    ):
+        BmcRuntimeStep(0, (), (), (), (), inputs={"sensor": "bad"})
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("contract", [BmcWitnessStep, BmcRuntimeStep])
+def test_public_input_snapshot_annotations_resolve(contract):
+    from typing import get_type_hints
+
+    assert "inputs" in get_type_hints(contract)

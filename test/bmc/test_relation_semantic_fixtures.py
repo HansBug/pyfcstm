@@ -31,6 +31,7 @@ from test.bmc.semantic_fixture_policy import (
 from test.testings.simulate_semantics import (
     BMC_CORE_RUNNER,
     SemanticCaseError,
+    _build_simulation_runtime,
     _cycle_input_for_step,
     _effective_cycle_count,
     _register_fixture_handlers,
@@ -145,25 +146,43 @@ def _initial_predicate(initial_vars: Mapping[str, Any]) -> str:
     )
 
 
-def _initial_havoc_clause(model, initial_vars: Mapping[str, Any]) -> str:
-    if not initial_vars:
+def _initial_havoc_clause(
+    model, initial_vars: Mapping[str, Any], parameters: Mapping[str, Any]
+) -> str:
+    pinned_names = set(initial_vars) | set(parameters)
+    if not pinned_names:
         return ""
     model_variables = set(model.defines)
-    initial_variable_names = set(initial_vars)
-    if initial_variable_names == model_variables:
+    if pinned_names == model_variables:
         return " havoc *"
-    refs = ", ".join(_havoc_reference(name) for name in sorted(initial_variable_names))
+    refs = ", ".join(_havoc_reference(name) for name in sorted(pinned_names))
     return " havoc { %s }" % refs
 
 
 def _query_text_for_case(
-    case, model, bound: int, check_clause: str = "check reach <= {bound}: terminated();"
+    case,
+    model,
+    bound: int,
+    check_clause: str = "check reach <= {bound}: terminated();",
+    input_frames=(),
 ) -> str:
     initial = case.data.get("initial") or {}
     lines = []
-    initial_vars = initial.get("vars") or {}
-    where = _initial_predicate(initial_vars) if initial_vars else ""
-    havoc = _initial_havoc_clause(model, initial_vars)
+    initial_vars = dict(initial.get("vars") or {})
+    initial_vars.update(initial.get("outputs") or {})
+    clauses = [
+        "%s == %s" % (_var_reference(name), _value_literal(value))
+        for name, value in sorted(initial_vars.items())
+    ]
+    # Fixture parameter overrides pin the frame-0 static-input symbols through
+    # the same public ``init ... where`` surface used for persistent vars.
+    clauses.extend(
+        "%s == %s" % (_var_reference(name), _value_literal(value))
+        for name, value in sorted((case.data.get("parameters") or {}).items())
+    )
+    where = " && ".join(clauses) if clauses else ""
+    parameters = case.data.get("parameters") or {}
+    havoc = _initial_havoc_clause(model, initial_vars, parameters)
     if initial.get("state") is not None:
         target = json.dumps(initial["state"], ensure_ascii=False)
         line = "init state(%s)" % target
@@ -173,6 +192,7 @@ def _query_text_for_case(
         lines.append(line + ";")
     elif where:
         lines.append("init cold%s where %s;" % (havoc, where))
+    lines.extend(_input_assumption_lines(model, input_frames))
     lines.append(check_clause.format(bound=max(1, bound)))
     return "\n".join(lines)
 
@@ -187,11 +207,29 @@ def _event_constraints(core, step_index: int, selected_events: Iterable[str]):
     )
 
 
-def _collect_runtime_trace(case) -> Tuple[int, Tuple[Tuple[str, ...], ...]]:
-    model = build_state_machine_from_case(case)
-    runtime = SimulationRuntime(model, **_simulation_kwargs(case))
+def _input_assumption_lines(model, input_frames):
+    """Constrain complete fixture input snapshots through public assumptions."""
+    lines = []
+    for step, values in enumerate(input_frames):
+        # Ended cycles have no input sample.
+        if not values:
+            continue
+        assert set(values) == set(model.dynamic_inputs)
+        for name in model.dynamic_inputs:
+            lines.append(
+                "assume at %d: var(%s) == %s;"
+                % (step, json.dumps(name), _value_literal(values[name]))
+            )
+    return lines
+
+
+def _collect_runtime_trace(
+    case,
+) -> Tuple[int, Tuple[Tuple[str, ...], ...], Tuple[Dict[str, Any], ...]]:
+    runtime = _build_simulation_runtime(case)
     _register_fixture_handlers(runtime, case)
     event_inputs: List[Tuple[str, ...]] = []
+    input_frames: List[Dict[str, Any]] = []
     frame_index = 0
     for index, step in enumerate(case.data.get("steps") or []):
         field_path = "steps[%d]" % index
@@ -203,11 +241,14 @@ def _collect_runtime_trace(case) -> Tuple[int, Tuple[Tuple[str, ...], ...]]:
             )
         cycle_count = _effective_cycle_count(step, case.id, case.yaml_path, field_path)
         cycle_input = _cycle_input_for_step(step, case.id, case.yaml_path, field_path)
+        if hasattr(runtime, "_fixture_input_source"):
+            runtime._fixture_input_source.snapshot = dict(step.get("inputs") or {})
         for _ in range(cycle_count):
             result = runtime.cycle(cycle_input)
             event_inputs.append(tuple(result.input_events))
+            input_frames.append(dict(result.inputs))
             frame_index += 1
-    return frame_index, tuple(event_inputs)
+    return frame_index, tuple(event_inputs), tuple(input_frames)
 
 
 def _expect_state(core, frame_index: int, state_path: Any) -> z3.BoolRef:
@@ -373,6 +414,7 @@ def _expectation_expr(core, case, ignored_fields: Sequence[str]) -> z3.BoolRef:
     public_fields = {
         "state",
         "vars",
+        "outputs",
         "ended",
         "delta",
         "handler_calls",
@@ -397,12 +439,14 @@ def _expectation_expr(core, case, ignored_fields: Sequence[str]) -> z3.BoolRef:
         if "vars" in expect:
             observed_public_fields += 1
             constraints.append(_expect_vars(core, frame_index, expect["vars"]))
+        if "outputs" in expect:
+            observed_public_fields += 1
+            constraints.append(_expect_vars(core, frame_index, expect["outputs"]))
         if "delta" in expect and "delta" not in ignored:
             observed_public_fields += 1
             for step_index in range(start_frame_index, frame_index):
                 constraints.append(
-                    core.symbols.delta_flag(step_index)
-                    == z3.BoolVal(expect["delta"])
+                    core.symbols.delta_flag(step_index) == z3.BoolVal(expect["delta"])
                 )
         unknown_unignored = (set(expect) - public_fields - ignored) - {"raises"}
         if unknown_unignored:
@@ -455,6 +499,9 @@ def _expectation_query_predicate(case, ignored_fields: Sequence[str]) -> str:
         if "vars" in expect:
             observed_public_fields += 1
             terms.append(_expect_vars_query(expect["vars"]))
+        if "outputs" in expect:
+            observed_public_fields += 1
+            terms.append(_expect_vars_query(expect["outputs"]))
         if "handler_calls" in expect and "handler_calls" not in ignored:
             observed_public_fields += 1
             terms.append(
@@ -473,9 +520,9 @@ def _expectation_query_predicate(case, ignored_fields: Sequence[str]) -> str:
 
 
 def _assert_semantic_fixture_matches_bmc_core(case, ignored_fields: Sequence[str]):
-    bound, selected_events_by_step = _collect_runtime_trace(case)
+    bound, selected_events_by_step, input_frames = _collect_runtime_trace(case)
     model = build_state_machine_from_case(case)
-    query_text = _query_text_for_case(case, model, bound)
+    query_text = _query_text_for_case(case, model, bound, input_frames=input_frames)
     core = build_bmc_core_formula(BmcEngine(model).prepare(query_text))
     event_constraints = []
     for step_index, selected_events in enumerate(selected_events_by_step):
@@ -494,6 +541,7 @@ def _assert_semantic_fixture_matches_bmc_core(case, ignored_fields: Sequence[str
         model,
         bound,
         check_clause="check invariant <= {bound}: %s;" % property_predicate,
+        input_frames=input_frames,
     )
     property_core = build_bmc_core_formula(
         BmcEngine(model).prepare(property_query_text)
@@ -533,8 +581,14 @@ def test_bmc_semantic_fixture_policy_covers_known_gap_inventory() -> None:
     }
     assert (
         excluded_in_yaml
-        == TEMPORARY_BMC_CORE_EXCLUDE_CASES | CONSTRUCTOR_DIAGNOSTIC_EXCLUDE_CASES
-        | {case.id for case in cases.values() if "variable_roles" in case.data["categories"]}
+        == TEMPORARY_BMC_CORE_EXCLUDE_CASES
+        | CONSTRUCTOR_DIAGNOSTIC_EXCLUDE_CASES
+        | {
+            case.id
+            for case in cases.values()
+            if "variable_roles" in case.data["categories"]
+            and is_runner_excluded(case, BMC_CORE_RUNNER)
+        }
     )
     assert not (NUMERIC_UNSUPPORTED_CASES & excluded_in_yaml)
     assert not (FLOAT_MODULO_UNSUPPORTED_CASES & excluded_in_yaml)
@@ -546,10 +600,16 @@ def test_bmc_semantic_fixture_policy_covers_known_gap_inventory() -> None:
         for mode in _SUPPORTED_POLICY_MODES
     }
     assert mode_counts == {
-        "hard_pass": 168,
+        "hard_pass": 175,
         "partial": 0,
         "expected_unsupported": 10,
-        "temporary_exclude": 23 + sum("variable_roles" in case.data["categories"] for case in cases.values()),
+        "temporary_exclude": 23
+        + sum(
+            1
+            for case in cases.values()
+            if "variable_roles" in case.data["categories"]
+            and is_runner_excluded(case, BMC_CORE_RUNNER)
+        ),
         "long_term_exclude": 4,
     }
 
@@ -589,7 +649,9 @@ def test_role_fixture_policy_uses_category_and_explicit_exclusion(tmp_path, excl
         data["exclude_runners"] = ["bmc_core"]
     yaml_path = tmp_path / "custom_model_behavior.yaml"
     yaml_path.write_text(yaml.safe_dump(data), encoding="utf-8")
-    yaml_path.with_suffix(".fcstm").write_text("control int count = 0; state Root;", encoding="utf-8")
+    yaml_path.with_suffix(".fcstm").write_text(
+        "control int count = 0; state Root;", encoding="utf-8"
+    )
     policy = policy_for_case(str(yaml_path))
     assert policy.mode == ("temporary_exclude" if excluded else "hard_pass")
     assert policy.bucket == ("variable_roles" if excluded else "baseline")

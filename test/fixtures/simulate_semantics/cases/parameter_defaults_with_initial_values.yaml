@@ -7,7 +7,6 @@ categories:
 - variable_roles
 exclude_runners:
 - generated_python_alignment
-- bmc_core
 initial:
   vars:
     count: 7

@@ -3482,10 +3482,9 @@ def test_bmc_cli_rejects_unobservable_input_references(tmp_path, query):
     model.write_text("input int sensor; state Root;", encoding="utf-8")
     query_path = tmp_path / "query.fbmcq"
     query_path.write_text(query, encoding="utf-8")
-    result, payload = _json_result(model, query_path)
+    result = _run("-i", str(model), "-q", str(query_path), "--json")
     assert result.exit_code == 1
-    assert payload is None
-    assert "Failed to compile BMC query" in result.output
+    _assert_stderr_only(result, "Failed to compile BMC query")
 
 
 def test_bmc_cli_replays_abstract_action_with_roles(tmp_path):

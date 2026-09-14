@@ -94,10 +94,10 @@ text is embedded in generated artifacts.
 
 ### Variables
 
-{% if model.defines.values() | list -%}
+{% if model.persistent_variables.values() | list -%}
 | Name | Type | Initial DSL |
 | --- | --- | --- |
-{% for def_item in model.defines.values() -%}
+{% for def_item in model.persistent_variables.values() -%}
 | `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ def_item.init.to_ast_node() | string }}` |
 {% endfor %}
 {% else %}
@@ -477,6 +477,12 @@ adapter code, confirm the following points in the downstream project:
 
 ## Quick Start
 
+{% if model.dynamic_inputs %}
+This model has inputs. Before the ordinary `cycle` calls below, install a complete
+input provider, or use `cycle_with_inputs` with a fresh snapshot as shown in the
+role configuration example at the end of this guide.
+{% endif %}
+
 ```c
 #include "machine.h"
 
@@ -556,10 +562,10 @@ int main(void)
 
 ### `{{ machine_class_name(model) }}Vars`
 
-{% if model.defines.values() | list %}
+{% if model.persistent_variables.values() | list %}
 | Field | C Type | Initial DSL |
 | --- | --- | --- |
-{% for def_item in model.defines.values() -%}
+{% for def_item in model.persistent_variables.values() -%}
 | `{{ def_item.name | to_c_identifier }}` | `{% if def_item.type == 'int' %}{{ machine_class_name(model) }}Int{% else %}double{% endif %}` | `{{ def_item.init.to_ast_node() | string }}` |
 {% endfor %}
 {% else %}
@@ -950,12 +956,12 @@ if (!{{ machine_class_name(model) }}_cycle(&machine)) {
 
 ```c
 const {{ machine_class_name(model) }}Vars *vars = {{ machine_class_name(model) }}_vars(&machine);
-{% if model.defines.values() | list %}
-{% if (model.defines.values() | list)[0].type == 'int' %}
-{{ machine_class_name(model) }}Int value = vars->{{ (model.defines.values() | list)[0].name | to_c_identifier }};
+{% if model.persistent_variables.values() | list %}
+{% if (model.persistent_variables.values() | list)[0].type == 'int' %}
+{{ machine_class_name(model) }}Int value = vars->{{ (model.persistent_variables.values() | list)[0].name | to_c_identifier }};
 (void)value;
 {% else %}
-double value = vars->{{ (model.defines.values() | list)[0].name | to_c_identifier }};
+double value = vars->{{ (model.persistent_variables.values() | list)[0].name | to_c_identifier }};
 (void)value;
 {% endif %}
 {% else %}
@@ -977,19 +983,23 @@ Each concurrent hot start needs its own scratch object; serialize access when st
 ```c
 {{ machine_class_name(model) }} default_machine;
 {{ machine_class_name(model) }}Vars initial_vars;
-
+{% if model.static_inputs %}{{ machine_class_name(model) }}Parameters parameters;
+{% endif %}
 if (!{{ machine_class_name(model) }}_init(&default_machine)) {
     fprintf(stderr, "default init failed: %s\n", {{ machine_class_name(model) }}_last_error(&default_machine));
     return 1;
 }
 initial_vars = *{{ machine_class_name(model) }}_vars(&default_machine);
+{% for item in model.static_inputs.values() %}parameters.{{ item.name | readonly_value_identifier }} = {{ machine_class_name(model) }}_get_param_{{ item.name | readonly_value_identifier }}(&default_machine);
+{% endfor %}
 
 /* Override initial_vars fields here when restoring a custom checkpoint. */
 
-if (!{{ machine_class_name(model) }}_hot_start(
+if (!{{ machine_class_name(model) }}_hot_start{% if model.static_inputs %}_with_parameters{% endif %}(
     &machine,
     {{ machine_macro_name(model) }}_STATE_{{ model.root_state | state_slug }},
-    &initial_vars
+    &initial_vars{% if model.static_inputs %},
+    &parameters{% endif %}
 )) {
     fprintf(stderr, "hot start failed: %s\n", {{ machine_class_name(model) }}_last_error(&machine));
     return 2;
@@ -1115,3 +1125,67 @@ canonical path-boundary-safe ids.
   built-in `c` runtime family while changing the event-input contract.
 - Template regression checks are expected to compile representative generated
   machines with both a C compiler and a C++ compiler.
+
+
+## Parameters and Cycle Inputs
+
+`Vars` contains only persistent control and output values. Both roles retain
+unwritten values and use the same validation and commit mechanism. Application
+code should read them through the public accessor; direct writes to internal
+state are unsupported and can invalidate verified properties. Output has no
+separate actuator callback.
+
+`Parameters` stores instance configuration. Zero-initialize `InitOptions`, set
+`parameters.<name>` and `parameters_present.<name>` for each supplied parameter,
+and set `vars.<name>` and `vars_present.<name>` for optional cold-start persistent
+values. A present value skips its DSL initializer; omitted values use defaults.
+Initialization copies all values. Reinitialization starts a new run; cycle APIs
+never accept parameter changes. Hot start requires a complete `Parameters`
+snapshot as well as complete `Vars`.
+
+`Inputs` is a complete typed snapshot for one cycle. Alternatively, install an
+`InputProvider`: each `read_<name>(user_data, value)` writes its out-parameter and
+returns `SUCCESS` or `FAILURE`. The provider table is copied; application-owned
+`user_data` must remain valid while installed. Each input is read once per cycle,
+including unused inputs, then frozen across validation and execution. Subsequent
+cycles acquire new values; there is no implicit hold. Explicit snapshots bypass
+the provider. Initialization and ended cycles do not sample inputs.
+
+Failures preserve committed Vars and the last input snapshot. Successful cycles,
+including Delta cycles, publish `last_inputs`; it is NULL before the first
+successful cycle. Input getters require an active cycle, such as an abstract
+hook; parameter getters require an initialized instance.
+
+Use `MachineWrapper(options)` or `init(options)` for cold initialization,
+`hot_start(state, vars, parameters)` for hot initialization, and
+`set_input_provider(&provider, user_data)` to install external reads.
+`cycle_with_inputs(inputs)` supplies a snapshot.
+The wrapper only forwards to the C core; it adds no separate value storage.
+
+## Instance Configuration Example
+
+The literal `1` values below are example configuration and sensor readings;
+replace them with values appropriate for the model. Mount any abstract hooks
+and event checks before executing cycles.
+
+```cpp
+#include "machine.hpp"
+#include <string.h>
+
+int main(void)
+{
+    {{ machine_class_name(model) }}InitOptions options;
+    {{ machine_class_name(model) }}Inputs inputs;
+    memset(&options, 0, sizeof(options));
+    memset(&inputs, 0, sizeof(inputs));
+{% for item in model.static_inputs.values() %}    options.parameters.{{ item.name | readonly_value_identifier }} = 1;
+    options.parameters_present.{{ item.name | readonly_value_identifier }} = 1;
+{% endfor %}{% for item in model.dynamic_inputs.values() %}    inputs.{{ item.name | readonly_value_identifier }} = 1;
+{% endfor %}    pyfcstm_generated::{{ machine_class_name(model) }}_cpp_poll::MachineWrapper machine(options);
+    return machine.cycle_with_inputs(inputs) ? 0 : 1;
+}
+```
+
+Input and parameter names that need escaping (keywords, significant underscores,
+or the reserved `v_` prefix) use the lossless `v_p...` spelling shown in the
+generated header. Ordinary names such as `gain` keep their original spelling.

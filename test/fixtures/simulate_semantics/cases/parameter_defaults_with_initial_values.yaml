@@ -5,8 +5,6 @@ origin:
 categories:
 - runtime
 - variable_roles
-exclude_runners:
-- generated_python_alignment
 initial:
   vars:
     count: 7

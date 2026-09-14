@@ -90,10 +90,10 @@ canonical export 会包含模型文档块。不要在 FCSTM 文档中写入密�
 
 ### Variables
 
-{% if model.defines.values() | list -%}
+{% if model.persistent_variables.values() | list -%}
 | 名称 | 类型 | 初始 DSL |
 | --- | --- | --- |
-{% for def_item in model.defines.values() -%}
+{% for def_item in model.persistent_variables.values() -%}
 | `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ def_item.init.to_ast_node() | string }}` |
 {% endfor %}
 {% else %}
@@ -378,6 +378,11 @@ g++ -x c++ -std=c++17 -Wall -Wextra -Werror -pedantic-errors -c machine.c -o mac
 
 ## 快速开始
 
+{% if model.dynamic_inputs %}
+本模型声明了 input。调用下文普通 `cycle` 接口前，先安装完整的 input provider；
+也可以使用 `cycle_with_inputs` 传入本周期快照，参见文末的角色配置示例。
+{% endif %}
+
 ```c
 #include "machine.h"
 
@@ -436,10 +441,10 @@ int main(void)
 
 ### `{{ machine_class_name(model) }}Vars`
 
-{% if model.defines.values() | list %}
+{% if model.persistent_variables.values() | list %}
 | 字段 | C 类型 | 初始 DSL |
 | --- | --- | --- |
-{% for def_item in model.defines.values() -%}
+{% for def_item in model.persistent_variables.values() -%}
 | `{{ def_item.name | to_c_identifier }}` | `{% if def_item.type == 'int' %}{{ machine_class_name(model) }}Int{% else %}double{% endif %}` | `{{ def_item.init.to_ast_node() | string }}` |
 {% endfor %}
 {% else %}
@@ -695,12 +700,12 @@ static const {{ machine_class_name(model) }}EventId event_ids[] = {
 
 ```c
 const {{ machine_class_name(model) }}Vars *vars = {{ machine_class_name(model) }}_vars(&machine);
-{% if model.defines.values() | list %}
-{% if (model.defines.values() | list)[0].type == 'int' %}
-{{ machine_class_name(model) }}Int value = vars->{{ (model.defines.values() | list)[0].name | to_c_identifier }};
+{% if model.persistent_variables.values() | list %}
+{% if (model.persistent_variables.values() | list)[0].type == 'int' %}
+{{ machine_class_name(model) }}Int value = vars->{{ (model.persistent_variables.values() | list)[0].name | to_c_identifier }};
 (void)value;
 {% else %}
-double value = vars->{{ (model.defines.values() | list)[0].name | to_c_identifier }};
+double value = vars->{{ (model.persistent_variables.values() | list)[0].name | to_c_identifier }};
 (void)value;
 {% endif %}
 {% else %}
@@ -720,19 +725,23 @@ hot start 的用法是“完整变量快照 + 生成状态 id”：
 ```c
 {{ machine_class_name(model) }} default_machine;
 {{ machine_class_name(model) }}Vars initial_vars;
-
+{% if model.static_inputs %}{{ machine_class_name(model) }}Parameters parameters;
+{% endif %}
 if (!{{ machine_class_name(model) }}_init(&default_machine)) {
     fprintf(stderr, "default init failed: %s\n", {{ machine_class_name(model) }}_last_error(&default_machine));
     return 1;
 }
 initial_vars = *{{ machine_class_name(model) }}_vars(&default_machine);
+{% for item in model.static_inputs.values() %}parameters.{{ item.name | readonly_value_identifier }} = {{ machine_class_name(model) }}_get_param_{{ item.name | readonly_value_identifier }}(&default_machine);
+{% endfor %}
 
 /* Override initial_vars fields here when restoring a custom checkpoint. */
 
-if (!{{ machine_class_name(model) }}_hot_start(
+if (!{{ machine_class_name(model) }}_hot_start{% if model.static_inputs %}_with_parameters{% endif %}(
     &machine,
     {{ machine_macro_name(model) }}_STATE_{{ model.root_state | state_slug }},
-    &initial_vars
+    &initial_vars{% if model.static_inputs %},
+    &parameters{% endif %}
 )) {
     fprintf(stderr, "hot start failed: %s\n", {{ machine_class_name(model) }}_last_error(&machine));
     return 2;
@@ -848,3 +857,58 @@ printf("last error: %s\n", {{ machine_class_name(model) }}_last_error(&machine))
 - 模板回归检查会同时用 C 编译器和 C++ 编译器编译代表性的生成产物。
 - 模板回归检查还会运行若干代表性的 C++ harness，覆盖基础行为、hot start、
   回滚行为、关键字安全标识符以及 abstract hook 挂载。
+
+
+## 实例参数与逐周期输入
+
+`Vars` 只包含持久 control/output 值。两种角色共用验证和提交机制，未赋值时
+保持原值。应用代码应通过公开 accessor 读取；直接写内部状态属于不支持的
+用法，可能破坏已经验证过的性质。output 没有额外的执行器回调。
+
+`Parameters` 保存实例配置。先将 `InitOptions` 清零，再为指定参数设置
+`parameters.<name>` 和 `parameters_present.<name>`；冷启动持久变量预设使用
+`vars.<name>` 和 `vars_present.<name>`。存在标记的值跳过对应 DSL initializer，
+省略的值使用默认值。初始化复制全部数据。重新初始化表示开始新的运行，
+cycle API 不接受参数变更。热启动要求完整 `Parameters` 和完整 `Vars` 快照。
+
+`Inputs` 是单周期完整的类型化输入快照。也可安装 `InputProvider`，其中每个
+`read_<name>(user_data, value)` 写入输出参数并返回 `SUCCESS` 或 `FAILURE`。
+运行时复制 provider 表；安装期间，应用拥有的 `user_data` 必须保持有效。
+每个周期读取每个 input 一次，包括未使用的输入，然后在验证与执行之间冻结。
+后续周期重新采样，不默认保持旧值。显式快照绕过 provider；初始化和已结束
+状态机的空操作不采样。
+
+失败不提交 Vars 或输入快照。成功周期（包括 Delta）发布 `last_inputs`，首次
+成功周期前为 NULL。input getter 只能在周期内部（例如 abstract hook 中）使用；
+param getter 要求实例已经初始化。
+
+冷启动使用 `MachineWrapper(options)` 或 `init(options)`；热启动使用
+`hot_start(state, vars, parameters)`。通过 `set_input_provider(&provider, user_data)`
+安装外部读取函数，或用 `cycle_with_inputs(inputs, events, event_count)` 提供快照。
+包装层仅转发到 C 内核，不维护另一份变量存储。
+
+## 实例配置示例
+
+下面的 `1` 仅演示实例参数和输入快照，请替换为模型需要的值。
+执行周期前，还需要安装模型要求的抽象 hook 和事件检查。
+
+```cpp
+#include "machine.hpp"
+#include <string.h>
+
+int main(void)
+{
+    {{ machine_class_name(model) }}InitOptions options;
+    {{ machine_class_name(model) }}Inputs inputs;
+    memset(&options, 0, sizeof(options));
+    memset(&inputs, 0, sizeof(inputs));
+{% for item in model.static_inputs.values() %}    options.parameters.{{ item.name | readonly_value_identifier }} = 1;
+    options.parameters_present.{{ item.name | readonly_value_identifier }} = 1;
+{% endfor %}{% for item in model.dynamic_inputs.values() %}    inputs.{{ item.name | readonly_value_identifier }} = 1;
+{% endfor %}    pyfcstm_generated::{{ machine_class_name(model) }}_cpp::MachineWrapper machine(options);
+    return machine.cycle_with_inputs(inputs) ? 0 : 1;
+}
+```
+
+input/param 名字遇到关键字、需要保留的下划线或预留的 `v_` 前缀时，
+使用生成头文件中列出的无损 `v_p...` 拼写；`gain` 等普通名字保持原样。

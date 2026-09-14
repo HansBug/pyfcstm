@@ -92,18 +92,22 @@ _SUITE_TARGETS = {
     "c": (
         "test/template/c/test_runtime.py",
         "test/template/c/test_semantic_fixture_alignment.py",
+        "test/template/c/test_variable_roles.py",
     ),
     "c_poll": (
         "test/template/c_poll/test_runtime.py",
         "test/template/c_poll/test_semantic_fixture_alignment.py",
+        "test/template/c_poll/test_variable_roles.py",
     ),
     "cpp": (
         "test/template/cpp/test_cpp_wrapper.py",
         "test/template/cpp/test_semantic_fixture_alignment.py",
+        "test/template/cpp/test_variable_roles.py",
     ),
     "cpp_poll": (
         "test/template/cpp_poll/test_cpp_poll_wrapper.py",
         "test/template/cpp_poll/test_semantic_fixture_alignment.py",
+        "test/template/cpp_poll/test_variable_roles.py",
     ),
 }
 _DEFAULT_SUITES = ("template_core", "python")

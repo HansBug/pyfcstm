@@ -102,6 +102,7 @@ _ALLOWED_PYTHON_RUNTIME_IMPORTS = {"dataclasses", "math", "types", "typing"}
 _ALLOWED_C_RUNTIME_INCLUDES = {
     "machine.h",
     "math.h",
+    "float.h",
     "stddef.h",
     "stdarg.h",
     "stdio.h",
@@ -617,6 +618,7 @@ def test_c_family_helpers_are_template_scoped():
         python_renderer = StateMachineCodeRenderer(str(template_dirs["python"]))
         c_helper_names = {
             "to_c_identifier",
+    "readonly_value_identifier",
             "to_c_path_identifier",
             "to_c_public_identifier",
             "to_c_public_macro_identifier",

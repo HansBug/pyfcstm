@@ -7,7 +7,6 @@ categories:
 - variable_roles
 - dynamic_inputs
 exclude_runners:
-- generated_python_alignment
 - bmc_core
 steps:
 - cycle: []

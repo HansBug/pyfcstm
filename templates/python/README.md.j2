@@ -1,3 +1,4 @@
+{%- macro example_values(items) -%}{{ '{' }}{% for item in items %}{{ item.name | tojson }}: {{ '1' if item.type == 'int' else '1.0' }}{% if not loop.last %}, {% endif %}{% endfor %}{{ '}' }}{%- endmacro -%}
 # {{ machine_class_name(model) }}
 
 This directory contains the generated Python runtime for the DSL root state
@@ -31,11 +32,11 @@ text is embedded in generated artifacts.
 
 ### Variables
 
-{% if model.defines.values() | list -%}
+{% if model.persistent_variables.values() | list -%}
 | Name | Type | Initial DSL |
 | --- | --- | --- |
-{% for def_item in model.defines.values() -%}
-| `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ def_item.init.to_ast_node() | string }}` |
+{% for def_item in model.persistent_variables.values() -%}
+| `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ (def_item.init.to_ast_node() | string) if def_item.init is not none else "—" }}` |
 {% endfor %}
 {% else %}
 This state machine does not define persistent variables.
@@ -144,7 +145,7 @@ committing a partial result.
 from machine import {{ machine_class_name(model) }}
 
 machine = {{ machine_class_name(model) }}()
-machine.cycle()
+machine.cycle({% if model.dynamic_inputs %}inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
 
 print(machine.current_state_path)
 print(machine.current_state_name)
@@ -154,18 +155,18 @@ print(machine.vars)
 Pass one or more generated event paths:
 
 ```python
-machine.cycle(["<event-path-1>", "<event-path-2>"])
+machine.cycle(["<event-path-1>", "<event-path-2>"]{% if model.dynamic_inputs %}, inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
 ```
 
 If you already know the exact event path, you can also pass a single string:
 
 ```python
-machine.cycle("<event-path>")
+machine.cycle("<event-path>"{% if model.dynamic_inputs %}, inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
 ```
 
 ## Event Resolution
 
-`cycle(events=None)` accepts:
+`cycle(events=None, *, inputs=None)` accepts:
 
 - `None`
 - one event string
@@ -201,7 +202,7 @@ Important rules:
 Example:
 
 {% set hot_start_var_lines = namespace(items=[]) -%}
-{% for def_item in model.defines.values() -%}
+{% for def_item in model.persistent_variables.values() -%}
 {% set hot_start_var_lines.items = hot_start_var_lines.items + [
     '        "' ~ def_item.name ~ '": ' ~ (def_item.init.value | default(0, true) if def_item.init.value is defined else 0) ~ ','
 ] -%}
@@ -215,7 +216,8 @@ machine = {{ machine_class_name(model) }}(
     initial_vars={
 {{ hot_start_var_lines.items | join('\n') }}
     },
-)
+{% if model.static_inputs %}    parameters={{ example_values(model.static_inputs.values()) }},
+{% endif %})
 ```
 
 ## Hook Rules
@@ -258,7 +260,7 @@ from machine import SimulationRuntimeDfsError, {{ machine_class_name(model) }}
 machine = {{ machine_class_name(model) }}()
 
 try:
-    machine.cycle()
+    machine.cycle({% if model.dynamic_inputs %}inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
 except SimulationRuntimeDfsError as err:
     print(err)
 ```
@@ -283,7 +285,7 @@ from machine import SimulationRuntimeExpressionError, {{ machine_class_name(mode
 machine = {{ machine_class_name(model) }}()
 
 try:
-    machine.cycle()
+    machine.cycle({% if model.dynamic_inputs %}inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
 except SimulationRuntimeExpressionError as err:
     print(err)
     print(type(err.__cause__).__name__)
@@ -349,7 +351,7 @@ print({{ machine_class_name(model) }}.EVENT_PATHS)
 
 #### Constructor
 
-`{{ machine_class_name(model) }}(initial_state=None, initial_vars=None)`
+`{{ machine_class_name(model) }}(initial_state=None, initial_vars=None, *, parameters=None)`
 
 Create a machine in cold-start mode or hot-start mode.
 
@@ -379,7 +381,7 @@ Example:
 
 ```python
 machine = {{ machine_class_name(model) }}()
-machine.cycle()
+machine.cycle({% if model.dynamic_inputs %}inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
 
 print(machine.vars)
 print(machine.is_ended)
@@ -389,7 +391,7 @@ print(machine.current_state_name)
 
 #### Methods
 
-- `cycle(events=None)`
+- `cycle(events=None, *, inputs=None)`
   - advance the state machine by one cycle
 - `info()`
   - return a summary dictionary with root-state name, current-state path,
@@ -402,9 +404,9 @@ Examples:
 ```python
 machine = {{ machine_class_name(model) }}()
 
-machine.cycle()
-machine.cycle("<event-path>")
-machine.cycle(["<event-path-1>", "<event-path-2>"])
+machine.cycle({% if model.dynamic_inputs %}inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
+machine.cycle("<event-path>"{% if model.dynamic_inputs %}, inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
+machine.cycle(["<event-path-1>", "<event-path-2>"]{% if model.dynamic_inputs %}, inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
 
 print(machine.info())
 print({{ machine_class_name(model) }}.get_abstract_hook_map())
@@ -513,9 +515,9 @@ machine = CustomMachine()
 {% else -%}
 machine = {{ machine_class_name(model) }}()
 {% endif -%}
-machine.cycle()
+machine.cycle({% if model.dynamic_inputs %}inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
 {% if doc_event_paths.items -%}
-machine.cycle("{{ doc_event_paths.items[0] }}")
+machine.cycle("{{ doc_event_paths.items[0] }}"{% if model.dynamic_inputs %}, inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
 {% endif -%}
 print(machine.current_state_path)
 print(machine.vars)
@@ -530,15 +532,15 @@ print(machine.hook_calls)
 
 ```python
 machine = {{ machine_class_name(model) }}()
-machine.cycle()
+machine.cycle({% if model.dynamic_inputs %}inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
 ```
 
 ### Read Variables
 
 ```python
 print(machine.vars)
-{% if model.defines.values() | list -%}
-print(machine.vars["{{ (model.defines.values() | list)[0].name }}"])
+{% if model.persistent_variables.values() | list -%}
+print(machine.vars["{{ (model.persistent_variables.values() | list)[0].name }}"])
 {% endif -%}
 ```
 
@@ -548,8 +550,8 @@ If your application needs to adjust persistent variables directly, do it outside
 hooks:
 
 ```python
-{% if model.defines.values() | list -%}
-machine.vars["{{ (model.defines.values() | list)[0].name }}"] = machine.vars["{{ (model.defines.values() | list)[0].name }}"]
+{% if model.persistent_variables.values() | list -%}
+machine.vars["{{ (model.persistent_variables.values() | list)[0].name }}"] = machine.vars["{{ (model.persistent_variables.values() | list)[0].name }}"]
 {% else %}
 # This machine has no persistent variables.
 pass
@@ -559,9 +561,9 @@ pass
 ### Send Events
 
 ```python
-machine.cycle()
-machine.cycle("<event-path>")
-machine.cycle(["<event-path-1>", "<event-path-2>"])
+machine.cycle({% if model.dynamic_inputs %}inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
+machine.cycle("<event-path>"{% if model.dynamic_inputs %}, inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
+machine.cycle(["<event-path-1>", "<event-path-2>"]{% if model.dynamic_inputs %}, inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
 ```
 
 ### Query State
@@ -584,11 +586,11 @@ print({{ machine_class_name(model) }}.get_abstract_hook_map())
 
 ## Variables
 
-{% if model.defines.values() | list -%}
+{% if model.persistent_variables.values() | list -%}
 | Name | Type | Initial DSL |
 | --- | --- | --- |
-{% for def_item in model.defines.values() -%}
-| `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ def_item.init.to_ast_node() | string }}` |
+{% for def_item in model.persistent_variables.values() -%}
+| `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ (def_item.init.to_ast_node() | string) if def_item.init is not none else "—" }}` |
 {% endfor %}
 {% else %}
 This state machine does not define persistent variables.
@@ -615,3 +617,41 @@ This state machine does not define persistent variables.
 {% else %}
 This state machine does not declare any events.
 {% endif -%}
+
+
+## Parameters and Cycle Inputs
+
+`control` and `output` share persistent `vars` storage. Both keep their value
+when a cycle does not assign them. Read results through `vars`; writing internal
+storage from application code is unsupported and can invalidate verified model
+properties. Outputs do not invoke external setters or actuator callbacks.
+
+Pass instance configuration through `parameters` when constructing the machine.
+Values are validated and copied; changing the original mapping has no effect.
+Cold construction uses each omitted parameter's DSL default. Hot construction
+requires complete parameters and persistent values. Parameters have no cycle
+argument or setter; `parameters` and each generated `get_param_*()` are read-only.
+
+Implement the generated `read_*()` methods to acquire external inputs. The runtime
+reads each input once per cycle, including inputs not used by the chosen path,
+and freezes that sample across validation and execution. `get_input_*()` is valid
+only during a cycle and never calls the device again. Construction and ended
+cycles do not read inputs. A subsequent cycle acquires a new sample; no implicit
+hold applies to inputs.
+
+`cycle(inputs=...)` supplies explicit values instead of invoking the corresponding
+read hooks. Missing entries use their hooks. Unknown names and invalid values are
+errors. A failed acquisition or execution preserves persistent values and
+`last_inputs`; a successful cycle, including a Delta cycle, publishes a new
+read-only `last_inputs` snapshot. Before the first successful cycle it is `None`.
+Action contexts expose independent read-only `inputs` and `parameters` snapshots.
+
+{% if model.dynamic_inputs or model.static_inputs %}
+For this model, the integration methods are:
+
+| Role | DSL name | Method |
+| --- | --- | --- |
+{% for item in model.static_inputs.values() %}| param | `{{ item.name }}` | `get_param_{{ item.name }}()` |
+{% endfor %}{% for item in model.dynamic_inputs.values() %}| input | `{{ item.name }}` | implement `read_{{ item.name }}()`; model reads `get_input_{{ item.name }}()` |
+{% endfor %}
+{% endif %}

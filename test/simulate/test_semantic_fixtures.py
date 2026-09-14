@@ -1188,7 +1188,7 @@ def test_shared_fixture_corpus_uses_public_observation_fields():
     assert top_level_hits == set()
     assert observation_hits == set()
     assert initial_hits == set()
-    assert all("variable_roles" in case.data["categories"] for case in cases if case.runners == ("simulation",))
+    assert all("generated_python_alignment" in case.runners for case in cases)
 
 
 @pytest.mark.unittest
@@ -1204,15 +1204,11 @@ def test_shared_fixture_corpus_satisfies_current_contract():
     assert all("source" not in case.data for case in cases)
     assert all("runners" not in case.data for case in cases)
     assert all(
-        case.runners == (("simulation",) if "variable_roles" in case.data["categories"]
-                         else ("simulation", "generated_python_alignment"))
+        case.runners == ("simulation", "generated_python_alignment")
         for case in cases
     )
     assert all(
-        set(case.data.get("exclude_runners") or ()) <= (
-            {BMC_CORE_RUNNER, "generated_python_alignment"}
-            if "variable_roles" in case.data["categories"] else {BMC_CORE_RUNNER}
-        )
+        set(case.data.get("exclude_runners") or ()) <= {BMC_CORE_RUNNER}
         for case in cases
     )
 

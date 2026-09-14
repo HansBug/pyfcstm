@@ -1,3 +1,4 @@
+{%- macro example_values(items) -%}{{ '{' }}{% for item in items %}{{ item.name | tojson }}: {{ '1' if item.type == 'int' else '1.0' }}{% if not loop.last %}, {% endif %}{% endfor %}{{ '}' }}{%- endmacro -%}
 # {{ machine_class_name(model) }}
 
 这里存放 DSL 根状态 `{{ model.root_state.name }}` 对应的 Python 生成运行时。
@@ -28,11 +29,11 @@ canonical export 会包含模型文档块。不要在 FCSTM 文档中写入密�
 
 ### Variables
 
-{% if model.defines.values() | list -%}
+{% if model.persistent_variables.values() | list -%}
 | 名称 | 类型 | 初始 DSL |
 | --- | --- | --- |
-{% for def_item in model.defines.values() -%}
-| `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ def_item.init.to_ast_node() | string }}` |
+{% for def_item in model.persistent_variables.values() -%}
+| `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ (def_item.init.to_ast_node() | string) if def_item.init is not none else "—" }}` |
 {% endfor %}
 {% else %}
 当前状态机没有定义持久变量。
@@ -142,7 +143,7 @@ canonical export 会包含模型文档块。不要在 FCSTM 文档中写入密�
 from machine import {{ machine_class_name(model) }}
 
 machine = {{ machine_class_name(model) }}()
-machine.cycle()
+machine.cycle({% if model.dynamic_inputs %}inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
 
 print(machine.current_state_path)
 print(machine.current_state_name)
@@ -152,18 +153,18 @@ print(machine.vars)
 更常见的事件发送方式是直接传事件路径：
 
 ```python
-machine.cycle(["<event-path-1>", "<event-path-2>"])
+machine.cycle(["<event-path-1>", "<event-path-2>"]{% if model.dynamic_inputs %}, inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
 ```
 
 如果只有一个事件，也可以直接传单个字符串：
 
 ```python
-machine.cycle("<event-path>")
+machine.cycle("<event-path>"{% if model.dynamic_inputs %}, inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
 ```
 
 ## 事件解析规则
 
-`cycle(events=None)` 接受：
+`cycle(events=None, *, inputs=None)` 接受：
 
 - `None`
 - 单个事件字符串
@@ -198,7 +199,7 @@ Python 当次提供的迭代顺序。
 例如：
 
 {% set hot_start_var_lines = namespace(items=[]) -%}
-{% for def_item in model.defines.values() -%}
+{% for def_item in model.persistent_variables.values() -%}
 {% set hot_start_var_lines.items = hot_start_var_lines.items + [
     '        "' ~ def_item.name ~ '": ' ~ (def_item.init.value | default(0, true) if def_item.init.value is defined else 0) ~ ','
 ] -%}
@@ -212,7 +213,8 @@ machine = {{ machine_class_name(model) }}(
     initial_vars={
 {{ hot_start_var_lines.items | join('\n') }}
     },
-)
+{% if model.static_inputs %}    parameters={{ example_values(model.static_inputs.values()) }},
+{% endif %})
 ```
 
 ## Hook 规则
@@ -250,7 +252,7 @@ from machine import SimulationRuntimeDfsError, {{ machine_class_name(model) }}
 machine = {{ machine_class_name(model) }}()
 
 try:
-    machine.cycle()
+    machine.cycle({% if model.dynamic_inputs %}inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
 except SimulationRuntimeDfsError as err:
     print(err)
 ```
@@ -274,7 +276,7 @@ from machine import SimulationRuntimeExpressionError, {{ machine_class_name(mode
 machine = {{ machine_class_name(model) }}()
 
 try:
-    machine.cycle()
+    machine.cycle({% if model.dynamic_inputs %}inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
 except SimulationRuntimeExpressionError as err:
     print(err)
     print(type(err.__cause__).__name__)
@@ -339,7 +341,7 @@ print({{ machine_class_name(model) }}.EVENT_PATHS)
 
 #### 构造函数
 
-`{{ machine_class_name(model) }}(initial_state=None, initial_vars=None)`
+`{{ machine_class_name(model) }}(initial_state=None, initial_vars=None, *, parameters=None)`
 
 用于创建冷启动或 hot start 的状态机实例。
 
@@ -369,7 +371,7 @@ machine = {{ machine_class_name(model) }}()
 
 ```python
 machine = {{ machine_class_name(model) }}()
-machine.cycle()
+machine.cycle({% if model.dynamic_inputs %}inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
 
 print(machine.vars)
 print(machine.is_ended)
@@ -379,7 +381,7 @@ print(machine.current_state_name)
 
 #### 方法
 
-- `cycle(events=None)`
+- `cycle(events=None, *, inputs=None)`
   - 推进一个 cycle
 - `info()`
   - 返回摘要字典，包含根状态名、当前状态路径、变量名、状态路径、abstract hook 映射和结束状态
@@ -391,9 +393,9 @@ print(machine.current_state_name)
 ```python
 machine = {{ machine_class_name(model) }}()
 
-machine.cycle()
-machine.cycle("<event-path>")
-machine.cycle(["<event-path-1>", "<event-path-2>"])
+machine.cycle({% if model.dynamic_inputs %}inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
+machine.cycle("<event-path>"{% if model.dynamic_inputs %}, inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
+machine.cycle(["<event-path-1>", "<event-path-2>"]{% if model.dynamic_inputs %}, inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
 
 print(machine.info())
 print({{ machine_class_name(model) }}.get_abstract_hook_map())
@@ -501,9 +503,9 @@ machine = CustomMachine()
 {% else -%}
 machine = {{ machine_class_name(model) }}()
 {% endif -%}
-machine.cycle()
+machine.cycle({% if model.dynamic_inputs %}inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
 {% if doc_event_paths.items -%}
-machine.cycle("{{ doc_event_paths.items[0] }}")
+machine.cycle("{{ doc_event_paths.items[0] }}"{% if model.dynamic_inputs %}, inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
 {% endif -%}
 print(machine.current_state_path)
 print(machine.vars)
@@ -518,15 +520,15 @@ print(machine.hook_calls)
 
 ```python
 machine = {{ machine_class_name(model) }}()
-machine.cycle()
+machine.cycle({% if model.dynamic_inputs %}inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
 ```
 
 ### 读取变量
 
 ```python
 print(machine.vars)
-{% if model.defines.values() | list -%}
-print(machine.vars["{{ (model.defines.values() | list)[0].name }}"])
+{% if model.persistent_variables.values() | list -%}
+print(machine.vars["{{ (model.persistent_variables.values() | list)[0].name }}"])
 {% endif -%}
 ```
 
@@ -535,8 +537,8 @@ print(machine.vars["{{ (model.defines.values() | list)[0].name }}"])
 如果你的业务确实需要直接调整持久变量，应在 hook 外部进行：
 
 ```python
-{% if model.defines.values() | list -%}
-machine.vars["{{ (model.defines.values() | list)[0].name }}"] = machine.vars["{{ (model.defines.values() | list)[0].name }}"]
+{% if model.persistent_variables.values() | list -%}
+machine.vars["{{ (model.persistent_variables.values() | list)[0].name }}"] = machine.vars["{{ (model.persistent_variables.values() | list)[0].name }}"]
 {% else %}
 # 当前状态机没有持久变量。
 pass
@@ -546,9 +548,9 @@ pass
 ### 发送事件
 
 ```python
-machine.cycle()
-machine.cycle("<event-path>")
-machine.cycle(["<event-path-1>", "<event-path-2>"])
+machine.cycle({% if model.dynamic_inputs %}inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
+machine.cycle("<event-path>"{% if model.dynamic_inputs %}, inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
+machine.cycle(["<event-path-1>", "<event-path-2>"]{% if model.dynamic_inputs %}, inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
 ```
 
 ### 查询状态
@@ -571,11 +573,11 @@ print({{ machine_class_name(model) }}.get_abstract_hook_map())
 
 ## 变量
 
-{% if model.defines.values() | list -%}
+{% if model.persistent_variables.values() | list -%}
 | 名称 | 类型 | 初始 DSL |
 | --- | --- | --- |
-{% for def_item in model.defines.values() -%}
-| `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ def_item.init.to_ast_node() | string }}` |
+{% for def_item in model.persistent_variables.values() -%}
+| `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ (def_item.init.to_ast_node() | string) if def_item.init is not none else "—" }}` |
 {% endfor %}
 {% else %}
 当前状态机没有定义持久变量。
@@ -602,3 +604,35 @@ print({{ machine_class_name(model) }}.get_abstract_hook_map())
 {% else %}
 当前状态机没有声明任何事件。
 {% endif -%}
+
+
+## 实例参数与逐周期输入
+
+`control` 和 `output` 共用持久 `vars` 存储：当周期没有赋值时，两者都保持
+原值。通过 `vars` 读取结果；应用代码直接修改内部存储属于不支持的用法，
+可能破坏模型已经验证过的性质。output 不触发外部 setter 或执行器回调。
+
+在构造实例时通过 `parameters` 传入配置。运行时校验并复制这些值，之后修改
+原始 mapping 不影响实例。冷启动时，省略的参数使用 DSL 默认值；热启动要求
+完整参数与持久变量值。param 不提供逐周期参数或 setter，通过只读 `parameters`
+和生成的 `get_param_*()` 读取。
+
+实现生成的 `read_*()` 方法以接入设备输入。运行时在每个周期读取每个 input
+一次，包括本次路径未用到的 input；验证执行和正式执行使用同一份冻结快照。
+`get_input_*()` 仅在周期执行期间有效，不会再次访问设备。构造实例和已结束
+状态机的空操作不采样；下一个周期重新采样，input 不会默认保持上一周期值。
+
+`cycle(inputs=...)` 可直接提供指定输入，未提供的输入调用对应 read hook。
+未知名称和非法值报错。采样或执行失败不提交持久变量和 `last_inputs`；成功周期
+（包括 Delta 周期）发布新的只读 `last_inputs`，首次成功周期前为 `None`。
+抽象 action 的 context 也提供独立的只读 `inputs` 和 `parameters` 快照。
+
+{% if model.dynamic_inputs or model.static_inputs %}
+本模型生成以下集成方法：
+
+| 角色 | DSL 名称 | 方法 |
+| --- | --- | --- |
+{% for item in model.static_inputs.values() %}| param | `{{ item.name }}` | `get_param_{{ item.name }}()` |
+{% endfor %}{% for item in model.dynamic_inputs.values() %}| input | `{{ item.name }}` | 实现 `read_{{ item.name }}()`；模型通过 `get_input_{{ item.name }}()` 读取 |
+{% endfor %}
+{% endif %}

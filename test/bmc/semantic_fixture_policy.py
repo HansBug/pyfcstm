@@ -161,7 +161,13 @@ def policy_for_case(case_id: str) -> BmcSemanticFixturePolicy:
         return BmcSemanticFixturePolicy(
             mode="temporary_exclude",
             bucket="variable_roles",
-            reason="Role-aware parameter bindings, input symbols and output observations require BMC lowering.",
+            reason=(
+                "Simulator-only semantics: run-error rollback retry and hot-composite "
+                "init_wait stay outside the BMC step-error/init-state contract."
+                if case_id
+                in ("dynamic_input_error_retry", "dynamic_input_unblocks_hot_composite")
+                else "Role-aware parameter bindings, input symbols and output observations require BMC lowering."
+            ),
         )
     if case_id in PLAIN_BEFORE_ALIGNMENT_CASES:
         return BmcSemanticFixturePolicy(

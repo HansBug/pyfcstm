@@ -187,6 +187,17 @@ An assumption changes the executions being checked. It is not a restatement of
 the conclusion. Never add an unrequested assumption to hide an unwanted
 execution.
 
+### Role-Aware Variables In Frame Conditions
+
+Variables keep their declared roles inside frame predicates and `init ... where`
+clauses. Dynamic inputs (`input`) are environment-chosen per cycle: two frames
+may hold different values, and `assume at k: sensor == 5;` pins exactly one
+cycle's sample. Static inputs (`param`) are constant across the whole trace, so
+an initializer-consistent `where` clause fixes them once. Control and output
+variables persist across cycles exactly as before; witness reports carry
+per-step `inputs`, `input_reads`, and `initial.parameters` alongside the
+persistent `frames[i].vars`.
+
 ## Expressions
 
 Numeric expressions and condition expressions have different roles. A bare

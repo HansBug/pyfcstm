@@ -42,7 +42,7 @@ VarDomainEntry
 -----------------------------------------------------
 
 .. autoclass:: VarDomainEntry
-    :members: __post_init__,to_canonical,id,name,declared_type
+    :members: __post_init__,to_canonical,id,name,declared_type,role
 
 
 FrameRef
@@ -70,7 +70,7 @@ BmcDomain
 -----------------------------------------------------
 
 .. autoclass:: BmcDomain
-    :members: __post_init__,frame0_state_ids,recurrence_state_ids,state_by_id,state_by_path,state_path_to_id,state_id_to_path,event_by_id,event_by_path,event_path_to_id,event_id_to_path,variable_by_id,variable_by_name,variable_name_to_id,variable_id_to_name,event_input,to_canonical,bound,states,events,variables,frames,steps,event_inputs,initial_state_ids,stable_state_ids,model
+    :members: __post_init__,frame0_state_ids,recurrence_state_ids,dynamic_input_names,static_input_names,persistent_variable_names,state_by_id,state_by_path,state_path_to_id,state_id_to_path,event_by_id,event_by_path,event_path_to_id,event_id_to_path,variable_by_id,variable_by_name,variable_name_to_id,variable_id_to_name,event_input,to_canonical,bound,states,events,variables,frames,steps,event_inputs,initial_state_ids,stable_state_ids,model
 
 
 build\_bmc\_domain

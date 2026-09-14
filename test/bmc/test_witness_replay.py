@@ -540,6 +540,7 @@ def test_replay_accepts_later_init_sentinel_when_initial_cycle_stays_unstable() 
                 "unconsumed_events": [],
                 "abstract_calls": [],
                 "delta": True,
+                "inputs": {},
             }
         ],
     }

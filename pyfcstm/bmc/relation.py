@@ -106,6 +106,7 @@ from .source import (
     terminated_source,
 )
 from .provenance import BmcTrackedConstraint
+from pyfcstm.dsl.role import VariableRole
 from pyfcstm.model import Expr
 from pyfcstm.solver.domain import DomainConstraint, DomainSource, translate_expr_domain
 from pyfcstm.solver.operation import execute_operations_domain
@@ -2416,6 +2417,11 @@ def _build_case_relation(
             value, "post variable %s for case %s" % (var.name, case.label)
         )
         post_var_exprs[var.name] = arith_value
+        if var.role == VariableRole.INPUT_DYNAMIC:
+            # Dynamic inputs are re-chosen by the environment every cycle, so
+            # the next frame's input symbol must stay free instead of
+            # inheriting the pre-frame value through the case identity.
+            continue
         post_constraints.append(
             symbols.frame_var(step_index + 1, var.name) == arith_value
         )
@@ -2658,6 +2664,11 @@ def _build_initial_formula(
         if var.name in havoc_names:
             continue
         define = context.model.defines[var.name]
+        if var.role == VariableRole.INPUT_DYNAMIC:
+            # Dynamic inputs carry no declared initializer (the model layer
+            # rejects one); the frame-0 input symbol stays free for the
+            # environment to choose, like every later frame.
+            continue
         result = _translate_model_expr(
             define.init, env, "initializer for %s" % var.name
         )

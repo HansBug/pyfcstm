@@ -86,7 +86,8 @@ from .properties import BmcPropertyFormula, _lower_predicate
 from .query import EventAssumption
 from .relation import BmcCaseRelation
 from .solver import BmcSolveStatus, _SolveBudget, _check_with_budget
-from pyfcstm.model import OnAspect, OnStage, StateMachine
+from pyfcstm.dsl.role import VariableRole
+from pyfcstm.model import Expr, OnAspect, OnStage, StateMachine, Variable
 from pyfcstm.simulate import ReadOnlyExecutionContext, SimulationRuntime
 
 if TYPE_CHECKING:  # pragma: no cover - annotation-only imports
@@ -3843,14 +3844,28 @@ class BmcWitnessStep(_PrettyPrintableMixin):
         selected macro path. ``None`` derives the value from ``input_events``
         and ``consumed_events``, defaults to ``None``.
     :type unconsumed_events: Sequence[str], optional
+    :param inputs: Complete dynamic-input snapshot the selected case read,
+        keyed by declared dynamic input name.  Steps whose source frame is
+        already terminated carry an empty mapping because no environment
+        sampling happens after termination, defaults to ``None`` (coerced to
+        an empty mapping).
+    :type inputs: Mapping[str, Union[int, float]], optional
+    :param input_reads: Dynamic input names actually referenced by the
+        selected case's guards and actions, in declaration order without
+        duplicates.  This is provenance for which symbolic reads the case
+        performed, not a claim that replay independently verified the read
+        set, defaults to ``None`` (coerced to an empty tuple).
+    :type input_reads: Sequence[str], optional
     :raises pyfcstm.bmc.errors.BmcBuildError: If the step payload is
-        malformed.
+        malformed
 
     Example::
 
         >>> step = BmcWitnessStep(0, 0, 1, 'Root::fallback::Root::0', 'fallback', 'fallback_gamma', 'Root', 'Root', False, True)
         >>> step.to_canonical()['progress']
         'fallback_gamma'
+        >>> step.to_canonical()['inputs']
+        {}
     """
 
     index: int
@@ -3868,6 +3883,8 @@ class BmcWitnessStep(_PrettyPrintableMixin):
     abstract_calls: Sequence[BmcWitnessCallRecord] = ()
     consumed_events: Sequence[str] = ()
     unconsumed_events: Optional[Sequence[str]] = None
+    inputs: Mapping[str, Union[int, float]] = None
+    input_reads: Sequence[str] = None
 
     def __post_init__(self) -> None:
         for field_name in ("index", "source_frame", "target_frame"):
@@ -3960,10 +3977,32 @@ class BmcWitnessStep(_PrettyPrintableMixin):
                     "strings",
                 ),
             )
-        if tuple(self.unconsumed_events) != expected_unconsumed:
-            raise BmcBuildError(
-                "unconsumed_events must equal input events minus consumed events."
-            )
+            if tuple(self.unconsumed_events) != expected_unconsumed:
+                raise BmcBuildError(
+                    "unconsumed_events must equal input events minus consumed events."
+                )
+        object.__setattr__(
+            self,
+            "inputs",
+            _coerce_public_json_mapping("inputs", self.inputs or {}),
+        )
+        for input_name, input_value in self.inputs.items():
+            if (
+                isinstance(input_value, bool)
+                or not isinstance(input_value, (int, float))
+            ):
+                raise BmcBuildError("inputs values must be int or float.")
+        object.__setattr__(
+            self,
+            "input_reads",
+            _coerce_public_sequence(
+                "input_reads", self.input_reads or (), str, "strings"
+            ),
+        )
+        if len(set(self.input_reads)) != len(self.input_reads):
+            raise BmcBuildError("input_reads must not contain duplicates.")
+        if any(name not in self.inputs for name in self.input_reads):
+            raise BmcBuildError("input_reads must reference decoded inputs.")
 
     @property
     def input_event_paths(self) -> Tuple[str, ...]:
@@ -4008,6 +4047,8 @@ class BmcWitnessStep(_PrettyPrintableMixin):
             "abstract_calls": [item.to_canonical() for item in self.abstract_calls],
             "consumed_events": list(self.consumed_events),
             "unconsumed_events": list(self.unconsumed_events),
+            "inputs": dict(sorted(self.inputs.items())),
+            "input_reads": list(self.input_reads),
         }
 
 
@@ -4277,6 +4318,9 @@ class BmcRuntimeStep(_PrettyPrintableMixin):
     :type abstract_calls: Sequence[BmcWitnessCallRecord]
     :param delta: Runtime Delta observation, defaults to ``False``.
     :type delta: bool, optional
+    :param inputs: Runtime dynamic-input snapshot committed by this step's
+        cycle, defaults to ``None`` (coerced to an empty mapping).
+    :type inputs: Mapping[str, Union[int, float]], optional
     :raises pyfcstm.bmc.errors.BmcBuildError: If the runtime-step payload is
         malformed.
 
@@ -4292,6 +4336,7 @@ class BmcRuntimeStep(_PrettyPrintableMixin):
     unconsumed_events: Sequence[str]
     abstract_calls: Sequence[BmcWitnessCallRecord]
     delta: bool = False
+    inputs: Mapping[str, Union[int, float]] = None
 
     def __post_init__(self) -> None:
         if (
@@ -4331,6 +4376,16 @@ class BmcRuntimeStep(_PrettyPrintableMixin):
                 "BmcWitnessCallRecord objects",
             ),
         )
+        object.__setattr__(
+            self,
+            "inputs",
+            _coerce_public_json_mapping("inputs", self.inputs or {}),
+        )
+        for input_value in self.inputs.values():
+            if isinstance(input_value, bool) or not isinstance(
+                input_value, (int, float)
+            ):
+                raise BmcBuildError("inputs values must be int or float.")
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable runtime step.
@@ -4350,6 +4405,7 @@ class BmcRuntimeStep(_PrettyPrintableMixin):
             "unconsumed_events": list(self.unconsumed_events),
             "abstract_calls": [item.to_canonical() for item in self.abstract_calls],
             "delta": self.delta,
+            "inputs": dict(sorted(self.inputs.items())),
         }
 
 
@@ -5407,8 +5463,13 @@ def _frame_for_index(
 ) -> BmcWitnessFrame:
     core = formula.core
     state_id = _z3_int_value(model, core.symbols.frame_state(index))
+    persistent_names = set(core.context.domain.persistent_variable_names)
     variables = {}
     for var in core.context.domain.variables:
+        if var.name not in persistent_names:
+            # Dynamic inputs live in ``steps[i].inputs`` and parameters in
+            # ``initial.parameters``; frames expose only control/output state.
+            continue
         variables[var.name] = _z3_number_value(
             model, core.symbols.frame_var(index, var.name), var.declared_type
         )
@@ -5690,6 +5751,53 @@ def _decode_calls(
     return tuple(calls)
 
 
+def _collect_expr_variable_names(expr: Expr, found: Set[str]) -> None:
+    """Collect variable names referenced by ``expr`` into ``found``."""
+    if isinstance(expr, Variable):
+        found.add(expr.name)
+        return
+    for child_name in ("x", "y", "cond", "if_true", "if_false"):
+        child = getattr(expr, child_name, None)
+        if isinstance(child, Expr):
+            _collect_expr_variable_names(child, found)
+
+
+def _collect_statement_variable_names(statement: Any, found: Set[str]) -> None:
+    """Collect variable names referenced by one operation statement."""
+    if hasattr(statement, "expr"):
+        _collect_expr_variable_names(statement.expr, found)
+    for branch in getattr(statement, "branches", ()) or ():
+        _collect_expr_variable_names(branch.condition, found)
+        for nested in branch.statements:
+            _collect_statement_variable_names(nested, found)
+
+
+def _case_dynamic_input_reads(
+    case: Any, dynamic_names: Sequence[str]
+) -> Tuple[str, ...]:
+    """Return dynamic inputs the case's guards/actions reference.
+
+    The result follows declaration order and carries no duplicates.  This is
+    read-evidence provenance for the selected case; it does not claim that
+    replay independently rebuilt and verified the symbolic read set.
+
+    :param case: Selected ``CycleCase``.
+    :param dynamic_names: Declared dynamic input names in order.
+    :return: Referenced dynamic input names in declaration order.
+    :rtype: Tuple[str, ...]
+    """
+    if not dynamic_names:
+        return ()
+    allowed = set(dynamic_names)
+    found: Set[str] = set()
+    for requirement in case.guard_requirements:
+        _collect_expr_variable_names(requirement.expr, found)
+    for block in case.action_blocks:
+        for statement in block.operations:
+            _collect_statement_variable_names(statement, found)
+    return tuple(name for name in dynamic_names if name in found)
+
+
 def _decode_step(
     formula: BmcPropertyFormula,
     model: z3.ModelRef,
@@ -5710,6 +5818,23 @@ def _decode_step(
     )
     source = frames[step_index]
     target = frames[step_index + 1]
+    domain = formula.core.context.domain
+    dynamic_names = domain.dynamic_input_names
+    if source.terminated:
+        # No environment sampling happens once the machine has terminated;
+        # post-termination absorb steps carry empty inputs.
+        step_inputs: Dict[str, Union[int, float]] = {}
+        input_reads: Tuple[str, ...] = ()
+    else:
+        declared_types = {var.name: var.declared_type for var in domain.variables}
+        step_inputs = {
+            name: _z3_number_value(
+                model, formula.core.symbols.frame_var(step_index, name),
+                declared_types[name],
+            )
+            for name in dynamic_names
+        }
+        input_reads = _case_dynamic_input_reads(relation.case, dynamic_names)
     return BmcWitnessStep(
         index=step_index,
         source_frame=step_index,
@@ -5726,21 +5851,33 @@ def _decode_step(
         abstract_calls=_decode_calls(formula, model, relation),
         consumed_events=consumed_events,
         unconsumed_events=unconsumed_events,
+        inputs=step_inputs,
+        input_reads=input_reads,
     )
 
 
 def _initial_metadata(
-    formula: BmcPropertyFormula, frames: Sequence[BmcWitnessFrame]
+    formula: BmcPropertyFormula,
+    model: z3.ModelRef,
+    frames: Sequence[BmcWitnessFrame],
 ) -> _CanonicalDict:
     initial = formula.core.context.bound_query.initial.source
     if not frames:
         raise _internal_error("Decoded witness trace has no frames.")
     first = frames[0]
+    parameters: Dict[str, Union[int, float]] = {}
+    for var in formula.core.context.domain.variables:
+        if var.role != VariableRole.INPUT_STATIC:
+            continue
+        parameters[var.name] = _z3_number_value(
+            model, formula.core.symbols.frame_var(0, var.name), var.declared_type
+        )
     return {
         "mode": initial.mode,
         "state": first.state,
         "sentinel": first.sentinel,
         "vars": dict(sorted(first.vars.items())),
+        "parameters": dict(sorted(parameters.items())),
     }
 
 
@@ -5777,7 +5914,7 @@ def _decode_witness_trace(
     return BmcWitnessTrace(
         property=prop,
         solver=solver_metadata,
-        initial=_initial_metadata(checked, frames),
+        initial=_initial_metadata(checked, checked_model, frames),
         frames=frames,
         steps=steps,
         diagnostics=checked.diagnostics,
@@ -6224,6 +6361,20 @@ def _compare_step(
                 "unconsumed events mismatch",
             )
         )
+    common_input_names = _compare_mapping_keys(
+        mismatches,
+        "steps[%d].inputs" % witness.index,
+        witness.inputs,
+        runtime.inputs,
+        "input key set mismatch",
+    )
+    for name in common_input_names:
+        _compare_values(
+            mismatches,
+            "steps[%d].inputs.%s" % (witness.index, name),
+            witness.inputs[name],
+            runtime.inputs[name],
+        )
     _compare_calls(
         mismatches, witness.index, witness.abstract_calls, runtime.abstract_calls
     )
@@ -6291,12 +6442,30 @@ def _initial_runtime(
     initial_state = (
         first.state if first is not None and first.sentinel is None else None
     )
+    # Witness-decoded parameters are always complete for role-aware models;
+    # hot start requires the full mapping while cold start fills defaults.
+    parameters = dict(witness.initial.get("parameters") or ()) or None
+    # Constant zero defaults keep the runtime constructible for models with
+    # dynamic inputs; every replayed step overrides the snapshot with the
+    # deterministic values recorded in the witness.
+    input_defaults = {
+        name: (0.0 if define.type == "float" else 0)
+        for name, define in state_machine.dynamic_inputs.items()
+    }
+    input_source = input_defaults or None
     if initial_state is None:
-        return SimulationRuntime(state_machine, initial_vars=initial_vars)
+        return SimulationRuntime(
+            state_machine,
+            initial_vars=initial_vars,
+            parameters=parameters,
+            input_source=input_source,
+        )
     return SimulationRuntime(
         state_machine,
         initial_state=initial_state,
         initial_vars=initial_vars,
+        parameters=parameters,
+        input_source=input_source,
     )
 
 
@@ -6376,7 +6545,7 @@ def replay_bmc_witness(
     for step in witness.steps:
         call_start = len(recorder.calls)
         recorder.begin_step()
-        result = runtime.cycle(step.input_event_paths)
+        result = runtime.cycle(step.input_event_paths, inputs=dict(step.inputs))
         recorder.end_step()
         step_calls = tuple(
             BmcWitnessCallRecord(
@@ -6398,6 +6567,7 @@ def replay_bmc_witness(
             unconsumed_events=result.unconsumed_events,
             abstract_calls=step_calls,
             delta=result.delta,
+            inputs=dict(result.inputs),
         )
         steps.append(runtime_step)
         _compare_step(mismatches, step, runtime_step)

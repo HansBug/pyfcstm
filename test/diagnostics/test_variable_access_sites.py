@@ -277,3 +277,27 @@ def test_schema_rejects_invalid_access_location(field, value):
     payload['variables'][0]['read_sites'][0][field] = value
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.Draft7Validator(schema).validate(payload)
+
+
+@pytest.mark.parametrize('role,initializer,writable', [
+    ('input', '', False), ('param', ' = 1', False),
+    ('control', ' = 1', True), ('output', ' = 1', True),
+])
+def test_shared_roles_keep_every_import_instance_access(tmp_path, role, initializer, writable):
+    leaf = tmp_path / 'leaf.fcstm'
+    body = 'result = value;' + (' value = value + 1;' if writable else '')
+    leaf.write_text('%s int value%s; output int result = 0; state Leaf { during { %s } }'
+                    % (role, initializer, body), encoding='utf-8')
+    host = tmp_path / 'host.fcstm'
+    host.write_text('%s int shared%s; state Host { '
+                    'import "./leaf.fcstm" as A { var value -> shared; var result -> a_result; } '
+                    'import "./leaf.fcstm" as B { var value -> shared; var result -> b_result; } '
+                    '[*] -> A; A -> B; }' % (role, initializer), encoding='utf-8')
+    report = inspect_model(load_state_machine_from_file(host))
+    shared = next(v for v in report.variables if v.name == 'shared')
+    expected_reads = ['Host.A', 'Host.A', 'Host.B', 'Host.B'] if writable else ['Host.A', 'Host.B']
+    assert [site.state_path for site in shared.read_sites] == expected_reads
+    assert [site.state_path for site in shared.write_sites] == (['Host.A', 'Host.B'] if writable else [])
+    assert all(site.source_path == str(leaf) for site in shared.read_sites + shared.write_sites)
+    assert [site.action_index for site in shared.read_sites] == ([0, 0, 1, 1] if writable else [0, 1])
+    assert shared.diagnostic_policy['unused'] == (role == 'control')

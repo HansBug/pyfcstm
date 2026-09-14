@@ -217,3 +217,27 @@ it('variable access report contract keeps host provenance for forced guards insi
         assert.equal(report.transitions[site.transition_index!].source_path, host);
     }
 });
+
+for (const role of ['input', 'param', 'control', 'output']) {
+    it(`variable access report contract keeps every shared ${role} instance`, async () => {
+        const dir = trackTempDir('jsfcstm-shared-role-access-');
+        const leaf = path.join(dir, 'leaf.fcstm');
+        const initializer = role === 'input' ? '' : ' = 1';
+        const writable = role === 'control' || role === 'output';
+        const body = 'result = value;' + (writable ? ' value = value + 1;' : '');
+        writeFile(leaf, `${role} int value${initializer}; output int result = 0; state Leaf { during { ${body} } }`);
+        const host = path.join(dir, 'host.fcstm');
+        writeFile(host, `${role} int shared${initializer}; state Host {
+            import "./leaf.fcstm" as A { var value -> shared; var result -> a_result; }
+            import "./leaf.fcstm" as B { var value -> shared; var result -> b_result; }
+            [*] -> A; A -> B; }`);
+        const snapshot = await new packageModule.FcstmWorkspaceGraph().buildSnapshotForFile(host);
+        const report = packageModule.inspectModel(snapshot.nodes[host].model!);
+        const shared = report.variables.find(variable => variable.name === 'shared')!;
+        assert.deepEqual(shared.read_sites.map(site => site.state_path), writable ? ['Host.A', 'Host.A', 'Host.B', 'Host.B'] : ['Host.A', 'Host.B']);
+        assert.deepEqual(shared.write_sites.map(site => site.state_path), writable ? ['Host.A', 'Host.B'] : []);
+        assert.ok([...shared.read_sites, ...shared.write_sites].every(site => site.source_path === leaf));
+        assert.deepEqual(shared.read_sites.map(site => site.action_index), writable ? [0, 0, 1, 1] : [0, 1]);
+        assert.equal(shared.diagnostic_policy.unused, role === 'control');
+    });
+}

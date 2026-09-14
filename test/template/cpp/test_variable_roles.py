@@ -488,7 +488,7 @@ def _check_role_readme_example(polled, wrapper, language):
                 StateMachineCodeRenderer(template).render(
                     model=artifacts["model"], output_dir=artifacts["output_dir"])
         filename = "README.md" if language == "en" else "README_zh.md"
-        readme = (Path(artifacts["output_dir"]) / filename).read_text()
+        readme = (Path(artifacts["output_dir"]) / filename).read_text(encoding="utf-8")
         source = re.findall(r"```(?:c|cpp)\n(.*?)```", readme, re.DOTALL)[-1]
         # The wrapper source is still linked when checking the byte-identical C core.
         result = compile_harness(artifacts, "role_readme", source)

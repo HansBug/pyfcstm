@@ -3424,3 +3424,47 @@ def test_write_bmc_output_leaves_no_descriptor_or_temporary_file(
     )
     assert report.points_reached > 0
     assert not report.body_windows, report.describe()
+
+
+def test_bmc_role_model_json_payload_matches_schema(tmp_path: Path) -> None:
+    """A role-aware witness payload carries inputs/reads/parameters and validates."""
+    model_path = tmp_path / "machine.fcstm"
+    model_path.write_text(
+        "input float pressure;\n"
+        "param float gain = 2.0;\n"
+        "def int ticks = 0;\n"
+        "output float altitude = 0.0;\n"
+        "state Root {\n"
+        "    state Flying { during { ticks = ticks + 1; "
+        "altitude = altitude + pressure * gain; } }\n"
+        "    [*] -> Flying;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    query_path = tmp_path / "property.fbmcq"
+    query_path.write_text(
+        "assume always: pressure >= 0.0 && pressure <= 1.0;\n"
+        'check reach <= 2: active("Root.Flying");\n',
+        encoding="utf-8",
+    )
+
+    result, payload = _json_result(model_path, query_path)
+
+    assert result.exit_code == 0
+    schema = json.loads(
+        Path("docs/source/reference/bmc_results/bmc_cli.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    _assert_bmc_schema_instance(schema, payload)
+    assert "schema_version" not in payload
+    witness = payload["witness"]
+    assert witness["initial"]["parameters"] == {"gain": 2.0}
+    for frame in witness["frames"]:
+        assert set(frame["vars"]) == {"ticks", "altitude"}
+    for step in witness["steps"]:
+        assert 0.0 <= step["inputs"]["pressure"] <= 1.0
+        assert step["input_reads"] == ["pressure"]
+    assert payload["replay"]["ok"] is True
+    for runtime_step in payload["replay"]["runtime_trace"]["steps"]:
+        assert set(runtime_step["inputs"]) == {"pressure"}

@@ -136,7 +136,7 @@ def test_input_range_assume_applies_to_every_decoded_cycle() -> None:
     model, formula, result = _solve(
         _FLIGHT_MODEL,
         "assume always: pressure >= 0.0 && pressure <= 1.0;\n"
-        "check reach <= 3: active(\"Root.Flying\");",
+        'check reach <= 3: active("Root.Flying");',
     )
     assert result.status == "sat"
     witness = decode_bmc_result_trace(result, source="primary")
@@ -151,7 +151,7 @@ def test_output_assume_at_pins_decoded_frame_value() -> None:
         _FLIGHT_MODEL,
         "assume at 0: pressure == 1.0;\n"
         "assume at 2: altitude == 4.0;\n"
-        "check reach <= 3: active(\"Root.Flying\");",
+        'check reach <= 3: active("Root.Flying");',
     )
     assert result.status == "sat"
     witness = decode_bmc_result_trace(result, source="primary")
@@ -163,8 +163,7 @@ def test_param_assume_conflicting_with_initializer_is_unsat() -> None:
     """Parameters are pinned once at frame 0; conflicting assumes are unsat."""
     _, _, result = _solve(
         _FLIGHT_MODEL,
-        "assume always: gain == 3.0;\n"
-        "check reach <= 1: active(\"Root.Flying\");",
+        'assume always: gain == 3.0;\ncheck reach <= 1: active("Root.Flying");',
     )
     assert result.status == "unsat"
 
@@ -173,8 +172,7 @@ def test_param_assume_matching_initializer_is_sat() -> None:
     """A parameter assume equal to the initializer stays consistent."""
     _, _, result = _solve(
         _FLIGHT_MODEL,
-        "assume always: gain == 2.0;\n"
-        "check reach <= 1: active(\"Root.Flying\");",
+        'assume always: gain == 2.0;\ncheck reach <= 1: active("Root.Flying");',
     )
     assert result.status == "sat"
     assert result.property_satisfied is True
@@ -185,7 +183,7 @@ def test_param_override_via_where_havoc_decodes_into_initial_parameters() -> Non
     model, formula, result = _solve(
         _FLIGHT_MODEL,
         "init cold havoc { gain } where gain == 3.0;\n"
-        "check reach <= 1: active(\"Root.Flying\");",
+        'check reach <= 1: active("Root.Flying");',
     )
     assert result.status == "sat"
     witness = decode_bmc_result_trace(result, source="primary")
@@ -193,34 +191,14 @@ def test_param_override_via_where_havoc_decodes_into_initial_parameters() -> Non
     assert replay_bmc_witness(model, witness).ok
 
 
-def test_check_predicate_may_reference_dynamic_inputs() -> None:
-    """Property predicates can reference inputs, not only assumptions."""
-    _, _, unconstrained = _solve(
-        _FLIGHT_MODEL,
-        "check invariant <= 3: pressure >= 0.0;",
-    )
-    assert unconstrained.status == "sat"
-    assert unconstrained.property_satisfied is False
+@pytest.mark.parametrize(
+    "predicate", ["pressure >= 0.0", "altitude - pressure <= 10.0"]
+)
+def test_frame_property_rejects_dynamic_input_predicates(predicate):
+    from pyfcstm.bmc import InvalidBmcQuery
 
-    _, _, constrained = _solve(
-        _FLIGHT_MODEL,
-        "assume always: pressure >= 0.0;\n"
-        "check invariant <= 3: pressure >= 0.0;",
-    )
-    assert constrained.status == "unsat"
-    assert constrained.property_satisfied is True
-
-
-def test_check_predicate_may_combine_output_and_input_same_frame() -> None:
-    """Same-frame output/input bands lower as single-frame predicates."""
-    model, formula, result = _solve(
-        _FLIGHT_MODEL,
-        "assume always: pressure == 1.0;\n"
-        "check invariant <= 3: altitude - pressure <= 10.0;\n",
-    )
-    # With pressure pinned at 1.0 the band holds at every frame.
-    assert result.status == "unsat"
-    assert result.property_satisfied is True
+    with pytest.raises(InvalidBmcQuery, match="variable_role_mismatch"):
+        _solve(_FLIGHT_MODEL, "check invariant <= 3: %s;" % predicate)
 
 
 # ---------------------------------------------------------------------------
@@ -233,13 +211,11 @@ def test_input_reads_follow_declaration_order_not_read_order() -> None:
     model, formula, result = _solve(
         _ORDER_MODEL,
         "assume at 1: first == 1;\nassume at 1: second == 2;\n"
-        "check reach <= 2: active(\"Root.T\");",
+        'check reach <= 2: active("Root.T");',
     )
     assert result.status == "sat"
     witness = decode_bmc_result_trace(result, source="primary")
-    transition = next(
-        step for step in witness.steps if step.case_kind == "transition"
-    )
+    transition = next(step for step in witness.steps if step.case_kind == "transition")
     assert transition.input_reads == ("second", "first")
     assert transition.inputs == {"second": 2, "first": 1}
 
@@ -249,13 +225,13 @@ def test_unread_inputs_still_decode_but_stay_out_of_reads() -> None:
     model, formula, result = _solve(
         _TWO_INPUT_MODEL,
         "assume at 0: watched == 5;\nassume at 0: ignored == 9;\n"
-        "check reach <= 1: active(\"Root.S\");",
+        'check reach <= 1: active("Root.S");',
     )
     assert result.status == "sat"
     witness = decode_bmc_result_trace(result, source="primary")
     step = witness.steps[0]
     assert step.inputs == {"watched": 5, "ignored": 9}
-    assert step.input_reads == ("watched",)
+    assert step.input_reads == ("watched", "ignored")
 
 
 def test_terminated_initial_frame_decodes_empty_step_inputs() -> None:
@@ -275,19 +251,14 @@ def test_terminated_initial_frame_decodes_empty_step_inputs() -> None:
     assert replay.ok
 
 
-def test_havoced_dynamic_input_stays_environment_chosen() -> None:
-    """Havocing a dynamic input keeps frame-0 input free for the solver."""
-    model, formula, result = _solve(
-        _TWO_INPUT_MODEL,
-        "init cold havoc { watched };\n"
-        "assume at 0: ignored == 3;\n"
-        "check reach <= 1: active(\"Root.S\");",
-    )
-    assert result.status == "sat"
-    witness = decode_bmc_result_trace(result, source="primary")
-    assert "watched" not in witness.frames[0].vars
-    assert witness.steps[0].inputs["ignored"] == 3
-    assert replay_bmc_witness(model, witness).ok
+def test_havoc_rejects_dynamic_inputs() -> None:
+    from pyfcstm.bmc import InvalidBmcQuery
+
+    with pytest.raises(InvalidBmcQuery, match="variable_role_mismatch"):
+        _solve(
+            _TWO_INPUT_MODEL,
+            'init cold havoc { watched }; check reach <= 1: active("Root.S");',
+        )
 
 
 def test_case_consequent_never_pins_next_frame_input_symbols() -> None:
@@ -324,8 +295,7 @@ def test_fractional_real_input_decodes_and_replays_exactly() -> None:
     """Non-binary-exact Real inputs survive decode and replay within contract."""
     model, formula, result = _solve(
         _FLIGHT_MODEL,
-        "assume always: pressure == 0.1;\n"
-        "check reach <= 2: active(\"Root.Flying\");",
+        'assume always: pressure == 0.1;\ncheck reach <= 2: active("Root.Flying");',
     )
     assert result.status == "sat"
     witness = decode_bmc_result_trace(result, source="primary")
@@ -343,7 +313,7 @@ def test_fractional_real_param_decodes_exactly() -> None:
     )
     formula = compile_bmc_property(
         build_bmc_core_formula(
-            BmcEngine(model).prepare("check reach <= 1: active(\"Root.Flying\");")
+            BmcEngine(model).prepare('check reach <= 1: active("Root.Flying");')
         )
     )
     result = solve_bmc_property(formula)
@@ -358,12 +328,14 @@ def test_nested_if_blocks_collect_reads_recursively() -> None:
     model, formula, result = _solve(
         _NESTED_IF_MODEL,
         "assume at 0: cmd == 0;\nassume at 0: mode == 4;\n"
-        "check reach <= 1: active(\"Root.S\");",
+        'check reach <= 1: active("Root.S");',
     )
     assert result.status == "sat"
     witness = decode_bmc_result_trace(result, source="primary")
     step = witness.steps[0]
     declared = ("cmd", "mode")
-    assert tuple(name for name in declared if name in step.input_reads) == step.input_reads
+    assert (
+        tuple(name for name in declared if name in step.input_reads) == step.input_reads
+    )
     assert set(step.input_reads) == {"cmd", "mode"}
     assert replay_bmc_witness(model, witness).ok

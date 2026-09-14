@@ -187,16 +187,28 @@ An assumption changes the executions being checked. It is not a restatement of
 the conclusion. Never add an unrequested assumption to hide an unwanted
 execution.
 
-### Role-Aware Variables In Frame Conditions
+### Variable roles in assumptions
 
-Variables keep their declared roles inside frame predicates and `init ... where`
-clauses. Dynamic inputs (`input`) are environment-chosen per cycle: two frames
-may hold different values, and `assume at k: sensor == 5;` pins exactly one
-cycle's sample. Static inputs (`param`) are constant across the whole trace, so
-an initializer-consistent `where` clause fixes them once. Control and output
-variables persist across cycles exactly as before; witness reports carry
-per-step `inputs`, `input_reads`, and `initial.parameters` alongside the
-persistent `frames[i].vars`.
+Use the existing bare-name or `var("name")` syntax for all four variable roles
+inside `assume at` and `assume always`. Control and output values persist when
+not written. Dynamic input values are independent on every cycle unless an
+assumption constrains them; they never inherit the preceding sample. Parameters
+are strictly equal across the entire trace. Defaults fix parameters initially;
+`init cold havoc { gain } where gain == 3;` selects another fixed configuration.
+
+For bound N, an assumption mentioning a dynamic input ranges over steps 0..N-1:
+`assume at N` is rejected, and `assume always` visits N steps. A mixed assumption
+reads control/output at the source frame and inputs for that step. Assumptions
+without inputs retain the existing frame range 0..N. Dynamic inputs cannot be
+used in `init ... where`, `havoc`, or frame property predicates; latch an input
+into control/output when the property concerns its observed value. These are
+binding rules, not new FBMCQ grammar.
+
+Witness frames contain persistent `vars`, `initial.parameters` fixes the
+configuration, and each non-ended step contains its complete `inputs` snapshot.
+`input_reads` includes the selected case's reads, rejected-candidate guard reads
+needed for selection, and explicit input assumption references. Replay uses only
+these recorded snapshots, with no random or fallback input source.
 
 ## Expressions
 

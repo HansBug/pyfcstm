@@ -4396,9 +4396,34 @@
           "type": "array",
           "items": {
             "type": "string"
+          },
+          "uniqueItems": true
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "case_kind": {
+                "const": "absorb"
+              }
+            },
+            "required": [
+              "case_kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "inputs": {
+                "maxProperties": 0
+              },
+              "input_reads": {
+                "maxItems": 0
+              }
+            }
           }
         }
-      }
+      ]
     },
     "legacyWitness": {
       "type": "object",

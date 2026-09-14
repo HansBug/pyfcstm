@@ -80,22 +80,22 @@ def test_dynamic_inputs_may_differ_across_cycles() -> None:
     symbols = _frame_symbols_expr(core_expr)
     solver = z3.Solver()
     solver.add(core_expr)
-    solver.add(
-        _symbol(symbols, "F_0_command") != _symbol(symbols, "F_1_command")
-    )
+    solver.add(_symbol(symbols, "I_0_command") != _symbol(symbols, "I_1_command"))
     assert solver.check() == z3.sat
 
 
 def test_parameters_stay_constant_across_cycles() -> None:
-    """Static inputs (parameters) cannot change between cycles."""
-    import z3
-
-    _, core_expr = _core_expr(_ROLE_MODEL, "check reach <= 2: terminated();")
-    symbols = _frame_symbols_expr(core_expr)
-    solver = z3.Solver()
-    solver.add(core_expr)
-    solver.add(_symbol(symbols, "F_0_gain") != _symbol(symbols, "F_1_gain"))
-    assert solver.check() == z3.unsat
+    """Assumptions at different frames cannot assign different parameters."""
+    _, formula = _core(
+        _ROLE_MODEL,
+        """
+        init cold havoc { gain };
+        assume at 0: gain == 2;
+        assume at 1: gain == 3;
+        check reach <= 2: active("Root.Done");
+    """,
+    )
+    assert solve_bmc_property(formula).status == "unsat"
 
 
 def _frame_symbols_expr(expr):
@@ -121,7 +121,7 @@ def test_concrete_inputs_constrain_the_scenario() -> None:
     _, formula = _core(
         _ROLE_MODEL,
         "assume at 0: command == 3;\nassume at 1: command == 5;\n"
-        "check reach <= 2: active(\"Root.Done\");",
+        'check reach <= 2: active("Root.Done");',
     )
     symbols = _frame_symbols(formula)
     solver = z3.Solver()
@@ -137,7 +137,7 @@ def test_witness_decode_and_replay_carry_role_metadata() -> None:
     model, formula = _core(
         _ROLE_MODEL,
         "assume at 0: command == 3;\nassume at 1: command == 5;\n"
-        "check reach <= 2: active(\"Root.Done\");",
+        'check reach <= 2: active("Root.Done");',
     )
     result = solve_bmc_property(formula)
     assert result.status == "sat"
@@ -175,14 +175,7 @@ def test_forged_step_inputs_are_reported_by_replay() -> None:
     absorb_index = next(
         index for index, step in enumerate(witness.steps) if step.case_kind == "absorb"
     )
-    forged_steps = list(witness.steps)
-    name = next(iter(witness.steps[0].inputs))
-    forged_steps[absorb_index] = dc.replace(
-        witness.steps[absorb_index], inputs={name: 7}
-    )
-    forged = dc.replace(witness, steps=tuple(forged_steps))
-    replay = replay_bmc_witness(model, forged)
-    assert not replay.ok
-    assert any(
-        "steps[%d].inputs" % absorb_index in item.path for item in replay.mismatches
-    )
+    from pyfcstm.bmc import BmcBuildError
+
+    with pytest.raises(BmcBuildError, match="absorb steps must have empty"):
+        dc.replace(witness.steps[absorb_index], inputs={"finish": 7})

@@ -3934,12 +3934,12 @@ def test_witness_step_input_payload_validation() -> None:
     assert valid.to_canonical()["input_reads"] == ["sensor"]
     assert BmcWitnessStep(**base).to_canonical()["inputs"] == {}
 
-    with pytest.raises(BmcBuildError, match="inputs values must be int or float"):
+    with pytest.raises(
+        BmcBuildError, match="inputs.sensor must be a finite int or float"
+    ):
         BmcWitnessStep(**base, inputs={"sensor": True})
     with pytest.raises(BmcBuildError, match="input_reads must not contain duplicates"):
-        BmcWitnessStep(
-            **base, inputs={"sensor": 5}, input_reads=("sensor", "sensor")
-        )
+        BmcWitnessStep(**base, inputs={"sensor": 5}, input_reads=("sensor", "sensor"))
     with pytest.raises(BmcBuildError, match="input_reads must reference decoded"):
         BmcWitnessStep(**base, inputs={"sensor": 5}, input_reads=("other",))
 
@@ -3950,5 +3950,15 @@ def test_runtime_step_input_payload_validation() -> None:
     assert BmcRuntimeStep(0, (), (), (), (), inputs={"sensor": 1}).to_canonical()[
         "inputs"
     ] == {"sensor": 1}
-    with pytest.raises(BmcBuildError, match="inputs values must be int or float"):
+    with pytest.raises(
+        BmcBuildError, match="inputs.sensor must be a finite int or float"
+    ):
         BmcRuntimeStep(0, (), (), (), (), inputs={"sensor": "bad"})
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("contract", [BmcWitnessStep, BmcRuntimeStep])
+def test_public_input_snapshot_annotations_resolve(contract):
+    from typing import get_type_hints
+
+    assert "inputs" in get_type_hints(contract)

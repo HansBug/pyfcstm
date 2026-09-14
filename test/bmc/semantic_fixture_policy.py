@@ -12,7 +12,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Iterable, Tuple
 
-from test.testings.simulate_semantics import BMC_CORE_RUNNER, is_runner_excluded, load_semantic_case
+from test.testings.simulate_semantics import (
+    BMC_CORE_RUNNER,
+    is_runner_excluded,
+    load_semantic_case,
+)
 
 
 @dataclass(frozen=True)
@@ -157,17 +161,13 @@ def policy_for_case(case_id: str) -> BmcSemanticFixturePolicy:
         'hard_pass'
     """
     case = load_semantic_case(case_id)
-    if "variable_roles" in case.data["categories"] and is_runner_excluded(case, BMC_CORE_RUNNER):
+    if "variable_roles" in case.data["categories"] and is_runner_excluded(
+        case, BMC_CORE_RUNNER
+    ):
         return BmcSemanticFixturePolicy(
             mode="temporary_exclude",
             bucket="variable_roles",
-            reason=(
-                "Simulator-only semantics: run-error rollback retry and hot-composite "
-                "init_wait stay outside the BMC step-error/init-state contract."
-                if case_id
-                in ("dynamic_input_error_retry", "dynamic_input_unblocks_hot_composite")
-                else "Role-aware parameter bindings, input symbols and output observations require BMC lowering."
-            ),
+            reason="Runtime error recovery requires simulator execution; BMC rejects undefined executions.",
         )
     if case_id in PLAIN_BEFORE_ALIGNMENT_CASES:
         return BmcSemanticFixturePolicy(

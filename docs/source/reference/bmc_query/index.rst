@@ -212,10 +212,45 @@ Environment assumptions
 Assumptions conjoin constraints with the core trace; they do not change the
 property polarity.
 
+Variable roles in assumptions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+All four roles use the existing bare-name or ``var("name")`` reference syntax.
+The role changes the value's lifetime, not the query grammar:
+
+* ``control`` / ``output`` belong to frames ``0..N``. A cycle with no write
+  preserves the preceding value.
+* Dynamic ``input`` belongs to steps ``0..N-1``. Every step has an independent
+  symbol; no implicit equality connects successive input samples.
+* ``param`` has one value shared by every frame. Its default fixes the value;
+  an initial ``havoc`` permits a different, still trace-global value.
+
+An assumption mentioning an input uses the step range: ``assume at N`` is
+rejected and ``assume always`` applies to N steps. Mixed assumptions read
+control/output from the source frame and input from that step. An assumption
+without inputs retains the complete frame range ``0..N``. For example, with
+``input int sensor; param int gain = 2; state Root;``::
+
+    assume at 0: sensor == 1;
+    assume at 1: var("sensor") == 3;
+    assume at 2: gain == 2;
+    check reach <= 2: active("Root");
+
+This query is SAT and records input snapshots ``{"sensor": 1}`` and
+``{"sensor": 3}``. Replacing the last assumption with ``sensor == 2`` is a
+binding error: there is no third input sample at bound 2. Contradictory parameter
+assumptions at two valid frames are UNSAT because the parameter cannot change.
+
+Dynamic inputs are not initializable variables: naming one in ``havoc`` or
+``init ... where`` is rejected. ``havoc *`` covers control/output/parameters.
+Frame property predicates cannot reference a dynamic input; model an explicit
+control/output latch when checking an observed sample across frames. Parameters
+may be referenced normally, including in call-filter predicates.
+
 Frame assumptions
 ~~~~~~~~~~~~~~~~~
 
-``assume always`` applies to all ``N+1`` frames.  ``assume at k`` applies to
+For predicates without dynamic inputs, ``assume always`` applies to all ``N+1`` frames.  ``assume at k`` applies to
 one frame and requires ``0 <= k <= N``.  Frame predicates permit ``cycle`` and
 current-frame ``active``/``terminated`` atoms, but not event, case, or call
 atoms.

@@ -70,6 +70,8 @@ from .ast import (
     Terminated,
     UFuncCall,
 )
+from pyfcstm.dsl.role import VariableRole
+
 from .errors import InvalidBmcDomain, InvalidBmcQuery
 from .query import (
     BmcAssumption,
@@ -899,9 +901,12 @@ def _validate_query_shape(query: BmcQuery) -> None:
 
 
 class _BindingContext:
-    def __init__(self, bound: int, domain: object = None) -> None:
+    def __init__(
+        self, bound: int, domain: object = None, allow_inputs: bool = False
+    ) -> None:
         self.bound = bound
         self.domain = domain
+        self.allow_inputs = allow_inputs
         self.references: List[BoundReference] = []
 
     @property
@@ -975,6 +980,15 @@ def _resolve_variable(
         # InvalidBmcDomain: domain lookup fails when the query references an
         # unknown persistent variable; convert it into a binding diagnostic.
         _raise_binding_error("unknown_variable", path, str(err))
+    valid_role = entry.role != VariableRole.INPUT_DYNAMIC or ctx.allow_inputs
+    if spelling == "havoc":
+        valid_role = entry.role != VariableRole.INPUT_DYNAMIC
+    if not valid_role:
+        _raise_binding_error(
+            "variable_role_mismatch",
+            path,
+            "%s cannot reference %s variable %r." % (spelling, entry.role.value, name),
+        )
     ctx.add_reference("variable", name, path, spelling, entry.id, entry.declared_type)
     return entry.id
 
@@ -1381,7 +1395,11 @@ def _bind_condition_expr(
 def _domain_variable_names(ctx: _BindingContext) -> Tuple[str, ...]:
     if not ctx.has_domain:
         return ()
-    return tuple(var.name for var in ctx.domain.variables)
+    return tuple(
+        var.name
+        for var in ctx.domain.variables
+        if var.role != VariableRole.INPUT_DYNAMIC
+    )
 
 
 def _bind_initial_variable_policy(
@@ -1456,12 +1474,25 @@ def _bind_frame_assumption(
             path + ".frame",
             "assume at frame must satisfy 0 <= k <= bound.",
         )
+    local = _BindingContext(ctx.bound, ctx.domain, allow_inputs=True)
     _bind_condition_expr(
-        ctx,
+        local,
         assumption.predicate,
         path + ".predicate",
         _ConditionRules.frame_local(allow_cycle=True),
     )
+    uses_inputs = local.has_domain and any(
+        ref.kind == "variable"
+        and local.domain.variable_by_name(ref.name).role == VariableRole.INPUT_DYNAMIC
+        for ref in local.references
+    )
+    if uses_inputs and assumption.kind == "at" and assumption.frame == ctx.bound:
+        _raise_binding_error(
+            "input_step_out_of_range",
+            path + ".frame",
+            "An assumption reading dynamic inputs must satisfy 0 <= k < bound.",
+        )
+    ctx.references.extend(local.references)
     return BoundAssumption(assumption, "frame", frame=assumption.frame)
 
 

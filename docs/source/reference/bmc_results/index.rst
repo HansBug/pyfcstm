@@ -1153,6 +1153,19 @@ sets, not by a payload version field.
 Witness fields
 --------------
 
+Role-aware traces keep ``frames[*].vars`` and abstract-call ``snapshot``
+limited to control/output values. ``initial.parameters`` contains the complete
+fixed configuration. Each non-ended step has complete numeric ``inputs`` in
+model declaration order, including unread inputs. Absorb steps have empty
+``inputs`` and ``input_reads``. The latter is a duplicate-free, ordered subset
+of the step inputs covering case/selection-guard and explicit assumption reads;
+it is provenance, not an independently replayed simulator read log.
+
+Replay uses ``ReplayInputPattern`` and validates the complete input and parameter
+name sets before execution. It compares inputs with the cycle result,
+``last_inputs`` and committed history, alongside the existing frame/event/call
+checks. It never fills missing witness inputs with zeros or random samples.
+
 The selected witness trace is present for a primary or suffix model. CLI-emitted
 traces use the role-aware shape with root ``model_role`` and ``verdict`` fields;
 the raw-model ``decode_bmc_witness`` API emits the legacy-compatible shape
@@ -1180,7 +1193,7 @@ below.
      - The role/verdict combination is validated together; suffix replay cannot
        be promoted to a property verdict.
    * - ``witness.initial``
-     - ``mode``, ``state``, ``sentinel``, ``vars``
+     - ``mode``, ``state``, ``sentinel``, ``vars``, ``parameters``
      - Replay initialization metadata.  State may be null; sentinel is
        ``init``, ``terminated``, or null; vars is a JSON-stable map.
    * - ``witness.frames[]``
@@ -1191,7 +1204,8 @@ below.
      - ``index``, ``source_frame``, ``target_frame``, ``case_label``,
        ``case_kind``, ``progress``, ``source_state``, ``target_state``,
        ``delta``, ``gamma``, ``input_events``, ``event_reads``,
-       ``abstract_calls``, ``consumed_events``, ``unconsumed_events``
+       ``abstract_calls``, ``consumed_events``, ``unconsumed_events``,
+       ``inputs``, ``input_reads``
      - One decoded macro-step.  Source/target states may be null for sentinels.
        Event consumption is ordered; unconsumed events equal replay inputs minus
        consumed events.

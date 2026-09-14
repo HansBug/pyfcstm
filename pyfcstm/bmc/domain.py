@@ -371,8 +371,8 @@ class VarDomainEntry:
     :param declared_type: Declared FCSTM variable type.
     :type declared_type: str
     :param role: Variable role, defaults to ``VariableRole.CONTROL``.  The role
-        drives which frame symbols the relation layer pins: dynamic inputs are
-        environment-chosen per frame, static inputs stay constant, and
+        drives symbol lifetimes: dynamic inputs are independently chosen per
+        step, static inputs share one trace-global symbol, and
         control/output variables follow the persistent transition relation.
     :type role: pyfcstm.dsl.role.VariableRole
 
@@ -398,6 +398,15 @@ class VarDomainEntry:
         if not isinstance(self.role, VariableRole):
             raise InvalidBmcDomain("role must be a VariableRole.")
 
+    @property
+    def time_domain(self) -> str:
+        """Return the symbol lifetime: frame, step, or trace."""
+        if self.role == VariableRole.INPUT_DYNAMIC:
+            return "step"
+        if self.role == VariableRole.INPUT_STATIC:
+            return "trace"
+        return "frame"
+
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable variable entry dictionary.
 
@@ -417,6 +426,7 @@ class VarDomainEntry:
             "name": self.name,
             "declared_type": self.declared_type,
             "role": self.role.value,
+            "time_domain": self.time_domain,
         }
 
 

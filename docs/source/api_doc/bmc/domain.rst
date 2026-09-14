@@ -42,7 +42,7 @@ VarDomainEntry
 -----------------------------------------------------
 
 .. autoclass:: VarDomainEntry
-    :members: __post_init__,to_canonical,id,name,declared_type,role
+    :members: __post_init__,time_domain,to_canonical,id,name,declared_type,role
 
 
 FrameRef

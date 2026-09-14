@@ -21,7 +21,10 @@ from pyfcstm.bmc.witness import (
     solve_bmc_property,
 )
 from test.bmc.semantic_fixture_policy import policy_for_case
-from test.bmc.test_relation_semantic_fixtures import _query_text_for_case
+from test.bmc.test_relation_semantic_fixtures import (
+    _query_text_for_case,
+    _input_assumption_lines,
+)
 from test.testings.simulate_semantics import (
     BMC_CORE_RUNNER,
     _build_simulation_runtime,
@@ -151,25 +154,9 @@ def _event_assumption_lines(
     return lines
 
 
-def _input_assumption_lines(model, input_frames) -> List[str]:
-    """Pin per-step dynamic inputs through the public ``assume at`` surface."""
-    dynamic_names = tuple(model.dynamic_inputs)
-    if not dynamic_names:
-        return []
-    lines = []
-    for step_index, inputs in enumerate(input_frames):
-        for name in dynamic_names:
-            value = inputs.get(name)
-            if value is None:
-                continue
-            literal = repr(value)
-            lines.append(
-                "assume at %d: var(%s) == %s;" % (step_index, json.dumps(name), literal)
-            )
-    return lines
-
-
-def _query_with_fixture_events(case, model, bound: int, event_inputs, input_frames) -> str:
+def _query_with_fixture_events(
+    case, model, bound: int, event_inputs, input_frames
+) -> str:
     query = _query_text_for_case(
         case,
         model,
@@ -237,7 +224,7 @@ def test_bmc_witness_fixture_runner_keeps_policy_counts_auditable() -> None:
         policy = policy_for_case(case.id)
         mode_counts[policy.mode] = mode_counts.get(policy.mode, 0) + 1
     assert mode_counts == {
-        "hard_pass": 174,
+        "hard_pass": 175,
         "expected_unsupported": 10,
         "temporary_exclude": 23
         + sum(
@@ -248,7 +235,7 @@ def test_bmc_witness_fixture_runner_keeps_policy_counts_auditable() -> None:
         ),
         "long_term_exclude": 4,
     }
-    assert len(_hard_pass_cases()) == 174
+    assert len(_hard_pass_cases()) == 175
     zero_step_ids = set()
     for case in _hard_pass_cases():
         cycle_count = 0

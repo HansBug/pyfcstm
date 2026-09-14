@@ -1000,6 +1000,16 @@ UNSAT。``origin == "inferred"`` 只能表示可信的更强结果已经蕴含�
 见证字段
 ------------
 
+角色化轨迹的 ``frames[*].vars`` 和抽象调用 ``snapshot`` 仅包含持久状态与输出。
+``initial.parameters`` 保存完整固定配置。每个非结束步的 ``inputs`` 按模型声明顺序
+保存完整数值输入，包括未读取的输入；吸收步的 ``inputs`` 和 ``input_reads`` 为空。
+``input_reads`` 是按声明顺序排列、无重复的输入子集，包含当前路径、选择路径所需的
+守卫及显式假设的读取证据。它是来源信息，不声称模拟器独立重建了读取日志。
+
+回放使用 ``ReplayInputPattern``，执行前校验完整输入和参数名称集合。在原有帧、
+事件和调用核对之外，还将输入与周期结果、``last_inputs`` 和已提交历史比较。
+缺失的见证输入不会由零值或随机采样补齐。
+
 选出的见证轨迹可能对应主模型或后缀模型。CLI 输出使用带角色信息的形状，根节点包含
 ``model_role`` 和 ``verdict``；直接接收原始模型的 ``decode_bmc_witness`` API 输出不含
 这两个字段的兼容形状。在带角色信息的形状中，``model_role`` 位于见证根节点，不位于
@@ -1023,7 +1033,7 @@ UNSAT。``origin == "inferred"`` 只能表示可信的更强结果已经蕴含�
      - 封闭角色和脱离的结论对象
      - 角色与结论必须一致；suffix 重放不能被提升为性质结论。
    * - ``witness.initial``
-     - ``mode``、``state``、``sentinel``、``vars``
+     - ``mode``、``state``、``sentinel``、``vars``、``parameters``
      - 重放初始化元数据。状态可为 ``null``；哨兵为 ``init``、``terminated`` 或
        ``null``；变量是 JSON 稳定映射。
    * - ``witness.frames[]``
@@ -1034,7 +1044,8 @@ UNSAT。``origin == "inferred"`` 只能表示可信的更强结果已经蕴含�
      - ``index``、``source_frame``、``target_frame``、``case_label``、
        ``case_kind``、``progress``、``source_state``、``target_state``、
        ``delta``、``gamma``、``input_events``、``event_reads``、
-       ``abstract_calls``、``consumed_events``、``unconsumed_events``
+       ``abstract_calls``、``consumed_events``、``unconsumed_events``、
+       ``inputs``、``input_reads``
      - 一个解码后的宏步。哨兵对应的源/目标状态可为 ``null``。
        事件消费有顺序；未消费事件等于重放输入减去已消费事件。
    * - ``witness.diagnostics``

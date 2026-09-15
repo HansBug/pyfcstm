@@ -218,7 +218,7 @@ cycles leave persistent state unchanged; the next step explicitly supplies its
 own external input frame. Provider caching, advancement and override ergonomics
 belong in dedicated simulator unit tests.
 
-Cases using these roles declare `variable_roles`; cases with inputs also declare `inputs`. All eight role cases run in the simulator and all five generated runtimes. Seven run through BMC; the runtime-error retry case remains excluded because error recovery is outside BMC execution semantics. `exclude_runners` records actual unsupported behavior, with BMC exclusion reasons derived from categories rather than case-name branches.
+Cases using these roles declare `variable_roles`; cases with inputs also declare `inputs`. All 17 role cases run in the simulator and all five generated runtimes. Sixteen run through BMC; the runtime-error retry case remains excluded because error recovery is outside BMC execution semantics. `exclude_runners` records actual unsupported behavior, with BMC exclusion reasons derived from categories rather than case-name branches.
 
 When `expect.delta` is present with `cycle_count > 1`, the same boolean is
 checked after every individual `cycle()` call, not only after the final call.

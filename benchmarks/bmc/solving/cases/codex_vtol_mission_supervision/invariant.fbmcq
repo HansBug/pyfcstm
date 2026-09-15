@@ -1,0 +1,2 @@
+init cold havoc { off_count } where off_count >= 0 && off_count <= 3;
+check invariant <= 10: off_count <= 3;

@@ -1,0 +1,28 @@
+// Definedness-trap corpus model: mean is never read, but computing it divides
+// by count, which is zero on the first Report entry.  A slice that drops the
+// unread assignment also drops the division's definedness condition.
+def int total = 0;
+def int count = 0;
+def int mean = 0;
+
+state Estimator {
+    [*] -> Collect;
+
+    state Collect {
+        enter {
+            total = total + 5;
+        }
+    }
+    state Report {
+        enter {
+            mean = total / count;
+        }
+    }
+    state Idle;
+
+    Collect -> Report : if [total >= 5];
+    Report -> Collect : if [count < 2] effect {
+        count = count + 1;
+    }
+    Report -> Idle : if [count >= 2];
+}

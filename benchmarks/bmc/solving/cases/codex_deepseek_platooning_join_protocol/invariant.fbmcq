@@ -1,0 +1,2 @@
+init cold havoc { close_enough } where close_enough >= 0 && close_enough <= 3;
+check invariant <= 10: close_enough <= 3;

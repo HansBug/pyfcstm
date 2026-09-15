@@ -1,12 +1,12 @@
-"""Shared Z3 checking-budget primitives for the BMC pipeline.
+"""Shared Z3 construction and checking-budget primitives for the BMC pipeline.
 
 The BMC solver uses one monotonic optional budget across primary solving,
 feasibility localization, and later refinement checks.  ``None`` deliberately
 means that no Z3 timeout is configured and no hidden deadline is introduced.
-This module contains only the budget/check mechanics; verdict interpretation,
+This module contains solver selection and budget/check mechanics; verdict interpretation,
 source provenance, and explanation policy belong to other BMC layers.
 
-The leading underscore on the two implementation names is intentional.  They
+The leading underscore on implementation helper names is intentional. They
 are shared internal primitives, not part of the public BMC API.  Their exact
 ``check_started`` and reason semantics are documented here because later
 internal modules depend on them.
@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import math
 import time
-from typing import Optional, Tuple, cast
+from typing import Optional, Sequence, Tuple, cast
 
 import z3
 
@@ -42,6 +42,58 @@ except ImportError:  # pragma: no cover - Python < 3.8 compatibility
     from typing_extensions import Literal
 
 BmcSolveStatus = Literal["sat", "unsat", "unknown", "timeout"]
+
+SOLVER_PROFILES = ("default", "logic", "tactic")
+_LOGIC_PROBES = (
+    ("QF_LIA", "is-qflia"),
+    ("QF_LRA", "is-qflra"),
+    ("QF_LIRA", "is-qflira"),
+    ("QF_NIA", "is-qfnia"),
+    ("QF_NRA", "is-qfnra"),
+    ("NIRA", "is-nira"),
+)
+
+
+def _solver_for_profile(
+    profile: str, expressions: Sequence[z3.ExprRef] = ()
+) -> Tuple[z3.Solver, Optional[str]]:
+    """Build a solver without asserting or rewriting the supplied expressions.
+
+    :param profile: ``default``, ``logic`` or ``tactic``. Explanation callers
+        deliberately pass ``default``: their assumption cores and proof
+        checks must remain independent of the main solver's tactics.
+    :type profile: str
+    :param expressions: Every expression that any staged check may assert,
+        including the response suffix. Used only for logic classification.
+    :type expressions: Sequence[z3.ExprRef]
+    :return: Empty solver and selected logic, or ``None`` for default/tactic
+        and for an unrecognized fragment that falls back to default.
+    :rtype: Tuple[z3.Solver, Optional[str]]
+    :raises BmcBuildError: If the requested profile is unsupported.
+    """
+    if isinstance(profile, bool) or profile not in SOLVER_PROFILES:
+        raise BmcBuildError("solver_profile must be one of default, logic, or tactic.")
+    if profile == "default":
+        return z3.Solver(), None
+    if profile == "tactic":
+        return z3.Then(
+            "simplify", "propagate-values", "solve-eqs", "smt"
+        ).solver(), None
+    goal = z3.Goal()
+    # Goal.add(False) erases other assertions. Guard each root for this
+    # syntactic probe so an impossible objective cannot hide nonlinear terms
+    # needed later when the solver pops back to a feasible scenario.
+    guard = z3.Bool("solver_profile_probe")
+    for expression in expressions:
+        goal.add(z3.Implies(guard, expression))
+    selected = None
+    for logic, probe_name in _LOGIC_PROBES:
+        if z3.Probe(probe_name)(goal) > 0.5:
+            selected = logic
+            break
+    if selected is None:
+        return z3.Solver(), None
+    return z3.SolverFor(selected), selected
 
 
 class _SolveBudget:

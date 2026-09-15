@@ -44,6 +44,9 @@ JSON 类型和必需键以模式为准；执行顺序、标准输出/标准错�
 .. cli-ref-option: command=bmc option=--json
 .. cli-ref-option: command=bmc option=--timeout-ms
 .. cli-ref-option: command=bmc option=--max-bound
+.. cli-ref-option: command=bmc option=--cone-slicing
+
+.. cli-ref-option: command=bmc option=--solver-profile choices=default,logic,tactic default=default
 .. cli-ref-option: command=bmc option=--explain-infeasibility choices=none,formal,proof default=none
 .. cli-ref-option: command=bmc option=--color choices=auto,always,never default=auto
 .. cli-ref-option: command=bmc option=--help
@@ -95,6 +98,15 @@ JSON 类型和必需键以模式为准；执行顺序、标准输出/标准错�
      - 未设置；无 CLI 上限
      - 构造 ``BmcOptions(max_bound=N)``。查询边界大于 ``N`` 时，在关系
        构造前作为受控编译错误拒绝；不会改写或截断查询边界。
+   * - ``--cone-slicing``
+     - 布尔开关
+     - 关闭
+     - 删除与当前查询无关且可证明计算安全的整数赋值；保留控制流、初值及危险运算的依赖。
+   * - ``--solver-profile``
+     - ``default``、``logic`` 或 ``tactic``
+     - ``default``
+     - 选择主求解器及其分阶段检查的构造方式；不可行解释、冲突核和证明检查始终
+       使用默认求解器。语法区分大小写；未知值退出 ``2``。
    * - ``--explain-infeasibility``
      - ``none``、``formal`` 或 ``proof``
      - ``none``
@@ -118,6 +130,64 @@ JSON 类型和必需键以模式为准；执行顺序、标准输出/标准错�
 两个数值选项的零值和负值都是 Click 用法错误（usage error）。缺少必需选项和未知选项
 同样是用法错误，均退出 ``2``。路径按用户提供的字符串传递，JSON 也原样记录；CLI 不会
 把它们规范化为绝对路径。
+
+求解器配置与回退
+----------------
+
+``default`` 使用通用 ``z3.Solver()``，保持原有检查顺序和人类可读默认输出。
+``logic`` 按 ``is-qflia``、``is-qflra``、``is-qflira``、``is-qfnia``、
+``is-qfnra``、``is-nira`` 的顺序，用 Z3 探针识别完整查询涉及的算术片段，
+包括初始化、环境约束和 response 后缀。命中后使用 ``SolverFor``，没有命中则
+回退通用求解器；例如整数表达式 ``x / 3`` 可能没有探针命中。
+
+``tactic`` 使用 ``simplify``、``propagate-values``、``solve-eqs``、``smt``
+组合。它可改变搜索顺序和选出的见证，但见证仍须通过运行时重放。该组合不提供本项目
+解释路径要求的假设冲突核，因此所有解释与证明检查均保留通用求解器。
+
+Python 使用 ``solve_bmc_property(formula, solver_profile="logic")``；文件入口
+``build_bmc_output`` 也接受同名参数。非法值在求解 API 中抛出 ``BmcBuildError``，
+在文件入口中抛出 ``ClickErrorException``。配置不改变性质语义；不同求解策略仍可能
+产生不同的耗时或不确定结果。遇到 ``unknown`` 或 ``timeout`` 时检查原因，并用
+``default`` 对照重跑，不能把不确定结果当成安全证明。
+
+新增三个结果字段属于本发行版的 JSON 契约；既有结论、见证和重放字段语义不变。
+比较结果时应单独处理耗时与统计，不能要求它们逐字节相同。
+
+实测对比
+~~~~~~~~
+
+仓库的 `求解器对比记录
+<https://github.com/HansBug/pyfcstm/blob/dev/bmc-solver-profile/benchmarks/bmc/solving/outputs/runs/cd24a68e137b/report.md>`_
+在 Linux x86_64、CPython 3.10.1、Z3 4.15.4 上运行，覆盖 51 条查询、四个对照臂，
+每组用新进程重复五次，共 1,020 个样本。所有对照臂结论一致，260 个 SAT 样本均通过
+重放，没有 ``unknown`` 或 ``timeout``。不同策略仍可能选择不同的合法见证。
+
+.. list-table:: 相对默认配置的求解耗时
+   :header-rows: 1
+
+   * - 配置
+     - 各查询 p50 的中位数
+     - 中位改善
+     - 最差单例退化
+   * - ``default``
+     - 12.036 ms
+     - 对照
+     - 对照
+   * - ``logic``
+     - 11.730 ms
+     - 2.54%
+     - 46.88%
+   * - ``tactic``
+     - 11.105 ms
+     - 7.74%
+     - 409.44%
+
+两个可选配置均未同时满足事前登记的采纳条件：中位改善至少 15%，且每条查询的退化
+不超过 10%。因此均保留为显式选项，默认配置不变；选用前应测量自己的模型。
+``logic`` 的最差单例为 ``pump_supervisor_hooks/forbid``，从 4.245 ms 增至
+6.235 ms；``tactic`` 的最差单例为 ``ratio_estimator/reach``，从 5.711 ms
+增至 29.092 ms。当前默认配置的中位耗时比旧基线的 11.950 ms 高 0.72%。
+这些数字只代表本次环境，不是性能保证；测量包含求解器准备和分阶段检查。
 
 执行与输出事务
 --------------
@@ -933,6 +1003,24 @@ JSON 使用 UTF-8、两空格缩进、递归键排序、保留非 ASCII 字符�
    * - ``reason``
      - 字符串或 ``null``
      - 仅主目标 ``unknown``/``timeout`` 时保存原始原因；SAT/UNSAT 时为 ``null``。
+   * - ``cone_slicing``
+     - 对象；仅开启切片时出现
+     - ``enabled`` 固定为 true；``retained_count`` 是保留的持久变量数；
+       ``dropped_variables`` 是尝试删除的变量名列表；``skipped_reason`` 为 null、
+       ``abstract_actions`` 或 ``no_removable_variables``；``fallback`` 表示是否已
+       使用完整模型重跑。跳过时删除列表为空；关闭时整个字段不存在。
+   * - ``solver_profile``
+     - ``default``、``logic`` 或 ``tactic``
+     - 请求的主求解器配置；默认是 ``default``。
+   * - ``solver_logic``
+     - ``QF_LIA``、``QF_LRA``、``QF_LIRA``、``QF_NIA``、``QF_NRA``、``NIRA`` 或 null
+     - ``logic`` 实际选中的片段。未识别片段时回退默认求解器并记录 null；
+       ``default`` 和 ``tactic`` 始终为 null。
+   * - ``solver_statistics``
+     - 非空字符串键到有限非负数的对象
+     - 主检查刚完成时读取的 Z3 统计；未开始检查时为空对象。键随 Z3 版本与配置变化，
+       缺项不代表零。``rlimit count`` 和 ``num allocs`` 是上下文累计值，不能当成
+       本次查询的工作量。手动构造结果时默认空对象。
    * - ``elapsed_ms``
      - 有限数值，``>= 0``
      - 主检查墙钟时间；本质上不确定。
@@ -1317,3 +1405,99 @@ UNSAT。``origin == "inferred"`` 只能表示可信的更强结果已经蕴含�
 * 退出状态 ``4`` 是可检查的信任失败；不要与异常或性质反例混淆。
 * 不要解析人类可读表格、依赖实时耗时、期待原始模型/公式、推断 ``response``
   原因，也不要假设重放能证明已解码有界轨迹之外的行为。
+
+.. _sec-bmc-cone-measurements-zh:
+
+切片性能实测
+------------
+
+采用默认事件策略解码结果时，切片求解会复用返回前已经验证的完整见证。
+每次解码返回独立副本；显式指定事件策略时重新解码。CLI 仍对输出见证执行普通的
+运行时重放。复用同时覆盖主见证与 response 不完整后缀，不改变 JSON 契约。
+
+首轮 `五臂基准报告 <https://github.com/HansBug/pyfcstm/blob/7f8c88d3/benchmarks/bmc/solving/outputs/runs/2db089114bb5/report.md>`_ 绑定干净提交 ``2db08911``，在 Linux x86_64、
+CPython 3.10.1、Z3 4.15.4 上完成 1,275 个样本。51 条查询中 32 条实际切片、
+19 条未切片；H0 全部通过，325 个 SAT 见证重放成功，零失败、零切片回退。
+
+.. list-table:: 切片与同提交 default 臂对比
+   :header-rows: 1
+
+   * - 指标
+     - default
+     - 切片
+     - 结论
+   * - 可切子集公式 DAG p50
+     - 2,399 节点
+     - 2,253 节点
+     - 缩减 6.09%，未达到 20% 门槛
+   * - 可切子集求解 p50
+     - 15.650 ms
+     - 15.528 ms
+     - 改善 0.78%，通过不退化超过 5% 的门槛
+   * - 不可切子集构建＋求解 p50
+     - 263.482 ms
+     - 262.975 ms
+     - 改善 0.19%，通过开销增长不超过 5% 的门槛
+
+T3 未达标，因此默认仍关闭。这里沿用 runner 的离散 p50：排序后取零基下标
+``round(0.5 * (n - 1))``，32 条查询取第 17 个值。每条查询先统计五次采样的
+p50，再按实际切片分组汇总。
+
+总体接近持平不代表单例没有退化。最大求解退化为
+``codex_traffic_emergency_priority/invariant``：10.178 → 23.586 ms，增长
+131.73%。开启切片会增加原始运行时验证与见证回填成本；可切且有见证的查询中，
+对外解码重放 p50 从 11.650 增至 17.184 ms。选择开关时应测量自己的模型与完整
+调用路径。关闭时结果 JSON 不增加切片字段；选项对象
+``BmcOptions.to_canonical()`` 新增 ``cone_slicing=False`` 键。
+
+后续 `六臂正式 run <https://github.com/HansBug/pyfcstm/blob/4d9bd08f/benchmarks/bmc/solving/outputs/runs/9e68e7458e79/report.md>`_
+绑定干净实现提交 ``9e68e745``，并把首轮切片实现纳入同轮对照。
+1,530 个样本 H0 全通过，390 个 SAT 见证重放成功，零失败、零回退。
+见证复用没有改变 DAG 大小。T3 仍未达标：可切子集 DAG p50 仅缩减 6.09%；
+求解 p50 增长 4.47%，在 5% 限制内；未切子集构建＋求解 p50 增长 6.87%，
+超过 5% 门槛。切片仍默认关闭。
+
+.. list-table:: 从模型加载到最终回放的 API 时间，按查询 p50 汇总
+   :header-rows: 1
+
+   * - 分组
+     - default
+     - 首轮切片
+     - 见证复用
+   * - 全部 51 条查询
+     - 431.160 ms
+     - 433.596 ms
+     - 430.809 ms
+   * - 13 条 SAT 查询
+     - 585.459 ms
+     - 617.659 ms
+     - 617.733 ms
+   * - 38 条 UNSAT 查询
+     - 388.716 ms
+     - 390.939 ms
+     - 411.468 ms
+   * - 6 条实际切片的 SAT 查询
+     - 322.510 ms
+     - 287.274 ms
+     - 276.408 ms
+
+这里的 API 时间不含调用前导入、解释器启动及 JSON 报告序列化。实际切片的 SAT
+查询中，对外解码回放 p50 相对首轮实现从 16.997 降到 4.415 ms，但完整 API p50
+仅改善 3.78%，全部查询汇总仅改善 0.64%。内部回填验证与独立输出回放仍保留。
+相对 default 的最差求解退化仍是 traffic invariant：10.331 → 24.089 ms，增长
+133.18%，但其完整 API 时间由 1,254.490 降至 1,155.686 ms。大模型仍由构造成本
+主导，例如 VTOL reach 构造约 26,869 ms，求解约 126 ms。
+
+完整 API 最大退化发生在未切片查询 ``claude_vtol_mission_supervision/reach``：
+相对 default 增长 5.85%，相对首轮切片增长 5.25%；它也决定了未切子集计时中位数。
+一次 `90 样本诊断复测 <https://github.com/HansBug/pyfcstm/blob/4d9bd08f/benchmarks/bmc/solving/outputs/runs/9e68e7458e79-unsliced-control/report.md>`_
+未复现该幅度：相对 default，构建＋求解增长 0.42%，完整 API 增长 0.89%。
+此路径不会进入见证复用，构造代码也未因复用而改变。这支持计时波动的解释，但没有
+证明具体环境原因，更不能覆盖正式 run 的门槛失败结果。
+
+独立的 `完整 API／CLI profiling <https://github.com/HansBug/pyfcstm/blob/4d9bd08f/benchmarks/bmc/solving/outputs/witness_profiles/9e68e7458e79/report.md>`_
+计入报告序列化，并将带插桩的阶段诊断与无插桩计时分开。实际切片 SAT 调用从两次
+解码、三次回放降到一次解码、两次回放。本组开启切片的 SAT CLI 完整调用变化介于
+改善 3.97% 与退化 1.31% 之间，未改路径的对照也有波动。复用为每个结果保留一份
+完整轨迹，并向调用方返回副本。这些数据证实重复工作减少，不代表普遍提速；
+是否开启应测量自己的模型及完整调用路径。

@@ -44,7 +44,7 @@ BmcCoreFormula
 -----------------------------------------------------
 
 .. autoclass:: BmcCoreFormula
-    :members: __post_init__,to_canonical,context,symbols,domain_formula,initial_formula,transition_formula,environment_formula,core,steps,diagnostics
+    :members: __post_init__,to_canonical,context,symbols,domain_formula,initial_formula,transition_formula,environment_formula,core,steps,diagnostics,cone_slice
 
 
 build\_bmc\_core\_formula

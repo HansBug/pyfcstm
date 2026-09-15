@@ -1,0 +1,521 @@
+{
+  "arms": {
+    "baseline": {
+      "commit": "df5416b18b00497dd2fe5820b092d814dba4343c",
+      "path": "/tmp/bmc-resolution-baseline"
+    },
+    "candidate": {
+      "commit": "235d29cf8a832848135a58a69e45949321c6f847",
+      "path": "/tmp/bmc-resolution-candidate"
+    }
+  },
+  "driver_sha256": "a939c9036db766573adc01e08dbb57904695bae354796e3ac0b9b2d0aa4ce127",
+  "samples": [
+    {
+      "arm": "baseline",
+      "case": "codex_vtol_mission_supervision",
+      "query": "reach",
+      "repetition": 0,
+      "warmup": true
+    },
+    {
+      "arm": "candidate",
+      "case": "codex_vtol_mission_supervision",
+      "query": "reach",
+      "repetition": 0,
+      "warmup": true
+    },
+    {
+      "arm": "candidate",
+      "case": "codex_vtol_mission_supervision",
+      "query": "reach",
+      "repetition": 1,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_vtol_mission_supervision",
+      "query": "reach",
+      "repetition": 1,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_vtol_mission_supervision",
+      "query": "reach",
+      "repetition": 2,
+      "warmup": false
+    },
+    {
+      "arm": "candidate",
+      "case": "codex_vtol_mission_supervision",
+      "query": "reach",
+      "repetition": 2,
+      "warmup": false
+    },
+    {
+      "arm": "candidate",
+      "case": "codex_vtol_mission_supervision",
+      "query": "reach",
+      "repetition": 3,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_vtol_mission_supervision",
+      "query": "reach",
+      "repetition": 3,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_vtol_mission_supervision",
+      "query": "reach",
+      "repetition": 4,
+      "warmup": false
+    },
+    {
+      "arm": "candidate",
+      "case": "codex_vtol_mission_supervision",
+      "query": "reach",
+      "repetition": 4,
+      "warmup": false
+    },
+    {
+      "arm": "candidate",
+      "case": "codex_vtol_mission_supervision",
+      "query": "reach",
+      "repetition": 5,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_vtol_mission_supervision",
+      "query": "reach",
+      "repetition": 5,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_vtol_mission_supervision",
+      "query": "invariant",
+      "repetition": 0,
+      "warmup": true
+    },
+    {
+      "arm": "candidate",
+      "case": "codex_vtol_mission_supervision",
+      "query": "invariant",
+      "repetition": 0,
+      "warmup": true
+    },
+    {
+      "arm": "candidate",
+      "case": "codex_vtol_mission_supervision",
+      "query": "invariant",
+      "repetition": 1,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_vtol_mission_supervision",
+      "query": "invariant",
+      "repetition": 1,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_vtol_mission_supervision",
+      "query": "invariant",
+      "repetition": 2,
+      "warmup": false
+    },
+    {
+      "arm": "candidate",
+      "case": "codex_vtol_mission_supervision",
+      "query": "invariant",
+      "repetition": 2,
+      "warmup": false
+    },
+    {
+      "arm": "candidate",
+      "case": "codex_vtol_mission_supervision",
+      "query": "invariant",
+      "repetition": 3,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_vtol_mission_supervision",
+      "query": "invariant",
+      "repetition": 3,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_vtol_mission_supervision",
+      "query": "invariant",
+      "repetition": 4,
+      "warmup": false
+    },
+    {
+      "arm": "candidate",
+      "case": "codex_vtol_mission_supervision",
+      "query": "invariant",
+      "repetition": 4,
+      "warmup": false
+    },
+    {
+      "arm": "candidate",
+      "case": "codex_vtol_mission_supervision",
+      "query": "invariant",
+      "repetition": 5,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_vtol_mission_supervision",
+      "query": "invariant",
+      "repetition": 5,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_traffic_emergency_priority",
+      "query": "reach",
+      "repetition": 0,
+      "warmup": true
+    },
+    {
+      "arm": "candidate",
+      "case": "codex_traffic_emergency_priority",
+      "query": "reach",
+      "repetition": 0,
+      "warmup": true
+    },
+    {
+      "arm": "candidate",
+      "case": "codex_traffic_emergency_priority",
+      "query": "reach",
+      "repetition": 1,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_traffic_emergency_priority",
+      "query": "reach",
+      "repetition": 1,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_traffic_emergency_priority",
+      "query": "reach",
+      "repetition": 2,
+      "warmup": false
+    },
+    {
+      "arm": "candidate",
+      "case": "codex_traffic_emergency_priority",
+      "query": "reach",
+      "repetition": 2,
+      "warmup": false
+    },
+    {
+      "arm": "candidate",
+      "case": "codex_traffic_emergency_priority",
+      "query": "reach",
+      "repetition": 3,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_traffic_emergency_priority",
+      "query": "reach",
+      "repetition": 3,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_traffic_emergency_priority",
+      "query": "reach",
+      "repetition": 4,
+      "warmup": false
+    },
+    {
+      "arm": "candidate",
+      "case": "codex_traffic_emergency_priority",
+      "query": "reach",
+      "repetition": 4,
+      "warmup": false
+    },
+    {
+      "arm": "candidate",
+      "case": "codex_traffic_emergency_priority",
+      "query": "reach",
+      "repetition": 5,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_traffic_emergency_priority",
+      "query": "reach",
+      "repetition": 5,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_traffic_emergency_priority",
+      "query": "invariant",
+      "repetition": 0,
+      "warmup": true
+    },
+    {
+      "arm": "candidate",
+      "case": "codex_traffic_emergency_priority",
+      "query": "invariant",
+      "repetition": 0,
+      "warmup": true
+    },
+    {
+      "arm": "candidate",
+      "case": "codex_traffic_emergency_priority",
+      "query": "invariant",
+      "repetition": 1,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_traffic_emergency_priority",
+      "query": "invariant",
+      "repetition": 1,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_traffic_emergency_priority",
+      "query": "invariant",
+      "repetition": 2,
+      "warmup": false
+    },
+    {
+      "arm": "candidate",
+      "case": "codex_traffic_emergency_priority",
+      "query": "invariant",
+      "repetition": 2,
+      "warmup": false
+    },
+    {
+      "arm": "candidate",
+      "case": "codex_traffic_emergency_priority",
+      "query": "invariant",
+      "repetition": 3,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_traffic_emergency_priority",
+      "query": "invariant",
+      "repetition": 3,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_traffic_emergency_priority",
+      "query": "invariant",
+      "repetition": 4,
+      "warmup": false
+    },
+    {
+      "arm": "candidate",
+      "case": "codex_traffic_emergency_priority",
+      "query": "invariant",
+      "repetition": 4,
+      "warmup": false
+    },
+    {
+      "arm": "candidate",
+      "case": "codex_traffic_emergency_priority",
+      "query": "invariant",
+      "repetition": 5,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_traffic_emergency_priority",
+      "query": "invariant",
+      "repetition": 5,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "heater_logging",
+      "query": "reach",
+      "repetition": 0,
+      "warmup": true
+    },
+    {
+      "arm": "candidate",
+      "case": "heater_logging",
+      "query": "reach",
+      "repetition": 0,
+      "warmup": true
+    },
+    {
+      "arm": "candidate",
+      "case": "heater_logging",
+      "query": "reach",
+      "repetition": 1,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "heater_logging",
+      "query": "reach",
+      "repetition": 1,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "heater_logging",
+      "query": "reach",
+      "repetition": 2,
+      "warmup": false
+    },
+    {
+      "arm": "candidate",
+      "case": "heater_logging",
+      "query": "reach",
+      "repetition": 2,
+      "warmup": false
+    },
+    {
+      "arm": "candidate",
+      "case": "heater_logging",
+      "query": "reach",
+      "repetition": 3,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "heater_logging",
+      "query": "reach",
+      "repetition": 3,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "heater_logging",
+      "query": "reach",
+      "repetition": 4,
+      "warmup": false
+    },
+    {
+      "arm": "candidate",
+      "case": "heater_logging",
+      "query": "reach",
+      "repetition": 4,
+      "warmup": false
+    },
+    {
+      "arm": "candidate",
+      "case": "heater_logging",
+      "query": "reach",
+      "repetition": 5,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "heater_logging",
+      "query": "reach",
+      "repetition": 5,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "heater_logging",
+      "query": "invariant",
+      "repetition": 0,
+      "warmup": true
+    },
+    {
+      "arm": "candidate",
+      "case": "heater_logging",
+      "query": "invariant",
+      "repetition": 0,
+      "warmup": true
+    },
+    {
+      "arm": "candidate",
+      "case": "heater_logging",
+      "query": "invariant",
+      "repetition": 1,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "heater_logging",
+      "query": "invariant",
+      "repetition": 1,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "heater_logging",
+      "query": "invariant",
+      "repetition": 2,
+      "warmup": false
+    },
+    {
+      "arm": "candidate",
+      "case": "heater_logging",
+      "query": "invariant",
+      "repetition": 2,
+      "warmup": false
+    },
+    {
+      "arm": "candidate",
+      "case": "heater_logging",
+      "query": "invariant",
+      "repetition": 3,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "heater_logging",
+      "query": "invariant",
+      "repetition": 3,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "heater_logging",
+      "query": "invariant",
+      "repetition": 4,
+      "warmup": false
+    },
+    {
+      "arm": "candidate",
+      "case": "heater_logging",
+      "query": "invariant",
+      "repetition": 4,
+      "warmup": false
+    },
+    {
+      "arm": "candidate",
+      "case": "heater_logging",
+      "query": "invariant",
+      "repetition": 5,
+      "warmup": false
+    },
+    {
+      "arm": "baseline",
+      "case": "heater_logging",
+      "query": "invariant",
+      "repetition": 5,
+      "warmup": false
+    }
+  ],
+  "timing": "Click CLI invocation including report serialization, excluding interpreter startup/imports. process_ms additionally includes startup/imports and profiler transport. No diagnostic patches or retained formulas.",
+  "tool_sha256": "ed4331288550e81f3bbd8d7fe9e59a7a5783fe5d650d7bcd3b4652d6c8b7c9d8"
+}

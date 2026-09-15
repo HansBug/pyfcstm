@@ -20,10 +20,8 @@ pytestmark = pytest.mark.unittest
 DECLARATIONS = [
     ("def", "control", " = 2"),
     ("control", "control", " = 2"),
-    ("input", "input_dynamic", ""),
-    ("input dynamic", "input_dynamic", ""),
-    ("param", "input_static", " = 2"),
-    ("input static", "input_static", " = 2"),
+    ("input", "input", ""),
+    ("param", "param", " = 2"),
     ("output", "output", " = 2"),
 ]
 
@@ -51,7 +49,7 @@ def test_declaration_round_trip(keyword, role, initializer, type_name):
     assert tree.definitions[0].role == role
     assert str(model.to_ast_node()) == str(tree)
     assert build(str(model.to_ast_node())).defines["value"] == definition
-    assert (definition.init is None) == (role == "input_dynamic")
+    assert (definition.init is None) == (role == "input")
     assert definition.doc == "sensor interface"
 
 
@@ -62,8 +60,8 @@ def test_role_partitions_keep_global_order_and_definition_identity():
     )
     expected = {
         "control_variables": ["count"],
-        "dynamic_inputs": ["sensor"],
-        "static_inputs": ["limit"],
+        "inputs": ["sensor"],
+        "parameters": ["limit"],
         "output_variables": ["first", "last"],
         "persistent_variables": ["first", "count", "last"],
     }
@@ -80,7 +78,7 @@ def test_role_partitions_keep_global_order_and_definition_identity():
 
 
 @pytest.mark.parametrize(
-    "keyword", ["def", "control", "param", "input static", "output"]
+    "keyword", ["def", "control", "param", "output"]
 )
 def test_required_initializer_is_model_error(keyword):
     with pytest.raises(ModelValidationError) as error:
@@ -88,14 +86,14 @@ def test_required_initializer_is_model_error(keyword):
     assert error.value.diagnostics[0].code == "E_VARIABLE_INITIALIZER_REQUIRED"
 
 
-@pytest.mark.parametrize("keyword", ["input", "input dynamic"])
-def test_dynamic_initializer_is_model_error(keyword):
+@pytest.mark.parametrize("keyword", ["input"])
+def test_input_initializer_is_model_error(keyword):
     with pytest.raises(ModelValidationError) as error:
         build("%s int value = 1; state Root;" % keyword)
-    assert error.value.diagnostics[0].code == "E_DYNAMIC_INPUT_INITIALIZER"
+    assert error.value.diagnostics[0].code == "E_INPUT_INITIALIZER"
 
 
-@pytest.mark.parametrize("keyword", ["input", "input dynamic", "param", "input static"])
+@pytest.mark.parametrize("keyword", ["input", "param"])
 @pytest.mark.parametrize(
     "body",
     [
@@ -115,12 +113,12 @@ def test_dynamic_initializer_is_model_error(keyword):
     ],
 )
 def test_input_writes_rejected_during_model_construction(keyword, body):
-    initializer = " = 0" if keyword in ("param", "input static") else ""
+    initializer = " = 0" if keyword == "param" else ""
     source = "%s int value%s; %s" % (keyword, initializer, body)
     with pytest.raises(ModelValidationError) as error:
         build(source)
     diagnostic = error.value.diagnostics[0]
-    expected = "E_STATIC_INPUT_WRITE" if initializer else "E_DYNAMIC_INPUT_WRITE"
+    expected = "E_PARAM_WRITE" if initializer else "E_INPUT_WRITE"
     assert diagnostic.code == expected
     assert diagnostic.refs["var_name"] == "value"
     assert diagnostic.span is not None
@@ -128,7 +126,7 @@ def test_input_writes_rejected_during_model_construction(keyword, body):
     assert expected in [item.code for item in diagnostics]
 
 
-@pytest.mark.parametrize("role", ["control", "input_static", "output"])
+@pytest.mark.parametrize("role", ["control", "param", "output"])
 def test_programmatic_initializers_cannot_reference_variables(role):
     with pytest.raises(ModelValidationError) as error:
         VarDefine("derived", "int", Variable("other") + Integer(1), role=role)
@@ -143,8 +141,8 @@ def test_programmatic_roles_and_legacy_positional_documentation():
     assert legacy.doc == "legacy documentation"
     assert str(legacy.to_ast_node()).endswith("def int x = 1;")
     for role, keyword, initializer in [
-        ("input_dynamic", "input", None),
-        ("input_static", "param", Integer(1)),
+        ("input", "input", None),
+        ("param", "param", Integer(1)),
         ("output", "output", Integer(1)),
     ]:
         definition = VarDefine("x", "int", initializer, role=role)
@@ -159,9 +157,9 @@ def test_programmatic_machine_rejects_input_write():
     state = build("def int value = 0; state Root { during { value = 1; } }").root_state
     with pytest.raises(ModelValidationError) as error:
         StateMachine(
-            {"value": VarDefine("value", "int", None, role="input_dynamic")}, state
+            {"value": VarDefine("value", "int", None, role="input")}, state
         )
-    assert error.value.diagnostics[0].code == "E_DYNAMIC_INPUT_WRITE"
+    assert error.value.diagnostics[0].code == "E_INPUT_WRITE"
 
 
 @pytest.mark.parametrize(
@@ -191,7 +189,7 @@ def test_ast_initializer_variable_reference_is_rejected():
 
 
 @pytest.mark.parametrize("mapping", ["", " { def * -> shared_$0; }"])
-def test_import_preserves_role_and_missing_dynamic_initializer(tmp_path, mapping):
+def test_import_preserves_role_and_missing_input_initializer(tmp_path, mapping):
     from pyfcstm.model import load_state_machine_from_file
 
     module = tmp_path / "sensor.fcstm"
@@ -214,15 +212,15 @@ def test_import_preserves_role_and_missing_dynamic_initializer(tmp_path, mapping
     assert [
         (name, definition.role.value) for name, definition in model.defines.items()
     ] == [
-        (prefix + "reading", "input_dynamic"),
-        (prefix + "limit", "input_static"),
+        (prefix + "reading", "input"),
+        (prefix + "limit", "param"),
         (prefix + "command", "output"),
         (prefix + "count", "control"),
     ]
     assert model.defines[prefix + "reading"].init is None
     assert (
         build(str(model.to_ast_node())).defines[prefix + "reading"].role
-        == "input_dynamic"
+        == "input"
     )
 
 
@@ -250,7 +248,21 @@ def test_plantuml_legend_exposes_roles_for_external_interfaces():
     )
     legend = model.to_plantuml()
     assert "|= Variable |= Type |= Initial Value |= Role |" in legend
-    assert "| sensor | int | N/A | input_dynamic |" in legend
-    assert "| limit | int | 2 | input_static |" in legend
+    assert "| sensor | int | N/A | input |" in legend
+    assert "| limit | int | 2 | param |" in legend
     assert "| command | int | 0 | output |" in legend
     assert "| count | int | 0 | control |" in legend
+
+
+@pytest.mark.parametrize("old_role", ["input_dynamic", "input_static"])
+def test_obsolete_programmatic_role_is_rejected(old_role):
+    with pytest.raises(ValueError):
+        VarDefine("value", "int", None, role=old_role)
+
+
+def test_model_exposes_only_current_input_parameter_partitions():
+    model = build("input int sensor; param int limit = 2; state Root;")
+    assert list(model.inputs) == ["sensor"]
+    assert list(model.parameters) == ["limit"]
+    assert not hasattr(model, "dynamic_inputs")
+    assert not hasattr(model, "static_inputs")

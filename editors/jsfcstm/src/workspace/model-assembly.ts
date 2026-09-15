@@ -738,7 +738,7 @@ function mergeImportedDefinitions(
                 ? `already exists in host model as type ${JSON.stringify(existing.type)}, cannot bind imported type ${JSON.stringify(definition.type)}`
                 : `receives incompatible imported types ${JSON.stringify(existing.type)} and ${JSON.stringify(definition.type)}`;
         } else if (!explicit) {
-            if (definition.role === 'input_dynamic') {
+            if (definition.role === 'input') {
                 reason = 'implicit_input_sharing';
                 conflict = 'requires an explicit host input declaration for sharing';
             } else if (initializerStructure(existing.initializer) !== initializerStructure(definition.initializer)) {

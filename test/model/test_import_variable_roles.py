@@ -78,7 +78,7 @@ def test_absent_target_preserves_declaration(tmp_path, role, numeric):
     )
     machine = load_state_machine_from_file(str(host))
     variable = machine.defines["renamed"]
-    expected = {"input": "input_dynamic", "param": "input_static"}.get(role, role)
+    expected = {"input": "input", "param": "param"}.get(role, role)
     assert variable.role.value == expected
     assert variable.type == numeric
 
@@ -181,7 +181,7 @@ def test_shared_input_retains_each_recursive_declaration_source(tmp_path):
     assert sources[2]["declaration"]._source_path == str(tmp_path / "leaf.fcstm")
     assert [item["alias"] for item in sources[2]["bindings"]] == ["Leaf", "A"]
     assert [item["alias"] for item in sources[4]["bindings"]] == ["Leaf", "B"]
-    assert all(item["declaration"].role.value == "input_dynamic" for item in sources)
+    assert all(item["declaration"].role.value == "input" for item in sources)
     assert sources[2]["bindings"][-1]["target_name"] == "shared"
 
 
@@ -209,7 +209,7 @@ def test_reassembling_expanded_ast_preserves_declaration_provenance(tmp_path):
 @pytest.mark.parametrize(
     "source,host,code",
     [
-        ("input int value = 1;", "input int shared;", "E_DYNAMIC_INPUT_INITIALIZER"),
+        ("input int value = 1;", "input int shared;", "E_INPUT_INITIALIZER"),
         (
             "param int value;",
             "param int shared = 1;",
@@ -264,7 +264,7 @@ def test_canonical_mapping_selectors_preserve_roles(
     )
     machine = load_state_machine_from_file(host)
     assert list(machine.defines) == [expected]
-    expected_role = {"input": "input_dynamic", "param": "input_static"}.get(role, role)
+    expected_role = {"input": "input", "param": "param"}.get(role, role)
     assert machine.defines[expected].role.value == expected_role
 
 

@@ -1,3 +1,4 @@
+import {requireVariableRole} from '../ast/variable-roles';
 /**
  * Runtime model classes for jsfcstm.
  *
@@ -628,7 +629,7 @@ export class VarDefine extends ModelNode {
         this.type = raw.type;
         this.init = init;
         this.sourceDeclarations = raw.sourceDeclarations;
-        this.role = raw.role ?? 'control';
+        this.role = requireVariableRole(raw.role);
         this.spelling = raw.spelling;
         this.doc = raw.doc;
     }
@@ -1564,12 +1565,12 @@ export class StateMachine extends ModelNode {
         return Object.freeze(Object.fromEntries(Object.entries(this.defines).filter(([, value]) => value.role === 'control')));
     }
 
-    get dynamic_inputs(): Readonly<Record<string, VarDefine>> {
-        return Object.freeze(Object.fromEntries(Object.entries(this.defines).filter(([, value]) => value.role === 'input_dynamic')));
+    get inputs(): Readonly<Record<string, VarDefine>> {
+        return Object.freeze(Object.fromEntries(Object.entries(this.defines).filter(([, value]) => value.role === 'input')));
     }
 
-    get static_inputs(): Readonly<Record<string, VarDefine>> {
-        return Object.freeze(Object.fromEntries(Object.entries(this.defines).filter(([, value]) => value.role === 'input_static')));
+    get parameters(): Readonly<Record<string, VarDefine>> {
+        return Object.freeze(Object.fromEntries(Object.entries(this.defines).filter(([, value]) => value.role === 'param')));
     }
 
     get output_variables(): Readonly<Record<string, VarDefine>> {

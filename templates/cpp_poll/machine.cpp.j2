@@ -37,7 +37,7 @@ const MachineWrapper::Inputs *MachineWrapper::last_inputs() const {
     return {{ machine_class_name(model) }}_last_inputs(&machine_);
 }
 
-{% for prefix, declarations in [('param', model.static_inputs), ('input', model.dynamic_inputs)] %}
+{% for prefix, declarations in [('param', model.parameters), ('input', model.inputs)] %}
 {% for item in declarations.values() %}{% if item.type == 'int' %}MachineWrapper::Int{% else %}double{% endif %} MachineWrapper::get_{{ prefix }}_{{ item.name | readonly_value_identifier }}() const {
     return {{ machine_class_name(model) }}_get_{{ prefix }}_{{ item.name | readonly_value_identifier }}(&machine_);
 }

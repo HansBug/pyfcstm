@@ -737,8 +737,8 @@ class SimulationRuntime:
         This constructor prepares the runtime for execution by initializing
         variable storage from the state machine's variable definitions and
         setting up the initial execution stack with the root state. Variables
-        are initialized in declaration order, allowing later initializers to
-        reference earlier variables.
+        are initialized in declaration order using name-free initializers.
+        Initializers cannot reference other model variables.
 
         The runtime stack is initialized with the root state in ``init_wait``
         mode, allowing :attr:`current_state` to be accessed immediately. Full
@@ -748,7 +748,7 @@ class SimulationRuntime:
         ``initial_vars`` may override persistent variables during construction.
         In default-start mode the mapping may be partial; each provided variable
         skips its default initializer, while uncovered variables still initialize
-        in declaration order. In hot-start mode every declared variable must be
+        in declaration order. In hot-start mode every persistent variable must be
         provided so the runtime can build a complete already-entered state. All
         provided values use strict Python ``int`` / ``float`` type checks;
         subclasses and ``bool`` are rejected.
@@ -776,12 +776,12 @@ class SimulationRuntime:
             (``('System', 'Active')``), or State object. Defaults to ``None``
             (start from root state).
         :type initial_state: Optional[Union[str, Tuple[str, ...], State]]
-        :param parameters: Construction-time static-input overrides. Cold
+        :param parameters: Construction-time parameter overrides. Cold
             construction uses defaults for omitted parameters; hot start
             requires every parameter explicitly. The resulting mapping is
             detached, normalized and read-only.
         :type parameters: Optional[Mapping[str, Union[int, float]]]
-        :param input_source: Complete dynamic-input bindings, either a mapping
+        :param input_source: Complete input bindings, either a mapping
             of scalar patterns/numeric constants or an integrated pattern.
             Construction validates names and protocols without sampling.
         :type input_source: Optional[InputSourceSpec]
@@ -874,17 +874,17 @@ class SimulationRuntime:
         self.state_machine = state_machine
         self.stack: List[_Frame] = []
         self.vars: Dict[str, Union[int, float]] = {}
-        self._input_sources = _InputSources(state_machine.dynamic_inputs, input_source)
+        self._input_sources = _InputSources(state_machine.inputs, input_source)
         self._active_inputs = types.MappingProxyType({})
         self._last_inputs = None
         parameter_values = {} if parameters is None else dict(parameters)
-        unknown_parameters = set(parameter_values) - set(state_machine.static_inputs)
+        unknown_parameters = set(parameter_values) - set(state_machine.parameters)
         if unknown_parameters:
             raise ValueError(
                 "Unknown parameters: {!r}".format(list(unknown_parameters))
             )
         if initial_state is not None and set(parameter_values) != set(
-            state_machine.static_inputs
+            state_machine.parameters
         ):
             raise ValueError("Hot start requires all parameters")
         self._parameters = types.MappingProxyType(
@@ -897,7 +897,7 @@ class SimulationRuntime:
                     ),
                     define.type,
                 )
-                for name, define in state_machine.static_inputs.items()
+                for name, define in state_machine.parameters.items()
             }
         )
         self.cycle_count: int = 0  # Track number of cycles executed
@@ -3516,7 +3516,7 @@ class SimulationRuntime:
         inputs: Optional[Mapping[str, Union[int, float]]] = None,
     ) -> CycleResult:
         """
-        Execute with one immutable dynamic-input snapshot.
+        Execute with one immutable input snapshot.
 
         ``inputs`` supplies per-cycle overrides. Validate overrides and events
         before sampling; sample every source even when fully overridden.
@@ -3525,7 +3525,7 @@ class SimulationRuntime:
         do not advance; a provider that raises from ``cycle()`` permanently
         poisons the runtime. Already ended/error runtimes remain no-ops.
 
-        :param inputs: Optional partial dynamic-input override mapping.
+        :param inputs: Optional partial input override mapping.
         :type inputs: Optional[Mapping[str, Union[int, float]]]
         :raises SimulationRuntimeInputSourceError: Invalid overrides, provider
             read failures, invalid snapshots, or advancement contract failures.
@@ -3949,7 +3949,7 @@ class SimulationRuntime:
             "events": event_names,
             "delta": delta,
         }
-        if self.state_machine.dynamic_inputs:
+        if self.state_machine.inputs:
             history_entry["inputs"] = dict(snapshot_inputs)
         prepared_history = self.history + [history_entry]
         if self.history_size is not None:

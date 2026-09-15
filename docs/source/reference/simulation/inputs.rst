@@ -1,4 +1,4 @@
-Dynamic input sources
+Input sources
 =====================
 
 Variables have distinct ownership and lifetimes. ``control`` and ``output``
@@ -168,7 +168,7 @@ Observing execution
 ``CycleResult.inputs`` and ``runtime.last_inputs`` expose detached, read-only
 snapshots. ``last_inputs`` is ``None`` before the first committed cycle; no-op
 calls return empty result inputs without replacing it. History entries for
-models with dynamic inputs include ``inputs``. ``history_size`` accepts only
+models with inputs include ``inputs``. ``history_size`` accepts only
 ``None`` or nonnegative integers; zero retains no history.
 
 ``ReadOnlyExecutionContext.inputs`` and ``.parameters`` expose external values
@@ -176,7 +176,7 @@ separately from persistent ``.vars``. Execution trace entries carry the same
 role partitions and include nonempty input/parameter mappings in ``to_dict()``.
 ``runtime.control_variables`` and ``runtime.outputs`` are read-only projections.
 
-The CLI currently has no provider binding flags. A dynamic-input model therefore
+The CLI currently has no provider binding flags. An input model therefore
 requires the Python runtime API; the CLI reports the missing source. A REPL
 constructed around such a runtime refuses ``init``/``clear`` rather than reuse
 an advanced source. Parameter-only REPL rebuilds retain fixed parameters.

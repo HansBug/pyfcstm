@@ -980,9 +980,9 @@ def _resolve_variable(
         # InvalidBmcDomain: domain lookup fails when the query references an
         # unknown persistent variable; convert it into a binding diagnostic.
         _raise_binding_error("unknown_variable", path, str(err))
-    valid_role = entry.role != VariableRole.INPUT_DYNAMIC or ctx.allow_inputs
+    valid_role = entry.role != VariableRole.INPUT or ctx.allow_inputs
     if spelling == "havoc":
-        valid_role = entry.role != VariableRole.INPUT_DYNAMIC
+        valid_role = entry.role != VariableRole.INPUT
     if not valid_role:
         _raise_binding_error(
             "variable_role_mismatch",
@@ -1398,7 +1398,7 @@ def _domain_variable_names(ctx: _BindingContext) -> Tuple[str, ...]:
     return tuple(
         var.name
         for var in ctx.domain.variables
-        if var.role != VariableRole.INPUT_DYNAMIC
+        if var.role != VariableRole.INPUT
     )
 
 
@@ -1483,14 +1483,14 @@ def _bind_frame_assumption(
     )
     uses_inputs = local.has_domain and any(
         ref.kind == "variable"
-        and local.domain.variable_by_name(ref.name).role == VariableRole.INPUT_DYNAMIC
+        and local.domain.variable_by_name(ref.name).role == VariableRole.INPUT
         for ref in local.references
     )
     if uses_inputs and assumption.kind == "at" and assumption.frame == ctx.bound:
         _raise_binding_error(
             "input_step_out_of_range",
             path + ".frame",
-            "An assumption reading dynamic inputs must satisfy 0 <= k < bound.",
+            "An assumption reading inputs must satisfy 0 <= k < bound.",
         )
     ctx.references.extend(local.references)
     return BoundAssumption(assumption, "frame", frame=assumption.frame)

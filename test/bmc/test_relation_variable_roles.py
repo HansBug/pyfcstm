@@ -1,8 +1,8 @@
 """
-Unit tests for BMC role-aware variable and dynamic-input semantics.
+Unit tests for BMC role-aware variable and input semantics.
 
 These tests pin the symbolic contract through the public engine surface:
-per-cycle dynamic-input freedom, parameter constancy, concrete input
+per-cycle input freedom, parameter constancy, concrete input
 scenario pinning, witness decoding, and replay input accounting.
 """
 
@@ -72,8 +72,8 @@ def _core_expr(model_text: str, query: str):
     return model, built.core
 
 
-def test_dynamic_inputs_may_differ_across_cycles() -> None:
-    """Two cycles may see different dynamic-input values."""
+def test_inputs_may_differ_across_cycles() -> None:
+    """Two cycles may see different input values."""
     import z3
 
     _, core_expr = _core_expr(_ROLE_MODEL, "check reach <= 2: terminated();")

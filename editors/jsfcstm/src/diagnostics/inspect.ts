@@ -1150,7 +1150,7 @@ function buildVariableInfos(machine: StateMachine, states: StateInfo[]): Variabl
             type: def.type,
             init_value: exprText(def.init) ?? '',
             role: def.role,
-            external_supply: def.role === 'input_dynamic' ? 'cycle' : def.role === 'input_static' ? 'construction' : 'none',
+            external_supply: def.role === 'input' ? 'cycle' : def.role === 'param' ? 'construction' : 'none',
             diagnostic_policy: {
                 unused: def.role === 'control', unwritten: def.role === 'control',
                 write_only: def.role === 'control', constant_guard: def.role === 'control',

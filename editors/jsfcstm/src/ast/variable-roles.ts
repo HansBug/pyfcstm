@@ -1,5 +1,14 @@
-import type {FcstmAstDocument, FcstmAstExpression, FcstmAstOperationStatement, FcstmAstStateDefinition} from './model';
+import type {FcstmAstDocument, FcstmAstExpression, FcstmAstOperationStatement, FcstmAstStateDefinition, VariableRole} from './model';
 import type {FcstmDiagnostic, TextRange} from '../utils/text';
+
+/** Reject unknown serialized roles while retaining the default control declaration. */
+export function requireVariableRole(role: VariableRole | undefined): VariableRole {
+    const value = role ?? 'control';
+    if (!['control', 'input', 'param', 'output'].includes(value)) {
+        throw new RangeError(`Unknown variable role: ${JSON.stringify(value)}.`);
+    }
+    return value;
+}
 
 /** Validate declaration ownership before building a model or publishing editor diagnostics. */
 export function collectVariableRoleDiagnostics(ast: FcstmAstDocument): FcstmDiagnostic[] {
@@ -22,13 +31,13 @@ export function collectVariableRoleDiagnostics(ast: FcstmAstDocument): FcstmDiag
         }
     }
     for (const definition of ast.variables) {
-        const role = definition.role ?? 'control';
+        const role = requireVariableRole(definition.role);
         const init = definition.initializer;
-        if (role === 'input_dynamic') {
-            readonly.set(definition.name, 'E_DYNAMIC_INPUT_WRITE');
-            if (init) emit('E_DYNAMIC_INPUT_INITIALIZER', definition.name, definition.range);
+        if (role === 'input') {
+            readonly.set(definition.name, 'E_INPUT_WRITE');
+            if (init) emit('E_INPUT_INITIALIZER', definition.name, definition.range);
         } else {
-            if (role === 'input_static') readonly.set(definition.name, 'E_STATIC_INPUT_WRITE');
+            if (role === 'param') readonly.set(definition.name, 'E_PARAM_WRITE');
             if (!init) emit('E_VARIABLE_INITIALIZER_REQUIRED', definition.name, definition.range);
             else if (hasVariable(init)) emit('E_INITIALIZER_VARIABLE_REFERENCE', definition.name, definition.range);
         }

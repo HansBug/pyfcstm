@@ -138,7 +138,7 @@ def test_action_references_keep_definition_sites_and_reference_graph(tmp_path):
     host = tmp_path / 'host.fcstm'
     host.write_text('state Root { import "./child.fcstm" as Child; state A { enter ref /Child.Setup; } [*] -> A; }', encoding='utf-8')
     report = inspect_model(load_state_machine_from_file(host))
-    sensor = next(v for v in report.variables if v.role == 'input_dynamic')
+    sensor = next(v for v in report.variables if v.role == 'input')
     assert len(sensor.read_sites) == 1
     site = sensor.read_sites[0]
     assert site.state_path == 'Root.Child'
@@ -188,8 +188,8 @@ def test_human_and_llm_reports_explain_variable_ownership():
 
     report = inspect_model(load_state_machine_from_text(SOURCE))
     human = render_inspect_human(report, SOURCE)
-    assert 'sensor: input_dynamic; external supply: cycle' in human
-    assert 'limit: input_static; external supply: construction' in human
+    assert 'sensor: input; external supply: cycle' in human
+    assert 'limit: param; external supply: construction' in human
     assert 'result: output; external supply: none' in human
     llm = json.loads(render_inspect_llm_json(report, SOURCE))
     assert any('input/param' in rule and 'output' in rule for rule in llm['repair_protocol']['rules'])
@@ -254,7 +254,7 @@ def test_cli_emits_role_access_contract_in_public_formats(tmp_path, format_name)
         assert site['span']['line'] == 6
         assert payload['variables'][0]['external_supply'] == 'cycle'
     elif format_name == 'human':
-        assert 'sensor: input_dynamic; external supply: cycle' in result.output
+        assert 'sensor: input; external supply: cycle' in result.output
     else:
         assert 'input/param' in result.output
 

@@ -1,11 +1,11 @@
-title: Dynamic input snapshots with fixed parameters and latched output
+title: Input snapshots with fixed parameters and latched output
 origin:
   files:
   - test/simulate/test_runtime_inputs.py
 categories:
 - runtime
 - variable_roles
-- dynamic_inputs
+- inputs
 steps:
 - cycle: []
   inputs:

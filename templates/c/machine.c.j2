@@ -2298,7 +2298,7 @@ int {{ machine_class_name(model) }}_init_with_options(
     if (_{{ machine_class_name(model) }}_reset_vars(machine, &machine->vars, options) != {{ machine_macro_name(model) }}_SUCCESS) {
         return {{ machine_macro_name(model) }}_FAILURE;
     }
-{% for storage, declarations in [('vars', model.persistent_variables), ('_parameters', model.static_inputs)] %}
+{% for storage, declarations in [('vars', model.persistent_variables), ('_parameters', model.parameters)] %}
 {% for item in declarations.values() if item.type == 'float' %}    if (!(machine->{{ storage }}.{{ (item.name | to_c_identifier) if storage == 'vars' else (item.name | readonly_value_identifier) }} >= -DBL_MAX && machine->{{ storage }}.{{ (item.name | to_c_identifier) if storage == 'vars' else (item.name | readonly_value_identifier) }} <= DBL_MAX)) {
         _{{ machine_class_name(model) }}_set_error(machine, "Initial value for {{ item.name }} must be finite");
         return {{ machine_macro_name(model) }}_FAILURE;
@@ -2340,7 +2340,7 @@ int {{ machine_class_name(model) }}_hot_start_with_parameters(
         return {{ machine_macro_name(model) }}_FAILURE;
     }
 
-{% if model.static_inputs %}    if (parameters == NULL) {
+{% if model.parameters %}    if (parameters == NULL) {
         _{{ machine_class_name(model) }}_set_error(machine, "Hot start requires complete parameters");
         return {{ machine_macro_name(model) }}_FAILURE;
     }
@@ -2349,10 +2349,10 @@ int {{ machine_class_name(model) }}_hot_start_with_parameters(
     hot_start_error[0] = '\0';
     memset(machine, 0, sizeof(*machine));
     machine->vars = *initial_vars;
-{% if model.static_inputs %}    machine->_parameters = *parameters;
+{% if model.parameters %}    machine->_parameters = *parameters;
 {% else %}    (void)parameters;
 {% endif %}
-{% for storage, declarations in [('vars', model.persistent_variables), ('_parameters', model.static_inputs)] %}
+{% for storage, declarations in [('vars', model.persistent_variables), ('_parameters', model.parameters)] %}
 {% for item in declarations.values() if item.type == 'float' %}    if (!(machine->{{ storage }}.{{ (item.name | to_c_identifier) if storage == 'vars' else (item.name | readonly_value_identifier) }} >= -DBL_MAX && machine->{{ storage }}.{{ (item.name | to_c_identifier) if storage == 'vars' else (item.name | readonly_value_identifier) }} <= DBL_MAX)) {
         _{{ machine_class_name(model) }}_format_error_text(hot_start_error, sizeof(hot_start_error), "Initial value for {{ item.name }} must be finite");
         goto hot_start_failure;
@@ -2501,7 +2501,7 @@ static int _{{ machine_class_name(model) }}_cycle_frozen(
     return {{ machine_macro_name(model) }}_SUCCESS;
 }
 
-{% for prefix, declarations, storage in [('param', model.static_inputs, '_parameters'), ('input', model.dynamic_inputs, '_active_inputs')] %}
+{% for prefix, declarations, storage in [('param', model.parameters, '_parameters'), ('input', model.inputs, '_active_inputs')] %}
 {% for item in declarations.values() %}{% if item.type == 'int' %}{{ machine_class_name(model) }}Int{% else %}double{% endif %} {{ machine_class_name(model) }}_get_{{ prefix }}_{{ item.name | readonly_value_identifier }}(const {{ machine_class_name(model) }} *machine)
 {
     return machine->{{ storage }}{% if prefix == 'input' %}->{% else %}.{% endif %}{{ item.name | readonly_value_identifier }};
@@ -2569,7 +2569,7 @@ int {{ machine_class_name(model) }}_cycle_with_inputs(
     if (inputs != NULL) {
         sampled = *inputs;
     } else {
-{% for item in model.dynamic_inputs.values() %}        if (machine->_input_provider.read_{{ item.name | readonly_value_identifier }} == NULL) {
+{% for item in model.inputs.values() %}        if (machine->_input_provider.read_{{ item.name | readonly_value_identifier }} == NULL) {
             _{{ machine_class_name(model) }}_set_error(machine, "Missing input provider for {{ item.name }}");
             return {{ machine_macro_name(model) }}_FAILURE;
         }
@@ -2578,7 +2578,7 @@ int {{ machine_class_name(model) }}_cycle_with_inputs(
             return {{ machine_macro_name(model) }}_FAILURE;
         }
 {% endfor %}    }
-{% for item in model.dynamic_inputs.values() if item.type == 'float' %}    if (!(sampled.{{ item.name | readonly_value_identifier }} >= -DBL_MAX && sampled.{{ item.name | readonly_value_identifier }} <= DBL_MAX)) {
+{% for item in model.inputs.values() if item.type == 'float' %}    if (!(sampled.{{ item.name | readonly_value_identifier }} >= -DBL_MAX && sampled.{{ item.name | readonly_value_identifier }} <= DBL_MAX)) {
         _{{ machine_class_name(model) }}_set_error(machine, "Input {{ item.name }} must be finite");
         return {{ machine_macro_name(model) }}_FAILURE;
     }

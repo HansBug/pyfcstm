@@ -79,7 +79,7 @@ export interface FcstmAstDocument extends FcstmAstNodeBase {
 /**
  * Variable definition aligned with pyfcstm's ``DefAssignment`` node.
  */
-export type VariableRole = 'control' | 'input_dynamic' | 'input_static' | 'output';
+export type VariableRole = 'control' | 'input' | 'param' | 'output';
 
 /** An authored declaration and its ordered import bindings before flattening. */
 export interface FcstmVariableDeclarationSource {

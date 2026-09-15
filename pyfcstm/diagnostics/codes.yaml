@@ -1556,7 +1556,7 @@ E_IMPORT_DUPLICATE_MAPPING:
       An import-mapping block duplicates a source or target, or a variable
       binding conflicts with an existing declaration. Within one import each
       target receives at most one source. Across imports, sharing requires
-      matching roles and numeric types; dynamic inputs additionally require
+      matching roles and numeric types; inputs additionally require
       an explicit host input declaration. Consult binding_reason when present.
     recommended_actions:
       - kind: drop_duplicate
@@ -4066,10 +4066,10 @@ W_COMPOSITE_INIT_INCOMPLETE:
         [*] -> B : if [x < 0];
     }
 
-E_DYNAMIC_INPUT_INITIALIZER:
+E_INPUT_INITIALIZER:
   severity: error
   span_object: variable_declaration
-  description: Dynamic inputs must not have initializers.
+  description: Inputs must not have initializers.
   refs:
     var_name:
       type: str
@@ -4085,7 +4085,7 @@ E_DYNAMIC_INPUT_INITIALIZER:
 E_VARIABLE_INITIALIZER_REQUIRED:
   severity: error
   span_object: variable_declaration
-  description: Control, output, and static input declarations require an initializer.
+  description: Control, output, and parameter declarations require an initializer.
   refs:
     var_name:
       type: str
@@ -4114,10 +4114,10 @@ E_INITIALIZER_VARIABLE_REFERENCE:
   example_dsl: |
     def int value = 1; state Root;
 
-E_DYNAMIC_INPUT_WRITE:
+E_INPUT_WRITE:
   severity: error
   span_object: effect_statement
-  description: Model operations must not assign dynamic inputs.
+  description: Model operations must not assign inputs.
   refs:
     var_name:
       type: str
@@ -4130,10 +4130,10 @@ E_DYNAMIC_INPUT_WRITE:
   example_dsl: |
     input int value; state Root { during { value = 1; } }
 
-E_STATIC_INPUT_WRITE:
+E_PARAM_WRITE:
   severity: error
   span_object: effect_statement
-  description: Model operations must not assign static inputs.
+  description: Model operations must not assign parameters.
   refs:
     var_name:
       type: str

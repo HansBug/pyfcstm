@@ -3919,13 +3919,13 @@ class BmcWitnessStep(_PrettyPrintableMixin):
         selected macro path. ``None`` derives the value from ``input_events``
         and ``consumed_events``, defaults to ``None``.
     :type unconsumed_events: Sequence[str], optional
-    :param inputs: Complete dynamic-input snapshot the selected case read,
-        keyed by declared dynamic input name.  Steps whose source frame is
+    :param inputs: Complete input snapshot the selected case read,
+        keyed by declared input name.  Steps whose source frame is
         already terminated carry an empty mapping because no environment
         sampling happens after termination, defaults to ``None`` (coerced to
         an empty mapping).
     :type inputs: Mapping[str, Union[int, float]], optional
-    :param input_reads: Dynamic input names actually referenced by the
+    :param input_reads: Input names actually referenced by the
         selected case's guards and actions, in declaration order without
         duplicates.  This is provenance for which symbolic reads the case
         performed, not a claim that replay independently verified the read
@@ -4394,7 +4394,7 @@ class BmcRuntimeStep(_PrettyPrintableMixin):
     :type abstract_calls: Sequence[BmcWitnessCallRecord]
     :param delta: Runtime Delta observation, defaults to ``False``.
     :type delta: bool, optional
-    :param inputs: Runtime dynamic-input snapshot committed by this step's
+    :param inputs: Runtime input snapshot committed by this step's
         cycle, defaults to ``None`` (coerced to an empty mapping).
     :type inputs: Mapping[str, Union[int, float]], optional
     :raises pyfcstm.bmc.errors.BmcBuildError: If the runtime-step payload is
@@ -5642,7 +5642,7 @@ def _frame_for_index(
     variables = {}
     for var in core.context.domain.variables:
         if var.name not in persistent_names:
-            # Dynamic inputs live in ``steps[i].inputs`` and parameters in
+            # Inputs live in ``steps[i].inputs`` and parameters in
             # ``initial.parameters``; frames expose only control/output state.
             continue
         variables[var.name] = _z3_number_value(
@@ -5942,21 +5942,21 @@ def _collect_statement_variable_names(statement: Any, found: Set[str]) -> None:
             _collect_statement_variable_names(nested, found)
 
 
-def _case_dynamic_input_reads(
-    case: Any, dynamic_names: Sequence[str]
+def _case_input_reads(
+    case: Any, input_names: Sequence[str]
 ) -> Tuple[str, ...]:
-    """Return dynamic inputs the case's guards/actions reference.
+    """Return inputs the case's guards/actions reference.
 
     The result follows declaration order and carries no duplicates.  This is
     read-evidence provenance for the selected case; it does not claim that
     replay independently rebuilt and verified the symbolic read set.
 
     :param case: Selected ``CycleCase``.
-    :param dynamic_names: Declared dynamic input names in order.
-    :return: Referenced dynamic input names in declaration order.
+    :param input_names: Declared input names in order.
+    :return: Referenced input names in declaration order.
     :rtype: Tuple[str, ...]
     """
-    if not dynamic_names:
+    if not input_names:
         return ()
     found: Set[str] = set()
     for requirement in case.guard_requirements:
@@ -5964,7 +5964,7 @@ def _case_dynamic_input_reads(
     for block in case.action_blocks:
         for statement in block.operations:
             _collect_statement_variable_names(statement, found)
-    return tuple(name for name in dynamic_names if name in found)
+    return tuple(name for name in input_names if name in found)
 
 
 def _decode_step(
@@ -5988,7 +5988,7 @@ def _decode_step(
     source = frames[step_index]
     target = frames[step_index + 1]
     domain = formula.core.context.domain
-    dynamic_names = domain.dynamic_input_names
+    input_names = domain.input_names
     if source.terminated:
         # No environment sampling happens once the machine has terminated;
         # post-termination absorb steps carry empty inputs.
@@ -6002,9 +6002,9 @@ def _decode_step(
                 formula.core.symbols.step_input(step_index, name),
                 declared_types[name],
             )
-            for name in dynamic_names
+            for name in input_names
         }
-        reads = set(_case_dynamic_input_reads(relation.case, dynamic_names))
+        reads = set(_case_input_reads(relation.case, input_names))
         # Fallback/Delta conditions also read guards of rejected candidates;
         # those guards live in the lowered acceptance dependency formula.
         condition_symbols = {
@@ -6022,7 +6022,7 @@ def _decode_step(
                 assumption.source.kind == "always" or assumption.frame == step_index
             ):
                 reads.update(_assumption_input_names(formula.core.context, index))
-        input_reads = tuple(name for name in dynamic_names if name in reads)
+        input_reads = tuple(name for name in input_names if name in reads)
     return BmcWitnessStep(
         index=step_index,
         source_frame=step_index,
@@ -6055,7 +6055,7 @@ def _initial_metadata(
     first = frames[0]
     parameters: Dict[str, Union[int, float]] = {}
     for var in formula.core.context.domain.variables:
-        if var.role != VariableRole.INPUT_STATIC:
+        if var.role != VariableRole.PARAM:
             continue
         parameters[var.name] = _z3_number_value(
             model, formula.core.symbols.parameter(var.name), var.declared_type
@@ -6688,16 +6688,16 @@ def _validate_replay_bindings(values, defines, path):
 def _validate_replay_roles(model: StateMachine, witness: BmcWitnessTrace) -> None:
     """Validate role-dependent payloads before constructing any input source."""
     _validate_replay_bindings(
-        witness.initial.get("parameters", {}), model.static_inputs, "initial.parameters"
+        witness.initial.get("parameters", {}), model.parameters, "initial.parameters"
     )
     for step in witness.steps:
         # Shape mismatches are reported by the existing trace comparison; do
         # not index an invalid source frame while validating role snapshots.
         ended = step.case_kind == "absorb"
-        defines = {} if ended else model.dynamic_inputs
+        defines = {} if ended else model.inputs
         _validate_replay_bindings(step.inputs, defines, "steps[%d].inputs" % step.index)
         expected_reads = tuple(
-            name for name in model.dynamic_inputs if name in step.input_reads
+            name for name in model.inputs if name in step.input_reads
         )
         if tuple(step.input_reads) != expected_reads:
             raise BmcBuildError("input_reads must follow model declaration order.")
@@ -6719,9 +6719,9 @@ def _initial_runtime(
     input_source = (
         ReplayInputPattern(
             [step.inputs for step in witness.steps if step.case_kind != "absorb"],
-            input_names=tuple(state_machine.dynamic_inputs),
+            input_names=tuple(state_machine.inputs),
         )
-        if state_machine.dynamic_inputs
+        if state_machine.inputs
         else None
     )
     if initial_state is None:

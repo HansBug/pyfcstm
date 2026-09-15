@@ -28,8 +28,8 @@ def test_roles_survive_inspect_json_without_dead_variable_false_positives():
     payload = json.loads(json.dumps(report.to_json()))
     variables = {item["name"]: item for item in payload["variables"]}
     assert {name: item["role"] for name, item in variables.items()} == {
-        "sensor": "input_dynamic",
-        "limit": "input_static",
+        "sensor": "input",
+        "limit": "param",
         "command": "output",
         "counter": "control",
     }
@@ -55,17 +55,17 @@ def test_roles_survive_inspect_json_without_dead_variable_false_positives():
 @pytest.mark.parametrize(
     "declaration,body,code",
     [
-        ("input int value = 1;", "state Root;", "E_DYNAMIC_INPUT_INITIALIZER"),
+        ("input int value = 1;", "state Root;", "E_INPUT_INITIALIZER"),
         ("param int value;", "state Root;", "E_VARIABLE_INITIALIZER_REQUIRED"),
         (
             "input int value;",
             "state Root { during { value = 1; } }",
-            "E_DYNAMIC_INPUT_WRITE",
+            "E_INPUT_WRITE",
         ),
         (
             "param int value = 1;",
             "state Root { during { value = 2; } }",
-            "E_STATIC_INPUT_WRITE",
+            "E_PARAM_WRITE",
         ),
     ],
 )
@@ -103,11 +103,11 @@ def test_role_schema_and_cli_collect_errors(tmp_path):
         schema = json.load(file)
     jsonschema.Draft7Validator(schema).validate(payload)
     assert [v["role"] for v in payload["variables"]] == [
-        "input_dynamic",
-        "input_static",
+        "input",
+        "param",
         "output",
     ]
-    for invalid_role in [None, "input", "param", "unknown"]:
+    for invalid_role in [None, "input_dynamic", "input_static", "unknown"]:
         invalid = json.loads(json.dumps(payload))
         if invalid_role is None:
             del invalid["variables"][0]["role"]
@@ -122,7 +122,7 @@ def test_role_schema_and_cli_collect_errors(tmp_path):
         cli, ["inspect", "-i", str(source), "--format", "json", "--collect-errors"]
     )
     payload = json.loads(result.output)
-    assert any(d["code"] == "E_DYNAMIC_INPUT_WRITE" for d in payload["diagnostics"])
+    assert any(d["code"] == "E_INPUT_WRITE" for d in payload["diagnostics"])
 
 
 @pytest.mark.parametrize(
@@ -142,3 +142,21 @@ def test_guard_change_advice_is_scoped_to_control_state(declaration, expected):
     assert (
         "W_GUARD_VARS_NEVER_CHANGE" in [d.code for d in report.diagnostics]
     ) == expected
+
+
+
+def test_inspect_publishes_current_input_parameter_roles():
+    report = inspect_source("input int sensor; param int limit = 2; state Root;")
+    assert [variable["role"] for variable in report.to_json()["variables"]] == ["input", "param"]
+
+
+@pytest.mark.parametrize("current,obsolete", [
+    ("E_INPUT_INITIALIZER", "E_DYNAMIC_INPUT_INITIALIZER"),
+    ("E_INPUT_WRITE", "E_DYNAMIC_INPUT_WRITE"),
+    ("E_PARAM_WRITE", "E_STATIC_INPUT_WRITE"),
+])
+def test_role_diagnostic_codes_have_no_obsolete_aliases(current, obsolete):
+    from pyfcstm.diagnostics.codes import resolve_diagnostic_code
+
+    assert resolve_diagnostic_code(current).canonical_code == current
+    assert resolve_diagnostic_code(obsolete) is None

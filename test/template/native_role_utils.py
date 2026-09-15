@@ -10,7 +10,7 @@ from pyfcstm.utils import to_c_identifier
 def _structure_type(definitions, presence=False):
     fields = [
         (
-            (readonly_value_identifier(name) if item.role in (VariableRole.INPUT_DYNAMIC, VariableRole.INPUT_STATIC) else to_c_identifier(name)),
+            (readonly_value_identifier(name) if item.role in (VariableRole.INPUT, VariableRole.PARAM) else to_c_identifier(name)),
             ctypes.c_int
             if presence
             else ctypes.c_int64
@@ -44,8 +44,8 @@ class NativeRoleSupport:
     """Use typed snapshots through exported functions, never machine fields."""
 
     def _initialize_role_io(self):
-        self._parameters_struct = _structure_type(self._model.static_inputs)
-        self._inputs_struct = _structure_type(self._model.dynamic_inputs)
+        self._parameters_struct = _structure_type(self._model.parameters)
+        self._inputs_struct = _structure_type(self._model.inputs)
         self._options_struct = type(
             "InitOptions",
             (ctypes.Structure,),
@@ -59,7 +59,7 @@ class NativeRoleSupport:
                     ("parameters", self._parameters_struct),
                     (
                         "parameters_present",
-                        _structure_type(self._model.static_inputs, True),
+                        _structure_type(self._model.parameters, True),
                     ),
                 ]
             },
@@ -85,7 +85,7 @@ class NativeRoleSupport:
                 [ctypes.c_void_p],
                 ctypes.c_int64 if item.type == "int" else ctypes.c_double,
             )
-            for name, item in self._model.static_inputs.items()
+            for name, item in self._model.parameters.items()
         }
 
     def initialize_with_values(self, initial_vars=None, parameters=None):
@@ -94,7 +94,7 @@ class NativeRoleSupport:
         parameters = {} if parameters is None else parameters
         options.vars = self._create_initial_vars(initial_vars)
         options.parameters = _values(
-            self._parameters_struct, self._model.static_inputs, parameters
+            self._parameters_struct, self._model.parameters, parameters
         )
         for name in initial_vars:
             setattr(options.vars_present, to_c_identifier(name), 1)
@@ -106,7 +106,7 @@ class NativeRoleSupport:
     def _hot_start_with_parameters(self, state_id, values, parameters):
         parameter_values = _values(
             self._parameters_struct,
-            self._model.static_inputs,
+            self._model.parameters,
             {} if parameters is None else parameters,
             complete=True,
         )
@@ -123,7 +123,7 @@ class NativeRoleSupport:
 
     def _input_values(self, inputs):
         return _values(
-            self._inputs_struct, self._model.dynamic_inputs, inputs, complete=True
+            self._inputs_struct, self._model.inputs, inputs, complete=True
         )
 
     @property
@@ -145,5 +145,5 @@ class NativeRoleSupport:
             return None
         return {
             name: getattr(pointer.contents, readonly_value_identifier(name))
-            for name in self._model.dynamic_inputs
+            for name in self._model.inputs
         }

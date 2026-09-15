@@ -1014,15 +1014,15 @@ def test_var_domain_entry_carries_variable_role() -> None:
     """Variable entries expose the declared role and reject foreign values."""
     from pyfcstm.dsl.role import VariableRole
 
-    entry = VarDomainEntry(0, "sensor", "int", VariableRole.INPUT_DYNAMIC)
-    assert entry.to_canonical()["role"] == "input_dynamic"
+    entry = VarDomainEntry(0, "sensor", "int", VariableRole.INPUT)
+    assert entry.to_canonical()["role"] == "input"
     with pytest.raises(InvalidBmcDomain):
-        VarDomainEntry(0, "sensor", "int", "input_dynamic")
+        VarDomainEntry(0, "sensor", "int", "input")
 
 
 @pytest.mark.unittest
 def test_domain_role_name_helpers_follow_declaration_order() -> None:
-    """Domain groups dynamic inputs, parameters, and persistent variables."""
+    """Domain groups inputs, parameters, and persistent variables."""
     from pyfcstm.model import load_state_machine_from_text
 
     model = load_state_machine_from_text(
@@ -1030,6 +1030,8 @@ def test_domain_role_name_helpers_follow_declaration_order() -> None:
         "output int y = 0; input float level; state Root;"
     )
     domain = build_bmc_domain(model, 1)
-    assert domain.dynamic_input_names == ("sensor", "level")
-    assert domain.static_input_names == ("gain",)
+    assert domain.input_names == ("sensor", "level")
+    assert domain.parameter_names == ("gain",)
     assert domain.persistent_variable_names == ("x", "y")
+    assert not hasattr(domain, "dynamic_input_names")
+    assert not hasattr(domain, "static_input_names")

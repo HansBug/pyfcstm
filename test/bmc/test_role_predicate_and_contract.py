@@ -194,7 +194,7 @@ def test_param_override_via_where_havoc_decodes_into_initial_parameters() -> Non
 @pytest.mark.parametrize(
     "predicate", ["pressure >= 0.0", "altitude - pressure <= 10.0"]
 )
-def test_frame_property_rejects_dynamic_input_predicates(predicate):
+def test_frame_property_rejects_input_predicates(predicate):
     from pyfcstm.bmc import InvalidBmcQuery
 
     with pytest.raises(InvalidBmcQuery, match="variable_role_mismatch"):
@@ -251,7 +251,7 @@ def test_terminated_initial_frame_decodes_empty_step_inputs() -> None:
     assert replay.ok
 
 
-def test_havoc_rejects_dynamic_inputs() -> None:
+def test_havoc_rejects_inputs() -> None:
     from pyfcstm.bmc import InvalidBmcQuery
 
     with pytest.raises(InvalidBmcQuery, match="variable_role_mismatch"):
@@ -262,13 +262,13 @@ def test_havoc_rejects_dynamic_inputs() -> None:
 
 
 def test_case_consequent_never_pins_next_frame_input_symbols() -> None:
-    """Structural: dynamic inputs receive no post-frame case equalities."""
+    """Structural: inputs receive no post-frame case equalities."""
     model_text = _ORDER_MODEL
     model = load_state_machine_from_text(model_text)
     built = build_bmc_core_formula(
         BmcEngine(model).prepare("check reach <= 2: terminated();")
     )
-    dynamic_names = set(built.context.domain.dynamic_input_names)
+    dynamic_names = set(built.context.domain.input_names)
     assert dynamic_names == {"second", "first"}
     for step_relation in built.steps:
         for relation in step_relation.case_relations:

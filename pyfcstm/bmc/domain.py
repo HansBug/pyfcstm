@@ -371,8 +371,8 @@ class VarDomainEntry:
     :param declared_type: Declared FCSTM variable type.
     :type declared_type: str
     :param role: Variable role, defaults to ``VariableRole.CONTROL``.  The role
-        drives symbol lifetimes: dynamic inputs are independently chosen per
-        step, static inputs share one trace-global symbol, and
+        drives symbol lifetimes: inputs are independently chosen per
+        step, parameters share one trace-global symbol, and
         control/output variables follow the persistent transition relation.
     :type role: pyfcstm.dsl.role.VariableRole
 
@@ -380,8 +380,8 @@ class VarDomainEntry:
 
         >>> VarDomainEntry(0, 'counter', 'int').to_canonical()['declared_type']
         'int'
-        >>> VarDomainEntry(1, 'pressure', 'float', VariableRole.INPUT_DYNAMIC).role.value
-        'input_dynamic'
+        >>> VarDomainEntry(1, 'pressure', 'float', VariableRole.INPUT).role.value
+        'input'
     """
 
     id: int
@@ -401,9 +401,9 @@ class VarDomainEntry:
     @property
     def time_domain(self) -> str:
         """Return the symbol lifetime: frame, step, or trace."""
-        if self.role == VariableRole.INPUT_DYNAMIC:
+        if self.role == VariableRole.INPUT:
             return "step"
-        if self.role == VariableRole.INPUT_STATIC:
+        if self.role == VariableRole.PARAM:
             return "trace"
         return "frame"
 
@@ -759,10 +759,10 @@ class BmcDomain:
         return self.stable_state_ids
 
     @property
-    def dynamic_input_names(self) -> Tuple[str, ...]:
-        """Return dynamic input variable names in declaration order.
+    def input_names(self) -> Tuple[str, ...]:
+        """Return input variable names in declaration order.
 
-        :return: Names of ``input dynamic`` variables.
+        :return: Names of ``input`` variables.
         :rtype: Tuple[str, ...]
 
         Example::
@@ -771,18 +771,18 @@ class BmcDomain:
             >>> model = load_state_machine_from_text(
             ...     'input int sensor; param int gain = 1; state Root;')
             >>> domain = build_bmc_domain(model, 1)
-            >>> domain.dynamic_input_names
+            >>> domain.input_names
             ('sensor',)
         """
         return tuple(
             entry.name
             for entry in self.variables
-            if entry.role == VariableRole.INPUT_DYNAMIC
+            if entry.role == VariableRole.INPUT
         )
 
     @property
-    def static_input_names(self) -> Tuple[str, ...]:
-        """Return static input (parameter) names in declaration order.
+    def parameter_names(self) -> Tuple[str, ...]:
+        """Return parameter names in declaration order.
 
         :return: Names of ``param`` variables.
         :rtype: Tuple[str, ...]
@@ -793,13 +793,13 @@ class BmcDomain:
             >>> model = load_state_machine_from_text(
             ...     'input int sensor; param int gain = 1; state Root;')
             >>> domain = build_bmc_domain(model, 1)
-            >>> domain.static_input_names
+            >>> domain.parameter_names
             ('gain',)
         """
         return tuple(
             entry.name
             for entry in self.variables
-            if entry.role == VariableRole.INPUT_STATIC
+            if entry.role == VariableRole.PARAM
         )
 
     @property

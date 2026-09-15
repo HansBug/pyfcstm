@@ -1,11 +1,11 @@
-title: dynamic input unblocks hot composite
+title: input unblocks hot composite
 origin:
   files:
   - test/simulate/test_runtime_inputs.py
 categories:
 - runtime
 - variable_roles
-- dynamic_inputs
+- inputs
 parameters:
   gain: 4
 initial:

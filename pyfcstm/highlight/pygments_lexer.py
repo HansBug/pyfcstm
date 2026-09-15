@@ -187,7 +187,7 @@ class FcstmLexer(RegexLexer):
         'abstract', 'after', 'as', 'before', 'def', 'during', 'effect', 'enter',
         'else', 'event', 'exit', 'float', 'if', 'import', 'int', 'named',
         'implies', 'iff', 'pseudo', 'ref', 'state', 'xor',
-        'control', 'input', 'dynamic', 'static', 'param', 'output', 'var',
+        'control', 'input', 'param', 'output', 'var',
     ))
     _ANALYSIS_LIFECYCLE_KEYWORDS = frozenset(('enter', 'during', 'exit'))
 
@@ -201,7 +201,7 @@ class FcstmLexer(RegexLexer):
             # Keywords - state machine structure
             (words((
                 'state', 'pseudo', 'named', 'def', 'event', 'as',
-                'control', 'input', 'dynamic', 'static', 'param', 'output', 'var',
+                'control', 'input', 'param', 'output', 'var',
             ), suffix=r'\b'), Keyword.Declaration),
 
             # Keywords - lifecycle actions

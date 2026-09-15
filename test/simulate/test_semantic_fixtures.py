@@ -19,7 +19,7 @@ from test.testings.simulate_semantics import (
 # cycle call. Keep this table independent from both YAML and Runtime output so
 # drift is reported instead of becoming self-consistent.
 EXPECTED_DELTA_STEP_SEQUENCES = {
-    "dynamic_input_unblocks_hot_composite": ((True,), (False,)),
+    "input_unblocks_hot_composite": ((True,), (False,)),
     "design_composite_stuck_in_init_wait": ((True,), (True,), (True,)),
     "design_post_child_exit_without_follow_up": ((True,), (True,), (True,)),
     "failed_initial_cycle_preserves_root_entry_lifecycle": ((True,), (False,)),
@@ -1338,7 +1338,7 @@ def test_role_fixture_requires_complete_model_input_frame(tmp_path, inputs):
     data = _valid_case_data()
     data["steps"] = [{"cycle": [], "inputs": inputs, "expect": {"outputs": {"result": 2}}}]
     dsl = "input int sensor; output int result = 0; state Root { during { result = sensor; } }"
-    with pytest.raises(SemanticCaseError, match="exactly the model dynamic inputs"):
+    with pytest.raises(SemanticCaseError, match="exactly the model inputs"):
         run_simulation_case(load_semantic_case(_write_fixture(tmp_path, data, dsl)))
 
 

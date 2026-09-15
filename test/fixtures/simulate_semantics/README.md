@@ -192,13 +192,6 @@ structural input source without encoding generator or override behavior in YAML.
 The role corpus covers parameter defaults, partial cold initial values, hot
 snapshots, changing and repeated multi-input frames, output latching, lifecycle
 and transition effects, Delta, termination and recovery after runtime errors.
-Cases declare `variable_roles` and, where applicable, `dynamic_inputs`, with
-explicit exclusions for generated-runtime and BMC adapters until supported.
-Policy reasons derive from categories rather than individual case names.
-Existing backend cases remain required. See [schema.md](schema.md) for the full
-construction and cycle contract.
+Cases declare `variable_roles` and, where applicable, `inputs`. All eight role cases run in the simulator and all five generated runtimes; BMC runs seven, excluding runtime-error recovery. Policy reasons derive from categories rather than individual case names. Existing backend cases remain required. See [schema.md](schema.md) for the full construction and cycle contract.
 
-The C/C-poll/C++/C++-poll corpus tests consume the same generated-runtime-ready
-subset selected by `generated_python_alignment`, rather than the unfiltered
-simulator corpus. This keeps the existing shared template baseline while
-allowing explicitly simulator-only input fixtures until template support lands.
+The C/C-poll/C++/C++-poll corpus tests consume the same subset selected by `generated_python_alignment`. All five templates currently run the complete 213-case shared corpus, including every input/parameter case.

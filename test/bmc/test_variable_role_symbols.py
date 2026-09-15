@@ -39,7 +39,7 @@ def test_symbol_lifetimes_are_disjoint():
 
 
 @pytest.mark.parametrize("reference", ["sensor", 'var("sensor")'])
-def test_frame_property_rejects_dynamic_input(reference):
+def test_frame_property_rejects_input(reference):
     model = load_state_machine_from_text("input int sensor; state Root;")
     with pytest.raises(InvalidBmcQuery, match="variable_role_mismatch"):
         compile_bmc_query(model, "check reach <= 1: %s == 1;" % reference)
@@ -204,11 +204,11 @@ def test_symbol_bundle_validates_role_partitions():
     )
     with pytest.raises(BmcBuildError, match="step_inputs must contain bound mappings"):
         replace(symbols, step_inputs=())
-    with pytest.raises(BmcBuildError, match="exactly the dynamic input names"):
+    with pytest.raises(BmcBuildError, match="exactly the input names"):
         replace(symbols, step_inputs=({},))
-    with pytest.raises(BmcBuildError, match="exactly the static input names"):
+    with pytest.raises(BmcBuildError, match="exactly the parameter names"):
         replace(symbols, parameters={})
-    with pytest.raises(BmcBuildError, match="Unknown dynamic input"):
+    with pytest.raises(BmcBuildError, match="Unknown input"):
         symbols.step_input(0, "gain")
     with pytest.raises(BmcBuildError, match="Unknown parameter"):
         symbols.parameter("sensor")

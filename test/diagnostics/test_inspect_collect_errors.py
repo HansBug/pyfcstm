@@ -25,10 +25,10 @@ from pyfcstm.model import load_state_machine_from_file, parse_dsl_node_to_state_
 
 # Single-file DSL snippets, one per model-build error code.
 SINGLE_FILE_CASES = {
-    'E_DYNAMIC_INPUT_INITIALIZER': 'input int value = 1; state Root;',
+    'E_INPUT_INITIALIZER': 'input int value = 1; state Root;',
     'E_VARIABLE_INITIALIZER_REQUIRED': 'param int value; state Root;',
-    'E_DYNAMIC_INPUT_WRITE': 'input int value; state Root { during { value = 1; } }',
-    'E_STATIC_INPUT_WRITE': 'param int value = 1; state Root { during { value = 2; } }',
+    'E_INPUT_WRITE': 'input int value; state Root { during { value = 1; } }',
+    'E_PARAM_WRITE': 'param int value = 1; state Root { during { value = 2; } }',
     'E_UNDEFINED_VAR': 'state Root { state A; state B; A -> B : if [zzz > 0]; }',
     'E_DUPLICATE_VAR': 'def int x = 0;\ndef int x = 1;\nstate Root { state A; }',
     'E_MISSING_STATE': (

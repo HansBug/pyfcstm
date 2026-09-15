@@ -5,7 +5,7 @@ origin:
 categories:
 - runtime
 - variable_roles
-- dynamic_inputs
+- inputs
 steps:
 - cycle: []
   inputs:

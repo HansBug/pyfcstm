@@ -566,7 +566,7 @@
         "name": { "type": "string" },
         "type": { "type": "string" },
         "init_value": { "type": "string" },
-        "role": { "type": "string", "enum": ["control", "input_dynamic", "input_static", "output"] },
+        "role": { "type": "string", "enum": ["control", "input", "param", "output"] },
         "external_supply": { "enum": ["none", "cycle", "construction"] },
         "diagnostic_policy": {
           "type": "object",

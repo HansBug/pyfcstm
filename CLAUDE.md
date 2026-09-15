@@ -1475,6 +1475,14 @@ For built-in template work, the current design bar is defined by the `python` te
   formatter-only rewrites fall under the non-blocking exception policy above when explicitly justified.
 - When adding a new built-in template, update all of the following together: [templates/](templates/), packaged template assets, CLI/template metadata, maintainer docs, generated docs if applicable, and the corresponding tests.
 
+### Template README maintenance
+
+Generated `README*.md.j2` guides must teach a complete downstream integration using only the generated directory: construction with parameters, numeric input readers, action hooks, events, cycles, outputs, failures and recovery. Template-source `README*.md` guides explain maintenance: source ownership, runtime invariants, coupled changes and concrete verification commands. Follow [the template README authoring rules](templates/README.md#generated-readme-authoring-rules).
+
+Keep one complete Quick Start and one consistent API surface per generated guide. Extend that program in later fragments instead of recreating partially configured instances. When an API changes, revise existing explanations, examples and reference tables together and remove obsolete duplicates. C++ guides use wrapper operations throughout; input/action/event callbacks retain their documented C signatures. Keep prose paragraphs on one physical line in source and rendered Markdown; code, lists, tables and Jinja control structures keep necessary line breaks. English and Chinese guides must stay structurally equivalent.
+
+Inspect source/rendered layout, equivalent bilingual examples and anchors. Execute generated example tests with combined role/action/event models, optional-feature omissions, repeated input acquisition, actual action invocation, committed results, failures/retry and hot restoration. A successful process exit is not proof that the documented cycle succeeded. Inspect rendered guides and use a fresh downstream-only review for substantive restructuring. Keep maintainer-document checks outside pytest and generated behavioral examples inside pytest.
+
 ### Testing Strategy
 
 #### Docstring Example Gate

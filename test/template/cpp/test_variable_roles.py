@@ -474,11 +474,11 @@ int main() {
 
 def _check_role_readme_example(polled, wrapper, language, section):
     from pathlib import Path
-    import re
 
     render = render_poll_artifacts if polled else render_cpp_artifacts
     compile_harness = compile_poll_harness if polled else compile_and_run_cpp_wrapper_harness
     dsl = ROLE_MODEL.replace("input int signal;", "input int signal; input int unused;")
+    dsl = dsl.replace("state Ready {", "state Ready { during abstract Observe;")
     dsl = dsl.replace("[*] -> Ready;", "[*] -> Ready; Ready -> Ready :: Tick;")
     with render(dsl) as artifacts:
         if not wrapper:
@@ -491,36 +491,79 @@ def _check_role_readme_example(polled, wrapper, language, section):
                     model=artifacts["model"], output_dir=artifacts["output_dir"])
         filename = "README.md" if language == "en" else "README_zh.md"
         readme = (Path(artifacts["output_dir"]) / filename).read_text(encoding="utf-8")
-        if section == "quick":
-            if wrapper:
-                heading = (
-                    "C++ Poll Wrapper Quick Start"
-                    if polled and language == "en"
-                    else "C++ Poll Wrapper 快速开始"
-                    if polled
-                    else "C++ Wrapper Quick Start"
-                    if language == "en"
-                    else "C++ Wrapper 快速开始"
-                )
-            else:
-                heading = "Quick Start" if language == "en" else "快速开始"
-            text = readme.split("## " + heading + "\n", 1)[1].split("\n## ", 1)[0]
-            source = re.findall(r"```(?:c|cpp)\n(.*?)```", text, re.DOTALL)[0]
-        else:
-            source = re.findall(r"```(?:c|cpp)\n(.*?)```", readme, re.DOTALL)[-1]
-        # The wrapper source is still linked when checking the byte-identical C core.
+        from test.template.readme_examples import example_code, extend_native_main
+        source = example_code(readme, "quick-start")
+        initial_count = 1
+        if section == "initial":
+            before = "    Wrapper machine(options);" if wrapper else "    RootMachine machine;"
+            source = source.replace(before, example_code(readme, "initial-values") + "\n" + before)
+            initial_count = 2
+        source = source.replace(
+            "typedef struct AppData {",
+            "static int provider_reads = 0;\nstatic int fail_reads = 0;\ntypedef struct AppData {",
+        ).replace("    *value = data->inputs.",
+                  "    ++provider_reads;\n    if (fail_reads) return 0;\n    *value = data->inputs.")
+        source = source.replace('#include <stdio.h>',
+                                '#include <stdio.h>\n#ifdef NDEBUG\n#undef NDEBUG\n#endif\n#include <assert.h>')
+        variables = "machine.vars()" if wrapper else "RootMachine_vars(&machine)"
+        parameter = "machine.get_param_gain()" if wrapper else "RootMachine_get_param_gain(&machine)"
+        last_inputs = "machine.last_inputs()" if wrapper else "RootMachine_last_inputs(&machine)"
+        cycle = "machine.cycle()" if wrapper else (
+            "RootMachine_cycle(&machine)" if polled else "RootMachine_cycle(&machine, NULL, 0u)")
+        checks = """
+    assert(provider_reads == 2);
+    assert(data.hook_calls == 1);
+    assert(VARS->count == 1 && VARS->result == 1);
+    assert(PARAM == 1);
+    options.parameters.gain = 99;
+    assert(PARAM == 1);
+"""
+        checks = checks.replace("VARS->count == 1", "VARS->count == %d" % initial_count)
+        if section == "snapshot":
+            checks += "    data.inputs.signal = 3; data.inputs.unused = 7;\n"
+            checks += example_code(readme, "input-snapshot")
+            checks += """
+    assert(provider_reads == 2);
+    assert(data.hook_calls == 2);
+    assert(VARS->count == 2 && VARS->result == 3);
+    assert(LAST->signal == 3 && LAST->unused == 7);
+"""
+        elif section == "hot":
+            checks += example_code(readme, "hot-start")
+            checks += """
+    assert(PARAM == 1);
+    assert(VARS->count == 1 && VARS->result == 1);
+    assert(data.hook_calls == 1);
+    data.inputs.signal = 5;
+    data.inputs.unused = 8;
+    fail_reads = 1;
+    assert(CYCLE == 0);
+    assert(VARS->count == 1 && VARS->result == 1);
+    assert(data.hook_calls == 1);
+    fail_reads = 0;
+    assert(CYCLE == 1);
+    assert(VARS->count == 2 && VARS->result == 5);
+    assert(PARAM == 1);
+    assert(LAST->signal == 5 && LAST->unused == 8);
+    assert(data.hook_calls == 2);
+    assert(provider_reads == 5);
+"""
+        for token, value in (("VARS", variables), ("PARAM", parameter),
+                             ("LAST", last_inputs), ("CYCLE", cycle)):
+            checks = checks.replace(token, value)
+        source = extend_native_main(source, checks)
+        # Instrument only the documented application callbacks, never runtime internals.
         result = compile_harness(artifacts, "role_readme", source)
         assert result.returncode == 0, result.stderr
-        if section == "quick":
-            assert "param gain = 1" in result.stdout
-            assert "control count = 1" in result.stdout
-            assert "output result = 1" in result.stdout
-            assert "read_signal" in source and "read_unused" in source
+        assert "param gain = 1" in result.stdout
+        assert "control count = %d" % initial_count in result.stdout
+        assert "output result = 1" in result.stdout
+        assert "hook calls = 1" in result.stdout
 
 
 @pytest.mark.parametrize("wrapper", [False, True], ids=["c", "cpp"])
 @pytest.mark.parametrize("language", ["en", "zh"])
-@pytest.mark.parametrize("section", ["quick", "snapshot"])
+@pytest.mark.parametrize("section", ["quick", "snapshot", "initial", "hot"])
 def test_role_readme_example_runs(wrapper, language, section):
     _check_role_readme_example(False, wrapper, language, section)
 

@@ -385,7 +385,7 @@ class TestCppPollWrapperTemplate:
     def test_poll_wrapper_generated_english_readme_quick_start_runs(self):
         with render_cpp_poll_artifacts(_README_MULTI_EVENT_DSL) as artifacts:
             readme = _read(artifacts["readme_file"])
-            source = _extract_cpp_code_block(readme, "C++ Poll Wrapper Quick Start")
+            source = _extract_cpp_code_block(readme, "Quick Start")
             result = compile_and_run_cpp_poll_wrapper_harness(
                 artifacts,
                 "cpp_poll_readme_quick_start_en",
@@ -396,7 +396,7 @@ class TestCppPollWrapperTemplate:
     def test_poll_wrapper_generated_chinese_readme_quick_start_runs(self):
         with render_cpp_poll_artifacts(_README_MULTI_EVENT_DSL) as artifacts:
             readme = _read(artifacts["readme_zh_file"])
-            source = _extract_cpp_code_block(readme, "C++ Poll Wrapper 快速开始")
+            source = _extract_cpp_code_block(readme, "快速开始")
             result = compile_and_run_cpp_poll_wrapper_harness(
                 artifacts,
                 "cpp_poll_readme_quick_start_zh",
@@ -407,7 +407,7 @@ class TestCppPollWrapperTemplate:
     def test_poll_wrapper_generated_english_readme_gcc_direct_commands_run(self):
         with render_cpp_poll_artifacts(_README_MULTI_EVENT_DSL) as artifacts:
             readme = _read(artifacts["readme_file"])
-            source = _extract_cpp_code_block(readme, "C++ Poll Wrapper Quick Start")
+            source = _extract_cpp_code_block(readme, "Quick Start")
             commands = _extract_named_bash_block(
                 readme,
                 "Compile the C poll core as C99",
@@ -423,7 +423,7 @@ class TestCppPollWrapperTemplate:
     def test_poll_wrapper_generated_chinese_readme_gcc_direct_commands_run(self):
         with render_cpp_poll_artifacts(_README_MULTI_EVENT_DSL) as artifacts:
             readme = _read(artifacts["readme_zh_file"])
-            source = _extract_cpp_code_block(readme, "C++ Poll Wrapper 快速开始")
+            source = _extract_cpp_code_block(readme, "快速开始")
             commands = _extract_named_bash_block(
                 readme,
                 "先把 C poll core 按 C99 编译",
@@ -439,7 +439,7 @@ class TestCppPollWrapperTemplate:
     def test_poll_wrapper_generated_english_readme_clang_direct_commands_run(self):
         with render_cpp_poll_artifacts(_README_MULTI_EVENT_DSL) as artifacts:
             readme = _read(artifacts["readme_file"])
-            source = _extract_cpp_code_block(readme, "C++ Poll Wrapper Quick Start")
+            source = _extract_cpp_code_block(readme, "Quick Start")
             commands = _extract_named_bash_block(
                 readme,
                 "The equivalent Clang / Clang++ form is:",
@@ -455,7 +455,7 @@ class TestCppPollWrapperTemplate:
     def test_poll_wrapper_generated_chinese_readme_clang_direct_commands_run(self):
         with render_cpp_poll_artifacts(_README_MULTI_EVENT_DSL) as artifacts:
             readme = _read(artifacts["readme_zh_file"])
-            source = _extract_cpp_code_block(readme, "C++ Poll Wrapper 快速开始")
+            source = _extract_cpp_code_block(readme, "快速开始")
             commands = _extract_named_bash_block(
                 readme,
                 "等价的 Clang / Clang++ 写法是：",

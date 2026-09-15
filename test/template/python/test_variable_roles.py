@@ -197,40 +197,64 @@ def test_failed_external_read_preserves_previous_committed_snapshot():
 
 
 @pytest.mark.parametrize("language", ["en", "zh"])
-@pytest.mark.parametrize("section", ["quick", "hot"])
+@pytest.mark.parametrize("section", ["quick", "snapshot", "initial", "hot"])
 def test_role_readme_examples_use_inputs_and_separate_parameters(
     language, section, monkeypatch
 ):
     import sys
     from pathlib import Path
-    from .test_runtime import _render_python_artifacts, _python_code_blocks
+    from .test_runtime import _render_python_artifacts
 
-    with _render_python_artifacts(ROLE_MODEL) as artifacts:
+    dsl = ROLE_MODEL.replace("input float pressure;", "input float pressure; input int unused;")
+    dsl = dsl.replace("state Ready {", "state Ready { during abstract Observe;")
+    dsl = dsl.replace("[*] -> Ready;", "[*] -> Ready; Ready -> Ready :: Tick;")
+    with _render_python_artifacts(dsl) as artifacts:
         monkeypatch.setitem(sys.modules, "machine", artifacts["module"])
         key = "readme_file" if language == "en" else "readme_zh_file"
         markdown = Path(artifacts[key]).read_text(encoding="utf-8")
-        heading = (
-            "Hot Start"
-            if section == "hot"
-            else ("Quick Start" if language == "en" else "快速开始")
-        )
-        text = markdown.split("## " + heading, 1)[1].split("\n## ", 1)[0]
+        from test.template.readme_examples import example_code
         namespace = {}
-        exec(_python_code_blocks(text)[0], namespace)
+        exec(example_code(markdown, "quick-start"), namespace)
         machine = namespace["machine"]
-        assert set(machine.vars) == {"samples", "reading"}
-        assert set(machine.parameters) == {"gain"}
-        if section == "quick":
-            assert machine.last_inputs == {"pressure": 1.0}
-            assert machine.parameters == {"gain": 1.0}
+        assert machine.last_inputs == {"pressure": 1.0, "unused": 1}
+        assert machine.parameters == {"gain": 1.0}
+        assert machine.vars == {"samples": 1, "reading": 1.0}
+        assert machine.hook_calls == [("Root.Ready.Observe", "during")]
+        assert type(machine).read_pressure is not artifacts["module"].RootMachine.read_pressure
+        if section == "snapshot":
+            # Missing device data proves that the complete snapshot bypasses all readers.
+            namespace["sensor_values"].clear()
+            exec(example_code(markdown, "input-snapshot"), namespace)
+            assert machine.vars == {"samples": 2, "reading": 1.0}
+            assert len(machine.hook_calls) == 2
+            return
+        if section == "initial":
+            exec(example_code(markdown, "initial-values"), namespace)
+            machine = namespace["machine"]
             assert machine.vars == {"samples": 1, "reading": 1.0}
-            # The README must teach device integration, not just explicit snapshots.
-            assert type(machine).read_pressure is not artifacts["module"].RootMachine.read_pressure
-            namespace["sensor_values"]["pressure"] = 3.0
+            assert machine.last_inputs is None
+            assert machine.hook_calls == []
+        if section == "hot":
+            exec(example_code(markdown, "hot-start"), namespace)
+            machine = namespace["machine"]
+            assert machine.vars == {"samples": 1, "reading": 1.0}
+            assert machine.parameters == {"gain": 1.0}
+            assert machine.hook_calls == []
+        namespace["sensor_values"]["pressure"] = 3.0
+        machine.cycle()
+        assert machine.vars == {"samples": 2, "reading": 3.0}
+        assert machine.parameters == {"gain": 1.0}
+        committed = dict(machine.last_inputs)
+        del namespace["sensor_values"]["unused"]
+        with pytest.raises(KeyError, match="unused"):
             machine.cycle()
-            assert machine.vars == {"samples": 2, "reading": 3.0}
-            assert "Modify Variables Outside Hooks" not in markdown
-            assert "在 Hook 外修改变量" not in markdown
+        assert machine.vars == {"samples": 2, "reading": 3.0}
+        assert machine.last_inputs == committed
+        namespace["sensor_values"].update(pressure=-2.0, unused=7)
+        machine.cycle()
+        assert machine.last_inputs == {"pressure": -2.0, "unused": 7}
+        assert machine.vars == {"samples": 2, "reading": 3.0}
+        assert machine.hook_calls[-1] == ("Root.Ready.Observe", "during")
 
 
 def test_unused_input_is_sampled_each_cycle_without_implicit_hold():

@@ -1,4 +1,4 @@
-import {collectVariableRoleDiagnostics} from '../ast/variable-roles';
+import {collectVariableRoleDiagnostics, requireVariableRole} from '../ast/variable-roles';
 import type {FcstmDiagnostic} from '../utils/text';
 import type {
     FcstmAstAction,
@@ -727,9 +727,17 @@ function mergeImportedDefinitions(
         const existing = existingDefinitions.get(definition.name);
         if (!existing) continue;
         const explicit = hostExplicitDefNames.has(definition.name);
+        const sourceRole = requireVariableRole(definition.role);
+        const targetRole = requireVariableRole(existing.role);
         let conflict: string | undefined;
         let reason: string | undefined;
-        if (existing.role !== definition.role) {
+        const targets = {
+            param: ['param'],
+            input: ['param', 'input', 'control', 'output'],
+            control: ['control', 'output'],
+            output: ['control', 'output'],
+        };
+        if (!targets[sourceRole].includes(targetRole) || (targetRole !== sourceRole && !explicit)) {
             reason = 'role_mismatch';
             conflict = `has role ${JSON.stringify(existing.role)}, cannot bind imported role ${JSON.stringify(definition.role)}`;
         } else if (existing.type !== definition.type) {
@@ -738,7 +746,7 @@ function mergeImportedDefinitions(
                 ? `already exists in host model as type ${JSON.stringify(existing.type)}, cannot bind imported type ${JSON.stringify(definition.type)}`
                 : `receives incompatible imported types ${JSON.stringify(existing.type)} and ${JSON.stringify(definition.type)}`;
         } else if (!explicit) {
-            if (definition.role === 'input') {
+            if (sourceRole === 'input') {
                 reason = 'implicit_input_sharing';
                 conflict = 'requires an explicit host input declaration for sharing';
             } else if (initializerStructure(existing.initializer) !== initializerStructure(definition.initializer)) {
@@ -1273,13 +1281,6 @@ function assembleAstDocumentImports(
                     }
                     names.add(definition.name);
                 }
-                const diagnostic = collectVariableRoleDiagnostics(program)[0];
-                if (diagnostic) {
-                    throw new ModelAssemblyError(diagnostic.message, {
-                        filePath,
-                        diagnostic: {...diagnostic, data: {...diagnostic.data, source_path: filePath}},
-                    });
-                }
             }
             if (program.rootState) {
                 markAuthoredTransitionFiles(program.rootState, filePath);
@@ -1301,6 +1302,15 @@ function assembleAstDocumentImports(
                 hostExplicitDefNames,
                 assembleProgramForFile
             );
+            if (filePath !== rootFile) {
+                const diagnostic = collectVariableRoleDiagnostics(program)[0];
+                if (diagnostic) {
+                    throw new ModelAssemblyError(diagnostic.message, {
+                        filePath,
+                        diagnostic: {...diagnostic, data: {...diagnostic.data, source_path: filePath}},
+                    });
+                }
+            }
             cache.set(filePath, program);
             return cloneAstValue(program);
         } finally {

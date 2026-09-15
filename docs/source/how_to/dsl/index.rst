@@ -607,21 +607,53 @@ mapping validation error. Use ``$0`` for the whole imported name and ``$1`` /
 The rendered target must be a valid DSL identifier, not an empty capture,
 a numeric name, or a reserved keyword such as ``input`` or ``param``.
 
-``var`` is the canonical import mapping keyword; ``def`` remains an explicit
-legacy spelling. Mapping preserves the declaration role: control binds to
-control, input to input, param to param, and output to output. Numeric types
-must also match exactly, including ``int`` versus ``float``. A missing target
-is created with the imported role, type and default; an explicit host target
-keeps its own default. Without an explicit host declaration, imported defaults
-must agree, and inputs cannot implicitly share a target. Declare the
-shared input in the host to bind multiple imports to one input source.
+``var`` is the canonical mapping keyword; ``def`` remains an explicit legacy spelling. Numeric types must match. Child ``input`` may bind to all four parent roles; child ``param`` only to parent ``param``; child ``control/output`` only to parent ``control/output``. A permitted binding adopts the parent role; see :ref:`dsl-import-forms` for the complete result matrix.
 
-These rules apply at every recursive import boundary. Import mappings do not
-connect an output to an input or convert a parameter into mutable state. Such
-connections require separate execution semantics. Multiple output or control
-writers introduce no additional import restriction. In collecting mode, an
-invalid variable binding excludes the affected import from the partial model;
-its diagnostic records the original declarations and import location.
+The parent must explicitly declare a cross-role target. Missing targets retain the child role; implicit same-role sharing requires equal defaults and shared ``input`` requires an explicit declaration. Explicit parent defaults win and multiple legitimate writers introduce no restriction. Reject illegal source read-only writes before mapping. In collect mode a failed variable binding commits neither declarations nor substates from that import; diagnostics retain source files and import locations.
+
+With pyfcstm installed, save ``child.fcstm`` in a working directory:
+
+.. code-block:: fcstm
+
+   input int reading;
+   output int result = 0;
+   state Child { enter { result = reading; } }
+
+Save ``host.fcstm`` beside it, binding the child input to parent control state and internalizing the child output:
+
+.. code-block:: fcstm
+
+   control int cached = 5;
+   control int internal = 0;
+   state Host {
+       import "./child.fcstm" as Child {
+           var reading -> cached;
+           var result -> internal;
+       }
+       [*] -> Child;
+   }
+
+Run this Python code from that directory. It executes in memory and creates no output files:
+
+.. code-block:: python
+
+   from pyfcstm.model import load_state_machine_from_file
+   from pyfcstm.simulate import SimulationRuntime
+
+   model = load_state_machine_from_file("host.fcstm")
+   runtime = SimulationRuntime(model)
+   runtime.cycle()
+   print(runtime.vars["internal"])
+   print(list(model.inputs), list(model.output_variables))
+
+Expected output confirms the value is 5, with no external inputs or system outputs in the final model:
+
+.. code-block:: text
+
+   5
+   [] []
+
+Changing the parent declaration to ``param int internal = 0`` makes the child ``output`` binding fail with ``E_IMPORT_DUPLICATE_MAPPING``; choose a writable parent target. A numeric type mismatch requires correcting the declarations rather than an implicit conversion. Child input bound to mutable parent state reads the latest value in execution order; reverify properties that relied on cycle-frozen child inputs against the assembled model.
 
 Preamble forms such as ``name = value;`` and ``name := value;`` are parser-helper
 entry points used by import assembly tests and helpers. They are not ordinary

@@ -811,9 +811,9 @@ def _strip_ansi(text: str) -> str:
     return _ANSI_RE.sub("", text)
 
 
-def _parse_dsl(dsl_code: str):
+def _parse_dsl(dsl_code: str, path=None):
     ast_node = parse_with_grammar_entry(dsl_code, "state_machine_dsl")
-    return parse_dsl_node_to_state_machine(ast_node)
+    return parse_dsl_node_to_state_machine(ast_node, path=path)
 
 
 def build_state_machine_from_case(case: SemanticCase):
@@ -839,7 +839,7 @@ def build_state_machine_from_case(case: SemanticCase):
         >>> model.root_state.name
         'Root'
     """
-    return _parse_dsl(case.dsl_code)
+    return _parse_dsl(case.dsl_code, path=case.fcstm_path)
 
 
 def _initial_constructor_expect(case: SemanticCase) -> Optional[Mapping[str, Any]]:

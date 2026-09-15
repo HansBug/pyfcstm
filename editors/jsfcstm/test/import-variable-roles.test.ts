@@ -34,7 +34,7 @@ describe('import role preservation', () => {
                 const host = path.join(dir, 'host.fcstm');
                 writeFile(host, declaration(target, 'shared') + ' state Host { import "./child.fcstm" as Child { def value -> shared; } [*] -> Child; }');
                 const snapshot = await new packageModule.FcstmWorkspaceGraph().buildSnapshotForFile(host);
-                assert.equal(snapshot.nodes[host].modelAuthority, source === target ? 'assembled' : 'local');
+                assert.equal(snapshot.nodes[host].modelAuthority, (source === 'input' || source === target || (['control', 'output'].includes(source) && ['control', 'output'].includes(target))) ? 'assembled' : 'local');
             });
         }
     }
@@ -44,7 +44,7 @@ describe('import binding diagnostics', () => {
     it('publishes a role conflict at the import through the public editor API', async () => {
         const {editorModule} = await import('./support');
         const dir = trackTempDir('jsfcstm-import-diagnostic-');
-        writeFile(path.join(dir, 'child.fcstm'), 'input int value; state Child;');
+        writeFile(path.join(dir, 'child.fcstm'), 'control int value = 1; state Child;');
         const host = path.join(dir, 'host.fcstm');
         const source = 'param int shared = 1; state Host { import "./child.fcstm" as Child { var value -> shared; } }';
         writeFile(host, source);
@@ -121,9 +121,9 @@ describe('import binding failures', () => {
     it('publishes a nested conflict against its declaring file', async () => {
         const {editorModule} = await import('./support');
         const dir = trackTempDir('jsfcstm-import-nested-diagnostic-');
-        writeFile(path.join(dir, 'leaf.fcstm'), 'input int value; state Leaf;');
+        writeFile(path.join(dir, 'leaf.fcstm'), 'param int value = 1; state Leaf;');
         const child = path.join(dir, 'child.fcstm');
-        writeFile(child, 'param int shared = 1; state Child { import "./leaf.fcstm" as Leaf { var value -> shared; } }');
+        writeFile(child, 'control int shared = 1; state Child { import "./leaf.fcstm" as Leaf { var value -> shared; } }');
         const host = path.join(dir, 'host.fcstm');
         const source = 'state Host { import "./child.fcstm" as Child; }';
         writeFile(host, source);
@@ -211,8 +211,8 @@ describe('recursive role bindings', () => {
                 const host = path.join(dir, 'host.fcstm');
                 writeFile(host, declaration(target, 'shared') + ' state Host { import "./child.fcstm" as Child { var inner -> shared; } [*] -> Child; }');
                 const snapshot = await new packageModule.FcstmWorkspaceGraph().buildSnapshotForFile(host);
-                assert.equal(snapshot.nodes[host].modelAuthority, source === target ? 'assembled' : 'local');
-                if (source !== target) {
+                assert.equal(snapshot.nodes[host].modelAuthority, (source === 'input' || source === target || (['control', 'output'].includes(source) && ['control', 'output'].includes(target))) ? 'assembled' : 'local');
+                if (!(source === 'input' || source === target || (['control', 'output'].includes(source) && ['control', 'output'].includes(target)))) {
                     assert.equal(snapshot.nodes[host].bindingDiagnostic!.diagnostic.data!.binding_reason, 'role_mismatch');
                 }
             });

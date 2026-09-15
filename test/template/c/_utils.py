@@ -743,12 +743,12 @@ def render_c_runtime(dsl_code):
             runtime.close()
 
 
-def build_c_runtime(dsl_code, initial_state=None, initial_vars=None, parameters=None):
+def build_c_runtime(dsl_code, initial_state=None, initial_vars=None, parameters=None, path=None):
     ast_node = parse_with_grammar_entry(
         textwrap.dedent(dsl_code).strip(),
         entry_name='state_machine_dsl',
     )
-    model = parse_dsl_node_to_state_machine(ast_node)
+    model = parse_dsl_node_to_state_machine(ast_node, path=path)
 
     tempdir = TemporaryDirectory()
     template_dir = extract_template('c', tempdir.name)

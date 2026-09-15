@@ -1,0 +1,28 @@
+title: Imported input uses final input int semantics
+origin:
+  files:
+  - test/model/test_import_role_bindings.py
+categories:
+- runtime
+- variable_roles
+steps:
+- cycle: []
+  expect:
+    state: Root.A
+    outputs:
+      A_entered: 3
+      A_exited: 0
+      B_entered: 0
+      B_exited: 0
+  inputs:
+    shared: 3
+- cycle: []
+  expect:
+    state: Root.B
+    outputs:
+      A_entered: 3
+      A_exited: 4
+      B_entered: 4
+      B_exited: 0
+  inputs:
+    shared: 4

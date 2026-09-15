@@ -171,7 +171,7 @@ _WRAPPER_NAMESPACE_SUFFIX = {"cpp": "cpp", "cpp_poll": "cpp_poll"}
 
 def _parse_model(case: SemanticCase):
     ast_node = parse_with_grammar_entry(case.dsl_code, "state_machine_dsl")
-    return parse_dsl_node_to_state_machine(ast_node)
+    return parse_dsl_node_to_state_machine(ast_node, path=case.fcstm_path)
 
 
 def _state_rows(model) -> List[Dict[str, Any]]:

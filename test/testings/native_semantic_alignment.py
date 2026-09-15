@@ -449,7 +449,7 @@ class _GeneratedNativeAlignmentRuntime:
 def _build_native_runtime(runner: str, case: SemanticCase) -> Any:
     native_utils = _native_utils_for_runner(runner)
     return native_utils.build_c_runtime(
-        case.dsl_code, parameters=case.data.get("parameters"),
+        case.dsl_code, parameters=case.data.get("parameters"), path=case.fcstm_path,
         **simulate_semantics._initial_kwargs(case)
     )
 

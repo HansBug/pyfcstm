@@ -667,7 +667,7 @@ def test_native_collection_keeps_the_generated_runtime_fixture_contract(monkeypa
     name, values, ids = recorded[0]
     assert name == "native_semantic_case_id"
     assert values == ids
-    assert len(values) == 213
+    assert len(values) == 222
     assert "design_basic_simple_transition" in values
     assert "input_calculation" in values
     assert "parameter_defaults_with_initial_values" in values

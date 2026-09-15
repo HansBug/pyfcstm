@@ -79,6 +79,11 @@ def float temperature = 25.5;           // Float with decimal
 def float ratio = 3.14e-5;              // Float with scientific notation
 def float pi_value = 3.14159;           // Float literal
 
+control int control_count = 0;
+input int input_value;
+param int param_limit = 4;
+output int output_result = 0;
+
 // Math constants (math_const)
 def float pi_const = pi;
 def float e_const = E;
@@ -334,7 +339,7 @@ state System named "System State Machine" {
 
         // Import with block and every mapping form the grammar accepts
         import "./modules/worker.fcstm" as Worker named "Worker Module" {
-            def counter -> shared_counter;
+            var counter -> shared_counter;
             def {status_flag, a, b, c} -> set_*;
             def sensor_* -> sensor_$1;
             def a_*_b_* -> pair_${1}_${2}_${0};
@@ -436,6 +441,11 @@ SHARED_CHECKPOINT_SPECS: List[Dict[str, Any]] = [
             SharedExpectation('pseudo', Token.Keyword.Declaration, 'keywords', 'keyword.control.fcstm'),
             SharedExpectation('named', Token.Keyword.Declaration, 'keywords', 'keyword.control.fcstm'),
             SharedExpectation('def', Token.Keyword.Declaration, 'keywords', 'keyword.control.fcstm'),
+            SharedExpectation('control', Token.Keyword.Declaration, 'keywords', 'keyword.control.fcstm'),
+            SharedExpectation('input', Token.Keyword.Declaration, 'keywords', 'keyword.control.fcstm'),
+            SharedExpectation('param', Token.Keyword.Declaration, 'keywords', 'keyword.control.fcstm'),
+            SharedExpectation('output', Token.Keyword.Declaration, 'keywords', 'keyword.control.fcstm'),
+            SharedExpectation('var', Token.Keyword.Declaration, 'keywords', 'keyword.control.fcstm'),
             SharedExpectation('event', Token.Keyword.Declaration, 'keywords', 'keyword.control.fcstm'),
         ],
     },
@@ -659,6 +669,8 @@ SHARED_CHECKPOINT_SPECS: List[Dict[str, Any]] = [
         'name': 'Import Block - Templates and Selectors',
         'description': 'wildcard selectors and target templates in import mappings',
         'items': [
+            SharedExpectation('var', Token.Keyword.Declaration, 'import-body', 'keyword.control.fcstm'),
+            SharedExpectation('def', Token.Keyword.Declaration, 'import-body', 'keyword.control.fcstm'),
             SharedExpectation('sensor_*', Token.Name.Variable, 'import-body', 'variable.parameter.fcstm'),
             SharedExpectation('a_*_b_*', Token.Name.Variable, 'import-body', 'variable.parameter.fcstm'),
             SharedExpectation('set_*', Token.Name.Variable, 'import-body', 'variable.parameter.fcstm'),

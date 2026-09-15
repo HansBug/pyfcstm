@@ -39,7 +39,16 @@ state_machine_dsl
 
 // Top-level variable definitions that appear before the root state.
 def_assignment
-    : leading_doc=MULTILINE_COMMENT? DEF deftype=(INT_TYPE | FLOAT_TYPE) ID ASSIGN init_expression SEMI
+    : leading_doc=MULTILINE_COMMENT? variable_declaration deftype=(INT_TYPE | FLOAT_TYPE) var_name=ID
+      (ASSIGN init_expression)? SEMI
+    ;
+
+variable_declaration
+    : DEF
+    | CONTROL
+    | INPUT
+    | PARAM
+    | OUTPUT
     ;
 
 // State-machine structural rules.
@@ -214,13 +223,13 @@ import_statement
     ;
 
 import_mapping_statement
-    : import_def_mapping
+    : import_variable_mapping
     | import_event_mapping
     | SEMI
     ;
 
-import_def_mapping
-    : DEF import_def_selector ARROW import_def_target_template SEMI
+import_variable_mapping
+    : keyword=(VAR | DEF) import_def_selector ARROW import_def_target_template SEMI
     ;
 
 import_def_selector

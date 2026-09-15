@@ -201,3 +201,11 @@
 5. 如果热启动失败，先检查是否提供了所有变量和结构深度；若首周期得到 Delta，检查目标是否确实需要事件或存在稳定无进展边界。
 
 不要把仿真输出当作目标运行时测试的替代品。它是快速模型级检查；依赖目标语言行为时，还应搭配生成运行时测试。
+
+绑定自定义环境输入源
+--------------------
+
+通过 ``SimulationRuntime(..., input_source=...)`` 绑定外部数值输入。
+单值生成器可继承 ``BaseScalarInputPattern`` 并实现 ``_sample(step)``，相关向量可使用
+``BaseIntegratedInputPattern``。可运行示例及采样、覆盖、耗尽和错误契约见
+:doc:`../../reference/simulation/inputs_zh`。

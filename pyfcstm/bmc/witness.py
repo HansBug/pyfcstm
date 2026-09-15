@@ -59,6 +59,8 @@ from typing import (
     Optional,
     Sequence,
     Tuple,
+    Set,
+    Union,
     cast,
 )
 
@@ -86,7 +88,7 @@ from .explanation import (
 )
 from .properties import BmcPropertyFormula, _lower_predicate
 from .query import EventAssumption
-from .relation import BmcCaseRelation
+from .relation import BmcCaseRelation, _assumption_input_names
 from .slicing import ConeSlice
 from .solver import (
     SOLVER_PROFILES,
@@ -96,12 +98,14 @@ from .solver import (
     _check_with_budget,
     _solver_for_profile,
 )
-from pyfcstm.model import OnAspect, OnStage, StateMachine
+from pyfcstm.dsl.role import VariableRole
+from pyfcstm.model import Expr, OnAspect, OnStage, StateMachine
 from pyfcstm.simulate import (
     ReadOnlyExecutionContext,
     SimulationRuntime,
     SimulationRuntimeExpressionError,
 )
+from pyfcstm.simulate.inputs import ReplayInputPattern
 
 if TYPE_CHECKING:  # pragma: no cover - annotation-only imports
     from .explanation import BmcInfeasibilityExplanation
@@ -3915,14 +3919,28 @@ class BmcWitnessStep(_PrettyPrintableMixin):
         selected macro path. ``None`` derives the value from ``input_events``
         and ``consumed_events``, defaults to ``None``.
     :type unconsumed_events: Sequence[str], optional
+    :param inputs: Complete input snapshot the selected case read,
+        keyed by declared input name.  Steps whose source frame is
+        already terminated carry an empty mapping because no environment
+        sampling happens after termination, defaults to ``None`` (coerced to
+        an empty mapping).
+    :type inputs: Mapping[str, Union[int, float]], optional
+    :param input_reads: Input names actually referenced by the
+        selected case's guards and actions, in declaration order without
+        duplicates.  This is provenance for which symbolic reads the case
+        performed, not a claim that replay independently verified the read
+        set, defaults to ``None`` (coerced to an empty tuple).
+    :type input_reads: Sequence[str], optional
     :raises pyfcstm.bmc.errors.BmcBuildError: If the step payload is
-        malformed.
+        malformed
 
     Example::
 
         >>> step = BmcWitnessStep(0, 0, 1, 'Root::fallback::Root::0', 'fallback', 'fallback_gamma', 'Root', 'Root', False, True)
         >>> step.to_canonical()['progress']
         'fallback_gamma'
+        >>> step.to_canonical()['inputs']
+        {}
     """
 
     index: int
@@ -3940,6 +3958,8 @@ class BmcWitnessStep(_PrettyPrintableMixin):
     abstract_calls: Sequence[BmcWitnessCallRecord] = ()
     consumed_events: Sequence[str] = ()
     unconsumed_events: Optional[Sequence[str]] = None
+    inputs: Mapping[str, Union[int, float]] = None
+    input_reads: Sequence[str] = None
 
     def __post_init__(self) -> None:
         for field_name in ("index", "source_frame", "target_frame"):
@@ -4032,10 +4052,33 @@ class BmcWitnessStep(_PrettyPrintableMixin):
                     "strings",
                 ),
             )
-        if tuple(self.unconsumed_events) != expected_unconsumed:
-            raise BmcBuildError(
-                "unconsumed_events must equal input events minus consumed events."
-            )
+            if tuple(self.unconsumed_events) != expected_unconsumed:
+                raise BmcBuildError(
+                    "unconsumed_events must equal input events minus consumed events."
+                )
+        object.__setattr__(
+            self,
+            "inputs",
+            _coerce_public_value_mapping(
+                "inputs", {} if self.inputs is None else self.inputs
+            ),
+        )
+        object.__setattr__(
+            self,
+            "input_reads",
+            _coerce_public_sequence(
+                "input_reads",
+                () if self.input_reads is None else self.input_reads,
+                str,
+                "strings",
+            ),
+        )
+        if self.case_kind == "absorb" and (self.inputs or self.input_reads):
+            raise BmcBuildError("absorb steps must have empty inputs and input_reads.")
+        if len(set(self.input_reads)) != len(self.input_reads):
+            raise BmcBuildError("input_reads must not contain duplicates.")
+        if any(name not in self.inputs for name in self.input_reads):
+            raise BmcBuildError("input_reads must reference decoded inputs.")
 
     @property
     def input_event_paths(self) -> Tuple[str, ...]:
@@ -4080,6 +4123,8 @@ class BmcWitnessStep(_PrettyPrintableMixin):
             "abstract_calls": [item.to_canonical() for item in self.abstract_calls],
             "consumed_events": list(self.consumed_events),
             "unconsumed_events": list(self.unconsumed_events),
+            "inputs": dict(self.inputs),
+            "input_reads": list(self.input_reads),
         }
 
 
@@ -4349,6 +4394,9 @@ class BmcRuntimeStep(_PrettyPrintableMixin):
     :type abstract_calls: Sequence[BmcWitnessCallRecord]
     :param delta: Runtime Delta observation, defaults to ``False``.
     :type delta: bool, optional
+    :param inputs: Runtime input snapshot committed by this step's
+        cycle, defaults to ``None`` (coerced to an empty mapping).
+    :type inputs: Mapping[str, Union[int, float]], optional
     :raises pyfcstm.bmc.errors.BmcBuildError: If the runtime-step payload is
         malformed.
 
@@ -4364,6 +4412,7 @@ class BmcRuntimeStep(_PrettyPrintableMixin):
     unconsumed_events: Sequence[str]
     abstract_calls: Sequence[BmcWitnessCallRecord]
     delta: bool = False
+    inputs: Mapping[str, Union[int, float]] = None
 
     def __post_init__(self) -> None:
         if (
@@ -4403,6 +4452,13 @@ class BmcRuntimeStep(_PrettyPrintableMixin):
                 "BmcWitnessCallRecord objects",
             ),
         )
+        object.__setattr__(
+            self,
+            "inputs",
+            _coerce_public_value_mapping(
+                "inputs", {} if self.inputs is None else self.inputs
+            ),
+        )
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable runtime step.
@@ -4422,6 +4478,7 @@ class BmcRuntimeStep(_PrettyPrintableMixin):
             "unconsumed_events": list(self.unconsumed_events),
             "abstract_calls": [item.to_canonical() for item in self.abstract_calls],
             "delta": self.delta,
+            "inputs": dict(self.inputs),
         }
 
 
@@ -5581,8 +5638,13 @@ def _frame_for_index(
 ) -> BmcWitnessFrame:
     core = formula.core
     state_id = _z3_int_value(model, core.symbols.frame_state(index))
+    persistent_names = set(core.context.domain.persistent_variable_names)
     variables = {}
     for var in core.context.domain.variables:
+        if var.name not in persistent_names:
+            # Inputs live in ``steps[i].inputs`` and parameters in
+            # ``initial.parameters``; frames expose only control/output state.
+            continue
         variables[var.name] = _z3_number_value(
             model, core.symbols.frame_var(index, var.name), var.declared_type
         )
@@ -5864,6 +5926,47 @@ def _decode_calls(
     return tuple(calls)
 
 
+def _collect_expr_variable_names(expr: Expr, found: Set[str]) -> None:
+    """Collect referenced variables using the model expression traversal."""
+    if isinstance(expr, Expr):
+        found.update(variable.name for variable in expr.list_variables())
+
+
+def _collect_statement_variable_names(statement: Any, found: Set[str]) -> None:
+    """Collect variable names referenced by one operation statement."""
+    if hasattr(statement, "expr"):
+        _collect_expr_variable_names(statement.expr, found)
+    for branch in getattr(statement, "branches", ()) or ():
+        _collect_expr_variable_names(branch.condition, found)
+        for nested in branch.statements:
+            _collect_statement_variable_names(nested, found)
+
+
+def _case_input_reads(
+    case: Any, input_names: Sequence[str]
+) -> Tuple[str, ...]:
+    """Return inputs the case's guards/actions reference.
+
+    The result follows declaration order and carries no duplicates.  This is
+    read-evidence provenance for the selected case; it does not claim that
+    replay independently rebuilt and verified the symbolic read set.
+
+    :param case: Selected ``CycleCase``.
+    :param input_names: Declared input names in order.
+    :return: Referenced input names in declaration order.
+    :rtype: Tuple[str, ...]
+    """
+    if not input_names:
+        return ()
+    found: Set[str] = set()
+    for requirement in case.guard_requirements:
+        _collect_expr_variable_names(requirement.expr, found)
+    for block in case.action_blocks:
+        for statement in block.operations:
+            _collect_statement_variable_names(statement, found)
+    return tuple(name for name in input_names if name in found)
+
+
 def _decode_step(
     formula: BmcPropertyFormula,
     model: z3.ModelRef,
@@ -5884,6 +5987,42 @@ def _decode_step(
     )
     source = frames[step_index]
     target = frames[step_index + 1]
+    domain = formula.core.context.domain
+    input_names = domain.input_names
+    if source.terminated:
+        # No environment sampling happens once the machine has terminated;
+        # post-termination absorb steps carry empty inputs.
+        step_inputs: Dict[str, Union[int, float]] = {}
+        input_reads: Tuple[str, ...] = ()
+    else:
+        declared_types = {var.name: var.declared_type for var in domain.variables}
+        step_inputs = {
+            name: _z3_number_value(
+                model,
+                formula.core.symbols.step_input(step_index, name),
+                declared_types[name],
+            )
+            for name in input_names
+        }
+        reads = set(_case_input_reads(relation.case, input_names))
+        # Fallback/Delta conditions also read guards of rejected candidates;
+        # those guards live in the lowered acceptance dependency formula.
+        condition_symbols = {
+            symbol.get_id() for symbol in z3.z3util.get_vars(relation.antecedent)
+        }
+        reads.update(
+            name
+            for name, symbol in formula.core.symbols.step_inputs[step_index].items()
+            if symbol.get_id() in condition_symbols
+        )
+        for index, assumption in enumerate(
+            formula.core.context.bound_query.assumptions
+        ):
+            if assumption.kind == "frame" and (
+                assumption.source.kind == "always" or assumption.frame == step_index
+            ):
+                reads.update(_assumption_input_names(formula.core.context, index))
+        input_reads = tuple(name for name in input_names if name in reads)
     return BmcWitnessStep(
         index=step_index,
         source_frame=step_index,
@@ -5900,21 +6039,33 @@ def _decode_step(
         abstract_calls=_decode_calls(formula, model, relation),
         consumed_events=consumed_events,
         unconsumed_events=unconsumed_events,
+        inputs=step_inputs,
+        input_reads=input_reads,
     )
 
 
 def _initial_metadata(
-    formula: BmcPropertyFormula, frames: Sequence[BmcWitnessFrame]
+    formula: BmcPropertyFormula,
+    model: z3.ModelRef,
+    frames: Sequence[BmcWitnessFrame],
 ) -> _CanonicalDict:
     initial = formula.core.context.bound_query.initial.source
     if not frames:
         raise _internal_error("Decoded witness trace has no frames.")
     first = frames[0]
+    parameters: Dict[str, Union[int, float]] = {}
+    for var in formula.core.context.domain.variables:
+        if var.role != VariableRole.PARAM:
+            continue
+        parameters[var.name] = _z3_number_value(
+            model, formula.core.symbols.parameter(var.name), var.declared_type
+        )
     return {
         "mode": initial.mode,
         "state": first.state,
         "sentinel": first.sentinel,
         "vars": dict(sorted(first.vars.items())),
+        "parameters": dict(sorted(parameters.items())),
     }
 
 
@@ -5951,7 +6102,7 @@ def _decode_witness_trace(
     trace = BmcWitnessTrace(
         property=prop,
         solver=solver_metadata,
-        initial=_initial_metadata(checked, frames),
+        initial=_initial_metadata(checked, checked_model, frames),
         frames=frames,
         steps=steps,
         diagnostics=checked.diagnostics,
@@ -6452,6 +6603,20 @@ def _compare_step(
                 "unconsumed events mismatch",
             )
         )
+    common_input_names = _compare_mapping_keys(
+        mismatches,
+        "steps[%d].inputs" % witness.index,
+        witness.inputs,
+        runtime.inputs,
+        "input key set mismatch",
+    )
+    for name in common_input_names:
+        _compare_values(
+            mismatches,
+            "steps[%d].inputs.%s" % (witness.index, name),
+            witness.inputs[name],
+            runtime.inputs[name],
+        )
     _compare_calls(
         mismatches, witness.index, witness.abstract_calls, runtime.abstract_calls
     )
@@ -6509,6 +6674,35 @@ def _compare_trace_shape(
             )
 
 
+def _validate_replay_bindings(values, defines, path):
+    """Reject incomplete or wrong-role concrete replay snapshots."""
+    values = _coerce_public_value_mapping(path, values)
+    if set(values) != set(defines):
+        raise BmcBuildError("%s must contain exactly the declared names." % path)
+    for name, define in defines.items():
+        value = values[name]
+        if define.type == "int" and not isinstance(value, int):
+            raise BmcBuildError("%s.%s must be an int." % (path, name))
+
+
+def _validate_replay_roles(model: StateMachine, witness: BmcWitnessTrace) -> None:
+    """Validate role-dependent payloads before constructing any input source."""
+    _validate_replay_bindings(
+        witness.initial.get("parameters", {}), model.parameters, "initial.parameters"
+    )
+    for step in witness.steps:
+        # Shape mismatches are reported by the existing trace comparison; do
+        # not index an invalid source frame while validating role snapshots.
+        ended = step.case_kind == "absorb"
+        defines = {} if ended else model.inputs
+        _validate_replay_bindings(step.inputs, defines, "steps[%d].inputs" % step.index)
+        expected_reads = tuple(
+            name for name in model.inputs if name in step.input_reads
+        )
+        if tuple(step.input_reads) != expected_reads:
+            raise BmcBuildError("input_reads must follow model declaration order.")
+
+
 def _initial_runtime(
     state_machine: StateMachine, witness: BmcWitnessTrace
 ) -> Optional[SimulationRuntime]:
@@ -6519,12 +6713,30 @@ def _initial_runtime(
     initial_state = (
         first.state if first is not None and first.sentinel is None else None
     )
+    # Witness-decoded parameters are always complete for role-aware models;
+    # hot start requires the full mapping while cold start fills defaults.
+    parameters = dict(witness.initial.get("parameters") or ()) or None
+    input_source = (
+        ReplayInputPattern(
+            [step.inputs for step in witness.steps if step.case_kind != "absorb"],
+            input_names=tuple(state_machine.inputs),
+        )
+        if state_machine.inputs
+        else None
+    )
     if initial_state is None:
-        return SimulationRuntime(state_machine, initial_vars=initial_vars)
+        return SimulationRuntime(
+            state_machine,
+            initial_vars=initial_vars,
+            parameters=parameters,
+            input_source=input_source,
+        )
     return SimulationRuntime(
         state_machine,
         initial_state=initial_state,
         initial_vars=initial_vars,
+        parameters=parameters,
+        input_source=input_source,
     )
 
 
@@ -6571,6 +6783,7 @@ def replay_bmc_witness(
         raise BmcBuildError("witness must be BmcWitnessTrace.")
     if abstract_handlers is not None and not isinstance(abstract_handlers, Mapping):
         raise BmcBuildError("abstract_handlers must be a mapping or None.")
+    _validate_replay_roles(state_machine, witness)
     runtime = _initial_runtime(state_machine, witness)
     recorder = _HandlerCallRecorder(_abstract_call_role_resolver(state_machine))
     frames = []
@@ -6604,6 +6817,7 @@ def replay_bmc_witness(
     for step in witness.steps:
         call_start = len(recorder.calls)
         recorder.begin_step()
+        was_ended = runtime.is_ended
         result = runtime.cycle(step.input_event_paths)
         recorder.end_step()
         step_calls = tuple(
@@ -6626,9 +6840,23 @@ def replay_bmc_witness(
             unconsumed_events=result.unconsumed_events,
             abstract_calls=step_calls,
             delta=result.delta,
+            inputs=dict(result.inputs),
         )
         steps.append(runtime_step)
         _compare_step(mismatches, step, runtime_step)
+        if not was_ended:
+            for label, snapshot in (
+                ("last_inputs", runtime.last_inputs or {}),
+                ("history.inputs", runtime.history[-1].get("inputs", {})),
+            ):
+                path = "steps[%d].%s" % (step.index, label)
+                names = _compare_mapping_keys(
+                    mismatches, path, step.inputs, snapshot, "input key set mismatch"
+                )
+                for name in names:
+                    _compare_values(
+                        mismatches, path + "." + name, step.inputs[name], snapshot[name]
+                    )
         runtime_frame = _runtime_frame(runtime, step.target_frame)
         frames.append(runtime_frame)
         if step.target_frame < len(witness.frames):

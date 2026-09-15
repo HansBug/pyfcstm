@@ -1,0 +1,3 @@
+param int gain = 3;
+control int count = 1; output int reading = 3;
+state Root { state Ready { during { count = count + 1; reading = count * gain; } } [*] -> Ready; }

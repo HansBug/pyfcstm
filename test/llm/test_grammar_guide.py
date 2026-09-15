@@ -288,6 +288,8 @@ def test_grammar_guide_prompt_metadata_is_deterministic():
         "## Documentation Blocks",
         "## Top-Level Structure",
         "## State Definitions",
+        "## Variable Roles",
+        "## Import variable roles",
         "## Transitions",
         "## Nested State Targets",
         "## Events",

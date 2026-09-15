@@ -1,0 +1,27 @@
+title: input lifecycle and effect
+origin:
+  files:
+  - test/simulate/test_runtime_inputs.py
+categories:
+- runtime
+- variable_roles
+- inputs
+steps:
+- cycle: []
+  inputs:
+    command: 1
+  expect:
+    vars:
+      total: 1
+    outputs:
+      result: 0
+    state: Root.Ready
+- cycle: []
+  inputs:
+    command: 3
+  expect:
+    vars:
+      total: 4
+    outputs:
+      result: 10
+    state: Root.Done

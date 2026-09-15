@@ -19,6 +19,7 @@ from test.testings.simulate_semantics import (
 # cycle call. Keep this table independent from both YAML and Runtime output so
 # drift is reported instead of becoming self-consistent.
 EXPECTED_DELTA_STEP_SEQUENCES = {
+    "input_unblocks_hot_composite": ((True,), (False,)),
     "design_composite_stuck_in_init_wait": ((True,), (True,), (True,)),
     "design_post_child_exit_without_follow_up": ((True,), (True,), (True,)),
     "failed_initial_cycle_preserves_root_entry_lifecycle": ((True,), (False,)),
@@ -42,7 +43,7 @@ EXPECTED_DELTA_STEP_SEQUENCES = {
 def test_all_semantic_fixtures_load():
     cases = iter_semantic_cases()
 
-    assert len(cases) == 205
+    assert len(cases) == 222
     assert {case.id for case in cases}
 
 
@@ -59,8 +60,8 @@ def test_full_fixture_runtime_scan_finds_exact_delta_cohort():
         original_cycle = runtime.cycle
         observed_deltas = []
 
-        def cycle(events=None):
-            result = original_cycle(events)
+        def cycle(events=None, **kwargs):
+            result = original_cycle(events, **kwargs)
             observed_deltas.append(result.delta)
             return result
 
@@ -176,9 +177,9 @@ def test_delta_cohort_yaml_matches_independent_truth_ledger():
         for sequences in observed_case_sequences.values()
         for step_sequence in sequences
     )
-    assert yaml_step_count == 18
-    assert (true_count, false_count) == (13, 5)
-    assert actual_call_count == 20
+    assert yaml_step_count == 20
+    assert (true_count, false_count) == (14, 6)
+    assert actual_call_count == 22
 
 
 @pytest.mark.unittest
@@ -201,6 +202,7 @@ def test_delta_cohort_runtime_matches_independent_truth_ledger():
             events = simulate_semantics._step_events(
                 cycle_input, runtime, case, "steps[%d]" % step_index
             )
+            runtime._fixture_input_source.snapshot = dict(step.get("inputs", {}))
             step_values = []
             for _ in range(cycle_count):
                 result = runtime.cycle(events)
@@ -298,7 +300,7 @@ def test_semantic_fixture_assertion_families_are_executable():
                 covered.add("current_state")
             if any(
                 field in expect
-                for field in ("vars", "vars_exact", "vars_keys", "vars_absent")
+                for field in ("vars", "outputs")
             ):
                 covered.add("vars")
             cycle_count = step.get("cycle_count", 1)
@@ -709,25 +711,25 @@ def _shared_case_data():
             lambda data: data["steps"][0]["expect"].update(
                 {"vars": {"x": 1}, "vars_exact": {"x": 1}}
             ),
-            "vars and vars_exact conflict",
+            "unknown fields",
         ),
         (
             lambda data: data["steps"][0]["expect"].update(
                 {"vars_exact": {"x": 1}, "vars_keys": ["x"]}
             ),
-            "vars_exact and vars_keys conflict",
+            "unknown fields",
         ),
         (
             lambda data: data["steps"][0]["expect"].update(
                 {"vars_exact": {"x": 1}, "vars_absent": ["tmp"]}
             ),
-            "vars_exact and vars_absent conflict",
+            "unknown fields",
         ),
         (
             lambda data: data["steps"][0]["expect"].update(
                 {"vars_keys": ["tmp"], "vars_absent": ["tmp"]}
             ),
-            "vars_keys and vars_absent overlap",
+            "unknown fields",
         ),
         (
             lambda data: data["steps"][0]["expect"].update({"state": ["Root", "A"]}),
@@ -1186,7 +1188,7 @@ def test_shared_fixture_corpus_uses_public_observation_fields():
     assert top_level_hits == set()
     assert observation_hits == set()
     assert initial_hits == set()
-    assert [case.id for case in cases if case.runners == ("simulation",)] == []
+    assert all("generated_python_alignment" in case.runners for case in cases)
 
 
 @pytest.mark.unittest
@@ -1202,7 +1204,8 @@ def test_shared_fixture_corpus_satisfies_current_contract():
     assert all("source" not in case.data for case in cases)
     assert all("runners" not in case.data for case in cases)
     assert all(
-        case.runners == ("simulation", "generated_python_alignment") for case in cases
+        case.runners == ("simulation", "generated_python_alignment")
+        for case in cases
     )
     assert all(
         set(case.data.get("exclude_runners") or ()) <= {BMC_CORE_RUNNER}
@@ -1243,3 +1246,149 @@ def test_semantic_fixture_schema_reports_case_id_and_path(tmp_path):
     message = str(exc_info.value)
     assert "bad" in message
     assert os.path.abspath(yaml_path) in message
+
+
+@pytest.mark.unittest
+def test_numeric_input_fixture_runs_fixed_parameters_and_repeated_inputs(tmp_path):
+    data = {
+        'title': 'Sample external values with fixed parameters',
+        'origin': {'files': ['test/simulate/test_runtime_inputs.py']},
+        'categories': ['runtime'],
+        'exclude_runners': ['generated_python_alignment', 'bmc_core'],
+        'parameters': {'gain': 3},
+        'steps': [
+            {'cycle': [], 'inputs': {'sensor': 2}, 'cycle_count': 2,
+             'expect': {'outputs': {'result': 6}}},
+            {'cycle': [], 'inputs': {'sensor': 4},
+             'expect': {'outputs': {'result': 12}}},
+        ],
+    }
+    path = _write_fixture(tmp_path, data, '''input int sensor; param int gain = 2;
+    output int result = 0;
+    state Root { state Ready { during { result = sensor * gain; } } [*] -> Ready; }''')
+    run_simulation_case(load_semantic_case(path))
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("hot", [False, True])
+def test_role_fixture_initial_values_and_sparse_observations(tmp_path, hot):
+    data = _valid_case_data()
+    data["parameters"] = {"gain": 3}
+    data["initial"] = {"vars": {"count": 7}, "outputs": {"reading": 11}}
+    if hot:
+        data["initial"]["state"] = "Root.Ready"
+    data["steps"] = [
+        {"cycle_count": 0, "expect": {"vars": {"count": 7}, "outputs": {"reading": 11}}},
+        {"cycle": [], "expect": {"vars": {"count": 8}, "outputs": {"reading": 24}}},
+    ]
+    dsl = """param int gain = 2; control int count = 0; output int reading = 0;
+    state Root { state Ready { during { count = count + 1; reading = count * gain; } }
+    [*] -> Ready; }"""
+    run_simulation_case(load_semantic_case(_write_fixture(tmp_path, data, dsl)))
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("field", ["inputs", "parameters", "vars_exact", "vars_keys", "vars_absent", "outputs_exact"])
+def test_role_fixture_rejects_nonsemantic_expectations(tmp_path, field):
+    data = _valid_case_data()
+    data["steps"][0]["expect"][field] = {}
+    with pytest.raises(SemanticCaseError, match="unknown fields"):
+        load_semantic_case(_write_fixture(tmp_path, data))
+
+
+@pytest.mark.unittest
+def test_role_fixture_rejects_nested_parameters(tmp_path):
+    data = _valid_case_data()
+    data["initial"] = {"parameters": {"gain": 3}}
+    with pytest.raises(SemanticCaseError, match="unknown fields"):
+        load_semantic_case(_write_fixture(tmp_path, data))
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("field", ["vars", "outputs"])
+def test_role_fixture_sparse_assertion_rejects_wrong_values_and_roles(tmp_path, field):
+    data = _valid_case_data()
+    dsl = '''control int count = 1; control int unused = 9;
+    output int reading = 2; output int extra = 8;
+    state Root { state Ready; [*] -> Ready; }'''
+    name = "count" if field == "vars" else "reading"
+    data["steps"] = [{"cycle_count": 0, "expect": {field: {name: 1 if field == "vars" else 2}}}]
+    run_simulation_case(load_semantic_case(_write_fixture(tmp_path, data, dsl)))
+    data["steps"][0]["expect"][field][name] = 999
+    with pytest.raises(AssertionError, match="mismatch"):
+        run_simulation_case(load_semantic_case(_write_fixture(tmp_path, data, dsl)))
+    data["steps"][0]["expect"][field] = {"reading" if field == "vars" else "count": 2}
+    with pytest.raises(AssertionError, match="is not a"):
+        run_simulation_case(load_semantic_case(_write_fixture(tmp_path, data, dsl)))
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("initial", [{"vars": {"reading": 1}}, {"outputs": {"count": 2}}])
+def test_role_fixture_rejects_initial_values_in_wrong_partition(tmp_path, initial):
+    data = _valid_case_data()
+    data["initial"] = initial
+    dsl = "control int count = 0; output int reading = 0; state Root;"
+    with pytest.raises(SemanticCaseError, match="wrong-role"):
+        run_simulation_case(load_semantic_case(_write_fixture(tmp_path, data, dsl)))
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("inputs", [{}, {"sensor": 2, "extra": 3}])
+def test_role_fixture_requires_complete_model_input_frame(tmp_path, inputs):
+    data = _valid_case_data()
+    data["steps"] = [{"cycle": [], "inputs": inputs, "expect": {"outputs": {"result": 2}}}]
+    dsl = "input int sensor; output int result = 0; state Root { during { result = sensor; } }"
+    with pytest.raises(SemanticCaseError, match="exactly the model inputs"):
+        run_simulation_case(load_semantic_case(_write_fixture(tmp_path, data, dsl)))
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("mutate", [
+    lambda data: data.update(parameters=[]),
+    lambda data: data.update(initial={"outputs": []}),
+    lambda data: data["steps"][0]["expect"].update(outputs=[]),
+    lambda data: data["steps"][0].update(inputs=[]),
+    lambda data: data["steps"][0].update(cycle_count=0, inputs={}),
+    lambda data: data["steps"][0].update(parameters={}),
+    lambda data: data["steps"][0].update(input_overrides={}),
+])
+def test_role_fixture_rejects_malformed_or_misplaced_fields(tmp_path, mutate):
+    data = _valid_case_data()
+    mutate(data)
+    with pytest.raises(SemanticCaseError):
+        load_semantic_case(_write_fixture(tmp_path, data))
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("case", iter_semantic_cases(), ids=lambda case: case.id)
+def test_fixture_runtime_persistent_keys_do_not_leak_temporaries(case):
+    if simulate_semantics._initial_constructor_expect(case) is not None:
+        return
+    runtime = simulate_semantics._build_simulation_runtime(case)
+    calls = simulate_semantics._register_fixture_handlers(runtime, case)
+    expected_names = set(runtime.state_machine.persistent_variables)
+    assert set(runtime.vars) == expected_names
+    for index, step in enumerate(case.data["steps"]):
+        simulate_semantics._run_step(runtime, step, case, index, handler_calls=calls)
+        assert set(runtime.vars) == expected_names
+
+
+@pytest.mark.unittest
+def test_role_fixture_cold_output_override_preserves_other_defaults(tmp_path):
+    data = _valid_case_data()
+    data["initial"] = {"outputs": {"reading": 11}}
+    data["steps"] = [{"cycle_count": 0, "expect": {"vars": {"count": 7}, "outputs": {"reading": 11}}}]
+    dsl = "control int count = 7; output int reading = 0; state Root;"
+    run_simulation_case(load_semantic_case(_write_fixture(tmp_path, data, dsl)))
+
+
+@pytest.mark.unittest
+def test_role_fixture_hot_start_missing_parameter_is_constructor_failure(tmp_path):
+    data = _valid_case_data()
+    data["initial"] = {
+        "state": "Root.Ready", "outputs": {"reading": 11},
+        "expect": {"raises": {"type": "ValueError", "match": "parameters", "match_kind": "substring"}},
+    }
+    data["steps"] = []
+    dsl = "param int gain = 2; output int reading = 0; state Root { state Ready; [*] -> Ready; }"
+    run_simulation_case(load_semantic_case(_write_fixture(tmp_path, data, dsl)))

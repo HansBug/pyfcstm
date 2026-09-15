@@ -1,22 +1,8 @@
-# python template maintainer handbook
+# python template maintainer guide
 
-`python` is the built-in template that emits a native Python state-machine
-runtime for one FCSTM model. This file is the maintainer-facing handbook for the
-template source under `templates/python/`; it is not copied to generated output.
-The generated user guide is produced from `README.md.j2` / `README_zh.md.j2`.
+This guide is for changing the `python` template. Downstream integration belongs in `README.md.j2` / `README_zh.md.j2`; the root [template handbook](../README.md) owns renderer, metadata and packaging contracts. Read the source map, preserve the behavior below, then select the checks for your change.
 
-## Target and non-targets
-
-Use this template when the desired output is an importable, dependency-free
-Python runtime that can be embedded into applications, tests, examples, or
-small automation scripts.
-
-This template is not the simulator implementation and should not depend on the
-`pyfcstm` runtime package after generation. It should also avoid becoming a
-large framework around generated code: downstream users should change the FCSTM
-DSL and regenerate instead of maintaining hand-edited generated runtime logic.
-
-## Source layout and generated output
+## Source map and change ownership
 
 | Template source | Maintainer role | Generated output |
 | --- | --- | --- |
@@ -27,123 +13,52 @@ DSL and regenerate instead of maintaining hand-edited generated runtime logic.
 | `template.json` | Built-in template metadata | Not copied |
 | `README.md` / `README_zh.md` | Template maintainer handbooks | Not copied by the renderer, but included in packaged template archives |
 
-`config.yaml` ignores `README.md`, `README_zh.md`, and `template.json` so they
-do not leak into generated output. `make tpl` still packages the complete
-template source directory, so changes to these maintainer README files must be validated with a
-refreshed local `pyfcstm/template/python.zip`. The archive is ignored by git in
-normal checkouts; setup and packaging commands recreate it from source.
+Generation-time helpers run inside pyfcstm; generated programs must remain self-contained. `config.yaml` excludes these maintainer guides and `template.json` from generated output. `make tpl` still includes them in the packaged source archive, so refresh packaging after any template edit.
 
-## Compatibility and runtime dependency boundary
+| Change | Edit and synchronize |
+| --- | --- |
+| Generated guide | Both README Jinja files, rendered examples and executable documentation tests |
+| Role API or lifecycle behavior | Runtime source, generated guide/API tables, role tests and semantic alignment |
+| Expression/getter emission | `config.yaml` role-aware expression/statement styles and `../../pyfcstm/render/render.py` context; generated action/guard tests |
 
-Generated `machine.py` should keep these defaults:
+## Runtime contracts
 
-- Python 3.7 or newer.
-- Python standard library only.
-- No import from `pyfcstm` or repository test helpers.
-- No third-party runtime dependency.
-- No syntax that unnecessarily raises the minimum supported Python version.
+The four variable roles are part of the runtime contract, including their observable lifetime and failure behavior:
 
-Generation-time dependencies such as Jinja2, YAML parsing, renderer filters, and
-statement renderers belong to `pyfcstm` and must not become generated-runtime
-requirements.
+| Role | Required behavior |
+| --- | --- |
+| `input` | Acquire every declared input once per active cycle, including unused inputs; freeze across validation/execution; no implicit hold; explicit snapshots bypass acquisition |
+| `param` | Copy and validate at construction; omitted cold values use DSL defaults; complete same-checkpoint parameters required for hot start; no cycle override |
+| `control` | Persistent writable model state; optional cold preset; complete hot snapshot; hold when unwritten |
+| `output` | Same persistent commit/rollback behavior as control; application observes after success; no generated actuator setter |
 
-## Public integration surface
+Sampling or execution failure preserves committed variables and `last_inputs`. Successful Delta cycles hold persistent state but publish the new input snapshot. Construction and ended cycles do not acquire inputs. Action hooks run only during execution, observe read-only context and cannot mutate model state; external side effects cannot be rolled back.
 
-Generated users primarily interact with one machine class whose name is derived
-from the root state. The stable integration surface should remain concentrated
-around:
+Shared fixtures use top-level `parameters`, `initial.vars` / `initial.outputs`, per-step `inputs` and partial `expect.vars` / `expect.outputs`. Do not add parameter/input expectations or step-level parameter overrides. Tests must execute the generated runtime and compare values, lifecycle observations and failures with the simulator.
 
-- constructing the generated machine class;
-- calling `cycle(...)` with event names or event collections supported by the
-generated API;
-- reading the current state and persistent variable snapshot;
-- using hot start with an explicit state and complete variable snapshot;
-- subclassing the generated class to implement abstract lifecycle hooks.
+Keep generated code Python 3.7+ and standard-library-only. Preserve exact input/parameter suffixes, `read_*` overrides, keyword-only `parameters` / `inputs`, read-only parameter/input snapshots and complete constructor forwarding in documented subclasses. Representative artifacts must pass Ruff check and format with an explicit Python 3.7 target.
 
-Abstract lifecycle actions should stay discoverable through stable protected
-hook method names. Hook names must map clearly back to DSL abstract action names
-so a DSL author can find the right override with IDE completion.
+## Documentation maintenance
 
-## Semantics and alignment expectations
+Maintain the user journey as a whole. There must be one complete Quick Start, followed by extensions of the same instance, recovery, API reference and advanced integration. A new API belongs in its existing tutorial section and reference table; replace obsolete examples and remove duplicate explanations in the same edit. Do not append a second quick start, final “complete example” or corrective note to compensate for a broken earlier section.
 
-The generated Python runtime is a product artifact, not a thin wrapper around
-`pyfcstm.simulate.SimulationRuntime`. Its visible behavior must still align with
-the simulator for supported FCSTM semantics:
+Every standalone example must include required input/action/event setup, initialization and error handling. Fragments must name their prerequisite example and insertion point and must not silently recreate the instance. A successful executable exit alone is insufficient: assert sampling, action invocation and committed outputs.
 
-- cold start and hot start;
-- initial transitions and composite entry ordering;
-- lifecycle action order, including aspect actions;
-- event scoping and transition priority;
-- guard, effect, rollback, and validation behavior;
-- abstract hook invocation timing and context values.
+Keep each prose paragraph on one physical line, in both source README files and rendered Markdown. Keep necessary line breaks in code, tables, lists and Jinja control structure. English and Chinese guides must have matching section order and equivalent code examples. Use natural Chinese for prose and preserve literal API names. Review the rendered output, not just the Jinja diff.
 
-Semantic alignment tests are maintained outside this README. A documentation-only
-change to this file should not modify those tests, but runtime template changes
-must use them as a correctness gate.
+Generated guides contain integration instructions, not repository CI troubleshooting or packaging rules. Put shared mechanisms in the root handbook and concrete template decisions here. Preserve runtime limits and compatibility guidance; avoid repeating the same warning in multiple sections. Text/structure checks belong in maintenance tooling; runnable generated examples belong in pytest.
 
-## Generated implementation strategy
+## Verification workflow
 
-Generated `machine.py` may favor direct, generated control flow over manual
-readability when that improves predictable runtime behavior. Keep the public
-class API and generated README clear; the implementation body can be more
-mechanical as long as it stays deterministic, self-contained, and formatter-
-stable.
-
-Formatter and linter checks are quality gates for professionalism and
-integration hygiene. They should not drive runtime design in a way that weakens
-FCSTM semantics or performance.
-
-## Maintenance workflow
-
-Use the smallest verification set that matches the change:
-
-1. For maintainer README-only edits, review the English and Chinese files for
-   section parity and factual consistency.
-2. Run `make rst_auto` before committing repository changes. This README should
-   not normally produce generated RST changes.
-3. Run `make tpl` after changing any file under `templates/python/`, including
-   this README, because packaged built-in template archives include the template
-   source directory.
-4. Inspect packaged asset changes. A README-only change should refresh the local generated
-   `pyfcstm/template/python.zip` archive; because zip archives are ignored by
-   git in normal checkouts, the tracked `pyfcstm/template/index.json` should
-   normally stay content-equivalent.
-5. For runtime template changes, generate representative outputs and run Python
-   template tests and simulator-alignment tests.
-
-Useful commands:
+Run commands from the repository root. `make template_unittest` refreshes packaged templates and clears inherited slow-test skips for explicitly selected suites. Direct pytest requires a prior `make tpl`. Do not use the lightweight default suite as evidence for native template completion.
 
 ```bash
-make rst_auto
 make tpl
-pytest test/template/python -v
-SKIP_SLOW_TESTS=1 make unittest
+PYFCSTM_TEMPLATE_SUITES=python make template_unittest
+make test_boundary_check resource_ownership_check
+make rst_auto
 ```
 
-## Language-specific verification
+For guide-only changes, execute the generated examples and relevant formatter/build tests. For runtime changes, run the full selected suites and applicable shared fixtures.
 
-Representative generated `machine.py` files should satisfy:
-
-```bash
-ruff check path/to/generated/machine.py
-ruff format --check path/to/generated/machine.py
-```
-
-The generated code should be lint-clean and formatter-stable without asking
-users to edit generated files. If a rare generated construct needs an exception,
-keep it narrow, documented in the template, and justified by runtime semantics
-or compatibility.
-
-## Documentation layering
-
-Keep the three documentation layers separate:
-
-- this file explains how to maintain the `python` template;
-- `README.md.j2` / `README_zh.md.j2` explain how to use one generated output
-  directory;
-- root `templates/README.md` / `README_zh.md` explain repository-wide template
-  system rules.
-
-Do not move packaging internals into generated READMEs. A downstream user or LLM
-that only sees generated output should learn how to instantiate and run the
-machine, not how the repository packages templates.
+Use models with all four roles and actions/events together, input-free and parameter-free models, multiple inputs, unused inputs, scoped names and failure/retry paths. Confirm both language versions render, their anchors and code blocks remain valid, and examples work without editing generated machine files. Review package contents, public API differences and test results before publishing.

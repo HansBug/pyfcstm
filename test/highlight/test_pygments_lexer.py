@@ -1919,7 +1919,7 @@ _LANGCHECK_POSITIVE_CASES += [
         dedent('''\
             def int allowmixing = 0;
             def int database = 0;
-            def int var = 0;
+            def int async = 0;
             def int impl = 0;
             def int public = 0;
             def int globalThis = 0;
@@ -1931,7 +1931,7 @@ _LANGCHECK_POSITIVE_CASES += [
                 during after {
                     allowmixing = 1;
                     database = 2;
-                    var = 3;
+                    async = 3;
                     impl = 4;
                     public = 5;
                     globalThis = 6;
@@ -2039,7 +2039,7 @@ _LANGCHECK_POSITIVE_CASES += [
         dedent('''\
             def int allowmixing = 0;
             def int database = 0;
-            def int var = 0;
+            def int async = 0;
             def int impl = 0;
             def int public = 0;
             def int globalThis = 0;
@@ -2051,7 +2051,7 @@ _LANGCHECK_POSITIVE_CASES += [
                 A -> B effect {
                     allowmixing = 1;
                     database = 2;
-                    var = 3;
+                    async = 3;
                     impl = 4;
                     public = 5;
                     globalThis = 6;

@@ -401,6 +401,7 @@ state Root {
             const {collectDataFlowWarnings} = await import('../dist/diagnostics/analyzers/data-flow');
             const diagnostics = collectDataFlowWarnings([{
                 name: 'write_only',
+                role: 'control',
                 type: 'int',
                 init_value: '0',
                 read_in_states: [],
@@ -1528,13 +1529,13 @@ state Root {
         it('emits const-fold guard and during-assignment warnings', async () => {
             const report = inspectModel(await buildMachine(`
 def int stable = 0;
-def int dynamic = 0;
+def int changing = 0;
 def int wide = 0;
 def float powered = 0.0;
 state Root {
     state Idle {
         during { stable = (2 + 3) * 4; }
-        during { dynamic = dynamic + 1; }
+        during { changing = changing + 1; }
         during { wide = 0xFFFFFFFF & 0xFFFFFFFF; }
         during { powered = 2.0 ** 3; }
     }

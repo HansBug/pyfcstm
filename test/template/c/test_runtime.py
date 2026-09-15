@@ -6,6 +6,8 @@ import textwrap
 
 import pytest
 
+from test.template.readme_examples import example_code
+
 from ._utils import render_c_artifacts, render_c_runtime
 
 
@@ -1147,54 +1149,21 @@ class TestCBuiltinTemplate:
             with open(artifacts['readme_zh_file'], 'r', encoding='utf-8') as f:
                 readme_zh = f.read()
 
-            assert os.path.isfile(artifacts['readme_file'])
-            assert os.path.isfile(artifacts['readme_zh_file'])
-            assert '# RootMachine' in readme
-            assert 'RootMachineHooks' in readme
-            assert 'on_p4_Root_p8_RootInit' in readme
+            for text in (readme, readme_zh):
+                for interface in ('RootMachineHooks', 'RootMachineInitOptions',
+                                  'RootMachineParameters', 'RootMachineInputs',
+                                  'RootMachineInputProvider', 'RootMachineInt',
+                                  'on_p4_Root_p8_RootInit', 'PYFCSTM_GENERATED_NO_HEAP',
+                                  'target_compile_definitions(machine PUBLIC PYFCSTM_GENERATED_NO_HEAP)',
+                                  'if(NOT WIN32)', 'gcc -std=c99', 'clang -std=c99'):
+                    assert interface in text
+                assert '_vars(&machine)' in text
+                assert '_set_hooks(&machine, &hooks, &data)' in text
+                assert 'hot_start_with_parameters' in text
+            assert '## Public API reference' in readme
+            assert '## 公开 API 参考' in readme_zh
             assert 'on_p4_Root_p6_System_p1_A_p6_AEnter' in readme
-            assert '| Hook field | DSL action path | Owner state | Stage |' in readme
-            assert '## Public Header Reference' in readme
-            assert '## Function Reference' in readme
-            assert '## Performance Advice' in readme
-            assert 'C++98' in readme
-            assert 'RootMachineInt' in readme
-            assert 'g++ -x c++ -std=c++98' in readme
-            assert '### Deployment Profiles' in readme
-            assert 'Caller-owned object' in readme
-            assert 'PYFCSTM_GENERATED_NO_HEAP' in readme
-            assert 'target_compile_definitions(machine PUBLIC PYFCSTM_GENERATED_NO_HEAP)' in readme
-            assert 'default hosted profile only' in readme
-            assert 'omitted when `PYFCSTM_GENERATED_NO_HEAP` is defined' in readme
-            assert 'if(NOT WIN32)' in readme
-            assert 'gcc -std=c99' in readme
-            assert 'clang -std=c99' in readme
-            assert 'strict freestanding guarantee' in readme
-            assert 'read-only extension points' in readme
-            assert 'should not mutate persistent machine variables' in readme
-            assert 'RootMachine_vars(&machine)' in readme
-            assert '| Hook 字段 | DSL 动作路径 | 所属状态 | 阶段 |' in readme_zh
-            assert 'on_p4_Root_p8_RootInit' in readme_zh
             assert 'on_p4_Root_p6_System_p1_A_p6_AEnter' in readme_zh
-            assert '## 公开头文件参考' in readme_zh
-            assert '## 函数参考' in readme_zh
-            assert '## 性能建议' in readme_zh
-            assert 'C++98' in readme_zh
-            assert 'RootMachineInt' in readme_zh
-            assert 'g++ -x c++ -std=c++98' in readme_zh
-            assert '### 部署剖面' in readme_zh
-            assert '调用方拥有对象' in readme_zh
-            assert 'PYFCSTM_GENERATED_NO_HEAP' in readme_zh
-            assert 'target_compile_definitions(machine PUBLIC PYFCSTM_GENERATED_NO_HEAP)' in readme_zh
-            assert '仅默认宿主剖面可用' in readme_zh
-            assert '定义 `PYFCSTM_GENERATED_NO_HEAP` 时省略' in readme_zh
-            assert 'if(NOT WIN32)' in readme_zh
-            assert 'gcc -std=c99' in readme_zh
-            assert 'clang -std=c99' in readme_zh
-            assert '不等于严格 freestanding 保证' in readme_zh
-            assert '只读扩展点' in readme_zh
-            assert '不适合修改状态机持久变量' in readme_zh
-            assert 'RootMachine_vars(&machine)' in readme_zh
 
     def test_generated_readme_hot_start_reuses_runtime_default_values(self):
         dsl_code = """
@@ -1211,7 +1180,7 @@ class TestCBuiltinTemplate:
         with render_c_artifacts(dsl_code) as artifacts:
             for readme_key in ['readme_file', 'readme_zh_file']:
                 with open(artifacts[readme_key], 'r', encoding='utf-8') as f:
-                    hot_start = _extract_c_code_block(f.read(), '4. Hot Start')
+                    hot_start = example_code(f.read(), 'hot-start')
 
                 run = _compile_and_run_c_harness(
                     artifacts,
@@ -1220,6 +1189,7 @@ class TestCBuiltinTemplate:
                         r'''
                         #include "machine.h"
                         #include <stdio.h>
+                        #include <string.h>
 
                         static void a_enter_hook(
                             RootMachine *machine,
@@ -1356,8 +1326,6 @@ class TestCBuiltinTemplate:
                 for block in blocks:
                     assert "\t" not in block
 
-            assert "clang-format" in readme
-            assert "clang-format" in readme_zh
 
     def test_generated_machine_clang_format_converges_under_four_space_style(self):
         with render_c_artifacts(_representative_gate_dsl()) as artifacts:

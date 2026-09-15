@@ -17,7 +17,7 @@
  *    alias, and optional ``named`` clause until it sees either ``;`` or ``{``.
  * 3. ``{`` switches into IMPORT_BLOCK_MODE, which lexes mapping statements
  *    inside the import block.
- * 4. ``def`` inside the block switches into IMPORT_DEF_SELECTOR_MODE, where
+ * 4. ``var`` (or legacy ``def``) inside the block switches into IMPORT_DEF_SELECTOR_MODE, where
  *    wildcard selectors such as ``sensor_*`` or ``a_*_b_*`` must stay compact
  *    and are emitted as a single token when appropriate.
  * 5. ``->`` then switches into IMPORT_DEF_TARGET_MODE, where compact target
@@ -43,6 +43,11 @@ lexer grammar GrammarLexer;
 // Core FCSTM keywords, including the import entry point that switches modes.
 IMPORT: 'import' -> mode(IMPORT_HEADER_MODE);
 DEF: 'def';
+VAR: 'var';
+CONTROL: 'control';
+INPUT: 'input';
+PARAM: 'param';
+OUTPUT: 'output';
 EVENT: 'event';
 AS: 'as';
 NAMED: 'named';
@@ -184,6 +189,7 @@ IMPORT_BLOCK_UNTERMINATED_MULTILINE_COMMENT
     ;
 IMPORT_BLOCK_LINE_COMMENT: '//' ~[\r\n]* -> skip;
 IMPORT_BLOCK_PYTHON_COMMENT: '#' ~[\r\n]* -> skip;
+IMPORT_BLOCK_VAR: 'var' -> type(VAR), mode(IMPORT_DEF_SELECTOR_MODE);
 IMPORT_BLOCK_DEF: 'def' -> type(DEF), mode(IMPORT_DEF_SELECTOR_MODE);
 IMPORT_BLOCK_EVENT: 'event' -> type(EVENT);
 IMPORT_BLOCK_NAMED: 'named' -> type(NAMED);

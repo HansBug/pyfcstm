@@ -296,12 +296,12 @@ describe('jsfcstm block-local temporary variables', () => {
             'def int sensor = 1;',                                     // 0
             'def int fallback = 2;',                                   // 1
             'def int mode = 0;',                                       // 2
-            'def int output = 0;',                                     // 3
+            'def int result_value = 0;',                                     // 3
             'state Root {',                                            // 4
             '    state A {',                                            // 5
             '        during {',                                         // 6
             '            tmp = (mode > 0) ? abs(sensor) : -fallback;',  // 7
-            '            output = tmp;',                                // 8
+            '            result_value = tmp;',                                // 8
             '        }',                                                // 9
             '    }',                                                    // 10
             '    [*] -> A;',                                            // 11

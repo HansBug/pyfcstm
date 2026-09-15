@@ -122,7 +122,7 @@ def build_cone_slice(context):
     :return: Requested slice with persistent and local dependency names.
     :rtype: ConeSlice
     """
-    names = tuple(variable.name for variable in context.domain.variables)
+    names = context.domain.persistent_variable_names
     integer_names = {
         variable.name
         for variable in context.domain.variables

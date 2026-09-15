@@ -24,7 +24,7 @@ from pyfcstm.bmc import (
     compile_bmc_property,
     solve_bmc_property,
 )
-from pyfcstm.model import load_state_machine_from_file, load_state_machine_from_text
+from pyfcstm.model import Integer, StateMachine, VarDefine, load_state_machine_from_text
 
 _MODEL = """
 def int x = 0;
@@ -891,48 +891,28 @@ def test_a_variable_whose_name_starts_like_the_state_slot_stays_its_own_slot() -
     assert "state_x" not in text, text
 
 
-@pytest.mark.unittest
-def test_a_model_variable_named_like_the_state_slot_keeps_its_own_reading(
-    tmp_path,
-) -> None:
-    """A variable a model calls ``state`` is a variable, not the frame's state slot.
+def _model_with_state_slot_name(name: str) -> StateMachine:
+    """Build a symbol-collision model through the public Python constructors.
 
-    The slot needed a subject so the rules could compare it, and the first spelling
-    chosen was ``state`` on the reasoning that the grammar reserves the word.  It
-    does not reserve it everywhere: ``STATE`` is a keyword in the lexer's default
-    mode only, and an import mapping renames through a mode whose identifier rule
-    admits any name.  So a model can declare ``state``, and its requirement was then
-    routed to the slot's symbol, failed to bind, and lost a proof this query used to
-    get.
-
-    The subject's spelling is not what makes the two readings separable -- a model
-    can declare that name too, through the target-template rule.  The ``state_slot``
-    flag is, and this case holds the variable's reading to itself.
+    Import mappings reject reserved or otherwise invalid DSL identifiers. The
+    Python model API still accepts arbitrary names, so BMC must distinguish a
+    variable's identity from the frame's state slot on that public entry point.
     """
-    imported = tmp_path / "worker.fcstm"
-    imported.write_text(
-        "def int w = 0;\n"
-        "state WorkerRoot {\n"
-        "    state Idle;\n"
-        "    state Done;\n"
-        "    [*] -> Idle;\n"
-        "    Idle -> Done;\n"
-        "}\n",
-        encoding="utf-8",
+    tree = load_state_machine_from_text(
+        "state Root { state Host { state Worker { state Idle; state Done; "
+        "[*] -> Idle; Idle -> Done; } [*] -> Worker; } [*] -> Host; }",
+        "machine.fcstm",
     )
-    main = tmp_path / "main.fcstm"
-    main.write_text(
-        "state Root {\n"
-        "    state Host {\n"
-        '        import "./worker.fcstm" as Worker { def w -> state; };\n'
-        "        [*] -> Worker;\n"
-        "    }\n"
-        "    [*] -> Host;\n"
-        "}\n",
-        encoding="utf-8",
+    return StateMachine(
+        defines={name: VarDefine(name=name, type="int", init=Integer(0))},
+        root_state=tree.root_state,
     )
 
-    model = load_state_machine_from_file(main)
+
+@pytest.mark.unittest
+def test_a_model_variable_named_like_the_state_slot_keeps_its_own_reading() -> None:
+    """A Python model variable named ``state`` retains its variable identity."""
+    model = _model_with_state_slot_name("state")
     context = BmcEngine(model).prepare(
         'assume at 0: var("state") == 1;\n'
         'assume at 0: var("state") == 2;\n'
@@ -953,45 +933,9 @@ def test_a_model_variable_named_like_the_state_slot_keeps_its_own_reading(
 
 
 @pytest.mark.unittest
-def test_a_variable_spelled_like_the_slot_and_a_state_read_as_themselves(
-    tmp_path,
-) -> None:
-    """One model, both subjects, each read as what it is.
-
-    A model can declare a variable named exactly what the slot calls itself.  Two
-    arguments for why it could not were both wrong -- ``state`` is a keyword only in
-    the lexer's default mode, so an import mapping renames past it, and ``$state``
-    is reachable too because the target template rule admits ``$`` and
-    ``def x_* -> *$state;`` with an empty capture renders it exactly.
-
-    Rather than defend the name, identity moved off it: the fact carries a flag, and
-    the slot comparison, the binding and the reading all consult that instead.  So
-    this model needs no special handling -- its variable's requirements read as a
-    variable, its state requirements read as states, and both reach the proof tier.
-    """
-    imported = tmp_path / "worker.fcstm"
-    imported.write_text(
-        "def int x_ = 0;\n"
-        "state WorkerRoot {\n"
-        "    state Idle;\n"
-        "    state Done;\n"
-        "    [*] -> Idle;\n"
-        "    Idle -> Done;\n"
-        "}\n",
-        encoding="utf-8",
-    )
-    main = tmp_path / "main.fcstm"
-    main.write_text(
-        "state Root {\n"
-        "    state Host {\n"
-        '        import "./worker.fcstm" as Worker { def x_* -> *$state; };\n'
-        "        [*] -> Worker;\n"
-        "    }\n"
-        "    [*] -> Host;\n"
-        "}\n",
-        encoding="utf-8",
-    )
-    model = load_state_machine_from_file(main)
+def test_a_variable_spelled_like_the_slot_and_a_state_read_as_themselves() -> None:
+    """The public Python model API keeps both subjects distinct in one proof."""
+    model = _model_with_state_slot_name("$state")
 
     def read(query: str) -> str:
         context = BmcEngine(model).prepare(query, query_source_path="query.fbmcq")

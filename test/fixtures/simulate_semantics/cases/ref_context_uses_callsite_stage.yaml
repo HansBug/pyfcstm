@@ -21,7 +21,7 @@ steps:
 - cycle: []
   expect:
     state: Root.A
-    vars_exact: {}
+    vars: {}
     ended: false
     handler_calls:
     - action: Root.Library.SharedExit
@@ -51,7 +51,7 @@ steps:
 - cycle: Root.A.Go
   expect:
     state: Root.B
-    vars_exact: {}
+    vars: {}
     ended: false
     handler_calls:
     - action: Root.Library.SharedExit

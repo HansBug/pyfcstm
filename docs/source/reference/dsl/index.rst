@@ -147,7 +147,7 @@ swallowing, is not a supported documentation contract.
 Top-level program forms
 -----------------------
 
-A normal DSL entry has zero or more persistent variable declarations followed by
+A normal DSL entry has zero or more variable declarations followed by
 one root state:
 
 Fragment::
@@ -169,6 +169,48 @@ Facts:
   does not accept runtime variable references or C-style ternary expressions.
 * The root may be leaf or composite, but practical models usually use composite
   root state.
+
+Variable roles
+~~~~~~~~~~~~~~
+
+.. list-table:: Declarations and ownership
+   :header-rows: 1
+
+   * - Declaration
+     - ``role``
+     - Initialization and model assignments
+   * - ``control int count = 0;`` / ``def int count = 0;``
+     - ``control``
+     - Initializer required; model reads and writes allowed.
+   * - ``input float pressure;``
+     - ``input``
+     - Initializer forbidden; model reads only.
+   * - ``param int limit = 2;``
+     - ``param``
+     - Default required; model reads only.
+   * - ``output int command = 0;``
+     - ``output``
+     - Initializer required; model reads and writes allowed, including multiple writers.
+
+``control``, ``input``, ``param``, and ``output`` are
+reserved keywords, unavailable as variable, state, event, or action names.
+``dynamic`` and ``static`` are ordinary identifiers; the former long input
+declarations are not accepted. All declarations share one namespace. Initializers cannot reference variables.
+Input/parameter writes are rejected during model construction, including writes
+in lifecycle actions, aspects, effects, and nested conditionals.
+
+AST exports preserve declaration spelling. ``pyfcstm.model.VariableRole`` exposes
+``CONTROL``, ``INPUT``, ``PARAM``, and ``OUTPUT``; ``VarDefine.init`` is ``None`` only for inputs in valid
+models. ``StateMachine.control_variables``, ``inputs``, ``parameters``,
+``output_variables``, and ``persistent_variables`` return read-only mappings in
+global declaration order. The last preserves control/output interleaving; values
+are the same objects held in ``defines``. Inspect JSON variable entries require
+``role``; read-only inputs/parameters and write-only outputs do not receive
+ordinary control-variable dead-use warnings.
+
+This section defines the syntax/model contract. Runtime input sources,
+role-aware import merging, BMC input symbols, and generated runtime interfaces
+are documented in the simulation, BMC, and template guides.
 
 .. _dsl-import-preamble-forms:
 
@@ -684,17 +726,17 @@ Import forms
    * - Import block
      - ``import "file.fcstm" as Alias { ... }``
      - Contains mapping statements.
-   * - Def fallback selector
-     - ``def * -> target;``
+   * - Variable fallback selector
+     - ``var * -> target;``
      - Fallback variable mapping.
-   * - Def set selector
-     - ``def {a, b} -> target;``
+   * - Variable set selector
+     - ``var {a, b} -> target;``
      - Maps a set of variables.
-   * - Def pattern selector
-     - ``def sensor_* -> sensor_$1;``
+   * - Variable pattern selector
+     - ``var sensor_* -> sensor_$1;``
      - Pattern selector is compact and whitespace-sensitive; ``$1`` is the first wildcard capture.
-   * - Def exact selector
-     - ``def value -> renamed;``
+   * - Variable exact selector
+     - ``var value -> renamed;``
      - Maps one variable.
    * - Target template
      - ``ID``, compact template, or ``*``
@@ -706,8 +748,47 @@ Import forms
      - ``import "./dir/main.fcstm" as Subsystem;``
      - Use an explicit file; bare directory import is unsupported.
 
-File resolution, recursive loading, conflict detection, mapping precedence, and
-model assembly are implemented after parsing in Python import/model code.
+``var`` is the canonical mapping keyword; ``def`` is also accepted explicitly. Rows below are child source roles and columns are explicitly declared parent target roles. Each permitted cell specifies the final assembled role. Numeric types must match exactly; ``int`` and ``float`` are not implicitly converted.
+
+.. list-table:: Final role after binding
+   :header-rows: 1
+
+   * - Child / parent
+     - ``param``
+     - ``input``
+     - ``control``
+     - ``output``
+   * - ``param``
+     - ``param``
+     - Forbidden
+     - Forbidden
+     - Forbidden
+   * - ``input``
+     - ``param``
+     - ``input``
+     - ``control``
+     - ``output``
+   * - ``control``
+     - Forbidden
+     - Forbidden
+     - ``control``
+     - ``output``
+   * - ``output``
+     - Forbidden
+     - Forbidden
+     - ``control``
+     - ``output``
+
+The parent declaration determines storage, time behavior and the external interface. A child ``input`` bound to a parent ``param`` needs construction parameters rather than an input reader; child ``control`` bound to parent ``output`` becomes a system output; child ``output`` bound to parent ``control`` remains writable but is no longer a system output. Model partitions, inspect reports, simulation, BMC and generated interfaces all use the final role.
+
+Validate the source module against its own roles first. Any source ``input`` or ``param`` assignment raises ``E_INPUT_WRITE`` or ``E_PARAM_WRITE``, including unreachable conditional branches; mapping cannot grant write permission. Child ``param`` to parent ``input`` and child ``output`` to parent ``param`` are rejected with ``E_IMPORT_DUPLICATE_MAPPING``.
+
+Cross-role binding requires an explicit parent declaration. An absent target is created with the child role, type and default; a target introduced by another import is not an explicit parent declaration and cannot be retyped by import order. Explicit parent defaults win; implicit same-role sharing still requires equal defaults, and shared ``input`` requires a parent declaration. Validate every nested boundary: after child ``input`` binds to an intermediate ``param``, that intermediate variable cannot bind to outer ``control``.
+
+A binding has one actual variable and introduces no cache, copy or one-cycle delay. Child ``input`` bound to parent ``control/output`` reads the current value at each execution position: if ``A.exit`` reads 1 and the parent transition ``effect`` then writes 2, ``B.enter`` must read 2. Only final ``input`` environment interfaces have frozen cycle snapshots; ``param`` is fixed across the run and unwritten ``control/output`` holds its value. Properties relying on standalone child input stability must be reverified on the assembled model.
+
+File resolution, recursive loading, conflict detection, mapping precedence, and model assembly happen after parsing. See :ref:`dsl-import-task` for a complete two-file example.
+
 
 .. _dsl-diagnostics-risk:
 
@@ -976,7 +1057,7 @@ Every row still has a reference or explanation landing point.
      - synced
    * - ``dsl-import-mapping``
      - import
-     - ``def_mapping_statement`` / ``event_mapping_statement``
+     - ``import_variable_mapping`` / ``import_event_mapping``
      - N/A: tutorial skips imports
      - :ref:`dsl-import-task`
      - :ref:`dsl-import-forms`

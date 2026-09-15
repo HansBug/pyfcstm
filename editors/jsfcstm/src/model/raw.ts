@@ -159,9 +159,12 @@ export type RawFcstmModelOperationStatement =
 export interface RawFcstmModelVarDefine extends RawFcstmModelNodeBase {
     kind: 'varDefine';
     pyModelType: 'VarDefine';
+    sourceDeclarations?: import('../ast').FcstmVariableDeclarationSource[];
     name: string;
     type: 'int' | 'float';
-    init: RawFcstmModelExpression;
+    init: RawFcstmModelExpression | null;
+    role?: import('../ast').VariableRole;
+    spelling?: string;
     doc?: string;
 }
 

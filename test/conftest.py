@@ -181,7 +181,11 @@ def pytest_generate_tests(metafunc):
     resolve_selected_profile(metafunc.config)
     from test.testings.simulate_semantics import iter_semantic_cases
 
-    case_ids = [case.id for case in iter_semantic_cases()]
+    # Native compilers exercise the same generated-runtime contract as the
+    # ordinary template alignment suites, including its declared exclusions.
+    case_ids = [
+        case.id for case in iter_semantic_cases(runners=["generated_python_alignment"])
+    ]
     metafunc.parametrize("native_semantic_case_id", case_ids, ids=case_ids)
 
 

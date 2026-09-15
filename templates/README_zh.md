@@ -11,25 +11,11 @@
 
 ## 文档元数据合同
 
-受支持的 FCSTM 所有者（`State`、`Event`、`Transition`、`VarDefine`、
-`OnStage` 和 `OnAspect`）各自携带一个不透明的 `doc` 值。文档块由 grammar
-作为所有者前的 leading block 消费；abstract 生命周期动作也兼容历史
-trailing 写法，canonical export 会把两者归一为同一个字段。`None`、空字符
-串和字面量 `*` 是不同的值。文档属于元数据：它会进入 AST/Model round-trip
-和 canonical export，但不会进入 runtime identity、diagnostics、PlantUML
-展示或结构化 Diagram 数据。
+受支持的 FCSTM 所有者（`State`、`Event`、`Transition`、`VarDefine`、 `OnStage` 和 `OnAspect`）各自携带一个不透明的 `doc` 值。文档块由 grammar 作为所有者前的 leading block 消费；abstract 生命周期动作也兼容历史 trailing 写法，canonical export 会把两者归一为同一个字段。`None`、空字符 串和字面量 `*` 是不同的值。文档属于元数据：它会进入 AST/Model round-trip 和 canonical export，但不会进入 runtime identity、diagnostics、PlantUML 展示或结构化 Diagram 数据。
 
-模板作者应使用显式的 `is not none` 判断消费 `doc`，不能根据源码行号猜测
-所有者。canonical `model.to_ast_node()` export 是生成 README/源码文本的权威
-来源。它不是秘密边界：生成物可能包含完整文档，因此模板和生成 README 必须
-提醒用户不要在文档块中保存凭据、token、密码或私钥。
+模板作者应使用显式的 `is not none` 判断消费 `doc`，不能根据源码行号猜测 所有者。canonical `model.to_ast_node()` export 是生成 README/源码文本的权威 来源。它不是秘密边界：生成物可能包含完整文档，因此模板和生成 README 必须 提醒用户不要在文档块中保存凭据、token、密码或私钥。
 
-共享 renderer 提供 `markdown_fence`（保护 README 代码块）和
-`escape_python_docstring`（保护 Python 三引号 docstring）。这些 helper 只
-保护 Markdown 分隔符和目标语言语法，不改变 Model 的 `doc` 值。C-family
-canonical 字符串还必须保护 `??/` 等 C 三字符组；这是源码模板自己的转义
-策略，`doc` 本身不被修改。值域仍拒绝 `/*` 与 `*/`，以保证每次 canonical
-export 都能重新解析。
+共享 renderer 提供 `markdown_fence`（保护 README 代码块）和 `escape_python_docstring`（保护 Python 三引号 docstring）。这些 helper 只 保护 Markdown 分隔符和目标语言语法，不改变 Model 的 `doc` 值。C-family canonical 字符串还必须保护 `??/` 等 C 三字符组；这是源码模板自己的转义 策略，`doc` 本身不被修改。值域仍拒绝 `/*` 与 `*/`，以保证每次 canonical export 都能重新解析。
 
 ## 目录职责
 
@@ -176,38 +162,22 @@ Renderer 主要实现在 `pyfcstm/render/render.py` 和 `pyfcstm/render/env.py`�
 
 只看到生成目录的人或 LLM，应能仅凭 generated README 使用 generated runtime，而不需要理解仓库模板系统。
 
-## Generated README 写作规则
+## 生成 README 写作规则
 
-Generated `README.md.j2` 和 `README_zh.md.j2` 是面向最终用户的 runtime
-使用手册，不是模板维护者笔记。它们应被视为给人类和 LLM 的可执行
-onboarding contract：读者只拿到生成目录，也应该能按 README 把 runtime
-跑起来。
+生成的 `README.md.j2` 和 `README_zh.md.j2` 面向只持有生成目录的使用者，必须提供完整接入指导。模板目录中的 `README.md` / `README_zh.md` 面向维护者，说明源码分工、行为约束、联动修改和验证命令。两类文档的职责必须明确。
 
-修改 generated README 模板时：
+- 维护一条使用路径：完整快速开始、输入/动作/事件、初始化与恢复、结果/错误/生命周期、API 参考、高级构建选项和模型参考。第一份可运行程序应在长篇模型清单及部署讨论之前。
+- 每种语言、每套模板只保留一份完整快速开始。新增 API 时同步修改教程、示例和参考表，替换过时示例并删除重复内容，不追加第二份快速开始或补丁式说明来弥补前文。
+- 独立示例包含初始化、输入读取、所需动作/事件注册及检查返回值的周期调用。片段明确前置示例和插入位置，继续使用同一实例，不悄悄重新初始化。C++ 指南始终使用封装方法，明确说明沿用的 C 回调签名。
+- 展示固定 `parameters` 构造、每个 `input` 采样、抽象动作挂载、事件提交/查询和已提交 control/output 读取。区分每拍数值采样、仅执行阶段调用的动作和按需缓存的事件查询，并说明返回约定、借用与复制的生命周期。
+- 冷初始化可使用默认值；热恢复使用同一检查点的状态、全部持久值和全部参数。说明采样失败、重试、Delta 周期、结束后调用和无法撤销的外部副作用。
+- 源码及生成 Markdown 的自然段均保持一段一行。代码、列表、表格和 Jinja 控制结构保留必要换行。中英文章节顺序等价、可执行示例同步；标识符以外使用自然中文。
+- 渲染现有角色用例、组合 input/param/control/output/action/event 模型及缺少可选功能的模型。审阅实际输出的表格、锚点和代码块，不能只检查 Jinja 是否成功。
+- 通过打包模板/公开渲染路径执行生成示例，断言读取次数、动作调用、提交结果、连续周期、失败重试和恢复。退出码为零不足以证明正确。行为测试保留在 pytest，源码/纯文档检查放维护工具。
+- 回调映射和公开 API 清单与生成头文件/模块同步。`model.to_ast_node()` 使用规范化模型导出的表述。内部引擎布局、CI 产物排障和打包机制不进入入门主线。
 
-- 至少渲染一个复杂度适中的、已纳入仓库的 FCSTM fixture；该 fixture
-  应包含持久变量、events、嵌套状态、生命周期行为，并在目标模板支持时
-  包含 abstract hooks。
-- 只基于生成目录和 generated README，编写一个小型下游使用程序。对编译型
-  语言，必须把该程序和 generated sources 一起编译并运行；对解释型语言，
-  必须从仓库测试 helper 外部导入并运行 generated module。
-- 下游程序应覆盖 cold start、存在 events 时至少一次带事件 cycle、状态/变量
-  查看，以及模型声明 extension points 时的 hook 或 event-check 安装。
-- 示例应尽量 copy-adaptable。除非明确标注为示意代码并在附近指向完整示例，
-  不要引用未定义的 callback、变量、event-check 字段、hook 字段、include 或
-  import。
-- 对 `c_poll`，有事件模型的可运行 cycle 示例必须说明：调用 `cycle()` 前需要
-  安装完整 `EventChecks` 表。部分表是 runtime error，示例不能暗示只设置一个
-  字段就适用于所有 generated model。
-- 由 `model.to_ast_node()` 生成的文本必须称为 canonical / normalized model
-  export；不能称为 raw source 或 original source。
-- generated README 只聚焦 generated runtime：文件结构、model text、model
-  summary、变量、events、hooks、cold start、hot start、cycle 输入、当前状态/
-  变量查看、错误诊断和完整最小流程。Renderer internals、packaging 机制和
-  template governance 应放在根级或单模板维护手册。
+实质性修改指南后，应由新的审阅者只根据生成目录完成小型接入。缺失配置、未定义符号、接口混用和误导示例必须在交付前解决。记录实际编译或执行的内容，区分命令次数与程序数量。
 
-如果 generated README 示例经过直接的标识符替换后，无法写出一个小型可运行
-consumer program，就必须先修 README 模板，再声称模板改动完成。
 
 ## Generated runtime policy
 
@@ -229,15 +199,9 @@ Generated implementation files 应优先服务模型语义、可预测执行和�
 
 ## C/C++ 部署安全表述
 
-当前 C-family 模板（`c`、`c_poll`、`cpp` 和 `cpp_poll`）提供的是面向控制状态机
-生成运行时的部署硬化工程基线（deployment-hardened engineering baseline）。
-这条基线包括 C99 execution core、适用时的 C++98-compatible integration surface、
-调用方拥有对象与无堆剖面、共享语义对齐，以及原生工具链矩阵证据。
+当前 C-family 模板（`c`、`c_poll`、`cpp` 和 `cpp_poll`）提供的是面向控制状态机 生成运行时的部署硬化工程基线（deployment-hardened engineering baseline）。 这条基线包括 C99 execution core、适用时的 C++98-compatible integration surface、 调用方拥有对象与无堆剖面、共享语义对齐，以及原生工具链矩阵证据。
 
-这不是安全认证声明。维护文档和生成物文档都不能把这些模板描述为已经满足
-MISRA、AUTOSAR、DO-178C、IEC 61508、ISO 26262 或其他认证 ready。正确表述是：
-它们是非认证的 generated-code baseline，用于支撑后续项目自己的静态分析、
-编码规则审查、板级支持包集成和认证证据工作。
+这不是安全认证声明。维护文档和生成物文档都不能把这些模板描述为已经满足 MISRA、AUTOSAR、DO-178C、IEC 61508、ISO 26262 或其他认证 ready。正确表述是： 它们是非认证的 generated-code baseline，用于支撑后续项目自己的静态分析、 编码规则审查、板级支持包集成和认证证据工作。
 
 职责边界应保持分离：
 
@@ -247,9 +211,7 @@ MISRA、AUTOSAR、DO-178C、IEC 61508、ISO 26262 或其他认证 ready。正确
 - 模板 README 负责集成边界、资源生命周期、编译器剖面、hook/event-check 安装、并发假设、
   外部 I/O adapter 和认证表述边界。
 
-C/C++ family 的 generated README 必须给下游用户提供短小的集成前检查清单。只拿到生成目录的用户，
-也应能直接看到 compiler/profile 边界、内存 ownership 选择、event/hook 要求、单实例并发假设、
-外部设备 adapter 边界、numeric inspect 入口，以及“工程证据不等于认证”的边界，而不需要阅读本维护手册。
+C/C++ 生成指南必须在相关用法和构建说明中讲清集成边界。只拿到生成目录的用户， 也应能直接看到 compiler/profile 边界、内存 ownership 选择、event/hook 要求、单实例并发假设、 外部设备 adapter 边界、numeric inspect 入口，以及“工程证据不等于认证”的边界，而不需要阅读本维护手册。
 
 ## Source context contract
 
@@ -277,6 +239,22 @@ C/C++ family 的 generated README 必须给下游用户提供短小的集成前�
 - 添加代表性 generated-runtime tests；适用时添加 simulator alignment tests。
 - 运行 packaging checks，确保 `pyfcstm/template/index.json`、zip archives、`extract_template` 和源码模板一致。
 - 只有仓库级 contract 变化时才更新本手册；单模板变化应更新单模板 README。
+
+<a id="native-template-verification"></a>
+
+## 原生模板验证
+
+原生 pytest 构建复用现有 CMake 测试程序，不新增第二套主机编译器调度层。现有 README 命令测试可直接执行文档中的 gcc/clang 命令，验证这些具体构建方法。运行测试通过共享语义用例比较公开观察值，包括事件与动作行为。
+
+`PYFCSTM_GENERATED_NO_HEAP` 按宏是否定义选择（`#if defined(...)` / `#ifdef`），`-DNAME` 和 `-DNAME=1` 均需有效。头文件堆接口声明、实现及其 `<stdlib.h>` 依赖一起移除；通过预处理和符号/链接检查确认不存在堆辅助函数及 `calloc/free` 引用。保留调用方拥有的存储、动作回调和轮询事件查询。用 CMake `PUBLIC` / `INTERFACE` 或一致的最终目标定义，确保 C 内核、封装及所有消费端使用相同宏。
+
+| 证据类型 | 必须证明的结果 |
+| --- | --- |
+| 宿主或模拟环境执行 | 编译并运行每个共享语义用例，比较公开数值、生命周期和事件观察 |
+| 仅编译 | 生成非空的运行时、测试程序和 C++ 头文件探测目标文件；不能宣称已证明运行时对齐 |
+| 仅分析 | 保留 cppcheck/clang-tidy 等工具的报告；工具崩溃、解析失败和缺报告均视为失败 |
+
+新增编译器配置时，同步现有配置注册表、工作流选择、预期产物和维护文档，以工具链行为命名配置。公开宿主配置缺少必需工具时必须失败；需要授权的厂商工具保持手动或自托管运行，直到配置好相应执行环境。涉及源码所有权或兼容性变化时，在常规语义对齐之外执行代表性的运行时错误与泄漏检查。
 
 ## Maintenance workflow
 

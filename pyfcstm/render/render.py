@@ -513,9 +513,13 @@ class StateMachineCodeRenderer:
             "_stmt_default_var_types",
             _MISSING,
         )
+        previous_var_roles = self.env.globals.get("_stmt_default_var_roles", _MISSING)
         self.env.globals["_stmt_default_state_vars"] = tuple(model.defines.keys())
         self.env.globals["_stmt_default_var_types"] = {
             name: define.type for name, define in model.defines.items()
+        }
+        self.env.globals["_stmt_default_var_roles"] = {
+            name: define.role.value for name, define in model.defines.items()
         }
         try:
             yield
@@ -528,6 +532,10 @@ class StateMachineCodeRenderer:
                 self.env.globals.pop("_stmt_default_var_types", None)
             else:
                 self.env.globals["_stmt_default_var_types"] = previous_var_types
+            if previous_var_roles is _MISSING:
+                self.env.globals.pop("_stmt_default_var_roles", None)
+            else:
+                self.env.globals["_stmt_default_var_roles"] = previous_var_roles
 
     def _prepare_for_file_mapping(self) -> None:
         """

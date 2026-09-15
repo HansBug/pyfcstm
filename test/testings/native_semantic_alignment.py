@@ -272,10 +272,16 @@ class _GeneratedNativeAlignmentRuntime:
         self._native_runtime = native_runtime
         self._dsl_code = dsl_code
         self._last_simulation_delta = False
+        if hasattr(simulation_runtime, "_fixture_input_source"):
+            self._fixture_input_source = simulation_runtime._fixture_input_source
 
     @property
     def vars(self) -> Mapping[str, Any]:
         return self._native_runtime.vars
+
+    @property
+    def outputs(self):
+        return self._native_runtime.outputs
 
     @property
     def is_ended(self) -> bool:
@@ -371,7 +377,10 @@ class _GeneratedNativeAlignmentRuntime:
             # bugs instead of being converted into alignment mismatches.
             sim_exc = err
         try:
-            self._native_runtime.cycle(native_events)
+            if hasattr(self, "_fixture_input_source"):
+                self._native_runtime.cycle(native_events, inputs=self._fixture_input_source.snapshot)
+            else:
+                self._native_runtime.cycle(native_events)
         except _NATIVE_RUNTIME_EXCEPTIONS as err:
             # Native adapters expose generated diagnostics as Python exceptions.
             native_exc = err
@@ -440,7 +449,8 @@ class _GeneratedNativeAlignmentRuntime:
 def _build_native_runtime(runner: str, case: SemanticCase) -> Any:
     native_utils = _native_utils_for_runner(runner)
     return native_utils.build_c_runtime(
-        case.dsl_code, **simulate_semantics._initial_kwargs(case)
+        case.dsl_code, parameters=case.data.get("parameters"), path=case.fcstm_path,
+        **simulate_semantics._initial_kwargs(case)
     )
 
 

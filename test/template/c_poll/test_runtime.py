@@ -6,6 +6,8 @@ import textwrap
 
 import pytest
 
+from test.template.readme_examples import example_code
+
 from ._utils import render_c_artifacts, render_c_runtime
 
 _CLANG_FORMAT_STYLE = '{BasedOnStyle: LLVM, IndentWidth: 4, ContinuationIndentWidth: 4}'
@@ -971,45 +973,23 @@ class TestCPollBuiltinTemplate:
             with open(artifacts['readme_zh_file'], 'r', encoding='utf-8') as f:
                 readme_zh = f.read()
 
-            assert 'EventChecks' in readme
-            assert 'EventCheckFn' in readme
-            assert '_set_event_checks(' in readme
-            assert '_cycle(&machine)' in readme
-            assert 'cycle(machine, event_ids, event_count)' not in readme
-            assert 'fails fast' in readme
-            assert 'check_p4_Root_p1_A_p2_Go' in readme
-            assert 'return non-zero' in readme
-            assert 'return `0`' in readme
-            assert '### Deployment Profiles' in readme
-            assert 'Caller-owned object' in readme
-            assert 'PYFCSTM_GENERATED_NO_HEAP' in readme
-            assert 'target_compile_definitions(machine PUBLIC PYFCSTM_GENERATED_NO_HEAP)' in readme
-            assert 'default hosted profile only' in readme
-            assert 'omitted when `PYFCSTM_GENERATED_NO_HEAP` is defined' in readme
-            assert 'if(NOT WIN32)' in readme
-            assert 'gcc -std=c99' in readme
-            assert 'clang -std=c99' in readme
-            assert 'strict freestanding guarantee' in readme
-
-            assert 'EventChecks' in readme_zh
-            assert 'EventCheckFn' in readme_zh
-            assert '_set_event_checks(' in readme_zh
-            assert '_cycle(&machine)' in readme_zh
-            assert 'cycle(machine, event_ids, event_count)' not in readme_zh
-            assert '直接失败' in readme_zh
-            assert 'check_p4_Root_p1_A_p2_Go' in readme_zh
-            assert '返回非零' in readme_zh
-            assert '返回 `0`' in readme_zh
-            assert '### 部署剖面' in readme_zh
-            assert '调用方拥有对象' in readme_zh
-            assert 'PYFCSTM_GENERATED_NO_HEAP' in readme_zh
-            assert 'target_compile_definitions(machine PUBLIC PYFCSTM_GENERATED_NO_HEAP)' in readme_zh
-            assert '仅默认宿主剖面可用' in readme_zh
-            assert '定义 `PYFCSTM_GENERATED_NO_HEAP` 时省略' in readme_zh
-            assert 'if(NOT WIN32)' in readme_zh
-            assert 'gcc -std=c99' in readme_zh
-            assert 'clang -std=c99' in readme_zh
-            assert '不等于严格 freestanding 保证' in readme_zh
+            for text in (readme, readme_zh):
+                for interface in ('RootMachineHooks', 'RootMachineInitOptions',
+                                  'RootMachineParameters', 'RootMachineInputs',
+                                  'RootMachineInputProvider', 'RootMachineInt',
+                                  'on_p4_Root_p8_RootInit', 'PYFCSTM_GENERATED_NO_HEAP',
+                                  'target_compile_definitions(machine PUBLIC PYFCSTM_GENERATED_NO_HEAP)',
+                                  'if(NOT WIN32)', 'gcc -std=c99', 'clang -std=c99'):
+                    assert interface in text
+                assert '_vars(&machine)' in text
+                assert '_set_hooks(&machine, &hooks, &data)' in text
+                assert 'hot_start_with_parameters' in text
+                assert 'EventChecks' in text
+                assert '_set_event_checks(&machine, &event_checks, &data)' in text
+                assert 'check_p4_Root_p1_A_p2_Go' in text
+                assert '_cycle(&machine)' in text
+            assert 'Complete table' in readme
+            assert '完整表' in readme_zh
 
     def test_generated_readme_hot_start_keeps_event_checks_and_runtime_defaults(self):
         dsl_code = """
@@ -1026,7 +1006,7 @@ class TestCPollBuiltinTemplate:
         with render_c_artifacts(dsl_code) as artifacts:
             for readme_key in ['readme_file', 'readme_zh_file']:
                 with open(artifacts[readme_key], 'r', encoding='utf-8') as f:
-                    hot_start = _extract_c_code_block(f.read(), '5. Hot Start')
+                    hot_start = example_code(f.read(), 'hot-start')
 
                 run = _compile_and_run_c_harness(
                     artifacts,
@@ -1035,6 +1015,7 @@ class TestCPollBuiltinTemplate:
                         r'''
                         #include "machine.h"
                         #include <stdio.h>
+                        #include <string.h>
 
                         static int inactive_event_check(
                             RootMachine *machine,
@@ -1201,8 +1182,6 @@ class TestCPollBuiltinTemplate:
                 for block in blocks:
                     assert "\t" not in block
 
-            assert "clang-format" in readme
-            assert "clang-format" in readme_zh
 
     def test_generated_machine_no_heap_profile_uses_caller_owned_objects_and_event_checks(self):
         with render_c_artifacts(_representative_gate_dsl()) as artifacts:

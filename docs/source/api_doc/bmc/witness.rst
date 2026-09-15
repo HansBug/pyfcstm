@@ -72,7 +72,7 @@ BmcWitnessStep
 -----------------------------------------------------
 
 .. autoclass:: BmcWitnessStep
-    :members: __post_init__,input_event_paths,to_canonical,pretty_print,to_text,__str__,index,source_frame,target_frame,case_label,case_kind,progress,source_state,target_state,delta,gamma,input_events,event_reads,abstract_calls,consumed_events,unconsumed_events
+    :members: __post_init__,input_event_paths,to_canonical,pretty_print,to_text,__str__,index,source_frame,target_frame,case_label,case_kind,progress,source_state,target_state,delta,gamma,input_events,event_reads,abstract_calls,consumed_events,unconsumed_events,inputs,input_reads
 
 
 BmcWitnessTrace
@@ -93,7 +93,7 @@ BmcRuntimeStep
 -----------------------------------------------------
 
 .. autoclass:: BmcRuntimeStep
-    :members: __post_init__,to_canonical,pretty_print,to_text,__str__,index,input_events,consumed_events,unconsumed_events,abstract_calls,delta
+    :members: __post_init__,to_canonical,pretty_print,to_text,__str__,index,input_events,consumed_events,unconsumed_events,abstract_calls,delta,inputs
 
 
 BmcRuntimeTrace

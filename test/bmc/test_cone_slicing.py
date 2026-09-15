@@ -5,6 +5,7 @@ import z3
 
 from pyfcstm.bmc import (
     BmcBuildError,
+    BmcCoreFormula,
     BmcEventDecodePolicy,
     BmcOptions,
     compile_bmc_query,
@@ -38,11 +39,11 @@ def _dag_size(expr):
 
 _OUTPUTS = """
 def int ticks = 0;
-def int output = 3;
+def int reported = 3;
 def int other = 5;
 state Root {
-    enter { ticks = ticks + 1; output = ticks * 17; other = output + 9; }
-    during { ticks = ticks + 1; output = output + ticks; other = other * 2; }
+    enter { ticks = ticks + 1; reported = ticks * 17; other = reported + 9; }
+    during { ticks = ticks + 1; reported = reported + ticks; other = other * 2; }
 }
 """
 
@@ -51,7 +52,7 @@ def test_unread_outputs_are_removed_and_public_decoders_fill_every_frame():
     query = "check reach <= 4: ticks == 2;"
     machine, full = _compile(_OUTPUTS, query, False)
     _, sliced = _compile(_OUTPUTS, query)
-    assert sliced.core.cone_slice.dropped_variables == ("output", "other")
+    assert sliced.core.cone_slice.dropped_variables == ("reported", "other")
     assert _dag_size(sliced.core.core) < _dag_size(full.core.core)
     assert z3.eq(sliced.core.initial_formula, full.core.initial_formula)
     full_result, result = solve_bmc_property(full), solve_bmc_property(sliced)
@@ -65,7 +66,7 @@ def test_unread_outputs_are_removed_and_public_decoders_fill_every_frame():
         ]
         assert replay_bmc_witness(machine, trace).ok
     assert result.to_canonical()["cone_slicing"]["dropped_variables"] == [
-        "output",
+        "reported",
         "other",
     ]
 
@@ -136,7 +137,7 @@ def test_query_references_and_guard_dependencies_are_retained():
 
 def test_abstract_actions_skip_slicing():
     machine, formula = _compile(
-        "def int output = 0; state Root { enter abstract Observe; }",
+        "def int reported = 0; state Root { enter abstract Observe; }",
         'check reach <= 1: active("Root");',
     )
     assert formula.core.cone_slice.skipped_reason == "abstract_actions"
@@ -165,7 +166,7 @@ def test_response_suffix_is_completed_before_exposing_result(profile):
     assert result.incomplete_status == "sat"
     trace = decode_bmc_result_trace(result, source="incomplete_suffix")
     assert replay_bmc_witness(machine, trace).ok
-    assert trace.frames[1].vars["output"] == 19
+    assert trace.frames[1].vars["reported"] == 19
 
 
 @pytest.mark.parametrize(
@@ -197,8 +198,8 @@ def test_result_decoding_reuses_validation_without_sharing_mutable_traces(
     assert len(calls) == 1
     first = decode_bmc_result_trace(result, source=source)
     expected = first.to_canonical()
-    first.frames[1].vars["output"] = -999
-    first.initial["vars"]["output"] = -999
+    first.frames[1].vars["reported"] = -999
+    first.initial["vars"]["reported"] = -999
     first.solver["primary_status"] = "changed"
     second = decode_bmc_result_trace(result, source=source)
     assert second.to_canonical() == expected
@@ -219,9 +220,9 @@ def test_result_decoding_reuses_validation_without_sharing_mutable_traces(
 def test_result_reuse_preserves_explicit_event_policy_and_channel_validation():
     machine, formula = _compile(
         """
-        def int output = 0;
+        def int reported = 0;
         state Root {
-            state A { event go; during { output = output + 1; } }
+            state A { event go; during { reported = reported + 1; } }
             state B;
             [*] -> A;
             A -> B :: go;
@@ -269,7 +270,7 @@ def test_failed_slice_replays_once_then_solves_full_model_with_same_budget(monke
     assert result.formula.core.context.options.cone_slicing is False
     assert result.to_canonical()["cone_slicing"]["fallback"] is True
     assert "slicing_fallback" in result.diagnostics
-    assert decode_bmc_result_trace(result).frames[1].vars["output"] == 19
+    assert decode_bmc_result_trace(result).frames[1].vars["reported"] == 19
 
 
 def test_slicing_disabled_keeps_core_and_result_payload_unchanged():
@@ -301,9 +302,9 @@ def test_slice_metadata_rejects_inconsistent_partitions(retained, dropped, reaso
 def test_float_and_unknown_arithmetic_remain_in_the_model():
     source = """
     def float value = 1.0;
-    def float output = 0.0;
+    def float reported = 0.0;
     def int integer_output = 0;
-    state Root { enter { output = sqrt(value); integer_output = 17; } }
+    state Root { enter { reported = sqrt(value); integer_output = 17; } }
     """
     machine, formula = _compile(source, 'check reach <= 1: active("Root");')
     assert formula.core.cone_slice.dropped_variables == ("integer_output",)
@@ -314,14 +315,14 @@ def test_float_and_unknown_arithmetic_remain_in_the_model():
 def test_temporary_float_in_integer_variable_preserves_dependent_writes():
     source = """
     def int temporary = 0;
-    def int output = 0;
+    def int reported = 0;
     def int telemetry = 0;
     state Root {
         enter {
             temporary = 0.5;
-            output = temporary + 1;
+            reported = temporary + 1;
             temporary = 0;
-            output = 0;
+            reported = 0;
             telemetry = 17;
         }
     }
@@ -365,3 +366,102 @@ def test_property_verdicts_match_full_model(property_text):
         assert replay_bmc_witness(
             machine, decode_bmc_result_trace(result, source="incomplete_suffix")
         ).ok
+
+
+@pytest.mark.parametrize("profile", ["default", "logic", "tactic"])
+@pytest.mark.parametrize("numeric_type", ["int", "float"])
+def test_slicing_preserves_input_steps_parameters_and_complete_outputs(
+    profile, numeric_type
+):
+    source = """
+    input %s sensor;
+    input int spare;
+    param int gain = 2;
+    param int unused_gain = 9;
+    control int ticks = 0;
+    output %s reading = 0;
+    output int held = 11;
+    state Root {
+        state Ready { during { ticks = ticks + 1; reading = sensor + gain; } }
+        [*] -> Ready;
+    }
+    """ % (numeric_type, numeric_type)
+    query = (
+        "init cold havoc { gain }; assume always: gain == 4; "
+        "assume at 0: sensor == 3; assume at 1: sensor == 5; "
+        "assume at 0: spare == 9; assume at 1: spare == 8; "
+        "check reach <= 2: ticks == 2;"
+    )
+    machine, sliced = _compile(source, query)
+    _, full = _compile(source, query, False)
+    result = solve_bmc_property(sliced, solver_profile=profile)
+    baseline = solve_bmc_property(full, solver_profile=profile)
+    assert result.status == baseline.status == "sat"
+    assert result.to_canonical()["cone_slicing"]["fallback"] is False
+    cone = sliced.core.cone_slice
+    assert set(cone.retained_variables) | set(cone.dropped_variables) == {
+        "ticks", "reading", "held"
+    }
+    assert "held" in cone.dropped_variables
+    expected = decode_bmc_result_trace(baseline)
+    for witness in (
+        decode_bmc_result_trace(result),
+        decode_bmc_witness(result.formula, result.model),
+    ):
+        assert witness.initial["parameters"] == {"gain": 4, "unused_gain": 9}
+        assert [step.inputs for step in witness.steps] == [
+            {"sensor": 3, "spare": 9}, {"sensor": 5, "spare": 8}
+        ]
+        assert [frame.vars for frame in witness.frames] == [
+            frame.vars for frame in expected.frames
+        ]
+        assert witness.frames[-1].vars == {"ticks": 2, "reading": 9, "held": 11}
+        assert replay_bmc_witness(machine, witness).ok
+
+
+@pytest.mark.parametrize("abstract", [False, True])
+def test_slicing_without_persistent_variables_keeps_environment_and_call_context(abstract):
+    source = "input int sensor; param int gain = 2; state Root { %s }" % (
+        "enter abstract Observe;" if abstract else ""
+    )
+    machine, formula = _compile(
+        source, 'assume at 0: sensor == 5; check reach <= 1: active("Root");'
+    )
+    cone = formula.core.cone_slice
+    assert cone.retained_variables == cone.dropped_variables == ()
+    assert cone.skipped_reason == (
+        "abstract_actions" if abstract else "no_removable_variables"
+    )
+    result = solve_bmc_property(formula)
+    assert result.status == "sat"
+    witness = decode_bmc_result_trace(result)
+    assert witness.initial["parameters"] == {"gain": 2}
+    assert witness.steps[0].inputs == {"sensor": 5}
+    assert all(frame.vars == {} for frame in witness.frames)
+    if abstract:
+        assert len(witness.steps[0].abstract_calls) == 1
+        assert witness.steps[0].abstract_calls[0].snapshot == {}
+    assert replay_bmc_witness(machine, witness).ok
+
+
+@pytest.mark.parametrize("name", ["sensor", "gain"])
+def test_core_slice_partition_rejects_input_and_parameter_names(name):
+    from pyfcstm.bmc.slicing import ConeSlice
+
+    _, formula = _compile(
+        "input int sensor; param int gain = 2; control int ticks = 0; state Root;",
+        'check reach <= 1: active("Root");',
+    )
+    core = formula.core
+    with pytest.raises(BmcBuildError, match="partition the persistent variables"):
+        BmcCoreFormula(
+            context=core.context,
+            symbols=core.symbols,
+            domain_formula=core.domain_formula,
+            initial_formula=core.initial_formula,
+            transition_formula=core.transition_formula,
+            environment_formula=core.environment_formula,
+            core=core.core,
+            steps=core.steps,
+            cone_slice=ConeSlice(("ticks", name), ()),
+        )

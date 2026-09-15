@@ -22,6 +22,7 @@ export type FcstmPyNodeType =
     | 'ImportDefFallbackSelector'
     | 'ImportDefTargetTemplate'
     | 'ImportDefMapping'
+    | 'ImportVariableMapping'
     | 'ImportEventMapping'
     | 'OperationAssignment'
     | 'OperationIfBranch'
@@ -78,15 +79,33 @@ export interface FcstmAstDocument extends FcstmAstNodeBase {
 /**
  * Variable definition aligned with pyfcstm's ``DefAssignment`` node.
  */
+export type VariableRole = 'control' | 'input' | 'param' | 'output';
+
+/** An authored declaration and its ordered import bindings before flattening. */
+export interface FcstmVariableDeclarationSource {
+    filePath: string;
+    declaration: FcstmAstVariableDefinition;
+    bindings: Array<{
+        filePath: string;
+        sourceName: string;
+        targetName: string;
+        alias: string;
+        range: TextRange;
+    }>;
+}
+
 export interface FcstmAstVariableDefinition extends FcstmAstNodeBase {
     kind: 'variableDefinition';
     pyNodeType: 'DefAssignment';
+    sourceDeclarations?: FcstmVariableDeclarationSource[];
     name: string;
     type: 'int' | 'float';
     valueType: 'int' | 'float';
     deftype: 'int' | 'float';
-    initializer: FcstmAstExpression;
-    expr: FcstmAstExpression;
+    role?: VariableRole;
+    spelling?: string;
+    initializer: FcstmAstExpression | null;
+    expr: FcstmAstExpression | null;
     doc?: string;
 }
 
@@ -360,14 +379,17 @@ export type FcstmAstImportDefSelector =
     | FcstmAstImportDefPatternSelector
     | FcstmAstImportDefExactSelector;
 
-export interface FcstmAstImportDefMapping extends FcstmAstNodeBase {
+export interface FcstmAstImportVariableMapping extends FcstmAstNodeBase {
     kind: 'importDefMapping';
-    pyNodeType: 'ImportDefMapping';
+    pyNodeType: 'ImportVariableMapping' | 'ImportDefMapping';
+    spelling?: 'var' | 'def';
     selector: FcstmAstImportDefSelector;
     targetTemplate: string;
     targetTemplateNode: FcstmAstImportDefTargetTemplate;
     target_template: FcstmAstImportDefTargetTemplate;
 }
+
+export type FcstmAstImportDefMapping = FcstmAstImportVariableMapping;
 
 export interface FcstmAstImportEventMapping extends FcstmAstNodeBase {
     kind: 'importEventMapping';
@@ -545,6 +567,7 @@ export type TransitionDefinition = FcstmAstTransition;
 export type ForceTransitionDefinition = FcstmAstForcedTransition;
 export type ImportStatement = FcstmAstImportStatement;
 export type ImportDefTargetTemplate = FcstmAstImportDefTargetTemplate;
+export type ImportVariableMapping = FcstmAstImportVariableMapping;
 export type ImportDefMapping = FcstmAstImportDefMapping;
 export type ImportEventMapping = FcstmAstImportEventMapping;
 export type OperationAssignment = FcstmAstAssignmentStatement;

@@ -77,7 +77,8 @@ export interface FcstmSemanticVariable {
     identity: FcstmSymbolIdentity;
     name: string;
     valueType: 'int' | 'float';
-    initializer: FcstmAstExpression;
+    role: import('../ast').VariableRole;
+    initializer: FcstmAstExpression | null;
     ast: FcstmAstVariableDefinition;
     range: TextRange;
 }

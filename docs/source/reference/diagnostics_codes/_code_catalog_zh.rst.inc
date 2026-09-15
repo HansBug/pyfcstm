@@ -1011,9 +1011,9 @@ E_IMPORT_DUPLICATE_MAPPING
 
 **注册表事实。** 严重级别 ``error``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``import_statement``。
 
-**含义。** 同一次导入内存在重复源名或目标名，或者导入变量与已有声明的角色、数值类型、输入所有权或初始值冲突。跨导入共享目标必须保持角色和类型一致，共享动态输入还必须由宿主显式声明；根据 ``binding_reason`` 定位冲突，不隐式改变角色。
+**含义。** 同一次导入内存在重复源名或目标名，或者导入变量与已有声明的角色、数值类型、输入所有权或初始值冲突。数值类型必须一致；显式父目标决定最终角色：子 input 可绑定任意父角色，param 只能绑定 param，control/output 只能绑定 control/output。隐式共享不能改变角色，共享 input 必须由父级显式声明；根据 ``binding_reason`` 定位冲突并保留源只读约束。
 
-**面向 LLM 的修复摘要。** 这是会阻塞模型构建或目标 API 解析的错误。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。同一次导入内存在重复源名或目标名，或者导入变量与已有声明的角色、数值类型、输入所有权或初始值冲突。跨导入共享目标必须保持角色和类型一致，共享动态输入还必须由宿主显式声明；根据 ``binding_reason`` 定位冲突，不隐式改变角色。
+**面向 LLM 的修复摘要。** 这是会阻塞模型构建或目标 API 解析的错误。 修复时先根据 ``refs`` 定位对象，再做最小、可解释、保留模型意图的修改。同一次导入内存在重复源名或目标名，或者导入变量与已有声明的角色、数值类型、输入所有权或初始值冲突。数值类型必须一致；显式父目标决定最终角色：子 input 可绑定任意父角色，param 只能绑定 param，control/output 只能绑定 control/output。隐式共享不能改变角色，共享 input 必须由父级显式声明；根据 ``binding_reason`` 定位冲突并保留源只读约束。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -1074,12 +1074,12 @@ E_IMPORT_DUPLICATE_MAPPING
 .. diagnostics-example E_IMPORT_DUPLICATE_MAPPING 2 boundary_only
 
 **示例 2**\ （``boundary_only``）——针对 ``E_IMPORT_DUPLICATE_MAPPING`` 的修复方向。
-典型修复是对 ``mapping_clause`` 执行 ``drop_duplicate``：针对“同一次导入内存在重复源名或目标名，或者导入变量与已有声明的角色、数值类型、输入所有权或初始值冲突。跨导入共享目标必须保持角色和类型一致，共享动态输入还必须由宿主显式声明；根据 ``binding_reason`` 定位冲突，不隐式改变角色。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
+典型修复是对 ``mapping_clause`` 执行 ``drop_duplicate``：针对“同一次导入内存在重复源名或目标名，或者导入变量与已有声明的角色、数值类型、输入所有权或初始值冲突。数值类型必须一致；显式父目标决定最终角色：子 input 可绑定任意父角色，param 只能绑定 param，control/output 只能绑定 control/output。隐式共享不能改变角色，共享 input 必须由父级显式声明；根据 ``binding_reason`` 定位冲突并保留源只读约束。”，结合上方 ``refs`` 定位具体对象，做最小语义保持修改；如果无法确认意图，先补充模型上下文或保留诊断。
 
 .. diagnostics-example E_IMPORT_DUPLICATE_MAPPING 3 boundary_only
 
 **示例 3**\ （``boundary_only``）——针对 ``E_IMPORT_DUPLICATE_MAPPING`` 的反例边界。
-不要这样处理：针对“同一次导入内存在重复源名或目标名，或者导入变量与已有声明的角色、数值类型、输入所有权或初始值冲突。跨导入共享目标必须保持角色和类型一致，共享动态输入还必须由宿主显式声明；根据 ``binding_reason`` 定位冲突，不隐式改变角色。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
+不要这样处理：针对“同一次导入内存在重复源名或目标名，或者导入变量与已有声明的角色、数值类型、输入所有权或初始值冲突。数值类型必须一致；显式父目标决定最终角色：子 input 可绑定任意父角色，param 只能绑定 param，control/output 只能绑定 control/output。隐式共享不能改变角色，共享 input 必须由父级显式声明；根据 ``binding_reason`` 定位冲突并保留源只读约束。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
 .. _diag-code-e-import-mapping-invalid-zh:
 

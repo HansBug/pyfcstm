@@ -107,6 +107,19 @@ This syntax/model contract does not itself supply cycle input values. Runtime
 input sources, role-aware import merging, BMC input symbols, and generated
 runtime interfaces are documented in their respective guides.
 
+## Import variable roles
+
+Use `var child_name -> parent_name;` inside an import block (`def` is also supported). The following cells specify the **final parent role**, assuming an explicitly declared parent target and identical numeric types:
+
+| Child / parent | param | input | control | output |
+|---|---|---|---|---|
+| param | param | rejected | rejected | rejected |
+| input | param | input | control | output |
+| control | rejected | rejected | control | output |
+| output | rejected | rejected | control | output |
+
+Validate source input/param writes before binding; mapping cannot legalize them. Only explicit parent declarations permit role changes. Missing targets retain child roles; implicit shared inputs remain forbidden. Parent defaults win, and every nested boundary must satisfy the matrix. Binding directly references the one parent variable: input bound to mutable parent control/output reads the current value at each execution position, without a child snapshot or delay. Final input uses cycle snapshots, final param is fixed, and control/output persists. Generated interfaces and inspect partitions use the final role; child output bound to control is internal, while child control bound to output is externally exposed. Reverify the assembled model when standalone child proofs relied on frozen inputs.
+
 ## Top-Level Structure
 
 Variable definitions come before the root state:

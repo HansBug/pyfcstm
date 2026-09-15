@@ -5,6 +5,8 @@ shared data files. Each case lives in `cases/<id>.fcstm` plus
 `cases/<id>.yaml` and is executed by helpers in
 `test/testings/simulate_semantics.py`.
 
+Import fixtures keep supporting child sources under `modules/` and resolve relative imports from the paired case file. All runners build the assembled model through the public parser/model API, including native harness generation. The cross-role cases verify final interfaces, parent defaults, cold/hot initialization, nested parameter binding, and exit/effect/entry reads without a child snapshot.
+
 The shared corpus is a fixture/test-harness contract. It does not change
 production runtime semantics, and it must not activate known simulator bug
 reproductions as expected failures.

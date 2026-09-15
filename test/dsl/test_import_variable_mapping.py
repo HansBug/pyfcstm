@@ -53,3 +53,23 @@ def test_var_is_reserved_outside_import_blocks():
 
     with pytest.raises(GrammarParseError):
         parse_state_machine_dsl("def int var = 0; state Root;")
+
+
+@pytest.mark.parametrize("source_role", ["param", "input", "control", "output"])
+@pytest.mark.parametrize("target_role", ["param", "input", "control", "output"])
+def test_mapping_syntax_preserves_authored_roles_without_converting_them(
+    source_role, target_role
+):
+    source_init = "" if source_role == "input" else " = 1"
+    target_init = "" if target_role == "input" else " = 2"
+    child = parse_state_machine_dsl(
+        f"{source_role} int value{source_init}; state Child;"
+    )
+    host = parse_state_machine_dsl(
+        f'{target_role} int shared{target_init}; state Host {{ import "./child.fcstm" as Child {{ var value -> shared; }} }}'
+    )
+    assert child.definitions[0].role.value == source_role
+    assert host.definitions[0].role.value == target_role
+    assert str(host.root_state.imports[0].mappings[0]) == "var value -> shared;"
+    assert parse_state_machine_dsl(str(child)) == child
+    assert parse_state_machine_dsl(str(host)) == host

@@ -1,0 +1,6 @@
+control int counter = 0;
+output int report = 0;
+state Probe {
+    enter { counter = counter + 1; report = counter * 2; }
+    during { counter = counter + 1; report = counter * 2; }
+}

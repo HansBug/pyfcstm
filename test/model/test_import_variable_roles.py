@@ -33,8 +33,16 @@ def build(tmp_path, source_role, target_role, source_type="int", target_type="in
 
 @pytest.mark.parametrize("source", ROLES)
 @pytest.mark.parametrize("target", ROLES)
-def test_import_requires_identical_roles(tmp_path, source, target):
-    if source != target:
+def test_import_uses_parent_role(tmp_path, source, target):
+    if (
+        target
+        not in {
+            "param": {"param"},
+            "input": set(ROLES),
+            "control": {"control", "output"},
+            "output": {"control", "output"},
+        }[source]
+    ):
         with pytest.raises(SyntaxError, match="role"):
             build(tmp_path, source, target)
     else:
@@ -85,7 +93,7 @@ def test_absent_target_preserves_declaration(tmp_path, role, numeric):
 
 @pytest.mark.parametrize("source", ROLES)
 @pytest.mark.parametrize("target", ROLES)
-def test_recursive_mapping_cannot_change_role(tmp_path, source, target):
+def test_recursive_mapping_uses_parent_role(tmp_path, source, target):
     (tmp_path / "leaf.fcstm").write_text(
         declaration(source, "value") + " state Leaf;", encoding="utf-8"
     )
@@ -99,7 +107,15 @@ def test_recursive_mapping_cannot_change_role(tmp_path, source, target):
         + ' state Host { import "./child.fcstm" as Child { var inner -> shared; } [*] -> Child; }',
         encoding="utf-8",
     )
-    if source != target:
+    if (
+        target
+        not in {
+            "param": {"param"},
+            "input": set(ROLES),
+            "control": {"control", "output"},
+            "output": {"control", "output"},
+        }[source]
+    ):
         with pytest.raises(SyntaxError, match="role"):
             load_state_machine_from_file(str(host))
     else:
@@ -112,7 +128,7 @@ def test_collect_conflicting_import_does_not_commit_any_declarations(tmp_path):
     from pyfcstm.model.imports import assemble_state_machine_imports
 
     (tmp_path / "child.fcstm").write_text(
-        "output int fresh = 1; input int value; state Child;", encoding="utf-8"
+        "output int fresh = 1; control int value = 1; state Child;", encoding="utf-8"
     )
     source = 'param int shared = 1; state Host { import "./child.fcstm" as Child { var value -> shared; var fresh -> fresh; } }'
     sink = DiagnosticSink(collect=True)
@@ -134,9 +150,9 @@ def test_collect_rejects_invalid_nested_import_and_keeps_valid_sibling(
     from pyfcstm.model.imports import assemble_state_machine_imports
 
     (tmp_path / "leaf.fcstm").write_text(
-        "input int value; state Leaf;", encoding="utf-8"
+        "param int value = 1; state Leaf;", encoding="utf-8"
     )
-    nested = 'param int shared = 1; state Child { import "./leaf.fcstm" as Leaf { var value -> shared; } }'
+    nested = 'control int shared = 1; state Child { import "./leaf.fcstm" as Leaf { var value -> shared; } }'
     if invalid_mapping:
         nested = (
             'state Child { import "./leaf.fcstm" as Leaf { var missing -> shared; } }'

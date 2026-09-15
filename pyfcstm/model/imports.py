@@ -14,8 +14,11 @@ The assembler provides:
 * Circular imports and alias conflicts are reported explicitly.
 * Imported root states are renamed to the declared alias; an explicit host
   display name takes precedence over the imported display name.
-* Imported declarations preserve their roles and numeric types. Shared dynamic
-  inputs require an explicit host declaration; host defaults take precedence.
+* Imported declarations bind to explicit host roles with identical numeric types.
+  Inputs may bind to any host role, parameters only to parameters, and writable
+  declarations only to control/output. Host defaults take precedence.
+* Source inputs/parameters remain read-only before mapping. Final host roles
+  determine storage and interfaces; bindings add no input snapshot or delay.
 * Variable ``var`` mappings (also spelled ``def``) support exact / set / pattern / fallback rules,
   placeholder expansion, default alias-based isolation, and deep variable
   reference rewriting across definitions, guards, and operation blocks.
@@ -49,6 +52,14 @@ from ..utils.validate import ModelDiagnostic, ModelValidationError, Span
 __all__ = [
     "assemble_state_machine_imports",
 ]
+
+
+_IMPORT_ROLE_TARGETS = {
+    VariableRole.PARAM: {VariableRole.PARAM},
+    VariableRole.INPUT: set(VariableRole),
+    VariableRole.CONTROL: {VariableRole.CONTROL, VariableRole.OUTPUT},
+    VariableRole.OUTPUT: {VariableRole.CONTROL, VariableRole.OUTPUT},
+}
 
 
 _TRUSTED_GENERATED_COMBO_PSEUDO_NODE_IDS: Set[int] = set()
@@ -542,6 +553,12 @@ def _assemble_state(
             import_stack=[*import_stack, resolved_file],
             sink=sink,
         )
+        readonly = {
+            definition.name: definition.role
+            for definition in imported_program.definitions
+            if definition.role in (VariableRole.INPUT, VariableRole.PARAM)
+        }
+        _validate_imported_readonly_writes(imported_program.root_state, readonly, sink)
         if len(sink.diagnostics) != diagnostic_count:
             continue
         # The mapping helpers (def / event) are sink-aware: in strict
@@ -795,6 +812,29 @@ def _load_imported_program(
         return None
 
     return program
+
+
+def _validate_imported_readonly_writes(node, readonly, sink: DiagnosticSink) -> None:
+    """Reject source writes before a binding can replace the declaration role."""
+    if isinstance(node, dsl_nodes.OperationAssignment):
+        if node.name in readonly:
+            sink.emit(
+                ModelDiagnostic(
+                    code="E_INPUT_WRITE"
+                    if readonly[node.name] is VariableRole.INPUT
+                    else "E_PARAM_WRITE",
+                    severity="error",
+                    message=f"Model operations cannot write input {node.name!r}.",
+                    span=node._span,
+                    refs={"var_name": node.name, "source_path": node._source_path},
+                )
+            )
+    elif isinstance(node, dsl_nodes.ASTNode):
+        for item in fields(node):
+            _validate_imported_readonly_writes(getattr(node, item.name), readonly, sink)
+    elif isinstance(node, list):
+        for item in node:
+            _validate_imported_readonly_writes(item, readonly, sink)
 
 
 def _rewrite_absolute_paths_for_imported_root(
@@ -1631,7 +1671,9 @@ def _merge_imported_definitions(
 
         explicit = def_item.name in host_explicit_def_names
         conflict = None
-        if existing_item.role != def_item.role:
+        if existing_item.role not in _IMPORT_ROLE_TARGETS[def_item.role] or (
+            existing_item.role != def_item.role and not explicit
+        ):
             reason = "role_mismatch"
             conflict = (
                 f"has role {existing_item.role.value!r}, cannot bind imported "

@@ -1013,7 +1013,7 @@ E_IMPORT_DUPLICATE_MAPPING
 
 **Meaning.** A mapping duplicates a source or target within one import, or an imported variable conflicts with an existing declaration in role, numeric type, input ownership, or initializer.
 
-**LLM repair summary.** Within one import, each target receives at most one source. Across imports, shared targets require matching roles and numeric types; inputs require an explicit host declaration. Use ``binding_reason`` to identify conflicts, preserving the authored roles.
+**LLM repair summary.** Within one import, each target receives at most one source. Numeric types must match. Explicit parent targets determine the final role: child input may bind to any role, param only to param, and control/output only to control/output. Implicit sharing cannot change roles; shared inputs require an explicit host declaration. Use ``binding_reason`` to identify the conflict and preserve source read-only constraints.
 
 .. list-table:: Refs schema
    :header-rows: 1

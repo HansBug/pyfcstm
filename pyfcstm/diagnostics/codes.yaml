@@ -1555,9 +1555,11 @@ E_IMPORT_DUPLICATE_MAPPING:
     summary: >-
       An import-mapping block duplicates a source or target, or a variable
       binding conflicts with an existing declaration. Within one import each
-      target receives at most one source. Across imports, sharing requires
-      matching roles and numeric types; inputs additionally require
-      an explicit host input declaration. Consult binding_reason when present.
+      target receives at most one source. Numeric types must match. An explicit
+      host declaration determines the final role: child input may bind to any
+      role, param only to param, and control/output only to control/output.
+      Implicit sharing cannot change roles; shared inputs require an explicit
+      host declaration. Consult binding_reason when present.
     recommended_actions:
       - kind: drop_duplicate
         target: mapping_clause

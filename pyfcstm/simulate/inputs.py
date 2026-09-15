@@ -422,7 +422,7 @@ class ReplayInputPattern(IntegratedSequenceInput):
     """Deterministic finite replay source with explicit model input names.
 
     :param snapshots: Complete per-cycle input mappings, copied on construction.
-    :param input_names: Model dynamic input names in declaration order.
+    :param input_names: Model input names in declaration order.
     """
 
     def __init__(self, snapshots, *, input_names: Tuple[str, ...]):
@@ -491,7 +491,7 @@ class _InputSources:
         for name, value in values.items():
             if name not in self.defines:
                 raise SimulationRuntimeInputSourceError(
-                    "E_INPUT_SOURCE_UNKNOWN", "Unknown dynamic input {!r}.".format(name)
+                    "E_INPUT_SOURCE_UNKNOWN", "Unknown input {!r}.".format(name)
                 )
             result[name] = _number(value, self.defines[name].type)
         return result

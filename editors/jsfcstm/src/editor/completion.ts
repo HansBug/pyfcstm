@@ -75,7 +75,7 @@ type FcstmImportCompletionContext =
 
 export const KEYWORDS = [
     'state', 'pseudo', 'named', 'def', 'event', 'import', 'as',
-    'control', 'input', 'dynamic', 'static', 'param', 'output',
+    'control', 'input', 'param', 'output',
     'enter', 'during', 'exit', 'before', 'after',
     'abstract', 'ref', 'effect', 'if', 'else',
     'int', 'float',

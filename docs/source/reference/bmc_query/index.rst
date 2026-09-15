@@ -241,16 +241,16 @@ This query is SAT and records input snapshots ``{"sensor": 1}`` and
 binding error: there is no third input sample at bound 2. Contradictory parameter
 assumptions at two valid frames are UNSAT because the parameter cannot change.
 
-Dynamic inputs are not initializable variables: naming one in ``havoc`` or
+Inputs are not initializable variables: naming one in ``havoc`` or
 ``init ... where`` is rejected. ``havoc *`` covers control/output/parameters.
-Frame property predicates cannot reference a dynamic input; model an explicit
+Frame property predicates cannot reference an input; model an explicit
 control/output latch when checking an observed sample across frames. Parameters
 may be referenced normally, including in call-filter predicates.
 
 Frame assumptions
 ~~~~~~~~~~~~~~~~~
 
-For predicates without dynamic inputs, ``assume always`` applies to all ``N+1`` frames.  ``assume at k`` applies to
+For predicates without inputs, ``assume always`` applies to all ``N+1`` frames.  ``assume at k`` applies to
 one frame and requires ``0 <= k <= N``.  Frame predicates permit ``cycle`` and
 current-frame ``active``/``terminated`` atoms, but not event, case, or call
 atoms.

@@ -65,7 +65,7 @@ This directory contains a self-contained C99 state-machine runtime. Put your app
 
 ## Quick Start
 
-Save this complete program as `app.c`. Its setup follows this model’s declarations for parameters, inputs and abstract actions. {% if model.dynamic_inputs or model.static_inputs %}Values of `1` are demonstration readings/configuration; replace them with values appropriate for this model.{% endif %} Action callbacks print observations; replace their bodies with application work. Initialize once and let your host scheduler call `cycle` repeatedly on the same instance.
+Save this complete program as `app.c`. Its setup follows this model’s declarations for parameters, inputs and abstract actions. {% if model.inputs or model.parameters %}Values of `1` are demonstration readings/configuration; replace them with values appropriate for this model.{% endif %} Action callbacks print observations; replace their bodies with application work. Initialize once and let your host scheduler call `cycle` repeatedly on the same instance.
 
 <!-- example:quick-start -->
 
@@ -80,7 +80,7 @@ typedef struct AppData {
     int event_active;
 } AppData;
 
-{% for item in model.dynamic_inputs.values() %}static int app_read_{{ item.name | readonly_value_identifier }}(void *user_data, {% if item.type == 'int' %}{{ m }}Int{% else %}double{% endif %} *value)
+{% for item in model.inputs.values() %}static int app_read_{{ item.name | readonly_value_identifier }}(void *user_data, {% if item.type == 'int' %}{{ m }}Int{% else %}double{% endif %} *value)
 {
     AppData *data = (AppData *)user_data;
     /* Replace this lookup with your sensor/driver call; return 0 on failure. */
@@ -93,8 +93,8 @@ typedef struct AppData {
     AppData *data = (AppData *)user_data;
     (void)machine;
     ++data->hook_calls;
-{% for item in model.dynamic_inputs.values() %}    printf("input {{ item.name }} = %.17g\n", (double){{ m }}_get_input_{{ item.name | readonly_value_identifier }}(machine));
-{% endfor %}{% for item in model.static_inputs.values() %}    printf("param {{ item.name }} = %.17g\n", (double){{ m }}_get_param_{{ item.name | readonly_value_identifier }}(machine));
+{% for item in model.inputs.values() %}    printf("input {{ item.name }} = %.17g\n", (double){{ m }}_get_input_{{ item.name | readonly_value_identifier }}(machine));
+{% endfor %}{% for item in model.parameters.values() %}    printf("param {{ item.name }} = %.17g\n", (double){{ m }}_get_param_{{ item.name | readonly_value_identifier }}(machine));
 {% endfor %}    printf("action %d stage %d\n", (int)ctx->action_id, (int)ctx->action_stage_id);
 }
 
@@ -105,17 +105,17 @@ int main(void)
     AppData data;
     memset(&options, 0, sizeof(options));
     memset(&data, 0, sizeof(data));
-{% for item in model.static_inputs.values() %}    options.parameters.{{ item.name | readonly_value_identifier }} = 1;
+{% for item in model.parameters.values() %}    options.parameters.{{ item.name | readonly_value_identifier }} = 1;
     options.parameters_present.{{ item.name | readonly_value_identifier }} = 1;
 {% endfor %}    {{ m }} machine;
     if (!{{ m }}_init_with_options(&machine, &options)) {
         fprintf(stderr, "%s\n", {{ m }}_last_error(&machine));
         return 1;
     }
-{% if model.dynamic_inputs %}
+{% if model.inputs %}
     {{ m }}InputProvider provider;
     memset(&provider, 0, sizeof(provider));
-{% for item in model.dynamic_inputs.values() %}    data.inputs.{{ item.name | readonly_value_identifier }} = 1;
+{% for item in model.inputs.values() %}    data.inputs.{{ item.name | readonly_value_identifier }} = 1;
     provider.read_{{ item.name | readonly_value_identifier }} = app_read_{{ item.name | readonly_value_identifier }};
 {% endfor %}    {{ m }}_set_input_provider(&machine, &provider, &data);
 {% endif %}{% if abstract_ns.rows %}
@@ -128,7 +128,7 @@ int main(void)
         fprintf(stderr, "%s\n", {{ m }}_last_error(&machine));
         return 2;
     }
-{% for item in model.static_inputs.values() %}    printf("param {{ item.name }} = %.17g\n", (double){{ m }}_get_param_{{ item.name | readonly_value_identifier }}(&machine));
+{% for item in model.parameters.values() %}    printf("param {{ item.name }} = %.17g\n", (double){{ m }}_get_param_{{ item.name | readonly_value_identifier }}(&machine));
 {% endfor %}{% for item in model.persistent_variables.values() %}    printf("{{ item.role.value }} {{ item.name }} = %.17g\n",
            (double){{ m }}_vars(&machine)->{{ item.name | to_c_identifier }});
 {% endfor %}    printf("hook calls = %d\n", data.hook_calls);
@@ -162,8 +162,8 @@ Integer input callbacks write the generated signed 64-bit `Int`; floating input 
 {% if model.defines %}
 | Role | DSL name | Access |
 | --- | --- | --- |
-{% for item in model.dynamic_inputs.values() %}| input | `{{ item.name }}` | `InputProvider.read_{{ item.name | readonly_value_identifier }}`; `get_input_{{ item.name | readonly_value_identifier }}` |
-{% endfor %}{% for item in model.static_inputs.values() %}| param | `{{ item.name }}` | `InitOptions.parameters.{{ item.name | readonly_value_identifier }}` + `parameters_present.{{ item.name | readonly_value_identifier }}`; `get_param_{{ item.name | readonly_value_identifier }}` |
+{% for item in model.inputs.values() %}| input | `{{ item.name }}` | `InputProvider.read_{{ item.name | readonly_value_identifier }}`; `get_input_{{ item.name | readonly_value_identifier }}` |
+{% endfor %}{% for item in model.parameters.values() %}| param | `{{ item.name }}` | `InitOptions.parameters.{{ item.name | readonly_value_identifier }}` + `parameters_present.{{ item.name | readonly_value_identifier }}`; `get_param_{{ item.name | readonly_value_identifier }}` |
 {% endfor %}{% for item in model.persistent_variables.values() %}| {{ item.role.value }} | `{{ item.name }}` | `Vars.{{ item.name | to_c_identifier }}` |
 {% endfor %}
 
@@ -250,7 +250,7 @@ This fragment continues after a successful cycle in Quick Start. It captures sta
 {{ m }}Vars initial_vars = *{{ m }}_vars(&machine);
 {{ m }}Parameters parameters;
 memset(&parameters, 0, sizeof(parameters));
-{% for item in model.static_inputs.values() %}parameters.{{ item.name | readonly_value_identifier }} = {{ m }}_get_param_{{ item.name | readonly_value_identifier }}(&machine);
+{% for item in model.parameters.values() %}parameters.{{ item.name | readonly_value_identifier }} = {{ m }}_get_param_{{ item.name | readonly_value_identifier }}(&machine);
 {% endfor %}
 if (state == {{ a }}_INVALID_STATE_ID) {
     fprintf(stderr, "Cannot restore a completed machine as a live checkpoint\n");
@@ -450,7 +450,7 @@ Before C/C++ deployment, run `pyfcstm inspect` and review numeric diagnostics fo
 {% if model.defines %}
 | Role | Name | Type | Initial DSL |
 | --- | --- | --- | --- |
-{% for def_item in model.defines.values() %}| `{{ {'input_dynamic': 'input', 'input_static': 'param', 'control': 'control (def)', 'output': 'output'}[def_item.role.value] }}` | `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ (def_item.init.to_ast_node() | string) if def_item.init is not none else '-' }}` |
+{% for def_item in model.defines.values() %}| `{{ {'input': 'input', 'param': 'param', 'control': 'control (def)', 'output': 'output'}[def_item.role.value] }}` | `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ (def_item.init.to_ast_node() | string) if def_item.init is not none else '-' }}` |
 {% endfor %}
 {% else %}
 This model has no variable declarations.

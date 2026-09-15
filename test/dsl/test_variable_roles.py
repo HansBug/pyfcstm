@@ -26,10 +26,8 @@ pytestmark = pytest.mark.unittest
     [
         ("def", "control", " = 1"),
         ("control", "control", " = 1"),
-        ("input", "input_dynamic", ""),
-        ("input dynamic", "input_dynamic", ""),
-        ("param", "input_static", " = 1"),
-        ("input static", "input_static", " = 1"),
+        ("input", "input", ""),
+        ("param", "param", " = 1"),
         ("output", "output", " = 1"),
     ],
 )
@@ -44,12 +42,12 @@ def test_declaration_ast(prefix, role, initializer, type_name, documented):
     assert str(node.without_docs()) == declaration
     assert node._span.column == 1
     assert node._span.line == (2 if documented else 1)
-    assert (node.expr is None) == (role == "input_dynamic")
+    assert (node.expr is None) == (role == "input")
     assert parse_with_grammar_entry(str(node), "def_assignment") == node
 
 
 @pytest.mark.parametrize(
-    "word", ["control", "input", "dynamic", "static", "param", "output"]
+    "word", ["control", "input", "param", "output"]
 )
 @pytest.mark.parametrize(
     "template",
@@ -86,8 +84,8 @@ def test_unknown_declaration_prefix_rejected_by_grammar(prefix):
     "role,prefix,expr",
     [
         (VariableRole.CONTROL, "def", Integer("1")),
-        (VariableRole.INPUT_DYNAMIC, "input", None),
-        (VariableRole.INPUT_STATIC, "param", Integer("1")),
+        (VariableRole.INPUT, "input", None),
+        (VariableRole.PARAM, "param", Integer("1")),
         (VariableRole.OUTPUT, "output", Integer("1")),
     ],
 )
@@ -97,24 +95,12 @@ def test_programmatic_ast_default_spelling(role, prefix, expr):
     assert parse_with_grammar_entry(str(node), "def_assignment") == node
 
 
-@pytest.mark.parametrize("modifier,initializer", [("dynamic", ""), ("static", " = 1")])
-@pytest.mark.parametrize("gap", [" ", "\t", "\n", " // sample\n", " # sample\n"])
-def test_input_modifier_accepts_normal_token_separators(modifier, initializer, gap):
-    node = parse_with_grammar_entry(
-        "input%s%s int value%s;" % (gap, modifier, initializer), "def_assignment"
-    )
-    assert node.spelling == "input " + modifier
-    assert str(node) == "input %s int value%s;" % (modifier, initializer)
-
-
 @pytest.mark.parametrize(
     "prefix,token_names",
     [
         ("def", ["DEF"]),
         ("control", ["CONTROL"]),
         ("input", ["INPUT"]),
-        ("input dynamic", ["INPUT", "DYNAMIC"]),
-        ("input static", ["INPUT", "STATIC"]),
         ("param", ["PARAM"]),
         ("output", ["OUTPUT"]),
     ],
@@ -161,8 +147,8 @@ def test_invalid_declaration_rule_reports_a_grammar_error():
 @pytest.mark.parametrize(
     "role,prefix,expr",
     [
-        (VariableRole.INPUT_DYNAMIC, "input", None),
-        (VariableRole.INPUT_STATIC, "param", Integer("1")),
+        (VariableRole.INPUT, "input", None),
+        (VariableRole.PARAM, "param", Integer("1")),
     ],
 )
 def test_declaration_positional_fields_end_with_span(role, prefix, expr):
@@ -179,10 +165,8 @@ def test_declaration_positional_fields_end_with_span(role, prefix, expr):
     [
         ("def", VariableRole.CONTROL),
         ("control", VariableRole.CONTROL),
-        ("input", VariableRole.INPUT_DYNAMIC),
-        ("input dynamic", VariableRole.INPUT_DYNAMIC),
-        ("param", VariableRole.INPUT_STATIC),
-        ("input static", VariableRole.INPUT_STATIC),
+        ("input", VariableRole.INPUT),
+        ("param", VariableRole.PARAM),
         ("output", VariableRole.OUTPUT),
     ],
 )
@@ -276,3 +260,32 @@ class TestDSLVariableDeclaration:
                 prefix + " " + declaration, entry_name="def_assignment"
             )
         assert error.value.errors
+
+
+@pytest.mark.parametrize("modifier", ["dynamic", "static"])
+@pytest.mark.parametrize("gap", [" ", "\t", "\n", " // old modifier\n", " # old modifier\n"])
+def test_obsolete_input_modifiers_are_rejected(modifier, gap):
+    with pytest.raises(GrammarParseError):
+        parse_with_grammar_entry(
+            "input%s%s int value; state Root;" % (gap, modifier), "state_machine_dsl"
+        )
+
+
+@pytest.mark.parametrize("word", ["dynamic", "static"])
+@pytest.mark.parametrize("source", [
+    "def int %s = 0; state Root;", "state %s;",
+    "state Root { event %s; }", "state Root { enter %s {} }",
+])
+def test_removed_modifiers_are_normal_identifiers(word, source):
+    assert parse_with_grammar_entry(source % word, "state_machine_dsl") is not None
+
+
+@pytest.mark.parametrize("old_role", ["input_dynamic", "input_static"])
+def test_obsolete_role_values_are_rejected(old_role):
+    with pytest.raises(ValueError):
+        VariableRole(old_role)
+
+
+@pytest.mark.parametrize("old_name", ["INPUT_DYNAMIC", "INPUT_STATIC"])
+def test_obsolete_enum_members_are_absent(old_name):
+    assert not hasattr(VariableRole, old_name)

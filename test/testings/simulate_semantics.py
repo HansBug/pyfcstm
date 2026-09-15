@@ -66,7 +66,7 @@ _ALLOWED_TOP_LEVEL_FIELDS = {
 _ALLOWED_ORIGIN_FIELDS = {"files", "docs", "notes"}
 _ALLOWED_CATEGORIES = {
     "variable_roles",
-    "dynamic_inputs",
+    "inputs",
     "runtime",
     "template_alignment",
     "design_example",
@@ -771,7 +771,7 @@ def _run_step(
         source = runtime._fixture_input_source
         source.snapshot = dict(step.get("inputs", {}))
         if cycle_count and set(source.snapshot) != set(source.input_names):
-            raise _case_error(case.id, case.yaml_path, "%s.inputs must provide exactly the model dynamic inputs" % field_path)
+            raise _case_error(case.id, case.yaml_path, "%s.inputs must provide exactly the model inputs" % field_path)
     if "raises" in expect:
         try:
             runtime.cycle(events)
@@ -1335,8 +1335,8 @@ def _build_simulation_runtime(case: SemanticCase) -> SimulationRuntime:
     kwargs = _simulation_kwargs(case)
     if "parameters" in case.data:
         kwargs["parameters"] = case.data["parameters"]
-    source = _FixtureInputSource(model.dynamic_inputs)
-    if model.dynamic_inputs:
+    source = _FixtureInputSource(model.inputs)
+    if model.inputs:
         kwargs["input_source"] = source
     runtime = SimulationRuntime(model, **kwargs)
     runtime._fixture_input_source = source

@@ -90,7 +90,7 @@ def test_invalid_import_initializer_retains_its_authored_file(tmp_path):
     diagnostic = next(
         item
         for item in report.diagnostics
-        if item.code == "E_DYNAMIC_INPUT_INITIALIZER"
+        if item.code == "E_INPUT_INITIALIZER"
     )
     assert diagnostic.refs["source_path"] == str(child)
     assert diagnostic.refs["var_name"] == "value"

@@ -616,8 +616,8 @@ def readonly_value_identifier(name: str) -> str:
 def _readonly_roles(var_defines: Mapping[str, Any]) -> Dict[str, str]:
     """Map read-only model declarations to their generated getter prefixes."""
     prefixes = {
-        VariableRole.INPUT_DYNAMIC: "input",
-        VariableRole.INPUT_STATIC: "param",
+        VariableRole.INPUT: "input",
+        VariableRole.PARAM: "param",
     }
     return {
         name: prefixes[define.role]

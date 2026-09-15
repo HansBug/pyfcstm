@@ -1,7 +1,7 @@
 {%- set state_items = model.walk_states() | list -%}
 {%- set define_items = model.persistent_variables.values() | list -%}
-{%- set input_items = model.dynamic_inputs.values() | list -%}
-{%- set parameter_items = model.static_inputs.values() | list -%}
+{%- set input_items = model.inputs.values() | list -%}
+{%- set parameter_items = model.parameters.values() | list -%}
 {%- macro state_key(state) -%}{{ state | state_path }}{%- endmacro %}
 {%- set action_scan = namespace(items=[]) -%}
 {%- for scan_state in model.walk_states() -%}
@@ -467,7 +467,7 @@ class {{ machine_class_name(model) }}:
         :type initial_state: Optional[Union[str, Tuple[str, ...], List[str]]]
         :param initial_vars: Optional hot-start variable mapping.
         :type initial_vars: Optional[Dict[str, Number]]
-        :param parameters: Instance-owned static inputs; omitted cold values use DSL defaults.
+        :param parameters: Instance-owned parameters; omitted cold values use DSL defaults.
         :type parameters: Optional[Mapping[str, Number]]
         """
         parameter_values = {} if parameters is None else dict(parameters)

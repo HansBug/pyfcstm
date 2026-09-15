@@ -820,9 +820,9 @@ class BmcTraceSymbols:
     :type frame_states: Tuple[z3.ArithRef, ...]
     :param frame_vars: Per-frame persistent-variable symbols.
     :type frame_vars: Tuple[Mapping[str, z3.ArithRef], ...]
-    :param step_inputs: Independent dynamic-input symbols for each of the N steps.
+    :param step_inputs: Independent input symbols for each of the N steps.
     :type step_inputs: Tuple[Mapping[str, z3.ArithRef], ...]
-    :param parameters: Static-input symbols shared by every frame and step.
+    :param parameters: Parameter symbols shared by every frame and step.
     :type parameters: Mapping[str, z3.ArithRef]
     :param event_inputs: Per-step event-input symbols.
     :type event_inputs: Tuple[Mapping[str, z3.BoolRef], ...]
@@ -875,18 +875,18 @@ class BmcTraceSymbols:
         if len(self.case_selectors) != self.domain.bound:
             raise BmcBuildError("case_selectors must contain bound mappings.")
         step_inputs = self.step_inputs
-        if not step_inputs and not self.domain.dynamic_input_names:
+        if not step_inputs and not self.domain.input_names:
             step_inputs = tuple({} for _ in self.domain.steps)
         if len(step_inputs) != self.domain.bound:
             raise BmcBuildError("step_inputs must contain bound mappings.")
         for values in step_inputs:
-            if set(values) != set(self.domain.dynamic_input_names):
+            if set(values) != set(self.domain.input_names):
                 raise BmcBuildError(
-                    "step_inputs must contain exactly the dynamic input names."
+                    "step_inputs must contain exactly the input names."
                 )
-        if set(self.parameters) != set(self.domain.static_input_names):
+        if set(self.parameters) != set(self.domain.parameter_names):
             raise BmcBuildError(
-                "parameters must contain exactly the static input names."
+                "parameters must contain exactly the parameter names."
             )
         object.__setattr__(
             self, "step_inputs", tuple(dict(values) for values in step_inputs)
@@ -971,7 +971,7 @@ class BmcTraceSymbols:
                     "I_%d_%s" % (step.index, _safe_symbol_fragment(var.name))
                 )
                 for var in domain.variables
-                if var.role == VariableRole.INPUT_DYNAMIC
+                if var.role == VariableRole.INPUT
             }
             for step in domain.steps
         )
@@ -980,7 +980,7 @@ class BmcTraceSymbols:
                 "P_%s" % _safe_symbol_fragment(var.name)
             )
             for var in domain.variables
-            if var.role == VariableRole.INPUT_STATIC
+            if var.role == VariableRole.PARAM
         }
         event_inputs = []
         for step in domain.steps:
@@ -1071,10 +1071,10 @@ class BmcTraceSymbols:
             raise BmcBuildError("Unknown frame variable: %r." % name) from err
 
     def step_input(self, step_index: int, name: str) -> z3.ArithRef:
-        """Return the dynamic input sampled for one step in ``0..N-1``.
+        """Return the input sampled for one step in ``0..N-1``.
 
         :param step_index: Zero-based macro-step index, strictly less than bound.
-        :param name: Assembled dynamic input name.
+        :param name: Assembled input name.
         :return: Int or Real input symbol for this step.
         :raises BmcBuildError: If the index or input name is invalid.
         """
@@ -1085,13 +1085,13 @@ class BmcTraceSymbols:
         ):
             raise BmcBuildError("step index out of range: %r." % step_index)
         if name not in self.step_inputs[step_index]:
-            raise BmcBuildError("Unknown dynamic input: %r." % name)
+            raise BmcBuildError("Unknown input: %r." % name)
         return self.step_inputs[step_index][name]
 
     def parameter(self, name: str) -> z3.ArithRef:
         """Return a parameter symbol shared by the entire trace.
 
-        :param name: Assembled static input name.
+        :param name: Assembled parameter name.
         :return: The single Int or Real configuration symbol.
         :raises BmcBuildError: If the parameter name is unknown.
         """
@@ -1105,7 +1105,7 @@ class BmcTraceSymbols:
         """Resolve a bound query reference in its frame or input-step scope."""
         if name in self.parameters:
             return self.parameter(name)
-        if step_index is not None and name in self.domain.dynamic_input_names:
+        if step_index is not None and name in self.domain.input_names:
             return self.step_input(step_index, name)
         return self.frame_var(frame_index, name)
 
@@ -2784,8 +2784,8 @@ def _build_initial_formula(
         if var.name in havoc_names:
             continue
         define = context.model.defines[var.name]
-        if var.role == VariableRole.INPUT_DYNAMIC:
-            # Dynamic inputs carry no declared initializer (the model layer
+        if var.role == VariableRole.INPUT:
+            # Inputs carry no declared initializer (the model layer
             # rejects one); each step input is free unless constrained by
             # an explicit assumption.
             continue
@@ -2856,7 +2856,7 @@ def _assumption_input_names(context: BmcPreparedContext, index: int) -> Tuple[st
         if ref.kind == "variable"
         and ref.path.startswith("assumptions[%d].predicate" % index)
     }
-    return tuple(name for name in context.domain.dynamic_input_names if name in names)
+    return tuple(name for name in context.domain.input_names if name in names)
 
 
 def _build_environment_formula(

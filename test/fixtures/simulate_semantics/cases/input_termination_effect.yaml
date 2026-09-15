@@ -1,11 +1,11 @@
-title: dynamic input termination effect
+title: input termination effect
 origin:
   files:
   - test/simulate/test_runtime_inputs.py
 categories:
 - runtime
 - variable_roles
-- dynamic_inputs
+- inputs
 steps:
 - cycle: []
   inputs:

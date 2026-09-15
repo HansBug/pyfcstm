@@ -514,7 +514,7 @@ class VariableInfo:
         assignments to this variable from lifecycle actions or transition
         effects.
     :type float_literal_assignments: Tuple[str, ...]
-    :param external_supply: ``cycle`` for dynamic inputs, ``construction`` for
+    :param external_supply: ``cycle`` for inputs, ``construction`` for
         parameters, or ``none`` for model-owned control/output variables.
     :type external_supply: str
     :param diagnostic_policy: Fixed applicability of control-variable unused,
@@ -1717,7 +1717,7 @@ def _build_variable_infos(
             type=var_define.type,
             init_value=_expr_text(var_define.init) or '',
             role=var_define.role.value,
-            external_supply={'input_dynamic': 'cycle', 'input_static': 'construction'}.get(var_define.role.value, 'none'),
+            external_supply={'input': 'cycle', 'param': 'construction'}.get(var_define.role.value, 'none'),
             diagnostic_policy={
                 rule: var_define.role.value == 'control'
                 for rule in ('unused', 'unwritten', 'write_only', 'constant_guard')

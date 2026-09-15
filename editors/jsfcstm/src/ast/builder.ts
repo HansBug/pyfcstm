@@ -1639,9 +1639,8 @@ function buildVariableDefinition(
     const declaration = contextChildren(node).find(child => child.constructor!.name === 'Variable_declarationContext')!;
     const spelling = terminalChildren(declaration).map(child => child.getText!()).join(' ');
     const roles: Record<string, import('./model').VariableRole> = {
-        def: 'control', control: 'control', input: 'input_dynamic',
-        'input dynamic': 'input_dynamic', param: 'input_static',
-        'input static': 'input_static', output: 'output',
+        def: 'control', control: 'control', input: 'input',
+        param: 'param', output: 'output',
     };
     const typeToken = (node as ParseTreeContext).deftype;
     const typeIndex = terminals.findIndex(

@@ -98,13 +98,13 @@ typedef struct {{ machine_class_name(model) }}Vars {
 } {{ machine_class_name(model) }}Vars;
 
 
-{% for label, declarations in [('Parameters', model.static_inputs), ('Inputs', model.dynamic_inputs)] %}
+{% for label, declarations in [('Parameters', model.parameters), ('Inputs', model.inputs)] %}
 typedef struct {{ machine_class_name(model) }}{{ label }} {
 {% for item in declarations.values() %}    {% if item.type == 'int' %}{{ machine_class_name(model) }}Int{% else %}double{% endif %} {{ item.name | readonly_value_identifier }};
 {% else %}    int _unused_placeholder;
 {% endfor %}} {{ machine_class_name(model) }}{{ label }};
 {% endfor %}
-{% for label, declarations in [('Vars', model.persistent_variables), ('Parameters', model.static_inputs)] %}
+{% for label, declarations in [('Vars', model.persistent_variables), ('Parameters', model.parameters)] %}
 typedef struct {{ machine_class_name(model) }}{{ label }}Present {
 {% for item in declarations.values() %}    int {{ (item.name | to_c_identifier) if label == 'Vars' else (item.name | readonly_value_identifier) }};
 {% else %}    int _unused_placeholder;
@@ -120,7 +120,7 @@ typedef struct {{ machine_class_name(model) }}InitOptions {
 
 /* Return SUCCESS after writing one value, FAILURE when acquisition fails. */
 typedef struct {{ machine_class_name(model) }}InputProvider {
-{% for item in model.dynamic_inputs.values() %}    int (*read_{{ item.name | readonly_value_identifier }})(void *user_data, {% if item.type == 'int' %}{{ machine_class_name(model) }}Int{% else %}double{% endif %} *value);
+{% for item in model.inputs.values() %}    int (*read_{{ item.name | readonly_value_identifier }})(void *user_data, {% if item.type == 'int' %}{{ machine_class_name(model) }}Int{% else %}double{% endif %} *value);
 {% else %}    int _unused_placeholder;
 {% endfor %}} {{ machine_class_name(model) }}InputProvider;
 
@@ -411,7 +411,7 @@ extern "C" {
     {{ machine_class_name(model) }} *machine,
     const {{ machine_class_name(model) }}InitOptions *options);
 /* Read getters require an initialized instance; input getters require an active cycle. */
-{% for prefix, declarations in [('param', model.static_inputs), ('input', model.dynamic_inputs)] %}
+{% for prefix, declarations in [('param', model.parameters), ('input', model.inputs)] %}
 {% for item in declarations.values() %}{{ machine_macro_name(model) }}_API {% if item.type == 'int' %}{{ machine_class_name(model) }}Int{% else %}double{% endif %} {{ machine_class_name(model) }}_get_{{ prefix }}_{{ item.name | readonly_value_identifier }}(const {{ machine_class_name(model) }} *machine);
 {% endfor %}{% endfor %}
 {{ machine_macro_name(model) }}_API void {{ machine_class_name(model) }}_set_input_provider(

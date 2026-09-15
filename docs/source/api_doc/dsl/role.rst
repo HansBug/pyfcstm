@@ -10,4 +10,4 @@ VariableRole
 -----------------------------------------------------
 
 .. autoclass:: VariableRole
-    :members: CONTROL,INPUT_DYNAMIC,INPUT_STATIC,OUTPUT
+    :members: CONTROL,INPUT,PARAM,OUTPUT

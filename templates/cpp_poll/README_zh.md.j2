@@ -65,7 +65,7 @@
 
 ## 快速开始
 
-将下面的完整程序保存为 `app.cpp`。程序按模型声明配置参数、连接输入并注册抽象动作{% if event_ns.items %}，同时安装完整事件查询表{% endif %}。{% if model.dynamic_inputs or model.static_inputs %}数值 `1` 仅用于演示，请替换为适合当前模型的读数和配置。{% endif %}动作回调打印观察值，可将其函数体替换为应用逻辑。初始化一次后，由应用调度器对同一个实例重复调用周期入口。
+将下面的完整程序保存为 `app.cpp`。程序按模型声明配置参数、连接输入并注册抽象动作{% if event_ns.items %}，同时安装完整事件查询表{% endif %}。{% if model.inputs or model.parameters %}数值 `1` 仅用于演示，请替换为适合当前模型的读数和配置。{% endif %}动作回调打印观察值，可将其函数体替换为应用逻辑。初始化一次后，由应用调度器对同一个实例重复调用周期入口。
 
 <!-- example:quick-start -->
 
@@ -83,7 +83,7 @@ typedef struct AppData {
     int event_active;
 } AppData;
 
-{% for item in model.dynamic_inputs.values() %}static int app_read_{{ item.name | readonly_value_identifier }}(void *user_data, {% if item.type == 'int' %}Wrapper::Int{% else %}double{% endif %} *value)
+{% for item in model.inputs.values() %}static int app_read_{{ item.name | readonly_value_identifier }}(void *user_data, {% if item.type == 'int' %}Wrapper::Int{% else %}double{% endif %} *value)
 {
     AppData *data = (AppData *)user_data;
     /* Replace this lookup with your sensor/driver call; return 0 on failure. */
@@ -96,8 +96,8 @@ typedef struct AppData {
     AppData *data = (AppData *)user_data;
     (void)machine;
     ++data->hook_calls;
-{% for item in model.dynamic_inputs.values() %}    printf("input {{ item.name }} = %.17g\n", (double)data->owner->get_input_{{ item.name | readonly_value_identifier }}());
-{% endfor %}{% for item in model.static_inputs.values() %}    printf("param {{ item.name }} = %.17g\n", (double)data->owner->get_param_{{ item.name | readonly_value_identifier }}());
+{% for item in model.inputs.values() %}    printf("input {{ item.name }} = %.17g\n", (double)data->owner->get_input_{{ item.name | readonly_value_identifier }}());
+{% endfor %}{% for item in model.parameters.values() %}    printf("param {{ item.name }} = %.17g\n", (double)data->owner->get_param_{{ item.name | readonly_value_identifier }}());
 {% endfor %}    printf("action %d stage %d\n", (int)ctx->action_id, (int)ctx->action_stage_id);
 }
 
@@ -115,7 +115,7 @@ int main(void)
     AppData data;
     memset(&options, 0, sizeof(options));
     memset(&data, 0, sizeof(data));
-{% for item in model.static_inputs.values() %}    options.parameters.{{ item.name | readonly_value_identifier }} = 1;
+{% for item in model.parameters.values() %}    options.parameters.{{ item.name | readonly_value_identifier }} = 1;
     options.parameters_present.{{ item.name | readonly_value_identifier }} = 1;
 {% endfor %}    Wrapper machine(options);
     data.owner = &machine;
@@ -123,10 +123,10 @@ int main(void)
         fprintf(stderr, "%s\n", machine.last_error());
         return 1;
     }
-{% if model.dynamic_inputs %}
+{% if model.inputs %}
     Wrapper::InputProvider provider;
     memset(&provider, 0, sizeof(provider));
-{% for item in model.dynamic_inputs.values() %}    data.inputs.{{ item.name | readonly_value_identifier }} = 1;
+{% for item in model.inputs.values() %}    data.inputs.{{ item.name | readonly_value_identifier }} = 1;
     provider.read_{{ item.name | readonly_value_identifier }} = app_read_{{ item.name | readonly_value_identifier }};
 {% endfor %}    machine.set_input_provider(&provider, &data);
 {% endif %}{% if abstract_ns.rows %}
@@ -147,7 +147,7 @@ int main(void)
         fprintf(stderr, "%s\n", machine.last_error());
         return 2;
     }
-{% for item in model.static_inputs.values() %}    printf("param {{ item.name }} = %.17g\n", (double)machine.get_param_{{ item.name | readonly_value_identifier }}());
+{% for item in model.parameters.values() %}    printf("param {{ item.name }} = %.17g\n", (double)machine.get_param_{{ item.name | readonly_value_identifier }}());
 {% endfor %}{% for item in model.persistent_variables.values() %}    printf("{{ item.role.value }} {{ item.name }} = %.17g\n",
            (double)machine.vars()->{{ item.name | to_c_identifier }});
 {% endfor %}    printf("hook calls = %d\n", data.hook_calls);
@@ -182,8 +182,8 @@ c++ -std=c++98 -O2 machine.cpp app.cpp machine.o -lm -o app
 {% if model.defines %}
 | 角色 | DSL 名称 | 访问入口 |
 | --- | --- | --- |
-{% for item in model.dynamic_inputs.values() %}| input | `{{ item.name }}` | `InputProvider.read_{{ item.name | readonly_value_identifier }}`; `get_input_{{ item.name | readonly_value_identifier }}` |
-{% endfor %}{% for item in model.static_inputs.values() %}| param | `{{ item.name }}` | `InitOptions.parameters.{{ item.name | readonly_value_identifier }}` + `parameters_present.{{ item.name | readonly_value_identifier }}`; `get_param_{{ item.name | readonly_value_identifier }}` |
+{% for item in model.inputs.values() %}| input | `{{ item.name }}` | `InputProvider.read_{{ item.name | readonly_value_identifier }}`; `get_input_{{ item.name | readonly_value_identifier }}` |
+{% endfor %}{% for item in model.parameters.values() %}| param | `{{ item.name }}` | `InitOptions.parameters.{{ item.name | readonly_value_identifier }}` + `parameters_present.{{ item.name | readonly_value_identifier }}`; `get_param_{{ item.name | readonly_value_identifier }}` |
 {% endfor %}{% for item in model.persistent_variables.values() %}| {{ item.role.value }} | `{{ item.name }}` | `Vars.{{ item.name | to_c_identifier }}` |
 {% endfor %}
 
@@ -276,7 +276,7 @@ Wrapper::StateId state = machine.current_state_id();
 Wrapper::Vars initial_vars = *machine.vars();
 Wrapper::Parameters parameters;
 memset(&parameters, 0, sizeof(parameters));
-{% for item in model.static_inputs.values() %}parameters.{{ item.name | readonly_value_identifier }} = machine.get_param_{{ item.name | readonly_value_identifier }}();
+{% for item in model.parameters.values() %}parameters.{{ item.name | readonly_value_identifier }} = machine.get_param_{{ item.name | readonly_value_identifier }}();
 {% endfor %}
 if (state == {{ a }}_INVALID_STATE_ID) {
     fprintf(stderr, "Cannot restore a completed machine as a live checkpoint\n");
@@ -468,7 +468,7 @@ C/C++ 部署前运行 `pyfcstm inspect`，检查默认 C/C++ deployment-profile 
 {% if model.defines %}
 | 角色 | 名称 | 类型 | DSL 初值 |
 | --- | --- | --- | --- |
-{% for def_item in model.defines.values() %}| `{{ {'input_dynamic': 'input', 'input_static': 'param', 'control': 'control (def)', 'output': 'output'}[def_item.role.value] }}` | `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ (def_item.init.to_ast_node() | string) if def_item.init is not none else '-' }}` |
+{% for def_item in model.defines.values() %}| `{{ {'input': 'input', 'param': 'param', 'control': 'control (def)', 'output': 'output'}[def_item.role.value] }}` | `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ (def_item.init.to_ast_node() | string) if def_item.init is not none else '-' }}` |
 {% endfor %}
 {% else %}
 当前模型没有变量声明。

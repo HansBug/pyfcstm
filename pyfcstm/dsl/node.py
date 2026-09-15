@@ -873,7 +873,7 @@ class DefAssignment(Statement):
     :type role: pyfcstm.dsl.role.VariableRole
     :param spelling: Original declaration prefix, or ``None`` for the default
         spelling of the role. Legacy control declarations default to ``def``.
-        Dynamic and static inputs default to ``input`` and ``param`` respectively.
+        Inputs and parameters default to ``input`` and ``param`` respectively.
     :type spelling: Optional[str]
 
     :rtype: DefAssignment

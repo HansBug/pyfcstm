@@ -321,10 +321,10 @@ These fields describe the expanded model, not an execution trace.
    * - ``control`` (including legacy ``def``)
      - ``none``
      - ``unused``, ``unwritten``, ``write_only`` and ``constant_guard`` are true.
-   * - ``input_dynamic`` (``input``)
+   * - ``input``
      - ``cycle``
      - All four flags are false; the environment supplies each cycle's value.
-   * - ``input_static`` (``param``)
+   * - ``param``
      - ``construction``
      - All four flags are false; the parameter is fixed at construction.
    * - ``output``

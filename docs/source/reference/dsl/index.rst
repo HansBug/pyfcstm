@@ -182,25 +182,26 @@ Variable roles
    * - ``control int count = 0;`` / ``def int count = 0;``
      - ``control``
      - Initializer required; model reads and writes allowed.
-   * - ``input dynamic float pressure;`` / ``input float pressure;``
-     - ``input_dynamic``
+   * - ``input float pressure;``
+     - ``input``
      - Initializer forbidden; model reads only.
-   * - ``input static int limit = 2;`` / ``param int limit = 2;``
-     - ``input_static``
+   * - ``param int limit = 2;``
+     - ``param``
      - Default required; model reads only.
    * - ``output int command = 0;``
      - ``output``
      - Initializer required; model reads and writes allowed, including multiple writers.
 
-``control``, ``input``, ``dynamic``, ``static``, ``param``, and ``output`` are
+``control``, ``input``, ``param``, and ``output`` are
 reserved keywords, unavailable as variable, state, event, or action names.
-All declarations share one namespace. Initializers cannot reference variables.
+``dynamic`` and ``static`` are ordinary identifiers; the former long input
+declarations are not accepted. All declarations share one namespace. Initializers cannot reference variables.
 Input/parameter writes are rejected during model construction, including writes
 in lifecycle actions, aspects, effects, and nested conditionals.
 
 AST exports preserve declaration spelling. ``pyfcstm.model.VariableRole`` exposes
-four enum values; ``VarDefine.init`` is ``None`` only for dynamic inputs in valid
-models. ``StateMachine.control_variables``, ``dynamic_inputs``, ``static_inputs``,
+``CONTROL``, ``INPUT``, ``PARAM``, and ``OUTPUT``; ``VarDefine.init`` is ``None`` only for inputs in valid
+models. ``StateMachine.control_variables``, ``inputs``, ``parameters``,
 ``output_variables``, and ``persistent_variables`` return read-only mappings in
 global declaration order. The last preserves control/output interleaving; values
 are the same objects held in ``defines``. Inspect JSON variable entries require
@@ -209,7 +210,7 @@ ordinary control-variable dead-use warnings.
 
 This section defines the syntax/model contract. Runtime input sources,
 role-aware import merging, BMC input symbols, and generated runtime interfaces
-require their respective integration implementations.
+are documented in the simulation, BMC, and template guides.
 
 .. _dsl-import-preamble-forms:
 

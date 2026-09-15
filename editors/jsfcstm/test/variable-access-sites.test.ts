@@ -97,7 +97,7 @@ it('variable access report contract retains definition sites for cross-file acti
     writeFile(host, 'state Root { import "./child.fcstm" as Child; state A { enter ref /Child.Setup; } [*] -> A; }');
     const snapshot = await new packageModule.FcstmWorkspaceGraph().buildSnapshotForFile(host);
     const report = packageModule.inspectModel(snapshot.nodes[host].model!);
-    const sites = report.variables.find(v => v.role === 'input_dynamic')!.read_sites;
+    const sites = report.variables.find(v => v.role === 'input')!.read_sites;
     assert.equal(sites.length, 1);
     assert.equal(sites[0].source_path, child);
     assert.equal(sites[0].state_path, 'Root.Child');
@@ -122,7 +122,7 @@ it('variable access report contract includes JSON spans and bundled schema field
 it('variable access DSL retains branch and assignment ranges', async () => {
     const text = 'input int sensor; output int result = 0; state Root { during { if [sensor > 0] { result = sensor; } else { result = 0; } } }';
     const ast = await packageModule.parseAstDocument(createDocument(text, '/tmp/ast-access.fcstm'));
-    assert.deepEqual(ast.variables.map(v => v.role), ['input_dynamic', 'output']);
+    assert.deepEqual(ast.variables.map(v => v.role), ['input', 'output']);
     const conditional = ast.rootState!.durings[0].operationsList[0];
     assert.equal(conditional.kind, 'ifStatement');
     if (conditional.kind !== 'ifStatement') throw new Error('Expected conditional AST');
@@ -143,7 +143,7 @@ it('variable access model retains imported nested source, names and roles', asyn
     writeFile(host, 'input int shared; state Host { import "./leaf.fcstm" as A { var sensor -> shared; var limit -> A_limit; var result -> A_result; } import "./leaf.fcstm" as B { var sensor -> shared; var limit -> B_limit; var result -> B_result; } [*] -> A; A -> B; }');
     const snapshot = await new packageModule.FcstmWorkspaceGraph().buildSnapshotForFile(host);
     const model = snapshot.nodes[host].model!;
-    assert.equal(model.defines.shared.role, 'input_dynamic');
+    assert.equal(model.defines.shared.role, 'input');
     for (const name of ['A', 'B']) {
         const state = model.rootState.substates[name];
         assert.equal(state.importedFromFile, leaf);
@@ -153,7 +153,7 @@ it('variable access model retains imported nested source, names and roles', asyn
         const assignment = block.branches[0].statements[0].branches[0].statements[0];
         assert.equal(assignment.varName, `${name}_result`);
         assert.equal(assignment.expr.name, 'shared');
-        assert.equal(model.defines[`${name}_limit`].role, 'input_static');
+        assert.equal(model.defines[`${name}_limit`].role, 'param');
         assert.equal(model.defines[`${name}_result`].role, 'output');
     }
 });

@@ -136,7 +136,7 @@ describe('import binding failures', () => {
 
 describe('import initializer validation', () => {
     for (const [source, hostDeclaration, code] of [
-        ['input int value = 1;', 'input int shared;', 'E_DYNAMIC_INPUT_INITIALIZER'],
+        ['input int value = 1;', 'input int shared;', 'E_INPUT_INITIALIZER'],
         ['param int value;', 'param int shared = 1;', 'E_VARIABLE_INITIALIZER_REQUIRED'],
     ]) {
         it(`does not let host defaults hide ${code}`, async () => {
@@ -168,7 +168,7 @@ describe('canonical variable mapping assembly', () => {
                 assert.equal(snapshot.nodes[host].modelAuthority, 'assembled');
                 const definitions = snapshot.nodes[host].model!.defines;
                 assert.deepEqual(Object.keys(definitions), [expected]);
-                const expectedRole = role === 'input' ? 'input_dynamic' : role === 'param' ? 'input_static' : role;
+                const expectedRole = role === 'input' ? 'input' : role === 'param' ? 'param' : role;
                 assert.equal(definitions[expected].role, expectedRole);
                 assert.equal(definitions[expected].type, 'int');
             });

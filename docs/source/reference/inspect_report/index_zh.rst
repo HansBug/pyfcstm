@@ -280,10 +280,10 @@ identity 的并集计算，因此同一转换可以出现在多个原因桶中�
    * - ``control``，包括旧写法 ``def``
      - ``none``
      - ``unused``、``unwritten``、``write_only``、``constant_guard`` 均为 true。
-   * - ``input_dynamic``，即 ``input``
+   * - ``input``
      - ``cycle``
      - 四项均为 false；由环境逐拍提供。
-   * - ``input_static``，即 ``param``
+   * - ``param``
      - ``construction``
      - 四项均为 false；构造时确定，此后固定。
    * - ``output``

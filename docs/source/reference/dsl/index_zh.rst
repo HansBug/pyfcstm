@@ -184,31 +184,31 @@ FCSTM 支持在每个持久变量定义、状态（包括根状态和伪状态�
    * - ``control int count = 0;`` / ``def int count = 0;``
      - ``control``
      - 必须初始化；模型可读写。
-   * - ``input dynamic float pressure;`` / ``input float pressure;``
-     - ``input_dynamic``
+   * - ``input float pressure;``
+     - ``input``
      - 禁止初始化；模型只读。
-   * - ``input static int limit = 2;`` / ``param int limit = 2;``
-     - ``input_static``
+   * - ``param int limit = 2;``
+     - ``param``
      - 必须提供默认值；模型只读。
    * - ``output int command = 0;``
      - ``output``
      - 必须初始化；模型可读写，可由多个动作写入。
 
-``control``、``input``、``dynamic``、``static``、``param``、``output``
-是保留字，不能作为变量、状态、事件或动作名。所有声明共享同一个命名空间。
+``control``、``input``、``param``、``output``
+是保留字，不能作为变量、状态、事件或动作名。``dynamic`` 和 ``static`` 是普通标识符，旧输入长声明不再接受。所有声明共享同一个命名空间。
 初始化表达式不能引用任何变量。对动态输入和参数的赋值在模型构造时拒绝，
 包括生命周期动作、横切动作、转移效果和嵌套条件分支中的写入。
 
-AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供四个枚举值；
+AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供 ``CONTROL``、``INPUT``、``PARAM`` 和 ``OUTPUT`` 四个枚举值；
 ``VarDefine.init`` 在合法模型中仅对动态输入为 ``None``。
-``StateMachine.control_variables``、``dynamic_inputs``、``static_inputs``、
+``StateMachine.control_variables``、``inputs``、``parameters``、
 ``output_variables``、``persistent_variables`` 返回保持全局声明顺序的只读映射；
 最后一个按原序筛选控制变量与输出变量，映射值仍是 ``defines`` 中的对象。
 ``inspect`` JSON 的变量条目包含必填 ``role``；动态输入和参数只读、输出变量只写，
 都不产生普通控制变量的无用变量告警。
 
 本节定义语法与模型契约；运行时输入源、按角色合并导入、BMC 输入符号与生成运行时接口
-仍需各自的集成实现。
+分别见仿真、BMC 与模板指南。
 
 .. _dsl-import-preamble-forms-zh:
 

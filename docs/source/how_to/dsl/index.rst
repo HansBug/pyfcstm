@@ -613,7 +613,7 @@ control, input to input, param to param, and output to output. Numeric types
 must also match exactly, including ``int`` versus ``float``. A missing target
 is created with the imported role, type and default; an explicit host target
 keeps its own default. Without an explicit host declaration, imported defaults
-must agree, and dynamic inputs cannot implicitly share a target. Declare the
+must agree, and inputs cannot implicitly share a target. Declare the
 shared input in the host to bind multiple imports to one input source.
 
 These rules apply at every recursive import boundary. Import mappings do not

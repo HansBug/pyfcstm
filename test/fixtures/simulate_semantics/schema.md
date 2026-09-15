@@ -74,7 +74,7 @@ Allowed categories:
 
 - `runtime`
 - `variable_roles`
-- `dynamic_inputs`
+- `inputs`
 - `template_alignment`
 - `design_example`
 - `scenario_example`
@@ -207,10 +207,10 @@ omitted or `cycle: []`; non-empty cycle input with `cycle_count: 0` is rejected.
 than just writing `cycle_count: N`.
 
 `steps[].inputs` is the complete external input frame for that model cycle.
-It must contain exactly the declared dynamic-input names, with values accepted
+It must contain exactly the declared input names, with values accepted
 by the model's numeric types. Repeated cycles use the same frame; use separate
 steps for changing input values. A zero-cycle checkpoint cannot supply inputs.
-Models without dynamic inputs may omit the field or supply an empty mapping.
+Models without inputs may omit the field or supply an empty mapping.
 
 The simulator adapter exposes this frame through an input source. The fixture
 has no generator configuration, override field or input expectation. Failed
@@ -218,11 +218,7 @@ cycles leave persistent state unchanged; the next step explicitly supplies its
 own external input frame. Provider caching, advancement and override ergonomics
 belong in dedicated simulator unit tests.
 
-Cases using the new roles declare `variable_roles`; cases with dynamic inputs
-also declare `dynamic_inputs`. Until their adapters support these semantics,
-they explicitly exclude `generated_python_alignment` and `bmc_core` through
-`exclude_runners`. BMC exclusion reasons use categories, never a case-name
-special branch. Remove the relevant exclusions when backend support lands.
+Cases using these roles declare `variable_roles`; cases with inputs also declare `inputs`. All eight role cases run in the simulator and all five generated runtimes. Seven run through BMC; the runtime-error retry case remains excluded because error recovery is outside BMC execution semantics. `exclude_runners` records actual unsupported behavior, with BMC exclusion reasons derived from categories rather than case-name branches.
 
 When `expect.delta` is present with `cycle_count > 1`, the same boolean is
 checked after every individual `cycle()` call, not only after the final call.

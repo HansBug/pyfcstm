@@ -17,7 +17,7 @@ def test_role_access_ast_keeps_nested_statement_and_branch_spans(owner):
     else:
         source = prefix + 'state Root { ' + owner + ' { ' + body + ' } }'
     ast = parse_with_grammar_entry(source, 'state_machine_dsl')
-    assert [d.role.value for d in ast.definitions] == ['input_dynamic', 'input_static', 'output', 'control']
+    assert [d.role.value for d in ast.definitions] == ['input', 'param', 'output', 'control']
     statements = (ast.root_state.transitions[-1].post_operations if owner == 'effect'
                   else getattr(ast.root_state, {'enter': 'enters', 'during': 'durings', 'exit': 'exits'}[owner])[0].operations)
     conditional = statements[0]

@@ -4,8 +4,8 @@ import {collectSemanticAnalysisDiagnosticsFromSemantic} from '@pyfcstm/jsfcstm/e
 
 const declarations = [
     ['def', 'control', ' = 1'], ['control', 'control', ' = 1'],
-    ['input', 'input_dynamic', ''], ['input dynamic', 'input_dynamic', ''],
-    ['param', 'input_static', ' = 1'], ['input static', 'input_static', ' = 1'],
+    ['input', 'input', ''],
+    ['param', 'param', ' = 1'],
     ['output', 'output', ' = 1'],
 ];
 
@@ -23,7 +23,7 @@ describe('variable role DSL', () => {
                 const {ast} = await parse(`/* measured value */\n${prefix} ${type} value${init}; state Root;`);
                 assert.equal(ast.variables[0].role, role);
                 assert.equal(ast.variables[0].spelling, prefix);
-                assert.equal(ast.variables[0].initializer === null, role === 'input_dynamic');
+                assert.equal(ast.variables[0].initializer === null, role === 'input');
                 assert.equal(ast.variables[0].doc, 'measured value');
                 assert.equal(ast.variables[0].range.start.character, 0);
             });
@@ -38,7 +38,7 @@ describe('variable role model', () => {
             const model = packageModule.buildStateMachineModel(ast)!;
             assert.ok(model);
             assert.equal(model.defines.value.role, role);
-            assert.equal(model.defines.value.init === null, role === 'input_dynamic');
+            assert.equal(model.defines.value.init === null, role === 'input');
             const exported = model.to_ast_node();
             assert.equal(exported.variables[0].spelling, prefix);
             assert.equal(packageModule.buildStateMachineModel(exported)!.defines.value.role, role);
@@ -48,8 +48,8 @@ describe('variable role model', () => {
         const {ast} = await parse('output int first = 0; input int sensor; def int count = 1; param int limit = 2; output int last = 0; state Root;');
         const model = packageModule.buildStateMachineModel(ast)!;
         for (const [partition, names] of [
-            [model.control_variables, ['count']], [model.dynamic_inputs, ['sensor']],
-            [model.static_inputs, ['limit']], [model.output_variables, ['first', 'last']],
+            [model.control_variables, ['count']], [model.inputs, ['sensor']],
+            [model.parameters, ['limit']], [model.output_variables, ['first', 'last']],
             [model.persistent_variables, ['first', 'count', 'last']],
         ] as const) {
             assert.deepEqual(Object.keys(partition), names);
@@ -61,7 +61,7 @@ describe('variable role model', () => {
 });
 
 describe('variable role diagnostics', () => {
-    for (const prefix of ['input', 'input dynamic', 'param', 'input static']) {
+    for (const prefix of ['input', 'param']) {
         for (const body of [
             'state Root { enter { value = 1; } }',
             'state Root { exit { value = 1; } }',
@@ -75,20 +75,20 @@ describe('variable role diagnostics', () => {
             'state Root { enter Set { value = 1; } exit ref Set; }',
         ]) {
             it(`rejects a write to ${prefix} in ${body}`, async () => {
-                const isStatic = prefix === 'param' || prefix === 'input static';
-                const {document, ast} = await parse(`${prefix} int value${isStatic ? ' = 0' : ''}; ${body}`);
+                const isParameter = prefix === 'param';
+                const {document, ast} = await parse(`${prefix} int value${isParameter ? ' = 0' : ''}; ${body}`);
                 assert.equal(packageModule.buildStateMachineModel(ast), null);
                 const diagnostics = collectSemanticAnalysisDiagnosticsFromSemantic(packageModule.buildSemanticDocument(ast)!, document);
-                assert.ok(diagnostics.some(item => item.code === (isStatic ? 'E_STATIC_INPUT_WRITE' : 'E_DYNAMIC_INPUT_WRITE')));
+                assert.ok(diagnostics.some(item => item.code === (isParameter ? 'E_PARAM_WRITE' : 'E_INPUT_WRITE')));
             });
         }
     }
     for (const [declaration, body, code] of [
-        ['input int value = 1;', 'state Root;', 'E_DYNAMIC_INPUT_INITIALIZER'],
+        ['input int value = 1;', 'state Root;', 'E_INPUT_INITIALIZER'],
         ['param int value;', 'state Root;', 'E_VARIABLE_INITIALIZER_REQUIRED'],
-        ['input int value;', 'state Root { during { value = 1; } }', 'E_DYNAMIC_INPUT_WRITE'],
-        ['param int value = 1;', 'state Root { during { if [True] { value = 2; } else { value = 3; } } }', 'E_STATIC_INPUT_WRITE'],
-        ['input int value;', 'state Root { state A; [*] -> A effect { value = 1; } }', 'E_DYNAMIC_INPUT_WRITE'],
+        ['input int value;', 'state Root { during { value = 1; } }', 'E_INPUT_WRITE'],
+        ['param int value = 1;', 'state Root { during { if [True] { value = 2; } else { value = 3; } } }', 'E_PARAM_WRITE'],
+        ['input int value;', 'state Root { state A; [*] -> A effect { value = 1; } }', 'E_INPUT_WRITE'],
     ]) {
         it(`rejects ${code} before model construction`, async () => {
             const {document, ast} = await parse(declaration + body);
@@ -101,7 +101,7 @@ describe('variable role diagnostics', () => {
     it('publishes roles without false dead-variable warnings for external interfaces', async () => {
         const {ast} = await parse('input int sensor; param int limit = 2; output int command = 0; def int count = 0; state Root { state A; state B; [*] -> A; A -> B : if [sensor > limit] effect { command = 1; } }');
         const report = packageModule.inspectModel(packageModule.buildStateMachineModel(ast)!);
-        assert.deepEqual(report.variables.map(variable => variable.role), ['input_dynamic', 'input_static', 'output', 'control']);
+        assert.deepEqual(report.variables.map(variable => variable.role), ['input', 'param', 'output', 'control']);
         assert.equal(report.variables[0].init_value, '');
         assert.ok(report.diagnostics.some(item => item.code === 'W_UNREFERENCED_VAR' && item.refs.var_name === 'count'));
         assert.ok(!report.diagnostics.some(item => item.code === 'W_GUARD_VARS_NEVER_CHANGE'));
@@ -148,7 +148,7 @@ describe('programmatic variable declarations', () => {
 });
 
 describe('reserved variable role keywords', () => {
-    for (const keyword of ['control', 'input', 'dynamic', 'static', 'param', 'output']) {
+    for (const keyword of ['control', 'input', 'param', 'output']) {
         it(`rejects ${keyword} as a variable, state, event, or action name`, async () => {
             for (const source of [
                 `def int ${keyword} = 0; state Root;`, `state ${keyword};`,
@@ -160,9 +160,9 @@ describe('reserved variable role keywords', () => {
     }
     for (const modifier of ['dynamic', 'static']) {
         for (const gap of [' ', '\t', '\n', ' // sample\n', ' # sample\n']) {
-            it(`parses input ${modifier} separated by ${JSON.stringify(gap)}`, async () => {
-                const {ast} = await parse(`input${gap}${modifier} int value${modifier === 'static' ? ' = 1' : ''}; state Root;`);
-                assert.equal(ast.variables[0].spelling, `input ${modifier}`);
+            it(`rejects input ${modifier} separated by ${JSON.stringify(gap)}`, async () => {
+                const result = await packageModule.getParser().parse(`input${gap}${modifier} int value${modifier === 'static' ? ' = 1' : ''}; state Root;`);
+                assert.equal(result.success, false);
             });
         }
     }
@@ -177,6 +177,45 @@ describe('guard change advice for external interfaces', () => {
             const {ast} = await parse(`${declaration} state Root {state A;state B;[*] -> A; A -> B : if [setting > 0];}`);
             const report = packageModule.inspectModel(packageModule.buildStateMachineModel(ast)!);
             assert.equal(report.diagnostics.some(d => d.code === 'W_GUARD_VARS_NEVER_CHANGE'), expected);
+        });
+    }
+});
+
+
+describe('current input and parameter naming', () => {
+    it('exposes input/param roles and inputs/parameters model partitions', async () => {
+        const {ast} = await parse('input int sensor; param int limit = 2; state Root;');
+        assert.deepEqual(ast.variables.map(variable => variable.role), ['input', 'param']);
+        const model = packageModule.buildStateMachineModel(ast)!;
+        assert.deepEqual(Object.keys(model.inputs), ['sensor']);
+        assert.deepEqual(Object.keys(model.parameters), ['limit']);
+        assert.equal('dynamic_inputs' in model, false);
+        assert.equal('static_inputs' in model, false);
+        assert.deepEqual(packageModule.inspectModel(model).variables.map(variable => variable.role), ['input', 'param']);
+    });
+    for (const word of ['dynamic', 'static']) {
+        it(`accepts ${word} as an ordinary identifier`, async () => {
+            for (const source of [
+                `def int ${word} = 0; state Root;`, `state ${word};`,
+                `state Root { event ${word}; }`, `state Root { enter ${word} {} }`,
+            ]) assert.equal((await packageModule.getParser().parse(source)).success, true);
+        });
+    }
+});
+
+
+describe('obsolete serialized role values', () => {
+    for (const role of ['input_dynamic', 'input_static']) {
+        it(`rejects ${role} at AST construction and raw model hydration`, async () => {
+            const {ast} = await parse('param int value = 1; state Root;');
+            const model = packageModule.buildStateMachineModel(ast)!;
+            const definition = {...ast.variables[0], role};
+            const obsoleteAst = {...ast, variables: [definition], definitions: [definition]};
+            assert.throws(() => packageModule.buildStateMachineModel(obsoleteAst as any), RangeError);
+            assert.throws(() => packageModule.buildSemanticDocument(obsoleteAst as any), RangeError);
+            assert.throws(() => packageModule.hydrateStateMachine({
+                ...model, defines: {value: {...model.defines.value, role}},
+            } as any), RangeError);
         });
     }
 });

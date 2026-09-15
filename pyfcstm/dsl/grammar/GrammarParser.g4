@@ -47,8 +47,6 @@ variable_declaration
     : DEF
     | CONTROL
     | INPUT
-    | INPUT DYNAMIC
-    | INPUT STATIC
     | PARAM
     | OUTPUT
     ;

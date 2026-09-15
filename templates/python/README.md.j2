@@ -62,7 +62,7 @@ Use this directory as a self-contained Python 3.7+ runtime. Put your application
 
 ## Quick Start
 
-Save the following program as `app.py`. {% if model.dynamic_inputs or model.static_inputs %}The sample uses `1` for parameters and sensor readings; replace these with values appropriate for your model. {% endif %}It implements every input reader and mounts every declared abstract action. The first `cycle()` enters the model; subsequent calls acquire fresh input values. The host application decides when to call it; there is no background scheduler.
+Save the following program as `app.py`. {% if model.inputs or model.parameters %}The sample uses `1` for parameters and sensor readings; replace these with values appropriate for your model. {% endif %}It implements every input reader and mounts every declared abstract action. The first `cycle()` enters the model; subsequent calls acquire fresh input values. The host application decides when to call it; there is no background scheduler.
 
 <!-- example:quick-start -->
 
@@ -79,7 +79,7 @@ class Device({{ machine_class_name(model) }}):
             parameters=parameters,
         )
 
-{% for item in model.dynamic_inputs.values() %}    def read_{{ item.name }}(self) -> {{ item.type }}:
+{% for item in model.inputs.values() %}    def read_{{ item.name }}(self) -> {{ item.type }}:
         # Replace this lookup with your sensor/driver call.
         return self.sensors[{{ item.name | tojson }}]
 
@@ -88,12 +88,12 @@ class Device({{ machine_class_name(model) }}):
         print("action", ctx.action_name, dict(ctx.vars))
 
 {% endfor %}
-sensor_values = {{ example_values(model.dynamic_inputs.values()) }}
-machine = Device(sensor_values{% if model.static_inputs %}, parameters={{ example_values(model.static_inputs.values()) }}{% endif %})
+sensor_values = {{ example_values(model.inputs.values()) }}
+machine = Device(sensor_values{% if model.parameters %}, parameters={{ example_values(model.parameters.values()) }}{% endif %})
 machine.cycle()
 
 print(machine.current_state_path)
-{% for item in model.static_inputs.values() %}print("param {{ item.name }} =", machine.get_param_{{ item.name }}())
+{% for item in model.parameters.values() %}print("param {{ item.name }} =", machine.get_param_{{ item.name }}())
 {% endfor %}{% for item in model.persistent_variables.values() %}print("{{ item.role.value }} {{ item.name }} =", machine.vars[{{ item.name | tojson }}])
 {% endfor %}# Send committed outputs to your actuator/driver after normal return.
 ```
@@ -123,13 +123,13 @@ Implement the generated `read_*()` methods to acquire external inputs. The runti
 
 `cycle(inputs=...)` supplies explicit values instead of invoking the corresponding read hooks. Missing entries use their hooks. Unknown names and invalid values are errors. A failed acquisition or execution preserves persistent values and `last_inputs`; a successful cycle, including a Delta cycle, publishes a new read-only `last_inputs` snapshot. Before the first successful cycle it is `None`. Action contexts expose independent read-only `inputs` and `parameters` snapshots.
 
-{% if model.dynamic_inputs or model.static_inputs %}
+{% if model.inputs or model.parameters %}
 For this model, the integration methods are:
 
 | Role | DSL name | Method |
 | --- | --- | --- |
-{% for item in model.static_inputs.values() %}| param | `{{ item.name }}` | `get_param_{{ item.name }}()` |
-{% endfor %}{% for item in model.dynamic_inputs.values() %}| input | `{{ item.name }}` | implement `read_{{ item.name }}()`; model reads `get_input_{{ item.name }}()` |
+{% for item in model.parameters.values() %}| param | `{{ item.name }}` | `get_param_{{ item.name }}()` |
+{% endfor %}{% for item in model.inputs.values() %}| input | `{{ item.name }}` | implement `read_{{ item.name }}()`; model reads `get_input_{{ item.name }}()` |
 {% endfor %}
 {% endif %}
 The `read_*()` input interface is separate from the `_abstract_hook_*()` lifecycle action hooks. If an input has neither an explicit value nor an implemented reader, its default reader raises `NotImplementedError`. An `int` input requires a Python `int`; a `float` input accepts finite `int`/`float` values. Neither accepts `bool`. Invalid input values raise `ValueError`; exceptions from your device reader propagate. `cycle()` returns `None`: consume/send outputs only after normal return. Failure does not undo device reads or other external side effects that have already occurred.
@@ -160,7 +160,7 @@ For tests or externally sampled data, replace a cycle call in `app.py` with the 
 <!-- example:input-snapshot -->
 
 ```python
-machine.cycle(inputs={{ example_values(model.dynamic_inputs.values()) }})
+machine.cycle(inputs={{ example_values(model.inputs.values()) }})
 ```
 
 ## Event Resolution
@@ -195,7 +195,7 @@ Cold construction may preset a partial `initial_vars` mapping containing control
 machine = Device(
     sensor_values,
     initial_vars={{ example_values(model.persistent_variables.values()) }},
-{% if model.static_inputs %}    parameters={{ example_values(model.static_inputs.values()) }},
+{% if model.parameters %}    parameters={{ example_values(model.parameters.values()) }},
 {% endif %})
 ```
 
@@ -273,7 +273,7 @@ Exceptions from application readers and actions propagate. Catch only failures y
 {% if model.defines %}
 | Role | Name | Type | Initial DSL |
 | --- | --- | --- | --- |
-{% for def_item in model.defines.values() %}| `{{ {'input_dynamic': 'input', 'input_static': 'param', 'control': 'control (def)', 'output': 'output'}[def_item.role.value] }}` | `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ (def_item.init.to_ast_node() | string) if def_item.init is not none else '-' }}` |
+{% for def_item in model.defines.values() %}| `{{ {'input': 'input', 'param': 'param', 'control': 'control (def)', 'output': 'output'}[def_item.role.value] }}` | `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ (def_item.init.to_ast_node() | string) if def_item.init is not none else '-' }}` |
 {% endfor %}
 {% else %}
 This model has no variable declarations.

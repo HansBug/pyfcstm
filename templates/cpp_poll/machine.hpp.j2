@@ -42,7 +42,7 @@ public:
     int hot_start(StateId state_id, const Vars &initial_vars, const Parameters &parameters);
     void set_input_provider(const InputProvider *provider, void *user_data);
     const Inputs *last_inputs() const;
-{% for prefix, declarations in [('param', model.static_inputs), ('input', model.dynamic_inputs)] %}
+{% for prefix, declarations in [('param', model.parameters), ('input', model.inputs)] %}
 {% for item in declarations.values() %}    {% if item.type == 'int' %}Int{% else %}double{% endif %} get_{{ prefix }}_{{ item.name | readonly_value_identifier }}() const;
 {% endfor %}{% endfor %}
     int hot_start(StateId state_id, const Vars &initial_vars);

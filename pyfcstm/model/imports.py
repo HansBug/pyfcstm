@@ -1650,7 +1650,7 @@ def _merge_imported_definitions(
                     f"and {def_item.type!r}"
                 )
         elif not explicit:
-            if def_item.role == VariableRole.INPUT_DYNAMIC:
+            if def_item.role == VariableRole.INPUT:
                 reason = "implicit_input_sharing"
                 conflict = "requires an explicit host input declaration for sharing"
             elif existing_item.expr != def_item.expr:

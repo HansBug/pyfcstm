@@ -191,15 +191,15 @@ execution.
 
 Use the existing bare-name or `var("name")` syntax for all four variable roles
 inside `assume at` and `assume always`. Control and output values persist when
-not written. Dynamic input values are independent on every cycle unless an
+not written. Input values are independent on every cycle unless an
 assumption constrains them; they never inherit the preceding sample. Parameters
 are strictly equal across the entire trace. Defaults fix parameters initially;
 `init cold havoc { gain } where gain == 3;` selects another fixed configuration.
 
-For bound N, an assumption mentioning a dynamic input ranges over steps 0..N-1:
+For bound N, an assumption mentioning an input ranges over steps 0..N-1:
 `assume at N` is rejected, and `assume always` visits N steps. A mixed assumption
 reads control/output at the source frame and inputs for that step. Assumptions
-without inputs retain the existing frame range 0..N. Dynamic inputs cannot be
+without inputs retain the existing frame range 0..N. Inputs cannot be
 used in `init ... where`, `havoc`, or frame property predicates; latch an input
 into control/output when the property concerns its observed value. These are
 binding rules, not new FBMCQ grammar.

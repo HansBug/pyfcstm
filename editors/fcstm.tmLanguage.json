@@ -161,7 +161,7 @@
       "patterns": [
         {
           "name": "keyword.control.fcstm",
-          "match": "\\b(state|pseudo|named|def|control|input|dynamic|static|param|output|event|import|as|if|else)\\b"
+          "match": "\\b(state|pseudo|named|def|control|input|param|output|event|import|as|if|else)\\b"
         },
         {
           "name": "keyword.other.lifecycle.fcstm",

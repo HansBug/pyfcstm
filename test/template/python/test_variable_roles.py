@@ -298,3 +298,27 @@ def test_role_getters_preserve_significant_underscores():
         machine.cycle(inputs={"a_b": 1, "a__b": 2, "a_b_": 3})
         assert machine.vars == {"result": 54321}
         assert machine.last_inputs == {"a_b": 1, "a__b": 2, "a_b_": 3}
+
+
+
+def test_transition_guard_reads_all_four_roles_through_current_getters():
+    source = """
+    input int signal;
+    param int limit = 2;
+    control int count = 1;
+    output int reading = 3;
+    state Root {
+        state Ready;
+        state Done;
+        [*] -> Ready;
+        Ready -> Done : if [signal >= limit + count + reading];
+    }
+    """
+    with _render_python_module(source) as module:
+        machine = module.RootMachine(parameters={"limit": 4})
+        machine.cycle(inputs={"signal": 7})
+        assert machine.current_state_path == ("Root", "Ready")
+        machine.cycle(inputs={"signal": 8})
+        assert machine.current_state_path == ("Root", "Done")
+        assert machine.parameters == {"limit": 4}
+        assert machine.vars == {"count": 1, "reading": 3}

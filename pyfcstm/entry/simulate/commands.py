@@ -366,7 +366,7 @@ class CommandProcessor:
                 "Note: All variables must be provided when using init."
             )
 
-        if self.runtime.state_machine.dynamic_inputs:
+        if self.runtime.state_machine.inputs:
             return CommandResult("Initialization requires a fresh input_source; construct a new SimulationRuntime through the Python API.")
         state_path = args[0]
         var_assignments = args[1:]
@@ -542,7 +542,7 @@ class CommandProcessor:
         :return: Command result with reset state
         :rtype: CommandResult
         """
-        if self.runtime.state_machine.dynamic_inputs:
+        if self.runtime.state_machine.inputs:
             return CommandResult("Reset requires a fresh input_source; construct a new SimulationRuntime through the Python API.")
         # Recreate the runtime to reset state
         from ...simulate import SimulationRuntime

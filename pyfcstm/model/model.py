@@ -2603,7 +2603,7 @@ class VarDefine(AstExportable):
     :type init: Optional[Expr]
     :param role: Ownership and lifetime, defaulting to legacy control state.
     :type role: pyfcstm.dsl.role.VariableRole
-    :raises pyfcstm.utils.validate.ModelValidationError: If a dynamic input
+    :raises pyfcstm.utils.validate.ModelValidationError: If an input
         has an initializer, another role lacks one, or an initializer refers
         to a model variable.
 
@@ -2627,14 +2627,14 @@ class VarDefine(AstExportable):
         self.role = VariableRole(self.role)
         code = None
         message = None
-        if self.role is VariableRole.INPUT_DYNAMIC:
+        if self.role is VariableRole.INPUT:
             if self.init is not None:
-                code = "E_DYNAMIC_INPUT_INITIALIZER"
-                message = "Dynamic input must not have an initializer"
+                code = "E_INPUT_INITIALIZER"
+                message = "Input must not have an initializer"
         elif self.init is None:
             code = "E_VARIABLE_INITIALIZER_REQUIRED"
             message = (
-                "Control, output and static input declarations require an initializer"
+                "Control, output and parameter declarations require an initializer"
             )
         elif self.init.list_variables():
             code = "E_INITIALIZER_VARIABLE_REFERENCE"
@@ -2738,13 +2738,13 @@ class StateMachine(AstExportable, PlantUMLExportable):
     def __post_init__(self, _validation_sink: Optional[DiagnosticSink]) -> None:
         readonly = {
             name: (
-                "E_DYNAMIC_INPUT_WRITE"
-                if definition.role is VariableRole.INPUT_DYNAMIC
-                else "E_STATIC_INPUT_WRITE"
+                "E_INPUT_WRITE"
+                if definition.role is VariableRole.INPUT
+                else "E_PARAM_WRITE"
             )
             for name, definition in self.defines.items()
             if definition.role
-            in (VariableRole.INPUT_DYNAMIC, VariableRole.INPUT_STATIC)
+            in (VariableRole.INPUT, VariableRole.PARAM)
         }
         diagnostics = []
 
@@ -2789,24 +2789,24 @@ class StateMachine(AstExportable, PlantUMLExportable):
         )
 
     @property
-    def dynamic_inputs(self) -> Mapping[str, VarDefine]:
+    def inputs(self) -> Mapping[str, VarDefine]:
         """Read-only environment input declarations in global declaration order."""
         return MappingProxyType(
             {
                 name: value
                 for name, value in self.defines.items()
-                if value.role is VariableRole.INPUT_DYNAMIC
+                if value.role is VariableRole.INPUT
             }
         )
 
     @property
-    def static_inputs(self) -> Mapping[str, VarDefine]:
+    def parameters(self) -> Mapping[str, VarDefine]:
         """Read-only parameter declarations in global declaration order."""
         return MappingProxyType(
             {
                 name: value
                 for name, value in self.defines.items()
-                if value.role is VariableRole.INPUT_STATIC
+                if value.role is VariableRole.PARAM
             }
         )
 

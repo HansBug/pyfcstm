@@ -70,19 +70,20 @@ All declarations precede the root state. Types are `int` and `float`.
 | Declaration | Role | Initializer | Model assignments |
 |---|---|---|---|
 | `control` or `def` | `control` | Required, name-free | Allowed |
-| `input dynamic` or `input` | `input_dynamic` | Forbidden | Rejected |
-| `input static` or `param` | `input_static` | Required, name-free default | Rejected |
+| `input` | `input` | Forbidden | Rejected |
+| `param` | `param` | Required, name-free default | Rejected |
 | `output` | `output` | Required, name-free | Allowed |
 
-`control`, `input`, `dynamic`, `static`, `param`, and `output` are reserved
+`control`, `input`, `param`, and `output` are reserved
 keywords. They cannot be variable, state, event, or action identifiers.
+`dynamic` and `static` are ordinary identifiers, not input modifiers.
 Initializers retain the existing `init_expression` syntax; they cannot refer
 to other variables. Input writes are model errors in every lifecycle action,
 aspect, transition effect, and nested conditional. Output values may be written
 by multiple actions and need not be read internally.
 
 ```fcstm
-input dynamic float pressure;
+input float pressure;
 param float trip_pressure = 80.0;
 control int count = 0;
 output int alarm = 0;
@@ -95,16 +96,16 @@ state Controller {
 ```
 
 The AST preserves declaration spelling. `pyfcstm.model.VariableRole` describes
-the normalized role; `VarDefine.init` is `None` only for dynamic inputs in a
-valid model. `StateMachine` exposes `control_variables`, `dynamic_inputs`,
-`static_inputs`, `output_variables`, and `persistent_variables` as read-only
+the normalized role; `VarDefine.init` is `None` only for inputs in a
+valid model. `StateMachine` exposes `control_variables`, `inputs`,
+`parameters`, `output_variables`, and `persistent_variables` as read-only
 mappings in global declaration order. The last combines control and output.
 Inspect exports a required `role` field; input/parameter read-only use and
 output write-only use do not trigger control-variable dead-use warnings.
 
 This syntax/model contract does not itself supply cycle input values. Runtime
 input sources, role-aware import merging, BMC input symbols, and generated
-runtime interfaces are separate integration work.
+runtime interfaces are documented in their respective guides.
 
 ## Top-Level Structure
 

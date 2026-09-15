@@ -14,7 +14,7 @@ def test_imported_nested_accesses_keep_source_and_mapped_names(tmp_path):
     host = tmp_path / 'host.fcstm'
     host.write_text('input int shared; state Host { import "./leaf.fcstm" as A { var sensor -> shared; var limit -> A_limit; var result -> A_result; } import "./leaf.fcstm" as B { var sensor -> shared; var limit -> B_limit; var result -> B_result; } [*] -> A; A -> B; }', encoding='utf-8')
     model = load_state_machine_from_file(host)
-    assert model.defines['shared'].role.value == 'input_dynamic'
+    assert model.defines['shared'].role.value == 'input'
     for name in ['A', 'B']:
         state = model.root_state.substates[name]
         block = state.on_durings[0].operations[0]
@@ -29,5 +29,5 @@ def test_imported_nested_accesses_keep_source_and_mapped_names(tmp_path):
         for node in [block, block.branches[0], nested, nested.branches[0], assignment]:
             assert node._source_path == str(leaf)
             assert node._span.line == 1
-        assert model.defines[name + '_limit'].role.value == 'input_static'
+        assert model.defines[name + '_limit'].role.value == 'param'
         assert model.defines[name + '_result'].role.value == 'output'

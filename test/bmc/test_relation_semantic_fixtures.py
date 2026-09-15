@@ -175,7 +175,7 @@ def _query_text_for_case(
         "%s == %s" % (_var_reference(name), _value_literal(value))
         for name, value in sorted(initial_vars.items())
     ]
-    # Fixture parameter overrides pin the frame-0 static-input symbols through
+    # Fixture parameter overrides pin the frame-0 parameter symbols through
     # the same public ``init ... where`` surface used for persistent vars.
     clauses.extend(
         "%s == %s" % (_var_reference(name), _value_literal(value))
@@ -215,8 +215,8 @@ def _input_assumption_lines(model, input_frames):
         # Ended cycles have no input sample.
         if not values:
             continue
-        assert set(values) == set(model.dynamic_inputs)
-        for name in model.dynamic_inputs:
+        assert set(values) == set(model.inputs)
+        for name in model.inputs:
             lines.append(
                 "assume at %d: var(%s) == %s;"
                 % (step, json.dumps(name), _value_literal(values[name]))

@@ -492,7 +492,18 @@ def _check_role_readme_example(polled, wrapper, language, section):
         filename = "README.md" if language == "en" else "README_zh.md"
         readme = (Path(artifacts["output_dir"]) / filename).read_text(encoding="utf-8")
         if section == "quick":
-            heading = "Quick Start" if language == "en" else "快速开始"
+            if wrapper:
+                heading = (
+                    "C++ Poll Wrapper Quick Start"
+                    if polled and language == "en"
+                    else "C++ Poll Wrapper 快速开始"
+                    if polled
+                    else "C++ Wrapper Quick Start"
+                    if language == "en"
+                    else "C++ Wrapper 快速开始"
+                )
+            else:
+                heading = "Quick Start" if language == "en" else "快速开始"
             text = readme.split("## " + heading + "\n", 1)[1].split("\n## ", 1)[0]
             source = re.findall(r"```(?:c|cpp)\n(.*?)```", text, re.DOTALL)[0]
         else:

@@ -1454,16 +1454,19 @@ class {{ machine_class_name(model) }}:
         if unknown_inputs:
             raise ValueError("Unknown inputs: %s" % sorted(unknown_inputs))
         values = []
-{% for item in input_items %}        value = (
-            overrides[{{ item.name | tojson }}]
-            if {{ item.name | tojson }} in overrides
-            else self.read_{{ item.name }}()
-        )
+{% for item in input_items %}        if {{ item.name | tojson }} in overrides:
+            value = overrides[{{ item.name | tojson }}]
+        else:
+            value = self.read_{{ item.name }}()
 {% if item.type == "int" %}        if type(value) is not int:
             raise ValueError("Input {{ item.name }} must be int")
-{% endif %}        values.append(self._normalize_persistent_value(
-            {{ item.name | tojson }}, value, "input {{ item.name }}"
-        ))
+{% endif %}        values.append(
+            self._normalize_persistent_value(
+                {{ item.name | tojson }},
+                value,
+                "input {{ item.name }}",
+            )
+        )
 {% endfor %}{% if input_items %}        committed_inputs = MappingProxyType(
             {
 {% for item in input_items %}                {{ item.name | tojson }}: values[{{ loop.index0 }}],

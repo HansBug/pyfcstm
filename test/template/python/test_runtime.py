@@ -585,6 +585,9 @@ class TestPythonBuiltinTemplate:
             pytest.skip('ruff binary is not available in this test environment')
 
         fixture_ids = [
+            'dynamic_input_calculation',
+            'multiple_inputs_latched_output',
+            'parameter_defaults_with_initial_values',
             'sign_function_updates_during_action',
             'sign_function_handles_all_signs',
             'sign_function_controls_guard_transition',

@@ -631,6 +631,7 @@ class TestRenderRender:
             renderer = StateMachineCodeRenderer(template_dir)
             renderer.env.globals["_stmt_default_state_vars"] = ("previous",)
             renderer.env.globals["_stmt_default_var_types"] = {"previous": "int"}
+            renderer.env.globals["_stmt_default_var_roles"] = {"previous": "input"}
 
             with TemporaryDirectory() as output_dir:
                 with pytest.raises(jinja2.exceptions.UndefinedError):
@@ -642,6 +643,7 @@ class TestRenderRender:
 
         assert renderer.env.globals["_stmt_default_state_vars"] == ("previous",)
         assert renderer.env.globals["_stmt_default_var_types"] == {"previous": "int"}
+        assert renderer.env.globals["_stmt_default_var_roles"] == {"previous": "input"}
 
     def test_statement_default_context_restores_explicit_none_values(
         self, sample_model
@@ -655,6 +657,7 @@ class TestRenderRender:
             renderer = StateMachineCodeRenderer(template_dir)
             renderer.env.globals["_stmt_default_state_vars"] = None
             renderer.env.globals["_stmt_default_var_types"] = None
+            renderer.env.globals["_stmt_default_var_roles"] = None
 
             with TemporaryDirectory() as output_dir:
                 renderer.render(model=sample_model, output_dir=output_dir)
@@ -663,6 +666,8 @@ class TestRenderRender:
         assert "_stmt_default_var_types" in renderer.env.globals
         assert renderer.env.globals["_stmt_default_state_vars"] is None
         assert renderer.env.globals["_stmt_default_var_types"] is None
+        assert "_stmt_default_var_roles" in renderer.env.globals
+        assert renderer.env.globals["_stmt_default_var_roles"] is None
 
     def test_statement_default_context_does_not_leak_between_models(self):
         ast_node_a = parse_with_grammar_entry(
@@ -714,6 +719,7 @@ class TestRenderRender:
                 with open(os.path.join(output_dir, "stmt.txt"), "r") as f:
                     rendered_b = f.read()
 
+        assert "_stmt_default_var_roles" not in renderer.env.globals
         assert "scope->counter = scope->counter + 1;" == rendered_a
         assert (
             rendered_b == "int tmp;\ntmp = scope->other + 1;\nscope->other = tmp + 2;"

@@ -1,0 +1,3 @@
+input int permit; param int gain = 2; output int result = 0;
+state Root { state Group { enter { result = 999; } during before { result = 888; }
+state Ready { enter { result = permit * gain; } } [*] -> Ready : if [permit > 0]; } [*] -> Group; }

@@ -49,6 +49,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
 
 from .errors import InvalidBmcDomain
+from pyfcstm.dsl.role import VariableRole
 from pyfcstm.model import Event, State, StateMachine
 
 STATE_INIT_ID = -3
@@ -369,16 +370,24 @@ class VarDomainEntry:
     :type name: str
     :param declared_type: Declared FCSTM variable type.
     :type declared_type: str
+    :param role: Variable role, defaults to ``VariableRole.CONTROL``.  The role
+        drives symbol lifetimes: inputs are independently chosen per
+        step, parameters share one trace-global symbol, and
+        control/output variables follow the persistent transition relation.
+    :type role: pyfcstm.dsl.role.VariableRole
 
     Example::
 
         >>> VarDomainEntry(0, 'counter', 'int').to_canonical()['declared_type']
         'int'
+        >>> VarDomainEntry(1, 'pressure', 'float', VariableRole.INPUT).role.value
+        'input'
     """
 
     id: int
     name: str
     declared_type: str
+    role: VariableRole = VariableRole.CONTROL
 
     def __post_init__(self) -> None:
         _validate_index(self.id, "variable id")
@@ -386,6 +395,17 @@ class VarDomainEntry:
             raise InvalidBmcDomain("Variable ids must be non-negative.")
         _require_non_empty_string(self.name, "variable name")
         _require_non_empty_string(self.declared_type, "declared_type")
+        if not isinstance(self.role, VariableRole):
+            raise InvalidBmcDomain("role must be a VariableRole.")
+
+    @property
+    def time_domain(self) -> str:
+        """Return the symbol lifetime: frame, step, or trace."""
+        if self.role == VariableRole.INPUT:
+            return "step"
+        if self.role == VariableRole.PARAM:
+            return "trace"
+        return "frame"
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable variable entry dictionary.
@@ -395,14 +415,18 @@ class VarDomainEntry:
 
         Example::
 
-            >>> VarDomainEntry(0, 'x', 'int').to_canonical()['node']
-            'var_domain_entry'
+        >>> VarDomainEntry(0, 'x', 'int').to_canonical()['node']
+        'var_domain_entry'
+        >>> VarDomainEntry(0, 'x', 'int').to_canonical()['role']
+        'control'
         """
         return {
             "node": "var_domain_entry",
             "id": self.id,
             "name": self.name,
             "declared_type": self.declared_type,
+            "role": self.role.value,
+            "time_domain": self.time_domain,
         }
 
 
@@ -733,6 +757,73 @@ class BmcDomain:
             True
         """
         return self.stable_state_ids
+
+    @property
+    def input_names(self) -> Tuple[str, ...]:
+        """Return input variable names in declaration order.
+
+        :return: Names of ``input`` variables.
+        :rtype: Tuple[str, ...]
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text(
+            ...     'input int sensor; param int gain = 1; state Root;')
+            >>> domain = build_bmc_domain(model, 1)
+            >>> domain.input_names
+            ('sensor',)
+        """
+        return tuple(
+            entry.name
+            for entry in self.variables
+            if entry.role == VariableRole.INPUT
+        )
+
+    @property
+    def parameter_names(self) -> Tuple[str, ...]:
+        """Return parameter names in declaration order.
+
+        :return: Names of ``param`` variables.
+        :rtype: Tuple[str, ...]
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text(
+            ...     'input int sensor; param int gain = 1; state Root;')
+            >>> domain = build_bmc_domain(model, 1)
+            >>> domain.parameter_names
+            ('gain',)
+        """
+        return tuple(
+            entry.name
+            for entry in self.variables
+            if entry.role == VariableRole.PARAM
+        )
+
+    @property
+    def persistent_variable_names(self) -> Tuple[str, ...]:
+        """Return control and output variable names in declaration order.
+
+        :return: Names of variables that persist across cycles in
+            ``frames[i].vars``.
+        :rtype: Tuple[str, ...]
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text(
+            ...     'def int x = 0; output int y = 0; input int sensor; state Root;')
+            >>> domain = build_bmc_domain(model, 1)
+            >>> domain.persistent_variable_names
+            ('x', 'y')
+        """
+        return tuple(
+            entry.name
+            for entry in self.variables
+            if entry.role in (VariableRole.CONTROL, VariableRole.OUTPUT)
+        )
 
     def _normalize_sequence(
         self, field_name: str, value: Sequence[Any], item_type: type
@@ -1356,7 +1447,7 @@ def _event_entries(
 
 def _variable_entries(model: StateMachine) -> Tuple[VarDomainEntry, ...]:
     return tuple(
-        VarDomainEntry(index, name, define.type)
+        VarDomainEntry(index, name, define.type, define.role)
         for index, (name, define) in enumerate(model.defines.items())
     )
 

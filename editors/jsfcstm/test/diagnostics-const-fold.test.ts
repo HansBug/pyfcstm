@@ -133,14 +133,14 @@ describe('diagnostics/const-fold', () => {
         assert.deepEqual(collectConstFoldWarnings(null), []);
         const machine = await buildMachine(`
 def int stable = 0;
-def int dynamic = 0;
+def int changing = 0;
 state Root {
     state Wrapper {
         during before { stable = 1; }
         >> during before { stable = 2; }
         state Idle {
             during { stable = (2 + 3) * 4; }
-            during { dynamic = dynamic + 1; }
+            during { changing = changing + 1; }
         }
         state Active;
         [*] -> Idle;
@@ -180,12 +180,12 @@ state Root {
 
     it('does not warn for block-local temporary constant assignments', async () => {
         const diagnostics = inspectModel(await buildMachine(`
-def int output = 0;
+def int result_value = 0;
 state Root {
     state Idle {
         during {
             temp = 5;
-            output = temp + 1;
+            result_value = temp + 1;
         }
     }
     [*] -> Idle;

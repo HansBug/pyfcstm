@@ -1,0 +1,28 @@
+title: Imported input uses final control float semantics
+origin:
+  files:
+  - test/model/test_import_role_bindings.py
+categories:
+- runtime
+- variable_roles
+steps:
+- cycle: []
+  expect:
+    state: Root.A
+    outputs:
+      A_entered: 1
+      A_exited: 0
+      B_entered: 0
+      B_exited: 0
+    vars:
+      shared: 1
+- cycle: []
+  expect:
+    state: Root.B
+    outputs:
+      A_entered: 1
+      A_exited: 1
+      B_entered: 2
+      B_exited: 0
+    vars:
+      shared: 2

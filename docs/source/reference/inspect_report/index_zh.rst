@@ -262,3 +262,69 @@ identity 的并集计算，因此同一转换可以出现在多个原因桶中�
 ----------------------------------------
 
 检查命令会先读取、解码、解析并校验 DSL。任一步失败时，命令会抛出受控 CLI 错误，而不是返回正常检查报告。应把这种情况当作输入失败，而不是带 ``E_*`` 诊断码的 ``diagnostics`` 数组。
+
+变量角色与访问位置
+------------------
+
+``VariableInfo`` 保留既有读写汇总字段，并增加 ``external_supply``、
+``diagnostic_policy``、``read_sites`` 和 ``write_sites``。
+这些字段描述展开后的模型，不是执行轨迹。
+
+.. list-table:: 所有权与诊断适用范围
+   :header-rows: 1
+   :widths: 22 23 55
+
+   * - ``role``
+     - ``external_supply``
+     - ``diagnostic_policy``
+   * - ``control``，包括旧写法 ``def``
+     - ``none``
+     - ``unused``、``unwritten``、``write_only``、``constant_guard`` 均为 true。
+   * - ``input``
+     - ``cycle``
+     - 四项均为 false；由环境逐拍提供。
+   * - ``param``
+     - ``construction``
+     - 四项均为 false；构造时确定，此后固定。
+   * - ``output``
+     - ``none``
+     - 四项均为 false；外部消费者不必通过模型内部读取输出。
+
+策略标志说明既有 control 变量未使用、未写入但被读取、只写，以及 guard
+变量不变诊断的适用范围。它们不是可配置的屏蔽开关，也不关闭其他校验或常量
+表达式分析。写入 ``input`` 或 ``param`` 仍然是模型错误；``output`` 仍允许多个写入者。
+
+每个访问位置包含以下字段：
+
+.. list-table:: VariableAccessSite
+   :header-rows: 1
+   :widths: 25 75
+
+   * - 字段
+     - 含义
+   * - ``kind``
+     - ``action``、``guard`` 或 ``effect``；action/effect 内部的条件沿用其容器类别。
+   * - ``state_path``
+     - 展开后的所属状态路径，包含 import 实例位置。
+   * - ``action`` / ``action_index``
+     - 动作签名及其在 ``actions`` 中的零基索引；transition 访问两者均为 null。inline 签名可能重复，索引用于区分。
+   * - ``transition_index``
+     - guard/effect 在 ``transitions`` 中对应的零基索引；action 为 null。
+   * - ``statement_path``
+     - 容器内部的零基语句、分支索引。``[0]`` 是首条语句；``[0, 0]`` 是该条件语句的首个分支条件；``[0, 0, 1]`` 是该分支内第二条语句。transition guard 使用 ``[]``。
+   * - ``source_path``
+     - 实际书写的源文件，与展开状态路径不同；无法取得时为 null。
+   * - ``span``
+     - 语句、分支块或 transition 的源码范围，沿用从 1 开始、末端不包含的 ``Span`` 约定；无法取得时为 null。它不是变量 token 的精确范围。
+
+同一个表达式内重复出现的变量只产生一个读取位置；不同语句、分支和导入实例
+分别保留。赋值若读取自身，则同时产生读取与写入位置。initializer 属于声明
+元数据，不算 action/effect 写入。不可达语句仍然记录；抽象动作不虚构访问。
+动作引用通过既有 ``action_ref_graph`` 表达，具体函数体在其定义处记录访问。
+访问数组按模型遍历顺序排列，每个状态先动作后 transition，嵌套语句遵循源码
+顺序。索引只在本份报告内有效，不是跨编辑稳定标识。
+
+human 报告列出变量角色和外部供给方式。LLM 修复报告加入所有权说明，避免把
+``input``/``param`` 没有模型写入、``output`` 没有内部读取误当成需要修复的问题。
+完整结构化访问位置保留在 full JSON 报告中。公共 payload 不加入 schema 或
+产品版本标记，消费者应使用运行版本随包发布的 schema 校验。

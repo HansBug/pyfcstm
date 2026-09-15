@@ -15,6 +15,9 @@ stmt_styles:
     temp_type_fallback: double
 
 globals:
+  readonly_value_identifier:
+    type: import
+    from: pyfcstm.render.c_runtime.readonly_value_identifier
   render_c_action_body:
     type: import
     from: pyfcstm.render.c_runtime.render_c_action_body
@@ -106,6 +109,9 @@ globals:
     template: "{{ action.parent.path | join('.') }}"
 
 filters:
+  readonly_value_identifier:
+    type: import
+    from: pyfcstm.render.c_runtime.readonly_value_identifier
   to_c_identifier:
     type: import
     from: pyfcstm.utils.to_c_identifier

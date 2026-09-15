@@ -1,0 +1,37 @@
+title: input error retry
+origin:
+  files:
+  - test/simulate/test_runtime_inputs.py
+categories:
+- runtime
+- variable_roles
+- inputs
+exclude_runners:
+- bmc_core
+steps:
+- cycle: []
+  inputs:
+    divisor: 2
+  expect:
+    vars:
+      attempts: 1
+    outputs:
+      result: 4
+- cycle: []
+  inputs:
+    divisor: 0
+  expect:
+    vars:
+      attempts: 1
+    outputs:
+      result: 4
+    raises:
+      type: SimulationRuntimeExpressionError
+- cycle: []
+  inputs:
+    divisor: 4
+  expect:
+    vars:
+      attempts: 2
+    outputs:
+      result: 2

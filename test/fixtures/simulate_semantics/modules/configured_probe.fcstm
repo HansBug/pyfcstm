@@ -1,0 +1,9 @@
+param int configured = 3;
+state Module {
+    import "./input_probe_int.fcstm" as Probe {
+        var sample -> configured;
+        var entered -> reading;
+        var exited -> last;
+    }
+    [*] -> Probe;
+}

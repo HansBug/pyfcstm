@@ -1,5 +1,7 @@
 {%- set state_items = model.walk_states() | list -%}
-{%- set define_items = model.defines.values() | list -%}
+{%- set define_items = model.persistent_variables.values() | list -%}
+{%- set input_items = model.inputs.values() | list -%}
+{%- set parameter_items = model.parameters.values() | list -%}
 {%- macro state_key(state) -%}{{ state | state_path }}{%- endmacro %}
 {%- set action_scan = namespace(items=[]) -%}
 {%- for scan_state in model.walk_states() -%}
@@ -128,7 +130,7 @@ Canonical Model Export::
 """
 
 import math  # noqa: F401 - rendered DSL math expressions may use this module.
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Mapping, Optional, Tuple, Union
 
@@ -250,6 +252,10 @@ class ReadOnlyExecutionContext:
     :param named_ref: Full path of the named ref callsite. Anonymous
         refs and direct abstract actions use ``None``.
     :type named_ref: Optional[str], optional
+    :param parameters: Fixed instance parameter snapshot.
+    :type parameters: Mapping[str, Number]
+    :param inputs: Frozen input snapshot for the current cycle.
+    :type inputs: Mapping[str, Number]
     """
 
     state_path: Tuple[str, ...]
@@ -260,10 +266,14 @@ class ReadOnlyExecutionContext:
     call_stage: Optional[str] = None
     abstract_target: Optional[str] = None
     named_ref: Optional[str] = None
+    parameters: Mapping[str, Number] = field(default_factory=dict, repr=False)
+    inputs: Mapping[str, Number] = field(default_factory=dict, repr=False)
 
     def __post_init__(self):
         object.__setattr__(self, "state_path", tuple(self.state_path))
         object.__setattr__(self, "vars", MappingProxyType(dict(self.vars)))
+        object.__setattr__(self, "parameters", MappingProxyType(dict(self.parameters)))
+        object.__setattr__(self, "inputs", MappingProxyType(dict(self.inputs)))
         active_leaf = self.state_path if self.active_leaf is None else self.active_leaf
         object.__setattr__(self, "active_leaf", tuple(active_leaf))
         call_stage = self.action_stage if self.call_stage is None else self.call_stage
@@ -366,13 +376,18 @@ class {{ machine_class_name(model) }}:
 {% for def_item in define_items %}        {{ def_item.name | tojson }}: {{ def_item.type | tojson }},
 {% endfor %}    }
 {% endif %}
+{% if input_items or parameter_items %}    _VALUE_TYPES = {
+{% for item in model.defines.values() %}        {{ item.name | tojson }}: {{ item.type | tojson }},
+{% endfor %}    }
+{% else %}    _VALUE_TYPES = _VAR_TYPES
+{% endif %}
     def _normalize_persistent_value(self, name, value, source):
-        if name not in self._VAR_TYPES:
+        if name not in self._VALUE_TYPES:
             raise ValueError(
                 "Variable %r not defined in state machine. Available variables: %s"
                 % (name, list(self._VAR_TYPES.keys()))
             )
-        declared_type = self._VAR_TYPES[name]
+        declared_type = self._VALUE_TYPES[name]
         if type(value) is bool:
             raise ValueError("%s must not be bool" % (source,))
         if type(value) not in (int, float):
@@ -444,7 +459,7 @@ class {{ machine_class_name(model) }}:
         for name, value in normalized_updates.items():
             vars_[name] = value
 
-    def __init__(self, initial_state=None, initial_vars=None):
+    def __init__(self, initial_state=None, initial_vars=None, *, parameters=None):
         """
         Initialize the generated state machine runtime.
 
@@ -452,7 +467,27 @@ class {{ machine_class_name(model) }}:
         :type initial_state: Optional[Union[str, Tuple[str, ...], List[str]]]
         :param initial_vars: Optional hot-start variable mapping.
         :type initial_vars: Optional[Dict[str, Number]]
+        :param parameters: Instance-owned parameters; omitted cold values use DSL defaults.
+        :type parameters: Optional[Mapping[str, Number]]
         """
+        parameter_values = {} if parameters is None else dict(parameters)
+        unknown_parameters = set(parameter_values) - set({{ parameter_items | map(attribute='name') | list | tojson }})
+        if unknown_parameters:
+            raise ValueError("Unknown parameters: %s" % sorted(unknown_parameters))
+{% for item in parameter_items %}        if {{ item.name | tojson }} in parameter_values:
+            parameter_value = parameter_values[{{ item.name | tojson }}]
+        elif initial_state is not None:
+            raise ValueError("Hot start requires parameter {{ item.name }}")
+        else:
+            parameter_value = self._evaluate_runtime_expr(
+                lambda: {{ item.init.to_ast_node() | expr_render(style="python_expr") }},
+                "parameter {{ item.name }} initializer",
+            )
+        self._parameter_{{ item.name }} = self._normalize_persistent_value(
+            {{ item.name | tojson }}, parameter_value, "parameter {{ item.name }}"
+        )
+{% endfor %}        self._active_inputs = None
+        self._last_inputs = None
         self._vars = {}
         self.variables = self._vars
         if initial_state is not None and initial_vars is None:
@@ -503,6 +538,35 @@ class {{ machine_class_name(model) }}:
             self._validate_hot_start_stack(self._normalize_state_path(initial_state))
 
     @property
+    def parameters(self):
+        """Read the instance-owned, fixed parameter values."""
+{% if parameter_items %}        return MappingProxyType(
+            {
+{% for item in parameter_items %}                {{ item.name | tojson }}: self._parameter_{{ item.name }},
+{% endfor %}            }
+        )
+{% else %}        return MappingProxyType({})
+{% endif %}
+    @property
+    def last_inputs(self):
+        """Read the last committed input snapshot, or None before a cycle."""
+        return self._last_inputs
+
+{% for item in parameter_items %}    def get_param_{{ item.name }}(self) -> {{ item.type }}:
+        """Return the fixed configuration value for {{ item.name }}."""
+        return self._parameter_{{ item.name }}
+
+{% endfor %}{% for item in input_items %}    def read_{{ item.name }}(self) -> {{ item.type }}:
+        """Implement this external read hook, or supply this cycle's inputs."""
+        raise NotImplementedError("Implement read_{{ item.name }} or supply inputs")
+
+    def get_input_{{ item.name }}(self) -> {{ item.type }}:
+        """Read {{ item.name }} from the frozen current-cycle snapshot."""
+        if self._active_inputs is None:
+            raise ValueError("Input {{ item.name }} is only available during a cycle")
+        return self._active_inputs[{{ loop.index0 }}]
+
+{% endfor %}    @property
     def vars(self):
         return self._vars
 
@@ -774,6 +838,10 @@ class {{ machine_class_name(model) }}:
             call_stage=action["call_stage"],
             abstract_target=action["abstract_target"],
             named_ref=action["named_ref"],
+            parameters=self.parameters,
+            inputs={% if input_items %}{
+{% for item in input_items %}                {{ item.name | tojson }}: self.get_input_{{ item.name }}(),
+{% endfor %}            }{% else %}{}{% endif %},
         )
         old_vars = self._vars
         old_variables = self.variables
@@ -1376,7 +1444,46 @@ class {{ machine_class_name(model) }}:
 
         return True, True
 
-    def cycle(self, events=None):
+    def cycle(self, events=None, *, inputs=None):
+        """Freeze external inputs and execute one atomic model cycle."""
+        if self._ended:
+            return None
+        event_names = self._normalize_events(events)
+        overrides = {} if inputs is None else dict(inputs)
+        unknown_inputs = set(overrides) - set({{ input_items | map(attribute='name') | list | tojson }})
+        if unknown_inputs:
+            raise ValueError("Unknown inputs: %s" % sorted(unknown_inputs))
+        values = []
+{% for item in input_items %}        if {{ item.name | tojson }} in overrides:
+            value = overrides[{{ item.name | tojson }}]
+        else:
+            value = self.read_{{ item.name }}()
+{% if item.type == "int" %}        if type(value) is not int:
+            raise ValueError("Input {{ item.name }} must be int")
+{% endif %}        values.append(
+            self._normalize_persistent_value(
+                {{ item.name | tojson }},
+                value,
+                "input {{ item.name }}",
+            )
+        )
+{% endfor %}{% if input_items %}        committed_inputs = MappingProxyType(
+            {
+{% for item in input_items %}                {{ item.name | tojson }}: values[{{ loop.index0 }}],
+{% endfor %}            }
+        )
+{% else %}        committed_inputs = MappingProxyType({})
+{% endif %}
+        previous_inputs = self._active_inputs
+        try:
+            self._active_inputs = tuple(values)
+            self._cycle(event_names)
+        finally:
+            self._active_inputs = previous_inputs
+        self._last_inputs = committed_inputs
+        return None
+
+    def _cycle(self, events=None):
         """
         Advance the state machine by one cycle.
 

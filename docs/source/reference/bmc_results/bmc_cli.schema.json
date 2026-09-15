@@ -4431,7 +4431,9 @@
         "event_reads",
         "abstract_calls",
         "consumed_events",
-        "unconsumed_events"
+        "unconsumed_events",
+        "inputs",
+        "input_reads"
       ],
       "properties": {
         "index": {
@@ -4496,8 +4498,45 @@
           "items": {
             "type": "string"
           }
+        },
+        "inputs": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "input_reads": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "case_kind": {
+                "const": "absorb"
+              }
+            },
+            "required": [
+              "case_kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "inputs": {
+                "maxProperties": 0
+              },
+              "input_reads": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      ]
     },
     "legacyWitness": {
       "type": "object",
@@ -4547,7 +4586,8 @@
             "mode",
             "state",
             "sentinel",
-            "vars"
+            "vars",
+            "parameters"
           ],
           "properties": {
             "mode": {
@@ -4565,6 +4605,12 @@
             },
             "vars": {
               "$ref": "#/$defs/stringMap"
+            },
+            "parameters": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "number"
+              }
             }
           }
         },
@@ -4702,7 +4748,8 @@
             "mode",
             "state",
             "sentinel",
-            "vars"
+            "vars",
+            "parameters"
           ],
           "properties": {
             "mode": {
@@ -4720,6 +4767,12 @@
             },
             "vars": {
               "$ref": "#/$defs/stringMap"
+            },
+            "parameters": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "number"
+              }
             }
           }
         },
@@ -4949,7 +5002,8 @@
         "consumed_events",
         "unconsumed_events",
         "abstract_calls",
-        "delta"
+        "delta",
+        "inputs"
       ],
       "properties": {
         "index": {
@@ -4982,6 +5036,12 @@
         },
         "delta": {
           "type": "boolean"
+        },
+        "inputs": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
         }
       }
     },

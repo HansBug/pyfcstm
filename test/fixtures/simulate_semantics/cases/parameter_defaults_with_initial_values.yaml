@@ -1,0 +1,31 @@
+title: parameter defaults with initial values
+origin:
+  files:
+  - test/simulate/test_runtime_inputs.py
+categories:
+- runtime
+- variable_roles
+initial:
+  vars:
+    count: 7
+  outputs:
+    reading: 11
+steps:
+- cycle_count: 0
+  expect:
+    vars:
+      count: 7
+    outputs:
+      reading: 11
+- cycle: []
+  expect:
+    vars:
+      count: 8
+    outputs:
+      reading: 24
+- cycle: []
+  expect:
+    vars:
+      count: 9
+    outputs:
+      reading: 27

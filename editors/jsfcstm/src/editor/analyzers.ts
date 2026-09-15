@@ -1,3 +1,4 @@
+import {collectVariableRoleDiagnostics} from '../ast/variable-roles';
 import {pathToFileURL} from 'node:url';
 
 import type {
@@ -1225,6 +1226,7 @@ export function collectSemanticAnalysisDiagnosticsFromSemantic(
     document: TextDocumentLike,
 ): FcstmDiagnostic[] {
     const diagnostics: FcstmDiagnostic[] = [];
+    if (semantic.ast) diagnostics.push(...collectVariableRoleDiagnostics(semantic.ast));
     addImportMappingDiagnostics(semantic, document, diagnostics);
     addUnreachableStateDiagnostics(semantic, document, diagnostics);
     addTransitionDiagnostics(semantic, document, diagnostics);

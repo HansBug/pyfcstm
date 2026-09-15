@@ -450,6 +450,27 @@ class ComboOriginInfo:
 
 
 @dataclass(frozen=True)
+class VariableAccessSite:
+    """A static variable access in an expanded model.
+
+    ``statement_path`` contains zero-based statement and branch indices within
+    the owning action or effect; an empty path identifies a transition guard.
+    ``span`` covers the authored statement, branch block, or transition,
+    rather than claiming a token-level variable position. Missing source metadata
+    remains ``None`` for programmatically constructed models.
+    """
+
+    kind: str
+    state_path: str
+    action: Optional[str]
+    action_index: Optional[int]
+    transition_index: Optional[int]
+    statement_path: Tuple[int, ...]
+    source_path: Optional[str]
+    span: Optional[Span]
+
+
+@dataclass(frozen=True)
 class VariableInfo:
     """
     Structural summary of a variable definition plus guard-affect flags.
@@ -493,6 +514,19 @@ class VariableInfo:
         assignments to this variable from lifecycle actions or transition
         effects.
     :type float_literal_assignments: Tuple[str, ...]
+    :param external_supply: ``cycle`` for inputs, ``construction`` for
+        parameters, or ``none`` for model-owned control/output variables.
+    :type external_supply: str
+    :param diagnostic_policy: Fixed applicability of control-variable unused,
+        unwritten-read, write-only and guard-variable-change diagnostics.
+        These flags do not suppress other validation or expression analysis.
+    :type diagnostic_policy: Dict[str, bool]
+    :param read_sites: Static reads in expanded model traversal order.
+        Repeated occurrences within one expression share a site.
+    :type read_sites: Tuple[VariableAccessSite, ...]
+    :param write_sites: Static assignment destinations, including unreachable
+        statements but excluding declaration initializers.
+    :type write_sites: Tuple[VariableAccessSite, ...]
     """
 
     name: str
@@ -508,6 +542,11 @@ class VariableInfo:
     float_literal_assignments: Tuple[str, ...] = field(default_factory=tuple)
     span: Optional['Span'] = None
     float_literal_assignment_spans: Tuple[Optional['Span'], ...] = field(default_factory=tuple)
+    role: str = 'control'
+    external_supply: str = 'none'
+    diagnostic_policy: Dict[str, bool] = field(default_factory=dict)
+    read_sites: Tuple[VariableAccessSite, ...] = field(default_factory=tuple)
+    write_sites: Tuple[VariableAccessSite, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -1494,10 +1533,72 @@ def _collect_action_reads_writes(state: Any) -> Tuple[Dict[str, bool], Dict[str,
     return reads, writes
 
 
+def _variable_access_sites(machine: 'StateMachine') -> Dict[str, Dict[str, List[VariableAccessSite]]]:
+    """Collect static accesses without collapsing distinct imported instances."""
+    from ..model.model import Operation
+
+    sites = {name: {'reads': [], 'writes': []} for name in machine.defines}
+
+    def record(names, mode, site):
+        for name in dict.fromkeys(names):
+            if name in sites:
+                sites[name][mode].append(site)
+
+    def located(owner, node, path):
+        return replace(
+            owner,
+            statement_path=path,
+            source_path=getattr(node, '_source_path', owner.source_path),
+            span=getattr(node, '_span', owner.span),
+        )
+
+    def statements(items, owner, prefix=()):
+        for index, statement in enumerate(items):
+            path = (*prefix, index)
+            site = located(owner, statement, path)
+            if isinstance(statement, Operation):
+                record([statement.var_name], 'writes', site)
+                record(_walk_expr_variables(statement.expr), 'reads', site)
+            else:
+                for branch_index, branch in enumerate(statement.branches):
+                    branch_path = (*path, branch_index)
+                    record(_walk_expr_variables(branch.condition), 'reads',
+                           located(owner, branch, branch_path))
+                    statements(branch.statements, owner, branch_path)
+
+    transition_index = 0
+    action_index = 0
+    for state in machine.walk_states():
+        path = _state_path(state)
+        for collection in (state.on_enters, state.on_durings, state.on_exits, state.on_during_aspects):
+            for action in collection:
+                owner = VariableAccessSite(
+                    kind='action', state_path=path,
+                    action=_function_signature(state, path, action),
+                    action_index=action_index, transition_index=None, statement_path=(),
+                    source_path=getattr(action, '_source_path', machine.source_path),
+                    span=getattr(action, '_span', None),
+                )
+                statements(action.operations, owner)
+                action_index += 1
+        for transition in state.transitions:
+            owner = VariableAccessSite(
+                kind='guard', state_path=path, action=None, action_index=None,
+                transition_index=transition_index, statement_path=(),
+                source_path=getattr(transition, '_source_path', None),
+                span=getattr(transition, '_span', None),
+            )
+            record(_walk_expr_variables(transition.guard), 'reads', owner)
+            statements(transition.effects, replace(owner, kind='effect'))
+            transition_index += 1
+    return sites
+
+
 def _build_variable_infos(
         machine: 'StateMachine',
         states: Tuple[StateInfo, ...],
 ) -> Tuple[VariableInfo, ...]:
+    access_sites = _variable_access_sites(machine)
     var_reads_by_state: Dict[str, List[str]] = {name: [] for name in machine.defines}
     var_writes_by_state: Dict[str, List[str]] = {name: [] for name in machine.defines}
     var_read_guards: Dict[str, List[Tuple[str, str]]] = {name: [] for name in machine.defines}
@@ -1615,6 +1716,14 @@ def _build_variable_infos(
             name=name,
             type=var_define.type,
             init_value=_expr_text(var_define.init) or '',
+            role=var_define.role.value,
+            external_supply={'input': 'cycle', 'param': 'construction'}.get(var_define.role.value, 'none'),
+            diagnostic_policy={
+                rule: var_define.role.value == 'control'
+                for rule in ('unused', 'unwritten', 'write_only', 'constant_guard')
+            },
+            read_sites=tuple(access_sites[name]['reads']),
+            write_sites=tuple(access_sites[name]['writes']),
             read_in_states=read_states,
             written_in_states=written_states,
             read_in_guards=read_guards,
@@ -4440,7 +4549,7 @@ def _to_json_dataclass(obj: Any) -> Any:
         return {
             name: _to_json_dataclass(getattr(obj, name))
             for name in obj.__dataclass_fields__
-            if name not in {
+            if isinstance(obj, VariableAccessSite) or name not in {
                 'span',
                 'effect_spans',
                 'effect_self_assign_spans',
@@ -4454,10 +4563,7 @@ def _to_json_dataclass(obj: Any) -> Any:
         # exclusively, but future payloads may introduce list-typed
         # dataclass fields.
         return [_to_json_dataclass(x) for x in obj]
-    if isinstance(obj, dict):  # pragma: no cover
-        # Same as list: the current ModelInspect keeps every dict field
-        # at the top level, but nested dict payloads should still
-        # serialize predictably if introduced later.
+    if isinstance(obj, dict):
         return {str(k): _to_json_dataclass(v) for k, v in obj.items()}
     return obj
 

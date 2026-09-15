@@ -16,6 +16,6 @@ steps:
       type: ValueError
       match: non-integer float from operation block writeback
       match_kind: substring
-    vars_exact:
+    vars:
       r: 0
     ended: false

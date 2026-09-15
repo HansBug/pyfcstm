@@ -435,3 +435,8 @@ This reference is aligned with these implementation and test facts:
   ``test/testings/simulate_semantics.py`` for execution-order scenarios.
 * ``docs/source/tutorials/simulation/*.demo.*`` for checked documentation
   transcripts.
+
+.. toctree::
+   :maxdepth: 1
+
+   inputs

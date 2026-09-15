@@ -169,7 +169,7 @@ DefAssignment
 -----------------------------------------------------
 
 .. autoclass:: DefAssignment
-    :members: __str__,name,type,expr,doc
+    :members: __str__,name,type,expr,doc,role,spelling
 
 
 OperationalDeprecatedAssignment
@@ -247,11 +247,18 @@ ImportDefTargetTemplate
     :members: __str__,template
 
 
+ImportVariableMapping
+-----------------------------------------------------
+
+.. autoclass:: ImportVariableMapping
+    :members: __post_init__,__str__,selector,target_template,spelling
+
+
 ImportDefMapping
 -----------------------------------------------------
 
 .. autoclass:: ImportDefMapping
-    :members: __str__,selector,target_template
+    :members: spelling
 
 
 ImportEventMapping

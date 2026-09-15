@@ -9,6 +9,8 @@ from tempfile import TemporaryDirectory
 
 import pytest
 
+from test.template.native_role_utils import NativeRoleSupport
+
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.render import StateMachineCodeRenderer
@@ -60,7 +62,8 @@ def _runtime_exception_from_message(message):
     ):
         return SimulationRuntimeDfsError(message), None
     if (
-        'non-integer float' in message
+        'outside signed 64-bit range' in message
+        or 'non-integer float' in message
         or 'must not be bool' in message
         or 'must be int or float' in message
         or 'must be finite' in message
@@ -370,7 +373,7 @@ class _EventContextView:
         return self.current_state_path.split('.')[-1] if self.current_state_path else ''
 
 
-class _CPollRuntime:
+class _CPollRuntime(NativeRoleSupport):
     def __init__(
         self,
         lib,
@@ -386,9 +389,9 @@ class _CPollRuntime:
         self._dll_directory_handle = dll_directory_handle
         self._prefix = to_c_public_identifier(model.root_state.name, 'Machine')
         self._var_types = {
-            def_item.name: def_item.type for def_item in model.defines.values()
+            def_item.name: def_item.type for def_item in model.persistent_variables.values()
         }
-        self._var_names = list(model.defines.keys())
+        self._var_names = list(model.persistent_variables.keys())
         self._generated_var_names = {
             name: to_c_identifier(name) for name in self._var_names
         }
@@ -448,6 +451,9 @@ class _CPollRuntime:
         self._last_error = self._bind_function(
             '{prefix}_last_error', argtypes=[ctypes.c_void_p], restype=ctypes.c_char_p
         )
+        self._initialize_role_io()
+        self._cycle_inputs = self._bind_function(
+            '{prefix}_cycle_with_inputs', argtypes=[ctypes.c_void_p, ctypes.c_void_p], restype=ctypes.c_int)
         if self._machine is None:
             raise MemoryError('failed to allocate generated C poll runtime machine.')
         if initialize:
@@ -532,7 +538,7 @@ class _CPollRuntime:
 
     def _build_vars_struct_type(self):
         field_defs = []
-        for def_item in self._model.defines.values():
+        for def_item in self._model.persistent_variables.values():
             if def_item.type == 'int':
                 field_defs.append((to_c_identifier(def_item.name), ctypes.c_longlong))
             else:
@@ -633,13 +639,12 @@ class _CPollRuntime:
             raise ValueError('Unknown event path: {!r}'.format(event_ref))
         return self._event_ids[resolved]
 
-    def hot_start(self, initial_state, initial_vars):
+    def hot_start(self, initial_state, initial_vars, parameters=None):
         if set(initial_vars.keys()) != set(self._var_names):
             raise ValueError('initial_vars must provide all variables exactly once.')
         values = self._create_initial_vars(initial_vars)
         state_id = self._resolve_state_id(initial_state)
-        if self._hot_start(self._machine, state_id, ctypes.byref(values)) != 1:
-            self._raise_last_error()
+        self._hot_start_with_parameters(state_id, values, parameters)
 
     def _create_initial_vars(self, initial_vars):
         values = self._vars_struct()
@@ -755,7 +760,7 @@ class _CPollRuntime:
         if message and message.decode('utf-8'):
             self._raise_last_error()
 
-    def cycle(self, events=None):
+    def cycle(self, events=None, *, inputs=None):
         if self.is_ended:
             self._current_cycle_event_ids = set()
             try:
@@ -771,7 +776,12 @@ class _CPollRuntime:
 
         self._current_cycle_event_ids = event_ids
         try:
-            if self._cycle(self._machine) != 1:
+            if inputs is None:
+                success = self._cycle(self._machine)
+            else:
+                values = self._input_values(inputs)
+                success = self._cycle_inputs(self._machine, ctypes.byref(values))
+            if success != 1:
                 self._raise_last_error()
         finally:
             self._current_cycle_event_ids = set()
@@ -847,12 +857,12 @@ def render_c_runtime(dsl_code, auto_install_event_checks=True):
             runtime.close()
 
 
-def build_c_runtime(dsl_code, initial_state=None, initial_vars=None, auto_install_event_checks=True):
+def build_c_runtime(dsl_code, initial_state=None, initial_vars=None, auto_install_event_checks=True, parameters=None, path=None):
     ast_node = parse_with_grammar_entry(
         textwrap.dedent(dsl_code).strip(),
         entry_name='state_machine_dsl',
     )
-    model = parse_dsl_node_to_state_machine(ast_node)
+    model = parse_dsl_node_to_state_machine(ast_node, path=path)
 
     tempdir = TemporaryDirectory()
     template_dir = extract_template('c_poll', tempdir.name)
@@ -870,8 +880,18 @@ def build_c_runtime(dsl_code, initial_state=None, initial_vars=None, auto_instal
         temporary_directories=temporary_directories,
         dll_directory_handle=dll_directory_handle,
         auto_install_event_checks=auto_install_event_checks,
-        initialize=initial_state is None,
+        initialize=initial_state is None and initial_vars is None and parameters is None,
     )
-    if initial_state is not None:
-        runtime.hot_start(initial_state, initial_vars or {})
-    return runtime
+    configured = False
+    try:
+        if initial_state is not None:
+            runtime.hot_start(initial_state, initial_vars or {}, parameters)
+        elif initial_vars is not None or parameters is not None:
+            runtime.initialize_with_values(initial_vars, parameters)
+            if auto_install_event_checks and runtime._event_paths:
+                runtime.install_event_checks()
+        configured = True
+        return runtime
+    finally:
+        if not configured:
+            runtime.close()

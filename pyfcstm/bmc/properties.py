@@ -27,7 +27,7 @@ Example::
 from __future__ import annotations
 
 from collections.abc import Iterable as IterableABC
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
 import z3
@@ -537,6 +537,14 @@ class _CallSnapshotSymbols:
     """
 
     snapshot: Mapping[str, z3.ArithRef]
+    parameters: Mapping[str, z3.ArithRef] = field(default_factory=dict)
+
+    def resolve_query_value(
+        self, frame_index: int, step_index: Optional[int], name: str
+    ) -> z3.ArithRef:
+        if name in self.parameters:
+            return self.parameters[name]
+        return self.frame_var(frame_index, name)
 
     def frame_var(self, frame_index: int, name: str) -> z3.ArithRef:
         """Return a call-time variable from the snapshot.
@@ -574,10 +582,11 @@ def _snapshot_cond_expr(
     snapshot: Mapping[str, z3.ArithRef],
     label: str,
     step_index: int,
+    parameters: Mapping[str, z3.ArithRef],
 ) -> z3.BoolRef:
     lowered = _lower_bmc_cond_expr(
         expr,
-        _CallSnapshotSymbols(snapshot),
+        _CallSnapshotSymbols(snapshot, parameters),
         frame_index=step_index,
         step_index=step_index,
     )
@@ -590,6 +599,7 @@ def _call_match_expr(
     record,
     filter_node: CallFilter,
     step_index: int,
+    parameters: Mapping[str, z3.ArithRef],
 ) -> z3.BoolRef:
     terms = [relation.selector]
     if filter_node.action is not None:
@@ -609,7 +619,7 @@ def _call_match_expr(
     if filter_node.where is not None:
         terms.append(
             _snapshot_cond_expr(
-                filter_node.where, record.snapshot, "call where", step_index
+                filter_node.where, record.snapshot, "call where", step_index, parameters
             )
         )
     return _and(terms)
@@ -631,7 +641,13 @@ def _lower_call_count(
             for record in relation.call_records:
                 items.append(
                     z3.If(
-                        _call_match_expr(relation, record, expr.filter, selected_step),
+                        _call_match_expr(
+                            relation,
+                            record,
+                            expr.filter,
+                            selected_step,
+                            core.symbols.parameters,
+                        ),
                         z3.IntVal(1),
                         z3.IntVal(0),
                     )

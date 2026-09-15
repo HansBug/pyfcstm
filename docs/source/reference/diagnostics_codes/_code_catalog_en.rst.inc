@@ -382,6 +382,32 @@ This catalog is synchronized with ``pyfcstm.diagnostics.codes.CODE_REGISTRY``. T
      - ``verify_pipeline``
      - ``requires_solver``
      - ``composite_block``
+   * - :ref:`E_INPUT_INITIALIZER <diag-code-e-input-initializer>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``variable_declaration``
+   * - :ref:`E_VARIABLE_INITIALIZER_REQUIRED <diag-code-e-variable-initializer-required>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``variable_declaration``
+   * - :ref:`E_INITIALIZER_VARIABLE_REFERENCE <diag-code-e-initializer-variable-reference>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``variable_declaration``
+   * - :ref:`E_INPUT_WRITE <diag-code-e-input-write>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``effect_statement``
+   * - :ref:`E_PARAM_WRITE <diag-code-e-param-write>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``effect_statement``
+
 
 Names, variables, types, and imports
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -464,6 +490,7 @@ E_DUPLICATE_VAR
 .. diagnostics-meta E_DUPLICATE_VAR severity=error emit_tier=static_pipeline capability=pure_static span_object=variable_declaration
 .. diagnostics-ref E_DUPLICATE_VAR var_name type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_DUPLICATE_VAR previous_span type=Span required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_DUPLICATE_VAR source_path type=str required=false enum=- item_enum=- exact_values=-
 
 
 .. diagnostics-boundary E_DUPLICATE_VAR kind=cli_error
@@ -490,6 +517,11 @@ E_DUPLICATE_VAR
      - ``Span``
      - no
      - Source position of the first declaration.
+
+   * - ``source_path``
+     - ``str``
+     - no
+     - Authored file containing duplicate imported declarations.
 
 .. diagnostics-example E_DUPLICATE_VAR 1 cli_error
 
@@ -970,15 +1002,18 @@ E_IMPORT_DUPLICATE_MAPPING
 .. diagnostics-ref E_IMPORT_DUPLICATE_MAPPING duplicated_name type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_IMPORT_DUPLICATE_MAPPING direction type=str required=true enum=source_duplicated|target_duplicated item_enum=- exact_values=-
 .. diagnostics-ref E_IMPORT_DUPLICATE_MAPPING host_state_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_IMPORT_DUPLICATE_MAPPING source_path type=str required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_IMPORT_DUPLICATE_MAPPING binding_reason type=str required=false enum=role_mismatch|type_mismatch|implicit_input_sharing|initializer_mismatch item_enum=- exact_values=-
+.. diagnostics-ref E_IMPORT_DUPLICATE_MAPPING binding type=dict required=false enum=- item_enum=- exact_values=-
 
 
 .. diagnostics-boundary E_IMPORT_DUPLICATE_MAPPING kind=cli_error
 
 **Registry facts.** Severity ``error``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``import_statement``.
 
-**Meaning.** Two or more mapping clauses under the same ``import { ... }`` block target the same source name (event or variable), or two source names target the same host name.
+**Meaning.** A mapping duplicates a source or target within one import, or an imported variable conflicts with an existing declaration in role, numeric type, input ownership, or initializer.
 
-**LLM repair summary.** An import-mapping block contains a duplicate source or target name. Each source identifier can be mapped at most once; each target host slot can receive at most one source.
+**LLM repair summary.** Within one import, each target receives at most one source. Numeric types must match. Explicit parent targets determine the final role: child input may bind to any role, param only to param, and control/output only to control/output. Implicit sharing cannot change roles; shared inputs require an explicit host declaration. Use ``binding_reason`` to identify the conflict and preserve source read-only constraints.
 
 .. list-table:: Refs schema
    :header-rows: 1
@@ -1009,6 +1044,19 @@ E_IMPORT_DUPLICATE_MAPPING
      - yes
      - Dotted path of the composite state hosting the import.
 
+   * - ``source_path``
+     - ``str``
+     - no
+     - Authored file containing the conflicting import statement.
+   * - ``binding_reason``
+     - ``str``
+     - no
+     - Why merging an imported variable into an existing declaration failed.
+   * - ``binding``
+     - ``dict``
+     - no
+     - Source and target declaration lists. Each entry retains its authored name, role, numeric type, source_path and declaration span, including every contributing declaration behind a recursively merged variable.
+
 .. diagnostics-example E_IMPORT_DUPLICATE_MAPPING 1 cli_error
 
 **Example 1** (``cli_error``) — reproduction boundary.
@@ -1018,8 +1066,8 @@ This source shape reproduces a controlled model-validation failure through ``pyf
 
    state System {
        import "sub.fcstm" as Sub {
-           def x = a;
-           def x = b;
+           var x -> a;
+           var x -> b;
        }
    }
 
@@ -1044,6 +1092,7 @@ E_IMPORT_MAPPING_INVALID
 .. diagnostics-ref E_IMPORT_MAPPING_INVALID host_state_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_IMPORT_MAPPING_INVALID reason type=str required=true enum=source_not_found|target_invalid|selector_invalid|template_invalid|empty_path|host_root_mismatch item_enum=- exact_values=-
 .. diagnostics-ref E_IMPORT_MAPPING_INVALID detail type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_IMPORT_MAPPING_INVALID source_path type=str required=false enum=- item_enum=- exact_values=-
 
 
 .. diagnostics-boundary E_IMPORT_MAPPING_INVALID kind=cli_error
@@ -1082,6 +1131,11 @@ E_IMPORT_MAPPING_INVALID
      - ``str``
      - yes
      - Human-readable specifics of the mapping failure (mapping text, selector / template literal, or path that failed to resolve).
+
+   * - ``source_path``
+     - ``str``
+     - no
+     - Authored file containing the invalid import mapping.
 
 .. diagnostics-example E_IMPORT_MAPPING_INVALID 1 cli_error
 
@@ -4697,12 +4751,12 @@ This diagnostic can appear in a successful inspect report. Reproduce it with ``p
 .. code-block:: fcstm
 
    def int result = 0;
-   def int input = 1;
+   def int sensor_value = 1;
    state Root {
        state A;
        state B;
        [*] -> A;
-       A -> B effect { result = input / (1 - 1); };
+       A -> B effect { result = sensor_value / (1 - 1); };
    }
 
 .. diagnostics-example W_NUMERIC_CONSTANT_DIVISION_BY_ZERO 2 boundary_only
@@ -5652,3 +5706,196 @@ A typical repair is ``rename_inner_action`` on ``named_action``: Give the nested
 
 **Example 3** (``boundary_only``) — anti-pattern boundary for ``W_NAMED_ACTION_SHADOWS_ANCESTOR``.
 Do not leave the shadowing name in place unless the scope distinction is intentional and documented outside the DSL.
+
+.. _diag-code-e-input-initializer:
+
+E_INPUT_INITIALIZER
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_INPUT_INITIALIZER severity=error emit_tier=static_pipeline capability=pure_static span_object=variable_declaration
+.. diagnostics-ref E_INPUT_INITIALIZER var_name type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_INPUT_INITIALIZER source_path type=str required=false enum=- item_enum=- exact_values=-
+.. diagnostics-boundary E_INPUT_INITIALIZER kind=cli_error
+
+Inputs have no model initializer; their values come from the environment.
+
+``refs.var_name`` identifies the affected declaration. Severity is ``error``; validation is static and needs no solver.
+
+   * - ``source_path``
+     - ``str``
+     - no
+     - Authored file containing an invalid imported declaration or assignment.
+
+.. diagnostics-example E_INPUT_INITIALIZER 1 cli_error
+
+.. code-block:: fcstm
+
+   input int sensor = 1; state Root;
+
+Loading this source fails during model construction. ``pyfcstm inspect -i model.fcstm --collect-errors --format json`` retains the error in its report.
+
+.. diagnostics-example E_INPUT_INITIALIZER 2 boundary_only
+
+Remove the initializer. A fixed external input belongs in the runtime input source.
+
+.. code-block:: fcstm
+
+   input int sensor; state Root;
+
+.. diagnostics-example E_INPUT_INITIALIZER 3 boundary_only
+
+Do not hide the error by renaming another variable. Initializers have no declaration-order dependency exception.
+
+.. _diag-code-e-variable-initializer-required:
+
+E_VARIABLE_INITIALIZER_REQUIRED
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_VARIABLE_INITIALIZER_REQUIRED severity=error emit_tier=static_pipeline capability=pure_static span_object=variable_declaration
+.. diagnostics-ref E_VARIABLE_INITIALIZER_REQUIRED var_name type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_VARIABLE_INITIALIZER_REQUIRED source_path type=str required=false enum=- item_enum=- exact_values=-
+.. diagnostics-boundary E_VARIABLE_INITIALIZER_REQUIRED kind=cli_error
+
+Control, output, and parameter declarations require a name-free initial value.
+
+``refs.var_name`` identifies the affected declaration. Severity is ``error``; validation is static and needs no solver.
+
+   * - ``source_path``
+     - ``str``
+     - no
+     - Authored file containing an invalid imported declaration or assignment.
+
+.. diagnostics-example E_VARIABLE_INITIALIZER_REQUIRED 1 cli_error
+
+.. code-block:: fcstm
+
+   param int limit; state Root;
+
+Loading this source fails during model construction. ``pyfcstm inspect -i model.fcstm --collect-errors --format json`` retains the error in its report.
+
+.. diagnostics-example E_VARIABLE_INITIALIZER_REQUIRED 2 boundary_only
+
+Supply an explicit default instead of relying on an implicit zero.
+
+.. code-block:: fcstm
+
+   param int limit = 2; state Root;
+
+.. diagnostics-example E_VARIABLE_INITIALIZER_REQUIRED 3 boundary_only
+
+Do not hide the error by renaming another variable. Initializers have no declaration-order dependency exception.
+
+.. _diag-code-e-initializer-variable-reference:
+
+E_INITIALIZER_VARIABLE_REFERENCE
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_INITIALIZER_VARIABLE_REFERENCE severity=error emit_tier=static_pipeline capability=pure_static span_object=variable_declaration
+.. diagnostics-ref E_INITIALIZER_VARIABLE_REFERENCE var_name type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_INITIALIZER_VARIABLE_REFERENCE source_path type=str required=false enum=- item_enum=- exact_values=-
+.. diagnostics-boundary E_INITIALIZER_VARIABLE_REFERENCE kind=cli_error
+
+An initializer supplied through the public AST/model API contains a variable reference.
+
+``refs.var_name`` identifies the affected declaration. Severity is ``error``; validation is static and needs no solver.
+
+   * - ``source_path``
+     - ``str``
+     - no
+     - Authored file containing an invalid imported declaration or assignment.
+
+.. diagnostics-example E_INITIALIZER_VARIABLE_REFERENCE 1 repro_api
+
+.. code-block:: python
+
+   from pyfcstm.model import VarDefine, Variable, VariableRole
+
+   VarDefine("derived", "int", Variable("source"), role=VariableRole.PARAM)
+
+This raises ``ModelValidationError`` with this code. A textual DSL initializer containing a name is rejected earlier by the grammar; use the API example to reproduce this particular code.
+
+.. diagnostics-example E_INITIALIZER_VARIABLE_REFERENCE 2 boundary_only
+
+Move derived initialization into an enter action, or supply an already computed literal.
+
+.. diagnostics-example E_INITIALIZER_VARIABLE_REFERENCE 3 boundary_only
+
+Do not hide the error by renaming another variable. Initializers have no declaration-order dependency exception.
+
+.. _diag-code-e-input-write:
+
+E_INPUT_WRITE
+^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_INPUT_WRITE severity=error emit_tier=static_pipeline capability=pure_static span_object=effect_statement
+.. diagnostics-ref E_INPUT_WRITE var_name type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_INPUT_WRITE source_path type=str required=false enum=- item_enum=- exact_values=-
+.. diagnostics-boundary E_INPUT_WRITE kind=cli_error
+
+An action, aspect, or effect assigns an input.
+
+``refs.var_name`` identifies the affected declaration. Severity is ``error``; validation is static and needs no solver.
+
+   * - ``source_path``
+     - ``str``
+     - no
+     - Authored file containing an invalid imported declaration or assignment.
+
+.. diagnostics-example E_INPUT_WRITE 1 cli_error
+
+.. code-block:: fcstm
+
+   input int sensor; state Root { during { sensor = 1; } }
+
+Loading this source fails during model construction. ``pyfcstm inspect -i model.fcstm --collect-errors --format json`` retains the error in its report.
+
+.. diagnostics-example E_INPUT_WRITE 2 boundary_only
+
+Write a control or output variable while keeping the external input read-only.
+
+.. code-block:: fcstm
+
+   input int sensor; output int command = 0; state Root { during { command = sensor; } }
+
+.. diagnostics-example E_INPUT_WRITE 3 boundary_only
+
+Validation also applies to nested conditional branches and programmatic construction. Output variables may have multiple writers; that is not an error.
+
+.. _diag-code-e-param-write:
+
+E_PARAM_WRITE
+^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_PARAM_WRITE severity=error emit_tier=static_pipeline capability=pure_static span_object=effect_statement
+.. diagnostics-ref E_PARAM_WRITE var_name type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_PARAM_WRITE source_path type=str required=false enum=- item_enum=- exact_values=-
+.. diagnostics-boundary E_PARAM_WRITE kind=cli_error
+
+An action, aspect, or effect assigns a parameter or parameter.
+
+``refs.var_name`` identifies the affected declaration. Severity is ``error``; validation is static and needs no solver.
+
+   * - ``source_path``
+     - ``str``
+     - no
+     - Authored file containing an invalid imported declaration or assignment.
+
+.. diagnostics-example E_PARAM_WRITE 1 cli_error
+
+.. code-block:: fcstm
+
+   param int limit = 2; state Root { during { limit = 3; } }
+
+Loading this source fails during model construction. ``pyfcstm inspect -i model.fcstm --collect-errors --format json`` retains the error in its report.
+
+.. diagnostics-example E_PARAM_WRITE 2 boundary_only
+
+Use a control variable for mutable state; keep the parameter fixed within the run.
+
+.. code-block:: fcstm
+
+   param int limit = 2; control int count = 0; state Root { during { count = limit; } }
+
+.. diagnostics-example E_PARAM_WRITE 3 boundary_only
+
+Validation also applies to nested conditional branches and programmatic construction. Output variables may have multiple writers; that is not an error.

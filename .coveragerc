@@ -1,0 +1,9 @@
+[run]
+branch = True
+# ANTLR-generated code is validated through DSL behavior tests, not coverage.
+omit =
+    */pyfcstm/dsl/grammar/*
+
+[report]
+omit =
+    */pyfcstm/dsl/grammar/*

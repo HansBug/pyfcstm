@@ -618,6 +618,8 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
     abstract_calls     -
     consumed_events    -
     unconsumed_events  -
+    inputs             -
+    input_reads        -
     """
     expected_runtime_frame = """
     BmcRuntimeFrame
@@ -636,6 +638,7 @@ def test_public_non_trace_objects_are_field_value_golden_pinned() -> None:
         unconsumed_events  -
         abstract_calls     -
         delta              false
+        inputs             -
     """
 
     solve_result = BmcSolveResult(

@@ -648,3 +648,26 @@ def test_compile_only_profile_records_non_running_contract():
     assert profile.build_mode == "compile-only"
     assert profile.run_prefix == ()
     assert profile.compiler == "arm-none-eabi-gcc"
+
+
+@pytest.mark.unittest
+def test_native_collection_keeps_the_generated_runtime_fixture_contract(monkeypatch):
+    from types import SimpleNamespace
+    from test.conftest import pytest_generate_tests
+
+    monkeypatch.setenv(RUN_ENV_VAR, "1")
+    monkeypatch.setenv(PROFILE_ENV_VAR, "linux-gcc-o2")
+    recorded = []
+    metafunc = SimpleNamespace(
+        fixturenames=["native_semantic_case_id"],
+        config=None,
+        parametrize=lambda name, values, ids: recorded.append((name, values, ids)),
+    )
+    pytest_generate_tests(metafunc)
+    name, values, ids = recorded[0]
+    assert name == "native_semantic_case_id"
+    assert values == ids
+    assert len(values) == 222
+    assert "design_basic_simple_transition" in values
+    assert "input_calculation" in values
+    assert "parameter_defaults_with_initial_values" in values

@@ -98,6 +98,7 @@ const EXPR_PRECEDENCE: Record<string, number> = {
 };
 
 interface ParseTreeContext extends ParseTreeNode {
+    keyword?: { text: 'var' | 'def' };
     var_name?: { text?: string };
     from_state?: { text?: string };
     to_state?: { text?: string };
@@ -301,8 +302,11 @@ function declarationRange(node: ParseTreeContext, document: TextDocumentLike, fa
     const range = getNodeRange(node, document, fallbackText || nodeText(node));
     if (!leading || !node.start || tokenText(node.start) !== tokenText(leading)) return range;
     const leadingToken = leading as unknown as {line?: number; column?: number; text?: string};
-    const first = terminalChildren(node)
-        .map(item => (item as unknown as {symbol?: {line?: number; column?: number; text?: string}}).symbol)
+    const first = node.children!
+        .map(item => {
+            const child = item as ParseTreeContext & {symbol?: {line?: number; column?: number; text?: string}};
+            return child.symbol || child.start;
+        })
         .find(item => {
             if (!item || !tokenText(item).trim()) return false;
             if (item.line != null && leadingToken.line != null && item.column != null && leadingToken.column != null) {
@@ -1439,13 +1443,14 @@ function buildImportMapping(
     const inner = firstContextChild(node) || node;
     const nodeName = inner.constructor?.name || '';
 
-    if (nodeName === 'Import_def_mappingContext') {
+    if (nodeName === 'Import_variable_mappingContext') {
         const selectorNode = contextChildren(inner).find(child => /ImportDef.*SelectorContext$/.test(child.constructor?.name || ''));
         const templateNode = contextChildren(inner).find(child => child.constructor?.name === 'Import_def_target_templateContext');
         const targetTemplateNode = buildImportDefTargetTemplate(templateNode as ParseTreeContext, document);
         return {
             kind: 'importDefMapping',
-            pyNodeType: 'ImportDefMapping',
+            pyNodeType: inner.keyword!.text === 'var' ? 'ImportVariableMapping' : 'ImportDefMapping',
+            spelling: inner.keyword!.text,
             range: getNodeRange(inner, document, nodeText(inner)),
             text: nodeText(inner),
             selector: buildImportDefSelector(selectorNode as ParseTreeContext, document),
@@ -1630,7 +1635,13 @@ function buildVariableDefinition(
     const expressionNode = contextChildren(node).find(child => /InitContext$/.test(child.constructor?.name || ''));
     const terminals = terminalChildren(node);
     const valueType = tokenText((node as ParseTreeContext).deftype) === 'float' ? 'float' : 'int';
-    const initializer = buildExpression(expressionNode as ParseTreeContext, document);
+    const initializer = expressionNode ? buildExpression(expressionNode as ParseTreeContext, document) : null;
+    const declaration = contextChildren(node).find(child => child.constructor!.name === 'Variable_declarationContext')!;
+    const spelling = terminalChildren(declaration).map(child => child.getText!()).join(' ');
+    const roles: Record<string, import('./model').VariableRole> = {
+        def: 'control', control: 'control', input: 'input',
+        param: 'param', output: 'output',
+    };
     const typeToken = (node as ParseTreeContext).deftype;
     const typeIndex = terminals.findIndex(
         item => item === typeToken || item.getText?.() === tokenText(typeToken)
@@ -1649,6 +1660,8 @@ function buildVariableDefinition(
         deftype: valueType,
         initializer,
         expr: initializer,
+        role: roles[spelling],
+        spelling,
         doc: nodeDocumentation(node),
     };
 }

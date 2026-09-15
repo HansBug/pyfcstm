@@ -1,0 +1,24 @@
+title: input termination effect
+origin:
+  files:
+  - test/simulate/test_runtime_inputs.py
+categories:
+- runtime
+- variable_roles
+- inputs
+steps:
+- cycle: []
+  inputs:
+    finish: 0
+  expect:
+    outputs:
+      result: 0
+    state: Root.Ready
+- cycle: []
+  inputs:
+    finish: 5
+  expect:
+    outputs:
+      result: 5
+    ended: true
+    state: null

@@ -11,6 +11,7 @@ export function collectDataFlowWarnings(
 ): ModelDiagnosticJson[] {
     const out: ModelDiagnosticJson[] = [];
     for (const variable of variables) {
+        if (variable.role !== 'control') continue;
         const readStates = new Set(variable.read_in_states);
         for (const [source] of variable.read_in_guards) readStates.add(source);
         const writeStates = new Set(variable.written_in_states);
@@ -83,7 +84,7 @@ function collectGuardVarsNeverChangeDiagnostics(
     const declaredVars = new Set(variables.map(variable => variable.name));
     const writtenVars = new Set(
         variables
-            .filter(variable => variable.written_in_states.length > 0 || variable.written_in_effects.length > 0)
+            .filter(variable => variable.role !== 'control' || variable.written_in_states.length > 0 || variable.written_in_effects.length > 0)
             .map(variable => variable.name),
     );
     const out: ModelDiagnosticJson[] = [];

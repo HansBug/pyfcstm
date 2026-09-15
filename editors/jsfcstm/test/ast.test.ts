@@ -867,7 +867,7 @@ describe('jsfcstm AST builder', () => {
                 createNode('State_inner_statementContext', [
                     createNode('Import_statementContext', [
                         createNode('Import_mapping_statementContext', [
-                            createNode('Import_def_mappingContext', [
+                            createNode('Import_variable_mappingContext', [
                                 createNode('ImportDefExactSelectorContext', [], {
                                     selector_name: createToken('exact', 1, 0),
                                     getText() {
@@ -884,6 +884,7 @@ describe('jsfcstm AST builder', () => {
                                 getText() {
                                     return 'def exact -> target;';
                                 },
+                                keyword: createToken('def', 1, 0),
                             }),
                         ]),
                         createNode('Import_mapping_statementContext', []),

@@ -1,0 +1,7 @@
+input int sample;
+output int entered = 0;
+output int exited = 0;
+state Probe {
+    enter { entered = sample; }
+    exit { exited = sample; }
+}

@@ -1,3 +1,4 @@
+import {requireVariableRole} from '../ast/variable-roles';
 import type {
     FcstmAstAction,
     FcstmAstChainPath,
@@ -209,6 +210,7 @@ class SemanticBuilder {
             name: variable.name,
             valueType: variable.valueType,
             initializer: variable.initializer,
+            role: requireVariableRole(variable.role),
             ast: variable,
             range: variable.range,
         };

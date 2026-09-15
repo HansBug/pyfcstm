@@ -551,14 +551,63 @@ JSON 中重点看：
 
 映射事实：
 
-* ``def speed -> plant_speed;`` 映射一个被导入变量到一个宿主变量。
-* ``def sensor_* -> left_$1;`` 捕获通配后缀，并插入目标模板。
-* ``def * -> prefix_$0;`` 是兜底映射；``$0`` 表示完整被导入变量名。
+* ``var speed -> plant_speed;`` 映射一个被导入变量到一个宿主变量。
+* ``var sensor_* -> left_$1;`` 捕获通配后缀，并插入目标模板。
+* ``var * -> prefix_$0;`` 是兜底映射；``$0`` 表示完整被导入变量名。
 * ``event /Start -> Start;`` 映射被导入根事件到宿主事件。
 * 目录项目必须导入具体入口文件，例如 ``./import_line/main.fcstm``；裸目录不是 DSL 文件。
 
-常见错误：裸目录路径不会被当作 DSL 源加载；``def sensor_* -> left_$2;`` 这样的越界占位符
+常见错误：裸目录路径不会被当作 DSL 源加载；``var sensor_* -> left_$2;`` 这样的越界占位符
 会触发导入映射验证错误。``$0`` 表示完整被导入名称，``$1`` / ``${1}`` 表示第一个通配捕获。
+展开后的目标必须是合法 DSL 标识符，不能是空捕获、数字名称或 ``input``、``param`` 等保留字。
+
+``var`` 是规范映射关键字，``def`` 保留为显式旧拼写。数值类型必须一致。子 ``input`` 可以绑定父四种角色；子 ``param`` 只能绑定父 ``param``；子 ``control/output`` 只能绑定父 ``control/output``。合法绑定采用父角色，完整结果矩阵见 :ref:`dsl-import-forms-zh`。
+
+父级必须显式声明跨角色目标。缺失目标按子角色创建；同角色隐式共享必须有一致默认值，``input`` 共享必须显式声明。显式父默认值优先，多个合法写入者不增加限制。源只读变量的非法写入在映射前拒绝。收集诊断模式下，失败的变量绑定不会提交该导入的声明和子状态，诊断保留源文件及导入位置。
+
+以下示例要求已安装 pyfcstm。在同一目录保存 ``child.fcstm``：
+
+.. code-block:: fcstm
+
+   input int reading;
+   output int result = 0;
+   state Child { enter { result = reading; } }
+
+保存 ``host.fcstm``，把子输入绑定父控制状态，并把子输出收进父内部状态：
+
+.. code-block:: fcstm
+
+   control int cached = 5;
+   control int internal = 0;
+   state Host {
+       import "./child.fcstm" as Child {
+           var reading -> cached;
+           var result -> internal;
+       }
+       [*] -> Child;
+   }
+
+在该目录运行以下 Python 代码；操作只在内存中执行，不产生输出文件：
+
+.. code-block:: python
+
+   from pyfcstm.model import load_state_machine_from_file
+   from pyfcstm.simulate import SimulationRuntime
+
+   model = load_state_machine_from_file("host.fcstm")
+   runtime = SimulationRuntime(model)
+   runtime.cycle()
+   print(runtime.vars["internal"])
+   print(list(model.inputs), list(model.output_variables))
+
+预期输出如下，证明结果为 5，且最终模型不需要外部输入，也没有系统输出：
+
+.. code-block:: text
+
+   5
+   [] []
+
+若改成父 ``param int internal = 0``，子 ``output`` 的绑定将以 ``E_IMPORT_DUPLICATE_MAPPING`` 拒绝；应选择可写父目标。若改用不同数值类型，应修正声明类型，不能靠转换绕过校验。子输入绑定父可变值后按执行顺序读取最新值，原先依赖整拍输入稳定的性质应在组装模型上重新验证。
 
 前置片段形式（preamble form）例如 ``name = value;`` 和 ``name := value;``，它是导入组装辅助测试使用的解析辅助入口，不是普通 ``state_machine_dsl`` 文件里的根级 ``def``。边界见 :ref:`dsl-import-preamble-forms-zh`。
 

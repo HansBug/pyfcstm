@@ -52,9 +52,10 @@ def test_input_snapshot_requires_event_checks():
 
 @pytest.mark.parametrize("wrapper", [False, True], ids=["c", "cpp"])
 @pytest.mark.parametrize("language", ["en", "zh"])
-def test_role_readme_example_runs(wrapper, language):
+@pytest.mark.parametrize("section", ["quick", "snapshot"])
+def test_role_readme_example_runs(wrapper, language, section):
     from ..cpp.test_variable_roles import _check_role_readme_example
-    _check_role_readme_example(True, wrapper, language)
+    _check_role_readme_example(True, wrapper, language, section)
 
 
 def test_role_identifiers_remain_distinct():

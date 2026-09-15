@@ -502,12 +502,15 @@ class TestPythonBuiltinTemplate:
             assert '_abstract_hook_Root_System_A_AEnter' in readme
             assert '| DSL action path | Hook method | Owner state | Stage |' in readme
             assert 'Abstract hooks are read-only extension points' in readme
-            assert 'do not mutate persistent' in readme
+            assert (
+                'Application writes to persistent state are unsupported both inside and outside hooks'
+                in ' '.join(readme.split())
+            )
             assert '可覆写的 Abstract Hook 清单' in readme_zh
             assert '_abstract_hook_Root_RootInit' in readme_zh
             assert '_abstract_hook_Root_System_A_AEnter' in readme_zh
             assert 'abstract hook' in readme_zh
-            assert '修改状态机持久变量' in readme_zh
+            assert '无论在 hook 内外，应用直接修改持久状态都属于' in readme_zh
 
     def test_generated_readme_python_code_blocks_are_formatter_friendly(self):
         with _render_python_artifacts(_representative_gate_dsl()) as artifacts:

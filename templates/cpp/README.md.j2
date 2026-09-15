@@ -71,6 +71,8 @@ reimplement state-machine semantics.
 - `README.md`: English usage guide for this generated machine
 - `README_zh.md`: Chinese usage guide for this generated machine
 
+Start with [Quick Start](#quick-start) to connect and run the model; the preceding section explains ownership and lifetime for all four variable roles.
+
 ## Model Text
 
 `{{ machine_class_name(model) }}_dsl_source()` returns a canonical model export.
@@ -93,15 +95,14 @@ text is embedded in generated artifacts.
 
 ### Variables
 
-{% if model.persistent_variables.values() | list -%}
-| Name | Type | Initial DSL |
-| --- | --- | --- |
-{% for def_item in model.persistent_variables.values() -%}
-| `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ def_item.init.to_ast_node() | string }}` |
+{% if model.defines %}
+| Role | Name | Type | Initial DSL |
+| --- | --- | --- | --- |
+{% for def_item in model.defines.values() %}| `{{ {'input_dynamic': 'input', 'input_static': 'param', 'control': 'control (def)', 'output': 'output'}[def_item.role.value] }}` | `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ (def_item.init.to_ast_node() | string) if def_item.init is not none else '—' }}` |
 {% endfor %}
 {% else %}
-This state machine does not define persistent variables.
-{% endif -%}
+This model has no variable declarations.
+{% endif %}
 
 ### Events
 
@@ -445,34 +446,126 @@ adapter code, confirm the following points in the downstream project:
 - In generated integer fields, `{{ machine_class_name(model) }}Int` is the
   public signed 64-bit type alias chosen to stay valid in both C99 and C++98+.
 
+## Parameters and Cycle Inputs
+
+| Role | Application responsibility | During model execution |
+| --- | --- | --- |
+| `input` | Implement the read interface below, or supply a snapshot for this cycle | Sampled anew each cycle; read-only to the model, no implicit hold |
+| `param` | Supply during construction/initialization; omissions use DSL defaults | Fixed per instance; generated getters need no callback implementation |
+| `control` (`def`, often called var) | Optionally preset at initialization, then observe | Model-owned writable state; holds when not assigned |
+| `output` | Read after a successful cycle and pass to an actuator if needed | Shares persistent storage with control; holds when not assigned |
+
+`Vars` contains only persistent control and output values. Both roles retain
+unwritten values and use the same validation and commit mechanism. Application
+code should read them through the public accessor; direct writes to internal
+state are unsupported and can invalidate verified properties. Output has no
+separate actuator callback.
+
+`Parameters` stores instance configuration. Zero-initialize `InitOptions`, set
+`parameters.<name>` and `parameters_present.<name>` for each supplied parameter,
+and set `vars.<name>` and `vars_present.<name>` for optional cold-start persistent
+values. A present value skips its DSL initializer; omitted values use defaults.
+Initialization copies all values. Reinitialization starts a new run; cycle APIs
+never accept parameter changes. Hot start requires a complete `Parameters`
+snapshot as well as complete `Vars`.
+
+`Inputs` is a complete typed snapshot for one cycle. Alternatively, install an
+`InputProvider`: each `read_<name>(user_data, value)` writes its out-parameter and
+returns `SUCCESS` or `FAILURE`. The provider table is copied; application-owned
+`user_data` must remain valid while installed. Each input is read once per cycle,
+including unused inputs, then frozen across validation and execution. Subsequent
+cycles acquire new values; there is no implicit hold. Explicit snapshots bypass
+the provider. Initialization and ended cycles do not sample inputs.
+
+Failures preserve committed Vars and the last input snapshot. Successful cycles,
+including Delta cycles, publish `last_inputs`; it is NULL before the first
+successful cycle. Input getters require an active cycle, such as an abstract
+hook; parameter getters require an initialized instance.
+
+Use `MachineWrapper(options)` or `init(options)` for cold initialization,
+`hot_start(state, vars, parameters)` for hot initialization, and
+`set_input_provider(&provider, user_data)` to install external reads.
+`cycle_with_inputs(inputs, events, event_count)` supplies a snapshot.
+The wrapper only forwards to the C core; it adds no separate value storage.
+
+`InputProvider` is the application-implemented input interface, separate from
+lifecycle `Hooks` and the poll templates' `EventChecks`. `set_input_provider` returns `void` and copies the table. Every declared input needs
+a callback; a missing callback or a callback returning `0` fails the cycle.
+Integer callbacks use the generated 64-bit `Int`; floating callbacks use finite
+`double` values. C++ wrappers use the same C callback table, without virtual overrides.
+Check initialization/cycle results and inspect `last_error` on failure. Consume
+outputs only after successful cycles. Failure does not undo device reads or other
+external side effects. Cold reinitialization clears installed providers/hooks; reinstall
+them for the new run. Do not use reinitialization to change a running instance's parameters.
+
+The concrete access points for this model are:
+
+| Role | DSL name | Access |
+| --- | --- | --- |
+{% for item in model.dynamic_inputs.values() %}| input | `{{ item.name }}` | `InputProvider.read_{{ item.name | readonly_value_identifier }}`; `get_input_{{ item.name | readonly_value_identifier }}` |
+{% endfor %}{% for item in model.static_inputs.values() %}| param | `{{ item.name }}` | `InitOptions.parameters.{{ item.name | readonly_value_identifier }}` + `parameters_present.{{ item.name | readonly_value_identifier }}`; `get_param_{{ item.name | readonly_value_identifier }}` |
+{% endfor %}{% for item in model.persistent_variables.values() %}| {{ item.role.value }} | `{{ item.name }}` | `Vars.{{ item.name | to_c_identifier }}` |
+{% endfor %}
+
+`MachineWrapper(options)` copies parameters during construction. C++98
+constructors do not return status: check `last_error()[0]` afterwards (an empty
+string means success), or explicitly call and check `init(options)`.
+
+`const Inputs *MachineWrapper::last_inputs() const` returns a read-only pointer. It is `NULL` before the first successful cycle.
+The pointer refers to instance storage: subsequent successful cycles overwrite its
+contents, cold initialization clears it, and destroying the instance invalidates it.
+To retain a cycle snapshot, check for NULL and copy `{{ machine_class_name(model) }}Inputs saved = *last`; storing
+only the pointer does not retain historical values.
+
 ## Quick Start
 
-{% if model.dynamic_inputs %}
-This model has inputs. Before the ordinary `cycle` calls below, install a complete
-input provider, or use `cycle_with_inputs` with a fresh snapshot as shown in the
-role configuration example at the end of this guide.
-{% endif %}
+Save this complete example in the generated directory and run it. Literal `1`
+values are sample configuration/readings; replace them with values valid for your
+model and connect your sensor/driver at the marked read sites. Initialize once,
+then call `cycle()` repeatedly to sample fresh inputs. Input readers are separate
+from lifecycle action hooks; install any application action hooks as described below.
 
-```c
-#include "machine.h"
+```cpp
+#include "machine.hpp"
+#include <stdio.h>
+#include <string.h>
 
-int main(void)
+{% for item in model.dynamic_inputs.values() %}static int app_read_{{ item.name | readonly_value_identifier }}(void *user_data, {% if item.type == 'int' %}{{ machine_class_name(model) }}Int{% else %}double{% endif %} *value)
 {
-    {{ machine_class_name(model) }} machine;
+    const {{ machine_class_name(model) }}Inputs *sensor_values = (const {{ machine_class_name(model) }}Inputs *)user_data;
+    /* Replace this read with your sensor/driver call; return 0 on failure. */
+    *value = sensor_values->{{ item.name | readonly_value_identifier }};
+    return 1;
+}
 
-    if (!{{ machine_class_name(model) }}_init(&machine)) {
+{% endfor %}int main(void)
+{
+    {{ machine_class_name(model) }}InitOptions options;
+    memset(&options, 0, sizeof(options));
+{% for item in model.static_inputs.values() %}    options.parameters.{{ item.name | readonly_value_identifier }} = 1;
+    options.parameters_present.{{ item.name | readonly_value_identifier }} = 1;
+{% endfor %}    pyfcstm_generated::{{ machine_class_name(model) }}_cpp::MachineWrapper machine(options);
+    if (machine.last_error()[0] != '\0') {
+        fprintf(stderr, "%s\n", machine.last_error());
         return 1;
     }
-{% if event_ns.items %}
-    {
-        static const {{ machine_class_name(model) }}EventId event_ids[] = {
-            {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier }}
-        };
-        {{ machine_class_name(model) }}_cycle(&machine, event_ids, 1u);
-    }
-{% else %}
-    {{ machine_class_name(model) }}_cycle(&machine, NULL, 0u);
+{% if model.dynamic_inputs %}
+    {{ machine_class_name(model) }}Inputs sensor_values;
+    {{ machine_class_name(model) }}InputProvider provider;
+    memset(&sensor_values, 0, sizeof(sensor_values));
+    memset(&provider, 0, sizeof(provider));
+{% for item in model.dynamic_inputs.values() %}    sensor_values.{{ item.name | readonly_value_identifier }} = 1;
+    provider.read_{{ item.name | readonly_value_identifier }} = app_read_{{ item.name | readonly_value_identifier }};
+{% endfor %}    machine.set_input_provider(&provider, &sensor_values);
 {% endif %}
+    if (!machine.cycle()) {
+        fprintf(stderr, "%s\n", machine.last_error());
+        return 2;
+    }
+{% for item in model.static_inputs.values() %}    printf("param {{ item.name }} = %.17g\n", (double)machine.get_param_{{ item.name | readonly_value_identifier }}());
+{% endfor %}{% for item in model.persistent_variables.values() %}    printf("{{ item.role.value }} {{ item.name }} = %.17g\n",
+           (double)machine.vars()->{{ item.name | to_c_identifier }});
+{% endfor %}    /* Send committed output values to your actuator/driver here. */
     return 0;
 }
 ```
@@ -609,7 +702,7 @@ The machine object is not opaque in C, but most fields are runtime-owned.
 | `{{ machine_class_name(model) }}_create()` | Allocate and initialize a machine on the heap; default hosted profile only, omitted when `PYFCSTM_GENERATED_NO_HEAP` is defined |
 | `{{ machine_class_name(model) }}_destroy(machine)` | Destroy a heap-allocated machine; default hosted profile only, omitted when `PYFCSTM_GENERATED_NO_HEAP` is defined |
 | `{{ machine_class_name(model) }}_init(machine)` | Cold-initialize or reset a machine |
-| `{{ machine_class_name(model) }}_hot_start(machine, state_id, vars)` | Start from a concrete generated state id and variable snapshot |
+| `{{ machine_class_name(model) }}_hot_start{% if model.static_inputs %}_with_parameters{% endif %}(machine, state_id, vars{% if model.static_inputs %}, parameters{% endif %})` | Start from a concrete generated state id and variable snapshot |
 | `{{ machine_class_name(model) }}_set_hooks(machine, hooks, user_data)` | Register abstract hooks |
 | `{{ machine_class_name(model) }}_cycle(machine, event_ids, event_count)` | Execute one cycle with zero or more event ids |
 | `{{ machine_class_name(model) }}_vars(machine)` | Read persistent variables |
@@ -630,9 +723,10 @@ The machine object is not opaque in C, but most fields are runtime-owned.
   `{{ machine_class_name(model) }}_hot_start(...)`.
 - `{{ machine_class_name(model) }}_init()`:
   use this for stack-allocated machines or to reset an existing machine.
-- `{{ machine_class_name(model) }}_hot_start()`:
+- `{{ machine_class_name(model) }}_hot_start{% if model.static_inputs %}_with_parameters{% endif %}()`:
   `initial_vars` must describe a complete persistent-state snapshot compatible
   with `initial_state_id`.
+  {% if model.static_inputs %}Also supply the complete parameter snapshot from the same checkpoint; do not substitute new configuration during restoration.{% endif %}
 - `{{ machine_class_name(model) }}_cycle()`:
   pass `NULL` and `0u` when a cycle should run without external events.
 - `{{ machine_class_name(model) }}_vars()`:
@@ -646,87 +740,60 @@ The machine object is not opaque in C, but most fields are runtime-owned.
 
 ## Minimal Complete Flow
 
-```c
-#include "machine.h"
-#include <stdio.h>
-
-{% if abstract_ns.rows -%}
-static void generated_hook(
-    {{ machine_class_name(model) }} *machine,
-    const {{ machine_class_name(model) }}ExecutionContext *ctx,
-    void *user_data
-)
-{
-    (void)machine;
-    (void)user_data;
-    printf("hook: action=%d state=%d stage=%d\n", (int)ctx->action_id, (int)ctx->state_id, (int)ctx->action_stage_id);
-}
-
-{% endif -%}
-int main(void)
-{
-    {{ machine_class_name(model) }} machine;
-{% if abstract_ns.rows %}
-    {{ machine_class_name(model) }}Hooks hooks = {{ machine_class_name(model) | upper }}_HOOKS_INIT;
-{% endif %}
-
-    if (!{{ machine_class_name(model) }}_init(&machine)) {
-        return 1;
-    }
-{% if abstract_ns.rows %}
-    hooks.{{ abstract_ns.rows[0]['hook_name'] }} = generated_hook;
-    {{ machine_class_name(model) }}_set_hooks(&machine, &hooks, NULL);
-{% endif %}
-    if (!{{ machine_class_name(model) }}_cycle(&machine, NULL, 0u)) {
-        return 2;
-    }
-{% if event_ns.items %}
-    {
-        static const {{ machine_class_name(model) }}EventId event_ids[] = {
-            {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier }}
-        };
-        if (!{{ machine_class_name(model) }}_cycle(&machine, event_ids, 1u)) {
-            return 3;
-        }
-    }
-{% endif %}
-    printf("state id: %d\n", (int){{ machine_class_name(model) }}_current_state_id(&machine));
-    return 0;
-}
-```
+Use the complete Quick Start program above: initialize parameters, install all
+input readers, mount application action hooks and poll event checks, then execute
+cycles and read outputs. The API examples below are fragments that assume this
+integration has already been completed.
 
 ## C++ Wrapper Quick Start
 
+This wrapper example uses constructor parameters and the C input callback interface.
+See Quick Start for the integration steps.
+
 ```cpp
 #include "machine.hpp"
+#include <stdio.h>
+#include <string.h>
 
-int main()
+{% for item in model.dynamic_inputs.values() %}static int app_read_{{ item.name | readonly_value_identifier }}(void *user_data, {% if item.type == 'int' %}{{ machine_class_name(model) }}Int{% else %}double{% endif %} *value)
 {
-    pyfcstm_generated::{{ machine_class_name(model) }}_cpp::MachineWrapper machine;
+    const {{ machine_class_name(model) }}Inputs *sensor_values = (const {{ machine_class_name(model) }}Inputs *)user_data;
+    /* Replace this read with your sensor/driver call; return 0 on failure. */
+    *value = sensor_values->{{ item.name | readonly_value_identifier }};
+    return 1;
+}
 
-    if (!machine.cycle()) {
+{% endfor %}int main(void)
+{
+    {{ machine_class_name(model) }}InitOptions options;
+    memset(&options, 0, sizeof(options));
+{% for item in model.static_inputs.values() %}    options.parameters.{{ item.name | readonly_value_identifier }} = 1;
+    options.parameters_present.{{ item.name | readonly_value_identifier }} = 1;
+{% endfor %}    pyfcstm_generated::{{ machine_class_name(model) }}_cpp::MachineWrapper machine(options);
+    if (machine.last_error()[0] != '\0') {
+        fprintf(stderr, "%s\n", machine.last_error());
         return 1;
     }
-{% if event_ns.items %}
-    {{ machine_class_name(model) }}EventId event_id =
-        {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier }};
-    if (!machine.cycle(event_id)) {
+{% if model.dynamic_inputs %}
+    {{ machine_class_name(model) }}Inputs sensor_values;
+    {{ machine_class_name(model) }}InputProvider provider;
+    memset(&sensor_values, 0, sizeof(sensor_values));
+    memset(&provider, 0, sizeof(provider));
+{% for item in model.dynamic_inputs.values() %}    sensor_values.{{ item.name | readonly_value_identifier }} = 1;
+    provider.read_{{ item.name | readonly_value_identifier }} = app_read_{{ item.name | readonly_value_identifier }};
+{% endfor %}    machine.set_input_provider(&provider, &sensor_values);
+{% endif %}
+    if (!machine.cycle()) {
+        fprintf(stderr, "%s\n", machine.last_error());
         return 2;
     }
-{% endif %}
-
-    const {{ machine_class_name(model) }}Vars *vars = machine.vars();
-    (void)vars;
-    (void)machine.is_ended();
+{% for item in model.static_inputs.values() %}    printf("param {{ item.name }} = %.17g\n", (double)machine.get_param_{{ item.name | readonly_value_identifier }}());
+{% endfor %}{% for item in model.persistent_variables.values() %}    printf("{{ item.role.value }} {{ item.name }} = %.17g\n",
+           (double)machine.vars()->{{ item.name | to_c_identifier }});
+{% endfor %}    /* Send committed output values to your actuator/driver here. */
     return 0;
 }
 ```
-
-`MachineWrapper` owns one embedded `{{ machine_class_name(model) }}` object. Use
-`native_handle()` when an existing C integration point needs the underlying
-handle. Use `set_hooks(...)` to mount the generated C hook table; the wrapper
-forwards the hook table and `void *user_data` without introducing virtual
-interfaces or heap-owned callback objects.
 
 ## Full Usage Guide
 
@@ -956,41 +1023,6 @@ canonical path-boundary-safe ids.
   abstract hook mounting.
 
 
-## Parameters and Cycle Inputs
-
-`Vars` contains only persistent control and output values. Both roles retain
-unwritten values and use the same validation and commit mechanism. Application
-code should read them through the public accessor; direct writes to internal
-state are unsupported and can invalidate verified properties. Output has no
-separate actuator callback.
-
-`Parameters` stores instance configuration. Zero-initialize `InitOptions`, set
-`parameters.<name>` and `parameters_present.<name>` for each supplied parameter,
-and set `vars.<name>` and `vars_present.<name>` for optional cold-start persistent
-values. A present value skips its DSL initializer; omitted values use defaults.
-Initialization copies all values. Reinitialization starts a new run; cycle APIs
-never accept parameter changes. Hot start requires a complete `Parameters`
-snapshot as well as complete `Vars`.
-
-`Inputs` is a complete typed snapshot for one cycle. Alternatively, install an
-`InputProvider`: each `read_<name>(user_data, value)` writes its out-parameter and
-returns `SUCCESS` or `FAILURE`. The provider table is copied; application-owned
-`user_data` must remain valid while installed. Each input is read once per cycle,
-including unused inputs, then frozen across validation and execution. Subsequent
-cycles acquire new values; there is no implicit hold. Explicit snapshots bypass
-the provider. Initialization and ended cycles do not sample inputs.
-
-Failures preserve committed Vars and the last input snapshot. Successful cycles,
-including Delta cycles, publish `last_inputs`; it is NULL before the first
-successful cycle. Input getters require an active cycle, such as an abstract
-hook; parameter getters require an initialized instance.
-
-Use `MachineWrapper(options)` or `init(options)` for cold initialization,
-`hot_start(state, vars, parameters)` for hot initialization, and
-`set_input_provider(&provider, user_data)` to install external reads.
-`cycle_with_inputs(inputs, events, event_count)` supplies a snapshot.
-The wrapper only forwards to the C core; it adds no separate value storage.
-
 ## Instance Configuration Example
 
 The literal `1` values below are example configuration and sensor readings;
@@ -999,19 +1031,34 @@ and event checks before executing cycles.
 
 ```cpp
 #include "machine.hpp"
+#include <stdio.h>
 #include <string.h>
 
 int main(void)
 {
     {{ machine_class_name(model) }}InitOptions options;
-    {{ machine_class_name(model) }}Inputs inputs;
     memset(&options, 0, sizeof(options));
-    memset(&inputs, 0, sizeof(inputs));
 {% for item in model.static_inputs.values() %}    options.parameters.{{ item.name | readonly_value_identifier }} = 1;
     options.parameters_present.{{ item.name | readonly_value_identifier }} = 1;
-{% endfor %}{% for item in model.dynamic_inputs.values() %}    inputs.{{ item.name | readonly_value_identifier }} = 1;
 {% endfor %}    pyfcstm_generated::{{ machine_class_name(model) }}_cpp::MachineWrapper machine(options);
-    return machine.cycle_with_inputs(inputs) ? 0 : 1;
+    if (machine.last_error()[0] != '\0') {
+        fprintf(stderr, "%s\n", machine.last_error());
+        return 1;
+    }
+
+    {{ machine_class_name(model) }}Inputs inputs;
+    memset(&inputs, 0, sizeof(inputs));
+{% for item in model.dynamic_inputs.values() %}    inputs.{{ item.name | readonly_value_identifier }} = 1;
+{% endfor %}
+    if (!machine.cycle_with_inputs(inputs)) {
+        fprintf(stderr, "%s\n", machine.last_error());
+        return 2;
+    }
+{% for item in model.static_inputs.values() %}    printf("param {{ item.name }} = %.17g\n", (double)machine.get_param_{{ item.name | readonly_value_identifier }}());
+{% endfor %}{% for item in model.persistent_variables.values() %}    printf("{{ item.role.value }} {{ item.name }} = %.17g\n",
+           (double)machine.vars()->{{ item.name | to_c_identifier }});
+{% endfor %}    /* Send committed output values to your actuator/driver here. */
+    return 0;
 }
 ```
 

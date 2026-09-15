@@ -472,13 +472,15 @@ int main() {
         assert result.returncode == 0, result.stderr
 
 
-def _check_role_readme_example(polled, wrapper, language):
+def _check_role_readme_example(polled, wrapper, language, section):
     from pathlib import Path
     import re
 
     render = render_poll_artifacts if polled else render_cpp_artifacts
     compile_harness = compile_poll_harness if polled else compile_and_run_cpp_wrapper_harness
-    with render(ROLE_MODEL) as artifacts:
+    dsl = ROLE_MODEL.replace("input int signal;", "input int signal; input int unused;")
+    dsl = dsl.replace("[*] -> Ready;", "[*] -> Ready; Ready -> Ready :: Tick;")
+    with render(dsl) as artifacts:
         if not wrapper:
             from pyfcstm.render import StateMachineCodeRenderer
             from pyfcstm.template import extract_template
@@ -489,16 +491,27 @@ def _check_role_readme_example(polled, wrapper, language):
                     model=artifacts["model"], output_dir=artifacts["output_dir"])
         filename = "README.md" if language == "en" else "README_zh.md"
         readme = (Path(artifacts["output_dir"]) / filename).read_text(encoding="utf-8")
-        source = re.findall(r"```(?:c|cpp)\n(.*?)```", readme, re.DOTALL)[-1]
+        if section == "quick":
+            heading = "Quick Start" if language == "en" else "快速开始"
+            text = readme.split("## " + heading + "\n", 1)[1].split("\n## ", 1)[0]
+            source = re.findall(r"```(?:c|cpp)\n(.*?)```", text, re.DOTALL)[0]
+        else:
+            source = re.findall(r"```(?:c|cpp)\n(.*?)```", readme, re.DOTALL)[-1]
         # The wrapper source is still linked when checking the byte-identical C core.
         result = compile_harness(artifacts, "role_readme", source)
         assert result.returncode == 0, result.stderr
+        if section == "quick":
+            assert "param gain = 1" in result.stdout
+            assert "control count = 1" in result.stdout
+            assert "output result = 1" in result.stdout
+            assert "read_signal" in source and "read_unused" in source
 
 
 @pytest.mark.parametrize("wrapper", [False, True], ids=["c", "cpp"])
 @pytest.mark.parametrize("language", ["en", "zh"])
-def test_role_readme_example_runs(wrapper, language):
-    _check_role_readme_example(False, wrapper, language)
+@pytest.mark.parametrize("section", ["quick", "snapshot"])
+def test_role_readme_example_runs(wrapper, language, section):
+    _check_role_readme_example(False, wrapper, language, section)
 
 
 def _check_role_identifier_spelling(polled):

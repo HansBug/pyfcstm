@@ -297,8 +297,8 @@ def _delta_harness_source():
 
 
 def _extract_cpp_code_block(markdown, heading):
-    pattern = r"## {heading}\n\n```cpp\n(.*?)\n```".format(heading=re.escape(heading))
-    match = re.search(pattern, markdown, re.S)
+    section = markdown.split("## " + heading + "\n", 1)[1].split("\n## ", 1)[0]
+    match = re.search(r"```cpp\n(.*?)\n```", section, re.S)
     assert match is not None, "Cannot find C++ code block under {!r}.".format(heading)
     return match.group(1)
 

@@ -67,6 +67,8 @@
 - `README.md`：当前状态机的英文使用说明
 - `README_zh.md`：当前状态机的中文使用说明
 
+从[快速开始](#快速开始)接线并运行；四种变量角色的生命周期和读写规则见其前一节。
+
 ## Model Text
 
 `{{ machine_class_name(model) }}_dsl_source()` 返回的是 canonical model
@@ -87,15 +89,14 @@ canonical export 会包含模型文档块。不要在 FCSTM 文档中写入密�
 
 ### Variables
 
-{% if model.persistent_variables.values() | list -%}
-| 名称 | 类型 | 初始 DSL |
-| --- | --- | --- |
-{% for def_item in model.persistent_variables.values() -%}
-| `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ def_item.init.to_ast_node() | string }}` |
+{% if model.defines %}
+| Role | Name | Type | Initial DSL |
+| --- | --- | --- | --- |
+{% for def_item in model.defines.values() %}| `{{ {'input_dynamic': 'input', 'input_static': 'param', 'control': 'control (def)', 'output': 'output'}[def_item.role.value] }}` | `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ (def_item.init.to_ast_node() | string) if def_item.init is not none else '—' }}` |
 {% endfor %}
 {% else %}
-当前状态机没有定义持久变量。
-{% endif -%}
+当前模型没有变量声明。
+{% endif %}
 
 ### Events
 
@@ -317,50 +318,125 @@ g++ -x c++ -std=c++17 -Wall -Wextra -Werror -pedantic-errors -c machine.c -o mac
 - `{{ machine_class_name(model) }}Int` 是公开的有符号 64 位整数别名，
   用于生成整数持久变量字段，并兼顾 C99 与 C++98+。
 
+## 实例参数与逐周期输入
+
+| 角色 | 应用负责什么 | 模型运行期间 |
+| --- | --- | --- |
+| `input` | 实现下方读取接口，或为当前周期提供显式快照 | 每周期重新获取；模型只读，没有默认保持 |
+| `param` | 构造/初始化时传入；省略项使用 DSL 默认值 | 实例固定，只有 getter，不需要实现回调 |
+| `control`（`def`，通常称 var） | 可在初始化时预设，运行后只读观察 | 模型内部可写；未赋值保持原值 |
+| `output` | 在成功周期之后读结果，并按需交给执行器 | 与 control 共用持久存储；未赋值保持原值 |
+
+`Vars` 只包含持久 control/output 值。两种角色共用验证和提交机制，未赋值时
+保持原值。应用代码应通过公开 accessor 读取；直接写内部状态属于不支持的
+用法，可能破坏已经验证过的性质。output 没有额外的执行器回调。
+
+`Parameters` 保存实例配置。先将 `InitOptions` 清零，再为指定参数设置
+`parameters.<name>` 和 `parameters_present.<name>`；冷启动持久变量预设使用
+`vars.<name>` 和 `vars_present.<name>`。存在标记的值跳过对应 DSL initializer，
+省略的值使用默认值。初始化复制全部数据。重新初始化表示开始新的运行，
+cycle API 不接受参数变更。热启动要求完整 `Parameters` 和完整 `Vars` 快照。
+
+`Inputs` 是单周期完整的类型化输入快照。也可安装 `InputProvider`，其中每个
+`read_<name>(user_data, value)` 写入输出参数并返回 `SUCCESS` 或 `FAILURE`。
+运行时复制 provider 表；安装期间，应用拥有的 `user_data` 必须保持有效。
+每个周期读取每个 input 一次，包括未使用的输入，然后在验证与执行之间冻结。
+后续周期重新采样，不默认保持旧值。显式快照绕过 provider；初始化和已结束
+状态机的空操作不采样。
+
+失败不提交 Vars 或输入快照。成功周期（包括 Delta）发布 `last_inputs`，首次
+成功周期前为 NULL。input getter 只能在周期内部（例如 abstract hook 中）使用；
+param getter 要求实例已经初始化。
+
+冷启动使用 `{{ machine_class_name(model) }}_init_with_options(machine, &options)`，
+热启动使用 `{{ machine_class_name(model) }}_hot_start_with_parameters(machine,
+state, &vars, &parameters)`。provider 安装入口为
+`{{ machine_class_name(model) }}_set_input_provider(machine, &provider, user_data)`。
+快照入口为 `{{ machine_class_name(model) }}_cycle_with_inputs(machine, &inputs)`；
+inputs 传 NULL 时使用 provider。原 hot-start 入口继续服务于没有 param 的模型，
+不能为包含 param 的模型提供配置。
+
+`InputProvider` 是应用实现的输入接口，独立于生命周期 `Hooks` 和 poll 模板的
+`EventChecks`。`set_input_provider` 返回 `void` 并复制表。每个声明的 input 都需要对应 callback；缺少 callback 或 callback
+返回 `0` 会使周期失败。`int` 使用生成的 64 位 `Int`，`float` 使用有限 `double`。
+C++ wrapper 使用同一份 C callback 表，无需继承或覆写 C++ 虚方法。
+每次检查初始化/周期返回值，失败后读取 `last_error`；仅在成功周期后消费 output。
+失败不能撤销已发生的设备读取或其他外部副作用。重新冷初始化会清除已安装的 provider/hook，
+需要重新安装；不要通过重新初始化来修改正在运行的实例参数。
+
+本模型的具体访问入口：
+
+| Role | DSL name | Access |
+| --- | --- | --- |
+{% for item in model.dynamic_inputs.values() %}| input | `{{ item.name }}` | `InputProvider.read_{{ item.name | readonly_value_identifier }}`; `get_input_{{ item.name | readonly_value_identifier }}` |
+{% endfor %}{% for item in model.static_inputs.values() %}| param | `{{ item.name }}` | `InitOptions.parameters.{{ item.name | readonly_value_identifier }}` + `parameters_present.{{ item.name | readonly_value_identifier }}`; `get_param_{{ item.name | readonly_value_identifier }}` |
+{% endfor %}{% for item in model.persistent_variables.values() %}| {{ item.role.value }} | `{{ item.name }}` | `Vars.{{ item.name | to_c_identifier }}` |
+{% endfor %}
+
+`const {{ machine_class_name(model) }}Inputs *{{ machine_class_name(model) }}_last_inputs(const {{ machine_class_name(model) }} *machine)` 返回只读指针。首次成功周期前为 `NULL`；指针指向实例内部存储，
+后续成功周期会覆盖内容，冷初始化会清除内容，实例销毁后指针失效。
+要留存某一周期的快照，应先检查非空，再复制 `{{ machine_class_name(model) }}Inputs saved = *last`，不要只保留指针。
+
 ## 快速开始
 
-{% if model.dynamic_inputs %}
-本模型声明了 input。调用下文普通 `cycle` 接口前，先安装完整的 input provider；
-也可以使用 `cycle_with_inputs` 传入本周期快照，参见文末的角色配置示例。
-{% endif %}
+把下面完整示例保存到生成目录并运行。数值 `1` 是示例配置/读数，应换成模型允许的值；
+在标注位置接入传感器/驱动。示例只初始化一次，之后可以反复调用 `cycle()`，每次都会重新
+读取 input。input reader 不等于生命周期 action hook；需要的 action hook 请按后文安装。
 
 ```c
 #include "machine.h"
+#include <stdio.h>
+#include <string.h>
 
-static int event_check(
-    {{ machine_class_name(model) }} *machine,
-    const {{ machine_class_name(model) }}EventContext *ctx,
-    void *user_data
-)
+{% for item in model.dynamic_inputs.values() %}static int app_read_{{ item.name | readonly_value_identifier }}(void *user_data, {% if item.type == 'int' %}{{ machine_class_name(model) }}Int{% else %}double{% endif %} *value)
+{
+    const {{ machine_class_name(model) }}Inputs *sensor_values = (const {{ machine_class_name(model) }}Inputs *)user_data;
+    /* Replace this read with your sensor/driver call; return 0 on failure. */
+    *value = sensor_values->{{ item.name | readonly_value_identifier }};
+    return 1;
+}
+
+{% endfor %}{% if event_ns.items %}static int event_check({{ machine_class_name(model) }} *machine,
+                       const {{ machine_class_name(model) }}EventContext *ctx, void *user_data)
 {
     (void)machine;
     (void)ctx;
     (void)user_data;
-    return 0;  /* 当前 cycle 事件成立/触发时返回 1 或任意非零值。 */
-               /* 当前 cycle 事件不成立/未触发时返回 0。 */
+    return 0;  /* Replace with the external event condition. */
 }
 
-int main(void)
+{% endif %}int main(void)
 {
-    {{ machine_class_name(model) }} machine;
-{% if event_ns.items %}
-    {{ machine_class_name(model) }}EventChecks event_checks = {{ machine_class_name(model) | upper }}_EVENT_CHECKS_INIT;
-{% endif %}
-
-    if (!{{ machine_class_name(model) }}_init(&machine)) {
+    {{ machine_class_name(model) }}InitOptions options;
+    memset(&options, 0, sizeof(options));
+{% for item in model.static_inputs.values() %}    options.parameters.{{ item.name | readonly_value_identifier }} = 1;
+    options.parameters_present.{{ item.name | readonly_value_identifier }} = 1;
+{% endfor %}    {{ machine_class_name(model) }} machine;
+    if (!{{ machine_class_name(model) }}_init_with_options(&machine, &options)) {
+        fprintf(stderr, "%s\n", {{ machine_class_name(model) }}_last_error(&machine));
         return 1;
     }
-{% if event_ns.items %}
-
-{% for event_path in event_ns.items %}
-    event_checks.{{ event_check_field_id_name(event_path) }} = event_check;
-{% endfor %}
-    {{ machine_class_name(model) }}_set_event_checks(&machine, &event_checks, NULL);
+{% if model.dynamic_inputs %}
+    {{ machine_class_name(model) }}Inputs sensor_values;
+    {{ machine_class_name(model) }}InputProvider provider;
+    memset(&sensor_values, 0, sizeof(sensor_values));
+    memset(&provider, 0, sizeof(provider));
+{% for item in model.dynamic_inputs.values() %}    sensor_values.{{ item.name | readonly_value_identifier }} = 1;
+    provider.read_{{ item.name | readonly_value_identifier }} = app_read_{{ item.name | readonly_value_identifier }};
+{% endfor %}    {{ machine_class_name(model) }}_set_input_provider(&machine, &provider, &sensor_values);
+{% endif %}{% if event_ns.items %}
+    {{ machine_class_name(model) }}EventChecks event_checks = {{ machine_class_name(model) | upper }}_EVENT_CHECKS_INIT;
+{% for event_path in event_ns.items %}    event_checks.{{ event_check_field_id_name(event_path) }} = event_check;
+{% endfor %}    {{ machine_class_name(model) }}_set_event_checks(&machine, &event_checks, NULL);
 {% endif %}
-
     if (!{{ machine_class_name(model) }}_cycle(&machine)) {
+        fprintf(stderr, "%s\n", {{ machine_class_name(model) }}_last_error(&machine));
         return 2;
     }
+{% for item in model.static_inputs.values() %}    printf("param {{ item.name }} = %.17g\n", (double){{ machine_class_name(model) }}_get_param_{{ item.name | readonly_value_identifier }}(&machine));
+{% endfor %}{% for item in model.persistent_variables.values() %}    printf("{{ item.role.value }} {{ item.name }} = %.17g\n",
+           (double){{ machine_class_name(model) }}_vars(&machine)->{{ item.name | to_c_identifier }});
+{% endfor %}    /* Send committed output values to your actuator/driver here. */
     return 0;
 }
 ```
@@ -552,7 +628,7 @@ machine 对象在 C 中不是 opaque type，但其中多数字段都属于运行
 | `{{ machine_class_name(model) }}_create()` | 在堆上分配并初始化 machine；仅默认宿主剖面可用，定义 `PYFCSTM_GENERATED_NO_HEAP` 时省略 |
 | `{{ machine_class_name(model) }}_destroy(machine)` | 销毁堆分配的 machine；仅默认宿主剖面可用，定义 `PYFCSTM_GENERATED_NO_HEAP` 时省略 |
 | `{{ machine_class_name(model) }}_init(machine)` | 冷启动初始化或重置 machine |
-| `{{ machine_class_name(model) }}_hot_start(machine, state_id, vars)` | 从指定生成状态 id 和变量快照启动 |
+| `{{ machine_class_name(model) }}_hot_start{% if model.static_inputs %}_with_parameters{% endif %}(machine, state_id, vars{% if model.static_inputs %}, parameters{% endif %})` | 从指定生成状态 id 和变量快照启动 |
 | `{{ machine_class_name(model) }}_set_hooks(machine, hooks, user_data)` | 注册 abstract 生命周期 hook |
 | `{{ machine_class_name(model) }}_set_event_checks(machine, event_checks, user_data)` | 注册并校验 event-check 表 |
 | `{{ machine_class_name(model) }}_cycle(machine)` | 使用当前已安装 event-check 表执行一个 cycle |
@@ -574,8 +650,9 @@ machine 对象在 C 中不是 opaque type，但其中多数字段都属于运行
   `{{ machine_class_name(model) }}_hot_start(...)`。
 - `{{ machine_class_name(model) }}_init()`：
   适用于栈上对象，或者对已有 machine 做重置。重置后应按需重新安装 hook 和 event-check 表。
-- `{{ machine_class_name(model) }}_hot_start()`：
-  `initial_vars` 必须是一个与 `initial_state_id` 兼容的完整持久变量快照。hot start 会保留已安装的 hook 表和 event-check 表。
+- `{{ machine_class_name(model) }}_hot_start{% if model.static_inputs %}_with_parameters{% endif %}()`：
+  `initial_vars` 必须是一个与 `initial_state_id` 兼容的完整持久变量快照。
+  {% if model.static_inputs %}还必须提供同一检查点的完整参数快照；恢复时不要换成新的配置。{% endif %}hot start 会保留已安装的 hook 表和 event-check 表。
 - `{{ machine_class_name(model) }}_set_event_checks()`：
   对声明了事件的状态机，必须提供完整生成表。部分填充的表会被拒绝，并让 machine 继续处于不可运行状态。
 - `{{ machine_class_name(model) }}_cycle()`：
@@ -590,91 +667,9 @@ machine 对象在 C 中不是 opaque type，但其中多数字段都属于运行
 
 ## Minimal Complete Flow
 
-```c
-#include "machine.h"
-#include <stdio.h>
-
-{% if abstract_ns.rows -%}
-static void generated_hook(
-    {{ machine_class_name(model) }} *machine,
-    const {{ machine_class_name(model) }}ExecutionContext *ctx,
-    void *user_data
-)
-{
-    (void)machine;
-    (void)user_data;
-    printf("hook: action=%d state=%d stage=%d\n", (int)ctx->action_id, (int)ctx->state_id, (int)ctx->action_stage_id);
-}
-
-{% endif -%}
-{% if event_ns.items -%}
-typedef struct DriverState {
-    int trigger_selected_event;
-} DriverState;
-
-static int selected_event_check(
-    {{ machine_class_name(model) }} *machine,
-    const {{ machine_class_name(model) }}EventContext *ctx,
-    void *user_data
-)
-{
-    DriverState *driver = (DriverState *)user_data;
-    (void)machine;
-    (void)ctx;
-    return driver->trigger_selected_event;
-}
-
-static int inactive_event_check(
-    {{ machine_class_name(model) }} *machine,
-    const {{ machine_class_name(model) }}EventContext *ctx,
-    void *user_data
-)
-{
-    (void)machine;
-    (void)ctx;
-    (void)user_data;
-    return 0;
-}
-
-{% endif -%}
-int main(void)
-{
-    {{ machine_class_name(model) }} machine;
-{% if abstract_ns.rows %}
-    {{ machine_class_name(model) }}Hooks hooks = {{ machine_class_name(model) | upper }}_HOOKS_INIT;
-{% endif -%}
-{% if event_ns.items %}
-    {{ machine_class_name(model) }}EventChecks event_checks = {{ machine_class_name(model) | upper }}_EVENT_CHECKS_INIT;
-    DriverState driver = {0};
-{% endif %}
-
-    if (!{{ machine_class_name(model) }}_init(&machine)) {
-        return 1;
-    }
-{% if abstract_ns.rows %}
-    hooks.{{ abstract_ns.rows[0]['hook_name'] }} = generated_hook;
-    {{ machine_class_name(model) }}_set_hooks(&machine, &hooks, NULL);
-{% endif %}
-{% if event_ns.items %}
-    /* Fill every generated event-check field before cycle(). */
-{% for event_path in event_ns.items %}
-    event_checks.{{ event_check_field_id_name(event_path) }} = {% if loop.first %}selected_event_check{% else %}inactive_event_check{% endif %};
-{% endfor %}
-    {{ machine_class_name(model) }}_set_event_checks(&machine, &event_checks, &driver);
-{% endif %}
-    if (!{{ machine_class_name(model) }}_cycle(&machine)) {
-        return 2;
-    }
-{% if event_ns.items %}
-    driver.trigger_selected_event = 1;
-    if (!{{ machine_class_name(model) }}_cycle(&machine)) {
-        return 3;
-    }
-{% endif %}
-    printf("state id: %d\n", (int){{ machine_class_name(model) }}_current_state_id(&machine));
-    return 0;
-}
-```
+完整可运行的接入程序见前面的“快速开始”：初始化参数、安装所有输入读取 callback，
+再安装应用需要的 action hook 和 poll event check，最后执行周期并读取输出。
+下面的 API 示例是局部片段，驱动周期前须完成上述接线。
 
 ## 全面使用指南
 
@@ -885,37 +880,6 @@ printf("last error: %s\n", {{ machine_class_name(model) }}_last_error(&machine))
 - 模板回归检查预期会同时用 C 编译器和 C++ 编译器编译代表性的生成产物。
 
 
-## 实例参数与逐周期输入
-
-`Vars` 只包含持久 control/output 值。两种角色共用验证和提交机制，未赋值时
-保持原值。应用代码应通过公开 accessor 读取；直接写内部状态属于不支持的
-用法，可能破坏已经验证过的性质。output 没有额外的执行器回调。
-
-`Parameters` 保存实例配置。先将 `InitOptions` 清零，再为指定参数设置
-`parameters.<name>` 和 `parameters_present.<name>`；冷启动持久变量预设使用
-`vars.<name>` 和 `vars_present.<name>`。存在标记的值跳过对应 DSL initializer，
-省略的值使用默认值。初始化复制全部数据。重新初始化表示开始新的运行，
-cycle API 不接受参数变更。热启动要求完整 `Parameters` 和完整 `Vars` 快照。
-
-`Inputs` 是单周期完整的类型化输入快照。也可安装 `InputProvider`，其中每个
-`read_<name>(user_data, value)` 写入输出参数并返回 `SUCCESS` 或 `FAILURE`。
-运行时复制 provider 表；安装期间，应用拥有的 `user_data` 必须保持有效。
-每个周期读取每个 input 一次，包括未使用的输入，然后在验证与执行之间冻结。
-后续周期重新采样，不默认保持旧值。显式快照绕过 provider；初始化和已结束
-状态机的空操作不采样。
-
-失败不提交 Vars 或输入快照。成功周期（包括 Delta）发布 `last_inputs`，首次
-成功周期前为 NULL。input getter 只能在周期内部（例如 abstract hook 中）使用；
-param getter 要求实例已经初始化。
-
-冷启动使用 `{{ machine_class_name(model) }}_init_with_options(machine, &options)`，
-热启动使用 `{{ machine_class_name(model) }}_hot_start_with_parameters(machine,
-state, &vars, &parameters)`。provider 安装入口为
-`{{ machine_class_name(model) }}_set_input_provider(machine, &provider, user_data)`。
-快照入口为 `{{ machine_class_name(model) }}_cycle_with_inputs(machine, &inputs)`；
-inputs 传 NULL 时使用 provider。原 hot-start 入口继续服务于没有 param 的模型，
-不能为包含 param 的模型提供配置。
-
 ## 实例配置示例
 
 下面的 `1` 仅演示实例参数和输入快照，请替换为模型需要的值。
@@ -923,22 +887,47 @@ inputs 传 NULL 时使用 provider。原 hot-start 入口继续服务于没有 p
 
 ```c
 #include "machine.h"
+#include <stdio.h>
 #include <string.h>
 
-int main(void)
+{% if event_ns.items %}static int event_check({{ machine_class_name(model) }} *machine,
+                       const {{ machine_class_name(model) }}EventContext *ctx, void *user_data)
+{
+    (void)machine;
+    (void)ctx;
+    (void)user_data;
+    return 0;  /* Replace with the external event condition. */
+}
+
+{% endif %}int main(void)
 {
     {{ machine_class_name(model) }}InitOptions options;
-    {{ machine_class_name(model) }}Inputs inputs;
-    {{ machine_class_name(model) }} machine;
     memset(&options, 0, sizeof(options));
-    memset(&inputs, 0, sizeof(inputs));
 {% for item in model.static_inputs.values() %}    options.parameters.{{ item.name | readonly_value_identifier }} = 1;
     options.parameters_present.{{ item.name | readonly_value_identifier }} = 1;
-{% endfor %}{% for item in model.dynamic_inputs.values() %}    inputs.{{ item.name | readonly_value_identifier }} = 1;
-{% endfor %}    if (!{{ machine_class_name(model) }}_init_with_options(&machine, &options)) {
+{% endfor %}    {{ machine_class_name(model) }} machine;
+    if (!{{ machine_class_name(model) }}_init_with_options(&machine, &options)) {
+        fprintf(stderr, "%s\n", {{ machine_class_name(model) }}_last_error(&machine));
         return 1;
     }
-    return {{ machine_class_name(model) }}_cycle_with_inputs(&machine, &inputs) ? 0 : 1;
+
+    {{ machine_class_name(model) }}Inputs inputs;
+    memset(&inputs, 0, sizeof(inputs));
+{% for item in model.dynamic_inputs.values() %}    inputs.{{ item.name | readonly_value_identifier }} = 1;
+{% endfor %}{% if event_ns.items %}
+    {{ machine_class_name(model) }}EventChecks event_checks = {{ machine_class_name(model) | upper }}_EVENT_CHECKS_INIT;
+{% for event_path in event_ns.items %}    event_checks.{{ event_check_field_id_name(event_path) }} = event_check;
+{% endfor %}    {{ machine_class_name(model) }}_set_event_checks(&machine, &event_checks, NULL);
+{% endif %}
+    if (!{{ machine_class_name(model) }}_cycle_with_inputs(&machine, &inputs)) {
+        fprintf(stderr, "%s\n", {{ machine_class_name(model) }}_last_error(&machine));
+        return 2;
+    }
+{% for item in model.static_inputs.values() %}    printf("param {{ item.name }} = %.17g\n", (double){{ machine_class_name(model) }}_get_param_{{ item.name | readonly_value_identifier }}(&machine));
+{% endfor %}{% for item in model.persistent_variables.values() %}    printf("{{ item.role.value }} {{ item.name }} = %.17g\n",
+           (double){{ machine_class_name(model) }}_vars(&machine)->{{ item.name | to_c_identifier }});
+{% endfor %}    /* Send committed output values to your actuator/driver here. */
+    return 0;
 }
 ```
 

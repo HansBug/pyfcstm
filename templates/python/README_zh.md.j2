@@ -9,6 +9,8 @@
 - `README.md`：当前状态机的英文使用说明
 - `README_zh.md`：当前状态机的中文使用说明
 
+从[快速开始](#快速开始)接线并运行；四种变量角色的生命周期和读写规则见其前一节。
+
 ## Model Text
 
 `{{ machine_class_name(model) }}.DSL_SOURCE` 内嵌的是 canonical model
@@ -29,15 +31,14 @@ canonical export 会包含模型文档块。不要在 FCSTM 文档中写入密�
 
 ### Variables
 
-{% if model.persistent_variables.values() | list -%}
-| 名称 | 类型 | 初始 DSL |
-| --- | --- | --- |
-{% for def_item in model.persistent_variables.values() -%}
-| `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ (def_item.init.to_ast_node() | string) if def_item.init is not none else "—" }}` |
+{% if model.defines %}
+| Role | Name | Type | Initial DSL |
+| --- | --- | --- | --- |
+{% for def_item in model.defines.values() %}| `{{ {'input_dynamic': 'input', 'input_static': 'param', 'control': 'control (def)', 'output': 'output'}[def_item.role.value] }}` | `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ (def_item.init.to_ast_node() | string) if def_item.init is not none else '—' }}` |
 {% endfor %}
 {% else %}
-当前状态机没有定义持久变量。
-{% endif -%}
+当前模型没有变量声明。
+{% endif %}
 
 ### Events
 
@@ -129,7 +130,7 @@ canonical export 会包含模型文档块。不要在 FCSTM 文档中写入密�
 
 一次 `cycle(...)` 大致会做这些事情：
 
-1. 规范化输入事件。
+1. 规范化事件、读取每个 input 一次，并冻结本周期输入。
 2. 如果根状态尚未进入，则先进入根状态并沿初始转换推进。
 3. 在当前活动状态上尝试可用转换。
 4. 如果没有转换触发，则执行当前叶状态的 `during` 流程。
@@ -137,29 +138,74 @@ canonical export 会包含模型文档块。不要在 FCSTM 文档中写入密�
 
 如果 speculative validation 失败，运行时会回滚本轮执行，而不是提交一半的中间状态。
 
+## 实例参数与逐周期输入
+
+| 角色 | 应用负责什么 | 模型运行期间 |
+| --- | --- | --- |
+| `input` | 实现下方读取接口，或为当前周期提供显式快照 | 每周期重新获取；模型只读，没有默认保持 |
+| `param` | 构造/初始化时传入；省略项使用 DSL 默认值 | 实例固定，只有 getter，不需要实现回调 |
+| `control`（`def`，通常称 var） | 可在初始化时预设，运行后只读观察 | 模型内部可写；未赋值保持原值 |
+| `output` | 在成功周期之后读结果，并按需交给执行器 | 与 control 共用持久存储；未赋值保持原值 |
+
+`control` 和 `output` 共用持久 `vars` 存储：当周期没有赋值时，两者都保持
+原值。通过 `vars` 读取结果；应用代码直接修改内部存储属于不支持的用法，
+可能破坏模型已经验证过的性质。output 不触发外部 setter 或执行器回调。
+
+在构造实例时通过 `parameters` 传入配置。运行时校验并复制这些值，之后修改
+原始 mapping 不影响实例。冷启动时，省略的参数使用 DSL 默认值；热启动要求
+完整参数与持久变量值。param 不提供逐周期参数或 setter，通过只读 `parameters`
+和生成的 `get_param_*()` 读取。
+
+实现生成的 `read_*()` 方法以接入设备输入。运行时在每个周期读取每个 input
+一次，包括本次路径未用到的 input；验证执行和正式执行使用同一份冻结快照。
+`get_input_*()` 仅在周期执行期间有效，不会再次访问设备。构造实例和已结束
+状态机的空操作不采样；下一个周期重新采样，input 不会默认保持上一周期值。
+
+`cycle(inputs=...)` 可直接提供指定输入，未提供的输入调用对应 read hook。
+未知名称和非法值报错。采样或执行失败不提交持久变量和 `last_inputs`；成功周期
+（包括 Delta 周期）发布新的只读 `last_inputs`，首次成功周期前为 `None`。
+抽象 action 的 context 也提供独立的只读 `inputs` 和 `parameters` 快照。
+
+{% if model.dynamic_inputs or model.static_inputs %}
+本模型生成以下集成方法：
+
+| 角色 | DSL 名称 | 方法 |
+| --- | --- | --- |
+{% for item in model.static_inputs.values() %}| param | `{{ item.name }}` | `get_param_{{ item.name }}()` |
+{% endfor %}{% for item in model.dynamic_inputs.values() %}| input | `{{ item.name }}` | 实现 `read_{{ item.name }}()`；模型通过 `get_input_{{ item.name }}()` 读取 |
+{% endfor %}
+{% endif %}
+
+`read_*()` 是需要应用覆写的输入接口，和 `_abstract_hook_*()` 生命周期 action hook
+是两回事。没有为某个 input 提供快照又没有实现读取方法时，会抛出 `NotImplementedError`。
+input `int` 必须返回 Python `int`（不接受 `bool`）；input `float` 接受有限 `int/float`
+（不接受 `bool`）。非法输入抛出 `ValueError`，设备读取自身的异常原样传播。
+`cycle()` 返回 `None`，正常返回才读取/发送 output；失败不会撤销已经发生的设备读取或外部副作用。
+
 ## 快速开始
+
+把下面完整示例保存到生成目录并运行。数值 `1` 是示例配置/读数，应换成模型允许的值；
+在标注位置接入传感器/驱动。示例只初始化一次，之后可以反复调用 `cycle()`，每次都会重新
+读取 input。input reader 不等于生命周期 action hook；需要的 action hook 请按后文安装。
 
 ```python
 from machine import {{ machine_class_name(model) }}
 
-machine = {{ machine_class_name(model) }}()
-machine.cycle({% if model.dynamic_inputs %}inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
+{% if model.dynamic_inputs %}sensor_values = {{ example_values(model.dynamic_inputs.values()) }}
+
+class Device({{ machine_class_name(model) }}):
+{% for item in model.dynamic_inputs.values() %}    def read_{{ item.name }}(self) -> {{ item.type }}:
+        # Replace this read with your sensor/driver call.
+        return sensor_values[{{ item.name | tojson }}]
+
+{% endfor %}machine = Device({% if model.static_inputs %}parameters={{ example_values(model.static_inputs.values()) }}{% endif %})
+{% else %}machine = {{ machine_class_name(model) }}({% if model.static_inputs %}parameters={{ example_values(model.static_inputs.values()) }}{% endif %})
+{% endif %}machine.cycle()
 
 print(machine.current_state_path)
-print(machine.current_state_name)
-print(machine.vars)
-```
-
-更常见的事件发送方式是直接传事件路径：
-
-```python
-machine.cycle(["<event-path-1>", "<event-path-2>"]{% if model.dynamic_inputs %}, inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
-```
-
-如果只有一个事件，也可以直接传单个字符串：
-
-```python
-machine.cycle("<event-path>"{% if model.dynamic_inputs %}, inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
+{% for item in model.static_inputs.values() %}print("param {{ item.name }} =", machine.get_param_{{ item.name }}())
+{% endfor %}{% for item in model.persistent_variables.values() %}print("{{ item.role.value }} {{ item.name }} =", machine.vars[{{ item.name | tojson }}])
+{% endfor %}# Send committed output values to your actuator/driver here.
 ```
 
 ## 事件解析规则
@@ -195,6 +241,7 @@ Python 当次提供的迭代顺序。
 - `initial_state` 必须位于当前生成运行时的根状态之下
 - `initial_vars` 必须提供全部持久变量
 - `initial_vars` 不能包含未知变量名
+- `parameters` 必须包含全部 param，并使用同一检查点的参数值
 
 例如：
 
@@ -235,8 +282,9 @@ abstract hook 是只读扩展点。
 - 不要依赖写入 `ctx.vars`
 - 不要调用私有运行时辅助函数强行改状态
 
-运行时传给 `ctx` 的是一个快照。hook 代码应把它视为只读观察对象。如果确实需要修改持久变量，应在 hook 外部修改，例如在 `cycle(...)` 前后处理，或者调整 DSL 设计，而不是在 hook 内部动手。
-一句话概括：不要在 hook 里修改状态机持久变量。
+运行时传给 `ctx` 的是只读观察快照。无论在 hook 内外，应用直接修改持久状态都属于
+不支持的用法；状态变化应在 DSL 中描述。仅在构造阶段用 `initial_vars` 预设冷启动值
+或恢复热启动快照。
 
 ## 对外 API
 
@@ -289,7 +337,9 @@ except SimulationRuntimeExpressionError as err:
 字段：
 
 - `state_path`：执行该动作的所属状态路径，类型为 `Tuple[str, ...]`。叶状态生命周期动作与祖先 aspect 动作（为后代叶状态的周期执行）拿到的是叶状态；进入或离开复合状态、以及声明在复合状态上的普通 `during` 动作，拿到的是该复合状态自身的路径
-- `vars`：持久变量快照字典
+- `parameters`：只读实例参数快照
+- `inputs`：只读本周期输入快照
+- `vars`：持久 control/output 变量快照字典
 - `action_name`：解析后的 abstract target 动作路径
 - `action_stage`：生命周期调用点阶段字符串
 - `active_leaf`：动作执行时的运行时状态路径——存在活跃叶状态时为该叶状态，否则为该动作的宿主状态路径。aspect hook 为后代叶状态的周期执行，因此报告该叶状态；进入或离开复合状态时不存在活跃叶状态，报告宿主路径
@@ -345,8 +395,8 @@ print({{ machine_class_name(model) }}.EVENT_PATHS)
 
 用于创建冷启动或 hot start 的状态机实例。
 
-- 冷启动：两个参数都保持 `None`
-- hot start：同时提供 `initial_state` 和 `initial_vars`
+- 冷启动：`initial_state=None`；可用部分 `initial_vars` 预设 control/output
+- hot start：提供 `initial_state`、完整 `initial_vars` 和完整 `parameters`
 
 例如：
 
@@ -356,8 +406,10 @@ machine = {{ machine_class_name(model) }}()
 
 #### 属性
 
+- `parameters`：只读固定实例参数
+- `last_inputs`：上次提交的输入快照，首次成功周期前为 `None`
 - `vars`
-  - 返回当前活动的持久变量字典
+  - 返回当前 control/output 字典；按只读使用，每次周期后重新访问 `machine.vars`（提交会替换字典），需要留存快照时用 `dict(machine.vars)` 复制
 - `is_ended`
   - 返回运行时是否已结束
 - `last_cycle_was_delta`
@@ -532,17 +584,17 @@ print(machine.vars["{{ (model.persistent_variables.values() | list)[0].name }}"]
 {% endif -%}
 ```
 
-### 在 Hook 外修改变量
+### 预设初始值
 
-如果你的业务确实需要直接调整持久变量，应在 hook 外部进行：
+冷启动允许 `initial_vars` 只提供部分 control/output，其余使用 DSL 默认值。
+`parameters` 独立提供 param；两者都不接受 input。下面是新实例的初始化，
+不是运行期间修改状态。恢复热启动时必须提供完整 control/output 与 parameters。
 
 ```python
-{% if model.persistent_variables.values() | list -%}
-machine.vars["{{ (model.persistent_variables.values() | list)[0].name }}"] = machine.vars["{{ (model.persistent_variables.values() | list)[0].name }}"]
-{% else %}
-# 当前状态机没有持久变量。
-pass
-{% endif -%}
+machine = {{ machine_class_name(model) }}(
+    initial_vars={{ example_values(model.persistent_variables.values()) }},
+{% if model.static_inputs %}    parameters={{ example_values(model.static_inputs.values()) }},
+{% endif %})
 ```
 
 ### 发送事件
@@ -577,7 +629,7 @@ print({{ machine_class_name(model) }}.get_abstract_hook_map())
 | 名称 | 类型 | 初始 DSL |
 | --- | --- | --- |
 {% for def_item in model.persistent_variables.values() -%}
-| `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ (def_item.init.to_ast_node() | string) if def_item.init is not none else "—" }}` |
+| `{{ def_item.role.value }}` | `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ (def_item.init.to_ast_node() | string) if def_item.init is not none else "—" }}` |
 {% endfor %}
 {% else %}
 当前状态机没有定义持久变量。
@@ -604,35 +656,3 @@ print({{ machine_class_name(model) }}.get_abstract_hook_map())
 {% else %}
 当前状态机没有声明任何事件。
 {% endif -%}
-
-
-## 实例参数与逐周期输入
-
-`control` 和 `output` 共用持久 `vars` 存储：当周期没有赋值时，两者都保持
-原值。通过 `vars` 读取结果；应用代码直接修改内部存储属于不支持的用法，
-可能破坏模型已经验证过的性质。output 不触发外部 setter 或执行器回调。
-
-在构造实例时通过 `parameters` 传入配置。运行时校验并复制这些值，之后修改
-原始 mapping 不影响实例。冷启动时，省略的参数使用 DSL 默认值；热启动要求
-完整参数与持久变量值。param 不提供逐周期参数或 setter，通过只读 `parameters`
-和生成的 `get_param_*()` 读取。
-
-实现生成的 `read_*()` 方法以接入设备输入。运行时在每个周期读取每个 input
-一次，包括本次路径未用到的 input；验证执行和正式执行使用同一份冻结快照。
-`get_input_*()` 仅在周期执行期间有效，不会再次访问设备。构造实例和已结束
-状态机的空操作不采样；下一个周期重新采样，input 不会默认保持上一周期值。
-
-`cycle(inputs=...)` 可直接提供指定输入，未提供的输入调用对应 read hook。
-未知名称和非法值报错。采样或执行失败不提交持久变量和 `last_inputs`；成功周期
-（包括 Delta 周期）发布新的只读 `last_inputs`，首次成功周期前为 `None`。
-抽象 action 的 context 也提供独立的只读 `inputs` 和 `parameters` 快照。
-
-{% if model.dynamic_inputs or model.static_inputs %}
-本模型生成以下集成方法：
-
-| 角色 | DSL 名称 | 方法 |
-| --- | --- | --- |
-{% for item in model.static_inputs.values() %}| param | `{{ item.name }}` | `get_param_{{ item.name }}()` |
-{% endfor %}{% for item in model.dynamic_inputs.values() %}| input | `{{ item.name }}` | 实现 `read_{{ item.name }}()`；模型通过 `get_input_{{ item.name }}()` 读取 |
-{% endfor %}
-{% endif %}

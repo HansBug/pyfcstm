@@ -10,6 +10,8 @@ This directory contains the generated Python runtime for the DSL root state
 - `README.md`: English usage guide for this generated machine
 - `README_zh.md`: Chinese usage guide for this generated machine
 
+Start with [Quick Start](#quick-start) to connect and run the model; the preceding section explains ownership and lifetime for all four variable roles.
+
 ## Model Text
 
 `{{ machine_class_name(model) }}.DSL_SOURCE` embeds a canonical model export.
@@ -32,15 +34,14 @@ text is embedded in generated artifacts.
 
 ### Variables
 
-{% if model.persistent_variables.values() | list -%}
-| Name | Type | Initial DSL |
-| --- | --- | --- |
-{% for def_item in model.persistent_variables.values() -%}
-| `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ (def_item.init.to_ast_node() | string) if def_item.init is not none else "—" }}` |
+{% if model.defines %}
+| Role | Name | Type | Initial DSL |
+| --- | --- | --- | --- |
+{% for def_item in model.defines.values() %}| `{{ {'input_dynamic': 'input', 'input_static': 'param', 'control': 'control (def)', 'output': 'output'}[def_item.role.value] }}` | `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ (def_item.init.to_ast_node() | string) if def_item.init is not none else '—' }}` |
 {% endfor %}
 {% else %}
-This state machine does not define persistent variables.
-{% endif -%}
+This model has no variable declarations.
+{% endif %}
 
 ### Events
 
@@ -129,7 +130,7 @@ the generated machine class, and the generated protected hook methods.
 
 At a high level, one `cycle(...)` call does one runtime step:
 
-1. Normalize the input events.
+1. Normalize events, acquire each input once, and freeze the values for this cycle.
 2. If the root has not been entered yet, enter the root and follow initial
    transitions.
 3. Try enabled transitions from the current active state.
@@ -139,29 +140,84 @@ At a high level, one `cycle(...)` call does one runtime step:
 If speculative validation fails, the runtime rolls the cycle back instead of
 committing a partial result.
 
+## Parameters and Cycle Inputs
+
+| Role | Application responsibility | During model execution |
+| --- | --- | --- |
+| `input` | Implement the read interface below, or supply a snapshot for this cycle | Sampled anew each cycle; read-only to the model, no implicit hold |
+| `param` | Supply during construction/initialization; omissions use DSL defaults | Fixed per instance; generated getters need no callback implementation |
+| `control` (`def`, often called var) | Optionally preset at initialization, then observe | Model-owned writable state; holds when not assigned |
+| `output` | Read after a successful cycle and pass to an actuator if needed | Shares persistent storage with control; holds when not assigned |
+
+`control` and `output` share persistent `vars` storage. Both keep their value
+when a cycle does not assign them. Read results through `vars`; writing internal
+storage from application code is unsupported and can invalidate verified model
+properties. Outputs do not invoke external setters or actuator callbacks.
+
+Pass instance configuration through `parameters` when constructing the machine.
+Values are validated and copied; changing the original mapping has no effect.
+Cold construction uses each omitted parameter's DSL default. Hot construction
+requires complete parameters and persistent values. Parameters have no cycle
+argument or setter; `parameters` and each generated `get_param_*()` are read-only.
+
+Implement the generated `read_*()` methods to acquire external inputs. The runtime
+reads each input once per cycle, including inputs not used by the chosen path,
+and freezes that sample across validation and execution. `get_input_*()` is valid
+only during a cycle and never calls the device again. Construction and ended
+cycles do not read inputs. A subsequent cycle acquires a new sample; no implicit
+hold applies to inputs.
+
+`cycle(inputs=...)` supplies explicit values instead of invoking the corresponding
+read hooks. Missing entries use their hooks. Unknown names and invalid values are
+errors. A failed acquisition or execution preserves persistent values and
+`last_inputs`; a successful cycle, including a Delta cycle, publishes a new
+read-only `last_inputs` snapshot. Before the first successful cycle it is `None`.
+Action contexts expose independent read-only `inputs` and `parameters` snapshots.
+
+{% if model.dynamic_inputs or model.static_inputs %}
+For this model, the integration methods are:
+
+| Role | DSL name | Method |
+| --- | --- | --- |
+{% for item in model.static_inputs.values() %}| param | `{{ item.name }}` | `get_param_{{ item.name }}()` |
+{% endfor %}{% for item in model.dynamic_inputs.values() %}| input | `{{ item.name }}` | implement `read_{{ item.name }}()`; model reads `get_input_{{ item.name }}()` |
+{% endfor %}
+{% endif %}
+
+The `read_*()` input interface is separate from the `_abstract_hook_*()` lifecycle
+action hooks. If an input has neither an explicit value nor an implemented reader,
+its default reader raises `NotImplementedError`. An `int` input requires a Python
+`int`; a `float` input accepts finite `int`/`float` values. Neither accepts `bool`.
+Invalid input values raise `ValueError`; exceptions from your device reader propagate.
+`cycle()` returns `None`: consume/send outputs only after normal return. Failure does
+not undo device reads or other external side effects that have already occurred.
+
 ## Quick Start
+
+Save this complete example in the generated directory and run it. Literal `1`
+values are sample configuration/readings; replace them with values valid for your
+model and connect your sensor/driver at the marked read sites. Initialize once,
+then call `cycle()` repeatedly to sample fresh inputs. Input readers are separate
+from lifecycle action hooks; install any application action hooks as described below.
 
 ```python
 from machine import {{ machine_class_name(model) }}
 
-machine = {{ machine_class_name(model) }}()
-machine.cycle({% if model.dynamic_inputs %}inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
+{% if model.dynamic_inputs %}sensor_values = {{ example_values(model.dynamic_inputs.values()) }}
+
+class Device({{ machine_class_name(model) }}):
+{% for item in model.dynamic_inputs.values() %}    def read_{{ item.name }}(self) -> {{ item.type }}:
+        # Replace this read with your sensor/driver call.
+        return sensor_values[{{ item.name | tojson }}]
+
+{% endfor %}machine = Device({% if model.static_inputs %}parameters={{ example_values(model.static_inputs.values()) }}{% endif %})
+{% else %}machine = {{ machine_class_name(model) }}({% if model.static_inputs %}parameters={{ example_values(model.static_inputs.values()) }}{% endif %})
+{% endif %}machine.cycle()
 
 print(machine.current_state_path)
-print(machine.current_state_name)
-print(machine.vars)
-```
-
-Pass one or more generated event paths:
-
-```python
-machine.cycle(["<event-path-1>", "<event-path-2>"]{% if model.dynamic_inputs %}, inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
-```
-
-If you already know the exact event path, you can also pass a single string:
-
-```python
-machine.cycle("<event-path>"{% if model.dynamic_inputs %}, inputs={{ example_values(model.dynamic_inputs.values()) }}{% endif %})
+{% for item in model.static_inputs.values() %}print("param {{ item.name }} =", machine.get_param_{{ item.name }}())
+{% endfor %}{% for item in model.persistent_variables.values() %}print("{{ item.role.value }} {{ item.name }} =", machine.vars[{{ item.name | tojson }}])
+{% endfor %}# Send committed output values to your actuator/driver here.
 ```
 
 ## Event Resolution
@@ -198,6 +254,7 @@ Important rules:
 - `initial_state` must be under the generated root state
 - `initial_vars` must provide all persistent variables
 - `initial_vars` cannot contain unknown variable names
+- `parameters` must contain every param; restore the values belonging to the same checkpoint
 
 Example:
 
@@ -238,11 +295,10 @@ Do not do these things inside a hook:
 - do not depend on writing through `ctx.vars`
 - do not call private runtime helpers to force state changes
 
-The runtime passes a snapshot into `ctx`. Hook code should treat it as
-observation-only. If you need to modify persistent variables, do it outside the
-hook, for example before or after `cycle(...)`, or by choosing a different DSL
-design. In short: do not mutate persistent machine variables from inside the
-hook.
+The runtime passes an observation-only snapshot into `ctx`. Application writes
+to persistent state are unsupported both inside and outside hooks; express state
+changes in the DSL. Use constructor `initial_vars` only to preset a cold start
+or restore a hot-start snapshot.
 
 ## Public API
 
@@ -298,7 +354,9 @@ This object is passed into every abstract hook.
 Fields:
 
 - `state_path`: state path that owns the executing action, as `Tuple[str, ...]`. A leaf for leaf lifecycle actions and for ancestor aspect actions; entering or leaving a composite state, or a plain `during` action declared on one, gives that composite state's own path
-- `vars`: snapshot dictionary of persistent variables
+- `parameters`: read-only instance parameter snapshot
+- `inputs`: read-only current-cycle input snapshot
+- `vars`: snapshot dictionary of persistent control/output variables
 - `action_name`: resolved abstract target action path
 - `action_stage`: lifecycle callsite stage string
 - `active_leaf`: runtime state path where the action executes — the active leaf state when one is active, otherwise the action's host state path. Aspect hooks run for a descendant leaf's cycle and so report that leaf; entering or leaving a composite state has no active leaf and reports the host path
@@ -355,8 +413,8 @@ print({{ machine_class_name(model) }}.EVENT_PATHS)
 
 Create a machine in cold-start mode or hot-start mode.
 
-- cold start: leave both arguments as `None`
-- hot start: provide both `initial_state` and `initial_vars`
+- cold start: leave `initial_state=None`; optional partial `initial_vars` preset control/output
+- hot start: provide `initial_state`, complete `initial_vars`, and complete `parameters`
 
 Example:
 
@@ -366,8 +424,10 @@ machine = {{ machine_class_name(model) }}()
 
 #### Properties
 
+- `parameters`: read-only fixed instance configuration
+- `last_inputs`: last committed input snapshot, or `None` before the first successful cycle
 - `vars`
-  - returns the live persistent-variable dictionary
+  - returns the current control/output dictionary; treat it as read-only and re-read `machine.vars` after each cycle (commits replace the dictionary). Use `dict(machine.vars)` to retain a snapshot
 - `is_ended`
   - returns whether the runtime has ended
 - `last_cycle_was_delta`
@@ -544,18 +604,18 @@ print(machine.vars["{{ (model.persistent_variables.values() | list)[0].name }}"]
 {% endif -%}
 ```
 
-### Modify Variables Outside Hooks
+### Preset Initial Values
 
-If your application needs to adjust persistent variables directly, do it outside
-hooks:
+Cold construction accepts a partial `initial_vars` mapping of control/output
+values; omissions use DSL defaults. `parameters` separately supplies params;
+neither mapping accepts inputs. This initializes a new instance; it does not
+modify a running one. Hot restoration requires all control/output values and parameters.
 
 ```python
-{% if model.persistent_variables.values() | list -%}
-machine.vars["{{ (model.persistent_variables.values() | list)[0].name }}"] = machine.vars["{{ (model.persistent_variables.values() | list)[0].name }}"]
-{% else %}
-# This machine has no persistent variables.
-pass
-{% endif -%}
+machine = {{ machine_class_name(model) }}(
+    initial_vars={{ example_values(model.persistent_variables.values()) }},
+{% if model.static_inputs %}    parameters={{ example_values(model.static_inputs.values()) }},
+{% endif %})
 ```
 
 ### Send Events
@@ -587,10 +647,10 @@ print({{ machine_class_name(model) }}.get_abstract_hook_map())
 ## Variables
 
 {% if model.persistent_variables.values() | list -%}
-| Name | Type | Initial DSL |
-| --- | --- | --- |
+| Role | Name | Type | Initial DSL |
+| --- | --- | --- | --- |
 {% for def_item in model.persistent_variables.values() -%}
-| `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ (def_item.init.to_ast_node() | string) if def_item.init is not none else "—" }}` |
+| `{{ def_item.role.value }}` | `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ (def_item.init.to_ast_node() | string) if def_item.init is not none else "—" }}` |
 {% endfor %}
 {% else %}
 This state machine does not define persistent variables.
@@ -617,41 +677,3 @@ This state machine does not define persistent variables.
 {% else %}
 This state machine does not declare any events.
 {% endif -%}
-
-
-## Parameters and Cycle Inputs
-
-`control` and `output` share persistent `vars` storage. Both keep their value
-when a cycle does not assign them. Read results through `vars`; writing internal
-storage from application code is unsupported and can invalidate verified model
-properties. Outputs do not invoke external setters or actuator callbacks.
-
-Pass instance configuration through `parameters` when constructing the machine.
-Values are validated and copied; changing the original mapping has no effect.
-Cold construction uses each omitted parameter's DSL default. Hot construction
-requires complete parameters and persistent values. Parameters have no cycle
-argument or setter; `parameters` and each generated `get_param_*()` are read-only.
-
-Implement the generated `read_*()` methods to acquire external inputs. The runtime
-reads each input once per cycle, including inputs not used by the chosen path,
-and freezes that sample across validation and execution. `get_input_*()` is valid
-only during a cycle and never calls the device again. Construction and ended
-cycles do not read inputs. A subsequent cycle acquires a new sample; no implicit
-hold applies to inputs.
-
-`cycle(inputs=...)` supplies explicit values instead of invoking the corresponding
-read hooks. Missing entries use their hooks. Unknown names and invalid values are
-errors. A failed acquisition or execution preserves persistent values and
-`last_inputs`; a successful cycle, including a Delta cycle, publishes a new
-read-only `last_inputs` snapshot. Before the first successful cycle it is `None`.
-Action contexts expose independent read-only `inputs` and `parameters` snapshots.
-
-{% if model.dynamic_inputs or model.static_inputs %}
-For this model, the integration methods are:
-
-| Role | DSL name | Method |
-| --- | --- | --- |
-{% for item in model.static_inputs.values() %}| param | `{{ item.name }}` | `get_param_{{ item.name }}()` |
-{% endfor %}{% for item in model.dynamic_inputs.values() %}| input | `{{ item.name }}` | implement `read_{{ item.name }}()`; model reads `get_input_{{ item.name }}()` |
-{% endfor %}
-{% endif %}

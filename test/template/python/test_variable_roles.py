@@ -222,6 +222,15 @@ def test_role_readme_examples_use_inputs_and_separate_parameters(
         assert set(machine.parameters) == {"gain"}
         if section == "quick":
             assert machine.last_inputs == {"pressure": 1.0}
+            assert machine.parameters == {"gain": 1.0}
+            assert machine.vars == {"samples": 1, "reading": 1.0}
+            # The README must teach device integration, not just explicit snapshots.
+            assert type(machine).read_pressure is not artifacts["module"].RootMachine.read_pressure
+            namespace["sensor_values"]["pressure"] = 3.0
+            machine.cycle()
+            assert machine.vars == {"samples": 2, "reading": 3.0}
+            assert "Modify Variables Outside Hooks" not in markdown
+            assert "在 Hook 外修改变量" not in markdown
 
 
 def test_unused_input_is_sampled_each_cycle_without_implicit_hold():

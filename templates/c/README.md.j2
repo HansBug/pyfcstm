@@ -52,98 +52,281 @@
 {% endfor -%}
 {% endfor -%}
 {% endfor -%}
-# {{ machine_class_name(model) }}
+{% set m = machine_class_name(model) -%}
+{% set a = machine_macro_name(model) -%}
 
-This directory contains the generated C99 / C++98-compatible runtime for the
-DSL root state `{{ model.root_state.name }}`.
+# {{ m }}
 
-The generated `machine.h` and `machine.c` stay close to a 4-space
-`clang-format` style so reformatting should not introduce obvious churn.
+This directory contains a self-contained C99 state-machine runtime. Put your application in `app.c`; regenerate the machine files from the DSL when model behavior changes. The generated program has no Python or third-party runtime dependency.
 
-## Generated Files
+**Generated files:** Use `machine.h` and its public functions for integration. `machine.c` are generated implementation files. This guide and `README_zh.md` describe the same API. Follow [Quick Start](#quick-start), then [Integration](#integration), [Recovery](#recovery) and [Build](#build).
 
-- `machine.h`: public runtime header
-- `machine.c`: generated runtime implementation
-- `README.md`: English usage guide for this generated machine
-- `README_zh.md`: Chinese usage guide for this generated machine
+<a id="quick-start"></a>
 
-## Model Text
+## Quick Start
 
-`{{ machine_class_name(model) }}_dsl_source()` returns a canonical model export.
-The text is regenerated from the parsed model as a canonical / normalized
-model export, so it may differ from the user's file formatting, comments, or
-blank lines. Use it for diagnostics, traceability, or exposing the generated
-runtime's model semantics to tooling.
+Save this complete program as `app.c`. Its setup follows this model’s declarations for parameters, inputs and abstract actions. {% if model.dynamic_inputs or model.static_inputs %}Values of `1` are demonstration readings/configuration; replace them with values appropriate for this model.{% endif %} Action callbacks print observations; replace their bodies with application work. Initialize once and let your host scheduler call `cycle` repeatedly on the same instance.
 
-The canonical export includes model documentation blocks. Do not place
-passwords, tokens, private keys, or other secrets in FCSTM documentation: this
-text is embedded in generated artifacts.
+<!-- example:quick-start -->
 
-{% set canonical_model = model.to_ast_node() | string -%}
-{% set canonical_fence = canonical_model | markdown_fence -%}
-{{ canonical_fence }}fcstm
-{{ canonical_model }}
-{{ canonical_fence }}
+```c
+#include "machine.h"
+#include <stdio.h>
+#include <string.h>
 
-## Model Summary
+typedef struct AppData {
+    {{ m }}Inputs inputs;
+    int hook_calls;
+    int event_active;
+} AppData;
 
-### Variables
+{% for item in model.dynamic_inputs.values() %}static int app_read_{{ item.name | readonly_value_identifier }}(void *user_data, {% if item.type == 'int' %}{{ m }}Int{% else %}double{% endif %} *value)
+{
+    AppData *data = (AppData *)user_data;
+    /* Replace this lookup with your sensor/driver call; return 0 on failure. */
+    *value = data->inputs.{{ item.name | readonly_value_identifier }};
+    return 1;
+}
 
-{% if model.defines.values() | list -%}
-| Name | Type | Initial DSL |
+{% endfor %}{% if abstract_ns.rows %}static void app_action({{ m }} *machine, const {{ m }}ExecutionContext *ctx, void *user_data)
+{
+    AppData *data = (AppData *)user_data;
+    (void)machine;
+    ++data->hook_calls;
+{% for item in model.dynamic_inputs.values() %}    printf("input {{ item.name }} = %.17g\n", (double){{ m }}_get_input_{{ item.name | readonly_value_identifier }}(machine));
+{% endfor %}{% for item in model.static_inputs.values() %}    printf("param {{ item.name }} = %.17g\n", (double){{ m }}_get_param_{{ item.name | readonly_value_identifier }}(machine));
+{% endfor %}    printf("action %d stage %d\n", (int)ctx->action_id, (int)ctx->action_stage_id);
+}
+
+{% endif %}
+int main(void)
+{
+    {{ m }}InitOptions options;
+    AppData data;
+    memset(&options, 0, sizeof(options));
+    memset(&data, 0, sizeof(data));
+{% for item in model.static_inputs.values() %}    options.parameters.{{ item.name | readonly_value_identifier }} = 1;
+    options.parameters_present.{{ item.name | readonly_value_identifier }} = 1;
+{% endfor %}    {{ m }} machine;
+    if (!{{ m }}_init_with_options(&machine, &options)) {
+        fprintf(stderr, "%s\n", {{ m }}_last_error(&machine));
+        return 1;
+    }
+{% if model.dynamic_inputs %}
+    {{ m }}InputProvider provider;
+    memset(&provider, 0, sizeof(provider));
+{% for item in model.dynamic_inputs.values() %}    data.inputs.{{ item.name | readonly_value_identifier }} = 1;
+    provider.read_{{ item.name | readonly_value_identifier }} = app_read_{{ item.name | readonly_value_identifier }};
+{% endfor %}    {{ m }}_set_input_provider(&machine, &provider, &data);
+{% endif %}{% if abstract_ns.rows %}
+    {{ m }}Hooks hooks = {{ m | upper }}_HOOKS_INIT;
+{% for row in abstract_ns.rows %}    hooks.{{ row['hook_name'] }} = app_action;
+{% endfor %}    {{ m }}_set_hooks(&machine, &hooks, &data);
+{% endif %}
+    /* Keep this instance and AppData alive for subsequent host-scheduled cycles. */
+    if (!{{ m }}_cycle(&machine, NULL, 0u)) {
+        fprintf(stderr, "%s\n", {{ m }}_last_error(&machine));
+        return 2;
+    }
+{% for item in model.static_inputs.values() %}    printf("param {{ item.name }} = %.17g\n", (double){{ m }}_get_param_{{ item.name | readonly_value_identifier }}(&machine));
+{% endfor %}{% for item in model.persistent_variables.values() %}    printf("{{ item.role.value }} {{ item.name }} = %.17g\n",
+           (double){{ m }}_vars(&machine)->{{ item.name | to_c_identifier }});
+{% endfor %}    printf("hook calls = %d\n", data.hook_calls);
+    /* Send committed outputs to your actuator/driver after success. */
+    return 0;
+}
+```
+
+```bash
+cc -std=c99 -Wall -Wextra -pedantic -O2 machine.c app.c -lm -o app
+./app
+```
+
+These commands target a POSIX hosted toolchain. See Build for Windows, CMake and no-heap integration. On each later tick, refresh `data.inputs` (or read the device inside the provider), then call the same cycle entry. Stop after `is_ended()` becomes true. Keep the instance, callback tables and application data alive for the whole run.
+
+<a id="integration"></a>
+
+## Connect inputs, actions and events
+
+| Role | Application responsibility | During model execution |
 | --- | --- | --- |
-{% for def_item in model.defines.values() -%}
-| `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ def_item.init.to_ast_node() | string }}` |
+| `input` | Implement the read interface below, or supply a snapshot for this cycle | Sampled anew each cycle; read-only to the model, no implicit hold |
+| `param` | Supply during construction/initialization; omissions use DSL defaults | Fixed per instance; generated getters need no callback implementation |
+| `control` (`def`, often called var) | Optionally preset at initialization, then observe | Model-owned writable state; holds when not assigned |
+| `output` | Read after a successful cycle and pass to an actuator if needed | Shares persistent storage with control; holds when not assigned |
+
+`Vars` holds control/output state; only the DSL writes it. `Parameters` is copied and validated during initialization. In `InitOptions`, pair each supplied value with its presence flag; omitted values use DSL defaults. For inputs, implement the callbacks below or supply a complete typed `Inputs` snapshot. Every input is sampled once before execution, including unused inputs, and the same values are used for validation and actions.
+
+Integer input callbacks write the generated signed 64-bit `Int`; floating input callbacks write finite `double` values. For declared inputs, missing providers, non-finite values and callbacks returning 0 fail the cycle. Input getters require an active cycle; parameter getters require an initialized instance.
+
+{% if model.defines %}
+| Role | DSL name | Access |
+| --- | --- | --- |
+{% for item in model.dynamic_inputs.values() %}| input | `{{ item.name }}` | `InputProvider.read_{{ item.name | readonly_value_identifier }}`; `get_input_{{ item.name | readonly_value_identifier }}` |
+{% endfor %}{% for item in model.static_inputs.values() %}| param | `{{ item.name }}` | `InitOptions.parameters.{{ item.name | readonly_value_identifier }}` + `parameters_present.{{ item.name | readonly_value_identifier }}`; `get_param_{{ item.name | readonly_value_identifier }}` |
+{% endfor %}{% for item in model.persistent_variables.values() %}| {{ item.role.value }} | `{{ item.name }}` | `Vars.{{ item.name | to_c_identifier }}` |
+{% endfor %}
+
+{% else %}
+This model has no input, parameter, control or output declarations.
+{% endif %}
+
+### Callback responsibilities
+
+| Interface | Invocation | Result and ownership |
+| --- | --- | --- |
+| `InputProvider.read_*` | Every declared input once per active cycle; explicit snapshots bypass the provider | Write the typed output and return 1; 0 aborts sampling. The table is copied; `user_data` is borrowed |
+| `Hooks` | When an abstract lifecycle action executes; never during speculative validation | Returns void; uninstalled slots do nothing. The table and `user_data` are borrowed |
+
+The callbacks in Quick Start share `AppData` through `user_data`. Keep hook tables in the owning object or another scope that outlives all cycles; registering a pointer to a local table that goes out of scope is invalid. Inside an action, read `ctx->vars` for that action’s observation and use the input/parameter getters on the supplied machine. Do not write persistent state from callbacks; express changes in the DSL. Send actuator outputs after a successful cycle when they must reflect committed state.
+
+### Declared actions
+
+{% if abstract_ns.rows %}
+| Hook field | DSL action path | Owner state | Stage |
+| --- | --- | --- | --- |
+{% for row in abstract_ns.rows %}| `{{ row['hook_name'] }}` | `{{ row['func_name'] }}` | `{{ row['owner_path'] }}` | `{{ row['stage'] }}{% if row['aspect'] %} {{ row['aspect'] }}{% endif %}` |
 {% endfor %}
 {% else %}
-This state machine does not define persistent variables.
-{% endif -%}
+This model declares no abstract actions.
 
-### Events
+{% endif %}
+### Drive events
 
-{% if event_ns.items -%}
-{% for event_path in event_ns.items | unique | list -%}
-- `{{ event_path }}`
-{% endfor %}
+The following fragments continue inside `main()` from Quick Start; they do not reinitialize the instance or replace its providers.
+
+{% if event_ns.items %}
+```c
+{{ m }}EventId event = {{ a }}_EVENT_{{ event_ns.items[0].split(".") | to_c_path_identifier }};
+if (!{{ m }}_cycle(&machine, &event, 1u)) {
+    fprintf(stderr, "%s\n", {{ m }}_last_error(&machine));
+    return 2;
+}
+```
+
 {% else %}
-This state machine does not declare any events.
-{% endif -%}
+This model has no declared events; call the same event-free cycle entry as Quick Start.
 
-### Abstract Hooks
+{% endif %}
+### Explicit input snapshots
 
-{% if abstract_ns.rows -%}
-{% for row in abstract_ns.rows -%}
-- `{{ row['func_name'] }}` -> `{{ row['hook_name'] }}`
+Use this replacement cycle call for data already sampled by the application. Supply every input, including unused ones. It bypasses all numeric input callbacks for that cycle.
+
+<!-- example:input-snapshot -->
+
+```c
+{{ m }}Inputs inputs = data.inputs;
+if (!{{ m }}_cycle_with_inputs(&machine, NULL, 0u, &inputs)) {
+    fprintf(stderr, "%s\n", {{ m }}_last_error(&machine));
+    return 2;
+}
+```
+
+<a id="recovery"></a>
+
+## Initialization and recovery
+
+Configure `InitOptions` before the constructor/init call in Quick Start. A nonzero `parameters_present` or `vars_present` field selects the corresponding value and bypasses its DSL initializer. Omitted parameters and persistent values use DSL defaults. Cold reinitialization starts a new run and clears installed callbacks; reinstall them before the next cycle. Parameters cannot be changed during a run.
+
+To preset control/output, insert this fragment before the initialization call in Quick Start. Each presence flag selects that value; model execution may then overwrite it. Leave a flag zero to keep the DSL initializer.
+
+<!-- example:initial-values -->
+
+```c
+{% if model.persistent_variables %}{% for item in model.persistent_variables.values() %}options.vars.{{ item.name | to_c_identifier }} = 1;
+options.vars_present.{{ item.name | to_c_identifier }} = 1;
+{% endfor %}{% else %}/* This model has no persistent variables to preset. */
+{% endif %}
+```
+
+### Hot Start
+
+This fragment continues after a successful cycle in Quick Start. It captures state, all persistent values and parameters from the same checkpoint and restores them without replaying entry actions. For saved checkpoints, supply those saved values instead. Do not replace checkpoint parameters with current defaults or new configuration. A composite target starts in initial-transition wait mode. Hot start preserves installed providers, hooks; a failed hot start preserves the previous run. Serialize snapshot capture and restoration with all other access to the instance.
+
+<!-- example:hot-start -->
+
+```c
+{{ m }}StateId state = {{ m }}_current_state_id(&machine);
+{{ m }}Vars initial_vars = *{{ m }}_vars(&machine);
+{{ m }}Parameters parameters;
+memset(&parameters, 0, sizeof(parameters));
+{% for item in model.static_inputs.values() %}parameters.{{ item.name | readonly_value_identifier }} = {{ m }}_get_param_{{ item.name | readonly_value_identifier }}(&machine);
 {% endfor %}
-{% else %}
-This state machine does not declare abstract hooks.
-{% endif -%}
+if (state == {{ a }}_INVALID_STATE_ID) {
+    fprintf(stderr, "Cannot restore a completed machine as a live checkpoint\n");
+    return 3;
+}
+if (!{{ m }}_hot_start_with_parameters(&machine, state, &initial_vars, &parameters)) {
+    fprintf(stderr, "hot start failed: %s\n", {{ m }}_last_error(&machine));
+    return 3;
+}
+```
 
-## Runtime Overview
+## Results, failures and lifetime
 
-This generated runtime is a self-contained C99 / C++98+ state-machine engine
-specialized for the concrete DSL model. It is intended to be used as a
-black-box runtime:
+Initialization and cycle return 1 on success and 0 on failure; inspect `last_error()` immediately after failure. Sampling/validation/execution errors do not commit persistent values or `last_inputs`. Fix the cause and retry a cycle; it acquires fresh input. External reads, logs and action side effects are not rolled back. A successful Delta cycle holds persistent state and publishes its input snapshot.
 
-- `machine.h` is the integration surface for application code
-- `machine.c` contains the generated execution logic and should usually be
-  treated as an implementation detail
-- events are submitted by integer id, not by string
-- hot start restores a full variable snapshot into a generated state id
-- failed speculative transitions roll back to the previous committed machine
-  state
-- abstract hooks are the supported extension point for integrating external
-  systems
-- generated identifiers are normalized for both C and C++, including escaping
-  keyword collisions such as `class` or `template` and avoiding reserved
-  public identifier shapes such as double underscores
-- root-machine public ABI prefixes and header guards use the same reserved-safe
-  identifier discipline; legal root names such as `_Root`, `class`, and `A__B`
-  must not leak reserved C/C++ public names into the generated header
+Read control/output through `vars()` after success. This returns instance-owned storage, not a historical copy; copy `Vars` to retain values. Input getters are valid only during a cycle; read `last_inputs()` afterwards and copy `Inputs` when retaining history. Context pointers are valid only inside their callback. Getter calls require an initialized live instance. Calls after termination do not sample inputs. Destroy only heap instances created by the corresponding create function; caller-owned objects need no generated destroy call.
 
-The public header exposes some runtime layout structs for ABI simplicity, but
-runtime-owned internals should not be modified directly unless the field is
-explicitly documented for external use.
+## Public API reference
+
+| Type | Purpose |
+| --- | --- |
+| `{{ m }}` | Caller-owned machine instance; initialize before use |
+| `{{ m }}InitOptions` | Cold-start values and presence flags |
+| `{{ m }}Parameters` | Complete parameter snapshot |
+| `{{ m }}Inputs` | Complete one-cycle input snapshot |
+| `{{ m }}InputProvider` | Typed input callback table; copied on installation |
+| `{{ m }}Vars` | Persistent control/output storage |
+| `{{ m }}Hooks` | Borrowed action callback table |
+| `{{ m }}ExecutionContext` | Read-only action observation |
+| `{{ m }}Int` | Signed 64-bit integer alias |
+| `{{ m }}StateId` | Generated state identity |
+| `{{ m }}EventId` | Generated event identity |
+
+### Functions
+
+Names below are shown without the `{{ m }}_` prefix. Every instance function takes `machine` as its first pointer argument; snapshot/table arguments are pointers.
+
+| Entry | Purpose |
+| --- | --- |
+| `init_with_options(machine, options)` | Cold initialize with optional values |
+| `init(machine)` | Cold initialize/reset with DSL defaults |
+| `hot_start_with_parameters(machine, state, vars, parameters)` | Restore a complete live checkpoint |
+| `hot_start(machine, state, vars)` | Complete persistent restoration for models without parameters |
+| `set_input_provider(machine, provider, user_data)` | Copy the input callback table; NULL clears it |
+| `set_hooks(machine, hooks, user_data)` | Borrow the action table; NULL uninstalls it |
+| `cycle(machine, events, count)` | Run using installed input readers |
+| `cycle_with_inputs(machine, events, count, inputs)` | Run with explicit input values |
+| `last_inputs(machine)` | Last successful input snapshot; initially NULL |
+| `vars(machine)` | Read persistent state |
+| `is_ended(machine)` | Test termination |
+| `last_cycle_was_delta(machine)` | Test successful no-progress cycle |
+| `current_state_id(machine)` | Current state id (may be composite while awaiting initial entry), or invalid sentinel |
+| `current_state_path(machine)` | Diagnostic path or NULL after termination |
+| `last_error(machine)` | Error text or empty string |
+| `create() / create_uninitialized() / destroy(machine)` | Heap allocation/lifetime; omitted with PYFCSTM_GENERATED_NO_HEAP |
+| `current_state_name(machine)` | Diagnostic short state name |
+| `dsl_source()` | Embedded canonical model text |
+
+For each input/parameter, use the exact getter names listed in Integration. The parameter-free hot-start overload is valid only for models without parameters. Internal frame, stack and scratch fields are runtime-owned even where visible in the header.
+
+### `{{ machine_class_name(model) }}ExecutionContext`
+
+| Field | Meaning |
+| --- | --- |
+| `state_id` | Public call-context state id; compare with generated `{{ machine_macro_name(model) }}_STATE_*` macros |
+| `vars` | Read-only snapshot pointer to persistent machine variables |
+| `action_id` | Resolved abstract target action id; compare with generated `{{ machine_macro_name(model) }}_ACTION_*` macros |
+| `action_stage_id` | Lifecycle stage id reported for this callsite; compare with `{{ machine_macro_name(model) }}_STAGE_*` |
+| `active_leaf_state_id` | Active leaf-state id visible to the callsite |
+| `call_stage_id` | Lifecycle stage id of the concrete callsite before resolving `ref` chains |
+| `abstract_target_id` | Resolved abstract action id after following `ref` chains |
+| `named_ref_id` | Named `ref` action id when the callsite itself is a named `ref`, otherwise `{{ machine_macro_name(model) }}_INVALID_ACTION_ID`; a chain starting from an anonymous `ref` stays invalid however many named actions it passes through |
+
+This structure is intended for observation only. In particular, abstract hooks should not mutate persistent machine variables through `machine` or any other runtime-owned storage. All generation-time enumerable metadata is numeric on purpose: use the generated macros instead of string comparisons in hot paths.
+
+<a id="build"></a>
 
 ## Build
 
@@ -151,24 +334,11 @@ explicitly documented for external use.
 
 The generated runtime supports three integration profiles:
 
-1. **Default hosted C99**: keep `{{ machine_class_name(model) }}_create()` and
-   `{{ machine_class_name(model) }}_destroy()` available. This profile may use
-   the C standard library and is suitable for hosted systems such as desktop
-   tools, industrial PCs, embedded Linux, or hosted RTOS builds.
-2. **Caller-owned object**: allocate `{{ machine_class_name(model) }}` yourself,
-   for example on the stack or in static storage, and call
-   `{{ machine_class_name(model) }}_init(&machine)` or
-   `{{ machine_class_name(model) }}_hot_start(...)`. This is the preferred path
-   when object lifetime is controlled by a driver, scheduler, or device owner.
-3. **No-heap profile**: define `PYFCSTM_GENERATED_NO_HEAP` for both
-   `machine.c` and every source file that includes `machine.h`. In this profile
-   the heap API declarations and implementations are omitted, and `machine.c`
-   does not include `<stdlib.h>` for `calloc` / `free`.
+1. **Default hosted C99**: keep `{{ machine_class_name(model) }}_create()` and `{{ machine_class_name(model) }}_destroy()` available. This profile may use the C standard library and is suitable for hosted systems such as desktop tools, industrial PCs, embedded Linux, or hosted RTOS builds.
+2. **Caller-owned object**: allocate `{{ machine_class_name(model) }}` yourself, for example on the stack or in static storage, and call `{{ machine_class_name(model) }}_init(&machine)` or `{{ machine_class_name(model) }}_hot_start(...)`. This is the preferred path when object lifetime is controlled by a driver, scheduler, or device owner.
+3. **No-heap profile**: define `PYFCSTM_GENERATED_NO_HEAP` for both `machine.c` and every source file that includes `machine.h`. In this profile the heap API declarations and implementations are omitted, and `machine.c` does not include `<stdlib.h>` for `calloc` / `free`.
 
-`PYFCSTM_GENERATED_NO_HEAP` is tested by symbol presence, using
-`#if defined(PYFCSTM_GENERATED_NO_HEAP)` / `#ifdef` semantics. The documented
-build form is `-DPYFCSTM_GENERATED_NO_HEAP`; an external build that spells it
-as `-DPYFCSTM_GENERATED_NO_HEAP=1` must still select the same no-heap profile.
+`PYFCSTM_GENERATED_NO_HEAP` is tested by symbol presence, using `#if defined(PYFCSTM_GENERATED_NO_HEAP)` / `#ifdef` semantics. The documented build form is `-DPYFCSTM_GENERATED_NO_HEAP`; an external build that spells it as `-DPYFCSTM_GENERATED_NO_HEAP=1` must still select the same no-heap profile.
 
 ### Object Lifetime Examples
 
@@ -176,8 +346,11 @@ as `-DPYFCSTM_GENERATED_NO_HEAP=1` must still select the same no-heap profile.
 {{ machine_class_name(model) }} stack_machine;
 static {{ machine_class_name(model) }} static_machine;
 
-{{ machine_class_name(model) }}_init(&stack_machine);
-{{ machine_class_name(model) }}_init(&static_machine);
+if (!{{ machine_class_name(model) }}_init(&stack_machine) ||
+    !{{ machine_class_name(model) }}_init(&static_machine)) {
+    fprintf(stderr, "initialization failed\n");
+    return 1;
+}
 ```
 
 The default hosted profile also allows heap-managed objects:
@@ -192,8 +365,7 @@ if (machine == NULL) {
 
 ### Single-command C Builds
 
-The examples below are validated with gcc / clang style command lines.
-Compile the generated runtime and your application together:
+The examples below are validated with gcc / clang style command lines. Compile the generated runtime and your application together:
 
 ```bash
 cc -std=c99 -Wall -Wextra -pedantic -O2 machine.c app.c -lm -o app
@@ -206,8 +378,7 @@ gcc -std=c99 -Wall -Wextra -pedantic -O2 machine.c app.c -lm -o app
 clang -std=c99 -Wall -Wextra -pedantic -O2 machine.c app.c -lm -o app
 ```
 
-For a no-heap build, define the same profile symbol for the generated runtime
-and every consumer that includes `machine.h`:
+For a no-heap build, define the same profile symbol for the generated runtime and every consumer that includes `machine.h`:
 
 ```bash
 cc -std=c99 -DPYFCSTM_GENERATED_NO_HEAP -Wall -Wextra -pedantic -O2 machine.c app.c -lm -o app
@@ -221,8 +392,7 @@ cc -std=c99 -Wall -Wextra -c app.c -o app.o
 cc machine.o app.o -lm -o app
 ```
 
-On Windows, use the equivalent library or DLL flags for your compiler toolchain
-and do not force-link the POSIX math library `m`.
+On Windows, use the equivalent library or DLL flags for your compiler toolchain and do not force-link the POSIX math library `m`.
 
 ### CMake Integration
 
@@ -250,505 +420,49 @@ add_executable(app app.c)
 target_link_libraries(app PRIVATE machine)
 ```
 
-For a no-heap library that is consumed by other targets, propagate the macro as
-part of the public interface:
+For a no-heap library that is consumed by other targets, propagate the macro as part of the public interface:
 
 ```cmake
 target_compile_definitions(machine PUBLIC PYFCSTM_GENERATED_NO_HEAP)
 ```
 
-If `machine.c` is compiled into an interface-style wrapper, use
-`INTERFACE PYFCSTM_GENERATED_NO_HEAP` on the wrapper target. A `PRIVATE`
-definition is only safe when `machine.c` and all consumer source files that
-include `machine.h` are compiled in the same final target and therefore see the
-same macro.
+If `machine.c` is compiled into an interface-style wrapper, use `INTERFACE PYFCSTM_GENERATED_NO_HEAP` on the wrapper target. A `PRIVATE` definition is only safe when `machine.c` and all consumer source files that include `machine.h` are compiled in the same final target and therefore see the same macro.
 
-### C++ Compile Checking
+### Integration limits
 
-Compile checking with a C++ compiler is also supported and recommended when
-your integration layer is C++:
+Serialize access to each instance: it is non-reentrant. Do not call cycle recursively from callbacks. Keep volatile device registers, DMA buffers and I/O inside application adapters and expose numeric readings through input providers. `PYFCSTM_GENERATED_NO_HEAP` removes heap helpers; it is not a strict freestanding guarantee. Standard math, string and diagnostic facilities may still be required.
 
-```bash
-g++ -x c++ -std=c++98 -Wall -Wextra -Werror -pedantic-errors -c machine.c -o machine.o
-g++ -x c++ -std=c++17 -Wall -Wextra -Werror -pedantic-errors -c machine.c -o machine.o
-```
-
-
-### Native Toolchain Evidence
-
-The repository-level native toolchain matrix builds representative generated
-`c` and `c_poll` artifacts through pytest with the same shared semantic fixture
-corpus used by the simulator and template-alignment tests. Public profiles cover
-hosted GCC / Clang optimization levels, 32-bit Linux, AArch64 with QEMU,
-AppleClang, Windows MinGW / MSVC / clang-cl, sanitizer runs, compile-only ARM
-bare-metal checks, and report-only static analysis such as `cppcheck` and
-`clang-tidy`.
-
-Those profiles are an engineering compatibility baseline, not a certification
-claim. Treat them as reproducible evidence that the generated public API and
-shared semantics survive common compiler families and build modes. Safety
-standards, coding-rule sign-off, board support packages, linker scripts, and
-project-specific warning policies remain the responsibility of the downstream
-integration process.
-
-When a native matrix job fails, inspect the uploaded `result.json`,
-`commands.json`, command logs, generated files, and harness files. Runnable
-profiles also include `observations.jsonl`; compile-only and analyze-only
-profiles intentionally do not produce runtime observations.
-
-### Boundary Notes
-
-- The no-heap profile only removes generated heap allocation helpers. It is not
-  a strict freestanding guarantee; the generated runtime may still use standard
-  headers such as `<math.h>`, `<string.h>`, or `<stdio.h>`.
-- This generated runtime is not a claim of MISRA, AUTOSAR, DO-178C, IEC 61508,
-  or ISO 26262 certification readiness.
-- Binary layout, endian conversion, and cross-device persistence of variable
-  snapshots are outside this public contract.
-
-### Integration Preflight Checklist
-
-Before integrating this generated runtime into controller, firmware, or hardware
-adapter code, confirm the following points in the downstream project:
-
-- Compile the C core as C99 and choose one memory profile: default hosted,
-  caller-owned object, or `PYFCSTM_GENERATED_NO_HEAP`. The no-heap profile only
-  removes generated allocation helpers; it is not a full freestanding or safety
-  certification profile.
-- Install every abstract hook that the application depends on. Hooks are
-  read-only extension points; do not mutate generated persistent variables from
-  hook callbacks.
-- Submit generated integer event ids through `{{ machine_class_name(model) }}_cycle(...)`; do
-  not reintroduce runtime string event lookup in application glue.
-- Treat one `{{ machine_class_name(model) }}` instance as non-reentrant. Serialize
-  `init`, `hot_start`, `cycle`, hook registration, and state/variable reads when
-  ISR, scheduler, or multi-threaded code can touch the same instance.
-- Keep volatile registers, DMA buffers, communication frames, and device I/O in
-  an outer adapter. Do not model them as generated persistent variables merely
-  to access hardware directly; bridge them through event submission, hooks, or
-  application-owned adapter code.
-- Run `pyfcstm inspect` before C/C++ deployment and review numeric warnings.
-  Those diagnostics describe default C/C++ deployment-profile risks; Python
-  generated runtimes have different numeric and exception behavior. Follow-up
-  BitVec / BMC / fixed-point proof work is tracked in
-  <https://github.com/HansBug/pyfcstm/issues/254>, and future codegen numeric
-  strategy work is tracked in <https://github.com/HansBug/pyfcstm/issues/255>.
-- Generated `round()` uses `nearbyint()` and therefore assumes that the process
-  floating-point rounding mode remains `FE_TONEAREST` (the default). Do not
-  change that mode around generated machine calls when simulator parity matters.
-- Treat native toolchain matrix results, sanitizer runs, `cppcheck`, and
-  `clang-tidy` as engineering evidence only. They do not make this generated
-  runtime MISRA, AUTOSAR, DO-178C, IEC 61508, ISO 26262, or other certification
-  ready by themselves.
+Before C/C++ deployment, run `pyfcstm inspect` and review numeric diagnostics for the default C/C++ deployment-profile; Python numeric behavior differs. Generated `round()` uses `nearbyint()` and assumes `FE_TONEAREST`. Integer overflow, target ABI and cross-device serialization need application-level review. Compiler and sanitizer evidence does not establish MISRA, AUTOSAR, DO-178C, IEC 61508 or ISO 26262 certification.
 
 ### Linkage and Visibility
 
-- `{{ machine_macro_name(model) }}_API` is the generated symbol-visibility macro
-  used by all public functions.
-- Define `{{ machine_macro_name(model) }}_BUILD_SHARED` when building the
-  generated runtime itself as a Windows DLL.
-- Define `{{ machine_macro_name(model) }}_USE_SHARED` when consuming that DLL
-  from external code on Windows.
-- `machine.h` wraps only the public API declarations in `extern "C"` when
-  included from C++.
+- `{{ machine_macro_name(model) }}_API` is the generated symbol-visibility macro used by all public functions.
+- Define `{{ machine_macro_name(model) }}_BUILD_SHARED` when building the generated runtime itself as a Windows DLL.
+- Define `{{ machine_macro_name(model) }}_USE_SHARED` when consuming that DLL from external code on Windows.
+- `machine.h` wraps only the public API declarations in `extern "C"` when included from C++.
 - Public layout structs and hook typedefs stay usable from both C and C++.
-- In generated integer fields, `{{ machine_class_name(model) }}Int` is the
-  public signed 64-bit type alias chosen to stay valid in both C99 and C++98+.
+- In generated integer fields, `{{ machine_class_name(model) }}Int` is the public signed 64-bit type alias chosen to stay valid in both C99 and C++98+.
 
-## Quick Start
+## Model reference
 
-```c
-#include "machine.h"
+### Variables
 
-int main(void)
-{
-    {{ machine_class_name(model) }} machine;
-
-    if (!{{ machine_class_name(model) }}_init(&machine)) {
-        return 1;
-    }
-{% if event_ns.items %}
-    {
-        static const {{ machine_class_name(model) }}EventId event_ids[] = {
-            {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier }}
-        };
-        {{ machine_class_name(model) }}_cycle(&machine, event_ids, 1u);
-    }
-{% else %}
-    {{ machine_class_name(model) }}_cycle(&machine, NULL, 0u);
-{% endif %}
-    return 0;
-}
-```
-
-## Public Header Reference
-
-### Core Macros
-
-| Macro | Value | Meaning |
-| --- | ---: | --- |
-| `{{ machine_macro_name(model) }}_SUCCESS` | `1` | Successful API result |
-| `{{ machine_macro_name(model) }}_FAILURE` | `0` | Failed API result |
-| `{{ machine_macro_name(model) }}_MAX_STACK_DEPTH` | `64` | Internal maximum state-stack depth |
-| `{{ machine_macro_name(model) }}_MAX_DFS_STEPS` | `1000` | Internal maximum validation DFS steps |
-| `{{ machine_macro_name(model) }}_INVALID_STATE_ID` | `-1` | Invalid state id sentinel |
-| `{{ machine_macro_name(model) }}_INVALID_EVENT_ID` | `-1` | Invalid event id sentinel |
-| `{{ machine_macro_name(model) }}_STATE_COUNT` | `{{ state_items | length }}` | Number of generated state ids |
-| `{{ machine_macro_name(model) }}_EVENT_COUNT` | `{{ event_ns.items | length }}` | Number of generated event ids |
-| `{{ machine_class_name(model) | upper }}_HOOKS_INIT` | generated brace initializer | Zero-init helper for the hook table |
-
-### Public Types
-
-| Type | Description |
-| --- | --- |
-| `{{ machine_class_name(model) }}` | Runtime instance type |
-| `{{ machine_class_name(model) }}ExecutionContext` | Read-only context passed to abstract hooks |
-| `{{ machine_class_name(model) }}StateId` | Integer state id type |
-| `{{ machine_class_name(model) }}EventId` | Integer event id type |
-| `{{ machine_class_name(model) }}ActionId` | Integer action id type for generated abstract-action metadata |
-| `{{ machine_class_name(model) }}StageId` | Integer lifecycle-stage id type |
-| `{{ machine_class_name(model) }}Int` | Public signed 64-bit integer alias used by generated integer vars |
-| `{{ machine_class_name(model) }}Vars` | Persistent variable snapshot type |
-| `{{ machine_class_name(model) }}HookFn` | Abstract hook callback function type |
-| `{{ machine_class_name(model) }}Hooks` | Hook registration table |
-| `{{ machine_class_name(model) }}Frame` | Publicly visible internal frame layout |
-
-### `{{ machine_class_name(model) }}Vars`
-
-{% if model.defines.values() | list %}
-| Field | C Type | Initial DSL |
-| --- | --- | --- |
-{% for def_item in model.defines.values() -%}
-| `{{ def_item.name | to_c_identifier }}` | `{% if def_item.type == 'int' %}{{ machine_class_name(model) }}Int{% else %}double{% endif %}` | `{{ def_item.init.to_ast_node() | string }}` |
-{% endfor %}
-{% else %}
-This state machine does not define persistent variables.
-{% endif %}
-
-Use `{{ machine_class_name(model) }}_vars(&machine)` to read the current
-persistent values. The returned pointer is owned by the runtime and remains
-valid as long as the machine object remains valid.
-
-### `{{ machine_class_name(model) }}ExecutionContext`
-
-| Field | Meaning |
-| --- | --- |
-| `state_id` | Public call-context state id; compare with generated `{{ machine_macro_name(model) }}_STATE_*` macros |
-| `vars` | Read-only snapshot pointer to persistent machine variables |
-| `action_id` | Resolved abstract target action id; compare with generated `{{ machine_macro_name(model) }}_ACTION_*` macros |
-| `action_stage_id` | Lifecycle stage id reported for this callsite; compare with `{{ machine_macro_name(model) }}_STAGE_*` |
-| `active_leaf_state_id` | Active leaf-state id visible to the callsite |
-| `call_stage_id` | Lifecycle stage id of the concrete callsite before resolving `ref` chains |
-| `abstract_target_id` | Resolved abstract action id after following `ref` chains |
-| `named_ref_id` | Named `ref` action id when the callsite itself is a named `ref`, otherwise `{{ machine_macro_name(model) }}_INVALID_ACTION_ID`; a chain starting from an anonymous `ref` stays invalid however many named actions it passes through |
-
-This structure is intended for observation only. In particular, abstract hooks
-should not mutate persistent machine variables through `machine` or any other
-runtime-owned storage. All generation-time enumerable metadata is numeric on
-purpose: use the generated macros instead of string comparisons in hot paths.
-
-### `{{ machine_class_name(model) }}HookFn`
-
-```c
-typedef void (*{{ machine_class_name(model) }}HookFn)(
-    {{ machine_class_name(model) }} *machine,
-    const {{ machine_class_name(model) }}ExecutionContext *ctx,
-    void *user_data
-);
-```
-
-- `machine`: current runtime instance
-- `ctx`: read-only execution context
-- `user_data`: pointer previously passed to `{{ machine_class_name(model) }}_set_hooks(...)`
-
-### `{{ machine_class_name(model) }}Hooks`
-
-{% if abstract_ns.rows %}
-| Hook field | DSL action path | Owner state | Stage |
+{% if model.defines %}
+| Role | Name | Type | Initial DSL |
 | --- | --- | --- | --- |
-{% for row in abstract_ns.rows -%}
-| `{{ row['hook_name'] }}` | `{{ row['func_name'] }}` | `{{ row['owner_path'] }}` | `{{ row['stage'] }}{% if row['aspect'] %} {{ row['aspect'] }}{% endif %}` |
+{% for def_item in model.defines.values() %}| `{{ {'input_dynamic': 'input', 'input_static': 'param', 'control': 'control (def)', 'output': 'output'}[def_item.role.value] }}` | `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ (def_item.init.to_ast_node() | string) if def_item.init is not none else '-' }}` |
 {% endfor %}
 {% else %}
-This state machine does not declare any abstract actions, so the hook table has
-no usable slots.
+This model has no variable declarations.
 {% endif %}
-
-Initialize the table with `{{ machine_class_name(model) | upper }}_HOOKS_INIT`,
-assign the fields you need, and register it with
-`{{ machine_class_name(model) }}_set_hooks(...)`.
-
-### `{{ machine_class_name(model) }}Frame`
-
-`{{ machine_class_name(model) }}Frame` is part of the exposed runtime layout but
-is primarily internal:
-
-| Field | Meaning |
-| --- | --- |
-| `state_id` | Internal active-state id stored in the runtime stack |
-| `mode` | Internal frame mode used by generated execution logic |
-
-Application code should treat this struct as runtime-owned.
-
-### `struct {{ machine_class_name(model) }}`
-
-The machine object is not opaque in C, but most fields are runtime-owned.
-
-| Field | Meaning | External usage |
-| --- | --- | --- |
-| `vars` | Persistent variable storage | Read through `{{ machine_class_name(model) }}_vars(...)` |
-| `_active_vars` | Internal active variable pointer | Internal |
-| `stack` | Internal execution stack | Internal |
-| `stack_size` | Current internal stack depth | Internal |
-| `ended` | Internal terminal flag | Prefer `{{ machine_class_name(model) }}_is_ended(...)` |
-| `entered_root` | Internal root-entry flag | Internal |
-| `hooks` | Installed hook table pointer | Prefer `{{ machine_class_name(model) }}_set_hooks(...)` |
-| `hook_user_data` | Installed hook user pointer | Prefer `{{ machine_class_name(model) }}_set_hooks(...)` |
-| `last_error` | Internal last-error buffer | Prefer `{{ machine_class_name(model) }}_last_error(...)` |
-
-## Function Reference
-
-| Function | Purpose |
-| --- | --- |
-| `{{ machine_class_name(model) }}_create()` | Allocate and initialize a machine on the heap; default hosted profile only, omitted when `PYFCSTM_GENERATED_NO_HEAP` is defined |
-| `{{ machine_class_name(model) }}_destroy(machine)` | Destroy a heap-allocated machine; default hosted profile only, omitted when `PYFCSTM_GENERATED_NO_HEAP` is defined |
-| `{{ machine_class_name(model) }}_init(machine)` | Cold-initialize or reset a machine |
-| `{{ machine_class_name(model) }}_hot_start(machine, state_id, vars)` | Start from a concrete generated state id and variable snapshot |
-| `{{ machine_class_name(model) }}_set_hooks(machine, hooks, user_data)` | Register abstract hooks |
-| `{{ machine_class_name(model) }}_cycle(machine, event_ids, event_count)` | Execute one cycle with zero or more event ids |
-| `{{ machine_class_name(model) }}_vars(machine)` | Read persistent variables |
-| `{{ machine_class_name(model) }}_is_ended(machine)` | Test whether the machine has ended |
-| `{{ machine_class_name(model) }}_last_cycle_was_delta(machine)` | Read whether the most recent successful cycle was a Delta no-progress step |
-| `{{ machine_class_name(model) }}_current_state_id(machine)` | Read the current leaf-state id |
-| `{{ machine_class_name(model) }}_current_state_path(machine)` | Read the current leaf-state full path for diagnostics |
-| `{{ machine_class_name(model) }}_current_state_name(machine)` | Read the current leaf-state short name |
-| `{{ machine_class_name(model) }}_last_error(machine)` | Read the last error message |
-| `{{ machine_class_name(model) }}_dsl_source()` | Read the embedded canonical model export |
-
-### Function Usage Notes
-
-- `{{ machine_class_name(model) }}_create()` / `{{ machine_class_name(model) }}_destroy()`:
-  use these if you want heap allocation managed by the generated runtime. They
-  belong to the default hosted profile; in the no-heap profile, allocate the
-  machine object yourself and call `{{ machine_class_name(model) }}_init()` or
-  `{{ machine_class_name(model) }}_hot_start(...)`.
-- `{{ machine_class_name(model) }}_init()`:
-  use this for stack-allocated machines or to reset an existing machine.
-- `{{ machine_class_name(model) }}_hot_start()`:
-  `initial_vars` must describe a complete persistent-state snapshot compatible
-  with `initial_state_id`.
-- `{{ machine_class_name(model) }}_cycle()`:
-  pass `NULL` and `0u` when a cycle should run without external events.
-- `{{ machine_class_name(model) }}_vars()`:
-  returns a read-only pointer; if you need a mutable external snapshot, copy the
-  struct value out first.
-- `{{ machine_class_name(model) }}_last_error()`:
-  useful after any API call that returned `{{ machine_macro_name(model) }}_FAILURE`.
-- `{{ machine_class_name(model) }}_dsl_source()`:
-  useful for diagnostics, traceability, or exposing the canonical / normalized
-  model export to tooling.
-
-## Minimal Complete Flow
-
-```c
-#include "machine.h"
-#include <stdio.h>
-
-{% if abstract_ns.rows -%}
-static void generated_hook(
-    {{ machine_class_name(model) }} *machine,
-    const {{ machine_class_name(model) }}ExecutionContext *ctx,
-    void *user_data
-)
-{
-    (void)machine;
-    (void)user_data;
-    printf("hook: action=%d state=%d stage=%d\n", (int)ctx->action_id, (int)ctx->state_id, (int)ctx->action_stage_id);
-}
-
-{% endif -%}
-int main(void)
-{
-    {{ machine_class_name(model) }} machine;
-{% if abstract_ns.rows %}
-    {{ machine_class_name(model) }}Hooks hooks = {{ machine_class_name(model) | upper }}_HOOKS_INIT;
-{% endif %}
-
-    if (!{{ machine_class_name(model) }}_init(&machine)) {
-        return 1;
-    }
-{% if abstract_ns.rows %}
-    hooks.{{ abstract_ns.rows[0]['hook_name'] }} = generated_hook;
-    {{ machine_class_name(model) }}_set_hooks(&machine, &hooks, NULL);
-{% endif %}
-    if (!{{ machine_class_name(model) }}_cycle(&machine, NULL, 0u)) {
-        return 2;
-    }
-{% if event_ns.items %}
-    {
-        static const {{ machine_class_name(model) }}EventId event_ids[] = {
-            {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier }}
-        };
-        if (!{{ machine_class_name(model) }}_cycle(&machine, event_ids, 1u)) {
-            return 3;
-        }
-    }
-{% endif %}
-    printf("state id: %d\n", (int){{ machine_class_name(model) }}_current_state_id(&machine));
-    return 0;
-}
-```
-
-## Full Usage Guide
-
-### 1. Cold Start
-
-```c
-{{ machine_class_name(model) }} machine;
-
-if (!{{ machine_class_name(model) }}_init(&machine)) {
-    fprintf(stderr, "init failed: %s\n", {{ machine_class_name(model) }}_last_error(&machine));
-    return 1;
-}
-```
-
-### 2. Submit Events
-
-Use generated event ids directly. Do not construct event names at runtime.
-
-```c
-{% if event_ns.items %}
-static const {{ machine_class_name(model) }}EventId event_ids[] = {
-    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier }}
-};
-
-{{ machine_class_name(model) }}_cycle(&machine, event_ids, 1u);
-{% else %}
-{{ machine_class_name(model) }}_cycle(&machine, NULL, 0u);
-{% endif %}
-```
-
-You may also submit more than one event in one cycle:
-
-```c
-{% if event_ns.items | length >= 2 %}
-static const {{ machine_class_name(model) }}EventId event_ids[] = {
-    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier }},
-    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[1].split('.') | to_c_path_identifier }}
-};
-{{ machine_class_name(model) }}_cycle(&machine, event_ids, 2u);
-{% elif event_ns.items %}
-static const {{ machine_class_name(model) }}EventId event_ids[] = {
-    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier }}
-};
-{{ machine_class_name(model) }}_cycle(&machine, event_ids, 1u);
-{% else %}
-{{ machine_class_name(model) }}_cycle(&machine, NULL, 0u);
-{% endif %}
-```
-
-### 3. Read Variables
-
-```c
-const {{ machine_class_name(model) }}Vars *vars = {{ machine_class_name(model) }}_vars(&machine);
-{% if model.defines.values() | list %}
-{% if (model.defines.values() | list)[0].type == 'int' %}
-{{ machine_class_name(model) }}Int value = vars->{{ (model.defines.values() | list)[0].name | to_c_identifier }};
-(void)value;
-{% else %}
-double value = vars->{{ (model.defines.values() | list)[0].name | to_c_identifier }};
-(void)value;
-{% endif %}
-{% else %}
-(void)vars;
-{% endif %}
-```
-
-### 4. Hot Start
-
-Hot start restores a full variable snapshot into a generated state id:
-
-Run this after initializing the target machine and installing any required
-hooks or event checks. The separate `default_machine` supplies the DSL defaults
-without resetting the target machine.
-`default_machine` is a full runtime scratch object; use static or
-application-owned storage when its automatic storage would exceed the stack budget.
-Each concurrent hot start needs its own scratch object; serialize access when storage is shared.
-
-```c
-{{ machine_class_name(model) }} default_machine;
-{{ machine_class_name(model) }}Vars initial_vars;
-
-if (!{{ machine_class_name(model) }}_init(&default_machine)) {
-    fprintf(stderr, "default init failed: %s\n", {{ machine_class_name(model) }}_last_error(&default_machine));
-    return 1;
-}
-initial_vars = *{{ machine_class_name(model) }}_vars(&default_machine);
-
-/* Override initial_vars fields here when restoring a custom checkpoint. */
-
-if (!{{ machine_class_name(model) }}_hot_start(
-    &machine,
-    {{ machine_macro_name(model) }}_STATE_{{ model.root_state | state_slug }},
-    &initial_vars
-)) {
-    fprintf(stderr, "hot start failed: %s\n", {{ machine_class_name(model) }}_last_error(&machine));
-    return 2;
-}
-```
-
-### 5. Register Abstract Hooks
-
-Abstract hooks are read-only extension points. They are intended for logging,
-metrics, tracing, or external side effects, but not for mutating machine
-persistent state.
-
-```c
-static void custom_hook(
-    {{ machine_class_name(model) }} *machine,
-    const {{ machine_class_name(model) }}ExecutionContext *ctx,
-    void *user_data
-)
-{
-    (void)machine;
-    (void)ctx;
-    (void)user_data;
-}
-
-int main(void)
-{
-    {{ machine_class_name(model) }} machine;
-    {{ machine_class_name(model) }}Hooks hooks = {{ machine_class_name(model) | upper }}_HOOKS_INIT;
-
-    {{ machine_class_name(model) }}_init(&machine);
-{% if abstract_ns.rows %}
-    hooks.{{ abstract_ns.rows[0]['hook_name'] }} = custom_hook;
-{% endif %}
-    {{ machine_class_name(model) }}_set_hooks(&machine, &hooks, NULL);
-    {{ machine_class_name(model) }}_cycle(&machine, NULL, 0u);
-    return 0;
-}
-```
-
-### 6. Inspect State and Errors
-
-```c
-printf("state id: %d\n", (int){{ machine_class_name(model) }}_current_state_id(&machine));
-printf("state path: %s\n", {{ machine_class_name(model) }}_current_state_path(&machine));
-printf("state name: %s\n", {{ machine_class_name(model) }}_current_state_name(&machine));
-printf("ended: %d\n", {{ machine_class_name(model) }}_is_ended(&machine));
-printf("last error: %s\n", {{ machine_class_name(model) }}_last_error(&machine));
-```
-
-## State IDs
+### State IDs
 
 | State path | Macro | Value |
 | --- | --- | ---: |
 {% for state in state_items -%}
 | `{{ state | state_path }}` | `{{ machine_macro_name(model) }}_STATE_{{ state | state_slug }}` | `{{ loop.index0 }}` |
 {% endfor %}
-
-## Event IDs
+### Event IDs
 
 {% if event_ns.items %}
 | Event path | Macro | Value |
@@ -759,8 +473,7 @@ printf("last error: %s\n", {{ machine_class_name(model) }}_last_error(&machine))
 {% else %}
 This state machine does not define any events.
 {% endif %}
-
-## Action and Stage IDs
+### Action IDs
 
 {% if action_scan.items %}
 {% set action_doc_ns = namespace(rows=[]) -%}
@@ -777,6 +490,7 @@ This state machine does not define any events.
 {% else %}
 This state machine does not define lifecycle actions.
 {% endif %}
+### Lifecycle stage IDs
 
 | Stage | Macro | Value |
 | --- | --- | ---: |
@@ -784,40 +498,16 @@ This state machine does not define lifecycle actions.
 | `during` | `{{ machine_macro_name(model) }}_STAGE_DURING` | `1` |
 | `exit` | `{{ machine_macro_name(model) }}_STAGE_EXIT` | `2` |
 
+Only the canonical macros listed in these tables are guaranteed. If the header also emits shorter compatibility aliases for simple, non-conflicting paths, treat them as optional convenience names: they are intentionally omitted whenever they would collide with reserved public macros such as `..._STATE_COUNT`, `..._EVENT_COUNT`, `..._ACTION_COUNT`, invalid-id sentinels, stage macros, or canonical path-boundary-safe ids.
 
-Only the canonical macros listed in these tables are guaranteed. If the header
-also emits shorter compatibility aliases for simple, non-conflicting paths, treat
-them as optional convenience names: they are intentionally omitted whenever they
-would collide with reserved public macros such as `..._STATE_COUNT`,
-`..._EVENT_COUNT`, `..._ACTION_COUNT`, invalid-id sentinels, stage macros, or
-canonical path-boundary-safe ids.
+### Canonical model text
 
-## Performance Advice
+`{{ machine_class_name(model) }}_dsl_source()` returns a canonical model export. The text is regenerated from the parsed model as a canonical / normalized model export, so it may differ from the user's file formatting, comments, or blank lines. Use it for diagnostics, traceability, or exposing the generated runtime's model semantics to tooling.
 
-- Use the generated event-id macros directly; do not reintroduce runtime string
-  parsing in your application layer.
-- Reuse `static const {{ machine_class_name(model) }}EventId[]` arrays for hot
-  event paths instead of rebuilding temporary arrays every cycle.
-- Pass `NULL, 0u` for no-event cycles instead of creating an empty array.
-- Keep hook registration sparse on critical paths; installed hooks introduce
-  extra callback overhead.
-- Treat the generated runtime as reusable stateful infrastructure: initialize
-  once, cycle many times, and avoid unnecessary create/destroy churn.
-- Build production binaries with optimization enabled, for example `-O2` or
-  `-O3`, and usually `-DNDEBUG`.
-- If your toolchain supports it and your build policy allows it, LTO can help
-  further: for example `-flto`.
-- Prefer hot start when restoring from a known checkpoint, because it avoids
-  reconstructing that checkpoint externally through many normal cycles.
-- Do not mutate runtime-owned internal fields such as `stack`, `stack_size`,
-  `hooks`, or `last_error` directly; use the public APIs instead so the runtime
-  can preserve its optimized invariants.
+The canonical export includes model documentation blocks. Do not place passwords, tokens, private keys, or other secrets in FCSTM documentation: this text is embedded in generated artifacts.
 
-## Compatibility Notes
-
-- The generated runtime targets C99 and C++98 or later.
-- Template regression checks compile representative generated machines with both
-  a C compiler and a C++ compiler.
-- Template regression checks also run representative C++ harnesses covering
-  basic behavior, hot start, rollback behavior, keyword-safe identifiers, and
-  abstract hook mounting.
+{% set canonical_model = model.to_ast_node() | string -%}
+{% set canonical_fence = canonical_model | markdown_fence -%}
+{{ canonical_fence }}fcstm
+{{ canonical_model }}
+{{ canonical_fence }}

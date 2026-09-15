@@ -17,6 +17,35 @@ MachineWrapper::MachineWrapper() {
     (void){{ machine_class_name(model) }}_init(&machine_);
 }
 
+MachineWrapper::MachineWrapper(const InitOptions &options) {
+    (void){{ machine_class_name(model) }}_init_with_options(&machine_, &options);
+}
+
+int MachineWrapper::init(const InitOptions &options) {
+    return {{ machine_class_name(model) }}_init_with_options(&machine_, &options);
+}
+
+int MachineWrapper::hot_start(StateId state_id, const Vars &initial_vars, const Parameters &parameters) {
+    return {{ machine_class_name(model) }}_hot_start_with_parameters(&machine_, state_id, &initial_vars, &parameters);
+}
+
+void MachineWrapper::set_input_provider(const InputProvider *provider, void *user_data) {
+    {{ machine_class_name(model) }}_set_input_provider(&machine_, provider, user_data);
+}
+
+const MachineWrapper::Inputs *MachineWrapper::last_inputs() const {
+    return {{ machine_class_name(model) }}_last_inputs(&machine_);
+}
+
+{% for prefix, declarations in [('param', model.static_inputs), ('input', model.dynamic_inputs)] %}
+{% for item in declarations.values() %}{% if item.type == 'int' %}MachineWrapper::Int{% else %}double{% endif %} MachineWrapper::get_{{ prefix }}_{{ item.name | readonly_value_identifier }}() const {
+    return {{ machine_class_name(model) }}_get_{{ prefix }}_{{ item.name | readonly_value_identifier }}(&machine_);
+}
+{% endfor %}{% endfor %}
+int MachineWrapper::cycle_with_inputs(const Inputs &inputs) {
+    return {{ machine_class_name(model) }}_cycle_with_inputs(&machine_, &inputs);
+}
+
 int MachineWrapper::init() {
     return {{ machine_class_name(model) }}_init(&machine_);
 }

@@ -32,7 +32,7 @@ Example::
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import (
     Any,
     Callable,
@@ -47,8 +47,9 @@ from typing import (
 )
 
 from ..dsl import node as dsl_nodes
+from ..dsl.role import VariableRole
 from ..model import IfBlock, Operation, OperationStatement
-from ..utils import to_c_identifier
+from ..utils import to_c_identifier, to_c_path_identifier
 
 
 @dataclass(frozen=True)
@@ -91,6 +92,7 @@ class _CNames:
 
     machine_class_name: str
     machine_macro_name: str
+    readonly_roles: Mapping[str, str] = field(default_factory=dict)
 
     @property
     def success(self) -> str:
@@ -596,6 +598,34 @@ def _safe_static_zero_result(value_type: Optional[str]) -> str:
     return "0"
 
 
+def readonly_value_identifier(name: str) -> str:
+    """Encode a read-only value name without merging distinct DSL identifiers.
+
+    Ordinary C/C++ identifiers remain readable. Keywords, significant
+    underscores and the reserved escape prefix use the existing lossless
+    path encoding.
+
+    :param name: Original input or parameter name.
+    :return: Collision-free C/C++ field and getter suffix.
+    """
+    if to_c_identifier(name) == name and not name.startswith(("_", "v_")):
+        return name
+    return "v_" + to_c_path_identifier([name])
+
+
+def _readonly_roles(var_defines: Mapping[str, Any]) -> Dict[str, str]:
+    """Map read-only model declarations to their generated getter prefixes."""
+    prefixes = {
+        VariableRole.INPUT_DYNAMIC: "input",
+        VariableRole.INPUT_STATIC: "param",
+    }
+    return {
+        name: prefixes[define.role]
+        for name, define in var_defines.items()
+        if getattr(define, "role", None) in prefixes
+    }
+
+
 def _render_expr(
     expr: dsl_nodes.Expr,
     known_types: Mapping[str, str],
@@ -615,6 +645,16 @@ def _render_expr(
     if isinstance(expr, dsl_nodes.Constant):
         return _ExprRenderResult(repr(expr.value), "float")
     if isinstance(expr, dsl_nodes.Name):
+        if expr.name in names.readonly_roles:
+            return _ExprRenderResult(
+                "%s_get_%s_%s(machine)"
+                % (
+                    names.machine_class_name,
+                    names.readonly_roles[expr.name],
+                    readonly_value_identifier(expr.name),
+                ),
+                known_types.get(expr.name),
+            )
         if expr.name in known_types:
             text = (
                 "scope->%s" % to_c_identifier(expr.name)
@@ -982,6 +1022,33 @@ def _c_type(value_type: Optional[str]) -> str:
     return "double"
 
 
+def _emit_int64_range_check(
+    lines: List[str],
+    value: str,
+    variable_name: str,
+    names: _CNames,
+    indent: str,
+    level: int,
+) -> None:
+    """Reject non-finite or out-of-range floats before any integer cast."""
+    _line(
+        lines,
+        indent,
+        level,
+        "if (!(%s >= -9223372036854775808.0 && %s < 9223372036854775808.0)) {"
+        % (value, value),
+    )
+    _emit_error(
+        lines,
+        names,
+        indent,
+        level + 1,
+        "Variable '%s' is int type, value is outside signed 64-bit range"
+        % variable_name,
+    )
+    _line(lines, indent, level, "}")
+
+
 def _render_statement_sequence(
     statements: Sequence[dsl_nodes.OperationalStatement],
     state_types: Mapping[str, str],
@@ -1026,6 +1093,9 @@ def _render_statement_sequence(
             if state_types.get(statement.name) == "int" and expr.value_type == "float":
                 temp_name = "__pyfcstm_value_%d" % len(lines)
                 _line(lines, indent, level, "double %s = %s;" % (temp_name, expr.text))
+                _emit_int64_range_check(
+                    lines, temp_name, statement.name, names, indent, level
+                )
                 _line(
                     lines,
                     indent,
@@ -1155,7 +1225,7 @@ def render_c_action_body(
     """
     state_types = _normalise_var_types(var_types)
     nodes = tuple(_coerce_statement(statement) for statement in statements)
-    names = _CNames(machine_class_name, machine_macro_name)
+    names = _CNames(machine_class_name, machine_macro_name, _readonly_roles(var_types))
     lines = [
         "%s(void)machine;" % indent,
         "%s(void)scope;" % indent,
@@ -1171,6 +1241,8 @@ def render_c_reset_vars_body(
     machine_class_name: str,
     machine_macro_name: str,
     indent: str = "    ",
+    parameters: bool = False,
+    initial_options: bool = False,
 ) -> str:
     """
     Render C statements for default persistent-variable initialization.
@@ -1190,6 +1262,10 @@ def render_c_reset_vars_body(
     :param indent: Indentation unit used for generated C code, defaults to four
         spaces.
     :type indent: str, optional
+    :param parameters: Initialize static parameters instead of persistent variables.
+    :type parameters: bool
+    :param initial_options: Read presence flags and values from an ``options`` pointer.
+    :type initial_options: bool
     :return: C statements ending in a generated success return.
     :rtype: str
 
@@ -1200,60 +1276,76 @@ def render_c_reset_vars_body(
         True
     """
     state_types = _normalise_var_types(var_defines)
-    names = _CNames(machine_class_name, machine_macro_name)
+    names = _CNames(
+        machine_class_name, machine_macro_name, _readonly_roles(var_defines)
+    )
     lines = [
         "%s(void)machine;" % indent,
         "%s(void)scope;" % indent,
     ]
+    storage = "parameters" if parameters else "vars"
     for name, define in var_defines.items():
+        readonly_role = names.readonly_roles.get(name)
+        if parameters:
+            if readonly_role != "param":
+                continue
+        elif readonly_role is not None:
+            continue
+        member = readonly_value_identifier(name) if parameters else to_c_identifier(name)
+        target = "scope->%s" % member
+        level = 1
+        if initial_options:
+            _line(
+                lines,
+                indent,
+                1,
+                "if (options != NULL && options->%s_present.%s) {" % (storage, member),
+            )
+            _line(lines, indent, 2, "%s = options->%s.%s;" % (target, storage, member))
+            _line(lines, indent, 1, "} else {")
+            level = 2
         expr = _render_expr(define.init, state_types, names, state_types.keys())
-        checks: List[str] = []
         safe = _emit_expr_checks(
-            checks,
+            lines,
             define.init,
             state_types,
             state_types.keys(),
             names,
             "variable '%s' initializer" % name,
             indent,
-            1,
+            level,
         )
-        lines.extend(checks)
-        if not safe:
-            continue
-        target = "scope->%s" % to_c_identifier(name)
-        if state_types.get(name) == "int" and expr.value_type == "float":
-            temp_name = "__pyfcstm_init_%d" % len(lines)
-            _line(lines, indent, 1, "double %s = %s;" % (temp_name, expr.text))
-            _line(
-                lines,
-                indent,
-                1,
-                "if (%s != (double)((PYFCSTM_GENERATED_INT64)%s)) {"
-                % (temp_name, temp_name),
-            )
-            _line(
-                lines,
-                indent,
-                2,
-                (
-                    "%s(machine, "
-                    "\"Variable '%s' is int type, cannot assign float %%.15g; "
-                    "non-integer float from variable '%s' initializer\", "
-                    "%s);"
+        if safe:
+            if state_types.get(name) == "int" and expr.value_type == "float":
+                temp_name = "__pyfcstm_init_%d" % len(lines)
+                _line(lines, indent, level, "double %s = %s;" % (temp_name, expr.text))
+                _emit_int64_range_check(lines, temp_name, name, names, indent, level)
+                _line(
+                    lines,
+                    indent,
+                    level,
+                    "if (%s != (double)((PYFCSTM_GENERATED_INT64)%s)) {"
+                    % (temp_name, temp_name),
                 )
-                % (names.set_error, name, name, temp_name),
-            )
-            _line(lines, indent, 2, "return %s;" % names.failure)
+                _line(
+                    lines,
+                    indent,
+                    level + 1,
+                    "%s(machine, \"Variable '%s' is int type, cannot assign float %%.15g; non-integer float from variable '%s' initializer\", %s);"
+                    % (names.set_error, name, name, temp_name),
+                )
+                _line(lines, indent, level + 1, "return %s;" % names.failure)
+                _line(lines, indent, level, "}")
+                _line(
+                    lines,
+                    indent,
+                    level,
+                    "%s = (PYFCSTM_GENERATED_INT64)%s;" % (target, temp_name),
+                )
+            else:
+                _line(lines, indent, level, "%s = %s;" % (target, expr.text))
+        if initial_options:
             _line(lines, indent, 1, "}")
-            _line(
-                lines,
-                indent,
-                1,
-                "%s = (PYFCSTM_GENERATED_INT64)%s;" % (target, temp_name),
-            )
-            continue
-        _line(lines, indent, 1, "%s = %s;" % (target, expr.text))
     lines.append("%sreturn %s;" % (indent, names.success))
     return "\n".join(lines)
 
@@ -1299,7 +1391,7 @@ def render_c_condition_body(
     """
     state_types = _normalise_var_types(var_types)
     expr_node = _coerce_expr(expr)
-    names = _CNames(machine_class_name, machine_macro_name)
+    names = _CNames(machine_class_name, machine_macro_name, _readonly_roles(var_types))
     lines = [
         "%s(void)machine;" % indent,
         "%s(void)scope;" % indent,

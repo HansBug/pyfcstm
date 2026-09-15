@@ -28,13 +28,14 @@ import json
 import math
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
+from pyfcstm.render.c_runtime import readonly_value_identifier
 from pyfcstm.utils import (
     to_c_identifier,
     to_c_path_identifier,
@@ -52,12 +53,12 @@ _TOKEN_PASTE_RE = re.compile(r"##")
 _NATIVE_HANDLE_CALL_RE = re.compile(r"\bnative_handle\s*\(")
 _DIRECT_C_TYPE_RE = re.compile(
     r"(?<!Wrapper::)\b(?:[A-Za-z_][A-Za-z0-9_]*Machine|Machine)"
-    r"(Vars|StateId|EventId|Int|Hooks|EventChecks|ExecutionContext|EventContext)?\b"
+    r"(Vars|VarsPresent|Parameters|ParametersPresent|Inputs|InputProvider|InitOptions|StateId|EventId|Int|Hooks|EventChecks|ExecutionContext|EventContext)?\b"
 )
 _DIRECT_C_API_RE = re.compile(
     r"\b[A-Za-z_][A-Za-z0-9_]*Machine_"
-    r"(create_uninitialized|create|destroy|init|hot_start|set_hooks|"
-    r"set_event_checks|cycle|vars|is_ended|current_state_id|"
+    r"(create_uninitialized|create|destroy|init|init_with_options|hot_start|hot_start_with_parameters|set_hooks|set_input_provider|last_inputs|get_(?:param|input)_[A-Za-z_][A-Za-z0-9_]*|"
+    r"set_event_checks|cycle|cycle_with_inputs|vars|is_ended|current_state_id|"
     r"current_state_path|current_state_name|last_error|dsl_source)\b"
 )
 
@@ -123,6 +124,7 @@ class HarnessContext:
     harness_source_name: str = "harness.c"
     machine_source_names: Sequence[str] = ("machine.c",)
     wrapper_namespace_suffix: Optional[str] = None
+    configuration: Mapping[str, Any] = field(default_factory=dict)
 
     @property
     def uses_cpp_wrapper(self) -> bool:
@@ -264,7 +266,7 @@ def _hook_rows(model) -> List[Dict[str, Any]]:
 
 def _var_rows(model) -> List[Dict[str, Any]]:
     rows = []
-    for def_item in model.defines.values():
+    for def_item in model.persistent_variables.values():
         rows.append(
             {
                 "name": def_item.name,
@@ -347,7 +349,7 @@ def _initial_context(
     if not initial:
         return None
     state_path = initial.get("state")
-    vars_data = initial.get("vars")
+    vars_data = {**(initial.get("vars") or {}), **(initial.get("outputs") or {})}
     if state_path is None:
         return None
     if state_macros.get(state_path) is None:
@@ -404,6 +406,10 @@ def _step_contexts(
                 pre_error_message = str(raises.get("match", "Unknown event path"))
         steps.append(
             {
+                "inputs": [
+                    {"field": readonly_value_identifier(name), "value": repr(value).lower()}
+                    for name, value in (step.get("inputs") or {}).items()
+                ],
                 "index": index,
                 "cycle_count": cycle_count,
                 "events": events,
@@ -451,6 +457,7 @@ def build_harness_context(template_name: str, case: SemanticCase) -> HarnessCont
         case.data.get("steps") or [], case, event_macros, root_path
     )
     initial_expect = simulate_semantics._initial_constructor_expect(case)
+    initial = case.data.get("initial") or {}
     return HarnessContext(
         template_name=template_name,
         case_id=case.id,
@@ -458,6 +465,19 @@ def build_harness_context(template_name: str, case: SemanticCase) -> HarnessCont
         machine_macro_name=to_c_public_macro_identifier(
             model.root_state.name, "_MACHINE"
         ),
+        configuration={
+            "parameters": [
+                {"field": readonly_value_identifier(name), "value": repr(value).lower()}
+                for name, value in (case.data.get("parameters") or {}).items()
+            ],
+            "vars": [] if initial.get("state") is not None else [
+                {"field": to_c_identifier(name), "value": repr(value).lower()}
+                for name, value in {
+                    **((case.data.get("initial") or {}).get("vars") or {}),
+                    **((case.data.get("initial") or {}).get("outputs") or {}),
+                }.items()
+            ],
+        },
         variables=variables,
         states=states,
         events=events,

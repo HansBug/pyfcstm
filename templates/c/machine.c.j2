@@ -66,6 +66,7 @@
 #include "machine.h"
 
 #include <math.h>
+#include <float.h>
 #include <stdarg.h>
 #include <stdio.h>
 #if !defined(PYFCSTM_GENERATED_NO_HEAP)
@@ -236,7 +237,7 @@ static int _{{ machine_class_name(model) }}_contexts_equal(
     if (left->stack_size != right->stack_size) {
         return 0;
     }
-{% for def_item in model.defines.values() -%}
+{% for def_item in model.persistent_variables.values() -%}
     if (left->vars.{{ def_item.name | to_c_identifier }} != right->vars.{{ def_item.name | to_c_identifier }}) {
         return 0;
     }
@@ -392,9 +393,20 @@ static PYFCSTM_GENERATED_UNUSED PYFCSTM_GENERATED_INT64 _{{ machine_class_name(m
 /* Reset persistent variables to the DSL `def ... = ...;` defaults. */
 static int _{{ machine_class_name(model) }}_reset_vars(
     {{ machine_class_name(model) }} *machine,
-    {{ machine_class_name(model) }}Vars *scope)
+    {{ machine_class_name(model) }}Vars *scope,
+    const {{ machine_class_name(model) }}InitOptions *options)
 {
-{{ render_c_reset_vars_body(model.defines, machine_class_name(model), machine_macro_name(model)) }}
+    (void)options;
+{{ render_c_reset_vars_body(model.defines, machine_class_name(model), machine_macro_name(model), initial_options=True) }}
+}
+
+static int _{{ machine_class_name(model) }}_reset_parameters(
+    {{ machine_class_name(model) }} *machine,
+    {{ machine_class_name(model) }}Parameters *scope,
+    const {{ machine_class_name(model) }}InitOptions *options)
+{
+    (void)options;
+{{ render_c_reset_vars_body(model.defines, machine_class_name(model), machine_macro_name(model), parameters=True, initial_options=True) }}
 }
 
 static int _{{ machine_class_name(model) }}_is_stoppable_state(int state_id);
@@ -2268,15 +2280,30 @@ void {{ machine_class_name(model) }}_destroy({{ machine_class_name(model) }} *ma
 
 int {{ machine_class_name(model) }}_init({{ machine_class_name(model) }} *machine)
 {
+    return {{ machine_class_name(model) }}_init_with_options(machine, NULL);
+}
+
+int {{ machine_class_name(model) }}_init_with_options(
+    {{ machine_class_name(model) }} *machine,
+    const {{ machine_class_name(model) }}InitOptions *options)
+{
     if (machine == NULL) {
         return {{ machine_macro_name(model) }}_FAILURE;
     }
 
     memset(machine, 0, sizeof(*machine));
-    if (_{{ machine_class_name(model) }}_reset_vars(machine, &machine->vars) != {{ machine_macro_name(model) }}_SUCCESS) {
+    if (_{{ machine_class_name(model) }}_reset_parameters(machine, &machine->_parameters, options) != {{ machine_macro_name(model) }}_SUCCESS) {
         return {{ machine_macro_name(model) }}_FAILURE;
     }
-    machine->stack_size = 1u;
+    if (_{{ machine_class_name(model) }}_reset_vars(machine, &machine->vars, options) != {{ machine_macro_name(model) }}_SUCCESS) {
+        return {{ machine_macro_name(model) }}_FAILURE;
+    }
+{% for storage, declarations in [('vars', model.persistent_variables), ('_parameters', model.static_inputs)] %}
+{% for item in declarations.values() if item.type == 'float' %}    if (!(machine->{{ storage }}.{{ (item.name | to_c_identifier) if storage == 'vars' else (item.name | readonly_value_identifier) }} >= -DBL_MAX && machine->{{ storage }}.{{ (item.name | to_c_identifier) if storage == 'vars' else (item.name | readonly_value_identifier) }} <= DBL_MAX)) {
+        _{{ machine_class_name(model) }}_set_error(machine, "Initial value for {{ item.name }} must be finite");
+        return {{ machine_macro_name(model) }}_FAILURE;
+    }
+{% endfor %}{% endfor %}    machine->stack_size = 1u;
     machine->stack[0].state_id = {{ state_enum(model.root_state) }};
     machine->stack[0].mode = {{ machine_macro_name(model) }}_FRAME_MODE_INIT_WAIT;
     machine->ended = 0;
@@ -2293,6 +2320,15 @@ int {{ machine_class_name(model) }}_hot_start(
     {{ machine_class_name(model) }}StateId initial_state_id,
     const {{ machine_class_name(model) }}Vars *initial_vars)
 {
+    return {{ machine_class_name(model) }}_hot_start_with_parameters(machine, initial_state_id, initial_vars, NULL);
+}
+
+int {{ machine_class_name(model) }}_hot_start_with_parameters(
+    {{ machine_class_name(model) }} *machine,
+    {{ machine_class_name(model) }}StateId initial_state_id,
+    const {{ machine_class_name(model) }}Vars *initial_vars,
+    const {{ machine_class_name(model) }}Parameters *parameters)
+{
     {{ machine_class_name(model) }} saved_machine;
     char hot_start_error[sizeof(machine->last_error)];
     int path_ids[{{ machine_macro_name(model) }}_MAX_STACK_DEPTH];
@@ -2304,10 +2340,24 @@ int {{ machine_class_name(model) }}_hot_start(
         return {{ machine_macro_name(model) }}_FAILURE;
     }
 
+{% if model.static_inputs %}    if (parameters == NULL) {
+        _{{ machine_class_name(model) }}_set_error(machine, "Hot start requires complete parameters");
+        return {{ machine_macro_name(model) }}_FAILURE;
+    }
+{% endif %}
     saved_machine = *machine;
     hot_start_error[0] = '\0';
     memset(machine, 0, sizeof(*machine));
     machine->vars = *initial_vars;
+{% if model.static_inputs %}    machine->_parameters = *parameters;
+{% else %}    (void)parameters;
+{% endif %}
+{% for storage, declarations in [('vars', model.persistent_variables), ('_parameters', model.static_inputs)] %}
+{% for item in declarations.values() if item.type == 'float' %}    if (!(machine->{{ storage }}.{{ (item.name | to_c_identifier) if storage == 'vars' else (item.name | readonly_value_identifier) }} >= -DBL_MAX && machine->{{ storage }}.{{ (item.name | to_c_identifier) if storage == 'vars' else (item.name | readonly_value_identifier) }} <= DBL_MAX)) {
+        _{{ machine_class_name(model) }}_format_error_text(hot_start_error, sizeof(hot_start_error), "Initial value for {{ item.name }} must be finite");
+        goto hot_start_failure;
+    }
+{% endfor %}{% endfor %}
     current_state_id = initial_state_id;
     if (!_{{ machine_class_name(model) }}_state_id_is_valid(current_state_id)) {
         _{{ machine_class_name(model) }}_format_error_text(
@@ -2354,15 +2404,9 @@ int {{ machine_class_name(model) }}_hot_start(
     machine->_active_vars = NULL;
     machine->hooks = saved_machine.hooks;
     machine->hook_user_data = saved_machine.hook_user_data;
+    machine->_input_provider = saved_machine._input_provider;
+    machine->_input_user_data = saved_machine._input_user_data;
     _{{ machine_class_name(model) }}_clear_error(machine);
-    if (machine->stack_size > {{ machine_macro_name(model) }}_MAX_STACK_DEPTH) {
-        _{{ machine_class_name(model) }}_format_error_text(
-            hot_start_error,
-            sizeof(hot_start_error),
-            "Hot start target exceeds the structural stack-depth safety limit (%d) before execution; choose a shallower target state or simplify the state hierarchy.",
-            {{ machine_macro_name(model) }}_MAX_STACK_DEPTH);
-        goto hot_start_failure;
-    }
     return {{ machine_macro_name(model) }}_SUCCESS;
 
 hot_start_failure:
@@ -2383,51 +2427,31 @@ void {{ machine_class_name(model) }}_set_hooks(
     machine->hook_user_data = user_data;
 }
 
-int {{ machine_class_name(model) }}_cycle(
+static int _{{ machine_class_name(model) }}_cycle_frozen(
     {{ machine_class_name(model) }} *machine,
-    const {{ machine_class_name(model) }}EventId *event_ids,
-    size_t event_count)
+    const _{{ machine_class_name(model) }}EventSet *event_set)
 {
     _{{ machine_class_name(model) }}RuntimeContext validation_context;
     _{{ machine_class_name(model) }}RuntimeContext sim_context;
-    _{{ machine_class_name(model) }}EventSet event_set;
     int validation_entered_root;
     int validation_ended;
     int sim_entered_root;
     int sim_ended;
     int success;
 
-    if (machine == NULL) {
-        return {{ machine_macro_name(model) }}_FAILURE;
-    }
-    machine->last_cycle_was_delta = 0;
-    if (!machine->initialized) {
-        _{{ machine_class_name(model) }}_set_error(machine, "Machine is not initialized; call {{ machine_class_name(model) }}_init(...) or {{ machine_class_name(model) }}_hot_start(...) before cycle().");
-        return {{ machine_macro_name(model) }}_FAILURE;
-    }
-
-    _{{ machine_class_name(model) }}_clear_error(machine);
-    if (machine->ended) {
-        return {{ machine_macro_name(model) }}_SUCCESS;
-    }
-
-    if (_{{ machine_class_name(model) }}_normalize_events(machine, event_ids, event_count, &event_set) != {{ machine_macro_name(model) }}_SUCCESS) {
-        return {{ machine_macro_name(model) }}_FAILURE;
-    }
-
     _{{ machine_class_name(model) }}_copy_from_machine(&validation_context, machine);
     validation_entered_root = machine->entered_root;
     validation_ended = machine->ended;
 
     if (!validation_entered_root) {
-        validation_ended = _{{ machine_class_name(model) }}_initialize_context(machine, &validation_context, &event_set, 1);
+        validation_ended = _{{ machine_class_name(model) }}_initialize_context(machine, &validation_context, event_set, 1);
         validation_entered_root = 1;
     }
 
     success = _{{ machine_class_name(model) }}_run_cycle_on_context(
         machine,
         &validation_context,
-        &event_set,
+        event_set,
         &validation_ended,
         1,
         1);
@@ -2445,14 +2469,14 @@ int {{ machine_class_name(model) }}_cycle(
     sim_ended = machine->ended;
 
     if (!sim_entered_root) {
-        sim_ended = _{{ machine_class_name(model) }}_initialize_context(machine, &sim_context, &event_set, 0);
+        sim_ended = _{{ machine_class_name(model) }}_initialize_context(machine, &sim_context, event_set, 0);
         sim_entered_root = 1;
     }
 
     success = _{{ machine_class_name(model) }}_run_cycle_on_context(
         machine,
         &sim_context,
-        &event_set,
+        event_set,
         &sim_ended,
         1,
         0);
@@ -2475,6 +2499,97 @@ int {{ machine_class_name(model) }}_cycle(
         machine->last_cycle_was_delta = 1;
     }
     return {{ machine_macro_name(model) }}_SUCCESS;
+}
+
+{% for prefix, declarations, storage in [('param', model.static_inputs, '_parameters'), ('input', model.dynamic_inputs, '_active_inputs')] %}
+{% for item in declarations.values() %}{% if item.type == 'int' %}{{ machine_class_name(model) }}Int{% else %}double{% endif %} {{ machine_class_name(model) }}_get_{{ prefix }}_{{ item.name | readonly_value_identifier }}(const {{ machine_class_name(model) }} *machine)
+{
+    return machine->{{ storage }}{% if prefix == 'input' %}->{% else %}.{% endif %}{{ item.name | readonly_value_identifier }};
+}
+{% endfor %}{% endfor %}
+void {{ machine_class_name(model) }}_set_input_provider(
+    {{ machine_class_name(model) }} *machine,
+    const {{ machine_class_name(model) }}InputProvider *provider,
+    void *user_data)
+{
+    if (machine == NULL) {
+        return;
+    }
+    if (provider != NULL) {
+        machine->_input_provider = *provider;
+    } else {
+        memset(&machine->_input_provider, 0, sizeof(machine->_input_provider));
+    }
+    machine->_input_user_data = user_data;
+}
+
+const {{ machine_class_name(model) }}Inputs *{{ machine_class_name(model) }}_last_inputs(
+    const {{ machine_class_name(model) }} *machine)
+{
+    return machine != NULL && machine->_has_last_inputs ? &machine->_last_inputs : NULL;
+}
+
+int {{ machine_class_name(model) }}_cycle(
+    {{ machine_class_name(model) }} *machine,
+    const {{ machine_class_name(model) }}EventId *event_ids,
+    size_t event_count)
+{
+    return {{ machine_class_name(model) }}_cycle_with_inputs(machine, event_ids, event_count, NULL);
+}
+
+int {{ machine_class_name(model) }}_cycle_with_inputs(
+    {{ machine_class_name(model) }} *machine,
+    const {{ machine_class_name(model) }}EventId *event_ids,
+    size_t event_count,
+    const {{ machine_class_name(model) }}Inputs *inputs)
+{
+    _{{ machine_class_name(model) }}EventSet event_set;
+    {{ machine_class_name(model) }}Inputs sampled;
+    int success;
+    if (machine == NULL) {
+        return {{ machine_macro_name(model) }}_FAILURE;
+    }
+    machine->last_cycle_was_delta = 0;
+    if (!machine->initialized) {
+        _{{ machine_class_name(model) }}_set_error(machine, "Machine is not initialized; call {{ machine_class_name(model) }}_init(...) or {{ machine_class_name(model) }}_hot_start(...) before cycle().");
+        return {{ machine_macro_name(model) }}_FAILURE;
+    }
+
+    _{{ machine_class_name(model) }}_clear_error(machine);
+    if (machine->ended) {
+        return {{ machine_macro_name(model) }}_SUCCESS;
+    }
+
+    if (_{{ machine_class_name(model) }}_normalize_events(machine, event_ids, event_count, &event_set) != {{ machine_macro_name(model) }}_SUCCESS) {
+        return {{ machine_macro_name(model) }}_FAILURE;
+    }
+
+
+    memset(&sampled, 0, sizeof(sampled));
+    if (inputs != NULL) {
+        sampled = *inputs;
+    } else {
+{% for item in model.dynamic_inputs.values() %}        if (machine->_input_provider.read_{{ item.name | readonly_value_identifier }} == NULL) {
+            _{{ machine_class_name(model) }}_set_error(machine, "Missing input provider for {{ item.name }}");
+            return {{ machine_macro_name(model) }}_FAILURE;
+        }
+        if (machine->_input_provider.read_{{ item.name | readonly_value_identifier }}(machine->_input_user_data, &sampled.{{ item.name | readonly_value_identifier }}) != {{ machine_macro_name(model) }}_SUCCESS) {
+            _{{ machine_class_name(model) }}_set_error(machine, "Input provider failed for {{ item.name }}");
+            return {{ machine_macro_name(model) }}_FAILURE;
+        }
+{% endfor %}    }
+{% for item in model.dynamic_inputs.values() if item.type == 'float' %}    if (!(sampled.{{ item.name | readonly_value_identifier }} >= -DBL_MAX && sampled.{{ item.name | readonly_value_identifier }} <= DBL_MAX)) {
+        _{{ machine_class_name(model) }}_set_error(machine, "Input {{ item.name }} must be finite");
+        return {{ machine_macro_name(model) }}_FAILURE;
+    }
+{% endfor %}    machine->_active_inputs = &sampled;
+    success = _{{ machine_class_name(model) }}_cycle_frozen(machine, &event_set);
+    machine->_active_inputs = NULL;
+    if (success == {{ machine_macro_name(model) }}_SUCCESS) {
+        machine->_last_inputs = sampled;
+        machine->_has_last_inputs = 1;
+    }
+    return success;
 }
 
 const {{ machine_class_name(model) }}Vars *{{ machine_class_name(model) }}_vars(

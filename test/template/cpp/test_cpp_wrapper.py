@@ -297,8 +297,8 @@ def _delta_harness_source():
 
 
 def _extract_cpp_code_block(markdown, heading):
-    pattern = r"## {heading}\n\n```cpp\n(.*?)\n```".format(heading=re.escape(heading))
-    match = re.search(pattern, markdown, re.S)
+    section = markdown.split("## " + heading + "\n", 1)[1].split("\n## ", 1)[0]
+    match = re.search(r"```cpp\n(.*?)\n```", section, re.S)
     assert match is not None, "Cannot find C++ code block under {!r}.".format(heading)
     return match.group(1)
 
@@ -362,7 +362,7 @@ class TestCppWrapperTemplate:
     def test_wrapper_generated_english_readme_quick_start_runs(self):
         with render_cpp_artifacts(_README_MULTI_EVENT_DSL) as artifacts:
             readme = _read(artifacts["readme_file"])
-            source = _extract_cpp_code_block(readme, "C++ Wrapper Quick Start")
+            source = _extract_cpp_code_block(readme, "Quick Start")
             result = compile_and_run_cpp_wrapper_harness(
                 artifacts,
                 "cpp_readme_quick_start_en",
@@ -373,7 +373,7 @@ class TestCppWrapperTemplate:
     def test_wrapper_generated_chinese_readme_quick_start_runs(self):
         with render_cpp_artifacts(_README_MULTI_EVENT_DSL) as artifacts:
             readme = _read(artifacts["readme_zh_file"])
-            source = _extract_cpp_code_block(readme, "C++ Wrapper 快速开始")
+            source = _extract_cpp_code_block(readme, "快速开始")
             result = compile_and_run_cpp_wrapper_harness(
                 artifacts,
                 "cpp_readme_quick_start_zh",
@@ -384,7 +384,7 @@ class TestCppWrapperTemplate:
     def test_wrapper_generated_english_readme_gcc_direct_commands_run(self):
         with render_cpp_artifacts(_README_MULTI_EVENT_DSL) as artifacts:
             readme = _read(artifacts["readme_file"])
-            source = _extract_cpp_code_block(readme, "C++ Wrapper Quick Start")
+            source = _extract_cpp_code_block(readme, "Quick Start")
             commands = _extract_named_bash_block(
                 readme,
                 "Compile the C core as C99",
@@ -400,7 +400,7 @@ class TestCppWrapperTemplate:
     def test_wrapper_generated_chinese_readme_gcc_direct_commands_run(self):
         with render_cpp_artifacts(_README_MULTI_EVENT_DSL) as artifacts:
             readme = _read(artifacts["readme_zh_file"])
-            source = _extract_cpp_code_block(readme, "C++ Wrapper 快速开始")
+            source = _extract_cpp_code_block(readme, "快速开始")
             commands = _extract_named_bash_block(
                 readme,
                 "先把 C core 按 C99 编译",
@@ -416,7 +416,7 @@ class TestCppWrapperTemplate:
     def test_wrapper_generated_english_readme_clang_direct_commands_run(self):
         with render_cpp_artifacts(_README_MULTI_EVENT_DSL) as artifacts:
             readme = _read(artifacts["readme_file"])
-            source = _extract_cpp_code_block(readme, "C++ Wrapper Quick Start")
+            source = _extract_cpp_code_block(readme, "Quick Start")
             commands = _extract_named_bash_block(
                 readme,
                 "The equivalent Clang / Clang++ form is:",
@@ -432,7 +432,7 @@ class TestCppWrapperTemplate:
     def test_wrapper_generated_chinese_readme_clang_direct_commands_run(self):
         with render_cpp_artifacts(_README_MULTI_EVENT_DSL) as artifacts:
             readme = _read(artifacts["readme_zh_file"])
-            source = _extract_cpp_code_block(readme, "C++ Wrapper 快速开始")
+            source = _extract_cpp_code_block(readme, "快速开始")
             commands = _extract_named_bash_block(
                 readme,
                 "等价的 Clang / Clang++ 写法是：",

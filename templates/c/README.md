@@ -1,27 +1,8 @@
-# c template maintainer handbook
+# c template maintainer guide
 
-`c` is the built-in native C runtime template. It emits a self-contained C99
-state-machine runtime with a public header designed for C users and C++98
-integration paths.
+This guide is for changing the `c` template. Downstream integration belongs in `README.md.j2` / `README_zh.md.j2`; the root [template handbook](../README.md) owns renderer, metadata and packaging contracts. Read the source map, preserve the behavior below, then select the checks for your change.
 
-This file is the maintainer-facing handbook for `templates/c/`. It is ignored
-by the renderer and is not copied to generated output. Generated-output user
-guides come from `README.md.j2` / `README_zh.md.j2`.
-
-## Target and non-targets
-
-Use this template when generated runtime performance, predictable C integration,
-and a small public C API are the primary requirements.
-
-The generated implementation should be treated as black-box runtime code. Users
-who need different behavior should edit the FCSTM DSL and regenerate. Manual
-long-term maintenance should concentrate on `machine.h`, generated README files,
-and template source review, not on hand-editing generated `machine.c`.
-
-This template is not a dependency bridge to `pyfcstm`. Generated C output must
-run without the Python package or any third-party runtime library.
-
-## Source layout and generated output
+## Source map and change ownership
 
 | Template source | Maintainer role | Generated output |
 | --- | --- | --- |
@@ -33,241 +14,99 @@ run without the Python package or any third-party runtime library.
 | `template.json` | Built-in template metadata | Not copied |
 | `README.md` / `README_zh.md` | Template maintainer handbooks | Not copied by the renderer, but included in packaged template archives |
 
-`config.yaml` ignores `README.md`, `README_zh.md`, and `template.json` for
-rendered output. `make tpl` still packages the full template source directory,
-so changes to this handbook must be validated with a refreshed local
-`pyfcstm/template/c.zip`. The archive is ignored by git in normal checkouts;
-setup and packaging commands recreate it from source.
+Generation-time helpers run inside pyfcstm; generated programs must remain self-contained. `config.yaml` excludes these maintainer guides and `template.json` from generated output. `make tpl` still includes them in the packaged source archive, so refresh packaging after any template edit.
 
-## Compatibility and runtime dependency boundary
+| Change | Edit and synchronize |
+| --- | --- |
+| Generated guide | Both README Jinja files, rendered examples and executable documentation tests |
+| Role API or lifecycle behavior | Runtime source, generated guide/API tables, role tests and semantic alignment |
+| Expression/getter emission | `../../pyfcstm/render/c_runtime.py`, explicit imports in `config.yaml`, C and poll runtimes, both wrappers |
+| Input/parameter identifiers | `readonly_value_identifier`; declarations, getters, providers, README examples and ABI tests |
+| Shared native behavior | Update `c` and `c_poll` consistently; changes also affect the `cpp` and `cpp_poll` wrappers |
 
-Generated C output should keep these defaults:
+## Runtime contracts
 
-- C99 implementation path.
-- C++98-compatible integration path for the generated public header and
-  representative harnesses.
-- Standard-library-only runtime dependencies; the generated runtime is standard-library-only by default.
-- No dependency on `pyfcstm`, Python, generated-time helpers, or third-party C
-  libraries.
-- Broad compiler and platform compatibility, including older Windows-oriented
-  C environments where practical.
+The four variable roles are part of the runtime contract, including their observable lifetime and failure behavior:
 
-Generated code may use long-lived C standard headers such as `<stddef.h>`,
-`<math.h>`, `<stdarg.h>`, `<stdio.h>`, `<stdlib.h>`, and `<string.h>` when the
-runtime requires them.
+| Role | Required behavior |
+| --- | --- |
+| `input` | Acquire every declared input once per active cycle, including unused inputs; freeze across validation/execution; no implicit hold; explicit snapshots bypass acquisition |
+| `param` | Copy and validate at construction; omitted cold values use DSL defaults; complete same-checkpoint parameters required for hot start; no cycle override |
+| `control` | Persistent writable model state; optional cold preset; complete hot snapshot; hold when unwritten |
+| `output` | Same persistent commit/rollback behavior as control; application observes after success; no generated actuator setter |
 
-## Resource lifetime and leak policy
+Sampling or execution failure preserves committed variables and `last_inputs`. Successful Delta cycles hold persistent state but publish the new input snapshot. Construction and ended cycles do not acquire inputs. Action hooks run only during execution, observe read-only context and cannot mutate model state; external side effects cannot be rolled back.
 
-Generated C runtimes may be embedded in long-running control systems, so memory and resource ownership are runtime correctness concerns, not optional polish. The generated API should keep ownership simple: `..._create()` owns allocation, `..._destroy()` releases it, `..._init()` and `..._hot_start()` reset runtime state without leaking, and hook registration stores caller-owned pointers without taking ownership. Runtime changes must preserve this contract.
+Shared fixtures use top-level `parameters`, `initial.vars` / `initial.outputs`, per-step `inputs` and partial `expect.vars` / `expect.outputs`. Do not add parameter/input expectations or step-level parameter overrides. Tests must execute the generated runtime and compare values, lifecycle observations and failures with the simulator.
 
-When `machine.c.j2` or allocation-related parts of `machine.h.j2` change, run at least one representative generated harness under AddressSanitizer / LeakSanitizer, valgrind, or an equivalent platform tool when available. The harness should cover create/destroy, cold start, hot start, normal cycles, eventful cycles, hook installation, and error/rollback paths that are relevant to the change. If a leak is discovered and clearly predates the current change, record the reproduction and scope it for a dedicated fix instead of hiding it.
+`InputProvider` is copied, while its `user_data`, `Hooks` and its data are borrowed. `last_inputs` and `vars` expose instance storage; context pointers are callback-scoped. Cold initialization clears registrations; hot start preserves them. Keep C99, the signed 64-bit `Int` ABI, standard-library-only dependencies, caller-owned objects and `PYFCSTM_GENERATED_NO_HEAP` working. Guard floating-to-integer casts before conversion. Keep instances non-reentrant and resource ownership explicit.
 
-## Deployment-profile maintenance discipline
+## Documentation maintenance
 
-The `c` template has three deployment profiles that must be maintained
-together:
+Maintain the user journey as a whole. There must be one complete Quick Start, followed by extensions of the same instance, recovery, API reference and advanced integration. A new API belongs in its existing tutorial section and reference table; replace obsolete examples and remove duplicate explanations in the same edit. Do not append a second quick start, final “complete example” or corrective note to compensate for a broken earlier section.
 
-| Profile | Public shape | Required checks |
-| --- | --- | --- |
-| Default hosted C99 | `..._create()`, `..._create_uninitialized()`, and `..._destroy()` are available. | Existing create/destroy, hot-start, hook, and shared semantic-alignment tests keep passing. |
-| Caller-owned object | Callers allocate `Machine` storage and use `..._init(&machine)` / `..._hot_start(...)`. | Native CMake harnesses cover stack storage, static storage, hook installation, eventful cycles, hot start, and failure paths without heap helpers. |
-| No-heap profile | `PYFCSTM_GENERATED_NO_HEAP` removes heap API declarations/definitions and the `<stdlib.h>` include that only served `calloc/free`. | Header preprocessing or generated-file checks prove heap API declarations disappear; link or symbol checks prove `calloc/free` are not referenced. |
+Every standalone example must include required input/action/event setup, initialization and error handling. Fragments must name their prerequisite example and insertion point and must not silently recreate the instance. A successful executable exit alone is insufficient: assert sampling, action invocation and committed outputs.
 
-`PYFCSTM_GENERATED_NO_HEAP` is a symbol-presence contract. Template code should
-use `#if defined(PYFCSTM_GENERATED_NO_HEAP)` or equivalent `#ifdef` checks, not
-`#if PYFCSTM_GENERATED_NO_HEAP`. The documented consumer spelling is
-`-DPYFCSTM_GENERATED_NO_HEAP`; if an external build spells it as
-`-DPYFCSTM_GENERATED_NO_HEAP=1`, it must still select the same no-heap profile.
+Keep each prose paragraph on one physical line, in both source README files and rendered Markdown. Keep necessary line breaks in code, tables, lists and Jinja control structure. English and Chinese guides must have matching section order and equivalent code examples. Use natural Chinese for prose and preserve literal API names. Review the rendered output, not just the Jinja diff.
 
-Keep the three sides of that contract synchronized:
+Generated guides contain integration instructions, not repository CI troubleshooting or packaging rules. Put shared mechanisms in the root handbook and concrete template decisions here. Preserve runtime limits and compatibility guidance; avoid repeating the same warning in multiple sections. Text/structure checks belong in maintenance tooling; runnable generated examples belong in pytest.
 
-- `machine.h.j2`: public heap declarations are removed in the no-heap profile;
-- `machine.c.j2`: heap implementations and the `<stdlib.h>` include are removed
-  in the no-heap profile;
-- generated README examples: CMake consumers propagate the macro with
-  `PUBLIC` / `INTERFACE`, or every final target that includes `machine.h` sees
-  the same definition.
+## Verification workflow
 
-Native template tests must continue to use CMake as the build driver. User
-README files may show gcc / clang style one-command examples, but pytest should
-not grow a parallel handwritten host-compiler orchestration layer.
+Native ownership, no-heap and toolchain evidence rules are maintained in the root [native template verification](../README.md#native-template-verification) section. Apply them with the template-specific checks below.
 
+Run commands from the repository root. `make template_unittest` refreshes packaged templates and clears inherited slow-test skips for explicitly selected suites. Direct pytest requires a prior `make tpl`. Do not use the lightweight default suite as evidence for native template completion.
 
-### Native toolchain matrix discipline
+```bash
+make tpl
+PYFCSTM_TEMPLATE_SUITES=c,cpp make template_unittest
+make test_boundary_check resource_ownership_check
+make rst_auto
+```
 
-The native toolchain pytest matrix is the cross-implementation evidence gate for
-`c` generated artifacts. It uses the same shared semantic fixtures as the
-simulator and template-alignment tests, then swaps the backend to concrete
-compiler profiles. Keep profile names descriptive of the toolchain behavior,
-such as `linux-gcc-o2`, `linux-aarch64-gcc-o2`, `arm-none-eabi-gcc-o2`, or
-`linux-cppcheck`; do not put roadmap slice names into code identifiers, test
-ids, pydoc, or runtime messages.
+For guide-only changes, execute the generated examples and relevant formatter/build tests. For runtime changes, run the full selected suites and applicable shared fixtures; changes to shared C rendering require both C cores and both wrappers. For native numeric, ABI or ownership changes, run relevant native-toolchain/sanitizer profiles as well:
 
-The public matrix has three levels:
+```bash
+PYFCSTM_RUN_NATIVE_TOOLCHAIN=1 PYFCSTM_TEMPLATE_SUITES=c make template_unittest TEMPLATE_UNITTEST_ARGS="--run-native-toolchain"
+```
 
-| Level | Examples | Meaning |
-| --- | --- | --- |
-| Runnable hosted / emulated profiles | Linux GCC/Clang optimization profiles, Linux 32-bit, AArch64+QEMU, macOS AppleClang, Windows MinGW/MSVC/clang-cl, sanitizer profiles | Compile, run the standalone harness for every shared semantic fixture, and compare public observations. |
-| Compile-only profiles | ARM bare-metal GCC and future licensed self-hosted toolchains | Compile each generated `machine.c`, `harness.c`, and a C++ header probe to non-empty object files; do not pretend this is runtime evidence. |
-| Analyze-only profiles | `cppcheck`, `clang-tidy` | Scan each generated runtime plus harness and keep report-only artifacts; tool crashes, parse failures, and missing reports are failures. |
+Use models with all four roles and actions/events together, input-free and parameter-free models, multiple inputs, unused inputs, scoped names and failure/retry paths. Confirm both language versions render, their anchors and code blocks remain valid, and examples work without editing generated machine files. Review package contents, public API differences and test results before publishing.
 
-When extending the matrix, update the profile registry, workflow trigger list,
-artifact expectations, and this handbook together. Public GitHub-hosted profiles
-must fail on missing tools rather than silently skipping. Licensed or vendor
-profiles must remain manual/self-hosted and must not block public CI unless a
-runner is explicitly configured.
+## Implementation references
 
-### Deployment safety wording discipline
+### Numeric metadata discipline
 
-The C-family deployment work is an engineering baseline for generated control
-state-machine code, not a certification package. Maintainer and generated
-READMEs may say that the template supports C99, C++98-compatible integration,
-caller-owned objects, the no-heap profile, shared semantic alignment, and native
-toolchain matrix evidence. They must not say or imply that generated output is
-MISRA, AUTOSAR, DO-178C, IEC 61508, ISO 26262, or other safety-standard ready.
+Generation-time enumerable runtime metadata should use collision-resistant generated macros and numeric ids in the public hot-path ABI. This applies to states, events, abstract actions, named `ref` actions, lifecycle stages, current-state ids, active-leaf ids, and future finite metadata domains with the same shape.
 
-Keep downstream responsibility explicit. Board support packages, linker
-scripts, interrupt policy, scheduler integration, static-analysis waiver
-handling, coding-rule sign-off, and certification evidence belong to the
-consumer project. Template documentation should help that project find the
-right integration checkpoints without pretending to complete those downstream
-processes.
-
-Numeric-risk wording is target-specific. The inspect diagnostics are about the
-default C/C++ deployment profile; they should not be described as
-target-independent FCSTM model errors or Python-template risks. Future BitVec,
-BMC, fixed-point, numeric-profile, checked-arithmetic, or generated failure
-channel work belongs to the verify and codegen design lines, not to README-only
-template patches.
-
-## Public integration surface
-
-`machine.h` is the public integration surface and should stay small, clear, and
-stable. It owns:
-
-- the generated machine struct type;
-- persistent variable struct definitions;
-- public state-id and event-id macros;
-- integer event submission through `..._cycle(machine, event_ids, event_count)`;
-- hot start through generated state ids and a complete variable snapshot;
-- abstract hook callback signatures and hook table;
-- current-state, variable, ended-state, last-error, and embedded-model accessors.
-
-`machine.c` is the generated implementation. Downstream integrators should treat
-its internal metadata, helper functions, stack frames, validation state, and
-scratch storage as private implementation details.
-
-## Performance and implementation strategy
-
-Runtime performance and FCSTM semantic correctness are the first priorities for
-`machine.c`. Human readability is secondary for generated implementation code.
-Keep comments and structure sufficient for diagnostics and review, but do not
-turn the generated implementation into a hand-maintained interpreter when a
-specialized generated path is faster and semantically equivalent.
-
-The current stable design includes:
-
-- id-only public event input instead of runtime string event lookup;
-- public event-id and state-id macros in `machine.h`;
-- a hybrid event-set backend that keeps small and dense event spaces fast while
-  avoiding a fixed small event-count ceiling;
-- state-specialized dispatch for transition selection and lifecycle execution;
-- direct expansion of concrete action blocks in generated code;
-- abstract hooks as the remaining user-defined indirect extension points;
-- speculative validation and rollback with reduced copying where possible;
-- C/C++ keyword-safe generated identifiers;
-- a public 64-bit integer alias strategy that avoids exposing raw `long long`
-  as the only ABI spelling.
-
-These are stable design facts, not a temporary development plan. Avoid
-reintroducing temporary milestone lists or milestone headings as the main
-README structure.
-
-## Numeric metadata discipline
-
-Generation-time enumerable runtime metadata should use collision-resistant
-generated macros and numeric ids in the public hot-path ABI. This applies to
-states, events, abstract actions, named `ref` actions, lifecycle stages,
-current-state ids, active-leaf ids, and future finite metadata domains with the
-same shape.
-
-Do not keep `const char *` fields in `ExecutionContext`, event submission, or
-other hot-path contracts merely for readability. Do not reintroduce `strcmp()`
-into runtime selection or hook-context checks when the compared domain is known
-while rendering the template. The readable integration surface is the generated
-macro set in `machine.h`, for example `..._STATE_*`, `..._EVENT_*`,
-`..._ACTION_*`, and `..._STAGE_*`.
+Do not keep `const char *` fields in `ExecutionContext`, event submission, or other hot-path contracts merely for readability. Do not reintroduce `strcmp()` into runtime selection or hook-context checks when the compared domain is known while rendering the template. The readable integration surface is the generated macro set in `machine.h`, for example `..._STATE_*`, `..._EVENT_*`, `..._ACTION_*`, and `..._STAGE_*`.
 
 Strings remain acceptable only for cold or diagnostic surfaces:
 
 - `last_error` and other crash-loudly diagnostic messages;
 - `..._dsl_source()` and generated comments / README text;
-- optional diagnostic helpers such as `..._current_state_path()` and
-  `..._current_state_name()`;
-- Python test adapters that map generated ids back to shared fixture schema
-  strings;
-- genuinely non-enumerable output where no stable finite id domain exists at
-  generation time.
+- optional diagnostic helpers such as `..._current_state_path()` and `..._current_state_name()`;
+- Python test adapters that map generated ids back to shared fixture schema strings;
+- genuinely non-enumerable output where no stable finite id domain exists at generation time.
 
-When adding a new context field or public metadata value, first ask whether the
-domain is completely known while rendering the template. If it is, generate a
-macro-backed integer id and keep any string mapping outside the generated
-runtime hot path.
+When adding a new context field or public metadata value, first ask whether the domain is completely known while rendering the template. If it is, generate a macro-backed integer id and keep any string mapping outside the generated runtime hot path.
 
-Generated public identifiers for finite domains must preserve path boundaries
-instead of flattening dotted paths with plain underscore joins. Legal DSL paths
-such as `Root.A.B` and `Root.A_B` must never produce the same public state,
-event, action, hook, or event-check identifier. Use the template's
-collision-resistant path-identifier helpers for canonical public macros and
-callback-table fields. Short aliases may exist only when the alias is provably
-unique within that generated domain **and** does not collide with any reserved
-public macro such as `..._STATE_COUNT`, `..._EVENT_COUNT`,
-`..._ACTION_COUNT`, invalid-id sentinels, stage macros, or canonical ids from
-that domain. When in doubt, omit the alias and keep only the canonical
-path-boundary-safe macro. Canonical finite-domain public macros are deliberately
-case-preserving and lossless for significant underscores. Do not uppercase,
-lowercase, collapse repeated underscores, or strip trailing underscores from
-canonical state/event/action/hook/event-check identifiers. Uppercase or flattened
-compatibility aliases may be emitted only as optional conveniences after the full
-generated domain proves that the alias is unique and does not collide with a
-reserved or canonical public macro. Canonical public identifiers must also stay
-outside C/C++ reserved identifier forms, including double underscores or names
-that begin with an underscore followed by an uppercase letter.
+Generated public identifiers for finite domains must preserve path boundaries instead of flattening dotted paths with plain underscore joins. Legal DSL paths such as `Root.A.B` and `Root.A_B` must never produce the same public state, event, action, hook, or event-check identifier. Use the template's collision-resistant path-identifier helpers for canonical public macros and callback-table fields. Short aliases may exist only when the alias is provably unique within that generated domain **and** does not collide with any reserved public macro such as `..._STATE_COUNT`, `..._EVENT_COUNT`, `..._ACTION_COUNT`, invalid-id sentinels, stage macros, or canonical ids from that domain. When in doubt, omit the alias and keep only the canonical path-boundary-safe macro. Canonical finite-domain public macros are deliberately case-preserving and lossless for significant underscores. Do not uppercase, lowercase, collapse repeated underscores, or strip trailing underscores from canonical state/event/action/hook/event-check identifiers. Uppercase or flattened compatibility aliases may be emitted only as optional conveniences after the full generated domain proves that the alias is unique and does not collide with a reserved or canonical public macro. Canonical public identifiers must also stay outside C/C++ reserved identifier forms, including double underscores or names that begin with an underscore followed by an uppercase letter.
 
-The same reserved-shape rule applies to the root-machine ABI prefix, symbol
-visibility macro prefix, hook/event-check initializer macros, and header guard.
-Do not derive those public names by simply uppercasing or underscore-joining the
-raw root state name. Use the public C identifier helpers so legal root names such
-as `_Root`, `class`, and `A__B` cannot generate public macros, typedefs, function
-prefixes, or include guards in C/C++ reserved namespaces.
+The same reserved-shape rule applies to the root-machine ABI prefix, symbol visibility macro prefix, hook/event-check initializer macros, and header guard. Do not derive those public names by simply uppercasing or underscore-joining the raw root state name. Use the public C identifier helpers so legal root names such as `_Root`, `class`, and `A__B` cannot generate public macros, typedefs, function prefixes, or include guards in C/C++ reserved namespaces.
 
-When maintaining this contract, treat the following checks as part of normal
-template review:
+When maintaining this contract, treat the following checks as part of normal template review:
 
-- Generate at least one model that combines nested states, events, abstract
-  actions, named `ref` actions, lifecycle stages, and similar-looking paths such
-  as `Root.A.B` / `Root.A_B` before changing public metadata or identifier
-  helpers.
-- Inspect the generated public ABI and hot path. Any generation-time enumerable
-  value that appears as `const char *`, requires `strcmp()`, or needs per-cycle
-  string allocation / formatting is a design regression unless it is explicitly
-  confined to a cold diagnostic surface.
-- Keep test adapters one-way: Python fixtures may map numeric ids back to schema
-  strings for assertions, but that compatibility layer must not require the
-  generated C ABI to carry strings in hooks, event submission, or current-state
-  checks.
-- Update `c` and `c_poll` together for shared C-family metadata rules. A
-  difference is acceptable only when it follows directly from the different
-  event-input model and is documented in both template handbooks.
-- Re-run representative native gates without relying on slow-test skipping
-  before claiming metadata, identifier, or hook-context changes are complete.
+- Generate at least one model that combines nested states, events, abstract actions, named `ref` actions, lifecycle stages, and similar-looking paths such as `Root.A.B` / `Root.A_B` before changing public metadata or identifier helpers.
+- Inspect the generated public ABI and hot path. Any generation-time enumerable value that appears as `const char *`, requires `strcmp()`, or needs per-cycle string allocation / formatting is a design regression unless it is explicitly confined to a cold diagnostic surface.
+- Keep test adapters one-way: Python fixtures may map numeric ids back to schema strings for assertions, but that compatibility layer must not require the generated C ABI to carry strings in hooks, event submission, or current-state checks.
+- Update `c` and `c_poll` together for shared C-family metadata rules. A difference is acceptable only when it follows directly from the different event-input model and is documented in both template handbooks.
+- Re-run representative native gates without relying on slow-test skipping before claiming metadata, identifier, or hook-context changes are complete.
 
-## Performance evidence
 
-A historical benchmark compared the current specialized C runtime design against
-the older string-submission runtime on a moderately complex elevator-control
-model with nested composites, initial transitions, sibling transitions,
-exit-to-parent paths, and validation rollback.
+
+### Performance evidence
+
+A historical benchmark compared the current specialized C runtime design against the older string-submission runtime on a moderately complex elevator-control model with nested composites, initial transitions, sibling transitions, exit-to-parent paths, and validation rollback.
 
 The benchmark used `cc -O3 -DNDEBUG -std=c99` and measured two workloads:
 
@@ -276,101 +115,6 @@ The benchmark used `cc -O3 -DNDEBUG -std=c99` and measured two workloads:
 | `mixed` | 4,000,000 | Mean speedup was about `6.42x`; median speedup was about `7.25x`. |
 | `validation_heavy` | 8,000,000 | Mean speedup was about `9.59x`; median speedup was about `9.75x`. |
 
-The result supports the current design direction: id-only event input,
-specialized state dispatch, and reduced-copy validation / rollback materially
-improve the hot paths that dominate generated C runtime cost.
+The result supports the current design direction: id-only event input, specialized state dispatch, and reduced-copy validation / rollback materially improve the hot paths that dominate generated C runtime cost.
 
-Benchmark records are evidence for maintenance decisions, not a substitute for
-semantic regression tests. Do not loosen correctness, rollback, or hook behavior
-in pursuit of microbenchmarks.
-
-## Semantics and alignment expectations
-
-The C template must preserve the FCSTM runtime contract for:
-
-- cold start and hot start;
-- composite initial transition ordering;
-- lifecycle enter, during, exit, and aspect actions;
-- event scoping, event identity, and transition priority;
-- guard/effect evaluation and speculative rollback;
-- abstract hook invocation timing and read-only execution context.
-
-The C runtime tests and alignment tests are the behavioral authority. Template
-README edits do not change these tests, but runtime template changes must keep
-them passing.
-
-## Maintenance workflow
-
-Use the smallest verification set that matches the change:
-
-1. For maintainer README-only edits, review English/Chinese section parity and
-   confirm no generated user guide or source template changed.
-2. Run `make rst_auto` before committing repository changes. This README should
-   not normally produce generated RST changes.
-3. Run `make tpl` after changing any file under `templates/c/`, including this
-   README, because packaged built-in template archives include the template
-   source directory.
-4. Inspect packaged asset changes. README-only edits should refresh the local generated
-   `pyfcstm/template/c.zip` archive; because zip archives are ignored by git in
-   normal checkouts, the tracked `pyfcstm/template/index.json` should normally
-   stay content-equivalent.
-5. For runtime template changes, generate representative machines and run C99
-   build checks, C++98 integration checks, formatter convergence checks,
-   sanitizer or equivalent leak checks where available, and simulator-alignment
-   tests.
-
-Useful commands:
-
-```bash
-make rst_auto
-make tpl
-pytest test/template/c -v
-SKIP_SLOW_TESTS=1 make unittest
-```
-
-For C runtime work, do not rely only on `SKIP_SLOW_TESTS=1`; the native C/C++
-toolchain tests are part of the real completion gate.
-
-## Language-specific verification
-
-Representative generated C artifacts should satisfy:
-
-```bash
-clang-format -i -style='{BasedOnStyle: LLVM, IndentWidth: 4}' path/to/machine.h
-clang-format -i -style='{BasedOnStyle: LLVM, IndentWidth: 4}' path/to/machine.c
-cmake -S path/to/harness -B path/to/build
-cmake --build path/to/build
-```
-
-Formatter convergence is a pragmatic quality gate, not an absolute style
-objective. It should catch obvious generated-code roughness and keep artifacts
-professional enough for integration. Do not spend maintenance effort contorting
-generated C for rare formatter-only edge cases when semantics, performance, or
-compatibility would be harmed; document any known formatter-only exception
-narrowly with the reason.
-
-## Relationship to `c_poll`
-
-`c` and `c_poll` share the C-family compatibility and self-contained runtime
-policy, but their event input models are different:
-
-- `c` accepts explicit generated event ids per cycle through the public cycle
-  API.
-- `c_poll` asks installed event-check callbacks whether each generated event is
-  active during the current cycle.
-
-Do not move essential `c` maintenance requirements into `c_poll` by link only.
-Each template README must stay self-contained.
-
-## Documentation layering
-
-Keep documentation layers separate:
-
-- this file explains how to maintain the `c` template;
-- `README.md.j2` / `README_zh.md.j2` explain how to use one generated C output
-  directory;
-- root `templates/README.md` / `README_zh.md` explain repository-wide template
-  system rules.
-
-Generated READMEs should help a downstream user build and run the generated C
-machine without understanding template packaging internals.
+Benchmark records are evidence for maintenance decisions, not a substitute for semantic regression tests. Do not loosen correctness, rollback, or hook behavior in pursuit of microbenchmarks.

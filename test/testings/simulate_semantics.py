@@ -1040,6 +1040,8 @@ class _GeneratedPythonAlignmentRuntime:
         self._simulation_runtime = simulation_runtime
         self._generated_runtime = generated_runtime
         self._dsl_code = dsl_code
+        if hasattr(simulation_runtime, "_fixture_input_source"):
+            self._fixture_input_source = simulation_runtime._fixture_input_source
 
     @property
     def state_machine(self):
@@ -1185,7 +1187,12 @@ class _GeneratedPythonAlignmentRuntime:
             # alignment compares its class name with the generated runtime.
             sim_exc = err
         try:
-            self._generated_runtime.cycle(events)
+            if hasattr(self, "_fixture_input_source"):
+                self._generated_runtime.cycle(
+                    events, inputs=self._fixture_input_source.snapshot
+                )
+            else:
+                self._generated_runtime.cycle(events)
         except Exception as err:
             # Generated runtime has its own local exception classes, so class-name
             # comparison is the stable cross-runtime contract.
@@ -1298,7 +1305,10 @@ def _build_generated_runtime(
                 machine_cls = type(
                     "%sFixtureHandlers" % machine_cls.__name__, (machine_cls,), attrs
                 )
-            return machine_cls(**_initial_kwargs(case))
+            kwargs = _initial_kwargs(case)
+            if "parameters" in case.data:
+                kwargs["parameters"] = case.data["parameters"]
+            return machine_cls(**kwargs)
 
 
 class _FixtureInputSource:

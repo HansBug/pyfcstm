@@ -5,14 +5,14 @@ expr_styles:
     UFunc(sign): "self._sign({{ node.expr | expr_render }})"
   python_scope_expr:
     base_lang: python
-    Name: "scope[{{ node.name | tojson }}]"
+    Name: "{% if _stmt_default_var_roles[node.name] == 'input_dynamic' %}self.get_input_{{ node.name }}(){% elif _stmt_default_var_roles[node.name] == 'input_static' %}self.get_param_{{ node.name }}(){% else %}scope[{{ node.name | tojson }}]{% endif %}"
     UFunc(sign): "self._sign({{ node.expr | expr_render }})"
 
 stmt_styles:
   python_runtime:
     base_lang: python
     expr_lang: python
-    state_var_target: "_v[{{ name | tojson }}]"
+    state_var_target: "{% if _stmt_default_var_roles[name] == 'input_dynamic' %}self.get_input_{{ name }}(){% elif _stmt_default_var_roles[name] == 'input_static' %}self.get_param_{{ name }}(){% else %}_v[{{ name | tojson }}]{% endif %}"
     temp_var_target: "{{ name }}"
     expr_templates:
       UFunc(sign): "_s({{ node.expr | expr_render }})"

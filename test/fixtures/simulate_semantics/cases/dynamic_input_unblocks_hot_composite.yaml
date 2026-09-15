@@ -6,8 +6,6 @@ categories:
 - runtime
 - variable_roles
 - dynamic_inputs
-exclude_runners:
-- generated_python_alignment
 parameters:
   gain: 4
 initial:

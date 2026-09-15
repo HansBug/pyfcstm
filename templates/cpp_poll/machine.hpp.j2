@@ -29,15 +29,29 @@ public:
     typedef {{ machine_class_name(model) }}ExecutionContext ExecutionContext;
     typedef {{ machine_class_name(model) }}EventContext EventContext;
 
+    typedef {{ machine_class_name(model) }}Parameters Parameters;
+    typedef {{ machine_class_name(model) }}Inputs Inputs;
+    typedef {{ machine_class_name(model) }}InitOptions InitOptions;
+    typedef {{ machine_class_name(model) }}InputProvider InputProvider;
+
     MachineWrapper();
+    explicit MachineWrapper(const InitOptions &options);
 
     int init();
+    int init(const InitOptions &options);
+    int hot_start(StateId state_id, const Vars &initial_vars, const Parameters &parameters);
+    void set_input_provider(const InputProvider *provider, void *user_data);
+    const Inputs *last_inputs() const;
+{% for prefix, declarations in [('param', model.static_inputs), ('input', model.dynamic_inputs)] %}
+{% for item in declarations.values() %}    {% if item.type == 'int' %}Int{% else %}double{% endif %} get_{{ prefix }}_{{ item.name | readonly_value_identifier }}() const;
+{% endfor %}{% endfor %}
     int hot_start(StateId state_id, const Vars &initial_vars);
     int hot_start(StateId state_id, const Vars *initial_vars);
     void set_hooks(const Hooks *hooks, void *user_data);
     void set_event_checks(const EventChecks *event_checks, void *user_data);
 
     int cycle();
+    int cycle_with_inputs(const Inputs &inputs);
 
     const Vars *vars() const;
     int is_ended() const;

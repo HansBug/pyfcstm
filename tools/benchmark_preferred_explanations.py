@@ -89,7 +89,7 @@ def sample(root, arm, surface, query, directory, observe=False):
         raise RuntimeError("exit %s: %s %s" % (completed.returncode, completed.stderr, completed.stdout))
     report = json.loads(completed.stdout)
     result = report['result']
-    expected = 'property_satisfied' if query == CASES['feasible'] else 'scenario_infeasible'
+    expected = 'witness_found' if query == CASES['feasible'] else 'scenario_infeasible'
     if result['outcome'] != expected:
         raise AssertionError('Unexpected benchmark outcome: %r' % result['outcome'])
     explanation = result['feasibility']['explanation']

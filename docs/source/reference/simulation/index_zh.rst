@@ -29,7 +29,7 @@
      - 否
      - 显示 Click 帮助并退出。
 
-解码、语法、语义建模失败会写到 stderr，形如 ``Failed to parse DSL file: ...``。批处理和交互命令失败通常返回用户可见信息，而不是让异常穿透 CLI 进程。
+解码、语法、语义建模失败会写到标准错误，形如 ``Failed to parse DSL file: ...``，并非零退出。批处理命令失败会停止执行并非零退出；交互命令失败打印提示后可继续输入。
 
 批处理和交互命令
 ----------------
@@ -174,7 +174,7 @@ Python 运行时应用程序接口
    * - ``SimulationRuntime(state_machine, abstract_error_mode='raise', history_size=None, initial_state=None, initial_vars=None)``
      - 创建运行时。默认启动模式可接受部分 ``initial_vars``；热启动要求提供每个声明过的持久变量。
        ``history_size=None``\ 表示历史不设上限，而 ``history_size=0``\ 表示不保留历史记录。
-   * - ``cycle(events=None, *, trace=False) -> CycleResult``
+   * - ``cycle(events=None, *, trace=False, inputs=None, diagnostics=False) -> CycleResult``
      - 执行一个周期，验证候选路径，提交或回滚，并记录历史。
    * - ``CycleResult.value``
      - 兼容旧行为的返回值；当前为 ``None``。
@@ -378,3 +378,8 @@ Delta、异常、中断、热启动，以及伪状态、强制转换和组合转
    :maxdepth: 1
 
    inputs_zh
+
+候选决策诊断
+--------------------------------
+
+排查迁移为何未执行，见 :doc:`diagnostics_zh`；其中包含 Python 采集、交互查询、逐拍输入和 JSONL 示例。

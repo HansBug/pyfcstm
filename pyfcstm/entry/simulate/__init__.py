@@ -4,12 +4,15 @@ CLI entry point for the interactive state machine simulator.
 This module provides the simulate subcommand for the pyfcstm CLI tool.
 """
 
-from pathlib import Path
+import json
+from functools import partial
 
 import click
 
 from .batch import BatchProcessor, create_cross_platform_output_func
 from .repl import SimulationREPL
+from .commands import CommandProcessor
+from .inputs import _CommandInput, _assignments
 
 
 def _add_simulate_subcommand(cli: click.Group) -> click.Group:
@@ -40,7 +43,13 @@ def _add_simulate_subcommand(cli: click.Group) -> click.Group:
         '--no-color', is_flag=True,
         help='Disable color output',
     )
-    def simulate(input_code_file: str, batch_commands: str, no_color: bool) -> None:
+    @click.option('--diagnostics', is_flag=True, help='Capture and display candidate decision evidence.')
+    @click.option('--diagnostics-format', type=click.Choice(['text', 'jsonl']), default='text',
+                  help='Diagnostic output; JSONL requires --diagnostics and batch --execute.')
+    @click.option('--param', 'parameter_assignments', multiple=True, metavar='NAME=VALUE',
+                  help='Set an immutable parameter at construction; repeat for multiple parameters.')
+    def simulate(input_code_file: str, batch_commands: str, no_color: bool,
+                 diagnostics: bool, diagnostics_format: str, parameter_assignments) -> None:
         """
         Run the interactive state machine simulator.
 
@@ -53,20 +62,25 @@ def _add_simulate_subcommand(cli: click.Group) -> click.Group:
         :type batch_commands: str
         :param no_color: Whether to disable color output
         :type no_color: bool
+        :param diagnostics: Capture candidate evidence for each cycle.
+        :type diagnostics: bool
+        :param diagnostics_format: Human ``text`` or batch-only ``jsonl``.
+        :type diagnostics_format: str
+        :param parameter_assignments: Repeated construction-time name=value pairs.
         """
         # Import here to avoid circular dependencies
-        from ...dsl import parse_with_grammar_entry
         from ...dsl.error import GrammarParseError
-        from ...model import parse_dsl_node_to_state_machine
+        from ...model import load_state_machine_from_file
         from ...simulate import SimulationRuntime, SimulationRuntimeInputSourceError
-        from ...utils import auto_decode
         from ...utils.validate import ModelValidationError
 
-        # Parse DSL file
+        if diagnostics_format == 'jsonl' and not batch_commands:
+            raise click.UsageError('JSONL diagnostics require batch --execute.')
+        if diagnostics_format == 'jsonl' and not diagnostics:
+            raise click.UsageError('JSONL output requires --diagnostics.')
+        # Use the existing file loader so imported models retain their origins.
         try:
-            code = auto_decode(Path(input_code_file).read_bytes())
-            ast_node = parse_with_grammar_entry(code, entry_name='state_machine_dsl')
-            model = parse_dsl_node_to_state_machine(ast_node, path=input_code_file)
+            model = load_state_machine_from_file(input_code_file)
         except (OSError, GrammarParseError, ModelValidationError, UnicodeDecodeError) as e:
             # OSError: input file missing / unreadable (Path.read_bytes).
             # GrammarParseError: DSL syntax issues from ANTLR.
@@ -74,26 +88,42 @@ def _add_simulate_subcommand(cli: click.Group) -> click.Group:
             # UnicodeDecodeError: auto_decode could not pick a working codec.
             # Programmer bugs (TypeError, AttributeError, KeyError, ...) and
             # unrelated runtime errors deliberately propagate.
-            click.echo(f"Failed to parse DSL file: {e}", err=True)
-            return
+            raise click.ClickException(f"Failed to parse DSL file: {e}") from e
 
         # Create runtime
+        input_source = _CommandInput(tuple(model.inputs))
         try:
-            runtime = SimulationRuntime(model)
-        except SimulationRuntimeInputSourceError as err:
-            # Construction rejects dynamic declarations without a bound source.
-            raise click.ClickException(
-                "{} Bind input_source using the SimulationRuntime Python API.".format(err)
-            ) from err
+            parameters = _assignments(parameter_assignments, CommandProcessor._parse_value)
+            runtime = SimulationRuntime(model, parameters=parameters, input_source=input_source)
+        except (ValueError, SimulationRuntimeInputSourceError) as err:
+            # ValueError: malformed assignments or invalid construction parameters.
+            # SimulationRuntimeInputSourceError: rejected input-source contract.
+            raise click.ClickException(str(err)) from err
 
         # Batch mode
         if batch_commands:
-            processor = BatchProcessor(runtime, state_machine=model, use_color=not no_color)
-            processor.execute_commands(batch_commands)
+            output_func = None
+            diagnostic_output = None
+            if diagnostics_format == 'jsonl':
+                output_func = partial(click.echo, err=True)
+
+                def diagnostic_output(report):
+                    click.echo(json.dumps(report.to_dict(), ensure_ascii=False))
+            processor = BatchProcessor(
+                runtime, state_machine=model, use_color=not no_color,
+                output_func=output_func, input_source=input_source,
+                diagnostics=diagnostics, diagnostic_output=diagnostic_output,
+            )
+            exit_code = processor.execute_commands(batch_commands)
+            if exit_code:
+                raise click.exceptions.Exit(exit_code)
             return
 
         # Interactive mode
-        repl = SimulationREPL(runtime, state_machine=model, use_color=not no_color)
+        repl = SimulationREPL(
+            runtime, state_machine=model, use_color=not no_color,
+            input_source=input_source, diagnostics=diagnostics,
+        )
 
         # Print banner with Unicode box-drawing characters
         banner_lines = [

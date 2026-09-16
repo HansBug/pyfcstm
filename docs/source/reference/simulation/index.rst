@@ -35,10 +35,7 @@ interactive REPL or runs semicolon-separated batch commands.
      - no
      - Show Click help and exit.
 
-Parse, decode, grammar, and model-validation failures are written to stderr as
-``Failed to parse DSL file: ...``.  Batch and REPL command failures normally
-return a user-facing message in command output instead of raising through the
-CLI process.
+Parse, decode, grammar, and model-validation failures are written to stderr as ``Failed to parse DSL file: ...`` and return nonzero. Batch command failures stop execution with nonzero status; interactive failures print a message and keep the REPL available.
 
 Batch and REPL commands
 -----------------------
@@ -69,8 +66,7 @@ Batch mode and the interactive REPL use the same command processor.
        available.``.
    * - ``init <state_path> [var=value...]``
      - Target state plus numeric variable assignments.
-     - Rebuilds the runtime as a hot start.  Every declared variable must be
-       provided.  Values accept decimal, hexadecimal, binary, float, and
+     - Rebuilds the runtime as a hot start.  Every persistent control/output variable must be provided; inputs belong to each cycle and parameters remain fixed.  Values accept decimal, hexadecimal, binary, float, and
        scientific notation.
    * - ``setting [key] [value]``
      - No arguments, one key, or key/value pair.
@@ -203,7 +199,7 @@ Python runtime API
        ``initial_vars``; hot start requires every declared persistent variable.
        ``history_size=None`` keeps unlimited history, while ``history_size=0``
        keeps no entries.
-   * - ``cycle(events=None, *, trace=False) -> CycleResult``
+   * - ``cycle(events=None, *, trace=False, inputs=None, diagnostics=False) -> CycleResult``
      - Executes one cycle, validates candidate paths, commits or rolls back, and
        records history.
    * - ``CycleResult.value``
@@ -440,3 +436,8 @@ This reference is aligned with these implementation and test facts:
    :maxdepth: 1
 
    inputs
+
+Candidate decision diagnostics
+------------------------------------------------------------
+
+For rejected candidates, captured Python reports, REPL queries, per-cycle inputs and JSONL output, see :doc:`diagnostics`.

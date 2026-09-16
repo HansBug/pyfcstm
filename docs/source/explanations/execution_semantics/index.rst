@@ -137,6 +137,30 @@ without advancing state or variables.  A changing-signature loop or an actual
 expression/event/DFS error still fails loudly instead of leaving the machine
 halfway through a pseudo or composite routing chain.
 
+.. _exec-diagnostic-boundaries:
+
+Diagnostic evidence and complete macro paths
+--------------------------------------------
+
+``cycle(diagnostics=True)`` captures actual candidate checks at their actual variable snapshots. It does not reevaluate guards against final values. The call-level report separates the persistent boundary snapshots (``vars_before`` and ``vars_after``) from each check's potentially speculative ``vars``. Frozen ``inputs`` and fixed ``parameters`` are also explicit, including on a normal cycle without candidate checks. The report's committed micro-transition list is ordered; parent links between checks describe validation context instead of execution order.
+
+For one fixed candidate path, its micro-step guards must all hold, each at its own action-prefix state. A schematic path relation is:
+
+.. code-block:: text
+
+   valid(P) = required events
+              AND guard_0(v_0, input_t, parameters)
+              AND action updates v_1 = F_0(v_0, input_t, parameters)
+              AND guard_1(v_1, input_t, parameters)
+              AND ...
+              AND a stoppable or terminated final boundary
+
+This is not the conjunction of every check observed while exploring alternative paths. Alternatives have their own path conditions and declaration-order priority exclusions. A failed guard in one branch does not reject a candidate if another valid continuation exists. Inputs stay frozen within this macro step; parameters stay fixed across all steps. The BMC macro contract records guard anchors at action prefixes and the relation builder lowers guards against those intermediate environments. The simulator obtains the same boundary by checking speculative contexts and discarding unsuccessful ones; a committed trace does not contain the discarded checks.
+
+In the :doc:`combo example <../../how_to/simulation/diagnostics>`, the terminal effect sets ``reading=sensor`` before the target initial guard checks ``reading >= limit``. At the ``Root.Start`` boundary, the simplified accepted condition is ``A_t AND B_t AND sensor_t >= limit``. The fallback requires A and the absence of an accepted complete combo path; a true first event alone must not suppress it. When ``sensor=3``, the rejected check sees ``score=10011`` and ``reading=3``, while the fallback commits ``score=121`` and ``reading=0``. These are different branch contexts, not a public write of 10011 followed by an undo to 121.
+
+A rejected candidate can be followed by a successful candidate in the same ordinary cycle. Delta instead records a successful no-progress macro boundary, keeps the prior state and persistent variables, and still advances the input source and cycle history. An ignored call does not advance or sample at all; its report uses ``inputs=None``. These distinctions prevent “same state” from being mistaken for Delta, and prevent “rollback” from being mistaken for reversing external time or arbitrary callback side effects. See the :doc:`diagnostics reference <../../reference/simulation/diagnostics>` for exact fields and query rules.
+
 Hot start semantics
 -------------------
 

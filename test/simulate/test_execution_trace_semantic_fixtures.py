@@ -20,7 +20,8 @@ pytestmark = pytest.mark.unittest
     ],
     ids=lambda case: case.id,
 )
-def test_trace_preserves_semantic_fixture(case, monkeypatch):
+@pytest.mark.parametrize("diagnostics", [False, True])
+def test_trace_preserves_semantic_fixture(case, monkeypatch, diagnostics):
     plain = fixtures._build_simulation_runtime(case)
     traced = fixtures._build_simulation_runtime(case)
     plain_calls = fixtures._register_fixture_handlers(plain, case)
@@ -30,6 +31,7 @@ def test_trace_preserves_semantic_fixture(case, monkeypatch):
     plain_results = []
     traced_results = []
     snapshots = []
+    decision_snapshots = []
 
     def without_trace(events=None, **kwargs):
         result = plain_cycle(events, **kwargs)
@@ -37,9 +39,21 @@ def test_trace_preserves_semantic_fixture(case, monkeypatch):
         return result
 
     def with_trace(events=None, **kwargs):
-        result = traced_cycle(events, trace=True, **kwargs)
+        before = dict(traced.vars)
+        result = traced_cycle(events, trace=True, diagnostics=diagnostics, **kwargs)
         traced_results.append(result)
         snapshots.append([entry.to_dict() for entry in result.trace])
+        if diagnostics:
+            decision_snapshots.append(result.diagnostics.to_dict())
+            report = result.diagnostics
+            assert report.vars_before == before
+            assert report.vars_after == traced.vars
+            assert report.parameters == traced.parameters
+            assert report.input_events == result.input_events
+            assert report.inputs == (None if report.outcome == 'noop' else result.inputs)
+            assert [d.transition_label for d in report.decisions if d.committed] == [
+                e.transition_label for e in result.trace if e.kind == 'transition'
+            ]
         if result.delta:
             assert result.trace == ()
         return result
@@ -58,10 +72,13 @@ def test_trace_preserves_semantic_fixture(case, monkeypatch):
         assert traced.cycle_count == plain.cycle_count
         assert traced.is_ended == plain.is_ended
         assert traced_calls == plain_calls
-        assert [replace(result, trace=()) for result in traced_results] == plain_results
+        assert [replace(result, trace=(), diagnostics=None) for result in traced_results] == plain_results
 
     # Retain all results across the complete scenario to catch snapshots backed
     # by live mutable state, including a later failure or Delta boundary.
     assert [
         [entry.to_dict() for entry in result.trace] for result in traced_results
     ] == snapshots
+
+    if diagnostics:
+        assert [r.diagnostics.to_dict() for r in traced_results] == decision_snapshots

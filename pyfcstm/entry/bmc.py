@@ -250,6 +250,8 @@ def _execute_bmc(
     solver_profile: str = "default",
     cone_slicing: bool = False,
     diagnose_response_trigger: bool = False,
+    explanation_preference: str = "none",
+    feedback_timeout_ms: Optional[int] = None,
 ) -> _BmcExecution:
     from ..bmc import BmcBuildError
 
@@ -270,6 +272,10 @@ def _execute_bmc(
             options["solver_profile"] = solver_profile
         if diagnose_response_trigger:
             options["diagnose_response_trigger"] = True
+        if explanation_preference != "none":
+            options["explanation_preference"] = explanation_preference
+        if feedback_timeout_ms is not None:
+            options["feedback_timeout_ms"] = feedback_timeout_ms
         result = _solve_bmc_property(formula, timeout_ms=timeout_ms, **options)
     except BmcBuildError as err:
         # solve_bmc_property receives validated CLI arguments and a compiled
@@ -320,6 +326,11 @@ def _property_payload(formula: BmcPropertyFormula) -> dict:
 def _human_presentation(execution: _BmcExecution) -> _BmcPresentation:
     base = _solve_presentation(execution.result)
     evidence = list(base.evidence)
+    if execution.result.explanation_preference != "none":
+        preference = execution.result.to_canonical()["explanation_preference"]
+        evidence.append("Explanation preference: %s (%s)." % (
+            preference["strategy"], preference["status"],
+        ))
     trigger_status = execution.result.trigger_diagnostic_status
     trigger_reason = execution.result.trigger_diagnostic_reason
     if trigger_status == "unsat":
@@ -637,6 +648,8 @@ def build_bmc_output(
     solver_profile: str = "default",
     cone_slicing: bool = False,
     diagnose_response_trigger: bool = False,
+    explanation_preference: str = "none",
+    feedback_timeout_ms: Optional[int] = None,
 ) -> Tuple[str, int]:
     """Run one bounded query and build its complete CLI report.
 
@@ -661,6 +674,13 @@ def build_bmc_output(
     :param solver_profile: Main solver choice: ``default``, ``logic`` or
         ``tactic``. Explanation and proof checks retain the default solver.
     :type solver_profile: str, optional
+    :param explanation_preference: ``none`` (default) or ``editable`` for a
+        preference-guided source core; requires ``formal`` or ``proof`` explanation.
+    :type explanation_preference: str, optional
+    :param feedback_timeout_ms: Positive auxiliary budget in milliseconds,
+        required for preferred explanations and optional for trigger diagnosis.
+        Does not extend an existing main timeout.
+    :type feedback_timeout_ms: int, optional
     :param cone_slicing: Enable conservative cone slicing, defaults to ``False``.
     :type cone_slicing: bool, optional
     :return: Completed report text and matching process exit status.
@@ -687,6 +707,8 @@ def build_bmc_output(
         solver_profile=solver_profile,
         **({"cone_slicing": cone_slicing} if cone_slicing is not False else {}),
         **({"diagnose_response_trigger": True} if diagnose_response_trigger else {}),
+        **({"explanation_preference": explanation_preference} if explanation_preference != "none" else {}),
+        **({"feedback_timeout_ms": feedback_timeout_ms} if feedback_timeout_ms is not None else {}),
     )
     return text, exit_code
 
@@ -702,6 +724,8 @@ def _build_bmc_report(
     solver_profile: str = "default",
     cone_slicing: bool = False,
     diagnose_response_trigger: bool = False,
+    explanation_preference: str = "none",
+    feedback_timeout_ms: Optional[int] = None,
 ) -> Tuple[str, int, str]:
     """Build one report and retain presentation severity for terminal color."""
     for option_name, option_value in (
@@ -736,6 +760,15 @@ def _build_bmc_report(
         )
     if not isinstance(cone_slicing, bool):
         raise ClickErrorException("cone_slicing must be bool.")
+    from ..bmc.errors import BmcBuildError
+    from ..bmc.witness import _validate_feedback_options
+
+    try:
+        _validate_feedback_options(explanation_preference, feedback_timeout_ms,
+                                   infeasibility_explanation, diagnose_response_trigger)
+    except BmcBuildError as err:
+        # BmcBuildError: feedback argument combinations are invalid user input.
+        raise ClickErrorException(str(err)) from err
     execution = _execute_bmc(
         input_code_file,
         query_file,
@@ -745,6 +778,8 @@ def _build_bmc_report(
         solver_profile,
         **({"cone_slicing": cone_slicing} if cone_slicing is not False else {}),
         **({"diagnose_response_trigger": True} if diagnose_response_trigger else {}),
+        **({"explanation_preference": explanation_preference} if explanation_preference != "none" else {}),
+        **({"feedback_timeout_ms": feedback_timeout_ms} if feedback_timeout_ms is not None else {}),
     )
     if json_output:
         return (
@@ -934,6 +969,8 @@ def _run_bmc_command(
     solver_profile: str = "default",
     cone_slicing: bool = False,
     diagnose_response_trigger: bool = False,
+    explanation_preference: str = "none",
+    feedback_timeout_ms: Optional[int] = None,
 ) -> int:
     """Build and publish one report behind the CLI exception boundary."""
     text, exit_code, severity = _build_bmc_report(
@@ -946,6 +983,8 @@ def _run_bmc_command(
         solver_profile=solver_profile,
         **({"cone_slicing": cone_slicing} if cone_slicing is not False else {}),
         **({"diagnose_response_trigger": True} if diagnose_response_trigger else {}),
+        **({"explanation_preference": explanation_preference} if explanation_preference != "none" else {}),
+        **({"feedback_timeout_ms": feedback_timeout_ms} if feedback_timeout_ms is not None else {}),
     )
     if output_file is None:
         color_enabled = _resolve_bmc_color_enabled(
@@ -1044,6 +1083,16 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
         help="Select the main solver; explanation and proof checks use default.",
     )
     @click.option(
+        "--explanation-preference",
+        type=click.Choice(("none", "editable")),
+        default="none", show_default=True,
+        help="Prefer assumptions and initial conditions in an infeasibility core; requires an explanation and feedback budget.",
+    )
+    @click.option(
+        "--feedback-timeout-ms", type=click.IntRange(min=1), default=None,
+        help="Finite auxiliary budget for preferred explanations or trigger diagnosis, capped by the main deadline.",
+    )
+    @click.option(
         "--diagnose-response-trigger",
         is_flag=True,
         help="Report whether a satisfied response trigger is reachable within the bound.",
@@ -1081,6 +1130,8 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
         solver_profile: str,
         cone_slicing: bool,
         diagnose_response_trigger: bool,
+        explanation_preference: str,
+        feedback_timeout_ms: Optional[int],
     ) -> None:
         """Run a bounded model checking query.
 
@@ -1107,6 +1158,10 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
         :param solver_profile: Main solver choice, one of ``default``, ``logic``
             or ``tactic``.
         :type solver_profile: str
+        :param explanation_preference: Optional source-core selection strategy.
+        :type explanation_preference: str
+        :param feedback_timeout_ms: Auxiliary deadline cap in milliseconds.
+        :type feedback_timeout_ms: int, optional
         :param cone_slicing: Enable conservative query-specific cone slicing.
         :type cone_slicing: bool
         :return: ``None``.
@@ -1131,6 +1186,8 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
             solver_profile=solver_profile,
             **({"cone_slicing": cone_slicing} if cone_slicing is not False else {}),
             **({"diagnose_response_trigger": True} if diagnose_response_trigger else {}),
+            **({"explanation_preference": explanation_preference} if explanation_preference != "none" else {}),
+            **({"feedback_timeout_ms": feedback_timeout_ms} if feedback_timeout_ms is not None else {}),
         )
         ctx.exit(exit_code)
 

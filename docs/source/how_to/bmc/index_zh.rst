@@ -799,3 +799,60 @@ options=BmcOptions(cone_slicing=True))``；文件入口支持
 本次实测正确性门禁通过，但公式规模仅缩减 6.09%，未达到 T3 的 20% 门槛；
 切片默认保持关闭。单例求解最多退化 131.73%，所以应同时比较编译、求解和
 对外重放总成本。详细数字见 :ref:`sec-bmc-cone-measurements-zh`。
+
+优先解释初始条件冲突
+--------------------
+
+将下面两段分别保存为 ``preferred.fcstm`` 和 ``preferred.fbmcq``：
+
+.. code-block:: fcstm
+
+   def int x = 0;
+   def int y = 0;
+   state Root;
+
+.. code-block:: text
+
+   init cold where y == 0;
+   assume at 0: y >= 1;
+   assume at 1: x >= 1;
+   check reach <= 2: true;
+
+模型把两个变量初始化为零。第一条假设与 ``y`` 的初值矛盾；第二条假设与进入状态后
+``x`` 仍为零矛盾。``where y == 0`` 又提供了一条来自查询的初值条件，可替代模型的
+初始化事实。因此，同一场景中存在多个可以选择的冲突子集。
+
+显式启用偏好，并给辅助分析提供有限预算：
+
+.. code-block:: console
+
+   pyfcstm bmc -i preferred.fcstm -q preferred.fbmcq \
+       --explain-infeasibility formal --explanation-preference editable \
+       --feedback-timeout-ms 2000 --color never
+
+首行仍为 ``SCENARIO INFEASIBLE``，退出码为 ``3``，不表示性质检查通过。
+报告增加 ``Explanation preference: editable (complete).``，选择
+``initial.where`` 与 ``assumption.0000.frame.0000``，并报告
+``subset_minimal`` 和 ``proven``。这两个条件合在一起矛盾，任取一个则不矛盾；
+修改其中一个条件后，其他独立冲突仍可能存在。
+``test/bmc/test_preferred_explanations.py`` 通过公开 API 与 CLI 验证这一预期。
+
+自动化处理时，在命令后增加 ``--json -o preferred.json``，读取
+``result.explanation_preference.status`` 及
+``result.feasibility.explanation.core``。默认调用不输出偏好对象。
+如果查询只有 ``check reach <= 2: true;`` 而没有上述假设，场景可行，
+偏好状态为 ``not_applicable``，不会执行选择搜索。
+
+选核成功不等于证明成功。对上述不等式，把 ``formal`` 改成 ``proof`` 后，
+当前规则目录无法闭合所选冲突核，因此保留完整的形式解释，但报告
+``achieved_mode: formal``，解释状态为 ``partial``。
+偏好状态仍为 ``complete``，因为核的极小性已经独立验证。
+若把 ``y >= 1`` 改成 ``y == 1``，两个互斥等式便能在同一组成员编号上构成
+经过核验的证明。
+
+若命令拒绝缺失的解释选项或反馈预算，按上面的形式补齐；
+``--feedback-timeout-ms 0`` 不合法。若选择结果部分完成或超时，应检查原因和核的
+极小性标记，不能把它当成新的性质判定。只有主预算 ``--timeout-ms`` 仍有余量时，
+增加反馈预算才可能允许更多工作。较大的步数上界可能产生更多源约束组，
+完整范围搜索的成本可能明显高于普通解释。
+准确的优先级与截止时间契约见 :doc:`../../reference/bmc_results/index_zh`。

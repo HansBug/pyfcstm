@@ -863,12 +863,14 @@ def _trial_solver(groups: Sequence["BmcTrackedConstraint"]) -> z3.Solver:
 
 
 def minimize_source_core(
-    core: "BmcCoreFormula", extraction: CoreExtraction, budget: _SolveBudget
+    core: "BmcCoreFormula", extraction: CoreExtraction, budget: _SolveBudget,
+    *, preference_scope: Optional[str] = None,
 ) -> MinimizedCore:
     """Shrink a sound source core to a subset-minimal one and verify it.
 
-    The loop follows the frozen algorithm: walk the members in ``stable_id``
-    order, drop one, and keep the smaller set only when it is still unsat.  A
+    By default, walk the raw-core members in ``stable_id`` order, drop one,
+    and keep the smaller set only when it is still unsat. A preference scope
+    starts from its complete group set and orders deletion by aggregate first.  A
     satisfiable trial proves the member is load-bearing; an undetermined one
     proves nothing, so the member stays and the phase can only end partial; an
     exhausted budget stops immediately and returns what has been reached.
@@ -882,8 +884,13 @@ def minimize_source_core(
     :type core: pyfcstm.bmc.relation.BmcCoreFormula
     :param extraction: The sound raw core to shrink.
     :type extraction: CoreExtraction
-    :param budget: Shared solver budget; never exceeded.
+    :param budget: Shared solver budget, checked before each probe.
     :type budget: pyfcstm.bmc.solver._SolveBudget
+    :param preference_scope: When supplied, search every tracked group in this
+        scope instead of only the raw core. Delete domain, transition, initial,
+        then environment groups, with stable-id ties. The extraction must be a
+        sound core of that same scope. Defaults to ``None`` (legacy ordering).
+    :type preference_scope: str, optional
     :return: The minimized core and the aggregate record for the phase.
     :rtype: MinimizedCore
 
@@ -900,6 +907,19 @@ def minimize_source_core(
         # members: the caller decides whether an empty extraction is publishable.
         return MinimizedCore((), "raw", "not_proven", extraction.status)
 
+    if preference_scope is not None:
+        if budget.deadline is not None and budget.remaining_ms() is None:
+            return MinimizedCore(
+                extraction.groups, "raw", "not_proven", "timeout",
+                "budget exhausted before preference search",
+            )
+        # ponytail: reuse deletion trials; incremental activation can replace
+        # solver rebuilding if full-scope measurements justify that complexity.
+        priority = {"domain": 0, "transition": 1, "initial": 2, "environment": 3}
+        candidate = sorted(
+            partition_tracked_groups(core).groups_for(preference_scope),
+            key=lambda group: (priority[_aggregate_of(group)], group.stable_id),
+        )
     started = 0
     degraded = None
     started_at = time.perf_counter()
@@ -938,6 +958,16 @@ def minimize_source_core(
     else:
         status = "unknown"
 
+    # Re-check the chosen conjunction independently before accepting its
+    # minimality. A partial search retains soundness by UNSAT-only deletion.
+    if preference_scope is not None and status == "complete":
+        verdict, record = _run_probe(
+            _trial_solver(candidate), budget, "unsat_core_minimization", ()
+        )
+        started += int(record.started)
+        if verdict != "unsat":
+            status = "timeout" if verdict == "timeout" else "unknown"
+            degraded = "selected core recheck did not return unsat (%s)" % verdict
     proven = False
     if status == "complete":
         proven = True
@@ -963,6 +993,7 @@ def minimize_source_core(
         reduction = "partial_minimized"
     else:
         reduction = "raw"
+        candidate = list(extraction.groups)
 
     elapsed_ms = (time.perf_counter() - started_at) * 1000.0
     aggregate = (
@@ -2353,6 +2384,7 @@ def explain_infeasibility(
     budget: _SolveBudget,
     requested_mode: str = "formal",
     registry: Optional[SourceDocumentRegistry] = None,
+    *, explanation_preference: str = "none",
 ) -> ExplanationOutcome:
     """Classify a localized stage and publish the strongest honest artifact.
 
@@ -2377,6 +2409,9 @@ def explain_infeasibility(
         having to supply it.
     :type registry: Optional[pyfcstm.bmc.provenance.SourceDocumentRegistry],
         optional
+    :param explanation_preference: ``editable`` searches the complete selected
+        scope in preference order; ``none`` preserves raw-core minimization.
+    :type explanation_preference: str, optional
     :return: Public explanation plus the probe ledger that produced it.
     :rtype: ExplanationOutcome
     :raises pyfcstm.bmc.errors.BmcBuildError: If the stage is unsupported or
@@ -2398,7 +2433,17 @@ def explain_infeasibility(
         >>> outcome.explanation.classification
         'kernel_conflict'
     """
+    if explanation_preference not in ("none", "editable"):
+        raise BmcBuildError("explanation_preference must be none or editable.")
     started = time.monotonic()
+    if explanation_preference == "editable" and budget.deadline is not None and budget.remaining_ms() is None:
+        return ExplanationOutcome(
+            BmcInfeasibilityExplanation(
+                requested_mode=requested_mode, achieved_mode="none", status="timeout",
+                classification=None, reason="budget exhausted before preference classification",
+                elapsed_ms=(time.monotonic() - started) * 1000.0,
+            ), (),
+        )
     if registry is None:
         # Read the field directly rather than through getattr: the prepared
         # context always builds a registry, so a rename must surface as an
@@ -2423,7 +2468,12 @@ def explain_infeasibility(
     # rather than being left unspent.  Giving up here would withhold the source
     # lines purely because the *shape* of the conflict stayed undetermined.
     try:
-        extraction = extract_source_core(core, outcome.scope, budget)
+        if explanation_preference == "editable" and budget.deadline is not None and budget.remaining_ms() is None:
+            extraction = CoreExtraction(
+                (), "timeout", "budget exhausted before preferred core extraction",
+            )
+        else:
+            extraction = extract_source_core(core, outcome.scope, budget)
     except BmcBuildError as err:
         # Kept as stated defensive code, and unreachable through any public path:
         # extraction fails closed on corrupt group metadata, which the builder
@@ -2485,7 +2535,10 @@ def explain_infeasibility(
             checks,
         )
 
-    minimized = minimize_source_core(core, extraction, budget)
+    minimized = minimize_source_core(
+        core, extraction, budget,
+        preference_scope=outcome.scope if explanation_preference == "editable" else None,
+    )
     if minimized.record is not None:
         # One aggregate phase record, not one per deletion trial: the ledger
         # names decisions a reader can act on, and trial count is an artifact of

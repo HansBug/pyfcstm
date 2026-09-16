@@ -157,6 +157,4 @@
 执行轨迹条目保留这些角色分区，``to_dict()`` 输出非空输入和参数。
 ``runtime.control_variables``、``runtime.outputs`` 提供只读投影。
 
-CLI 当前没有输入源绑定参数，带动态输入的模型应使用 Python API；CLI 会报告
-缺少输入源。围绕此类运行时创建的 REPL 会拒绝 ``init``/``clear``，避免复用已推进的
-输入源。只有参数的模型在 REPL 重建时保留当前参数。
+CLI 支持构造阶段 ``--param name=value`` 和逐拍 ``cycle --input name=value``，每个实际周期必须给出完整输入向量，不隐式保持。命令拥有的输入源在 ``init``/``clear`` 时重建，参数保持不变；由 Python 调用者提供的其他输入源仍须显式重新构造运行时。完整命令与失败边界见 :doc:`diagnostics_zh`。

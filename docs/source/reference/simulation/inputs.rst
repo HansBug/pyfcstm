@@ -176,7 +176,4 @@ separately from persistent ``.vars``. Execution trace entries carry the same
 role partitions and include nonempty input/parameter mappings in ``to_dict()``.
 ``runtime.control_variables`` and ``runtime.outputs`` are read-only projections.
 
-The CLI currently has no provider binding flags. An input model therefore
-requires the Python runtime API; the CLI reports the missing source. A REPL
-constructed around such a runtime refuses ``init``/``clear`` rather than reuse
-an advanced source. Parameter-only REPL rebuilds retain fixed parameters.
+The CLI accepts construction-time ``--param name=value`` and per-cycle ``cycle --input name=value``. Each actual cycle requires the complete vector with no implicit hold. Command-owned sources are recreated on ``init``/``clear`` and parameters remain fixed; other Python-supplied providers still require explicit runtime reconstruction. See :doc:`diagnostics` for the complete command and failure contract.

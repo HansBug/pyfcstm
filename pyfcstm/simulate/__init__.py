@@ -125,6 +125,7 @@ from .inputs import (
     ReplayInputPattern,
     SimulationRuntimeInputSourceError,
 )
+from .diagnostics import CycleDiagnostics, TransitionDecision
 from .context import ReadOnlyExecutionContext
 from .decorators import abstract_handler
 from .runtime import (
@@ -158,6 +159,8 @@ __all__ = [
     "ReplayInputPattern",
     "SimulationRuntimeInputSourceError",
 
+    "CycleDiagnostics",
+    "TransitionDecision",
     "CycleResult",
     "ExecutionTraceEntry",
     "ReadOnlyExecutionContext",

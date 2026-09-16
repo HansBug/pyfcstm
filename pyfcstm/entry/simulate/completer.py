@@ -35,19 +35,21 @@ class SimulationCompleter(Completer):
 
     COMMANDS = [
         'cycle', 'init', 'clear', 'current', 'events',
-        'history', 'setting', 'export', 'help', 'quit', 'exit'
+        'history', 'setting', 'export', 'help', 'quit', 'exit', 'decisions', 'why'
     ]
 
     LOG_LEVELS = ['debug', 'info', 'warning', 'error', 'off']
 
-    def __init__(self, runtime):
+    def __init__(self, runtime, *, processor=None):
         """
         Initialize the completer.
 
         :param runtime: The simulation runtime instance
         :type runtime: SimulationRuntime
+        :param processor: Optional command processor providing the latest report.
         """
         self.runtime = runtime
+        self.processor = processor
 
     def get_completions(self, document: Document, complete_event) -> Iterable[Completion]:
         """
@@ -78,6 +80,17 @@ class SimulationCompleter(Completer):
         command = words[0]
 
         # cycle command - complete with count or events
+        if command in ('decisions', 'why'):
+            prefix = words[-1] if not text.endswith(' ') else ''
+            choices = ['--verbose']
+            if command == 'why' and self.processor is not None and self.processor.last_diagnostics is not None:
+                choices.extend(dict.fromkeys(
+                    item.transition_label for item in self.processor.last_diagnostics.decisions
+                ))
+            for choice in choices:
+                if choice.startswith(prefix):
+                    yield Completion(choice, start_position=-len(prefix))
+            return
         if command == 'cycle':
             # If we have only "cycle " or typing first argument
             if len(words) == 1 or (len(words) == 2 and not text.endswith(' ')):
@@ -209,7 +222,7 @@ class SimulationCompleter(Completer):
 
         # setting command - complete with keys and values
         elif command == 'setting':
-            setting_keys = ['table_max_rows', 'history_size', 'color', 'log_level']
+            setting_keys = ['table_max_rows', 'history_size', 'color', 'log_level', 'diagnostics']
 
             # First argument - setting key
             if len(words) == 1 or (len(words) == 2 and not text.endswith(' ')):
@@ -236,7 +249,7 @@ class SimulationCompleter(Completer):
                                 start_position=-len(prefix),
                                 display_meta='log level'
                             )
-                elif setting_key == 'color':
+                elif setting_key in ('color', 'diagnostics'):
                     for value in ['on', 'off', 'true', 'false']:
                         if value.startswith(prefix):
                             yield Completion(
@@ -382,6 +395,8 @@ class SimulationCompleter(Completer):
         :rtype: str
         """
         help_map = {
+            'decisions': 'show captured candidate decisions',
+            'why': 'explain a captured transition check',
             'cycle': 'Execute cycle(s) with optional events',
             'init': 'Hot start from specific state',
             'clear': 'Reset to initial state',
@@ -408,6 +423,7 @@ class SimulationCompleter(Completer):
         help_map = {
             'table_max_rows': 'max rows in tables (default: 20)',
             'history_size': 'max history entries (default: 100)',
+            'diagnostics': 'capture candidate decisions (default: off)',
             'color': 'enable/disable colors (on/off)',
             'log_level': 'logging level (debug/info/warning/error/off)',
         }

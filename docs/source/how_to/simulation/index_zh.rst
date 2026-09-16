@@ -209,3 +209,8 @@
 单值生成器可继承 ``BaseScalarInputPattern`` 并实现 ``_sample(step)``，相关向量可使用
 ``BaseIntegratedInputPattern``。可运行示例及采样、覆盖、耗尽和错误契约见
 :doc:`../../reference/simulation/inputs_zh`。
+
+候选决策诊断
+--------------------------------
+
+排查迁移为何未执行，见 :doc:`diagnostics_zh`；其中包含 Python 采集、交互查询、逐拍输入和 JSONL 示例。

@@ -130,6 +130,7 @@ from ..model import (
     StateMachine,
     Transition,
 )
+from .diagnostics import CycleDiagnostics, _DecisionCollector, _transition_label
 from .context import ReadOnlyExecutionContext
 from .inputs import InputSourceSpec, _InputSources, _number
 
@@ -490,6 +491,8 @@ class CycleResult:
         was requested. Empty when disabled, on Delta, or on an ignored call.
         Failed cycles raise without returning a partial trace.
     :type trace: Tuple[ExecutionTraceEntry, ...]
+    :param diagnostics: Detached candidate evidence, or ``None`` when disabled.
+    :type diagnostics: Optional[CycleDiagnostics]
 
     Example::
 
@@ -514,6 +517,9 @@ class CycleResult:
     #: Ordered committed observations from a call with trace=True.
     trace: Tuple[ExecutionTraceEntry, ...] = field(default=(), repr=False)
     inputs: Mapping[str, Union[int, float]] = field(default_factory=dict, repr=False)
+
+    #: Candidate evidence when cycle(diagnostics=True) was requested.
+    diagnostics: Optional[CycleDiagnostics] = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         """Detach the per-cycle input vector from caller-owned mappings."""
@@ -906,6 +912,7 @@ class SimulationRuntime:
         )
         self.history: List[Dict] = []  # Execution history
         self._cycle_trace: Optional[List[ExecutionTraceEntry]] = None
+        self._cycle_diagnostics: Optional[_DecisionCollector] = None
 
         # Initialize logger
         self.logger = get_logger("pyfcstm.simulate")
@@ -1664,24 +1671,7 @@ class SimulationRuntime:
         """Record a completed effect using the BMC source-local edge address."""
         if self._cycle_trace is None or is_validation_mode:
             return
-        transitions = (
-            state.init_transitions
-            if transition.from_state == INIT_STATE
-            else state.transitions_from
-        )
-        # Root exits are synthesized anew by ``transitions_from`` on each read.
-        index = (
-            0
-            if state.is_root_state and transition.from_state != INIT_STATE
-            else next(i for i, item in enumerate(transitions) if item is transition)
-        )
-        target = "[*]" if transition.to_state == EXIT_STATE else transition.to_state
-        label = "%s::%d::%s->%s" % (
-            ".".join(state.path),
-            index,
-            transition.from_state,
-            target,
-        )
+        label = _transition_label(state, transition)
         self._cycle_trace.append(
             ExecutionTraceEntry(
                 "transition",
@@ -2371,31 +2361,58 @@ class SimulationRuntime:
             )
         )
 
-    def _transition_is_enabled(
-        self,
-        transition: Transition,
-        d_events: Dict[str, Event],
-        vars_: Dict[str, Union[int, float]],
-    ) -> bool:
-        """
-        Check whether a transition is enabled in an arbitrary execution context.
-
-        This is the context-parameterized counterpart to
-        :meth:`is_transition_triggered`. It is used by validation and init-flow
-        logic where guards must be evaluated against cloned variable mappings.
-
-        :param transition: Transition to test.
-        :type transition: Transition
-        :param d_events: Active events indexed by dot-separated name.
-        :type d_events: Dict[str, Event]
-        :param vars_: Variable mapping used for guard evaluation.
-        :type vars_: Dict[str, Union[int, float]]
-        :return: ``True`` if the transition is enabled in the supplied context.
-        :rtype: bool
-        """
-        return self._transition_matches_event(
-            transition, d_events
-        ) and self._transition_matches_guard(transition, vars_)
+    def _check_candidate(
+        self, stack, vars_, d_events, transition, *, validator=None, search=False
+    ):
+        """Observe the actual short-circuit checks, preserving their order."""
+        collector = self._cycle_diagnostics
+        record = None
+        if collector is not None:
+            record = collector.start(
+                stack[-1].state, transition, vars_, self._active_inputs,
+                self._parameters, search=search,
+            )
+        event_match = self._transition_matches_event(transition, d_events)
+        guard_match = None
+        if event_match:
+            guard_match = self._transition_matches_guard(transition, vars_)
+        if record is not None:
+            record.update(event_result=event_match, guard_result=guard_match)
+        if not event_match or not guard_match:
+            if record is not None:
+                record['outcome'] = 'guard_false' if event_match else 'event_missing'
+            return False
+        if validator is not None:
+            previous_parent = None
+            try:
+                if collector is not None:
+                    previous_parent = collector.parent
+                    collector.parent = record['id']
+                accepted = validator(stack, vars_, transition, d_events)
+            finally:
+                if collector is not None:
+                    collector.parent = previous_parent
+            if record is not None:
+                record['successor_result'] = accepted
+            if not accepted:
+                if record is not None:
+                    record['outcome'] = 'successor_rejected'
+                return False
+        if record is not None:
+            record['outcome'] = 'enabled' if search else 'selected'
+            if not search:
+                state = stack[-1].state
+                transitions = state.init_transitions if transition.from_state == INIT_STATE else state.transitions_from
+                # Root's synthetic exit is the sole candidate and has no tail.
+                index = 0 if state.is_root_state and transition.from_state != INIT_STATE else next(
+                    i for i, item in enumerate(transitions) if item is transition
+                )
+                for skipped in transitions[index + 1:]:
+                    skipped_record = collector.start(
+                        state, skipped, vars_, self._active_inputs, self._parameters
+                    )
+                    skipped_record.update(outcome='not_evaluated', blocked_by=record['id'])
+        return True
 
     @staticmethod
     def _is_no_outgoing_pseudo(state: State) -> bool:
@@ -2570,20 +2587,12 @@ class SimulationRuntime:
         if state.is_leaf_state:
             return False
 
-        for transition in state.init_transitions:
-            if self._transition_is_enabled(transition, d_events, vars_):
-                if not self._validate_initial_transition(
-                    stack,
-                    vars_,
-                    transition,
-                    d_events,
-                ):
-                    current_state_path = ".".join(state.path)
-                    self.logger.debug(
-                        f"[VALIDATION] DFS validation rejected initial transition "
-                        f"{current_state_path} -> {transition.to_state}"
-                    )
-                    continue
+        transitions = state.init_transitions
+        for transition in transitions:
+            if self._check_candidate(
+                stack, vars_, d_events, transition,
+                validator=self._validate_initial_transition,
+            ):
                 self._execute_initial_transition_on_context(
                     stack,
                     vars_,
@@ -2974,16 +2983,17 @@ class SimulationRuntime:
         if not stack:
             return None
         current_state = stack[-1].state
-        for transition in current_state.transitions_from:
-            if not self._transition_is_enabled(transition, d_events, vars_):
+        transitions = current_state.transitions_from
+        validator = (
+            self._validate_transition
+            if validate_stoppable and (current_state.is_stoppable or force_validate)
+            else None
+        )
+        for transition in transitions:
+            if not self._check_candidate(
+                stack, vars_, d_events, transition, validator=validator,
+            ):
                 continue
-            if validate_stoppable and (current_state.is_stoppable or force_validate):
-                if not self._validate_transition(stack, vars_, transition, d_events):
-                    current_state_path = ".".join(current_state.path)
-                    self.logger.debug(
-                        f"[VALIDATION] DFS validation rejected transition {current_state_path} -> {transition.to_state}"
-                    )
-                    continue
             current_state_path = ".".join(current_state.path)
             self.logger.debug(
                 f"Transition selected: "
@@ -3165,8 +3175,8 @@ class SimulationRuntime:
             if state.is_leaf_state:
                 progressed = False
                 for transition in reversed(state.transitions_from):
-                    if not self._transition_is_enabled(
-                        transition, d_events, current_vars
+                    if not self._check_candidate(
+                        current_stack, current_vars, d_events, transition, search=True,
                     ):
                         continue
                     next_stack = self._clone_stack(current_stack)
@@ -3196,8 +3206,8 @@ class SimulationRuntime:
             if frame.mode == "init_wait":
                 progressed = False
                 for transition in reversed(state.init_transitions):
-                    if not self._transition_is_enabled(
-                        transition, d_events, current_vars
+                    if not self._check_candidate(
+                        current_stack, current_vars, d_events, transition, search=True,
                     ):
                         continue
                     next_stack = self._clone_stack(current_stack)
@@ -3220,8 +3230,8 @@ class SimulationRuntime:
                 if not validate_post_child_exit:
                     continue
                 for transition in reversed(state.transitions_from):
-                    if not self._transition_is_enabled(
-                        transition, d_events, current_vars
+                    if not self._check_candidate(
+                        current_stack, current_vars, d_events, transition, search=True,
                     ):
                         continue
                     next_stack = self._clone_stack(current_stack)
@@ -3514,6 +3524,7 @@ class SimulationRuntime:
         *,
         trace: bool = False,
         inputs: Optional[Mapping[str, Union[int, float]]] = None,
+        diagnostics: bool = False,
     ) -> CycleResult:
         """
         Execute with one immutable input snapshot.
@@ -3525,6 +3536,10 @@ class SimulationRuntime:
         do not advance; a provider that raises from ``cycle()`` permanently
         poisons the runtime. Already ended/error runtimes remain no-ops.
 
+        :param diagnostics: Capture immutable candidate checks independently of
+            committed tracing, defaults to ``False``. Reports survive Delta;
+            failures still raise without a partial report.
+        :type diagnostics: bool
         :param inputs: Optional partial input override mapping.
         :type inputs: Optional[Mapping[str, Union[int, float]]]
         :raises SimulationRuntimeInputSourceError: Invalid overrides, provider
@@ -3806,11 +3821,21 @@ class SimulationRuntime:
             self.logger.warning(
                 "Runtime in error state, cycle ignored. Check error_info."
             )
-            return CycleResult()
+            return CycleResult(diagnostics=(
+                _DecisionCollector(self).finish(
+                    self.cycle_count, 'noop',
+                    tuple(self.stack[-1].state.path) if self.stack else None,
+                ) if diagnostics else None
+            ))
 
         if self._ended:
             self.logger.warning("Runtime already ended, cycle ignored.")
-            return CycleResult()
+            return CycleResult(diagnostics=(
+                _DecisionCollector(self).finish(
+                    self.cycle_count, 'noop',
+                    tuple(self.stack[-1].state.path) if self.stack else None,
+                ) if diagnostics else None
+            ))
 
         event_objects, d_events = self._normalize_events(events)
         overrides = self._input_sources.overrides(inputs)
@@ -3819,8 +3844,10 @@ class SimulationRuntime:
         previous_warnings = set(self._warned_anonymous_abstracts)
         previous_errors = list(self._abstract_handler_errors)
         committed = False
+        previous_diagnostics = self._cycle_diagnostics
         try:
             self._active_inputs = snapshot_inputs
+            self._cycle_diagnostics = _DecisionCollector(self) if diagnostics else None
             result = self._cycle_with_inputs(
                 event_objects, d_events, trace, snapshot_inputs
             )
@@ -3828,6 +3855,7 @@ class SimulationRuntime:
             return result
         finally:
             self._active_inputs = previous_inputs
+            self._cycle_diagnostics = previous_diagnostics
             if not committed:
                 self._warned_anonymous_abstracts = previous_warnings
                 self._abstract_handler_errors = previous_errors
@@ -3888,6 +3916,8 @@ class SimulationRuntime:
             previous_trace = self._cycle_trace
             try:
                 self._cycle_trace = trace_entries
+                if self._cycle_diagnostics is not None:
+                    self._cycle_diagnostics.phase = 'execution'
                 if not sim_initialized:
                     sim_ended = self._initialize_context(
                         sim_stack,
@@ -3966,6 +3996,11 @@ class SimulationRuntime:
             delta=delta,
             trace=tuple(trace_entries or ()) if not delta else (),
             inputs=snapshot_inputs,
+            diagnostics=(self._cycle_diagnostics.finish(
+                prepared_count,
+                'delta' if delta else ('terminated' if prepared_ended else 'cycle'),
+                tuple(prepared_stack[-1].state.path) if prepared_stack else None,
+            ) if self._cycle_diagnostics is not None else None),
         )
         changes = self._format_var_changes(snapshot_vars, prepared_vars)
         current_values = ", ".join(

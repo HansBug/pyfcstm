@@ -1,6 +1,7 @@
 """Public CLI diagnostics, explicit inputs, and output stream contracts."""
 
 import json
+from inspect import signature
 
 import pytest
 from click.testing import CliRunner
@@ -26,10 +27,17 @@ state Root {
 """
 
 
+def cli_runner():
+    """Keep stdout and stderr separate across supported Click releases."""
+    # Click < 8.2 requires opt-in; newer versions removed this argument.
+    options = {"mix_stderr": False} if "mix_stderr" in signature(CliRunner).parameters else {}
+    return CliRunner(**options)
+
+
 def invoke(tmp_path, commands, *options, source=MODEL):
     path = tmp_path / "model.fcstm"
     path.write_text(source)
-    return CliRunner().invoke(
+    return cli_runner().invoke(
         cli,
         [
             "simulate",
@@ -131,16 +139,16 @@ def test_invalid_inputs_fail_without_successful_json(tmp_path, commands, options
 def test_jsonl_requires_batch_and_diagnostics(tmp_path):
     path = tmp_path / "model.fcstm"
     path.write_text("state Root;")
-    result = CliRunner().invoke(
+    result = cli_runner().invoke(
         cli, ["simulate", "-i", str(path), "--diagnostics-format", "jsonl"]
     )
     assert result.exit_code != 0
-    assert "batch" in result.output.lower()
+    assert "batch" in result.stderr.lower()
     result = invoke(
         tmp_path, "cycle", "--diagnostics-format", "jsonl", source="state Root;"
     )
     assert result.exit_code != 0
-    assert "--diagnostics" in result.output
+    assert "--diagnostics" in result.stderr
 
 
 @pytest.mark.parametrize(

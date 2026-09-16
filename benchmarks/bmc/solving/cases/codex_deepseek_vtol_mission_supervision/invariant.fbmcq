@@ -1,0 +1,2 @@
+init cold havoc { link_ok } where link_ok >= 0 && link_ok <= 3;
+check invariant <= 10: link_ok <= 3;

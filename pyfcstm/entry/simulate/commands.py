@@ -366,6 +366,8 @@ class CommandProcessor:
                 "Note: All variables must be provided when using init."
             )
 
+        if self.runtime.state_machine.inputs:
+            return CommandResult("Initialization requires a fresh input_source; construct a new SimulationRuntime through the Python API.")
         state_path = args[0]
         var_assignments = args[1:]
 
@@ -404,6 +406,7 @@ class CommandProcessor:
 
             new_runtime = SimulationRuntime(
                 self.state_machine,
+                parameters=self.runtime.parameters,
                 initial_state=state_path,
                 initial_vars=initial_vars,
                 abstract_error_mode=self.runtime.abstract_error_mode,
@@ -539,11 +542,14 @@ class CommandProcessor:
         :return: Command result with reset state
         :rtype: CommandResult
         """
+        if self.runtime.state_machine.inputs:
+            return CommandResult("Reset requires a fresh input_source; construct a new SimulationRuntime through the Python API.")
         # Recreate the runtime to reset state
         from ...simulate import SimulationRuntime
 
         new_runtime = SimulationRuntime(
             self.runtime.state_machine,
+            parameters=self.runtime.parameters,
             abstract_error_mode=self.runtime.abstract_error_mode,
             history_size=self.runtime.history_size,
         )

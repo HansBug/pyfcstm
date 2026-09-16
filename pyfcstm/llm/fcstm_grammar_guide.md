@@ -63,6 +63,63 @@ and should not be used as a second source of model facts. An unterminated
 and non-EOF swallowing in import lexer modes, are outside the supported guide
 contract.
 
+## Variable Roles
+
+All declarations precede the root state. Types are `int` and `float`.
+
+| Declaration | Role | Initializer | Model assignments |
+|---|---|---|---|
+| `control` or `def` | `control` | Required, name-free | Allowed |
+| `input` | `input` | Forbidden | Rejected |
+| `param` | `param` | Required, name-free default | Rejected |
+| `output` | `output` | Required, name-free | Allowed |
+
+`control`, `input`, `param`, and `output` are reserved
+keywords. They cannot be variable, state, event, or action identifiers.
+`dynamic` and `static` are ordinary identifiers, not input modifiers.
+Initializers retain the existing `init_expression` syntax; they cannot refer
+to other variables. Input writes are model errors in every lifecycle action,
+aspect, transition effect, and nested conditional. Output values may be written
+by multiple actions and need not be read internally.
+
+```fcstm
+input float pressure;
+param float trip_pressure = 80.0;
+control int count = 0;
+output int alarm = 0;
+state Controller {
+    during {
+        count = count + 1;
+        if [pressure >= trip_pressure] { alarm = 1; }
+    }
+}
+```
+
+The AST preserves declaration spelling. `pyfcstm.model.VariableRole` describes
+the normalized role; `VarDefine.init` is `None` only for inputs in a
+valid model. `StateMachine` exposes `control_variables`, `inputs`,
+`parameters`, `output_variables`, and `persistent_variables` as read-only
+mappings in global declaration order. The last combines control and output.
+Inspect exports a required `role` field; input/parameter read-only use and
+output write-only use do not trigger control-variable dead-use warnings.
+
+This syntax/model contract does not itself supply cycle input values. Runtime
+input sources, role-aware import merging, BMC input symbols, and generated
+runtime interfaces are documented in their respective guides.
+
+## Import variable roles
+
+Use `var child_name -> parent_name;` inside an import block (`def` is also supported). The following cells specify the **final parent role**, assuming an explicitly declared parent target and identical numeric types:
+
+| Child / parent | param | input | control | output |
+|---|---|---|---|---|
+| param | param | rejected | rejected | rejected |
+| input | param | input | control | output |
+| control | rejected | rejected | control | output |
+| output | rejected | rejected | control | output |
+
+Validate source input/param writes before binding; mapping cannot legalize them. Only explicit parent declarations permit role changes. Missing targets retain child roles; implicit shared inputs remain forbidden. Parent defaults win, and every nested boundary must satisfy the matrix. Binding directly references the one parent variable: input bound to mutable parent control/output reads the current value at each execution position, without a child snapshot or delay. Final input uses cycle snapshots, final param is fixed, and control/output persists. Generated interfaces and inspect partitions use the final role; child output bound to control is internal, while child control bound to output is externally exposed. Reverify the assembled model when standalone child proofs relied on frozen inputs.
+
 ## Top-Level Structure
 
 Variable definitions come before the root state:

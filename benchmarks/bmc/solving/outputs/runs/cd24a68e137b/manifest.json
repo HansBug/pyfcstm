@@ -1,0 +1,608 @@
+{
+  "arms": [
+    {
+      "label": "baseline-0cc43647",
+      "options": {
+        "compile": {},
+        "solve": {}
+      },
+      "revision": "0cc43647ad85c99347fbdd8eab0259279a5f40d0"
+    },
+    {
+      "label": "default",
+      "options": {
+        "compile": {},
+        "solve": {}
+      },
+      "revision": "36ae48d507798a22726a5cf213792ad1997a7729"
+    },
+    {
+      "label": "logic",
+      "options": {
+        "compile": {},
+        "solve": {
+          "solver_profile": "logic"
+        }
+      },
+      "revision": "36ae48d507798a22726a5cf213792ad1997a7729"
+    },
+    {
+      "label": "tactic",
+      "options": {
+        "compile": {},
+        "solve": {
+          "solver_profile": "tactic"
+        }
+      },
+      "revision": "36ae48d507798a22726a5cf213792ad1997a7729"
+    }
+  ],
+  "baseline": {
+    "commit": "0cc43647ad85c99347fbdd8eab0259279a5f40d0",
+    "label": "baseline-0cc43647"
+  },
+  "candidate": {
+    "commit": "36ae48d507798a22726a5cf213792ad1997a7729",
+    "dirty": false,
+    "porcelain": []
+  },
+  "case_filter": null,
+  "environment": {
+    "machine": "x86_64",
+    "platform": "Linux-6.8.0-137-generic-x86_64-with-glibc2.39",
+    "processor": "x86_64",
+    "python": "3.10.1",
+    "python_implementation": "CPython",
+    "z3": "4.15.4"
+  },
+  "expected": {
+    "claude_distributed_elevator_can": {
+      "forbid": {
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "invariant": {
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "reach": {
+        "outcome": "witness_found",
+        "property_satisfied": true,
+        "status": "sat"
+      }
+    },
+    "claude_platooning_join_protocol": {
+      "forbid": {
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "invariant": {
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "reach": {
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      }
+    },
+    "claude_traffic_emergency_priority": {
+      "forbid": {
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "invariant": {
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "reach": {
+        "outcome": "witness_found",
+        "property_satisfied": true,
+        "status": "sat"
+      }
+    },
+    "claude_vtol_mission_supervision": {
+      "forbid": {
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "invariant": {
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "reach": {
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      }
+    },
+    "codex_deepseek_distributed_elevator_can": {
+      "forbid": {
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "invariant": {
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "reach": {
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      }
+    },
+    "codex_deepseek_platooning_join_protocol": {
+      "forbid": {
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "invariant": {
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "reach": {
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      }
+    },
+    "codex_deepseek_traffic_emergency_priority": {
+      "forbid": {
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "invariant": {
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "reach": {
+        "outcome": "witness_found",
+        "property_satisfied": true,
+        "status": "sat"
+      }
+    },
+    "codex_deepseek_vtol_mission_supervision": {
+      "forbid": {
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "invariant": {
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "reach": {
+        "outcome": "witness_found",
+        "property_satisfied": true,
+        "status": "sat"
+      }
+    },
+    "codex_distributed_elevator_can": {
+      "forbid": {
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "invariant": {
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "reach": {
+        "outcome": "witness_found",
+        "property_satisfied": true,
+        "status": "sat"
+      }
+    },
+    "codex_platooning_join_protocol": {
+      "forbid": {
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "invariant": {
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "reach": {
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      }
+    },
+    "codex_traffic_emergency_priority": {
+      "forbid": {
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "invariant": {
+        "outcome": "property_violated",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "reach": {
+        "outcome": "witness_found",
+        "property_satisfied": true,
+        "status": "sat"
+      }
+    },
+    "codex_vtol_mission_supervision": {
+      "forbid": {
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "invariant": {
+        "outcome": "property_violated",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "reach": {
+        "outcome": "no_witness",
+        "property_satisfied": false,
+        "status": "unsat"
+      }
+    },
+    "conveyor_counters": {
+      "forbid": {
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "invariant": {
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "reach": {
+        "outcome": "witness_found",
+        "property_satisfied": true,
+        "status": "sat"
+      }
+    },
+    "heater_logging": {
+      "forbid": {
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "invariant": {
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "reach": {
+        "outcome": "witness_found",
+        "property_satisfied": true,
+        "status": "sat"
+      }
+    },
+    "pump_supervisor_hooks": {
+      "forbid": {
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "invariant": {
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "reach": {
+        "outcome": "witness_found",
+        "property_satisfied": true,
+        "status": "sat"
+      }
+    },
+    "ratio_estimator": {
+      "forbid": {
+        "outcome": "property_violated",
+        "property_satisfied": false,
+        "status": "sat"
+      },
+      "invariant": {
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "reach": {
+        "outcome": "scenario_infeasible",
+        "property_satisfied": null,
+        "status": "unsat"
+      }
+    },
+    "telemetry_outputs": {
+      "forbid": {
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "invariant": {
+        "outcome": "property_satisfied",
+        "property_satisfied": true,
+        "status": "unsat"
+      },
+      "reach": {
+        "outcome": "witness_found",
+        "property_satisfied": true,
+        "status": "sat"
+      }
+    }
+  },
+  "inputs": {
+    "claude_distributed_elevator_can/case.json": "136b4a3bbe472c7b8197ec81874aba26d7b11a5542ab111c2913fbe9c8430444",
+    "claude_distributed_elevator_can/forbid.fbmcq": "c70fc9df3ddcee9d3fe8ef829581bcfe276a832277ac160d0b88846be6b649ec",
+    "claude_distributed_elevator_can/invariant.fbmcq": "6f6b9b501ffcf3acd36701ea949e18155a4e40fed15f15d929b42aa162611309",
+    "claude_distributed_elevator_can/model.fcstm": "884418695c4fa75622685f7ad41f462b72ae2781ebef739202fc349fa520ac56",
+    "claude_distributed_elevator_can/reach.fbmcq": "f2445c426d26bd1f6db7c9528df90635c86e396d250ffbaaeaf357a5b839aa00",
+    "claude_platooning_join_protocol/case.json": "821dc9d70c1480c6a44407744da20378ee6b80592e389728071ffcd6c5633325",
+    "claude_platooning_join_protocol/forbid.fbmcq": "86cd24be959fb1152b84a700ef1a5da61eabe23c35ff6355aaa7adc6e7c57680",
+    "claude_platooning_join_protocol/invariant.fbmcq": "f3239a5fd19b0097e82643e352389522bfb7f2fb5fcfa2dfd580817891adccfd",
+    "claude_platooning_join_protocol/model.fcstm": "7a31f8a8c4e7c66e53baa82dddc423ab82fe7f1f1a07d605a48813507c8b7b5a",
+    "claude_platooning_join_protocol/reach.fbmcq": "4295f67952d1e7de0d4cf9a15f7c54670c2a0077df1af5422b40b2de6756d239",
+    "claude_traffic_emergency_priority/case.json": "49370b34ac2b1bdfff807992dc80b893c29ce55487b5736a8bba57a030fb4120",
+    "claude_traffic_emergency_priority/forbid.fbmcq": "0c92f1281759fc241c390332061991ef3954a4181817bd200535af025dff20cf",
+    "claude_traffic_emergency_priority/invariant.fbmcq": "2631131fb106ba5e9f6685b1ee1d16980ddaeb6f746af9d4f01c4e186d772897",
+    "claude_traffic_emergency_priority/model.fcstm": "0b91223d54e1c5d3029a825dac2ae3d835214b60bf7dc9b9243352806765605a",
+    "claude_traffic_emergency_priority/reach.fbmcq": "377960567737e586eadb7144d2e34f474d3dece2a1a7b5aaf4004f7ba7c27f4b",
+    "claude_vtol_mission_supervision/case.json": "78c7e4f23a0ec978444154bd130b651d6dab2202f624d3d63b5a57f95dd131d3",
+    "claude_vtol_mission_supervision/forbid.fbmcq": "ec00c3db6ce00888d294cf678648b4d9a757ee81f3369382708ae58a7bd71838",
+    "claude_vtol_mission_supervision/invariant.fbmcq": "ab7dd0fb0ba966a9e085d210444da4ac1bc28e76ece1b588a11489501af6213f",
+    "claude_vtol_mission_supervision/model.fcstm": "3ae12d3f3913fe3adae10ac0abaaa4f6213d94cadcf691fc165ebeeac3a53721",
+    "claude_vtol_mission_supervision/reach.fbmcq": "f05f7dec272d9f8e48ba6c1b9acd8fa9f2af010c4923a79c678a0b4d2eb7e0c9",
+    "codex_deepseek_distributed_elevator_can/case.json": "13f8d9144d30d53dc16c758c08282847521cfdfc77a2a921e51625eb9bf1c387",
+    "codex_deepseek_distributed_elevator_can/forbid.fbmcq": "c70fc9df3ddcee9d3fe8ef829581bcfe276a832277ac160d0b88846be6b649ec",
+    "codex_deepseek_distributed_elevator_can/invariant.fbmcq": "6f6b9b501ffcf3acd36701ea949e18155a4e40fed15f15d929b42aa162611309",
+    "codex_deepseek_distributed_elevator_can/model.fcstm": "ba9d9c7174b2289f57d007d6a16f5d443816813c1b762087c92775b4d6c94166",
+    "codex_deepseek_distributed_elevator_can/reach.fbmcq": "0e5f3abd195dfa62013f191841648a1541e09971e1cd4c287c2b1276f1624e5a",
+    "codex_deepseek_platooning_join_protocol/case.json": "05f7bc7cfcdef8a594a44f23e31042351a63c8213b080d869292f2c50679ed63",
+    "codex_deepseek_platooning_join_protocol/forbid.fbmcq": "c90593c7852e2d22872e8ce9b738e50a410119948dda8eae4e2ed256a8ed7dc1",
+    "codex_deepseek_platooning_join_protocol/invariant.fbmcq": "9229a4b429fceaba8d297545b517444970ce80a2d8536dfcc3e2b0efcb142b68",
+    "codex_deepseek_platooning_join_protocol/model.fcstm": "8acef18a0366c3e9ad8be981dca21a62bf897f0034bc4fd0829295466c3dba90",
+    "codex_deepseek_platooning_join_protocol/reach.fbmcq": "eb3a1fb31490d1f4a22df919cd68faf381607d5bede130ca1aeab4f2d9460d91",
+    "codex_deepseek_traffic_emergency_priority/case.json": "df26e6fa641f245af6a2e210c5b69ec88234e877228d71d4c721edddcf03b9f1",
+    "codex_deepseek_traffic_emergency_priority/forbid.fbmcq": "6fc0146141c878cbd63f4fbe7557030833ebe9174387d4955c34080cc664850d",
+    "codex_deepseek_traffic_emergency_priority/invariant.fbmcq": "994261e387f934857df9b5c5f4e4872ce27f1b7be0371cba3f4f83806ae3cef7",
+    "codex_deepseek_traffic_emergency_priority/model.fcstm": "6f58ff238a44648efadec785f69bff1107728c589e5ae38b715d3988d17984fa",
+    "codex_deepseek_traffic_emergency_priority/reach.fbmcq": "df84257c23652d226e3d6b0bc60ac2e6e7d00b9bcfd1d93ec81ea9b3bc00c91f",
+    "codex_deepseek_vtol_mission_supervision/case.json": "be700d7eb4ac43b4b4365da4acabdade4fb86008b693994650653b810efc9c7f",
+    "codex_deepseek_vtol_mission_supervision/forbid.fbmcq": "ec00c3db6ce00888d294cf678648b4d9a757ee81f3369382708ae58a7bd71838",
+    "codex_deepseek_vtol_mission_supervision/invariant.fbmcq": "ab7dd0fb0ba966a9e085d210444da4ac1bc28e76ece1b588a11489501af6213f",
+    "codex_deepseek_vtol_mission_supervision/model.fcstm": "94cc6308c939409161e0ed65447d46ff465b8b93c5f9765ef62bf00b538e3b94",
+    "codex_deepseek_vtol_mission_supervision/reach.fbmcq": "729555ba07d386e3a481f302bfe8dbc5a22ab8f03f48e54bc9100de7d1d646ec",
+    "codex_distributed_elevator_can/case.json": "625fa1094fc457b7b44849d5a927d71743d5676683276c785c9e14352cd6813a",
+    "codex_distributed_elevator_can/forbid.fbmcq": "c70fc9df3ddcee9d3fe8ef829581bcfe276a832277ac160d0b88846be6b649ec",
+    "codex_distributed_elevator_can/invariant.fbmcq": "6f6b9b501ffcf3acd36701ea949e18155a4e40fed15f15d929b42aa162611309",
+    "codex_distributed_elevator_can/model.fcstm": "720c66882078b685c98dc6384d175fb54c4f97afa6e8ef634ae559f1d807464f",
+    "codex_distributed_elevator_can/reach.fbmcq": "71b6457653c65c03aaf09c54e63410db4d4a69c97da1f18916ec0a3293130d07",
+    "codex_platooning_join_protocol/case.json": "49cc98faddfdb6478da3e3f119ff46d59e1bdf09e178282b854fd6996ab82fb7",
+    "codex_platooning_join_protocol/forbid.fbmcq": "c15ada735a65913b224a7c5adc58bb7d842a1657897fe26a93a228add886d960",
+    "codex_platooning_join_protocol/invariant.fbmcq": "15f846f02ef6def675425a455bd2ec4d61e75c666038fbc66604efd3758c70cc",
+    "codex_platooning_join_protocol/model.fcstm": "e6cd76176f2f61954d04766ba58ec009dc637a90827f8279c199d459958f5623",
+    "codex_platooning_join_protocol/reach.fbmcq": "ea4a99ced94adcfca7aa25850f54f8afb0221eddcf123fba5687270e1bc018f1",
+    "codex_traffic_emergency_priority/case.json": "0e129f605d8bb587256f538eed681e447585e1439ddc0e325c6bb2dd83e8296d",
+    "codex_traffic_emergency_priority/forbid.fbmcq": "d52a1ebd63dc6d419a59a35e57d31bdf8dadaac9d469dc2711019b883d8b1589",
+    "codex_traffic_emergency_priority/invariant.fbmcq": "f135ea1494516f2e157c0f836a253d58780525313cdbf4c150e1d0c5b3e46a5a",
+    "codex_traffic_emergency_priority/model.fcstm": "0e726007a904b8ecff5d9e4f1c36cb4d54ef70cf4c5aff7bebd45a002bcd70b2",
+    "codex_traffic_emergency_priority/reach.fbmcq": "aa7a3a8a023c3203d998f5063c941c1306252842465bdd9083a3b4a68a0764e8",
+    "codex_vtol_mission_supervision/case.json": "ba53488974934287116864e025917549d2f5e77d20e661c1ad1b24b68339ae2f",
+    "codex_vtol_mission_supervision/forbid.fbmcq": "9d752152e53df657b770ae6311a0536f6f5cd4d5e14f170cc8d0a87135cf5847",
+    "codex_vtol_mission_supervision/invariant.fbmcq": "8d7066502efa5046ec298667c63842818b500e019fe49c0624ae003ff15362ed",
+    "codex_vtol_mission_supervision/model.fcstm": "1065233b516ba055a7c0c8a4dc480af72bf36d7b5f6ae1e02d3d7ad6626ae231",
+    "codex_vtol_mission_supervision/reach.fbmcq": "ada7fcc4a59984653afcf53033615419bb81e1c4b7f40bf95cc464efdceba94c",
+    "conveyor_counters/case.json": "757406879763b0c8ecb57391482d40afe0aa0537b62c24c2b98170f87f2c1f28",
+    "conveyor_counters/forbid.fbmcq": "ea856830cc6f01301df083780c273af50bceb4bdc306b9a47c8a854016d327c6",
+    "conveyor_counters/invariant.fbmcq": "640b7447d4a1da54a05b074ae2d88badd6974890604d525c8235426030bc49d1",
+    "conveyor_counters/model.fcstm": "ac24c2c5c6d194abeb1600e8b6c3e40bf58cea2175405ace01761456b0176839",
+    "conveyor_counters/reach.fbmcq": "43707d0bd1553e6faab412cd814a07379a5de322ea2dac18f8eaae93a46515a4",
+    "heater_logging/case.json": "5251a9e056ad2bdf8f94ec8195389854b6bd587078e437bfebb8e13a7261d93b",
+    "heater_logging/forbid.fbmcq": "23ade6fab36cb41dc3c221f0f54b36b1fb2e6ede1689d85970bc2806f9f07765",
+    "heater_logging/invariant.fbmcq": "d612e0581b75f60ae8f6a685d7992bab5ed5bfcdcd5c64c5d7ea0013d7b817a5",
+    "heater_logging/model.fcstm": "7cf4c8d4cad49f72520e71c6489cb960b1ce0ce387a8a927d2e364f65cb8eca8",
+    "heater_logging/reach.fbmcq": "dd3b93d242bdfc7b90cd5990a18db5e11602764ce828ec86e5b542816d253990",
+    "pump_supervisor_hooks/case.json": "b87dcf40ed7246f125bc11cd0858ce4ffd5554d3985d685629423c159dd050ed",
+    "pump_supervisor_hooks/forbid.fbmcq": "0fa3e42345f6ea73e1ea06c1f1373960b2c72e4cd09102d036475d172c138130",
+    "pump_supervisor_hooks/invariant.fbmcq": "8d467b4ef22c7ece70336cb177a8a85784d2ec663b42e436d71e6e6bbfcf9644",
+    "pump_supervisor_hooks/model.fcstm": "e5f4ebb0c3af00767653f35a3ffa9a33ee4fd180a521f70c4cd4c044cdc50f2a",
+    "pump_supervisor_hooks/reach.fbmcq": "b0fc86948ed595f37ad7d03994ee67b102bcc068b589db843162176e271f1207",
+    "ratio_estimator/case.json": "c6f8d2dc9c866a798623809ff6c481102b9f8fc738d5212a0e282bba20a1c736",
+    "ratio_estimator/forbid.fbmcq": "5010f9c55fe69a60a92255ec84064d899fb73e6d999ad426a1821ec77b90e047",
+    "ratio_estimator/invariant.fbmcq": "0cb376b00116949a154afef74d89982f7e2a84970203b86cfa2526f9f4a29eb3",
+    "ratio_estimator/model.fcstm": "e8b6ae5140984c2df5965fa6f061891e97b9b55452a3ca8bd711d65db365cf56",
+    "ratio_estimator/reach.fbmcq": "fba9d909034d6ae8f4ec45262b0da1dc5a87e044a12ea941b3c81b772b2f5c82",
+    "telemetry_outputs/case.json": "6ee4d67c2336e276203f4d38a427a828b1f580cacea411c55d4a48e8effa562e",
+    "telemetry_outputs/forbid.fbmcq": "e92e4fec7b85d2f3e9b95be6c3594089ec300b1a7e4dbce36a8a33dde65ac142",
+    "telemetry_outputs/invariant.fbmcq": "0d8fd764b747283ef8f009128dea5ed197026825e561e9ead32c63212e230f31",
+    "telemetry_outputs/model.fcstm": "c6013404acb73ef160686068a7b4d933954611ebd89e56cb802222eda95fe7df",
+    "telemetry_outputs/reach.fbmcq": "c7479b71f5fe57c690d6fc5c218ec8cd460d28d50fcc16e96789aeb7a211109d"
+  },
+  "kinds": {
+    "claude_distributed_elevator_can": {
+      "forbid": "forbid",
+      "invariant": "invariant",
+      "reach": "reach"
+    },
+    "claude_platooning_join_protocol": {
+      "forbid": "forbid",
+      "invariant": "invariant",
+      "reach": "reach"
+    },
+    "claude_traffic_emergency_priority": {
+      "forbid": "forbid",
+      "invariant": "invariant",
+      "reach": "reach"
+    },
+    "claude_vtol_mission_supervision": {
+      "forbid": "forbid",
+      "invariant": "invariant",
+      "reach": "reach"
+    },
+    "codex_deepseek_distributed_elevator_can": {
+      "forbid": "forbid",
+      "invariant": "invariant",
+      "reach": "reach"
+    },
+    "codex_deepseek_platooning_join_protocol": {
+      "forbid": "forbid",
+      "invariant": "invariant",
+      "reach": "reach"
+    },
+    "codex_deepseek_traffic_emergency_priority": {
+      "forbid": "forbid",
+      "invariant": "invariant",
+      "reach": "reach"
+    },
+    "codex_deepseek_vtol_mission_supervision": {
+      "forbid": "forbid",
+      "invariant": "invariant",
+      "reach": "reach"
+    },
+    "codex_distributed_elevator_can": {
+      "forbid": "forbid",
+      "invariant": "invariant",
+      "reach": "reach"
+    },
+    "codex_platooning_join_protocol": {
+      "forbid": "forbid",
+      "invariant": "invariant",
+      "reach": "reach"
+    },
+    "codex_traffic_emergency_priority": {
+      "forbid": "forbid",
+      "invariant": "invariant",
+      "reach": "reach"
+    },
+    "codex_vtol_mission_supervision": {
+      "forbid": "forbid",
+      "invariant": "invariant",
+      "reach": "reach"
+    },
+    "conveyor_counters": {
+      "forbid": "forbid",
+      "invariant": "invariant",
+      "reach": "reach"
+    },
+    "heater_logging": {
+      "forbid": "forbid",
+      "invariant": "invariant",
+      "reach": "reach"
+    },
+    "pump_supervisor_hooks": {
+      "forbid": "forbid",
+      "invariant": "invariant",
+      "reach": "reach"
+    },
+    "ratio_estimator": {
+      "forbid": "forbid",
+      "invariant": "invariant",
+      "reach": "reach"
+    },
+    "telemetry_outputs": {
+      "forbid": "forbid",
+      "invariant": "invariant",
+      "reach": "reach"
+    }
+  },
+  "measurement_map": [
+    {
+      "metric": "build_ms",
+      "note": "prepare, core relation, and property compilation; the region an encoding option changes",
+      "source": "compile_bmc_query wall time in the child"
+    },
+    {
+      "metric": "solve_ms",
+      "note": "the staged primary solve including its verdict; the region a solver option changes",
+      "source": "solve_bmc_property wall time in the child"
+    },
+    {
+      "metric": "replay_ms",
+      "note": "only when the primary status is sat; absent otherwise",
+      "source": "decode_bmc_result_trace + replay_bmc_witness wall time in the child"
+    },
+    {
+      "metric": "total_elapsed_ms",
+      "note": "production ledger; the solver's own accounting of the whole solve",
+      "source": "result.total_elapsed_ms"
+    },
+    {
+      "metric": "formula_dag_nodes",
+      "note": "a size measure that does not depend on printing or on the process; what a slice shrinks.  Counted after the peak memory reading",
+      "source": "distinct Z3 AST ids reachable from core.core and objective_formula"
+    },
+    {
+      "metric": "status / property_satisfied / outcome / replay_ok",
+      "note": "the correctness gate compares these between arms and against case.json",
+      "source": "result fields and replay.ok"
+    },
+    {
+      "metric": "peak_child_rss_bytes",
+      "note": "the kernel high-water mark of the production path; absent where the resource module is unavailable, never zero",
+      "source": "resource.getrusage(RUSAGE_SELF).ru_maxrss in the child, read right after replay"
+    },
+    {
+      "metric": "solver_statistics",
+      "note": "actual Z3 statistics; keys vary by profile/version. rlimit count and num allocs are context-wide, not per-query work and not adoption gates",
+      "source": "result.solver_statistics immediately after the primary check"
+    },
+    {
+      "metric": "pyfcstm_file",
+      "note": "not published; the parent refuses a sample whose package did not come from the arm's worktree",
+      "source": "pyfcstm.__file__ in the child"
+    }
+  ],
+  "readme_digest": "647c774622f25c53f9d9add5183035109809bcb6edd26d1a619bbb432a1157ae",
+  "reference_arm": "default",
+  "repetitions": 5,
+  "roles": {
+    "claude_distributed_elevator_can": "llm_generated",
+    "claude_platooning_join_protocol": "llm_generated",
+    "claude_traffic_emergency_priority": "llm_generated",
+    "claude_vtol_mission_supervision": "llm_generated",
+    "codex_deepseek_distributed_elevator_can": "llm_generated",
+    "codex_deepseek_platooning_join_protocol": "llm_generated",
+    "codex_deepseek_traffic_emergency_priority": "llm_generated",
+    "codex_deepseek_vtol_mission_supervision": "llm_generated",
+    "codex_distributed_elevator_can": "llm_generated",
+    "codex_platooning_join_protocol": "llm_generated",
+    "codex_traffic_emergency_priority": "llm_generated",
+    "codex_vtol_mission_supervision": "llm_generated",
+    "conveyor_counters": "slicing_positive",
+    "heater_logging": "slicing_positive",
+    "pump_supervisor_hooks": "abstract_skip",
+    "ratio_estimator": "definedness_trap",
+    "telemetry_outputs": "slicing_positive"
+  },
+  "run_id": "cd24a68e137b",
+  "schema": "bmc-solving-benchmark/v1",
+  "solver_thresholds": {
+    "logic": {
+      "id": "T1",
+      "maximum_query_regression": 0.1,
+      "minimum_median_improvement": 0.15
+    },
+    "tactic": {
+      "id": "T2",
+      "maximum_query_regression": 0.1,
+      "minimum_median_improvement": 0.15
+    }
+  },
+  "timeout_ms": null,
+  "warmups": 1
+}

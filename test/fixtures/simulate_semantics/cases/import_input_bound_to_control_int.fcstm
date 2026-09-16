@@ -1,0 +1,15 @@
+control int shared = 1;
+state Root {
+    import "../modules/input_probe_int.fcstm" as A {
+        var sample -> shared;
+        var entered -> A_entered;
+        var exited -> A_exited;
+    }
+    import "../modules/input_probe_int.fcstm" as B {
+        var sample -> shared;
+        var entered -> B_entered;
+        var exited -> B_exited;
+    }
+    [*] -> A;
+    A -> B effect { shared = 2; };
+}

@@ -1922,50 +1922,62 @@ def _resolve_accepted_atoms(
     condition: BoolTemplate,
     registry: Mapping[str, BoolTemplate],
     active: Optional[Set[str]] = None,
+    completed: Optional[Dict[int, BoolTemplate]] = None,
 ) -> BoolTemplate:
     if active is None:
         active = set()
+    if completed is None:
+        completed = {}
+    ident = id(condition)
+    if ident in completed:
+        return completed[ident]
     if condition.kind == "atom":
         atom = condition._atom_name()
         if not atom.startswith(_ACCEPTED_ATOM_PREFIX):
-            return condition
-        label = atom[len(_ACCEPTED_ATOM_PREFIX) :]
-        if label not in registry:
-            raise BmcBuildError(
-                "accepted atom references unknown case label: %r." % label
+            resolved = condition
+        else:
+            label = atom[len(_ACCEPTED_ATOM_PREFIX) :]
+            if label not in registry:
+                raise BmcBuildError(
+                    "accepted atom references unknown case label: %r." % label
+                )
+            if label in active:
+                raise BmcBuildError(
+                    "accepted atom cycle detected for case label: %r." % label
+                )
+            active.add(label)
+            resolved = _resolve_accepted_atoms(
+                registry[label], registry, active, completed
             )
-        if label in active:
-            raise BmcBuildError(
-                "accepted atom cycle detected for case label: %r." % label
-            )
-        active.add(label)
-        resolved = _resolve_accepted_atoms(registry[label], registry, active)
-        active.remove(label)
-        return resolved
-    if condition.kind in {"true", "false"}:
-        return condition
-    if condition.kind == "not":
-        return BoolTemplate.not_(
-            _resolve_accepted_atoms(condition.operands[0], registry, active)
+            active.remove(label)
+    elif condition.kind in {"true", "false"}:
+        resolved = condition
+    elif condition.kind == "not":
+        resolved = BoolTemplate.not_(
+            _resolve_accepted_atoms(condition.operands[0], registry, active, completed)
         )
-    if condition.kind == "and":
-        return BoolTemplate.and_(
+    elif condition.kind == "and":
+        resolved = BoolTemplate.and_(
             *[
-                _resolve_accepted_atoms(item, registry, active)
+                _resolve_accepted_atoms(item, registry, active, completed)
                 for item in condition.operands
             ]
         )
-    if condition.kind == "or":
-        return BoolTemplate.or_(
+    elif condition.kind == "or":
+        resolved = BoolTemplate.or_(
             *[
-                _resolve_accepted_atoms(item, registry, active)
+                _resolve_accepted_atoms(item, registry, active, completed)
                 for item in condition.operands
             ]
         )
-    raise _internal_bmc_error(  # pragma: no cover
-        "unsupported boolean template kind while resolving accepted atoms: %r."
-        % condition.kind
-    )
+    else:
+        raise _internal_bmc_error(  # pragma: no cover
+            "unsupported boolean template kind while resolving accepted atoms: %r."
+            % condition.kind
+        )
+    # Insert only after successful recursion so cycles and missing labels still fail.
+    completed[ident] = resolved
+    return resolved
 
 
 def _validate_sentinel_absorb_partition(
@@ -2264,8 +2276,18 @@ def verify_source_partition(
         [case.condition for case in success + delta] + list(diagnostics)
     )
     registry = {case.label: case.condition for case in success + delta}
-    buckets = [_resolve_accepted_atoms(case.condition, registry) for case in success]
-    buckets.extend(_resolve_accepted_atoms(case.condition, registry) for case in delta)
+    # Input trees remain owned by the cases and registry throughout this call,
+    # so their identities cannot be reused. Identity keys avoid recursive hashing
+    # of shared immutable trees; no completed result survives this partition.
+    completed: Dict[int, BoolTemplate] = {}
+    buckets = [
+        _resolve_accepted_atoms(case.condition, registry, completed=completed)
+        for case in success
+    ]
+    buckets.extend(
+        _resolve_accepted_atoms(case.condition, registry, completed=completed)
+        for case in delta
+    )
     if diagnostics:
         buckets.append(BoolTemplate.or_(*diagnostics))
     variables = sorted(

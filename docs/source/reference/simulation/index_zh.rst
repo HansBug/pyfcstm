@@ -373,3 +373,8 @@ Delta、异常、中断、热启动，以及伪状态、强制转换和组合转
 * ``pyfcstm/simulate/runtime.py``、``context.py`` 和 ``decorators.py``：Python 应用程序接口表面。
 * ``test/fixtures/simulate_semantics/cases/`` 与 ``test/testings/simulate_semantics.py``：执行顺序场景。
 * ``docs/source/tutorials/simulation/*.demo.*``：文档中已检查的命令转录。
+
+.. toctree::
+   :maxdepth: 1
+
+   inputs_zh

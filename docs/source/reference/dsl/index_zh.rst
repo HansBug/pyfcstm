@@ -150,7 +150,7 @@ FCSTM 支持在每个持久变量定义、状态（包括根状态和伪状态�
 顶层程序形式
 --------------
 
-普通 DSL 入口是零个或多个持久变量声明，后面接一个根状态。
+普通 DSL 入口是零个或多个变量声明，后面接一个根状态。
 
 片段：
 
@@ -171,6 +171,44 @@ FCSTM 支持在每个持久变量定义、状态（包括根状态和伪状态�
 * 初始化表达式使用 ``init_expression``。这个子集接受字面量、数学常量、算术、
   位运算符和一元数学函数，但不接受运行时变量引用，也不接受 C 风格三目表达式。
 * 根状态可以是叶状态或复合状态；实际模型通常使用复合根状态。
+
+变量角色
+~~~~~~~~
+
+.. list-table:: 声明与所有权
+   :header-rows: 1
+
+   * - 声明
+     - ``role``
+     - 初始化与模型赋值
+   * - ``control int count = 0;`` / ``def int count = 0;``
+     - ``control``
+     - 必须初始化；模型可读写。
+   * - ``input float pressure;``
+     - ``input``
+     - 禁止初始化；模型只读。
+   * - ``param int limit = 2;``
+     - ``param``
+     - 必须提供默认值；模型只读。
+   * - ``output int command = 0;``
+     - ``output``
+     - 必须初始化；模型可读写，可由多个动作写入。
+
+``control``、``input``、``param``、``output``
+是保留字，不能作为变量、状态、事件或动作名。``dynamic`` 和 ``static`` 是普通标识符，旧输入长声明不再接受。所有声明共享同一个命名空间。
+初始化表达式不能引用任何变量。对动态输入和参数的赋值在模型构造时拒绝，
+包括生命周期动作、横切动作、转移效果和嵌套条件分支中的写入。
+
+AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供 ``CONTROL``、``INPUT``、``PARAM`` 和 ``OUTPUT`` 四个枚举值；
+``VarDefine.init`` 在合法模型中仅对动态输入为 ``None``。
+``StateMachine.control_variables``、``inputs``、``parameters``、
+``output_variables``、``persistent_variables`` 返回保持全局声明顺序的只读映射；
+最后一个按原序筛选控制变量与输出变量，映射值仍是 ``defines`` 中的对象。
+``inspect`` JSON 的变量条目包含必填 ``role``；动态输入和参数只读、输出变量只写，
+都不产生普通控制变量的无用变量告警。
+
+本节定义语法与模型契约；运行时输入源、按角色合并导入、BMC 输入符号与生成运行时接口
+分别见仿真、BMC 与模板指南。
 
 .. _dsl-import-preamble-forms-zh:
 
@@ -712,16 +750,16 @@ FCSTM 支持在每个持久变量定义、状态（包括根状态和伪状态�
      - ``import "file.fcstm" as Alias { ... }``
      - 包含映射语句。
    * - 变量兜底选择器
-     - ``def * -> target;``
+     - ``var * -> target;``
      - 兜底变量映射。
    * - 变量集合选择器
-     - ``def {a, b} -> target;``
+     - ``var {a, b} -> target;``
      - 映射一组变量。
    * - 变量模式选择器
-     - ``def sensor_* -> sensor_$1;``
+     - ``var sensor_* -> sensor_$1;``
      - 模式选择器是紧凑且空白敏感的；``$1`` 表示第一个通配捕获。
    * - 变量精确选择器
-     - ``def value -> renamed;``
+     - ``var value -> renamed;``
      - 映射一个变量。
    * - 目标模板
      - ``ID``、紧凑模板或 ``*``
@@ -734,7 +772,47 @@ FCSTM 支持在每个持久变量定义、状态（包括根状态和伪状态�
      - ``import "./dir/main.fcstm" as Subsystem;``
      - 使用显式文件；不支持裸目录导入。
 
-文件解析、递归加载、冲突检测、映射优先级和模型组装在解析后的 Python 导入 / 模型代码中实现。
+``var`` 是规范映射关键字，``def`` 是显式支持的旧拼写。以下矩阵的行是子模块源角色，列是父模型显式声明的目标角色；每个合法单元格是组装后的最终角色。数值类型必须严格相同，``int`` 与 ``float`` 不会隐式转换。
+
+.. list-table:: 绑定后的最终角色
+   :header-rows: 1
+
+   * - 子角色 / 父角色
+     - ``param``
+     - ``input``
+     - ``control``
+     - ``output``
+   * - ``param``
+     - ``param``
+     - 禁止
+     - 禁止
+     - 禁止
+   * - ``input``
+     - ``param``
+     - ``input``
+     - ``control``
+     - ``output``
+   * - ``control``
+     - 禁止
+     - 禁止
+     - ``control``
+     - ``output``
+   * - ``output``
+     - 禁止
+     - 禁止
+     - ``control``
+     - ``output``
+
+父声明决定最终变量的存储、时间行为和对外接口。例如子 ``input`` 绑定父 ``param`` 后只需要构造参数，不再需要输入读取函数；子 ``control`` 绑定父 ``output`` 后成为系统输出；子 ``output`` 绑定父 ``control`` 后仍可写入，但不再具有系统输出身份。模型分区、检查报告、仿真、BMC 和生成接口都使用最终角色。
+
+源模块必须先满足自身角色约束。任何源 ``input`` 或 ``param`` 写入都分别以 ``E_INPUT_WRITE`` 或 ``E_PARAM_WRITE`` 拒绝，包含不会执行的条件分支；不能借映射获得写权限。子 ``param`` 绑定父 ``input``、子 ``output`` 绑定父 ``param`` 都以 ``E_IMPORT_DUPLICATE_MAPPING`` 拒绝。
+
+只有父级显式声明允许跨角色绑定。目标不存在时按子角色、类型和默认值创建；来自其他导入的目标不等于父级显式声明，不按导入顺序升级角色。显式父默认值优先；隐式同角色共享继续要求默认值一致，共享 ``input`` 必须由父级显式声明。每一层嵌套绑定独立校验：子 ``input`` 先绑定中间 ``param`` 后，该中间变量不能再绑定外层 ``control``。
+
+绑定只有一个实际变量，不引入缓存、副本或一拍延迟。子 ``input`` 绑定父 ``control/output`` 后读取当前执行位置的父值：若 ``A.exit`` 读到 1，父转换的 ``effect`` 随后写入 2，则 ``B.enter`` 必须读到 2。只有最终仍为 ``input`` 的环境接口按拍冻结；``param`` 全程固定，``control/output`` 未写保持。依赖子输入整拍稳定的验证结论需要在组装后的模型上重新验证。
+
+文件解析、递归加载、冲突检测、映射优先级和模型组装在解析后的 Python 导入 / 模型代码中实现。完整两文件使用例见 :ref:`dsl-import-task-zh`。
+
 
 .. _dsl-diagnostics-risk-zh:
 
@@ -934,11 +1012,11 @@ FCSTM 支持在每个持久变量定义、状态（包括根状态和伪状态�
      - 保存显示元数据。
      - 不改变路径解析。
    * - 变量映射
-     - ``def sensor_* -> left_$1;``
+     - ``var sensor_* -> left_$1;``
      - 用通配捕获重写变量名。
      - ``$1`` 只能引用存在的捕获组。
    * - 兜底映射
-     - ``def * -> *;``
+     - ``var * -> *;``
      - 保留未被更具体规则命中的名称。
      - 规则优先级必须可审计。
    * - 事件映射
@@ -1209,7 +1287,7 @@ DSL 覆盖矩阵
      - 已同步
    * - ``dsl-import-mapping``
      - 导入
-     - ``def_mapping_statement`` / ``event_mapping_statement``
+     - ``import_variable_mapping`` / ``import_event_mapping``
      - N/A：教程不展开导入
      - :ref:`dsl-import-task-zh`
      - :ref:`dsl-import-forms-zh`

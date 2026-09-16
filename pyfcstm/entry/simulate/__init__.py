@@ -58,7 +58,7 @@ def _add_simulate_subcommand(cli: click.Group) -> click.Group:
         from ...dsl import parse_with_grammar_entry
         from ...dsl.error import GrammarParseError
         from ...model import parse_dsl_node_to_state_machine
-        from ...simulate import SimulationRuntime
+        from ...simulate import SimulationRuntime, SimulationRuntimeInputSourceError
         from ...utils import auto_decode
         from ...utils.validate import ModelValidationError
 
@@ -78,7 +78,13 @@ def _add_simulate_subcommand(cli: click.Group) -> click.Group:
             return
 
         # Create runtime
-        runtime = SimulationRuntime(model)
+        try:
+            runtime = SimulationRuntime(model)
+        except SimulationRuntimeInputSourceError as err:
+            # Construction rejects dynamic declarations without a bound source.
+            raise click.ClickException(
+                "{} Bind input_source using the SimulationRuntime Python API.".format(err)
+            ) from err
 
         # Batch mode
         if batch_commands:

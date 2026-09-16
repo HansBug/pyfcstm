@@ -370,8 +370,8 @@ assembly run after parsing.
 .. code-block:: fcstm
 
    import "./import_worker.fcstm" as LeftWorker {
-       def sensor_* -> left_$1;
-       def speed -> plant_speed;
+       var sensor_* -> left_$1;
+       var speed -> plant_speed;
        event /Start -> Start named "Shared Start";
    }
 

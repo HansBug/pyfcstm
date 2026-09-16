@@ -1,0 +1,9 @@
+output int exported = 10;
+control int internal = 20;
+state Root {
+    import "../modules/writable_probe.fcstm" as Probe {
+        var counter -> exported;
+        var report -> internal;
+    }
+    [*] -> Probe;
+}

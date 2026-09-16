@@ -1106,6 +1106,14 @@ counterexample, and the evidence that should be inspected after the run.
      - Legal forms
      - Boundary or counterexample
      - Evidence to inspect
+   * - ``--cone-slicing``
+     - Explicitly enable conservative slicing; disabled by default.
+     - Potentially partial arithmetic and dependencies remain; abstract models skip slicing. More variables do not guarantee a removable cone.
+     - Inspect ``result.cone_slicing`` when enabled; witnesses retain all variables, and skips or fallback are reported.
+   * - ``--solver-profile``
+     - ``default`` keeps the generic solver; ``logic`` detects arithmetic fragments; ``tactic`` uses the fixed simplification pipeline. Default: ``default``.
+     - ``--solver-profile fast`` is a usage error (exit ``2``); explanations and proofs always use the default solver.
+     - JSON ``result.solver_profile``, ``result.solver_logic`` and ``result.solver_statistics``; SAT witnesses must pass replay.
    * - ``--explain-infeasibility``
      - ``none`` for the mandatory verdict alone; ``formal`` for the classification and a source core; ``proof`` for a checked step-by-step proof.
      - The depth never changes the verdict, so it cannot turn an inconclusive run into a conclusive one. ``proof`` degrades to ``formal`` when no catalog rule closes the core; a caller that treats a missing ``proof`` key as an error will misread that.

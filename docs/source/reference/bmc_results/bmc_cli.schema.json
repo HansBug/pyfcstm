@@ -2966,7 +2966,10 @@
         "total_elapsed_ms",
         "feasibility",
         "available_model_roles",
-        "diagnostics"
+        "diagnostics",
+        "solver_profile",
+        "solver_logic",
+        "solver_statistics"
       ],
       "properties": {
         "node": {
@@ -3079,6 +3082,91 @@
           "items": {
             "type": "string"
           }
+        },
+        "solver_profile": {
+          "enum": [
+            "default",
+            "logic",
+            "tactic"
+          ]
+        },
+        "solver_logic": {
+          "enum": [
+            null,
+            "QF_LIA",
+            "QF_LRA",
+            "QF_LIRA",
+            "QF_NIA",
+            "QF_NRA",
+            "NIRA"
+          ]
+        },
+        "solver_statistics": {
+          "type": "object",
+          "propertyNames": {
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "cone_slicing": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled",
+            "retained_count",
+            "dropped_variables",
+            "skipped_reason",
+            "fallback"
+          ],
+          "properties": {
+            "enabled": {
+              "const": true,
+              "type": "boolean"
+            },
+            "retained_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "dropped_variables": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "skipped_reason": {
+              "enum": [
+                null,
+                "abstract_actions",
+                "no_removable_variables"
+              ]
+            },
+            "fallback": {
+              "type": "boolean"
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "skipped_reason": {
+                    "type": "string"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "dropped_variables": {
+                    "maxItems": 0
+                  }
+                }
+              }
+            }
+          ]
         }
       },
       "allOf": [
@@ -4199,6 +4287,25 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "solver_profile": {
+                "enum": [
+                  "default",
+                  "tactic"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "solver_logic": {
+                "const": null
+              }
+            }
+          }
         }
       ]
     },
@@ -4318,7 +4425,9 @@
         "event_reads",
         "abstract_calls",
         "consumed_events",
-        "unconsumed_events"
+        "unconsumed_events",
+        "inputs",
+        "input_reads"
       ],
       "properties": {
         "index": {
@@ -4383,8 +4492,45 @@
           "items": {
             "type": "string"
           }
+        },
+        "inputs": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "input_reads": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "case_kind": {
+                "const": "absorb"
+              }
+            },
+            "required": [
+              "case_kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "inputs": {
+                "maxProperties": 0
+              },
+              "input_reads": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      ]
     },
     "legacyWitness": {
       "type": "object",
@@ -4434,7 +4580,8 @@
             "mode",
             "state",
             "sentinel",
-            "vars"
+            "vars",
+            "parameters"
           ],
           "properties": {
             "mode": {
@@ -4452,6 +4599,12 @@
             },
             "vars": {
               "$ref": "#/$defs/stringMap"
+            },
+            "parameters": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "number"
+              }
             }
           }
         },
@@ -4589,7 +4742,8 @@
             "mode",
             "state",
             "sentinel",
-            "vars"
+            "vars",
+            "parameters"
           ],
           "properties": {
             "mode": {
@@ -4607,6 +4761,12 @@
             },
             "vars": {
               "$ref": "#/$defs/stringMap"
+            },
+            "parameters": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "number"
+              }
             }
           }
         },
@@ -4836,7 +4996,8 @@
         "consumed_events",
         "unconsumed_events",
         "abstract_calls",
-        "delta"
+        "delta",
+        "inputs"
       ],
       "properties": {
         "index": {
@@ -4869,6 +5030,12 @@
         },
         "delta": {
           "type": "boolean"
+        },
+        "inputs": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
         }
       }
     },
@@ -7025,17 +7192,33 @@
         {
           "$comment": "Which side of the graph a method belongs to. Expressible here for the same reason as the rule below: it is an object-internal condition on two of this object's own values, not a relation to a sibling node and not a numeric comparison. The reference states it as prose -- both bindings are used by input nodes only, the checker and the solver by derived and root nodes -- and a reversed pairing describes a check that cannot have happened: a contradiction has no core member to re-encode against, an input has no premises to re-derive from.",
           "if": {
-            "required": ["kind"],
-            "properties": { "kind": { "const": "input" } }
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "input"
+              }
+            }
           },
           "then": {
             "properties": {
-              "verification_method": { "enum": ["core_binding", "core_binding_unit"] }
+              "verification_method": {
+                "enum": [
+                  "core_binding",
+                  "core_binding_unit"
+                ]
+              }
             }
           },
           "else": {
             "properties": {
-              "verification_method": { "enum": ["rule_checker", "solver_entailment"] }
+              "verification_method": {
+                "enum": [
+                  "rule_checker",
+                  "solver_entailment"
+                ]
+              }
             }
           }
         },

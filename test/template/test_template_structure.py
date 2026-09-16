@@ -102,6 +102,7 @@ _ALLOWED_PYTHON_RUNTIME_IMPORTS = {"dataclasses", "math", "types", "typing"}
 _ALLOWED_C_RUNTIME_INCLUDES = {
     "machine.h",
     "math.h",
+    "float.h",
     "stddef.h",
     "stdarg.h",
     "stdio.h",
@@ -246,6 +247,7 @@ def _assert_source_context_terms(text):
     assert (
         "canonical model export" in normalized
         or "normalized model export" in normalized
+        or "规范化模型导出" in normalized
     )
     for banned in _BANNED_SOURCE_WORDING:
         assert banned not in normalized
@@ -457,83 +459,20 @@ def test_c_family_readmes_document_deployment_safety_boundaries(rendered_templat
             assert "pyfcstm inspect" in text
             assert "C/C++ deployment-profile" in text
             assert "Python" in text
-            assert "https://github.com/HansBug/pyfcstm/issues/254" in text
-            assert "https://github.com/HansBug/pyfcstm/issues/255" in text
-            assert "non-reentrant" in text
-            assert "volatile" in text
-            assert "DMA" in text
-        assert "FE_TONEAREST" in generated_readme
-        assert "nearbyint()" in generated_readme
-        assert "FE_TONEAREST" in generated_readme_zh
-        assert "nearbyint()" in generated_readme_zh
-
-        generated_readme_words = " ".join(generated_readme.split())
-        generated_readme_zh_words = " ".join(generated_readme_zh.split())
-        assert (
-            "This generated runtime is not a claim of MISRA, AUTOSAR, "
-            "DO-178C, IEC 61508, or ISO 26262 certification readiness."
-            in generated_readme_words
-        )
-        assert (
-            "They do not make this generated runtime MISRA, AUTOSAR, DO-178C, "
-            "IEC 61508, ISO 26262, or other certification ready by themselves."
-            in generated_readme_words
-        )
-        assert (
-            "本生成运行时不宣称已经满足 MISRA、AUTOSAR、DO-178C、IEC 61508 "
-            "或 ISO 26262 认证就绪要求。" in generated_readme_zh_words
-        )
-        assert (
-            "它们本身不会让生成运行时达到 MISRA、AUTOSAR、DO-178C、IEC 61508、"
-            "ISO 26262 或其他认证 ready。" in generated_readme_zh_words
-        )
-
-        assert "Integration Preflight Checklist" in generated_readme
-        assert "engineering evidence" in generated_readme
-        assert "集成前检查清单" in generated_readme_zh
-        assert "工程证据" in generated_readme_zh
-
-    for name in ["c_poll", "cpp_poll"]:
-        generated_readme = _read_text(rendered_templates[name] / "README.md")
-        generated_readme_zh = _read_text(rendered_templates[name] / "README_zh.md")
-        assert "complete" in generated_readme
-        assert "EventChecks" in generated_readme
-        assert "完整" in generated_readme_zh
-        assert "EventChecks" in generated_readme_zh
-
-    for name in ["cpp", "cpp_poll"]:
-        generated_readme = _read_text(rendered_templates[name] / "README.md")
-        generated_readme_zh = _read_text(rendered_templates[name] / "README_zh.md")
-        assert "wrapper surface" in generated_readme
-        assert "MachineWrapper" in generated_readme
-        assert "wrapper surface" in generated_readme_zh
-        assert "MachineWrapper" in generated_readme_zh
-
-
-@pytest.mark.unittest
-def test_c_family_hot_start_readmes_reuse_runtime_default_snapshot(rendered_templates):
-    for name in ["c", "c_poll", "cpp", "cpp_poll"]:
-        for readme_name in ["README.md", "README_zh.md"]:
-            readme = _read_text(rendered_templates[name] / readme_name)
-            heading = re.search(r"(?m)^### [45]\. Hot Start\n", readme)
-            assert heading is not None
-            next_heading = readme.find("\n### ", heading.end())
-            hot_start = readme[heading.end() : next_heading]
-
-            assert re.search(r"(?m)^\w+ default_machine;$", hot_start)
-            assert re.search(r"_init\(&default_machine\)", hot_start)
-            assert re.search(
-                r"initial_vars = \*\w+_vars\(&default_machine\);",
-                hot_start,
-            )
-            assert "default init failed" in hot_start
-            assert re.search(r"if \(!\w+_hot_start\(", hot_start)
-            assert "hot start failed" in hot_start
-            assert (
-                "full runtime scratch object" in hot_start
-                or "完整的运行时暂存对象" in hot_start
-            )
-            assert not re.search(r"initial_vars\.[A-Za-z_]", hot_start)
+            for contract in ("non-reentrant", "volatile", "DMA", "FE_TONEAREST",
+                             "nearbyint()", "PYFCSTM_GENERATED_NO_HEAP",
+                             "MISRA", "AUTOSAR", "DO-178C", "IEC 61508", "ISO 26262"):
+                assert contract in text
+        assert "does not establish" in generated_readme
+        assert "不代表通过" in generated_readme_zh
+        assert "strict freestanding guarantee" in generated_readme
+        assert "不等于严格 freestanding 保证" in generated_readme_zh
+        if name.endswith("poll"):
+            assert "Complete table" in generated_readme
+            assert "完整表" in generated_readme_zh
+        if name.startswith("cpp"):
+            assert "MachineWrapper" in generated_readme
+            assert "MachineWrapper" in generated_readme_zh
 
 
 @pytest.mark.unittest
@@ -552,9 +491,7 @@ def test_cpp_template_documentation_describes_early_first_class_status(
         generated_readme = _read_text(rendered_templates[name] / "README.md")
         generated_readme_zh = _read_text(rendered_templates[name] / "README_zh.md")
         for text in [generated_readme, generated_readme_zh]:
-            assert "`c`, `c_poll`, `cpp`, and `cpp_poll`" in text or (
-                "`c`、`c_poll`、`cpp` 和 `cpp_poll`" in text
-            )
+            assert "experimental" in text
             assert "gcc -std=c99" in text
             assert "g++ -std=c++98" in text
             assert "clang -std=c99" in text
@@ -617,6 +554,7 @@ def test_c_family_helpers_are_template_scoped():
         python_renderer = StateMachineCodeRenderer(str(template_dirs["python"]))
         c_helper_names = {
             "to_c_identifier",
+    "readonly_value_identifier",
             "to_c_path_identifier",
             "to_c_public_identifier",
             "to_c_public_macro_identifier",

@@ -12,6 +12,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Iterable, Tuple
 
+from test.testings.simulate_semantics import (
+    BMC_CORE_RUNNER,
+    is_runner_excluded,
+    load_semantic_case,
+)
+
 
 @dataclass(frozen=True)
 class BmcSemanticFixturePolicy:
@@ -139,14 +145,6 @@ BMC_CORE_FIXTURE_LEDGER_CASES = (
 )
 
 
-def _temporary_policy(case_id: str) -> BmcSemanticFixturePolicy:
-    return BmcSemanticFixturePolicy(
-        mode="temporary_exclude",
-        bucket="runtime_step_error",
-        reason="Runtime step-error semantics are scheduled for later BMC diagnostic research.",
-    )
-
-
 def policy_for_case(case_id: str) -> BmcSemanticFixturePolicy:
     """Return the BMC-core fixture policy for ``case_id``.
 
@@ -162,6 +160,15 @@ def policy_for_case(case_id: str) -> BmcSemanticFixturePolicy:
         >>> policy_for_case("abstract_handler_context_metadata").mode
         'hard_pass'
     """
+    case = load_semantic_case(case_id)
+    if "variable_roles" in case.data["categories"] and is_runner_excluded(
+        case, BMC_CORE_RUNNER
+    ):
+        return BmcSemanticFixturePolicy(
+            mode="temporary_exclude",
+            bucket="variable_roles",
+            reason="Runtime error recovery requires simulator execution; BMC rejects undefined executions.",
+        )
     if case_id in PLAIN_BEFORE_ALIGNMENT_CASES:
         return BmcSemanticFixturePolicy(
             mode="hard_pass",
@@ -193,7 +200,11 @@ def policy_for_case(case_id: str) -> BmcSemanticFixturePolicy:
             reason="Abstract call records, call-time snapshots, and handler_calls expectations are covered by the current BMC relation.",
         )
     if case_id in TEMPORARY_BMC_CORE_EXCLUDE_CASES:
-        return _temporary_policy(case_id)
+        return BmcSemanticFixturePolicy(
+            mode="temporary_exclude",
+            bucket="runtime_step_error",
+            reason="Runtime step-error semantics are scheduled for later BMC diagnostic research.",
+        )
     if case_id in CONSTRUCTOR_DIAGNOSTIC_EXCLUDE_CASES:
         return BmcSemanticFixturePolicy(
             mode="long_term_exclude",

@@ -648,3 +648,19 @@ describe('jsfcstm state-machine model', () => {
         assert.throws(() => child.resolve_event('/Parent.Missing'), /Event "Missing" not found in state "Root.Parent"/);
     });
 });
+
+it('reports access provenance honestly for a hydrated model without source ranges', () => {
+    const raw = createHydrationRawStateMachine();
+    raw.defines = {counter: {
+        kind: 'varDefine', pyModelType: 'VarDefine', range: ZERO_RANGE, text: 'control int counter = 0;',
+        name: 'counter', type: 'int', role: 'control', spelling: 'control',
+        init: {kind: 'integer', pyModelType: 'Integer', range: ZERO_RANGE, text: '0', value: 0},
+    }};
+    const model = modelModule.hydrateStateMachine(raw as never);
+    const report = packageModule.inspectModel(model);
+    const accesses = report.variables.flatMap(variable => [...variable.read_sites, ...variable.write_sites]);
+    assert.ok(accesses.some(site => site.kind === 'effect'));
+    assert.ok(accesses.every(site => site.span === null));
+    assert.ok(accesses.filter(site => site.kind === 'action').every(site => site.source_path === model.filePath));
+    assert.ok(accesses.filter(site => site.kind === 'effect').every(site => site.source_path === null));
+});

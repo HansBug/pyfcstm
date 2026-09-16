@@ -12,6 +12,12 @@ OperationalNode
 .. autodata:: OperationalNode
 
 
+readonly\_value\_identifier
+-----------------------------------------------------
+
+.. autofunction:: readonly_value_identifier
+
+
 render\_c\_action\_body
 -----------------------------------------------------
 

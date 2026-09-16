@@ -45,8 +45,10 @@ import math
 import sys
 import time
 from collections.abc import Iterable as IterableABC
+from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from fractions import Fraction
+from functools import partial
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -57,6 +59,8 @@ from typing import (
     Optional,
     Sequence,
     Tuple,
+    Set,
+    Union,
     cast,
 )
 
@@ -84,10 +88,24 @@ from .explanation import (
 )
 from .properties import BmcPropertyFormula, _lower_predicate
 from .query import EventAssumption
-from .relation import BmcCaseRelation
-from .solver import BmcSolveStatus, _SolveBudget, _check_with_budget
-from pyfcstm.model import OnAspect, OnStage, StateMachine
-from pyfcstm.simulate import ReadOnlyExecutionContext, SimulationRuntime
+from .relation import BmcCaseRelation, _assumption_input_names
+from .slicing import ConeSlice
+from .solver import (
+    SOLVER_PROFILES,
+    _LOGIC_PROBES,
+    BmcSolveStatus,
+    _SolveBudget,
+    _check_with_budget,
+    _solver_for_profile,
+)
+from pyfcstm.dsl.role import VariableRole
+from pyfcstm.model import Expr, OnAspect, OnStage, StateMachine
+from pyfcstm.simulate import (
+    ReadOnlyExecutionContext,
+    SimulationRuntime,
+    SimulationRuntimeExpressionError,
+)
+from pyfcstm.simulate.inputs import ReplayInputPattern
 
 if TYPE_CHECKING:  # pragma: no cover - annotation-only imports
     from .explanation import BmcInfeasibilityExplanation
@@ -1278,7 +1296,14 @@ def _render_replay_result(result: "BmcReplayResult", **kwargs: Any) -> str:
 
 def _canonical_for_pretty(obj: Any) -> Mapping[str, Any]:
     if isinstance(obj, BmcSolveResult):
-        return obj.to_canonical()
+        result = obj.to_canonical()
+        # Detailed statistics belong in the machine report, not the verdict
+        # table. Preserve the established default human-readable output.
+        result.pop("solver_statistics")
+        if obj.solver_profile == "default":
+            result.pop("solver_profile")
+            result.pop("solver_logic")
+        return result
     if isinstance(obj, BmcFeasibilityCheck):
         return obj.to_canonical()
     if isinstance(obj, BmcFeasibilityRefinementCheck):
@@ -2056,7 +2081,7 @@ def _solve(
         >>> _solve(z3.BoolVal(True), None)[0]
         'sat'
     """
-    solver = z3.Solver()
+    solver, _ = _solver_for_profile("default")
     solver.add(expr)
     status, model, reason, elapsed_ms, _ = _check_with_budget(
         solver, _SolveBudget(timeout_ms)
@@ -2971,6 +2996,16 @@ class BmcSolveResult(_PrettyPrintableMixin):
     :param feasibility: Staged scenario-feasibility evidence, defaults to
         ``None`` for SAT and inconclusive direct constructors.
     :type feasibility: BmcFeasibilityResult, optional
+    :param solver_profile: Requested solver profile, defaults to ``default``.
+    :type solver_profile: str, optional
+    :param solver_logic: Selected logic, or ``None`` for default/tactic and
+        when logic classification fell back to the default solver.
+    :type solver_logic: str, optional
+    :param solver_statistics: Z3 statistics captured immediately after the
+        primary check, defaults to an empty mapping for manually built results.
+        Keys vary with Z3 and the selected solver. ``rlimit count`` and
+        ``num allocs`` are context-wide counters, not per-query measurements.
+    :type solver_statistics: Mapping[str, Union[int, float]], optional
     :raises pyfcstm.bmc.errors.BmcBuildError: If the solve result payload is
         malformed.
 
@@ -3001,8 +3036,37 @@ class BmcSolveResult(_PrettyPrintableMixin):
     incomplete_elapsed_ms: Optional[float] = None
     total_elapsed_ms: Optional[float] = None
     feasibility: Optional[BmcFeasibilityResult] = None
+    solver_profile: str = "default"
+    solver_logic: Optional[str] = None
+    solver_statistics: Mapping[str, Any] = field(default_factory=dict)
+    _attempted_slice: Optional[ConeSlice] = field(
+        default=None, repr=False, compare=False
+    )
+    # Only solve_bmc_property installs a verified default-policy trace. Valid
+    # dataclasses.replace variants discard it instead of carrying stale data.
+    _verified_trace: Optional[BmcWitnessTrace] = field(
+        default=None, init=False, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
+        if (
+            not isinstance(self.solver_profile, str)
+            or self.solver_profile not in SOLVER_PROFILES
+        ):
+            raise BmcBuildError("solver_profile must be default, logic, or tactic.")
+        if self.solver_logic is not None and (
+            self.solver_profile != "logic"
+            or self.solver_logic not in tuple(logic for logic, _ in _LOGIC_PROBES)
+        ):
+            raise BmcBuildError(
+                "solver_logic requires a supported logic profile fragment."
+            )
+        statistics = _coerce_public_value_mapping(
+            "solver_statistics", self.solver_statistics
+        )
+        if any(value < 0 for value in statistics.values()):
+            raise BmcBuildError("solver_statistics values must be non-negative.")
+        object.__setattr__(self, "solver_statistics", statistics)
         _require_formula(self.formula)
         if self.status not in {"sat", "unsat", "unknown", "timeout"}:
             raise BmcBuildError("status must be sat, unsat, unknown, or timeout.")
@@ -3469,6 +3533,10 @@ class BmcSolveResult(_PrettyPrintableMixin):
             "incomplete": self.incomplete,
             "outcome": self.outcome,
             "reason": self.reason,
+            "solver_profile": self.solver_profile,
+            "solver_logic": self.solver_logic,
+            "solver_statistics": dict(self.solver_statistics),
+            **self._cone_metadata(),
             "elapsed_ms": self.elapsed_ms,
             "timeout_ms": self.timeout_ms,
             "has_model": self.model is not None,
@@ -3481,6 +3549,14 @@ class BmcSolveResult(_PrettyPrintableMixin):
             "available_model_roles": list(self.available_model_roles),
             "diagnostics": list(self.diagnostics),
         }
+
+    def _cone_metadata(self):
+        cone = self._attempted_slice or self.formula.core.cone_slice
+        if cone is None:
+            return {}
+        metadata = cone.to_canonical()
+        metadata["fallback"] = self._attempted_slice is not None
+        return {"cone_slicing": metadata}
 
     @property
     def available_model_roles(self) -> Tuple[str, ...]:
@@ -3843,14 +3919,28 @@ class BmcWitnessStep(_PrettyPrintableMixin):
         selected macro path. ``None`` derives the value from ``input_events``
         and ``consumed_events``, defaults to ``None``.
     :type unconsumed_events: Sequence[str], optional
+    :param inputs: Complete input snapshot the selected case read,
+        keyed by declared input name.  Steps whose source frame is
+        already terminated carry an empty mapping because no environment
+        sampling happens after termination, defaults to ``None`` (coerced to
+        an empty mapping).
+    :type inputs: Mapping[str, Union[int, float]], optional
+    :param input_reads: Input names actually referenced by the
+        selected case's guards and actions, in declaration order without
+        duplicates.  This is provenance for which symbolic reads the case
+        performed, not a claim that replay independently verified the read
+        set, defaults to ``None`` (coerced to an empty tuple).
+    :type input_reads: Sequence[str], optional
     :raises pyfcstm.bmc.errors.BmcBuildError: If the step payload is
-        malformed.
+        malformed
 
     Example::
 
         >>> step = BmcWitnessStep(0, 0, 1, 'Root::fallback::Root::0', 'fallback', 'fallback_gamma', 'Root', 'Root', False, True)
         >>> step.to_canonical()['progress']
         'fallback_gamma'
+        >>> step.to_canonical()['inputs']
+        {}
     """
 
     index: int
@@ -3868,6 +3958,8 @@ class BmcWitnessStep(_PrettyPrintableMixin):
     abstract_calls: Sequence[BmcWitnessCallRecord] = ()
     consumed_events: Sequence[str] = ()
     unconsumed_events: Optional[Sequence[str]] = None
+    inputs: Mapping[str, Union[int, float]] = None
+    input_reads: Sequence[str] = None
 
     def __post_init__(self) -> None:
         for field_name in ("index", "source_frame", "target_frame"):
@@ -3960,10 +4052,33 @@ class BmcWitnessStep(_PrettyPrintableMixin):
                     "strings",
                 ),
             )
-        if tuple(self.unconsumed_events) != expected_unconsumed:
-            raise BmcBuildError(
-                "unconsumed_events must equal input events minus consumed events."
-            )
+            if tuple(self.unconsumed_events) != expected_unconsumed:
+                raise BmcBuildError(
+                    "unconsumed_events must equal input events minus consumed events."
+                )
+        object.__setattr__(
+            self,
+            "inputs",
+            _coerce_public_value_mapping(
+                "inputs", {} if self.inputs is None else self.inputs
+            ),
+        )
+        object.__setattr__(
+            self,
+            "input_reads",
+            _coerce_public_sequence(
+                "input_reads",
+                () if self.input_reads is None else self.input_reads,
+                str,
+                "strings",
+            ),
+        )
+        if self.case_kind == "absorb" and (self.inputs or self.input_reads):
+            raise BmcBuildError("absorb steps must have empty inputs and input_reads.")
+        if len(set(self.input_reads)) != len(self.input_reads):
+            raise BmcBuildError("input_reads must not contain duplicates.")
+        if any(name not in self.inputs for name in self.input_reads):
+            raise BmcBuildError("input_reads must reference decoded inputs.")
 
     @property
     def input_event_paths(self) -> Tuple[str, ...]:
@@ -4008,6 +4123,8 @@ class BmcWitnessStep(_PrettyPrintableMixin):
             "abstract_calls": [item.to_canonical() for item in self.abstract_calls],
             "consumed_events": list(self.consumed_events),
             "unconsumed_events": list(self.unconsumed_events),
+            "inputs": dict(self.inputs),
+            "input_reads": list(self.input_reads),
         }
 
 
@@ -4277,6 +4394,9 @@ class BmcRuntimeStep(_PrettyPrintableMixin):
     :type abstract_calls: Sequence[BmcWitnessCallRecord]
     :param delta: Runtime Delta observation, defaults to ``False``.
     :type delta: bool, optional
+    :param inputs: Runtime input snapshot committed by this step's
+        cycle, defaults to ``None`` (coerced to an empty mapping).
+    :type inputs: Mapping[str, Union[int, float]], optional
     :raises pyfcstm.bmc.errors.BmcBuildError: If the runtime-step payload is
         malformed.
 
@@ -4292,6 +4412,7 @@ class BmcRuntimeStep(_PrettyPrintableMixin):
     unconsumed_events: Sequence[str]
     abstract_calls: Sequence[BmcWitnessCallRecord]
     delta: bool = False
+    inputs: Mapping[str, Union[int, float]] = None
 
     def __post_init__(self) -> None:
         if (
@@ -4331,6 +4452,13 @@ class BmcRuntimeStep(_PrettyPrintableMixin):
                 "BmcWitnessCallRecord objects",
             ),
         )
+        object.__setattr__(
+            self,
+            "inputs",
+            _coerce_public_value_mapping(
+                "inputs", {} if self.inputs is None else self.inputs
+            ),
+        )
 
     def to_canonical(self) -> _CanonicalDict:
         """Return a JSON-stable runtime step.
@@ -4350,6 +4478,7 @@ class BmcRuntimeStep(_PrettyPrintableMixin):
             "unconsumed_events": list(self.unconsumed_events),
             "abstract_calls": [item.to_canonical() for item in self.abstract_calls],
             "delta": self.delta,
+            "inputs": dict(self.inputs),
         }
 
 
@@ -4993,6 +5122,9 @@ def _make_solve_result(
     diagnostics: Sequence[str],
     feasibility: BmcFeasibilityResult,
     started_at: float,
+    solver_profile: str,
+    solver_logic: Optional[str],
+    solver_statistics: Mapping[str, Any],
 ) -> BmcSolveResult:
     return BmcSolveResult(
         formula=formula,
@@ -5008,6 +5140,9 @@ def _make_solve_result(
         incomplete_elapsed_ms=incomplete_elapsed_ms,
         total_elapsed_ms=(time.monotonic() - started_at) * 1000.0,
         feasibility=feasibility,
+        solver_profile=solver_profile,
+        solver_logic=solver_logic,
+        solver_statistics=solver_statistics,
     )
 
 
@@ -5017,6 +5152,7 @@ def solve_bmc_property(
     timeout_ms: Optional[int] = None,
     check_incomplete: bool = True,
     infeasibility_explanation: str = "none",
+    solver_profile: str = "default",
 ) -> BmcSolveResult:
     """Solve a compiled BMC property formula.
 
@@ -5026,6 +5162,12 @@ def solve_bmc_property(
     and ``K_N`` before exposing a property verdict.  Response suffix checks
     run only after ``S_assume`` is SAT.  All staged checks share one optional
     deadline; ``timeout_ms=None`` leaves Z3's timeout unset.
+
+    When cone slicing removed writes, primary and incomplete-suffix models
+    are completed and verified against the original runtime before returning.
+    A replay disagreement retries the full model at most once using the same
+    deadline; the returned ``formula`` then describes that full model.
+    ``total_elapsed_ms`` includes verification and any rebuild and retry.
 
     :param formula: Compiled BMC property formula.
     :type formula: pyfcstm.bmc.properties.BmcPropertyFormula
@@ -5039,6 +5181,12 @@ def solve_bmc_property(
         stage has been localized: ``none``, ``formal`` or ``proof``, defaults
         to ``'none'``.  The default runs no additional solver check at all.
     :type infeasibility_explanation: str, optional
+    :param solver_profile: ``default`` preserves the generic solver; ``logic``
+        selects a fragment recognized by Z3 probes, falling back to default
+        otherwise; ``tactic`` uses simplify/propagate-values/solve-eqs/smt.
+        Only the staged main checks use this choice. Explanation and proof
+        checks always use the default solver to preserve assumption cores.
+    :type solver_profile: str, optional
     :return: Structured solve result.
     :rtype: BmcSolveResult
     :raises pyfcstm.bmc.errors.BmcBuildError: If arguments are malformed, or
@@ -5053,6 +5201,71 @@ def solve_bmc_property(
         >>> solve_bmc_property(formula).status
         'sat'
     """
+    cone = _require_formula(formula).core.cone_slice
+    if cone is None or not cone.dropped_variables:
+        return _solve_property(
+            formula,
+            timeout_ms,
+            check_incomplete,
+            infeasibility_explanation,
+            solver_profile,
+        )
+    started = time.monotonic()
+    budget = _SolveBudget(timeout_ms)
+    result = _solve_property(
+        formula,
+        timeout_ms,
+        check_incomplete,
+        infeasibility_explanation,
+        solver_profile,
+        budget,
+    )
+    verified_trace = None
+    try:
+        if result.model is not None:
+            verified_trace = decode_bmc_result_trace(result)
+        if result.incomplete_model is not None:
+            verified_trace = decode_bmc_result_trace(result, source="incomplete_suffix")
+    except _ConeReplayFailure:
+        # _ConeReplayFailure: replay of the sliced candidate disagrees with the
+        # original runtime or hits a documented expression evaluation failure.
+        # Recompile with slicing disabled and reuse the same deadline once.
+        from .pipeline import compile_bmc_query
+
+        context = formula.core.context
+        full = compile_bmc_query(
+            context.model,
+            context.source_text if context.source_text is not None else context.query,
+            options=replace(context.options, cone_slicing=False),
+            query_source_path=context.query_source_path,
+        )
+        result = _solve_property(
+            full,
+            timeout_ms,
+            check_incomplete,
+            infeasibility_explanation,
+            solver_profile,
+            budget,
+        )
+        result = replace(
+            result,
+            _attempted_slice=cone,
+            diagnostics=(*result.diagnostics, "slicing_fallback"),
+        )
+        verified_trace = None
+    result = replace(result, total_elapsed_ms=(time.monotonic() - started) * 1000.0)
+    object.__setattr__(result, "_verified_trace", verified_trace)
+    return result
+
+
+def _solve_property(
+    formula,
+    timeout_ms,
+    check_incomplete,
+    infeasibility_explanation,
+    solver_profile,
+    budget=None,
+):
     checked = _require_formula(formula)
     if not isinstance(check_incomplete, bool):
         raise BmcBuildError("check_incomplete must be bool.")
@@ -5065,7 +5278,17 @@ def solve_bmc_property(
             "Unsupported infeasibility_explanation: %r." % (infeasibility_explanation,)
         )
     core = checked.core
-    solver = z3.Solver()
+    solver, solver_logic = _solver_for_profile(
+        solver_profile,
+        (
+            core.domain_formula,
+            core.transition_formula,
+            core.initial_formula,
+            core.environment_formula,
+            checked.objective_formula,
+            checked.incomplete_formula,
+        ),
+    )
     solver.add(core.domain_formula, core.transition_formula)
     solver.push()
     solver.add(core.initial_formula)
@@ -5076,12 +5299,20 @@ def solve_bmc_property(
 
     # Start the shared check budget after solver construction, so a very small
     # user budget is spent on Z3 checks rather than Python-side setup.
-    budget = _SolveBudget(timeout_ms)
-    status, model, reason, elapsed_ms, _ = _check_with_budget(solver, budget)
+    budget = budget if budget is not None else _SolveBudget(timeout_ms)
+    status, model, reason, elapsed_ms, primary_started = _check_with_budget(
+        solver, budget
+    )
+    finish = partial(
+        _make_solve_result,
+        solver_profile=solver_profile,
+        solver_logic=solver_logic,
+        solver_statistics=dict(iter(solver.statistics())) if primary_started else {},
+    )
     diagnostics = list(checked.diagnostics)
     if status == "sat":
         feasibility = _inferred_feasibility()
-        return _make_solve_result(
+        return finish(
             checked,
             status=status,
             model=model,
@@ -5099,7 +5330,7 @@ def solve_bmc_property(
     if status in {"unknown", "timeout"}:
         feasibility = _not_checked_feasibility()
         diagnostics.append("feasibility_%s:primary" % status)
-        return _make_solve_result(
+        return finish(
             checked,
             status=status,
             model=model,
@@ -5138,7 +5369,7 @@ def solve_bmc_property(
             refinement_status="not_needed",
         )
         diagnostics.append(_FEASIBILITY_TIMEOUT_BEFORE_ASSUMPTIONS)
-        return _make_solve_result(
+        return finish(
             checked,
             status=status,
             model=None,
@@ -5162,7 +5393,7 @@ def solve_bmc_property(
             refinement_status="not_needed",
         )
         diagnostics.append("feasibility_%s:assumptions" % assumptions_status)
-        return _make_solve_result(
+        return finish(
             checked,
             status=status,
             model=None,
@@ -5216,7 +5447,7 @@ def solve_bmc_property(
             else:
                 incomplete_reason = "incomplete check disabled"
                 diagnostics.append("incomplete_check=disabled")
-        return _make_solve_result(
+        return finish(
             checked,
             status=status,
             model=None,
@@ -5259,7 +5490,7 @@ def solve_bmc_property(
         diagnostics.append(
             "feasibility_timeout:deadline_exhausted_before_initialization_check"
         )
-        return _make_solve_result(
+        return finish(
             checked,
             status=status,
             model=None,
@@ -5283,7 +5514,7 @@ def solve_bmc_property(
             refinement_status="not_requested",
         )
         diagnostics.append("feasibility_%s:initialization" % initialization_status)
-        return _make_solve_result(
+        return finish(
             checked,
             status=status,
             model=None,
@@ -5312,7 +5543,7 @@ def solve_bmc_property(
         feasibility = _attach_explanation(
             feasibility, core, budget, infeasibility_explanation
         )
-        return _make_solve_result(
+        return finish(
             checked,
             status=status,
             model=None,
@@ -5348,7 +5579,7 @@ def solve_bmc_property(
             refinement_status="not_requested",
         )
         diagnostics.append("feasibility_timeout:deadline_exhausted_before_kernel_check")
-        return _make_solve_result(
+        return finish(
             checked,
             status=status,
             model=None,
@@ -5385,7 +5616,7 @@ def solve_bmc_property(
         )
     if kernel_status in {"unknown", "timeout"}:
         diagnostics.append("feasibility_%s:kernel" % kernel_status)
-    return _make_solve_result(
+    return finish(
         checked,
         status=status,
         model=None,
@@ -5407,8 +5638,13 @@ def _frame_for_index(
 ) -> BmcWitnessFrame:
     core = formula.core
     state_id = _z3_int_value(model, core.symbols.frame_state(index))
+    persistent_names = set(core.context.domain.persistent_variable_names)
     variables = {}
     for var in core.context.domain.variables:
+        if var.name not in persistent_names:
+            # Inputs live in ``steps[i].inputs`` and parameters in
+            # ``initial.parameters``; frames expose only control/output state.
+            continue
         variables[var.name] = _z3_number_value(
             model, core.symbols.frame_var(index, var.name), var.declared_type
         )
@@ -5690,6 +5926,47 @@ def _decode_calls(
     return tuple(calls)
 
 
+def _collect_expr_variable_names(expr: Expr, found: Set[str]) -> None:
+    """Collect referenced variables using the model expression traversal."""
+    if isinstance(expr, Expr):
+        found.update(variable.name for variable in expr.list_variables())
+
+
+def _collect_statement_variable_names(statement: Any, found: Set[str]) -> None:
+    """Collect variable names referenced by one operation statement."""
+    if hasattr(statement, "expr"):
+        _collect_expr_variable_names(statement.expr, found)
+    for branch in getattr(statement, "branches", ()) or ():
+        _collect_expr_variable_names(branch.condition, found)
+        for nested in branch.statements:
+            _collect_statement_variable_names(nested, found)
+
+
+def _case_input_reads(
+    case: Any, input_names: Sequence[str]
+) -> Tuple[str, ...]:
+    """Return inputs the case's guards/actions reference.
+
+    The result follows declaration order and carries no duplicates.  This is
+    read-evidence provenance for the selected case; it does not claim that
+    replay independently rebuilt and verified the symbolic read set.
+
+    :param case: Selected ``CycleCase``.
+    :param input_names: Declared input names in order.
+    :return: Referenced input names in declaration order.
+    :rtype: Tuple[str, ...]
+    """
+    if not input_names:
+        return ()
+    found: Set[str] = set()
+    for requirement in case.guard_requirements:
+        _collect_expr_variable_names(requirement.expr, found)
+    for block in case.action_blocks:
+        for statement in block.operations:
+            _collect_statement_variable_names(statement, found)
+    return tuple(name for name in input_names if name in found)
+
+
 def _decode_step(
     formula: BmcPropertyFormula,
     model: z3.ModelRef,
@@ -5710,6 +5987,42 @@ def _decode_step(
     )
     source = frames[step_index]
     target = frames[step_index + 1]
+    domain = formula.core.context.domain
+    input_names = domain.input_names
+    if source.terminated:
+        # No environment sampling happens once the machine has terminated;
+        # post-termination absorb steps carry empty inputs.
+        step_inputs: Dict[str, Union[int, float]] = {}
+        input_reads: Tuple[str, ...] = ()
+    else:
+        declared_types = {var.name: var.declared_type for var in domain.variables}
+        step_inputs = {
+            name: _z3_number_value(
+                model,
+                formula.core.symbols.step_input(step_index, name),
+                declared_types[name],
+            )
+            for name in input_names
+        }
+        reads = set(_case_input_reads(relation.case, input_names))
+        # Fallback/Delta conditions also read guards of rejected candidates;
+        # those guards live in the lowered acceptance dependency formula.
+        condition_symbols = {
+            symbol.get_id() for symbol in z3.z3util.get_vars(relation.antecedent)
+        }
+        reads.update(
+            name
+            for name, symbol in formula.core.symbols.step_inputs[step_index].items()
+            if symbol.get_id() in condition_symbols
+        )
+        for index, assumption in enumerate(
+            formula.core.context.bound_query.assumptions
+        ):
+            if assumption.kind == "frame" and (
+                assumption.source.kind == "always" or assumption.frame == step_index
+            ):
+                reads.update(_assumption_input_names(formula.core.context, index))
+        input_reads = tuple(name for name in input_names if name in reads)
     return BmcWitnessStep(
         index=step_index,
         source_frame=step_index,
@@ -5726,21 +6039,33 @@ def _decode_step(
         abstract_calls=_decode_calls(formula, model, relation),
         consumed_events=consumed_events,
         unconsumed_events=unconsumed_events,
+        inputs=step_inputs,
+        input_reads=input_reads,
     )
 
 
 def _initial_metadata(
-    formula: BmcPropertyFormula, frames: Sequence[BmcWitnessFrame]
+    formula: BmcPropertyFormula,
+    model: z3.ModelRef,
+    frames: Sequence[BmcWitnessFrame],
 ) -> _CanonicalDict:
     initial = formula.core.context.bound_query.initial.source
     if not frames:
         raise _internal_error("Decoded witness trace has no frames.")
     first = frames[0]
+    parameters: Dict[str, Union[int, float]] = {}
+    for var in formula.core.context.domain.variables:
+        if var.role != VariableRole.PARAM:
+            continue
+        parameters[var.name] = _z3_number_value(
+            model, formula.core.symbols.parameter(var.name), var.declared_type
+        )
     return {
         "mode": initial.mode,
         "state": first.state,
         "sentinel": first.sentinel,
         "vars": dict(sorted(first.vars.items())),
+        "parameters": dict(sorted(parameters.items())),
     }
 
 
@@ -5774,16 +6099,55 @@ def _decode_witness_trace(
         "case_label": checked.case_label,
         "response_window": checked.response_window,
     }
-    return BmcWitnessTrace(
+    trace = BmcWitnessTrace(
         property=prop,
         solver=solver_metadata,
-        initial=_initial_metadata(checked, frames),
+        initial=_initial_metadata(checked, checked_model, frames),
         frames=frames,
         steps=steps,
         diagnostics=checked.diagnostics,
         model_role=model_role,
         verdict=verdict,
     )
+    cone = checked.core.cone_slice
+    return (
+        _fill_cone_trace(checked, trace)
+        if cone is not None and cone.dropped_variables
+        else trace
+    )
+
+
+class _ConeReplayFailure(BmcBuildError):
+    """A sliced candidate cannot be completed by the original runtime."""
+
+
+def _fill_cone_trace(formula, trace):
+    dropped = formula.core.cone_slice.dropped_variables
+    try:
+        replay = replay_bmc_witness(formula.core.context.model, trace)
+    except SimulationRuntimeExpressionError as err:
+        # SimulationRuntimeExpressionError: evaluating original DSL actions or
+        # guards during candidate replay fails, e.g. division by zero.
+        raise _ConeReplayFailure(str(err)) from err
+    replaced_paths = {
+        "frames[%d].vars.%s" % (frame.index, name)
+        for frame in trace.frames[1:]
+        for name in dropped
+    }
+    failures = [item for item in replay.mismatches if item.path not in replaced_paths]
+    if failures:
+        raise _ConeReplayFailure(
+            "Sliced witness disagrees with runtime: %s" % failures[0].path
+        )
+    frames = tuple(
+        replace(
+            frame, vars={**frame.vars, **{name: runtime.vars[name] for name in dropped}}
+        )
+        if frame.index > 0
+        else frame
+        for frame, runtime in zip(trace.frames, replay.runtime_trace.frames)
+    )
+    return replace(trace, frames=frames)
 
 
 def decode_bmc_witness(
@@ -5797,7 +6161,9 @@ def decode_bmc_witness(
     The decoder consumes selected case relations and trace symbols produced by
     earlier BMC layers.  It does not re-expand macro paths, and it intentionally
     emits only sparse replay input events instead of every true event Boolean in
-    the Z3 model.
+    the Z3 model. With cone slicing enabled, the original runtime supplies
+    removed variable values so every frame still contains the full variable
+    set. A candidate that disagrees with retained observations is rejected.
 
     :param formula: Compiled BMC property formula whose solve formula was SAT.
     :type formula: pyfcstm.bmc.properties.BmcPropertyFormula
@@ -5845,6 +6211,11 @@ def decode_bmc_result_trace(
 ) -> BmcWitnessTrace:
     """Decode one model channel from a structured BMC solve result.
 
+    With the default event policy, sliced solve results reuse their verified
+    complete trace. Each call returns an independent copy, so editing a trace
+    does not affect later decodes. Explicit event policies decode afresh;
+    :func:`replay_bmc_witness` always performs an independent runtime replay.
+
     :param result: Structured result returned by :func:`solve_bmc_property`.
     :type result: BmcSolveResult
     :param source: Model channel, either ``"primary"`` or
@@ -5874,6 +6245,14 @@ def decode_bmc_result_trace(
         raise BmcBuildError(
             "source must be primary or incomplete_suffix, got %r." % source
         )
+    verified = result._verified_trace
+    if (
+        event_policy is None
+        and verified is not None
+        and (source == "incomplete_suffix")
+        == (verified.model_role == "incomplete_suffix")
+    ):
+        return deepcopy(verified)
     if source == "primary":
         if result.status != "sat" or result.model is None:
             raise BmcBuildError(
@@ -6224,6 +6603,20 @@ def _compare_step(
                 "unconsumed events mismatch",
             )
         )
+    common_input_names = _compare_mapping_keys(
+        mismatches,
+        "steps[%d].inputs" % witness.index,
+        witness.inputs,
+        runtime.inputs,
+        "input key set mismatch",
+    )
+    for name in common_input_names:
+        _compare_values(
+            mismatches,
+            "steps[%d].inputs.%s" % (witness.index, name),
+            witness.inputs[name],
+            runtime.inputs[name],
+        )
     _compare_calls(
         mismatches, witness.index, witness.abstract_calls, runtime.abstract_calls
     )
@@ -6281,6 +6674,35 @@ def _compare_trace_shape(
             )
 
 
+def _validate_replay_bindings(values, defines, path):
+    """Reject incomplete or wrong-role concrete replay snapshots."""
+    values = _coerce_public_value_mapping(path, values)
+    if set(values) != set(defines):
+        raise BmcBuildError("%s must contain exactly the declared names." % path)
+    for name, define in defines.items():
+        value = values[name]
+        if define.type == "int" and not isinstance(value, int):
+            raise BmcBuildError("%s.%s must be an int." % (path, name))
+
+
+def _validate_replay_roles(model: StateMachine, witness: BmcWitnessTrace) -> None:
+    """Validate role-dependent payloads before constructing any input source."""
+    _validate_replay_bindings(
+        witness.initial.get("parameters", {}), model.parameters, "initial.parameters"
+    )
+    for step in witness.steps:
+        # Shape mismatches are reported by the existing trace comparison; do
+        # not index an invalid source frame while validating role snapshots.
+        ended = step.case_kind == "absorb"
+        defines = {} if ended else model.inputs
+        _validate_replay_bindings(step.inputs, defines, "steps[%d].inputs" % step.index)
+        expected_reads = tuple(
+            name for name in model.inputs if name in step.input_reads
+        )
+        if tuple(step.input_reads) != expected_reads:
+            raise BmcBuildError("input_reads must follow model declaration order.")
+
+
 def _initial_runtime(
     state_machine: StateMachine, witness: BmcWitnessTrace
 ) -> Optional[SimulationRuntime]:
@@ -6291,12 +6713,30 @@ def _initial_runtime(
     initial_state = (
         first.state if first is not None and first.sentinel is None else None
     )
+    # Witness-decoded parameters are always complete for role-aware models;
+    # hot start requires the full mapping while cold start fills defaults.
+    parameters = dict(witness.initial.get("parameters") or ()) or None
+    input_source = (
+        ReplayInputPattern(
+            [step.inputs for step in witness.steps if step.case_kind != "absorb"],
+            input_names=tuple(state_machine.inputs),
+        )
+        if state_machine.inputs
+        else None
+    )
     if initial_state is None:
-        return SimulationRuntime(state_machine, initial_vars=initial_vars)
+        return SimulationRuntime(
+            state_machine,
+            initial_vars=initial_vars,
+            parameters=parameters,
+            input_source=input_source,
+        )
     return SimulationRuntime(
         state_machine,
         initial_state=initial_state,
         initial_vars=initial_vars,
+        parameters=parameters,
+        input_source=input_source,
     )
 
 
@@ -6343,6 +6783,7 @@ def replay_bmc_witness(
         raise BmcBuildError("witness must be BmcWitnessTrace.")
     if abstract_handlers is not None and not isinstance(abstract_handlers, Mapping):
         raise BmcBuildError("abstract_handlers must be a mapping or None.")
+    _validate_replay_roles(state_machine, witness)
     runtime = _initial_runtime(state_machine, witness)
     recorder = _HandlerCallRecorder(_abstract_call_role_resolver(state_machine))
     frames = []
@@ -6376,6 +6817,7 @@ def replay_bmc_witness(
     for step in witness.steps:
         call_start = len(recorder.calls)
         recorder.begin_step()
+        was_ended = runtime.is_ended
         result = runtime.cycle(step.input_event_paths)
         recorder.end_step()
         step_calls = tuple(
@@ -6398,9 +6840,23 @@ def replay_bmc_witness(
             unconsumed_events=result.unconsumed_events,
             abstract_calls=step_calls,
             delta=result.delta,
+            inputs=dict(result.inputs),
         )
         steps.append(runtime_step)
         _compare_step(mismatches, step, runtime_step)
+        if not was_ended:
+            for label, snapshot in (
+                ("last_inputs", runtime.last_inputs or {}),
+                ("history.inputs", runtime.history[-1].get("inputs", {})),
+            ):
+                path = "steps[%d].%s" % (step.index, label)
+                names = _compare_mapping_keys(
+                    mismatches, path, step.inputs, snapshot, "input key set mismatch"
+                )
+                for name in names:
+                    _compare_values(
+                        mismatches, path + "." + name, step.inputs[name], snapshot[name]
+                    )
         runtime_frame = _runtime_frame(runtime, step.target_frame)
         frames.append(runtime_frame)
         if step.target_frame < len(witness.frames):

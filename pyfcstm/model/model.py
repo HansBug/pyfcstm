@@ -46,9 +46,11 @@ import io
 import json
 import os
 import weakref
-from dataclasses import dataclass, field, fields, is_dataclass
+from dataclasses import InitVar, dataclass, field, fields, is_dataclass
+from itertools import chain
 from textwrap import indent
-from typing import Any, Optional, Union, List, Dict, Tuple, Iterator, Set
+from types import MappingProxyType
+from typing import Any, Optional, Union, List, Dict, Tuple, Iterator, Set, Mapping
 
 from .base import AstExportable, PlantUMLExportable
 from .expr import Expr, parse_expr_node_to_expr
@@ -63,6 +65,7 @@ from .plantuml import PlantUMLOptions, PlantUMLOptionsInput, format_state_name
 from ..diagnostics.sink import DiagnosticSink
 from ..diagnostics.sink import _emit as _emit_or_raise
 from ..dsl import node as dsl_nodes, INIT_STATE, EXIT_STATE
+from ..dsl.role import VariableRole
 from ..utils.validate import (
     ModelDiagnostic,
     ModelLookupError,
@@ -82,6 +85,7 @@ __all__ = [
     "OnAspect",
     "State",
     "VarDefine",
+    "VariableRole",
     "StateMachine",
     "parse_dsl_node_to_state_machine",
 ]
@@ -184,6 +188,7 @@ def _attach_model_source_metadata(
     for name, definition in machine.defines.items():
         matched = ast_definitions.get(name)
         attach(definition, getattr(matched, "_source_path", None))
+        definition._source_declarations = getattr(matched, "_source_declarations", ())
 
     def attach_operation(operation: Any, source: Optional[str]) -> None:
         """Give an operation and everything nested inside it the same owner.
@@ -2595,7 +2600,12 @@ class VarDefine(AstExportable):
     :param type: The type of the variable
     :type type: str
     :param init: The initial value expression
-    :type init: Expr
+    :type init: Optional[Expr]
+    :param role: Ownership and lifetime, defaulting to legacy control state.
+    :type role: pyfcstm.dsl.role.VariableRole
+    :raises pyfcstm.utils.validate.ModelValidationError: If an input
+        has an initializer, another role lacks one, or an initializer refers
+        to a model variable.
 
     Example::
 
@@ -2607,9 +2617,39 @@ class VarDefine(AstExportable):
 
     name: str
     type: str
-    init: Expr
+    init: Optional[Expr]
     doc: Optional[str] = None
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
+    role: VariableRole = VariableRole.CONTROL
+    _validation_sink: InitVar[Optional[DiagnosticSink]] = None
+
+    def __post_init__(self, _validation_sink: Optional[DiagnosticSink]) -> None:
+        self.role = VariableRole(self.role)
+        code = None
+        message = None
+        if self.role is VariableRole.INPUT:
+            if self.init is not None:
+                code = "E_INPUT_INITIALIZER"
+                message = "Input must not have an initializer"
+        elif self.init is None:
+            code = "E_VARIABLE_INITIALIZER_REQUIRED"
+            message = (
+                "Control, output and parameter declarations require an initializer"
+            )
+        elif self.init.list_variables():
+            code = "E_INITIALIZER_VARIABLE_REFERENCE"
+            message = "Variable initializers must not reference model variables"
+        if code is not None:
+            _emit_or_raise(
+                _validation_sink,
+                ModelDiagnostic(
+                    code=code,
+                    severity="error",
+                    message=f"{message}: {self.name!r}.",
+                    span=self._span,
+                    refs={"var_name": self.name},
+                ),
+            )
 
     def to_ast_node(self) -> dsl_nodes.DefAssignment:
         """
@@ -2621,7 +2661,9 @@ class VarDefine(AstExportable):
         return dsl_nodes.DefAssignment(
             name=self.name,
             type=self.type,
-            expr=self.init.to_ast_node(),
+            expr=self.init.to_ast_node() if self.init is not None else None,
+            role=self.role,
+            spelling=getattr(self, "_spelling", None),
             **_ast_doc_kwargs(dsl_nodes.DefAssignment, self.doc),
         )
 
@@ -2691,6 +2733,105 @@ class StateMachine(AstExportable, PlantUMLExportable):
         default_factory=dict, compare=False, repr=False
     )
 
+    _validation_sink: InitVar[Optional[DiagnosticSink]] = None
+
+    def __post_init__(self, _validation_sink: Optional[DiagnosticSink]) -> None:
+        readonly = {
+            name: (
+                "E_INPUT_WRITE"
+                if definition.role is VariableRole.INPUT
+                else "E_PARAM_WRITE"
+            )
+            for name, definition in self.defines.items()
+            if definition.role
+            in (VariableRole.INPUT, VariableRole.PARAM)
+        }
+        diagnostics = []
+
+        def check(statements: List[OperationStatement]) -> None:
+            for statement in statements:
+                if isinstance(statement, IfBlock):
+                    for branch in statement.branches:
+                        check(branch.statements)
+                elif statement.var_name in readonly:
+                    diagnostics.append(
+                        ModelDiagnostic(
+                            code=readonly[statement.var_name],
+                            severity="error",
+                            message=f"Model operations cannot write input {statement.var_name!r}.",
+                            span=statement._span,
+                            refs={"var_name": statement.var_name},
+                        )
+                    )
+
+        for state in self.walk_states():
+            for transition in state.transitions:
+                check(transition.effects)
+            for action in chain(
+                state.on_enters,
+                state.on_durings,
+                state.on_exits,
+                state.on_during_aspects,
+            ):
+                check(action.operations)
+        for diagnostic in diagnostics:
+            _emit_or_raise(_validation_sink, diagnostic)
+
+    @property
+    def control_variables(self) -> Mapping[str, VarDefine]:
+        """Read-only control declarations in global declaration order."""
+        return MappingProxyType(
+            {
+                name: value
+                for name, value in self.defines.items()
+                if value.role is VariableRole.CONTROL
+            }
+        )
+
+    @property
+    def inputs(self) -> Mapping[str, VarDefine]:
+        """Read-only environment input declarations in global declaration order."""
+        return MappingProxyType(
+            {
+                name: value
+                for name, value in self.defines.items()
+                if value.role is VariableRole.INPUT
+            }
+        )
+
+    @property
+    def parameters(self) -> Mapping[str, VarDefine]:
+        """Read-only parameter declarations in global declaration order."""
+        return MappingProxyType(
+            {
+                name: value
+                for name, value in self.defines.items()
+                if value.role is VariableRole.PARAM
+            }
+        )
+
+    @property
+    def output_variables(self) -> Mapping[str, VarDefine]:
+        """Read-only output declarations in global declaration order."""
+        return MappingProxyType(
+            {
+                name: value
+                for name, value in self.defines.items()
+                if value.role is VariableRole.OUTPUT
+            }
+        )
+
+    @property
+    def persistent_variables(self) -> Mapping[str, VarDefine]:
+        """Read-only control and output declarations, preserving their interleaving."""
+        return MappingProxyType(
+            {
+                name: value
+                for name, value in self.defines.items()
+                if value.role in (VariableRole.CONTROL, VariableRole.OUTPUT)
+            }
+        )
+
     def to_ast_node(self) -> dsl_nodes.StateMachineDSLProgram:
         """
         Convert this state machine to an AST node.
@@ -2742,8 +2883,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
                         # PlantUML is a semantic display and must not embed
                         # source documentation blocks.
                         print(
-                            f"    def {def_item.type} {def_item.name} = "
-                            f"{def_item.init};",
+                            f"    {def_item.to_ast_node().without_docs()}",
                             file=sf,
                         )
                     print("}", file=sf)
@@ -2755,8 +2895,14 @@ class StateMachine(AstExportable, PlantUMLExportable):
 
                     # Use configured legend position
                     print(f"legend {config.variable_legend_position}", file=sf)
-                    # Header row
-                    print("|= Variable |= Type |= Initial Value |", file=sf)
+                    show_roles = any(
+                        item.role is not VariableRole.CONTROL
+                        for item in self.defines.values()
+                    )
+                    role_header = "= Role |" if show_roles else ""
+                    print(
+                        f"|= Variable |= Type |= Initial Value |{role_header}", file=sf
+                    )
                     for def_item in self.defines.values():
                         var_name = def_item.name
                         var_type = def_item.type
@@ -2767,7 +2913,9 @@ class StateMachine(AstExportable, PlantUMLExportable):
                         var_init_escaped = escape_plantuml_table_cell(str(var_init))
                         # All columns left-aligned
                         print(
-                            f"| {var_name} | {var_type} | {var_init_escaped} |", file=sf
+                            f"| {var_name} | {var_type} | {var_init_escaped} |"
+                            + (f" {def_item.role.value} |" if show_roles else ""),
+                            file=sf,
                         )
                     print("endlegend", file=sf)
                     print("", file=sf)
@@ -3197,13 +3345,17 @@ def parse_dsl_node_to_state_machine(
     d_define_spans: Dict[str, Optional[Span]] = {}
     for def_item in dnode.definitions:
         if def_item.name not in d_defines:
-            d_defines[def_item.name] = VarDefine(
+            definition = VarDefine(
                 name=def_item.name,
                 type=def_item.type,
-                init=parse_expr_node_to_expr(def_item.expr),
+                init=parse_expr_node_to_expr(def_item.expr) if def_item.expr is not None else None,
                 doc=getattr(def_item, "doc", None),
                 _span=_node_span(def_item),
+                role=def_item.role,
+                _validation_sink=sink,
             )
+            definition._spelling = def_item.spelling
+            d_defines[def_item.name] = definition
             d_define_spans[def_item.name] = _node_span(def_item)
         else:
             sink.emit(
@@ -5269,6 +5421,7 @@ def parse_dsl_node_to_state_machine(
         defines=d_defines,
         root_state=root_state,
         forced_transitions=tuple(forced_transition_declarations),
+        _validation_sink=sink,
     )
     _attach_model_source_metadata(machine, dnode)
 

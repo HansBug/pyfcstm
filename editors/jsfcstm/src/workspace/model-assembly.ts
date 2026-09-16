@@ -1,3 +1,5 @@
+import {collectVariableRoleDiagnostics, requireVariableRole} from '../ast/variable-roles';
+import type {FcstmDiagnostic} from '../utils/text';
 import type {
     FcstmAstAction,
     FcstmAstChainPath,
@@ -19,6 +21,9 @@ import {
 } from '../model';
 import type {FcstmSemanticDocument, FcstmSemanticImport} from '../semantics';
 
+const GrammarLexer = require('../dsl/grammar/GrammarLexer').default;
+const {InputStream} = require('antlr4');
+
 /**
  * Custom Error subclass for assembly-validation failures.
  *
@@ -31,7 +36,10 @@ import type {FcstmSemanticDocument, FcstmSemanticImport} from '../semantics';
  * genuine programmer bugs like TypeError / ReferenceError).
  */
 export class ModelAssemblyError extends Error {
-    constructor(message: string) {
+    constructor(
+        message: string,
+        readonly bindingDiagnostic?: {filePath: string; diagnostic: FcstmDiagnostic},
+    ) {
         super(message);
         this.name = 'ModelAssemblyError';
     }
@@ -587,7 +595,8 @@ function resolveImportVariableTarget(
 function applyImportDefMappings(
     program: FcstmAstDocument,
     importItem: FcstmAstImportStatement,
-    ownerStatePath: string[]
+    ownerStatePath: string[],
+    ownerFile: string,
 ): void {
     let defMappings = importItem.mappings.filter(
         item => item.kind === 'importDefMapping'
@@ -627,7 +636,7 @@ function applyImportDefMappings(
     }
 
     const sourceToTarget: Record<string, string> = {};
-    const targetToSource: Record<string, string> = {};
+    const targetNames = new Set<string>();
 
     for (const definition of program.definitions) {
         const targetName = resolveImportVariableTarget(
@@ -636,19 +645,45 @@ function applyImportDefMappings(
             importItem,
             ownerStatePath
         );
-        if (targetToSource[targetName] && targetToSource[targetName] !== definition.name) {
-            /* c8 ignore start */
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(targetName)
+            || new GrammarLexer(new InputStream(targetName)).nextToken().type !== GrammarLexer.ID) {
+            const message = `Rendered variable mapping target ${JSON.stringify(targetName)} is not a DSL identifier.`;
+            throw new ModelAssemblyError(message, {
+                filePath: ownerFile,
+                diagnostic: {
+                    range: importItem.range, message, severity: 'error', source: 'fcstm',
+                    code: 'E_IMPORT_MAPPING_INVALID',
+                    data: {
+                        alias: importItem.alias, mapping_kind: 'variable',
+                        reason: 'target_invalid', detail: targetName,
+                        source_path: ownerFile, host_state_path: ownerStatePath.join('.'),
+                    },
+                },
+            });
+        }
+        if (targetNames.has(targetName)) {
             throw new ModelAssemblyError(
                 `Variable mapping conflict: import ${JSON.stringify(importItem.alias)} maps multiple source variables to the same target variable ${JSON.stringify(targetName)}.`
             );
-            /* c8 ignore stop */
         }
         sourceToTarget[definition.name] = targetName;
-        targetToSource[targetName] = definition.name;
+        targetNames.add(targetName);
     }
 
     for (const definition of program.definitions) {
-        rewriteExpressionVariables(definition.initializer, sourceToTarget);
+        if (definition.initializer) {
+            rewriteExpressionVariables(definition.initializer, sourceToTarget);
+        }
+        definition.sourceDeclarations = definition.sourceDeclarations!.map(source => ({
+            ...source,
+            bindings: [...source.bindings, {
+                filePath: ownerFile,
+                sourceName: definition.name,
+                targetName: sourceToTarget[definition.name],
+                alias: importItem.alias,
+                range: importItem.range,
+            }],
+        }));
         definition.name = sourceToTarget[definition.name];
     }
 
@@ -657,54 +692,110 @@ function applyImportDefMappings(
     }
 }
 
+function initializerStructure(initializer: FcstmAstExpression | null): string {
+    // Compare syntax independently of source coordinates and whitespace, as the
+    // Python AST does with non-comparing spans. Literal spelling stays intact.
+    return JSON.stringify(initializer, (key, value) => key === 'range' || key === 'text' ? undefined : value);
+}
+
+function bindingSourceRefs(definition: FcstmAstVariableDefinition): Array<Record<string, unknown>> {
+    return definition.sourceDeclarations!.map(({filePath, declaration}) => ({
+        name: declaration.name,
+        role: declaration.role,
+        type: declaration.type,
+        source_path: filePath,
+        span: {
+            line: declaration.range.start.line + 1,
+            column: declaration.range.start.character + 1,
+            end_line: declaration.range.end.line + 1,
+            end_column: declaration.range.end.character + 1,
+        },
+    }));
+}
+
 function mergeImportedDefinitions(
     hostProgram: FcstmAstDocument,
     importedProgram: FcstmAstDocument,
-    hostExplicitDefNames: Set<string>
+    hostExplicitDefNames: Set<string>,
+    importItem: FcstmAstImportStatement,
+    ownerStatePath: string[],
 ): void {
     const existingDefinitions = new Map<string, FcstmAstVariableDefinition>(
         hostProgram.definitions.map(item => [item.name, item])
     );
-
+    for (const definition of importedProgram.definitions) {
+        const existing = existingDefinitions.get(definition.name);
+        if (!existing) continue;
+        const explicit = hostExplicitDefNames.has(definition.name);
+        const sourceRole = requireVariableRole(definition.role);
+        const targetRole = requireVariableRole(existing.role);
+        let conflict: string | undefined;
+        let reason: string | undefined;
+        const targets = {
+            param: ['param'],
+            input: ['param', 'input', 'control', 'output'],
+            control: ['control', 'output'],
+            output: ['control', 'output'],
+        };
+        if (!targets[sourceRole].includes(targetRole) || (targetRole !== sourceRole && !explicit)) {
+            reason = 'role_mismatch';
+            conflict = `has role ${JSON.stringify(existing.role)}, cannot bind imported role ${JSON.stringify(definition.role)}`;
+        } else if (existing.type !== definition.type) {
+            reason = 'type_mismatch';
+            conflict = explicit
+                ? `already exists in host model as type ${JSON.stringify(existing.type)}, cannot bind imported type ${JSON.stringify(definition.type)}`
+                : `receives incompatible imported types ${JSON.stringify(existing.type)} and ${JSON.stringify(definition.type)}`;
+        } else if (!explicit) {
+            if (sourceRole === 'input') {
+                reason = 'implicit_input_sharing';
+                conflict = 'requires an explicit host input declaration for sharing';
+            } else if (initializerStructure(existing.initializer) !== initializerStructure(definition.initializer)) {
+                reason = 'initializer_mismatch';
+                conflict = 'has conflicting initial values';
+            }
+        }
+        if (conflict !== undefined) {
+            const message = `Variable mapping conflict: target variable ${JSON.stringify(definition.name)} ${conflict}.`;
+            throw new ModelAssemblyError(message, {
+                filePath: hostProgram.filePath,
+                diagnostic: {
+                    range: importItem.range,
+                    message,
+                    severity: 'error',
+                    source: 'fcstm',
+                    code: 'E_IMPORT_DUPLICATE_MAPPING',
+                    data: {
+                        alias: importItem.alias,
+                        binding_reason: reason,
+                        source_path: hostProgram.filePath,
+                        binding: {
+                            source: bindingSourceRefs(definition),
+                            target: bindingSourceRefs(existing),
+                        },
+                        mapping_kind: 'variable',
+                        duplicated_name: definition.name,
+                        direction: 'target_duplicated',
+                        host_state_path: ownerStatePath.join('.'),
+                    },
+                },
+            });
+        }
+    }
     for (const definition of importedProgram.definitions) {
         const existing = existingDefinitions.get(definition.name);
         if (!existing) {
             hostProgram.definitions.push(definition);
             existingDefinitions.set(definition.name, definition);
-            continue;
-        }
-
-        if (existing.type !== definition.type) {
-            if (hostExplicitDefNames.has(definition.name)) {
-                /* c8 ignore start */
-                throw new ModelAssemblyError(
-                    `Variable mapping conflict: target variable ${JSON.stringify(definition.name)} already exists in host model as type ${JSON.stringify(existing.type)}, cannot bind imported type ${JSON.stringify(definition.type)}.`
-                );
-                /* c8 ignore stop */
+        } else {
+            existing.sourceDeclarations = [...existing.sourceDeclarations!, ...definition.sourceDeclarations!];
+            if (initializerStructure(existing.initializer) === initializerStructure(definition.initializer)) {
+                existing.doc = aggregateDocumentation([existing.doc, definition.doc]);
             }
-            /* c8 ignore start */
-            throw new ModelAssemblyError(
-                `Variable mapping conflict: target variable ${JSON.stringify(definition.name)} receives incompatible imported types ${JSON.stringify(existing.type)} and ${JSON.stringify(definition.type)}.`
-            );
-            /* c8 ignore stop */
         }
-
-        if (hostExplicitDefNames.has(definition.name)) {
-            continue;
-        }
-
-        if (JSON.stringify(existing.initializer) !== JSON.stringify(definition.initializer)) {
-            /* c8 ignore start */
-            throw new ModelAssemblyError(
-                `Variable mapping conflict: target variable ${JSON.stringify(definition.name)} has conflicting initial values.`
-            );
-            /* c8 ignore stop */
-        }
-        existing.doc = aggregateDocumentation([existing.doc, definition.doc]);
     }
-
     importedProgram.definitions.length = 0;
 }
+
 
 function resolveImportEventTargetPath(
     targetEvent: FcstmAstChainPath,
@@ -1097,8 +1188,8 @@ function assembleProgramImports(
                 continue;
             }
 
-            applyImportDefMappings(importedProgram, importItem, currentStatePath);
-            mergeImportedDefinitions(program, importedProgram, hostExplicitDefNames);
+            applyImportDefMappings(importedProgram, importItem, currentStatePath, program.filePath);
+            mergeImportedDefinitions(program, importedProgram, hostExplicitDefNames, importItem, currentStatePath);
 
             const importedRoot = importedProgram.rootState;
             const eventMappings = resolveImportEventMappings(importItem, currentStatePath);
@@ -1171,8 +1262,35 @@ function assembleAstDocumentImports(
         visiting.add(filePath);
         try {
             const program = cloneAstValue(node.ast);
+            if (filePath !== rootFile) {
+                const names = new Set<string>();
+                for (const definition of program.definitions) {
+                    if (names.has(definition.name)) {
+                        const message = `Duplicated variable definition - ${JSON.stringify(definition.name)}.`;
+                        throw new ModelAssemblyError(message, {
+                            filePath,
+                            diagnostic: {
+                                range: definition.range,
+                                message,
+                                severity: 'error',
+                                source: 'fcstm',
+                                code: 'E_DUPLICATE_VAR',
+                                data: {var_name: definition.name, source_path: filePath},
+                            },
+                        });
+                    }
+                    names.add(definition.name);
+                }
+            }
             if (program.rootState) {
                 markAuthoredTransitionFiles(program.rootState, filePath);
+            }
+            for (const definition of program.definitions) {
+                definition.sourceDeclarations = [{
+                    filePath,
+                    declaration: cloneAstValue(definition),
+                    bindings: [],
+                }];
             }
             const hostExplicitDefNames = new Set(program.definitions.map(item => item.name));
             const importLookup = buildImportLookup(node.semantic.imports);
@@ -1184,6 +1302,15 @@ function assembleAstDocumentImports(
                 hostExplicitDefNames,
                 assembleProgramForFile
             );
+            if (filePath !== rootFile) {
+                const diagnostic = collectVariableRoleDiagnostics(program)[0];
+                if (diagnostic) {
+                    throw new ModelAssemblyError(diagnostic.message, {
+                        filePath,
+                        diagnostic: {...diagnostic, data: {...diagnostic.data, source_path: filePath}},
+                    });
+                }
+            }
             cache.set(filePath, program);
             return cloneAstValue(program);
         } finally {

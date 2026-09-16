@@ -689,7 +689,9 @@ function collectNodeOccurrences(
             role: 'definition',
             renameable: true,
         });
-        collectExpressionOccurrences(variable.initializer, node.document, variablesByName, occurrences);
+        if (variable.initializer) {
+            collectExpressionOccurrences(variable.initializer, node.document, variablesByName, occurrences);
+        }
     }
 
     for (const state of semantic.states) {

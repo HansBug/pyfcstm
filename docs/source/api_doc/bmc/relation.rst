@@ -23,7 +23,7 @@ BmcTraceSymbols
 -----------------------------------------------------
 
 .. autoclass:: BmcTraceSymbols
-    :members: __post_init__,allocate,frame_state,frame_var,event_input,delta_flag,gamma_flag,active_state,case_selector,to_canonical,domain,frame_states,frame_vars,event_inputs,delta_flags,gamma_flags,case_selectors
+    :members: __post_init__,allocate,frame_state,frame_var,step_input,parameter,resolve_query_value,event_input,delta_flag,gamma_flag,active_state,case_selector,to_canonical,domain,frame_states,frame_vars,event_inputs,delta_flags,gamma_flags,case_selectors,step_inputs,parameters
 
 
 BmcCaseRelation
@@ -44,7 +44,7 @@ BmcCoreFormula
 -----------------------------------------------------
 
 .. autoclass:: BmcCoreFormula
-    :members: __post_init__,to_canonical,context,symbols,domain_formula,initial_formula,transition_formula,environment_formula,core,steps,diagnostics
+    :members: __post_init__,to_canonical,context,symbols,domain_formula,initial_formula,transition_formula,environment_formula,core,steps,diagnostics,cone_slice
 
 
 build\_bmc\_core\_formula

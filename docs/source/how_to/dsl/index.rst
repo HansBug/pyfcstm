@@ -591,19 +591,69 @@ Directory entry import:
 
 Mapping facts:
 
-* ``def speed -> plant_speed;`` maps one imported variable to one host variable.
-* ``def sensor_* -> left_$1;`` captures the wildcard suffix and inserts it into
+* ``var speed -> plant_speed;`` maps one imported variable to one host variable.
+* ``var sensor_* -> left_$1;`` captures the wildcard suffix and inserts it into
   the target template.
-* ``def * -> prefix_$0;`` is a fallback mapping; ``$0`` is the whole imported
+* ``var * -> prefix_$0;`` is a fallback mapping; ``$0`` is the whole imported
   variable name.
 * ``event /Start -> Start;`` maps an imported root event to a host event.
 * Directory projects must import a concrete entry file such as
   ``./import_line/main.fcstm``; a bare directory is not a DSL file.
 
 Common mistakes: a bare directory path is not loaded as DSL source; an out-of-range
-placeholder such as ``$2`` in ``def sensor_* -> left_$2;`` reports an import
+placeholder such as ``$2`` in ``var sensor_* -> left_$2;`` reports an import
 mapping validation error. Use ``$0`` for the whole imported name and ``$1`` /
 ``${1}`` for the first wildcard capture.
+The rendered target must be a valid DSL identifier, not an empty capture,
+a numeric name, or a reserved keyword such as ``input`` or ``param``.
+
+``var`` is the canonical mapping keyword; ``def`` remains an explicit legacy spelling. Numeric types must match. Child ``input`` may bind to all four parent roles; child ``param`` only to parent ``param``; child ``control/output`` only to parent ``control/output``. A permitted binding adopts the parent role; see :ref:`dsl-import-forms` for the complete result matrix.
+
+The parent must explicitly declare a cross-role target. Missing targets retain the child role; implicit same-role sharing requires equal defaults and shared ``input`` requires an explicit declaration. Explicit parent defaults win and multiple legitimate writers introduce no restriction. Reject illegal source read-only writes before mapping. In collect mode a failed variable binding commits neither declarations nor substates from that import; diagnostics retain source files and import locations.
+
+With pyfcstm installed, save ``child.fcstm`` in a working directory:
+
+.. code-block:: fcstm
+
+   input int reading;
+   output int result = 0;
+   state Child { enter { result = reading; } }
+
+Save ``host.fcstm`` beside it, binding the child input to parent control state and internalizing the child output:
+
+.. code-block:: fcstm
+
+   control int cached = 5;
+   control int internal = 0;
+   state Host {
+       import "./child.fcstm" as Child {
+           var reading -> cached;
+           var result -> internal;
+       }
+       [*] -> Child;
+   }
+
+Run this Python code from that directory. It executes in memory and creates no output files:
+
+.. code-block:: python
+
+   from pyfcstm.model import load_state_machine_from_file
+   from pyfcstm.simulate import SimulationRuntime
+
+   model = load_state_machine_from_file("host.fcstm")
+   runtime = SimulationRuntime(model)
+   runtime.cycle()
+   print(runtime.vars["internal"])
+   print(list(model.inputs), list(model.output_variables))
+
+Expected output confirms the value is 5, with no external inputs or system outputs in the final model:
+
+.. code-block:: text
+
+   5
+   [] []
+
+Changing the parent declaration to ``param int internal = 0`` makes the child ``output`` binding fail with ``E_IMPORT_DUPLICATE_MAPPING``; choose a writable parent target. A numeric type mismatch requires correcting the declarations rather than an implicit conversion. Child input bound to mutable parent state reads the latest value in execution order; reverify properties that relied on cycle-frozen child inputs against the assembled model.
 
 Preamble forms such as ``name = value;`` and ``name := value;`` are parser-helper
 entry points used by import assembly tests and helpers. They are not ordinary

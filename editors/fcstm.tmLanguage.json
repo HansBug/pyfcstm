@@ -161,7 +161,7 @@
       "patterns": [
         {
           "name": "keyword.control.fcstm",
-          "match": "\\b(state|pseudo|named|def|event|import|as|if|else)\\b"
+          "match": "\\b(state|pseudo|named|def|control|input|param|output|var|event|import|as|if|else)\\b"
         },
         {
           "name": "keyword.other.lifecycle.fcstm",
@@ -325,7 +325,7 @@
         },
         {
           "name": "keyword.control.fcstm",
-          "match": "\\b(def|event|named)\\b"
+          "match": "\\b(var|def|event|named)\\b"
         },
         {
           "name": "keyword.operator.transition.fcstm",

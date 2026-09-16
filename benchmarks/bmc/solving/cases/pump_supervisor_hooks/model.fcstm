@@ -1,0 +1,35 @@
+// Abstract-hook corpus model: abstract lifecycle actions observe the whole
+// variable environment, so a cone-of-influence slice must skip this model.
+def int pressure = 0;
+def int pump_on = 0;
+def int alarm_count = 0;
+
+state Pump {
+    [*] -> Idle;
+
+    state Idle {
+        enter abstract Standby;
+    }
+    state Running {
+        enter {
+            pump_on = 1;
+        }
+        during abstract Monitor;
+        during {
+            pressure = pressure + 2;
+        }
+    }
+    state Alarm {
+        enter {
+            alarm_count = alarm_count + 1;
+            pump_on = 0;
+        }
+        exit abstract Reset;
+    }
+
+    Idle -> Running : if [pressure < 6];
+    Running -> Alarm : if [pressure >= 6];
+    Alarm -> Idle : if [alarm_count < 3] effect {
+        pressure = 0;
+    }
+}

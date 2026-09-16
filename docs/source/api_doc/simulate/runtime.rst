@@ -35,7 +35,7 @@ CycleResult
 -----------------------------------------------------
 
 .. autoclass:: CycleResult
-    :members: __post_init__,value,input_events,consumed_events,unconsumed_events,delta,trace,inputs
+    :members: __post_init__,value,input_events,consumed_events,unconsumed_events,delta,trace,inputs,diagnostics
 
 
 SimulationRuntimeExpressionError

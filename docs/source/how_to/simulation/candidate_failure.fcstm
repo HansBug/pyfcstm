@@ -1,0 +1,13 @@
+control int x = 0;
+state Root {
+    state A;
+    state Blocked {
+        enter { x = 100; }
+        state Inner;
+        [*] -> Inner : if [x < 0];
+    }
+    state B { enter { x = 1; } }
+    [*] -> A;
+    A -> Blocked :: Go;
+    A -> B :: Go;
+}

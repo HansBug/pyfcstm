@@ -66,7 +66,7 @@ class BatchProcessor:
     :vartype command_processor: CommandProcessor
     """
 
-    def __init__(self, runtime, state_machine=None, use_color: bool = True, output_func: Callable[[str], None] = None):
+    def __init__(self, runtime, state_machine=None, use_color: bool = True, output_func: Callable[[str], None] = None, *, input_source=None, diagnostics=False, diagnostic_output=None):
         """
         Initialize the batch processor.
 
@@ -78,6 +78,10 @@ class BatchProcessor:
         :type use_color: bool, optional
         :param output_func: Function to output text, defaults to cross-platform output
         :type output_func: Callable[[str], None], optional
+        :param input_source: Optional command-owned input adapter.
+        :param diagnostics: Enable candidate diagnostics for cycle commands.
+        :type diagnostics: bool
+        :param diagnostic_output: Optional separate report sink, e.g. JSONL stdout.
         """
         self.runtime = runtime
         self.state_machine = state_machine if state_machine is not None else runtime.state_machine
@@ -86,6 +90,9 @@ class BatchProcessor:
             state_machine=self.state_machine,
             use_color=use_color,
             runtime_replaced_callback=self._replace_runtime,
+            input_source=input_source,
+            diagnostics=diagnostics,
+            diagnostic_output=diagnostic_output,
         )
         self.output_func = output_func or create_cross_platform_output_func()
 
@@ -100,7 +107,7 @@ class BatchProcessor:
         """
         self.runtime = runtime
 
-    def execute_commands(self, command_string: str) -> None:
+    def execute_commands(self, command_string: str) -> int:
         """
         Execute a batch command string with clear command separators.
 
@@ -109,6 +116,8 @@ class BatchProcessor:
 
         :param command_string: Semicolon-separated command string
         :type command_string: str
+        :return: Zero on success, or the first failed command's exit status.
+        :rtype: int
 
         Example::
 
@@ -128,6 +137,7 @@ class BatchProcessor:
             ...     output_func=lines.append,
             ... )
             >>> processor.execute_commands("current; cycle; current")
+            0
             >>> any('Demo' in line for line in lines)
             True
         """
@@ -147,5 +157,8 @@ class BatchProcessor:
             if i < len(commands) - 1:
                 self.output_func("")
 
+            if result.exit_code:
+                return result.exit_code
             if result.should_exit:
                 break
+        return 0

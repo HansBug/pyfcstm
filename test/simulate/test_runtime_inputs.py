@@ -442,7 +442,7 @@ def test_repl_rebuild_keeps_fixed_parameters(command):
     assert processor.runtime.parameters == {"gain": 9}
 
 
-def test_cli_missing_dynamic_source_is_a_readable_error(tmp_path):
+def test_cli_missing_cycle_vector_is_a_readable_error(tmp_path):
     from click.testing import CliRunner
     from pyfcstm.entry.cli import cli
 
@@ -450,8 +450,8 @@ def test_cli_missing_dynamic_source_is_a_readable_error(tmp_path):
     path.write_text("input int sensor; state Root;")
     result = CliRunner().invoke(cli, ["simulate", "-i", str(path), "-e", "cycle"])
     assert result.exit_code != 0
-    assert "input_source" in result.output
-    assert "E_INPUT_SOURCE_MISSING" in result.output
+    assert "Each cycle requires exactly these inputs" in result.output
+    assert "E_INPUT_SOURCE_CONTRACT" in result.output
 
 
 def test_guard_effect_branches_aspects_and_refs_share_one_input_frame():

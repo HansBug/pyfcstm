@@ -5,6 +5,7 @@ This module provides command parsing and execution for the interactive
 state machine simulator.
 """
 
+import re
 from dataclasses import dataclass
 from enum import Enum
 from typing import List, Optional, Tuple, Dict, Any, Callable
@@ -13,7 +14,9 @@ from ...simulate import (
     SimulationRuntimeDfsError,
     SimulationRuntimeEventError,
     SimulationRuntimeExpressionError,
+    SimulationRuntimeInputSourceError,
 )
+from .inputs import _CommandInput, _assignments
 from .display import StateDisplay
 from .events import get_current_event_display_items
 from .logging import configure_simulate_cli_logger
@@ -46,6 +49,8 @@ class Settings:
     :vartype history_size: int
     :ivar color: Whether to use ANSI colors
     :vartype color: bool
+    :ivar diagnostics: Whether each cycle collects candidate decision evidence.
+    :vartype diagnostics: bool
     :ivar log_level: Current log level
     :vartype log_level: LogLevel
     """
@@ -55,6 +60,7 @@ class Settings:
         self.table_max_rows: int = 20
         self.history_size: int = 100
         self.color: bool = True
+        self.diagnostics: bool = False
         self.log_level: LogLevel = LogLevel.WARNING
 
     def get(self, key: str) -> Any:
@@ -123,6 +129,7 @@ class Settings:
             'table_max_rows': self.table_max_rows,
             'history_size': self.history_size,
             'color': self.color,
+            'diagnostics': self.diagnostics,
             'log_level': self.log_level.value if isinstance(self.log_level, LogLevel) else self.log_level,
         }
 
@@ -136,9 +143,12 @@ class CommandResult:
     :type output: str
     :param should_exit: Whether the REPL should exit after this command
     :type should_exit: bool
+    :param exit_code: Zero on success; nonzero stops a batch with failure.
+    :type exit_code: int
     """
     output: str
     should_exit: bool = False
+    exit_code: int = 0
 
 
 class CommandProcessor:
@@ -162,6 +172,9 @@ class CommandProcessor:
             state_machine=None,
             use_color: bool = True,
             runtime_replaced_callback: Optional[Callable[[Any], None]] = None,
+            input_source=None,
+            diagnostics: bool = False,
+            diagnostic_output=None,
     ):
         """
         Initialize the command processor.
@@ -174,12 +187,23 @@ class CommandProcessor:
         :type use_color: bool, optional
         :param runtime_replaced_callback: Callback invoked after init/clear rebuilds runtime.
         :type runtime_replaced_callback: Callable[[SimulationRuntime], None], optional
+        :param input_source: Command-owned input adapter, or ``None`` when the
+            supplied runtime owns its Python input sources.
+        :param diagnostics: Initial candidate collection setting.
+        :type diagnostics: bool
+        :param diagnostic_output: Optional sink called once per successful report.
+            When supplied, command output omits the diagnostic text.
+        :type diagnostic_output: Optional[Callable[[CycleDiagnostics], None]]
         """
         self.runtime = runtime
         self.state_machine = state_machine if state_machine is not None else runtime.state_machine
         self._runtime_replaced_callback = runtime_replaced_callback
         self.settings = Settings()
         self.settings.color = use_color
+        self.settings.diagnostics = diagnostics
+        self.input_source = input_source
+        self.last_diagnostics = None
+        self.diagnostic_output = diagnostic_output
         self.display = StateDisplay(use_color=use_color, logger=runtime.logger)
         if self.runtime.history_size is None:
             self._apply_history_size_setting()
@@ -245,7 +269,7 @@ class CommandProcessor:
         """
         from .completer import SimulationCompleter
 
-        return SimulationCompleter(self.runtime)
+        return SimulationCompleter(self.runtime, processor=self)
 
     def process(self, user_input: str) -> CommandResult:
         """
@@ -265,6 +289,8 @@ class CommandProcessor:
 
         if command == 'cycle':
             return self._handle_cycle(args)
+        elif command in ('decisions', 'why'):
+            return self._handle_decisions(command, args)
         elif command == 'init':
             return self._handle_init(args)
         elif command == 'clear':
@@ -284,7 +310,7 @@ class CommandProcessor:
         elif command in ['quit', 'exit']:
             return CommandResult("Goodbye!", should_exit=True)
         else:
-            return CommandResult(f"Unknown command: {command}. Type 'help' for available commands.")
+            return CommandResult(f"Unknown command: {command}. Type 'help' for available commands.", exit_code=1)
 
     def _handle_cycle(self, events: List[str]) -> CommandResult:
         """
@@ -301,6 +327,26 @@ class CommandProcessor:
         :return: Command result with current state or table
         :rtype: CommandResult
         """
+        self.last_diagnostics = None
+        assignments = []
+        event_args = []
+        index = 0
+        while index < len(events):
+            word = events[index]
+            if word == '--input':
+                index += 1
+                if index == len(events):
+                    return CommandResult("Error: --input requires name=value", exit_code=1)
+                assignments.append(events[index])
+            else:
+                event_args.append(word)
+            index += 1
+        try:
+            inputs = _assignments(assignments, self._parse_value)
+        except ValueError as error:
+            # ValueError: malformed, duplicated, or nonnumeric command assignment.
+            return CommandResult("Error: %s" % error, exit_code=1)
+        events = event_args
         try:
             # Parse arguments: first arg might be count
             count = 1
@@ -314,20 +360,23 @@ class CommandProcessor:
                     try:
                         count = int(first_arg)
                         if count <= 0:
-                            return CommandResult("Error: cycle count must be a positive integer")
+                            return CommandResult("Error: cycle count must be a positive integer", exit_code=1)
                         event_list = events[1:]
                     except ValueError:
-                        return CommandResult(f"Error: invalid cycle count '{first_arg}'")
+                        return CommandResult(f"Error: invalid cycle count '{first_arg}'", exit_code=1)
 
             # Single cycle - use simple format
             if count == 1:
                 if self.settings.log_level == LogLevel.DEBUG:
                     self.display.log(f"Executing cycle with events: {event_list if event_list else 'none'}", "debug")
-                self.runtime.cycle(event_list if event_list else None)
-                return CommandResult(self.display.format_current_state(self.runtime))
+                result = self._run_cycle(event_list, inputs)
+                output = self.display.format_current_state(self.runtime)
+                if result.diagnostics is not None and self.diagnostic_output is None:
+                    output += '\n' + str(result.diagnostics)
+                return CommandResult(output)
 
             # Multiple cycles - use table format
-            return self._handle_multiple_cycles(count, event_list)
+            return self._handle_multiple_cycles(count, event_list, inputs)
 
         except SimulationRuntimeDfsError:
             # SimulationRuntimeDfsError: runtime.cycle validation exceeded its
@@ -335,15 +384,54 @@ class CommandProcessor:
             return CommandResult(
                 "Cycle execution failed: State machine contains an unbounded execution chain.\n"
                 "This usually means there are too many automatic transitions without a stable state.\n"
-                "Please review your state machine definition for missing stoppable states."
+                "Please review your state machine definition for missing stoppable states.",
+                exit_code=1,
             )
-        except (SimulationRuntimeEventError, SimulationRuntimeExpressionError) as e:
+        except (SimulationRuntimeEventError, SimulationRuntimeExpressionError, SimulationRuntimeInputSourceError) as e:
+            # SimulationRuntimeInputSourceError: incomplete vector or invalid value.
             # SimulationRuntimeEventError: runtime.cycle rejected a
             # user-supplied event path after trying supported resolution modes.
             # SimulationRuntimeExpressionError: user DSL guard/action
             # expression evaluation failed, for example division by zero,
             # math domain error, or numeric overflow.
-            return CommandResult(f"Cycle execution failed: {e}")
+            return CommandResult(f"Cycle execution failed: {e}", exit_code=1)
+
+    def _run_cycle(self, events, inputs):
+        """Capture only the latest call and stream each successful report once."""
+        self.last_diagnostics = None
+        if self.input_source is not None and not (self.runtime.is_ended or self.runtime.is_error_state):
+            if set(inputs) != set(self.input_source.input_names):
+                raise SimulationRuntimeInputSourceError(
+                    'E_INPUT_SOURCE_CONTRACT',
+                    'Each cycle requires exactly these inputs: %s' % (self.input_source.input_names,),
+                )
+            self.input_source.values = inputs
+        # Complete overrides keep an explicit retry independent of an earlier
+        # cached failed sample; the provider's normal advancement stays intact.
+        result = self.runtime.cycle(
+            events or None, inputs=inputs, diagnostics=self.settings.diagnostics,
+        )
+        self.last_diagnostics = result.diagnostics
+        if result.diagnostics is not None and self.diagnostic_output is not None:
+            self.diagnostic_output(result.diagnostics)
+        return result
+
+    def _handle_decisions(self, command, args):
+        """Query captured evidence without advancing or resampling the runtime."""
+        verbose = '--verbose' in args
+        arguments = [word for word in args if word != '--verbose']
+        expected = 1 if command == 'why' else 0
+        if len(arguments) != expected or args.count('--verbose') > 1:
+            return CommandResult(
+                'Usage: decisions [--verbose] or why <check-id|transition-label> [--verbose]',
+                exit_code=1,
+            )
+        if self.last_diagnostics is None:
+            return CommandResult('No diagnostic report. Enable setting diagnostics on before cycle.')
+        selector = arguments[0] if arguments else None
+        if selector is not None and re.fullmatch(r'[0-9]+', selector):
+            return CommandResult(self.last_diagnostics.to_text(check_id=selector, verbose=verbose))
+        return CommandResult(self.last_diagnostics.to_text(transition=selector, verbose=verbose))
 
     def _handle_init(self, args: List[str]) -> CommandResult:
         """
@@ -359,15 +447,16 @@ class CommandProcessor:
         :return: Command result with new current state
         :rtype: CommandResult
         """
+        self.last_diagnostics = None
         if not args:
             return CommandResult(
                 "Usage: init <state_path> [var1=value1 ...]\n"
                 "Example: init System.Active counter=10 flag=1\n"
-                "Note: All variables must be provided when using init."
+                "Note: All variables must be provided when using init.", exit_code=1,
             )
 
-        if self.runtime.state_machine.inputs:
-            return CommandResult("Initialization requires a fresh input_source; construct a new SimulationRuntime through the Python API.")
+        if self.runtime.state_machine.inputs and self.input_source is None:
+            return CommandResult("Initialization requires a fresh input_source; construct a new SimulationRuntime through the Python API.", exit_code=1)
         state_path = args[0]
         var_assignments = args[1:]
 
@@ -377,7 +466,7 @@ class CommandProcessor:
             if '=' not in assignment:
                 return CommandResult(
                     f"Error: invalid variable assignment '{assignment}'. "
-                    f"Expected format: var=value"
+                    f"Expected format: var=value", exit_code=1,
                 )
             var_name, var_value_str = assignment.split('=', 1)
             var_name = var_name.strip()
@@ -387,7 +476,7 @@ class CommandProcessor:
             try:
                 var_value = self._parse_value(var_value_str)
             except ValueError as e:
-                return CommandResult(f"Error: {e}")
+                return CommandResult(f"Error: {e}", exit_code=1)
 
             initial_vars[var_name] = var_value
 
@@ -396,9 +485,11 @@ class CommandProcessor:
         if missing_vars:
             return CommandResult(
                 f"Error: All variables must be provided. Missing: {sorted(missing_vars)}\n"
-                f"Available variables: {sorted(self.runtime.vars.keys())}"
+                f"Available variables: {sorted(self.runtime.vars.keys())}", exit_code=1,
             )
 
+        # The command adapter owns no external state; start its cache afresh.
+        input_source = _CommandInput(tuple(self.state_machine.inputs)) if self.input_source is not None else None
         # Create new runtime with hot start
         try:
             # Import here to avoid circular dependency
@@ -407,6 +498,7 @@ class CommandProcessor:
             new_runtime = SimulationRuntime(
                 self.state_machine,
                 parameters=self.runtime.parameters,
+                input_source=input_source,
                 initial_state=state_path,
                 initial_vars=initial_vars,
                 abstract_error_mode=self.runtime.abstract_error_mode,
@@ -414,7 +506,8 @@ class CommandProcessor:
             )
             self.runtime.copy_session_configuration_to(new_runtime)
 
-            # Replace runtime
+            # Replace runtime only after successful construction.
+            self.input_source = input_source
             self._replace_runtime(new_runtime)
 
             return CommandResult(
@@ -424,9 +517,10 @@ class CommandProcessor:
         except ValueError as e:
             # ValueError: SimulationRuntime hot-start validation rejected the
             # user-provided state path or initial variable values.
-            return CommandResult(f"Initialization failed: {e}")
+            return CommandResult(f"Initialization failed: {e}", exit_code=1)
 
-    def _parse_value(self, value_str: str) -> float:
+    @staticmethod
+    def _parse_value(value_str: str) -> float:
         """
         Parse a numeric value from string.
 
@@ -471,7 +565,7 @@ class CommandProcessor:
         except ValueError:
             raise ValueError(f"Invalid numeric value: {value_str}")
 
-    def _handle_multiple_cycles(self, count: int, event_list: List[str]) -> CommandResult:
+    def _handle_multiple_cycles(self, count: int, event_list: List[str], inputs=None) -> CommandResult:
         """
         Handle multiple cycle execution with table output.
 
@@ -487,6 +581,7 @@ class CommandProcessor:
         # terminated row for user feedback but do not fabricate extra cycles.
         var_names = sorted(self.runtime.vars.keys())
         table_data = []
+        reports = []
         last_delta = False
         if self.runtime.is_ended:
             table_data.append([self.runtime.cycle_count, "(terminated)", False] + [
@@ -502,7 +597,9 @@ class CommandProcessor:
 
             cycle_count_before = self.runtime.cycle_count
             was_ended = self.runtime.is_ended
-            cycle_result = self.runtime.cycle(event_list if event_list else None)
+            cycle_result = self._run_cycle(event_list, inputs or {})
+            if cycle_result.diagnostics is not None and self.diagnostic_output is None:
+                reports.append(str(cycle_result.diagnostics))
             last_delta = bool(getattr(cycle_result, 'delta', False))
             if was_ended and self.runtime.cycle_count == cycle_count_before:
                 break
@@ -533,7 +630,7 @@ class CommandProcessor:
             display_data = table_data
 
         table_str = self.display.format_table(headers, display_data, var_names)
-        return CommandResult(table_str)
+        return CommandResult('\n'.join([table_str] + reports))
 
     def _handle_clear(self) -> CommandResult:
         """
@@ -542,18 +639,22 @@ class CommandProcessor:
         :return: Command result with reset state
         :rtype: CommandResult
         """
-        if self.runtime.state_machine.inputs:
-            return CommandResult("Reset requires a fresh input_source; construct a new SimulationRuntime through the Python API.")
+        self.last_diagnostics = None
+        if self.runtime.state_machine.inputs and self.input_source is None:
+            return CommandResult("Reset requires a fresh input_source; construct a new SimulationRuntime through the Python API.", exit_code=1)
         # Recreate the runtime to reset state
         from ...simulate import SimulationRuntime
 
+        input_source = _CommandInput(tuple(self.state_machine.inputs)) if self.input_source is not None else None
         new_runtime = SimulationRuntime(
             self.runtime.state_machine,
             parameters=self.runtime.parameters,
+            input_source=input_source,
             abstract_error_mode=self.runtime.abstract_error_mode,
             history_size=self.runtime.history_size,
         )
         self.runtime.copy_session_configuration_to(new_runtime)
+        self.input_source = input_source
         self._replace_runtime(new_runtime)
         if self.settings.log_level in [LogLevel.DEBUG, LogLevel.INFO]:
             self.display.log("State machine reset to initial state", "info")
@@ -586,18 +687,21 @@ class CommandProcessor:
         :rtype: CommandResult
         """
         help_text = """Available commands:
-  cycle [count] [events...]  - Execute cycle(s) with optional events
+  cycle [count] [events...] [--input name=value ...]
+                             - Execute with a complete explicit input vector
                                count: number of cycles (default: 1)
                                Examples: cycle, cycle 5, cycle 3 Start
   init <state> [vars...]     - Hot start from specific state with variables
                                All variables must be provided
                                Examples: init System.Active counter=10 flag=1
                                Supports: hex (0xFF), binary (0b1010), float (3.14)
+  decisions [--verbose]      - Show the latest captured candidate checks
+  why <id|label> [--verbose] - Explain a check or transition with its context
   clear                      - Reset to initial state
   current                    - Show current state and all variables
   events                     - List available events in current state
   history [n|all]            - Show execution history (default: 10 recent entries)
-  setting [key] [value]      - View or change settings (including log_level)
+  setting [key] [value]      - View or change settings (including log_level and diagnostics)
   export <filename>          - Export history to file (.csv, .json, .yaml, .jsonl)
   help                       - Show this help message
   quit, exit                 - Exit simulator
@@ -629,9 +733,9 @@ Keyboard shortcuts (interactive mode):
             try:
                 count = int(args[0])
                 if count <= 0:
-                    return CommandResult("Error: count must be a positive integer")
+                    return CommandResult("Error: count must be a positive integer", exit_code=1)
             except ValueError:
-                return CommandResult(f"Error: invalid count '{args[0]}'")
+                return CommandResult(f"Error: invalid count '{args[0]}'", exit_code=1)
         else:
             count = 10  # Default
 
@@ -686,10 +790,12 @@ Keyboard shortcuts (interactive mode):
                     value = value.value
                 return CommandResult(f"{key} = {value}")
             except KeyError as e:
-                return CommandResult(f"Error: {e}")
+                return CommandResult(f"Error: {e}", exit_code=1)
 
         # Set setting
         value = args[1]
+        if key == 'diagnostics' and self.diagnostic_output is not None and value.lower() in ('off', 'false', '0', 'no'):
+            return CommandResult('Error: JSONL output requires diagnostics to remain on.', exit_code=1)
         try:
             self.settings.set(key, value)
 
@@ -704,7 +810,7 @@ Keyboard shortcuts (interactive mode):
 
             return CommandResult(f"Setting updated: {key} = {value}")
         except (KeyError, ValueError) as e:
-            return CommandResult(f"Error: {e}")
+            return CommandResult(f"Error: {e}", exit_code=1)
 
     def _get_current_events(self) -> List[Tuple[str, Optional[str]]]:
         """
@@ -731,7 +837,7 @@ Keyboard shortcuts (interactive mode):
         :rtype: CommandResult
         """
         if not args:
-            return CommandResult("Usage: export <filename>\nSupported formats: .csv, .json, .yaml, .jsonl")
+            return CommandResult("Usage: export <filename>\nSupported formats: .csv, .json, .yaml, .jsonl", exit_code=1)
 
         filename = args[0]
 
@@ -745,7 +851,7 @@ Keyboard shortcuts (interactive mode):
         ext = ext.lower()
 
         if ext not in ['.csv', '.json', '.yaml', '.jsonl']:
-            return CommandResult(f"Unsupported file format: {ext}\nSupported formats: .csv, .json, .yaml, .jsonl")
+            return CommandResult(f"Unsupported file format: {ext}\nSupported formats: .csv, .json, .yaml, .jsonl", exit_code=1)
 
         if ext == '.csv':
             import csv
@@ -755,14 +861,14 @@ Keyboard shortcuts (interactive mode):
             except (OSError, csv.Error) as e:
                 # OSError: open/write failed due to path, permission, or disk
                 # state; csv.Error: csv.writer rejected the output stream/data.
-                return CommandResult(f"Export failed: {e}")
+                return CommandResult(f"Export failed: {e}", exit_code=1)
         elif ext == '.json':
             try:
                 self._export_json(filename)
             except (OSError, ValueError) as e:
                 # OSError: open/write failed due to path, permission, or disk
                 # state; ValueError: json serialization/write rejected payload.
-                return CommandResult(f"Export failed: {e}")
+                return CommandResult(f"Export failed: {e}", exit_code=1)
         elif ext == '.yaml':
             import yaml
 
@@ -772,14 +878,14 @@ Keyboard shortcuts (interactive mode):
                 # OSError: open/write failed due to path, permission, or disk
                 # state; ValueError/YAMLError: PyYAML rejected the payload or
                 # output stream.
-                return CommandResult(f"Export failed: {e}")
+                return CommandResult(f"Export failed: {e}", exit_code=1)
         elif ext == '.jsonl':
             try:
                 self._export_jsonl(filename)
             except (OSError, ValueError) as e:
                 # OSError: open/write failed due to path, permission, or disk
                 # state; ValueError: per-entry json serialization/write failed.
-                return CommandResult(f"Export failed: {e}")
+                return CommandResult(f"Export failed: {e}", exit_code=1)
 
         return CommandResult(f"History exported to {filename} ({len(self.runtime.history)} entries)")
 

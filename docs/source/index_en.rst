@@ -128,6 +128,7 @@ extra click through a category page.
     how_to/bmc/index
     how_to/dsl/index
     how_to/simulation/index
+    how_to/simulation/diagnostics
     how_to/inspect/index
     how_to/generation/index
     how_to/visualization/index
@@ -199,6 +200,7 @@ generated API documentation remains the last item in this reference area.
     reference/inspect_report/index
     reference/diagnostics_codes/index
     reference/simulation/index
+    reference/simulation/diagnostics
     reference/visualization_options/index
     reference/template_config/index
     reference/grammar_tooling/index

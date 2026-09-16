@@ -28,3 +28,5 @@ python tools/benchmark_preferred_explanations.py --rebuild /tmp/preferred-new-ru
 ```
 
 The rebuild changes only `report.md`; it must reproduce the same presentation for the saved raw data. Recorded runs live under `outputs/runs/`. Runtime branch coverage is measured separately from performance, so coverage instrumentation is absent from timed subprocesses.
+
+Recorded run: [measurements](outputs/runs/8d897a964a98/report.md), [validation and limitations](outputs/runs/8d897a964a98/validation.md), and [diff coverage](outputs/runs/8d897a964a98/diff-coverage.json).

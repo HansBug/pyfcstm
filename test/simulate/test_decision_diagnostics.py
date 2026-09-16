@@ -251,7 +251,8 @@ def test_search_branches_do_not_turn_one_failure_into_total_rejection():
         for d in report.decisions
     )
     assert any(d.outcome == "enabled" for d in report.decisions)
-    assert "folded" in str(report)
+    assert "guard_false" in str(report)
+    assert "committed" in str(report)
     assert "folded" not in report.to_text(verbose=True)
 
 

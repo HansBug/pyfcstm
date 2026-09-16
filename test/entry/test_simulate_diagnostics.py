@@ -396,3 +396,43 @@ def test_parameters_cannot_be_reassigned_after_construction(tmp_path):
     assert result.exit_code == 1
     assert result.stdout == ""
     assert "Initialization failed" in result.stderr
+
+
+def test_why_check_number_includes_ancestors_and_preserves_jsonl_stdout(tmp_path):
+    result = invoke(
+        tmp_path, "cycle; cycle Root.A.Go; why 2; why 999; decisions --verbose",
+        "--diagnostics", "--diagnostics-format", "jsonl", source='''
+        control int x = 0;
+        state Root {
+            state A;
+            state Blocked { enter { x = 100; } state Inner;
+                [*] -> Inner : if [x < 0]; }
+            state B;
+            [*] -> A;
+            A -> Blocked :: Go;
+            A -> B :: Go;
+        }
+        ''',
+    )
+    assert result.exit_code == 0, result.stderr
+    reports = [json.loads(line) for line in result.stdout.splitlines()]
+    assert len(reports) == 2
+    assert reports[1]["vars_before"] == reports[1]["vars_after"] == {"x": 0}
+    query = result.stderr.split(">>> why 2", 1)[1].split(">>> why 999", 1)[0]
+    assert "#1 " in query and "#2 " in query
+    assert "successor_rejected" in query and "guard_false" in query
+    assert "No recorded evidence for 999" in result.stderr
+
+
+def test_why_completion_includes_report_local_numbers():
+    runtime = SimulationRuntime(load_state_machine_from_text('''
+        state Root { state A; state B; [*] -> A; A -> B :: Go; }
+    '''))
+    processor = CommandProcessor(runtime, diagnostics=True)
+    processor.process("cycle")
+    processor.process("cycle")
+    choices = [c.text for c in processor.create_completer().get_completions(Document("why "), None)]
+    assert "1" in choices and "Root.A::0::A->B" in choices
+    count = runtime.cycle_count
+    assert "event_missing" in processor.process("why 1").output
+    assert runtime.cycle_count == count

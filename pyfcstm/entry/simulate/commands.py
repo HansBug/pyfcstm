@@ -5,6 +5,7 @@ This module provides command parsing and execution for the interactive
 state machine simulator.
 """
 
+import re
 from dataclasses import dataclass
 from enum import Enum
 from typing import List, Optional, Tuple, Dict, Any, Callable
@@ -422,13 +423,15 @@ class CommandProcessor:
         expected = 1 if command == 'why' else 0
         if len(arguments) != expected or args.count('--verbose') > 1:
             return CommandResult(
-                'Usage: decisions [--verbose] or why <transition-label> [--verbose]',
+                'Usage: decisions [--verbose] or why <check-id|transition-label> [--verbose]',
                 exit_code=1,
             )
         if self.last_diagnostics is None:
             return CommandResult('No diagnostic report. Enable setting diagnostics on before cycle.')
-        transition = arguments[0] if arguments else None
-        return CommandResult(self.last_diagnostics.to_text(transition=transition, verbose=verbose))
+        selector = arguments[0] if arguments else None
+        if selector is not None and re.fullmatch(r'[0-9]+', selector):
+            return CommandResult(self.last_diagnostics.to_text(check_id=selector, verbose=verbose))
+        return CommandResult(self.last_diagnostics.to_text(transition=selector, verbose=verbose))
 
     def _handle_init(self, args: List[str]) -> CommandResult:
         """
@@ -693,7 +696,7 @@ class CommandProcessor:
                                Examples: init System.Active counter=10 flag=1
                                Supports: hex (0xFF), binary (0b1010), float (3.14)
   decisions [--verbose]      - Show the latest captured candidate checks
-  why <label> [--verbose]    - Explain a transition from captured evidence
+  why <id|label> [--verbose] - Explain a check or transition with its context
   clear                      - Reset to initial state
   current                    - Show current state and all variables
   events                     - List available events in current state

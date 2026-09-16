@@ -48,10 +48,84 @@ Read the evidence in this order:
      - Whole-cycle checking found a viable selection. It has not yet committed.
    * - ``A -> B`` has ``committed`` in execution
      - This actual selection survived the cycle. Its transition is also in the committed trace.
-   * - Repeated summaries are folded
-     - The engine checked some edges multiple times. Use ``report.to_text(verbose=True)`` or ``decisions --verbose`` to see each check and its parent.
+   * - Identical adjacent checks are folded
+     - Only identical uncommitted evidence folds; IDs and counts stay visible. Use ``report.to_text(verbose=True)`` or ``decisions --verbose`` to see each check and its parent.
 
 A false guard on one search branch does not prove that the entire candidate fails. Read the outer candidate's ``successor_result`` together with the child evidence. Likewise, ``not_evaluated`` with ``blocked_by`` means an earlier candidate was selected; it does not mean the later guard is false. A normal leaf can stay in place without producing Delta. These distinctions explain why the report records real checks rather than reevaluating conditions from final values.
+
+Inspect combo rollback and fallback
+-----------------------------------
+
+Download :download:`combo_diagnostics.fcstm` and :download:`combo_diagnostics.demo.py` into the same directory, or run the checked-in program from the repository root:
+
+.. code-block:: bash
+
+   python docs/source/how_to/simulation/combo_diagnostics.demo.py
+
+.. literalinclude:: combo_diagnostics.fcstm
+   :language: fcstm
+
+The program constructs a fresh runtime for each of three cases. All events in ``A + B`` are checked inside the same macro step, using that call's frozen input. It does not mean A on one cycle followed by B on another.
+
+.. literalinclude:: combo_diagnostics.demo.py
+   :language: python
+   :start-at: from pathlib
+
+.. list-table:: Expected committed boundaries
+   :header-rows: 1
+
+   * - Input and events
+     - Evidence
+     - Final boundary
+   * - ``sensor=12``, A only
+     - B is missing; the target guard is not evaluated.
+     - ``Root.Fallback``; ``score=121``, ``reading=0``.
+   * - ``sensor=3``, A and B
+     - Target initial guard fails with speculative ``score=10011``, ``reading=3``.
+     - ``Root.Fallback``; ``score=121``, ``reading=0``.
+   * - ``sensor=12``, A and B
+     - Whole path succeeds; the fallback is not evaluated.
+     - ``Root.Target.Good``; ``score=11011``, ``reading=12``.
+
+The middle case's actual output is shown below; the other two cases are omitted here and are printed by the same program:
+
+.. literalinclude:: combo_diagnostics.demo.py.txt
+   :language: text
+   :start-after: === target guard false ===
+   :end-before: === complete path ===
+
+The rejected path computes source exit ``+1``, terminal effect ``+10`` and ``reading=sensor``, then target entry ``+10000``. Its initial guard therefore sees 10011 and 3. Those are values at a speculative check. The fallback commits its own ``+1+20+100`` from the original boundary, yielding 121. Read ``vars_before`` and ``vars_after`` from the report itself; no extra runtime inspection is required to distinguish them from the failed check's snapshot.
+
+There is no separate undo-action log. ``successor_rejected`` and child evidence explain the rejected path; the committed micro-transition list and boundary values show what survived. This does not promise rollback of arbitrary external callback effects. A candidate rollback is not automatically Delta: this example commits a fallback normally.
+
+The default combo display identifies the authored source, target and canonical trigger. It is a readable semantic label, not replacement DSL. Verbose text and ``transition_label`` retain expanded addresses. A shared prefix explicitly lists multiple origins; committing that shared micro-transition does not prove every originating alternative committed. Check the terminal path and final boundary as well.
+
+No files are written by this program. If the expected target differs, first check that both fully qualified events were supplied in the same call and that the frozen input meets the target guard. Use ``report.to_text(check_id=3, verbose=True)`` or CLI ``why 3 --verbose`` to query the observed failure with its ancestors; IDs are local to that report. :doc:`../../reference/simulation/diagnostics` defines the selectors and fields.
+
+Distinguish Delta from a normal stay-in-place cycle
+---------------------------------------------------
+
+Download :download:`delta_diagnostics.fcstm` and :download:`delta_diagnostics.demo.py` together, or run:
+
+.. code-block:: bash
+
+   python docs/source/how_to/simulation/delta_diagnostics.demo.py
+
+.. literalinclude:: delta_diagnostics.fcstm
+   :language: fcstm
+
+.. literalinclude:: delta_diagnostics.demo.py
+   :language: python
+   :start-at: from pathlib
+
+The first frozen input is 3. The initial route computes ``score=110`` and ``reading=3`` but cannot leave the pseudo state for a stoppable state. The call returns Delta, retaining the original root boundary and zero persistent values; the committed trace is empty. The second input is 12, so initialization completes with ``score=1110`` and ``reading=12``. The first attempt's 110 is not accumulated.
+
+.. literalinclude:: delta_diagnostics.demo.py.txt
+   :language: text
+
+A Delta warning is also logged to stderr. The program writes no files. Delta advances the cycle counter, history and input source; it does not rewind the environment. If the second call still fails, inspect the sequence and guard values rather than expecting the first sample to be reused. A normal stoppable leaf can stay active, run ``during`` and change outputs while ``decisions`` is empty; that is a normal cycle, and its report still contains inputs, parameters and both boundary snapshots. Ignored calls instead have ``inputs=None`` because no new sampling occurred.
+
+When the same pseudo edge executes repeatedly within one macro step, each committed occurrence remains visible, even if its label repeats. Compact text folds only adjacent uncommitted checks whose evidence is identical apart from ID, retaining every ID and the count. Different variable values or validation parents are distinct facts. Verbose text and JSON always retain every original check. For the relationship to whole-path guard constraints, see :ref:`exec-diagnostic-boundaries`.
 
 Provide inputs and parameters
 -----------------------------
@@ -93,4 +167,4 @@ Expected output from the second command is ``2 valid reports``. The shell create
 
 If JSON parsing fails, first check that both ``--diagnostics`` and ``--diagnostics-format jsonl`` were supplied, and avoid combining stderr into the file. JSONL requires batch mode; REPL queries are human-readable. There is no automatic scenario loading, persistence or replay added here. Keep the model and experimental conditions in your own script when comparing separate runs.
 
-In the REPL, ``setting diagnostics on``, ``cycle``, ``decisions`` and ``why <label>`` provide the same workflow; Tab completes captured labels. Only the latest call is retained. A new failed call, ``init`` or ``clear`` removes the previous report, so a stale explanation cannot appear to describe the new state.
+In the REPL, ``setting diagnostics on``, ``cycle``, ``decisions`` and ``why <id|label>`` provide the same workflow; Tab completes captured check numbers and labels. Only the latest call is retained. A new failed call, ``init`` or ``clear`` removes the previous report, so a stale explanation cannot appear to describe the new state.

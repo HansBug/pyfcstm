@@ -3847,7 +3847,9 @@ class SimulationRuntime:
         previous_diagnostics = self._cycle_diagnostics
         try:
             self._active_inputs = snapshot_inputs
-            self._cycle_diagnostics = _DecisionCollector(self) if diagnostics else None
+            self._cycle_diagnostics = _DecisionCollector(
+                self, (event.path_name for event in event_objects), snapshot_inputs,
+            ) if diagnostics else None
             result = self._cycle_with_inputs(
                 event_objects, d_events, trace, snapshot_inputs
             )
@@ -4000,6 +4002,7 @@ class SimulationRuntime:
                 prepared_count,
                 'delta' if delta else ('terminated' if prepared_ended else 'cycle'),
                 tuple(prepared_stack[-1].state.path) if prepared_stack else None,
+                prepared_vars,
             ) if self._cycle_diagnostics is not None else None),
         )
         changes = self._format_var_changes(snapshot_vars, prepared_vars)

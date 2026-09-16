@@ -278,7 +278,7 @@ SAT 结果都必须经过见证与重放可信门禁。全部选项、颜色行�
    pyfcstm simulate -i machine.fcstm -e "current; cycle; current"
    pyfcstm simulate -i machine.fcstm -e "init System.Active counter=10; cycle 5"
 
-诊断选项：``--diagnostics`` 默认关闭；``--diagnostics-format text|jsonl`` 默认 ``text``，JSONL 要求 ``--diagnostics`` 和 ``-e``；可重复的 ``--param NAME=VALUE`` 在构造时设置参数。``cycle --input NAME=VALUE`` 每拍提供完整输入，``decisions`` 和 ``why <label>`` 查询最近证据。精确类型、非法情况及完整示例见 :doc:`../simulation/diagnostics_zh`。JSONL 模式的标准输出只含报告，转录和查询写入标准错误，不含 ANSI 的报告可直接重定向。
+诊断选项：``--diagnostics`` 默认关闭；``--diagnostics-format text|jsonl`` 默认 ``text``，JSONL 要求 ``--diagnostics`` 和 ``-e``；可重复的 ``--param NAME=VALUE`` 在构造时设置参数。``cycle --input NAME=VALUE`` 每拍提供完整输入，``decisions`` 和 ``why <id|label>`` 查询最近证据。精确类型、非法情况及完整示例见 :doc:`../simulation/diagnostics_zh`。JSONL 模式的标准输出只含报告，转录和查询写入标准错误，不含 ANSI 的报告可直接重定向。
 
 ``inspect``
 -----------

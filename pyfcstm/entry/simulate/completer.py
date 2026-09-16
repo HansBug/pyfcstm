@@ -84,6 +84,7 @@ class SimulationCompleter(Completer):
             prefix = words[-1] if not text.endswith(' ') else ''
             choices = ['--verbose']
             if command == 'why' and self.processor is not None and self.processor.last_diagnostics is not None:
+                choices.extend(str(item.id) for item in self.processor.last_diagnostics.decisions)
                 choices.extend(dict.fromkeys(
                     item.transition_label for item in self.processor.last_diagnostics.decisions
                 ))

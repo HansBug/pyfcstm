@@ -18,9 +18,9 @@ Collection and querying
    * - ``report.decisions``
      - Tuple of ``TransitionDecision`` objects in observation order. Iterate or filter with ordinary Python. Each check owns detached value mappings.
    * - ``str(report)``
-     - Plain-text summary. Repeated label/phase/outcome/commit summaries are folded and the number omitted is printed. It is not a machine protocol.
-   * - ``report.to_text(transition=None, verbose=False)``
-     - Optional exact transition label includes its recorded successor checks. Verbose output includes every check, parent links, full variable sets and available locations. Unknown labels produce ``No recorded evidence``; they do not prove the source was inactive.
+     - Plain-text explanation: cycle result, events, inputs, parameters, persistent values before/after, committed micro-transitions in execution order, then candidate evidence. Only adjacent identical uncommitted checks fold; all their IDs and their count remain visible. Different snapshots, parents or phases never fold; committed occurrences never fold. It is not a machine protocol.
+   * - ``report.to_text(transition=None, check_id=None, verbose=False)``
+     - Select an exact expanded transition label or a report-local check ID (integer or decimal string). The result includes matching checks, their descendants, required ancestors and blocking selections; unrelated siblings are omitted. Supplying both selectors raises ``ValueError``. Unknown selectors produce ``No recorded evidence``; they do not prove the source was inactive. Verbose output includes every check, expanded combo addresses, full snapshots and source spans. The cycle summary always describes the whole call, even in a filtered query.
    * - ``report.to_dict()``
      - Complete independent dictionary, with tuples represented as lists and read-only mappings as dictionaries. Changes to the dictionary do not change the report. Use ``json.dumps`` when serialization is required; no schema/version discriminator is added.
 
@@ -55,6 +55,19 @@ All fields below appear in ``to_dict()``; absent optional values are ``None`` in
      - name-to-string mapping
      - Final assembled model roles: ``control``, ``output``, ``input``, ``param``. Imported names use their final parent binding.
 
+   * - ``input_events``
+     - tuple of strings; JSON array
+     - Normalized event paths processed by this cycle. An ignored call has an empty tuple; its unprocessed arguments are not evidence.
+   * - ``inputs``
+     - numeric mapping or ``None``
+     - Complete frozen input vector even when there are no candidate checks. ``{}`` means a real cycle of a model without inputs; ``None`` means an ignored call sampled nothing, not that previous inputs were reused.
+   * - ``parameters``
+     - numeric mapping
+     - Fixed instance values, captured even on an ignored call.
+   * - ``vars_before`` / ``vars_after``
+     - numeric mappings
+     - Persistent control/output snapshots at the call boundaries, not speculative values. A Delta or no-op retains identical values; a normal stay-in-place cycle may change them through ``during``. Use ``roles`` to distinguish control from output.
+
 .. list-table:: ``TransitionDecision``
    :header-rows: 1
 
@@ -67,6 +80,9 @@ All fields below appear in ``to_dict()``; absent optional values are ``None`` in
    * - ``transition_label``
      - string
      - Existing trace/BMC address ``source_path::index::source->target``. Expanded forced/combo edges use their model addresses. The synthetic root exit has index zero. Editing/reordering the model can change labels.
+   * - ``combo_origins``
+     - tuple of read-only mappings; JSON array of objects
+     - Every authored combo origin represented by this expanded edge; empty for an ordinary edge. Shared prefixes retain multiple origins. Each object has ``origin_id``, ``source_path``, ``target_path``, canonical ``trigger``, zero-based ``term_index``, ``term_text``, ``role`` and ``consumes_term``. Initial sources use ``Owner.[*]``; exit targets use ``[*]``. Import assembly uses final parent paths. Origin IDs distinguish declarations, including identical triggers with different effects; they are not stable across arbitrary model edits.
    * - ``phase``
      - string
      - ``preflight``: whole-cycle precheck; ``execution``: actual selection pass; ``validation``: nested successor checks or search. Only ``committed`` proves final execution.
@@ -101,6 +117,28 @@ All fields below appear in ``to_dict()``; absent optional values are ``None`` in
      - method
      - Independent dictionary for this check alone, using the same field meanings.
 
+.. list-table:: Fields within each ``combo_origins`` entry
+   :header-rows: 1
+
+   * - Fields
+     - Contract
+   * - ``origin_id``
+     - String identifying the authored declaration in this assembled model. Multiple entries can share an expanded edge without sharing this ID.
+   * - ``source_path`` / ``target_path``
+     - Original endpoints expressed in assembled model paths. Initial and exit endpoints use the forms described above; these are not generated relay names.
+   * - ``trigger``
+     - Complete canonical trigger text assembled from ordered term metadata. Event scope is evidenced by each check's resolved ``event`` field, not a guessed DSL separator.
+   * - ``term_index`` / ``term_text``
+     - Zero-based integer position and canonical text of the term represented by this edge. Human labels display positions starting at one.
+   * - ``role`` / ``consumes_term``
+     - Expanded-edge role (currently ``prefix`` or ``terminal``) and a boolean saying whether this edge consumes the referenced trigger term. Neither field alone means the complete authored path committed.
+
+Human text uses the canonical ``Source -> Target [combo: terms]`` display, followed by the observed term and expanded-edge role. This is a semantic display, not round-trippable DSL. Actual event checks show resolved event paths, so event scope is not guessed from the display. Shared expanded edges list all origins without claiming that all those authored alternatives committed. Verbose output and JSON retain the exact expanded address for correlation with trace and BMC.
+
+Human messages distinguish a missing event, a failed guard, a skipped check, local search success, phase-local selection and final commit. ``None`` results are displayed as “not evaluated”; absent conditions as “no requirement”. Parent links describe validation context, not execution order. In particular, a false guard below an accepted candidate can describe one unsuccessful search alternative; it is not automatically the cause of an outer rejection. Only the committed micro-transition list has execution-order meaning.
+
+A rejected candidate's snapshots can contain speculative writes while ``vars_after`` contains the actual committed outcome of another path. There is no separate ``rollback`` event or undo-action log. Delta retains the pre-cycle state and persistent values while advancing the cycle count and input sources. Querying any view is read-only; it cannot undo arbitrary external callback side effects.
+
 The report explains mechanical selection, not counterfactual reachability or arbitrary external handler behavior. Validation deliberately does not execute abstract handlers. An enabled edge is not proof that external code would succeed. No evidence does not mean a guard was false, a source never became active or the model is globally unreachable. ``trace`` continues to contain committed observations only.
 
 CLI contract
@@ -127,9 +165,9 @@ CLI contract
    * - ``decisions [--verbose]``
      - latest call
      - Read the latest report. If none exists, print ``No diagnostic report``; do not replay.
-   * - ``why <transition-label> [--verbose]``
-     - exact label from summary/completion
-     - Read that edge and its recorded successor checks. Missing label, extra arguments or repeated ``--verbose`` fail. A valid but unrecorded label yields a no-evidence message.
+   * - ``why <check-id|transition-label> [--verbose]``
+     - decimal check number or exact expanded label from completion
+     - ``why 3`` selects check 3; ``why Root.A::0::A->B --verbose`` selects all checks of that edge. Include ancestors and blocking selections in either case. Missing selector, extra arguments or repeated ``--verbose`` fail. An unrecorded number/label yields a no-evidence message. Tab completes both numbers and labels; IDs refer only to the latest report.
 
 Use decimal, hexadecimal, binary or floating-point numeric assignments; model types still apply. ``init`` and ``clear`` preserve parameter values, recreate the command-owned input adapter and clear the last report. They do not allow later parameter reassignment. An externally supplied Python input source still requires its owner to construct a fresh runtime when restarting. Failed calls and initialization attempts clear previous diagnostic evidence; disabled collection on the next cycle also clears it. The REPL retains only the latest call; a successful multi-cycle text command displays its collected reports and leaves only its last call queryable. JSONL reports stream after each successful call.
 

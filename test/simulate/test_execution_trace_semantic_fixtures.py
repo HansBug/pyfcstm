@@ -39,11 +39,21 @@ def test_trace_preserves_semantic_fixture(case, monkeypatch, diagnostics):
         return result
 
     def with_trace(events=None, **kwargs):
+        before = dict(traced.vars)
         result = traced_cycle(events, trace=True, diagnostics=diagnostics, **kwargs)
         traced_results.append(result)
         snapshots.append([entry.to_dict() for entry in result.trace])
         if diagnostics:
             decision_snapshots.append(result.diagnostics.to_dict())
+            report = result.diagnostics
+            assert report.vars_before == before
+            assert report.vars_after == traced.vars
+            assert report.parameters == traced.parameters
+            assert report.input_events == result.input_events
+            assert report.inputs == (None if report.outcome == 'noop' else result.inputs)
+            assert [d.transition_label for d in report.decisions if d.committed] == [
+                e.transition_label for e in result.trace if e.kind == 'transition'
+            ]
         if result.delta:
             assert result.trace == ()
         return result

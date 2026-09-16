@@ -75,6 +75,8 @@ class TransitionDecision:
         ``selected``, ``enabled`` (search only), or ``not_evaluated``.
     :param blocked_by: Successful prior selection that skipped this candidate.
     :param committed: Whether this particular selection was committed.
+    :param combo_origins: Detached authored combo references, including every
+        origin sharing this expanded edge. Term indexes are zero-based.
     """
 
     id: int
@@ -94,11 +96,17 @@ class TransitionDecision:
     outcome: str = "not_evaluated"
     blocked_by: Optional[int] = None
     committed: bool = False
+    combo_origins: Tuple[Mapping[str, object], ...] = ()
 
     def __post_init__(self):
         for name in ("vars", "inputs", "parameters", "location"):
             object.__setattr__(self, name, MappingProxyType(dict(getattr(self, name))))
         object.__setattr__(self, "state_path", tuple(self.state_path))
+        object.__setattr__(
+            self,
+            "combo_origins",
+            tuple(MappingProxyType(dict(origin)) for origin in self.combo_origins),
+        )
 
     def to_dict(self) -> dict:
         """Return independent JSON-compatible data, including unevaluated checks."""
@@ -106,6 +114,7 @@ class TransitionDecision:
         for name in ("vars", "inputs", "parameters", "location"):
             data[name] = dict(data[name])
         data["state_path"] = list(self.state_path)
+        data["combo_origins"] = [dict(origin) for origin in self.combo_origins]
         return data
 
 
@@ -119,12 +128,24 @@ class CycleDiagnostics:
     :param state_after: Active final path, or ``None`` after termination.
     :param decisions: Actual checks, in observation order, including skipped edges.
     :param roles: Final model variable roles after import assembly.
+    :param input_events: Normalized events supplied to this cycle; empty for no-op.
+    :param inputs: Frozen cycle inputs; ``None`` for an ignored, unsampled call.
+    :param parameters: Immutable instance parameter snapshot.
+    :param vars_before: Persistent control/output values before the call.
+    :param vars_after: Persistent control/output values committed by the call.
 
     Example::
 
         >>> report = CycleDiagnostics(0, 'noop', None, None)
         >>> print(report)
         Cycle 0: noop; (terminated) -> (terminated)
+        Result: call ignored; no new inputs sampled and no cycle advanced.
+        Events: (none processed)
+        Inputs: (not sampled)
+        Parameters: {}
+        Persistent values before: {}
+        Persistent values after:  {}
+        Committed micro-transitions: (none)
         No candidate checks recorded.
         >>> report.to_dict()['decisions']
         []
@@ -136,10 +157,19 @@ class CycleDiagnostics:
     state_after: Optional[Tuple[str, ...]]
     decisions: Tuple[TransitionDecision, ...] = ()
     roles: Mapping[str, str] = field(default_factory=dict)
+    input_events: Tuple[str, ...] = ()
+    inputs: Optional[Mapping[str, Number]] = None
+    parameters: Mapping[str, Number] = field(default_factory=dict)
+    vars_before: Mapping[str, Number] = field(default_factory=dict)
+    vars_after: Mapping[str, Number] = field(default_factory=dict)
 
     def __post_init__(self):
         object.__setattr__(self, "decisions", tuple(self.decisions))
-        object.__setattr__(self, "roles", MappingProxyType(dict(self.roles)))
+        object.__setattr__(self, "input_events", tuple(self.input_events))
+        for name in ("roles", "parameters", "vars_before", "vars_after"):
+            object.__setattr__(self, name, MappingProxyType(dict(getattr(self, name))))
+        if self.inputs is not None:
+            object.__setattr__(self, "inputs", MappingProxyType(dict(self.inputs)))
         for name in ("state_before", "state_after"):
             value = getattr(self, name)
             if value is not None:
@@ -157,6 +187,11 @@ class CycleDiagnostics:
             if self.state_after is not None
             else None,
             "roles": dict(self.roles),
+            "input_events": list(self.input_events),
+            "inputs": dict(self.inputs) if self.inputs is not None else None,
+            "parameters": dict(self.parameters),
+            "vars_before": dict(self.vars_before),
+            "vars_after": dict(self.vars_after),
             "decisions": [decision.to_dict() for decision in self.decisions],
         }
 
@@ -164,19 +199,26 @@ class CycleDiagnostics:
         return self.to_text()
 
     def to_text(
-        self, *, transition: Optional[str] = None, verbose: bool = False
+        self,
+        *,
+        transition: Optional[str] = None,
+        check_id: Optional[Union[int, str]] = None,
+        verbose: bool = False,
     ) -> str:
-        """Format captured evidence without running the model again.
+        """Explain the committed boundary and captured checks without reexecution.
 
-        :param transition: Optional exact transition label. Includes checks made
-            while validating its successors. No matching record yields an
-            explicit no-evidence message, not a claim that the source was inactive.
-        :param verbose: Include every check, its parent, location and full values.
-            The compact view groups equal label/phase/outcome summaries and shows
-            guard-referenced values. Both views retain validation outcomes.
-        :return: Plain text, with no ANSI sequences.
+        :param transition: Exact expanded transition label. Includes its checks,
+            their descendants, ancestors and selections that blocked them.
+        :param check_id: A report-local check number (integer or decimal string),
+            mutually exclusive with ``transition``. Includes the same context.
+        :param verbose: Show every check, expanded labels, full snapshots and
+            source spans. Compact text folds only adjacent identical uncommitted
+            evidence, naming every folded ID. Committed occurrences never fold.
+        :return: Plain text; unknown selectors say there is no recorded evidence.
         :rtype: str
         """
+        if transition is not None and check_id is not None:
+            raise ValueError("Select either transition or check_id, not both.")
         before = (
             ".".join(self.state_before)
             if self.state_before is not None
@@ -187,107 +229,200 @@ class CycleDiagnostics:
             if self.state_after is not None
             else "(terminated)"
         )
+        explanations = {
+            "cycle": "cycle committed.",
+            "delta": "no stoppable successor committed; state and persistent values unchanged; cycle and inputs advanced.",
+            "terminated": "cycle committed and the machine terminated.",
+            "noop": "call ignored; no new inputs sampled and no cycle advanced.",
+        }
         lines = [
-            "Cycle %s: %s; %s -> %s" % (self.cycle_count, self.outcome, before, after)
+            "Cycle %s: %s; %s -> %s" % (self.cycle_count, self.outcome, before, after),
+            "Result: " + explanations[self.outcome],
+            "Events: " + (", ".join(self.input_events) or "(none processed)"),
+            "Inputs: "
+            + (
+                _format_values(self.inputs)
+                if self.inputs is not None
+                else "(not sampled)"
+            ),
+            "Parameters: " + _format_values(self.parameters),
+            "Persistent values before: " + _format_values(self.vars_before),
+            "Persistent values after:  " + _format_values(self.vars_after),
         ]
-        selected = set()
-        decisions = []
-        for decision in self.decisions:
-            if (
-                transition is None
-                or decision.transition_label == transition
-                or decision.parent_id in selected
-            ):
-                selected.add(decision.id)
-                decisions.append(decision)
+        committed = [d for d in self.decisions if d.committed]
+        if committed:
+            lines.append("Committed micro-transitions (in execution order):")
+            lines.extend("  #%s %s" % (d.id, _decision_name(d)) for d in committed)
+        else:
+            lines.append("Committed micro-transitions: (none)")
+        decisions = self._select_decisions(transition, check_id)
         if not decisions:
+            selector = transition if transition is not None else check_id
             lines.append(
-                "No recorded evidence for %s." % transition
-                if transition is not None
+                "No recorded evidence for %s." % selector
+                if selector is not None
                 else "No candidate checks recorded."
             )
             return "\n".join(lines)
-        seen = set()
-        depths = {}
-        folded = 0
+        lines.append(
+            "Candidate evidence (parent links describe validation, not execution order):"
+        )
+        groups = []
+        previous_key = None
         for decision in decisions:
+            # Equality includes every evidence field except the observation ID.
+            # Only adjacent duplicates can fold; chronology and values survive.
+            key = tuple(
+                getattr(decision, f.name) for f in fields(decision) if f.name != "id"
+            )
+            if not verbose and not decision.committed and key == previous_key:
+                groups[-1].append(decision)
+            else:
+                groups.append([decision])
+            previous_key = key
+        depths = {}
+        for group in groups:
+            decision = group[0]
             depth = depths.get(decision.parent_id, -1) + 1
-            depths[decision.id] = depth
-            line_start = len(lines)
-            key = (
-                decision.transition_label,
-                decision.phase,
-                decision.outcome,
-                decision.committed,
-            )
-            if not verbose and key in seen:
-                folded += 1
-                continue
-            seen.add(key)
-            lines.append(
-                "#%s %s [%s] %s%s"
-                % (
-                    decision.id,
-                    decision.transition_label,
-                    decision.phase,
-                    decision.outcome,
-                    "; committed" if decision.committed else "",
+            for item in group:
+                depths[item.id] = depth
+            entry = _decision_text(decision, verbose)
+            if len(group) > 1:
+                entry.append(
+                    "  Identical adjacent checks folded: %s (%s checks)."
+                    % (", ".join("#%s" % item.id for item in group), len(group))
                 )
-            )
-            if decision.event is not None:
-                lines.append(
-                    "  event %s -> %s" % (decision.event, decision.event_result)
-                )
-            if decision.guard is not None:
-                values = {**decision.parameters, **decision.inputs, **decision.vars}
-                # Model identifiers are tokens; substring matches would confuse x and xx.
-                referenced = set(re.findall(r"[A-Za-z_][A-Za-z_0-9]*", decision.guard))
-                relevant = {
-                    name: value for name, value in values.items() if name in referenced
-                }
-                lines.append(
-                    "  guard %s -> %s; values=%s"
-                    % (decision.guard, decision.guard_result, _format_values(relevant))
-                )
-            if decision.blocked_by is not None:
-                lines.append(
-                    "  not evaluated after selection #%s" % decision.blocked_by
-                )
-            if verbose:
-                lines.append(
-                    "  parent=%s; event=%s -> %s; successor=%s"
-                    % (
-                        decision.parent_id,
-                        decision.event,
-                        decision.event_result,
-                        decision.successor_result,
-                    )
-                )
-                lines.append(
-                    "  vars=%s; inputs=%s; parameters=%s"
-                    % (
-                        _format_values(decision.vars),
-                        _format_values(decision.inputs),
-                        _format_values(decision.parameters),
-                    )
-                )
-                if decision.location:
-                    lines.append("  source=%s" % dict(decision.location))
-                lines[line_start:] = [
-                    "  " * depth + line for line in lines[line_start:]
-                ]
-        if folded:
-            lines.append(
-                "%s repeated summaries folded; use verbose=True for every check."
-                % folded
-            )
+            lines.extend("  " * depth + line for line in entry)
         return "\n".join(lines)
+
+    def _select_decisions(self, transition, check_id):
+        """Retain query context without including unrelated siblings."""
+        if transition is None and check_id is None:
+            return self.decisions
+        selected = set()
+        for decision in self.decisions:
+            if (
+                decision.transition_label == transition
+                or str(decision.id) == str(check_id)
+                or decision.parent_id in selected
+            ):
+                selected.add(decision.id)
+        by_id = {d.id: d for d in self.decisions}
+        pending = list(selected)
+        while pending:
+            decision = by_id[pending.pop()]
+            for related in (decision.parent_id, decision.blocked_by):
+                if related is not None and related not in selected:
+                    selected.add(related)
+                    pending.append(related)
+        return tuple(d for d in self.decisions if d.id in selected)
+
+
+def _decision_name(decision):
+    """Prefer authored combo paths without guessing from generated names."""
+    if not decision.combo_origins:
+        return decision.transition_label
+    descriptions = []
+    for origin in decision.combo_origins:
+        descriptions.append(
+            "%s -> %s [combo: %s] (term %s: %s; %s)"
+            % (
+                origin["source_path"],
+                origin["target_path"],
+                origin["trigger"],
+                origin["term_index"] + 1,
+                origin["term_text"],
+                origin["role"],
+            )
+        )
+    return ("Shared expanded edge for: " if len(descriptions) > 1 else "") + " | ".join(
+        descriptions
+    )
+
+
+def _decision_text(decision, verbose):
+    """Render facts without inventing a unique failure cause for a search tree."""
+    explanations = {
+        "event_missing": "required event missing; guard not evaluated",
+        "guard_false": "guard failed; candidate not selected",
+        "successor_rejected": "successor validation failed; this candidate's speculative writes were not committed",
+        "selected": "selected in this phase; not committed",
+        "enabled": "local conditions passed during search; not proof of a committed path",
+        "not_evaluated": "not evaluated because a prior candidate was selected",
+    }
+    status = "committed" if decision.committed else explanations[decision.outcome]
+    lines = [
+        "#%s %s [%s] %s: %s"
+        % (
+            decision.id,
+            _decision_name(decision),
+            decision.phase,
+            decision.outcome,
+            status,
+        )
+    ]
+    if verbose and decision.combo_origins:
+        lines.append("  Expanded edge: " + decision.transition_label)
+    if decision.event is not None:
+        event_status = {True: "present", False: "missing", None: "not evaluated"}[
+            decision.event_result
+        ]
+        lines.append("  Event %s: %s" % (decision.event, event_status))
+    elif verbose:
+        lines.append("  Event: no event requirement")
+    if decision.guard is not None:
+        guard_status = {True: "passed", False: "failed", None: "not evaluated"}[
+            decision.guard_result
+        ]
+        values = {**decision.parameters, **decision.inputs, **decision.vars}
+        referenced = set(re.findall(r"[A-Za-z_][A-Za-z_0-9]*", decision.guard))
+        relevant = {name: value for name, value in values.items() if name in referenced}
+        lines.append(
+            "  Guard %s: %s; values=%s"
+            % (decision.guard, guard_status, _format_values(relevant))
+        )
+    elif verbose:
+        lines.append("  Guard: no guard requirement")
+    if decision.blocked_by is not None:
+        lines.append("  Not evaluated after selection #%s." % decision.blocked_by)
+    if decision.parent_id is not None:
+        lines.append("  Checked while validating candidate #%s." % decision.parent_id)
+    if verbose:
+        successor = {True: "accepted", False: "rejected", None: "not requested"}[
+            decision.successor_result
+        ]
+        lines.append("  Successor validation: %s." % successor)
+    if verbose or decision.outcome == "guard_false":
+        lines.append(
+            "  Values at check (not final values): vars=%s; inputs=%s; parameters=%s"
+            % (
+                _format_values(decision.vars),
+                _format_values(decision.inputs),
+                _format_values(decision.parameters),
+            )
+        )
+    if decision.location:
+        location = decision.location
+        lines.append(
+            "  source=%s"
+            % (
+                dict(location)
+                if verbose
+                else "%s:%s:%s"
+                % (
+                    location.get("path", "<text>"),
+                    location.get("line", "?"),
+                    location.get("column", "?"),
+                )
+            )
+        )
+    return lines
 
 
 class _DecisionCollector:
     """Call-local mutable collection; frozen only when the cycle returns."""
 
-    def __init__(self, runtime):
+    def __init__(self, runtime, input_events=(), inputs=None):
         self.phase = "preflight"
         self.parent = None
         self.records = []
@@ -296,6 +431,19 @@ class _DecisionCollector:
             for name, define in runtime.state_machine.defines.items()
         }
         self.before = tuple(runtime.stack[-1].state.path) if runtime.stack else None
+        self.vars_before = dict(runtime.vars)
+        self.input_events = tuple(input_events)
+        self.inputs = inputs
+        self.parameters = dict(runtime.parameters)
+        terms = {}
+        for state in runtime.state_machine.walk_states():
+            for transition in state.transitions:
+                for ref in transition.combo_origin_refs:
+                    terms.setdefault(ref.origin_id, {})[ref.term_index] = ref.term_text
+        self.triggers = {
+            origin: " + ".join(parts[index] for index in sorted(parts))
+            for origin, parts in terms.items()
+        }
 
     def start(self, state, transition, vars_, inputs, parameters, *, search=False):
         span = getattr(transition, "_span", None)
@@ -319,11 +467,25 @@ class _DecisionCollector:
             inputs=dict(inputs),
             parameters=dict(parameters),
             location=location,
+            combo_origins=tuple(
+                {
+                    "origin_id": ref.origin_id,
+                    "source_path": ref.source_path
+                    or (ref.selection_owner_path + ".[*]"),
+                    "target_path": ref.target_path,
+                    "trigger": self.triggers[ref.origin_id],
+                    "term_index": ref.term_index,
+                    "term_text": ref.term_text,
+                    "role": ref.role,
+                    "consumes_term": ref.consumes_term,
+                }
+                for ref in transition.combo_origin_refs
+            ),
         )
         self.records.append(record)
         return record
 
-    def finish(self, cycle_count, outcome, state_after):
+    def finish(self, cycle_count, outcome, state_after, vars_after=None):
         decisions = []
         for record in self.records:
             committed = (
@@ -333,5 +495,15 @@ class _DecisionCollector:
             )
             decisions.append(TransitionDecision(**record, committed=committed))
         return CycleDiagnostics(
-            cycle_count, outcome, self.before, state_after, tuple(decisions), self.roles
+            cycle_count,
+            outcome,
+            self.before,
+            state_after,
+            tuple(decisions),
+            self.roles,
+            self.input_events,
+            self.inputs,
+            self.parameters,
+            self.vars_before,
+            self.vars_before if vars_after is None else vars_after,
         )

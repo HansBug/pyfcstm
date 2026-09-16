@@ -299,7 +299,7 @@ Typical examples:
    pyfcstm simulate -i machine.fcstm -e "current; cycle; current"
    pyfcstm simulate -i machine.fcstm -e "init System.Active counter=10; cycle 5"
 
-Diagnostic options: ``--diagnostics`` defaults off; ``--diagnostics-format text|jsonl`` defaults to ``text`` and JSONL requires ``--diagnostics`` plus ``-e``; repeatable ``--param NAME=VALUE`` sets construction parameters. ``cycle --input NAME=VALUE`` supplies each complete input vector; ``decisions`` and ``why <label>`` query the latest evidence. See :doc:`../simulation/diagnostics` for exact types, invalid forms and runnable examples. JSONL stdout contains only ANSI-free reports; transcripts and queries go to stderr.
+Diagnostic options: ``--diagnostics`` defaults off; ``--diagnostics-format text|jsonl`` defaults to ``text`` and JSONL requires ``--diagnostics`` plus ``-e``; repeatable ``--param NAME=VALUE`` sets construction parameters. ``cycle --input NAME=VALUE`` supplies each complete input vector; ``decisions`` and ``why <id|label>`` query the latest evidence. See :doc:`../simulation/diagnostics` for exact types, invalid forms and runnable examples. JSONL stdout contains only ANSI-free reports; transcripts and queries go to stderr.
 
 ``inspect``
 -----------

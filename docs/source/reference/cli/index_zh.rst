@@ -1067,6 +1067,14 @@ JSON 写入标准输出；HTML 写到请求路径。使用 ``--open`` 且省略�
      - ``default`` 保留通用求解器；``logic`` 识别算术片段；``tactic`` 使用固定化简组合。默认是 ``default``。
      - ``--solver-profile fast`` 是用法错误，退出 ``2``；不可行解释和证明始终使用默认求解器。
      - JSON 的 ``result.solver_profile``、``result.solver_logic`` 和 ``result.solver_statistics``；SAT 见证必须重放通过。
+   * - ``--explanation-preference``
+     - 默认 ``none``；使用 ``editable`` 时须同时提供 ``--explain-infeasibility formal|proof`` 和有限反馈预算。
+     - 缺少解释或预算属于参数错误；子集极小不意味着全局最优或成员最少。
+     - ``result.explanation_preference`` 单独报告选择状态，不等同于解释／证明完整性。
+   * - ``--feedback-timeout-ms``
+     - 正整数，偏好解释必需，响应触发诊断可选。
+     - 未开启这两项功能却单独提供预算属于参数错误；不延长主截止时间，也不逐探针重置。
+     - 查看反馈状态、原因及已有解释检查记录；原有触发诊断调用继续使用主预算。
    * - ``--explain-infeasibility``
      - ``none`` 只要强制判定；``formal`` 要分类与源组冲突核；``proof`` 要逐步核验过的证明。
      - 该深度从不改变判定，所以它无法把不确定的运行变成确定的。规则目录中没有规则能闭合冲突核时，``proof`` 会降级为 ``formal``；把缺失的 ``proof`` 键当成错误处理的调用方会误读这一点。

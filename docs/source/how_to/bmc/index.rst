@@ -882,3 +882,65 @@ The measured correctness gate passes, but the 6.09% formula reduction misses
 T3's 20% requirement, so slicing remains disabled by default. A query regresses
 131.73% in solve time; compare compilation, solving and external replay costs
 together. See :ref:`sec-bmc-cone-measurements` for the measured results.
+
+Prefer an initialization conflict over a model explanation
+----------------------------------------------------------
+
+Save these two small files as ``preferred.fcstm`` and ``preferred.fbmcq``:
+
+.. code-block:: fcstm
+
+   def int x = 0;
+   def int y = 0;
+   state Root;
+
+.. code-block:: text
+
+   init cold where y == 0;
+   assume at 0: y >= 1;
+   assume at 1: x >= 1;
+   check reach <= 2: true;
+
+The model initializes both variables to zero. The first assumption contradicts
+``y``'s initial value; the second also conflicts with ``x`` remaining zero after
+entry. ``where y == 0`` supplies a query-authored alternative to the model's
+initialization fact. There are multiple conflicting subsets to choose from.
+
+Run the explicit preference with a finite feedback budget:
+
+.. code-block:: console
+
+   pyfcstm bmc -i preferred.fcstm -q preferred.fbmcq \
+       --explain-infeasibility formal --explanation-preference editable \
+       --feedback-timeout-ms 2000 --color never
+
+The headline remains ``SCENARIO INFEASIBLE`` (exit ``3``), not a successful
+property check. The report adds ``Explanation preference: editable (complete).``
+and selects ``initial.where`` with ``assumption.0000.frame.0000``. It reports
+``subset_minimal`` and ``proven``. These two conditions alone conflict, and
+neither alone does; other independent conflicts can still remain after an edit.
+The expectation is exercised through public API and CLI paths in
+``test/bmc/test_preferred_explanations.py``.
+
+For automated inspection, repeat the command with ``--json -o preferred.json``.
+Read ``result.explanation_preference.status`` and the core under
+``result.feasibility.explanation.core``. Default runs omit the preference object.
+A feasible query such as ``check reach <= 2: true;`` without the assumptions
+reports ``not_applicable`` and does not run the selection search.
+
+Do not confuse selection success with proof success. With these inequalities,
+changing ``formal`` to ``proof`` currently retains the complete formal reading
+but reports ``achieved_mode: formal`` and explanation ``status: partial``:
+the existing proof-rule catalog cannot close this selected core. Preference
+status remains ``complete`` because minimality was independently verified.
+Changing ``y >= 1`` to ``y == 1`` supplies incompatible equalities and permits a
+verified proof over the same selected member IDs.
+
+If the invocation rejects missing explanation or feedback budget, supply both
+as above; ``--feedback-timeout-ms 0`` is invalid. If selection is partial or
+times out, inspect its reason and core minimality rather than treating it as a
+new property verdict. Increase the feedback budget only if the remaining main
+``--timeout-ms`` also permits more work. A larger bound can mean more source
+groups to test, so the full-scope search can cost considerably more than the
+ordinary explanation. See :doc:`../../reference/bmc_results/index` for the exact
+priority and deadline contract.

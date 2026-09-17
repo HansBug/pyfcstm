@@ -1120,6 +1120,14 @@ counterexample, and the evidence that should be inspected after the run.
      - ``default`` keeps the generic solver; ``logic`` detects arithmetic fragments; ``tactic`` uses the fixed simplification pipeline. Default: ``default``.
      - ``--solver-profile fast`` is a usage error (exit ``2``); explanations and proofs always use the default solver.
      - JSON ``result.solver_profile``, ``result.solver_logic`` and ``result.solver_statistics``; SAT witnesses must pass replay.
+   * - ``--explanation-preference``
+     - ``none`` (default) or ``editable`` with ``--explain-infeasibility formal|proof`` and a finite feedback budget.
+     - A preference without explanation or budget is an input error; subset-minimal does not mean globally best or fewest members.
+     - ``result.explanation_preference`` reports selection status separately from explanation/proof completeness.
+   * - ``--feedback-timeout-ms``
+     - Positive integer, required for preferred explanations; optional for response-trigger diagnosis.
+     - Supplying it without either feature is an input error. It never extends the main deadline or resets per probe.
+     - Inspect feedback status/reason and the existing explanation checks; old trigger-diagnosis calls retain their main-budget behavior.
    * - ``--explain-infeasibility``
      - ``none`` for the mandatory verdict alone; ``formal`` for the classification and a source core; ``proof`` for a checked step-by-step proof.
      - The depth never changes the verdict, so it cannot turn an inconclusive run into a conclusive one. ``proof`` degrades to ``formal`` when no catalog rule closes the core; a caller that treats a missing ``proof`` key as an error will misread that.

@@ -45,6 +45,9 @@ JSON 类型和必需键以模式为准；执行顺序、标准输出/标准错�
 .. cli-ref-option: command=bmc option=--timeout-ms
 .. cli-ref-option: command=bmc option=--max-bound
 .. cli-ref-option: command=bmc option=--cone-slicing
+.. cli-ref-option: command=bmc option=--diagnose-response-trigger
+.. cli-ref-option: command=bmc option=--explanation-preference choices=none,editable default=none
+.. cli-ref-option: command=bmc option=--feedback-timeout-ms
 
 .. cli-ref-option: command=bmc option=--solver-profile choices=default,logic,tactic default=default
 .. cli-ref-option: command=bmc option=--explain-infeasibility choices=none,formal,proof default=none
@@ -116,6 +119,18 @@ JSON 类型和必需键以模式为准；执行顺序、标准输出/标准错�
        构造逐步证明，在每一步都被核验过时发布它，在规则目录中没有规则能闭合该
        冲突核时降级为 ``formal``。实际达成的深度总会被报告，因此调用方能区分
        两者。该深度不改变强制判定。
+   * - ``--explanation-preference``
+     - ``none`` 或 ``editable``
+     - ``none``
+     - ``editable`` 在已确定诊断范围的全部约束组中选择冲突核，优先保留假设和初始条件。
+       必须同时请求 ``formal`` 或 ``proof`` 解释，并提供 ``--feedback-timeout-ms``。
+   * - ``--feedback-timeout-ms``
+     - 整数，``>= 1``
+     - 未设置
+     - 有限的辅助分析预算；偏好解释必须提供，响应触发诊断可选。
+       从必需求解结束后开始计时，仍受主预算剩余时间限制。
+       未开启这两项功能却单独提供预算属于参数错误。
+       已有触发诊断调用不提供此参数时，继续共享主预算。
    * - ``--color``
      - ``auto``、``always`` 或 ``never``
      - ``auto``
@@ -1501,3 +1516,73 @@ p50，再按实际切片分组汇总。
 改善 3.97% 与退化 1.31% 之间，未改路径的对照也有波动。复用为每个结果保留一份
 完整轨迹，并向调用方返回副本。这些数据证实重复工作减少，不代表普遍提速；
 是否开启应测量自己的模型及完整调用路径。
+
+
+按偏好选择源约束冲突核
+----------------------
+
+``--explain-infeasibility formal --explanation-preference editable
+--feedback-timeout-ms 2000`` 请求偏好解释，也可以选择 ``proof`` 深度。
+这里的预算只是示例，不是经过性能测量给出的推荐值。
+单独使用 ``--explanation-preference editable``，或者未提供有限正整数反馈预算，
+都属于参数错误。默认值 ``none`` 保持原有选核流程，不增加结果元数据。
+
+保留优先级依次为环境假设、初始化条件、模型转移、域约束。
+初始化条件既包含模型变量默认值，也包含查询初始条件，不意味着全部来自查询文本。
+有定义性要求随创建它的阶段归类。已有的 ``editable`` 布尔字段只表示存在可编辑的
+源位置，不能用来决定这里的排序。
+
+.. list-table:: 选择步骤
+   :header-rows: 1
+
+   * - 步骤
+     - 操作与证据
+   * - 保持分类
+     - 使用已确定诊断范围内的全部约束组。假设自身冲突不会扩大为包含模型的冲突。
+   * - 按偏好删除
+     - 依次尝试删除域、转移、初始化、环境约束；同类按 ``stable_id`` 升序。
+       只有剩余集合确定不可满足才接受删除；可满足或无法判定时保留，超时则停止。
+   * - 验收最终核
+     - 独立验证整体不可满足，且逐个删除成员后都可满足，才报告
+       ``subset_minimality: proven``。
+   * - 重建解释
+     - 源引用、解释文字和证明都基于最终核构建，仍须经过已有证明检查器。
+
+搜索从完整诊断范围开始，不受求解器任意返回的原始核限制。
+这是固定顺序的启发式选择，不枚举全部极小不可满足集，也不保证成员数量最少、
+偏好成员数量最多或全局最优解释。极小性以源约束组为单位。
+修改报告中的一个条件后，另一个独立冲突仍可能存在。
+求解结果确定且预算充足时，稳定编号保证相同的选择顺序；部分结果可能随计时变化。
+完整范围可能远大于原始核，因此开启此功能可能显著增加解释耗时。
+
+只有显式请求偏好时，结果中才增加 ``result.explanation_preference``：
+
+.. list-table:: 偏好元数据
+   :header-rows: 1
+
+   * - 字段／取值
+     - 契约
+   * - ``strategy``
+     - 输出对象中固定为 ``editable``。
+   * - ``status: complete``
+     - 所选核的子集极小性已经证明，不表示解释文字或请求的领域证明也已完整。
+       此时 ``reason`` 为 null。
+   * - ``status: partial``
+     - 保留了部分解释证据，但尚未完成偏好选择的全部校验。
+       应查看核的删减程度、极小性与解释原因；超时也可能导致这种部分交付。
+   * - ``status: unknown`` / ``timeout``
+     - 未完成可用解释，原因字段说明失败情况，不改变必需的场景／性质判定。
+   * - ``status: not_applicable``
+     - 没有已定位的不可行阶段可供解释，未运行偏好搜索。
+   * - ``reason``
+     - 除 ``complete`` 外均为非空字符串。
+
+辅助时钟在进入适用反馈阶段时启动，早于分类、提核、选择与校验。
+这些工作及后续证明共享剩余时间，每次探针不会重新获得完整预算。
+实际截止时间取反馈截止时间和已有主截止时间中的较早者。
+即使 ``timeout_ms=None``，反馈阶段仍有界。
+同时请求触发诊断与偏好解释时，根据结果最多执行其中一个适用阶段：
+响应性质成立时做触发诊断，已定位场景不可行时做偏好解释。
+Python 工作在探针边界检查时间，不承诺硬实时中断，也不引入额外回放。
+
+:doc:`../../how_to/bmc/index_zh` 提供具体输入文件、预期核成员与证明降级示例。

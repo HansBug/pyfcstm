@@ -51,6 +51,9 @@ lines.
 .. cli-ref-option: command=bmc option=--timeout-ms
 .. cli-ref-option: command=bmc option=--max-bound
 .. cli-ref-option: command=bmc option=--cone-slicing
+.. cli-ref-option: command=bmc option=--diagnose-response-trigger
+.. cli-ref-option: command=bmc option=--explanation-preference choices=none,editable default=none
+.. cli-ref-option: command=bmc option=--feedback-timeout-ms
 
 .. cli-ref-option: command=bmc option=--solver-profile choices=default,logic,tactic default=default
 .. cli-ref-option: command=bmc option=--explain-infeasibility choices=none,formal,proof default=none
@@ -132,6 +135,20 @@ Both installed entry forms have the same behavior:
        catalog closes the core.  The achieved depth is always reported, so a
        caller can tell the two apart.  The depth never changes the mandatory
        verdict.
+   * - ``--explanation-preference``
+     - ``none`` or ``editable``
+     - ``none``
+     - ``editable`` searches the full selected diagnostic scope, preferring
+       assumptions and initialization conditions. Requires ``formal`` or
+       ``proof`` explanation and ``--feedback-timeout-ms``.
+   * - ``--feedback-timeout-ms``
+     - Integer, ``>= 1``
+     - Unset
+     - Finite auxiliary deadline, required for preferred explanations and
+       optional for response-trigger diagnosis. Starts after mandatory solving;
+       any remaining main deadline still caps it. Without either feature this
+       option is an input error. Existing trigger-diagnosis calls without it
+       continue to share the main budget.
    * - ``--color``
      - ``auto``, ``always``, or ``never``
      - ``auto``
@@ -144,7 +161,7 @@ Both installed entry forms have the same behavior:
      - Optional
      - Prints Click help and exits ``0`` without loading either input.
 
-Zero and negative values for either numeric option are Click usage errors.
+Zero and negative values for any numeric option are Click usage errors.
 Missing required options and unknown options are also usage errors; all exit
 ``2``.  Paths are passed through as supplied and are also reproduced as
 strings in JSON; the CLI does not canonicalize them to absolute paths.
@@ -1720,3 +1737,86 @@ from a 3.97% improvement to a 1.31% regression in these cases; unchanged
 controls also vary. Reuse retains one complete trace per result and copies
 it for callers. These measurements establish reduced repeated work, not a
 universal speedup; measure the complete path on your own model.
+
+
+Preference-guided source cores
+------------------------------
+
+``--explain-infeasibility formal --explanation-preference editable
+--feedback-timeout-ms 2000`` requests a preference-guided explanation. The
+``proof`` depth is also legal; the budget value is an example, not a performance
+recommendation. ``--explanation-preference editable`` alone is invalid, as is
+providing a preference without a finite positive feedback budget. The default
+``none`` preserves existing core selection and omits the new result metadata.
+
+The retention order is environment assumptions, initialization conditions,
+model transitions, then domain constraints. Initialization includes both model
+variable defaults and query initial conditions; it is not a claim that every
+initial constraint was authored in the query. A definedness requirement belongs
+to the stage that created it. The existing source ``editable`` boolean only
+means an authored source location exists and is not the ranking key.
+
+.. list-table:: Selection steps
+   :header-rows: 1
+
+   * - Step
+     - Operation and evidence
+   * - Preserve classification
+     - Use all tracked groups in the selected scope. An assumptions-only
+       self-conflict is never widened to include the model.
+   * - Delete in preference order
+     - Try domain, transition, initial, then environment groups; break ties
+       with ascending ``stable_id``. Delete only after UNSAT. SAT or unknown
+       retains the member; a timeout stops the search.
+   * - Verify the final core
+     - Independently check the conjunction is UNSAT and every one-member
+       deletion is SAT before publishing ``subset_minimality: proven``.
+   * - Rebuild explanation
+     - Build source references, narrative and any proof from the selected core.
+       The existing proof checker remains mandatory.
+
+The deletion search starts from the complete scope, not Z3's arbitrary raw
+core. It is a fixed-order heuristic, not MUS enumeration, minimum cardinality,
+maximum preferred-member count or a globally optimal explanation. The result
+is minimal at source-group granularity. Editing one reported condition may
+leave another independent conflict unresolved. With definite solver answers
+and sufficient budget, stable-id ties make selection repeatable; partial
+results may vary with timing. The full scope can be much larger than a raw
+core, so enabling this option can substantially increase explanation cost.
+
+Only an explicit preference request adds ``result.explanation_preference``:
+
+.. list-table:: Preference metadata
+   :header-rows: 1
+
+   * - Field / value
+     - Contract
+   * - ``strategy``
+     - Always ``editable`` in an emitted object.
+   * - ``status: complete``
+     - Selected core has proven subset minimality. This does not claim that
+       the narrative or requested domain proof is complete. ``reason`` is null.
+   * - ``status: partial``
+     - Some explanation evidence survived but preferred selection was not
+       fully verified. Check the core's reduction/minimality and the explanation
+       reason; a timeout may have caused this partial delivery.
+   * - ``status: unknown`` / ``timeout``
+     - No usable explanation was completed; the reason names the failure.
+       Neither status changes the mandatory scenario/property result.
+   * - ``status: not_applicable``
+     - No localized infeasible stage to explain; no preference search ran.
+   * - ``reason``
+     - Nonempty string for every status other than ``complete``.
+
+The auxiliary clock starts on entry to the applicable feedback stage, before
+classification, extraction, selection and validation. Those operations and any
+proof construction share its remaining time; no probe gets a fresh allowance.
+The effective deadline is the earlier of the feedback deadline and the existing
+main deadline. With ``timeout_ms=None``, the feedback stage is still bounded.
+With both trigger diagnosis and preference requested, the result selects at
+most one applicable stage: satisfied response or localized infeasibility.
+Python work checks time at probe boundaries; this is not a hard realtime
+interrupt guarantee. No new replay is introduced.
+
+The task recipe in :doc:`../../how_to/bmc/index` includes concrete input files,
+expected core members and a proof-degradation example.

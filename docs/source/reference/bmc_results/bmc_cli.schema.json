@@ -3111,6 +3111,25 @@
             "minimum": 0
           }
         },
+        "explanation_preference": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["strategy", "status", "reason"],
+          "properties": {
+            "strategy": {"const": "editable"},
+            "status": {"enum": ["complete", "partial", "unknown", "timeout", "not_applicable"]},
+            "reason": {"type": ["string", "null"], "minLength": 1}
+          },
+          "if": {"properties": {"status": {"const": "complete"}}},
+          "then": {"properties": {"reason": {"type": "null"}}},
+          "else": {"properties": {"reason": {"type": "string", "minLength": 1}}}
+        },
+        "trigger_diagnostic_status": {
+          "enum": ["sat", "unsat", "unknown", "timeout", null]
+        },
+        "trigger_diagnostic_reason": {
+          "type": ["string", "null"]
+        },
         "cone_slicing": {
           "type": "object",
           "additionalProperties": false,
@@ -3170,6 +3189,29 @@
         }
       },
       "allOf": [
+        {
+          "if": {
+            "required": ["explanation_preference"],
+            "properties": {"explanation_preference": {"properties": {"status": {"const": "complete"}}}}
+          },
+          "then": {
+            "properties": {
+              "feasibility": {
+                "properties": {
+                  "explanation": {
+                    "type": "object",
+                    "properties": {
+                      "core": {
+                        "type": "object",
+                        "properties": {"subset_minimality": {"const": "proven"}}
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         {
           "if": {
             "properties": {

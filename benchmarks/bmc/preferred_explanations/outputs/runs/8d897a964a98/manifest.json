@@ -1,0 +1,39 @@
+{
+  "baseline_sha": "a20d8e6d5b00efbf58edeb4db9890a05bef4e74e",
+  "current_sha": "8d897a964a986c9421018b4c01895832d3f7a1f7",
+  "tracked_diff": "",
+  "baseline_source_sha256": {
+    "pyfcstm/bmc/infeasibility.py": "af2510257835642c5a8301da9ad36316f625d6cbde270c3f0a17aa63bddd5367",
+    "pyfcstm/bmc/witness.py": "d01047bc42031fbb9adf57d7591554ecbf083fe0e6d57264ea91e1d611d6a8f9",
+    "pyfcstm/entry/bmc.py": "a0c02124c8fa13466583c3eba5c974740150e9d0363cfbdd85805d793c42fd6f"
+  },
+  "current_source_sha256": {
+    "pyfcstm/bmc/infeasibility.py": "41b226872ec638ccc2bfd6c3be5ef13172bcdd464b739a5d52e1aa028862802f",
+    "pyfcstm/bmc/witness.py": "302dc6b3a73777f0c283ed0bd773d5cdb988c1dc3020a3a565b7db198ca47d79",
+    "pyfcstm/entry/bmc.py": "0cd54d5c582924eb648dd27569276ac5818fda269e08f739685c5baf1129b60e"
+  },
+  "z3": "4.15.4",
+  "cpu_count": 16,
+  "processor": "x86_64",
+  "python": "3.10.1 (main, Jul 29 2026, 11:26:03) [GCC 13.3.0]",
+  "platform": "Linux-6.8.0-137-generic-x86_64-with-glibc2.39",
+  "warmups": 1,
+  "repetitions": 5,
+  "feedback_timeout_ms_by_case": {
+    "multiple_short": 10000,
+    "multiple_long": 10000,
+    "single_conflict": 10000,
+    "feasible": 10000,
+    "budget_limited": 5
+  },
+  "cases": {
+    "multiple_short": "init cold where y == 0; assume at 0: y >= 1; assume at 1: x >= 1; check reach <= 2: true;",
+    "multiple_long": "init cold where y == 0; assume at 0: y >= 1; assume at 1: x >= 1; check reach <= 100: true;",
+    "single_conflict": "assume at 0: x == 1; assume at 0: x == 2; check reach <= 30: true;",
+    "feasible": "check reach <= 30: true;",
+    "budget_limited": "init cold where y == 0; assume at 0: y >= 1; assume at 1: x >= 1; check reach <= 100: true;"
+  },
+  "model": "def int x = 0; def int y = 0; state Root;",
+  "runner_sha256": "605378ac181892d70be8324a60e4e34adcad51b1e4999120924f566ee3521494",
+  "protocol": "Fresh processes; one warmup then five alternating samples per arm/surface; counts observed separately; no performance threshold."
+}

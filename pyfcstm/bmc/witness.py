@@ -2996,6 +2996,9 @@ class BmcSolveResult(_PrettyPrintableMixin):
     :param feasibility: Staged scenario-feasibility evidence, defaults to
         ``None`` for SAT and inconclusive direct constructors.
     :type feasibility: BmcFeasibilityResult, optional
+    :param explanation_preference: Requested core strategy, ``none`` or
+        ``editable``. Only a requested strategy adds canonical feedback metadata.
+    :type explanation_preference: str, optional
     :param solver_profile: Requested solver profile, defaults to ``default``.
     :type solver_profile: str, optional
     :param solver_logic: Selected logic, or ``None`` for default/tactic and
@@ -3039,6 +3042,9 @@ class BmcSolveResult(_PrettyPrintableMixin):
     solver_profile: str = "default"
     solver_logic: Optional[str] = None
     solver_statistics: Mapping[str, Any] = field(default_factory=dict)
+    trigger_diagnostic_status: Optional[BmcSolveStatus] = None
+    trigger_diagnostic_reason: Optional[str] = None
+    explanation_preference: str = "none"
     _attempted_slice: Optional[ConeSlice] = field(
         default=None, repr=False, compare=False
     )
@@ -3049,6 +3055,8 @@ class BmcSolveResult(_PrettyPrintableMixin):
     )
 
     def __post_init__(self) -> None:
+        if self.explanation_preference not in ("none", "editable"):
+            raise BmcBuildError("explanation_preference must be none or editable.")
         if (
             not isinstance(self.solver_profile, str)
             or self.solver_profile not in SOLVER_PROFILES
@@ -3096,6 +3104,18 @@ class BmcSolveResult(_PrettyPrintableMixin):
         _validate_optional_elapsed_ms(
             "incomplete_elapsed_ms", self.incomplete_elapsed_ms
         )
+        if self.trigger_diagnostic_status is not None and self.trigger_diagnostic_status not in {
+            "sat", "unsat", "unknown", "timeout"
+        }:
+            raise BmcBuildError("trigger_diagnostic_status is invalid.")
+        if self.trigger_diagnostic_reason is not None and not isinstance(
+            self.trigger_diagnostic_reason, str
+        ):
+            raise BmcBuildError("trigger_diagnostic_reason must be a string or None.")
+        if self.trigger_diagnostic_status in {"sat", "unsat"} and self.trigger_diagnostic_reason is not None:
+            raise BmcBuildError("trigger diagnostic reason is only valid for unknown/timeout.")
+        if self.trigger_diagnostic_status in {"unknown", "timeout"} and not self.trigger_diagnostic_reason:
+            raise BmcBuildError("trigger diagnostic reason is required for unknown/timeout.")
         _validate_optional_elapsed_ms("total_elapsed_ms", self.total_elapsed_ms)
         if self.timeout_ms is not None and (
             isinstance(self.timeout_ms, bool)
@@ -3522,7 +3542,7 @@ class BmcSolveResult(_PrettyPrintableMixin):
             'unsat'
         """
         feasibility = self._validated_feasibility()
-        return {
+        result = {
             "node": "bmc_solve_result",
             "kind": self.kind,
             "polarity": self.polarity,
@@ -3549,6 +3569,20 @@ class BmcSolveResult(_PrettyPrintableMixin):
             "available_model_roles": list(self.available_model_roles),
             "diagnostics": list(self.diagnostics),
         }
+        if self.trigger_diagnostic_status is not None or self.trigger_diagnostic_reason is not None:
+            result["trigger_diagnostic_status"] = self.trigger_diagnostic_status
+            result["trigger_diagnostic_reason"] = self.trigger_diagnostic_reason
+        if self.explanation_preference != "none":
+            explanation = feasibility.explanation
+            status, reason = "not_applicable", "no localized infeasible stage"
+            if explanation is not None:
+                status, reason = explanation.status, explanation.reason
+                if explanation.core is not None and explanation.core.subset_minimality == "proven":
+                    status, reason = "complete", None
+            result["explanation_preference"] = {
+                "strategy": self.explanation_preference, "status": status, "reason": reason,
+            }
+        return result
 
     def _cone_metadata(self):
         cone = self._attempted_slice or self.formula.core.cone_slice
@@ -5008,11 +5042,42 @@ def _build_feasibility(
 _EXPLANATION_MODES = ("none", "formal", "proof")
 
 
+def _validate_feedback_options(
+    explanation_preference, feedback_timeout_ms,
+    infeasibility_explanation, diagnose_response_trigger,
+):
+    """Validate feedback options before any solve or CLI input access."""
+    if explanation_preference not in ("none", "editable"):
+        raise BmcBuildError("explanation_preference must be none or editable.")
+    if explanation_preference == "editable":
+        if infeasibility_explanation not in ("formal", "proof"):
+            raise BmcBuildError("explanation_preference requires explain-infeasibility formal or proof.")
+        if feedback_timeout_ms is None:
+            raise BmcBuildError("explanation_preference requires feedback_timeout_ms.")
+    if feedback_timeout_ms is not None:
+        if isinstance(feedback_timeout_ms, bool) or not isinstance(feedback_timeout_ms, int) or feedback_timeout_ms <= 0:
+            raise BmcBuildError("feedback_timeout_ms must be a positive integer.")
+        if explanation_preference == "none" and not diagnose_response_trigger:
+            raise BmcBuildError("feedback_timeout_ms requires explanation_preference or diagnose_response_trigger.")
+
+
+def _feedback_budget(budget, timeout_ms):
+    """Cap an auxiliary stage without extending the mandatory solve deadline."""
+    if timeout_ms is None:
+        return budget
+    feedback = _SolveBudget(timeout_ms)
+    if budget.deadline is not None:
+        feedback.deadline = min(feedback.deadline, budget.deadline)
+    return feedback
+
+
 def _attach_explanation(
     feasibility: BmcFeasibilityResult,
     core: "BmcCoreFormula",
     budget: _SolveBudget,
     requested_mode: str,
+    explanation_preference: str = "none",
+    feedback_timeout_ms: Optional[int] = None,
 ) -> BmcFeasibilityResult:
     """Run the optional explanation stage and fold it into the aggregate.
 
@@ -5030,6 +5095,10 @@ def _attach_explanation(
     :type budget: pyfcstm.bmc.solver._SolveBudget
     :param requested_mode: Explanation depth the caller asked for.
     :type requested_mode: str
+    :param explanation_preference: Source-core selection strategy.
+    :type explanation_preference: str
+    :param feedback_timeout_ms: Optional finite auxiliary deadline cap.
+    :type feedback_timeout_ms: int, optional
     :return: The original result, or one carrying the explanation.
     :rtype: BmcFeasibilityResult
 
@@ -5047,6 +5116,7 @@ def _attach_explanation(
 
     from .infeasibility import explain_infeasibility
 
+    budget = _feedback_budget(budget, feedback_timeout_ms)
     started = time.monotonic()
     try:
         outcome = explain_infeasibility(
@@ -5054,6 +5124,7 @@ def _attach_explanation(
             feasibility.infeasible_stage,
             budget,
             requested_mode=requested_mode,
+            explanation_preference=explanation_preference,
         )
     except BmcBuildError as err:
         # The explanation is optional, so a fail-closed guard inside it must not
@@ -5153,6 +5224,9 @@ def solve_bmc_property(
     check_incomplete: bool = True,
     infeasibility_explanation: str = "none",
     solver_profile: str = "default",
+    diagnose_response_trigger: bool = False,
+    explanation_preference: str = "none",
+    feedback_timeout_ms: Optional[int] = None,
 ) -> BmcSolveResult:
     """Solve a compiled BMC property formula.
 
@@ -5181,6 +5255,16 @@ def solve_bmc_property(
         stage has been localized: ``none``, ``formal`` or ``proof``, defaults
         to ``'none'``.  The default runs no additional solver check at all.
     :type infeasibility_explanation: str, optional
+    :param explanation_preference: ``editable`` selects a core by deleting
+        domain, transition, initial, then environment groups within the existing
+        diagnostic scope. Requires an explanation mode and finite feedback budget.
+        ``none`` preserves default core selection.
+    :type explanation_preference: str, optional
+    :param feedback_timeout_ms: Positive auxiliary budget, required for preference
+        search and optional for response-trigger diagnosis. Starts after mandatory
+        solving, and is capped by any remaining main deadline. Not a hard realtime
+        limit; Python work checks the deadline at probe boundaries.
+    :type feedback_timeout_ms: int, optional
     :param solver_profile: ``default`` preserves the generic solver; ``logic``
         selects a fragment recognized by Z3 probes, falling back to default
         otherwise; ``tactic`` uses simplify/propagate-values/solve-eqs/smt.
@@ -5201,6 +5285,10 @@ def solve_bmc_property(
         >>> solve_bmc_property(formula).status
         'sat'
     """
+    _validate_feedback_options(
+        explanation_preference, feedback_timeout_ms,
+        infeasibility_explanation, diagnose_response_trigger,
+    )
     cone = _require_formula(formula).core.cone_slice
     if cone is None or not cone.dropped_variables:
         return _solve_property(
@@ -5209,6 +5297,9 @@ def solve_bmc_property(
             check_incomplete,
             infeasibility_explanation,
             solver_profile,
+            diagnose_response_trigger=diagnose_response_trigger,
+            explanation_preference=explanation_preference,
+            feedback_timeout_ms=feedback_timeout_ms,
         )
     started = time.monotonic()
     budget = _SolveBudget(timeout_ms)
@@ -5219,6 +5310,8 @@ def solve_bmc_property(
         infeasibility_explanation,
         solver_profile,
         budget,
+        explanation_preference=explanation_preference,
+        feedback_timeout_ms=feedback_timeout_ms,
     )
     verified_trace = None
     try:
@@ -5246,6 +5339,8 @@ def solve_bmc_property(
             infeasibility_explanation,
             solver_profile,
             budget,
+            explanation_preference=explanation_preference,
+            feedback_timeout_ms=feedback_timeout_ms,
         )
         result = replace(
             result,
@@ -5254,8 +5349,51 @@ def solve_bmc_property(
         )
         verified_trace = None
     result = replace(result, total_elapsed_ms=(time.monotonic() - started) * 1000.0)
+    result = _diagnose_response_trigger(
+        result, diagnose_response_trigger, budget, feedback_timeout_ms
+    )
     object.__setattr__(result, "_verified_trace", verified_trace)
     return result
+
+
+def _diagnose_response_trigger(
+    result: BmcSolveResult, enabled: bool, budget: "_SolveBudget",
+    feedback_timeout_ms: Optional[int] = None,
+) -> BmcSolveResult:
+    """Run the opt-in bounded response-trigger reachability probe."""
+    if not isinstance(enabled, bool):
+        raise BmcBuildError("diagnose_response_trigger must be bool.")
+    if not enabled or result.kind != "response":
+        return result
+    if result.outcome != "property_satisfied":
+        return replace(result, trigger_diagnostic_reason="not_applicable")
+    budget = _feedback_budget(budget, feedback_timeout_ms)
+    formula = result.formula.trigger_reachability_formula
+    if formula is None:
+        raise _internal_error("response trigger reachability formula is missing.")
+    solver = z3.Solver()
+    solver.add(formula)
+    status, _model, reason, _elapsed, started = _check_with_budget(solver, budget)
+    if not started:
+        return replace(
+            result,
+            trigger_diagnostic_status="timeout",
+            trigger_diagnostic_reason="feedback budget exhausted before trigger check",
+        )
+    if status == "sat":
+        value = "sat"
+        reason = None
+    elif status == "unsat":
+        value = "unsat"
+        reason = None
+    else:
+        value = status
+        reason = reason or "solver returned unknown"
+    return replace(
+        result,
+        trigger_diagnostic_status=value,
+        trigger_diagnostic_reason=reason,
+    )
 
 
 def _solve_property(
@@ -5265,6 +5403,9 @@ def _solve_property(
     infeasibility_explanation,
     solver_profile,
     budget=None,
+    diagnose_response_trigger=False,
+    explanation_preference="none",
+    feedback_timeout_ms=None,
 ):
     checked = _require_formula(formula)
     if not isinstance(check_incomplete, bool):
@@ -5303,12 +5444,21 @@ def _solve_property(
     status, model, reason, elapsed_ms, primary_started = _check_with_budget(
         solver, budget
     )
-    finish = partial(
+    make_result = partial(
         _make_solve_result,
         solver_profile=solver_profile,
         solver_logic=solver_logic,
         solver_statistics=dict(iter(solver.statistics())) if primary_started else {},
     )
+
+    def finish(*args, **kwargs):
+        result = make_result(*args, **kwargs)
+        if explanation_preference != "none":
+            result = replace(result, explanation_preference=explanation_preference)
+        return _diagnose_response_trigger(
+            result, diagnose_response_trigger, budget, feedback_timeout_ms
+        )
+
     diagnostics = list(checked.diagnostics)
     if status == "sat":
         feasibility = _inferred_feasibility()
@@ -5541,7 +5691,8 @@ def _solve_property(
             refinement_status="not_requested",
         )
         feasibility = _attach_explanation(
-            feasibility, core, budget, infeasibility_explanation
+            feasibility, core, budget, infeasibility_explanation,
+            explanation_preference, feedback_timeout_ms,
         )
         return finish(
             checked,
@@ -5612,7 +5763,8 @@ def _solve_property(
             refinement_status="not_requested",
         )
         feasibility = _attach_explanation(
-            feasibility, core, budget, infeasibility_explanation
+            feasibility, core, budget, infeasibility_explanation,
+            explanation_preference, feedback_timeout_ms,
         )
     if kernel_status in {"unknown", "timeout"}:
         diagnostics.append("feasibility_%s:kernel" % kernel_status)

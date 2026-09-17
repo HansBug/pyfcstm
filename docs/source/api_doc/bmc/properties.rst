@@ -16,7 +16,7 @@ BmcPropertyFormula
 -----------------------------------------------------
 
 .. autoclass:: BmcPropertyFormula
-    :members: __post_init__,bound,to_canonical,core,kind,polarity,objective_formula,solve_formula,incomplete_formula,incomplete_solve_formula,diagnostics,case_label,response_window
+    :members: __post_init__,bound,to_canonical,core,kind,polarity,objective_formula,solve_formula,incomplete_formula,incomplete_solve_formula,diagnostics,case_label,response_window,trigger_reachability_formula
 
 
 compile\_bmc\_property

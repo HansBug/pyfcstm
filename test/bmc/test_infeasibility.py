@@ -2149,8 +2149,10 @@ def test_a_prefix_that_admits_several_values_forces_none_of_them() -> None:
     narrative would report that single witness as the value the prefix demands --
     a sentence that reads exactly like a proof and is not one.
     """
+    # Discard the model's x = 0 initializer: the full prefix, not merely one
+    # solver-selected core that happens to omit that initializer, must admit ten values.
     core = _core_formula(
-        'init state("Root.A") where x >= 0 && x <= 9; '
+        'init state("Root.A") havoc { x } where x >= 0 && x <= 9; '
         'assume at 0: var("x") == 100; '
         'check reach <= 2: active("Root.B");'
     )

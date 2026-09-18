@@ -6,9 +6,9 @@ and *which* tracked source groups already suffice to make it infeasible.
 
 The orchestration here never rebuilds a formula.  It reuses the aggregate
 :class:`z3.BoolRef` values the relation builder already produced, drives a
-dedicated refinement solver through activation literals, and shares one
-monotonic budget with the mandatory solve so an optional explanation can never
-outlive the caller's timeout.
+dedicated refinement solver through formula assumptions, and shares one
+monotonic budget with the mandatory solve. No new solver check starts after
+that budget expires; solver timeout granularity and orchestration still add overhead.
 
 The module contains:
 
@@ -23,8 +23,8 @@ The module contains:
 
 .. note::
    Public explanation values live in :mod:`pyfcstm.bmc.explanation`, which
-   stays free of Z3.  This module is the only side that touches the solver, so
-   the dependency direction is one-way.
+   stays free of Z3. This orchestration and :mod:`pyfcstm.bmc.unsat` own the
+   solver calls; the dependency direction remains one-way.
 
 Example::
 
@@ -83,6 +83,10 @@ from .provenance import (
     normalized_fact_for,
 )
 from .solver import _SolveBudget, _check_with_budget, _solver_for_profile
+from .unsat import (
+    CoreExtraction, MinimizedCore, ProbeRecord, _extract_constraint_core,
+    _minimize_core, _run_probe, _probe_outcome_reason,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle guard for annotations only
     from .relation import BmcCoreFormula
@@ -189,36 +193,6 @@ class TrackedGroupPartition:
 
 
 @dataclass(frozen=True)
-class ProbeRecord:
-    """One refinement solver invocation and its outcome.
-
-    :param name: Probe name such as ``component`` or ``domain``.
-    :type name: str
-    :param status: Solver status reported for the probe.
-    :type status: str
-    :param started: Whether the solver check actually ran.
-    :type started: bool
-    :param elapsed_ms: Wall-clock duration of the check.
-    :type elapsed_ms: float
-    :param reason: Why an undetermined probe ended, defaults to ``None``.  It
-        is required for ``unknown`` and ``timeout`` so a degraded probe can
-        always explain itself.
-    :type reason: Optional[str], optional
-
-    Example::
-
-        >>> ProbeRecord("component", "unsat", True, 0.5).started
-        True
-    """
-
-    name: str
-    status: str
-    started: bool
-    elapsed_ms: float
-    reason: Optional[str] = None
-
-
-@dataclass(frozen=True)
 class ClassificationOutcome:
     """Result of the component and domain probes for one localized stage.
 
@@ -243,31 +217,6 @@ class ClassificationOutcome:
     classification: Optional[str]
     scope: str
     status: str
-    reason: Optional[str] = None
-    checks: Tuple[ProbeRecord, ...] = ()
-
-
-@dataclass(frozen=True)
-class CoreExtraction:
-    """Sound source groups that already make the target unsatisfiable.
-
-    :param groups: Core member groups ordered by ``stable_id``.
-    :type groups: Tuple[pyfcstm.bmc.provenance.BmcTrackedConstraint, ...]
-    :param status: ``complete``, ``unknown`` or ``timeout``.
-    :type status: str
-    :param reason: Why extraction degraded, defaults to ``None``.
-    :type reason: Optional[str], optional
-    :param checks: Solver invocations in execution order, defaults to ``()``.
-    :type checks: Tuple[ProbeRecord, ...], optional
-
-    Example::
-
-        >>> CoreExtraction((), "timeout", "budget exhausted").status
-        'timeout'
-    """
-
-    groups: Tuple[BmcTrackedConstraint, ...] = ()
-    status: str = "complete"
     reason: Optional[str] = None
     checks: Tuple[ProbeRecord, ...] = ()
 
@@ -421,118 +370,6 @@ def _activation_solver(
     return solver, literals
 
 
-def _run_probe(
-    solver: z3.Solver,
-    budget: _SolveBudget,
-    name: str,
-    assumptions: Sequence[z3.BoolRef],
-) -> Tuple[str, ProbeRecord]:
-    """Run one budgeted probe and record whether the check actually started.
-
-    The probe never outlives the shared deadline: an exhausted budget returns
-    a not-started record instead of launching a check that would extend the
-    caller's timeout.
-
-    :param solver: Refinement solver to query.
-    :type solver: z3.Solver
-    :param budget: Budget shared with the mandatory solve.
-    :type budget: pyfcstm.bmc.solver._SolveBudget
-    :param name: Frozen refinement check name for the ledger.
-    :type name: str
-    :param assumptions: Activation literals to assume for this probe.
-    :type assumptions: Sequence[z3.BoolRef]
-    :return: Resolved status and the record describing the attempt.
-    :rtype: Tuple[str, ProbeRecord]
-
-    Example::
-
-        >>> import z3
-        >>> from pyfcstm.bmc.solver import _SolveBudget
-        >>> status, record = _run_probe(z3.Solver(), _SolveBudget(None), "unsat_core", ())
-        >>> status
-        'sat'
-    """
-    remaining = budget.remaining_ms()
-    if budget.deadline is not None and remaining is None:
-        return "timeout", ProbeRecord(
-            name, "timeout", False, 0.0, "budget exhausted before the probe started"
-        )
-    if remaining is not None:
-        solver.set(timeout=remaining)
-    start = time.monotonic()
-    status = solver.check(*assumptions)
-    elapsed = (time.monotonic() - start) * 1000.0
-    if status == z3.unsat:
-        return "unsat", ProbeRecord(name, "unsat", True, elapsed)
-    if status == z3.sat:
-        return "sat", ProbeRecord(name, "sat", True, elapsed)
-    reason = solver.reason_unknown() or "unknown"
-    resolved = "timeout" if reason == "timeout" else "unknown"
-    return resolved, ProbeRecord(name, resolved, True, elapsed, reason)
-
-
-def _step_record(
-    extraction: ProbeRecord, recheck: ProbeRecord, status: str
-) -> ProbeRecord:
-    """Collapse the two calls of the core step into one reportable record.
-
-    The frozen result shape carries a single ``unsat_core`` entry, so the
-    published timing is the whole step and the status describes the step rather
-    than one solver verdict inside it.
-
-    :param extraction: Record of the labelled extraction check.
-    :type extraction: ProbeRecord
-    :param recheck: Record of the independent soundness recheck.
-    :type recheck: ProbeRecord
-    :param status: Step outcome to publish.
-    :type status: str
-    :return: One record covering both calls.
-    :rtype: ProbeRecord
-
-    Example::
-
-        >>> a = ProbeRecord("unsat_core", "unsat", True, 1.0)
-        >>> b = ProbeRecord("unsat_core", "unsat", True, 2.0)
-        >>> _step_record(a, b, "complete").elapsed_ms
-        3.0
-    """
-    return ProbeRecord(
-        "unsat_core",
-        status,
-        extraction.started or recheck.started,
-        extraction.elapsed_ms + recheck.elapsed_ms,
-        recheck.reason or extraction.reason,
-    )
-
-
-def _probe_outcome_reason(what: str, record: "ProbeRecord") -> str:
-    """Describe a probe outcome without claiming a verdict it never produced.
-
-    A probe whose budget was already spent never ran, so saying it "returned"
-    anything would contradict the published ledger, which records started probes
-    only: a reader would see a returned verdict beside an empty ledger.
-
-    :param what: Human name of the probe, used as the sentence subject.
-    :type what: str
-    :param record: The probe record, whose ``started`` flag decides the wording.
-    :type record: ProbeRecord
-    :return: One clause describing what happened to that probe.
-    :rtype: str
-
-    Example::
-
-        >>> started = ProbeRecord("component_assumptions", "timeout", True, 1.0, None)
-        >>> _probe_outcome_reason("component probe", started)
-        'component probe returned timeout'
-        >>> skipped = ProbeRecord("component_assumptions", "timeout", False, 0.0, "no budget")
-        >>> _probe_outcome_reason("component probe", skipped)
-        'component probe did not start: no budget'
-    """
-    if record.started:
-        return "%s returned %s" % (what, record.status)
-    return "%s did not start: %s" % (what, record.reason)
-
-
 def classify_infeasibility(
     core: "BmcCoreFormula", stage: str, budget: _SolveBudget
 ) -> ClassificationOutcome:
@@ -684,10 +521,10 @@ def extract_source_core(
 ) -> CoreExtraction:
     """Extract a sound source core for one scope and re-verify it.
 
-    Every target group gets its own activation literal, so the solver's unsat
-    core maps back to whole source groups instead of anonymous clauses.  The
-    result is only published when the returned labels resolve to exactly one
-    in-scope group each and the resulting conjunction is still unsatisfiable.
+    Every target group is passed as a formula assumption, so the solver's
+    returned ASTs map back to whole source groups instead of anonymous clauses.
+    Identical formulas use one source representative. The selected conjunction
+    is independently rechecked before the result is published.
 
     :param core: Core formula carrying the tracked group ledger.
     :type core: pyfcstm.bmc.relation.BmcCoreFormula
@@ -700,8 +537,7 @@ def extract_source_core(
         raised, so an optional explanation never turns a usable verdict into a
         crash.
     :rtype: CoreExtraction
-    :raises pyfcstm.bmc.errors.BmcBuildError: If the scope is unknown, or a
-        returned label cannot be mapped back to exactly one in-scope group.
+    :raises pyfcstm.bmc.errors.BmcBuildError: If the scope is unknown.
 
     Example::
 
@@ -712,278 +548,29 @@ def extract_source_core(
     """
     if scope not in SCOPE_TARGETS:
         raise BmcBuildError("Unsupported conflict core scope: %r." % scope)
-
-    partition = partition_tracked_groups(core)
-    targets = partition.groups_for(scope)
+    targets = partition_tracked_groups(core).groups_for(scope)
     if not targets:
-        return CoreExtraction(
-            (), "unknown", "scope %r selected no source group" % scope
-        )
-
-    solver, _ = _solver_for_profile("default")
-    by_label: Dict[str, BmcTrackedConstraint] = {}
-    labels = []
-    for group in targets:
-        # A stable id is metadata and never enters a group's expressions, so
-        # the partition assertion cannot see two groups sharing one id: the
-        # rebuilt aggregates stay identical.  Without this check the second
-        # group would silently overwrite the first in by_label, one activation
-        # literal would gate two different formulas, and the core would map
-        # back to the wrong group.
-        label_name = "core_%s" % group.stable_id
-        if label_name in by_label:
-            raise BmcBuildError(  # pragma: no cover - the builder assigns one stable id per group.
-                "two tracked groups share the stable id %r." % group.stable_id
-            )
-        label = z3.Bool(label_name)
-        by_label[label_name] = group
-        labels.append(label)
-        solver.add(z3.Implies(label, _conjunction((group,))))
-
-    status, record = _run_probe(solver, budget, "unsat_core", labels)
-    if status in ("unknown", "timeout"):
-        return CoreExtraction(
-            (), status, _probe_outcome_reason("core extraction", record), (record,)
-        )
-    if status == "sat":
-        return CoreExtraction(
-            (),
-            "unknown",
-            "internal mismatch: target formula for scope %r is satisfiable, so "
-            "the localized stage and this scope disagree" % scope,
-            (record,),
-        )
-
-    selected = []
-    for literal in solver.unsat_core():
-        name = literal.decl().name()
-        group = by_label.get(name)
-        if group is None:
-            # Z3 returns a subset of the assumption literals, so this cannot
-            # normally fire.  Degrading rather than raising keeps the check that
-            # already ran in the ledger: the solver call happened, and reporting
-            # an empty ledger would deny work the deadline actually spent.
-            return CoreExtraction(
-                (),
-                "unknown",
-                "internal mismatch: unsat core returned the unknown activation "
-                "label %r for scope %r" % (name, scope),
-                (record,),
-            )
-        selected.append(group)
-
-    if not selected:
-        # Every assertion here is guarded by a label, so an UNSAT result always
-        # names at least one of them.  Degrading keeps a hypothetical empty
-        # core from reaching BmcConflictCore, which would reject it as a crash
-        # rather than as a reportable outcome.
-        return CoreExtraction(
-            (), "unknown", "solver returned an empty unsat core", (record,)
-        )
-
-    ordered = tuple(sorted(selected, key=lambda group: group.stable_id))
-    verifier, _ = _solver_for_profile("default")
-    verifier.add(_conjunction(ordered))
-    # The recheck is a second solver call of the same extraction step, so it
-    # shares the caller's budget rather than running unbounded.
-    recheck, verify_record = _run_probe(verifier, budget, "unsat_core", ())
-    if recheck != "unsat":
-        return CoreExtraction(
-            (),
-            "unknown" if recheck != "timeout" else "timeout",
-            "extracted core for scope %r did not re-check as unsat (%s)"
-            % (scope, recheck),
-            (_step_record(record, verify_record, recheck),),
-        )
-    # The published ledger reports one entry for the whole step, matching the
-    # frozen result shape: 'complete' says extraction *and* the independent
-    # recheck both succeeded, which is stronger evidence than either raw
-    # solver verdict on its own.  Two entries sharing the name would instead
-    # read as the same check having run twice.
-    return CoreExtraction(
-        ordered, "complete", None, (_step_record(record, verify_record, "complete"),)
-    )
+        return CoreExtraction((), "unknown", "scope %r selected no source group" % scope)
+    extraction = _extract_constraint_core(targets, (), budget)
+    if extraction.solver_status == "sat":
+        return CoreExtraction((), "unknown", "internal mismatch: target formula for scope %r "
+                              "is satisfiable" % scope, extraction.checks)
+    return extraction
 
 
-@dataclass(frozen=True)
-class MinimizedCore:
-    """A source core after deterministic deletion shrink and its acceptance run.
+def minimize_source_core(core, extraction: CoreExtraction, budget: _SolveBudget) -> MinimizedCore:
+    """Shrink a verified scenario core using the shared background-aware kernel.
 
-    Shrink only ever deletes members, so ``groups`` stays sound no matter where
-    the budget ran out.  ``reduction`` and ``subset_minimality`` therefore say how
-    far minimization got rather than how the core was built.
-
-    :param groups: Surviving core member groups, ordered by ``stable_id``.
-    :type groups: Tuple[pyfcstm.bmc.provenance.BmcTrackedConstraint, ...]
-    :param reduction: ``raw``, ``partial_minimized`` or ``subset_minimal``.
-    :type reduction: str
-    :param subset_minimality: ``proven`` or ``not_proven``.
-    :type subset_minimality: str
-    :param status: ``complete``, ``unknown`` or ``timeout`` for the whole phase.
-    :type status: str
-    :param reason: Why minimization degraded, defaults to ``None``.
-    :type reason: Optional[str], optional
-    :param record: The single aggregate ledger entry for this phase, defaults to
-        ``None`` when no trial ran at all.
-    :type record: Optional[ProbeRecord], optional
-
-    Example::
-
-        >>> minimized = MinimizedCore((), "raw", "not_proven", "timeout", "no budget")
-        >>> minimized.reduction, minimized.subset_minimality
-        ('raw', 'not_proven')
-    """
-
-    groups: Tuple["BmcTrackedConstraint", ...]
-    reduction: str
-    subset_minimality: str
-    status: str = "complete"
-    reason: Optional[str] = None
-    record: Optional[ProbeRecord] = None
-
-
-def _trial_solver(groups: Sequence["BmcTrackedConstraint"]) -> z3.Solver:
-    """Return a solver asserting every expression of the given groups.
-
-    :param groups: Groups whose conjunction is being tested.
-    :type groups: Sequence[pyfcstm.bmc.provenance.BmcTrackedConstraint]
-    :return: A solver holding exactly those expressions.
-    :rtype: z3.Solver
-
-    Example::
-
-        >>> _trial_solver(()).check() == z3.sat
-        True
-    """
-    solver, _ = _solver_for_profile("default")
-    for group in groups:
-        for expression in group.expressions:
-            solver.add(expression)
-    return solver
-
-
-def minimize_source_core(
-    core: "BmcCoreFormula", extraction: CoreExtraction, budget: _SolveBudget
-) -> MinimizedCore:
-    """Shrink a sound source core to a subset-minimal one and verify it.
-
-    The loop follows the frozen algorithm: walk the members in ``stable_id``
-    order, drop one, and keep the smaller set only when it is still unsat.  A
-    satisfiable trial proves the member is load-bearing; an undetermined one
-    proves nothing, so the member stays and the phase can only end partial; an
-    exhausted budget stops immediately and returns what has been reached.
-
-    Because every step only deletes, the returned groups are unsat whenever the
-    input was.  ``subset_minimality`` is upgraded to ``proven`` only after a
-    second pass re-checks every surviving member on its own, so the published
-    claim rests on the final core rather than on the shrink history.
-
-    :param core: The compiled core formula the groups came from.
+    :param core: Compiled scenario, retained for API compatibility.
     :type core: pyfcstm.bmc.relation.BmcCoreFormula
-    :param extraction: The sound raw core to shrink.
+    :param extraction: Independently rechecked source groups.
     :type extraction: CoreExtraction
-    :param budget: Shared solver budget; never exceeded.
+    :param budget: Deadline shared with the mandatory solve and extraction.
     :type budget: pyfcstm.bmc.solver._SolveBudget
-    :return: The minimized core and the aggregate record for the phase.
+    :return: Deletion result with separately checked subset minimality.
     :rtype: MinimizedCore
-
-    Example::
-
-        >>> from pyfcstm.bmc.solver import _SolveBudget
-        >>> empty = CoreExtraction(())
-        >>> minimize_source_core(None, empty, _SolveBudget(None)).reduction
-        'raw'
     """
-    candidate = list(extraction.groups)
-    if not candidate:
-        # Nothing to shrink, and nothing to claim about a core that has no
-        # members: the caller decides whether an empty extraction is publishable.
-        return MinimizedCore((), "raw", "not_proven", extraction.status)
-
-    started = 0
-    degraded = None
-    started_at = time.perf_counter()
-    # Every member gets its trial, including the last one.  The empty set is
-    # satisfiable, so a trial that would empty the candidate always comes back
-    # sat and the member is kept -- that is what makes deleting unconditionally
-    # safe here, and it is also why the trial has to run: skipping it would leave
-    # a one-member core claiming minimality no check ever established, and the
-    # phase record that carries the claim would be missing entirely.
-    for group in tuple(candidate):
-        trial = [item for item in candidate if item.stable_id != group.stable_id]
-        verdict, record = _run_probe(
-            _trial_solver(trial), budget, "unsat_core_minimization", ()
-        )
-        if not record.started:
-            degraded = "budget exhausted before a deletion trial started"
-            break
-        started += 1
-        if verdict == "unsat":
-            candidate = trial
-        elif verdict == "sat":
-            continue
-        elif verdict == "timeout":
-            degraded = "deletion trial timed out"
-            break
-        else:
-            degraded = "deletion trial returned unknown"
-
-    if degraded is None:
-        status = "complete"
-    elif "timed out" in degraded or "budget exhausted" in degraded:
-        # §9.3 groups an exhausted budget with a timed-out trial: both mean the
-        # deadline stopped minimization, which is a different report from a
-        # solver that ran and gave up.
-        status = "timeout"
-    else:
-        status = "unknown"
-
-    proven = False
-    if status == "complete":
-        proven = True
-        for group in tuple(candidate):
-            remaining = [
-                item for item in candidate if item.stable_id != group.stable_id
-            ]
-            verdict, record = _run_probe(
-                _trial_solver(remaining), budget, "unsat_core_minimization", ()
-            )
-            if not record.started or verdict != "sat":
-                proven = False
-                status = "timeout" if verdict == "timeout" else "unknown"
-                degraded = (
-                    "acceptance check for %s did not return sat" % group.stable_id
-                )
-                break
-            started += 1
-
-    if proven:
-        reduction = "subset_minimal"
-    elif started:
-        reduction = "partial_minimized"
-    else:
-        reduction = "raw"
-
-    elapsed_ms = (time.perf_counter() - started_at) * 1000.0
-    aggregate = (
-        ProbeRecord(
-            "unsat_core_minimization",
-            status,
-            True,
-            elapsed_ms,
-            degraded,
-        )
-        if started
-        else None
-    )
-    return MinimizedCore(
-        tuple(candidate),
-        reduction,
-        "proven" if proven else "not_proven",
-        status,
-        degraded,
-        aggregate,
-    )
+    return _minimize_core(extraction, budget)
 
 
 def _semantic_role(category: str) -> str:

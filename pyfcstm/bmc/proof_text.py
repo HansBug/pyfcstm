@@ -41,6 +41,7 @@ from typing import Any, List, Mapping, Optional, Sequence, Tuple
 from .explanation import (
     BmcConflictProof,
     BmcReasoningStep,
+    _assignment_clause,
     _fact_sentence,
     _state_display,
 )
@@ -92,9 +93,8 @@ def _clause(fact: Mapping[str, Any], names: Optional[Mapping[int, str]] = None) 
             fact.get("frame"),
         )
     if kind == "arithmetic_expression":
-        return "%s changed by %s between frame %s and frame %s" % (
-            fact.get("variable"),
-            fact.get("operand"),
+        return "%s between frame %s and frame %s" % (
+            _assignment_clause(fact),
             fact.get("frame"),
             fact.get("target_frame"),
         )

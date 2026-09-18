@@ -627,9 +627,43 @@ def _condition_clause(members, names=None) -> str:
                     member.get("frame"),
                 )
             )
+        elif kind == "proposition" and {"identity", "holds"} <= set(member):
+            phrases.append("%s is required to %s" % (
+                member["identity"], "hold" if member["holds"] else "not hold",
+            ))
         else:
             phrases.append("a %s requirement" % (kind or "further"))
     return " where %s" % " and ".join(phrases)
+
+
+def _assignment_clause(fact: Mapping[str, Any]) -> str:
+    """Read an assignment without erasing its operator or symbolic operand.
+
+    Source facts use ``operation`` and proof facts may use ``operator``.
+    Both use the same vocabulary as :func:`human_text_for_fact`. Incomplete
+    public facts retain an explicit gap instead of displaying ``None``.
+
+    :param fact: A transition or arithmetic fact.
+    :type fact: Mapping[str, Any]
+    :return: A clause suitable for an input or derived proof sentence.
+    :rtype: str
+
+    Example::
+
+        >>> _assignment_clause({"variable": "x", "operator": "add", "operand": 2})
+        'the transition adds 2 to x'
+        >>> _assignment_clause({"variable": "x", "operator": "mod", "operand": 2})
+        'the transition has an unexpanded assignment to x'
+        >>> _assignment_clause({"variable": "x", "operator": "add"})
+        'the transition has an unexpanded assignment to x'
+    """
+    operation = fact.get("operation", fact.get("operator"))
+    phrase = _ASSIGNMENT_PHRASES.get(operation)
+    operand = fact.get("operand", fact.get("operand_variable"))
+    variable = fact.get("variable", "an unspecified variable")
+    if phrase is None or operand is None:
+        return "the transition has an unexpanded assignment to %s" % variable
+    return "the transition %s" % phrase.format(operand=operand, variable=variable)
 
 
 def _fact_sentence(
@@ -709,19 +743,17 @@ def _fact_sentence(
         # Without it the sentence asserts the assignment unconditionally while the
         # fact carries a condition -- the human account and the machine fact would
         # then disagree, which is the one thing this tier exists to prevent.
-        return "Between frame %s and frame %s, the transition changes %s by %s%s." % (
+        return "Between frame %s and frame %s, %s%s." % (
             fact.get("frame"),
             fact.get("target_frame"),
-            fact.get("variable"),
-            fact.get("operand", fact.get("operand_variable")),
+            _assignment_clause(fact),
             _condition_clause(fact.get("condition"), names),
         )
     if kind == "arithmetic_expression":
-        return "Between frame %s and frame %s, %s changes by %s." % (
+        return "Between frame %s and frame %s, %s." % (
             fact.get("frame"),
             fact.get("target_frame"),
-            fact.get("variable"),
-            fact.get("operand"),
+            _assignment_clause(fact),
         )
     if kind == "false":
         # The contradiction node's own sentence.  A reading built from the graph says

@@ -19,11 +19,18 @@ BmcAbstractCallRecord
     :members: __post_init__,to_canonical,ordinal,action_name,stage,role,state_path,active_leaf_path,named_ref,snapshot
 
 
+BmcSymbolSource
+-----------------------------------------------------
+
+.. autoclass:: BmcSymbolSource
+    :members: kind,name,frame,step,display_name
+
+
 BmcTraceSymbols
 -----------------------------------------------------
 
 .. autoclass:: BmcTraceSymbols
-    :members: __post_init__,allocate,frame_state,frame_var,step_input,parameter,resolve_query_value,event_input,delta_flag,gamma_flag,active_state,case_selector,to_canonical,domain,frame_states,frame_vars,event_inputs,delta_flags,gamma_flags,case_selectors,step_inputs,parameters
+    :members: __post_init__,allocate,frame_state,frame_var,step_input,parameter,resolve_query_value,event_input,delta_flag,gamma_flag,active_state,case_selector,to_canonical,domain,frame_states,frame_vars,event_inputs,delta_flags,gamma_flags,case_selectors,step_inputs,parameters,names
 
 
 BmcCaseRelation

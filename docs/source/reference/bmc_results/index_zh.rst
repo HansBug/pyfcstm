@@ -1506,7 +1506,10 @@ p50，再按实际切片分组汇总。
 与性质无关的 UNSAT 核接口
 ----------------------------------------
 
-Python 模块 :mod:`pyfcstm.bmc.unsat` 检查调用方提供的布尔 Z3 公式，
+共享 solver 代码负责公式检查；BMC 负责状态、转换和性质的含义。
+反例查询无解与可达性查询无解并不对应相同的性质结论，调用方须保留这一区别。
+
+Python 模块 :mod:`pyfcstm.solver.unsat` 检查调用方提供的布尔 Z3 公式，
 不评价 FCSTM 性质、不解码见证，也不生成源码级推导。性质结论和强制见证重放
 仍应使用既有 BMC 求解接口。这个独立接口不改变命令行或其 JSON 模式；
 导入模块和构造查询都不会发起求解。
@@ -1525,10 +1528,10 @@ Z3 将每个可移除组作为布尔假设接收，并在核中返回其原始�
 
    * - 输入
      - 合同
-   * - ``BmcUnsatConstraint(stable_id, expressions, source=None)``
+   * - ``UnsatConstraint(stable_id, expressions, source=None)``
      - 非空字符串标识、非空布尔 Z3 表达式序列，以及可选来源对象。来源保留对象身份；
        表达式序列复制为元组。所有表达式必须使用同一个 Z3 上下文。
-   * - ``BmcUnsatQuery(query_id, constraints, background=())``
+   * - ``UnsatQuery(query_id, constraints, background=())``
      - 非空字符串查询标识，以及约束组、背景组序列。两个序列均复制为元组；
        两者合并后标识不得重复，全部公式须处于同一上下文。两个集合均可为空。
    * - ``explain_unsat_core(query, *, selected_ids=None, minimize=True, timeout_ms=None)``
@@ -1536,7 +1539,7 @@ Z3 将每个可移除组作为布尔假设接收，并在核中返回其原始�
        ``()`` 仅检查背景。``minimize`` 必须是布尔值；``timeout_ms`` 为正整数，
        ``None`` 表示不限时。
 
-返回的 ``BmcUnsatExplanation`` 分别记录以下结果：
+返回的 ``UnsatExplanation`` 分别记录以下结果：
 
 .. list-table:: 结果字段
    :header-rows: 1
@@ -1574,19 +1577,46 @@ Z3 将每个可移除组作为布尔假设接收，并在核中返回其原始�
 冲突可以依赖变量关系，而不固定任一变量的值::
 
     >>> import z3
-    >>> from pyfcstm.bmc.unsat import BmcUnsatConstraint, BmcUnsatQuery, explain_unsat_core
+    >>> from pyfcstm.solver.unsat import UnsatConstraint, UnsatQuery, explain_unsat_core
     >>> x, y = z3.Ints("x y")
-    >>> guard = BmcUnsatConstraint("guard", (x < y,), "controller.fcstm:12")
-    >>> post = BmcUnsatConstraint("post", (x >= y,))
-    >>> result = explain_unsat_core(BmcUnsatQuery("order", (guard, post)))
+    >>> guard = UnsatConstraint("guard", (x < y,), "controller.fcstm:12")
+    >>> post = UnsatConstraint("post", (x >= y,))
+    >>> result = explain_unsat_core(UnsatQuery("order", (guard, post)))
     >>> result.solver_status, result.core_ids, result.subset_minimality
     ('unsat', ('guard', 'post'), 'proven')
 
 两组约束对所有取值均冲突，来源对象也得到保留；但结果尚未给出中间的业务推导。
 
+可读符号可在构建公式时登记，独立于冲突核检查器使用::
+
+    >>> from pyfcstm.solver.symbols import SymbolNames
+    >>> names = SymbolNames()
+    >>> payload = z3.Real("generated_controller_payload_1234567890")
+    >>> origin = {"variable": "payload", "frame": 2}
+    >>> names.register(payload, "v0@2", origin)
+    >>> names.render(payload / 2)
+    'v0@2/2'
+    >>> names.lookup(payload).source is origin
+    True
+
+查找依据实际 Z3 常量及其上下文，不解析编码名称。``register`` 拒绝重复登记符号
+或显示名称。``render`` 在临时表达式中替换名称，保留原公式；未登记常量保留原拼写。
+若未登记常量或量词绑定名称与本次使用的显示名称冲突，则抛出 ``ValueError``，
+避免把不同的值显示成同一身份。局部原生打印器设置避免截断，不修改全局 Z3 设置。
+这是表达式渲染，不是证明或代数化简；来源对象是调用方提供的元数据。
+
+BMC 在构建轨迹符号时登记变量、状态、输入、参数、事件和分支选择符，事实提取与
+绑定检查使用该登记表。持久变量用 ``name@N`` 表示第 N 帧的值；长变量名使用
+``v<ID>@N``，并在图例中保留完整原名。原始结构化事实仍使用原名。
+``v0@2 == v0@1/2`` 这样的赋值表达直接给出运算及前后帧。
+登记机制不会自动展开事实识别器尚不支持的算术或分支结构。
+冲突核成员即使没有可识别的领域事实，也显示原公式。证明输入显示源公式或通过
+绑定检查的特定合取单元；派生赋值复用证明编码器和原生表达式打印器。
+仅接收事实的独立接口没有原公式，因此显示赋值元数据，不重新拼装原式的表示。
+
 固定背景自身矛盾时，可移除核为空::
 
-    >>> query = BmcUnsatQuery("background", (), (guard, post))
+    >>> query = UnsatQuery("background", (), (guard, post))
     >>> result = explain_unsat_core(query)
     >>> result.core_ids, result.background_conflict
     ((), True)
@@ -1596,7 +1626,7 @@ Z3 将每个可移除组作为布尔假设接收，并在核中返回其原始�
 
 选定子集不能借用被省略的假设::
 
-    >>> query = BmcUnsatQuery("selected", (guard, post))
+    >>> query = UnsatQuery("selected", (guard, post))
     >>> result = explain_unsat_core(query, selected_ids=("guard",))
     >>> result.solver_status, result.core_check, result.core_ids
     ('unsat', 'sat', None)
@@ -1606,7 +1636,9 @@ Z3 将每个可移除组作为布尔假设接收，并在核中返回其原始�
 
 对象或成员类型错误、将单个字符串作为选定标识序列、非布尔 ``minimize`` 会抛出
 ``TypeError``。空标识、混用上下文、重复标识和未知选定标识会抛出 ``ValueError``。
-无效预算抛出 :class:`~pyfcstm.bmc.errors.BmcBuildError`。例如
+无效预算抛出 ``ValueError``。兼容入口 :mod:`pyfcstm.bmc.unsat` 保留
+``BmcUnsatConstraint``、``BmcUnsatQuery``、``BmcUnsatExplanation`` 别名，
+其无效预算仍抛出 :class:`~pyfcstm.bmc.errors.BmcBuildError`。例如
 ``selected_ids="guard"`` 非法，应写成 ``("guard",)``；背景标识不能作为可移除组选择。
 
 取核、独立复查和可选最小化共用单调时钟截止时间，到期后不再启动检查。

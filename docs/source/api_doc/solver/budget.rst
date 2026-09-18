@@ -1,9 +1,9 @@
-pyfcstm.bmc.unsat
+pyfcstm.solver.budget
 ========================================================
 
-.. currentmodule:: pyfcstm.bmc.unsat
+.. currentmodule:: pyfcstm.solver.budget
 
-.. automodule:: pyfcstm.bmc.unsat
+.. automodule:: pyfcstm.solver.budget
 
 
 \_\_all\_\_
@@ -12,7 +12,8 @@ pyfcstm.bmc.unsat
 .. autodata:: __all__
 
 
-explain\_unsat\_core
+SolveBudget
 -----------------------------------------------------
 
-.. autofunction:: explain_unsat_core
+.. autoclass:: SolveBudget
+    :members: __init__,remaining_ms

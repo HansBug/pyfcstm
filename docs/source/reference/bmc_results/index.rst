@@ -1725,7 +1725,11 @@ universal speedup; measure the complete path on your own model.
 Property-neutral UNSAT core API
 --------------------------------------------------------------
 
-The Python module :mod:`pyfcstm.bmc.unsat` checks caller-supplied Boolean Z3
+Shared solver code owns formula checks; BMC owns state, transition and property
+meaning. In particular, an UNSAT counterexample query and an UNSAT reachability
+query do not have the same property verdict. Callers retain that distinction.
+
+The Python module :mod:`pyfcstm.solver.unsat` checks caller-supplied Boolean Z3
 formulas. It does not evaluate an FCSTM property, decode a witness, or construct
 a source-level derivation. Use the existing BMC solve API for property verdicts
 and mandatory witness replay. This separate API does not change the CLI or its
@@ -1747,11 +1751,11 @@ have different identifiers; one group can contain several conjuncts.
 
    * - Input
      - Contract
-   * - ``BmcUnsatConstraint(stable_id, expressions, source=None)``
+   * - ``UnsatConstraint(stable_id, expressions, source=None)``
      - Nonempty string identifier; nonempty sequence of Boolean Z3 expressions;
        optional opaque source retained by identity. Expressions are snapshotted
        as a tuple. All expressions must share one Z3 context.
-   * - ``BmcUnsatQuery(query_id, constraints, background=())``
+   * - ``UnsatQuery(query_id, constraints, background=())``
      - Nonempty string query identity and sequences of constraints. Both
        sequences are snapshotted. Identifiers are unique across both collections;
        all groups share a context. Either collection may be empty.
@@ -1761,7 +1765,7 @@ have different identifiers; one group can contain several conjuncts.
        tests the background alone. ``minimize`` is Boolean. ``timeout_ms`` is
        a positive integer or ``None`` for no deadline.
 
-The returned ``BmcUnsatExplanation`` separates these observations:
+The returned ``UnsatExplanation`` separates these observations:
 
 .. list-table:: Result fields
    :header-rows: 1
@@ -1801,20 +1805,56 @@ The returned ``BmcUnsatExplanation`` separates these observations:
 A contradiction can depend on a relationship without fixing either value::
 
     >>> import z3
-    >>> from pyfcstm.bmc.unsat import BmcUnsatConstraint, BmcUnsatQuery, explain_unsat_core
+    >>> from pyfcstm.solver.unsat import UnsatConstraint, UnsatQuery, explain_unsat_core
     >>> x, y = z3.Ints("x y")
-    >>> guard = BmcUnsatConstraint("guard", (x < y,), "controller.fcstm:12")
-    >>> post = BmcUnsatConstraint("post", (x >= y,))
-    >>> result = explain_unsat_core(BmcUnsatQuery("order", (guard, post)))
+    >>> guard = UnsatConstraint("guard", (x < y,), "controller.fcstm:12")
+    >>> post = UnsatConstraint("post", (x >= y,))
+    >>> result = explain_unsat_core(UnsatQuery("order", (guard, post)))
     >>> result.solver_status, result.core_ids, result.subset_minimality
     ('unsat', ('guard', 'post'), 'proven')
 
 The two groups conflict for every valuation. Their source handles survive, but
 this result does not yet produce the intermediate business reasoning.
 
+Readable symbols can be registered when constructing formulas, independently of
+the core checker::
+
+    >>> from pyfcstm.solver.symbols import SymbolNames
+    >>> names = SymbolNames()
+    >>> payload = z3.Real("generated_controller_payload_1234567890")
+    >>> origin = {"variable": "payload", "frame": 2}
+    >>> names.register(payload, "v0@2", origin)
+    >>> names.render(payload / 2)
+    'v0@2/2'
+    >>> names.lookup(payload).source is origin
+    True
+
+The lookup uses the actual Z3 constant and context, not its encoded spelling.
+``register`` rejects duplicate symbols and duplicate display names. ``render``
+substitutes names in a temporary expression, preserving the original formula;
+unregistered constants keep their spelling. A collision between an unregistered
+constant and a used display name, or between a display name and a quantifier-bound
+name, raises ``ValueError`` instead of presenting two different values as one.
+Local native printer settings prevent display truncation without changing global
+Z3 settings. This is expression rendering, not a proof or an
+algebraic simplifier. The source object is opaque caller metadata.
+
+BMC registers variables, states, inputs, parameters, events and case selectors
+when trace symbols are constructed. Its fact extraction and binding checks use
+that registry. Persistent values use ``name@N`` for frame N; long variable names
+use ``v<ID>@N`` with a legend retaining the full authored name. Original structured
+facts keep their authored names. A displayed assignment such as
+``v0@2 == v0@1/2`` states the operation and both frames directly. Registration
+does not expand arithmetic or branch shapes that the fact recognizer cannot read.
+Core members display their original formulas even when no domain fact can be
+recognized. Proof inputs display the source formula or the specific conjunctive
+unit that passed binding checks. Derived assignment facts reuse the proof
+encoder and native expression printer. Standalone fact-only APIs have no original
+formula and display assignment metadata instead of reconstructing its notation.
+
 A fixed-background contradiction has an empty removable core::
 
-    >>> query = BmcUnsatQuery("background", (), (guard, post))
+    >>> query = UnsatQuery("background", (), (guard, post))
     >>> result = explain_unsat_core(query)
     >>> result.core_ids, result.background_conflict
     ((), True)
@@ -1824,7 +1864,7 @@ contains no constraints. In contrast, a query with both collections empty is SAT
 
 A selected subset cannot borrow omitted assumptions::
 
-    >>> query = BmcUnsatQuery("selected", (guard, post))
+    >>> query = UnsatQuery("selected", (guard, post))
     >>> result = explain_unsat_core(query, selected_ids=("guard",))
     >>> result.solver_status, result.core_check, result.core_ids
     ('unsat', 'sat', None)
@@ -1836,7 +1876,10 @@ interpret ``solver_status`` alone as successful subset verification.
 Wrong object/member types, a scalar string selection or a non-Boolean
 ``minimize`` raise ``TypeError``. Empty identifiers, mixed contexts, duplicate
 identifiers and unknown selected identifiers raise ``ValueError``. Invalid
-budgets raise :class:`~pyfcstm.bmc.errors.BmcBuildError`. For example,
+budgets raise ``ValueError``. The compatibility entry in
+:mod:`pyfcstm.bmc.unsat` retains the ``BmcUnsatConstraint``, ``BmcUnsatQuery``
+and ``BmcUnsatExplanation`` aliases and raises
+:class:`~pyfcstm.bmc.errors.BmcBuildError` for invalid budgets. For example,
 ``selected_ids="guard"`` is invalid; use ``("guard",)``. Background identifiers
 cannot be selected as removable constraints.
 

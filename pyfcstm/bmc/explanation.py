@@ -59,7 +59,7 @@ Example::
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, replace, field
 from types import MappingProxyType
 from typing import Any, Dict, List, Mapping, NamedTuple, Optional, Tuple
 
@@ -376,24 +376,6 @@ _RELATION_PHRASES = {
     "gt": "to be greater than %s",
 }
 
-#: How an assignment reads, keyed by the operation a published fact names.
-#:
-#: Each phrase names both the operand and the variable, because the natural word
-#: order differs between them: an addition reads "adds 1 to x" and a multiplication
-#: reads "multiplies x by 1".  Formatting by name rather than by position is what
-#: lets each operation put them where its own English wants them.  An operation
-#: absent here has no reading, which is why the recognizer only names the four the
-#: evaluation rule can apply.
-_ASSIGNMENT_PHRASES = {
-    "add": "adds {operand} to {variable}",
-    "sub": "subtracts {operand} from {variable}",
-    "mul": "multiplies {variable} by {operand}",
-    "div": "divides {variable} by {operand}",
-    # Not an arithmetic update: the next frame's value does not depend on this one,
-    # so the sentence says what the variable becomes rather than how it changes.
-    "set": "sets {variable} to {operand}",
-}
-
 #: Which authority a role speaks for, in the voice the sentence needs.
 #:
 #: A reader deciding where to make an edit cares whether a requirement came from
@@ -636,34 +618,57 @@ def _condition_clause(members, names=None) -> str:
     return " where %s" % " and ".join(phrases)
 
 
+def _display_fact(fact, variable_names):
+    """Rename only structured variable references in a temporary reading copy.
+
+    Original facts remain unchanged for binding and proof checks. No text
+    replacement or solver-name parsing participates in this mapping.
+    """
+    if not variable_names:
+        return fact
+    result = dict(fact)
+    for key in ("variable", "operand_variable"):
+        if key in result:
+            result[key] = variable_names.get(result[key], result[key])
+    if "condition" in result and isinstance(result["condition"], (list, tuple)):
+        result["condition"] = [_display_fact(member, variable_names) for member in result["condition"]]
+    return result
+
+
 def _assignment_clause(fact: Mapping[str, Any]) -> str:
-    """Read an assignment without erasing its operator or symbolic operand.
+    """Describe assignment metadata when no original formula is available.
 
-    Source facts use ``operation`` and proof facts may use ``operator``.
-    Both use the same vocabulary as :func:`human_text_for_fact`. Incomplete
-    public facts retain an explicit gap instead of displaying ``None``.
+    Actual BMC explanations render their bound Z3 expressions. A standalone
+    fact has no expression, sort or source binding, so this fallback reports
+    its fields rather than inventing an expression from an operator name.
 
-    :param fact: A transition or arithmetic fact.
-    :type fact: Mapping[str, Any]
-    :return: A clause suitable for an input or derived proof sentence.
-    :rtype: str
+    :param fact: A source transition fact or derived arithmetic fact.
+    :return: Assignment fields, or an explicit incomplete-assignment description.
 
     Example::
 
-        >>> _assignment_clause({"variable": "x", "operator": "add", "operand": 2})
-        'the transition adds 2 to x'
+        >>> _assignment_clause(dict(variable="x", operator="div", operand=2,
+        ...                         frame=1, target_frame=2))
+        'assignment to x@2 (operation=div, source=x@1, operand=2)'
         >>> _assignment_clause({"variable": "x", "operator": "mod", "operand": 2})
-        'the transition has an unexpanded assignment to x'
+        'assignment to x (operation=mod, source=x, operand=2)'
         >>> _assignment_clause({"variable": "x", "operator": "add"})
         'the transition has an unexpanded assignment to x'
     """
     operation = fact.get("operation", fact.get("operator"))
-    phrase = _ASSIGNMENT_PHRASES.get(operation)
-    operand = fact.get("operand", fact.get("operand_variable"))
+    operand = fact.get("operand")
+    operand_variable = fact.get("operand_variable")
     variable = fact.get("variable", "an unspecified variable")
-    if phrase is None or operand is None:
+    if operation is None or (operand is None and operand_variable is None):
         return "the transition has an unexpanded assignment to %s" % variable
-    return "the transition %s" % phrase.format(operand=operand, variable=variable)
+    frame, target = fact.get("frame"), fact.get("target_frame")
+    left = "%s@%s" % (variable, target) if target is not None else variable
+    prior = "%s@%s" % (variable, frame) if frame is not None else variable
+    if operand is None:
+        operand = "%s@%s" % (operand_variable, frame) if frame is not None else operand_variable
+    return "assignment to %s (operation=%s, source=%s, operand=%s)" % (
+        left, operation, prior, operand,
+    )
 
 
 def _fact_sentence(
@@ -859,11 +864,10 @@ def human_text_for_fact(
         "operation",
         "condition",
     } <= set(fact):
-        phrase = _ASSIGNMENT_PHRASES.get(fact["operation"])
         operand = fact.get("operand")
         if operand is None:
             operand = fact.get("operand_variable")
-        if phrase is None or operand is None:
+        if operand is None:
             return _unreduced_sentence(role, fact)
         # The condition is read out rather than alluded to.  An earlier version said
         # "where its case applies" and justified it by the condition being the
@@ -871,11 +875,11 @@ def human_text_for_fact(
         # it became a list of normalized facts.  The reader is owed the requirement
         # itself: the step after this one says "therefore", and its only warrant is
         # that this condition holds.
-        return "Between frame %s and frame %s, %s %s%s." % (
+        return "Between frame %s and frame %s, %s requires %s%s." % (
             fact["frame"],
             fact["target_frame"],
             voice,
-            phrase.format(operand=operand, variable=fact["variable"]),
+            _assignment_clause(fact),
             _condition_clause(fact["condition"], state_paths),
         )
     if kind == "definedness_condition" and {"frame", "operation"} <= set(fact):
@@ -3569,6 +3573,7 @@ def build_conflict_narrative(
     core: "BmcConflictCore",
     forced_values: Tuple = (),
     state_paths: Optional[Mapping] = None,
+    variable_names: Optional[Mapping[str, str]] = None,
 ) -> BmcConflictNarrative:
     """Render the deterministic account of why the published core is unsatisfiable.
 
@@ -3587,6 +3592,8 @@ def build_conflict_narrative(
     :param state_paths: State code to authored path, so every sentence names the
         state the reader wrote; defaults to ``None``.
     :type state_paths: Optional[Mapping[int, str]], optional
+    :param variable_names: Rendering-only aliases for authored variable names.
+    :type variable_names: Optional[Mapping[str, str]]
     :return: The narrative for this core.
     :rtype: BmcConflictNarrative
 
@@ -3606,6 +3613,15 @@ def build_conflict_narrative(
         >>> build_conflict_narrative(core).derivation_status
         'structural_only'
     """
+    if variable_names:
+        # Only the rendering copy uses aliases. The returned narrative still
+        # cites the original core IDs, and solver-checked facts stay untouched.
+        core = replace(core, items=tuple(
+            replace(item, normalized_fact=_display_fact(item.normalized_fact, variable_names))
+            for item in core.items
+        ))
+        forced_values = tuple(replace(value, variable=variable_names.get(value.variable, value.variable))
+                              for value in forced_values)
     ids = tuple(item.constraint.stable_id for item in core.items)
     # Only authored entries are offered: a generated encoding rule has no line
     # for the reader to open.  These are review entry points, not a repair
@@ -3706,6 +3722,13 @@ def explanation_text_lines(explanation) -> List[str]:
         lines.append(
             "Classification: %s" % CLASSIFICATION_PHRASES[explanation.classification]
         )
+    if explanation.core is not None:
+        aliases = {}
+        for item in explanation.core.items:
+            aliases.update(item.constraint.refs.get("variable_aliases", {}))
+        if aliases:
+            lines.append("Variable names (@N denotes the value at frame N):")
+            lines.extend("  %s = %s" % (alias, original) for alias, original in sorted(aliases.items()))
     narrative = explanation.narrative
     if narrative is not None and narrative.reasoning_steps:
         lines.append("")

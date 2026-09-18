@@ -172,7 +172,6 @@ def test_a_category_outside_every_family_is_refused() -> None:
 #: Frozen structures the transcription test above pins by value.
 _TRANSCRIBED_FROZEN_NAMES = frozenset(
     {
-        "_ASSIGNMENT_PHRASES",
         "_CONDITION_RELATIONS",
         "_DERIVATION_STATUSES",
         "_FACT_REQUIRED_KEYS",
@@ -315,13 +314,6 @@ def test_the_transcription_guard_covers_every_frozen_structure() -> None:
     # relation added to one and not the other renders as "is constrained" inside a
     # condition while reading correctly everywhere else.
     assert set(module._CONDITION_RELATIONS) == set(module._RELATION_PHRASES)
-    assert module._ASSIGNMENT_PHRASES == {
-        "add": "adds {operand} to {variable}",
-        "sub": "subtracts {operand} from {variable}",
-        "mul": "multiplies {variable} by {operand}",
-        "div": "divides {variable} by {operand}",
-        "set": "sets {variable} to {operand}",
-    }
     # Transcribed because it decides which members a reader may index directly:
     # a tag whose keys are dropped from here silently becomes indexable without
     # them, which is the KeyError this table exists to prevent.
@@ -4062,9 +4054,10 @@ def test_the_two_operation_vocabularies_stay_disjoint() -> None:
     to the other has to be written down here, which is the point where someone has to
     think about whether a consumer can still tell them apart.
     """
-    from pyfcstm.bmc.explanation import _ASSIGNMENT_PHRASES
+    import z3
+    from pyfcstm.bmc.provenance import _arithmetic_operations
 
-    assignment = set(_ASSIGNMENT_PHRASES)
+    assignment = set(_arithmetic_operations(z3).values()) | {"set"}
     # Set at the call sites that build a definedness group in ``relation.py``, so
     # there is no table to read; transcribed for the same reason the frozen tables
     # are, and the pair below is the whole reason this test exists: ``div`` and
@@ -4280,4 +4273,7 @@ def test_a_constant_assignment_is_published_as_the_replacement_it_is() -> None:
     fact = facts[0]
     assert fact["kind"] == "transition_case", fact
     assert (fact["operation"], fact["operand"]) == ("set", 1), fact
-    assert "sets x to 1" in human_text_for_fact("transition_rule", fact), fact
+    assert human_text_for_fact("transition_rule", fact) == (
+        "Between frame 1 and frame 2, the transition requires assignment to x@2 "
+        "(operation=set, source=x@1, operand=1) where frame 1 holds 1."
+    )

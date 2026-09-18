@@ -52,9 +52,11 @@ from typing import (
 )
 
 import z3
+from ..solver.symbols import _expression_constants
 
 from .errors import BmcBuildError
 from .explanation import (
+    _display_fact,
     BmcConflictNarrative,
     # Private because the frozen public surface must not grow to expose it, and
     # cross-module because the fact vocabulary is owned in one place: a second
@@ -872,6 +874,8 @@ def build_core_item(
     declared: Optional[Sequence[str]] = None,
     state_paths: Optional[Mapping[int, str]] = None,
     event_paths: Optional[Sequence[str]] = None,
+    variable_names: Optional[Mapping[str, str]] = None,
+    symbol_names=None,
 ) -> BmcCoreItem:
     """Turn one tracked source group into a publishable core member.
 
@@ -896,6 +900,13 @@ def build_core_item(
     :param state_paths: State code to authored path, so a sentence names the state
         the reader wrote rather than the encoding's number.  Defaults to ``None``.
     :type state_paths: Optional[Mapping[int, str]], optional
+    :param event_paths: Authored event paths for legacy symbol resolution.
+    :type event_paths: Optional[Sequence[str]]
+    :param variable_names: Rendering aliases; original fact identities are retained.
+    :type variable_names: Optional[Mapping[str, str]]
+    :param symbol_names: Construction-time symbol registry used for identity
+        resolution and native formula rendering. When supplied it is authoritative.
+    :type symbol_names: Optional[pyfcstm.solver.symbols.SymbolNames]
     :return: Core member carrying identity, provenance and its reading.
     :rtype: pyfcstm.bmc.explanation.BmcCoreItem
     :raises pyfcstm.bmc.errors.BmcBuildError: If the category has no frozen
@@ -921,6 +932,10 @@ def build_core_item(
     published_refs = {
         key: _canonical_refs_value(key, group.refs[key]) for key in sorted(group.refs)
     }
+    if variable_names:
+        published_refs["variable_aliases"] = {
+            alias: name for name, alias in variable_names.items() if alias != name
+        }
     reference = BmcConstraintRef(
         stable_id=group.stable_id,
         stage=group.stage,
@@ -942,14 +957,24 @@ def build_core_item(
     # instead of inviting a guess.  Frames, steps and refs stay in the constraint
     # reference above: publishing them here as well would give a reader two
     # copies of the same values and blur which keys are the fact itself.
-    fact = normalized_fact_for(group, declared, event_paths)
+    fact = normalized_fact_for(group, declared, event_paths, symbol_names)
+    if symbol_names is not None:
+        # Display the actual formulas, including operators the domain recognizer
+        # cannot reduce. Only registered constants acquire readable names.
+        human_text = "\n".join(symbol_names.render(expression) for expression in group.expressions)
+        if fact.get("kind") in ("state_membership", "state_domain", "proposition"):
+            human_text = "%s\n%s" % (
+                human_text_for_fact(role, fact, state_paths), human_text,
+            )
+    else:
+        human_text = human_text_for_fact(role, _display_fact(fact, variable_names), state_paths)
     return BmcCoreItem(
         constraint=reference,
         semantic_role=role,
         source_excerpt=excerpt,
         source_excerpt_truncated=truncated,
         normalized_fact=fact,
-        human_text=human_text_for_fact(role, fact, state_paths),
+        human_text=human_text,
         editable=group.source_ref.kind in ("fcstm", "fbmcq"),
     )
 
@@ -1080,6 +1105,7 @@ def check_core_bindings(
                 declared,
                 budget,
                 _event_paths_of(core),
+                core.symbols.names,
             )
             if outcome.attribution is None:
                 return (
@@ -1095,7 +1121,7 @@ def check_core_bindings(
                 )
             unit_bindings[stable_id] = outcome.attribution
             continue
-        symbol = _binding_symbol(conjunction, fact, declared)
+        symbol = _binding_symbol(conjunction, fact, declared, core.symbols.names)
         if symbol is None:
             return (
                 False,
@@ -1339,7 +1365,7 @@ def check_case_conditions(
     # One table over every member, not per group: the condition names slots its own
     # group may never mention, and the two sides have to talk about the same symbols.
     symbols = _binding_symbols(
-        z3.And(*[claim for _, claim in members]), declared, _event_paths_of(core)
+        z3.And(*[claim for _, claim in members]), declared, _event_paths_of(core), core.symbols.names
     )
 
     discharge_target = _entailment_prover(members, budget)
@@ -1467,7 +1493,7 @@ def check_value_carries(
         return carried, ProbeRecord("value_carry", "complete", False, elapsed(), None)
 
     symbols = _binding_symbols(
-        z3.And(*[claim for _, claim in members]), declared, _event_paths_of(core)
+        z3.And(*[claim for _, claim in members]), declared, _event_paths_of(core), core.symbols.names
     )
     discharge_target = _entailment_prover(members, budget)
 
@@ -1546,7 +1572,7 @@ class _UnitBindingOutcome:
 
 
 def _bind_against_one_unit(
-    encoder, fact, conjunction, declared, budget, event_paths=None
+    encoder, fact, conjunction, declared, budget, event_paths=None, symbol_names=None
 ):
     """Prove a fact equivalent to exactly one requirement of its group.
 
@@ -1570,7 +1596,7 @@ def _bind_against_one_unit(
     """
     from .provenance import conjunctive_units
 
-    symbols = _binding_symbols(conjunction, declared, event_paths)
+    symbols = _binding_symbols(conjunction, declared, event_paths, symbol_names)
     encoded = encoder(fact, symbols)
     if encoded is None:
         return _UnitBindingOutcome(
@@ -1668,7 +1694,7 @@ def _event_identity_of(symbol: Any, event_paths: Optional[Any] = None) -> Option
 
 
 def _binding_symbols(
-    expression, declared=None, event_paths=None
+    expression, declared=None, event_paths=None, symbol_names=None
 ) -> Dict[Tuple[int, Any], Any]:
     """Index every frame symbol a group mentions, by frame and subject.
 
@@ -1691,7 +1717,19 @@ def _binding_symbols(
     :rtype: Dict[Tuple[int, Any], Any]
     """
     indexed: Dict[Tuple[int, Any], Any] = {}
-    for symbol in z3.z3util.get_vars(expression):
+    for symbol in _expression_constants(expression):
+        if symbol_names is not None:
+            entry = symbol_names.lookup(symbol)
+            if entry is not None:
+                source = entry.source
+                if source.kind == "event":
+                    from .provenance import proposition_identity
+                    indexed[(None, proposition_identity(source.name, source.step))] = symbol
+                elif source.kind == "state":
+                    indexed[(source.frame, None)] = symbol
+                elif source.kind == "variable":
+                    indexed[(source.frame, source.name)] = symbol
+            continue
         event = _event_identity_of(symbol, event_paths)
         if event is not None:
             # A third kind of key.  An event symbol carries its own step inside its
@@ -1839,6 +1877,49 @@ def _encode_transition_case(fact: Mapping[str, Any], symbols) -> Optional[Any]:
     return z3.Implies(z3.And(*encoded_members), assignment)
 
 
+def _proof_formula_renderer(core, unit_bindings):
+    """Render bound inputs and derived assignments with native Z3 notation.
+
+    Input formulas come from the exact checked source unit. Derived assignments
+    reuse the binding encoder; rendering does not maintain an operator table.
+    Unknown fact kinds return None so their existing domain account is retained.
+    """
+    from .provenance import conjunctive_units
+
+    groups = {group.stable_id: group for group in core._tracked_groups}
+    symbols = {}
+    for entry in core.symbols.names.entries:
+        source = entry.source
+        if source.kind == "variable":
+            symbols[(source.frame, source.name)] = entry.symbol
+        elif source.kind == "state":
+            symbols[(source.frame, None)] = entry.symbol
+        elif source.kind == "event":
+            from .provenance import proposition_identity
+            symbols[(None, proposition_identity(source.name, source.step))] = entry.symbol
+
+    def render(fact, item_ids, kind):
+        if fact.get("state_slot") or fact.get("kind") in (
+            "state_domain", "state_exclusion", "state_membership", "proposition",
+        ):
+            return None
+        if kind == "input" and len(item_ids) == 1:
+            group = groups[item_ids[0]]
+            expression = z3.And(*group.expressions) if len(group.expressions) != 1 else group.expressions[0]
+            if item_ids[0] in unit_bindings:
+                index, _ = unit_bindings[item_ids[0]]
+                expression = conjunctive_units(expression)[index]
+            return core.symbols.names.render(expression)
+        if fact.get("kind") in ("arithmetic_expression", "transition_case"):
+            encoder = _encode_transition_case if fact.get("condition") else _encode_assignment
+            expression = encoder(fact, symbols)
+            if expression is not None:
+                return core.symbols.names.render(expression)
+        return None
+
+    return render
+
+
 #: Registered after the encoder it names, so the table cannot reference a
 #: function that does not exist yet.
 _UNIT_BOUND_ENCODERS["transition_case"] = _encode_transition_case
@@ -1868,13 +1949,19 @@ def encodable_fact_kinds() -> Tuple[str, ...]:
     return tuple(sorted(set(_BINDING_ENCODERS) | set(_UNIT_BOUND_ENCODERS)))
 
 
-def _binding_symbol(expression, fact: Mapping[str, object], declared=None):
+def _binding_symbol(expression, fact: Mapping[str, object], declared=None, symbol_names=None):
     """Return the frame symbol a fact is about, taken from its own group.
 
     Matching by name would depend on how symbols are spelled; taking the symbol out
     of the very expressions being compared means the two sides of the equivalence
     talk about the same object by construction.
     """
+    if symbol_names is not None:
+        indexed = _binding_symbols(expression, symbol_names=symbol_names)
+        if fact.get("kind") == "proposition":
+            return indexed.get((None, fact.get("identity")))
+        subject = None if fact.get("state_slot") else fact.get("variable")
+        return indexed.get((fact.get("frame"), subject))
     if fact.get("kind") == "proposition":
         # A proposition names no frame: its step is inside its identity, because the
         # rule that closes over it compares subjects and nothing else.  Its subject
@@ -1991,12 +2078,14 @@ def explain_infeasibility(
         # context always builds a registry, so a rename must surface as an
         # AttributeError instead of silently blanking every excerpt.
         registry = core.context._source_registry
-    # The declared names let a published fact name the variable the author wrote
-    # rather than the encoder's truncation of it.
+    # Facts retain authored identities; aliases affect only their display.
     declared = tuple(core.context.model.defines)
-    # The event paths, for the same reason and by the same mechanism: the symbol
-    # body replaces the path's dots, so an identity built from it would spell
-    # ``Root_A_Go`` where the author wrote ``Root.A.Go``.
+    variable_names = {
+        entry.source.name: entry.source.display_name
+        for entry in core.symbols.names.entries
+        if entry.source.display_name is not None
+    }
+    # Retain the legacy path table for compatibility alongside the registry.
     event_paths = _event_paths_of(core)
     # The domain's own table, so a sentence can name ``Root.A`` instead of the
     # number the encoding gave it.
@@ -2089,7 +2178,8 @@ def explain_infeasibility(
             reduction=minimized.reduction,
             subset_minimality=minimized.subset_minimality,
             items=tuple(
-                build_core_item(group, registry, declared, state_paths, event_paths)
+                build_core_item(group, registry, declared, state_paths, event_paths, variable_names,
+                                core.symbols.names)
                 for group in minimized.groups
             ),
         )
@@ -2126,7 +2216,7 @@ def explain_infeasibility(
     )
     if propagation_record is not None:
         checks = checks + (propagation_record,)
-    narrative = build_conflict_narrative(published, forced_values, state_paths)
+    narrative = build_conflict_narrative(published, forced_values, state_paths, variable_names)
     # Two questions, and they were one boolean until it became clear they answer to
     # different things.  Whether this artifact is solid enough to carry a proof is
     # about the core; whether the formal tier explained it is about the recognizers.
@@ -2182,6 +2272,7 @@ def explain_infeasibility(
         )
         checks = checks + (binding_record,)
         if bound:
+            render_fact = _proof_formula_renderer(core, unit_bindings)
             # One table for both artifacts: a node's own sentence and the reading
             # built from it are two spellings of the same state to the same reader.
             state_names = _state_names(core)
@@ -2205,6 +2296,8 @@ def explain_infeasibility(
                 budget,
                 member_ids=member_ids,
                 state_names=state_names,
+                variable_names=variable_names,
+                render_fact=render_fact,
                 # Keyed by rule, so a second solver-decided rule joins the same
                 # argument instead of adding another one.
                 solver_verdicts={
@@ -2228,7 +2321,9 @@ def explain_infeasibility(
             steps = linearize_proof(
                 proof,
                 state_names=state_names,
+                variable_names=variable_names,
                 core_categories=[item.constraint.category for item in published.items],
+                render_fact=render_fact,
             )
             proof_narrative = BmcConflictNarrative(
                 "complete",

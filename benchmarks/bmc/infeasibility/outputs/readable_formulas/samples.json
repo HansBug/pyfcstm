@@ -1,0 +1,2964 @@
+[
+  {
+    "version": "baseline",
+    "repetition": 0,
+    "seed": 9100,
+    "rows": [
+      {
+        "case": "unsat_objective",
+        "mode": "proof",
+        "ms": 48.03867405280471,
+        "solver_calls": 9,
+        "gc_ms": 0.46040862798690796,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "none",
+        "ms": 49.874463118612766,
+        "solver_calls": 10,
+        "gc_ms": 1.0489458218216896,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "formal",
+        "ms": 84.40696122124791,
+        "solver_calls": 17,
+        "gc_ms": 0.4199952818453312,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "sat_reach",
+        "mode": "formal",
+        "ms": 46.498486772179604,
+        "solver_calls": 8,
+        "gc_ms": 0.5207965150475502,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "proof",
+        "ms": 46.102382242679596,
+        "solver_calls": 8,
+        "gc_ms": 0.9622108191251755,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "proof",
+        "ms": 574.3568371981382,
+        "solver_calls": 80,
+        "gc_ms": 0.5625919438898563,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "proof",
+        "ms": 85.37665894255042,
+        "solver_calls": 21,
+        "gc_ms": 0.47226808965206146,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "none",
+        "ms": 47.023545019328594,
+        "solver_calls": 10,
+        "gc_ms": 1.0290550999343395,
+        "gc_generations": [
+          0,
+          0,
+          1,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "none",
+        "ms": 46.06885928660631,
+        "solver_calls": 9,
+        "gc_ms": 0.4800786264240742,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "formal",
+        "ms": 46.48849321529269,
+        "solver_calls": 9,
+        "gc_ms": 0.49590878188610077,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "formal",
+        "ms": 105.93583527952433,
+        "solver_calls": 28,
+        "gc_ms": 1.0966281406581402,
+        "gc_generations": [
+          0,
+          0,
+          1,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "sat_reach",
+        "mode": "none",
+        "ms": 46.07413988560438,
+        "solver_calls": 8,
+        "gc_ms": 0.45884866267442703,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      }
+    ],
+    "rss_kib": 94088
+  },
+  {
+    "version": "candidate",
+    "repetition": 0,
+    "seed": 9100,
+    "rows": [
+      {
+        "case": "unsat_objective",
+        "mode": "proof",
+        "ms": 49.77592406794429,
+        "solver_calls": 9,
+        "gc_ms": 0.8228453807532787,
+        "gc_generations": [
+          1,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "none",
+        "ms": 48.77535067498684,
+        "solver_calls": 10,
+        "gc_ms": 0.4360657185316086,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "formal",
+        "ms": 84.05763981863856,
+        "solver_calls": 17,
+        "gc_ms": 1.1670948006212711,
+        "gc_generations": [
+          0,
+          0,
+          1,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "sat_reach",
+        "mode": "formal",
+        "ms": 48.194949980825186,
+        "solver_calls": 8,
+        "gc_ms": 0.4333215765655041,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "proof",
+        "ms": 47.92323708534241,
+        "solver_calls": 8,
+        "gc_ms": 0.523839145898819,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "proof",
+        "ms": 218.16652733832598,
+        "solver_calls": 80,
+        "gc_ms": 1.357448287308216,
+        "gc_generations": [
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "proof",
+        "ms": 91.88929107040167,
+        "solver_calls": 21,
+        "gc_ms": 0.8160178549587727,
+        "gc_generations": [
+          0,
+          0,
+          1,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "none",
+        "ms": 51.08739109709859,
+        "solver_calls": 10,
+        "gc_ms": 0.5725850351154804,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "none",
+        "ms": 48.82619995623827,
+        "solver_calls": 9,
+        "gc_ms": 0.3928830847144127,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "formal",
+        "ms": 69.72836283966899,
+        "solver_calls": 9,
+        "gc_ms": 21.565360482782125,
+        "gc_generations": [
+          1,
+          2,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "formal",
+        "ms": 119.70558110624552,
+        "solver_calls": 28,
+        "gc_ms": 1.36117497459054,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "sat_reach",
+        "mode": "none",
+        "ms": 45.925091952085495,
+        "solver_calls": 8,
+        "gc_ms": 0.463804230093956,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      }
+    ],
+    "rss_kib": 95232
+  },
+  {
+    "version": "candidate",
+    "repetition": 1,
+    "seed": 9101,
+    "rows": [
+      {
+        "case": "sat_reach",
+        "mode": "formal",
+        "ms": 48.194408882409334,
+        "solver_calls": 8,
+        "gc_ms": 0.7688961923122406,
+        "gc_generations": [
+          1,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "none",
+        "ms": 48.56938775628805,
+        "solver_calls": 10,
+        "gc_ms": 0.5146577022969723,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "formal",
+        "ms": 121.26331217586994,
+        "solver_calls": 28,
+        "gc_ms": 1.3170866295695305,
+        "gc_generations": [
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "proof",
+        "ms": 88.28173484653234,
+        "solver_calls": 21,
+        "gc_ms": 0.7289256900548935,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          1,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "formal",
+        "ms": 83.59490102156997,
+        "solver_calls": 17,
+        "gc_ms": 0.5431026220321655,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "proof",
+        "ms": 46.37886956334114,
+        "solver_calls": 9,
+        "gc_ms": 0.4121088422834873,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "formal",
+        "ms": 48.031712882220745,
+        "solver_calls": 9,
+        "gc_ms": 0.9527057409286499,
+        "gc_generations": [
+          0,
+          1,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "none",
+        "ms": 48.505029175430536,
+        "solver_calls": 10,
+        "gc_ms": 0.5663270130753517,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "proof",
+        "ms": 45.99015088751912,
+        "solver_calls": 8,
+        "gc_ms": 0.4159389063715935,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "none",
+        "ms": 66.77525397390127,
+        "solver_calls": 9,
+        "gc_ms": 20.043106749653816,
+        "gc_generations": [
+          1,
+          2,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "none",
+        "ms": 46.67889000847936,
+        "solver_calls": 8,
+        "gc_ms": 0.49780262634158134,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "proof",
+        "ms": 203.20041896775365,
+        "solver_calls": 80,
+        "gc_ms": 1.185406930744648,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      }
+    ],
+    "rss_kib": 94868
+  },
+  {
+    "version": "baseline",
+    "repetition": 1,
+    "seed": 9101,
+    "rows": [
+      {
+        "case": "sat_reach",
+        "mode": "formal",
+        "ms": 46.895612962543964,
+        "solver_calls": 8,
+        "gc_ms": 0.4123528487980366,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "none",
+        "ms": 46.94429179653525,
+        "solver_calls": 10,
+        "gc_ms": 0.5010231398046017,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "formal",
+        "ms": 105.49403820186853,
+        "solver_calls": 28,
+        "gc_ms": 0.9633819572627544,
+        "gc_generations": [
+          1,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "proof",
+        "ms": 84.56722786650062,
+        "solver_calls": 21,
+        "gc_ms": 0.39168819785118103,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "formal",
+        "ms": 81.36359881609678,
+        "solver_calls": 17,
+        "gc_ms": 0.9804400615394115,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "proof",
+        "ms": 45.52414920181036,
+        "solver_calls": 9,
+        "gc_ms": 0.535245519131422,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "formal",
+        "ms": 45.01745477318764,
+        "solver_calls": 9,
+        "gc_ms": 0.43744826689362526,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "none",
+        "ms": 47.37283103168011,
+        "solver_calls": 10,
+        "gc_ms": 1.0631997138261795,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "proof",
+        "ms": 46.70378193259239,
+        "solver_calls": 8,
+        "gc_ms": 0.4716268740594387,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "none",
+        "ms": 46.422426123172045,
+        "solver_calls": 9,
+        "gc_ms": 0.4354645498096943,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "none",
+        "ms": 45.50573090091348,
+        "solver_calls": 8,
+        "gc_ms": 1.044770237058401,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "proof",
+        "ms": 569.7678201831877,
+        "solver_calls": 80,
+        "gc_ms": 0.6396351382136345,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      }
+    ],
+    "rss_kib": 94324
+  },
+  {
+    "version": "baseline",
+    "repetition": 2,
+    "seed": 9102,
+    "rows": [
+      {
+        "case": "assumption_conflict",
+        "mode": "formal",
+        "ms": 81.451749894768,
+        "solver_calls": 17,
+        "gc_ms": 0.4538176581263542,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "none",
+        "ms": 45.71478581055999,
+        "solver_calls": 10,
+        "gc_ms": 0.507391057908535,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "proof",
+        "ms": 85.35445714369416,
+        "solver_calls": 21,
+        "gc_ms": 0.9422698058187962,
+        "gc_generations": [
+          0,
+          1,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "sat_reach",
+        "mode": "none",
+        "ms": 44.94782304391265,
+        "solver_calls": 8,
+        "gc_ms": 0.4571853205561638,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "formal",
+        "ms": 103.93843101337552,
+        "solver_calls": 28,
+        "gc_ms": 0.5429256707429886,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "proof",
+        "ms": 46.444622334092855,
+        "solver_calls": 9,
+        "gc_ms": 0.8573601953685284,
+        "gc_generations": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "proof",
+        "ms": 568.5029826126993,
+        "solver_calls": 80,
+        "gc_ms": 0.5514561198651791,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "sat_reach",
+        "mode": "formal",
+        "ms": 46.05745803564787,
+        "solver_calls": 8,
+        "gc_ms": 0.9607593528926373,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "none",
+        "ms": 47.466719057410955,
+        "solver_calls": 10,
+        "gc_ms": 0.435603316873312,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "none",
+        "ms": 45.98418204113841,
+        "solver_calls": 9,
+        "gc_ms": 0.4458557814359665,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "proof",
+        "ms": 47.52596886828542,
+        "solver_calls": 8,
+        "gc_ms": 0.9837648831307888,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "formal",
+        "ms": 46.452159993350506,
+        "solver_calls": 9,
+        "gc_ms": 0.5177939310669899,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      }
+    ],
+    "rss_kib": 94692
+  },
+  {
+    "version": "candidate",
+    "repetition": 2,
+    "seed": 9102,
+    "rows": [
+      {
+        "case": "assumption_conflict",
+        "mode": "formal",
+        "ms": 82.97078404575586,
+        "solver_calls": 17,
+        "gc_ms": 0.889049842953682,
+        "gc_generations": [
+          1,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "none",
+        "ms": 48.136156052351,
+        "solver_calls": 10,
+        "gc_ms": 0.47486601397395134,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "proof",
+        "ms": 87.92529394850135,
+        "solver_calls": 21,
+        "gc_ms": 1.0442286729812622,
+        "gc_generations": [
+          0,
+          0,
+          1,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "sat_reach",
+        "mode": "none",
+        "ms": 46.74779297783971,
+        "solver_calls": 8,
+        "gc_ms": 0.3954768180847168,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "formal",
+        "ms": 119.8402289301157,
+        "solver_calls": 28,
+        "gc_ms": 1.3188677839934826,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "proof",
+        "ms": 48.132757656276226,
+        "solver_calls": 9,
+        "gc_ms": 0.38733985275030136,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "proof",
+        "ms": 209.4829878769815,
+        "solver_calls": 80,
+        "gc_ms": 1.1492501944303513,
+        "gc_generations": [
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "sat_reach",
+        "mode": "formal",
+        "ms": 49.72899332642555,
+        "solver_calls": 8,
+        "gc_ms": 0.894659198820591,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "none",
+        "ms": 70.54994814097881,
+        "solver_calls": 10,
+        "gc_ms": 22.08303241059184,
+        "gc_generations": [
+          2,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "none",
+        "ms": 48.015553038567305,
+        "solver_calls": 9,
+        "gc_ms": 0.4656645469367504,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "proof",
+        "ms": 47.853132244199514,
+        "solver_calls": 8,
+        "gc_ms": 1.1215321719646454,
+        "gc_generations": [
+          0,
+          0,
+          1,
+          0,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "formal",
+        "ms": 47.4246540106833,
+        "solver_calls": 9,
+        "gc_ms": 0.5815029144287109,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      }
+    ],
+    "rss_kib": 95236
+  },
+  {
+    "version": "candidate",
+    "repetition": 3,
+    "seed": 9103,
+    "rows": [
+      {
+        "case": "transition_conflict",
+        "mode": "none",
+        "ms": 49.9306321144104,
+        "solver_calls": 10,
+        "gc_ms": 0.7595336064696312,
+        "gc_generations": [
+          1,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "none",
+        "ms": 49.83601998537779,
+        "solver_calls": 9,
+        "gc_ms": 0.6110323593020439,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "proof",
+        "ms": 214.64997017756104,
+        "solver_calls": 80,
+        "gc_ms": 1.831625122576952,
+        "gc_generations": [
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "formal",
+        "ms": 48.96910581737757,
+        "solver_calls": 9,
+        "gc_ms": 0.7260739803314209,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "proof",
+        "ms": 48.679502215236425,
+        "solver_calls": 9,
+        "gc_ms": 0.4702904261648655,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "formal",
+        "ms": 47.013557981699705,
+        "solver_calls": 8,
+        "gc_ms": 0.44320477172732353,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "formal",
+        "ms": 85.9530777670443,
+        "solver_calls": 17,
+        "gc_ms": 1.1814632453024387,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          1,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "proof",
+        "ms": 89.56885384395719,
+        "solver_calls": 21,
+        "gc_ms": 0.5743023939430714,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "sat_reach",
+        "mode": "proof",
+        "ms": 47.63324465602636,
+        "solver_calls": 8,
+        "gc_ms": 0.40042679756879807,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "none",
+        "ms": 67.72375386208296,
+        "solver_calls": 10,
+        "gc_ms": 19.22968542203307,
+        "gc_generations": [
+          0,
+          1,
+          2,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "none",
+        "ms": 47.957614064216614,
+        "solver_calls": 8,
+        "gc_ms": 0.4437132738530636,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "formal",
+        "ms": 122.08152888342738,
+        "solver_calls": 28,
+        "gc_ms": 1.3255048543214798,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      }
+    ],
+    "rss_kib": 94816
+  },
+  {
+    "version": "baseline",
+    "repetition": 3,
+    "seed": 9103,
+    "rows": [
+      {
+        "case": "transition_conflict",
+        "mode": "none",
+        "ms": 47.252969816327095,
+        "solver_calls": 10,
+        "gc_ms": 0.4249126650393009,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "none",
+        "ms": 45.864328276365995,
+        "solver_calls": 9,
+        "gc_ms": 0.44640665873885155,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "proof",
+        "ms": 571.1425929330289,
+        "solver_calls": 80,
+        "gc_ms": 0.9889574721455574,
+        "gc_generations": [
+          1,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "formal",
+        "ms": 45.8345334045589,
+        "solver_calls": 9,
+        "gc_ms": 0.4992210306227207,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "proof",
+        "ms": 46.683342196047306,
+        "solver_calls": 9,
+        "gc_ms": 1.0633822530508041,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "formal",
+        "ms": 46.197742223739624,
+        "solver_calls": 8,
+        "gc_ms": 0.6850156933069229,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "formal",
+        "ms": 80.72451176121831,
+        "solver_calls": 17,
+        "gc_ms": 0.4085567779839039,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "proof",
+        "ms": 85.79957205802202,
+        "solver_calls": 21,
+        "gc_ms": 1.066695898771286,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "sat_reach",
+        "mode": "proof",
+        "ms": 46.36421473696828,
+        "solver_calls": 8,
+        "gc_ms": 0.4503875970840454,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "none",
+        "ms": 46.09793983399868,
+        "solver_calls": 10,
+        "gc_ms": 0.46248966827988625,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "none",
+        "ms": 46.8825651332736,
+        "solver_calls": 8,
+        "gc_ms": 1.0815071873366833,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "formal",
+        "ms": 106.5759239718318,
+        "solver_calls": 28,
+        "gc_ms": 0.599173828959465,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      }
+    ],
+    "rss_kib": 94300
+  },
+  {
+    "version": "baseline",
+    "repetition": 4,
+    "seed": 9104,
+    "rows": [
+      {
+        "case": "transition_conflict",
+        "mode": "proof",
+        "ms": 586.1777607351542,
+        "solver_calls": 80,
+        "gc_ms": 0.5706143565475941,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "none",
+        "ms": 47.91144700720906,
+        "solver_calls": 10,
+        "gc_ms": 0.4052724689245224,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "formal",
+        "ms": 82.55254803225398,
+        "solver_calls": 17,
+        "gc_ms": 0.8114497177302837,
+        "gc_generations": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "proof",
+        "ms": 47.54863912239671,
+        "solver_calls": 9,
+        "gc_ms": 0.4341551102697849,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "proof",
+        "ms": 47.36114479601383,
+        "solver_calls": 8,
+        "gc_ms": 0.47155097126960754,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "formal",
+        "ms": 46.87761189416051,
+        "solver_calls": 9,
+        "gc_ms": 0.9419540874660015,
+        "gc_generations": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "none",
+        "ms": 46.360991429537535,
+        "solver_calls": 8,
+        "gc_ms": 0.5974951200187206,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "none",
+        "ms": 47.99674404785037,
+        "solver_calls": 10,
+        "gc_ms": 0.701255165040493,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "none",
+        "ms": 48.29778661951423,
+        "solver_calls": 9,
+        "gc_ms": 1.3980716466903687,
+        "gc_generations": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "formal",
+        "ms": 106.61002201959491,
+        "solver_calls": 28,
+        "gc_ms": 0.5719824694097042,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "sat_reach",
+        "mode": "formal",
+        "ms": 46.63127288222313,
+        "solver_calls": 8,
+        "gc_ms": 0.9597204625606537,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "proof",
+        "ms": 84.89292906597257,
+        "solver_calls": 21,
+        "gc_ms": 0.4484299570322037,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      }
+    ],
+    "rss_kib": 94300
+  },
+  {
+    "version": "candidate",
+    "repetition": 4,
+    "seed": 9104,
+    "rows": [
+      {
+        "case": "transition_conflict",
+        "mode": "proof",
+        "ms": 216.86796005815268,
+        "solver_calls": 80,
+        "gc_ms": 1.2909537181258202,
+        "gc_generations": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "none",
+        "ms": 50.08187983185053,
+        "solver_calls": 10,
+        "gc_ms": 0.8623241446912289,
+        "gc_generations": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "formal",
+        "ms": 88.5640662163496,
+        "solver_calls": 17,
+        "gc_ms": 0.6757057271897793,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "proof",
+        "ms": 49.02573814615607,
+        "solver_calls": 9,
+        "gc_ms": 0.844951719045639,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "proof",
+        "ms": 48.25914790853858,
+        "solver_calls": 8,
+        "gc_ms": 0.5577374249696732,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "formal",
+        "ms": 49.2759020999074,
+        "solver_calls": 9,
+        "gc_ms": 0.4937401972711086,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "none",
+        "ms": 46.46396916359663,
+        "solver_calls": 8,
+        "gc_ms": 1.050158403813839,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "none",
+        "ms": 47.80958965420723,
+        "solver_calls": 10,
+        "gc_ms": 0.5400744266808033,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "none",
+        "ms": 46.140499878674746,
+        "solver_calls": 9,
+        "gc_ms": 0.41189044713974,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "formal",
+        "ms": 135.4613951407373,
+        "solver_calls": 28,
+        "gc_ms": 18.34819233044982,
+        "gc_generations": [
+          0,
+          0,
+          1,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "sat_reach",
+        "mode": "formal",
+        "ms": 45.64981581643224,
+        "solver_calls": 8,
+        "gc_ms": 0.7058931514620781,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          1,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "proof",
+        "ms": 85.16867272555828,
+        "solver_calls": 21,
+        "gc_ms": 0.4371986724436283,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      }
+    ],
+    "rss_kib": 94844
+  },
+  {
+    "version": "candidate",
+    "repetition": 5,
+    "seed": 9105,
+    "rows": [
+      {
+        "case": "transition_conflict",
+        "mode": "proof",
+        "ms": 202.11651781573892,
+        "solver_calls": 80,
+        "gc_ms": 0.6414586678147316,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "formal",
+        "ms": 118.69694897904992,
+        "solver_calls": 28,
+        "gc_ms": 1.011507585644722,
+        "gc_generations": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "sat_reach",
+        "mode": "proof",
+        "ms": 46.047087758779526,
+        "solver_calls": 8,
+        "gc_ms": 0.6573880091309547,
+        "gc_generations": [
+          0,
+          1,
+          0,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "proof",
+        "ms": 46.892231330275536,
+        "solver_calls": 9,
+        "gc_ms": 0.45894039794802666,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "none",
+        "ms": 47.77468414977193,
+        "solver_calls": 10,
+        "gc_ms": 0.5480651743710041,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "formal",
+        "ms": 84.14613688364625,
+        "solver_calls": 17,
+        "gc_ms": 1.006966456770897,
+        "gc_generations": [
+          1,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "none",
+        "ms": 48.140998929739,
+        "solver_calls": 10,
+        "gc_ms": 0.4965770058333874,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "none",
+        "ms": 65.40441419929266,
+        "solver_calls": 8,
+        "gc_ms": 19.04820976778865,
+        "gc_generations": [
+          0,
+          0,
+          1,
+          2,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "proof",
+        "ms": 86.37064788490534,
+        "solver_calls": 21,
+        "gc_ms": 0.4644133150577545,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "sat_reach",
+        "mode": "formal",
+        "ms": 48.747583758085966,
+        "solver_calls": 8,
+        "gc_ms": 0.48758089542388916,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "formal",
+        "ms": 47.29606630280614,
+        "solver_calls": 9,
+        "gc_ms": 0.9610909037292004,
+        "gc_generations": [
+          1,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "none",
+        "ms": 47.80118307098746,
+        "solver_calls": 9,
+        "gc_ms": 0.5157273262739182,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      }
+    ],
+    "rss_kib": 95460
+  },
+  {
+    "version": "baseline",
+    "repetition": 5,
+    "seed": 9105,
+    "rows": [
+      {
+        "case": "transition_conflict",
+        "mode": "proof",
+        "ms": 566.8480396270752,
+        "solver_calls": 80,
+        "gc_ms": 0.5252738483250141,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "formal",
+        "ms": 109.29032089188695,
+        "solver_calls": 28,
+        "gc_ms": 1.0495116002857685,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          1
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "sat_reach",
+        "mode": "proof",
+        "ms": 46.79101798683405,
+        "solver_calls": 8,
+        "gc_ms": 0.42555155232548714,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "proof",
+        "ms": 47.29259479790926,
+        "solver_calls": 9,
+        "gc_ms": 0.4678773693740368,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "none",
+        "ms": 48.634621780365705,
+        "solver_calls": 10,
+        "gc_ms": 1.0548681020736694,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "formal",
+        "ms": 82.06225093454123,
+        "solver_calls": 17,
+        "gc_ms": 0.49658631905913353,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "none",
+        "ms": 48.31726895645261,
+        "solver_calls": 10,
+        "gc_ms": 0.5206451751291752,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "none",
+        "ms": 47.0793335698545,
+        "solver_calls": 8,
+        "gc_ms": 1.0895095765590668,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "proof",
+        "ms": 86.49193914607167,
+        "solver_calls": 21,
+        "gc_ms": 0.4606577567756176,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "sat_reach",
+        "mode": "formal",
+        "ms": 47.23904002457857,
+        "solver_calls": 8,
+        "gc_ms": 0.6397594697773457,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "formal",
+        "ms": 47.80516494065523,
+        "solver_calls": 9,
+        "gc_ms": 0.9671109728515148,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "none",
+        "ms": 47.3389052785933,
+        "solver_calls": 9,
+        "gc_ms": 0.4686233587563038,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      }
+    ],
+    "rss_kib": 94980
+  },
+  {
+    "version": "baseline",
+    "repetition": 6,
+    "seed": 9106,
+    "rows": [
+      {
+        "case": "transition_conflict",
+        "mode": "proof",
+        "ms": 573.1388353742659,
+        "solver_calls": 80,
+        "gc_ms": 0.5376539193093777,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "none",
+        "ms": 48.21930266916752,
+        "solver_calls": 10,
+        "gc_ms": 0.40187546983361244,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "formal",
+        "ms": 48.03528403863311,
+        "solver_calls": 9,
+        "gc_ms": 0.9019132703542709,
+        "gc_generations": [
+          1,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "formal",
+        "ms": 105.2641817368567,
+        "solver_calls": 28,
+        "gc_ms": 0.5446332506835461,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "proof",
+        "ms": 51.15264328196645,
+        "solver_calls": 9,
+        "gc_ms": 1.1082259006798267,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "none",
+        "ms": 46.507036313414574,
+        "solver_calls": 8,
+        "gc_ms": 0.46167662367224693,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "proof",
+        "ms": 46.68188979849219,
+        "solver_calls": 8,
+        "gc_ms": 0.44835731387138367,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "formal",
+        "ms": 83.69122864678502,
+        "solver_calls": 17,
+        "gc_ms": 0.983663834631443,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "proof",
+        "ms": 85.17790492624044,
+        "solver_calls": 21,
+        "gc_ms": 0.5020550452172756,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "sat_reach",
+        "mode": "formal",
+        "ms": 46.59503698348999,
+        "solver_calls": 8,
+        "gc_ms": 0.4442436620593071,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "none",
+        "ms": 46.98596894741058,
+        "solver_calls": 9,
+        "gc_ms": 1.0152333416044712,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "none",
+        "ms": 47.88193618878722,
+        "solver_calls": 10,
+        "gc_ms": 0.5316268652677536,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      }
+    ],
+    "rss_kib": 94696
+  },
+  {
+    "version": "candidate",
+    "repetition": 6,
+    "seed": 9106,
+    "rows": [
+      {
+        "case": "transition_conflict",
+        "mode": "proof",
+        "ms": 206.2750607728958,
+        "solver_calls": 80,
+        "gc_ms": 1.234276220202446,
+        "gc_generations": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "none",
+        "ms": 50.23340694606304,
+        "solver_calls": 10,
+        "gc_ms": 0.852800440043211,
+        "gc_generations": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "formal",
+        "ms": 47.897414304316044,
+        "solver_calls": 9,
+        "gc_ms": 0.37309108301997185,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "formal",
+        "ms": 122.47673608362675,
+        "solver_calls": 28,
+        "gc_ms": 1.2031234800815582,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "proof",
+        "ms": 47.7698789909482,
+        "solver_calls": 9,
+        "gc_ms": 0.3987145610153675,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "none",
+        "ms": 48.31393389031291,
+        "solver_calls": 8,
+        "gc_ms": 0.9816293604671955,
+        "gc_generations": [
+          0,
+          1,
+          0,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "proof",
+        "ms": 48.03306609392166,
+        "solver_calls": 8,
+        "gc_ms": 0.461808405816555,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "formal",
+        "ms": 83.850156981498,
+        "solver_calls": 17,
+        "gc_ms": 0.5379300564527512,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "proof",
+        "ms": 109.87233696505427,
+        "solver_calls": 21,
+        "gc_ms": 21.45141316577792,
+        "gc_generations": [
+          1,
+          2,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "sat_reach",
+        "mode": "formal",
+        "ms": 46.10461601987481,
+        "solver_calls": 8,
+        "gc_ms": 0.3993706777691841,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "none",
+        "ms": 47.61640774086118,
+        "solver_calls": 9,
+        "gc_ms": 0.901754479855299,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          1,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "none",
+        "ms": 48.3718728646636,
+        "solver_calls": 10,
+        "gc_ms": 0.4859822802245617,
+        "gc_generations": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      }
+    ],
+    "rss_kib": 95592
+  }
+]

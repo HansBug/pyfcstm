@@ -47,6 +47,7 @@ from typing import (
     Iterable,
     List,
     Mapping,
+    NamedTuple,
     Optional,
     Sequence,
     Set,
@@ -55,6 +56,8 @@ from typing import (
 )
 
 import z3
+
+from ..solver.symbols import SymbolNames
 
 from .ast import (
     Active,
@@ -810,6 +813,23 @@ class _LoweredBoolTemplate:
     definedness_constraints: Tuple[DomainConstraint, ...] = ()
 
 
+class BmcSymbolSource(NamedTuple):
+    """Construction-time origin of a trace value, independent of its SMT name.
+
+    :param kind: Variable, state, input, parameter, event, case or observation.
+    :param name: Original authored name or semantic observation identity.
+    :param frame: Frame index for state and persistent values, otherwise None.
+    :param step: Step index for inputs/events/cases, otherwise None.
+    :param display_name: Readable variable alias without a frame suffix, or None.
+    """
+
+    kind: str
+    name: str
+    frame: Optional[int] = None
+    step: Optional[int] = None
+    display_name: Optional[str] = None
+
+
 @dataclass(frozen=True)
 class BmcTraceSymbols:
     """Z3 symbols for one bounded BMC trace.
@@ -832,6 +852,8 @@ class BmcTraceSymbols:
     :type gamma_flags: Tuple[z3.BoolRef, ...]
     :param case_selectors: Per-step case-selector symbols.
     :type case_selectors: Tuple[Mapping[str, z3.BoolRef], ...]
+    :ivar names: Readable names and source identities registered during construction.
+    :vartype names: pyfcstm.solver.symbols.SymbolNames
 
     Example::
 
@@ -854,6 +876,7 @@ class BmcTraceSymbols:
     case_selectors: Tuple[Mapping[str, z3.BoolRef], ...] = field(default_factory=tuple)
     step_inputs: Tuple[Mapping[str, z3.ArithRef], ...] = field(default_factory=tuple)
     parameters: Mapping[str, z3.ArithRef] = field(default_factory=dict)
+    names: SymbolNames = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.domain, BmcDomain):
@@ -916,6 +939,42 @@ class BmcTraceSymbols:
                 for mapping in self.case_selectors
             ),
         )
+        names = SymbolNames()
+        aliases = {
+            var.name: (var.name if len(var.name) <= 24 else "v%d" % var.id)
+            for var in self.domain.variables
+        }
+        # An authored short name can equal a generated alias. Numeric identities
+        # are stable within the domain and make that ambiguity explicit.
+        if len(set(aliases.values())) != len(aliases):
+            aliases = {var.name: "v%d" % var.id for var in self.domain.variables}
+        for frame, symbol in enumerate(self.frame_states):
+            names.register(symbol, "state[%d]" % frame,
+                           BmcSymbolSource("state", "state", frame=frame))
+        for frame, values in enumerate(self.frame_vars):
+            for name, symbol in values.items():
+                names.register(symbol, "%s@%d" % (aliases[name], frame),
+                               BmcSymbolSource("variable", name, frame=frame, display_name=aliases[name]))
+        for step, values in enumerate(self.step_inputs):
+            for name, symbol in values.items():
+                names.register(symbol, "%s@input%d" % (aliases[name], step),
+                               BmcSymbolSource("input", name, step=step, display_name=aliases[name]))
+        for name, symbol in self.parameters.items():
+            names.register(symbol, "%s@param" % aliases[name],
+                           BmcSymbolSource("parameter", name, display_name=aliases[name]))
+        for step, values in enumerate(self.event_inputs):
+            for index, (name, symbol) in enumerate(values.items()):
+                names.register(symbol, "event[%d]@%d" % (index, step),
+                               BmcSymbolSource("event", name, step=step))
+        for step, values in enumerate(self.case_selectors):
+            for index, (name, symbol) in enumerate(values.items()):
+                names.register(symbol, "case[%d]@%d" % (index, step),
+                               BmcSymbolSource("case", name, step=step))
+        for kind, symbols in (("delta", self.delta_flags), ("fallback", self.gamma_flags)):
+            for step, symbol in enumerate(symbols):
+                names.register(symbol, "%s[%d]" % (kind, step),
+                               BmcSymbolSource("observation", kind, step=step))
+        object.__setattr__(self, "names", names)
 
     @classmethod
     def allocate(

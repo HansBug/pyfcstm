@@ -31,13 +31,6 @@ TrackedGroupPartition
     :members: groups_for,domain,initial,transition,environment
 
 
-ProbeRecord
------------------------------------------------------
-
-.. autoclass:: ProbeRecord
-    :members: name,status,started,elapsed_ms,reason
-
-
 ClassificationOutcome
 -----------------------------------------------------
 
@@ -45,25 +38,11 @@ ClassificationOutcome
     :members: classification,scope,status,reason,checks
 
 
-CoreExtraction
------------------------------------------------------
-
-.. autoclass:: CoreExtraction
-    :members: groups,status,reason,checks
-
-
 ExplanationOutcome
 -----------------------------------------------------
 
 .. autoclass:: ExplanationOutcome
     :members: explanation,checks
-
-
-MinimizedCore
------------------------------------------------------
-
-.. autoclass:: MinimizedCore
-    :members: groups,reduction,subset_minimality,status,reason,record
 
 
 ForcedValue

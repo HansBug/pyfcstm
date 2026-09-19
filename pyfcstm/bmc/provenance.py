@@ -542,9 +542,13 @@ def _without_coercion(expression: Any) -> Any:
 
 
 def _frame_variable_name(
-    expression: Any, declared: Optional[Any] = None
+    expression: Any, declared: Optional[Any] = None, symbol_names=None
 ) -> Optional[str]:
     """Return the model variable a frame symbol stands for.
+
+    With ``symbol_names``, the construction-time registry is authoritative and
+    unknown symbols have no variable identity. No symbol spelling is inspected.
+    Without a registry, the compatibility path below reads legacy encodings.
 
     The encoding builds a symbol as ``F_<frame>_<body>_<digest>``, where the body
     is the variable name with unsafe characters replaced and then **truncated**,
@@ -578,6 +582,9 @@ def _frame_variable_name(
     import z3
 
     expression = _without_coercion(expression)
+    if symbol_names is not None:
+        entry = symbol_names.lookup(expression)
+        return entry.source.name if entry is not None and entry.source.kind == "variable" else None
     if not z3.is_const(expression):
         # Only a leaf symbol names a variable.  ``x + y`` renders as
         # ``F_0_x_... + F_0_y_...``, which begins like a frame symbol and ends
@@ -665,7 +672,7 @@ def _numeric_value(expression: Any) -> Optional[Any]:
 # preconditions that authored queries *do* reach -- a comparison between two
 # variables, an assertion about the active state -- are covered as normal paths.
 def _value_comparison_fact(
-    group: Any, declared: Optional[Any] = None
+    group: Any, declared: Optional[Any] = None, symbol_names=None
 ) -> Optional[Dict[str, Any]]:
     """Read a one-variable comparison group as a variable-comparison fact.
 
@@ -686,11 +693,11 @@ def _value_comparison_fact(
     if operator is None or expression.num_args() != 2:
         return None
     left, right = expression.arg(0), expression.arg(1)
-    name = _frame_variable_name(left, declared)
+    name = _frame_variable_name(left, declared, symbol_names)
     value = _numeric_value(right)
     if name is None or value is None:
         # Operand order is not fixed, so the mirrored shape is read too.
-        name = _frame_variable_name(right, declared)
+        name = _frame_variable_name(right, declared, symbol_names)
         value = _numeric_value(left)
         operator = {"lt": "gt", "gt": "lt", "le": "ge", "ge": "le"}.get(
             operator, operator
@@ -706,7 +713,7 @@ def _value_comparison_fact(
     # whether it may tighten a strict bound by one -- which it must not do over
     # the reals.  Publishing whole real values as floats is what keeps the two
     # domains distinguishable without a separate key.
-    slot = left if _frame_variable_name(left, None) == name else right
+    slot = left if _frame_variable_name(left, declared, symbol_names) == name else right
     if z3.is_int(_without_coercion(slot)):
         # An integer variable compared with ``3.0``: the literal is a real, but
         # the domain is not.  Narrowing is only sound when the value is whole --
@@ -735,7 +742,7 @@ def _value_comparison_fact(
     }
 
 
-def _state_domain_fact(group: Any) -> Optional[Dict[str, Any]]:
+def _state_domain_fact(group: Any, symbol_names=None) -> Optional[Dict[str, Any]]:
     """Read a frame-state domain group as the set of states the frame may hold.
 
     :param group: The tracked group to read.
@@ -769,7 +776,7 @@ def _state_domain_fact(group: Any) -> Optional[Dict[str, Any]]:
         # constructing one would mean standing in for the group this reads.
         value = None
         for slot, code in ((left, right), (right, left)):
-            if _frame_state_slot(slot, frame):
+            if _frame_state_slot(slot, frame, symbol_names):
                 value = _numeric_value(code)
                 break
         if value is None:
@@ -779,7 +786,7 @@ def _state_domain_fact(group: Any) -> Optional[Dict[str, Any]]:
 
 
 def _definedness_fact(
-    group: Any, declared: Optional[Any] = None
+    group: Any, declared: Optional[Any] = None, symbol_names=None
 ) -> Optional[Dict[str, Any]]:
     """Read a definedness group as the operation it keeps well defined.
 
@@ -812,14 +819,14 @@ def _definedness_fact(
         expression = group.expressions[0]
         if z3.is_app(expression) and expression.decl().kind() == z3.Z3_OP_DISTINCT:
             name = _frame_variable_name(
-                expression.arg(0), declared
-            ) or _frame_variable_name(expression.arg(1), declared)
+                expression.arg(0), declared, symbol_names
+            ) or _frame_variable_name(expression.arg(1), declared, symbol_names)
             if name is not None:
                 fact["variable"] = name
     return fact
 
 
-def _state_membership_fact(group: Any) -> Optional[Dict[str, Any]]:
+def _state_membership_fact(group: Any, symbol_names=None) -> Optional[Dict[str, Any]]:
     """Read a group that pins one frame's state as a state-membership fact.
 
     Both an initial target and an ``active(...)`` assumption lower to a single
@@ -856,7 +863,7 @@ def _state_membership_fact(group: Any) -> Optional[Dict[str, Any]]:
         return None
     left, right = expression.arg(0), expression.arg(1)
     for slot, code in ((left, right), (right, left)):
-        if _frame_state_slot(slot, frame):
+        if _frame_state_slot(slot, frame, symbol_names):
             value = _numeric_value(code)
             if value is not None:
                 return {
@@ -868,7 +875,7 @@ def _state_membership_fact(group: Any) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _frame_state_slot(expression: Any, frame: int) -> bool:
+def _frame_state_slot(expression: Any, frame: int, symbol_names=None) -> bool:
     """Report whether an expression is the state slot of one frame.
 
     The slot is named ``F_<frame>_state`` by the encoding, which is exactly the
@@ -894,10 +901,13 @@ def _frame_state_slot(expression: Any, frame: int) -> bool:
 
     if not z3.is_const(expression):
         return False
+    if symbol_names is not None:
+        entry = symbol_names.lookup(expression)
+        return entry is not None and entry.source.kind == "state" and entry.source.frame == frame
     return str(expression) == "F_%d_state" % frame
 
 
-def _event_path_of_symbol(expression: Any, event_paths: Optional[Any] = None):
+def _event_path_of_symbol(expression: Any, event_paths: Optional[Any] = None, symbol_names=None):
     """Return the event a proposition symbol stands for, and the step it names.
 
     The encoder builds the symbol as ``E_<step>_event_<id>_<body>_<digest>``, where
@@ -921,6 +931,11 @@ def _event_path_of_symbol(expression: Any, event_paths: Optional[Any] = None):
     import z3
 
     if not z3.is_const(expression):
+        return None
+    if symbol_names is not None:
+        entry = symbol_names.lookup(expression)
+        if entry is not None and entry.source.kind == "event":
+            return entry.source.name, entry.source.step
         return None
     text = str(expression)
     parts = text.split("_")
@@ -978,7 +993,7 @@ def proposition_identity(path: str, step: int) -> str:
 
 
 def _proposition_fact(
-    group: Any, event_paths: Optional[Any] = None
+    group: Any, event_paths: Optional[Any] = None, symbol_names=None
 ) -> Optional[Dict[str, Any]]:
     """Read an event assumption as the proposition it requires.
 
@@ -1010,7 +1025,7 @@ def _proposition_fact(
         if expression.num_args() != 1:
             return None
         expression, holds = expression.arg(0), False
-    resolved = _event_path_of_symbol(expression, event_paths)
+    resolved = _event_path_of_symbol(expression, event_paths, symbol_names)
     if resolved is None:
         return None
     path, step = resolved
@@ -1083,7 +1098,7 @@ def conjunctive_units(expression: Any) -> Tuple[Any, ...]:
     return tuple(units)
 
 
-def _frame_of_symbol(expression: Any) -> Optional[int]:
+def _frame_of_symbol(expression: Any, symbol_names=None) -> Optional[int]:
     """Return the frame index a frame symbol belongs to.
 
     :param expression: The candidate symbol.
@@ -1091,7 +1106,11 @@ def _frame_of_symbol(expression: Any) -> Optional[int]:
     :return: The frame index, or ``None`` when the operand is not a frame symbol.
     :rtype: Optional[int]
     """
-    text = str(_without_coercion(expression))
+    expression = _without_coercion(expression)
+    if symbol_names is not None:
+        entry = symbol_names.lookup(expression)
+        return entry.source.frame if entry is not None else None
+    text = str(expression)
     if not text.startswith("F_"):
         return None
     parts = text.split("_")
@@ -1127,6 +1146,7 @@ def _condition_facts(
     expression: Any,
     declared: Optional[Any] = None,
     event_paths: Optional[Any] = None,
+    symbol_names=None,
 ) -> Optional[Tuple[Dict[str, Any], ...]]:
     """Read the condition that selects one case as the facts it requires.
 
@@ -1164,9 +1184,9 @@ def _condition_facts(
             # The guard slot of a transition that carries no guard.  It requires
             # nothing, so publishing it would add a member standing for nothing.
             continue
-        fact = _state_equality_fact(conjunct, declared)
+        fact = _state_equality_fact(conjunct, declared, symbol_names)
         if fact is None:
-            fact = _variable_comparison_in(conjunct, declared)
+            fact = _variable_comparison_in(conjunct, declared, symbol_names)
         if fact is None:
             # An event-triggered transition names its event in the condition, and the
             # reading for that was already here -- one function away, used by the
@@ -1174,7 +1194,7 @@ def _condition_facts(
             # third.  A condition mentioning an event was therefore unreadable, and
             # the case kept its structural identity, which is what kept the whole
             # arithmetic chain from starting on any event-triggered model.
-            fact = _event_proposition_in(conjunct, event_paths)
+            fact = _event_proposition_in(conjunct, event_paths, symbol_names)
         if fact is None:
             return None
         facts.append(fact)
@@ -1182,7 +1202,7 @@ def _condition_facts(
 
 
 def _event_proposition_in(
-    expression: Any, event_paths: Optional[Any] = None
+    expression: Any, event_paths: Optional[Any] = None, symbol_names=None
 ) -> Optional[Dict[str, Any]]:
     """Read a condition conjunct that requires an event, as a ``proposition`` fact.
 
@@ -1222,7 +1242,7 @@ def _event_proposition_in(
             return None
         holds = False
         expression = expression.arg(0)
-    resolved = _event_path_of_symbol(expression, event_paths)
+    resolved = _event_path_of_symbol(expression, event_paths, symbol_names)
     if resolved is None:
         return None
     path, step = resolved
@@ -1239,7 +1259,7 @@ def _event_proposition_in(
 
 
 def _state_equality_fact(
-    expression: Any, declared: Optional[Any] = None
+    expression: Any, declared: Optional[Any] = None, symbol_names=None
 ) -> Optional[Dict[str, Any]]:
     """Read one equality between a state code and some frame's state slot.
 
@@ -1265,8 +1285,8 @@ def _state_equality_fact(
         (expression.arg(0), expression.arg(1)),
         (expression.arg(1), expression.arg(0)),
     ):
-        frame = _frame_of_symbol(slot)
-        if frame is None or not _frame_state_slot(slot, frame):
+        frame = _frame_of_symbol(slot, symbol_names)
+        if frame is None or not _frame_state_slot(slot, frame, symbol_names):
             continue
         value = _numeric_value(code)
         if value is not None:
@@ -1280,7 +1300,7 @@ def _state_equality_fact(
 
 
 def _variable_comparison_in(
-    expression: Any, declared: Optional[Any] = None
+    expression: Any, declared: Optional[Any] = None, symbol_names=None
 ) -> Optional[Dict[str, Any]]:
     """Read one comparison between a frame variable and a numeral.
 
@@ -1303,17 +1323,17 @@ def _variable_comparison_in(
     if operator is None or expression.num_args() != 2:
         return None
     left, right = expression.arg(0), expression.arg(1)
-    name, value = _frame_variable_name(left, declared), _numeric_value(right)
+    name, value = _frame_variable_name(left, declared, symbol_names), _numeric_value(right)
     slot = left
     if name is None or value is None:
-        name, value = _frame_variable_name(right, declared), _numeric_value(left)
+        name, value = _frame_variable_name(right, declared, symbol_names), _numeric_value(left)
         slot = right
         operator = {"lt": "gt", "gt": "lt", "le": "ge", "ge": "le"}.get(
             operator, operator
         )
     if name is None or value is None:
         return None
-    frame = _frame_of_symbol(slot)
+    frame = _frame_of_symbol(slot, symbol_names)
     if frame is None:
         return None
     return {
@@ -1326,7 +1346,7 @@ def _variable_comparison_in(
 
 
 def _assignment_in_unit(
-    unit: Any, step: int, declared: Optional[Any] = None
+    unit: Any, step: int, declared: Optional[Any] = None, symbol_names=None
 ) -> Optional[Dict[str, Any]]:
     """Read one decomposed requirement as an assignment a transition makes.
 
@@ -1362,11 +1382,11 @@ def _assignment_in_unit(
     # the value-comparison recognizer has always done, and the omission here was the
     # asymmetry.
     target, source = consequent.arg(0), consequent.arg(1)
-    variable = _frame_variable_name(target, declared)
-    if variable is None or _frame_of_symbol(target) != step + 1:
+    variable = _frame_variable_name(target, declared, symbol_names)
+    if variable is None or _frame_of_symbol(target, symbol_names) != step + 1:
         target, source = consequent.arg(1), consequent.arg(0)
-        variable = _frame_variable_name(target, declared)
-    if variable is None or _frame_of_symbol(target) != step + 1:
+        variable = _frame_variable_name(target, declared, symbol_names)
+    if variable is None or _frame_of_symbol(target, symbol_names) != step + 1:
         return None
     if not z3.is_app(source):
         return None
@@ -1387,8 +1407,8 @@ def _assignment_in_unit(
         return None
     left, right = source.arg(0), source.arg(1)
     if (
-        _frame_variable_name(left, declared) != variable
-        or _frame_of_symbol(left) != step
+        _frame_variable_name(left, declared, symbol_names) != variable
+        or _frame_of_symbol(left, symbol_names) != step
     ):
         # The rule that evaluates this reads the left operand as the variable's own
         # value at this frame.  A different subject there is a statement about two
@@ -1403,8 +1423,8 @@ def _assignment_in_unit(
     if operand is not None:
         reading["operand"] = operand
         return reading
-    operand_variable = _frame_variable_name(right, declared)
-    if operand_variable is None or _frame_of_symbol(right) != step:
+    operand_variable = _frame_variable_name(right, declared, symbol_names)
+    if operand_variable is None or _frame_of_symbol(right, symbol_names) != step:
         return None
     # A symbolic operand is named rather than resolved: the substitution rule needs
     # to see which variable is still standing before the evaluation rule can run.
@@ -1416,6 +1436,7 @@ def _transition_case_fact(
     group: Any,
     declared: Optional[Any] = None,
     event_paths: Optional[Any] = None,
+    symbol_names=None,
 ) -> Optional[Dict[str, Any]]:
     """Read a step relation as the assignment its one assigning case makes.
 
@@ -1452,7 +1473,7 @@ def _transition_case_fact(
     readings = [
         reading
         for reading in (
-            _assignment_in_unit(unit, step, declared)
+            _assignment_in_unit(unit, step, declared, symbol_names)
             for unit in conjunctive_units(group.expressions[0])
         )
         if reading is not None
@@ -1476,7 +1497,7 @@ def _transition_case_fact(
     # assignment whose condition is weaker than the encoding's would state something
     # the group does not require, which the binding check refuses in one direction
     # and a reader has no way to notice.
-    condition = _condition_facts(reading["condition_expression"], declared, event_paths)
+    condition = _condition_facts(reading["condition_expression"], declared, event_paths, symbol_names)
     if not condition:
         return None
     fact["condition"] = list(condition)
@@ -1487,6 +1508,7 @@ def normalized_fact_for(
     group: Any,
     declared: Optional[Any] = None,
     event_paths: Optional[Any] = None,
+    symbol_names=None,
 ) -> Dict[str, Any]:
     """Return the published domain fact for one tracked source group.
 
@@ -1494,6 +1516,11 @@ def normalized_fact_for(
     dispatches on ``kind`` and reads plain values.  A group whose shape has no
     recognizer keeps its identity under ``structural_constraint`` rather than
     inviting a reader to guess a domain meaning that was never derived.
+
+    :param symbol_names: Construction-time symbol registry. When supplied,
+        symbol identity, variable names, frames, states and events come only
+        from registered origins. Omit for legacy encoded-name recognition.
+    :type symbol_names: Optional[pyfcstm.solver.symbols.SymbolNames]
 
     :param group: The tracked group whose fact is published.
     :type group: BmcTrackedConstraint
@@ -1525,33 +1552,33 @@ def normalized_fact_for(
         ('variable_comparison', 'x', 'eq', 1)
     """
     if group.category in _VALUE_FACT_CATEGORIES:
-        fact = _value_comparison_fact(group, declared)
+        fact = _value_comparison_fact(group, declared, symbol_names)
         if fact is not None:
             return fact
         # An assumption may pin the active state rather than a variable, and both
         # arrive in the same category, so the state reader gets its turn before
         # the group falls back.
-        fact = _state_membership_fact(group)
+        fact = _state_membership_fact(group, symbol_names)
         if fact is not None:
             return fact
     elif group.category == "initial.target":
-        fact = _state_membership_fact(group)
+        fact = _state_membership_fact(group, symbol_names)
         if fact is not None:
             return fact
     elif group.category == "domain.frame_state":
-        fact = _state_domain_fact(group)
+        fact = _state_domain_fact(group, symbol_names)
         if fact is not None:
             return fact
     elif group.category == "definedness":
-        fact = _definedness_fact(group, declared)
+        fact = _definedness_fact(group, declared, symbol_names)
         if fact is not None:
             return fact
     elif group.category == "transition.step":
-        fact = _transition_case_fact(group, declared, event_paths)
+        fact = _transition_case_fact(group, declared, event_paths, symbol_names)
         if fact is not None:
             return fact
     elif group.category == "assumption.event":
-        fact = _proposition_fact(group, event_paths)
+        fact = _proposition_fact(group, event_paths, symbol_names)
         if fact is not None:
             return fact
     return {

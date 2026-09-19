@@ -1720,3 +1720,198 @@ from a 3.97% improvement to a 1.31% regression in these cases; unchanged
 controls also vary. Reuse retains one complete trace per result and copies
 it for callers. These measurements establish reduced repeated work, not a
 universal speedup; measure the complete path on your own model.
+
+
+Property-neutral UNSAT core API
+--------------------------------------------------------------
+
+Shared solver code owns formula checks; BMC owns state, transition and property
+meaning. In particular, an UNSAT counterexample query and an UNSAT reachability
+query do not have the same property verdict. Callers retain that distinction.
+
+The Python module :mod:`pyfcstm.solver.unsat` checks caller-supplied Boolean Z3
+formulas. It does not evaluate an FCSTM property, decode a witness, or construct
+a source-level derivation. Use the existing BMC solve API for property verdicts
+and mandatory witness replay. This separate API does not change the CLI or its
+JSON schema, and importing or constructing a query starts no solver checks.
+
+An exact query consists of fixed background groups and removable constraint
+groups. Every extraction, selected-core recheck and deletion trial retains the
+background. Z3 receives each removable group as a Boolean assumption and
+returns its original formula AST in the core. An AST-to-group map retains the
+original query and source objects without introducing named activation symbols
+that could alias caller variables. Identical formulas use one representative
+occurrence unless the caller explicitly selects source identifiers. Source metadata is not a
+verified AST binding. Equal formulas at different source occurrences should
+have different identifiers; one group can contain several conjuncts. A source
+handle may itself contain several source occurrences or construction dependencies,
+and several groups may share that handle. The checker preserves those objects
+without traversing them, asserting formulas stored in them, or trusting a proof
+status in them. Formula identity, source occurrence and display name are distinct.
+
+.. list-table:: Inputs
+   :header-rows: 1
+   :widths: 24 76
+
+   * - Input
+     - Contract
+   * - ``UnsatConstraint(stable_id, expressions, source=None)``
+     - Nonempty string identifier; nonempty sequence of Boolean Z3 expressions;
+       optional opaque source retained by identity. Expressions are snapshotted
+       as a tuple. All expressions must share one Z3 context.
+   * - ``UnsatQuery(query_id, constraints, background=())``
+     - Nonempty string query identity and sequences of constraints. Both
+       sequences are snapshotted. Identifiers are unique across both collections;
+       all groups share a context. Either collection may be empty.
+   * - ``explain_unsat_core(query, *, selected_ids=None, minimize=True, timeout_ms=None)``
+     - Explicit solver entry. ``selected_ids=None`` lets Z3 select a core;
+       a sequence restricts rechecking to those removable identifiers. ``()``
+       tests the background alone. ``minimize=True`` also shrinks explicit
+       selections; use ``False`` to retain the exact selected identifier set.
+       ``timeout_ms`` is a positive integer or ``None`` for no deadline.
+
+The returned ``UnsatExplanation`` separates these observations:
+
+.. list-table:: Result fields
+   :header-rows: 1
+   :widths: 25 75
+
+   * - Field
+     - Meaning and values
+   * - ``query``
+     - Original query, including its identity, exact formulas and source handles.
+   * - ``solver_status``
+     - Full query: ``sat``, ``unsat``, ``unknown`` or ``timeout``.
+   * - ``core_ids``
+     - Sorted verified removable identifiers; ``None`` if not verified;
+       ``()`` if the background alone was rechecked UNSAT.
+   * - ``core_check``
+     - ``verified``, ``not_checked``, ``sat``, ``unknown`` or ``timeout``.
+       A supplied subset may be SAT even when the full query is UNSAT.
+   * - ``background_conflict``
+     - True only for a verified empty removable core. False does not by itself
+       establish that the background is satisfiable.
+   * - ``subset_minimality``
+     - ``proven`` or ``not_proven``, relative to the fixed background.
+       Subset-minimal does not mean minimum cardinality, unique or most readable.
+   * - ``reduction``
+     - ``raw``, ``partial_minimized`` or ``subset_minimal``. Minimization only
+       deletes a group after checking that the smaller conjunction is UNSAT.
+   * - ``stop_reason``
+     - Optional explanation of a non-UNSAT query, failed subset recheck or
+       interrupted minimization. SAT is a normal result, not an exception.
+   * - ``checks``
+     - Phase records with ``name``, ``status``, ``started``, ``elapsed_ms`` and
+       optional ``reason``. Extraction/recheck and minimization are aggregated
+       phases, not a count of individual Z3 calls.
+   * - ``derivation_status``, ``proof_status``
+     - Both ``not_attempted``: verified core membership is not a readable proof.
+
+A contradiction can depend on a relationship without fixing either value::
+
+    >>> import z3
+    >>> from pyfcstm.solver.unsat import UnsatConstraint, UnsatQuery, explain_unsat_core
+    >>> x, y = z3.Ints("x y")
+    >>> guard = UnsatConstraint("guard", (x < y,), "controller.fcstm:12")
+    >>> post = UnsatConstraint("post", (x >= y,))
+    >>> result = explain_unsat_core(UnsatQuery("order", (guard, post)))
+    >>> result.solver_status, result.core_ids, result.subset_minimality
+    ('unsat', ('guard', 'post'), 'proven')
+
+The two groups conflict for every valuation. Their source handles survive, but
+this result does not yet produce the intermediate business reasoning.
+
+Readable symbols can be registered when constructing formulas, independently of
+the core checker::
+
+    >>> from pyfcstm.solver.symbols import SymbolNames
+    >>> names = SymbolNames()
+    >>> payload = z3.Real("generated_controller_payload_1234567890")
+    >>> origin = {"variable": "payload", "frame": 2}
+    >>> names.register(payload, "v0@2", origin)
+    >>> names.render(payload / 2)
+    'v0@2/2'
+    >>> names.lookup(payload).source is origin
+    True
+
+The lookup uses the actual Z3 constant and context, not its encoded spelling.
+``register`` rejects duplicate symbols and duplicate display names. ``render``
+substitutes names in a temporary expression, preserving the original formula;
+unregistered constants keep their spelling. A collision between an unregistered
+constant and a used display name, or between a display name and a quantifier-bound
+name, raises ``ValueError`` instead of presenting two different values as one.
+Local native printer settings prevent display truncation without changing global
+Z3 settings. This is expression rendering, not a proof or an
+algebraic simplifier. The source object is opaque caller metadata.
+
+BMC registers variables, states, inputs, parameters, events and case selectors
+when trace symbols are constructed. Its fact extraction and binding checks use
+that registry. Persistent values use ``name@N`` for frame N; long variable names
+use ``v<ID>@N`` with a legend retaining the full authored name. Original structured
+facts keep their authored names. A displayed assignment such as
+``v0@2 == v0@1/2`` states the operation and both frames directly. Registration
+does not expand arithmetic or branch shapes that the fact recognizer cannot read.
+Core members display their original formulas even when no domain fact can be
+recognized. Proof inputs display the source formula or the specific conjunctive
+unit that passed binding checks. Derived assignment facts reuse the proof
+encoder and native expression printer. Standalone fact-only APIs have no original
+formula and display assignment metadata instead of reconstructing its notation.
+
+A fixed-background contradiction has an empty removable core::
+
+    >>> query = UnsatQuery("background", (), (guard, post))
+    >>> result = explain_unsat_core(query)
+    >>> result.core_ids, result.background_conflict
+    ((), True)
+
+Empty here means that no removable group is needed, not that the full formula
+contains no constraints. In contrast, a query with both collections empty is SAT.
+
+A selected subset cannot borrow omitted assumptions::
+
+    >>> query = UnsatQuery("selected", (guard, post))
+    >>> result = explain_unsat_core(query, selected_ids=("guard",))
+    >>> result.solver_status, result.core_check, result.core_ids
+    ('unsat', 'sat', None)
+
+The full formula conflicts, but the requested subset does not. To obtain a
+verified core, let the solver choose or provide a sufficient subset; do not
+interpret ``solver_status`` alone as successful subset verification.
+
+When an upstream caller has already selected the set to explain, disable
+minimization explicitly. This retains the selected source occurrences even when
+another source has the same formula::
+
+    >>> repeated = UnsatConstraint("guard_again", (x < y,), "controller.fcstm:20")
+    >>> query = UnsatQuery("chosen_sources", (guard, repeated, post))
+    >>> result = explain_unsat_core(query, selected_ids=("post", "guard_again"), minimize=False)
+    >>> result.core_ids, result.reduction, result.subset_minimality
+    (('guard_again', 'post'), 'raw', 'not_proven')
+    >>> result.query.constraints[1] is repeated
+    True
+
+The returned identifiers are sorted, so selection order is not retained.
+``minimize=True`` permits further deletion, including redundant selected groups;
+it never replaces them with unselected occurrences. That reduced set is a new
+set of premises. A later derivation must use it rather than reuse a proof that
+silently relied on deleted assumptions. Neither setting generates or verifies
+the source construction chain or the intermediate reasoning to contradiction.
+
+Wrong object/member types, a scalar string selection or a non-Boolean
+``minimize`` raise ``TypeError``. Empty identifiers, mixed contexts, duplicate
+identifiers and unknown selected identifiers raise ``ValueError``. Invalid
+budgets raise ``ValueError``. The compatibility entry in
+:mod:`pyfcstm.bmc.unsat` retains the ``BmcUnsatConstraint``, ``BmcUnsatQuery``
+and ``BmcUnsatExplanation`` aliases and raises
+:class:`~pyfcstm.bmc.errors.BmcBuildError` for invalid budgets. For example,
+``selected_ids="guard"`` is invalid; use ``("guard",)``. Background identifiers
+cannot be selected as removable constraints.
+
+One monotonic deadline covers extraction, independent rechecking and optional
+minimization. No new check starts after it expires. Z3 timeout granularity and
+Python overhead can exceed wall-clock budget slightly. A timeout before core
+verification publishes no core; interruption during minimization preserves the
+already verified core without claiming minimality. This API has no file or
+stdout side effects. Default property solves do not call this API implicitly.
+The scenario explanation path reuses its checking machinery while retaining
+its existing options and result contract.

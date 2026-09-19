@@ -32,6 +32,7 @@ pyfcstm.bmc
     slicing
     solver
     source
+    unsat
     witness
 
 \_\_all\_\_

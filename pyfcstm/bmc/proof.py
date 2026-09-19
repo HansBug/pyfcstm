@@ -47,6 +47,7 @@ from .explanation import (
     BmcProofNode,
     _STATE_SLOT_SUBJECT,
     _fact_sentence,
+    _display_fact,
 )
 from .proof_rules import PROOF_RULES, RuleApplication, check_rule
 
@@ -283,6 +284,8 @@ def build_domain_proof(
     state_names: Optional[Mapping[int, str]] = None,
     solver_verdicts: Optional[Mapping[str, Mapping[str, Sequence[str]]]] = None,
     unit_bindings: Optional[Mapping[str, Tuple[int, int]]] = None,
+    variable_names: Optional[Mapping[str, str]] = None,
+    render_fact=None,
 ) -> Tuple[Optional[BmcConflictProof], Any]:
     """Search for a checked proof that these facts admit no execution.
 
@@ -295,6 +298,13 @@ def build_domain_proof(
     A proof is published only when every core member takes part in it.  A member the
     contradiction does not rest on would be named among the reasons while playing no
     part, so its presence means this core has no proof rather than a smaller one.
+
+    :param variable_names: Display aliases for authored variable identities.
+    :type variable_names: Optional[Mapping[str, str]]
+    :param render_fact: Optional callable accepting the original fact, source
+        item identifiers and node kind. It returns bound formula text, or None
+        to use the domain account. It does not alter proof facts or checks.
+    :type render_fact: Optional[Callable]
 
     :param scope: Diagnostic scope the proof will discharge.
     :type scope: str
@@ -472,6 +482,7 @@ def build_domain_proof(
     published = []
     for old in kept:
         node = nodes[old]
+        formula_text = None if render_fact is None else render_fact(node.fact, node.item_ids, node.kind)
         published.append(
             BmcProofNode(
                 _published_id(node, renumbered[old]),
@@ -483,7 +494,7 @@ def build_domain_proof(
                 ),
                 node.fact,
                 node.item_ids,
-                _fact_sentence(node.fact, state_names),
+                formula_text if formula_text is not None else _fact_sentence(_display_fact(node.fact, variable_names), state_names),
                 *_verification(node, unit_bindings),
             )
         )

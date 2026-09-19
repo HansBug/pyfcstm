@@ -55,6 +55,12 @@ Peak RSS medians: baseline 94324 KiB; candidate 95232 KiB; change +908 KiB.
 
 Timing gate failures: **transition_conflict/none exceeds 49.840 ms by 0.091 ms**. No thresholds were relaxed and this is not an all-gates-pass result.
 
+Review disposition (2026-09-20): the maintainer accepted this measured default-path
+increase as a small performance exception in [PR #503](https://github.com/HansBug/pyfcstm/pull/503).
+The **FAIL** above remains the original numeric result. Acceptance of this case
+does not establish the cost of larger or different workloads; the additional
+[workload survey](../expanded_workloads/report.md) records that investigation.
+
 Solver status, property truth, achieved explanation mode and solver-check counts
 agree in every case/mode. Default overhead is construction-time registration;
 default solves do not extract or render explanations. Enabled modes additionally
@@ -81,8 +87,8 @@ is still delegated to Z3, and full expressions are not silently truncated.
 
 This is a small local compatibility experiment, not a workload survey. It does not
 establish costs for hundreds of long generated variables, large bounds, arbitrary
-SMT theories, other platforms or future proof inference. The one marginal default
-gate miss remains a review item rather than a passing result rounded to 5%.
+SMT theories, other platforms or future proof inference. The marginal default
+gate miss is an accepted review exception, not a passing result rounded to 5%.
 
 ## Reproduction
 

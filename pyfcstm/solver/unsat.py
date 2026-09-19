@@ -5,17 +5,63 @@ only evidence that its conjunction with the background is unsatisfiable; it is
 not a derivation, a minimum-cardinality core, or a property verdict. This module
 also supplies the extraction and deletion checks used by scenario explanations.
 
-Example::
+The following admission check has five source constraints, but only two cause
+the conflict: the guard requires a load below capacity, whereas the requested
+target requires it to be at least capacity. Neither value is fixed. The retry
+and accounting conditions are irrelevant to this contradiction.
+
+Register symbols while constructing the formulas, then attach source handles
+to the constraint occurrences. These source labels are supplied by this example;
+they are not locations recovered automatically from an FCSTM file::
 
     >>> import z3
-    >>> x = z3.Int("x")
-    >>> query = UnsatQuery("bounds", (
-    ...     UnsatConstraint("lower", (x > 0,)),
-    ...     UnsatConstraint("upper", (x <= 0,)),
+    >>> from pyfcstm.solver import UnsatConstraint, UnsatQuery, explain_unsat_core
+    >>> from pyfcstm.solver.symbols import SymbolNames
+    >>> load, capacity, retries, accounted = z3.Ints(
+    ...     "encoded_load encoded_capacity encoded_retries encoded_accounted"
+    ... )
+    >>> names = SymbolNames()
+    >>> for symbol, label in ((load, "load@2"), (capacity, "capacity@2"),
+    ...                       (retries, "retries@2"), (accounted, "accounted@2")):
+    ...     names.register(symbol, label)
+    >>> query = UnsatQuery("admission", (
+    ...     UnsatConstraint("guard", (load < capacity,), "admission.fcstm:12"),
+    ...     UnsatConstraint("target", (load >= capacity,), "admission.fbmcq:4"),
+    ...     UnsatConstraint("retry_lower", (retries >= 0,), "admission.fbmcq:2"),
+    ...     UnsatConstraint("retry_upper", (retries <= 3,), "admission.fbmcq:3"),
+    ...     UnsatConstraint("accounting", (accounted == load + retries,),
+    ...                     "admission.fcstm:18"),
     ... ))
     >>> result = explain_unsat_core(query)
-    >>> result.solver_status, result.core_ids, result.subset_minimality
-    ('unsat', ('lower', 'upper'), 'proven')
+    >>> result.solver_status, result.core_check
+    ('unsat', 'verified')
+    >>> len(query.constraints), result.core_ids, result.subset_minimality
+    (5, ('guard', 'target'), 'proven')
+
+Follow the returned identifiers back to the original constraint objects, then
+render their exact formulas using the registered names. This example assembles
+the text itself; the core API returns structured evidence::
+
+    >>> by_id = {item.stable_id: item for item in result.query.constraints}
+    >>> selected = tuple(by_id[identifier] for identifier in result.core_ids)
+    >>> selected[0] is query.constraints[0]
+    True
+    >>> for item in selected:
+    ...     print("{} [{}]".format(item.stable_id, item.source))
+    ...     for expression in item.expressions:
+    ...         print("  " + names.render(expression))
+    guard [admission.fcstm:12]
+      load@2 < capacity@2
+    target [admission.fbmcq:4]
+      load@2 >= capacity@2
+
+The displayed pair is sufficient for UNSAT, and deleting either member makes
+it satisfiable. Subset minimality does not promise the smallest core among all
+possible cores. In particular, verifying a core and displaying its sources do
+not generate the source construction chain or a step-by-step derivation::
+
+    >>> result.derivation_status, result.proof_status
+    ('not_attempted', 'not_attempted')
 """
 
 from __future__ import annotations

@@ -1,0 +1,965 @@
+[
+  {
+    "revision": "baseline",
+    "case": "counter_bound_128",
+    "mode": "none",
+    "repetition": 0,
+    "total_ms": 837.2563969999994,
+    "status": "unsat",
+    "functions": [
+      {
+        "file": "pyfcstm/bmc/pipeline.py",
+        "line": 43,
+        "function": "compile_bmc_query",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.009191000000000001,
+        "cumulative_ms": 813.2485810000001
+      },
+      {
+        "file": "pyfcstm/bmc/witness.py",
+        "line": 5149,
+        "function": "solve_bmc_property",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.006176000000000001,
+        "cumulative_ms": 27.335796000000002
+      }
+    ]
+  },
+  {
+    "revision": "baseline",
+    "case": "counter_bound_128",
+    "mode": "none",
+    "repetition": 1,
+    "total_ms": 865.480505999999,
+    "status": "unsat",
+    "functions": [
+      {
+        "file": "pyfcstm/bmc/pipeline.py",
+        "line": 43,
+        "function": "compile_bmc_query",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.009496000000000001,
+        "cumulative_ms": 841.150524
+      },
+      {
+        "file": "pyfcstm/bmc/witness.py",
+        "line": 5149,
+        "function": "solve_bmc_property",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.006397000000000001,
+        "cumulative_ms": 27.809232
+      }
+    ]
+  },
+  {
+    "revision": "baseline",
+    "case": "counter_bound_128",
+    "mode": "none",
+    "repetition": 2,
+    "total_ms": 848.530566,
+    "status": "unsat",
+    "functions": [
+      {
+        "file": "pyfcstm/bmc/pipeline.py",
+        "line": 43,
+        "function": "compile_bmc_query",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.010360000000000001,
+        "cumulative_ms": 824.4226610000001
+      },
+      {
+        "file": "pyfcstm/bmc/witness.py",
+        "line": 5149,
+        "function": "solve_bmc_property",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.008042,
+        "cumulative_ms": 27.546162000000002
+      }
+    ]
+  },
+  {
+    "revision": "baseline",
+    "case": "pool",
+    "mode": "formal",
+    "repetition": 0,
+    "total_ms": 559.3764060000007,
+    "status": "unsat",
+    "functions": [
+      {
+        "file": "pyfcstm/bmc/witness.py",
+        "line": 5149,
+        "function": "solve_bmc_property",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.007340000000000001,
+        "cumulative_ms": 402.09472900000003
+      },
+      {
+        "file": "pyfcstm/bmc/infeasibility.py",
+        "line": 1282,
+        "function": "build_core_item",
+        "primitive": 8,
+        "calls": 8,
+        "own_ms": 0.085115,
+        "cumulative_ms": 238.42031500000002
+      },
+      {
+        "file": "pyfcstm/bmc/provenance.py",
+        "line": 1486,
+        "function": "normalized_fact_for",
+        "primitive": 8,
+        "calls": 8,
+        "own_ms": 0.023939000000000002,
+        "cumulative_ms": 234.715876
+      },
+      {
+        "file": "pyfcstm/bmc/pipeline.py",
+        "line": 43,
+        "function": "compile_bmc_query",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.005818,
+        "cumulative_ms": 108.31591600000002
+      }
+    ]
+  },
+  {
+    "revision": "baseline",
+    "case": "pool",
+    "mode": "formal",
+    "repetition": 1,
+    "total_ms": 536.9306570000005,
+    "status": "unsat",
+    "functions": [
+      {
+        "file": "pyfcstm/bmc/witness.py",
+        "line": 5149,
+        "function": "solve_bmc_property",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.007988,
+        "cumulative_ms": 404.37780000000004
+      },
+      {
+        "file": "pyfcstm/bmc/infeasibility.py",
+        "line": 1282,
+        "function": "build_core_item",
+        "primitive": 8,
+        "calls": 8,
+        "own_ms": 0.08382700000000001,
+        "cumulative_ms": 243.44774500000003
+      },
+      {
+        "file": "pyfcstm/bmc/provenance.py",
+        "line": 1486,
+        "function": "normalized_fact_for",
+        "primitive": 8,
+        "calls": 8,
+        "own_ms": 0.023486000000000003,
+        "cumulative_ms": 239.804807
+      },
+      {
+        "file": "pyfcstm/bmc/pipeline.py",
+        "line": 43,
+        "function": "compile_bmc_query",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.0056430000000000004,
+        "cumulative_ms": 107.97735100000001
+      }
+    ]
+  },
+  {
+    "revision": "baseline",
+    "case": "pool",
+    "mode": "formal",
+    "repetition": 2,
+    "total_ms": 540.2819730000004,
+    "status": "unsat",
+    "functions": [
+      {
+        "file": "pyfcstm/bmc/witness.py",
+        "line": 5149,
+        "function": "solve_bmc_property",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.007671,
+        "cumulative_ms": 406.200991
+      },
+      {
+        "file": "pyfcstm/bmc/infeasibility.py",
+        "line": 1282,
+        "function": "build_core_item",
+        "primitive": 8,
+        "calls": 8,
+        "own_ms": 0.09369300000000001,
+        "cumulative_ms": 246.099697
+      },
+      {
+        "file": "pyfcstm/bmc/provenance.py",
+        "line": 1486,
+        "function": "normalized_fact_for",
+        "primitive": 8,
+        "calls": 8,
+        "own_ms": 0.026336000000000002,
+        "cumulative_ms": 242.02090900000002
+      },
+      {
+        "file": "pyfcstm/bmc/pipeline.py",
+        "line": 43,
+        "function": "compile_bmc_query",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.006201000000000001,
+        "cumulative_ms": 109.579516
+      }
+    ]
+  },
+  {
+    "revision": "baseline",
+    "case": "dose_editor",
+    "mode": "formal",
+    "repetition": 0,
+    "total_ms": 1253.3350769999977,
+    "status": "unsat",
+    "functions": [
+      {
+        "file": "pyfcstm/bmc/witness.py",
+        "line": 5149,
+        "function": "solve_bmc_property",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.007208,
+        "cumulative_ms": 985.5187740000001
+      },
+      {
+        "file": "pyfcstm/bmc/infeasibility.py",
+        "line": 1282,
+        "function": "build_core_item",
+        "primitive": 9,
+        "calls": 9,
+        "own_ms": 0.10554000000000001,
+        "cumulative_ms": 649.057939
+      },
+      {
+        "file": "pyfcstm/bmc/provenance.py",
+        "line": 1486,
+        "function": "normalized_fact_for",
+        "primitive": 9,
+        "calls": 9,
+        "own_ms": 0.024659000000000004,
+        "cumulative_ms": 644.91741
+      },
+      {
+        "file": "pyfcstm/bmc/pipeline.py",
+        "line": 43,
+        "function": "compile_bmc_query",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.011145,
+        "cumulative_ms": 231.048526
+      }
+    ]
+  },
+  {
+    "revision": "baseline",
+    "case": "dose_editor",
+    "mode": "formal",
+    "repetition": 1,
+    "total_ms": 1292.1169020000036,
+    "status": "unsat",
+    "functions": [
+      {
+        "file": "pyfcstm/bmc/witness.py",
+        "line": 5149,
+        "function": "solve_bmc_property",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.023204,
+        "cumulative_ms": 1019.9108590000001
+      },
+      {
+        "file": "pyfcstm/bmc/infeasibility.py",
+        "line": 1282,
+        "function": "build_core_item",
+        "primitive": 9,
+        "calls": 9,
+        "own_ms": 0.10470100000000002,
+        "cumulative_ms": 656.8796110000001
+      },
+      {
+        "file": "pyfcstm/bmc/provenance.py",
+        "line": 1486,
+        "function": "normalized_fact_for",
+        "primitive": 9,
+        "calls": 9,
+        "own_ms": 0.026600000000000002,
+        "cumulative_ms": 652.788855
+      },
+      {
+        "file": "pyfcstm/bmc/pipeline.py",
+        "line": 43,
+        "function": "compile_bmc_query",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.0069500000000000004,
+        "cumulative_ms": 236.43386700000002
+      }
+    ]
+  },
+  {
+    "revision": "baseline",
+    "case": "dose_editor",
+    "mode": "formal",
+    "repetition": 2,
+    "total_ms": 1270.3710070000004,
+    "status": "unsat",
+    "functions": [
+      {
+        "file": "pyfcstm/bmc/witness.py",
+        "line": 5149,
+        "function": "solve_bmc_property",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.008304,
+        "cumulative_ms": 1002.8858460000001
+      },
+      {
+        "file": "pyfcstm/bmc/infeasibility.py",
+        "line": 1282,
+        "function": "build_core_item",
+        "primitive": 9,
+        "calls": 9,
+        "own_ms": 0.10674600000000001,
+        "cumulative_ms": 661.9458460000001
+      },
+      {
+        "file": "pyfcstm/bmc/provenance.py",
+        "line": 1486,
+        "function": "normalized_fact_for",
+        "primitive": 9,
+        "calls": 9,
+        "own_ms": 0.039557,
+        "cumulative_ms": 657.877731
+      },
+      {
+        "file": "pyfcstm/bmc/pipeline.py",
+        "line": 43,
+        "function": "compile_bmc_query",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.005261,
+        "cumulative_ms": 231.76672000000002
+      }
+    ]
+  },
+  {
+    "revision": "candidate",
+    "case": "counter_bound_128",
+    "mode": "none",
+    "repetition": 0,
+    "total_ms": 873.0439569999999,
+    "status": "unsat",
+    "functions": [
+      {
+        "file": "pyfcstm/bmc/pipeline.py",
+        "line": 43,
+        "function": "compile_bmc_query",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.008614,
+        "cumulative_ms": 849.285614
+      },
+      {
+        "file": "pyfcstm/solver/symbols.py",
+        "line": 103,
+        "function": "register",
+        "primitive": 1151,
+        "calls": 1151,
+        "own_ms": 3.030506,
+        "cumulative_ms": 38.279109000000005
+      },
+      {
+        "file": "pyfcstm/bmc/witness.py",
+        "line": 5149,
+        "function": "solve_bmc_property",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.006509000000000001,
+        "cumulative_ms": 26.799809
+      }
+    ]
+  },
+  {
+    "revision": "candidate",
+    "case": "counter_bound_128",
+    "mode": "none",
+    "repetition": 1,
+    "total_ms": 877.2239900000006,
+    "status": "unsat",
+    "functions": [
+      {
+        "file": "pyfcstm/bmc/pipeline.py",
+        "line": 43,
+        "function": "compile_bmc_query",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.009410000000000002,
+        "cumulative_ms": 853.123159
+      },
+      {
+        "file": "pyfcstm/solver/symbols.py",
+        "line": 103,
+        "function": "register",
+        "primitive": 1151,
+        "calls": 1151,
+        "own_ms": 2.9921130000000002,
+        "cumulative_ms": 38.153076
+      },
+      {
+        "file": "pyfcstm/bmc/witness.py",
+        "line": 5149,
+        "function": "solve_bmc_property",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.010629000000000001,
+        "cumulative_ms": 27.667412000000002
+      }
+    ]
+  },
+  {
+    "revision": "candidate",
+    "case": "counter_bound_128",
+    "mode": "none",
+    "repetition": 2,
+    "total_ms": 876.7695019999995,
+    "status": "unsat",
+    "functions": [
+      {
+        "file": "pyfcstm/bmc/pipeline.py",
+        "line": 43,
+        "function": "compile_bmc_query",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.010077000000000001,
+        "cumulative_ms": 851.930506
+      },
+      {
+        "file": "pyfcstm/solver/symbols.py",
+        "line": 103,
+        "function": "register",
+        "primitive": 1151,
+        "calls": 1151,
+        "own_ms": 2.9426950000000005,
+        "cumulative_ms": 37.049617
+      },
+      {
+        "file": "pyfcstm/bmc/witness.py",
+        "line": 5149,
+        "function": "solve_bmc_property",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.016397000000000002,
+        "cumulative_ms": 28.304809
+      }
+    ]
+  },
+  {
+    "revision": "candidate",
+    "case": "pool",
+    "mode": "formal",
+    "repetition": 0,
+    "total_ms": 682.3624609999989,
+    "status": "unsat",
+    "functions": [
+      {
+        "file": "pyfcstm/bmc/witness.py",
+        "line": 5149,
+        "function": "solve_bmc_property",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.009282,
+        "cumulative_ms": 542.463304
+      },
+      {
+        "file": "pyfcstm/bmc/infeasibility.py",
+        "line": 871,
+        "function": "build_core_item",
+        "primitive": 8,
+        "calls": 8,
+        "own_ms": 0.14511100000000002,
+        "cumulative_ms": 372.23730600000005
+      },
+      {
+        "file": "pyfcstm/solver/symbols.py",
+        "line": 140,
+        "function": "render",
+        "primitive": 8,
+        "calls": 8,
+        "own_ms": 0.20573000000000002,
+        "cumulative_ms": 239.38223200000002
+      },
+      {
+        "file": "pyfcstm/bmc/provenance.py",
+        "line": 1507,
+        "function": "normalized_fact_for",
+        "primitive": 8,
+        "calls": 8,
+        "own_ms": 0.030962,
+        "cumulative_ms": 127.364528
+      },
+      {
+        "file": "pyfcstm/solver/unsat.py",
+        "line": 363,
+        "function": "_minimize_core",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.140486,
+        "cumulative_ms": 115.09180300000001
+      },
+      {
+        "file": "pyfcstm/bmc/pipeline.py",
+        "line": 43,
+        "function": "compile_bmc_query",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.0049050000000000005,
+        "cumulative_ms": 113.94369300000001
+      },
+      {
+        "file": "pyfcstm/solver/unsat.py",
+        "line": 486,
+        "function": "_extract_constraint_core",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.033440000000000004,
+        "cumulative_ms": 12.497733
+      },
+      {
+        "file": "pyfcstm/solver/symbols.py",
+        "line": 103,
+        "function": "register",
+        "primitive": 83,
+        "calls": 83,
+        "own_ms": 0.22456,
+        "cumulative_ms": 2.767149
+      }
+    ]
+  },
+  {
+    "revision": "candidate",
+    "case": "pool",
+    "mode": "formal",
+    "repetition": 1,
+    "total_ms": 698.4294300000001,
+    "status": "unsat",
+    "functions": [
+      {
+        "file": "pyfcstm/bmc/witness.py",
+        "line": 5149,
+        "function": "solve_bmc_property",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.009665,
+        "cumulative_ms": 544.3662730000001
+      },
+      {
+        "file": "pyfcstm/bmc/infeasibility.py",
+        "line": 871,
+        "function": "build_core_item",
+        "primitive": 8,
+        "calls": 8,
+        "own_ms": 0.11707200000000001,
+        "cumulative_ms": 368.41877500000004
+      },
+      {
+        "file": "pyfcstm/solver/symbols.py",
+        "line": 140,
+        "function": "render",
+        "primitive": 8,
+        "calls": 8,
+        "own_ms": 0.17316600000000001,
+        "cumulative_ms": 236.46140200000002
+      },
+      {
+        "file": "pyfcstm/bmc/pipeline.py",
+        "line": 43,
+        "function": "compile_bmc_query",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.00558,
+        "cumulative_ms": 128.407104
+      },
+      {
+        "file": "pyfcstm/bmc/provenance.py",
+        "line": 1507,
+        "function": "normalized_fact_for",
+        "primitive": 8,
+        "calls": 8,
+        "own_ms": 0.030402000000000002,
+        "cumulative_ms": 126.67674000000001
+      },
+      {
+        "file": "pyfcstm/solver/unsat.py",
+        "line": 363,
+        "function": "_minimize_core",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.146589,
+        "cumulative_ms": 119.60137800000001
+      },
+      {
+        "file": "pyfcstm/solver/unsat.py",
+        "line": 486,
+        "function": "_extract_constraint_core",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.032547000000000006,
+        "cumulative_ms": 12.894115000000001
+      },
+      {
+        "file": "pyfcstm/solver/symbols.py",
+        "line": 103,
+        "function": "register",
+        "primitive": 83,
+        "calls": 83,
+        "own_ms": 0.222618,
+        "cumulative_ms": 2.7771030000000003
+      }
+    ]
+  },
+  {
+    "revision": "candidate",
+    "case": "pool",
+    "mode": "formal",
+    "repetition": 2,
+    "total_ms": 669.5344479999989,
+    "status": "unsat",
+    "functions": [
+      {
+        "file": "pyfcstm/bmc/witness.py",
+        "line": 5149,
+        "function": "solve_bmc_property",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.009183,
+        "cumulative_ms": 530.2962490000001
+      },
+      {
+        "file": "pyfcstm/bmc/infeasibility.py",
+        "line": 871,
+        "function": "build_core_item",
+        "primitive": 8,
+        "calls": 8,
+        "own_ms": 0.11778300000000001,
+        "cumulative_ms": 364.91194800000005
+      },
+      {
+        "file": "pyfcstm/solver/symbols.py",
+        "line": 140,
+        "function": "render",
+        "primitive": 8,
+        "calls": 8,
+        "own_ms": 0.19127600000000003,
+        "cumulative_ms": 234.558915
+      },
+      {
+        "file": "pyfcstm/bmc/provenance.py",
+        "line": 1507,
+        "function": "normalized_fact_for",
+        "primitive": 8,
+        "calls": 8,
+        "own_ms": 0.023848,
+        "cumulative_ms": 125.158194
+      },
+      {
+        "file": "pyfcstm/bmc/pipeline.py",
+        "line": 43,
+        "function": "compile_bmc_query",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.0050420000000000005,
+        "cumulative_ms": 113.84584700000002
+      },
+      {
+        "file": "pyfcstm/solver/unsat.py",
+        "line": 363,
+        "function": "_minimize_core",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.12028200000000001,
+        "cumulative_ms": 110.47179100000001
+      },
+      {
+        "file": "pyfcstm/solver/unsat.py",
+        "line": 486,
+        "function": "_extract_constraint_core",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.033092,
+        "cumulative_ms": 11.598393
+      },
+      {
+        "file": "pyfcstm/solver/symbols.py",
+        "line": 103,
+        "function": "register",
+        "primitive": 83,
+        "calls": 83,
+        "own_ms": 0.22357600000000002,
+        "cumulative_ms": 2.673921
+      }
+    ]
+  },
+  {
+    "revision": "candidate",
+    "case": "dose_editor",
+    "mode": "formal",
+    "repetition": 0,
+    "total_ms": 1576.6385759999991,
+    "status": "unsat",
+    "functions": [
+      {
+        "file": "pyfcstm/bmc/witness.py",
+        "line": 5149,
+        "function": "solve_bmc_property",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.019453,
+        "cumulative_ms": 1297.3379630000002
+      },
+      {
+        "file": "pyfcstm/bmc/infeasibility.py",
+        "line": 871,
+        "function": "build_core_item",
+        "primitive": 9,
+        "calls": 9,
+        "own_ms": 0.143566,
+        "cumulative_ms": 947.8848160000001
+      },
+      {
+        "file": "pyfcstm/solver/symbols.py",
+        "line": 140,
+        "function": "render",
+        "primitive": 9,
+        "calls": 9,
+        "own_ms": 0.27531700000000003,
+        "cumulative_ms": 594.538856
+      },
+      {
+        "file": "pyfcstm/bmc/provenance.py",
+        "line": 1507,
+        "function": "normalized_fact_for",
+        "primitive": 9,
+        "calls": 9,
+        "own_ms": 0.026763000000000002,
+        "cumulative_ms": 344.862955
+      },
+      {
+        "file": "pyfcstm/bmc/pipeline.py",
+        "line": 43,
+        "function": "compile_bmc_query",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.006867000000000001,
+        "cumulative_ms": 241.25796300000002
+      },
+      {
+        "file": "pyfcstm/solver/unsat.py",
+        "line": 363,
+        "function": "_minimize_core",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.15605100000000002,
+        "cumulative_ms": 222.93197
+      },
+      {
+        "file": "pyfcstm/solver/unsat.py",
+        "line": 486,
+        "function": "_extract_constraint_core",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.040567,
+        "cumulative_ms": 24.825713000000004
+      },
+      {
+        "file": "pyfcstm/solver/symbols.py",
+        "line": 103,
+        "function": "register",
+        "primitive": 188,
+        "calls": 188,
+        "own_ms": 0.48989,
+        "cumulative_ms": 6.213146
+      }
+    ]
+  },
+  {
+    "revision": "candidate",
+    "case": "dose_editor",
+    "mode": "formal",
+    "repetition": 1,
+    "total_ms": 1591.6922659999968,
+    "status": "unsat",
+    "functions": [
+      {
+        "file": "pyfcstm/bmc/witness.py",
+        "line": 5149,
+        "function": "solve_bmc_property",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.008609,
+        "cumulative_ms": 1314.718485
+      },
+      {
+        "file": "pyfcstm/bmc/infeasibility.py",
+        "line": 871,
+        "function": "build_core_item",
+        "primitive": 9,
+        "calls": 9,
+        "own_ms": 0.157858,
+        "cumulative_ms": 952.2500500000001
+      },
+      {
+        "file": "pyfcstm/solver/symbols.py",
+        "line": 140,
+        "function": "render",
+        "primitive": 9,
+        "calls": 9,
+        "own_ms": 0.269932,
+        "cumulative_ms": 592.842883
+      },
+      {
+        "file": "pyfcstm/bmc/provenance.py",
+        "line": 1507,
+        "function": "normalized_fact_for",
+        "primitive": 9,
+        "calls": 9,
+        "own_ms": 0.033185,
+        "cumulative_ms": 350.764473
+      },
+      {
+        "file": "pyfcstm/solver/unsat.py",
+        "line": 363,
+        "function": "_minimize_core",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.174108,
+        "cumulative_ms": 243.980387
+      },
+      {
+        "file": "pyfcstm/bmc/pipeline.py",
+        "line": 43,
+        "function": "compile_bmc_query",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.0067940000000000006,
+        "cumulative_ms": 241.950431
+      },
+      {
+        "file": "pyfcstm/solver/unsat.py",
+        "line": 486,
+        "function": "_extract_constraint_core",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.048268000000000005,
+        "cumulative_ms": 23.652332
+      },
+      {
+        "file": "pyfcstm/solver/symbols.py",
+        "line": 103,
+        "function": "register",
+        "primitive": 188,
+        "calls": 188,
+        "own_ms": 0.51666,
+        "cumulative_ms": 6.342651
+      }
+    ]
+  },
+  {
+    "revision": "candidate",
+    "case": "dose_editor",
+    "mode": "formal",
+    "repetition": 2,
+    "total_ms": 1575.2913319999975,
+    "status": "unsat",
+    "functions": [
+      {
+        "file": "pyfcstm/bmc/witness.py",
+        "line": 5149,
+        "function": "solve_bmc_property",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.010733000000000001,
+        "cumulative_ms": 1294.2283490000002
+      },
+      {
+        "file": "pyfcstm/bmc/infeasibility.py",
+        "line": 871,
+        "function": "build_core_item",
+        "primitive": 9,
+        "calls": 9,
+        "own_ms": 0.14911400000000002,
+        "cumulative_ms": 949.780963
+      },
+      {
+        "file": "pyfcstm/solver/symbols.py",
+        "line": 140,
+        "function": "render",
+        "primitive": 9,
+        "calls": 9,
+        "own_ms": 0.28776100000000004,
+        "cumulative_ms": 590.068251
+      },
+      {
+        "file": "pyfcstm/bmc/provenance.py",
+        "line": 1507,
+        "function": "normalized_fact_for",
+        "primitive": 9,
+        "calls": 9,
+        "own_ms": 0.029625000000000002,
+        "cumulative_ms": 351.144264
+      },
+      {
+        "file": "pyfcstm/bmc/pipeline.py",
+        "line": 43,
+        "function": "compile_bmc_query",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.005876,
+        "cumulative_ms": 246.18639900000002
+      },
+      {
+        "file": "pyfcstm/solver/unsat.py",
+        "line": 363,
+        "function": "_minimize_core",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.15862800000000002,
+        "cumulative_ms": 225.086896
+      },
+      {
+        "file": "pyfcstm/solver/unsat.py",
+        "line": 486,
+        "function": "_extract_constraint_core",
+        "primitive": 1,
+        "calls": 1,
+        "own_ms": 0.039606,
+        "cumulative_ms": 22.889518000000002
+      },
+      {
+        "file": "pyfcstm/solver/symbols.py",
+        "line": 103,
+        "function": "register",
+        "primitive": 188,
+        "calls": 188,
+        "own_ms": 0.6036980000000001,
+        "cumulative_ms": 6.837643
+      }
+    ]
+  }
+]

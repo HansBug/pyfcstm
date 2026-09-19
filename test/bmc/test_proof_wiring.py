@@ -910,7 +910,7 @@ def _model_with_state_slot_name(name: str) -> StateMachine:
 
 
 @pytest.mark.unittest
-def test_a_model_variable_named_like_the_state_slot_keeps_its_own_reading() -> None:
+def test_a_model_variable_named_like_the_state_slot_keeps_its_own_reading(text_aligner) -> None:
     """A Python model variable named ``state`` retains its variable identity."""
     model = _model_with_state_slot_name("state")
     context = BmcEngine(model).prepare(
@@ -927,13 +927,16 @@ def test_a_model_variable_named_like_the_state_slot_keeps_its_own_reading() -> N
 
     explanation = result.feasibility.explanation
     assert explanation.achieved_mode == "proof", explanation.reason
-    text = " ".join(step.text for step in explanation.narrative.reasoning_steps)
-    assert "state must equal 1" in text, text
-    assert "the state must be" not in text, text
+    text = "\n".join(step.text for step in explanation.narrative.reasoning_steps)
+    text_aligner.assert_equal(
+        expect="1 == state@0\n2 == state@0\nTherefore one value cannot be two things at once. "
+               "No execution satisfies these query requirements, and the property was not evaluated.",
+        actual=text,
+    )
 
 
 @pytest.mark.unittest
-def test_a_variable_spelled_like_the_slot_and_a_state_read_as_themselves() -> None:
+def test_a_variable_spelled_like_the_slot_and_a_state_read_as_themselves(text_aligner) -> None:
     """The public Python model API keeps both subjects distinct in one proof."""
     model = _model_with_state_slot_name("$state")
 
@@ -945,23 +948,31 @@ def test_a_variable_spelled_like_the_slot_and_a_state_read_as_themselves() -> No
         )
         explanation = result.feasibility.explanation
         assert explanation.achieved_mode == "proof", explanation.reason
-        return " ".join(step.text for step in explanation.narrative.reasoning_steps)
+        return "\n".join(step.text for step in explanation.narrative.reasoning_steps)
 
     as_variable = read(
         'assume at 0: var("$state") == 1;\n'
         'assume at 0: var("$state") == 2;\n'
         'check reach <= 1: active("Root.Host.Worker.Done");\n'
     )
-    assert "$state must equal 1" in as_variable, as_variable
-    assert "the state must be" not in as_variable, as_variable
+    text_aligner.assert_equal(
+        expect="1 == $state@0\n2 == $state@0\nTherefore one value cannot be two things at once. "
+               "No execution satisfies these query requirements, and the property was not evaluated.",
+        actual=as_variable,
+    )
 
     as_state = read(
         'assume at 1: active("Root.Host.Worker.Idle");\n'
         'assume at 1: active("Root.Host.Worker.Done");\n'
         'check reach <= 1: active("Root.Host.Worker.Done");\n'
     )
-    assert "the state must be Root.Host.Worker.Idle" in as_state, as_state
-    assert "must equal" not in as_state, as_state
+    text_aligner.assert_equal(
+        expect="At frame 1, the state must be Root.Host.Worker.Idle.\n"
+               "At frame 1, the state must be Root.Host.Worker.Done.\n"
+               "Therefore one value cannot be two things at once. "
+               "No execution satisfies these query requirements, and the property was not evaluated.",
+        actual=as_state,
+    )
 
 
 @pytest.mark.unittest

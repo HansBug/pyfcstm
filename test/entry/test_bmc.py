@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import copy
+import re
 import subprocess
 import sys
 from copy import deepcopy
@@ -2020,7 +2021,7 @@ def test_bmc_cli_can_request_each_explanation_depth(explain_files, tmp_path) -> 
 
 
 @pytest.mark.unittest
-def test_bmc_human_output_shows_the_explanation_it_paid_for(explain_files) -> None:
+def test_bmc_human_output_shows_the_explanation_it_paid_for(explain_files, text_aligner) -> None:
     """A human reader must see the explanation their request produced.
 
     Requesting ``formal`` costs extra solver work.  Before this, the human report
@@ -2037,30 +2038,55 @@ def test_bmc_human_output_shows_the_explanation_it_paid_for(explain_files) -> No
 
     assert default.exit_code == formal.exit_code == 3
     assert "Explanation:" not in default.output
-    assert "Explanation: COMPLETE FORMAL DOMAIN EXPLANATION" in formal.output
-    # The transcript now answers "why" as well as "where": a numbered causal
-    # chain whose closing step is the contradiction itself.
-    assert "Why no execution exists:" in formal.output
-    assert "  1. At frame 0, the query requires x to equal 1." in formal.output
-    assert "  3. Frame 0 cannot assign 1 and 2 to x at the same time." in formal.output
-    # And "where do I look": authored entry points, with no repair implied.
-    assert "Review surfaces:" in formal.output
-    assert "No automatic repair has been selected." in formal.output
-    assert "Core granularity: source_group" in formal.output
-    assert "Core size: 2" in formal.output
-    assert "Subset minimality: proven" in formal.output
-    assert (
-        "Classification: the assumptions are internally inconsistent" in formal.output
-    )
-    assert "Conflict constraints:" in formal.output
-    # The authored source location and text, not a paraphrase.
-    assert 'assume at 0: var("x") == 1;' in formal.output
-    assert "Core scope: assumptions_component" in formal.output
-    assert "Reduction: subset_minimal" in formal.output
-    assert (
-        "The displayed core is sufficient for UNSAT and proven subset-minimal."
-        in formal.output
-    )
+    # Only measured durations vary; every report line remains under comparison.
+    output = re.sub(r"(?m)^(Explanation time: |Solver: UNSAT in )[0-9]+\.[0-9]+ ms$",
+                    r"\g<1><elapsed> ms", formal.output)
+    text_aligner.assert_equal(expect='''
+BMC reach <= 2: SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED
+Scenario: INFEASIBLE
+Property verdict: NOT EVALUATED (SCENARIO INFEASIBLE)
+Semantic interpretation: The scenario constraints are unsatisfiable; no admissible execution exists, so the property was not evaluated.
+Primary search: WITNESS = UNSAT
+Conclusion: No admissible execution exists within 2 macro-steps; the property was not evaluated.
+Evidence:
+  Failure boundary: ASSUMPTIONS
+  Failure detail: Adding assumptions leaves no admissible execution.
+  Model evidence: no SAT model available.
+
+Explanation: COMPLETE FORMAL DOMAIN EXPLANATION
+Classification: the assumptions are internally inconsistent
+
+Why no execution exists:
+  1. 1 == x@0
+  2. 2 == x@0
+  3. Frame 0 cannot assign 1 and 2 to x at the same time.
+
+Conflict constraints:
+  1. scenario.fbmcq:2:1-2:28
+     assume at 0: var("x") == 1;
+  2. scenario.fbmcq:3:1-3:28
+     assume at 0: var("x") == 2;
+
+The displayed core is sufficient for UNSAT and proven subset-minimal.
+Core scope: assumptions_component
+Core granularity: source_group
+Core size: 2
+Reduction: subset_minimal
+Subset minimality: proven
+
+Review surfaces:
+  assumption  scenario.fbmcq:2:1-2:28
+  assumption  scenario.fbmcq:3:1-3:28
+  No automatic repair has been selected.
+
+Explanation time: <elapsed> ms
+
+Solver: UNSAT in <elapsed> ms
+Feasibility: kernel=sat, initialization=sat, assumptions=unsat
+
+This is a bounded result over at most 2 macro-steps; it does not establish behavior beyond that bound.
+Use --json for the complete witness, replay trace, and stable machine-readable diagnostics.
+'''.strip(), actual=output.strip())
     # The mandatory verdict is untouched.
     for line in default.output.splitlines():
         if line.startswith(("BMC ", "Scenario:", "Property verdict:")):
@@ -2827,7 +2853,7 @@ def test_the_complete_transcript_answers_the_five_reader_questions(
     ids=["integer-bounds", "float-bounds"],
 )
 def test_bounds_that_cross_are_reported_as_an_empty_range(
-    tmp_path, declaration, initial, bounds
+    tmp_path, declaration, initial, bounds, text_aligner
 ) -> None:
     """Two crossing bounds read as a range with nothing in it.
 
@@ -2856,10 +2882,13 @@ def test_bounds_that_cross_are_reported_as_an_empty_range(
 
     assert result.exit_code == 3, result.output
     assert "COMPLETE FORMAL DOMAIN EXPLANATION" in result.output
-    assert "No value of x satisfies every bound required at frame 0." in result.output
-    # The chain states each bound before concluding, rather than only concluding.
-    assert "requires x to be greater than" in result.output
-    assert "requires x to be less than" in result.output
+    lower, upper = ("5", "3") if declaration.startswith("def int") else ("1/2", "1/4")
+    narrative = result.output.split("Why no execution exists:\n", 1)[1].split("\n\n", 1)[0]
+    text_aligner.assert_equal(
+        expect="  1. %s < x@0\n  2. %s > x@0\n"
+               "  3. No value of x satisfies every bound required at frame 0." % (lower, upper),
+        actual=narrative,
+    )
 
 
 @pytest.mark.unittest

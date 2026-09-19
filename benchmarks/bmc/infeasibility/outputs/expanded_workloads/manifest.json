@@ -1,0 +1,34 @@
+{
+  "baseline_commit": "92a85f1ec4e0db20e05e341e088931a49c91ced5",
+  "candidate_runtime_commit": "94989748b5708ec6fea6db3f8ffca42e6d158414",
+  "candidate_followup": "Only the solver.unsat module docstring and benchmark artifacts differ; executable production logic is unchanged.",
+  "pairs": 9,
+  "seeds": [
+    19200,
+    19201,
+    19202,
+    19203,
+    19204,
+    19205,
+    19206,
+    19207,
+    19208
+  ],
+  "models_queries": 29,
+  "case_mode_combinations": 47,
+  "warmup": "One complete shuffled pass before each measured pass in every process.",
+  "ordering": "Alternate process launch order by pair; identical workload shuffle seed inside each pair.",
+  "default_gate": "median <= max(baseline * 1.05, baseline + 2ms)",
+  "enabled_gate": "median <= max(baseline * 1.15, baseline + 5ms)",
+  "rss_gate": "median <= max(baseline * 1.10, baseline + 8192KiB)",
+  "sampling": "All measured samples retained. GC enabled. Interpreter startup and imports excluded from API timing.",
+  "limits": "Shared Linux host, not an isolated performance lab. Only agent-owned test/build processes are awaited; other workloads are not controlled. Wall and process CPU times plus load averages are retained.",
+  "pilot_adjustments": [
+    "An initial full pilot with captured progress was interrupted and produced no complete sample.",
+    "A 16-way modulo-guard baseline was interrupted during compile_bmc_query, in guarded definedness construction; it is outside the 30s solve budget. The scaling case uses 16 equality guards in the measured matrix.",
+    "The existing VTOL invariant bound was reduced from 10 to 4 before measurement, after the baseline pilot took about 38.8 seconds under concurrent checks.",
+    "The initial pilot matrix was expanded to all seven property kinds, a short-name control and two original measurement cases before being frozen.",
+    "Exploratory pilots overlapped local verification, and their times are not used in the measured comparison."
+  ],
+  "comparison_note": "Solver call counts and selected core identities may vary even when semantic observations agree. Both are reported; differences are not silently counted as exact compatibility."
+}

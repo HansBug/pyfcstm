@@ -882,3 +882,61 @@ The measured correctness gate passes, but the 6.09% formula reduction misses
 T3's 20% requirement, so slicing remains disabled by default. A query regresses
 131.73% in solve time; compare compilation, solving and external replay costs
 together. See :ref:`sec-bmc-cone-measurements` for the measured results.
+
+Inspect the source construction of an action
+--------------------------------------------------------------------------------
+
+Use this Python workflow when you need to inspect how an action became a
+constraint, before attempting a logical explanation of UNSAT. Download
+:download:`dose_editor.fcstm <dose_editor.fcstm>`,
+:download:`dose_editor.fbmcq <dose_editor.fbmcq>` and
+:download:`source_construction.demo.py <source_construction.demo.py>` into the
+same directory. The editor includes Open/Increase/Undo/Confirm events, nested
+states, conditional effects and enter/exit/during actions. Its query havocs
+initial data and then constrains relationships with assumptions, rather than
+assigning one fixed starting value.
+
+Run with an installation containing the construction API:
+
+.. code-block:: console
+
+    python source_construction.demo.py
+
+The script only prints to stdout. It captures during actual compilation and
+checks the records for step 2; it does not modify the model or publish a proof.
+The first line should be ``Construction binding: verified``. If it is
+``unknown``, the binding check did not finish within its budget. An ``invalid``
+result means the source or formula bindings did not match: inspect
+``report.check().reason`` and recompile after any model edits before using the
+records. Asking for records from a core compiled without
+``BmcOptions(record_construction=True)`` raises ``ValueError``; inspection never
+silently recompiles that core.
+
+The complete script prints the selected case's scope before the action. The
+following excerpt shows why both later statements use the new refund:
+
+.. code-block:: text
+
+    Action 0: DoseEditor.Editing.Adjust.Trim state_enter
+      refund = quantum - margin; [dose_editor.fcstm:29:21]
+        reads: quantum#9, margin#4
+        refund#10 := quantum@param - margin@2
+        simplified: quantum@param + -1*margin@2
+      proposal = proposal - refund; [dose_editor.fcstm:30:21]
+        reads: proposal#3, refund#10
+        proposal#11 := proposal@2 - (quantum@param - margin@2)
+        simplified: proposal@2 + -1*quantum@param + margin@2
+      margin = margin + refund; [dose_editor.fcstm:31:21]
+        reads: margin#4, refund#10
+        margin#12 := margin@2 + quantum@param - margin@2
+        simplified: quantum@param
+
+``#10`` is an action-local write occurrence, not a BMC frame number.
+``margin@2`` is the incoming frame value; ``quantum@param`` is a shared parameter.
+The final simplified value is conditional on this case executing. It does not
+prove that every path reaches Trim, that the whole scenario is infeasible, or
+that the checked property holds. In particular, Z3 simplification is not a
+step-by-step arithmetic certificate. See
+:doc:`../../reference/bmc_results/index` for the exact capture, checking and
+core-refinement contracts, and :doc:`../../explanations/bmc_solving/index` for the
+separation between construction evidence and logical derivation.

@@ -64,7 +64,11 @@ class BmcOptions:
     :type max_bound: Optional[int], optional
     :param cone_slicing: Conservatively remove unobserved writes, defaults to ``False``.
     :type cone_slicing: bool, optional
-    :raises pyfcstm.bmc.errors.BmcBuildError: If ``cone_slicing`` is not Boolean or ``max_bound`` is not ``None``
+    :param record_construction: Retain source-level assignment, branch and guard
+        construction evidence during compilation, defaults to ``False``.
+        This adds no solver assertions and does not enable an explanation.
+    :type record_construction: bool, optional
+    :raises pyfcstm.bmc.errors.BmcBuildError: If ``record_construction`` or ``cone_slicing`` is not Boolean or ``max_bound`` is not ``None``
         and not a positive integer.
 
     Example::
@@ -75,8 +79,11 @@ class BmcOptions:
 
     max_bound: Optional[int] = None
     cone_slicing: bool = False
+    record_construction: bool = False
 
     def __post_init__(self) -> None:
+        if not isinstance(self.record_construction, bool):
+            raise BmcBuildError("record_construction must be bool.")
         if not isinstance(self.cone_slicing, bool):
             raise BmcBuildError("cone_slicing must be bool.")
         if self.max_bound is None:
@@ -101,6 +108,7 @@ class BmcOptions:
             "node": "bmc_options",
             "max_bound": self.max_bound,
             "cone_slicing": self.cone_slicing,
+            **({"record_construction": True} if self.record_construction else {}),
         }
 
 

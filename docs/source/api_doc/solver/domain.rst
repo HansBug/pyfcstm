@@ -40,11 +40,18 @@ BranchFeasibility
     :members: selector,status,source
 
 
+ExpressionConstruction
+-----------------------------------------------------
+
+.. autoclass:: ExpressionConstruction
+    :members: source,path,expression,path_conditions,definedness_constraints,failure
+
+
 ExprDomain
 -----------------------------------------------------
 
 .. autoclass:: ExprDomain
-    :members: z3_expr,expr_constraints,assumptions,definedness_constraints,failure,feasibility_checks
+    :members: z3_expr,expr_constraints,assumptions,definedness_constraints,failure,feasibility_checks,construction
 
 
 translate\_expr\_domain

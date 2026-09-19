@@ -669,3 +669,75 @@ reproduces the whole ledger.
 The ledger is worth reading against the boundary above: these four claims are
 about the constraints as encoded.  None of them says the encoding matches what
 the author meant, which is why the trust boundary is stated separately.
+
+Source construction and logical derivation are separate
+--------------------------------------------------------------------------------
+
+A core member is a submitted constraint, which may already contain substitutions,
+conditional values and several action effects. Finding its source line does not
+recover those construction steps. Optional construction capture therefore runs
+inside the existing operation executor and expression translator, where each
+source occurrence still has its actual input environment. It does not parse a
+printed Z3 formula to guess the original program, or maintain another statement
+executor.
+
+For the editor's Trim action, the construction order is observable:
+
+.. list-table:: Ordered reads and writes
+   :header-rows: 1
+   :widths: 35 65
+
+   * - Source statement
+     - Construction meaning
+   * - ``refund = quantum - margin;``
+     - Read the incoming margin and shared parameter; create a new refund version.
+   * - ``proposal = proposal - refund;``
+     - Read the incoming proposal and the refund written by the preceding line.
+   * - ``margin = margin + refund;``
+     - Read the incoming margin and that same new refund, not the incoming refund.
+
+Substitution yields ``margin + (quantum - margin)``. Z3 may simplify that to
+``quantum``; the displayed simplification is distinct from a checked sequence of
+arithmetic proof rules. The complete runnable example and actual output are in
+:doc:`../../how_to/bmc/index`.
+
+There are three distinct identities. A source occurrence identifies a statement
+or expression child by its path in the authored tree. An execution instance
+identifies the query, frame, case and action invocation. A value version identifies
+a particular write inside that invocation. ``x = x`` creates a new write even
+though its value AST is unchanged; the two occurrences in ``x + x`` remain
+different source children even if their generated values share one Z3 AST.
+Repeated named-action calls share authored source but have different input
+values and local lifetimes. Parameters share one symbol across frames, whereas
+inputs are sampled per step.
+
+Conditions belong to the evidence. An operation branch retains its ordered
+selector, including exclusions from earlier branches. A branch merge records
+which version each selector supplies and the incoming version preserved when
+none applies. Short-circuit subexpressions retain evaluation conditions and
+runtime-definedness requirements. Guard records use the environment at their
+actual ``after_action_block_index``; applying every guard to the final action
+environment would change the modeled behavior. A hot initial state starts from
+its own frame-zero values, without inventing earlier enter calls. Compiling cases
+for other source states does not mean those cases execute in the selected trace.
+
+The binding checker verifies local translations and versions against actual
+compiled anchors. This is useful evidence of consistency, but it is not an
+independent compiler certificate or a proof that all pruned branches really are
+unreachable. In particular, the checker reuses the expression translator that
+produced the records. Captured metadata must not be promoted to an unconditional
+logical premise. A complete UNSAT explanation still needs a derivation from the
+selected core and fixed background, with valid scopes, coverage of all relevant
+branches, and a final contradiction.
+
+Source slicing preserves an explicit retained-to-original occurrence map; it
+cannot identify source statements merely by equal resulting values. If the
+model loader supplied a statement span, that location can be shown. Child
+expression paths remain useful when no separate character span was supplied for
+them. Missing locations are reported as missing rather than fabricated.
+
+Detailed recording is disabled by default and does not silently run a new
+compilation when evidence is requested. Binding checks and equivalent core
+refinement are explicit operations with their own shared total budgets. Finishing
+a check marks only that check complete. Unknown reachability or an expired budget
+cannot be used to exclude a branch or advertise a complete explanation.

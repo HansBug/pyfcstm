@@ -1,0 +1,67 @@
+param int maximum = 0;
+param int quantum = 0;
+def int display = 0;
+def int saved = 0;
+def int snapshot = 0;
+def int proposal = 0;
+def int margin = 0;
+def int delta = 0;
+def int refund = 0;
+def int audit = 0;
+state DoseEditor {
+    event Open;
+    event Increase;
+    event Confirm;
+    event Undo;
+    state Idle;
+    state Editing {
+        enter {
+            snapshot = display;
+            proposal = display;
+            margin = maximum - proposal;
+        }
+        exit { audit = saved - snapshot; }
+        state Adjust {
+            state Choose;
+            state Review;
+            state Trim {
+                enter {
+                    refund = quantum - margin;
+                    proposal = proposal - refund;
+                    margin = margin + refund;
+                }
+            }
+            [*] -> Choose;
+            Choose -> Review : /Increase + [quantum > 0] effect {
+                if [margin > quantum * 2] {
+                    delta = quantum * 2;
+                } else {
+                    delta = quantum;
+                }
+                proposal = proposal + delta;
+                margin = margin - delta;
+            };
+            Review -> Choose : /Undo effect {
+                proposal = snapshot;
+                margin = maximum - proposal;
+            };
+            Review -> Trim : if [margin < quantum];
+            Review -> [*] : if [margin >= quantum];
+            Trim -> [*] : if [margin >= quantum];
+        }
+        state Ready;
+        [*] -> Adjust;
+        Adjust -> Ready;
+        Ready -> [*] : /Confirm + [margin >= quantum] effect {
+            saved = proposal;
+        };
+    }
+    state Committed {
+        enter { display = saved; }
+        during { audit = display - snapshot; }
+    }
+    [*] -> Idle;
+    Idle -> Editing : /Open + [display >= 0 && display < maximum];
+    Editing -> Committed;
+    Committed -> Idle;
+}

@@ -1,0 +1,8 @@
+init cold havoc *;
+assume at 0: quantum > 0;
+assume at 0: maximum > quantum * 4;
+assume at 0: display >= 0 && display < maximum;
+assume at 0: saved < maximum;
+assume at 0: proposal + margin == maximum;
+assume at 6: saved >= maximum;
+check reach <= 6: true;

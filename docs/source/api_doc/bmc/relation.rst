@@ -37,7 +37,7 @@ BmcCaseRelation
 -----------------------------------------------------
 
 .. autoclass:: BmcCaseRelation
-    :members: __post_init__,formula,to_canonical,step_index,case,selector,antecedent,consequent,implication,selector_constraint,post_var_exprs,guard_terms,definedness_constraints,call_records
+    :members: __post_init__,formula,to_canonical,step_index,case,selector,antecedent,consequent,implication,selector_constraint,post_var_exprs,guard_terms,definedness_constraints,call_records,construction
 
 
 BmcStepRelation

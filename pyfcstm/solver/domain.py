@@ -21,7 +21,7 @@ Example::
 """
 
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 import z3
@@ -40,6 +40,7 @@ from pyfcstm.model.expr import (
 
 from .expr import _apply_binary_z3, _apply_ufunc_z3, _apply_unary_z3, expr_to_z3
 from .logical import is_sat
+from .budget import SolveBudget
 
 _Z3Expr = Union[z3.ArithRef, z3.BoolRef]
 _Z3Vars = Dict[str, _Z3Expr]
@@ -166,6 +167,31 @@ class BranchFeasibility:
 
 
 @dataclass(frozen=True)
+class ExpressionConstruction:
+    """One source subexpression evaluated by the actual domain translator.
+
+    :param source: Original model expression object, preserved by identity.
+    :param path: Attribute path from the translated root, e.g. ``('y', 'x')``.
+        Distinct source occurrences remain distinct even for equal Z3 ASTs.
+    :param expression: Actual generated value, or ``None`` on failure.
+    :param path_conditions: Evaluation scope, including short-circuit guards.
+    :param definedness_constraints: Runtime requirements for this subexpression.
+    :param failure: Translation failure, if this expression could not be built.
+
+    Only evaluated subexpressions are recorded. A pruned expression has no
+    value record; the enclosing result retains its feasibility observations.
+    These records describe construction, not an independent proof of it.
+    """
+
+    source: Expr
+    path: Tuple[str, ...]
+    expression: Optional[_Z3Expr]
+    path_conditions: Tuple[z3.ExprRef, ...]
+    definedness_constraints: Tuple[DomainConstraint, ...]
+    failure: Optional[TranslationFailure]
+
+
+@dataclass(frozen=True)
 class ExprDomain:
     """Domain-aware translation result for one expression.
 
@@ -189,6 +215,9 @@ class ExprDomain:
     :param feasibility_checks: Branch reachability checks performed while
         pruning conditional expressions, defaults to ``()``.
     :type feasibility_checks: Tuple[BranchFeasibility, ...], optional
+    :param construction: Optional source subexpression records, in dependency
+        order. Empty unless explicitly requested from the public translator.
+    :type construction: Tuple[ExpressionConstruction, ...], optional
 
     Example::
 
@@ -205,6 +234,7 @@ class ExprDomain:
     definedness_constraints: Tuple[DomainConstraint, ...] = ()
     failure: Optional[TranslationFailure] = None
     feasibility_checks: Tuple[BranchFeasibility, ...] = ()
+    construction: Tuple[ExpressionConstruction, ...] = ()
 
 
 def _failure_from_exception(
@@ -517,6 +547,7 @@ def _branch_feasibility(
     condition_domains: Sequence[DomainConstraint],
     source: Optional[DomainSource],
     timeout_ms: Optional[int],
+    budget: Optional[SolveBudget] = None,
 ) -> BranchFeasibility:
     """Check whether one conditional value branch is reachable.
 
@@ -550,6 +581,10 @@ def _branch_feasibility(
         >>> result.status
         'sat'
     """
+    if budget is not None:
+        timeout_ms = budget.remaining_ms()
+        if budget.deadline is not None and timeout_ms is None:
+            return BranchFeasibility(selector=selector, status="unknown", source=source)
     result = is_sat(
         (
             *assumptions,
@@ -564,6 +599,26 @@ def _branch_feasibility(
 
 
 def _translate_expr_domain(
+    expr, z3_vars, *, assumptions, path_conditions, source,
+    prune_unreachable, timeout_ms, budget=None, construction=None,
+    expression_path=(),
+):
+    """Attach source occurrence evidence to the existing translation result."""
+    result = _translate_expr_domain_value(
+        expr, z3_vars, assumptions=assumptions, path_conditions=path_conditions,
+        source=source, prune_unreachable=prune_unreachable,
+        timeout_ms=timeout_ms, budget=budget, construction=construction,
+        expression_path=expression_path,
+    )
+    if construction is not None:
+        construction.append(ExpressionConstruction(
+            expr, expression_path, result.z3_expr, tuple(path_conditions),
+            result.definedness_constraints, result.failure,
+        ))
+    return result
+
+
+def _translate_expr_domain_value(
     expr: Expr,
     z3_vars: _Z3Vars,
     *,
@@ -572,6 +627,9 @@ def _translate_expr_domain(
     source: Optional[DomainSource],
     prune_unreachable: bool,
     timeout_ms: Optional[int],
+    budget: Optional[SolveBudget] = None,
+    construction=None,
+    expression_path=(),
 ) -> ExprDomain:
     """Recursively translate an expression with runtime-definedness metadata.
 
@@ -627,6 +685,9 @@ def _translate_expr_domain(
             source=source,
             prune_unreachable=prune_unreachable,
             timeout_ms=timeout_ms,
+            budget=budget,
+            construction=construction,
+            expression_path=expression_path,
         )
 
     if isinstance(expr, BinaryOp):
@@ -638,6 +699,9 @@ def _translate_expr_domain(
             source=source,
             prune_unreachable=prune_unreachable,
             timeout_ms=timeout_ms,
+            budget=budget,
+            construction=construction,
+            expression_path=(*expression_path, 'x') if construction is not None else (),
         )
         if left.failure is not None:
             return left
@@ -675,6 +739,7 @@ def _translate_expr_domain(
                     condition_domains=left.definedness_constraints,
                     source=source,
                     timeout_ms=timeout_ms,
+                    budget=budget,
                 )
                 feasibility_checks.append(right_check)
                 right_reachable = right_check.status != "unsat"
@@ -698,6 +763,9 @@ def _translate_expr_domain(
                 source=source,
                 prune_unreachable=prune_unreachable,
                 timeout_ms=timeout_ms,
+                budget=budget,
+                construction=construction,
+                expression_path=(*expression_path, 'y') if construction is not None else (),
             )
             guarded_right_domains = _guarded_domain_constraints(
                 right_selector, right.definedness_constraints
@@ -723,7 +791,7 @@ def _translate_expr_domain(
                     right.z3_expr,
                     expr.x,
                     expr.y,
-                    warning_stacklevel=6,
+                    warning_stacklevel=7,
                 ),
                 source,
             )
@@ -751,6 +819,9 @@ def _translate_expr_domain(
             source=source,
             prune_unreachable=prune_unreachable,
             timeout_ms=timeout_ms,
+            budget=budget,
+            construction=construction,
+            expression_path=(*expression_path, 'y') if construction is not None else (),
         )
         if right.failure is not None:
             return _failure_result(
@@ -792,7 +863,7 @@ def _translate_expr_domain(
                 right.z3_expr,
                 expr.x,
                 expr.y,
-                warning_stacklevel=6,
+                warning_stacklevel=7,
             ),
             source,
         )
@@ -816,6 +887,9 @@ def _translate_expr_domain(
             source=source,
             prune_unreachable=prune_unreachable,
             timeout_ms=timeout_ms,
+            budget=budget,
+            construction=construction,
+            expression_path=(*expression_path, 'x') if construction is not None else (),
         )
         if operand.failure is not None:
             return operand
@@ -823,7 +897,7 @@ def _translate_expr_domain(
             lambda: _apply_unary_z3(
                 expr.op,
                 operand.z3_expr,
-                warning_stacklevel=6,
+                warning_stacklevel=7,
             ),
             source,
         )
@@ -844,6 +918,9 @@ def _translate_expr_domain(
             source=source,
             prune_unreachable=prune_unreachable,
             timeout_ms=timeout_ms,
+            budget=budget,
+            construction=construction,
+            expression_path=(*expression_path, 'x') if construction is not None else (),
         )
         if operand.failure is not None:
             return operand
@@ -896,6 +973,9 @@ def _translate_conditional_domain(
     source: Optional[DomainSource],
     prune_unreachable: bool,
     timeout_ms: Optional[int],
+    budget: Optional[SolveBudget] = None,
+    construction=None,
+    expression_path=(),
 ) -> ExprDomain:
     """Translate a conditional expression with runtime short-circuit semantics.
 
@@ -944,6 +1024,9 @@ def _translate_conditional_domain(
         source=source,
         prune_unreachable=prune_unreachable,
         timeout_ms=timeout_ms,
+        budget=budget,
+        construction=construction,
+        expression_path=(*expression_path, 'cond') if construction is not None else (),
     )
     if condition.failure is not None:
         return condition
@@ -977,6 +1060,7 @@ def _translate_conditional_domain(
             condition_domains=condition_domains,
             source=source,
             timeout_ms=timeout_ms,
+            budget=budget,
         )
         false_check = _branch_feasibility(
             false_selector,
@@ -985,6 +1069,7 @@ def _translate_conditional_domain(
             condition_domains=condition_domains,
             source=source,
             timeout_ms=timeout_ms,
+            budget=budget,
         )
         feasibility_checks.extend((true_check, false_check))
         true_reachable = true_check.status != "unsat"
@@ -1004,6 +1089,9 @@ def _translate_conditional_domain(
             source=source,
             prune_unreachable=prune_unreachable,
             timeout_ms=timeout_ms,
+            budget=budget,
+            construction=construction,
+            expression_path=(*expression_path, 'if_true') if construction is not None else (),
         )
         feasibility_checks.extend(true_result.feasibility_checks)
         if true_result.failure is not None:
@@ -1025,6 +1113,9 @@ def _translate_conditional_domain(
             source=source,
             prune_unreachable=prune_unreachable,
             timeout_ms=timeout_ms,
+            budget=budget,
+            construction=construction,
+            expression_path=(*expression_path, 'if_false') if construction is not None else (),
         )
         feasibility_checks.extend(false_result.feasibility_checks)
         if false_result.failure is not None:
@@ -1108,6 +1199,8 @@ def translate_expr_domain(
     source: Optional[DomainSource] = None,
     prune_unreachable: bool = True,
     timeout_ms: Optional[int] = None,
+    budget: Optional[SolveBudget] = None,
+    record_construction: bool = False,
 ) -> ExprDomain:
     """Translate an expression and return runtime-definedness metadata.
 
@@ -1117,8 +1210,9 @@ def translate_expr_domain(
     :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
     :param assumptions: Caller-known facts preserved on the result.
     :type assumptions: Sequence[z3.ExprRef], optional
-    :param path_conditions: Current path predicates used only for branch
-        feasibility pruning; they are not stored on the result.
+    :param path_conditions: Current path predicates used for branch
+        feasibility pruning. They are retained on subexpression records only
+        when construction recording is enabled.
     :type path_conditions: Sequence[z3.ExprRef], optional
     :param source: Optional pure source metadata.
     :type source: Optional[DomainSource], optional
@@ -1127,8 +1221,17 @@ def translate_expr_domain(
     :type prune_unreachable: bool, optional
     :param timeout_ms: Optional timeout for branch reachability checks.
     :type timeout_ms: Optional[int], optional
+    :param budget: Optional shared total budget for all recursive reachability
+        checks. When supplied, its remaining time replaces ``timeout_ms``.
+        Exhaustion records unknown reachability and does not prune branches.
+    :type budget: Optional[pyfcstm.solver.budget.SolveBudget], optional
+    :param record_construction: Capture evaluated source subexpressions and
+        their actual values, paths, scopes and domain requirements. Defaults
+        to ``False``; no source-expression ledger is retained when disabled.
+    :type record_construction: bool, optional
     :return: Domain-aware expression translation.
     :rtype: ExprDomain
+    :raises TypeError: If ``record_construction`` is not Boolean.
 
     Example::
 
@@ -1142,7 +1245,10 @@ def translate_expr_domain(
         >>> bool(result.definedness_constraints)
         True
     """
-    return _translate_expr_domain(
+    if not isinstance(record_construction, bool):
+        raise TypeError("record_construction must be bool")
+    construction = [] if record_construction else None
+    result = _translate_expr_domain(
         expr,
         z3_vars,
         assumptions=tuple(assumptions),
@@ -1150,7 +1256,11 @@ def translate_expr_domain(
         source=source,
         prune_unreachable=prune_unreachable,
         timeout_ms=timeout_ms,
+        budget=budget,
+        construction=construction,
     )
+
+    return replace(result, construction=tuple(construction)) if construction is not None else result
 
 
 def merge_definedness_constraints(*items) -> Tuple[DomainConstraint, ...]:
@@ -1203,6 +1313,7 @@ __all__ = [
     "DomainConstraint",
     "DomainSource",
     "ExprDomain",
+    "ExpressionConstruction",
     "TranslationFailure",
     "merge_definedness_constraints",
     "translate_expr_domain",

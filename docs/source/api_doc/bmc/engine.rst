@@ -16,7 +16,7 @@ BmcOptions
 -----------------------------------------------------
 
 .. autoclass:: BmcOptions
-    :members: __post_init__,to_canonical,max_bound,cone_slicing
+    :members: __post_init__,to_canonical,max_bound,cone_slicing,record_construction
 
 
 BmcPreparedContext

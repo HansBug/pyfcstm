@@ -799,3 +799,51 @@ options=BmcOptions(cone_slicing=True))``；文件入口支持
 本次实测正确性门禁通过，但公式规模仅缩减 6.09%，未达到 T3 的 20% 门槛；
 切片默认保持关闭。单例求解最多退化 131.73%，所以应同时比较编译、求解和
 对外重放总成本。详细数字见 :ref:`sec-bmc-cone-measurements-zh`。
+
+检查动作的源码构建过程
+----------------------
+
+需要先看清动作如何变成约束，再分析无解原因时，可以使用此 Python 流程。
+下载 :download:`dose_editor.fcstm <dose_editor.fcstm>`、
+:download:`dose_editor.fbmcq <dose_editor.fbmcq>` 和
+:download:`source_construction.demo.py <source_construction.demo.py>`，放在同一目录。
+编辑器包含 Open/Increase/Undo/Confirm 事件、嵌套状态、带分支的迁移效果，以及
+进入、退出和停留动作。查询先让初始数据自由取值，再通过假设约束其关系，不将其锁定为某一组常量。
+
+使用包含构建记录接口的版本运行：
+
+.. code-block:: console
+
+    python source_construction.demo.py
+
+脚本只写标准输出，在实际编译时捕获记录，并检查第 2 步的记录；不修改模型，也不发布证明。
+第一行应为 ``Construction binding: verified``。若为 ``unknown``，说明绑定检查未在预算内完成。
+``invalid`` 表示来源或公式绑定失配，应查看 ``report.check().reason``；若曾修改模型，
+先重新编译再使用记录。若编译时没有设置 ``BmcOptions(record_construction=True)``，
+请求记录会抛出 ``ValueError``，检查过程不会暗中重新编译。
+
+完整脚本先打印选中宏步分支的作用域，再打印动作。下面的输出节选说明后两句为何都读取
+新的退款量：
+
+.. code-block:: text
+
+    Action 0: DoseEditor.Editing.Adjust.Trim state_enter
+      refund = quantum - margin; [dose_editor.fcstm:29:21]
+        reads: quantum#9, margin#4
+        refund#10 := quantum@param - margin@2
+        simplified: quantum@param + -1*margin@2
+      proposal = proposal - refund; [dose_editor.fcstm:30:21]
+        reads: proposal#3, refund#10
+        proposal#11 := proposal@2 - (quantum@param - margin@2)
+        simplified: proposal@2 + -1*quantum@param + margin@2
+      margin = margin + refund; [dose_editor.fcstm:31:21]
+        reads: margin#4, refund#10
+        margin#12 := margin@2 + quantum@param - margin@2
+        simplified: quantum@param
+
+``#10`` 是本次动作内的写入序号，不是 BMC 帧号。``margin@2`` 是输入帧中的余量，
+``quantum@param`` 是共享参数。最后的化简结果以该宏步分支实际执行为前提，
+不证明所有路径都经过 Trim，也不证明整个场景无解或性质成立。
+尤其要注意，Z3 化简不等于逐步算术证明。
+捕获、检查和核细化的完整合同见 :doc:`../../reference/bmc_results/index_zh`；
+构建证据与逻辑推导的区别见 :doc:`../../explanations/bmc_solving/index_zh`。

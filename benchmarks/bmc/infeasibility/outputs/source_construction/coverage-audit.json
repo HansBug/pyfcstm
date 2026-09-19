@@ -1,0 +1,156 @@
+[
+  {
+    "file": "pyfcstm/bmc/engine.py",
+    "changed_executable": 3,
+    "missing_lines": [],
+    "missing_branches": [],
+    "whole_module": {
+      "covered_lines": 134,
+      "num_statements": 135,
+      "percent_covered": 98.90710382513662,
+      "percent_covered_display": "99",
+      "missing_lines": 1,
+      "excluded_lines": 0,
+      "percent_statements_covered": 99.25925925925925,
+      "percent_statements_covered_display": "99",
+      "num_branches": 48,
+      "num_partial_branches": 1,
+      "covered_branches": 47,
+      "missing_branches": 1,
+      "percent_branches_covered": 97.91666666666667,
+      "percent_branches_covered_display": "98"
+    }
+  },
+  {
+    "file": "pyfcstm/bmc/relation.py",
+    "changed_executable": 14,
+    "missing_lines": [],
+    "missing_branches": [],
+    "whole_module": {
+      "covered_lines": 890,
+      "num_statements": 1087,
+      "percent_covered": 79.27063339731286,
+      "percent_covered_display": "79",
+      "missing_lines": 197,
+      "excluded_lines": 108,
+      "percent_statements_covered": 81.87672493100276,
+      "percent_statements_covered_display": "82",
+      "num_branches": 476,
+      "num_partial_branches": 49,
+      "covered_branches": 349,
+      "missing_branches": 127,
+      "percent_branches_covered": 73.31932773109244,
+      "percent_branches_covered_display": "73"
+    }
+  },
+  {
+    "file": "pyfcstm/bmc/slicing.py",
+    "changed_executable": 8,
+    "missing_lines": [],
+    "missing_branches": [],
+    "whole_module": {
+      "covered_lines": 93,
+      "num_statements": 96,
+      "percent_covered": 96.20253164556962,
+      "percent_covered_display": "96",
+      "missing_lines": 3,
+      "excluded_lines": 0,
+      "percent_statements_covered": 96.875,
+      "percent_statements_covered_display": "97",
+      "num_branches": 62,
+      "num_partial_branches": 3,
+      "covered_branches": 59,
+      "missing_branches": 3,
+      "percent_branches_covered": 95.16129032258064,
+      "percent_branches_covered_display": "95"
+    }
+  },
+  {
+    "file": "pyfcstm/solver/domain.py",
+    "changed_executable": 25,
+    "missing_lines": [],
+    "missing_branches": [],
+    "whole_module": {
+      "covered_lines": 244,
+      "num_statements": 244,
+      "percent_covered": 100.0,
+      "percent_covered_display": "100",
+      "missing_lines": 0,
+      "excluded_lines": 0,
+      "percent_statements_covered": 100.0,
+      "percent_statements_covered_display": "100",
+      "num_branches": 94,
+      "num_partial_branches": 0,
+      "covered_branches": 94,
+      "missing_branches": 0,
+      "percent_branches_covered": 100.0,
+      "percent_branches_covered_display": "100"
+    }
+  },
+  {
+    "file": "pyfcstm/solver/operation.py",
+    "changed_executable": 21,
+    "missing_lines": [],
+    "missing_branches": [],
+    "whole_module": {
+      "covered_lines": 327,
+      "num_statements": 327,
+      "percent_covered": 100.0,
+      "percent_covered_display": "100",
+      "missing_lines": 0,
+      "excluded_lines": 1,
+      "percent_statements_covered": 100.0,
+      "percent_statements_covered_display": "100",
+      "num_branches": 120,
+      "num_partial_branches": 0,
+      "covered_branches": 120,
+      "missing_branches": 0,
+      "percent_branches_covered": 100.0,
+      "percent_branches_covered_display": "100"
+    }
+  },
+  {
+    "file": "pyfcstm/bmc/construction.py",
+    "changed_executable": 234,
+    "missing_lines": [],
+    "missing_branches": [],
+    "whole_module": {
+      "covered_lines": 234,
+      "num_statements": 234,
+      "percent_covered": 100.0,
+      "percent_covered_display": "100",
+      "missing_lines": 0,
+      "excluded_lines": 0,
+      "percent_statements_covered": 100.0,
+      "percent_statements_covered_display": "100",
+      "num_branches": 110,
+      "num_partial_branches": 0,
+      "covered_branches": 110,
+      "missing_branches": 0,
+      "percent_branches_covered": 100.0,
+      "percent_branches_covered_display": "100"
+    }
+  },
+  {
+    "file": "pyfcstm/solver/construction.py",
+    "changed_executable": 184,
+    "missing_lines": [],
+    "missing_branches": [],
+    "whole_module": {
+      "covered_lines": 184,
+      "num_statements": 184,
+      "percent_covered": 100.0,
+      "percent_covered_display": "100",
+      "missing_lines": 0,
+      "excluded_lines": 0,
+      "percent_statements_covered": 100.0,
+      "percent_statements_covered_display": "100",
+      "num_branches": 72,
+      "num_partial_branches": 0,
+      "covered_branches": 72,
+      "missing_branches": 0,
+      "percent_branches_covered": 100.0,
+      "percent_branches_covered_display": "100"
+    }
+  }
+]

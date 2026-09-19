@@ -1664,3 +1664,112 @@ BMC 在构建轨迹符号时登记变量、状态、输入、参数、事件和�
 Z3 超时粒度及 Python 调度开销仍可能使实际耗时略超预算。核验证前超时不发布核；
 最小化中断则保留已经验证的核，但不宣称极小性。接口没有文件或标准输出副作用。
 默认性质求解不会隐式调用这个接口；场景解释复用其检查实现，保留原有选项和结果合同。
+
+捕获源码构建过程
+----------------
+
+源码构建记录说明编译器如何得到公式。它与不可满足核（UNSAT core）、从约束到矛盾的
+推导是不同的证据。本节是显式 Python 接口，不增加命令行开关或公共 BMC JSON 字段。
+性质真值和 SAT 见证的强制重放保持原有含义。
+
+``BmcOptions(record_construction=False)``
+    默认不保存详细构建记录。设为 ``True`` 后，在实际编译关系时捕获。
+    非布尔值抛出 ``BmcBuildError``。
+
+``get_bmc_construction(core, group_ids)``
+    从 ``pyfcstm.bmc.construction`` 导入。读取指定且不重复的来源组，不求解、
+    不重新编译。选择转移步组会包含其全部分支记录，选择单个分支组仅包含该分支。
+    初始化和假设组保留直接来源绑定。未开启记录、未知或重复标识抛出 ``ValueError``。
+
+``report.check(timeout_ms=None)``
+    检查查询和帧身份、动作与守卫环境、源码绑定和最终关系绑定，返回
+    ``ConstructionCheck``。正整数指定共享的毫秒总预算，``None`` 表示不限时。
+    无效预算抛出 ``ValueError``。
+
+``action.text_lines(names=None)``
+    返回完整的局部动作文本，包括源码、读写版本和展开值。
+    传入 ``core.symbols.names`` 可使用已登记的显示名称，运算符仍为原生记法。
+    版本编号仅属于本次动作调用，语句受所属分支的条件约束。
+
+``report.refine(query, timeout_ms=None, minimize=True)``
+    接收 ``UnsatQuery``，其中可移除约束及固定背景的标识、公式必须恰好匹配选定组。
+    细化可移除组、保留背景，逐组检查等价性，再独立检查细核。
+    绑定错误抛出 ``ValueError``；查询或最小化参数类型错误抛出 ``TypeError``。
+
+检查不会替未记录的公式补跑编译。需要先决定本次任务是否接受额外内存和编译成本，
+再显式开启捕获。例如，下面保留了仅比较前后值会遗漏的恒等赋值：
+
+.. code-block:: pycon
+
+    >>> from pyfcstm.model import load_state_machine_from_text
+    >>> from pyfcstm.bmc import BmcOptions, compile_bmc_query
+    >>> from pyfcstm.bmc.construction import get_bmc_construction
+    >>> model = load_state_machine_from_text("def int x = 0; state Root { enter { x = x; } }")
+    >>> compiled = compile_bmc_query(model, "init cold havoc *; check reach <= 1: true;",
+    ...                              options=BmcOptions(record_construction=True))
+    >>> report = get_bmc_construction(compiled.core, ("transition.step.0000",))
+    >>> report.check(timeout_ms=10000).status
+    'verified'
+    >>> action = next(action for case in report.cases for action in case.actions)
+    >>> writes = [value for value in action.execution.values if value.kind == "assignment"]
+    >>> [(value.name, value.identifier, value.reads) for value in writes]
+    [('x', 1, (('x', 0),))]
+
+新版本代表作者写下的一次赋值，即使其 Z3 值与输入完全相同，也保留这次写入。
+这不表示每条执行轨迹都会执行该动作；每个分支仍保留真实的 ``antecedent`` 和
+``expression``。
+
+``BmcConstructionReport``
+    原始 ``core``、准确的 ``group_ids`` 和来源 ``groups``，以及按帧和分支排序的
+    ``cases``。来源元数据不自动成为逻辑前提。
+
+``BmcCaseConstruction``
+    原始查询对象、``step_index``、宏步分支、提交公式、有效前件、输入环境、
+    有序动作和守卫。
+
+``BmcActionConstruction``
+    动作序号、含引用和生命周期身份的宏步动作块、输入输出环境、操作图、源码引用，
+    以及切片后保留位置到原源码位置的映射。抽象调用的 ``execution=None``，
+    不引入模型中的变量写入。
+
+``BmcGuardConstruction``
+    含 ``after_action_block_index`` 的原始守卫要求、实际求值环境和表达式、源码、
+    子表达式及有定义性条件。
+
+``OperationConstruction``
+    原始语句、带版本的输入和赋值及汇合、源码分支、初末版本、假设和入口条件。
+    局部变量保留在本次调用图内，不导出到下一个动作。
+
+``ConstructionValue``
+    版本序号、变量名、种类、实际表达式、源码位置、读取版本、有序汇合候选、
+    作用域、先前有定义性条件及赋值的子表达式记录。恒等赋值仍保留。
+
+``ConstructionBranch``
+    源码位置、分支种类、有效选择条件、观察到的可达性、输入输出版本、分支作用域，
+    以及实际求值的条件子表达式。
+
+``ExpressionConstruction``
+    原始表达式对象、从根开始的属性路径、生成的表达式、求值条件、运行时要求和
+    可能的翻译失败。相同生成值不会合并不同的源码出现位置。
+
+纯求解器入口 ``execute_operations_domain(..., record_construction=True)`` 将调用图
+放在 ``result.construction`` 中；执行失败时该字段为 ``None``。
+``translate_expr_domain(..., record_construction=True)`` 则将子表达式记录放在同名字段，
+关闭时为空元组。两个开关都默认为 ``False``，非布尔值抛出 ``TypeError``。
+表达式翻译器还可通过 ``budget=`` 接收共享 ``SolveBudget``，剩余时间优先于单次检查的
+``timeout_ms``。预算耗尽后记录未知可达性，不把分支裁剪为不可达。
+被裁剪的源码子表达式没有生成值记录。
+
+``ConstructionCheck.status`` 为 ``verified`` 时表示绑定检查已完成，``invalid`` 表示
+发现失配，``unknown`` 表示检查未完成。``reason`` 描述结果，``path`` 在可用时指出失败的
+源码出现位置。检查复用已有表达式翻译器并校验版本依赖，不另写语句执行器。
+它不证明编译器正确性、不证明全部分支可达性决定，也不证明矛盾。
+捕获后若修改原始源码对象，早先记录可能失效。没有源码位置时明确标为缺失，不从打印的
+符号名称推测位置。
+
+细化拆分合取时保留蕴含条件，不把 OR 或 ITE 平铺为无条件事实。
+``units`` 保留原始父组标识、序号、表达式和来源组身份。``equivalence`` 描述逐父组检查，
+``explanation`` 是另行检查的细核结果；等价性未确立或共享预算不足时为 ``None``。
+粗组极小性不会继承给细核，SAT 或 UNKNOWN 输入也不会因细化变为 UNSAT。
+Z3 在已选父组内提取细核。``minimize=False`` 不再继续删除这个已提取细核的成员，
+``True`` 允许继续删除并给出自己的极小性结果。两种模式都不会添加选定集合之外的父组。

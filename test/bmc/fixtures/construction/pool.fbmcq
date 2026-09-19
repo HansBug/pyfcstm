@@ -1,0 +1,7 @@
+init state("Pool.Intake") havoc *;
+assume at 0: request > 0;
+assume at 0: capacity > request;
+assume at 0: free >= 0 && reserved >= 0 && allocated >= 0;
+assume at 0: capacity == free + reserved + allocated;
+assume at 4: free < 0 || reserved < 0 || allocated < 0 || capacity != free + reserved + allocated;
+check reach <= 4: true;

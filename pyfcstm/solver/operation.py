@@ -32,6 +32,7 @@ from typing import List, Dict, Mapping, Optional, Sequence, Tuple, Union
 import z3
 
 from .expr import expr_to_z3
+from .construction import OperationConstruction, _ConstructionRecorder
 from .domain import (
     DomainConstraint,
     DomainSource,
@@ -209,6 +210,10 @@ class OperationExecution:
     :param failure: Expected execution failure, defaults to ``None``.
     :type failure: Optional[OperationFailure], optional
 
+    :param construction: Optional captured write/merge graph; ``None`` when
+        recording is disabled or execution fails.
+    :type construction: Optional[pyfcstm.solver.construction.OperationConstruction]
+
     Example::
 
         >>> import z3
@@ -224,6 +229,7 @@ class OperationExecution:
     steps: Tuple[OperationStep, ...] = ()
     branches: Tuple[OperationBranch, ...] = ()
     failure: Optional[OperationFailure] = None
+    construction: Optional[OperationConstruction] = None
 
 
 @dataclass
@@ -764,6 +770,7 @@ def _translate_operation_expr(
     source: Optional[DomainSource],
     prune_unreachable: bool,
     timeout_ms: Optional[int],
+    record_construction: bool = False,
 ):
     """Translate an operation expression in the current execution context.
 
@@ -816,6 +823,7 @@ def _translate_operation_expr(
         source=source,
         prune_unreachable=prune_unreachable,
         timeout_ms=timeout_ms,
+        record_construction=record_construction,
     )
 
 
@@ -922,6 +930,8 @@ def _execute_operation_statements_domain(
     prune_unreachable: bool,
     timeout_ms: Optional[int],
     step_start: int,
+    construction=None,
+    construction_path=(),
 ) -> _ExecutionResult:
     """Execute a statement sequence with path and domain evidence.
 
@@ -975,7 +985,8 @@ def _execute_operation_statements_domain(
     branches: List[OperationBranch] = []
     step_index = step_start
 
-    for statement in statements:
+    for statement_index, statement in enumerate(statements):
+        statement_path = (*construction_path, statement_index) if construction is not None else ()
         point_status = _execution_point_status(
             assumptions=assumptions,
             path_conditions=path_conditions,
@@ -1007,6 +1018,7 @@ def _execute_operation_statements_domain(
                 source=step_source,
                 prune_unreachable=prune_unreachable,
                 timeout_ms=timeout_ms,
+                record_construction=construction is not None,
             )
             step_domains = _path_guard(
                 result.definedness_constraints,
@@ -1023,6 +1035,11 @@ def _execute_operation_statements_domain(
                     next_step=step_index,
                 )
 
+            if construction is not None:
+                construction.assignment(
+                    statement, result, statement_path,
+                    path_conditions, current_domains,
+                )
             current_env = dict(current_env)
             current_env[statement.var_name] = result.z3_expr
             step = OperationStep(
@@ -1049,6 +1066,8 @@ def _execute_operation_statements_domain(
                 prune_unreachable=prune_unreachable,
                 timeout_ms=timeout_ms,
                 step_start=step_index,
+                construction=construction,
+                construction_path=statement_path,
             )
             branches.extend(result.branches)
             steps.extend(result.steps)
@@ -1101,6 +1120,8 @@ def _execute_if_block_domain(
     prune_unreachable: bool,
     timeout_ms: Optional[int],
     step_start: int,
+    construction=None,
+    construction_path=(),
 ) -> _ExecutionResult:
     """Execute an ``if`` block with path-sensitive branch pruning.
 
@@ -1151,6 +1172,7 @@ def _execute_if_block_domain(
     merge_names = tuple(base_env.keys())
     prefix_selectors: List[z3.ExprRef] = []
     branch_results = []
+    construction_alternatives = []
     branches: List[OperationBranch] = []
     steps: List[OperationStep] = []
     all_domains: List[DomainConstraint] = list(definedness_constraints)
@@ -1162,6 +1184,7 @@ def _execute_if_block_domain(
         )
         branch_id = str(index)
         arrival_conditions = (*path_conditions, *prefix_selectors)
+        condition_result = None
         local_domains: List[DomainConstraint] = []
 
         if branch.condition is None:
@@ -1198,6 +1221,10 @@ def _execute_if_block_domain(
                             failure=None,
                         )
                     )
+                    if construction is not None:
+                        construction.branch(
+                            branch, (*construction_path, index), branches[-1], None, merge_names
+                        )
                     if condition_expr is not None:
                         prefix_selectors.append(z3.Not(condition_expr))
                     continue
@@ -1211,6 +1238,7 @@ def _execute_if_block_domain(
                 source=source,
                 prune_unreachable=prune_unreachable,
                 timeout_ms=timeout_ms,
+                record_construction=construction is not None,
             )
             condition_domains = _path_guard(
                 condition_result.definedness_constraints,
@@ -1271,7 +1299,13 @@ def _execute_if_block_domain(
                     failure=None,
                 )
             )
+            if construction is not None:
+                construction.branch(
+                    branch, (*construction_path, index), branches[-1], None, merge_names,
+                    result=condition_result,
+                )
         else:
+            child_construction = construction.fork() if construction is not None else None
             branch_result = _execute_operation_statements_domain(
                 branch.statements,
                 base_env,
@@ -1283,6 +1317,8 @@ def _execute_if_block_domain(
                 prune_unreachable=prune_unreachable,
                 timeout_ms=timeout_ms,
                 step_start=step_index,
+                construction=child_construction,
+                construction_path=(*construction_path, index),
             )
             steps.extend(branch_result.steps)
             nested_branches = branch_result.branches
@@ -1305,6 +1341,12 @@ def _execute_if_block_domain(
                 definedness_constraints=branch_definedness,
                 failure=branch_result.failure,
             )
+            if construction is not None:
+                construction.branch(
+                    branch, (*construction_path, index), branch_obj, child_construction, merge_names,
+                    result=condition_result,
+                )
+                construction_alternatives.append((selector, child_construction))
             branches.append(branch_obj)
             branches.extend(nested_branches)
             all_domains.extend(branch_body_definedness)
@@ -1324,6 +1366,10 @@ def _execute_if_block_domain(
             prefix_selectors.append(z3.Not(condition_expr))
 
     merged_env = _merge_branch_env(base_env, merge_names, branch_results)
+    if construction is not None:
+        construction.merge(
+            if_block, construction_path, merged_env, construction_alternatives, path_conditions
+        )
 
     return _ExecutionResult(
         env=merged_env,
@@ -1344,6 +1390,7 @@ def execute_operations_domain(
     source: Optional[DomainSource] = None,
     prune_unreachable: bool = True,
     timeout_ms: Optional[int] = None,
+    record_construction: bool = False,
 ) -> OperationExecution:
     """Execute operation statements with runtime-definedness metadata.
 
@@ -1373,6 +1420,12 @@ def execute_operations_domain(
     :return: Domain-aware operation execution result.
     :rtype: OperationExecution
 
+    :param record_construction: Retain source assignments, read/write versions
+        and conditional merge evidence, defaults to ``False``. Recording does
+        not change value expressions or enable additional solving.
+    :type record_construction: bool, optional
+    :raises TypeError: If ``record_construction`` is not Boolean.
+
     Example::
 
         >>> import z3
@@ -1383,8 +1436,11 @@ def execute_operations_domain(
         >>> len(result.steps)
         1
     """
+    if not isinstance(record_construction, bool):
+        raise TypeError("record_construction must be bool")
     operation_list = _as_operation_list(operations)
     visible_names = tuple(var_exprs.keys())
+    construction = _ConstructionRecorder(var_exprs) if record_construction else None
     result = _execute_operation_statements_domain(
         operation_list,
         dict(var_exprs),
@@ -1396,6 +1452,7 @@ def execute_operations_domain(
         prune_unreachable=prune_unreachable,
         timeout_ms=timeout_ms,
         step_start=0,
+        construction=construction,
     )
     env = {name: result.env[name] for name in visible_names}
     return OperationExecution(
@@ -1406,6 +1463,12 @@ def execute_operations_domain(
         steps=result.steps,
         branches=result.branches,
         failure=result.failure,
+        construction=(
+            construction.finish(
+                operation_list, visible_names, assumptions, prune_unreachable, path_conditions
+            )
+            if construction is not None and result.failure is None else None
+        ),
     )
 
 

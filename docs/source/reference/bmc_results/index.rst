@@ -1915,3 +1915,133 @@ already verified core without claiming minimality. This API has no file or
 stdout side effects. Default property solves do not call this API implicitly.
 The scenario explanation path reuses its checking machinery while retaining
 its existing options and result contract.
+
+Captured source construction
+----------------------------
+
+Source construction records explain how the compiler obtained a formula. They
+are distinct from an UNSAT core and from a derivation of contradiction. This is
+an explicit Python API: it adds neither a CLI switch nor fields to the public
+BMC JSON payload. Property verdicts and mandatory SAT replay keep their existing
+meaning.
+
+``BmcOptions(record_construction=False)``
+    Default: no detailed construction records. ``True`` captures while the
+    real relation is compiled. A non-Boolean value raises ``BmcBuildError``.
+
+``get_bmc_construction(core, group_ids)``
+    Import from ``pyfcstm.bmc.construction``. Read exactly the unique source
+    group IDs requested; no solving or recompilation. A transition-step
+    group includes all its case records, a case group only its own case.
+    Initialization and assumption groups retain their direct source binding.
+    Missing capture, unknown IDs and duplicate IDs raise ``ValueError``.
+
+``report.check(timeout_ms=None)``
+    Check query/frame identity, action and guard environments, source
+    bindings and final relation bindings. Return ``ConstructionCheck``.
+    A positive integer gives one shared millisecond budget; ``None`` is
+    unbounded. Invalid budgets raise ``ValueError``.
+
+``action.text_lines(names=None)``
+    Return all local action lines, with source, read/write versions and
+    expanded values. Pass ``core.symbols.names`` for registered display
+    names. Native operators remain unchanged. Version numbers are local to
+    this action, and its statements are conditional on the enclosing case.
+
+``report.refine(query, timeout_ms=None, minimize=True)``
+    Accept an ``UnsatQuery`` whose constraints and fixed background match
+    exactly the selected groups by ID and formula. Refine removable groups,
+    preserve background, check each parent equivalence and independently
+    check the fine core. Wrong bindings raise ``ValueError``; wrong query
+    or minimization types raise ``TypeError``.
+
+An unrecorded core cannot be upgraded by inspection. Compile explicitly with
+capture if the extra memory and compilation cost are appropriate for the task.
+For example, this records an identity assignment that a before/after value diff
+would miss::
+
+    >>> from pyfcstm.model import load_state_machine_from_text
+    >>> from pyfcstm.bmc import BmcOptions, compile_bmc_query
+    >>> from pyfcstm.bmc.construction import get_bmc_construction
+    >>> model = load_state_machine_from_text("def int x = 0; state Root { enter { x = x; } }")
+    >>> compiled = compile_bmc_query(model, "init cold havoc *; check reach <= 1: true;",
+    ...                              options=BmcOptions(record_construction=True))
+    >>> report = get_bmc_construction(compiled.core, ("transition.step.0000",))
+    >>> report.check(timeout_ms=10000).status
+    'verified'
+    >>> action = next(action for case in report.cases for action in case.actions)
+    >>> writes = [value for value in action.execution.values if value.kind == "assignment"]
+    >>> [(value.name, value.identifier, value.reads) for value in writes]
+    [('x', 1, (('x', 0),))]
+
+The new version identifies an authored write, even though the resulting Z3
+value equals the incoming one. It does not assert that the action executes in
+every trace: each case retains its actual ``antecedent`` and ``expression``.
+
+``BmcConstructionReport``
+    Original ``core``, exact ``group_ids`` and source ``groups``, plus related
+    ``cases`` in frame/case order. Source metadata is not a logical premise.
+
+``BmcCaseConstruction``
+    Original query object, ``step_index``, macro case, submitted formula,
+    effective antecedent, incoming environment, ordered actions and guards.
+
+``BmcActionConstruction``
+    Action ordinal and macro block (including ref/lifecycle identity), entry
+    and exit environments, operation graph, source references and retained
+    occurrence-to-original-source paths after slicing. Abstract hooks have
+    ``execution=None`` and do not introduce modeled writes.
+
+``BmcGuardConstruction``
+    Original requirement with ``after_action_block_index``, actual evaluation
+    environment and expression, source, subexpressions and definedness.
+
+``OperationConstruction``
+    Original statements, versioned inputs/assignments/merges, source branches,
+    initial/final versions, assumptions and entry conditions. Locals stay in
+    the invocation graph but are not exported to the next action.
+
+``ConstructionValue``
+    Version index, variable name, kind, actual expression, source occurrence,
+    read versions, ordered merge alternatives, scope, prior definedness and
+    assignment subexpression records. Identity writes are retained.
+
+``ConstructionBranch``
+    Source occurrence, branch kind, effective selector, observed reachability,
+    read/output versions, branch scope and evaluated condition subexpressions.
+
+``ExpressionConstruction``
+    Original expression object and attribute path from the root, generated
+    expression, evaluation conditions, runtime requirements and any failure.
+    Equal generated values do not collapse distinct source occurrences.
+
+The solver-only entry ``execute_operations_domain(..., record_construction=True)``
+returns the invocation graph in ``result.construction``; execution failure leaves
+it ``None``. ``translate_expr_domain(..., record_construction=True)`` returns
+subexpression records in ``result.construction`` (an empty tuple when disabled).
+Both flags default to ``False`` and reject non-Booleans with ``TypeError``. The
+expression translator optionally accepts a shared ``SolveBudget`` through
+``budget=``; its remaining time overrides the per-check ``timeout_ms``. An
+exhausted budget records unknown reachability and never prunes a branch as
+unreachable. A pruned source subexpression has no generated-value record.
+
+``ConstructionCheck.status`` is ``verified`` for completed binding checks,
+``invalid`` for a discovered mismatch, or ``unknown`` for an unfinished check.
+``reason`` describes the outcome; ``path`` identifies a failing source occurrence
+when available. Checking uses the existing expression translator and checks
+version dependencies, not an independent statement executor. It does not prove
+compiler correctness, all branch reachability decisions or a contradiction.
+A source object changed after capture can invalidate its earlier records.
+Unavailable source spans remain explicitly unavailable; none are inferred from
+printed symbol names.
+
+Refinement splits conjunctions while retaining implication conditions; OR and
+ITE are not flattened into unconditional facts. ``units`` retain their original
+parent IDs, ordinals, expressions and source-group identities. ``equivalence``
+describes the per-parent check. ``explanation`` is a separately checked fine-core
+result, or ``None`` when equivalence or the shared time budget was insufficient.
+Group-level minimality is not inherited by the fine core. SAT and UNKNOWN inputs
+do not become UNSAT merely by refinement. Z3 selects a fine core within the chosen parent groups. ``minimize=False``
+skips further deletion of that extracted fine core; ``True`` permits deletion
+and reports its own minimality result. Neither mode adds a parent outside the
+selected set.

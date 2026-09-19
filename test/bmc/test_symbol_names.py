@@ -137,36 +137,38 @@ def test_authored_name_matching_generated_alias_keeps_distinct_identities():
 
 
 def test_empty_registry_never_recovers_identity_from_encoded_spelling():
-    from pyfcstm.bmc.infeasibility import _binding_symbols
-
     names = SymbolNames()
     event = z3.Bool('E_0_event_0_tick_opaque')
     group = BmcTrackedConstraint('event', 'assumptions', 'assumption.event',
                                  (event,), BmcSourceRef('generated', None, None))
     assert normalized_fact_for(group, symbol_names=names)['kind'] == 'structural_constraint'
-    assert _binding_symbols(event, symbol_names=names) == {}
 
 
-def test_legacy_binding_lookup_agrees_with_registered_compiled_variable():
-    from pyfcstm.bmc.infeasibility import _binding_symbol
+def test_public_binding_check_uses_authored_identity_instead_of_display_alias():
+    from pyfcstm.bmc.infeasibility import check_core_bindings
+    from pyfcstm.solver.budget import SolveBudget
 
-    model = load_state_machine_from_text('def int x = 0; state Root;')
-    core = compile_bmc_query(model, 'check invariant <= 1: x >= 0;').core
-    symbol = core.symbols.frame_var(0, 'x')
-    fact = dict(kind='variable_equality', variable='x', frame=0, value=1)
-    assert _binding_symbol(symbol == 1, fact, ('x',)).eq(symbol)
-    assert _binding_symbol(symbol == 1, fact, symbol_names=core.symbols.names).eq(symbol)
-
-
-def test_formula_renderer_does_not_invent_an_encoding_for_unsupported_proof_fact():
-    from pyfcstm.bmc.infeasibility import _proof_formula_renderer
-
-    model = load_state_machine_from_text('def int x = 0; state Root;')
-    core = compile_bmc_query(model, 'check invariant <= 1: x >= 0;').core
-    render = _proof_formula_renderer(core, {})
-    fact = dict(kind='arithmetic_expression', variable='x', frame=0,
-                target_frame=1, operator='mod', operand=2)
-    assert render(fact, (), 'derived') is None
+    name = 'generated_controller_payload_1234567890_abcdef'
+    model = load_state_machine_from_text('def int %s = 0; state Root;' % name)
+    core = compile_bmc_query(model, '''
+init cold havoc *;
+assume at 0: %s == 1;
+check reach <= 1: true;
+''' % name).core
+    group_id = 'assumption.0000.frame.0000'
+    fact = dict(kind='variable_equality', variable=name, frame=0, value=1)
+    held, record, units = check_core_bindings(core, ((group_id, fact),), SolveBudget(None))
+    assert held and record.status == 'complete'
+    assert units == {}
+    alias_fact = dict(fact, variable='v0')
+    held, record, units = check_core_bindings(
+        core, ((group_id, alias_fact),), SolveBudget(None),
+    )
+    assert not held and record.status == 'unknown'
+    assert record.reason == (
+        'the group behind assumption.0000.frame.0000 names no symbol this fact could restate'
+    )
+    assert units == {}
 
 
 def test_compound_assignment_operand_stays_an_original_formula_without_reduced_fact(text_aligner):

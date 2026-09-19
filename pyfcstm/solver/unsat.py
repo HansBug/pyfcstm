@@ -45,7 +45,9 @@ class UnsatConstraint:
     :param expressions: Non-empty Boolean Z3 expressions in one context.
     :type expressions: Tuple[z3.BoolRef, ...]
     :param source: Caller-owned source object, preserved by identity; defaults
-        to ``None``. It is metadata, never a premise or proof certificate.
+        to ``None``. It may contain multiple source occurrences or construction
+        dependencies. The checker neither interprets nor validates it; it is
+        metadata, never a premise or proof certificate.
     :type source: object, optional
     :raises ValueError: For an empty identifier or expression group, or mixed
         Z3 contexts.
@@ -592,16 +594,22 @@ def explain_unsat_core(query, *, selected_ids=None, minimize=True, timeout_ms=No
 
     Extraction, rechecking and deterministic deletion share one monotonic
     deadline. No solver work runs until this function is called. A caller's
-    selected subset is checked without adding omitted constraints back. A SAT
-    or UNKNOWN query produces no core, not an exception or a property verdict.
+    selected subset is checked without adding omitted constraints back. Use
+    ``minimize=False`` to retain exactly those source identifiers, even when
+    another occurrence has an identical formula. The result sorts identifiers;
+    it does not preserve selection order. With ``minimize=True`` (the default),
+    the verified selection may be reduced further. A SAT or UNKNOWN query
+    produces no core, not an exception or a property verdict.
 
     :param query: Exact formula groups and fixed background.
     :type query: UnsatQuery
     :param selected_ids: Optional subset of removable identifiers to verify;
         ``None`` asks Z3 to select a core. An empty sequence tests the background.
     :type selected_ids: Optional[Sequence[str]], optional
-    :param minimize: Shrink a verified core and verify subset minimality,
-        defaults to ``True``. Does not search for minimum cardinality.
+    :param minimize: Shrink a verified core, including an explicitly selected
+        one, and verify subset minimality; defaults to ``True``. Set to
+        ``False`` when explaining an existing selected set without changing it.
+        Does not search for minimum cardinality.
     :type minimize: bool, optional
     :param timeout_ms: Shared positive millisecond budget, or ``None`` (unbounded).
     :type timeout_ms: Optional[int], optional

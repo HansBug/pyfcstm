@@ -1518,8 +1518,10 @@ Python 模块 :mod:`pyfcstm.solver.unsat` 检查调用方提供的布尔 Z3 公�
 Z3 将每个可移除组作为布尔假设接收，并在核中返回其原始公式 AST。
 通过 AST 到约束组的映射保留原始查询及来源对象，不引入可能与调用方变量同名的
 激活符号。相同公式默认选择一个代表来源；调用方也可显式指定来源标识。
-来源元数据不是已经
-验证的 AST 绑定。同一公式出现在不同源码位置时应使用不同标识；一组可包含多个合取项。
+来源元数据不是已经验证的 AST 绑定。同一公式出现在不同源码位置时应使用不同标识；
+一组可包含多个合取项。来源对象自身可以包含多个源出现位置或构建依赖，多个约束组
+也可以共享同一个来源对象。检查器保留这些对象，不遍历其内容，不把其中的公式
+作为求解前提，也不信任其中的证明状态。公式身份、源出现位置和显示名称是不同概念。
 这里的冲突核（core）只表示足以导致无解的一组约束，不代表已经生成完整证明。
 
 .. list-table:: 输入
@@ -1536,8 +1538,9 @@ Z3 将每个可移除组作为布尔假设接收，并在核中返回其原始�
        两者合并后标识不得重复，全部公式须处于同一上下文。两个集合均可为空。
    * - ``explain_unsat_core(query, *, selected_ids=None, minimize=True, timeout_ms=None)``
      - 显式求解入口。``selected_ids=None`` 由 Z3 选核；传入序列则只复查指定可移除组；
-       ``()`` 仅检查背景。``minimize`` 必须是布尔值；``timeout_ms`` 为正整数，
-       ``None`` 表示不限时。
+       ``()`` 仅检查背景。``minimize=True`` 也会继续缩减显式指定的集合；
+       要保留准确的选定标识集合，应使用 ``False``。
+       ``timeout_ms`` 为正整数，``None`` 表示不限时。
 
 返回的 ``UnsatExplanation`` 分别记录以下结果：
 
@@ -1633,6 +1636,22 @@ BMC 在构建轨迹符号时登记变量、状态、输入、参数、事件和�
 
 完整公式确实冲突，但指定子集不冲突。此时可让求解器选核，或提供充分的子集；
 不能仅凭 ``solver_status`` 判定子集验证成功。
+
+上游已经选定待解释集合时，应显式关闭最小化。即使另一来源有相同公式，仍保留
+指定的源出现位置::
+
+    >>> repeated = UnsatConstraint("guard_again", (x < y,), "controller.fcstm:20")
+    >>> query = UnsatQuery("chosen_sources", (guard, repeated, post))
+    >>> result = explain_unsat_core(query, selected_ids=("post", "guard_again"), minimize=False)
+    >>> result.core_ids, result.reduction, result.subset_minimality
+    (('guard_again', 'post'), 'raw', 'not_proven')
+    >>> result.query.constraints[1] is repeated
+    True
+
+返回标识按名称排序，不保留选择顺序。``minimize=True`` 允许继续删除冗余的选定组，
+但不会将其替换为未选中的源出现位置。缩减后是另一套前提，后续推导必须使用这套
+前提，不能沿用暗中依赖已删除假设的证明。两种设置都不生成或验证源码构建链，
+也不生成从约束到矛盾的中间推理。
 
 对象或成员类型错误、将单个字符串作为选定标识序列、非布尔 ``minimize`` 会抛出
 ``TypeError``。空标识、混用上下文、重复标识和未知选定标识会抛出 ``ValueError``。

@@ -1743,7 +1743,11 @@ original query and source objects without introducing named activation symbols
 that could alias caller variables. Identical formulas use one representative
 occurrence unless the caller explicitly selects source identifiers. Source metadata is not a
 verified AST binding. Equal formulas at different source occurrences should
-have different identifiers; one group can contain several conjuncts.
+have different identifiers; one group can contain several conjuncts. A source
+handle may itself contain several source occurrences or construction dependencies,
+and several groups may share that handle. The checker preserves those objects
+without traversing them, asserting formulas stored in them, or trusting a proof
+status in them. Formula identity, source occurrence and display name are distinct.
 
 .. list-table:: Inputs
    :header-rows: 1
@@ -1762,8 +1766,9 @@ have different identifiers; one group can contain several conjuncts.
    * - ``explain_unsat_core(query, *, selected_ids=None, minimize=True, timeout_ms=None)``
      - Explicit solver entry. ``selected_ids=None`` lets Z3 select a core;
        a sequence restricts rechecking to those removable identifiers. ``()``
-       tests the background alone. ``minimize`` is Boolean. ``timeout_ms`` is
-       a positive integer or ``None`` for no deadline.
+       tests the background alone. ``minimize=True`` also shrinks explicit
+       selections; use ``False`` to retain the exact selected identifier set.
+       ``timeout_ms`` is a positive integer or ``None`` for no deadline.
 
 The returned ``UnsatExplanation`` separates these observations:
 
@@ -1872,6 +1877,25 @@ A selected subset cannot borrow omitted assumptions::
 The full formula conflicts, but the requested subset does not. To obtain a
 verified core, let the solver choose or provide a sufficient subset; do not
 interpret ``solver_status`` alone as successful subset verification.
+
+When an upstream caller has already selected the set to explain, disable
+minimization explicitly. This retains the selected source occurrences even when
+another source has the same formula::
+
+    >>> repeated = UnsatConstraint("guard_again", (x < y,), "controller.fcstm:20")
+    >>> query = UnsatQuery("chosen_sources", (guard, repeated, post))
+    >>> result = explain_unsat_core(query, selected_ids=("post", "guard_again"), minimize=False)
+    >>> result.core_ids, result.reduction, result.subset_minimality
+    (('guard_again', 'post'), 'raw', 'not_proven')
+    >>> result.query.constraints[1] is repeated
+    True
+
+The returned identifiers are sorted, so selection order is not retained.
+``minimize=True`` permits further deletion, including redundant selected groups;
+it never replaces them with unselected occurrences. That reduced set is a new
+set of premises. A later derivation must use it rather than reuse a proof that
+silently relied on deleted assumptions. Neither setting generates or verifies
+the source construction chain or the intermediate reasoning to contradiction.
 
 Wrong object/member types, a scalar string selection or a non-Boolean
 ``minimize`` raise ``TypeError``. Empty identifiers, mixed contexts, duplicate

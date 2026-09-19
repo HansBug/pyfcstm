@@ -41,7 +41,9 @@ from typing import Any, List, Mapping, Optional, Sequence, Tuple
 from .explanation import (
     BmcConflictProof,
     BmcReasoningStep,
+    _assignment_clause,
     _fact_sentence,
+    _display_fact,
     _state_display,
 )
 
@@ -92,9 +94,8 @@ def _clause(fact: Mapping[str, Any], names: Optional[Mapping[int, str]] = None) 
             fact.get("frame"),
         )
     if kind == "arithmetic_expression":
-        return "%s changed by %s between frame %s and frame %s" % (
-            fact.get("variable"),
-            fact.get("operand"),
+        return "%s between frame %s and frame %s" % (
+            _assignment_clause(fact),
             fact.get("frame"),
             fact.get("target_frame"),
         )
@@ -215,12 +216,21 @@ def linearize_proof(
     proof: BmcConflictProof,
     state_names: Optional[Mapping[int, str]] = None,
     core_categories: Sequence[str] = (),
+    variable_names: Optional[Mapping[str, str]] = None,
+    render_fact=None,
 ) -> Tuple[BmcReasoningStep, ...]:
     """Read a proof graph as an ordered chain of reasoning steps.
 
     One step per node, in the graph's own canonical order, each naming the node it
     reads.  The result is what a narrative publishes at proof depth, so a consumer
     can move between a sentence and the checked step behind it in either direction.
+
+    :param variable_names: Display aliases for authored variable identities.
+    :type variable_names: Optional[Mapping[str, str]]
+    :param render_fact: Optional callable accepting an original fact, source
+        item identifiers and node kind; returns native formula text or None.
+        The latter retains the domain account of that fact.
+    :type render_fact: Optional[Callable]
 
     Facts carry states as the encoding numbers them, because that is what the rules
     compare.  Passing ``state_names`` makes the prose say what the author wrote
@@ -268,12 +278,17 @@ def linearize_proof(
     )
     steps: List[BmcReasoningStep] = []
     for _, node in ordered:
-        if node.kind == "input":
-            kind, text = "fact", _fact_sentence(node.conclusion, state_names)
+        fact = _display_fact(node.conclusion, variable_names)
+        formula_text = None if render_fact is None else render_fact(node.conclusion, node.item_ids, node.kind)
+        if formula_text is not None:
+            kind = "fact" if node.kind == "input" else "derivation"
+            text = formula_text if kind == "fact" else "Therefore %s." % formula_text
+        elif node.kind == "input":
+            kind, text = "fact", _fact_sentence(fact, state_names)
         elif node.kind == "derived":
             kind, text = (
                 "derivation",
-                _derived_sentence(node.rule_id, node.conclusion, state_names),
+                _derived_sentence(node.rule_id, fact, state_names),
             )
         else:
             kind, text = "conflict", _closing_sentence(node.rule_id, core_categories)

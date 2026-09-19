@@ -1501,3 +1501,166 @@ p50，再按实际切片分组汇总。
 改善 3.97% 与退化 1.31% 之间，未改路径的对照也有波动。复用为每个结果保留一份
 完整轨迹，并向调用方返回副本。这些数据证实重复工作减少，不代表普遍提速；
 是否开启应测量自己的模型及完整调用路径。
+
+
+与性质无关的 UNSAT 核接口
+----------------------------------------
+
+共享 solver 代码负责公式检查；BMC 负责状态、转换和性质的含义。
+反例查询无解与可达性查询无解并不对应相同的性质结论，调用方须保留这一区别。
+
+Python 模块 :mod:`pyfcstm.solver.unsat` 检查调用方提供的布尔 Z3 公式，
+不评价 FCSTM 性质、不解码见证，也不生成源码级推导。性质结论和强制见证重放
+仍应使用既有 BMC 求解接口。这个独立接口不改变命令行或其 JSON 模式；
+导入模块和构造查询都不会发起求解。
+
+精确查询由固定背景组和可移除约束组组成。取核、选定核复查和删除试验均保留背景。
+Z3 将每个可移除组作为布尔假设接收，并在核中返回其原始公式 AST。
+通过 AST 到约束组的映射保留原始查询及来源对象，不引入可能与调用方变量同名的
+激活符号。相同公式默认选择一个代表来源；调用方也可显式指定来源标识。
+来源元数据不是已经验证的 AST 绑定。同一公式出现在不同源码位置时应使用不同标识；
+一组可包含多个合取项。来源对象自身可以包含多个源出现位置或构建依赖，多个约束组
+也可以共享同一个来源对象。检查器保留这些对象，不遍历其内容，不把其中的公式
+作为求解前提，也不信任其中的证明状态。公式身份、源出现位置和显示名称是不同概念。
+这里的冲突核（core）只表示足以导致无解的一组约束，不代表已经生成完整证明。
+
+.. list-table:: 输入
+   :header-rows: 1
+   :widths: 24 76
+
+   * - 输入
+     - 合同
+   * - ``UnsatConstraint(stable_id, expressions, source=None)``
+     - 非空字符串标识、非空布尔 Z3 表达式序列，以及可选来源对象。来源保留对象身份；
+       表达式序列复制为元组。所有表达式必须使用同一个 Z3 上下文。
+   * - ``UnsatQuery(query_id, constraints, background=())``
+     - 非空字符串查询标识，以及约束组、背景组序列。两个序列均复制为元组；
+       两者合并后标识不得重复，全部公式须处于同一上下文。两个集合均可为空。
+   * - ``explain_unsat_core(query, *, selected_ids=None, minimize=True, timeout_ms=None)``
+     - 显式求解入口。``selected_ids=None`` 由 Z3 选核；传入序列则只复查指定可移除组；
+       ``()`` 仅检查背景。``minimize=True`` 也会继续缩减显式指定的集合；
+       要保留准确的选定标识集合，应使用 ``False``。
+       ``timeout_ms`` 为正整数，``None`` 表示不限时。
+
+返回的 ``UnsatExplanation`` 分别记录以下结果：
+
+.. list-table:: 结果字段
+   :header-rows: 1
+   :widths: 25 75
+
+   * - 字段
+     - 含义与取值
+   * - ``query``
+     - 原始查询，包含身份、精确公式和来源对象。
+   * - ``solver_status``
+     - 完整查询的 ``sat``、``unsat``、``unknown`` 或 ``timeout``。
+   * - ``core_ids``
+     - 排序后的已验证可移除组标识；``None`` 表示没有验证成功的核；
+       ``()`` 表示背景自身已经复查为 UNSAT。
+   * - ``core_check``
+     - ``verified``、``not_checked``、``sat``、``unknown`` 或 ``timeout``。
+       完整查询无解时，调用方指定的子集仍可能可满足。
+   * - ``background_conflict``
+     - 仅在可移除核为空且已验证时为真；为假本身不能证明背景可满足。
+   * - ``subset_minimality``
+     - 相对于固定背景的 ``proven`` 或 ``not_proven``。
+       子集极小不等于基数最小、唯一或最易读。
+   * - ``reduction``
+     - ``raw``、``partial_minimized`` 或 ``subset_minimal``。
+       仅在检查删除后的合取仍为 UNSAT 时才移除该组。
+   * - ``stop_reason``
+     - 可选说明：完整查询并非 UNSAT、选定核复查失败或最小化中断。
+       SAT 是正常返回结果，不是异常。
+   * - ``checks``
+     - 阶段记录含 ``name``、``status``、``started``、``elapsed_ms`` 和可选 ``reason``。
+       取核与复查合并记录，最小化也聚合记录；条目数不是 Z3 调用次数。
+   * - ``derivation_status``、``proof_status``
+     - 均为 ``not_attempted``：核成员已验证不等于已生成可读证明。
+
+冲突可以依赖变量关系，而不固定任一变量的值::
+
+    >>> import z3
+    >>> from pyfcstm.solver.unsat import UnsatConstraint, UnsatQuery, explain_unsat_core
+    >>> x, y = z3.Ints("x y")
+    >>> guard = UnsatConstraint("guard", (x < y,), "controller.fcstm:12")
+    >>> post = UnsatConstraint("post", (x >= y,))
+    >>> result = explain_unsat_core(UnsatQuery("order", (guard, post)))
+    >>> result.solver_status, result.core_ids, result.subset_minimality
+    ('unsat', ('guard', 'post'), 'proven')
+
+两组约束对所有取值均冲突，来源对象也得到保留；但结果尚未给出中间的业务推导。
+
+可读符号可在构建公式时登记，独立于冲突核检查器使用::
+
+    >>> from pyfcstm.solver.symbols import SymbolNames
+    >>> names = SymbolNames()
+    >>> payload = z3.Real("generated_controller_payload_1234567890")
+    >>> origin = {"variable": "payload", "frame": 2}
+    >>> names.register(payload, "v0@2", origin)
+    >>> names.render(payload / 2)
+    'v0@2/2'
+    >>> names.lookup(payload).source is origin
+    True
+
+查找依据实际 Z3 常量及其上下文，不解析编码名称。``register`` 拒绝重复登记符号
+或显示名称。``render`` 在临时表达式中替换名称，保留原公式；未登记常量保留原拼写。
+若未登记常量或量词绑定名称与本次使用的显示名称冲突，则抛出 ``ValueError``，
+避免把不同的值显示成同一身份。局部原生打印器设置避免截断，不修改全局 Z3 设置。
+这是表达式渲染，不是证明或代数化简；来源对象是调用方提供的元数据。
+
+BMC 在构建轨迹符号时登记变量、状态、输入、参数、事件和分支选择符，事实提取与
+绑定检查使用该登记表。持久变量用 ``name@N`` 表示第 N 帧的值；长变量名使用
+``v<ID>@N``，并在图例中保留完整原名。原始结构化事实仍使用原名。
+``v0@2 == v0@1/2`` 这样的赋值表达直接给出运算及前后帧。
+登记机制不会自动展开事实识别器尚不支持的算术或分支结构。
+冲突核成员即使没有可识别的领域事实，也显示原公式。证明输入显示源公式或通过
+绑定检查的特定合取单元；派生赋值复用证明编码器和原生表达式打印器。
+仅接收事实的独立接口没有原公式，因此显示赋值元数据，不重新拼装原式的表示。
+
+固定背景自身矛盾时，可移除核为空::
+
+    >>> query = UnsatQuery("background", (), (guard, post))
+    >>> result = explain_unsat_core(query)
+    >>> result.core_ids, result.background_conflict
+    ((), True)
+
+这里的空表示不需要任何可移除组，不是完整公式没有约束。
+如果背景和可移除组都为空，查询结果则为 SAT。
+
+选定子集不能借用被省略的假设::
+
+    >>> query = UnsatQuery("selected", (guard, post))
+    >>> result = explain_unsat_core(query, selected_ids=("guard",))
+    >>> result.solver_status, result.core_check, result.core_ids
+    ('unsat', 'sat', None)
+
+完整公式确实冲突，但指定子集不冲突。此时可让求解器选核，或提供充分的子集；
+不能仅凭 ``solver_status`` 判定子集验证成功。
+
+上游已经选定待解释集合时，应显式关闭最小化。即使另一来源有相同公式，仍保留
+指定的源出现位置::
+
+    >>> repeated = UnsatConstraint("guard_again", (x < y,), "controller.fcstm:20")
+    >>> query = UnsatQuery("chosen_sources", (guard, repeated, post))
+    >>> result = explain_unsat_core(query, selected_ids=("post", "guard_again"), minimize=False)
+    >>> result.core_ids, result.reduction, result.subset_minimality
+    (('guard_again', 'post'), 'raw', 'not_proven')
+    >>> result.query.constraints[1] is repeated
+    True
+
+返回标识按名称排序，不保留选择顺序。``minimize=True`` 允许继续删除冗余的选定组，
+但不会将其替换为未选中的源出现位置。缩减后是另一套前提，后续推导必须使用这套
+前提，不能沿用暗中依赖已删除假设的证明。两种设置都不生成或验证源码构建链，
+也不生成从约束到矛盾的中间推理。
+
+对象或成员类型错误、将单个字符串作为选定标识序列、非布尔 ``minimize`` 会抛出
+``TypeError``。空标识、混用上下文、重复标识和未知选定标识会抛出 ``ValueError``。
+无效预算抛出 ``ValueError``。兼容入口 :mod:`pyfcstm.bmc.unsat` 保留
+``BmcUnsatConstraint``、``BmcUnsatQuery``、``BmcUnsatExplanation`` 别名，
+其无效预算仍抛出 :class:`~pyfcstm.bmc.errors.BmcBuildError`。例如
+``selected_ids="guard"`` 非法，应写成 ``("guard",)``；背景标识不能作为可移除组选择。
+
+取核、独立复查和可选最小化共用单调时钟截止时间，到期后不再启动检查。
+Z3 超时粒度及 Python 调度开销仍可能使实际耗时略超预算。核验证前超时不发布核；
+最小化中断则保留已经验证的核，但不宣称极小性。接口没有文件或标准输出副作用。
+默认性质求解不会隐式调用这个接口；场景解释复用其检查实现，保留原有选项和结果合同。

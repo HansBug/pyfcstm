@@ -1,0 +1,1612 @@
+[
+  {
+    "version": "baseline",
+    "repetition": 0,
+    "rows": [
+      {
+        "case": "sat_reach",
+        "mode": "none",
+        "ms": 44.883941765874624,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "formal",
+        "ms": 45.36863416433334,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "proof",
+        "ms": 46.15655867382884,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "none",
+        "ms": 46.17939703166485,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "formal",
+        "ms": 46.71877808868885,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "proof",
+        "ms": 46.54506081715226,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "none",
+        "ms": 48.052907921373844,
+        "solver_calls": 10,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "formal",
+        "ms": 80.2854816429317,
+        "solver_calls": 17,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "proof",
+        "ms": 84.62748536840081,
+        "solver_calls": 21,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "none",
+        "ms": 45.70054030045867,
+        "solver_calls": 10,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "formal",
+        "ms": 103.06091327220201,
+        "solver_calls": 28,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "proof",
+        "ms": 562.0276620611548,
+        "solver_calls": 80,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      }
+    ],
+    "rss_kib": 93880
+  },
+  {
+    "version": "candidate",
+    "repetition": 0,
+    "rows": [
+      {
+        "case": "sat_reach",
+        "mode": "none",
+        "ms": 47.59210720658302,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "formal",
+        "ms": 47.73250874131918,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "proof",
+        "ms": 47.619779128581285,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "none",
+        "ms": 46.73511302098632,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "formal",
+        "ms": 47.865055967122316,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "proof",
+        "ms": 47.113711945712566,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "none",
+        "ms": 49.09850377589464,
+        "solver_calls": 10,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "formal",
+        "ms": 83.63086171448231,
+        "solver_calls": 17,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "proof",
+        "ms": 86.98586700484157,
+        "solver_calls": 21,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "none",
+        "ms": 67.1736248768866,
+        "solver_calls": 10,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "formal",
+        "ms": 118.96996293216944,
+        "solver_calls": 28,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "proof",
+        "ms": 209.2226929962635,
+        "solver_calls": 80,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      }
+    ],
+    "rss_kib": 94948
+  },
+  {
+    "version": "candidate",
+    "repetition": 1,
+    "rows": [
+      {
+        "case": "sat_reach",
+        "mode": "none",
+        "ms": 51.74291366711259,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "formal",
+        "ms": 47.09980031475425,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "proof",
+        "ms": 47.13373491540551,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "none",
+        "ms": 47.1236240118742,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "formal",
+        "ms": 48.626973293721676,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "proof",
+        "ms": 49.99066889286041,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "none",
+        "ms": 53.66808408871293,
+        "solver_calls": 10,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "formal",
+        "ms": 83.58415775001049,
+        "solver_calls": 17,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "proof",
+        "ms": 90.45899892225862,
+        "solver_calls": 21,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "none",
+        "ms": 68.71888600289822,
+        "solver_calls": 10,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "formal",
+        "ms": 121.74613308161497,
+        "solver_calls": 28,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "proof",
+        "ms": 208.4395089186728,
+        "solver_calls": 80,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      }
+    ],
+    "rss_kib": 94656
+  },
+  {
+    "version": "baseline",
+    "repetition": 1,
+    "rows": [
+      {
+        "case": "sat_reach",
+        "mode": "none",
+        "ms": 46.89165996387601,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "formal",
+        "ms": 46.04176990687847,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "proof",
+        "ms": 47.82675672322512,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "none",
+        "ms": 47.08350682631135,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "formal",
+        "ms": 46.8119652941823,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "proof",
+        "ms": 47.27450106292963,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "none",
+        "ms": 46.703801956027746,
+        "solver_calls": 10,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "formal",
+        "ms": 81.41414728015661,
+        "solver_calls": 17,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "proof",
+        "ms": 86.07340883463621,
+        "solver_calls": 21,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "none",
+        "ms": 47.29822603985667,
+        "solver_calls": 10,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "formal",
+        "ms": 106.227349024266,
+        "solver_calls": 28,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "proof",
+        "ms": 578.1435882672668,
+        "solver_calls": 80,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      }
+    ],
+    "rss_kib": 94652
+  },
+  {
+    "version": "baseline",
+    "repetition": 2,
+    "rows": [
+      {
+        "case": "sat_reach",
+        "mode": "none",
+        "ms": 46.93842679262161,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "formal",
+        "ms": 46.317351050674915,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "proof",
+        "ms": 45.77779583632946,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "none",
+        "ms": 46.76117189228535,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "formal",
+        "ms": 47.539661172777414,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "proof",
+        "ms": 49.51220704242587,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "none",
+        "ms": 47.74751886725426,
+        "solver_calls": 10,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "formal",
+        "ms": 82.07466686144471,
+        "solver_calls": 17,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "proof",
+        "ms": 84.5800032839179,
+        "solver_calls": 21,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "none",
+        "ms": 48.63490583375096,
+        "solver_calls": 10,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "formal",
+        "ms": 105.85279436782002,
+        "solver_calls": 28,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "proof",
+        "ms": 568.2288873940706,
+        "solver_calls": 80,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      }
+    ],
+    "rss_kib": 94308
+  },
+  {
+    "version": "candidate",
+    "repetition": 2,
+    "rows": [
+      {
+        "case": "sat_reach",
+        "mode": "none",
+        "ms": 46.93828895688057,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "formal",
+        "ms": 46.4711282402277,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "proof",
+        "ms": 48.43605402857065,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "none",
+        "ms": 50.96786189824343,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "formal",
+        "ms": 48.62240795046091,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "proof",
+        "ms": 46.76387785002589,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "none",
+        "ms": 49.07679418101907,
+        "solver_calls": 10,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "formal",
+        "ms": 84.25113884732127,
+        "solver_calls": 17,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "proof",
+        "ms": 90.17120394855738,
+        "solver_calls": 21,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "none",
+        "ms": 68.6145699582994,
+        "solver_calls": 10,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "formal",
+        "ms": 117.8489001467824,
+        "solver_calls": 28,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "proof",
+        "ms": 214.77932296693325,
+        "solver_calls": 80,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      }
+    ],
+    "rss_kib": 94528
+  },
+  {
+    "version": "candidate",
+    "repetition": 3,
+    "rows": [
+      {
+        "case": "sat_reach",
+        "mode": "none",
+        "ms": 48.03675785660744,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "formal",
+        "ms": 46.37385718524456,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "proof",
+        "ms": 46.595836989581585,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "none",
+        "ms": 47.07368882372975,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "formal",
+        "ms": 48.56370994821191,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "proof",
+        "ms": 48.416032921522856,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "none",
+        "ms": 47.47985815629363,
+        "solver_calls": 10,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "formal",
+        "ms": 81.62618987262249,
+        "solver_calls": 17,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "proof",
+        "ms": 85.22452786564827,
+        "solver_calls": 21,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "none",
+        "ms": 66.1400449462235,
+        "solver_calls": 10,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "formal",
+        "ms": 117.33193136751652,
+        "solver_calls": 28,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "proof",
+        "ms": 203.17246299237013,
+        "solver_calls": 80,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      }
+    ],
+    "rss_kib": 94560
+  },
+  {
+    "version": "baseline",
+    "repetition": 3,
+    "rows": [
+      {
+        "case": "sat_reach",
+        "mode": "none",
+        "ms": 45.59306660667062,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "formal",
+        "ms": 45.85236730054021,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "proof",
+        "ms": 46.65478365495801,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "none",
+        "ms": 46.9823949970305,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "formal",
+        "ms": 45.10413110256195,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "proof",
+        "ms": 44.63517293334007,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "none",
+        "ms": 46.82527482509613,
+        "solver_calls": 10,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "formal",
+        "ms": 80.5600332096219,
+        "solver_calls": 17,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "proof",
+        "ms": 88.20293005555868,
+        "solver_calls": 21,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "none",
+        "ms": 46.33448785170913,
+        "solver_calls": 10,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "formal",
+        "ms": 104.6406370587647,
+        "solver_calls": 28,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "proof",
+        "ms": 561.54390797019,
+        "solver_calls": 80,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      }
+    ],
+    "rss_kib": 94208
+  },
+  {
+    "version": "baseline",
+    "repetition": 4,
+    "rows": [
+      {
+        "case": "sat_reach",
+        "mode": "none",
+        "ms": 45.29429320245981,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "formal",
+        "ms": 45.57659896090627,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "proof",
+        "ms": 46.14224890246987,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "none",
+        "ms": 45.55003670975566,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "formal",
+        "ms": 45.397479087114334,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "proof",
+        "ms": 45.93706224113703,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "none",
+        "ms": 46.85670416802168,
+        "solver_calls": 10,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "formal",
+        "ms": 79.75009782239795,
+        "solver_calls": 17,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "proof",
+        "ms": 83.70866486802697,
+        "solver_calls": 21,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "none",
+        "ms": 46.747040934860706,
+        "solver_calls": 10,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "formal",
+        "ms": 103.8316497579217,
+        "solver_calls": 28,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "proof",
+        "ms": 560.8825189992785,
+        "solver_calls": 80,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      }
+    ],
+    "rss_kib": 94504
+  },
+  {
+    "version": "candidate",
+    "repetition": 4,
+    "rows": [
+      {
+        "case": "sat_reach",
+        "mode": "none",
+        "ms": 46.49273632094264,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "formal",
+        "ms": 46.38957278802991,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "proof",
+        "ms": 47.14661696925759,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "none",
+        "ms": 48.25283633545041,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "formal",
+        "ms": 50.059224013239145,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "proof",
+        "ms": 46.319822780787945,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "none",
+        "ms": 48.93139190971851,
+        "solver_calls": 10,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "formal",
+        "ms": 85.85197618231177,
+        "solver_calls": 17,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "proof",
+        "ms": 92.75338379666209,
+        "solver_calls": 21,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "none",
+        "ms": 67.30018090456724,
+        "solver_calls": 10,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "formal",
+        "ms": 119.43614995107055,
+        "solver_calls": 28,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "proof",
+        "ms": 204.5331159606576,
+        "solver_calls": 80,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      }
+    ],
+    "rss_kib": 94424
+  },
+  {
+    "version": "candidate",
+    "repetition": 5,
+    "rows": [
+      {
+        "case": "sat_reach",
+        "mode": "none",
+        "ms": 46.75774788483977,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "formal",
+        "ms": 46.68245371431112,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "proof",
+        "ms": 46.251894906163216,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "none",
+        "ms": 46.07439273968339,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "formal",
+        "ms": 47.99412516877055,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "proof",
+        "ms": 47.94012662023306,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "none",
+        "ms": 48.47559193149209,
+        "solver_calls": 10,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "formal",
+        "ms": 82.23499497398734,
+        "solver_calls": 17,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "proof",
+        "ms": 86.60293370485306,
+        "solver_calls": 21,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "none",
+        "ms": 72.50990392640233,
+        "solver_calls": 10,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "formal",
+        "ms": 117.40418709814548,
+        "solver_calls": 28,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "proof",
+        "ms": 207.97024806961417,
+        "solver_calls": 80,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      }
+    ],
+    "rss_kib": 94928
+  },
+  {
+    "version": "baseline",
+    "repetition": 5,
+    "rows": [
+      {
+        "case": "sat_reach",
+        "mode": "none",
+        "ms": 46.726040076464415,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "formal",
+        "ms": 46.05724895372987,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "proof",
+        "ms": 47.3541640676558,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "none",
+        "ms": 46.30366573110223,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "formal",
+        "ms": 45.839850790798664,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "proof",
+        "ms": 46.13757086917758,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "none",
+        "ms": 46.44048772752285,
+        "solver_calls": 10,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "formal",
+        "ms": 80.24328015744686,
+        "solver_calls": 17,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "proof",
+        "ms": 87.34437776729465,
+        "solver_calls": 21,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "none",
+        "ms": 47.01900016516447,
+        "solver_calls": 10,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "formal",
+        "ms": 103.43519505113363,
+        "solver_calls": 28,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "proof",
+        "ms": 563.9094552025199,
+        "solver_calls": 80,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      }
+    ],
+    "rss_kib": 94888
+  },
+  {
+    "version": "baseline",
+    "repetition": 6,
+    "rows": [
+      {
+        "case": "sat_reach",
+        "mode": "none",
+        "ms": 45.60281103476882,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "formal",
+        "ms": 45.42060708627105,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "proof",
+        "ms": 45.985403936356306,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "none",
+        "ms": 47.39244608208537,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "formal",
+        "ms": 45.050881803035736,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "proof",
+        "ms": 46.22685024514794,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "none",
+        "ms": 46.551352832466364,
+        "solver_calls": 10,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "formal",
+        "ms": 82.08090020343661,
+        "solver_calls": 17,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "proof",
+        "ms": 84.04072187840939,
+        "solver_calls": 21,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "none",
+        "ms": 45.957257971167564,
+        "solver_calls": 10,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "formal",
+        "ms": 105.32413003966212,
+        "solver_calls": 28,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "proof",
+        "ms": 570.4369959421456,
+        "solver_calls": 80,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      }
+    ],
+    "rss_kib": 94544
+  },
+  {
+    "version": "candidate",
+    "repetition": 6,
+    "rows": [
+      {
+        "case": "sat_reach",
+        "mode": "none",
+        "ms": 48.663427121937275,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "formal",
+        "ms": 47.046374063938856,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "sat_reach",
+        "mode": "proof",
+        "ms": 47.782118897885084,
+        "solver_calls": 8,
+        "status": "sat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "none",
+        "ms": 47.110035084187984,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "formal",
+        "ms": 47.86829883232713,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "unsat_objective",
+        "mode": "proof",
+        "ms": 47.06359189003706,
+        "solver_calls": 9,
+        "status": "unsat",
+        "satisfied": true,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "none",
+        "ms": 48.670297022908926,
+        "solver_calls": 10,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "formal",
+        "ms": 83.06644205003977,
+        "solver_calls": 17,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "assumption_conflict",
+        "mode": "proof",
+        "ms": 93.39997917413712,
+        "solver_calls": 21,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "none",
+        "ms": 67.7984831854701,
+        "solver_calls": 10,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": null
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "formal",
+        "ms": 121.0409440100193,
+        "solver_calls": 28,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "formal"
+      },
+      {
+        "case": "transition_conflict",
+        "mode": "proof",
+        "ms": 206.12434297800064,
+        "solver_calls": 80,
+        "status": "unsat",
+        "satisfied": null,
+        "achieved": "proof"
+      }
+    ],
+    "rss_kib": 94752
+  }
+]

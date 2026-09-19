@@ -38,6 +38,15 @@ Module map:
    * - :mod:`pyfcstm.solver.solve`
      - :func:`solve`, :class:`SolveResult`
      - Enumerate satisfying assignments for caller-supplied constraints.
+   * - :mod:`pyfcstm.solver.unsat`
+     - :func:`explain_unsat_core`, :class:`UnsatQuery`
+     - Extract and independently verify conflict cores with fixed background.
+   * - :mod:`pyfcstm.solver.symbols`
+     - :class:`SymbolNames`
+     - Register source identities and readable names during formula construction.
+   * - :mod:`pyfcstm.solver.budget`
+     - :class:`~pyfcstm.solver.budget.SolveBudget`
+     - Share one monotonic deadline across solver checks.
 
 Example::
 
@@ -67,6 +76,8 @@ Example::
 from .expr import expr_to_z3, create_z3_vars_from_models
 from .operation import parse_operations, execute_operations
 from .solve import solve, SolveResult
+from .symbols import SymbolName, SymbolNames
+from .unsat import UnsatConstraint, UnsatQuery, UnsatExplanation, explain_unsat_core
 
 __all__ = [
     "SolveResult",
@@ -75,4 +86,10 @@ __all__ = [
     "expr_to_z3",
     "parse_operations",
     "solve",
+    "SymbolName",
+    "SymbolNames",
+    "UnsatConstraint",
+    "UnsatQuery",
+    "UnsatExplanation",
+    "explain_unsat_core",
 ]

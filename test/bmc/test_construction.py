@@ -173,20 +173,20 @@ def test_trim_text_exposes_local_reads_before_expanded_formulas(text_aligner):
     actual = '\n'.join(action.text_lines(formula.core.symbols.names))
     text_aligner.assert_equal(expect='''
 Action 1: Root state_enter
-  Local view: enclosing frame/case conditions are not shown.
-  Entry: refund [action 1 entry] = refund@0
-  Entry: proposal [action 1 entry] = proposal@0
-  Entry: margin [action 1 entry] = margin@0
-  Entry: quantum [action 1 entry] = quantum@param
-  Statement 1: refund = quantum - margin; [source location unavailable]
-    reads: quantum <- quantum [action 1 entry], margin <- margin [action 1 entry]
-    produces: refund [action 1, after statement 1]
-  Statement 2: proposal = proposal - refund; [source location unavailable]
-    reads: proposal <- proposal [action 1 entry], refund <- refund [action 1, after statement 1]
-    produces: proposal [action 1, after statement 2]
-  Statement 3: margin = margin + refund; [source location unavailable]
-    reads: margin <- margin [action 1 entry], refund <- refund [action 1, after statement 1]
-    produces: margin [action 1, after statement 3]
+  Local action view: frame/case conditions are not included; @entry means this call entry.
+  refund@entry := refund@0
+  proposal@entry := proposal@0
+  margin@entry := margin@0
+  quantum@entry := quantum@param
+  Statement 1 [source location unavailable]:
+    Source: refund = quantum - margin;
+    refund#1 := quantum@entry - margin@entry
+  Statement 2 [source location unavailable]:
+    Source: proposal = proposal - refund;
+    proposal#1 := proposal@entry - refund#1
+  Statement 3 [source location unavailable]:
+    Source: margin = margin + refund;
+    margin#1 := margin@entry + refund#1
 '''.strip(), actual=actual)
 
 
@@ -200,20 +200,16 @@ def test_conditional_identity_write_text_keeps_scope_and_preservation(text_align
     action = next(action for case in report.cases for action in case.actions)
     text_aligner.assert_equal(expect='''
 Action 1: Root state_enter
-  Local view: enclosing frame/case conditions are not shown.
-  Entry: x [action 1 entry] = x@0
-  Conditional statement 1: ordered alternatives (not sequential execution).
-    Branch 1 (if): x > 0
-      condition reads: x <- x [action 1 entry]
-      effective scope: And(0 < x@0)
-      executor reachability: sat (not rechecked by rendering)
-      Statement 1.1.1: x = x; [source location unavailable]
-        reads: x <- x [action 1 entry]
-        produces: x [action 1, after statement 1.1.1]
-        scope: And(0 < x@0)
-  Join: x [action 1, after join 1]
-    when 0 < x@0: x [action 1, after statement 1.1.1]
-    otherwise preserve: x [action 1 entry]
+  Local action view: frame/case conditions are not included; @entry means this call entry.
+  x@entry := x@0
+  Conditional statement 1 (ordered alternatives):
+    Branch 1 (if): x@entry > 0
+      Effective scope: 0 < x@0
+      Executor reachability: sat (recorded, not rechecked).
+      Statement 1.1.1 [source location unavailable]:
+        Source: x = x;
+        x#1 := x@entry
+  Join x#2 := (0 < x@0) ? x#1 : x@entry
 '''.strip(), actual='\n'.join(action.text_lines(formula.core.symbols.names)))
 
 
@@ -458,7 +454,10 @@ def test_recorded_inputs_parameters_locals_and_abstract_hook(text_aligner):
     text_aligner.assert_equal(expect='''
 Action 1: Root state_enter
   Named action: Root.Observe
-  Local view: enclosing frame/case conditions are not shown.
+  Local action view: frame/case conditions are not included; @entry means this call entry.
+  x@entry := F_0_x_11f6ad8ec52a2984abaafd7c3b516503785c2072
+  request@entry := I_0_request_088e29b0ab0079560dea5d3e5aeb2f7868af661e
+  gain@entry := P_gain_5fe05a50c1e04e07824c1e3f641a4e83e2c27d98
   Abstract hook: recorded call, no modeled writes.
 '''.strip(), actual='\n'.join(calls[0].text_lines()))
     recorded = [case for case in report.cases if any(action.execution for action in case.actions)]

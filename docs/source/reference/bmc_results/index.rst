@@ -1943,42 +1943,67 @@ meaning.
     unbounded. Invalid budgets raise ``ValueError``.
 
 ``action.text_lines(names=None, expanded=False)``
-    Return local action lines, with original source statements and references
-    to entry values, assignments and joins. Pass ``core.symbols.names`` for
-    frame/input/parameter names. Action and statement positions start at one;
-    nested positions alternate statement/branch/statement (``2.1.3`` means
-    statement 3 in branch 1 of statement 2). Slicing retains original positions.
-    Internal ``ConstructionValue.identifier`` values remain zero-based graph
-    indices shared by all variables; they are not printed as variable versions.
+    Return source statements and per-variable local definitions ``x#n``.
+    ``x@entry`` binds this call's input; pass ``core.symbols.names`` for
+    meaningful frame/input/parameter names. Without that registry the entry
+    expressions retain solver symbol names. Assignments and necessary joins
+    introduce definitions, including identity writes. Source positions start
+    at one: ``2.1.3`` is statement 3 in branch 1 of statement 2. Slicing retains
+    original positions. Internal graph identifiers are never display versions.
 
 ``report.text_lines(expanded=False)``
-    Return the selected groups and conditional cases, in frame/case order,
-    including effective conditions, state names, step-specific event names,
-    priority dependencies, guards at their real action-prefix positions,
-    cross-action references and conditional frame boundary equations. States
-    at boundaries are distinct from transient states visited inside a macro-step.
-    A parent-state predicate can cover multiple control-state codes; legends
-    label those codes without rewriting numeric constants. Terminal boundary
-    event constraints are retained. Listing cases establishes neither a trace
-    nor branch coverage. Excluded-case acceptance conditions describe embedded
-    dependencies; they are not additional selected premises.
+    Return selected groups and conditional cases in frame/case order, including
+    priority conditions and guards at their actual action-prefix positions.
+    ``x#n`` is local to one frame/case; subsequent actions continue its sequence.
+    Repeated calls' locals are separate. Boundary equations bind ``x@f`` to
+    the final definition; the next frame reads ``x@f``, never the old ``x#n``.
+    Every retained persistent variable appears, including preservation.
+    Sliced-out variables are disclosed without recompilation or invented values.
+    Locals, fresh step inputs and shared parameters are not persistent outputs.
 
-Both text methods return ``Tuple[str, ...]`` without truncation, recompilation,
+    Normal boundaries show one positive target leaf using ``active("path")@f``.
+    Actual source parent/negative conditions are preserved, without an automatic
+    ancestor/inactive-state checklist. ``cold@f`` and ``terminated@f`` name
+    lifecycle positions; ``control("path")@f`` is an exact nonleaf entry slot,
+    not an active descendant. An entered leaf root also retains ``!cold@f``:
+    fbmcq active(root) itself holds at cold. ``event("path")@k`` names a step
+    input; terminal event restrictions remain visible. Cases establish neither
+    a trace nor coverage. Excluded acceptance conditions describe dependencies
+    already embedded in the case, not additional selected premises.
+
+Both methods return ``Tuple[str, ...]`` without truncation, recompilation,
 solving, shared-registry mutation or file output. ``expanded`` is keyword-only,
 defaults to ``False`` and rejects non-Booleans with ``TypeError``.
-``expanded=True`` adds the actual expanded assignment expressions and labeled
-Z3 simplifications; the report also includes submitted case formulas.
-Native operators remain unchanged. Rendering does not certify the records:
-call ``report.check(...)`` separately, and retain its verified/invalid/unknown
-result. No new CLI switch or public JSON field is introduced.
+``expanded=True`` adds actual expanded values and the full submitted case
+formula; its expanded boundary contains no ``#n`` or display aliases. Expansion
+can be large, and the default view keeps shared structure. Rendering does not
+certify records: call ``report.check(...)`` separately and retain its
+verified/invalid/unknown result. No CLI switch or public JSON field is added.
 
-Examples: ``report.text_lines()`` connects adjacent steps with shared frame
-symbols; ``report.text_lines(expanded=True)`` exposes full formulas;
-``action.text_lines(core.symbols.names)`` defines one isolated action's entry
-values. ``report.text_lines(expanded=1)`` is invalid. Treating two different
-cases' ``x [action 1, after statement 1]`` as one value is also incorrect:
-references are scoped to the enclosing query, step and case. A variable read
-at action entry may come from an earlier action, not from the incoming frame.
+Boolean layout uses DSL precedence and ``&& || ! => iff xor`` plus conditionals.
+The first multiline operand aligns after the later connective. Guard,
+acceptance and source-branch scopes remain identifiable; visible ``<...>``
+aliases are local definitions, not assumptions. Long repeated/deep Boolean
+subterms may receive shared definitions. Full expansion removes those aliases.
+Arithmetic/functions may exceed the preferred line width rather than be cut.
+The report annotations are not a promise that the whole report parses as fbmcq.
+
+Local cleanup removes neutral Boolean literals, double negation, singleton
+connectives and redundant same-connective layers within a semantic group;
+exact integer/rational numeral comparisons evaluate locally. A false condition
+and its source remain visible; identity assignments and boundary preservation
+remain visible too. There is no global Z3 simplification, CNF/DNF conversion,
+reordering or assumption-driven deduction. Recorded translation context is
+labeled as context, not added premises. Typed numeric primitives such as
+``div``, ``mod`` and ``to_real`` retain exact SMT meaning; Real constants keep
+their type, and source operators retain their authored spelling.
+
+Examples: ``report.text_lines()`` connects adjacent frames;
+``report.text_lines(expanded=True)`` adds the full formulas;
+``action.text_lines(core.symbols.names)`` defines one isolated call's entry.
+``report.text_lines(expanded=1)`` is invalid. Two cases' ``x#1`` are different
+values. A later action can read an earlier action's result in the same case;
+that read is not necessarily the incoming frame value.
 
 ``report.refine(query, timeout_ms=None, minimize=True)``
     Accept an ``UnsatQuery`` whose constraints and fixed background match

@@ -754,7 +754,8 @@ instead. The renderer follows recorded write identities and final versions,
 not equality of printed expressions. This also preserves identity assignments.
 
 Two calls to one named action share source statements but have separate
-``action 1`` and ``action 2`` references and local lifetimes. A guard after both
+invocation identities and local lifetimes. Display definitions are numbered
+per variable within one case, for example ``temporary#1`` and ``temporary#2``. A guard after both
 calls reads the second call's output. Nested alternatives are printed beneath
 their conditional statement; their join names each selector and supplying
 write, with preservation when no alternative applies. Unknown reachability is
@@ -763,9 +764,10 @@ to original source positions, so unrelated input variables cannot renumber them.
 
 Control conditions belong to the same record. The editor's Review -> Trim
 case requires the Review state, the margin guard and exclusion of the earlier
-Undo transition. State comparisons retain native operators and numeric codes
-with adjacent model-name meanings. Events use full model paths and a step
-index; parameters are shared, while external inputs change per step. A state
+Undo transition. Exact leaf positions appear as ``active("path")@f``;
+nonleaf entry positions use ``control("path")@f``. Cold and terminated are
+explicit, and an entered root leaf retains the necessary ``!cold`` distinction.
+Events use ``event("path")@k``; parameters are shared, while external inputs change per step. A state
 predicate for a composite can include its descendants. Exact frame control
 states must not be confused with every state entered inside a macro-step.
 
@@ -781,4 +783,14 @@ proof. They can be mutually exclusive or unreachable. Construction text keeps
 each case's scope and conditional frame equations; establishing reachability,
 branch coverage and a final contradiction requires separate checked reasoning.
 The default text preserves authored expressions with exact read bindings;
-``expanded=True`` adds native expanded formulas without replacing those bindings.
+``expanded=True`` adds actual expanded formulas without replacing those bindings.
+Its expanded frame boundary has no local ``#n`` or display aliases. All retained
+persistent outputs appear, including preservation; slicing omissions are explicit.
+
+Layout is a separate operation from logical deduction. A neutral ``true`` in
+an AND can disappear, but source ``x = x`` remains a definition and an unchanged
+frame variable remains a preservation equation. Named guard/acceptance groups
+retain scope and order. Exact numeral comparisons may become true/false, with
+the source still visible; no global simplifier rewrites an action's arithmetic.
+Shared condition names abbreviate formulas and introduce no premises. Their
+expansion does not prove any case reachable or close an UNSAT argument.

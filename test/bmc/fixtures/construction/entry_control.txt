@@ -1,0 +1,79 @@
+Source construction (no reachability, coverage or UNSAT proof).
+Cases are conditional alternatives, not a selected execution trace.
+x@f is a frame value; x#n is a local definition in one frame/case, never a cross-frame reference.
+event("path")@k is a step k input; active("leaf")@k is the frame k state.
+Parameters are shared; @inputk values are fresh step inputs, not persistent frame variables.
+Local Boolean cleanup preserves source groups; SMT-specific numeric functions keep their exact meaning.
+Selected groups: initial.target, assumption.0000.frame.0000, transition.step.0000
+
+Group initial.target (initial.target)
+  Source: source location unavailable
+  Constraint: control("Root.Parent")@0
+
+Group assumption.0000.frame.0000 (assumption.frame)
+  Source: source location unavailable
+  Constraint: !active("Root.Parent.Ready")@0
+
+Build frame 1 from frame 0 using step 0 events/inputs.
+Case: Root.Parent::initial::Root.Parent.Ready::0
+  Start: Root.Parent (entry control position; not a stable leaf)
+  Condition definitions (local to this frame/case, not additional premises):
+  <apply this case> := (
+         control("Root.Parent")@0
+      && 0 < x@0
+  )
+  Construction under <apply this case>:
+    Guard after 0 action(s) [source location unavailable]:
+      Source: x > 0
+      Reads: x@0 > 0
+      Required polarity: positive
+      Expanded guard: 0 < x@0
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         active("Root.Parent.Ready")@1
+      && x@1 == x@0
+  )
+  Expanded frame boundary (no local versions or aliases):
+  control("Root.Parent")@0 && 0 < x@0 => (
+         active("Root.Parent.Ready")@1
+      && x@1 == x@0
+  )
+  Submitted case formula (including selector binding):
+  (
+         case[0]@0 iff (control("Root.Parent")@0 && 0 < x@0)
+      && (control("Root.Parent")@0 && 0 < x@0 => active("Root.Parent.Ready")@1 && x@1 == x@0)
+  )
+
+Build frame 1 from frame 0 using step 0 events/inputs.
+Case: Root.Parent::delta::Root.Parent::0
+  Start: Root.Parent (entry control position; not a stable leaf)
+  Condition definitions (local to this frame/case, not additional premises):
+  <accept Root.Parent -> Root.Parent.Ready [delta 1]> := (
+         control("Root.Parent")@0
+      && 0 < x@0
+  )
+  <apply this case> := (
+         control("Root.Parent")@0
+      && !<accept Root.Parent -> Root.Parent.Ready [delta 1]>
+  )
+  Construction under <apply this case>:
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         control("Root.Parent")@1
+      && x@1 == x@0
+  )
+  Expanded frame boundary (no local versions or aliases):
+  control("Root.Parent")@0 && !(control("Root.Parent")@0 && 0 < x@0) => (
+         control("Root.Parent")@1
+      && x@1 == x@0
+  )
+  Submitted case formula (including selector binding):
+  (
+         case[1]@0 iff (control("Root.Parent")@0 && !(control("Root.Parent")@0 && 0 < x@0))
+      && (
+             control("Root.Parent")@0 && !(control("Root.Parent")@0 && 0 < x@0) => (
+                    control("Root.Parent")@1
+                 && x@1 == x@0
+             )
+         )
+  )

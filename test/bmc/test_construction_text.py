@@ -1,8 +1,10 @@
 """Readable construction reports preserve execution scope and boundary identity."""
 
 from pathlib import Path
+import re
 
 import pytest
+import z3
 
 from pyfcstm.bmc import BmcOptions, compile_bmc_query
 from pyfcstm.bmc.construction import get_bmc_construction
@@ -170,8 +172,12 @@ def test_text_options_and_empty_selection(text_aligner):
     text_aligner.assert_equal(expect='''
 Source construction (no reachability, coverage or UNSAT proof).
 Cases are conditional alternatives, not a selected execution trace.
-Frame values connect adjacent steps; action references are local to their case.
+x@f is a frame value; x#n is a local definition in one frame/case, never a cross-frame reference.
+event("path")@k is a step k input; active("leaf")@k is the frame k state.
+Parameters are shared; @inputk values are fresh step inputs, not persistent frame variables.
+Local Boolean cleanup preserves source groups; SMT-specific numeric functions keep their exact meaning.
 Selected groups: (none)
+For a leaf root, !cold distinguishes its entered position from fbmcq active(root), which also holds at cold.
 '''.strip(), actual='\n'.join(empty.text_lines()))
 
 
@@ -185,3 +191,125 @@ def test_long_names_remain_authored_and_native_operators_are_preserved(text_alig
     ''', 'init cold havoc *; check reach <= 1: true;')
     action = next(action for case in report.cases for action in case.actions)
     assert_snapshot(text_aligner, 'long_names', action.text_lines(report.core.symbols.names, expanded=True))
+
+
+@pytest.mark.parametrize('condition', [
+    'true && (x > 0)', 'false || (x > 0)', '!!(x > 0)', '!true', '!false',
+    '(x > 0 && y > 0) => (z > 0)',
+    '((x > 0) iff (y > 0 && z > 0)) && (x < 10)',
+    '(x > 0 || y > 0) xor (z > 0)',
+    '((x > 0) => (y > 0)) && ((z > 0) => (x < 10))',
+    '!((x > 0 && y > 0) || (z > 0 && x < 10))',
+    '((x > 0) ? (y > 0) : (z > 0)) iff (x < 10)',
+    '((x + y + z > 0 && x - y + z > 0) => (x > y || y > z)) '
+    '&& ((x > 0 || y > 0) => (z < x && z < y))',
+    '((x + y + z > 0 && x - y + z > 0) ? '
+    '((x > y || y > z) => (x + y > z)) : '
+    '((x < y || y < z) iff (x - y < z)))',
+    '(1 < 2 && 1.0 != 2.0) => (x > 0)',
+    '(2 < 1 || 2.0 == 1.0) iff (x < 0)',
+    'z == ((x + y > 0 && x - y < 10 && x * y < 100 && x + y * 7 > -100) '
+    '? (x + y) : (x - y))',
+])
+def test_displayed_boolean_relation_roundtrips_through_fbmcq(condition):
+    source = 'def int x = 0; def int y = 0; def int z = 0; state Root;'
+    query = 'init state("Root") havoc *; assume at 0: %s; check reach <= 1: true;'
+    groups = ('assumption.0000.frame.0000',)
+    report = compile_report(source, query % condition, groups=groups)
+    original = report.groups[0].expressions[0]
+    before = original.sexpr()
+    output = '\n'.join(report.text_lines())
+    displayed = output.split('  Constraint: ', 1)[1].strip()
+    # Only frame labels are removed; the public grammar parses every emitted
+    # Boolean operator, its precedence, and all multiline parentheses.
+    rebound = compile_report(source, query % re.sub(r'\b([xyz])@0\b', r'\1', displayed), groups=groups)
+    recovered = rebound.groups[0].expressions[0]
+    recovered = z3.substitute(recovered, *((rebound.core.symbols.frame_var(0, name),
+                                           report.core.symbols.frame_var(0, name)) for name in ('x', 'y', 'z')))
+    checker = z3.Solver()
+    checker.add(z3.Xor(original, recovered))
+    assert checker.check() == z3.unsat
+    assert original.sexpr() == before
+
+
+def test_nonleaf_entry_delta_and_negative_source_condition(text_aligner):
+    report = compile_report('''
+        def int x = 0;
+        state Root { state Parent { state Ready; [*] -> Ready : if [x > 0]; }
+            [*] -> Parent; }
+    ''', '''init state("Root.Parent") havoc *;
+        assume at 0: !active("Root.Parent.Ready"); check reach <= 2: true;''',
+        groups=('initial.target', 'assumption.0000.frame.0000', 'transition.step.0000'))
+    assert report.check().status == 'verified'
+    assert_snapshot(text_aligner, 'entry_control', report.text_lines(expanded=True))
+
+
+def test_deep_guard_and_priority_preserve_named_groups(text_aligner):
+    clause = '((x > 10 && y < 20) || (x < -10 && y > 20) || (x > y && x < 100))'
+    report = compile_report('''
+        def int x = 0; def int y = 0;
+        state Root { event Apply; event Cancel; state Ready; state Done;
+            [*] -> Ready;
+            Ready -> Done : /Cancel + [x > 100];
+            Ready -> Done : /Apply + [%s && (x + y > 0 || x - y < 20)] effect {
+                if [%s] { x = x + y; } else { x = x - y; }
+            };
+        }
+    ''' % (clause, clause), 'init state("Root.Ready") havoc *; check reach <= 1: true;')
+    assert report.check().status == 'verified'
+    assert_snapshot(text_aligner, 'deep_conditions', report.text_lines())
+
+
+def test_expanded_boundaries_retain_typed_numeric_operations(text_aligner):
+    report = compile_report('''
+        def int x = 0; def int y = 0; def float ratio = 0.0;
+        state Root { enter {
+            x = (x / y) + (x % y);
+            ratio = ratio / 2.0;
+            ratio = ratio + x;
+            y = abs(x);
+        } }
+    ''', 'init cold havoc *; check reach <= 1: true;')
+    assert report.check().status == 'verified'
+    assert_snapshot(text_aligner, 'typed_boundary', report.text_lines(expanded=True))
+
+
+def test_false_guard_keeps_source_and_conditional_boundary(text_aligner):
+    report = compile_report('''
+        def int x = 0;
+        state Root { event Go; state Ready; state Done; [*] -> Ready;
+            Ready -> Done : /Go + [1 < 0] effect { x = x + 1; };
+        }
+    ''', 'init state("Root.Ready") havoc *; check reach <= 1: true;')
+    assert_snapshot(text_aligner, 'false_guard', report.text_lines())
+
+
+def test_entered_leaf_root_is_not_confused_with_cold(text_aligner):
+    report = compile_report('state Root;', '''
+        init state("Root"); assume at 0: active("Root"); check reach <= 1: true;
+    ''', groups=('initial.target', 'assumption.0000.frame.0000'))
+    assert_snapshot(text_aligner, 'leaf_root', report.text_lines())
+    # This ordinary query exposes why an exact entered-root position must
+    # retain !cold rather than silently borrow the frame-domain premise.
+    cold = compile_report('state Root;', '''
+        init cold; assume at 0: active("Root"); check reach <= 1: true;
+    ''', groups=('initial.target', 'assumption.0000.frame.0000'))
+    solver = z3.Solver()
+    solver.add(*(expression for group in cold.groups for expression in group.expressions))
+    assert solver.check() == z3.sat
+
+
+def test_shared_branch_condition_stays_scoped_and_expands_completely(text_aligner):
+    condition = ('((x + y * 3 > 10 && y - x * 7 < 20) '
+                 '|| (x * 7 + y < -10 && y * 3 - x > 20) '
+                 '|| (x + y * 3 > y - x * 7 && x * 7 + y < 100) '
+                 '|| (x - y * 7 < y + x * 3 && x * 3 - y > -100))')
+    report = compile_report('''
+        def int x = 0; def int y = 0;
+        state Root { enter {
+            if [%s] { x = x + y; } else { x = x - y; }
+        } }
+    ''' % condition, 'init cold havoc *; check reach <= 1: true;')
+    assert report.check().status == 'verified'
+    assert_snapshot(text_aligner, 'shared_branch', report.text_lines())
+    assert_snapshot(text_aligner, 'shared_branch_expanded', report.text_lines(expanded=True))

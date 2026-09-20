@@ -4,21 +4,13 @@ x@f is a frame value; x#n is a local definition in one frame/case, never a cross
 event("path")@k is a step k input; active("leaf")@k is the frame k state.
 Parameters are shared; @inputk values are fresh step inputs, not persistent frame variables.
 Local Boolean cleanup preserves source groups; SMT-specific numeric functions keep their exact meaning.
-Selected groups: initial.target, transition.step.0000
+Selected groups: initial.target, assumption.0000.frame.0000
 For a leaf root, !cold distinguishes its entered position from fbmcq active(root), which also holds at cold.
 
 Group initial.target (initial.target)
   Source: source location unavailable
-  Constraint: terminated@0
+  Constraint: active("Root")@0 && !cold@0
 
-Build frame 1 from frame 0 using step 0 events/inputs.
-Case: __terminate__::absorb::__terminate__::0
-  Start: terminated (model ended)
-  Condition definitions (local to this frame/case, not additional premises):
-  <apply this case> := terminated@0
-  Construction under <apply this case>:
-  Frame boundary (all retained persistent variables):
-  <apply this case> => (
-         terminated@1
-      && !event("Root.Stop")@0
-  )
+Group assumption.0000.frame.0000 (assumption.frame)
+  Source: source location unavailable
+  Constraint: cold@0 || active("Root")@0 && !cold@0

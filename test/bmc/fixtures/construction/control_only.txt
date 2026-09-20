@@ -1,91 +1,115 @@
 Source construction (no reachability, coverage or UNSAT proof).
 Cases are conditional alternatives, not a selected execution trace.
-Frame values connect adjacent steps; action references are local to their case.
+x@f is a frame value; x#n is a local definition in one frame/case, never a cross-frame reference.
+event("path")@k is a step k input; active("leaf")@k is the frame k state.
+Parameters are shared; @inputk values are fresh step inputs, not persistent frame variables.
+Local Boolean cleanup preserves source groups; SMT-specific numeric functions keep their exact meaning.
 Selected groups: initial.target, assumption.0000.frame.0000, transition.step.0000, transition.step.0001
 
 Group initial.target (initial.target)
   Source: control.fbmcq:2:9
   Source text: init state("Root.A");
-  Constraint: 1 == state[0]
-    state[0] code 1 means Root.A
+  Constraint: active("Root.A")@0
 
 Group assumption.0000.frame.0000 (assumption.frame)
   Source: control.fbmcq:3:9
   Source text: assume at 0: active("Root.B");
-  Constraint: Or(2 == state[0], 3 == state[0])
-    state[0] code 2 means Root.B
-    state[0] code 3 means Root.B.Leaf
+  Constraint: control("Root.B")@0 || active("Root.B.Leaf")@0
 
-Step 0: frame 0 -> frame 1
+Build frame 1 from frame 0 using step 0 events/inputs.
 Case: Root.A::fallback::Root.A::0
-  Start control state: Root.A
-  End control state if this case applies: Root.A
-  Effective condition: And(1 == state[0],
-        Not(And(1 == state[0], event("Root.Go")@step0)))
-    state[0] code 1 means Root.A
-  Event read: Root.Go at step 0 (fallback, negative).
-  Event reads alone do not imply occurrence or acceptance; use the effective condition above.
-  Excluded acceptance (fallback): Root.A::transition::Root.B.Leaf::0
-    Acceptance condition (embedded dependency, not an extra premise): And(1 == state[0], event("Root.Go")@step0)
-      state[0] code 1 means Root.A
-  Frame boundary under this case:
-    state[1] = Root.A
+  Start: Root.A
+  Condition definitions (local to this frame/case, not additional premises):
+  <accept Root.Go [fallback 1]> := (
+         active("Root.A")@0
+      && event("Root.Go")@0
+  )
+  <apply this case> := (
+         active("Root.A")@0
+      && !<accept Root.Go [fallback 1]>
+  )
+  event("Root.Go")@0: event input at step 0 (fallback, negative).
+  An event occurrence alone does not imply acceptance; exclusions negate the complete acceptance condition.
+  Construction under <apply this case>:
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         active("Root.A")@1
+  )
 
-Step 0: frame 0 -> frame 1
+Build frame 1 from frame 0 using step 0 events/inputs.
 Case: Root.A::transition::Root.B.Leaf::0
-  Start control state: Root.A
-  End control state if this case applies: Root.B.Leaf
-  Effective condition: And(1 == state[0], event("Root.Go")@step0)
-    state[0] code 1 means Root.A
-  Event read: Root.Go at step 0 (trigger, positive).
-  Event reads alone do not imply occurrence or acceptance; use the effective condition above.
-  Events consumed if this case applies: Root.Go
-  Frame boundary under this case:
-    state[1] = Root.B.Leaf
+  Start: Root.A
+  Condition definitions (local to this frame/case, not additional premises):
+  <apply this case> := (
+         active("Root.A")@0
+      && event("Root.Go")@0
+  )
+  event("Root.Go")@0: event input at step 0 (trigger, positive).
+  An event occurrence alone does not imply acceptance; exclusions negate the complete acceptance condition.
+  Events consumed under <apply this case>: Root.Go
+  Construction under <apply this case>:
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         active("Root.B.Leaf")@1
+  )
 
-Step 1: frame 1 -> frame 2
+Build frame 2 from frame 1 using step 1 events/inputs.
 Case: __terminate__::absorb::__terminate__::0
-  Start control state: terminated
-  End control state if this case applies: terminated
-  Effective condition: And(-1 == state[1], True)
-    state[1] code -1 means terminated
-  Frame boundary under this case:
-    state[2] = terminated
-    Boundary event requirement: Not(event("Root.B.Go")@step1)
-    Boundary event requirement: Not(event("Root.Go")@step1)
+  Start: terminated (model ended)
+  Condition definitions (local to this frame/case, not additional premises):
+  <apply this case> := terminated@1
+  Construction under <apply this case>:
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         terminated@2
+      && !event("Root.B.Go")@1
+      && !event("Root.Go")@1
+  )
 
-Step 1: frame 1 -> frame 2
+Build frame 2 from frame 1 using step 1 events/inputs.
 Case: Root.A::fallback::Root.A::0
-  Start control state: Root.A
-  End control state if this case applies: Root.A
-  Effective condition: And(1 == state[1],
-        Not(And(1 == state[1], event("Root.Go")@step1)))
-    state[1] code 1 means Root.A
-  Event read: Root.Go at step 1 (fallback, negative).
-  Event reads alone do not imply occurrence or acceptance; use the effective condition above.
-  Excluded acceptance (fallback): Root.A::transition::Root.B.Leaf::0
-    Acceptance condition (embedded dependency, not an extra premise): And(1 == state[1], event("Root.Go")@step1)
-      state[1] code 1 means Root.A
-  Frame boundary under this case:
-    state[2] = Root.A
+  Start: Root.A
+  Condition definitions (local to this frame/case, not additional premises):
+  <accept Root.Go [fallback 1]> := (
+         active("Root.A")@1
+      && event("Root.Go")@1
+  )
+  <apply this case> := (
+         active("Root.A")@1
+      && !<accept Root.Go [fallback 1]>
+  )
+  event("Root.Go")@1: event input at step 1 (fallback, negative).
+  An event occurrence alone does not imply acceptance; exclusions negate the complete acceptance condition.
+  Construction under <apply this case>:
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         active("Root.A")@2
+  )
 
-Step 1: frame 1 -> frame 2
+Build frame 2 from frame 1 using step 1 events/inputs.
 Case: Root.A::transition::Root.B.Leaf::0
-  Start control state: Root.A
-  End control state if this case applies: Root.B.Leaf
-  Effective condition: And(1 == state[1], event("Root.Go")@step1)
-    state[1] code 1 means Root.A
-  Event read: Root.Go at step 1 (trigger, positive).
-  Event reads alone do not imply occurrence or acceptance; use the effective condition above.
-  Events consumed if this case applies: Root.Go
-  Frame boundary under this case:
-    state[2] = Root.B.Leaf
+  Start: Root.A
+  Condition definitions (local to this frame/case, not additional premises):
+  <apply this case> := (
+         active("Root.A")@1
+      && event("Root.Go")@1
+  )
+  event("Root.Go")@1: event input at step 1 (trigger, positive).
+  An event occurrence alone does not imply acceptance; exclusions negate the complete acceptance condition.
+  Events consumed under <apply this case>: Root.Go
+  Construction under <apply this case>:
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         active("Root.B.Leaf")@2
+  )
 
-Step 1: frame 1 -> frame 2
+Build frame 2 from frame 1 using step 1 events/inputs.
 Case: Root.B.Leaf::fallback::Root.B.Leaf::0
-  Start control state: Root.B.Leaf
-  End control state if this case applies: Root.B.Leaf
-  Effective condition: And(3 == state[1], True)
-    state[1] code 3 means Root.B.Leaf
-  Frame boundary under this case:
-    state[2] = Root.B.Leaf
+  Start: Root.B.Leaf
+  Condition definitions (local to this frame/case, not additional premises):
+  <apply this case> := active("Root.B.Leaf")@1
+  Construction under <apply this case>:
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         active("Root.B.Leaf")@2
+  )

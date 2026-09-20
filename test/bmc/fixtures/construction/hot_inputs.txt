@@ -1,76 +1,108 @@
 Source construction (no reachability, coverage or UNSAT proof).
 Cases are conditional alternatives, not a selected execution trace.
-Frame values connect adjacent steps; action references are local to their case.
+x@f is a frame value; x#n is a local definition in one frame/case, never a cross-frame reference.
+event("path")@k is a step k input; active("leaf")@k is the frame k state.
+Parameters are shared; @inputk values are fresh step inputs, not persistent frame variables.
+Local Boolean cleanup preserves source groups; SMT-specific numeric functions keep their exact meaning.
 Selected groups: transition.step.0000, transition.step.0001
+For a leaf root, !cold distinguishes its entered position from fbmcq active(root), which also holds at cold.
 
-Step 0: frame 0 -> frame 1
+Build frame 1 from frame 0 using step 0 events/inputs.
 Case: Root::fallback::Root::0
-  Start control state: Root
-  End control state if this case applies: Root
-  Effective condition: And(0 == state[0], Not(And(0 == state[0], True)))
-    state[0] code 0 means Root
-  Excluded acceptance (fallback): Root::transition::__terminate__::0
-    Acceptance condition (embedded dependency, not an extra premise): And(0 == state[0], True)
-      state[0] code 0 means Root
-  Action 1: Root leaf_during
-    Statement 1: temporary = request * gain; [source location unavailable]
-      reads: request <- request@input0, gain <- gain@param
-      produces: temporary [action 1, after statement 1]
-      local to this action invocation
-    Statement 2: x = x + temporary; [source location unavailable]
-      reads: x <- x@0, temporary <- temporary [action 1, after statement 1]
-      produces: x [action 1, after statement 2]
-  Frame boundary under this case:
-    state[1] = Root
-    x@1 = x [action 1, after statement 2]
+  Start: Root
+  Condition definitions (local to this frame/case, not additional premises):
+  <accept Root -> __terminate__ [fallback 1]> := (
+         active("Root")@0
+      && !cold@0
+  )
+  <apply this case> := (
+         active("Root")@0
+      && !cold@0
+      && !<accept Root -> __terminate__ [fallback 1]>
+  )
+  Construction under <apply this case>:
+    Action 1: Root leaf_during
+      Statement 1 [source location unavailable]:
+        Source: temporary = request * gain;
+        temporary#1 := request@input0 * gain@param
+        Local to this action invocation.
+      Statement 2 [source location unavailable]:
+        Source: x = x + temporary;
+        x#1 := x@0 + temporary#1
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         active("Root")@1
+      && !cold@1
+      && x@1 == x#1
+  )
 
-Step 0: frame 0 -> frame 1
+Build frame 1 from frame 0 using step 0 events/inputs.
 Case: Root::transition::__terminate__::0
-  Start control state: Root
-  End control state if this case applies: terminated
-  Effective condition: And(0 == state[0], True)
-    state[0] code 0 means Root
-  Frame boundary under this case:
-    state[1] = terminated
-    x@1 = x@0 (preserved)
+  Start: Root
+  Condition definitions (local to this frame/case, not additional premises):
+  <apply this case> := (
+         active("Root")@0
+      && !cold@0
+  )
+  Construction under <apply this case>:
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         terminated@1
+      && x@1 == x@0
+  )
 
-Step 1: frame 1 -> frame 2
+Build frame 2 from frame 1 using step 1 events/inputs.
 Case: __terminate__::absorb::__terminate__::0
-  Start control state: terminated
-  End control state if this case applies: terminated
-  Effective condition: And(-1 == state[1], True)
-    state[1] code -1 means terminated
-  Frame boundary under this case:
-    state[2] = terminated
-    x@2 = x@1 (preserved)
+  Start: terminated (model ended)
+  Condition definitions (local to this frame/case, not additional premises):
+  <apply this case> := terminated@1
+  Construction under <apply this case>:
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         terminated@2
+      && x@2 == x@1
+  )
 
-Step 1: frame 1 -> frame 2
+Build frame 2 from frame 1 using step 1 events/inputs.
 Case: Root::fallback::Root::0
-  Start control state: Root
-  End control state if this case applies: Root
-  Effective condition: And(0 == state[1], Not(And(0 == state[1], True)))
-    state[1] code 0 means Root
-  Excluded acceptance (fallback): Root::transition::__terminate__::0
-    Acceptance condition (embedded dependency, not an extra premise): And(0 == state[1], True)
-      state[1] code 0 means Root
-  Action 1: Root leaf_during
-    Statement 1: temporary = request * gain; [source location unavailable]
-      reads: request <- request@input1, gain <- gain@param
-      produces: temporary [action 1, after statement 1]
-      local to this action invocation
-    Statement 2: x = x + temporary; [source location unavailable]
-      reads: x <- x@1, temporary <- temporary [action 1, after statement 1]
-      produces: x [action 1, after statement 2]
-  Frame boundary under this case:
-    state[2] = Root
-    x@2 = x [action 1, after statement 2]
+  Start: Root
+  Condition definitions (local to this frame/case, not additional premises):
+  <accept Root -> __terminate__ [fallback 1]> := (
+         active("Root")@1
+      && !cold@1
+  )
+  <apply this case> := (
+         active("Root")@1
+      && !cold@1
+      && !<accept Root -> __terminate__ [fallback 1]>
+  )
+  Construction under <apply this case>:
+    Action 1: Root leaf_during
+      Statement 1 [source location unavailable]:
+        Source: temporary = request * gain;
+        temporary#1 := request@input1 * gain@param
+        Local to this action invocation.
+      Statement 2 [source location unavailable]:
+        Source: x = x + temporary;
+        x#1 := x@1 + temporary#1
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         active("Root")@2
+      && !cold@2
+      && x@2 == x#1
+  )
 
-Step 1: frame 1 -> frame 2
+Build frame 2 from frame 1 using step 1 events/inputs.
 Case: Root::transition::__terminate__::0
-  Start control state: Root
-  End control state if this case applies: terminated
-  Effective condition: And(0 == state[1], True)
-    state[1] code 0 means Root
-  Frame boundary under this case:
-    state[2] = terminated
-    x@2 = x@1 (preserved)
+  Start: Root
+  Condition definitions (local to this frame/case, not additional premises):
+  <apply this case> := (
+         active("Root")@1
+      && !cold@1
+  )
+  Construction under <apply this case>:
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         terminated@2
+      && x@2 == x@1
+  )

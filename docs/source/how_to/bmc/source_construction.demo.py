@@ -30,5 +30,5 @@ checked = report.check(timeout_ms=10000)
 print('Construction binding:', checked.status)
 print('This script does not compute a property verdict or an UNSAT derivation.')
 print('\n'.join(report.text_lines()))
-# Use report.text_lines(expanded=True) to include native expanded values,
-# labeled Z3 simplifications and the complete submitted case formulas.
+# Use report.text_lines(expanded=True) for actual expanded values, boundaries
+# without local definitions/aliases, and the complete submitted case formulas.

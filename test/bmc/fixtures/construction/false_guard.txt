@@ -7,85 +7,50 @@ Local Boolean cleanup preserves source groups; SMT-specific numeric functions ke
 Selected groups: transition.step.0000
 
 Build frame 1 from frame 0 using step 0 events/inputs.
-Case: Root.A::fallback::Root.A::0
-  Start: Root.A
+Case: Root.Ready::fallback::Root.Ready::0
+  Start: Root.Ready
   Condition definitions (local to this frame/case, not additional premises):
-  <accept Root.A -> Root.A [fallback 1]> := (
-         active("Root.A")@0
-      && 0 >= x@0
-      && !(
-                active("Root.A")@0
-             && event("Root.Go")@0
-             && 0 < x@0
-         )
-  )
-  <accept Root.Go [fallback 2]> := (
-         active("Root.A")@0
+  <accept Root.Go [fallback 1]> := (
+         active("Root.Ready")@0
       && event("Root.Go")@0
-      && 0 < x@0
+      && false
   )
   <apply this case> := (
-         active("Root.A")@0
-      && !(
-                <accept Root.A -> Root.A [fallback 1]>
-             || <accept Root.Go [fallback 2]>
-         )
+         active("Root.Ready")@0
+      && !<accept Root.Go [fallback 1]>
   )
   event("Root.Go")@0: event input at step 0 (fallback, negative).
   An event occurrence alone does not imply acceptance; exclusions negate the complete acceptance condition.
   Construction under <apply this case>:
   Frame boundary (all retained persistent variables):
   <apply this case> => (
-         active("Root.A")@1
+         active("Root.Ready")@1
       && x@1 == x@0
   )
 
 Build frame 1 from frame 0 using step 0 events/inputs.
-Case: Root.A::transition::Root.A::1
-  Start: Root.A
-  Condition definitions (local to this frame/case, not additional premises):
-  <accept Root.Go [transition_priority 1]> := (
-         active("Root.A")@0
-      && event("Root.Go")@0
-      && 0 < x@0
-  )
-  <apply this case> := (
-         active("Root.A")@0
-      && 0 >= x@0
-      && !<accept Root.Go [transition_priority 1]>
-  )
-  event("Root.Go")@0: event input at step 0 (priority, negative).
-  An event occurrence alone does not imply acceptance; exclusions negate the complete acceptance condition.
-  Construction under <apply this case>:
-    Guard after 0 action(s) [source location unavailable]:
-      Source: x <= 0
-      Reads: x@0 <= 0
-      Required polarity: positive
-  Frame boundary (all retained persistent variables):
-  <apply this case> => (
-         active("Root.A")@1
-      && x@1 == x@0
-  )
-
-Build frame 1 from frame 0 using step 0 events/inputs.
-Case: Root.A::transition::Root.B::0
-  Start: Root.A
+Case: Root.Ready::transition::Root.Done::0
+  Start: Root.Ready
   Condition definitions (local to this frame/case, not additional premises):
   <apply this case> := (
-         active("Root.A")@0
+         active("Root.Ready")@0
       && event("Root.Go")@0
-      && 0 < x@0
+      && false
   )
   event("Root.Go")@0: event input at step 0 (trigger, positive).
   An event occurrence alone does not imply acceptance; exclusions negate the complete acceptance condition.
   Events consumed under <apply this case>: Root.Go
   Construction under <apply this case>:
     Guard after 0 action(s) [source location unavailable]:
-      Source: x > 0
-      Reads: x@0 > 0
+      Source: 1 < 0
+      Reads: 1 < 0
       Required polarity: positive
+    Action 1: transition_effect
+      Statement 1 [source location unavailable]:
+        Source: x = x + 1;
+        x#1 := x@0 + 1
   Frame boundary (all retained persistent variables):
   <apply this case> => (
-         active("Root.B")@1
-      && x@1 == x@0
+         active("Root.Done")@1
+      && x@1 == x#1
   )

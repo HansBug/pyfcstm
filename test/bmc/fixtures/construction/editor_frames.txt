@@ -1,64 +1,76 @@
 Source construction (no reachability, coverage or UNSAT proof).
 Cases are conditional alternatives, not a selected execution trace.
-Frame values connect adjacent steps; action references are local to their case.
+x@f is a frame value; x#n is a local definition in one frame/case, never a cross-frame reference.
+event("path")@k is a step k input; active("leaf")@k is the frame k state.
+Parameters are shared; @inputk values are fresh step inputs, not persistent frame variables.
+Local Boolean cleanup preserves source groups; SMT-specific numeric functions keep their exact meaning.
 Selected groups: transition.case.0002.0009, transition.case.0003.0012
 
-Step 2: frame 2 -> frame 3
+Build frame 3 from frame 2 using step 2 events/inputs.
 Case: DoseEditor.Editing.Adjust.Review::transition::DoseEditor.Editing.Adjust.Trim::1
-  Start control state: DoseEditor.Editing.Adjust.Review
-  End control state if this case applies: DoseEditor.Editing.Adjust.Trim
-  Effective condition: And(5 == state[2],
-        And(And(True, margin@2 < quantum@param),
-            Not(And(5 == state[2],
-                    event("DoseEditor.Undo")@step2))))
-    state[2] code 5 means DoseEditor.Editing.Adjust.Review
-  Event read: DoseEditor.Undo at step 2 (priority, negative).
-  Event reads alone do not imply occurrence or acceptance; use the effective condition above.
-  Excluded acceptance (transition_priority): DoseEditor.Editing.Adjust.Review::transition::DoseEditor.Editing.Adjust.Choose::0
-    Acceptance condition (embedded dependency, not an extra premise): And(5 == state[2], event("DoseEditor.Undo")@step2)
-      state[2] code 5 means DoseEditor.Editing.Adjust.Review
-  Guard after 0 action(s): margin < quantum [source location unavailable]
-    polarity: positive
-    reads: margin <- margin@2, quantum <- quantum@param
-    compiled guard: margin@2 < quantum@param
-  Action 1: DoseEditor.Editing.Adjust.Trim state_enter
-    Statement 1: refund = quantum - margin; [dose_editor.fcstm:29:21]
-      reads: quantum <- quantum@param, margin <- margin@2
-      produces: refund [action 1, after statement 1]
-    Statement 2: proposal = proposal - refund; [dose_editor.fcstm:30:21]
-      reads: proposal <- proposal@2, refund <- refund [action 1, after statement 1]
-      produces: proposal [action 1, after statement 2]
-    Statement 3: margin = margin + refund; [dose_editor.fcstm:31:21]
-      reads: margin <- margin@2, refund <- refund [action 1, after statement 1]
-      produces: margin [action 1, after statement 3]
-  Frame boundary under this case:
-    state[3] = DoseEditor.Editing.Adjust.Trim
-    display@3 = display@2 (preserved)
-    saved@3 = saved@2 (preserved)
-    snapshot@3 = snapshot@2 (preserved)
-    proposal@3 = proposal [action 1, after statement 2]
-    margin@3 = margin [action 1, after statement 3]
-    delta@3 = delta@2 (preserved)
-    refund@3 = refund [action 1, after statement 1]
-    audit@3 = audit@2 (preserved)
+  Start: DoseEditor.Editing.Adjust.Review
+  Condition definitions (local to this frame/case, not additional premises):
+  <accept DoseEditor.Undo [transition_priority 1]> := (
+         active("DoseEditor.Editing.Adjust.Review")@2
+      && event("DoseEditor.Undo")@2
+  )
+  <apply this case> := (
+         active("DoseEditor.Editing.Adjust.Review")@2
+      && margin@2 < quantum@param
+      && !<accept DoseEditor.Undo [transition_priority 1]>
+  )
+  event("DoseEditor.Undo")@2: event input at step 2 (priority, negative).
+  An event occurrence alone does not imply acceptance; exclusions negate the complete acceptance condition.
+  Construction under <apply this case>:
+    Guard after 0 action(s) [source location unavailable]:
+      Source: margin < quantum
+      Reads: margin@2 < quantum@param
+      Required polarity: positive
+    Action 1: DoseEditor.Editing.Adjust.Trim state_enter
+      Statement 1 [dose_editor.fcstm:29:21]:
+        Source: refund = quantum - margin;
+        refund#1 := quantum@param - margin@2
+      Statement 2 [dose_editor.fcstm:30:21]:
+        Source: proposal = proposal - refund;
+        proposal#1 := proposal@2 - refund#1
+      Statement 3 [dose_editor.fcstm:31:21]:
+        Source: margin = margin + refund;
+        margin#1 := margin@2 + refund#1
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         active("DoseEditor.Editing.Adjust.Trim")@3
+      && display@3 == display@2
+      && saved@3 == saved@2
+      && snapshot@3 == snapshot@2
+      && proposal@3 == proposal#1
+      && margin@3 == margin#1
+      && delta@3 == delta@2
+      && refund@3 == refund#1
+      && audit@3 == audit@2
+  )
 
-Step 3: frame 3 -> frame 4
+Build frame 4 from frame 3 using step 3 events/inputs.
 Case: DoseEditor.Editing.Adjust.Trim::transition::DoseEditor.Editing.Ready::0
-  Start control state: DoseEditor.Editing.Adjust.Trim
-  End control state if this case applies: DoseEditor.Editing.Ready
-  Effective condition: And(6 == state[3], margin@3 >= quantum@param)
-    state[3] code 6 means DoseEditor.Editing.Adjust.Trim
-  Guard after 0 action(s): margin >= quantum [source location unavailable]
-    polarity: positive
-    reads: margin <- margin@3, quantum <- quantum@param
-    compiled guard: margin@3 >= quantum@param
-  Frame boundary under this case:
-    state[4] = DoseEditor.Editing.Ready
-    display@4 = display@3 (preserved)
-    saved@4 = saved@3 (preserved)
-    snapshot@4 = snapshot@3 (preserved)
-    proposal@4 = proposal@3 (preserved)
-    margin@4 = margin@3 (preserved)
-    delta@4 = delta@3 (preserved)
-    refund@4 = refund@3 (preserved)
-    audit@4 = audit@3 (preserved)
+  Start: DoseEditor.Editing.Adjust.Trim
+  Condition definitions (local to this frame/case, not additional premises):
+  <apply this case> := (
+         active("DoseEditor.Editing.Adjust.Trim")@3
+      && margin@3 >= quantum@param
+  )
+  Construction under <apply this case>:
+    Guard after 0 action(s) [source location unavailable]:
+      Source: margin >= quantum
+      Reads: margin@3 >= quantum@param
+      Required polarity: positive
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         active("DoseEditor.Editing.Ready")@4
+      && display@4 == display@3
+      && saved@4 == saved@3
+      && snapshot@4 == snapshot@3
+      && proposal@4 == proposal@3
+      && margin@4 == margin@3
+      && delta@4 == delta@3
+      && refund@4 == refund@3
+      && audit@4 == audit@3
+  )

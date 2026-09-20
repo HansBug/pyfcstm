@@ -824,38 +824,78 @@ options=BmcOptions(cone_slicing=True))``；文件入口支持
 
 脚本选择第 2 步的 Review -> Trim 和第 3 步的 Trim -> Ready。
 它们是有条件的构建示例，不是求解器选出的不可满足核，也不是已经证实可行的执行。
-完整报告展示各分支的有效条件、状态编码对应的模型名称、事件名称、优先级排除、
-守卫求值位置、动作依赖和帧边界连接。下面是实际输出中的动作节选：
+完整报告展示有效条件、事件、优先级排除、守卫求值位置和帧边界。
+以下是首个分支的实际输出，只省略报告图例及分支标题：
 
 .. code-block:: text
 
-    Action 1: DoseEditor.Editing.Adjust.Trim state_enter
-      Statement 1: refund = quantum - margin; [dose_editor.fcstm:29:21]
-        reads: quantum <- quantum@param, margin <- margin@2
-        produces: refund [action 1, after statement 1]
-      Statement 2: proposal = proposal - refund; [dose_editor.fcstm:30:21]
-        reads: proposal <- proposal@2, refund <- refund [action 1, after statement 1]
-        produces: proposal [action 1, after statement 2]
-      Statement 3: margin = margin + refund; [dose_editor.fcstm:31:21]
-        reads: margin <- margin@2, refund <- refund [action 1, after statement 1]
-        produces: margin [action 1, after statement 3]
+    <accept DoseEditor.Undo [transition_priority 1]> := (
+           active("DoseEditor.Editing.Adjust.Review")@2
+        && event("DoseEditor.Undo")@2
+    )
+    <apply this case> := (
+           active("DoseEditor.Editing.Adjust.Review")@2
+        && margin@2 < quantum@param
+        && !<accept DoseEditor.Undo [transition_priority 1]>
+    )
+    event("DoseEditor.Undo")@2: event input at step 2 (priority, negative).
+    An event occurrence alone does not imply acceptance; exclusions negate the complete acceptance condition.
+    Construction under <apply this case>:
+      Guard after 0 action(s) [source location unavailable]:
+        Source: margin < quantum
+        Reads: margin@2 < quantum@param
+        Required polarity: positive
+      Action 1: DoseEditor.Editing.Adjust.Trim state_enter
+        Statement 1 [dose_editor.fcstm:29:21]:
+          Source: refund = quantum - margin;
+          refund#1 := quantum@param - margin@2
+        Statement 2 [dose_editor.fcstm:30:21]:
+          Source: proposal = proposal - refund;
+          proposal#1 := proposal@2 - refund#1
+        Statement 3 [dose_editor.fcstm:31:21]:
+          Source: margin = margin + refund;
+          margin#1 := margin@2 + refund#1
+    Frame boundary (all retained persistent variables):
+    <apply this case> => (
+           active("DoseEditor.Editing.Adjust.Trim")@3
+        && display@3 == display@2
+        && saved@3 == saved@2
+        && snapshot@3 == snapshot@2
+        && proposal@3 == proposal#1
+        && margin@3 == margin#1
+        && delta@3 == delta@2
+        && refund@3 == refund#1
+        && audit@3 == audit@2
+    )
 
-``refund [action 1, after statement 1]`` 指向读者可以看到的一次写入，
-不再暴露内部节点分配编号。在本分支成立的条件下，帧边界把 ``margin@3``
-连接到 ``margin [action 1, after statement 3]``；下一步的守卫读取这个共享的
-``margin@3``。这不代表两个分支必定实际执行。各候选分支具有独立的引用作用域，
-不能把两个分支内的 ``action 1`` 混为同一个执行实例。
+``refund#1`` 表示当前帧、当前候选分支内 refund 的第一次值定义。
+每个变量独立编号，赋值和必要的分支汇合都可以产生定义。
+帧末将 ``margin@3`` 连接到 ``margin#1``；下一分支的守卫读取
+``margin@3 >= quantum@param``，不会跨帧引用前一分支的 ``margin#1``。
+全部八个保留的持久变量都列出，包括保持项。局部变量不成为帧变量；
+外部输入逐步更新，参数跨步共享。
 
-Undo 事件显示为 ``event("DoseEditor.Undo")@step2``。状态比较保留原生整数编码，
-旁边明确标注对应的模型状态名称；普通数值常量不被替换。
-排除高优先级迁移被接受，不一定要求事件缺席，因为该迁移的守卫可能不成立。
-报告保留完整有效条件，不作这种错误简化。
+``event("DoseEditor.Undo")@2`` 表示第 2 步的事件输入，
+``active("DoseEditor.Editing.Adjust.Trim")@3`` 表示第 3 帧的活动叶状态。
+不额外列出祖先状态或不活动的兄弟状态；cold、terminated 和非叶入口使用独立记法。
+模型只有根叶状态时，fbmcq 的 ``active("Root")`` 在 cold 阶段也成立，
+因此精确的已进入根状态仍需保留 ``!cold`` 条件。
+排除高优先级迁移时否定的是完整接受条件，不能直接说事件缺席，因为其守卫可能不成立。
 
-需要原生展开值时，显式调用 ``report.text_lines(expanded=True)``；
-它还会打印有明确标注的 Z3 化简和提交公式，但不生成算术证明证书。
-仅查看单个动作可用 ``action.text_lines(compiled.core.symbols.names)``；
-该局部视图会定义入口值，但缺少完整帧和候选分支上下文。
-两个接口都只返回文本行，不写文件，也不进行求解检查。
+用 ``report.text_lines(expanded=True)`` 查看记录中的展开值和提交公式。
+完整展开的帧末不含 ``#n`` 或展示别名，例如
+``proposal@3 == proposal@2 - (quantum@param - margin@2)``。
+展开使用已记录表达式，不求解，也不做整体代数化简；输出可能很大，但不会静默截断。
+
+布尔式使用 ``&&``、``||``、``!``、``=>``、``iff`` 和 ``xor``，
+按优先级保留括号，多行操作数对齐。具名来源条件保留独立分组；
+只局部清理布尔中性元素、双重否定及精确数值常量比较，不借用其他假设化简。
+算术保留构建形状；没有完全对应 DSL 拼写的 SMT 数值运算保留 ``div``、
+``to_real`` 等有明确类型语义的形式，源码语句仍使用原记法。
+
+单独查看动作可用 ``action.text_lines(compiled.core.symbols.names)``，
+其中 ``x@entry`` 定义本次调用入口，缺少外层帧和候选分支上下文。
+两个接口都只返回文本行，不写文件、不进行求解检查。
 详细记录仍默认关闭，公共命令行 JSON 没有变化。
 
 捕获、文本、检查和核细化的完整合同见 :doc:`../../reference/bmc_results/index_zh`；

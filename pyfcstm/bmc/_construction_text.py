@@ -1,26 +1,29 @@
-"""Read construction records using source positions and conditional frame links.
+"""Read recorded construction as scoped frame relations and source assignments.
 
-This renderer does not execute model statements or discover logical consequences.
-It retains native formulas and uses the recorded value graph for read references;
-equal expressions never stand in for execution identity.
+The renderer neither executes model statements nor proves reachability. Local
+versions follow recorded write identities; expanded boundaries use the actual
+submitted post-state expressions. Only display formulas receive literal cleanup.
 """
+
+from collections import defaultdict
 
 import z3
 
 from pyfcstm.solver.symbols import SymbolNames
 
+from ._construction_formula import FormulaText, atom, combine, source_expression
 from .relation import BmcSymbolSource
 from .domain import STATE_INIT_ID, STATE_TERMINATE_ID
 
 
 def _display_names(original):
-    """Use authored event paths without changing the shared symbol registry."""
+    """Use model identities without changing the shared symbol registry."""
     names = SymbolNames()
     if original is not None:
         for entry in original.entries:
             source = entry.source
             if isinstance(source, BmcSymbolSource) and source.kind == 'event':
-                display = 'event("%s")@step%d' % (source.name, source.step)
+                display = 'event("%s")@%d' % (source.name, source.step)
             elif isinstance(source, BmcSymbolSource) and source.kind in ('variable', 'input', 'parameter'):
                 suffix = {'variable': source.frame, 'input': 'input%s' % source.step,
                           'parameter': 'param'}[source.kind]
@@ -40,72 +43,63 @@ def _position(path):
     return '.'.join(str(index + 1) for index in path)
 
 
-def _split_lines(lines):
-    for line in lines:
-        parts = line.split('\n')
-        yield parts[0]
-        indent = ' ' * (len(line) - len(line.lstrip()) + 2)
-        for part in parts[1:]:
-            yield indent + part
+def _append_formula(lines, prefix, term, renderer, *, force=False):
+    parts = renderer.lines(term, width=max(32, 96 - len(prefix)), force=force)
+    lines.append(prefix + parts[0])
+    indent = ' ' * (len(prefix) - len(prefix.lstrip()))
+    lines.extend(indent + part for part in parts[1:])
 
 
-def _expanded_lines(value, names):
-    lines = ['expanded: ' + names.render(value)]
-    simplified = z3.simplify(value)
-    if not z3.eq(simplified, value):
-        lines.append('Z3 simplification: ' + names.render(simplified))
-    return lines
-
-
-def _action_text(action, names=None, *, expanded=False, incoming=None):
-    """Return local text and exported references; callers supply case context."""
+def _action_text(action, names=None, *, expanded=False, incoming=None, counters=None, renderer=None):
+    """Return action text and exported local versions in the caller's scope."""
     if not isinstance(expanded, bool):
         raise TypeError('expanded must be Boolean')
-    names = _display_names(names) if incoming is None else names
+    local_view = incoming is None
+    names = _display_names(names) if renderer is None else names
+    renderer = renderer if renderer is not None else FormulaText(names)
+    counters = defaultdict(int) if counters is None else counters
     ordinal = action.index + 1
     block = action.block
-    lines = ['Action %d: %s %s' % (ordinal, block.owner_state_path, block.runtime_role)]
-    if block.action_name and not block.action_name.endswith(".<unnamed>"):
+    # Combo lowering can host a transition effect on a synthetic state. Its
+    # containing case and statement sources supply the modeler's identity.
+    owner = '' if block.runtime_role == 'transition_effect' else block.owner_state_path + ' '
+    lines = ['Action %d: %s%s' % (ordinal, owner, block.runtime_role)]
+    if block.action_name and not block.action_name.endswith('.<unnamed>'):
         lines.append('  Named action: ' + block.action_name)
     if block.named_ref:
         lines.append('  Call site: ' + block.named_ref)
     if block.execution_state_path and block.execution_state_path != block.owner_state_path:
         lines.append('  Execution state: ' + block.execution_state_path)
-    local_view = incoming is None
     if local_view:
-        incoming = {name: '%s [action %d entry]' % (name, ordinal) for name in action.before}
-        lines.append('  Local view: enclosing frame/case conditions are not shown.')
-        for name, expression in (action.before.items() if action.execution is not None else ()):
-            lines.append('  Entry: %s = %s' % (incoming[name], names.render(expression)))
+        incoming = {name: '%s@entry' % name for name in action.before}
+        lines.append('  Local action view: frame/case conditions are not included; @entry means this call entry.')
+        for name, expression in action.before.items():
+            _append_formula(lines, '  %s := ' % incoming[name], renderer.term(expression), renderer)
     if action.execution is None:
         lines.append('  Abstract hook: recorded call, no modeled writes.')
-        return tuple(_split_lines(lines)), dict(incoming)
+        return tuple(lines), dict(incoming)
     graph = action.execution
     refs = {index: incoming[name] for name, index in graph.initial_versions.items()}
-    assignments = {}
-    merges = {}
+    assignments, merges = {}, {}
     source_iter = iter(action.sources)
     for value in graph.values:
         if value.kind == 'input':
             continue
-        original = action.source_paths[value.path]
-        position = _position(original)
-        if value.kind == 'assignment':
-            refs[value.identifier] = '%s [action %d, after statement %s]' % (value.name, ordinal, position)
-            assignments[value.path] = (value, next(source_iter))
-        else:
+        if value.kind == 'merge':
             prior = refs[value.reads[0][1]]
             if all(refs[index] == prior for _, index in value.alternatives):
-                # A branch join for an untouched value is just preservation.
-                # Identity assignments still have distinct references above.
                 refs[value.identifier] = prior
                 continue
-            refs[value.identifier] = '%s [action %d, after join %s]' % (value.name, ordinal, position)
+        counters[value.name] += 1
+        refs[value.identifier] = '%s#%d' % (value.name, counters[value.name])
+        if value.kind == 'assignment':
+            assignments[value.path] = (value, next(source_iter))
+        else:
             merges.setdefault(value.path, []).append(value)
     branches = {branch.path: branch for branch in graph.branches}
 
-    def reads(items):
-        return ', '.join('%s <- %s' % (name, refs[index]) for name, index in items) or '(none)'
+    def bindings(items):
+        return {name: refs[index] for name, index in items}
 
     def walk(statements, prefix=(), indent='  '):
         for index, statement in enumerate(statements):
@@ -113,159 +107,175 @@ def _action_text(action, names=None, *, expanded=False, incoming=None):
             position = _position(action.source_paths.get(path, path))
             if path in assignments:
                 value, source = assignments[path]
-                lines.append('%sStatement %s: %s [%s]' % (
-                    indent, position, value.source.to_ast_node(), _location(source)))
-                lines.append(indent + '  reads: ' + reads(value.reads))
-                lines.append(indent + '  produces: ' + refs[value.identifier])
+                lines.append('%sStatement %s [%s]:' % (indent, position, _location(source)))
+                lines.append(indent + '  Source: ' + str(value.source.to_ast_node()))
+                lines.append('%s  %s := %s' % (indent, refs[value.identifier],
+                                               source_expression(value.source.expr, bindings(value.reads))))
                 if value.name not in graph.initial_versions:
-                    lines.append(indent + '  local to this action invocation')
-                if value.path_conditions:
-                    lines.append(indent + '  scope: ' + names.render(z3.And(*value.path_conditions)))
-                domains = (*value.definedness, *(item.constraint for part in value.subexpressions
-                                                for item in part.definedness_constraints))
+                    lines.append(indent + '  Local to this action invocation.')
+                if expanded and value.definedness:
+                    _append_formula(lines, indent + '  Recorded translation context (not new premises): ',
+                                    renderer.term(z3.And(*value.definedness)), renderer)
+                domains = tuple(item.constraint for part in value.subexpressions
+                                for item in part.definedness_constraints)
                 if domains:
-                    lines.append(indent + '  recorded definedness: ' + names.render(z3.And(*domains)))
+                    domain_term = renderer.term(z3.And(*domains))
+                    if domain_term != atom('true'):
+                        _append_formula(lines, indent + '  Required definedness: ', domain_term, renderer)
                 if expanded:
-                    lines.extend(indent + '  ' + line for line in _expanded_lines(value.expression, names))
+                    _append_formula(lines, indent + '  Expanded value: ', renderer.term(value.expression), renderer)
             else:
-                lines.append(indent + 'Conditional statement %s: ordered alternatives (not sequential execution).' % position)
+                lines.append(indent + 'Conditional statement %s (ordered alternatives):' % position)
                 for branch_index, source_branch in enumerate(statement.branches):
                     branch = branches[(*path, branch_index)]
-                    lines.append('%s  Branch %d (%s): %s' % (
-                        indent, branch_index + 1, branch.kind,
-                        source_branch.condition.to_ast_node() if source_branch.condition is not None else 'otherwise'))
-                    lines.append(indent + '    condition reads: ' + reads(branch.reads))
-                    lines.append(indent + '    effective scope: ' + names.render(z3.And(*branch.path_conditions)))
-                    lines.append(indent + '    executor reachability: ' + branch.status + ' (not rechecked by rendering)')
+                    condition = source_expression(source_branch.condition, bindings(branch.reads)) \
+                        if source_branch.condition is not None else 'otherwise'
+                    lines.append('%s  Branch %d (%s): %s' % (indent, branch_index + 1, branch.kind, condition))
+                    _append_formula(lines, indent + '    Effective scope: ',
+                                    renderer.term(z3.And(*branch.path_conditions)), renderer)
+                    lines.append(indent + '    Executor reachability: %s (recorded, not rechecked).' % branch.status)
                     if branch.status == 'unsat':
                         lines.append(indent + '    No body construction: pruned by the executor.')
                     else:
                         walk(source_branch.statements, (*path, branch_index), indent + '    ')
                 for value in merges.get(path, ()):
-                    lines.append(indent + 'Join: ' + refs[value.identifier])
-                    for selector, version in value.alternatives:
-                        lines.append(indent + '  when %s: %s' % (names.render(selector), refs[version]))
-                    lines.append(indent + '  otherwise preserve: ' + refs[value.reads[0][1]])
+                    result = atom(refs[value.reads[0][1]])
+                    for selector, version in reversed(value.alternatives):
+                        result = combine('?:', (renderer.term(selector), atom(refs[version]), result))
+                    _append_formula(lines, indent + 'Join %s := ' % refs[value.identifier], result, renderer)
                     if expanded:
-                        lines.extend(indent + '  ' + line for line in _expanded_lines(value.expression, names))
+                        _append_formula(lines, indent + '  Expanded value: ', renderer.term(value.expression), renderer)
 
     walk(graph.statements)
-    return tuple(_split_lines(lines)), {name: refs[index] for name, index in graph.final_versions.items()}
+    return tuple(lines), {name: refs[index] for name, index in graph.final_versions.items()}
 
 
 def _state_label(state_id, domain):
     if state_id == STATE_INIT_ID:
         return 'cold (before model entry)'
     if state_id == STATE_TERMINATE_ID:
-        return 'terminated'
-    return domain.state_by_id(state_id).path
+        return 'terminated (model ended)'
+    entry = domain.state_by_id(state_id)
+    return entry.path + ('' if entry.is_stoppable else ' (entry control position; not a stable leaf)')
 
 
-def _formula_lines(title, expression, names, domain):
-    """Annotate actual state comparisons, never reinterpret unrelated integers."""
-    lines = [title + names.render(expression)]
-    meanings = set()
-    pending = [expression]
-    seen = set()
-    while pending:
-        node = pending.pop()
-        if node.get_id() in seen:
-            continue
-        seen.add(node.get_id())
-        children = node.children()
-        pending.extend(children)
-        if node.decl().kind() not in (z3.Z3_OP_EQ, z3.Z3_OP_DISTINCT) or len(children) != 2:
-            continue
-        for slot, code in (children, children[::-1]):
-            entry = names.lookup(slot)
-            if entry is not None and getattr(entry.source, 'kind', None) == 'state' and z3.is_int_value(code):
-                meanings.add((entry.source.frame, code.as_long(), _state_label(code.as_long(), domain)))
-    lines.extend('  state[%d] code %d means %s' % meaning for meaning in sorted(meanings))
+def _definitions(lines, renderer):
+    for reference, term in renderer.definitions:
+        _append_formula(lines, '  %s := ' % reference.text, term, renderer, force=term.operator in ('&&', '||'))
+
+
+def _case_text(core, evidence, names, expanded):
+    step, case = evidence.step_index, evidence.case
+    relations = core.steps[step].case_relations
+    by_label = {item.case.label: item for item in relations}
+    relation = by_label[case.label]
+    renderer = FormulaText(names, core.symbols.domain)
+    lines = ['Build frame %d from frame %d using step %d events/inputs.' % (step + 1, step, step),
+             'Case: ' + case.label,
+             '  Start: ' + _state_label(case.source_state_id, core.symbols.domain),
+             '  Condition definitions (local to this frame/case, not additional premises):']
+    conditions = [evidence.antecedent] + [guard.expression for guard in evidence.guards]
+    conditions.extend(by_label[label].antecedent for exclusion in case.priority_exclusions
+                      for label in exclusion.excluded_case_labels)
+    for index, guard in enumerate(evidence.guards):
+        term = renderer.term(guard.expression)
+        if term.operator in ('&&', '||', '=>', 'iff', 'xor', '?:'):
+            renderer.define(guard.expression, 'guard %d after action %d' % (
+                index + 1, guard.requirement.after_action_block_index))
+    for exclusion in case.priority_exclusions:
+        for index, label in enumerate(exclusion.excluded_case_labels):
+            excluded = by_label[label]
+            description = ', '.join(excluded.case.consumed_events) or (
+                '%s -> %s' % (excluded.case.source_state_path, excluded.case.target_state_path))
+            renderer.define(excluded.antecedent, 'accept %s [%s %d]' % (description, exclusion.reason, index + 1))
+    if not expanded:
+        conditions.extend(z3.And(*branch.path_conditions)
+                          for action in evidence.actions if action.execution is not None
+                          for branch in action.execution.branches)
+        renderer.share(conditions)
+    applied = renderer.define(evidence.antecedent, 'apply this case')
+    _definitions(lines, renderer)
+    for use in case.used_events:
+        lines.append('  event("%s")@%d: event input at step %d (%s, %s).' % (
+            use.path, step, step, use.reason, use.polarity))
+    if case.used_events:
+        lines.append('  An event occurrence alone does not imply acceptance; exclusions negate the complete acceptance condition.')
+    if case.consumed_events:
+        lines.append('  Events consumed under %s: %s' % (applied.text, ', '.join(case.consumed_events)))
+    lines.append('  Construction under %s:' % applied.text)
+    incoming = {name: renderer.inline(renderer.term(expression)) for name, expression in evidence.before.items()}
+    counters = defaultdict(int)
+    for anchor in range(len(evidence.actions) + 1):
+        for guard in evidence.guards:
+            if guard.requirement.after_action_block_index != anchor:
+                continue
+            lines.append('    Guard after %d action(s) [%s]:' % (anchor, _location(guard.source)))
+            lines.append('      Source: ' + str(guard.requirement.expr.to_ast_node()))
+            lines.append('      Reads: ' + source_expression(guard.requirement.expr, incoming))
+            lines.append('      Required polarity: ' + guard.requirement.polarity)
+            if expanded:
+                # Use a fresh formatter: expanded evidence never uses aliases.
+                raw = FormulaText(names, core.symbols.domain)
+                _append_formula(lines, '      Expanded guard: ', raw.term(guard.expression), raw)
+        if anchor < len(evidence.actions):
+            action_lines, incoming = _action_text(evidence.actions[anchor], names, expanded=expanded,
+                                                   incoming=incoming, counters=counters, renderer=renderer)
+            lines.extend('    ' + line for line in action_lines)
+    lines.append('  Frame boundary (all retained persistent variables):')
+    terms = [renderer.state(case.target_state_id, step + 1)]
+    for name in relation.post_var_exprs:
+        target = renderer.term(core.symbols.frame_var(step + 1, name))
+        terms.append(combine('==', (target, atom(incoming[name]))))
+    terms.extend(renderer.term(item.constraint) for item in relation.definedness_constraints)
+    # Terminated cases constrain event inputs as part of the actual consequent.
+    post_terms = relation.consequent.children() if z3.is_and(relation.consequent) else (relation.consequent,)
+    for term in post_terms:
+        if z3.is_not(term):
+            entry = names.lookup(term.arg(0))
+            if entry is not None and getattr(entry.source, 'kind', None) == 'event':
+                terms.append(renderer.term(term))
+    boundary = combine('=>', (applied, combine('&&', terms)))
+    _append_formula(lines, '  ', boundary, renderer, force=True)
+    if expanded:
+        raw = FormulaText(names, core.symbols.domain)
+        lines.append('  Expanded frame boundary (no local versions or aliases):')
+        _append_formula(lines, '  ', raw.term(z3.Implies(evidence.antecedent, relation.consequent)), raw, force=True)
+        lines.append('  Submitted case formula (including selector binding):')
+        _append_formula(lines, '  ', raw.term(evidence.expression), raw, force=True)
     return lines
 
 
 def _report_text(report, *, expanded=False):
-    """Read original groups and case boundaries without choosing an execution."""
+    """Read selected groups and frame relations without selecting a trace."""
     if not isinstance(expanded, bool):
         raise TypeError('expanded must be Boolean')
     core = report.core
     names = _display_names(core.symbols.names)
-    domain = core.symbols.domain
+    renderer = FormulaText(names, core.symbols.domain)
     lines = [
         'Source construction (no reachability, coverage or UNSAT proof).',
         'Cases are conditional alternatives, not a selected execution trace.',
-        'Frame values connect adjacent steps; action references are local to their case.',
+        'x@f is a frame value; x#n is a local definition in one frame/case, never a cross-frame reference.',
+        'event("path")@k is a step k input; active("leaf")@k is the frame k state.',
+        'Parameters are shared; @inputk values are fresh step inputs, not persistent frame variables.',
+        'Local Boolean cleanup preserves source groups; SMT-specific numeric functions keep their exact meaning.',
         'Selected groups: ' + (', '.join(report.group_ids) or '(none)'),
     ]
+    if any(entry.is_root and entry.is_stoppable for entry in core.symbols.domain.states):
+        lines.append('For a leaf root, !cold distinguishes its entered position from fbmcq active(root), which also holds at cold.')
+    if core.cone_slice is not None and core.cone_slice.dropped_variables:
+        lines.append('Not retained by this compilation (no invented preservation): ' + ', '.join(core.cone_slice.dropped_variables))
     for group in report.groups:
         if group.category in ('transition.step', 'transition.case'):
             continue
-        lines.append('')
-        lines.append('Group %s (%s)' % (group.stable_id, group.category))
-        source = group.source_ref
-        lines.append('  Source: ' + _location(source))
-        excerpt = core.context._source_registry.excerpt(source)
+        lines.extend(('', 'Group %s (%s)' % (group.stable_id, group.category),
+                      '  Source: ' + _location(group.source_ref)))
+        excerpt = core.context._source_registry.excerpt(group.source_ref)
         if excerpt:
             lines.append('  Source text: ' + excerpt)
         for expression in group.expressions:
-            lines.extend('  ' + line for line in _formula_lines('Constraint: ', expression, names, domain))
+            _append_formula(lines, '  Constraint: ', renderer.term(expression), renderer)
     for evidence in report.cases:
-        step = evidence.step_index
-        case = evidence.case
-        relations = core.steps[step].case_relations
-        relation = next(item for item in relations if item.case is case)
-        lines.extend(('', 'Step %d: frame %d -> frame %d' % (step, step, step + 1),
-                      'Case: ' + case.label,
-                      '  Start control state: ' + _state_label(case.source_state_id, domain),
-                      '  End control state if this case applies: ' + _state_label(case.target_state_id, domain)))
-        lines.extend('  ' + line for line in _formula_lines('Effective condition: ', evidence.antecedent, names, domain))
-        for use in case.used_events:
-            lines.append('  Event read: %s at step %d (%s, %s).' % (use.path, step, use.reason, use.polarity))
-        if case.used_events:
-            lines.append('  Event reads alone do not imply occurrence or acceptance; use the effective condition above.')
-        if case.consumed_events:
-            lines.append('  Events consumed if this case applies: ' + ', '.join(case.consumed_events))
-        for exclusion in case.priority_exclusions:
-            for label in exclusion.excluded_case_labels:
-                excluded = next(item for item in relations if item.case.label == label)
-                lines.append('  Excluded acceptance (%s): %s' % (exclusion.reason, label))
-                lines.extend('    ' + line for line in _formula_lines(
-                    'Acceptance condition (embedded dependency, not an extra premise): ',
-                    excluded.antecedent, names, domain))
-        incoming = {name: names.render(expression) for name, expression in evidence.before.items()}
-        for anchor in range(len(evidence.actions) + 1):
-            for guard in evidence.guards:
-                if guard.requirement.after_action_block_index != anchor:
-                    continue
-                lines.append('  Guard after %d action(s): %s [%s]' % (
-                    anchor, guard.requirement.expr.to_ast_node(), _location(guard.source)))
-                lines.append('    polarity: ' + guard.requirement.polarity)
-                if expanded:
-                    lines.append('    encoding use: %s; transition: %s' % (
-                        guard.requirement.reason, guard.requirement.transition_label))
-                lines.append('    reads: ' + (', '.join('%s <- %s' % (var.name, incoming[var.name])
-                                                       for var in guard.requirement.expr.list_variables()) or '(none)'))
-                lines.append('    compiled guard: ' + names.render(guard.expression))
-            if anchor < len(evidence.actions):
-                action_lines, incoming = _action_text(
-                    evidence.actions[anchor], names, expanded=expanded, incoming=incoming)
-                lines.extend('  ' + line for line in action_lines)
-        lines.append('  Frame boundary under this case:')
-        lines.append('    state[%d] = %s' % (step + 1, _state_label(case.target_state_id, domain)))
-        for name, expression in relation.post_var_exprs.items():
-            target = names.render(core.symbols.frame_var(step + 1, name))
-            unchanged = incoming[name] == names.render(evidence.before[name])
-            lines.append('    %s = %s%s' % (target, incoming[name], ' (preserved)' if unchanged else ''))
-            if expanded:
-                lines.append('      compiled post value: ' + names.render(expression))
-        post_terms = relation.consequent.children() if z3.is_and(relation.consequent) else (relation.consequent,)
-        for term in post_terms:
-            if z3.is_not(term):
-                entry = names.lookup(term.arg(0))
-                if entry is not None and getattr(entry.source, 'kind', None) == 'event':
-                    lines.append('    Boundary event requirement: ' + names.render(term))
-        for constraint in relation.definedness_constraints:
-            lines.append('  Required definedness under this case: ' + names.render(constraint.constraint))
-        if expanded:
-            lines.extend('  ' + line for line in _formula_lines('Submitted formula: ', evidence.expression, names, domain))
-    return tuple(_split_lines(lines))
+        lines.append('')
+        lines.extend(_case_text(core, evidence, names, expanded))
+    return tuple(lines)

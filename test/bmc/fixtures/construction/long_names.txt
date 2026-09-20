@@ -1,22 +1,18 @@
 Action 1: Root state_enter
-  Local view: enclosing frame/case conditions are not shown.
-  Entry: pressure_before_calibration [action 1 entry] = pressure_before_calibration@0
-  Entry: v0 [action 1 entry] = v0@0
-  Statement 1: pressure_before_calibration = pressure_before_calibration % 7 * v0; [source location unavailable]
-    reads: pressure_before_calibration <- pressure_before_calibration [action 1 entry], v0 <- v0 [action 1 entry]
-    produces: pressure_before_calibration [action 1, after statement 1]
-    recorded definedness: And(7 != 0, 7 != 0)
-    expanded: (pressure_before_calibration@0%7)*v0@0
-    Z3 simplification: v0@0*(pressure_before_calibration@0%7)
-  Statement 2: v0 = (pressure_before_calibration > 0) ? pressure_before_calibration : v0; [source location unavailable]
-    reads: pressure_before_calibration <- pressure_before_calibration [action 1, after statement 1], v0 <- v0 [action 1 entry]
-    produces: v0 [action 1, after statement 2]
-    recorded definedness: And(7 != 0)
-    expanded: If(0 < (pressure_before_calibration@0%7)*v0@0,
-         (pressure_before_calibration@0%7)*v0@0,
-         v0@0)
-    Z3 simplification: If(Or(Not(v0@0 >= 0),
-            v0@0 == 0,
-            pressure_before_calibration@0%7 == 0),
-         v0@0,
-         v0@0*(pressure_before_calibration@0%7))
+  Local action view: frame/case conditions are not included; @entry means this call entry.
+  pressure_before_calibration@entry := pressure_before_calibration@0
+  v0@entry := v0@0
+  Statement 1 [source location unavailable]:
+    Source: pressure_before_calibration = pressure_before_calibration % 7 * v0;
+    pressure_before_calibration#1 := pressure_before_calibration@entry % 7 * v0@entry
+    Expanded value: mod(pressure_before_calibration@0, 7) * v0@0
+  Statement 2 [source location unavailable]:
+    Source: v0 = (pressure_before_calibration > 0) ? pressure_before_calibration : v0;
+    v0#1 := (pressure_before_calibration#1 > 0) ? pressure_before_calibration#1 : v0@entry
+    Recorded translation context (not new premises): true
+    Expanded value: (
+        (0 < mod(pressure_before_calibration@0, 7) * v0@0) ?
+            mod(pressure_before_calibration@0, 7) * v0@0
+        :
+            v0@0
+    )

@@ -1,0 +1,141 @@
+Source construction (no reachability, coverage or UNSAT proof).
+Cases are conditional alternatives, not a selected execution trace.
+x@f is a frame value; x#n is a local definition in one frame/case, never a cross-frame reference.
+event("path")@k is a step k input; active("leaf")@k is the frame k state.
+Parameters are shared; @inputk values are fresh step inputs, not persistent frame variables.
+Local Boolean cleanup preserves source groups; SMT-specific numeric functions keep their exact meaning.
+Selected groups: transition.step.0000
+
+Build frame 1 from frame 0 using step 0 events/inputs.
+Case: Root.Ready::fallback::Root.Ready::0
+  Start: Root.Ready
+  Condition definitions (local to this frame/case, not additional premises):
+  <accept Root.Cancel [fallback 1]> := (
+         active("Root.Ready")@0
+      && event("Root.Cancel")@0
+      && 100 < x@0
+  )
+  <accept Root.Apply [fallback 2]> := (
+         active("Root.Ready")@0
+      && event("Root.Apply")@0
+      && (
+                10 < x@0 && 20 > y@0
+             || x@0 < -10 && 20 < y@0
+             || x@0 > y@0 && 100 > x@0
+         )
+      && (0 < x@0 + y@0 || 20 > x@0 - y@0)
+      && !<accept Root.Cancel [fallback 1]>
+  )
+  <apply this case> := (
+         active("Root.Ready")@0
+      && !(
+                <accept Root.Cancel [fallback 1]>
+             || <accept Root.Apply [fallback 2]>
+         )
+  )
+  event("Root.Apply")@0: event input at step 0 (fallback, negative).
+  event("Root.Cancel")@0: event input at step 0 (fallback, negative).
+  An event occurrence alone does not imply acceptance; exclusions negate the complete acceptance condition.
+  Construction under <apply this case>:
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         active("Root.Ready")@1
+      && x@1 == x@0
+      && y@1 == y@0
+  )
+
+Build frame 1 from frame 0 using step 0 events/inputs.
+Case: Root.Ready::transition::Root.Done::0
+  Start: Root.Ready
+  Condition definitions (local to this frame/case, not additional premises):
+  <apply this case> := (
+         active("Root.Ready")@0
+      && event("Root.Cancel")@0
+      && 100 < x@0
+  )
+  event("Root.Cancel")@0: event input at step 0 (trigger, positive).
+  An event occurrence alone does not imply acceptance; exclusions negate the complete acceptance condition.
+  Events consumed under <apply this case>: Root.Cancel
+  Construction under <apply this case>:
+    Guard after 0 action(s) [source location unavailable]:
+      Source: x > 100
+      Reads: x@0 > 100
+      Required polarity: positive
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         active("Root.Done")@1
+      && x@1 == x@0
+      && y@1 == y@0
+  )
+
+Build frame 1 from frame 0 using step 0 events/inputs.
+Case: Root.Ready::transition::Root.Done::1
+  Start: Root.Ready
+  Condition definitions (local to this frame/case, not additional premises):
+  <guard 1 after action 0> := (
+         (
+                10 < x@0 && 20 > y@0
+             || x@0 < -10 && 20 < y@0
+             || x@0 > y@0 && 100 > x@0
+         )
+      && (0 < x@0 + y@0 || 20 > x@0 - y@0)
+  )
+  <accept Root.Cancel [transition_priority 1]> := (
+         active("Root.Ready")@0
+      && event("Root.Cancel")@0
+      && 100 < x@0
+  )
+  <apply this case> := (
+         active("Root.Ready")@0
+      && event("Root.Apply")@0
+      && <guard 1 after action 0>
+      && !<accept Root.Cancel [transition_priority 1]>
+  )
+  event("Root.Apply")@0: event input at step 0 (trigger, positive).
+  event("Root.Cancel")@0: event input at step 0 (priority, negative).
+  An event occurrence alone does not imply acceptance; exclusions negate the complete acceptance condition.
+  Events consumed under <apply this case>: Root.Apply
+  Construction under <apply this case>:
+    Guard after 0 action(s) [source location unavailable]:
+      Source: (x > 10 && y < 20 || x < -10 && y > 20 || x > y && x < 100) && (x + y > 0 || x - y < 20)
+      Reads: (x@0 > 10 && y@0 < 20 || x@0 < -10 && y@0 > 20 || x@0 > y@0 && x@0 < 100) && (x@0 + y@0 > 0 || x@0 - y@0 < 20)
+      Required polarity: positive
+    Action 1: transition_effect
+      Conditional statement 1 (ordered alternatives):
+        Branch 1 (if): x@0 > 10 && y@0 < 20 || x@0 < -10 && y@0 > 20 || x@0 > y@0 && x@0 < 100
+          Effective scope: 10 < x@0 && 20 > y@0 || x@0 < -10 && 20 < y@0 || x@0 > y@0 && 100 > x@0
+          Executor reachability: sat (recorded, not rechecked).
+          Statement 1.1.1 [source location unavailable]:
+            Source: x = x + y;
+            x#1 := x@0 + y@0
+        Branch 2 (else): otherwise
+          Effective scope: !(
+                 10 < x@0 && 20 > y@0
+              || x@0 < -10 && 20 < y@0
+              || x@0 > y@0 && 100 > x@0
+          )
+          Executor reachability: sat (recorded, not rechecked).
+          Statement 1.2.1 [source location unavailable]:
+            Source: x = x - y;
+            x#2 := x@0 - y@0
+      Join x#3 := (
+          (10 < x@0 && 20 > y@0 || x@0 < -10 && 20 < y@0 || x@0 > y@0 && 100 > x@0) ?
+              x#1
+          :
+              (
+                  (!(
+                          10 < x@0 && 20 > y@0
+                       || x@0 < -10 && 20 < y@0
+                       || x@0 > y@0 && 100 > x@0
+                   )) ?
+                      x#2
+                  :
+                      x@0
+              )
+      )
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         active("Root.Done")@1
+      && x@1 == x#3
+      && y@1 == y@0
+  )

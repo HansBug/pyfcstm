@@ -64,18 +64,22 @@ class BmcActionConstruction:
     source_paths: Mapping[tuple, tuple]
 
     def text_lines(self, names=None, *, expanded=False) -> Tuple[str, ...]:
-        """Show source statements and references to visible write positions.
+        """Show source statements and local value definitions.
 
-        Input values are explicitly bound at action entry. References name
-        one-based action/statement positions, not internal value indices.
+        Input values are explicitly bound as ``x@entry`` at this call entry.
+        ``x#n`` is the nth definition of x within this invocation, including
+        necessary branch joins; it is not an internal graph ID or a frame
+        value. Authored identity writes remain visible.
         For frame, case, guard and cross-action context, use the enclosing
         :meth:`BmcConstructionReport.text_lines` instead. This local view
         does not assert that the action is reachable or executes unconditionally.
 
         :param names: Optional construction-time symbol display registry.
         :type names: Optional[pyfcstm.solver.symbols.SymbolNames]
-        :param expanded: Add actual expanded Z3 values and labeled Z3
-            simplifications. Defaults to ``False``. Native operators are retained.
+        :param expanded: Add actual expanded values and recorded translation
+            context, without additional solving or algebraic simplification.
+            Defaults to ``False``. Booleans use DSL notation; numeric SMT
+            primitives without an exact DSL equivalent retain typed forms.
         :type expanded: bool
         :return: Complete lines for this action, without truncation.
         :rtype: Tuple[str, ...]
@@ -219,16 +223,29 @@ class BmcConstructionReport:
     def text_lines(self, *, expanded=False) -> Tuple[str, ...]:
         """Describe selected groups and conditional cases across frame boundaries.
 
-        Each case has its own scope and action references. Shared frame values
-        connect adjacent steps; listing alternatives does not select a trace or
-        prove branch coverage. Events are named at steps, states at frames,
-        and state-code meanings accompany the native formulas. Rendering does
-        not solve, recompile, or certify the records; call :meth:`check`
+        Each frame/case owns per-variable definitions ``x#n``; boundary values
+        ``x@f`` connect adjacent frames. A definition never crosses a case or
+        frame boundary. Events and leaf states use ``event("path")@k`` and
+        ``active("path")@k``. Each boundary lists all retained persistent
+        variables, including preservation, and its target control position.
+        Cold, terminated and nonleaf entries are explicit; an entered leaf
+        root also needs ``!cold`` because fbmcq active(root) includes cold.
+        Sliced-out variables are disclosed, not given invented equations.
+
+        Listing alternatives does not select a trace or prove coverage. DSL
+        Boolean layout cleans neutral literals, double negation, exact numeral
+        comparisons and redundant connective layers within named groups.
+        Typed SMT operations retain their meaning; no global simplifier runs.
+        Local condition aliases are definitions, not additional premises.
+        Rendering does not solve, recompile, or certify the records; call :meth:`check`
         separately. Only selected groups are premises. Priority dependencies
         are descriptions of conditions already embedded in the selected case.
 
-        :param expanded: Include expanded assignment values, Z3 simplifications
-            and the full submitted case formula. Defaults to ``False``.
+        :param expanded: Include actual expanded assignment values, a boundary
+            without local definitions or display aliases, and the full
+            submitted case formula. Defaults to ``False``. Expansion can be
+            large; formulas are never silently truncated. It uses recorded
+            expressions and does not re-execute actions or call a solver.
         :type expanded: bool
         :return: Complete text lines, without truncation or file side effects.
         :rtype: Tuple[str, ...]

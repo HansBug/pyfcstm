@@ -1,4 +1,4 @@
-"""Inspect an actual editor action without claiming an UNSAT derivation."""
+"""Inspect two conditional editor steps without claiming an UNSAT derivation."""
 
 from pathlib import Path
 
@@ -10,18 +10,25 @@ from pyfcstm.model import load_state_machine_from_file
 directory = Path(__file__).resolve().parent
 model = load_state_machine_from_file(str(directory / 'dose_editor.fcstm'))
 query = (directory / 'dose_editor.fbmcq').read_text(encoding='utf-8')
-compiled = compile_bmc_query(model, query, options=BmcOptions(record_construction=True))
-report = get_bmc_construction(compiled.core, ('transition.step.0002',))
+compiled = compile_bmc_query(
+    model, query, options=BmcOptions(record_construction=True),
+    query_source_path=str(directory / 'dose_editor.fbmcq'),
+)
+# Select Review -> Trim at step 2 and Trim -> Ready at step 3.
+# These are construction examples, not an asserted feasible trace or solver core.
+group_ids = tuple(
+    'transition.case.%04d.%04d' % (step, index)
+    for step in (2, 3)
+    for index, relation in enumerate(compiled.core.steps[step].case_relations)
+    if (step == 2 and relation.case.source_state_path.endswith('.Review')
+        and relation.case.target_state_path.endswith('.Trim'))
+    or (step == 3 and relation.case.source_state_path.endswith('.Trim')
+        and relation.case.target_state_path.endswith('.Ready'))
+)
+report = get_bmc_construction(compiled.core, group_ids)
 checked = report.check(timeout_ms=10000)
 print('Construction binding:', checked.status)
 print('This script does not compute a property verdict or an UNSAT derivation.')
-
-case, action = next(
-    (case, action)
-    for case in report.cases for action in case.actions
-    if action.block.owner_state_path.endswith('.Trim')
-)
-print('Frame:', case.step_index)
-print('Case:', case.case.label)
-print('Case scope:', compiled.core.symbols.names.render(case.antecedent))
-print('\n'.join(action.text_lines(compiled.core.symbols.names)))
+print('\n'.join(report.text_lines()))
+# Use report.text_lines(expanded=True) to include native expanded values,
+# labeled Z3 simplifications and the complete submitted case formulas.

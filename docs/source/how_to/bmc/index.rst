@@ -903,7 +903,7 @@ Run with an installation containing the construction API:
     python source_construction.demo.py
 
 The script only prints to stdout. It captures during actual compilation and
-checks the records for step 2; it does not modify the model or publish a proof.
+checks the selected records for steps 2 and 3; it does not modify the model or publish a proof.
 The first line should be ``Construction binding: verified``. If it is
 ``unknown``, the binding check did not finish within its budget. An ``invalid``
 result means the source or formula bindings did not match: inspect
@@ -912,31 +912,47 @@ records. Asking for records from a core compiled without
 ``BmcOptions(record_construction=True)`` raises ``ValueError``; inspection never
 silently recompiles that core.
 
-The complete script prints the selected case's scope before the action. The
-following excerpt shows why both later statements use the new refund:
+The script selects Review -> Trim at step 2 and Trim -> Ready at step 3.
+These are conditional construction examples, not a solver-selected UNSAT core
+or an asserted feasible execution. Its complete report shows each effective
+condition, state-code meanings, authored event names, priority exclusions,
+guard evaluation positions, action dependencies and frame boundary connections.
+Here is the action excerpt from the actual output:
 
 .. code-block:: text
 
-    Action 0: DoseEditor.Editing.Adjust.Trim state_enter
-      refund = quantum - margin; [dose_editor.fcstm:29:21]
-        reads: quantum#9, margin#4
-        refund#10 := quantum@param - margin@2
-        simplified: quantum@param + -1*margin@2
-      proposal = proposal - refund; [dose_editor.fcstm:30:21]
-        reads: proposal#3, refund#10
-        proposal#11 := proposal@2 - (quantum@param - margin@2)
-        simplified: proposal@2 + -1*quantum@param + margin@2
-      margin = margin + refund; [dose_editor.fcstm:31:21]
-        reads: margin#4, refund#10
-        margin#12 := margin@2 + quantum@param - margin@2
-        simplified: quantum@param
+    Action 1: DoseEditor.Editing.Adjust.Trim state_enter
+      Statement 1: refund = quantum - margin; [dose_editor.fcstm:29:21]
+        reads: quantum <- quantum@param, margin <- margin@2
+        produces: refund [action 1, after statement 1]
+      Statement 2: proposal = proposal - refund; [dose_editor.fcstm:30:21]
+        reads: proposal <- proposal@2, refund <- refund [action 1, after statement 1]
+        produces: proposal [action 1, after statement 2]
+      Statement 3: margin = margin + refund; [dose_editor.fcstm:31:21]
+        reads: margin <- margin@2, refund <- refund [action 1, after statement 1]
+        produces: margin [action 1, after statement 3]
 
-``#10`` is an action-local write occurrence, not a BMC frame number.
-``margin@2`` is the incoming frame value; ``quantum@param`` is a shared parameter.
-The final simplified value is conditional on this case executing. It does not
-prove that every path reaches Trim, that the whole scenario is infeasible, or
-that the checked property holds. In particular, Z3 simplification is not a
-step-by-step arithmetic certificate. See
-:doc:`../../reference/bmc_results/index` for the exact capture, checking and
-core-refinement contracts, and :doc:`../../explanations/bmc_solving/index` for the
-separation between construction evidence and logical derivation.
+The reference ``refund [action 1, after statement 1]`` names a visible write,
+not an internal allocation number. Within this case, the boundary connects
+``margin@3`` to ``margin [action 1, after statement 3]``. The next step's guard
+reads that shared ``margin@3``. This is a conditional connection, not a claim
+that the two cases necessarily execute. Each case starts a separate reference
+scope; two alternatives' ``action 1`` values must not be conflated.
+
+The Undo event appears as ``event("DoseEditor.Undo")@step2``. A state equality
+retains its native integer encoding and receives an adjacent model-name legend;
+ordinary numeric constants are not renamed. Excluding acceptance of an earlier
+transition does not in general require its event to be absent: its guard may
+be false. The report retains the complete effective condition.
+
+For native expanded values, explicitly use ``report.text_lines(expanded=True)``.
+This also prints labeled Z3 simplifications and the submitted case formulas;
+it does not produce arithmetic proof certificates. For one isolated action,
+use ``action.text_lines(compiled.core.symbols.names)``; that local view defines
+entry values but lacks the enclosing frame/case context. Both renderers return
+lines, write no files and perform no solver checks. The capture option remains
+disabled by default, and the public CLI JSON is unchanged.
+
+See :doc:`../../reference/bmc_results/index` for capture, text, checking and
+core-refinement contracts, and :doc:`../../explanations/bmc_solving/index` for
+construction evidence versus logical derivation.

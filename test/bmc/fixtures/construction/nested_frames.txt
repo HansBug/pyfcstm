@@ -1,0 +1,74 @@
+Source construction (no reachability, coverage or UNSAT proof).
+Cases are conditional alternatives, not a selected execution trace.
+Frame values connect adjacent steps; action references are local to their case.
+Selected groups: transition.step.0000
+
+Step 0: frame 0 -> frame 1
+Case: __init__::initial::Root::0
+  Start control state: cold (before model entry)
+  End control state if this case applies: Root
+  Effective condition: And(-3 == state[0], True)
+    state[0] code -3 means cold (before model entry)
+  Action 1: Root state_enter
+    Conditional statement 1: ordered alternatives (not sequential execution).
+      Branch 1 (if): x > 0
+        condition reads: x <- x@0
+        effective scope: And(0 < x@0)
+        executor reachability: sat (not rechecked by rendering)
+        Statement 1.1.1: x = x; [source location unavailable]
+          reads: x <- x@0
+          produces: x [action 1, after statement 1.1.1]
+          scope: And(0 < x@0)
+        Conditional statement 1.1.2: ordered alternatives (not sequential execution).
+          Branch 1 (if): y > x
+            condition reads: y <- y@0, x <- x [action 1, after statement 1.1.1]
+            effective scope: And(0 < x@0, y@0 > x@0)
+            executor reachability: sat (not rechecked by rendering)
+            Statement 1.1.2.1.1: y = y / x; [source location unavailable]
+              reads: y <- y@0, x <- x [action 1, after statement 1.1.1]
+              produces: y [action 1, after statement 1.1.2.1.1]
+              scope: And(0 < x@0, y@0 > x@0)
+              recorded definedness: And(x@0 != 0)
+        Join: y [action 1, after join 1.1.2]
+          when y@0 > x@0: y [action 1, after statement 1.1.2.1.1]
+          otherwise preserve: y@0
+      Branch 2 (elif): x < 0
+        condition reads: x <- x@0
+        effective scope: And(And(Not(0 < x@0), 0 > x@0))
+        executor reachability: sat (not rechecked by rendering)
+        Statement 1.2.1: x = x - 1; [source location unavailable]
+          reads: x <- x@0
+          produces: x [action 1, after statement 1.2.1]
+          scope: And(And(Not(0 < x@0), 0 > x@0))
+          recorded definedness: And(Implies(And(0 < x@0, y@0 > x@0), x@0 != 0))
+    Join: x [action 1, after join 1]
+      when 0 < x@0: x [action 1, after statement 1.1.1]
+      when And(Not(0 < x@0), 0 > x@0): x [action 1, after statement 1.2.1]
+      otherwise preserve: x@0
+    Join: y [action 1, after join 1]
+      when 0 < x@0: y [action 1, after join 1.1.2]
+      when And(Not(0 < x@0), 0 > x@0): y@0
+      otherwise preserve: y@0
+    Statement 2: y = x + y; [source location unavailable]
+      reads: x <- x [action 1, after join 1], y <- y [action 1, after join 1]
+      produces: y [action 1, after statement 2]
+      recorded definedness: And(Implies(And(0 < x@0, y@0 > x@0), x@0 != 0))
+  Frame boundary under this case:
+    state[1] = Root
+    x@1 = x [action 1, after join 1]
+    y@1 = y [action 1, after statement 2]
+  Required definedness under this case: Implies(And(0 < x@0, y@0 > x@0), x@0 != 0)
+
+Step 0: frame 0 -> frame 1
+Case: __init__::delta::__init__::0
+  Start control state: cold (before model entry)
+  End control state if this case applies: cold (before model entry)
+  Effective condition: And(-3 == state[0], Not(And(-3 == state[0], True)))
+    state[0] code -3 means cold (before model entry)
+  Excluded acceptance (delta): __init__::initial::Root::0
+    Acceptance condition (embedded dependency, not an extra premise): And(-3 == state[0], True)
+      state[0] code -3 means cold (before model entry)
+  Frame boundary under this case:
+    state[1] = cold (before model entry)
+    x@1 = x@0 (preserved)
+    y@1 = y@0 (preserved)

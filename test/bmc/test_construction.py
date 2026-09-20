@@ -172,19 +172,21 @@ def test_trim_text_exposes_local_reads_before_expanded_formulas(text_aligner):
     action = next(action for case in report.cases for action in case.actions)
     actual = '\n'.join(action.text_lines(formula.core.symbols.names))
     text_aligner.assert_equal(expect='''
-Action 0: Root state_enter
-  refund = quantum - margin; [source location unavailable]
-    reads: quantum#3, margin#2
-    refund#4 := quantum@param - margin@0
-    simplified: quantum@param + -1*margin@0
-  proposal = proposal - refund; [source location unavailable]
-    reads: proposal#1, refund#4
-    proposal#5 := proposal@0 - (quantum@param - margin@0)
-    simplified: proposal@0 + -1*quantum@param + margin@0
-  margin = margin + refund; [source location unavailable]
-    reads: margin#2, refund#4
-    margin#6 := margin@0 + quantum@param - margin@0
-    simplified: quantum@param
+Action 1: Root state_enter
+  Local view: enclosing frame/case conditions are not shown.
+  Entry: refund [action 1 entry] = refund@0
+  Entry: proposal [action 1 entry] = proposal@0
+  Entry: margin [action 1 entry] = margin@0
+  Entry: quantum [action 1 entry] = quantum@param
+  Statement 1: refund = quantum - margin; [source location unavailable]
+    reads: quantum <- quantum [action 1 entry], margin <- margin [action 1 entry]
+    produces: refund [action 1, after statement 1]
+  Statement 2: proposal = proposal - refund; [source location unavailable]
+    reads: proposal <- proposal [action 1 entry], refund <- refund [action 1, after statement 1]
+    produces: proposal [action 1, after statement 2]
+  Statement 3: margin = margin + refund; [source location unavailable]
+    reads: margin <- margin [action 1 entry], refund <- refund [action 1, after statement 1]
+    produces: margin [action 1, after statement 3]
 '''.strip(), actual=actual)
 
 
@@ -197,15 +199,21 @@ def test_conditional_identity_write_text_keeps_scope_and_preservation(text_align
     report = get_bmc_construction(formula.core, ('transition.step.0000',))
     action = next(action for case in report.cases for action in case.actions)
     text_aligner.assert_equal(expect='''
-Action 0: Root state_enter
-  x = x; [source location unavailable]
-    reads: x#0
-    when: And(0 < x@0)
-    x#1 := x@0
-  Merge x: ordered branches, otherwise preserve incoming value.
-    reads: x#0
-    x#2 := If(0 < x@0, x@0, x@0)
-    simplified: x@0
+Action 1: Root state_enter
+  Local view: enclosing frame/case conditions are not shown.
+  Entry: x [action 1 entry] = x@0
+  Conditional statement 1: ordered alternatives (not sequential execution).
+    Branch 1 (if): x > 0
+      condition reads: x <- x [action 1 entry]
+      effective scope: And(0 < x@0)
+      executor reachability: sat (not rechecked by rendering)
+      Statement 1.1.1: x = x; [source location unavailable]
+        reads: x <- x [action 1 entry]
+        produces: x [action 1, after statement 1.1.1]
+        scope: And(0 < x@0)
+  Join: x [action 1, after join 1]
+    when 0 < x@0: x [action 1, after statement 1.1.1]
+    otherwise preserve: x [action 1 entry]
 '''.strip(), actual='\n'.join(action.text_lines(formula.core.symbols.names)))
 
 
@@ -226,6 +234,7 @@ def test_complex_models_bind_all_public_initial_targets(name):
         checked = report.check()
         assert checked.status == 'verified', (target, checked)
         assert all(case.query is formula.core.context.query for case in report.cases)
+        assert report.text_lines()[0] == 'Source construction (no reachability, coverage or UNSAT proof).'
 
 
 def test_pool_repeated_cycles_keep_source_shared_and_frame_values_distinct():
@@ -428,7 +437,7 @@ def test_guard_check_expiry_does_not_publish_success(monkeypatch):
     assert report.check(timeout_ms=1).status == 'unknown'
 
 
-def test_recorded_inputs_parameters_locals_and_abstract_hook():
+def test_recorded_inputs_parameters_locals_and_abstract_hook(text_aligner):
     from pyfcstm.bmc.construction import get_bmc_construction
 
     model = load_state_machine_from_text('''
@@ -446,9 +455,12 @@ def test_recorded_inputs_parameters_locals_and_abstract_hook():
     assert report.check().status == 'verified'
     calls = [action for case in report.cases for action in case.actions if action.block.is_abstract]
     assert calls
-    assert calls[0].text_lines() == (
-        'Action 0: Root state_enter', '  Abstract hook: recorded call, no modeled writes.',
-    )
+    text_aligner.assert_equal(expect='''
+Action 1: Root state_enter
+  Named action: Root.Observe
+  Local view: enclosing frame/case conditions are not shown.
+  Abstract hook: recorded call, no modeled writes.
+'''.strip(), actual='\n'.join(calls[0].text_lines()))
     recorded = [case for case in report.cases if any(action.execution for action in case.actions)]
     assert z3.eq(recorded[0].before['gain'], recorded[-1].before['gain'])
     assert not z3.eq(recorded[0].before['request'], recorded[-1].before['request'])

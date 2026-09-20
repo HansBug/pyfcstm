@@ -1,0 +1,76 @@
+Source construction (no reachability, coverage or UNSAT proof).
+Cases are conditional alternatives, not a selected execution trace.
+Frame values connect adjacent steps; action references are local to their case.
+Selected groups: transition.step.0000, transition.step.0001
+
+Step 0: frame 0 -> frame 1
+Case: Root::fallback::Root::0
+  Start control state: Root
+  End control state if this case applies: Root
+  Effective condition: And(0 == state[0], Not(And(0 == state[0], True)))
+    state[0] code 0 means Root
+  Excluded acceptance (fallback): Root::transition::__terminate__::0
+    Acceptance condition (embedded dependency, not an extra premise): And(0 == state[0], True)
+      state[0] code 0 means Root
+  Action 1: Root leaf_during
+    Statement 1: temporary = request * gain; [source location unavailable]
+      reads: request <- request@input0, gain <- gain@param
+      produces: temporary [action 1, after statement 1]
+      local to this action invocation
+    Statement 2: x = x + temporary; [source location unavailable]
+      reads: x <- x@0, temporary <- temporary [action 1, after statement 1]
+      produces: x [action 1, after statement 2]
+  Frame boundary under this case:
+    state[1] = Root
+    x@1 = x [action 1, after statement 2]
+
+Step 0: frame 0 -> frame 1
+Case: Root::transition::__terminate__::0
+  Start control state: Root
+  End control state if this case applies: terminated
+  Effective condition: And(0 == state[0], True)
+    state[0] code 0 means Root
+  Frame boundary under this case:
+    state[1] = terminated
+    x@1 = x@0 (preserved)
+
+Step 1: frame 1 -> frame 2
+Case: __terminate__::absorb::__terminate__::0
+  Start control state: terminated
+  End control state if this case applies: terminated
+  Effective condition: And(-1 == state[1], True)
+    state[1] code -1 means terminated
+  Frame boundary under this case:
+    state[2] = terminated
+    x@2 = x@1 (preserved)
+
+Step 1: frame 1 -> frame 2
+Case: Root::fallback::Root::0
+  Start control state: Root
+  End control state if this case applies: Root
+  Effective condition: And(0 == state[1], Not(And(0 == state[1], True)))
+    state[1] code 0 means Root
+  Excluded acceptance (fallback): Root::transition::__terminate__::0
+    Acceptance condition (embedded dependency, not an extra premise): And(0 == state[1], True)
+      state[1] code 0 means Root
+  Action 1: Root leaf_during
+    Statement 1: temporary = request * gain; [source location unavailable]
+      reads: request <- request@input1, gain <- gain@param
+      produces: temporary [action 1, after statement 1]
+      local to this action invocation
+    Statement 2: x = x + temporary; [source location unavailable]
+      reads: x <- x@1, temporary <- temporary [action 1, after statement 1]
+      produces: x [action 1, after statement 2]
+  Frame boundary under this case:
+    state[2] = Root
+    x@2 = x [action 1, after statement 2]
+
+Step 1: frame 1 -> frame 2
+Case: Root::transition::__terminate__::0
+  Start control state: Root
+  End control state if this case applies: terminated
+  Effective condition: And(0 == state[1], True)
+    state[1] code 0 means Root
+  Frame boundary under this case:
+    state[2] = terminated
+    x@2 = x@1 (preserved)

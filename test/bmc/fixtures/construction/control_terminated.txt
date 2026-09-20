@@ -1,0 +1,19 @@
+Source construction (no reachability, coverage or UNSAT proof).
+Cases are conditional alternatives, not a selected execution trace.
+Frame values connect adjacent steps; action references are local to their case.
+Selected groups: initial.target, transition.step.0000
+
+Group initial.target (initial.target)
+  Source: source location unavailable
+  Constraint: -1 == state[0]
+    state[0] code -1 means terminated
+
+Step 0: frame 0 -> frame 1
+Case: __terminate__::absorb::__terminate__::0
+  Start control state: terminated
+  End control state if this case applies: terminated
+  Effective condition: And(-1 == state[0], True)
+    state[0] code -1 means terminated
+  Frame boundary under this case:
+    state[1] = terminated
+    Boundary event requirement: Not(event("Root.Stop")@step0)

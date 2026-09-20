@@ -1,0 +1,69 @@
+Action 1: Root state_enter
+  Local view: enclosing frame/case conditions are not shown.
+  Entry: x [action 1 entry] = x@0
+  Entry: y [action 1 entry] = y@0
+  Conditional statement 1: ordered alternatives (not sequential execution).
+    Branch 1 (if): x > 0
+      condition reads: x <- x [action 1 entry]
+      effective scope: And(0 < x@0)
+      executor reachability: sat (not rechecked by rendering)
+      Statement 1.1.1: x = x; [source location unavailable]
+        reads: x <- x [action 1 entry]
+        produces: x [action 1, after statement 1.1.1]
+        scope: And(0 < x@0)
+        expanded: x@0
+      Conditional statement 1.1.2: ordered alternatives (not sequential execution).
+        Branch 1 (if): y > x
+          condition reads: y <- y [action 1 entry], x <- x [action 1, after statement 1.1.1]
+          effective scope: And(0 < x@0, y@0 > x@0)
+          executor reachability: sat (not rechecked by rendering)
+          Statement 1.1.2.1.1: y = y / x; [source location unavailable]
+            reads: y <- y [action 1 entry], x <- x [action 1, after statement 1.1.1]
+            produces: y [action 1, after statement 1.1.2.1.1]
+            scope: And(0 < x@0, y@0 > x@0)
+            recorded definedness: And(x@0 != 0)
+            expanded: y@0/x@0
+      Join: y [action 1, after join 1.1.2]
+        when y@0 > x@0: y [action 1, after statement 1.1.2.1.1]
+        otherwise preserve: y [action 1 entry]
+        expanded: If(y@0 > x@0, y@0/x@0, y@0)
+        Z3 simplification: If(y@0 <= x@0, y@0, y@0/x@0)
+    Branch 2 (elif): x < 0
+      condition reads: x <- x [action 1 entry]
+      effective scope: And(And(Not(0 < x@0), 0 > x@0))
+      executor reachability: sat (not rechecked by rendering)
+      Statement 1.2.1: x = x - 1; [source location unavailable]
+        reads: x <- x [action 1 entry]
+        produces: x [action 1, after statement 1.2.1]
+        scope: And(And(Not(0 < x@0), 0 > x@0))
+        recorded definedness: And(Implies(And(0 < x@0, y@0 > x@0), x@0 != 0))
+        expanded: x@0 - 1
+        Z3 simplification: -1 + x@0
+  Join: x [action 1, after join 1]
+    when 0 < x@0: x [action 1, after statement 1.1.1]
+    when And(Not(0 < x@0), 0 > x@0): x [action 1, after statement 1.2.1]
+    otherwise preserve: x [action 1 entry]
+    expanded: If(0 < x@0,
+         If(y@0 > x@0, x@0, x@0),
+         If(And(Not(0 < x@0), 0 > x@0), x@0 - 1, x@0))
+    Z3 simplification: If(And(x@0 <= 0, Not(0 <= x@0)), -1 + x@0, x@0)
+  Join: y [action 1, after join 1]
+    when 0 < x@0: y [action 1, after join 1.1.2]
+    when And(Not(0 < x@0), 0 > x@0): y [action 1 entry]
+    otherwise preserve: y [action 1 entry]
+    expanded: If(0 < x@0,
+         If(y@0 > x@0, y@0/x@0, y@0),
+         If(And(Not(0 < x@0), 0 > x@0), y@0, y@0))
+    Z3 simplification: If(Or(x@0 <= 0, y@0 <= x@0), y@0, y@0/x@0)
+  Statement 2: y = x + y; [source location unavailable]
+    reads: x <- x [action 1, after join 1], y <- y [action 1, after join 1]
+    produces: y [action 1, after statement 2]
+    recorded definedness: And(Implies(And(0 < x@0, y@0 > x@0), x@0 != 0))
+    expanded: If(0 < x@0,
+         If(y@0 > x@0, x@0, x@0),
+         If(And(Not(0 < x@0), 0 > x@0), x@0 - 1, x@0)) +
+      If(0 < x@0,
+         If(y@0 > x@0, y@0/x@0, y@0),
+         If(And(Not(0 < x@0), 0 > x@0), y@0, y@0))
+    Z3 simplification: If(And(x@0 <= 0, Not(0 <= x@0)), -1 + x@0, x@0) +
+      If(Or(x@0 <= 0, y@0 <= x@0), y@0, y@0/x@0)

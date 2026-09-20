@@ -741,3 +741,44 @@ compilation when evidence is requested. Binding checks and equivalent core
 refinement are explicit operations with their own shared total budgets. Finishing
 a check marks only that check complete. Unknown reachability or an expired budget
 cannot be used to exclude a branch or advertise a complete explanation.
+
+Reading the construction across actions and frames
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A frame records a macro-step boundary, not every assignment. In the editor,
+step 2's Trim action writes a refund, then a proposal, then a margin. Its last
+margin write supplies ``margin@3`` through that case's actual post-state
+constraint. Step 3's Trim -> Ready guard reads ``margin@3``. If another action
+in step 2 overwrote the margin, that later write would supply the boundary
+instead. The renderer follows recorded write identities and final versions,
+not equality of printed expressions. This also preserves identity assignments.
+
+Two calls to one named action share source statements but have separate
+``action 1`` and ``action 2`` references and local lifetimes. A guard after both
+calls reads the second call's output. Nested alternatives are printed beneath
+their conditional statement; their join names each selector and supplying
+write, with preservation when no alternative applies. Unknown reachability is
+an observation, never a reason to discard a branch. Statement numbers refer
+to original source positions, so unrelated input variables cannot renumber them.
+
+Control conditions belong to the same record. The editor's Review -> Trim
+case requires the Review state, the margin guard and exclusion of the earlier
+Undo transition. State comparisons retain native operators and numeric codes
+with adjacent model-name meanings. Events use full model paths and a step
+index; parameters are shared, while external inputs change per step. A state
+predicate for a composite can include its descendants. Exact frame control
+states must not be confused with every state entered inside a macro-step.
+
+A counterexample to a tempting explanation is a prioritized event transition
+with an additional guard. Its acceptance may be false even while its event is
+present. The renderer therefore exposes the accepted alternative's complete
+condition, rather than reporting that the event is absent. These dependencies
+are already part of the effective case condition, not new premises taken from
+outside the selected core.
+
+Finally, two printed cases are not a feasible execution or an exhaustive
+proof. They can be mutually exclusive or unreachable. Construction text keeps
+each case's scope and conditional frame equations; establishing reachability,
+branch coverage and a final contradiction requires separate checked reasoning.
+The default text preserves authored expressions with exact read bindings;
+``expanded=True`` adds native expanded formulas without replacing those bindings.

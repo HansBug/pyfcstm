@@ -1,0 +1,30 @@
+Source construction (no reachability, coverage or UNSAT proof).
+Cases are conditional alternatives, not a selected execution trace.
+Frame values connect adjacent steps; action references are local to their case.
+Selected groups: initial.target, transition.step.0000
+
+Group initial.target (initial.target)
+  Source: source location unavailable
+  Constraint: -3 == state[0]
+    state[0] code -3 means cold (before model entry)
+
+Step 0: frame 0 -> frame 1
+Case: __init__::initial::Root::0
+  Start control state: cold (before model entry)
+  End control state if this case applies: Root
+  Effective condition: And(-3 == state[0], True)
+    state[0] code -3 means cold (before model entry)
+  Frame boundary under this case:
+    state[1] = Root
+
+Step 0: frame 0 -> frame 1
+Case: __init__::delta::__init__::0
+  Start control state: cold (before model entry)
+  End control state if this case applies: cold (before model entry)
+  Effective condition: And(-3 == state[0], Not(And(-3 == state[0], True)))
+    state[0] code -3 means cold (before model entry)
+  Excluded acceptance (delta): __init__::initial::Root::0
+    Acceptance condition (embedded dependency, not an extra premise): And(-3 == state[0], True)
+      state[0] code -3 means cold (before model entry)
+  Frame boundary under this case:
+    state[1] = cold (before model entry)

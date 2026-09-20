@@ -816,34 +816,47 @@ options=BmcOptions(cone_slicing=True))``；文件入口支持
 
     python source_construction.demo.py
 
-脚本只写标准输出，在实际编译时捕获记录，并检查第 2 步的记录；不修改模型，也不发布证明。
+脚本只写标准输出，在实际编译时捕获记录，并检查第 2、3 步选中分支的记录；不修改模型，也不发布证明。
 第一行应为 ``Construction binding: verified``。若为 ``unknown``，说明绑定检查未在预算内完成。
 ``invalid`` 表示来源或公式绑定失配，应查看 ``report.check().reason``；若曾修改模型，
 先重新编译再使用记录。若编译时没有设置 ``BmcOptions(record_construction=True)``，
 请求记录会抛出 ``ValueError``，检查过程不会暗中重新编译。
 
-完整脚本先打印选中宏步分支的作用域，再打印动作。下面的输出节选说明后两句为何都读取
-新的退款量：
+脚本选择第 2 步的 Review -> Trim 和第 3 步的 Trim -> Ready。
+它们是有条件的构建示例，不是求解器选出的不可满足核，也不是已经证实可行的执行。
+完整报告展示各分支的有效条件、状态编码对应的模型名称、事件名称、优先级排除、
+守卫求值位置、动作依赖和帧边界连接。下面是实际输出中的动作节选：
 
 .. code-block:: text
 
-    Action 0: DoseEditor.Editing.Adjust.Trim state_enter
-      refund = quantum - margin; [dose_editor.fcstm:29:21]
-        reads: quantum#9, margin#4
-        refund#10 := quantum@param - margin@2
-        simplified: quantum@param + -1*margin@2
-      proposal = proposal - refund; [dose_editor.fcstm:30:21]
-        reads: proposal#3, refund#10
-        proposal#11 := proposal@2 - (quantum@param - margin@2)
-        simplified: proposal@2 + -1*quantum@param + margin@2
-      margin = margin + refund; [dose_editor.fcstm:31:21]
-        reads: margin#4, refund#10
-        margin#12 := margin@2 + quantum@param - margin@2
-        simplified: quantum@param
+    Action 1: DoseEditor.Editing.Adjust.Trim state_enter
+      Statement 1: refund = quantum - margin; [dose_editor.fcstm:29:21]
+        reads: quantum <- quantum@param, margin <- margin@2
+        produces: refund [action 1, after statement 1]
+      Statement 2: proposal = proposal - refund; [dose_editor.fcstm:30:21]
+        reads: proposal <- proposal@2, refund <- refund [action 1, after statement 1]
+        produces: proposal [action 1, after statement 2]
+      Statement 3: margin = margin + refund; [dose_editor.fcstm:31:21]
+        reads: margin <- margin@2, refund <- refund [action 1, after statement 1]
+        produces: margin [action 1, after statement 3]
 
-``#10`` 是本次动作内的写入序号，不是 BMC 帧号。``margin@2`` 是输入帧中的余量，
-``quantum@param`` 是共享参数。最后的化简结果以该宏步分支实际执行为前提，
-不证明所有路径都经过 Trim，也不证明整个场景无解或性质成立。
-尤其要注意，Z3 化简不等于逐步算术证明。
-捕获、检查和核细化的完整合同见 :doc:`../../reference/bmc_results/index_zh`；
+``refund [action 1, after statement 1]`` 指向读者可以看到的一次写入，
+不再暴露内部节点分配编号。在本分支成立的条件下，帧边界把 ``margin@3``
+连接到 ``margin [action 1, after statement 3]``；下一步的守卫读取这个共享的
+``margin@3``。这不代表两个分支必定实际执行。各候选分支具有独立的引用作用域，
+不能把两个分支内的 ``action 1`` 混为同一个执行实例。
+
+Undo 事件显示为 ``event("DoseEditor.Undo")@step2``。状态比较保留原生整数编码，
+旁边明确标注对应的模型状态名称；普通数值常量不被替换。
+排除高优先级迁移被接受，不一定要求事件缺席，因为该迁移的守卫可能不成立。
+报告保留完整有效条件，不作这种错误简化。
+
+需要原生展开值时，显式调用 ``report.text_lines(expanded=True)``；
+它还会打印有明确标注的 Z3 化简和提交公式，但不生成算术证明证书。
+仅查看单个动作可用 ``action.text_lines(compiled.core.symbols.names)``；
+该局部视图会定义入口值，但缺少完整帧和候选分支上下文。
+两个接口都只返回文本行，不写文件，也不进行求解检查。
+详细记录仍默认关闭，公共命令行 JSON 没有变化。
+
+捕获、文本、检查和核细化的完整合同见 :doc:`../../reference/bmc_results/index_zh`；
 构建证据与逻辑推导的区别见 :doc:`../../explanations/bmc_solving/index_zh`。

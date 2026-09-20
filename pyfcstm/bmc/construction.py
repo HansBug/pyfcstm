@@ -32,7 +32,6 @@ from pyfcstm.solver.construction import ConstructionCheck, OperationConstruction
 from pyfcstm.solver.construction import _same_expression_records, _same_expressions, _source_at
 from pyfcstm.solver.domain import DomainConstraint, ExpressionConstruction, translate_expr_domain
 from pyfcstm.solver.budget import SolveBudget
-from pyfcstm.solver.symbols import SymbolNames
 from pyfcstm.solver.unsat import UnsatConstraint, UnsatQuery, explain_unsat_core
 
 from .macro import ActionBlock, GuardRequirement
@@ -64,44 +63,27 @@ class BmcActionConstruction:
     sources: Tuple[BmcSourceRef, ...]
     source_paths: Mapping[tuple, tuple]
 
-    def text_lines(self, names=None) -> Tuple[str, ...]:
-        """Show source statements, exact read versions and expanded values.
+    def text_lines(self, names=None, *, expanded=False) -> Tuple[str, ...]:
+        """Show source statements and references to visible write positions.
 
-        Version indices are local to this action invocation. Native Z3
-        operators are preserved; source statements use the existing DSL
-        serializer. Simplified values are labeled as simplifications, not
-        as complete arithmetic proofs.
+        Input values are explicitly bound at action entry. References name
+        one-based action/statement positions, not internal value indices.
+        For frame, case, guard and cross-action context, use the enclosing
+        :meth:`BmcConstructionReport.text_lines` instead. This local view
+        does not assert that the action is reachable or executes unconditionally.
 
         :param names: Optional construction-time symbol display registry.
         :type names: Optional[pyfcstm.solver.symbols.SymbolNames]
+        :param expanded: Add actual expanded Z3 values and labeled Z3
+            simplifications. Defaults to ``False``. Native operators are retained.
+        :type expanded: bool
         :return: Complete lines for this action, without truncation.
         :rtype: Tuple[str, ...]
+        :raises TypeError: If ``expanded`` is not Boolean.
         """
-        names = names if names is not None else SymbolNames()
-        lines = ['Action %d: %s %s' %
-                 (self.index, self.block.owner_state_path, self.block.runtime_role)]
-        if self.execution is None:
-            return tuple(lines + ['  Abstract hook: recorded call, no modeled writes.'])
-        source_index = 0
-        for value in self.execution.values:
-            if value.kind == 'input':
-                continue
-            if value.kind == 'assignment':
-                source = self.sources[source_index]
-                source_index += 1
-                location = ('%s:%d:%d' % (source.path, source.span.line, source.span.column)
-                            if source.span is not None else 'source location unavailable')
-                lines.append('  %s [%s]' % (str(value.source.to_ast_node()), location))
-            else:
-                lines.append('  Merge %s: ordered branches, otherwise preserve incoming value.' % value.name)
-            lines.append('    reads: %s' % (', '.join('%s#%d' % item for item in value.reads) or '(none)'))
-            if value.path_conditions:
-                lines.append('    when: ' + names.render(z3.And(*value.path_conditions)))
-            lines.append('    %s#%d := %s' % (value.name, value.identifier, names.render(value.expression)))
-            simplified = z3.simplify(value.expression)
-            if not z3.eq(simplified, value.expression):
-                lines.append('    simplified: ' + names.render(simplified))
-        return tuple(lines)
+        from ._construction_text import _action_text
+
+        return _action_text(self, names, expanded=expanded)[0]
 
 
 @dataclass(frozen=True)
@@ -233,6 +215,28 @@ class BmcConstructionReport:
     group_ids: Tuple[str, ...]
     groups: tuple
     cases: Tuple[BmcCaseConstruction, ...]
+
+    def text_lines(self, *, expanded=False) -> Tuple[str, ...]:
+        """Describe selected groups and conditional cases across frame boundaries.
+
+        Each case has its own scope and action references. Shared frame values
+        connect adjacent steps; listing alternatives does not select a trace or
+        prove branch coverage. Events are named at steps, states at frames,
+        and state-code meanings accompany the native formulas. Rendering does
+        not solve, recompile, or certify the records; call :meth:`check`
+        separately. Only selected groups are premises. Priority dependencies
+        are descriptions of conditions already embedded in the selected case.
+
+        :param expanded: Include expanded assignment values, Z3 simplifications
+            and the full submitted case formula. Defaults to ``False``.
+        :type expanded: bool
+        :return: Complete text lines, without truncation or file side effects.
+        :rtype: Tuple[str, ...]
+        :raises TypeError: If ``expanded`` is not Boolean.
+        """
+        from ._construction_text import _report_text
+
+        return _report_text(self, expanded=expanded)
 
     def refine(self, query, *, timeout_ms=None, minimize=True) -> BmcConstructionRefinement:
         """Refine only the selected query's groups, preserving its background.

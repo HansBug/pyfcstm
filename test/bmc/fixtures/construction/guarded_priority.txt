@@ -1,0 +1,79 @@
+Source construction (no reachability, coverage or UNSAT proof).
+Cases are conditional alternatives, not a selected execution trace.
+Frame values connect adjacent steps; action references are local to their case.
+Selected groups: transition.step.0000
+
+Step 0: frame 0 -> frame 1
+Case: Root.A::fallback::Root.A::0
+  Start control state: Root.A
+  End control state if this case applies: Root.A
+  Effective condition: And(1 == state[0],
+        Not(Or(Or(False,
+                  And(1 == state[0],
+                      And(And(True, 0 >= x@0),
+                          Not(And(1 == state[0],
+                                  And(And(True,
+                                          event("Root.Go")@step0),
+                                      0 < x@0)))))),
+               And(1 == state[0],
+                   And(And(True, event("Root.Go")@step0),
+                       0 < x@0)))))
+    state[0] code 1 means Root.A
+  Event read: Root.Go at step 0 (fallback, negative).
+  Event reads alone do not imply occurrence or acceptance; use the effective condition above.
+  Excluded acceptance (fallback): Root.A::transition::Root.A::1
+    Acceptance condition (embedded dependency, not an extra premise): And(1 == state[0],
+          And(And(True, 0 >= x@0),
+              Not(And(1 == state[0],
+                      And(And(True, event("Root.Go")@step0),
+                          0 < x@0)))))
+      state[0] code 1 means Root.A
+  Excluded acceptance (fallback): Root.A::transition::Root.B::0
+    Acceptance condition (embedded dependency, not an extra premise): And(1 == state[0],
+          And(And(True, event("Root.Go")@step0), 0 < x@0))
+      state[0] code 1 means Root.A
+  Frame boundary under this case:
+    state[1] = Root.A
+    x@1 = x@0 (preserved)
+
+Step 0: frame 0 -> frame 1
+Case: Root.A::transition::Root.A::1
+  Start control state: Root.A
+  End control state if this case applies: Root.A
+  Effective condition: And(1 == state[0],
+        And(And(True, 0 >= x@0),
+            Not(And(1 == state[0],
+                    And(And(True, event("Root.Go")@step0),
+                        0 < x@0)))))
+    state[0] code 1 means Root.A
+  Event read: Root.Go at step 0 (priority, negative).
+  Event reads alone do not imply occurrence or acceptance; use the effective condition above.
+  Excluded acceptance (transition_priority): Root.A::transition::Root.B::0
+    Acceptance condition (embedded dependency, not an extra premise): And(1 == state[0],
+          And(And(True, event("Root.Go")@step0), 0 < x@0))
+      state[0] code 1 means Root.A
+  Guard after 0 action(s): x <= 0 [source location unavailable]
+    polarity: positive
+    reads: x <- x@0
+    compiled guard: 0 >= x@0
+  Frame boundary under this case:
+    state[1] = Root.A
+    x@1 = x@0 (preserved)
+
+Step 0: frame 0 -> frame 1
+Case: Root.A::transition::Root.B::0
+  Start control state: Root.A
+  End control state if this case applies: Root.B
+  Effective condition: And(1 == state[0],
+        And(And(True, event("Root.Go")@step0), 0 < x@0))
+    state[0] code 1 means Root.A
+  Event read: Root.Go at step 0 (trigger, positive).
+  Event reads alone do not imply occurrence or acceptance; use the effective condition above.
+  Events consumed if this case applies: Root.Go
+  Guard after 0 action(s): x > 0 [source location unavailable]
+    polarity: positive
+    reads: x <- x@0
+    compiled guard: 0 < x@0
+  Frame boundary under this case:
+    state[1] = Root.B
+    x@1 = x@0 (preserved)

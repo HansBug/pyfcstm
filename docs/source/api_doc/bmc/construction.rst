@@ -45,7 +45,7 @@ BmcConstructionReport
 -----------------------------------------------------
 
 .. autoclass:: BmcConstructionReport
-    :members: refine,check,core,group_ids,groups,cases
+    :members: text_lines,refine,check,core,group_ids,groups,cases
 
 
 get\_bmc\_construction

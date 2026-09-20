@@ -11,6 +11,7 @@ pyfcstm.bmc
 
     ast
     binding
+    construction
     domain
     engine
     errors

@@ -1,0 +1,50 @@
+Action 1: Root state_enter
+  Local action view: frame/case conditions are not included; @entry means this call entry.
+  x@entry := x@0
+  y@entry := y@0
+  Conditional statement 1 (ordered alternatives):
+    Branch 1 (if): x@entry > 0
+      Effective scope: 0 < x@0
+      Executor reachability: sat (recorded, not rechecked).
+      Statement 1.1.1 [source location unavailable]:
+        Source: x = x;
+        x#1 := x@entry
+        Expanded value: x@0
+      Conditional statement 1.1.2 (ordered alternatives):
+        Branch 1 (if): y@entry > x#1
+          Effective scope: 0 < x@0 && y@0 > x@0
+          Executor reachability: sat (recorded, not rechecked).
+          Statement 1.1.2.1.1 [source location unavailable]:
+            Source: y = y / x;
+            y#1 := y@entry / x#1
+            Required definedness: x@0 != 0
+            Expanded value: div(y@0, x@0)
+      Join y#2 := (y@0 > x@0) ? y#1 : y@entry
+        Expanded value: (y@0 > x@0) ? div(y@0, x@0) : y@0
+    Branch 2 (elif): x@entry < 0
+      Effective scope: !(0 < x@0) && 0 > x@0
+      Executor reachability: sat (recorded, not rechecked).
+      Statement 1.2.1 [source location unavailable]:
+        Source: x = x - 1;
+        x#2 := x@entry - 1
+        Recorded translation context (not new premises): 0 < x@0 && y@0 > x@0 => x@0 != 0
+        Expanded value: x@0 - 1
+  Join x#3 := (0 < x@0) ? x#1 : ((!(0 < x@0) && 0 > x@0) ? x#2 : x@entry)
+    Expanded value: (
+        (0 < x@0) ?
+            (y@0 > x@0) ? x@0 : x@0
+        :
+            (!(0 < x@0) && 0 > x@0) ? x@0 - 1 : x@0
+    )
+  Join y#3 := (0 < x@0) ? y#2 : ((!(0 < x@0) && 0 > x@0) ? y@entry : y@entry)
+    Expanded value: (
+        (0 < x@0) ?
+            (y@0 > x@0) ? div(y@0, x@0) : y@0
+        :
+            (!(0 < x@0) && 0 > x@0) ? y@0 : y@0
+    )
+  Statement 2 [source location unavailable]:
+    Source: y = x + y;
+    y#4 := x#3 + y#3
+    Recorded translation context (not new premises): 0 < x@0 && y@0 > x@0 => x@0 != 0
+    Expanded value: ((0 < x@0) ? ((y@0 > x@0) ? x@0 : x@0) : ((!(0 < x@0) && 0 > x@0) ? x@0 - 1 : x@0)) + ((0 < x@0) ? ((y@0 > x@0) ? div(y@0, x@0) : y@0) : ((!(0 < x@0) && 0 > x@0) ? y@0 : y@0))

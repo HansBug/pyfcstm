@@ -1,0 +1,115 @@
+Source construction (no reachability, coverage or UNSAT proof).
+Cases are conditional alternatives, not a selected execution trace.
+x@f is a frame value; x#n is a local definition in one frame/case, never a cross-frame reference.
+event("path")@k is a step k input; active("leaf")@k is the frame k state.
+Parameters are shared; @inputk values are fresh step inputs, not persistent frame variables.
+Local Boolean cleanup preserves source groups; SMT-specific numeric functions keep their exact meaning.
+Selected groups: initial.target, assumption.0000.frame.0000, transition.step.0000, transition.step.0001
+
+Group initial.target (initial.target)
+  Source: control.fbmcq:2:9
+  Source text: init state("Root.A");
+  Constraint: active("Root.A")@0
+
+Group assumption.0000.frame.0000 (assumption.frame)
+  Source: control.fbmcq:3:9
+  Source text: assume at 0: active("Root.B");
+  Constraint: control("Root.B")@0 || active("Root.B.Leaf")@0
+
+Build frame 1 from frame 0 using step 0 events/inputs.
+Case: Root.A::fallback::Root.A::0
+  Start: Root.A
+  Condition definitions (local to this frame/case, not additional premises):
+  <accept Root.Go [fallback 1]> := (
+         active("Root.A")@0
+      && event("Root.Go")@0
+  )
+  <apply this case> := (
+         active("Root.A")@0
+      && !<accept Root.Go [fallback 1]>
+  )
+  event("Root.Go")@0: event input at step 0 (fallback, negative).
+  An event occurrence alone does not imply acceptance; exclusions negate the complete acceptance condition.
+  Construction under <apply this case>:
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         active("Root.A")@1
+  )
+
+Build frame 1 from frame 0 using step 0 events/inputs.
+Case: Root.A::transition::Root.B.Leaf::0
+  Start: Root.A
+  Condition definitions (local to this frame/case, not additional premises):
+  <apply this case> := (
+         active("Root.A")@0
+      && event("Root.Go")@0
+  )
+  event("Root.Go")@0: event input at step 0 (trigger, positive).
+  An event occurrence alone does not imply acceptance; exclusions negate the complete acceptance condition.
+  Events consumed under <apply this case>: Root.Go
+  Construction under <apply this case>:
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         active("Root.B.Leaf")@1
+  )
+
+Build frame 2 from frame 1 using step 1 events/inputs.
+Case: __terminate__::absorb::__terminate__::0
+  Start: terminated (model ended)
+  Condition definitions (local to this frame/case, not additional premises):
+  <apply this case> := terminated@1
+  Construction under <apply this case>:
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         terminated@2
+      && !event("Root.B.Go")@1
+      && !event("Root.Go")@1
+  )
+
+Build frame 2 from frame 1 using step 1 events/inputs.
+Case: Root.A::fallback::Root.A::0
+  Start: Root.A
+  Condition definitions (local to this frame/case, not additional premises):
+  <accept Root.Go [fallback 1]> := (
+         active("Root.A")@1
+      && event("Root.Go")@1
+  )
+  <apply this case> := (
+         active("Root.A")@1
+      && !<accept Root.Go [fallback 1]>
+  )
+  event("Root.Go")@1: event input at step 1 (fallback, negative).
+  An event occurrence alone does not imply acceptance; exclusions negate the complete acceptance condition.
+  Construction under <apply this case>:
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         active("Root.A")@2
+  )
+
+Build frame 2 from frame 1 using step 1 events/inputs.
+Case: Root.A::transition::Root.B.Leaf::0
+  Start: Root.A
+  Condition definitions (local to this frame/case, not additional premises):
+  <apply this case> := (
+         active("Root.A")@1
+      && event("Root.Go")@1
+  )
+  event("Root.Go")@1: event input at step 1 (trigger, positive).
+  An event occurrence alone does not imply acceptance; exclusions negate the complete acceptance condition.
+  Events consumed under <apply this case>: Root.Go
+  Construction under <apply this case>:
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         active("Root.B.Leaf")@2
+  )
+
+Build frame 2 from frame 1 using step 1 events/inputs.
+Case: Root.B.Leaf::fallback::Root.B.Leaf::0
+  Start: Root.B.Leaf
+  Condition definitions (local to this frame/case, not additional premises):
+  <apply this case> := active("Root.B.Leaf")@1
+  Construction under <apply this case>:
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         active("Root.B.Leaf")@2
+  )

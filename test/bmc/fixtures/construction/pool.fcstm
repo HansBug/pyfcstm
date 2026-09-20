@@ -1,0 +1,55 @@
+def int capacity = 0;
+def int free = 0;
+def int reserved = 0;
+def int allocated = 0;
+def int request = 0;
+def int moved = 0;
+def int observed = 0;
+
+state Pool {
+    state Intake;
+    state Transaction {
+        state Hold {
+            enter {
+                moved = request;
+                if [free < moved] { moved = free; }
+                free = free - moved;
+                reserved = reserved + moved;
+            }
+        }
+        state Apply {
+            enter {
+                moved = request;
+                reserved = reserved - moved;
+                allocated = allocated + moved;
+            }
+            during {
+                observed = free + reserved;
+                observed = observed + allocated;
+            }
+        }
+        state Return {
+            exit {
+                moved = request;
+                if [allocated < moved] { moved = allocated; }
+                allocated = allocated - moved;
+                free = free + moved;
+            }
+        }
+        [*] -> Hold;
+        Hold -> Apply : if [reserved >= request];
+        Apply -> Return : if [allocated >= request];
+        Return -> [*];
+    }
+    state Verify {
+        during {
+            observed = free + reserved;
+            observed = observed + allocated;
+        }
+    }
+
+    [*] -> Intake;
+    Intake -> Transaction : if [free >= request];
+    Transaction -> Verify;
+    Verify -> Intake;
+}

@@ -1,0 +1,108 @@
+Source construction (no reachability, coverage or UNSAT proof).
+Cases are conditional alternatives, not a selected execution trace.
+x@f is a frame value; x#n is a local definition in one frame/case, never a cross-frame reference.
+event("path")@k is a step k input; active("leaf")@k is the frame k state.
+Parameters are shared; @inputk values are fresh step inputs, not persistent frame variables.
+Local Boolean cleanup preserves source groups; SMT-specific numeric functions keep their exact meaning.
+Selected groups: transition.step.0000, transition.step.0001
+For a leaf root, !cold distinguishes its entered position from fbmcq active(root), which also holds at cold.
+
+Build frame 1 from frame 0 using step 0 events/inputs.
+Case: Root::fallback::Root::0
+  Start: Root
+  Condition definitions (local to this frame/case, not additional premises):
+  <accept Root -> __terminate__ [fallback 1]> := (
+         active("Root")@0
+      && !cold@0
+  )
+  <apply this case> := (
+         active("Root")@0
+      && !cold@0
+      && !<accept Root -> __terminate__ [fallback 1]>
+  )
+  Construction under <apply this case>:
+    Action 1: Root leaf_during
+      Statement 1 [source location unavailable]:
+        Source: temporary = request * gain;
+        temporary#1 := request@input0 * gain@param
+        Local to this action invocation.
+      Statement 2 [source location unavailable]:
+        Source: x = x + temporary;
+        x#1 := x@0 + temporary#1
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         active("Root")@1
+      && !cold@1
+      && x@1 == x#1
+  )
+
+Build frame 1 from frame 0 using step 0 events/inputs.
+Case: Root::transition::__terminate__::0
+  Start: Root
+  Condition definitions (local to this frame/case, not additional premises):
+  <apply this case> := (
+         active("Root")@0
+      && !cold@0
+  )
+  Construction under <apply this case>:
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         terminated@1
+      && x@1 == x@0
+  )
+
+Build frame 2 from frame 1 using step 1 events/inputs.
+Case: __terminate__::absorb::__terminate__::0
+  Start: terminated (model ended)
+  Condition definitions (local to this frame/case, not additional premises):
+  <apply this case> := terminated@1
+  Construction under <apply this case>:
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         terminated@2
+      && x@2 == x@1
+  )
+
+Build frame 2 from frame 1 using step 1 events/inputs.
+Case: Root::fallback::Root::0
+  Start: Root
+  Condition definitions (local to this frame/case, not additional premises):
+  <accept Root -> __terminate__ [fallback 1]> := (
+         active("Root")@1
+      && !cold@1
+  )
+  <apply this case> := (
+         active("Root")@1
+      && !cold@1
+      && !<accept Root -> __terminate__ [fallback 1]>
+  )
+  Construction under <apply this case>:
+    Action 1: Root leaf_during
+      Statement 1 [source location unavailable]:
+        Source: temporary = request * gain;
+        temporary#1 := request@input1 * gain@param
+        Local to this action invocation.
+      Statement 2 [source location unavailable]:
+        Source: x = x + temporary;
+        x#1 := x@1 + temporary#1
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         active("Root")@2
+      && !cold@2
+      && x@2 == x#1
+  )
+
+Build frame 2 from frame 1 using step 1 events/inputs.
+Case: Root::transition::__terminate__::0
+  Start: Root
+  Condition definitions (local to this frame/case, not additional premises):
+  <apply this case> := (
+         active("Root")@1
+      && !cold@1
+  )
+  Construction under <apply this case>:
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         terminated@2
+      && x@2 == x@1
+  )

@@ -1,0 +1,56 @@
+Source construction (no reachability, coverage or UNSAT proof).
+Cases are conditional alternatives, not a selected execution trace.
+x@f is a frame value; x#n is a local definition in one frame/case, never a cross-frame reference.
+event("path")@k is a step k input; active("leaf")@k is the frame k state.
+Parameters are shared; @inputk values are fresh step inputs, not persistent frame variables.
+Local Boolean cleanup preserves source groups; SMT-specific numeric functions keep their exact meaning.
+Selected groups: transition.step.0000
+
+Build frame 1 from frame 0 using step 0 events/inputs.
+Case: Root.Ready::fallback::Root.Ready::0
+  Start: Root.Ready
+  Condition definitions (local to this frame/case, not additional premises):
+  <accept Root.Go [fallback 1]> := (
+         active("Root.Ready")@0
+      && event("Root.Go")@0
+      && false
+  )
+  <apply this case> := (
+         active("Root.Ready")@0
+      && !<accept Root.Go [fallback 1]>
+  )
+  event("Root.Go")@0: event input at step 0 (fallback, negative).
+  An event occurrence alone does not imply acceptance; exclusions negate the complete acceptance condition.
+  Construction under <apply this case>:
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         active("Root.Ready")@1
+      && x@1 == x@0
+  )
+
+Build frame 1 from frame 0 using step 0 events/inputs.
+Case: Root.Ready::transition::Root.Done::0
+  Start: Root.Ready
+  Condition definitions (local to this frame/case, not additional premises):
+  <apply this case> := (
+         active("Root.Ready")@0
+      && event("Root.Go")@0
+      && false
+  )
+  event("Root.Go")@0: event input at step 0 (trigger, positive).
+  An event occurrence alone does not imply acceptance; exclusions negate the complete acceptance condition.
+  Events consumed under <apply this case>: Root.Go
+  Construction under <apply this case>:
+    Guard after 0 action(s) [source location unavailable]:
+      Source: 1 < 0
+      Reads: 1 < 0
+      Required polarity: positive
+    Action 1: transition_effect
+      Statement 1 [source location unavailable]:
+        Source: x = x + 1;
+        x#1 := x@0 + 1
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         active("Root.Done")@1
+      && x@1 == x#1
+  )

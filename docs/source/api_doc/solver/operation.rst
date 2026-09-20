@@ -43,7 +43,7 @@ OperationExecution
 -----------------------------------------------------
 
 .. autoclass:: OperationExecution
-    :members: env,visible_names,expr_constraints,definedness_constraints,steps,branches,failure
+    :members: env,visible_names,expr_constraints,definedness_constraints,steps,branches,failure,construction
 
 
 parse\_operations

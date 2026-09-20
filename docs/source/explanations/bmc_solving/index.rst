@@ -669,3 +669,128 @@ reproduces the whole ledger.
 The ledger is worth reading against the boundary above: these four claims are
 about the constraints as encoded.  None of them says the encoding matches what
 the author meant, which is why the trust boundary is stated separately.
+
+Source construction and logical derivation are separate
+--------------------------------------------------------------------------------
+
+A core member is a submitted constraint, which may already contain substitutions,
+conditional values and several action effects. Finding its source line does not
+recover those construction steps. Optional construction capture therefore runs
+inside the existing operation executor and expression translator, where each
+source occurrence still has its actual input environment. It does not parse a
+printed Z3 formula to guess the original program, or maintain another statement
+executor.
+
+For the editor's Trim action, the construction order is observable:
+
+.. list-table:: Ordered reads and writes
+   :header-rows: 1
+   :widths: 35 65
+
+   * - Source statement
+     - Construction meaning
+   * - ``refund = quantum - margin;``
+     - Read the incoming margin and shared parameter; create a new refund version.
+   * - ``proposal = proposal - refund;``
+     - Read the incoming proposal and the refund written by the preceding line.
+   * - ``margin = margin + refund;``
+     - Read the incoming margin and that same new refund, not the incoming refund.
+
+Substitution yields ``margin + (quantum - margin)``. Z3 may simplify that to
+``quantum``; the displayed simplification is distinct from a checked sequence of
+arithmetic proof rules. The complete runnable example and actual output are in
+:doc:`../../how_to/bmc/index`.
+
+There are three distinct identities. A source occurrence identifies a statement
+or expression child by its path in the authored tree. An execution instance
+identifies the query, frame, case and action invocation. A value version identifies
+a particular write inside that invocation. ``x = x`` creates a new write even
+though its value AST is unchanged; the two occurrences in ``x + x`` remain
+different source children even if their generated values share one Z3 AST.
+Repeated named-action calls share authored source but have different input
+values and local lifetimes. Parameters share one symbol across frames, whereas
+inputs are sampled per step.
+
+Conditions belong to the evidence. An operation branch retains its ordered
+selector, including exclusions from earlier branches. A branch merge records
+which version each selector supplies and the incoming version preserved when
+none applies. Short-circuit subexpressions retain evaluation conditions and
+runtime-definedness requirements. Guard records use the environment at their
+actual ``after_action_block_index``; applying every guard to the final action
+environment would change the modeled behavior. A hot initial state starts from
+its own frame-zero values, without inventing earlier enter calls. Compiling cases
+for other source states does not mean those cases execute in the selected trace.
+
+The binding checker verifies local translations and versions against actual
+compiled anchors. This is useful evidence of consistency, but it is not an
+independent compiler certificate or a proof that all pruned branches really are
+unreachable. In particular, the checker reuses the expression translator that
+produced the records. Captured metadata must not be promoted to an unconditional
+logical premise. A complete UNSAT explanation still needs a derivation from the
+selected core and fixed background, with valid scopes, coverage of all relevant
+branches, and a final contradiction.
+
+Source slicing preserves an explicit retained-to-original occurrence map; it
+cannot identify source statements merely by equal resulting values. If the
+model loader supplied a statement span, that location can be shown. Child
+expression paths remain useful when no separate character span was supplied for
+them. Missing locations are reported as missing rather than fabricated.
+
+Detailed recording is disabled by default and does not silently run a new
+compilation when evidence is requested. Binding checks and equivalent core
+refinement are explicit operations with their own shared total budgets. Finishing
+a check marks only that check complete. Unknown reachability or an expired budget
+cannot be used to exclude a branch or advertise a complete explanation.
+
+Reading the construction across actions and frames
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A frame records a macro-step boundary, not every assignment. In the editor,
+step 2's Trim action writes a refund, then a proposal, then a margin. Its last
+margin write supplies ``margin@3`` through that case's actual post-state
+constraint. Step 3's Trim -> Ready guard reads ``margin@3``. If another action
+in step 2 overwrote the margin, that later write would supply the boundary
+instead. The renderer follows recorded write identities and final versions,
+not equality of printed expressions. This also preserves identity assignments.
+
+Two calls to one named action share source statements but have separate
+invocation identities and local lifetimes. Display definitions are numbered
+per variable within one case, for example ``temporary#1`` and ``temporary#2``. A guard after both
+calls reads the second call's output. Nested alternatives are printed beneath
+their conditional statement; their join names each selector and supplying
+write, with preservation when no alternative applies. Unknown reachability is
+an observation, never a reason to discard a branch. Statement numbers refer
+to original source positions, so unrelated input variables cannot renumber them.
+
+Control conditions belong to the same record. The editor's Review -> Trim
+case requires the Review state, the margin guard and exclusion of the earlier
+Undo transition. Exact leaf positions appear as ``active("path")@f``;
+nonleaf entry positions use ``control("path")@f``. Cold and terminated are
+explicit, and an entered root leaf retains the necessary ``!cold`` distinction.
+Events use ``event("path")@k``; parameters are shared, while external inputs change per step. A state
+predicate for a composite can include its descendants. Exact frame control
+states must not be confused with every state entered inside a macro-step.
+
+A counterexample to a tempting explanation is a prioritized event transition
+with an additional guard. Its acceptance may be false even while its event is
+present. The renderer therefore exposes the accepted alternative's complete
+condition, rather than reporting that the event is absent. These dependencies
+are already part of the effective case condition, not new premises taken from
+outside the selected core.
+
+Finally, two printed cases are not a feasible execution or an exhaustive
+proof. They can be mutually exclusive or unreachable. Construction text keeps
+each case's scope and conditional frame equations; establishing reachability,
+branch coverage and a final contradiction requires separate checked reasoning.
+The default text preserves authored expressions with exact read bindings;
+``expanded=True`` adds actual expanded formulas without replacing those bindings.
+Its expanded frame boundary has no local ``#n`` or display aliases. All retained
+persistent outputs appear, including preservation; slicing omissions are explicit.
+
+Layout is a separate operation from logical deduction. A neutral ``true`` in
+an AND can disappear, but source ``x = x`` remains a definition and an unchanged
+frame variable remains a preservation equation. Named guard/acceptance groups
+retain scope and order. Exact numeral comparisons may become true/false, with
+the source still visible; no global simplifier rewrites an action's arithmetic.
+Shared condition names abbreviate formulas and introduce no premises. Their
+expansion does not prove any case reachable or close an UNSAT argument.

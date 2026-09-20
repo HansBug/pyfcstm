@@ -114,6 +114,7 @@ from pyfcstm.dsl.role import VariableRole
 from pyfcstm.model import Expr
 from pyfcstm.solver.domain import DomainConstraint, DomainSource, translate_expr_domain
 from pyfcstm.solver.operation import execute_operations_domain
+from .construction import BmcCaseConstruction, _CaseConstructionBuilder
 
 _CanonicalDict = Dict[str, Any]
 _Z3Expr = Union[z3.ArithRef, z3.BoolRef]
@@ -1384,6 +1385,10 @@ class BmcCaseRelation:
         order.
     :type definedness_constraints: Tuple[pyfcstm.solver.domain.DomainConstraint, ...]
 
+    :param construction: Optional captured source construction. Absent unless
+        explicitly requested at compile time; not part of canonical JSON.
+    :type construction: Optional[pyfcstm.bmc.construction.BmcCaseConstruction]
+
     Example::
 
         >>> import z3
@@ -1405,6 +1410,7 @@ class BmcCaseRelation:
     guard_terms: Mapping[str, z3.BoolRef]
     definedness_constraints: Tuple[DomainConstraint, ...] = ()
     call_records: Tuple[BmcAbstractCallRecord, ...] = ()
+    construction: Optional[BmcCaseConstruction] = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if isinstance(self.step_index, bool) or not isinstance(self.step_index, int):
@@ -2273,12 +2279,13 @@ def _lower_bmc_cond_expr(
     )
 
 
-def _translate_model_expr(expr: Expr, env: Mapping[str, _Z3Expr], label: str):
+def _translate_model_expr(expr: Expr, env: Mapping[str, _Z3Expr], label: str, record_construction=False):
     result = translate_expr_domain(
         expr,
         dict(env),
         source=DomainSource(label=label),
         prune_unreachable=True,
+        record_construction=record_construction,
     )
     _raise_expr_failure(result, label)
     if (
@@ -2296,6 +2303,7 @@ class _CaseLowering:
     final_env: Mapping[str, z3.ArithRef]
     definedness_constraints: Tuple[DomainConstraint, ...]
     call_records: Tuple[BmcAbstractCallRecord, ...] = ()
+    construction: Optional[_CaseConstructionBuilder] = None
 
 
 def _guarded_domain_constraints(
@@ -2323,9 +2331,10 @@ def _lower_guard_requirement(
     env: Mapping[str, _Z3Expr],
     constraints: Sequence[DomainConstraint],
     case_label: str,
+    construction=None,
 ) -> Tuple[z3.BoolRef, Tuple[DomainConstraint, ...]]:
     label = "guard %s in case %s" % (guard.requirement_id, case_label)
-    result = _translate_model_expr(guard.expr, env, label)
+    result = _translate_model_expr(guard.expr, env, label, construction is not None)
     guard_expr = _expect_bool(result.z3_expr, label)
     if (
         guard.polarity == "negative"
@@ -2335,6 +2344,8 @@ def _lower_guard_requirement(
         guard.polarity != "positive"
     ):  # pragma: no cover - GuardRequirement validates polarity.
         raise _internal_bmc_error("unknown guard polarity %r." % guard.polarity)
+    if construction is not None:
+        construction.guard(guard, env, guard_expr, result)
     return guard_expr, (*constraints, *result.definedness_constraints)
 
 
@@ -2365,12 +2376,15 @@ def _execute_action_block(
     case_label: str,
     persistent_names: Sequence[str],
     cone_slice: Optional[ConeSlice] = None,
+    construction=None,
 ) -> Tuple[
     Mapping[str, z3.ArithRef],
     Tuple[DomainConstraint, ...],
     Tuple[BmcAbstractCallRecord, ...],
 ]:
     if block.is_abstract:
+        if construction is not None:
+            construction.action(block, env, None)
         action_name = block.action_name
         if action_name is None:
             return dict(env), (), ()
@@ -2393,17 +2407,19 @@ def _execute_action_block(
             snapshot,
         )
         return dict(env), (), (record,)
+    source_paths = {} if construction is not None and cone_slice is not None else None
+    operations = (
+        slice_operations(block.operations, cone_slice, source_paths=source_paths)
+        if cone_slice is not None else block.operations
+    )
     execution = execute_operations_domain(
-        list(
-            slice_operations(block.operations, cone_slice)
-            if cone_slice is not None
-            else block.operations
-        ),
+        list(operations),
         dict(env),
         source=DomainSource(
             label="action block %s in case %s" % (block.runtime_role, case_label)
         ),
         prune_unreachable=True,
+        record_construction=construction is not None,
     )
     if execution.failure is not None:
         failure = execution.failure
@@ -2413,6 +2429,8 @@ def _execute_action_block(
             "action block %s in case %s" % (block.runtime_role, case_label),
         )
         raise UnsupportedBmcQuery(message)
+    if construction is not None:
+        construction.action(block, env, execution, source_paths)
     return dict(execution.env), tuple(execution.definedness_constraints), ()
 
 
@@ -2421,11 +2439,16 @@ def _prepare_case_lowering(
     pre_env: Mapping[str, _Z3Expr],
     persistent_names: Sequence[str],
     cone_slice: Optional[ConeSlice] = None,
+    construction_context=None,
 ) -> _CaseLowering:
     guards_by_anchor: Dict[int, List[GuardRequirement]] = {}
     for guard in case.guard_requirements:
         guards_by_anchor.setdefault(guard.after_action_block_index, []).append(guard)
     env = dict(pre_env)
+    construction = (
+        _CaseConstructionBuilder(construction_context, env)
+        if construction_context is not None else None
+    )
     guard_terms: Dict[str, z3.BoolRef] = {}
     guard_definedness: Dict[str, Tuple[DomainConstraint, ...]] = {}
     definedness: List[DomainConstraint] = []
@@ -2435,14 +2458,14 @@ def _prepare_case_lowering(
             guards_by_anchor.get(anchor, ()), key=lambda item: item.requirement_id
         ):
             term, new_definedness = _lower_guard_requirement(
-                guard, env, definedness, case.label
+                guard, env, definedness, case.label, construction
             )
             guard_terms[guard.requirement_id] = term
             guard_definedness[guard.requirement_id] = tuple(new_definedness)
             definedness = list(new_definedness)
         if anchor < len(case.action_blocks):
             env, block_definedness, block_call_records = _execute_action_block(
-                case.action_blocks[anchor], env, case.label, persistent_names, cone_slice
+                case.action_blocks[anchor], env, case.label, persistent_names, cone_slice, construction
             )
             definedness.extend(block_definedness)
             for record in block_call_records:
@@ -2465,6 +2488,7 @@ def _prepare_case_lowering(
         final_env=env,
         definedness_constraints=tuple(definedness),
         call_records=tuple(call_records),
+        construction=construction,
     )
 
 
@@ -2622,6 +2646,11 @@ def _build_case_relation(
         guard_terms=lowering.guard_terms,
         definedness_constraints=definedness_constraints,
         call_records=lowering.call_records,
+        construction=(
+            lowering.construction.finish(
+                step_index, case, _and((selector_constraint, implication)), antecedent
+            ) if lowering.construction is not None else None
+        ),
     )
 
 
@@ -2630,6 +2659,7 @@ def _build_step_relation(
     symbols: BmcTraceSymbols,
     formals: Sequence[MacroStepFormal],
     cone_slice: Optional[ConeSlice] = None,
+    construction_context=None,
 ) -> BmcStepRelation:
     case_list = [case for formal in formals for case in formal.cases]
     if len({case.label for case in case_list}) != len(
@@ -2641,7 +2671,7 @@ def _build_step_relation(
     pre_env.update(symbols.parameters)
     lowerings = {
         case.label: _prepare_case_lowering(
-            case, pre_env, symbols.domain.persistent_variable_names, cone_slice
+            case, pre_env, symbols.domain.persistent_variable_names, cone_slice, construction_context
         )
         for case in case_list
     }
@@ -3094,7 +3124,10 @@ def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
     symbols = BmcTraceSymbols.allocate(prepared.domain, case_labels_by_step)
     groups: List[BmcTrackedConstraint] = []
     steps = tuple(
-        _build_step_relation(step_index, symbols, formals, effective_slice)
+        _build_step_relation(
+            step_index, symbols, formals, effective_slice,
+            prepared if prepared.options.record_construction else None,
+        )
         for step_index, formals in enumerate(formals_by_step)
     )
     generated_ref = prepared._source_registry.reference("generated", None, None)

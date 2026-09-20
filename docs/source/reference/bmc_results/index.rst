@@ -1915,3 +1915,190 @@ already verified core without claiming minimality. This API has no file or
 stdout side effects. Default property solves do not call this API implicitly.
 The scenario explanation path reuses its checking machinery while retaining
 its existing options and result contract.
+
+Captured source construction
+----------------------------
+
+Source construction records explain how the compiler obtained a formula. They
+are distinct from an UNSAT core and from a derivation of contradiction. This is
+an explicit Python API: it adds neither a CLI switch nor fields to the public
+BMC JSON payload. Property verdicts and mandatory SAT replay keep their existing
+meaning.
+
+``BmcOptions(record_construction=False)``
+    Default: no detailed construction records. ``True`` captures while the
+    real relation is compiled. A non-Boolean value raises ``BmcBuildError``.
+
+``get_bmc_construction(core, group_ids)``
+    Import from ``pyfcstm.bmc.construction``. Read exactly the unique source
+    group IDs requested; no solving or recompilation. A transition-step
+    group includes all its case records, a case group only its own case.
+    Initialization and assumption groups retain their direct source binding.
+    Missing capture, unknown IDs and duplicate IDs raise ``ValueError``.
+
+``report.check(timeout_ms=None)``
+    Check query/frame identity, action and guard environments, source
+    bindings and final relation bindings. Return ``ConstructionCheck``.
+    A positive integer gives one shared millisecond budget; ``None`` is
+    unbounded. Invalid budgets raise ``ValueError``.
+
+``action.text_lines(names=None, expanded=False)``
+    Return source statements and per-variable local definitions ``x#n``.
+    ``x@entry`` binds this call's input; pass ``core.symbols.names`` for
+    meaningful frame/input/parameter names. Without that registry the entry
+    expressions retain solver symbol names. Assignments and necessary joins
+    introduce definitions, including identity writes. Source positions start
+    at one: ``2.1.3`` is statement 3 in branch 1 of statement 2. Slicing retains
+    original positions. Internal graph identifiers are never display versions.
+
+``report.text_lines(expanded=False)``
+    Return selected groups and conditional cases in frame/case order, including
+    priority conditions and guards at their actual action-prefix positions.
+    ``x#n`` is local to one frame/case; subsequent actions continue its sequence.
+    Repeated calls' locals are separate. Boundary equations bind ``x@f`` to
+    the final definition; the next frame reads ``x@f``, never the old ``x#n``.
+    Every retained persistent variable appears, including preservation.
+    Sliced-out variables are disclosed without recompilation or invented values.
+    Locals, fresh step inputs and shared parameters are not persistent outputs.
+
+    Normal boundaries show one positive target leaf using ``active("path")@f``.
+    Actual source parent/negative conditions are preserved, without an automatic
+    ancestor/inactive-state checklist. ``cold@f`` and ``terminated@f`` name
+    lifecycle positions; ``control("path")@f`` is an exact nonleaf entry slot,
+    not an active descendant. An entered leaf root also retains ``!cold@f``:
+    fbmcq active(root) itself holds at cold. ``event("path")@k`` names a step
+    input; terminal event restrictions remain visible. Cases establish neither
+    a trace nor coverage. Excluded acceptance conditions describe dependencies
+    already embedded in the case, not additional selected premises.
+
+Both methods return ``Tuple[str, ...]`` without truncation, recompilation,
+solving, shared-registry mutation or file output. ``expanded`` is keyword-only,
+defaults to ``False`` and rejects non-Booleans with ``TypeError``.
+``expanded=True`` adds actual expanded values and the full submitted case
+formula; its expanded boundary contains no ``#n`` or display aliases. Expansion
+can be large, and the default view keeps shared structure. Rendering does not
+certify records: call ``report.check(...)`` separately and retain its
+verified/invalid/unknown result. No CLI switch or public JSON field is added.
+
+Boolean layout uses DSL precedence and ``&& || ! => iff xor`` plus conditionals.
+The first multiline operand aligns after the later connective. Guard,
+acceptance and source-branch scopes remain identifiable; visible ``<...>``
+aliases are local definitions, not assumptions. Long repeated/deep Boolean
+subterms may receive shared definitions. Full expansion removes those aliases.
+Arithmetic/functions may exceed the preferred line width rather than be cut.
+The report annotations are not a promise that the whole report parses as fbmcq.
+
+Local cleanup removes neutral Boolean literals, double negation, singleton
+connectives and redundant same-connective layers within a semantic group;
+exact integer/rational numeral comparisons evaluate locally. A false condition
+and its source remain visible; identity assignments and boundary preservation
+remain visible too. There is no global Z3 simplification, CNF/DNF conversion,
+reordering or assumption-driven deduction. Recorded translation context is
+labeled as context, not added premises. Typed numeric primitives such as
+``div``, ``mod`` and ``to_real`` retain exact SMT meaning; Real constants keep
+their type, and source operators retain their authored spelling.
+
+Examples: ``report.text_lines()`` connects adjacent frames;
+``report.text_lines(expanded=True)`` adds the full formulas;
+``action.text_lines(core.symbols.names)`` defines one isolated call's entry.
+``report.text_lines(expanded=1)`` is invalid. Two cases' ``x#1`` are different
+values. A later action can read an earlier action's result in the same case;
+that read is not necessarily the incoming frame value.
+
+``report.refine(query, timeout_ms=None, minimize=True)``
+    Accept an ``UnsatQuery`` whose constraints and fixed background match
+    exactly the selected groups by ID and formula. Refine removable groups,
+    preserve background, check each parent equivalence and independently
+    check the fine core. Wrong bindings raise ``ValueError``; wrong query
+    or minimization types raise ``TypeError``.
+
+An unrecorded core cannot be upgraded by inspection. Compile explicitly with
+capture if the extra memory and compilation cost are appropriate for the task.
+For example, this records an identity assignment that a before/after value diff
+would miss::
+
+    >>> from pyfcstm.model import load_state_machine_from_text
+    >>> from pyfcstm.bmc import BmcOptions, compile_bmc_query
+    >>> from pyfcstm.bmc.construction import get_bmc_construction
+    >>> model = load_state_machine_from_text("def int x = 0; state Root { enter { x = x; } }")
+    >>> compiled = compile_bmc_query(model, "init cold havoc *; check reach <= 1: true;",
+    ...                              options=BmcOptions(record_construction=True))
+    >>> report = get_bmc_construction(compiled.core, ("transition.step.0000",))
+    >>> report.check(timeout_ms=10000).status
+    'verified'
+    >>> action = next(action for case in report.cases for action in case.actions)
+    >>> writes = [value for value in action.execution.values if value.kind == "assignment"]
+    >>> [(value.name, value.identifier, value.reads) for value in writes]
+    [('x', 1, (('x', 0),))]
+
+The new version identifies an authored write, even though the resulting Z3
+value equals the incoming one. It does not assert that the action executes in
+every trace: each case retains its actual ``antecedent`` and ``expression``.
+
+``BmcConstructionReport``
+    Original ``core``, exact ``group_ids`` and source ``groups``, plus related
+    ``cases`` in frame/case order. Source metadata is not a logical premise.
+
+``BmcCaseConstruction``
+    Original query object, ``step_index``, macro case, submitted formula,
+    effective antecedent, incoming environment, ordered actions and guards.
+
+``BmcActionConstruction``
+    Action ordinal and macro block (including ref/lifecycle identity), entry
+    and exit environments, operation graph, source references and retained
+    occurrence-to-original-source paths after slicing. Abstract hooks have
+    ``execution=None`` and do not introduce modeled writes.
+
+``BmcGuardConstruction``
+    Original requirement with ``after_action_block_index``, actual evaluation
+    environment and expression, source, subexpressions and definedness.
+
+``OperationConstruction``
+    Original statements, versioned inputs/assignments/merges, source branches,
+    initial/final versions, assumptions and entry conditions. Locals stay in
+    the invocation graph but are not exported to the next action.
+
+``ConstructionValue``
+    Version index, variable name, kind, actual expression, source occurrence,
+    read versions, ordered merge alternatives, scope, prior definedness and
+    assignment subexpression records. Identity writes are retained.
+
+``ConstructionBranch``
+    Source occurrence, branch kind, effective selector, observed reachability,
+    read/output versions, branch scope and evaluated condition subexpressions.
+
+``ExpressionConstruction``
+    Original expression object and attribute path from the root, generated
+    expression, evaluation conditions, runtime requirements and any failure.
+    Equal generated values do not collapse distinct source occurrences.
+
+The solver-only entry ``execute_operations_domain(..., record_construction=True)``
+returns the invocation graph in ``result.construction``; execution failure leaves
+it ``None``. ``translate_expr_domain(..., record_construction=True)`` returns
+subexpression records in ``result.construction`` (an empty tuple when disabled).
+Both flags default to ``False`` and reject non-Booleans with ``TypeError``. The
+expression translator optionally accepts a shared ``SolveBudget`` through
+``budget=``; its remaining time overrides the per-check ``timeout_ms``. An
+exhausted budget records unknown reachability and never prunes a branch as
+unreachable. A pruned source subexpression has no generated-value record.
+
+``ConstructionCheck.status`` is ``verified`` for completed binding checks,
+``invalid`` for a discovered mismatch, or ``unknown`` for an unfinished check.
+``reason`` describes the outcome; ``path`` identifies a failing source occurrence
+when available. Checking uses the existing expression translator and checks
+version dependencies, not an independent statement executor. It does not prove
+compiler correctness, all branch reachability decisions or a contradiction.
+A source object changed after capture can invalidate its earlier records.
+Unavailable source spans remain explicitly unavailable; none are inferred from
+printed symbol names.
+
+Refinement splits conjunctions while retaining implication conditions; OR and
+ITE are not flattened into unconditional facts. ``units`` retain their original
+parent IDs, ordinals, expressions and source-group identities. ``equivalence``
+describes the per-parent check. ``explanation`` is a separately checked fine-core
+result, or ``None`` when equivalence or the shared time budget was insufficient.
+Group-level minimality is not inherited by the fine core. SAT and UNKNOWN inputs
+do not become UNSAT merely by refinement. Z3 selects a fine core within the chosen parent groups. ``minimize=False``
+skips further deletion of that extracted fine core; ``True`` permits deletion
+and reports its own minimality result. Neither mode adds a parent outside the
+selected set.

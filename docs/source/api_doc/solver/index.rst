@@ -10,6 +10,7 @@ pyfcstm.solver
     :maxdepth: 3
 
     budget
+    construction
     domain
     expr
     logical

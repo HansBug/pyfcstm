@@ -1,0 +1,16 @@
+Source construction (no reachability, coverage or UNSAT proof).
+Cases are conditional alternatives, not a selected execution trace.
+x@f is a frame value; x#n is a local definition in one frame/case, never a cross-frame reference.
+event("path")@k is a step k input; active("leaf")@k is the frame k state.
+Parameters are shared; @inputk values are fresh step inputs, not persistent frame variables.
+Local Boolean cleanup preserves source groups; SMT-specific numeric functions keep their exact meaning.
+Selected groups: initial.target, assumption.0000.frame.0000
+For a leaf root, !cold distinguishes its entered position from fbmcq active(root), which also holds at cold.
+
+Group initial.target (initial.target)
+  Source: source location unavailable
+  Constraint: active("Root")@0 && !cold@0
+
+Group assumption.0000.frame.0000 (assumption.frame)
+  Source: source location unavailable
+  Constraint: cold@0 || active("Root")@0 && !cold@0

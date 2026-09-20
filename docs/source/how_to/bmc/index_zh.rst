@@ -799,3 +799,104 @@ options=BmcOptions(cone_slicing=True))``；文件入口支持
 本次实测正确性门禁通过，但公式规模仅缩减 6.09%，未达到 T3 的 20% 门槛；
 切片默认保持关闭。单例求解最多退化 131.73%，所以应同时比较编译、求解和
 对外重放总成本。详细数字见 :ref:`sec-bmc-cone-measurements-zh`。
+
+检查动作的源码构建过程
+----------------------
+
+需要先看清动作如何变成约束，再分析无解原因时，可以使用此 Python 流程。
+下载 :download:`dose_editor.fcstm <dose_editor.fcstm>`、
+:download:`dose_editor.fbmcq <dose_editor.fbmcq>` 和
+:download:`source_construction.demo.py <source_construction.demo.py>`，放在同一目录。
+编辑器包含 Open/Increase/Undo/Confirm 事件、嵌套状态、带分支的迁移效果，以及
+进入、退出和停留动作。查询先让初始数据自由取值，再通过假设约束其关系，不将其锁定为某一组常量。
+
+使用包含构建记录接口的版本运行：
+
+.. code-block:: console
+
+    python source_construction.demo.py
+
+脚本只写标准输出，在实际编译时捕获记录，并检查第 2、3 步选中分支的记录；不修改模型，也不发布证明。
+第一行应为 ``Construction binding: verified``。若为 ``unknown``，说明绑定检查未在预算内完成。
+``invalid`` 表示来源或公式绑定失配，应查看 ``report.check().reason``；若曾修改模型，
+先重新编译再使用记录。若编译时没有设置 ``BmcOptions(record_construction=True)``，
+请求记录会抛出 ``ValueError``，检查过程不会暗中重新编译。
+
+脚本选择第 2 步的 Review -> Trim 和第 3 步的 Trim -> Ready。
+它们是有条件的构建示例，不是求解器选出的不可满足核，也不是已经证实可行的执行。
+完整报告展示有效条件、事件、优先级排除、守卫求值位置和帧边界。
+以下是首个分支的实际输出，只省略报告图例及分支标题：
+
+.. code-block:: text
+
+    <accept DoseEditor.Undo [transition_priority 1]> := (
+           active("DoseEditor.Editing.Adjust.Review")@2
+        && event("DoseEditor.Undo")@2
+    )
+    <apply this case> := (
+           active("DoseEditor.Editing.Adjust.Review")@2
+        && margin@2 < quantum@param
+        && !<accept DoseEditor.Undo [transition_priority 1]>
+    )
+    event("DoseEditor.Undo")@2: event input at step 2 (priority, negative).
+    An event occurrence alone does not imply acceptance; exclusions negate the complete acceptance condition.
+    Construction under <apply this case>:
+      Guard after 0 action(s) [source location unavailable]:
+        Source: margin < quantum
+        Reads: margin@2 < quantum@param
+        Required polarity: positive
+      Action 1: DoseEditor.Editing.Adjust.Trim state_enter
+        Statement 1 [dose_editor.fcstm:29:21]:
+          Source: refund = quantum - margin;
+          refund#1 := quantum@param - margin@2
+        Statement 2 [dose_editor.fcstm:30:21]:
+          Source: proposal = proposal - refund;
+          proposal#1 := proposal@2 - refund#1
+        Statement 3 [dose_editor.fcstm:31:21]:
+          Source: margin = margin + refund;
+          margin#1 := margin@2 + refund#1
+    Frame boundary (all retained persistent variables):
+    <apply this case> => (
+           active("DoseEditor.Editing.Adjust.Trim")@3
+        && display@3 == display@2
+        && saved@3 == saved@2
+        && snapshot@3 == snapshot@2
+        && proposal@3 == proposal#1
+        && margin@3 == margin#1
+        && delta@3 == delta@2
+        && refund@3 == refund#1
+        && audit@3 == audit@2
+    )
+
+``refund#1`` 表示当前帧、当前候选分支内 refund 的第一次值定义。
+每个变量独立编号，赋值和必要的分支汇合都可以产生定义。
+帧末将 ``margin@3`` 连接到 ``margin#1``；下一分支的守卫读取
+``margin@3 >= quantum@param``，不会跨帧引用前一分支的 ``margin#1``。
+全部八个保留的持久变量都列出，包括保持项。局部变量不成为帧变量；
+外部输入逐步更新，参数跨步共享。
+
+``event("DoseEditor.Undo")@2`` 表示第 2 步的事件输入，
+``active("DoseEditor.Editing.Adjust.Trim")@3`` 表示第 3 帧的活动叶状态。
+不额外列出祖先状态或不活动的兄弟状态；cold、terminated 和非叶入口使用独立记法。
+模型只有根叶状态时，fbmcq 的 ``active("Root")`` 在 cold 阶段也成立，
+因此精确的已进入根状态仍需保留 ``!cold`` 条件。
+排除高优先级迁移时否定的是完整接受条件，不能直接说事件缺席，因为其守卫可能不成立。
+
+用 ``report.text_lines(expanded=True)`` 查看记录中的展开值和提交公式。
+完整展开的帧末不含 ``#n`` 或展示别名，例如
+``proposal@3 == proposal@2 - (quantum@param - margin@2)``。
+展开使用已记录表达式，不求解，也不做整体代数化简；输出可能很大，但不会静默截断。
+
+布尔式使用 ``&&``、``||``、``!``、``=>``、``iff`` 和 ``xor``，
+按优先级保留括号，多行操作数对齐。具名来源条件保留独立分组；
+只局部清理布尔中性元素、双重否定及精确数值常量比较，不借用其他假设化简。
+算术保留构建形状；没有完全对应 DSL 拼写的 SMT 数值运算保留 ``div``、
+``to_real`` 等有明确类型语义的形式，源码语句仍使用原记法。
+
+单独查看动作可用 ``action.text_lines(compiled.core.symbols.names)``，
+其中 ``x@entry`` 定义本次调用入口，缺少外层帧和候选分支上下文。
+两个接口都只返回文本行，不写文件、不进行求解检查。
+详细记录仍默认关闭，公共命令行 JSON 没有变化。
+
+捕获、文本、检查和核细化的完整合同见 :doc:`../../reference/bmc_results/index_zh`；
+构建证据与逻辑推导的区别见 :doc:`../../explanations/bmc_solving/index_zh`。

@@ -1,0 +1,40 @@
+Source construction (no reachability, coverage or UNSAT proof).
+Cases are conditional alternatives, not a selected execution trace.
+x@f is a frame value; x#n is a local definition in one frame/case, never a cross-frame reference.
+event("path")@k is a step k input; active("leaf")@k is the frame k state.
+Parameters are shared; @inputk values are fresh step inputs, not persistent frame variables.
+Local Boolean cleanup preserves source groups; SMT-specific numeric functions keep their exact meaning.
+Selected groups: transition.step.0000
+For a leaf root, !cold distinguishes its entered position from fbmcq active(root), which also holds at cold.
+
+Build frame 1 from frame 0 using step 0 events/inputs.
+Case: __init__::initial::Root::0
+  Start: cold (before model entry)
+  Condition definitions (local to this frame/case, not additional premises):
+  <apply this case> := cold@0
+  Construction under <apply this case>:
+    Action 1: Root state_enter
+      Named action: Root.Observe
+      Abstract hook: recorded call, no modeled writes.
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         active("Root")@1
+      && !cold@1
+      && x@1 == x@0
+  )
+
+Build frame 1 from frame 0 using step 0 events/inputs.
+Case: __init__::delta::__init__::0
+  Start: cold (before model entry)
+  Condition definitions (local to this frame/case, not additional premises):
+  <accept __init__ -> Root [delta 1]> := cold@0
+  <apply this case> := (
+         cold@0
+      && !<accept __init__ -> Root [delta 1]>
+  )
+  Construction under <apply this case>:
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         cold@1
+      && x@1 == x@0
+  )

@@ -170,32 +170,46 @@ def build_cone_slice(context):
     )
 
 
-def slice_operations(statements, cone):
+def slice_operations(statements, cone, *, source_paths=None, _source_prefix=(), _result_prefix=()):
     """Filter assignments while preserving ordered branch selection.
 
     :param statements: Original model operations; never mutated.
     :param cone: Retained persistent and local dependency names.
     :type cone: ConeSlice
+    :param source_paths: Optional dictionary populated with retained occurrence
+        paths mapped to their original statement/branch paths. Recording is
+        performed during slicing; identical statements remain distinct.
+    :type source_paths: dict, optional
     :return: Filtered operations preserving source spans and all conditions.
     :rtype: tuple
     """
     result = []
-    for statement in statements:
+    for index, statement in enumerate(statements):
+        source_path = (*_source_prefix, index)
+        result_path = (*_result_prefix, len(result))
         if isinstance(statement, Operation):
             if statement.var_name in cone._keep_names:
+                if source_paths is not None:
+                    source_paths[result_path] = source_path
                 result.append(statement)
         elif isinstance(statement, IfBlock):
             # Even an empty branch can block a later else or evaluate a
             # partial condition. Retain every condition and its priority.
+            if source_paths is not None:
+                source_paths[result_path] = source_path
             result.append(
                 replace(
                     statement,
                     branches=[
                         replace(
                             branch,
-                            statements=list(slice_operations(branch.statements, cone)),
+                            statements=list(slice_operations(
+                                branch.statements, cone, source_paths=source_paths,
+                                _source_prefix=(*source_path, branch_index),
+                                _result_prefix=(*result_path, branch_index),
+                            )),
                         )
-                        for branch in statement.branches
+                        for branch_index, branch in enumerate(statement.branches)
                     ],
                 )
             )

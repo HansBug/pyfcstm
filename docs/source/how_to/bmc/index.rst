@@ -882,3 +882,118 @@ The measured correctness gate passes, but the 6.09% formula reduction misses
 T3's 20% requirement, so slicing remains disabled by default. A query regresses
 131.73% in solve time; compare compilation, solving and external replay costs
 together. See :ref:`sec-bmc-cone-measurements` for the measured results.
+
+Inspect the source construction of an action
+--------------------------------------------------------------------------------
+
+Use this Python workflow when you need to inspect how an action became a
+constraint, before attempting a logical explanation of UNSAT. Download
+:download:`dose_editor.fcstm <dose_editor.fcstm>`,
+:download:`dose_editor.fbmcq <dose_editor.fbmcq>` and
+:download:`source_construction.demo.py <source_construction.demo.py>` into the
+same directory. The editor includes Open/Increase/Undo/Confirm events, nested
+states, conditional effects and enter/exit/during actions. Its query havocs
+initial data and then constrains relationships with assumptions, rather than
+assigning one fixed starting value.
+
+Run with an installation containing the construction API:
+
+.. code-block:: console
+
+    python source_construction.demo.py
+
+The script only prints to stdout. It captures during actual compilation and
+checks the selected records for steps 2 and 3; it does not modify the model or publish a proof.
+The first line should be ``Construction binding: verified``. If it is
+``unknown``, the binding check did not finish within its budget. An ``invalid``
+result means the source or formula bindings did not match: inspect
+``report.check().reason`` and recompile after any model edits before using the
+records. Asking for records from a core compiled without
+``BmcOptions(record_construction=True)`` raises ``ValueError``; inspection never
+silently recompiles that core.
+
+The script selects Review -> Trim at step 2 and Trim -> Ready at step 3.
+These are conditional construction examples, not a solver-selected UNSAT core
+or an asserted feasible execution. The complete report names effective
+conditions, events, priority exclusions, guard positions and frame boundaries.
+Here is its first case, omitting only the report legend and case heading:
+
+.. code-block:: text
+
+    <accept DoseEditor.Undo [transition_priority 1]> := (
+           active("DoseEditor.Editing.Adjust.Review")@2
+        && event("DoseEditor.Undo")@2
+    )
+    <apply this case> := (
+           active("DoseEditor.Editing.Adjust.Review")@2
+        && margin@2 < quantum@param
+        && !<accept DoseEditor.Undo [transition_priority 1]>
+    )
+    event("DoseEditor.Undo")@2: event input at step 2 (priority, negative).
+    An event occurrence alone does not imply acceptance; exclusions negate the complete acceptance condition.
+    Construction under <apply this case>:
+      Guard after 0 action(s) [source location unavailable]:
+        Source: margin < quantum
+        Reads: margin@2 < quantum@param
+        Required polarity: positive
+      Action 1: DoseEditor.Editing.Adjust.Trim state_enter
+        Statement 1 [dose_editor.fcstm:29:21]:
+          Source: refund = quantum - margin;
+          refund#1 := quantum@param - margin@2
+        Statement 2 [dose_editor.fcstm:30:21]:
+          Source: proposal = proposal - refund;
+          proposal#1 := proposal@2 - refund#1
+        Statement 3 [dose_editor.fcstm:31:21]:
+          Source: margin = margin + refund;
+          margin#1 := margin@2 + refund#1
+    Frame boundary (all retained persistent variables):
+    <apply this case> => (
+           active("DoseEditor.Editing.Adjust.Trim")@3
+        && display@3 == display@2
+        && saved@3 == saved@2
+        && snapshot@3 == snapshot@2
+        && proposal@3 == proposal#1
+        && margin@3 == margin#1
+        && delta@3 == delta@2
+        && refund@3 == refund#1
+        && audit@3 == audit@2
+    )
+
+``refund#1`` is refund's first definition in this frame/case. Every variable
+has its own sequence; assignments and necessary joins introduce definitions.
+The boundary connects ``margin@3`` to ``margin#1``. The next case's guard reads
+``margin@3 >= quantum@param``, never the previous case's ``margin#1``.
+All eight retained persistent variables appear, including preservation. Locals
+do not become boundary variables; inputs are fresh per step and parameters shared.
+
+``event("DoseEditor.Undo")@2`` means the step 2 event input;
+``active("DoseEditor.Editing.Adjust.Trim")@3`` names the frame 3 leaf.
+The report does not list every ancestor or inactive sibling. Cold, terminated
+and nonleaf entry positions have separate names. For a model consisting of
+one root leaf, ``active("Root")`` also holds at cold under fbmcq semantics;
+the exact entered-root position therefore retains ``!cold``.
+Excluding a higher-priority transition negates its complete acceptance condition,
+not just its event. The guard might reject a present event.
+
+Use ``report.text_lines(expanded=True)`` for recorded expanded values and the
+submitted case formulas. Its expanded boundary contains no ``#n`` or display
+aliases: for example, ``proposal@3 == proposal@2 - (quantum@param - margin@2)``.
+This substitutes recorded expressions without solving or globally simplifying
+them. Full expansion can be large and is not silently truncated.
+
+Boolean formulas use ``&&``, ``||``, ``!``, ``=>``, ``iff`` and ``xor`` with
+precedence-aware parentheses and aligned multiline operands. Named source
+conditions remain separate. Neutral Boolean literals, double negation and
+exact numeral comparisons are cleaned locally; no assumptions are borrowed
+to simplify them. Arithmetic retains its construction shape. Numeric SMT
+operations with no exact DSL spelling retain typed forms such as ``div`` and
+``to_real``, while source statements retain their original notation.
+
+For one isolated action, use ``action.text_lines(compiled.core.symbols.names)``;
+its ``x@entry`` bindings describe this call and omit the outer frame/case scope.
+Both methods return lines, write no files and perform no solver checks.
+Capture remains disabled by default; public CLI JSON is unchanged.
+
+See :doc:`../../reference/bmc_results/index` for capture, text, checking and
+core-refinement contracts, and :doc:`../../explanations/bmc_solving/index` for
+construction evidence versus logical derivation.

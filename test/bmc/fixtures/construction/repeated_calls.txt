@@ -1,0 +1,67 @@
+Source construction (no reachability, coverage or UNSAT proof).
+Cases are conditional alternatives, not a selected execution trace.
+x@f is a frame value; x#n is a local definition in one frame/case, never a cross-frame reference.
+event("path")@k is a step k input; active("leaf")@k is the frame k state.
+Parameters are shared; @inputk values are fresh step inputs, not persistent frame variables.
+Local Boolean cleanup preserves source groups; SMT-specific numeric functions keep their exact meaning.
+Selected groups: transition.step.0000
+
+Build frame 1 from frame 0 using step 0 events/inputs.
+Case: __init__::initial::Root.A.Ready::0
+  Start: cold (before model entry)
+  Condition definitions (local to this frame/case, not additional premises):
+  <apply this case> := (
+         cold@0
+      && 0 < x@0 + request@input0 * gain@param + request@input0 * gain@param
+  )
+  Construction under <apply this case>:
+    Action 1: Root.Library state_enter
+      Named action: Root.Library.Shared
+      Call site: Root.A.First
+      Execution state: Root.A
+      Statement 1 [source location unavailable]:
+        Source: temporary = request * gain;
+        temporary#1 := request@input0 * gain@param
+        Local to this action invocation.
+      Statement 2 [source location unavailable]:
+        Source: x = x + temporary;
+        x#1 := x@0 + temporary#1
+    Action 2: Root.Library state_enter
+      Named action: Root.Library.Shared
+      Call site: Root.A.Second
+      Execution state: Root.A
+      Statement 1 [source location unavailable]:
+        Source: temporary = request * gain;
+        temporary#2 := request@input0 * gain@param
+        Local to this action invocation.
+      Statement 2 [source location unavailable]:
+        Source: x = x + temporary;
+        x#2 := x#1 + temporary#2
+    Guard after 2 action(s) [source location unavailable]:
+      Source: x > 0
+      Reads: x#2 > 0
+      Required polarity: positive
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         active("Root.A.Ready")@1
+      && x@1 == x#2
+  )
+
+Build frame 1 from frame 0 using step 0 events/inputs.
+Case: __init__::delta::__init__::0
+  Start: cold (before model entry)
+  Condition definitions (local to this frame/case, not additional premises):
+  <accept __init__ -> Root.A.Ready [delta 1]> := (
+         cold@0
+      && 0 < x@0 + request@input0 * gain@param + request@input0 * gain@param
+  )
+  <apply this case> := (
+         cold@0
+      && !<accept __init__ -> Root.A.Ready [delta 1]>
+  )
+  Construction under <apply this case>:
+  Frame boundary (all retained persistent variables):
+  <apply this case> => (
+         cold@1
+      && x@1 == x@0
+  )

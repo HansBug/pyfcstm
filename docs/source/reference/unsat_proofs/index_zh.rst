@@ -94,10 +94,10 @@ UNSAT 证明 API 参考
    * - ``stop_reason``
      - 可选的中断或不可用原因。原始求解为 UNSAT 时也应读取。
 
-``CoreEvidence`` 包含 ``constraint_ids``（全部原始可移除组）、``background_ids``（固定组）、
-``core_ids``（经过验证的子集或 ``None``）、``core_check``
-（``verified|not_checked|sat|unknown|timeout``）、``subset_minimality``
-（``proven|not_proven``）、``reduction``（``raw|partial_minimized|subset_minimal``）
+``CoreEvidence`` 包含 ``constraint_ids`` （全部原始可移除组）、 ``background_ids`` （固定组）、
+``core_ids`` （经过验证的子集或 ``None`` ）、 ``core_check``
+（ ``verified|not_checked|sat|unknown|timeout`` ）、 ``subset_minimality``
+（ ``proven|not_proven`` ）、 ``reduction`` （ ``raw|partial_minimized|subset_minimal`` ）
 及核处理的 ``stop_reason``。经过验证的 ``core_ids=()`` 表示背景自身矛盾。
 
 例如，捕获后组装超时，可以产生 ``solver_status="unsat", proof_status="captured",
@@ -118,7 +118,7 @@ reading_status="not_requested"``。存在受信任的机械规则时，可以同
    * - ``ProofGraph``
      - ``execution_id``、``root_id``、拓扑排序的 ``nodes`` 和 ``terms``、原始 ``inputs``、``source_bindings``。``node(id)`` 和 ``term(id)`` 查询精确记录。
    * - ``ProofTerm``
-     - ``term_id``、``kind``（literal/algebraic/constant/application/variable/quantifier）、``sort``、``operator``、子项 ``arguments``、``value``、绑定变量 ``bindings``、``operator_kind``（builtin/uninterpreted）及带索引运算符的 ``parameters``。
+     - ``term_id``、 ``kind`` （literal/algebraic/constant/application/variable/quantifier）、 ``sort``、 ``operator``、子项 ``arguments``、 ``value``、绑定变量 ``bindings``、 ``operator_kind`` （builtin/uninterpreted）及带索引运算符的 ``parameters``。
    * - ``ProofInput``
      - ``occurrence_id``、``constraint_id``、从零开始的 ``expression_index``、``term_id`` 和布尔值 ``background``。未使用的提交表达式也会记录。
    * - ``ProofNode``

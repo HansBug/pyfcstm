@@ -1,0 +1,19 @@
+Query: config
+Solver result: UNSAT
+Reading: complete
+
+P1  Input
+  Input origins: minimum
+  Therefore: (x > 0)
+  Source: Minimum allocation [limits.cfg]
+
+P2  Input
+  Input origins: maximum
+  Therefore: (x <= 0)
+  Source: Capacity limit [limits.cfg]
+
+P3  Resolve the clauses
+  From: P1, P2
+  Therefore: false
+
+Conclusion: the submitted conjunction is inconsistent.

@@ -235,3 +235,10 @@ part of the seven sibling tutorial cards above.
 * :doc:`grammar/index`
 * :doc:`render/index`
 * :doc:`structure/index`
+
+UNSAT proofs
+------------
+
+The standalone solver-proof page in this section is :doc:`unsat_proofs/index`.
+The tutorial provides a first successful proof, the how-to guide covers integration
+tasks, the explanation describes guarantees, and the reference lists the contract.

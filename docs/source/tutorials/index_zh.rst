@@ -183,3 +183,9 @@
 * :doc:`grammar/index_zh`
 * :doc:`render/index_zh`
 * :doc:`structure/index_zh`
+
+UNSAT 证明
+----------
+
+通用 solver 证明的本栏目入口为 :doc:`unsat_proofs/index_zh`。
+教程给出首次成功路径，使用指南提供集成任务，原理说明解释保证范围，参考列出完整合同。

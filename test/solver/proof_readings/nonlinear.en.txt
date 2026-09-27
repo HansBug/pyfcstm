@@ -1,0 +1,107 @@
+Query: nonlinear
+Solver result: UNSAT
+Reading: partial
+
+P1  Unsupported inference
+  Therefore: (not (((x * x) = 2)) or ((x * x) >= 2))
+
+P2  Input
+  Input origins: square
+  Therefore: ((x * x) = 2)
+
+P3  Resolve the clauses
+  From: P1, P2
+  Therefore: ((x * x) >= 2)
+
+P4  Assume
+  Under assumptions: P4
+  Therefore: (x >= -1)
+
+P5  Assume
+  Under assumptions: P5
+  Therefore: not ((x >= 0))
+
+P6  Unsupported inference
+  From: P3, P4, P5
+  Under assumptions: P4, P5
+  Therefore: false
+
+P7  Discharge local assumptions
+  From: P6
+  Closed: P4, P5
+  Therefore: (not ((x >= -1)) or (x >= 0))
+
+P8  Unsupported inference
+  Therefore: (not (((x * x) = 2)) or ((x * x) <= 2))
+
+P9  Resolve the clauses
+  From: P8, P2
+  Therefore: ((x * x) <= 2)
+
+P10  Assume
+  Under assumptions: P10
+  Therefore: not ((x >= -1))
+
+P11  Unsupported inference
+  From: P9, P10
+  Under assumptions: P10
+  Therefore: false
+
+P12  Discharge local assumptions
+  From: P11
+  Closed: P10
+  Therefore: (x >= -1)
+
+P13  Resolve the clauses
+  From: P7, P12
+  Therefore: (x >= 0)
+
+P14  Assume
+  Under assumptions: P14
+  Therefore: not ((x <= 0))
+
+P15  Assume
+  Under assumptions: P15
+  Therefore: (x <= 1)
+
+P16  Unsupported inference
+  From: P3, P14, P15
+  Under assumptions: P14, P15
+  Therefore: false
+
+P17  Discharge local assumptions
+  From: P16
+  Closed: P14, P15
+  Therefore: (not ((x <= 1)) or (x <= 0))
+
+P18  Assume
+  Under assumptions: P18
+  Therefore: not ((x <= 1))
+
+P19  Unsupported inference
+  From: P9, P18
+  Under assumptions: P18
+  Therefore: false
+
+P20  Discharge local assumptions
+  From: P19
+  Closed: P18
+  Therefore: (x <= 1)
+
+P21  Resolve the clauses
+  From: P17, P20
+  Therefore: (x <= 0)
+
+P22  Unsupported inference
+  From: P3, P13, P21
+  Therefore: false
+
+Conclusion: the submitted conjunction is inconsistent.
+Unexplained or invalid evidence:
+  unsupported_rule: th-lemma
+  unsupported_rule: th-lemma
+  unsupported_rule: th-lemma
+  unsupported_rule: th-lemma
+  unsupported_rule: th-lemma
+  unsupported_rule: th-lemma
+  unsupported_rule: th-lemma

@@ -271,3 +271,10 @@ Reference is the final place for exact facts. If you are still trying to learn
 the first path, return to Tutorials. If you are trying to complete an operation,
 use How-to Guides. If you are trying to understand the reason behind a behavior,
 use Explanations.
+
+UNSAT proofs
+------------
+
+The standalone solver-proof page in this section is :doc:`unsat_proofs/index`.
+The tutorial provides a first successful proof, the how-to guide covers integration
+tasks, the explanation describes guarantees, and the reference lists the contract.

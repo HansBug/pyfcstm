@@ -9,14 +9,33 @@ pyfcstm.solver
 .. toctree::
     :maxdepth: 3
 
+    budget
     domain
     expr
     logical
     operation
+    proof
+    proof_io
+    proof_rules
+    proof_text
     safety
     solve
+    symbols
+    unsat
 
 \_\_all\_\_
 -----------------------------------------------------
 
 .. autodata:: __all__
+
+
+\_\_getattr\_\_
+-----------------------------------------------------
+
+.. autofunction:: __getattr__
+
+
+\_\_dir\_\_
+-----------------------------------------------------
+
+.. autofunction:: __dir__

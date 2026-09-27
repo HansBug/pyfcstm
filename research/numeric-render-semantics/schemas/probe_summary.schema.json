@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/HansBug/pyfcstm/research/numeric-render-semantics/schemas/probe_summary.schema.json",
+  "title": "Numeric render probe summary",
+  "type": "object",
+  "required": ["schema_version", "source_mapping_sha256", "language", "toolchain", "cases"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "mode": {"type": "string"},
+    "source_mapping_path": {"type": "string"},
+    "source_mapping_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "language": {"type": "string"},
+    "summary_status": {
+      "enum": ["passed", "completed", "completed_with_findings", "skipped", "unavailable", "invalid"]
+    },
+    "toolchain": {
+      "type": "object",
+      "required": ["compilers", "sanitizers"],
+      "properties": {
+        "compilers": {"type": "object"},
+        "sanitizers": {"type": "object"},
+        "timeout_seconds": {"type": "integer", "minimum": 1},
+        "work_dir": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "render_paths": {"type": "array"},
+    "cases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["case_id", "render_expression", "status"],
+        "properties": {
+          "case_id": {"type": "string"},
+          "operator": {"type": "string"},
+          "fcstm_expression": {"type": "string"},
+          "render_expression": {"type": "string"},
+          "render_path": {"type": "string"},
+          "compile_language": {"enum": ["c", "cpp"]},
+          "mapping_sources": {"type": "array", "items": {"type": "string"}},
+          "status": {
+            "enum": [
+              "passed",
+              "compile_failed",
+              "link_failed",
+              "runtime_failed",
+              "sanitizer_failed",
+              "skipped",
+              "unavailable",
+              "unknown"
+            ]
+          },
+          "reason": {"type": ["string", "null"]},
+          "commands": {"type": "object"},
+          "sanitizer": {"type": "object"}
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

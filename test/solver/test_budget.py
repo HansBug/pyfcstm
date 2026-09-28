@@ -19,12 +19,17 @@ def test_unlimited_and_finite_deadlines_have_distinct_state():
     assert 0 < finite.remaining_ms() <= 10000
 
 
-def test_expired_budget_cannot_be_mistaken_for_unlimited():
+def test_expired_budget_cannot_be_mistaken_for_unlimited(monkeypatch):
     from pyfcstm.solver.budget import SolveBudget
 
+    now = [100.0]
+    monkeypatch.setattr(time, 'monotonic', lambda: now[0])
     budget = SolveBudget(1)
-    time.sleep(0.005)
     assert budget.deadline is not None
+    assert budget.remaining_ms() == 1
+    now[0] = budget.deadline
+    assert budget.remaining_ms() is None
+    now[0] += 1.0
     assert budget.remaining_ms() is None
 
 

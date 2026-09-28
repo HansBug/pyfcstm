@@ -4,7 +4,7 @@ from dataclasses import dataclass, replace
 from fractions import Fraction
 from math import ceil, floor, inf
 
-from .core import IntervalCertificate, IntervalStep
+from .core import IntervalCertificate, IntervalStep, TermEquality
 
 
 def _multiply_endpoint(left, right):
@@ -83,13 +83,32 @@ class _Range:
         return _Range(lower, upper, lower == -inf, upper == inf)
 
 
+def _equalities(bounds, graph):
+    """Recognize exact a=b facts, including scaled opposing inequalities."""
+    pending, result = {}, {}
+    for index, bound in enumerate(bounds):
+        if bound.relation not in ('eq', 'le') or Fraction(bound.constant) != 0 or len(bound.coefficients) != 2:
+            continue
+        (left, first), (right, second) = bound.coefficients
+        if Fraction(first) + Fraction(second) != 0 or graph.term(left).sort != graph.term(right).sort:
+            continue
+        key, sign = (left, right), Fraction(first) > 0
+        if bound.relation == 'eq':
+            result[key] = TermEquality(left, right, (index,))
+        elif (key, not sign) in pending and key not in result:
+            result[key] = TermEquality(left, right, (pending[key, not sign], index))
+        pending[key, sign] = index
+    return tuple(result.values())
+
+
 class _Propagation:
     def __init__(self, graph, bounds, budget):
         self.graph, self.bounds, self.budget = graph, bounds, budget
         self.values, self.indices, self.steps = {}, {}, []
         self.conflict = None
+        self.equalities = _equalities(bounds, graph)
 
-    def record(self, term_id, value, rule, premises=(), bound_index=None):
+    def record(self, term_id, value, rule, premises=(), bound_index=None, substitutions=()):
         if self.graph.term(term_id).sort == 'Int':
             value = value.integer()
         previous = self.values.get(term_id, _Range())
@@ -100,7 +119,7 @@ class _Propagation:
         self.steps.append(IntervalStep(term_id, None if value.lower == -inf else str(value.lower),
                                        None if value.upper == inf else str(value.upper),
                                        value.lower_open, value.upper_open, rule,
-                                       tuple(dict.fromkeys(premises)), bound_index))
+                                       tuple(dict.fromkeys(premises)), bound_index, substitutions))
         if merged.empty():
             self.conflict = (self.indices.get(term_id, index), index)
             return
@@ -123,14 +142,76 @@ class _Propagation:
         indices = {old: new for new, old in enumerate(order)}
         bounds = sorted({self.steps[index].bound_index for index in order
                          if self.steps[index].bound_index is not None})
+        bounds = sorted(set(bounds) | {bound for index in order for equality in self.steps[index].substitutions
+                                      for bound in equality.bound_indices})
         bound_indices = {old: new for new, old in enumerate(bounds)}
         steps = tuple(replace(self.steps[index],
                               premises=tuple(indices[parent] for parent in self.steps[index].premises),
-                              bound_index=bound_indices.get(self.steps[index].bound_index)) for index in order)
+                              bound_index=bound_indices.get(self.steps[index].bound_index),
+                              substitutions=tuple(replace(equality, bound_indices=tuple(
+                                  bound_indices[bound] for bound in equality.bound_indices))
+                                  for equality in self.steps[index].substitutions)) for index in order)
         result = tuple(indices[index] for index in roots)
         return IntervalCertificate(tuple(self.bounds[index] for index in bounds), steps,
                                    result if equality is None else None,
                                    None if equality is None else result)
+
+    def congruence(self):
+        """Transfer ranges only between expressions equal under local facts."""
+        if not self.equalities:
+            return
+        groups = {}
+        for equality in self.equalities:
+            merged = groups.get(equality.left_id, {equality.left_id}) | groups.get(equality.right_id, {equality.right_id})
+            for term in merged:
+                groups[term] = merged
+        signatures, dependencies, interned = {}, {}, {}
+
+        def signature(term_id):
+            pending = [(term_id, False)]
+            while pending:
+                self.budget.checkpoint('proof analysis')
+                current, ready = pending.pop()
+                if current in signatures:
+                    continue
+                term = self.graph.term(current)
+                if current in groups:
+                    members = groups[current]
+                    key = ('equal', min(members))
+                    dependencies[current] = {index for index, equality in enumerate(self.equalities)
+                                              if equality.left_id in members}
+                elif term.kind == 'application' and term.operator_kind == 'builtin':
+                    if not ready:
+                        pending.append((current, True))
+                        pending.extend((child, False) for child in reversed(term.arguments))
+                        continue
+                    key = (term.kind, term.sort, term.operator, term.parameters,
+                           tuple(signatures[child] for child in term.arguments))
+                    dependencies[current] = set().union(*(dependencies[child] for child in term.arguments))
+                else:
+                    key, dependencies[current] = ('term', current), set()
+                signatures[current] = interned.setdefault(key, len(interned))
+            return signatures[term_id]
+
+        equivalent = {}
+        for term in self.graph.terms:
+            self.budget.checkpoint('proof analysis')
+            if term.sort in ('Int', 'Real'):
+                equivalent.setdefault(signature(term.term_id), []).append(term.term_id)
+        for members in equivalent.values():
+            for source in members:
+                if source not in self.indices:
+                    continue
+                for target in members:
+                    self.budget.checkpoint('proof analysis')
+                    if source == target:
+                        continue
+                    equalities = tuple(self.equalities[index] for index in sorted(
+                        dependencies[source] | dependencies[target]))
+                    self.record(target, self.values[source], 'congruence', (self.indices[source],),
+                                substitutions=equalities)
+                    if self.conflict is not None:
+                        return
 
     def linear(self, coefficients, constant):
         value, premises = _Range(constant, constant, False, False), []
@@ -237,6 +318,9 @@ def interval_certificate(node, graph, budget):
             state.evaluate(term)
             if state.conflict is not None:
                 return state.certificate()
+        state.congruence()
+        if state.conflict is not None:
+            return state.certificate()
         conclusion = graph.term(node.conclusion)
         candidates = (conclusion.arguments if conclusion.operator_kind == 'builtin' and
                       conclusion.operator == 'or' else (node.conclusion,))

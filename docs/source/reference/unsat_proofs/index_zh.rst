@@ -132,8 +132,10 @@ reading_status="not_requested"``。存在受信任的机械规则时，可以同
      - 布尔 ``term_id``、带符号整数 ``weight`` 及精确的 ``minimum`` / ``maximum`` 贡献。
    * - ``IntervalCertificate``
      - 局部归一化 ``bounds``、有序 ``steps``，以及二选一的 ``conflict`` 或 ``equality``。结果对为从零开始的步骤索引。矛盾使用同一项的不相交范围；等式使用结论某个等式分支两侧相等的闭单点范围。
+   * - ``TermEquality``
+     - ``left_id``、``right_id`` 及 ``bound_indices``：建立项相等关系的一条局部等式，或方向相反的两条非严格边界。
    * - ``IntervalStep``
-     - ``term_id``、精确有理数 ``lower`` / ``upper``（``None`` 表示无穷）、``lower_open`` / ``upper_open``、推导 ``rule``、先前步骤 ``premises``，以及线性推导可用的 ``bound_index``。最终结果未使用的步骤会被移除。
+     - ``term_id``、精确有理数 ``lower`` / ``upper``（``None`` 表示无穷）、``lower_open`` / ``upper_open``、推导 ``rule``、先前步骤 ``premises``，以及线性推导可用的 ``bound_index``。``substitutions`` 保存同余步骤使用的局部等式，该步骤的唯一前提为原范围。最终结果未使用的步骤会被移除。
    * - ``ReadingBlock``
      - ``block_id``、``kind``、结论 ``claims``、``premise_block_ids``、``active_hypotheses``、``evidence_node_ids``、``source_links``、合并的 ``detail_block_ids``、可选 ``title_en`` 和 ``title_zh``。
    * - ``ProofReading``

@@ -213,6 +213,7 @@ def _render(reading, language):
         'opaque': choose('Unsupported inference', '尚未解释的推导'),
     }
     interval_rules = {
+        'congruence': choose('substitute equal terms in the source expression', '在原表达式中替换相等项'),
         'literal': choose('exact constant', '精确常量'),
         'linear': choose('isolate the term', '移项求界'),
         'intersection': choose('intersect ranges', '区间求交'),
@@ -300,6 +301,10 @@ def _render(reading, language):
                     lines.append('    ' + choose('Temporary negation of a conclusion alternative.',
                                                 '临时否定结论中的一个分支。'))
             for index, step in enumerate(certificate.steps):
+                for equality in step.substitutions:
+                    lines.append('    %s = %s; %s' % (
+                        terms[equality.left_id], terms[equality.right_id],
+                        ', '.join('B%d' % (bound + 1) for bound in equality.bound_indices)))
                 interval = ('(' if step.lower_open else '[') + (step.lower or '-inf') + ', ' + (
                     step.upper or '+inf') + (')' if step.upper_open else ']')
                 dependencies = ['I%d' % (parent + 1) for parent in step.premises]

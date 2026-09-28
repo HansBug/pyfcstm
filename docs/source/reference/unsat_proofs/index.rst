@@ -138,8 +138,10 @@ Evidence and reading data
      - Boolean ``term_id``, signed integer ``weight`` and its exact ``minimum`` / ``maximum`` contribution.
    * - ``IntervalCertificate``
      - Local normalized ``bounds``, ordered ``steps``, and exactly one of ``conflict`` or ``equality``. Result pairs are zero-based step indices. Contradictions use disjoint ranges of one term; equality uses equal closed singleton ranges of an equality alternative in the conclusion.
+   * - ``TermEquality``
+     - ``left_id``, ``right_id`` and ``bound_indices``: one local equality or two opposing non-strict bounds establishing equal terms.
    * - ``IntervalStep``
-     - ``term_id``, exact rational ``lower`` / ``upper`` (``None`` denotes infinity), ``lower_open`` / ``upper_open``, deduction ``rule``, prior-step ``premises`` and optional ``bound_index`` for a linear deduction. Steps unrelated to the final result are removed.
+     - ``term_id``, exact rational ``lower`` / ``upper`` (``None`` denotes infinity), ``lower_open`` / ``upper_open``, deduction ``rule``, prior-step ``premises`` and optional ``bound_index`` for a linear deduction. ``substitutions`` retains local equalities for a congruence step; its one premise is the source range. Steps unrelated to the final result are removed.
    * - ``ReadingBlock``
      - ``block_id``, ``kind``, conclusion ``claims``, ``premise_block_ids``, ``active_hypotheses``, ``evidence_node_ids``, ``source_links``, folded ``detail_block_ids``, optional ``title_en`` and ``title_zh``.
    * - ``ProofReading``

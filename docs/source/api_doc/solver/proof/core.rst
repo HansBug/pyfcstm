@@ -76,11 +76,18 @@ ProofNode
     :members: node_id,rule,parents,conclusion,operands,parameters,input_occurrences,open_hypotheses,discharged_hypotheses,local_check,bindings,inference_kind,certificate,cardinality,interval
 
 
+TermEquality
+-----------------------------------------------------
+
+.. autoclass:: TermEquality
+    :members: left_id,right_id,bound_indices
+
+
 IntervalStep
 -----------------------------------------------------
 
 .. autoclass:: IntervalStep
-    :members: term_id,lower,upper,lower_open,upper_open,rule,premises,bound_index
+    :members: term_id,lower,upper,lower_open,upper_open,rule,premises,bound_index,substitutions
 
 
 IntervalCertificate

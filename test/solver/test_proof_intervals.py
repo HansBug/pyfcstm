@@ -220,3 +220,71 @@ def test_unbounded_odd_power_keeps_negative_infinity(power):
     x = z3.Real('x')
     graph = _certificate_graph((x < 0, x ** power < 0), ())
     assert analyze_proof(graph).graph.node(graph.root_id).local_check == 'unsupported'
+
+
+@pytest.mark.parametrize('case,expected', [
+    ('direct', 'checked'), ('chain', 'checked'), ('scaled', 'checked'),
+    ('one_way', 'unsupported'), ('offset', 'unsupported'), ('unequal_coefficients', 'unsupported'),
+    ('uninterpreted', 'unsupported'), ('mixed_sorts', 'unsupported'),
+    ('consistent', 'unsupported'),
+])
+def test_congruence_uses_only_proven_same_sort_equalities(case, expected):
+    x, y, z = z3.Reals('x y z')
+    i = z3.Int('i')
+    f = z3.Function('f', z3.RealSort(), z3.RealSort())
+    g = z3.Function('g', z3.RealSort(), z3.RealSort())
+    cases = {
+        'direct': (x == y, x * x <= 2, y * y >= 3),
+        'chain': (x == y, y == z, x * x <= 2, z * z >= 3),
+        'scaled': (2 * x <= 2 * y, 3 * y <= 3 * x, x * x <= 2, y * y >= 3),
+        'one_way': (x <= y, x * x <= 2, y * y >= 3),
+        'offset': (x == y + 1, x * x == 4, y * y == 1),
+        'unequal_coefficients': (x == 2 * y, x * x == 12, y * y == 3),
+        'uninterpreted': (x == y, f(x) == 2, g(y) == 3),
+        'mixed_sorts': (z3.ToReal(i) == x, x * x >= 0),
+        'consistent': (x == y, x * x <= 3, y * y >= 2),
+    }
+    graph = _certificate_graph(cases[case], ())
+    node = analyze_proof(graph).graph.node(graph.root_id)
+    assert node.local_check == expected
+    if expected == 'checked':
+        assert any(step.rule == 'congruence' for step in node.interval.steps)
+
+
+def test_congruence_handles_deep_boolean_conditions_without_python_recursion():
+    x, y = z3.Reals('x y')
+    condition = z3.Bool('p')
+    for _ in range(1100):
+        condition = z3.Not(condition)
+    report = explain_unsat(UnsatQuery('deep', (UnsatConstraint('conditions', (
+        x * x == 2, y * y == 3, x == y, z3.If(condition, x, y) > 0,
+    )),)))
+    assert report.solver_status == 'unsat'
+    assert report.reading_status == 'complete'
+    assert report.gaps == ()
+
+
+@pytest.mark.parametrize('mutation', ['arity', 'reference', 'sort', 'rule', 'source', 'bound'])
+def test_offline_congruence_evidence_rejects_broken_dependencies(mutation):
+    x, y = z3.Reals('x y')
+    report = explain_unsat(UnsatQuery('shared_square', (UnsatConstraint('conditions', (
+        x * x == 2, y * y == 3, x == y,
+    )),)))
+    data = report.to_canonical()
+    step = next(step for node in data['proof']['nodes'] if node['interval'] is not None
+                for step in node['interval']['steps'] if step['substitutions'])
+    equality = step['substitutions'][0]
+    if mutation == 'arity':
+        equality['bound_indices'] = []
+    elif mutation == 'reference':
+        equality['left_id'] = 'missing'
+    elif mutation == 'sort':
+        next(term for term in data['proof']['terms'] if term['term_id'] == equality['left_id'])['sort'] = 'Int'
+    elif mutation == 'rule':
+        step['rule'] = 'sum'
+    elif mutation == 'source':
+        step['premises'] = []
+    else:
+        equality['bound_indices'] = [-1]
+    with pytest.raises(ValueError):
+        UnsatReport.from_canonical(data)

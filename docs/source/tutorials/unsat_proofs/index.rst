@@ -94,7 +94,8 @@ checkout on ``PYTHONPATH``:
 
 The script also offers ``--case branches``, ``--case sources``,
 ``--case square`` (integer ``x*x == 2``) and ``--case product``
-(``x >= 2``, ``y >= 3``, ``x*y < 6``). It prints
+(``x >= 2``, ``y >= 3``, ``x*y < 6``), plus ``--case shared_square``
+(``x*x == 2``, ``y*y == 3``, ``x == y`` over reals). It prints
 actual proofs and writes no files. ``--minimize`` requests a subset-minimal
 condition core and a new proof; ``--fold`` demonstrates a checked domain title
 with expandable evidence. These are example-script options, not additions to

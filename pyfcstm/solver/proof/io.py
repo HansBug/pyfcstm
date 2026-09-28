@@ -120,6 +120,10 @@ def _validate_graph(graph):
                 _references((bound.term_id,) + tuple(term for term, _ in bound.coefficients), terms)
             for step in node.interval.steps:
                 _references((step.term_id,), terms)
+                for equality in step.substitutions:
+                    _references((equality.left_id, equality.right_id), terms)
+                    if graph.term(equality.left_id).sort != graph.term(equality.right_id).sort:
+                        raise ValueError('equal terms must have the same sort')
                 if graph.term(step.term_id).sort not in ('Int', 'Real'):
                     raise ValueError('interval evidence requires arithmetic terms')
             if node.interval.equality is not None:
@@ -210,8 +214,17 @@ def _validate(value):
         if value.kind == 'algebraic':
             _choice(value.sort, ('Real',))
             _nonempty(value.value)
+    elif isinstance(value, proof.TermEquality):
+        _nonempty(value.left_id)
+        _nonempty(value.right_id)
+        if len(value.bound_indices) not in (1, 2):
+            raise ValueError('term equality needs one or two bounds')
     elif isinstance(value, proof.IntervalStep):
-        _choice(value.rule, ('literal', 'linear', 'intersection', 'square', 'product', 'sum', 'cast', 'conditional', 'power'))
+        _choice(value.rule, ('literal', 'linear', 'intersection', 'square', 'product', 'sum', 'cast', 'conditional', 'power', 'congruence'))
+        if value.substitutions and value.rule != 'congruence':
+            raise ValueError('only congruence steps carry substitutions')
+        if value.rule == 'congruence' and len(value.premises) != 1:
+            raise ValueError('congruence needs one source range')
         for endpoint in (value.lower, value.upper):
             if endpoint is not None:
                 _rational(endpoint)
@@ -224,6 +237,9 @@ def _validate(value):
         for index, step in enumerate(value.steps):
             if any(parent < 0 or parent >= index for parent in step.premises):
                 raise ValueError('interval steps must reference earlier steps')
+            if any(bound < 0 or bound >= len(value.bounds) for equality in step.substitutions
+                   for bound in equality.bound_indices):
+                raise ValueError('unknown equality premise bound')
             if step.bound_index is not None and not 0 <= step.bound_index < len(value.bounds):
                 raise ValueError('unknown interval premise bound')
         if (value.conflict is None) == (value.equality is None):

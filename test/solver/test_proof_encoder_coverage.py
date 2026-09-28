@@ -10,6 +10,12 @@ from pyfcstm.solver import UnsatQuery, UnsatConstraint, explain_unsat
 pytestmark = pytest.mark.unittest
 
 EXPRESSION_CASES = [
+ ('expanded_square','float','x*x + 2*x + 1 < 0'),
+ ('expanded_product','float','(x+y)*(x+y) < x*x + 2*x*y + y*y'),
+ ('sum_of_squares','float','x*x + y*y < 0'),
+ ('zero_factor','float','x*y == 1 && x == 0'),
+ ('positive_square_sum','float','x>=0 && y>=0 && (x+y)*(x+y)<x*x'),
+ ('shared_square','float','x*x==2 && y*y==3 && x==y'),
  ('abs_int','int','abs(x) < 0'), ('abs_real','float','abs(x) < 0'),
  ('sign_int','int','sign(x) > 1'), ('sign_real','float','sign(x) < -1'),
  ('floor_real','float','floor(x) > x'), ('ceil_real','float','ceil(x) < x'),
@@ -62,7 +68,7 @@ def test_generated_expression_has_a_complete_proof(name, kind, predicate):
     assert report.gaps == ()
 
 
-@pytest.mark.parametrize('name', ['round_tie', 'real_div_positive', 'sqrt_square', 'variable_power'])
+@pytest.mark.parametrize('name', ['round_tie', 'real_div_positive', 'sqrt_square', 'variable_power', 'shared_square'])
 @pytest.mark.parametrize('language', ['en', 'zh'])
 def test_encoder_theory_proof_text_is_complete_and_portable(name, language, text_aligner):
     from pathlib import Path

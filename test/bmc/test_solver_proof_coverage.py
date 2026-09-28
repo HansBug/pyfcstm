@@ -197,3 +197,25 @@ state Root {
     assert report.scope_check == 'passed'
     assert report.reading_status == 'complete'
     assert report.gaps == ()
+
+
+
+def test_shared_square_equality_is_explained_in_actual_fbmcq():
+    model = load_state_machine_from_text(
+        'def float x=0.0; def float y=0.0; state Root { state A; [*]->A; }')
+    core = build_bmc_core_formula(BmcEngine(model).prepare(
+        'init state("Root.A") havoc { x, y }; check reach <= 1: x*x==2 && y*y==3 && x==y;'))
+    prop = compile_bmc_property(core)
+    report = explain_unsat(UnsatQuery('shared_square', tuple(UnsatConstraint(key, (expression,))
+                          for key, expression in (
+        ('domain', core.domain_formula), ('initial', core.initial_formula),
+        ('transitions', core.transition_formula), ('environment', core.environment_formula),
+        ('objective', prop.objective_formula),
+    ))))
+    assert report.solver_status == 'unsat'
+    assert report.input_check == 'passed'
+    assert report.scope_check == 'passed'
+    assert report.reading_status == 'complete'
+    assert report.gaps == ()
+    assert any(step.substitutions for node in report.proof.nodes if node.interval is not None
+               for step in node.interval.steps)

@@ -226,6 +226,20 @@ class ProofNode:
 
 
 @dataclass(frozen=True)
+class TermEquality:
+    """Equal arithmetic terms established by local normalized bounds.
+
+    :param left_id: First equal term.
+    :param right_id: Second equal term, of the same sort.
+    :param bound_indices: One equality bound or two opposing non-strict bounds.
+    """
+
+    left_id: str
+    right_id: str
+    bound_indices: Tuple[int, ...]
+
+
+@dataclass(frozen=True)
 class IntervalStep:
     """One range deduction with exact rational endpoints and prior evidence.
 
@@ -237,6 +251,7 @@ class IntervalStep:
     :param rule: Literal, linear, arithmetic, conditional or intersection rule.
     :param premises: Zero-based indices of earlier interval steps.
     :param bound_index: Index of a local normalized premise, for linear steps.
+    :param substitutions: Local equalities used to transfer an expression range.
     """
 
     term_id: str
@@ -247,6 +262,7 @@ class IntervalStep:
     rule: str
     premises: Tuple[int, ...] = ()
     bound_index: Optional[int] = None
+    substitutions: Tuple[TermEquality, ...] = ()
 
 
 @dataclass(frozen=True)

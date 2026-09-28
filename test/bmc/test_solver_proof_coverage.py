@@ -137,3 +137,63 @@ def test_actual_nonlinear_fbmcq_formulas_have_complete_interval_proofs(declarati
     assert report.scope_check == 'passed'
     assert report.reading_status == 'complete'
     assert report.gaps == ()
+
+
+@pytest.mark.parametrize('name,source,query', [
+    ('false_guard',
+     'def int x=0; state Root { state A; state B; [*]->A; A->B: if [x<0]; }',
+     'init state("Root.A"); check reach <= 1: active("Root.B");'),
+    ('true_guard',
+     'def int x=0; state Root { state A; state B; [*]->A; A->B: if [x>=0]; }',
+     'init state("Root.A"); check reach <= 1: x<0;'),
+    ('increment',
+     'def int x=0; state Root { state A { during { x=x+1; } } [*]->A; }',
+     'init state("Root.A") havoc { x } where x>=0; check reach <= 3: x<0;'),
+    ('conditional_update',
+     'def int x=0; state Root { state A { during { x=(x>=0)?x+1:0; } } [*]->A; }',
+     'init state("Root.A"); check reach <= 2: x<0;'),
+    ('priority',
+     'state Root { event Go; state A; state B; state C; [*]->A; A->B: Go; A->C: Go; }',
+     'init state("Root.A"); assume event("Root.Go",0)==true; check reach <= 1: active("Root.C");'),
+])
+def test_control_flow_encodings_have_complete_proofs(name, source, query):
+    core = build_bmc_core_formula(BmcEngine(load_state_machine_from_text(source)).prepare(query))
+    prop = compile_bmc_property(core)
+    report = explain_unsat(UnsatQuery(name, tuple(UnsatConstraint(key, (expression,)) for key, expression in (
+        ('domain', core.domain_formula), ('initial', core.initial_formula),
+        ('transitions', core.transition_formula), ('environment', core.environment_formula),
+        ('objective', prop.objective_formula),
+    ))))
+    assert report.solver_status == 'unsat'
+    assert report.input_check == 'passed'
+    assert report.scope_check == 'passed'
+    assert report.reading_status == 'complete'
+    assert report.gaps == ()
+
+
+def test_guard_after_prefix_effect_is_proved_at_its_actual_anchor():
+    import z3
+
+    model = load_state_machine_from_text('''
+def int x=0;
+state Root {
+    state A; pseudo state Route; state B; state C;
+    [*]->A;
+    A->Route effect { x=x+2; }
+    Route->B: if [x>=2];
+    Route->C;
+}
+''')
+    core = build_bmc_core_formula(BmcEngine(model).prepare(
+        'init state("Root.A"); check reach <= 1: active("Root.B");'))
+    case = next(item for item in core.steps[0].case_relations if item.case.target_state_path == 'Root.B')
+    guard = next(iter(case.guard_terms.values()))
+    report = explain_unsat(UnsatQuery('anchored_guard', (
+        UnsatConstraint('initial', (core.initial_formula,)),
+        UnsatConstraint('negated_guard', (z3.Not(guard),)),
+    )))
+    assert report.solver_status == 'unsat'
+    assert report.input_check == 'passed'
+    assert report.scope_check == 'passed'
+    assert report.reading_status == 'complete'
+    assert report.gaps == ()

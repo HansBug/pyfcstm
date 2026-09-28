@@ -86,7 +86,8 @@ solver API 接受任意应用提供的公式。本教程不运行 BMC，也不�
 脚本还提供 ``--case branches``、``--case sources``、
 ``--case square``（整数 ``x*x == 2``）和 ``--case product``
 （``x >= 2``、``y >= 3``、``x*y < 6``），以及 ``--case shared_square``
-（实数上的 ``x*x == 2``、``y*y == 3``、``x == y``）。它打印真实证明，不写文件。
+（实数上的 ``x*x == 2``、``y*y == 3``、``x == y``），以及
+``--case equal_squares``（``x == y``、``x**2 != y*y``）。它打印真实证明，不写文件。
 ``--minimize`` 请求条件组的包含极小核并重新生成证明；``--fold`` 演示经过边界检查、
 保留可展开证据的领域标题。这些是示例脚本的选项，不是新增的 ``pyfcstm bmc`` CLI 参数。
 

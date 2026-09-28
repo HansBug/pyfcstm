@@ -288,3 +288,34 @@ def test_offline_congruence_evidence_rejects_broken_dependencies(mutation):
         equality['bound_indices'] = [-1]
     with pytest.raises(ValueError):
         UnsatReport.from_canonical(data)
+
+
+
+@pytest.mark.parametrize('case,expected', [
+    ('algebraic', 'checked'), ('unequal_ratio', 'unsupported'),
+    ('nonzero_sum', 'unsupported'), ('nonzero_coefficient', 'unsupported'),
+])
+def test_congruence_cancellation_requires_exact_zero_coefficients(case, expected):
+    x, y, z = z3.Reals('x y z')
+    cases = {
+        'algebraic': (z > z3.simplify(z3.Sqrt(2)), x == y, x*x-y*y < 0),
+        'unequal_ratio': (x+y <= 2*x+3*y,),
+        'nonzero_sum': (x == y, x*x+y*y > 0),
+        'nonzero_coefficient': (x == y, x*x-2*y*y < 0),
+    }
+    graph = _certificate_graph(cases[case], ())
+    node = analyze_proof(graph).graph.node(graph.root_id)
+    assert node.local_check == expected
+
+
+def test_congruence_handles_deep_arithmetic_without_python_recursion():
+    x, y = z3.Reals('x y')
+    term = x
+    for _ in range(1100):
+        term = -term
+    report = explain_unsat(UnsatQuery('deep_arithmetic', (UnsatConstraint('conditions', (
+        x*x == 2, y*y == 3, x == y, term > 0,
+    )),)))
+    assert report.solver_status == 'unsat'
+    assert report.reading_status == 'complete'
+    assert report.gaps == ()

@@ -141,7 +141,7 @@ Evidence and reading data
    * - ``TermEquality``
      - ``left_id``, ``right_id`` and ``bound_indices``: one local equality or two opposing non-strict bounds establishing equal terms.
    * - ``IntervalStep``
-     - ``term_id``, exact rational ``lower`` / ``upper`` (``None`` denotes infinity), ``lower_open`` / ``upper_open``, deduction ``rule``, prior-step ``premises`` and optional ``bound_index`` for a linear deduction. ``substitutions`` retains local equalities for a congruence step; its one premise is the source range. Steps unrelated to the final result are removed.
+     - ``term_id``, exact rational ``lower`` / ``upper`` (``None`` denotes infinity), ``lower_open`` / ``upper_open``, deduction ``rule``, prior-step ``premises`` and optional ``bound_index`` for a linear deduction. ``substitutions`` retains local equalities. A ``congruence`` step transfers its one source range; ``congruence_sum`` checks exact cancellation of equal terms and records the resulting constant singleton. Steps unrelated to the final result are removed.
    * - ``ReadingBlock``
      - ``block_id``, ``kind``, conclusion ``claims``, ``premise_block_ids``, ``active_hypotheses``, ``evidence_node_ids``, ``source_links``, folded ``detail_block_ids``, optional ``title_en`` and ``title_zh``.
    * - ``ProofReading``

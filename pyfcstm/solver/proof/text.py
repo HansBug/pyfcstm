@@ -213,6 +213,8 @@ def _render(reading, language):
         'opaque': choose('Unsupported inference', '尚未解释的推导'),
     }
     interval_rules = {
+        'congruence_sum': choose('substitute equal terms and cancel opposite coefficients',
+                                 '替换相等项并消去相反系数'),
         'congruence': choose('substitute equal terms in the source expression', '在原表达式中替换相等项'),
         'literal': choose('exact constant', '精确常量'),
         'linear': choose('isolate the term', '移项求界'),

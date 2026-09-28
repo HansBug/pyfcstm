@@ -158,6 +158,8 @@ class _Propagation:
 
     def congruence(self):
         """Transfer ranges only between expressions equal under local facts."""
+        from .rules import _affine, _square_base
+
         if not self.equalities:
             return
         groups = {}
@@ -185,8 +187,10 @@ class _Propagation:
                         pending.append((current, True))
                         pending.extend((child, False) for child in reversed(term.arguments))
                         continue
-                    key = (term.kind, term.sort, term.operator, term.parameters,
-                           tuple(signatures[child] for child in term.arguments))
+                    base = _square_base(term, self.graph)
+                    key = (('square', term.sort, signatures[base]) if base is not None else
+                           (term.kind, term.sort, term.operator, term.parameters,
+                            tuple(signatures[child] for child in term.arguments)))
                     dependencies[current] = set().union(*(dependencies[child] for child in term.arguments))
                 else:
                     key, dependencies[current] = ('term', current), set()
@@ -198,6 +202,23 @@ class _Propagation:
             self.budget.checkpoint('proof analysis')
             if term.sort in ('Int', 'Real'):
                 equivalent.setdefault(signature(term.term_id), []).append(term.term_id)
+        for term in self.graph.terms:
+            self.budget.checkpoint('proof analysis')
+            if term.sort not in ('Int', 'Real'):
+                continue
+            vector = _affine(term.term_id, self.graph, True)
+            if vector is None:
+                continue
+            constant, coefficients, used = vector.pop(None, Fraction(0)), {}, set()
+            for atom, weight in vector.items():
+                key = signature(atom)
+                coefficients[key] = coefficients.get(key, Fraction(0)) + weight
+                used.update(dependencies[atom])
+            if used and not any(coefficients.values()):
+                self.record(term.term_id, _Range(constant, constant, False, False), 'congruence_sum',
+                            substitutions=tuple(self.equalities[index] for index in sorted(used)))
+                if self.conflict is not None:
+                    return
         for members in equivalent.values():
             for source in members:
                 if source not in self.indices:
@@ -222,6 +243,26 @@ class _Propagation:
         return value, tuple(premises)
 
     def constrain(self, bound, bound_index):
+        from .rules import _affine
+
+        relation = self.graph.term(bound.term_id)
+        while relation.operator == 'not':
+            relation = self.graph.term(relation.arguments[0])
+        coefficients = {term: Fraction(value) for term, value in bound.coefficients}
+        for side in relation.arguments:
+            vector = _affine(side, self.graph, True)
+            constant = vector.pop(None, Fraction(0))
+            if len(vector) <= 1 or set(vector) != set(coefficients):
+                continue
+            first = next(iter(vector))
+            factor = coefficients[first] / vector[first]
+            if any(coefficients[key] != factor * value for key, value in vector.items()):
+                continue
+            endpoint = constant - Fraction(bound.constant) / factor
+            value = (_Range(endpoint, endpoint, False, False) if bound.relation == 'eq' else
+                     _Range(-inf, endpoint, True, bound.relation == 'lt') if factor > 0 else
+                     _Range(endpoint, inf, bound.relation == 'lt', True))
+            self.record(side, value, 'linear', bound_index=bound_index)
         for orientation in ((1, -1) if bound.relation == 'eq' else (1,)):
             coefficients = [(term, Fraction(value) * orientation) for term, value in bound.coefficients]
             for term, coefficient in coefficients:

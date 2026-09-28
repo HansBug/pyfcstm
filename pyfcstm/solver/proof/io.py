@@ -220,8 +220,8 @@ def _validate(value):
         if len(value.bound_indices) not in (1, 2):
             raise ValueError('term equality needs one or two bounds')
     elif isinstance(value, proof.IntervalStep):
-        _choice(value.rule, ('literal', 'linear', 'intersection', 'square', 'product', 'sum', 'cast', 'conditional', 'power', 'congruence'))
-        if value.substitutions and value.rule != 'congruence':
+        _choice(value.rule, ('literal', 'linear', 'intersection', 'square', 'product', 'sum', 'cast', 'conditional', 'power', 'congruence', 'congruence_sum'))
+        if value.substitutions and value.rule not in ('congruence', 'congruence_sum'):
             raise ValueError('only congruence steps carry substitutions')
         if value.rule == 'congruence' and len(value.premises) != 1:
             raise ValueError('congruence needs one source range')

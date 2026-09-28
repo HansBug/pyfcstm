@@ -121,7 +121,25 @@ def _nonlinear_atom(term, graph):
 
 
 def _affine(term_id, graph, nonlinear_atoms=False):
-    term = graph.term(term_id)
+    """Normalize an arithmetic DAG without Python recursion."""
+    values, pending = {}, [(term_id, False)]
+    while pending:
+        current, ready = pending.pop()
+        if current in values:
+            continue
+        term = graph.term(current)
+        children = (term.arguments if term.operator_kind == 'builtin' and
+                    term.operator in ('to_real', '+', '-', 'uminus', '*') else ())
+        if children and not ready:
+            pending.append((current, True))
+            pending.extend((child, False) for child in reversed(children))
+            continue
+        values[current] = _affine_term(term, graph, values, nonlinear_atoms)
+    return values[term_id]
+
+
+def _affine_term(term, graph, values, nonlinear_atoms):
+    term_id = term.term_id
     if term.kind == 'algebraic':
         return None
     if term.operator_kind == 'uninterpreted':
@@ -129,9 +147,9 @@ def _affine(term_id, graph, nonlinear_atoms=False):
     if term.kind == 'literal' and term.sort in ('Int', 'Real'):
         return {None: Fraction(term.value)}
     if term.operator == 'to_real':
-        return _affine(term.arguments[0], graph, nonlinear_atoms)
+        return values[term.arguments[0]]
     if term.operator in ('+', '-', 'uminus'):
-        values = [_affine(child, graph, nonlinear_atoms) for child in term.arguments]
+        values = [values[child] for child in term.arguments]
         if any(value is None for value in values):
             return None
         if term.operator == 'uminus' or (term.operator == '-' and len(values) == 1):
@@ -144,7 +162,7 @@ def _affine(term_id, graph, nonlinear_atoms=False):
         coefficient = Fraction(1)
         variable = None
         for child in term.arguments:
-            value = _affine(child, graph, nonlinear_atoms)
+            value = values[child]
             if value is None:
                 return None
             if set(value) <= {None}:

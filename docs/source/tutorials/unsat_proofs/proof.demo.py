@@ -47,6 +47,11 @@ def build(case):
             UnsatConstraint('goal', (after < 0,)),
         ))
         return query, names, None
+    if case == 'equal_squares':
+        x, y = z3.Reals('x y')
+        return UnsatQuery(case, (UnsatConstraint('conditions', (
+            x == y, x ** 2 != y * y,
+        )),)), None, None
     if case == 'shared_square':
         x, y = z3.Reals('x y')
         return UnsatQuery(case, (UnsatConstraint('conditions', (
@@ -85,12 +90,12 @@ def summarize(reading):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--case', choices=('all', 'linear', 'branches', 'sources', 'square', 'product', 'shared_square'), default='all')
+    parser.add_argument('--case', choices=('all', 'linear', 'branches', 'sources', 'square', 'product', 'shared_square', 'equal_squares'), default='all')
     parser.add_argument('--language', choices=('all', 'en', 'zh'), default='all')
     parser.add_argument('--minimize', action='store_true')
     parser.add_argument('--fold', action='store_true')
     options = parser.parse_args()
-    cases = ('linear', 'branches', 'sources', 'square', 'product', 'shared_square') if options.case == 'all' else (options.case,)
+    cases = ('linear', 'branches', 'sources', 'square', 'product', 'shared_square', 'equal_squares') if options.case == 'all' else (options.case,)
     languages = ('en', 'zh') if options.language == 'all' else (options.language,)
     for case in cases:
         query, names, adapter = build(case)

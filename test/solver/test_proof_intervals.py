@@ -111,7 +111,7 @@ def _interval_implication_reading():
 def test_interval_implication_text_displays_and_discharges_temporary_assumptions(language, text_aligner):
     from pathlib import Path
 
-    expected = (Path(__file__).parent / 'proof_readings' / ('interval_implication.' + language + '.txt')).read_text()
+    expected = (Path(__file__).parent / 'proof_readings' / ('interval_implication.' + language + '.txt')).read_text(encoding='utf-8')
     text_aligner.assert_equal(expected, _interval_implication_reading().to_text(language))
 
 
@@ -126,7 +126,7 @@ def test_explicit_extension_gap_remains_visible_in_full_text(language, text_alig
     )), extensions=ProofExtensions(rule_handlers=(
         ProofRuleHandler('th-lemma', lambda node, graph: RuleAnalysis('opaque', 'unsupported')),)))
     assert report.reading_status == 'partial'
-    expected = (Path(__file__).parent / 'proof_readings' / ('unknown_rule.' + language + '.txt')).read_text()
+    expected = (Path(__file__).parent / 'proof_readings' / ('unknown_rule.' + language + '.txt')).read_text(encoding='utf-8')
     text_aligner.assert_equal(expected, report.reading.to_text(language))
 
 
@@ -160,7 +160,7 @@ def test_singleton_equality_full_text_and_offline_roundtrip(language, text_align
     from pathlib import Path
 
     report = _singleton_equality_report()
-    expected = (Path(__file__).parent / 'proof_readings' / ('singleton.' + language + '.txt')).read_text()
+    expected = (Path(__file__).parent / 'proof_readings' / ('singleton.' + language + '.txt')).read_text(encoding='utf-8')
     text_aligner.assert_equal(expected, report.reading.to_text(language))
     text_aligner.assert_equal(expected, UnsatReport.from_canonical(report.to_canonical()).reading.to_text(language))
 

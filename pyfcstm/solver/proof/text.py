@@ -5,7 +5,7 @@ from fractions import Fraction
 from types import MappingProxyType
 from typing import Callable, Optional, Tuple
 
-from .proof import ProofGap, ProofGraph, SourceAdapter, SourceDescription, SourceLink
+from .core import ProofGap, ProofGraph, SourceAdapter, SourceDescription, SourceLink
 
 
 @dataclass(frozen=True)
@@ -192,12 +192,36 @@ def _render(reading, language):
         'input': choose('Input', '输入条件'), 'assumption': choose('Assume', '局部假设'),
         'discharge': choose('Discharge local assumptions', '关闭局部假设'),
         'arithmetic': choose('Exact linear combination', '精确线性组合'),
+        'division_identity': choose('Euclidean division identity', '欧几里得整除恒等式'),
+        'remainder_lower': choose('Nonnegative remainder', '余数非负'),
+        'remainder_upper': choose('Remainder below divisor magnitude', '余数小于除数绝对值'),
+        'arithmetic_identity': choose('Arithmetic identity', '算术恒等式'),
+        'floor_lower': choose('Floor does not exceed its argument', '向下取整不超过原值'),
+        'floor_upper': choose('Floor differs by less than one', '向下取整与原值相差小于一'),
+        'real_division': choose('Real division identity', '实数除法恒等式'),
+        'interval': choose('Exact interval deduction', '精确区间推导'),
+        'even_power': choose('Even power is nonnegative', '正偶数次幂非负'),
+        'root_nonnegative': choose('Principal square root is nonnegative', '主平方根非负'),
+        'root_identity': choose('Squaring the principal square root', '主平方根的平方'),
+        'order': choose('Equality and order', '等式与大小关系'),
+        'cardinality': choose('Boolean counting contradiction', '布尔计数矛盾'),
         'resolution': choose('Resolve the clauses', '消解子句'),
         'definition': choose('Internal definition / defining clause', '内部定义／定义子句'),
         'logical': choose('Logical consequence', '逻辑推导'),
         'equality': choose('Equality substitution', '等式替换'),
         'rewrite': choose('Equivalent rewriting', '等价改写'),
         'opaque': choose('Unsupported inference', '尚未解释的推导'),
+    }
+    interval_rules = {
+        'literal': choose('exact constant', '精确常量'),
+        'linear': choose('isolate the term', '移项求界'),
+        'intersection': choose('intersect ranges', '区间求交'),
+        'square': choose('square the same value', '同一数值的平方'),
+        'product': choose('multiply operand ranges', '操作数区间相乘'),
+        'power': choose('apply the known positive integer exponent', '使用已确定的正整数指数'),
+        'sum': choose('add/subtract operand ranges', '操作数区间加减'),
+        'cast': choose('preserve the integer value as a real', '整数转实数，数值不变'),
+        'conditional': choose('select the branch using its condition', '按条件选取分支'),
     }
     for block in reading.blocks:
         node = graph.node(block.evidence_node_ids[0])
@@ -217,6 +241,39 @@ def _render(reading, language):
         if node.discharged_hypotheses and block.kind != 'domain':
             lines.append('  ' + choose('Closed: ', '已关闭：') + ', '.join(
                 node_labels[key] for key in node.discharged_hypotheses))
+        if block.kind in ('division_identity', 'remainder_lower', 'remainder_upper'):
+            lines.append('  ' + choose(
+                'For a nonzero integer divisor, dividend = divisor * quotient + remainder, with 0 <= remainder < abs(divisor).',
+                '整数除数非零时，被除数 = 除数 * 商 + 余数，且 0 <= 余数 < abs(除数)。'))
+            lines.append('  ' + choose(
+                'The zero-divisor alternative is retained or ruled out by a nonzero literal divisor.',
+                '除数为零的分支已保留，或由非零常量除数排除。'))
+        if block.kind == 'arithmetic_identity':
+            lines.append('  ' + choose('Exact arithmetic normalization makes this alternative true.',
+                                      '精确算术归一化后，此分支恒成立。'))
+        if block.kind in ('floor_lower', 'floor_upper'):
+            lines.append('  ' + choose('For every real x, to_int(x) <= x < to_int(x) + 1.',
+                                      '对任意实数 x，to_int(x) <= x < to_int(x) + 1。'))
+        if block.kind == 'real_division':
+            lines.append('  ' + choose('For a nonzero real divisor, dividend = divisor * quotient.',
+                                      '实数除数非零时，被除数 = 除数 * 商。'))
+            lines.append('  ' + choose('The zero-divisor alternative is retained or ruled out by a nonzero literal divisor.',
+                                      '除数为零的分支已保留，或由非零常量除数排除。'))
+        if block.kind == 'even_power':
+            lines.append('  ' + choose(
+                'A positive even integer power of a real value is nonnegative.',
+                '实数的正偶数次整数幂非负。'))
+        if block.kind in ('root_nonnegative', 'root_identity'):
+            lines.append('  ' + choose(
+                'For a nonnegative radicand, the principal square root is nonnegative and its square equals the radicand.',
+                '被开方数非负时，主平方根非负，且它的平方等于被开方数。'))
+            lines.append('  ' + choose(
+                'This deduction uses the nonnegative-radicand condition.',
+                '此推导使用了被开方数非负的条件。'))
+        if block.kind == 'order':
+            lines.append('  ' + choose(
+                'The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.',
+                '这些分支覆盖了全部三种情况：同一个算术差值小于零、等于零或大于零。'))
         if node.certificate is not None and block.kind != 'domain':
             certificate = node.certificate
             temporary = tuple(bound for bound in certificate.bounds if bound.negated)
@@ -234,6 +291,63 @@ def _render(reading, language):
             lines.append('  ' + choose('Sum: ', '相加得到：') + '%s %s 0; ' % (certificate.constant, relation) +
                          choose('contradiction.', '矛盾。'))
             if temporary:
+                lines.append('  ' + choose('Discharge these temporary assumptions.', '关闭上述临时假设。'))
+        if node.interval is not None and block.kind != 'domain':
+            certificate = node.interval
+            for index, bound in enumerate(certificate.bounds):
+                lines.append('  B%d: %s' % (index + 1, _linear_text(bound, terms)))
+                if bound.negated:
+                    lines.append('    ' + choose('Temporary negation of a conclusion alternative.',
+                                                '临时否定结论中的一个分支。'))
+            for index, step in enumerate(certificate.steps):
+                interval = ('(' if step.lower_open else '[') + (step.lower or '-inf') + ', ' + (
+                    step.upper or '+inf') + (')' if step.upper_open else ']')
+                dependencies = ['I%d' % (parent + 1) for parent in step.premises]
+                if step.bound_index is not None:
+                    dependencies.append('B%d' % (step.bound_index + 1))
+                description = interval_rules[step.rule]
+                if step.rule == 'linear' and graph.term(step.term_id).sort == 'Int':
+                    description += choose('; round integer bounds inward', '；整数边界向内取整')
+                lines.append('  I%d: %s %s %s; %s%s' % (
+                    index + 1, terms[step.term_id], choose('in', '范围为'), interval, description,
+                    ('; ' + ', '.join(dependencies)) if dependencies else ''))
+            if certificate.conflict is not None:
+                lines.append('  ' + choose('Incompatible ranges: ', '不相容的范围：') + ', '.join(
+                    'I%d' % (index + 1) for index in certificate.conflict) +
+                             choose('; contradiction.', '；矛盾。'))
+            else:
+                lines.append('  ' + choose('Equal singleton ranges: ', '相等的单点范围：') + ', '.join(
+                    'I%d' % (index + 1) for index in certificate.equality) +
+                             choose('; the equality follows.', '；等式成立。'))
+            if any(bound.negated for bound in certificate.bounds):
+                lines.append('  ' + choose('Discharge these temporary assumptions.', '关闭上述临时假设。'))
+        if node.cardinality is not None and block.kind != 'domain':
+            certificate = node.cardinality
+            if certificate.assumptions:
+                lines.append('  ' + choose('To refute the negated conclusion, temporarily assume:',
+                                          '为反驳结论的否定，暂时假设：'))
+                for term_id in certificate.assumptions:
+                    term = graph.term(term_id)
+                    text = (terms[term.arguments[0]] if term.operator_kind == 'builtin' and
+                            term.operator == 'not' else 'not (%s)' % terms[term_id])
+                    lines.append('    ' + text)
+            for term_id, value in certificate.assignments:
+                if term_id != certificate.constraint_id:
+                    lines.append('  ' + choose('Known: ', '已知：') + '%s = %s' %
+                                 (terms[term_id], str(value).lower()))
+            for item in certificate.contributions:
+                lines.append('  ' + choose('Contribution: ', '计数贡献：') +
+                             '%s; %s = %d; [%d, %d]' %
+                             (terms[item.term_id], choose('weight', '权重'), item.weight,
+                              item.minimum, item.maximum))
+            lines.append('  ' + choose('Weighted sum range: ', '加权总和范围：') +
+                         '[%d, %d]' % (certificate.minimum, certificate.maximum))
+            lines.append('  ' + choose('Required: ', '要求：') + '%s = %s' %
+                         (terms[certificate.constraint_id], str(certificate.constraint_value).lower()))
+            lines.append('  ' + choose('These bounds force the constraint to be ', '上述范围使约束为 ') +
+                         str(not certificate.constraint_value).lower() +
+                         choose('; contradiction.', '；矛盾。'))
+            if certificate.assumptions:
                 lines.append('  ' + choose('Discharge these temporary assumptions.', '关闭上述临时假设。'))
         for claim in block.claims:
             lines.append('  ' + choose('Therefore: ', '得到：') + terms[claim])
@@ -354,7 +468,10 @@ def build_reading(report, query, extensions, budget):
     hidden = {node.node_id for node in graph.nodes if node.rule in hidden_rules and node.node_id != graph.root_id}
     # Retain the formulas at arithmetic boundaries. Otherwise a linear sum can
     # use a rewritten inequality that none of its displayed premises states.
-    boundaries = {parent for node in graph.nodes if node.certificate is not None for parent in node.parents}
+    boundaries = {parent for node in graph.nodes if node.certificate is not None or node.cardinality is not None or node.interval is not None
+                  for parent in node.parents}
+    count_terms = {node.cardinality.constraint_id for node in graph.nodes if node.cardinality is not None}
+    boundaries.update(node.node_id for node in graph.nodes if node.conclusion in count_terms)
     hidden -= {key for key in boundaries if not any(
         graph.node(parent).conclusion == graph.node(key).conclusion for parent in graph.node(key).parents)}
     frontiers, slices, blocks = {}, {}, []

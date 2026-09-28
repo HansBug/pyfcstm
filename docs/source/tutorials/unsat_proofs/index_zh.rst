@@ -83,7 +83,9 @@ solver API 接受任意应用提供的公式。本教程不运行 BMC，也不�
 
     PYTHONPATH=. python docs/source/tutorials/unsat_proofs/proof.demo.py --case linear --language zh
 
-脚本还提供 ``--case branches`` 和 ``--case sources``。它打印真实证明，不写文件。
+脚本还提供 ``--case branches``、``--case sources``、
+``--case square``（整数 ``x*x == 2``）和 ``--case product``
+（``x >= 2``、``y >= 3``、``x*y < 6``）。它打印真实证明，不写文件。
 ``--minimize`` 请求条件组的包含极小核并重新生成证明；``--fold`` 演示经过边界检查、
 保留可展开证据的领域标题。这些是示例脚本的选项，不是新增的 ``pyfcstm bmc`` CLI 参数。
 

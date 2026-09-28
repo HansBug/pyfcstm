@@ -1,9 +1,9 @@
-pyfcstm.solver.proof\_rules
+pyfcstm.solver.proof.rules
 ========================================================
 
-.. currentmodule:: pyfcstm.solver.proof_rules
+.. currentmodule:: pyfcstm.solver.proof.rules
 
-.. automodule:: pyfcstm.solver.proof_rules
+.. automodule:: pyfcstm.solver.proof.rules
 
 
 RuleAnalysis

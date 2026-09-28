@@ -2,7 +2,6 @@ UNSAT proof API reference
 =========================
 
 This reference covers the standalone APIs in :mod:`pyfcstm.solver.proof`,
-:mod:`pyfcstm.solver.proof_rules`, :mod:`pyfcstm.solver.proof_text`,
 :mod:`pyfcstm.solver.unsat` and :mod:`pyfcstm.solver.symbols`.
 Examples are in :doc:`/tutorials/unsat_proofs/index` and
 :doc:`/how_to/unsat_proofs/index`. Existing BMC commands are unchanged.
@@ -128,22 +127,64 @@ Evidence and reading data
    * - ``ProofInput``
      - ``occurrence_id``, ``constraint_id``, zero-based ``expression_index``, ``term_id`` and Boolean ``background``. Unused submitted expressions remain recorded.
    * - ``ProofNode``
-     - ``node_id``, native ``rule``, ordered proof ``parents``, optional ``conclusion``, other term ``operands``, ``parameters``, alternative ``input_occurrences``, ``open_hypotheses``, ``discharged_hypotheses``, ``local_check``, binder ``bindings``, ``inference_kind`` and optional ``certificate``.
+     - ``node_id``, native ``rule``, ordered proof ``parents``, optional ``conclusion``, other term ``operands``, ``parameters``, alternative ``input_occurrences``, ``open_hypotheses``, ``discharged_hypotheses``, ``local_check``, binder ``bindings``, ``inference_kind`` and optional ``certificate``, ``cardinality`` and ``interval`` evidence.
    * - ``ProofParameter``
      - ``kind`` and textual ``value``. Kinds: integer, double, rational, symbol, sort, expression or declaration.
    * - ``ArithmeticCertificate``
      - ``bounds``, normalized exact ``weights``, resulting ``constant`` and Boolean ``strict``. Each ``LinearBound`` retains ``term_id``, ``negated``, term/coefficient pairs, ``constant`` and relation ``le|lt|eq`` against zero.
+   * - ``CardinalityCertificate``
+     - Temporary ``assumptions``, ``constraint_id``, required ``constraint_value``, known Boolean ``assignments`` and weighted ``contributions``. ``minimum`` and ``maximum`` are exact integer totals.
+   * - ``CountContribution``
+     - Boolean ``term_id``, signed integer ``weight`` and its exact ``minimum`` / ``maximum`` contribution.
+   * - ``IntervalCertificate``
+     - Local normalized ``bounds``, ordered ``steps``, and exactly one of ``conflict`` or ``equality``. Result pairs are zero-based step indices. Contradictions use disjoint ranges of one term; equality uses equal closed singleton ranges of an equality alternative in the conclusion.
+   * - ``IntervalStep``
+     - ``term_id``, exact rational ``lower`` / ``upper`` (``None`` denotes infinity), ``lower_open`` / ``upper_open``, deduction ``rule``, prior-step ``premises`` and optional ``bound_index`` for a linear deduction. Steps unrelated to the final result are removed.
    * - ``ReadingBlock``
      - ``block_id``, ``kind``, conclusion ``claims``, ``premise_block_ids``, ``active_hypotheses``, ``evidence_node_ids``, ``source_links``, folded ``detail_block_ids``, optional ``title_en`` and ``title_zh``.
    * - ``ProofReading``
      - ``query_id``, ``solver_status``, optional ``root_id``, ``status``, visible ``blocks``, ``sources``, ``gaps`` and hidden ``detail_blocks``. The bound graph is shared with the report, not serialized twice within the reading.
 
 ``local_check`` is ``not_run|checked|trusted|unsupported|invalid``. Reading kinds
-are ``input``, ``assumption``, ``discharge``, ``arithmetic``, ``logical``,
+are ``input``, ``assumption``, ``discharge``, ``arithmetic``, ``cardinality``, ``order``, ``logical``,
+``division_identity``, ``remainder_lower``, ``remainder_upper``,
+``floor_lower``, ``floor_upper``, ``real_division``, ``arithmetic_identity``,
+``even_power``, ``root_nonnegative``, ``root_identity``, ``interval``,
 ``equality``, ``rewrite``, ``definition``, ``resolution``, ``opaque`` and
 ``domain``. Native bound variables are rendered as de Bruijn indices: ``#0``
 is the innermost variable, with names/sorts retained in ``bindings``.
 Solver-introduced symbols are not decoded into fabricated source variables.
+The ``order`` category checks that equality/order alternatives cover all signs
+of one normalized arithmetic difference. Shared nonlinear terms can be treated
+as atoms for this check; it does not certify their multiplication properties.
+Division categories match the guarded Euclidean identity and remainder bounds
+from `SMT-LIB Ints <https://smt-lib.org/theories-Ints.shtml>`_. The zero-divisor
+alternative remains in the proof; no division property is inferred at zero.
+Power categories check positive even integer exponents and principal square
+root sign/identity deductions. Square root deductions require a nonnegative
+radicand, established by the local premises, clause alternatives or a numeric
+literal. These checks also recognize direct contradictions from local premises;
+they do not use unrelated query assertions to justify an intermediate step.
+Interval deductions use exact rational bounds, open endpoints, integer rounding,
+products, repeated-factor squares and conditionally selected arithmetic branches.
+Only local premises and temporary negations of conclusion alternatives establish
+bounds. The text exposes those assumptions, every retained range deduction and
+the final contradiction or singleton equality. Bounded propagation can leave a
+lemma unsupported when no certificate is found; it never upgrades that result
+to a checked inference merely because the overall query is UNSAT.
+
+Floor checks establish ``to_int(x) <= x < to_int(x) + 1``. Real division
+checks preserve the nonzero-divisor condition. Equivalent ``x*x`` and ``x^2``
+terms share an arithmetic atom; cancellation still requires exact coefficients.
+When native weights are unavailable, reconstruction may combine two local
+bounds with exact cancelling weights. Positive integral powers can propagate
+ranges when the exponent has a checked singleton value. All finite endpoints
+remain exact rationals, including extremely small or large values.
+
+When the initial arithmetic configuration returns a known arithmetic or proof
+production limitation, capture retries with Z3 arithmetic solver 6, the exact
+original assertions and the same total deadline. Only the resulting execution
+is exported. Timeout and unresolved UNKNOWN outcomes remain explicit.
 
 ``reading.to_text(language="en")`` accepts ``en`` or ``zh`` and returns complete
 plain text with a final newline. ``get_block(id)`` and ``get_source(id)`` look

@@ -229,7 +229,7 @@ def test_unknown_during_optional_minimization_preserves_the_full_proof(monkeypat
 def test_slow_rule_extension_exhausts_shared_deadline_without_losing_native_evidence(monkeypatch):
     import time
     from pyfcstm.solver.proof import ProofExtensions
-    from pyfcstm.solver.proof_rules import ProofRuleHandler, RuleAnalysis
+    from pyfcstm.solver.proof import ProofRuleHandler, RuleAnalysis
 
     now = [0.0]
     monkeypatch.setattr(time, 'monotonic', lambda: now[0])

@@ -92,7 +92,9 @@ checkout on ``PYTHONPATH``:
 
     PYTHONPATH=. python docs/source/tutorials/unsat_proofs/proof.demo.py --case linear --language en
 
-The script also offers ``--case branches`` and ``--case sources``. It prints
+The script also offers ``--case branches``, ``--case sources``,
+``--case square`` (integer ``x*x == 2``) and ``--case product``
+(``x >= 2``, ``y >= 3``, ``x*y < 6``). It prints
 actual proofs and writes no files. ``--minimize`` requests a subset-minimal
 condition core and a new proof; ``--fold`` demonstrates a checked domain title
 with expandable evidence. These are example-script options, not additions to

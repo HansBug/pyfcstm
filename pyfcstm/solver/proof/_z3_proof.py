@@ -4,10 +4,10 @@ from uuid import uuid4
 
 import z3
 
-from .proof import (ProofGraph, ProofInput, ProofNode, ProofParameter, ProofSource,
+from .core import (ProofGraph, ProofInput, ProofNode, ProofParameter, ProofSource,
                     ProofTerm, SourceBinding, SourceDescription, UnsatReport)
-from .unsat import _run_probe
-from .budget import BudgetExpired
+from ..unsat import _run_probe
+from ..budget import BudgetExpired
 
 
 class _Terms:
@@ -116,7 +116,7 @@ def capture_proof(query, budget, names, source_adapter):
         # Keep handles alive: Z3 can reuse an AST id after its last reference dies.
         displays = {symbol.get_id(): display for symbol, display in translated_names}
         terms = _Terms(displays, budget)
-        inputs = []
+        inputs, assertions = [], []
         origins = {}
         for background, groups in ((True, query.background), (False, query.constraints)):
             for group in groups:
@@ -129,8 +129,19 @@ def capture_proof(query, budget, names, source_adapter):
                     inputs.append(ProofInput(occurrence, group.stable_id, index,
                                              term_id, background))
                     origins.setdefault(translated.get_id(), []).append(occurrence)
+                    assertions.append(translated)
                     native.add(translated)
         status, check = _run_probe(native, budget, 'proof', ())
+        if status == 'unknown' and any(reason in (check.reason or '') for reason in (
+                'incomplete (theory arithmetic)', 'tseitin-cnf does not support proof production')):
+            # Retry only known arithmetic/proof limitations, with the same
+            # assertions and total deadline. Export one execution's proof.
+            budget.checkpoint('proof capture')
+            retry = z3.Solver(ctx=context)
+            retry.set('arith.solver', 6)
+            retry.add(*assertions)
+            native = retry
+            status, check = _run_probe(native, budget, 'proof', ())
         if status != 'unsat':
             return UnsatReport(query.query_id, status, 'unavailable', None,
                                stop_reason=check.reason)

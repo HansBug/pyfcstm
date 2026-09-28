@@ -2,9 +2,10 @@
 
 from dataclasses import fields, is_dataclass
 from fractions import Fraction
+from math import inf
 from typing import Union, get_type_hints
 
-from . import proof, proof_text
+from . import core as proof, text as proof_text
 
 
 def _decode(value, annotation, graph=None):
@@ -114,6 +115,31 @@ def _validate_graph(graph):
         if node.certificate is not None:
             for bound in node.certificate.bounds:
                 _references((bound.term_id,) + tuple(term for term, _ in bound.coefficients), terms)
+        if node.interval is not None:
+            for bound in node.interval.bounds:
+                _references((bound.term_id,) + tuple(term for term, _ in bound.coefficients), terms)
+            for step in node.interval.steps:
+                _references((step.term_id,), terms)
+                if graph.term(step.term_id).sort not in ('Int', 'Real'):
+                    raise ValueError('interval evidence requires arithmetic terms')
+            if node.interval.equality is not None:
+                conclusion = None if node.conclusion is None else graph.term(node.conclusion)
+                result_terms = tuple(node.interval.steps[index].term_id for index in node.interval.equality)
+                candidates = (() if conclusion is None else conclusion.arguments if
+                              conclusion.operator_kind == 'builtin' and conclusion.operator == 'or' else
+                              (node.conclusion,))
+                matches = [graph.term(candidate) for candidate in candidates]
+                if not any(term.operator_kind == 'builtin' and term.operator == '=' and
+                           term.arguments == result_terms for term in matches):
+                    raise ValueError('interval equality must match a conclusion alternative')
+        if node.cardinality is not None:
+            certificate = node.cardinality
+            references = ((certificate.constraint_id,) + certificate.assumptions +
+                          tuple(term for term, _ in certificate.assignments) +
+                          tuple(item.term_id for item in certificate.contributions))
+            _references(references, terms)
+            if any(graph.term(term).sort != 'Bool' for term in references):
+                raise ValueError('cardinality evidence requires Boolean terms')
         known.add(node.node_id)
     _references((graph.root_id,), nodes)
     for binding in graph.source_bindings:
@@ -184,11 +210,51 @@ def _validate(value):
         if value.kind == 'algebraic':
             _choice(value.sort, ('Real',))
             _nonempty(value.value)
+    elif isinstance(value, proof.IntervalStep):
+        _choice(value.rule, ('literal', 'linear', 'intersection', 'square', 'product', 'sum', 'cast', 'conditional', 'power'))
+        for endpoint in (value.lower, value.upper):
+            if endpoint is not None:
+                _rational(endpoint)
+        if (value.lower is None and not value.lower_open or
+                value.upper is None and not value.upper_open):
+            raise ValueError('infinite interval endpoints must be open')
+        if (value.rule == 'linear') != (value.bound_index is not None):
+            raise ValueError('only linear interval steps reference a premise bound')
+    elif isinstance(value, proof.IntervalCertificate):
+        for index, step in enumerate(value.steps):
+            if any(parent < 0 or parent >= index for parent in step.premises):
+                raise ValueError('interval steps must reference earlier steps')
+            if step.bound_index is not None and not 0 <= step.bound_index < len(value.bounds):
+                raise ValueError('unknown interval premise bound')
+        if (value.conflict is None) == (value.equality is None):
+            raise ValueError('interval evidence needs exactly one result')
+        result = value.conflict if value.conflict is not None else value.equality
+        if any(index < 0 or index >= len(value.steps) for index in result):
+            raise ValueError('unknown interval result step')
+        left, right = (value.steps[index] for index in result)
+        if value.equality is not None:
+            endpoints = (left.lower, left.upper, right.lower, right.upper)
+            if (any(endpoint is None for endpoint in endpoints) or
+                    len({Fraction(endpoint) for endpoint in endpoints}) != 1 or
+                    any((left.lower_open, left.upper_open, right.lower_open, right.upper_open))):
+                raise ValueError('equality needs equal closed singleton ranges')
+        else:
+            if left.term_id != right.term_id:
+                raise ValueError('interval conflict must bound the same term')
+            lower = max(((Fraction(step.lower), step.lower_open) for step in (left, right) if step.lower is not None),
+                        default=(-inf, True))
+            upper = min(((Fraction(step.upper), not step.upper_open) for step in (left, right) if step.upper is not None),
+                        default=(inf, False))
+            if lower[0] < upper[0] or lower[0] == upper[0] and not lower[1] and upper[1]:
+                raise ValueError('interval conflict ranges overlap')
     elif isinstance(value, proof.ProofNode):
         _nonempty(value.node_id)
         _nonempty(value.rule)
         _choice(value.local_check, ('not_run', 'checked', 'trusted', 'unsupported', 'invalid'))
-        _choice(value.inference_kind, ('opaque', 'input', 'assumption', 'discharge', 'arithmetic',
+        _choice(value.inference_kind, ('opaque', 'input', 'assumption', 'discharge', 'arithmetic', 'cardinality', 'order',
+                                      'division_identity', 'remainder_lower', 'remainder_upper',
+                                      'even_power', 'root_nonnegative', 'root_identity', 'interval',
+                                      'floor_lower', 'floor_upper', 'real_division', 'arithmetic_identity',
                                       'logical', 'equality', 'rewrite', 'definition', 'resolution'))
     elif isinstance(value, proof.ProofParameter):
         _choice(value.kind, ('integer', 'double', 'rational', 'symbol', 'sort', 'expression', 'declaration'))
@@ -214,12 +280,20 @@ def _validate(value):
             raise ValueError('certificate bounds and weights must align')
         for weight in value.weights:
             _rational(weight)
+    elif isinstance(value, proof.CountContribution):
+        if not min(0, value.weight) <= value.minimum <= value.maximum <= max(0, value.weight):
+            raise ValueError('invalid weighted Boolean contribution')
+    elif isinstance(value, proof.CardinalityCertificate):
+        _distinct(tuple(term for term, _ in value.assignments))
     elif isinstance(value, proof.ProofGraph):
         _nonempty(value.execution_id)
         _validate_graph(value)
     elif isinstance(value, proof_text.ReadingBlock):
         _nonempty(value.block_id)
-        _choice(value.kind, ('opaque', 'input', 'assumption', 'discharge', 'arithmetic',
+        _choice(value.kind, ('opaque', 'input', 'assumption', 'discharge', 'arithmetic', 'cardinality', 'order',
+                                      'division_identity', 'remainder_lower', 'remainder_upper',
+                                      'even_power', 'root_nonnegative', 'root_identity', 'interval',
+                                      'floor_lower', 'floor_upper', 'real_division', 'arithmetic_identity',
                              'logical', 'equality', 'rewrite', 'definition', 'resolution', 'domain'))
         if value.kind == 'domain':
             if not value.title_en or not value.title_zh or not value.detail_block_ids:

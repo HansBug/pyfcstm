@@ -122,7 +122,7 @@ class ProofExtensions:
     reading_folders: tuple = ()
 
     def __post_init__(self):
-        from .proof_rules import _index_handlers
+        from .rules import _index_handlers
 
         object.__setattr__(self, 'rule_handlers', tuple(self.rule_handlers))
         object.__setattr__(self, 'reading_folders', tuple(self.reading_folders))
@@ -204,6 +204,8 @@ class ProofNode:
     :param bindings: Native bound-variable names and sorts for proof binders.
     :param inference_kind: Semantic category used to assemble readable deductions.
     :param certificate: Optional exact, normalized arithmetic certificate.
+    :param cardinality: Optional checked Boolean counting contradiction.
+    :param interval: Optional exact local interval contradiction.
     """
 
     node_id: str
@@ -219,6 +221,92 @@ class ProofNode:
     bindings: Tuple[Tuple[str, str], ...] = ()
     inference_kind: str = 'opaque'
     certificate: Optional['ArithmeticCertificate'] = None
+    cardinality: Optional['CardinalityCertificate'] = None
+    interval: Optional['IntervalCertificate'] = None
+
+
+@dataclass(frozen=True)
+class IntervalStep:
+    """One range deduction with exact rational endpoints and prior evidence.
+
+    :param term_id: Arithmetic expression bounded by this step.
+    :param lower: Rational lower endpoint, or None for negative infinity.
+    :param upper: Rational upper endpoint, or None for positive infinity.
+    :param lower_open: Whether the lower endpoint is excluded.
+    :param upper_open: Whether the upper endpoint is excluded.
+    :param rule: Literal, linear, arithmetic, conditional or intersection rule.
+    :param premises: Zero-based indices of earlier interval steps.
+    :param bound_index: Index of a local normalized premise, for linear steps.
+    """
+
+    term_id: str
+    lower: Optional[str]
+    upper: Optional[str]
+    lower_open: bool
+    upper_open: bool
+    rule: str
+    premises: Tuple[int, ...] = ()
+    bound_index: Optional[int] = None
+
+
+@dataclass(frozen=True)
+class IntervalCertificate:
+    """Exact local range evidence for a contradiction or arithmetic equality.
+
+    :param bounds: Normalized local premises and negated conclusion literals.
+    :param steps: Ordered exact deductions, including integer rounding.
+    :param conflict: Indices of two incompatible ranges, or None.
+    :param equality: Indices of equal singleton ranges proving an equality, or None.
+    """
+
+    bounds: Tuple['LinearBound', ...]
+    steps: Tuple[IntervalStep, ...]
+    conflict: Optional[Tuple[int, int]]
+    equality: Optional[Tuple[int, int]] = None
+
+
+@dataclass(frozen=True)
+class CountContribution:
+    """An exact weighted Boolean contribution, with unknown values in [0, 1].
+
+    :param term_id: Boolean argument of a native cardinality constraint.
+    :param weight: Signed integer weight multiplying its truth indicator.
+    :param minimum: Smallest possible weighted contribution.
+    :param maximum: Largest possible weighted contribution.
+    """
+
+    term_id: str
+    weight: int
+    minimum: int
+    maximum: int
+
+
+@dataclass(frozen=True)
+class CardinalityCertificate:
+    """A Boolean weighted sum incompatible with a required constraint truth.
+
+    :param assumptions: Conclusion-clause literals temporarily assumed false.
+    :param constraint_id: Native Boolean cardinality expression.
+    :param constraint_value: Truth required by a premise or temporary assumption.
+    :param assignments: Known expression truth values from those same premises.
+    :param contributions: Checked interval for each weighted Boolean argument.
+    """
+
+    assumptions: Tuple[str, ...]
+    constraint_id: str
+    constraint_value: bool
+    assignments: Tuple[Tuple[str, bool], ...]
+    contributions: Tuple[CountContribution, ...]
+
+    @property
+    def minimum(self) -> int:
+        """Return the lower bound of the weighted sum."""
+        return sum(item.minimum for item in self.contributions)
+
+    @property
+    def maximum(self) -> int:
+        """Return the upper bound of the weighted sum."""
+        return sum(item.maximum for item in self.contributions)
 
 
 @dataclass(frozen=True)
@@ -361,7 +449,7 @@ class UnsatReport:
             >>> UnsatReport.from_canonical(original.to_canonical()).solver_status
             'sat'
         """
-        from .proof_io import load_report
+        from .io import load_report
 
         return load_report(data)
 
@@ -398,9 +486,9 @@ class CoreEvidence:
 
 def _assemble(report, query, extensions, budget):
     from dataclasses import replace
-    from .budget import BudgetExpired
-    from .proof_rules import analyze_proof
-    from .proof_text import build_reading
+    from ..budget import BudgetExpired
+    from .rules import analyze_proof
+    from .text import build_reading
 
     try:
         if report.proof is not None:
@@ -444,9 +532,9 @@ def explain_unsat(query, *, mode='proof', minimize=False, timeout_ms=None,
         >>> report.proof.node(report.proof.root_id).rule
         'asserted'
     """
-    from .budget import SolveBudget
-    from .unsat import UnsatQuery, _explain_unsat_core
-    from .symbols import SymbolNames
+    from ..budget import SolveBudget
+    from ..unsat import UnsatQuery, _explain_unsat_core
+    from ..symbols import SymbolNames
     from ._z3_proof import capture_proof
     from dataclasses import replace
 

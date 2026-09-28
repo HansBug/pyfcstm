@@ -1,9 +1,9 @@
-pyfcstm.solver.proof
+pyfcstm.solver.proof.core
 ========================================================
 
-.. currentmodule:: pyfcstm.solver.proof
+.. currentmodule:: pyfcstm.solver.proof.core
 
-.. automodule:: pyfcstm.solver.proof
+.. automodule:: pyfcstm.solver.proof.core
 
 
 SourceDescription
@@ -73,7 +73,35 @@ ProofNode
 -----------------------------------------------------
 
 .. autoclass:: ProofNode
-    :members: node_id,rule,parents,conclusion,operands,parameters,input_occurrences,open_hypotheses,discharged_hypotheses,local_check,bindings,inference_kind,certificate
+    :members: node_id,rule,parents,conclusion,operands,parameters,input_occurrences,open_hypotheses,discharged_hypotheses,local_check,bindings,inference_kind,certificate,cardinality,interval
+
+
+IntervalStep
+-----------------------------------------------------
+
+.. autoclass:: IntervalStep
+    :members: term_id,lower,upper,lower_open,upper_open,rule,premises,bound_index
+
+
+IntervalCertificate
+-----------------------------------------------------
+
+.. autoclass:: IntervalCertificate
+    :members: bounds,steps,conflict,equality
+
+
+CountContribution
+-----------------------------------------------------
+
+.. autoclass:: CountContribution
+    :members: term_id,weight,minimum,maximum
+
+
+CardinalityCertificate
+-----------------------------------------------------
+
+.. autoclass:: CardinalityCertificate
+    :members: minimum,maximum,assumptions,constraint_id,constraint_value,assignments,contributions
 
 
 LinearBound

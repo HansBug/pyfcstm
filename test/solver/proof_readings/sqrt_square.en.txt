@@ -1,0 +1,116 @@
+Query: sqrt_square
+Solver result: UNSAT
+Reading: complete
+
+P1  Arithmetic identity
+  Exact arithmetic normalization makes this alternative true.
+  Therefore: (not ((0 = (^(^(x, 1/2), 2) + (-1 * (^(x, 1/2) * ^(x, 1/2)))))) or ((^(^(x, 1/2), 2) + (-1 * (^(x, 1/2) * ^(x, 1/2)))) <= 0))
+
+P2  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not ((x = ^(^(x, 1/2), 2))) or ((x + (-1 * ^(^(x, 1/2), 2))) <= 0))
+
+P3  Squaring the principal square root
+  For a nonnegative radicand, the principal square root is nonnegative and its square equals the radicand.
+  This deduction uses the nonnegative-radicand condition.
+  Therefore: (not ((x >= 0)) or (x = ^(^(x, 1/2), 2)))
+
+P4  Input
+  Input origins: domain0, domain1
+  These are alternative occurrences of the same formula.
+  Therefore: (x >= 0)
+
+P5  Resolve the clauses
+  From: P3, P4
+  Therefore: (x = ^(^(x, 1/2), 2))
+
+P6  Resolve the clauses
+  From: P2, P5
+  Therefore: ((x + (-1 * ^(^(x, 1/2), 2))) <= 0)
+
+P7  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: ((0 = (x + (-1 * (^(x, 1/2) * ^(x, 1/2))))) or not (((x + (-1 * (^(x, 1/2) * ^(x, 1/2)))) <= 0)) or not (((x + (-1 * (^(x, 1/2) * ^(x, 1/2)))) >= 0)))
+
+P8  Input
+  Input origins: guard
+  Therefore: distinct((^(x, 1/2) * ^(x, 1/2)), x)
+
+P9  Resolve the clauses
+  From: P7, P8
+  Therefore: (not (((x + (-1 * (^(x, 1/2) * ^(x, 1/2)))) <= 0)) or not (((x + (-1 * (^(x, 1/2) * ^(x, 1/2)))) >= 0)))
+
+P10  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not (((x + (-1 * ^(^(x, 1/2), 2))) >= 0)) or ((x + (-1 * (^(x, 1/2) * ^(x, 1/2)))) >= 0))
+
+P11  Assume
+  Under assumptions: P11
+  Therefore: not (((x + (-1 * (^(x, 1/2) * ^(x, 1/2)))) >= 0))
+
+P12  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not ((x = ^(^(x, 1/2), 2))) or ((x + (-1 * ^(^(x, 1/2), 2))) >= 0))
+
+P13  Resolve the clauses
+  From: P12, P5
+  Therefore: ((x + (-1 * ^(^(x, 1/2), 2))) >= 0)
+
+P14  Resolve the clauses
+  From: P10, P11, P13
+  Under assumptions: P11
+  Therefore: false
+
+P15  Discharge local assumptions
+  From: P14
+  Closed: P11
+  Therefore: ((x + (-1 * (^(x, 1/2) * ^(x, 1/2)))) >= 0)
+
+P16  Resolve the clauses
+  From: P9, P15
+  Therefore: not (((x + (-1 * (^(x, 1/2) * ^(x, 1/2)))) <= 0))
+
+P17  Assume
+  Under assumptions: P17
+  Therefore: ((^(^(x, 1/2), 2) + (-1 * (^(x, 1/2) * ^(x, 1/2)))) <= 0)
+
+P18  Exact linear combination
+  From: P6, P16, P17
+  Under assumptions: P17
+  1 * [x + -1 * ^(^(x, 1/2), 2) <= 0]
+  1 * [-1 * x + ^(^(x, 1/2), 2) < 0]
+  Sum: 0 < 0; contradiction.
+  Therefore: false
+
+P19  Discharge local assumptions
+  From: P18
+  Closed: P17
+  Therefore: not (((^(^(x, 1/2), 2) + (-1 * (^(x, 1/2) * ^(x, 1/2)))) <= 0))
+
+P20  Resolve the clauses
+  From: P1, P19
+  Therefore: not ((0 = (^(^(x, 1/2), 2) + (-1 * (^(x, 1/2) * ^(x, 1/2))))))
+
+P21  Assume
+  Under assumptions: P21
+  Therefore: not ((0 = (^(^(x, 1/2), 2) + (-1 * (^(x, 1/2) * ^(x, 1/2))))))
+
+P22  Arithmetic identity
+  Exact arithmetic normalization makes this alternative true.
+  Therefore: ((^(^(x, 1/2), 2) + (-1 * (^(x, 1/2) * ^(x, 1/2)))) = 0)
+
+P23  Resolve the clauses
+  From: P21, P22
+  Under assumptions: P21
+  Therefore: false
+
+P24  Discharge local assumptions
+  From: P23
+  Closed: P21
+  Therefore: (0 = (^(^(x, 1/2), 2) + (-1 * (^(x, 1/2) * ^(x, 1/2)))))
+
+P25  Resolve the clauses
+  From: P20, P24
+  Therefore: false
+
+Conclusion: the submitted conjunction is inconsistent.

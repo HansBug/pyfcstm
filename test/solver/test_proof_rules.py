@@ -46,7 +46,7 @@ def test_arithmetic_certificate_has_exact_weights_and_a_real_contradiction(sort,
     assert report.scope_check == 'passed'
 
 
-def test_unsupported_nonlinear_inference_is_visible_as_a_gap():
+def test_nonlinear_interval_inferences_keep_native_evidence():
     x = z3.Int('x')
     report = solver.explain_unsat(solver.UnsatQuery('nonlinear', (
         solver.UnsatConstraint('square', (x * x == 2,)),
@@ -54,7 +54,8 @@ def test_unsupported_nonlinear_inference_is_visible_as_a_gap():
     assert report.solver_status == 'unsat'
     assert report.proof_status == 'captured'
     assert report.rule_check == 'partial'
-    assert any(gap.reason == 'unsupported_rule' for gap in report.gaps)
+    assert report.gaps == ()
+    assert any(node.interval is not None for node in report.proof.nodes)
 
 
 def test_quantifier_proof_binders_are_preserved_and_not_claimed_checked():
@@ -83,7 +84,7 @@ def test_asserted_false_is_a_closed_checked_refutation():
 
 def test_valid_scoped_public_graph_can_be_analyzed_without_native_objects():
     from pyfcstm.solver.proof import ProofGraph, ProofInput, ProofNode, ProofTerm
-    from pyfcstm.solver.proof_rules import analyze_proof
+    from pyfcstm.solver.proof import analyze_proof
 
     graph = ProofGraph('manual', 'n2', (
         ProofNode('n0', 'hypothesis', (), 'false'),
@@ -100,7 +101,7 @@ def test_valid_scoped_public_graph_can_be_analyzed_without_native_objects():
 
 def test_escaping_hypothesis_is_rejected_through_public_evidence_analysis():
     from pyfcstm.solver.proof import ProofGraph, ProofNode, ProofTerm
-    from pyfcstm.solver.proof_rules import analyze_proof
+    from pyfcstm.solver.proof import analyze_proof
 
     graph = ProofGraph('manual', 'n0', (
         ProofNode('n0', 'hypothesis', (), 'false'),
@@ -133,15 +134,15 @@ def _certificate_graph(expressions, weights, conclusion=None):
 @pytest.mark.parametrize('case,expected', [
     ('unary', 'checked'), ('difference', 'checked'), ('coercion', 'checked'),
     ('constant_product', 'checked'), ('negative_equality', 'checked'),
-    ('integer_strict', 'checked'), ('nested_nonlinear_sum', 'unsupported'),
-    ('nested_nonlinear_product', 'unsupported'), ('boolean_equality', 'unsupported'),
+    ('integer_strict', 'checked'), ('nested_nonlinear_sum', 'checked'),
+    ('nested_nonlinear_product', 'checked'), ('boolean_equality', 'unsupported'),
     ('uninterpreted_predicate', 'unsupported'), ('disequality', 'unsupported'),
-    ('missing_weight', 'unsupported'), ('nonconstant_sum', 'invalid'),
+    ('missing_weight', 'checked'), ('nonconstant_sum', 'invalid'),
     ('satisfiable_interval', 'invalid'), ('nonstrict_zero', 'invalid'),
     ('zero_weights', 'invalid'), ('single_clause', 'checked'),
 ])
 def test_local_certificate_checks_the_given_premises_not_the_full_unsat_query(case, expected):
-    from pyfcstm.solver.proof_rules import analyze_proof
+    from pyfcstm.solver.proof import analyze_proof
 
     x, y = z3.Reals('x y')
     i = z3.Int('i')
@@ -171,7 +172,13 @@ def test_local_certificate_checks_the_given_premises_not_the_full_unsat_query(ca
     analysis = analyze_proof(graph)
     root = analysis.graph.node(graph.root_id)
     assert root.local_check == expected
-    if expected == 'checked':
+    if case in ('nested_nonlinear_sum', 'nested_nonlinear_product'):
+        assert root.interval is not None
+        assert root.certificate is None
+    elif case == 'missing_weight':
+        assert root.certificate.weights == ('1', '1')
+        assert root.interval is None
+    elif expected == 'checked':
         assert root.certificate is not None
         assert root.certificate.weights == tuple(str(weight) for weight in weights)
     else:
@@ -180,7 +187,7 @@ def test_local_certificate_checks_the_given_premises_not_the_full_unsat_query(ca
 
 def test_a_boolean_symbol_named_false_is_not_a_refutation():
     from pyfcstm.solver.proof import ProofGraph, ProofInput, ProofNode, ProofTerm
-    from pyfcstm.solver.proof_rules import analyze_proof
+    from pyfcstm.solver.proof import analyze_proof
 
     graph = ProofGraph('caller', 'n', (
         ProofNode('n', 'asserted', (), 'symbol', input_occurrences=('i',)),
@@ -193,7 +200,7 @@ def test_a_boolean_symbol_named_false_is_not_a_refutation():
 
 
 def test_an_opaque_arithmetic_term_can_cancel_without_interpreting_its_operator():
-    from pyfcstm.solver.proof_rules import analyze_proof
+    from pyfcstm.solver.proof import analyze_proof
 
     x = z3.Real('x')
     graph = _certificate_graph((x / 2 >= 1, x / 2 <= 0), (1, 1))
@@ -204,7 +211,7 @@ def test_an_opaque_arithmetic_term_can_cancel_without_interpreting_its_operator(
 
 def test_a_proof_binder_without_a_false_root_is_not_a_refutation():
     from pyfcstm.solver.proof import ProofGraph, ProofNode
-    from pyfcstm.solver.proof_rules import analyze_proof
+    from pyfcstm.solver.proof import analyze_proof
 
     graph = ProofGraph('binder', 'root', (ProofNode('root', 'proof-bind', (), None),), (), ())
     analysis = analyze_proof(graph)
@@ -215,7 +222,7 @@ def test_a_proof_binder_without_a_false_root_is_not_a_refutation():
 def test_a_lemma_cannot_discharge_an_unrelated_conclusion():
     from dataclasses import replace
     from pyfcstm.solver.proof import ProofNode
-    from pyfcstm.solver.proof_rules import analyze_proof
+    from pyfcstm.solver.proof import analyze_proof
 
     x = z3.Real('x')
     graph = _certificate_graph((x > 0, x <= 0), (1, 1))
@@ -229,9 +236,113 @@ def test_a_lemma_cannot_discharge_an_unrelated_conclusion():
 
 
 def test_algebraic_bounds_do_not_claim_a_rational_certificate():
-    from pyfcstm.solver.proof_rules import analyze_proof
+    from pyfcstm.solver.proof import analyze_proof
 
     x = z3.Real('x')
     graph = _certificate_graph((x >= z3.simplify(z3.Sqrt(2)), x < 0), (1, 1))
     analysis = analyze_proof(graph)
     assert analysis.graph.node('combination').local_check == 'unsupported'
+
+
+@pytest.mark.parametrize('value, expected', [('true', 'checked'), ('false', 'invalid')])
+def test_truth_axiom_checks_its_actual_boolean_conclusion(value, expected):
+    """A native truth axiom cannot certify False in imported public evidence."""
+    from pyfcstm.solver.proof import ProofGraph, ProofNode, ProofTerm
+    from pyfcstm.solver.proof import analyze_proof
+
+    graph = ProofGraph('truth', 'n0', (
+        ProofNode('n0', 'true-axiom', (), 'fact'),
+    ), (ProofTerm('fact', 'literal', 'Bool', value, value=value),), ())
+    analysis = analyze_proof(graph)
+    assert analysis.graph.node('n0').local_check == expected
+    assert analysis.graph.node('n0').inference_kind == 'logical'
+
+
+@pytest.mark.parametrize('edges, endpoint, expected', [
+    ((('a', 'b'), ('c', 'b'), ('c', 'd')), ('a', 'd'), 'checked'),
+    ((('a', 'b'), ('c', 'd')), ('a', 'd'), 'invalid'),
+    ((('a', 'b'), ('a', 'b'), ('b', 'c')), ('a', 'c'), 'checked'),
+    ((('a', 'b'), ('a', 'c'), ('b', 'c')), ('a', 'd'), 'invalid'),
+    ((), ('a', 'a'), 'checked'),
+    ((), ('a', 'd'), 'invalid'),
+])
+def test_condensed_transitivity_requires_an_actual_equality_path(edges, endpoint, expected):
+    """Symmetry allows reversed edges, but disconnected facts prove no chain."""
+    from pyfcstm.solver.proof import ProofGraph, ProofInput, ProofNode, ProofTerm
+    from pyfcstm.solver.proof import analyze_proof
+
+    terms = [ProofTerm(name, 'constant', 'Int', name, value=name,
+                       operator_kind='uninterpreted') for name in 'abcd']
+    nodes, inputs = [], []
+    for index, edge in enumerate(edges):
+        term_id, node_id, occurrence = 'e%d' % index, 'n%d' % index, 'i%d' % index
+        terms.append(ProofTerm(term_id, 'application', 'Bool', '=', edge))
+        inputs.append(ProofInput(occurrence, occurrence, 0, term_id, False))
+        nodes.append(ProofNode(node_id, 'asserted', (), term_id,
+                               input_occurrences=(occurrence,)))
+    terms.append(ProofTerm('target', 'application', 'Bool', '=', endpoint))
+    nodes.append(ProofNode('chain', 'trans*', tuple(node.node_id for node in nodes), 'target'))
+    analysis = analyze_proof(ProofGraph('chain', 'chain', tuple(nodes), tuple(terms), tuple(inputs)))
+    assert analysis.graph.node('chain').local_check == expected
+    assert analysis.graph.node('chain').inference_kind == 'equality'
+
+
+@pytest.mark.parametrize('target_operator,target_kind,target_arguments,parent_operator,parent_kind,parent_arguments', [
+    ('=', 'builtin', None, '=', 'builtin', ('a', 'b')),
+    ('=', 'builtin', ('a',), '=', 'builtin', ('a', 'b')),
+    ('=', 'uninterpreted', ('a', 'b'), '=', 'builtin', ('a', 'b')),
+    ('<=', 'builtin', ('a', 'b'), '<=', 'builtin', ('a', 'b')),
+    ('=', 'builtin', ('a', 'b'), '=', 'builtin', None),
+    ('=', 'builtin', ('a', 'b'), '=', 'builtin', ('a',)),
+    ('=', 'builtin', ('a', 'b'), '=', 'uninterpreted', ('a', 'b')),
+    ('=', 'builtin', ('a', 'b'), '~', 'builtin', ('a', 'b')),
+])
+def test_condensed_transitivity_rejects_nonmatching_relation_evidence(
+        target_operator, target_kind, target_arguments, parent_operator, parent_kind, parent_arguments):
+    """Portable proofs must not reinterpret arbitrary binary predicates as equality."""
+    from pyfcstm.solver.proof import ProofGraph, ProofNode, ProofTerm
+    from pyfcstm.solver.proof import analyze_proof
+
+    terms = (
+        ProofTerm('a', 'constant', 'Int', 'a', value='a', operator_kind='uninterpreted'),
+        ProofTerm('b', 'constant', 'Int', 'b', value='b', operator_kind='uninterpreted'),
+        ProofTerm('edge', 'application', 'Bool', parent_operator, parent_arguments or (),
+                  operator_kind=parent_kind),
+        ProofTerm('target', 'application', 'Bool', target_operator, target_arguments or (),
+                  operator_kind=target_kind),
+    )
+    graph = ProofGraph('malformed', 'chain', (
+        ProofNode('premise', 'hypothesis', (), None if parent_arguments is None else 'edge'),
+        ProofNode('chain', 'trans*', ('premise',), None if target_arguments is None else 'target'),
+    ), terms, ())
+    result = analyze_proof(graph)
+    assert result.graph.node('chain').local_check == 'invalid'
+    assert result.graph.node('chain').open_hypotheses == ('premise',)
+
+
+@pytest.mark.parametrize('conclusion, parents', [(None, ()), ('true', ('p',))])
+def test_truth_axiom_requires_a_closed_literal_fact(conclusion, parents):
+    """Axiom checking must not accept a binder or evidence with dependencies."""
+    from pyfcstm.solver.proof import ProofGraph, ProofNode, ProofTerm
+    from pyfcstm.solver.proof import analyze_proof
+
+    graph = ProofGraph('malformed-truth', 'axiom', (
+        ProofNode('p', 'hypothesis', (), 'true'),
+        ProofNode('axiom', 'true-axiom', parents, conclusion),
+    ), (ProofTerm('true', 'literal', 'Bool', 'true', value='true'),), ())
+    assert analyze_proof(graph).graph.node('axiom').local_check == 'invalid'
+
+
+def test_native_integer_division_equality_chains_are_checked():
+    """Actual native trans* nodes preserve their active branch assumptions."""
+    x, d = z3.Ints('x d')
+    report = solver.explain_unsat(solver.UnsatQuery('quotient', (
+        solver.UnsatConstraint('x', (x == 5,)),
+        solver.UnsatConstraint('d', (d == 2,)),
+        solver.UnsatConstraint('wrong', (x / d != 2,)),
+    )))
+    chains = [node for node in report.proof.nodes if node.rule == 'trans*']
+    assert chains
+    assert all(node.local_check == 'checked' for node in chains)
+    assert all(node.inference_kind == 'equality' for node in chains)
+    assert report.scope_check == 'passed'

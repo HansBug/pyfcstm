@@ -1,9 +1,9 @@
-pyfcstm.solver.proof\_text
+pyfcstm.solver.proof.text
 ========================================================
 
-.. currentmodule:: pyfcstm.solver.proof_text
+.. currentmodule:: pyfcstm.solver.proof.text
 
-.. automodule:: pyfcstm.solver.proof_text
+.. automodule:: pyfcstm.solver.proof.text
 
 
 FoldProposal

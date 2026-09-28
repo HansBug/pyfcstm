@@ -1,8 +1,7 @@
 UNSAT 证明 API 参考
 ===================
 
-本参考覆盖 :mod:`pyfcstm.solver.proof`、:mod:`pyfcstm.solver.proof_rules`、
-:mod:`pyfcstm.solver.proof_text`、:mod:`pyfcstm.solver.unsat` 和
+本参考覆盖 :mod:`pyfcstm.solver.proof`、:mod:`pyfcstm.solver.unsat` 和
 :mod:`pyfcstm.solver.symbols` 中的独立 API。
 示例见 :doc:`/tutorials/unsat_proofs/index_zh` 与 :doc:`/how_to/unsat_proofs/index_zh`。
 现有 BMC 命令保持原有合同。
@@ -122,21 +121,54 @@ reading_status="not_requested"``。存在受信任的机械规则时，可以同
    * - ``ProofInput``
      - ``occurrence_id``、``constraint_id``、从零开始的 ``expression_index``、``term_id`` 和布尔值 ``background``。未使用的提交表达式也会记录。
    * - ``ProofNode``
-     - ``node_id``、原生 ``rule``、有序证明 ``parents``、可选 ``conclusion``、其他项 ``operands``、``parameters``、候选 ``input_occurrences``、``open_hypotheses``、``discharged_hypotheses``、``local_check``、``bindings``、``inference_kind`` 和可选 ``certificate``。
+     - ``node_id``、原生 ``rule``、有序证明 ``parents``、可选 ``conclusion``、其他项 ``operands``、``parameters``、候选 ``input_occurrences``、``open_hypotheses``、``discharged_hypotheses``、``local_check``、``bindings``、``inference_kind`` 和可选 ``certificate``、``cardinality``、``interval`` 证据。
    * - ``ProofParameter``
      - ``kind`` 和文本 ``value``。类别为 integer、double、rational、symbol、sort、expression 或 declaration。
    * - ``ArithmeticCertificate``
      - ``bounds``、归一化的精确 ``weights``、相加后的 ``constant`` 和布尔值 ``strict``。每个 ``LinearBound`` 保留 ``term_id``、``negated``、项与系数对、``constant`` 及相对于零的 ``le|lt|eq`` 关系。
+   * - ``CardinalityCertificate``
+     - 临时 ``assumptions``、``constraint_id``、所需 ``constraint_value``、已知布尔 ``assignments`` 和加权 ``contributions``。``minimum`` 与 ``maximum`` 为精确整数总和。
+   * - ``CountContribution``
+     - 布尔 ``term_id``、带符号整数 ``weight`` 及精确的 ``minimum`` / ``maximum`` 贡献。
+   * - ``IntervalCertificate``
+     - 局部归一化 ``bounds``、有序 ``steps``，以及二选一的 ``conflict`` 或 ``equality``。结果对为从零开始的步骤索引。矛盾使用同一项的不相交范围；等式使用结论某个等式分支两侧相等的闭单点范围。
+   * - ``IntervalStep``
+     - ``term_id``、精确有理数 ``lower`` / ``upper``（``None`` 表示无穷）、``lower_open`` / ``upper_open``、推导 ``rule``、先前步骤 ``premises``，以及线性推导可用的 ``bound_index``。最终结果未使用的步骤会被移除。
    * - ``ReadingBlock``
      - ``block_id``、``kind``、结论 ``claims``、``premise_block_ids``、``active_hypotheses``、``evidence_node_ids``、``source_links``、合并的 ``detail_block_ids``、可选 ``title_en`` 和 ``title_zh``。
    * - ``ProofReading``
      - ``query_id``、``solver_status``、可选 ``root_id``、``status``、可见 ``blocks``、``sources``、``gaps`` 和隐藏的 ``detail_blocks``。绑定的图与报告共享，不在阅读对象内重复序列化。
 
 ``local_check`` 为 ``not_run|checked|trusted|unsupported|invalid``。
-阅读类别为 ``input``、``assumption``、``discharge``、``arithmetic``、``logical``、
+阅读类别为 ``input``、``assumption``、``discharge``、``arithmetic``、``cardinality``、``order``、``logical``、
+``division_identity``、``remainder_lower``、``remainder_upper``、
+``floor_lower``、``floor_upper``、``real_division``、``arithmetic_identity``、
+``even_power``、``root_nonnegative``、``root_identity``、``interval``、
 ``equality``、``rewrite``、``definition``、``resolution``、``opaque`` 和 ``domain``。
 原生绑定变量显示为 de Bruijn 索引：``#0`` 是最内层变量；名称和类型保留在 ``bindings`` 中。
 求解器引入的符号不会被解码成虚构的源码变量。
+``order`` 类别检查等式与大小关系分支是否覆盖同一归一化算术差值的全部符号。
+检查可以将共享的非线性项视为原子，但不因此认证乘法本身的性质。
+整除类别匹配 `SMT-LIB Ints <https://smt-lib.org/theories-Ints.shtml>`_ 中带条件的
+欧几里得整除恒等式和余数边界。证明保留除数为零的分支，不在零除数上推导这些性质。
+幂类别检查正偶数次整数幂，以及主平方根的符号和平方恒等式。
+平方根推导要求被开方数非负；该条件由局部前提、子句分支或数值常量建立。
+检查也覆盖从局部前提直接推出矛盾的形状，不借用无关的查询断言证明中间步骤。
+区间推导使用精确有理数边界、开端点、整数取整、乘积、重复因子的平方和条件分支。
+只有本节点的局部前提及结论分支的临时否定能建立范围。
+文本展示这些假设、保留下来的每一步范围推导，以及最终矛盾或单点等式。
+区间传播有轮数上限，找不到证书时仍明确保留 unsupported，
+不会仅因整体查询为 UNSAT 就把局部推导标为已检查。
+
+取整检查建立 ``to_int(x) <= x < to_int(x) + 1``；实数除法检查保留除数非零条件。
+等价的 ``x*x`` 和 ``x^2`` 共享算术原子，消去仍要求精确系数匹配。
+原生权重不可用时，可以从两条局部边界重建精确消元权重。
+指数已由局部证据确定为正整数单点时，可以传播幂的范围。
+所有有限端点始终使用精确有理数，包括极大和极小的值。
+
+初始算术配置返回已知的算术或证明生成限制时，捕获使用 Z3 算术求解器 6 重试。
+重试使用保存的原始断言，共享同一个总预算，只导出最终一次执行的证明。
+超时以及仍无法解决的 UNKNOWN 会明确保留。
 
 ``reading.to_text(language="en")`` 接受 ``en`` 或 ``zh``，返回带末尾换行的完整纯文本。
 ``get_block(id)`` 和 ``get_source(id)`` 查询记录。

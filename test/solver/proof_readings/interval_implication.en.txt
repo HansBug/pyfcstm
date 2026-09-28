@@ -1,0 +1,35 @@
+Query: implication
+Solver result: UNSAT
+Reading: complete
+
+P1  Input
+  Input origins: fact0
+  Therefore: (x >= 2)
+
+P2  Input
+  Input origins: fact1
+  Therefore: (y >= 2)
+
+P3  Exact interval deduction
+  From: P1, P2
+  B1: -1 * x + 2 <= 0
+  B2: -1 * y + 2 <= 0
+  B3: (x * y) + -4 < 0
+    Temporary negation of a conclusion alternative.
+  I1: x in [2, +inf); isolate the term; B1
+  I2: y in [2, +inf); isolate the term; B2
+  I3: (x * y) in (-inf, 4); isolate the term; B3
+  I4: (x * y) in [4, +inf); multiply operand ranges; I1, I2
+  Incompatible ranges: I3, I4; contradiction.
+  Discharge these temporary assumptions.
+  Therefore: ((x * y) >= 4)
+
+P4  Input
+  Input origins: negative
+  Therefore: not (((x * y) >= 4))
+
+P5  Resolve the clauses
+  From: P3, P4
+  Therefore: false
+
+Conclusion: the submitted conjunction is inconsistent.

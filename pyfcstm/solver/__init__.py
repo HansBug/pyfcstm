@@ -79,8 +79,8 @@ _EXPORTS = {
     'explain_unsat': 'proof', 'UnsatReport': 'proof',
     'ProofExtensions': 'proof', 'SourceAdapter': 'proof',
     'SourceDescription': 'proof', 'SourceBinding': 'proof',
-    'ProofRuleHandler': 'proof_rules', 'RuleAnalysis': 'proof_rules',
-    'ReadingFolder': 'proof_text', 'FoldProposal': 'proof_text',
+    'ProofRuleHandler': 'proof', 'RuleAnalysis': 'proof',
+    'ReadingFolder': 'proof', 'FoldProposal': 'proof',
 }
 __all__ = list(_EXPORTS)
 

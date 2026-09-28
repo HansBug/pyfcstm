@@ -98,16 +98,16 @@ def test_a_business_source_adapter_needs_no_bmc_types(text_aligner):
     assert {link.relation for block in report.reading.blocks for link in block.source_links} == {'logical'}
 
 
-def test_unsupported_theory_is_not_hidden_by_a_fluent_reading(text_aligner):
+def test_nonlinear_reading_exposes_every_interval_deduction(text_aligner):
     x = z3.Int('x')
     report = solver.explain_unsat(solver.UnsatQuery('nonlinear', (
         solver.UnsatConstraint('square', (x * x == 2,)),
     )))
-    assert report.reading_status == 'partial'
+    assert report.reading_status == 'complete'
     assert report.source_status == 'absent'
     expected = Path(__file__).with_name('proof_readings') / 'nonlinear.en.txt'
     text_aligner.assert_equal(expected.read_text(encoding='utf-8'), report.reading.to_text())
-    assert report.reading.gaps
+    assert report.reading.gaps == ()
 
 
 def test_sat_reading_explains_why_there_is_no_refutation(text_aligner):

@@ -1,0 +1,41 @@
+Query: events
+Solver result: UNSAT
+Reading: complete
+
+P1  Boolean counting contradiction
+  To refute the negated conclusion, temporarily assume:
+    at-least[2](not (a), not (b), AUX)
+    b
+    a
+  Known: b = true
+  Known: a = true
+  Contribution: not (a); weight = 1; [0, 0]
+  Contribution: not (b); weight = 1; [0, 0]
+  Contribution: AUX; weight = 1; [0, 1]
+  Weighted sum range: [0, 1]
+  Required: at-least[2](not (a), not (b), AUX) = true
+  These bounds force the constraint to be false; contradiction.
+  Discharge these temporary assumptions.
+  Therefore: (not (at-least[2](not (a), not (b), AUX)) or not (b) or not (a))
+
+P2  Input
+  Input origins: limit
+  Therefore: at-most[1](a, b, c)
+
+P3  Logical consequence
+  From: P2
+  Therefore: at-least[2](not (a), not (b), AUX)
+
+P4  Input
+  Input origins: a
+  Therefore: a
+
+P5  Input
+  Input origins: b
+  Therefore: b
+
+P6  Resolve the clauses
+  From: P1, P3, P4, P5
+  Therefore: false
+
+Conclusion: the submitted conjunction is inconsistent.

@@ -1,11 +1,11 @@
 :orphan:
 
-pyfcstm.solver.\_z3\_proof
+pyfcstm.solver.proof.\_z3\_proof
 ========================================================
 
-.. currentmodule:: pyfcstm.solver._z3_proof
+.. currentmodule:: pyfcstm.solver.proof._z3_proof
 
-.. automodule:: pyfcstm.solver._z3_proof
+.. automodule:: pyfcstm.solver.proof._z3_proof
 
 
 capture\_proof

@@ -1,9 +1,9 @@
-pyfcstm.solver.proof\_io
+pyfcstm.solver.proof.io
 ========================================================
 
-.. currentmodule:: pyfcstm.solver.proof_io
+.. currentmodule:: pyfcstm.solver.proof.io
 
-.. automodule:: pyfcstm.solver.proof_io
+.. automodule:: pyfcstm.solver.proof.io
 
 
 load\_report

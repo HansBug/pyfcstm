@@ -11,7 +11,7 @@ pytestmark = pytest.mark.unittest
 
 
 def test_rule_handler_interprets_native_evidence_without_changing_its_claim():
-    from pyfcstm.solver.proof_rules import ProofRuleHandler, RuleAnalysis
+    from pyfcstm.solver.proof import ProofRuleHandler, RuleAnalysis
 
     seen = []
 
@@ -32,7 +32,7 @@ def test_rule_handler_interprets_native_evidence_without_changing_its_claim():
 
 
 def test_duplicate_rule_handlers_are_rejected_even_before_a_sat_check():
-    from pyfcstm.solver.proof_rules import ProofRuleHandler, RuleAnalysis
+    from pyfcstm.solver.proof import ProofRuleHandler, RuleAnalysis
 
     handler = ProofRuleHandler('th-lemma', lambda node, graph: RuleAnalysis('logical', 'trusted'))
     with pytest.raises(ValueError, match='duplicate rule handler'):
@@ -42,7 +42,7 @@ def test_duplicate_rule_handlers_are_rejected_even_before_a_sat_check():
 
 @pytest.mark.parametrize('rule', ['asserted', 'hypothesis', 'lemma'])
 def test_extensions_cannot_override_input_binding_or_hypothesis_discharge(rule):
-    from pyfcstm.solver.proof_rules import ProofRuleHandler, RuleAnalysis
+    from pyfcstm.solver.proof import ProofRuleHandler, RuleAnalysis
 
     with pytest.raises(ValueError, match='reserved rule'):
         explain_unsat(UnsatQuery('empty', ()), extensions=ProofExtensions(rule_handlers=(
@@ -51,7 +51,7 @@ def test_extensions_cannot_override_input_binding_or_hypothesis_discharge(rule):
 
 
 def test_handler_must_return_a_rule_analysis():
-    from pyfcstm.solver.proof_rules import ProofRuleHandler
+    from pyfcstm.solver.proof import ProofRuleHandler
 
     x = z3.Real('x')
     with pytest.raises(TypeError, match='RuleAnalysis'):
@@ -62,7 +62,7 @@ def test_handler_must_return_a_rule_analysis():
 
 @pytest.mark.parametrize('kind,check', [('nonsense', 'trusted'), ('logical', 'nonsense')])
 def test_handler_result_rejects_unknown_contract_values(kind, check):
-    from pyfcstm.solver.proof_rules import RuleAnalysis
+    from pyfcstm.solver.proof import RuleAnalysis
 
     with pytest.raises(ValueError):
         RuleAnalysis(kind, check)
@@ -76,7 +76,7 @@ def _interval_query():
 
 
 def _interval_fold(reading):
-    from pyfcstm.solver.proof_text import FoldProposal
+    from pyfcstm.solver.proof import FoldProposal
 
     root = reading.get_block(reading.root_id)
     selected = tuple(block.block_id for block in reading.blocks if block.kind != 'input')
@@ -87,7 +87,7 @@ def _interval_fold(reading):
 
 
 def test_a_domain_fold_keeps_expandable_original_evidence(text_aligner):
-    from pyfcstm.solver.proof_text import ReadingFolder
+    from pyfcstm.solver.proof import ReadingFolder
 
     report = explain_unsat(_interval_query(), extensions=ProofExtensions(reading_folders=(
         ReadingFolder(lambda reading: (_interval_fold(reading),)),
@@ -155,7 +155,7 @@ P3  上下界不相容
 ])
 def test_unsound_domain_fold_is_rejected(change, message):
     from dataclasses import replace
-    from pyfcstm.solver.proof_text import ReadingFolder
+    from pyfcstm.solver.proof import ReadingFolder
 
     def propose(reading):
         return (replace(_interval_fold(reading), **change),)
@@ -167,7 +167,7 @@ def test_unsound_domain_fold_is_rejected(change, message):
 @pytest.mark.parametrize('rule,callback,error', [('', lambda n, g: None, ValueError),
                                               ('rewrite', None, TypeError)])
 def test_rule_handler_requires_a_named_callable(rule, callback, error):
-    from pyfcstm.solver.proof_rules import ProofRuleHandler
+    from pyfcstm.solver.proof import ProofRuleHandler
 
     with pytest.raises(error):
         ProofRuleHandler(rule, callback)
@@ -179,14 +179,14 @@ def test_extension_collections_reject_foreign_objects():
 
 
 def test_reading_folder_requires_a_callable():
-    from pyfcstm.solver.proof_text import ReadingFolder
+    from pyfcstm.solver.proof import ReadingFolder
 
     with pytest.raises(TypeError, match='callable'):
         ReadingFolder(None)
 
 
 def test_reading_folder_must_return_proposals():
-    from pyfcstm.solver.proof_text import ReadingFolder
+    from pyfcstm.solver.proof import ReadingFolder
 
     with pytest.raises(TypeError, match='FoldProposal'):
         explain_unsat(_interval_query(), extensions=ProofExtensions(reading_folders=(
@@ -201,7 +201,7 @@ def test_reading_folder_collection_must_contain_folders():
 @pytest.mark.parametrize('choice,message', [('duplicate', 'duplicate'), ('disconnected', 'connected')])
 def test_domain_fold_requires_a_unique_connected_slice(choice, message):
     from dataclasses import replace
-    from pyfcstm.solver.proof_text import FoldProposal, ReadingFolder
+    from pyfcstm.solver.proof import FoldProposal, ReadingFolder
 
     def propose(reading):
         if choice == 'duplicate':
@@ -216,7 +216,7 @@ def test_domain_fold_requires_a_unique_connected_slice(choice, message):
 
 
 def test_an_extension_can_report_invalid_evidence_without_an_invented_reading():
-    from pyfcstm.solver.proof_rules import ProofRuleHandler, RuleAnalysis
+    from pyfcstm.solver.proof import ProofRuleHandler, RuleAnalysis
 
     report = explain_unsat(_interval_query(), extensions=ProofExtensions(rule_handlers=(
         ProofRuleHandler('th-lemma', lambda node, graph: RuleAnalysis('opaque', 'invalid')),
@@ -241,7 +241,7 @@ def _branch_query():
     ('open_root', 'hypotheses at its root'),
 ])
 def test_domain_fold_cannot_hide_external_dependencies_or_assumptions(choice, message):
-    from pyfcstm.solver.proof_text import FoldProposal, ReadingFolder
+    from pyfcstm.solver.proof import FoldProposal, ReadingFolder
 
     def propose(reading):
         assumption = next(block for block in reading.blocks if block.kind == 'assumption')
@@ -268,7 +268,7 @@ def test_domain_fold_cannot_hide_external_dependencies_or_assumptions(choice, me
 
 
 def test_closed_branch_proof_can_be_folded_without_erasing_its_derivation(text_aligner):
-    from pyfcstm.solver.proof_text import FoldProposal, ReadingFolder
+    from pyfcstm.solver.proof import FoldProposal, ReadingFolder
 
     def propose(reading):
         root = reading.get_block(reading.root_id)

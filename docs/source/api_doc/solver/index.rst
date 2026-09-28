@@ -14,10 +14,7 @@ pyfcstm.solver
     expr
     logical
     operation
-    proof
-    proof_io
-    proof_rules
-    proof_text
+    proof/index
     safety
     solve
     symbols

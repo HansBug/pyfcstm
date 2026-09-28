@@ -4,9 +4,10 @@ import argparse
 
 import z3
 
-from pyfcstm.solver import (
+from pyfcstm.solver import SymbolNames, UnsatConstraint, UnsatQuery
+from pyfcstm.solver.proof import (
     FoldProposal, ProofExtensions, ReadingFolder, SourceAdapter, SourceBinding,
-    SourceDescription, SymbolNames, UnsatConstraint, UnsatQuery, explain_unsat,
+    SourceDescription, explain_unsat,
 )
 
 
@@ -46,6 +47,16 @@ def build(case):
             UnsatConstraint('goal', (after < 0,)),
         ))
         return query, names, None
+    if case == 'square':
+        x = z3.Int('x')
+        return UnsatQuery(case, (UnsatConstraint('target', (x * x == 2,)),)), None, None
+    if case == 'product':
+        x, y = z3.Reals('x y')
+        return UnsatQuery(case, (
+            UnsatConstraint('minimum_x', (x >= 2,)),
+            UnsatConstraint('minimum_y', (y >= 3,)),
+            UnsatConstraint('target', (x * y < 6,)),
+        )), None, None
     allocation = z3.Int('allocation')
     query = UnsatQuery(case, (
         UnsatConstraint('minimum', (allocation > 0,), {
@@ -69,12 +80,12 @@ def summarize(reading):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--case', choices=('all', 'linear', 'branches', 'sources'), default='all')
+    parser.add_argument('--case', choices=('all', 'linear', 'branches', 'sources', 'square', 'product'), default='all')
     parser.add_argument('--language', choices=('all', 'en', 'zh'), default='all')
     parser.add_argument('--minimize', action='store_true')
     parser.add_argument('--fold', action='store_true')
     options = parser.parse_args()
-    cases = ('linear', 'branches', 'sources') if options.case == 'all' else (options.case,)
+    cases = ('linear', 'branches', 'sources', 'square', 'product') if options.case == 'all' else (options.case,)
     languages = ('en', 'zh') if options.language == 'all' else (options.language,)
     for case in cases:
         query, names, adapter = build(case)

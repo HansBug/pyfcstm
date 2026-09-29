@@ -165,3 +165,81 @@ def test_invalid_source_descriptions_fail_at_the_public_boundary(arguments):
     values.update(arguments)
     with pytest.raises(ValueError):
         SourceDescription(**values)
+
+
+def test_display_collisions_across_groups_warn_and_keep_symbols_distinct():
+    from pyfcstm.solver import SymbolNames, UnsatReport
+
+    x, middle, other = z3.Ints('encoded middle display')
+    names = SymbolNames()
+    names.register(x, 'display')
+    query = UnsatQuery('collision', tuple(UnsatConstraint(str(index), (expression,))
+                       for index, expression in enumerate((x > 0, x < middle, middle < other, other <= 0))))
+    with pytest.warns(UserWarning, match='Proof symbol display collision'):
+        report = explain_unsat(query, names=names)
+    symbols = [term for term in report.proof.terms
+               if term.kind == 'constant' and term.operator in ('encoded', 'display')]
+    assert len(symbols) == 2
+    assert len({term.value for term in symbols}) == 2
+    loaded = UnsatReport.from_canonical(report.to_canonical())
+    for term in symbols:
+        assert loaded.reading.get_term_text(term.term_id) == term.value
+        assert term.value.startswith('display [')
+
+
+def test_deep_query_does_not_render_expressions_to_validate_names():
+    from pyfcstm.solver import SymbolNames
+
+    expression = z3.Int('deep')
+    for _ in range(1200):
+        expression = expression + 1
+    query = UnsatQuery('deep', (
+        UnsatConstraint('long', (expression > 0,)),
+        UnsatConstraint('false', (z3.BoolVal(False),)),
+    ))
+    report = explain_unsat(query, names=SymbolNames())
+    assert report.solver_status == 'unsat'
+    assert report.reading_status == 'complete'
+
+
+def test_same_spelling_different_sorts_are_disambiguated_without_a_registry():
+    integer, real = z3.Int('x'), z3.Real('x')
+    query = UnsatQuery('sorts', (
+        UnsatConstraint('input', (integer > 0, real < 0, z3.ToReal(integer) == real)),
+    ))
+    with pytest.warns(UserWarning, match='Proof symbol display collision'):
+        report = explain_unsat(query)
+    symbols = [term for term in report.proof.terms if term.kind == 'constant']
+    assert len({term.value for term in symbols}) == 2
+
+
+def test_disambiguation_does_not_reuse_an_authored_suffix():
+    from pyfcstm.solver import SymbolNames
+
+    x, other, reserved = z3.Ints('encoded display display_suffix')
+    names = SymbolNames()
+    names.register(x, 'display')
+    names.register(reserved, 'display [t0]')
+    query = UnsatQuery('suffix', (
+        UnsatConstraint('input', (x > 0, other < 0, reserved == 0, x == other)),
+    ))
+    with pytest.warns(UserWarning):
+        report = explain_unsat(query, names=names)
+    values = {term.operator: term.value for term in report.proof.terms if term.kind == 'constant'}
+    assert values['encoded'] == 'display [t0]_'
+    assert values['display_suffix'] == 'display [t0]'
+    assert len(set(values.values())) == 3
+
+
+def test_registered_display_conflicting_with_a_binder_warns():
+    from pyfcstm.solver import SymbolNames
+
+    x, bound = z3.Ints('encoded bound')
+    names = SymbolNames()
+    names.register(x, 'bound')
+    with pytest.warns(UserWarning, match='Proof symbol display collision'):
+        report = explain_unsat(UnsatQuery('binder', (
+            UnsatConstraint('input', (x > 0, z3.ForAll(bound, bound >= 0))),
+        )), names=names)
+    value = next(term.value for term in report.proof.terms if term.operator == 'encoded')
+    assert value == 'bound [t0]'

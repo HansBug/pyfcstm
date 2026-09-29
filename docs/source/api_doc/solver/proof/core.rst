@@ -73,7 +73,7 @@ ProofNode
 -----------------------------------------------------
 
 .. autoclass:: ProofNode
-    :members: node_id,rule,parents,conclusion,operands,parameters,input_occurrences,open_hypotheses,discharged_hypotheses,local_check,bindings,inference_kind,certificate,cardinality,interval
+    :members: node_id,rule,parents,conclusion,operands,parameters,input_occurrences,open_hypotheses,discharged_hypotheses,local_check,bindings,inference_kind,certificate,cardinality,interval,divisibility,polynomial,linear_equality
 
 
 TermEquality
@@ -123,6 +123,34 @@ ArithmeticCertificate
 
 .. autoclass:: ArithmeticCertificate
     :members: bounds,weights,constant,strict
+
+
+DivisibilityCertificate
+-----------------------------------------------------
+
+.. autoclass:: DivisibilityCertificate
+    :members: bound_pairs,weights,coefficients,constant
+
+
+LinearEqualityCertificate
+-----------------------------------------------------
+
+.. autoclass:: LinearEqualityCertificate
+    :members: term_id,less,greater
+
+
+PolynomialStep
+-----------------------------------------------------
+
+.. autoclass:: PolynomialStep
+    :members: coefficients,strict,rule,premises,weights,term_id,negated,multiplier,factor
+
+
+PolynomialCertificate
+-----------------------------------------------------
+
+.. autoclass:: PolynomialCertificate
+    :members: steps
 
 
 ProofGap

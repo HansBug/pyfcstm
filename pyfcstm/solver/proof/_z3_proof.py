@@ -1,6 +1,8 @@
 """Native Z3 capture; all context-bound objects remain inside this module."""
 
 from uuid import uuid4
+from dataclasses import replace
+import warnings
 
 import z3
 
@@ -18,6 +20,33 @@ class _Terms:
         self.terms = []
         self.displays = displays
         self.budget = budget
+
+    def disambiguate(self):
+        """Keep distinct constants distinguishable across the entire report."""
+        groups = {}
+        bound_names = {name for term in self.terms for name, _ in term.bindings}
+        for term in self.terms:
+            if term.kind == 'constant':
+                groups.setdefault(term.value, []).append(term)
+        reserved = set(groups) | bound_names
+        replacements = {}
+        for display, members in groups.items():
+            self.budget.checkpoint('proof symbol names')
+            if len(members) == 1 and (display not in bound_names or members[0].operator == display):
+                continue
+            renamed = []
+            for term in members:
+                candidate = '%s [%s]' % (display, term.term_id)
+                while candidate in reserved:
+                    candidate += '_'
+                reserved.add(candidate)
+                replacements[term.term_id] = candidate
+                renamed.append('%s (%s) -> %s' % (term.operator, term.sort, candidate))
+            warnings.warn('Proof symbol display collision for %r: %s. '
+                          'Distinct symbols retain separate term identities.' %
+                          (display, '; '.join(renamed)), UserWarning, stacklevel=3)
+        self.terms = [replace(term, value=replacements[term.term_id])
+                      if term.term_id in replacements else term for term in self.terms]
 
     def intern(self, expression):
         pending = [(expression, False)]
@@ -121,8 +150,6 @@ def capture_proof(query, budget, names, source_adapter):
         for background, groups in ((True, query.background), (False, query.constraints)):
             for group in groups:
                 for index, expression in enumerate(group.expressions):
-                    if names is not None:
-                        names.render(expression)
                     translated = expression.translate(context)
                     term_id = terms.intern(translated)
                     occurrence = 'i%d' % len(inputs)
@@ -131,6 +158,7 @@ def capture_proof(query, budget, names, source_adapter):
                     origins.setdefault(translated.get_id(), []).append(occurrence)
                     assertions.append(translated)
                     native.add(translated)
+        terms.disambiguate()
         status, check = _run_probe(native, budget, 'proof', ())
         if status == 'unknown' and any(reason in (check.reason or '') for reason in (
                 'incomplete (theory arithmetic)', 'tseitin-cnf does not support proof production')):
@@ -185,6 +213,7 @@ def capture_proof(query, budget, names, source_adapter):
                 if not isinstance(description, SourceDescription):
                     raise TypeError('source adapter must return SourceDescription')
                 bound_sources.append(ProofSource(terms.identities[expression.get_id()], description, binding.relation))
+        terms.disambiguate()
         graph = ProofGraph(uuid4().hex, identities[root.get_id()], tuple(nodes),
                            tuple(terms.terms), tuple(inputs), tuple(bound_sources))
         bound = all(node.input_occurrences for node in nodes if node.rule == 'asserted')

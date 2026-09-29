@@ -132,7 +132,7 @@ class ProofReading:
         """
         if self._graph is None:
             raise ValueError('no proof graph')
-        return _term_texts(self._graph)[term_id]
+        return _term_texts(self._graph, (term_id,))[term_id]
 
     def to_text(self, language: str = 'en', detail: str = 'standard') -> str:
         """Render readable deductions in English or Chinese.
@@ -155,9 +155,31 @@ class ProofReading:
         return _render(reading, language, detail)
 
 
-def _term_texts(graph, definitions=None):
-    values = {}
-    for term in graph.terms:
+class _TermTexts(dict):
+    """Render additional certificate references only when the reader uses them."""
+
+    def __init__(self, graph, definitions):
+        super().__init__()
+        self.graph, self.definitions = graph, definitions
+
+    def __missing__(self, key):
+        _term_texts(self.graph, (key,), self.definitions, self)
+        return self[key]
+
+
+def _term_texts(graph, roots, definitions=None, values=None):
+    pending = [(key, False) for key in roots]
+    if values is None:
+        values = _TermTexts(graph, definitions)
+    while pending:
+        key, ready = pending.pop()
+        if key in values:
+            continue
+        term = graph.term(key)
+        if not ready:
+            pending.append((key, True))
+            pending.extend((child, False) for child in term.arguments)
+            continue
         args = [values[child] for child in term.arguments]
         if term.kind in ('constant', 'literal', 'algebraic'):
             text = term.value
@@ -198,6 +220,16 @@ def _linear_text(bound, terms):
     return '%s %s 0' % (' + '.join(parts), relation)
 
 
+def _polynomial_text(coefficients, terms):
+    parts = []
+    for monomial, coefficient in coefficients:
+        factors = [terms[key] for key in monomial]
+        if Fraction(coefficient) != 1 or not factors:
+            factors.insert(0, coefficient)
+        parts.append(' * '.join(factors))
+    return ' + '.join(parts) or '0'
+
+
 def _render(reading, language, detail):
     zh = language == 'zh'
     choose = lambda english, chinese: chinese if zh else english
@@ -215,7 +247,9 @@ def _render(reading, language, detail):
         return '\n'.join(lines) + '\n'
     graph = reading._graph
     definitions = {}
-    terms = _term_texts(graph, definitions if detail != 'detailed' else None)
+    roots = tuple(key for node in graph.nodes for key in
+                  ((node.conclusion,) if node.conclusion is not None else ()) + node.operands)
+    terms = _term_texts(graph, roots, definitions if detail != 'detailed' else None)
     inputs = {item.occurrence_id: item for item in graph.inputs}
     labels = {block.block_id: 'P%d' % (i + 1) for i, block in enumerate(reading.blocks)}
     node_labels = {block.evidence_node_ids[0]: labels[block.block_id] for block in reading.blocks}
@@ -231,10 +265,16 @@ def _render(reading, language, detail):
         'floor_upper': choose('Floor differs by less than one', '向下取整与原值相差小于一'),
         'real_division': choose('Real division identity', '实数除法恒等式'),
         'interval': choose('Exact interval deduction', '精确区间推导'),
+        'zero_power': choose('Zero power of a nonzero base', '非零底数的零次幂'),
+        'positive_power': choose('Power exceeds one', '幂大于一'),
         'even_power': choose('Even power is nonnegative', '正偶数次幂非负'),
+        'root_positive': choose('Positive principal square root', '主平方根严格为正'),
         'root_nonnegative': choose('Principal square root is nonnegative', '主平方根非负'),
         'root_identity': choose('Squaring the principal square root', '主平方根的平方'),
         'order': choose('Equality and order', '等式与大小关系'),
+        'linear_equality': choose('Exclude both strict orders', '排除两个严格大小关系'),
+        'polynomial': choose('Exact polynomial deduction', '精确多项式推导'),
+        'divisibility': choose('Integer divisibility contradiction', '整数整除矛盾'),
         'cardinality': choose('Boolean counting contradiction', '布尔计数矛盾'),
         'resolution': choose('Resolve the clauses', '消解子句'),
         'definition': choose('Internal definition / defining clause', '内部定义／定义子句'),
@@ -252,6 +292,8 @@ def _render(reading, language, detail):
         'intersection': choose('intersect ranges', '区间求交'),
         'square': choose('square the same value', '同一数值的平方'),
         'product': choose('multiply operand ranges', '操作数区间相乘'),
+        'product_inverse': choose('divide the product range by a strictly positive factor range',
+                                  '用乘积区间除以严格为正的因子区间'),
         'power': choose('apply the known positive integer exponent', '使用已确定的正整数指数'),
         'sum': choose('add/subtract operand ranges', '操作数区间加减'),
         'cast': choose('preserve the integer value as a real', '整数转实数，数值不变'),
@@ -295,10 +337,19 @@ def _render(reading, language, detail):
                                       '实数除数非零时，被除数 = 除数 * 商。'))
             lines.append('  ' + choose('The zero-divisor alternative is retained or ruled out by a nonzero literal divisor.',
                                       '除数为零的分支已保留，或由非零常量除数排除。'))
+        if block.kind == 'zero_power':
+            lines.append('  ' + choose('A nonzero base raised to zero equals one.',
+                                      '非零底数的零次幂等于一。'))
+        if block.kind == 'positive_power':
+            lines.append('  ' + choose('A base greater than one raised to a strictly positive exponent exceeds one.',
+                                      '底数大于一且指数严格为正时，幂大于一。'))
         if block.kind == 'even_power':
             lines.append('  ' + choose(
                 'A positive even integer power of a real value is nonnegative.',
                 '实数的正偶数次整数幂非负。'))
+        if block.kind == 'root_positive':
+            lines.append('  ' + choose('The principal square root of a strictly positive radicand is strictly positive.',
+                                      '被开方数严格为正时，主平方根严格为正。'))
         if block.kind in ('root_nonnegative', 'root_identity'):
             lines.append('  ' + choose(
                 'For a nonnegative radicand, the principal square root is nonnegative and its square equals the radicand.',
@@ -333,6 +384,57 @@ def _render(reading, language, detail):
                              choose('contradiction.', '矛盾。'))
             if temporary:
                 lines.append('  ' + choose('Discharge these temporary assumptions.', '关闭上述临时假设。'))
+        if node.linear_equality is not None and block.kind != 'domain':
+            equality = node.linear_equality
+            left, right = graph.term(equality.term_id).arguments
+            for first, second, certificate in ((left, right, equality.less), (right, left, equality.greater)):
+                lines.append('  ' + choose('Temporarily assume: ', '暂时假设：') + '%s < %s' %
+                             (terms[first], terms[second]))
+                if detail != 'brief':
+                    for bound, weight in zip(certificate.bounds, certificate.weights):
+                        lines.append('    %s * [%s]' % (weight, _linear_text(bound, terms)))
+                lines.append('    ' + choose('Sum: ', '相加得到：') + '%s %s 0; ' %
+                             (certificate.constant, '<' if certificate.strict else '<=') +
+                             choose('contradiction.', '矛盾。'))
+            lines.append('  ' + choose('Both strict alternatives are impossible, so the values are equal.',
+                                      '两个严格大小关系均不可能成立，因此两侧相等。'))
+        if node.polynomial is not None and block.kind != 'domain':
+            steps = node.polynomial.steps
+            if detail == 'brief':
+                lines.append('  ' + choose('%d checked polynomial steps establish a contradiction.',
+                                          '%d 个已检查的多项式步骤推出矛盾。') % len(steps))
+            else:
+                for index, step in enumerate(steps):
+                    if step.rule == 'input':
+                        literal = terms[step.term_id]
+                        if step.negated:
+                            literal = 'not (%s)' % literal
+                        reason = choose('Normalize local premise: ', '归一化局部前提：') + literal
+                    elif step.rule == 'square':
+                        reason = choose('Square is nonnegative: ', '平方非负：') + '(%s)^2' % _polynomial_text(step.factor, terms)
+                    elif step.rule == 'product':
+                        reason = choose('Multiply nonnegative factors: ', '非负因子相乘：') + ' * '.join(
+                            'Q%d' % (parent + 1) for parent in step.premises)
+                    else:
+                        reason = choose('Nonnegative linear combination: ', '非负线性组合：') + ' + '.join(
+                            '%s * Q%d' % (weight, parent + 1) for parent, weight in zip(step.premises, step.weights))
+                    lines.append('  Q%d: %s %s 0' % (index + 1, _polynomial_text(step.coefficients, terms),
+                                                    '>' if step.strict else '>='))
+                    lines.append('    ' + reason)
+                lines.append('  ' + choose('The final constant cannot have this sign; contradiction.',
+                                          '最后得到的常数不可能满足该符号条件，矛盾。'))
+        if node.divisibility is not None and block.kind != 'domain':
+            certificate = node.divisibility
+            for index, ((first, second), weight) in enumerate(zip(certificate.bound_pairs, certificate.weights)):
+                lines.append('  B%d: %s; B%d: %s' % (2 * index + 1, _linear_text(first, terms),
+                                                   2 * index + 2, _linear_text(second, terms)))
+                lines.append('  E%d: %s' % (index + 1, _linear_text(replace(first, relation='eq'), terms)))
+                lines.append('    ' + choose('Equation multiplier: ', '等式乘数：') + weight)
+            from .core import LinearBound
+            equation = LinearBound('', False, certificate.coefficients, certificate.constant, 'eq')
+            lines.append('  ' + choose('Sum: ', '相加得到：') + _linear_text(equation, terms))
+            lines.append('  ' + choose('The variable sum is an integer; it cannot equal ',
+                                      '变量的整系数和为整数，不可能等于 ') + str(-Fraction(certificate.constant)) + '.')
         if node.interval is not None and block.kind != 'domain':
             certificate = node.interval
             for index, bound in enumerate(certificate.bounds):
@@ -609,7 +711,7 @@ def build_reading(report, query, extensions, budget):
     hidden = {node.node_id for node in graph.nodes if node.rule in hidden_rules and node.node_id != graph.root_id}
     # Retain the formulas at arithmetic boundaries. Otherwise a linear sum can
     # use a rewritten inequality that none of its displayed premises states.
-    boundaries = {parent for node in graph.nodes if node.certificate is not None or node.cardinality is not None or node.interval is not None
+    boundaries = {parent for node in graph.nodes if node.certificate is not None or node.cardinality is not None or node.interval is not None or node.divisibility is not None or node.polynomial is not None or node.linear_equality is not None
                   for parent in node.parents}
     count_terms = {node.cardinality.constraint_id for node in graph.nodes if node.cardinality is not None}
     boundaries.update(node.node_id for node in graph.nodes if node.conclusion in count_terms)

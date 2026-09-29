@@ -238,3 +238,37 @@ def _check_reading_levels(report, text_aligner):
             text_aligner.assert_equal(report.reading.to_text(language, detail),
                                       restored.reading.to_text(language, detail))
     assert report.to_canonical() == before
+
+
+@pytest.mark.parametrize('name,kind,predicate', [
+    ('integer_product', 'int', 'x>1 && y>1 && x*y==5'),
+    ('difference_squares', 'float', 'x>y && y>=0 && x*x<=y*y'),
+    ('cubic_order', 'float', 'x>y && x*x*x<=y*y*y'),
+    ('quartic', 'float', 'x*x*x*x+1==0'),
+    ('square_difference', 'float', 'x>=0 && y>=0 && x*x+y*y<2*x*y'),
+    ('parity', 'int', 'x%2==0 && (x+1)%2==0'),
+    ('sqrt_monotone', 'float', 'x>y && y>=0 && sqrt(x)<=sqrt(y)'),
+    ('sqrt_sum', 'float', 'x>=0 && y>=0 && sqrt(x+y)>sqrt(x)+sqrt(y)'),
+    ('power_zero', 'int', 'x>0 && x**0!=1'),
+    ('variable_power', 'int', 'x>1 && y>1 && x**y<=1'),
+])
+def test_composed_arithmetic_proofs_explain_every_native_lemma(name, kind, predicate, text_aligner):
+    """The public BMC compiler exercises arithmetic combinations, not hand-built proof nodes."""
+    model = load_state_machine_from_text(
+        'def %s x=0; def %s y=0; state Root { state A; [*]->A; }' % (kind, kind))
+    core = build_bmc_core_formula(BmcEngine(model).prepare(
+        'init state("Root.A") havoc {x,y}; check reach <= 1: %s;' % predicate))
+    prop = compile_bmc_property(core)
+    query = UnsatQuery(name, tuple(UnsatConstraint(key, (expression,)) for key, expression in (
+        ('domain', core.domain_formula), ('initial', core.initial_formula),
+        ('transitions', core.transition_formula), ('environment', core.environment_formula),
+        ('objective', prop.objective_formula),
+    )))
+    # This is a semantic coverage test, not a wall-clock benchmark. Coverage
+    # instrumentation and parallel CI workers must not consume its deadline.
+    report = explain_unsat(query, timeout_ms=30000)
+    assert report.solver_status == 'unsat'
+    assert report.proof_status == 'captured'
+    assert report.gaps == ()
+    assert report.reading_status == 'complete'
+    _check_reading_levels(report, text_aligner)

@@ -10,8 +10,10 @@ pyfcstm.solver.proof
     :maxdepth: 3
 
     core
+    integer
     interval
     io
+    polynomial
     rules
     text
 

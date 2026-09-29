@@ -301,3 +301,81 @@ def test_loader_rejects_gap_references_when_no_graph_exists():
     data['reading'] = None
     with pytest.raises(ValueError):
         UnsatReport.from_canonical(data)
+
+
+@pytest.mark.parametrize('mutation,message', [
+    ('zero_coefficient', 'monomials must be normalized'),
+    ('negative_weight', 'weights must be nonnegative'),
+    ('missing_literal', 'only polynomial inputs'),
+    ('empty_steps', 'must contain a contradiction'),
+    ('forward_reference', 'must reference earlier steps'),
+    ('wrong_square', 'invalid polynomial derivation'),
+])
+def test_loader_rejects_changed_polynomial_certificates(mutation, message):
+    x = z3.Real('x')
+    report = explain_unsat(UnsatQuery('quartic', (
+        UnsatConstraint('impossible', (x*x*x*x + 1 == 0,)),
+    )))
+    data = report.to_canonical()
+    node = next(node for node in data['proof']['nodes'] if node['polynomial'] is not None)
+    certificate = node['polynomial']
+    steps = certificate['steps']
+    if mutation == 'zero_coefficient':
+        steps[0]['coefficients'] = (((), '0'),)
+    elif mutation == 'negative_weight':
+        steps[-1]['weights'] = ('-1',) + steps[-1]['weights'][1:]
+    elif mutation == 'missing_literal':
+        steps[0]['term_id'] = None
+    elif mutation == 'empty_steps':
+        certificate['steps'] = ()
+    elif mutation == 'forward_reference':
+        steps[-1]['premises'] = (len(steps),)
+    else:
+        square = next(step for step in steps if step['rule'] == 'square')
+        square['factor'] = (((), '2'),)
+    with pytest.raises(ValueError, match=message):
+        UnsatReport.from_canonical(data)
+
+
+@pytest.mark.parametrize('mutation,message', [
+    ('missing_weights', 'equations and weights must align'),
+    ('not_opposing', 'require opposing bounds'),
+    ('wrong_sum', 'integer with a noninteger'),
+    ('real_atom', 'requires integer terms'),
+])
+def test_loader_rejects_changed_divisibility_certificates(mutation, message):
+    from dataclasses import replace
+    from .test_integer import _graph, _check
+
+    graph = _graph()
+    root = replace(graph.node('root'), divisibility=_check(graph), inference_kind='divisibility')
+    graph = replace(graph, nodes=graph.nodes[:-1] + (root,))
+    data = UnsatReport('divisibility', 'unsat', 'captured', graph).to_canonical()
+    certificate = data['proof']['nodes'][-1]['divisibility']
+    if mutation == 'missing_weights':
+        certificate['weights'] = ()
+    elif mutation == 'not_opposing':
+        certificate['bound_pairs'][0][1]['constant'] = '100'
+    elif mutation == 'wrong_sum':
+        certificate['constant'] = '1/3'
+    else:
+        next(term for term in data['proof']['terms'] if term['term_id'] == 'x')['sort'] = 'Real'
+    with pytest.raises(ValueError, match=message):
+        UnsatReport.from_canonical(data)
+
+
+def test_loader_rejects_linear_evidence_for_a_different_conclusion():
+    from dataclasses import replace
+    from .test_polynomial import _graph
+    from pyfcstm.solver.budget import SolveBudget
+    from pyfcstm.solver.proof.rules import _linear_equality
+
+    graph = _graph((('<=', 'x', 'y'), ('<=', 'y', 'x')), ('=', 'x', 'y'))
+    root = graph.node('target')
+    certificate = _linear_equality(root, graph, SolveBudget(None))
+    assert certificate is not None
+    changed = replace(root, conclusion=graph.nodes[0].conclusion, linear_equality=certificate)
+    graph = replace(graph, nodes=graph.nodes[:-1] + (changed,))
+    data = UnsatReport('linear_equality', 'unsat', 'captured', graph).to_canonical()
+    with pytest.raises(ValueError, match='must prove an arithmetic conclusion alternative'):
+        UnsatReport.from_canonical(data)

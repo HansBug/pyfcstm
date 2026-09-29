@@ -277,3 +277,48 @@ Conclusion: the submitted conjunction is inconsistent.
 Unexplained or invalid evidence:
   unsupported_rule: th-lemma
 ''' % (detail, note), report.reading.to_text(detail=detail))
+
+
+@pytest.mark.parametrize('operation', ['term', 'missing', 'brief', 'standard', 'detailed'])
+def test_reading_does_not_expand_unused_shared_formulas(operation, text_aligner):
+    """A small proof must not materialize an unrelated exponential expression."""
+    import tracemalloc
+
+    expression = z3.Int('unused')
+    for _ in range(20):
+        expression = expression + expression
+    report = explain_unsat(UnsatQuery('unused_expression', (
+        UnsatConstraint('unused', (expression > 0,)),
+        UnsatConstraint('contradiction', (z3.BoolVal(False),)),
+    )))
+    root = report.proof.node(report.proof.root_id).conclusion
+    tracemalloc.start()
+    try:
+        if operation == 'term':
+            assert report.reading.get_term_text(root) == 'false'
+        elif operation == 'missing':
+            with pytest.raises(KeyError):
+                report.reading.get_term_text('missing')
+        else:
+            simple = explain_unsat(UnsatQuery('unused_expression', (
+                UnsatConstraint('contradiction', (z3.BoolVal(False),)),
+            )))
+            text_aligner.assert_equal(simple.reading.to_text(detail=operation),
+                                      report.reading.to_text(detail=operation))
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert peak < 1024 * 1024
+
+
+@pytest.mark.parametrize('detail', ['brief', 'standard', 'detailed'])
+def test_reading_renders_certificate_atoms_outside_native_proof_roots(detail, text_aligner):
+    from pyfcstm.solver.proof import UnsatReport
+
+    x = z3.Real('x')
+    report = explain_unsat(UnsatQuery('square_alias', tuple(
+        UnsatConstraint(str(index), (expression,)) for index, expression in enumerate(
+            (x*x >= 1, x*x <= 0, x**2 >= 0)))))
+    output = report.reading.to_text(detail=detail)
+    loaded = UnsatReport.from_canonical(report.to_canonical())
+    text_aligner.assert_equal(output, loaded.reading.to_text(detail=detail))

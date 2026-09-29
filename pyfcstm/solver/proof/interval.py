@@ -330,6 +330,16 @@ class _Propagation:
                 if chosen in self.indices:
                     self.record(term.term_id, self.values[chosen], 'conditional',
                                 dependencies + (self.indices[chosen],))
+        if self.conflict is None and term.operator == '*' and len(args) == 2 and term.term_id in self.indices:
+            for child, divisor in ((args[0], args[1]), (args[1], args[0])):
+                factor = self.values.get(divisor, _Range())
+                if factor.lower > 0:
+                    inverse = _Range(Fraction(0) if factor.upper == inf else Fraction(1) / factor.upper,
+                                     Fraction(1) / factor.lower, factor.upper_open, factor.lower_open)
+                    self.record(child, self.values[term.term_id].multiply(inverse), 'product_inverse',
+                                (self.indices[term.term_id], self.indices[divisor]))
+                    if self.conflict is not None:
+                        return
 
 
 def interval_certificate(node, graph, budget):

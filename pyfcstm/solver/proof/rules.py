@@ -10,7 +10,7 @@ from fractions import Fraction
 from typing import Callable, Tuple
 
 from .core import (ArithmeticCertificate, CardinalityCertificate, CountContribution,
-                    LinearBound, ProofGap, ProofGraph)
+                    LinearBound, LinearEqualityCertificate, ProofGap, ProofGraph)
 
 
 @dataclass(frozen=True)
@@ -271,6 +271,103 @@ def _local_pair_certificate(node, graph):
     return None
 
 
+def _linear_certificate(node, graph, budget):
+    """Reconstruct a rational combination by eliminating local arithmetic atoms.
+
+    Nonlinear terms remain independent atoms. Their arithmetic semantics are
+    never assumed by this elimination; every returned coefficient is checked.
+    """
+    if node.conclusion is None:
+        return None
+    literals = [(graph.node(parent).conclusion, False) for parent in node.parents]
+    if not _is_false(node.conclusion, graph):
+        conclusion = graph.term(node.conclusion)
+        clauses = conclusion.arguments if conclusion.operator == 'or' else (node.conclusion,)
+        literals.extend((clause, True) for clause in clauses)
+    bounds = tuple(bound for term, negated in literals
+                   for bound in (_bound(term, negated, graph, True),) if bound is not None)
+    return _eliminate_bounds(bounds, budget)
+
+
+def _eliminate_bounds(bounds, budget):
+    """Return only the weighted inequalities needed for a contradiction."""
+    rows = []
+    for index, bound in enumerate(bounds):
+        for sign in ((1, -1) if bound.relation == 'eq' else (1,)):
+            rows.append(({key: sign * Fraction(value) for key, value in bound.coefficients},
+                         sign * Fraction(bound.constant), bound.relation == 'lt', {index: Fraction(sign)}))
+    while rows:
+        unique = {}
+        for coefficients, constant, strict, weights in rows:
+            budget.checkpoint('linear proof reconstruction')
+            if not coefficients:
+                if constant > 0 or constant == 0 and strict:
+                    used = sorted(weights)
+                    return ArithmeticCertificate(tuple(bounds[index] for index in used),
+                                                 tuple(str(weights[index]) for index in used),
+                                                 str(constant), strict)
+                continue
+            scale = abs(coefficients[min(coefficients)])
+            coefficients = {key: value / scale for key, value in coefficients.items()}
+            constant /= scale
+            weights = {key: value / scale for key, value in weights.items()}
+            identity = tuple(sorted(coefficients.items()))
+            previous = unique.get(identity)
+            if previous is None or (constant, strict) > (previous[1], previous[2]):
+                unique[identity] = coefficients, constant, strict, weights
+        rows = list(unique.values())
+        variables = {key for coefficients, _, _, _ in rows for key in coefficients}
+        if not variables:
+            return None
+        pivot = min(variables, key=lambda key: (
+            sum(row[0].get(key, 0) > 0 for row in rows) *
+            sum(row[0].get(key, 0) < 0 for row in rows), key))
+        positive = [row for row in rows if row[0].get(pivot, 0) > 0]
+        negative = [row for row in rows if row[0].get(pivot, 0) < 0]
+        rows = [row for row in rows if pivot not in row[0]]
+        for left, left_constant, left_strict, left_weights in positive:
+            for right, right_constant, right_strict, right_weights in negative:
+                budget.checkpoint('linear proof reconstruction')
+                weight = -left[pivot] / right[pivot]
+                rows.append((_add(left, right, weight), left_constant + weight * right_constant,
+                             left_strict or right_strict, _add(left_weights, right_weights, weight)))
+    return None
+
+
+def _linear_equality(node, graph, budget):
+    """Exclude both strict directions using exact local linear combinations."""
+    if node.conclusion is None:
+        return None
+    conclusion = graph.term(node.conclusion)
+    clauses = conclusion.arguments if conclusion.operator == 'or' else (node.conclusion,)
+    literals = [(graph.node(parent).conclusion, False) for parent in node.parents]
+    literals.extend((clause, True) for clause in clauses)
+    bounds = tuple(bound for term, negated in literals
+                   for bound in (_bound(term, negated, graph, True),) if bound is not None)
+    for clause in clauses:
+        term = graph.term(clause)
+        if term.operator_kind != 'builtin' or term.operator != '=':
+            continue
+        equality = _bound(clause, False, graph, True)
+        if equality is None:
+            continue
+        integer = all(graph.term(child).sort == 'Int' for child in term.arguments)
+        certificates = []
+        for sign in (1, -1):
+            assumption = replace(equality, negated=True,
+                                 coefficients=tuple((key, str(sign * Fraction(value)))
+                                                    for key, value in equality.coefficients),
+                                 constant=str(sign * Fraction(equality.constant) + int(integer)),
+                                 relation='le' if integer else 'lt')
+            result = _eliminate_bounds(bounds + (assumption,), budget)
+            if result is None:
+                break
+            certificates.append(result)
+        if len(certificates) == 2:
+            return LinearEqualityCertificate(clause, *certificates)
+    return None
+
+
 def _arithmetic_identity(node, graph):
     if node.conclusion is None:
         return False
@@ -499,6 +596,41 @@ def _nonnegative_domain(base, assumptions, graph):
                _bound_vector(bound) == negative for bound in assumptions)
 
 
+def _strictly_above(term_id, threshold, assumptions, graph):
+    """Recognize an exact lower bound stronger than a strict threshold."""
+    value = _affine(term_id, graph, True)
+    if value is None:
+        return False
+    constant = value.get(None, Fraction(0))
+    coefficients = {key: -weight for key, weight in value.items() if key is not None}
+    if not coefficients:
+        return constant > threshold
+    return any(bound is not None and bound.relation in ('le', 'lt') and
+               {key: Fraction(weight) for key, weight in bound.coefficients} == coefficients and
+               (Fraction(bound.constant) + constant > threshold or
+                Fraction(bound.constant) + constant == threshold and bound.relation == 'lt')
+               for bound in assumptions)
+
+
+def _nonzero_assumption(base, literals, graph):
+    """Recognize the explicit nonzero alternative of a power axiom."""
+    value = _affine(base, graph, True)
+    if value is None:
+        return False
+    for literal, polarity in literals:
+        key, positive = _boolean_literal(literal, polarity, graph)
+        term = graph.term(key)
+        if (term.operator_kind != 'builtin' or len(term.arguments) != 2 or
+                (term.operator, positive) not in (('=', False), ('distinct', True))):
+            continue
+        left, right = (_affine(child, graph, True) for child in term.arguments)
+        if left is not None and right is not None:
+            difference = _add(left, right, Fraction(-1))
+            if difference in (value, _add({}, value, Fraction(-1))):
+                return True
+    return False
+
+
 def _power_axiom(node, graph, budget):
     """Check even powers and principal real square roots with their domains."""
     if node.conclusion is None:
@@ -518,10 +650,25 @@ def _power_axiom(node, graph, budget):
                             if (other, polarity) != (claim, negated))
         for term_id, _ in bound.coefficients:
             term = graph.term(term_id)
+            if (term.operator_kind == 'builtin' and term.operator == '^' and term.sort == 'Real' and
+                    len(term.arguments) == 2 and bound.relation == 'lt' and
+                    vector == {None: Fraction(1), term_id: Fraction(-1)} and
+                    _strictly_above(term.arguments[0], 1, assumptions, graph) and
+                    _strictly_above(term.arguments[1], 0, assumptions, graph)):
+                return 'positive_power'
             parts = _power_parts(term, graph)
             if parts is None:
                 continue
             base, exponent = parts
+            if (exponent == 0 and bound.relation == 'eq' and
+                    vector in ({term_id: Fraction(1), None: Fraction(-1)},
+                               {term_id: Fraction(-1), None: Fraction(1)}) and
+                    (_strictly_above(base, 0, assumptions, graph) or
+                     _nonzero_assumption(base, literals, graph))):
+                return 'zero_power'
+            if (exponent == Fraction(1, 2) and bound.relation == 'lt' and
+                    vector == {term_id: Fraction(-1)} and _strictly_above(base, 0, assumptions, graph)):
+                return 'root_positive'
             if bound.relation == 'le' and vector == {term_id: Fraction(-1)}:
                 if exponent.denominator == 1 and exponent > 0 and exponent.numerator % 2 == 0:
                     return 'even_power'
@@ -675,7 +822,8 @@ def analyze_proof(graph: ProofGraph, rule_handlers=(), budget=None) -> ProofAnal
     for node in graph.nodes:
         budget.checkpoint('proof analysis')
         opened = set().union(*(analyzed[parent].open_hypotheses for parent in node.parents))
-        discharged, certificate, cardinality, interval = (), None, None, None
+        discharged, certificate, cardinality, interval, divisibility, polynomial = (), None, None, None, None, None
+        linear_equality = None
         local, kind = 'trusted', mechanical.get(node.rule, 'opaque')
         if node.rule == 'asserted':
             kind = 'input'
@@ -716,7 +864,12 @@ def analyze_proof(graph: ProofGraph, rule_handlers=(), budget=None) -> ProofAnal
             kind = 'equality'
             local = 'checked' if _transitive_path(node, graph, budget) else 'invalid'
         elif node.rule == 'th-lemma':
-            if tuple(parameter.value for parameter in node.parameters) == ('pb',):
+            if tuple(parameter.value for parameter in node.parameters[:2]) == ('arith', 'gcd-test'):
+                from .integer import divisibility_certificate
+                divisibility = divisibility_certificate(node, graph, budget)
+                local = 'checked' if divisibility is not None else 'unsupported'
+                kind = 'divisibility' if divisibility is not None else 'opaque'
+            elif tuple(parameter.value for parameter in node.parameters) == ('pb',):
                 cardinality = _cardinality_certificate(node, graph, budget)
                 local = 'checked' if cardinality is not None else 'unsupported'
                 kind = 'cardinality' if cardinality is not None else 'opaque'
@@ -738,7 +891,8 @@ def analyze_proof(graph: ProofGraph, rule_handlers=(), budget=None) -> ProofAnal
                 kind = 'arithmetic' if certificate is not None else 'opaque'
             if local == 'unsupported' and tuple(p.value for p in node.parameters[:2]) in (
                     ('arith',), ('arith', 'farkas'), ('arith', 'eq-propagate')):
-                certificate = _local_pair_certificate(node, graph)
+                certificate = (_local_pair_certificate(node, graph) or
+                               _linear_certificate(node, graph, budget))
                 if certificate is not None:
                     local, kind = 'checked', 'arithmetic'
                 else:
@@ -746,6 +900,17 @@ def analyze_proof(graph: ProofGraph, rule_handlers=(), budget=None) -> ProofAnal
                     interval = interval_certificate(node, graph, budget)
                     if interval is not None:
                         local, kind = 'checked', 'interval'
+            if local == 'unsupported' and tuple(p.value for p in node.parameters[:2]) in (
+                    ('arith',), ('arith', 'farkas'), ('arith', 'eq-propagate')):
+                linear_equality = _linear_equality(node, graph, budget)
+                if linear_equality is not None:
+                    local, kind = 'checked', 'linear_equality'
+            if local == 'unsupported' and tuple(p.value for p in node.parameters[:2]) in (
+                    ('arith',), ('arith', 'farkas'), ('arith', 'eq-propagate')):
+                from .polynomial import polynomial_certificate
+                polynomial = polynomial_certificate(node, graph, budget)
+                if polynomial is not None:
+                    local, kind = 'checked', 'polynomial'
         elif kind == 'opaque':
             local = 'unsupported'
         if local == 'invalid':
@@ -760,7 +925,7 @@ def analyze_proof(graph: ProofGraph, rule_handlers=(), budget=None) -> ProofAnal
         analyzed[node.node_id] = replace(node, local_check=local, inference_kind=kind,
                                         open_hypotheses=tuple(sorted(opened)),
                                         discharged_hypotheses=discharged, certificate=certificate,
-                                        cardinality=cardinality, interval=interval)
+                                        cardinality=cardinality, interval=interval, divisibility=divisibility, polynomial=polynomial, linear_equality=linear_equality)
         nodes.append(analyzed[node.node_id])
     root = analyzed[graph.root_id]
     if root.open_hypotheses:

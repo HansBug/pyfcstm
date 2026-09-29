@@ -641,3 +641,69 @@ def test_nonlinear_local_bounds_produce_checked_interval_refutations(case):
     intervals = [node.interval for node in report.proof.nodes if node.inference_kind == 'interval']
     assert intervals
     assert all(certificate.steps for certificate in intervals)
+
+
+@pytest.mark.parametrize('base,threshold,expected', [(True, 0, False), (2, 1, True), (0, 0, False)])
+def test_constant_power_domain_requires_a_numeric_strict_bound(base, threshold, expected):
+    from .test_polynomial import _graph
+    from pyfcstm.solver.proof.rules import _strictly_above
+
+    graph = _graph((), base)
+    assert _strictly_above(graph.node('target').conclusion, threshold, (), graph) is expected
+
+
+@pytest.mark.parametrize('base,condition,expected', [
+    (True, ('not', ('=', 'x', 0)), False),
+    ('x', ('not', ('=', 'x', 0)), True),
+    ('x', ('not', ('=', 0, 'x')), True),
+    ('x', ('=', 'x', 0), False),
+    ('x', ('not', ('=', 'y', 0)), False),
+    ('x', ('not', ('=', True, False)), False),
+])
+def test_zero_power_domain_requires_the_same_nonzero_base(base, condition, expected):
+    from .test_polynomial import _graph
+    from pyfcstm.solver.proof.rules import _nonzero_assumption
+
+    graph = _graph((condition,), base)
+    assert _nonzero_assumption(graph.node('target').conclusion,
+                               ((graph.node('fact0').conclusion, True),), graph) is expected
+
+
+def test_linear_equality_reconstruction_rejects_boolean_equalities():
+    from .test_polynomial import _graph
+    from pyfcstm.solver.budget import SolveBudget
+    from pyfcstm.solver.proof.rules import _linear_equality
+
+    graph = _graph((), ('=', True, False))
+    assert _linear_equality(graph.node('target'), graph, SolveBudget(None)) is None
+
+
+@pytest.mark.parametrize('language', ['en', 'zh'])
+@pytest.mark.parametrize('detail', ['brief', 'standard', 'detailed'])
+def test_quartic_polynomial_reading_matches_the_complete_text(language, detail, text_aligner):
+    from pathlib import Path
+
+    x = z3.Real('x')
+    report = explain_unsat(UnsatQuery('quartic', (
+        UnsatConstraint('impossible', (x*x*x*x + 1 == 0,)),
+    )))
+    expected = (Path(__file__).parent / 'proof_readings' /
+                ('quartic.%s.%s.txt' % (detail, language))).read_text(encoding='utf-8')
+    text_aligner.assert_equal(expected, report.reading.to_text(language, detail=detail))
+    restored = UnsatReport.from_canonical(report.to_canonical())
+    text_aligner.assert_equal(expected, restored.reading.to_text(language, detail=detail))
+
+
+@pytest.mark.parametrize('algebraic_symbol', ['x', 'y'])
+def test_power_domain_helpers_do_not_guess_algebraic_values(algebraic_symbol):
+    from dataclasses import replace
+    from .test_polynomial import _graph
+    from pyfcstm.solver.proof.rules import _nonzero_assumption, _strictly_above
+
+    graph = _graph((('not', ('=', 'x', 'y')),), 'x')
+    graph = replace(graph, terms=tuple(
+        replace(term, kind='algebraic', value='root-obj') if term.value == algebraic_symbol else term
+        for term in graph.terms))
+    base = graph.node('target').conclusion
+    assert not _nonzero_assumption(base, ((graph.node('fact0').conclusion, True),), graph)
+    assert not _strictly_above(base, 0, (), graph)

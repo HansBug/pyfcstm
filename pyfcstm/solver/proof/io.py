@@ -115,6 +115,36 @@ def _validate_graph(graph):
         if node.certificate is not None:
             for bound in node.certificate.bounds:
                 _references((bound.term_id,) + tuple(term for term, _ in bound.coefficients), terms)
+        if node.linear_equality is not None:
+            equality = node.linear_equality
+            _references((equality.term_id,), terms)
+            term = graph.term(equality.term_id)
+            conclusion = None if node.conclusion is None else graph.term(node.conclusion)
+            alternatives = (() if conclusion is None else conclusion.arguments if
+                            conclusion.operator_kind == 'builtin' and conclusion.operator == 'or' else
+                            (node.conclusion,))
+            if (equality.term_id not in alternatives or term.operator_kind != 'builtin' or
+                    term.operator != '=' or any(graph.term(key).sort not in ('Int', 'Real') for key in term.arguments)):
+                raise ValueError('linear equality evidence must prove an arithmetic conclusion alternative')
+            for certificate in (equality.less, equality.greater):
+                for bound in certificate.bounds:
+                    _references((bound.term_id,) + tuple(key for key, _ in bound.coefficients), terms)
+        if node.divisibility is not None:
+            for pair in node.divisibility.bound_pairs:
+                for bound in pair:
+                    _references((bound.term_id,) + tuple(term for term, _ in bound.coefficients), terms)
+            _references(tuple(term for term, _ in node.divisibility.coefficients), terms)
+            if any(graph.term(term).sort != 'Int' for term, _ in node.divisibility.coefficients):
+                raise ValueError('divisibility evidence requires integer terms')
+        if node.polynomial is not None:
+            from .polynomial import check_polynomial_certificate
+
+            for step in node.polynomial.steps:
+                references = (() if step.term_id is None else (step.term_id,)) + tuple(
+                    term for monomial, _ in step.coefficients + step.factor for term in monomial)
+                _references(references, terms)
+            if not check_polynomial_certificate(node, graph, node.polynomial):
+                raise ValueError('invalid polynomial derivation')
         if node.interval is not None:
             for bound in node.interval.bounds:
                 _references((bound.term_id,) + tuple(term for term, _ in bound.coefficients), terms)
@@ -220,7 +250,7 @@ def _validate(value):
         if len(value.bound_indices) not in (1, 2):
             raise ValueError('term equality needs one or two bounds')
     elif isinstance(value, proof.IntervalStep):
-        _choice(value.rule, ('literal', 'linear', 'intersection', 'square', 'product', 'sum', 'cast', 'conditional', 'power', 'congruence', 'congruence_sum'))
+        _choice(value.rule, ('literal', 'linear', 'intersection', 'square', 'product', 'product_inverse', 'sum', 'cast', 'conditional', 'power', 'congruence', 'congruence_sum'))
         if value.substitutions and value.rule not in ('congruence', 'congruence_sum'):
             raise ValueError('only congruence steps carry substitutions')
         if value.rule == 'congruence' and len(value.premises) != 1:
@@ -267,9 +297,9 @@ def _validate(value):
         _nonempty(value.node_id)
         _nonempty(value.rule)
         _choice(value.local_check, ('not_run', 'checked', 'trusted', 'unsupported', 'invalid'))
-        _choice(value.inference_kind, ('opaque', 'input', 'assumption', 'discharge', 'arithmetic', 'cardinality', 'order',
+        _choice(value.inference_kind, ('opaque', 'input', 'assumption', 'discharge', 'arithmetic', 'cardinality', 'divisibility', 'polynomial', 'linear_equality', 'order',
                                       'division_identity', 'remainder_lower', 'remainder_upper',
-                                      'even_power', 'root_nonnegative', 'root_identity', 'interval',
+                                      'even_power', 'zero_power', 'positive_power', 'root_positive', 'root_nonnegative', 'root_identity', 'interval',
                                       'floor_lower', 'floor_upper', 'real_division', 'arithmetic_identity',
                                       'logical', 'equality', 'rewrite', 'definition', 'resolution'))
     elif isinstance(value, proof.ProofParameter):
@@ -296,6 +326,48 @@ def _validate(value):
             raise ValueError('certificate bounds and weights must align')
         for weight in value.weights:
             _rational(weight)
+    elif isinstance(value, proof.DivisibilityCertificate):
+        from .rules import _add, _bound_vector
+
+        if not value.bound_pairs or len(value.bound_pairs) != len(value.weights):
+            raise ValueError('divisibility equations and weights must align')
+        total = {}
+        for (first, second), weight in zip(value.bound_pairs, value.weights):
+            _rational(weight)
+            if (first.relation != 'le' or second.relation != 'le' or
+                    _add(_bound_vector(first), _bound_vector(second))):
+                raise ValueError('divisibility equations require opposing bounds')
+            total = _add(total, _bound_vector(first), Fraction(weight))
+        constant = total.pop(None, Fraction(0))
+        _rational(value.constant)
+        _distinct(tuple(term for term, _ in value.coefficients))
+        for _, coefficient in value.coefficients:
+            _rational(coefficient)
+        if (constant != Fraction(value.constant) or constant.denominator == 1 or
+                total != {term: Fraction(weight) for term, weight in value.coefficients} or
+                any(weight.denominator != 1 for weight in total.values())):
+            raise ValueError('divisibility sum must equate an integer with a noninteger')
+    elif isinstance(value, proof.PolynomialStep):
+        _choice(value.rule, ('input', 'square', 'product', 'sum'))
+        for polynomial in (value.coefficients, value.factor):
+            _distinct(tuple(monomial for monomial, _ in polynomial))
+            for monomial, coefficient in polynomial:
+                _rational(coefficient)
+                if tuple(sorted(monomial)) != monomial or Fraction(coefficient) == 0:
+                    raise ValueError('polynomial monomials must be normalized')
+        _rational(value.multiplier)
+        for weight in value.weights:
+            _rational(weight)
+            if Fraction(weight) < 0:
+                raise ValueError('polynomial combination weights must be nonnegative')
+        if (value.rule == 'input') != (value.term_id is not None):
+            raise ValueError('only polynomial inputs reference a literal')
+    elif isinstance(value, proof.PolynomialCertificate):
+        if not value.steps:
+            raise ValueError('polynomial derivation must contain a contradiction')
+        for index, step in enumerate(value.steps):
+            if any(parent < 0 or parent >= index for parent in step.premises):
+                raise ValueError('polynomial steps must reference earlier steps')
     elif isinstance(value, proof.CountContribution):
         if not min(0, value.weight) <= value.minimum <= value.maximum <= max(0, value.weight):
             raise ValueError('invalid weighted Boolean contribution')
@@ -306,9 +378,9 @@ def _validate(value):
         _validate_graph(value)
     elif isinstance(value, proof_text.ReadingBlock):
         _nonempty(value.block_id)
-        _choice(value.kind, ('opaque', 'input', 'assumption', 'discharge', 'arithmetic', 'cardinality', 'order',
+        _choice(value.kind, ('opaque', 'input', 'assumption', 'discharge', 'arithmetic', 'cardinality', 'divisibility', 'polynomial', 'linear_equality', 'order',
                                       'division_identity', 'remainder_lower', 'remainder_upper',
-                                      'even_power', 'root_nonnegative', 'root_identity', 'interval',
+                                      'even_power', 'zero_power', 'positive_power', 'root_positive', 'root_nonnegative', 'root_identity', 'interval',
                                       'floor_lower', 'floor_upper', 'real_division', 'arithmetic_identity',
                              'logical', 'equality', 'rewrite', 'definition', 'resolution', 'domain'))
         if value.kind == 'domain':

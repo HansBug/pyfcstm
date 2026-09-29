@@ -82,6 +82,28 @@ checked using exact rational arithmetic, while recognized mechanical Z3 rules
 can remain ``trusted``. Inspect ``rule_check`` and each node's ``local_check``
 when that distinction matters. A partial result carries explicit ``gaps``.
 
+Some native arithmetic lemmas supply coefficients; others omit intermediate
+algebraic steps. The reader reconstructs local evidence from the lemma's
+premises and negated conclusion: rational linear combinations, integer
+divisibility contradictions, interval deductions, and polynomial identities
+with nonnegative squares and products. These reconstructions use exact
+rational arithmetic. They do not query a second solver or assume unrelated
+input conditions. Polynomial evidence can be replayed when loading a portable
+report without importing Z3.
+
+Reconstruction is bounded, not a complete decision procedure for nonlinear
+arithmetic. Unsupported lemmas keep their explicit gaps. A complete reading
+also does not promise a globally shortest proof: unused polynomial derivation
+steps and zero-weight divisibility equations are removed, while native proof
+dependencies remain available. Unused input formulas are not expanded during
+text rendering. Equivalent terms referenced by a certificate are rendered on
+demand, even when they are absent from the native proof conclusions.
+
+Display names are checked across the captured query. If distinct symbols
+would display identically, capture emits a ``UserWarning`` and appends distinct
+term identifiers to their displayed names. This does not change the submitted
+formulas or the caller's name registry.
+
 Reproduce and continue
 ----------------------
 

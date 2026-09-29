@@ -206,6 +206,9 @@ class ProofNode:
     :param certificate: Optional exact, normalized arithmetic certificate.
     :param cardinality: Optional checked Boolean counting contradiction.
     :param interval: Optional exact local interval contradiction.
+    :param divisibility: Optional exact contradiction using integer-valued terms.
+    :param polynomial: Optional exact polynomial sign derivation.
+    :param linear_equality: Two exact contradictions excluding unequal arithmetic values.
     """
 
     node_id: str
@@ -223,6 +226,9 @@ class ProofNode:
     certificate: Optional['ArithmeticCertificate'] = None
     cardinality: Optional['CardinalityCertificate'] = None
     interval: Optional['IntervalCertificate'] = None
+    divisibility: Optional['DivisibilityCertificate'] = None
+    polynomial: Optional['PolynomialCertificate'] = None
+    linear_equality: Optional['LinearEqualityCertificate'] = None
 
 
 @dataclass(frozen=True)
@@ -359,6 +365,72 @@ class ArithmeticCertificate:
     weights: Tuple[str, ...]
     constant: str
     strict: bool
+
+
+@dataclass(frozen=True)
+class DivisibilityCertificate:
+    """Opposing inequalities establish equations with an impossible integer sum.
+
+    :param bound_pairs: Two opposing non-strict inequalities for each equation.
+    :param weights: Signed rational multiplier of the first bound in each pair.
+    :param coefficients: Integral coefficients of the resulting integer terms.
+    :param constant: Nonintegral constant in the resulting equation against zero.
+    """
+
+    bound_pairs: Tuple[Tuple[LinearBound, LinearBound], ...]
+    weights: Tuple[str, ...]
+    coefficients: Tuple[Tuple[str, str], ...]
+    constant: str
+
+
+@dataclass(frozen=True)
+class LinearEqualityCertificate:
+    """Establish an equality by refuting both strict order alternatives.
+
+    :param term_id: Equality conclusion or equality alternative in a clause.
+    :param less: Exact contradiction assuming the left side is smaller.
+    :param greater: Exact contradiction assuming the right side is smaller.
+    """
+
+    term_id: str
+    less: ArithmeticCertificate
+    greater: ArithmeticCertificate
+
+
+@dataclass(frozen=True)
+class PolynomialStep:
+    """A normalized polynomial proved nonnegative (or strictly positive).
+
+    :param coefficients: Sparse monomial/coefficient pairs; an empty monomial is constant.
+    :param strict: Whether the polynomial is strictly positive.
+    :param rule: Input relation, square, product or nonnegative linear combination.
+    :param premises: Earlier step indices used by the deduction.
+    :param weights: Nonnegative rational weights of a linear combination.
+    :param term_id: Original local literal for an input step.
+    :param negated: Whether the input negates a conclusion alternative.
+    :param multiplier: Equality orientation for an input step.
+    :param factor: Polynomial being squared for a square step.
+    """
+
+    coefficients: Tuple[Tuple[Tuple[str, ...], str], ...]
+    strict: bool
+    rule: str
+    premises: Tuple[int, ...] = ()
+    weights: Tuple[str, ...] = ()
+    term_id: Optional[str] = None
+    negated: bool = False
+    multiplier: str = '1'
+    factor: Tuple[Tuple[Tuple[str, ...], str], ...] = ()
+
+
+@dataclass(frozen=True)
+class PolynomialCertificate:
+    """Exact local deductions whose final polynomial has an impossible sign.
+
+    :param steps: Dependency-ordered, replayable steps ending in a contradiction.
+    """
+
+    steps: Tuple[PolynomialStep, ...]
 
 
 @dataclass(frozen=True)

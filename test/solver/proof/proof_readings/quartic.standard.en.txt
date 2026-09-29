@@ -1,0 +1,26 @@
+Query: quartic
+Solver result: UNSAT
+Reading: complete
+View: standard
+
+P1  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not (((x * x * x * x) = -1)) or ((x * x * x * x) <= -1))
+
+P2  Input
+  Input origins: impossible
+  Therefore: (((((x * x) * x) * x) + 1) = 0)
+
+P3  Propagate premises; Exact polynomial deduction
+  From: P1, P2
+  Q1: -1 + -1 * x * x * x * x >= 0
+    Normalize local premise: ((x * x * x * x) <= -1)
+  Q2: x * x * x * x >= 0
+    Square is nonnegative: (x * x)^2
+  Q3: -1 >= 0
+    Nonnegative linear combination: 1 * Q1 + 1 * Q2
+  The final constant cannot have this sign; contradiction.
+  Therefore: false
+  Expandable proof steps: 2
+
+Conclusion: the submitted conjunction is inconsistent.

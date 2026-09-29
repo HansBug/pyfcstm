@@ -15,6 +15,7 @@ pyfcstm.solver.proof
     io
     polynomial
     rules
+    semantics
     text
 
 \_\_all\_\_

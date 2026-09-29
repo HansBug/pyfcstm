@@ -824,6 +824,7 @@ def analyze_proof(graph: ProofGraph, rule_handlers=(), budget=None) -> ProofAnal
         opened = set().union(*(analyzed[parent].open_hypotheses for parent in node.parents))
         discharged, certificate, cardinality, interval, divisibility, polynomial = (), None, None, None, None, None
         linear_equality = None
+        diagnostics = []
         local, kind = 'trusted', mechanical.get(node.rule, 'opaque')
         if node.rule == 'asserted':
             kind = 'input'
@@ -908,7 +909,7 @@ def analyze_proof(graph: ProofGraph, rule_handlers=(), budget=None) -> ProofAnal
             if local == 'unsupported' and tuple(p.value for p in node.parameters[:2]) in (
                     ('arith',), ('arith', 'farkas'), ('arith', 'eq-propagate')):
                 from .polynomial import polynomial_certificate
-                polynomial = polynomial_certificate(node, graph, budget)
+                polynomial = polynomial_certificate(node, graph, budget, diagnostics=diagnostics)
                 if polynomial is not None:
                     local, kind = 'checked', 'polynomial'
         elif kind == 'opaque':
@@ -919,7 +920,7 @@ def analyze_proof(graph: ProofGraph, rule_handlers=(), budget=None) -> ProofAnal
         elif local != 'checked' and rules != 'failed':
             rules = 'partial'
         if local == 'unsupported':
-            gaps.append(ProofGap('unsupported_rule', node.node_id, node.rule))
+            gaps.extend(diagnostics or (ProofGap('unsupported_rule', node.node_id, node.rule),))
             if node.rule != 'th-lemma':
                 scope = 'partial'
         analyzed[node.node_id] = replace(node, local_check=local, inference_kind=kind,

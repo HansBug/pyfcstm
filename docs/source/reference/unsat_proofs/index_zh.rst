@@ -136,6 +136,14 @@ reading_status="not_requested"``。存在受信任的机械规则时，可以同
      - ``left_id``、``right_id`` 及 ``bound_indices``：建立项相等关系的一条局部等式，或方向相反的两条非严格边界。
    * - ``IntervalStep``
      - ``term_id``、精确有理数 ``lower`` / ``upper``（``None`` 表示无穷）、``lower_open`` / ``upper_open``、推导 ``rule``、先前步骤 ``premises``，以及线性推导可用的 ``bound_index``。``substitutions`` 保存局部等式。``congruence`` 从唯一的源范围传递边界；``congruence_sum`` 检查相等项的精确系数相消，记录所得常量单点。最终结果未使用的步骤会被移除。
+   * - ``DivisibilityCertificate``
+     - 方向相反的 ``bound_pairs``、带符号有理数 ``weights``、整数 ``coefficients`` 和非整数 ``constant``，共同建立不可能成立的整数等式。
+   * - ``LinearEqualityCertificate``
+     - 等式 ``term_id``，以及分别反驳两个严格大小关系的算术证书 ``less`` / ``greater``。
+   * - ``PolynomialCertificate``
+     - 按依赖顺序排列的 ``steps``，最终得到负常数非负或零严格为正的矛盾；仅保留最终矛盾依赖的步骤。
+   * - ``PolynomialStep``
+     - 稀疏单项式系数 ``coefficients``、布尔值 ``strict``、``rule``、先前步骤 ``premises``、有理数 ``weights``、可选 ``term_id``、``negated``、``multiplier`` 及多项式 ``factor``。单项式是排好序的算术项 ID 元组；空元组表示常数。输入步骤绑定局部条件；幂步骤绑定原始的带类型运算及明确的定义域前提。
    * - ``ReadingBlock``
      - ``block_id``、``kind``、结论 ``claims``、``premise_block_ids``、``active_hypotheses``、``evidence_node_ids``、``source_links``、合并的 ``detail_block_ids``、可选 ``title_en`` 和 ``title_zh``。
    * - ``ProofReading``
@@ -145,7 +153,8 @@ reading_status="not_requested"``。存在受信任的机械规则时，可以同
 阅读类别为 ``input``、``assumption``、``discharge``、``arithmetic``、``cardinality``、``order``、``logical``、
 ``division_identity``、``remainder_lower``、``remainder_upper``、
 ``floor_lower``、``floor_upper``、``real_division``、``arithmetic_identity``、
-``even_power``、``root_nonnegative``、``root_identity``、``interval``、
+``polynomial``、``divisibility``、``linear_equality``、``zero_power``、
+``positive_power``、``root_positive``、``even_power``、``root_nonnegative``、``root_identity``、``interval``、
 ``equality``、``rewrite``、``definition``、``resolution``、``opaque`` 和 ``domain``。
 原生绑定变量显示为 de Bruijn 索引：``#0`` 是最内层变量；名称和类型保留在 ``bindings`` 中。
 求解器引入的符号不会被解码成虚构的源码变量。
@@ -167,6 +176,45 @@ reading_status="not_requested"``。存在受信任的机械规则时，可以同
 原生权重不可用时，可以从两条局部边界重建精确消元权重。
 指数已由局部证据确定为正整数单点时，可以传播幂的范围。
 所有有限端点始终使用精确有理数，包括极大和极小的值。
+
+多项式证据可以组合使用。规则包括 ``input``、``square``、``square_zero``、
+``product``、``positive_factor``、``cancel_positive``、``sum``、``equality_product``、``power_sign`` 和
+``power_identity``，分别记录局部输入、平方、平方为零、乘积、非负因子的正性加强、消去严格正因子、
+非负线性组合、等式乘法和带定义域的幂性质。实数等式的否定可以转成差的平方严格为正。
+正底数的幂可以推导正性，有理数幂恒等式必须满足相应定义域；不会向用户的查询补入缺失条件。
+乘积具有严格符号时，其中的非负因子必为正；证据同时记录乘积的严格界和因子的非负界，
+再将所得正性用于消去因子。
+
+符号传播、等式替换和整数幂单调性共享这些事实。奇数次幂恒等式按指数参数化，
+偶数次幂次序推导要求相应的符号条件；嵌套根号、平移后的底数和赋值等式可以进入同一个局部证书。
+这仍是有资源上限的证据重建，不是完备的非线性判定过程：乘法展开最多允许 32 次和
+4096 个稀疏单项式，搜索也限制事实增长。超出能力的义务保留缺口，内部搜索限制不改变输入语言。
+
+搜索先处理局部条件中已有的次序关系，再尝试任意原子项之间的推测次序。
+联合乘积搜索最多考虑 4096 个不同候选，再由现有 Z3 线性求解器寻找精确组合权重；
+只有实际选中的乘积进入证明 DAG。等式代换保留原始证据，由化简后的界提供后续乘积候选，
+中间等式倍乘证据不再作为额外因子竞争搜索空间。事实或候选数量达到限制时记录
+``proof_search_limit``；停止生成新事实后，仍检查已有事实能否给出矛盾。
+
+线性组合搜索先使用精确有理数消元；行组合即将显著增长时，可由现有 Z3 线性求解器
+通过 SAT 模型给出非负有理数权重。每个生成的多项式证书在接受前均重新检查；
+检查器直接计算恒等式、符号、定义域和最终矛盾，不再次求解。
+内部回放失败会发出 ``RuntimeWarning``，该推理保持 unsupported。
+相邻线性组合会被展开合并，未使用的证据会被裁剪；这不表示找到了全局最短证明。
+standard 和 detailed 文本展示保留的 ``Q`` 推导步骤。
+
+多项式重建区分 ``proof_search_exhausted``（有界搜索未找到证书）、
+``proof_search_limit``（展开、事实或候选数量达到限制）和 ``invalid_generated_certificate``
+（生成的证书未通过内部回放）。缺口记录对应的原生节点和具体原因，
+不因此否定 Z3 的 UNSAT 结果。搜索系数之前，先剔除无法抵消的单项式列所关联的权重，
+重复这一过程直到候选集合不再缩小，避免为不可能参与非负组合的条件反复求解。
+纯多项式局部条件若在所有自由变量取零时成立，搜索立即结束；这个检查排除可能受额外语义
+约束的运算项和代数数项，不据此对用户提交的查询宣告 SAT。乘积传播会使用新推导出的界；
+纯常数缩放和已知零等式的乘积交给已有线性组合与等式消元处理。可选的幂恒等式展开超限时，
+已经建立的幂符号证据仍然保留。
+符号查询缓存按照线性化约束中相互关联的单项式列失效：无关新事实不会触发重算，
+把原本独立的列连接起来的新事实则会触发。非负线性组合没有增加新的约束信息，
+因此保留缓存。这只调整搜索顺序；保留的推导仍记录全部必要前提并接受精确回放。
 
 初始算术配置返回已知的算术或证明生成限制时，捕获使用 Z3 算术求解器 6 重试。
 重试使用保存的原始断言，共享同一个总预算，只导出最终一次执行的证明。

@@ -272,3 +272,59 @@ def test_composed_arithmetic_proofs_explain_every_native_lemma(name, kind, predi
     assert report.gaps == ()
     assert report.reading_status == 'complete'
     _check_reading_levels(report, text_aligner)
+
+
+@pytest.mark.parametrize('name,source,assumptions', [
+    ('shifted_power_transition',
+     '''def float x=0; def float y=0;
+        state Root { state A; state Mid; state Bad; [*]->A;
+          A->Mid effect { x=x+1; y=y+1; }
+          Mid->Bad: if [x**5 <= y**5]; }''',
+     'assume at 0: x>y;'),
+    ('root_product_transition',
+     '''def float x=0; def float y=0; def float r=0; def float s=0; def float t=0;
+        state Root { state A; state Mid; state Bad; [*]->A;
+          A->Mid effect { r=sqrt(x); s=sqrt(y); t=sqrt(x*y); }
+          Mid->Bad: if [t != r*s]; }''',
+     'assume at 0: x>=0; assume at 0: y>=0;'),
+])
+def test_compositional_proofs_follow_real_updates_across_frames(name, source, assumptions, text_aligner):
+    model = load_state_machine_from_text(source)
+    core = build_bmc_core_formula(BmcEngine(model).prepare(
+        'init state("Root.A") havoc {x,y}; %s check reach <= 2: active("Root.Bad");' % assumptions))
+    objective = compile_bmc_property(core)
+    report = explain_unsat(UnsatQuery(name, tuple(UnsatConstraint(key, (expression,)) for key, expression in (
+        ('domain', core.domain_formula), ('initial', core.initial_formula),
+        ('transitions', core.transition_formula), ('environment', core.environment_formula),
+        ('objective', objective.objective_formula),
+    ))), timeout_ms=120000)
+    assert report.solver_status == 'unsat'
+    assert report.stop_reason is None
+    assert report.input_check == 'passed'
+    assert report.scope_check == 'passed'
+    assert report.reading_status == 'complete'
+    assert report.gaps == ()
+    _check_reading_levels(report, text_aligner)
+
+
+def test_fbmcq_only_root_contradiction_uses_compositional_evidence(text_aligner):
+    model = load_state_machine_from_text(
+        'def float x=0; def float y=0; state Root { state A; [*]->A; }')
+    core = build_bmc_core_formula(BmcEngine(model).prepare('''
+        init state("Root.A") havoc {x,y};
+        assume at 0: x>=0;
+        assume at 0: y>=0;
+        assume at 0: sqrt(x*y)!=sqrt(x)*sqrt(y);
+        check reach <= 1: active("Root.A");
+    '''))
+    objective = compile_bmc_property(core)
+    report = explain_unsat(UnsatQuery('query_root_conflict', tuple(
+        UnsatConstraint(key, (expression,)) for key, expression in (
+            ('domain', core.domain_formula), ('initial', core.initial_formula),
+            ('environment', core.environment_formula), ('objective', objective.objective_formula),
+        ))), timeout_ms=120000)
+    assert report.solver_status == 'unsat'
+    assert report.stop_reason is None
+    assert report.reading_status == 'complete'
+    assert report.gaps == ()
+    _check_reading_levels(report, text_aligner)

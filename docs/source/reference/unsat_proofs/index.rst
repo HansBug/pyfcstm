@@ -127,7 +127,7 @@ Evidence and reading data
    * - ``ProofInput``
      - ``occurrence_id``, ``constraint_id``, zero-based ``expression_index``, ``term_id`` and Boolean ``background``. Unused submitted expressions remain recorded.
    * - ``ProofNode``
-     - ``node_id``, native ``rule``, ordered proof ``parents``, optional ``conclusion``, other term ``operands``, ``parameters``, alternative ``input_occurrences``, ``open_hypotheses``, ``discharged_hypotheses``, ``local_check``, binder ``bindings``, ``inference_kind`` and optional ``certificate``, ``cardinality`` and ``interval`` evidence.
+     - ``node_id``, native ``rule``, ordered proof ``parents``, optional ``conclusion``, other term ``operands``, ``parameters``, alternative ``input_occurrences``, ``open_hypotheses``, ``discharged_hypotheses``, ``local_check``, binder ``bindings``, ``inference_kind`` and optional ``certificate``, ``cardinality``, ``interval``, ``divisibility``, ``linear_equality`` and ``polynomial`` evidence.
    * - ``ProofParameter``
      - ``kind`` and textual ``value``. Kinds: integer, double, rational, symbol, sort, expression or declaration.
    * - ``ArithmeticCertificate``
@@ -142,6 +142,14 @@ Evidence and reading data
      - ``left_id``, ``right_id`` and ``bound_indices``: one local equality or two opposing non-strict bounds establishing equal terms.
    * - ``IntervalStep``
      - ``term_id``, exact rational ``lower`` / ``upper`` (``None`` denotes infinity), ``lower_open`` / ``upper_open``, deduction ``rule``, prior-step ``premises`` and optional ``bound_index`` for a linear deduction. ``substitutions`` retains local equalities. A ``congruence`` step transfers its one source range; ``congruence_sum`` checks exact cancellation of equal terms and records the resulting constant singleton. Steps unrelated to the final result are removed.
+   * - ``DivisibilityCertificate``
+     - Opposing ``bound_pairs``, signed rational ``weights``, integral ``coefficients`` and a nonintegral ``constant`` establish an impossible integer equation.
+   * - ``LinearEqualityCertificate``
+     - Equality ``term_id`` and arithmetic certificates ``less`` / ``greater`` refuting both strict order alternatives.
+   * - ``PolynomialCertificate``
+     - Dependency-ordered ``steps`` ending in a negative constant declared nonnegative, or zero declared strictly positive. Only dependencies of the final contradiction remain.
+   * - ``PolynomialStep``
+     - Sparse monomial/coefficient ``coefficients``, Boolean ``strict``, ``rule``, earlier ``premises``, rational ``weights``, optional ``term_id``, ``negated``, ``multiplier`` and polynomial ``factor``. A monomial is a sorted tuple of arithmetic term IDs; the empty tuple denotes a constant. Input steps bind local literals; power steps bind the original typed operation and explicit domain premises.
    * - ``ReadingBlock``
      - ``block_id``, ``kind``, conclusion ``claims``, ``premise_block_ids``, ``active_hypotheses``, ``evidence_node_ids``, ``source_links``, folded ``detail_block_ids``, optional ``title_en`` and ``title_zh``.
    * - ``ProofReading``
@@ -151,7 +159,8 @@ Evidence and reading data
 are ``input``, ``assumption``, ``discharge``, ``arithmetic``, ``cardinality``, ``order``, ``logical``,
 ``division_identity``, ``remainder_lower``, ``remainder_upper``,
 ``floor_lower``, ``floor_upper``, ``real_division``, ``arithmetic_identity``,
-``even_power``, ``root_nonnegative``, ``root_identity``, ``interval``,
+``polynomial``, ``divisibility``, ``linear_equality``, ``zero_power``,
+``positive_power``, ``root_positive``, ``even_power``, ``root_nonnegative``, ``root_identity``, ``interval``,
 ``equality``, ``rewrite``, ``definition``, ``resolution``, ``opaque`` and
 ``domain``. Native bound variables are rendered as de Bruijn indices: ``#0``
 is the innermost variable, with names/sorts retained in ``bindings``.
@@ -182,6 +191,64 @@ When native weights are unavailable, reconstruction may combine two local
 bounds with exact cancelling weights. Positive integral powers can propagate
 ranges when the exponent has a checked singleton value. All finite endpoints
 remain exact rationals, including extremely small or large values.
+
+Polynomial evidence is compositional. Its rules are ``input``, ``square``,
+``square_zero``, ``product``, ``positive_factor``, ``cancel_positive``, ``sum``, ``equality_product``,
+``power_sign`` and ``power_identity``. They cover exact polynomial identities,
+nonnegative products, cancellation of a strictly positive factor, and the fact
+that a square bounded above by zero has a zero factor. A nonnegative factor of
+a strictly signed product is strictly positive; its evidence records both the
+product and the factor's nonnegative bound before cancellation. Negated real equalities
+become strictly positive squares. Domain-conditioned power rules establish
+positivity for positive bases and rational-power identities on valid domains;
+no missing domain condition is added to the submitted query.
+
+Search shares these facts across sign propagation, equality substitution and
+integer-power order identities. The odd-degree identity is parameterized by the
+exponent; even-degree order requires appropriate half-line signs. Nested roots,
+shifted bases and assignment equalities can therefore participate in one local
+certificate. This is bounded reconstruction, not a complete nonlinear decision
+procedure: multiplicative expansion admits degree at most 32 and at most 4096 sparse monomials,
+and the search bounds its fact growth. Larger or unsupported obligations retain
+gaps. These internal search limits do not change the input language.
+
+Order consequences of the actual local bounds are processed before speculative
+orders between arbitrary atoms. Joint product search considers at most 4096
+distinct candidate products, then asks the existing Z3 linear solver for exact
+combination weights. Only selected products enter the proof DAG. Rewritten
+bounds keep their original evidence, while their reduced forms supply further
+product candidates; intermediate equality multiples do not compete as factors.
+Reaching a fact or candidate limit records ``proof_search_limit``. Existing
+facts are still checked for a contradiction when fact generation stops.
+
+Sparse linear combination search uses exact rational elimination. Before its
+row product grows large, the existing Z3 linear solver can supply nonnegative
+rational coefficients through a SAT model. Every generated polynomial certificate
+is replayed before acceptance; replay recomputes identities, signs, domains and
+the final contradiction without solving again. A failed internal replay emits
+``RuntimeWarning`` and leaves the inference unsupported. Adjacent linear sums
+are flattened and unused evidence is pruned; this does not establish a globally
+shortest proof. Standard and detailed text show the retained ``Q`` deductions.
+
+Polynomial reconstruction distinguishes ``proof_search_exhausted`` (no witness
+found by the bounded search), ``proof_search_limit`` (an expansion, fact or
+candidate limit was reached), and ``invalid_generated_certificate`` (internal replay rejected the
+candidate). Each gap identifies the native node and carries a diagnostic.
+These reasons do not invalidate Z3's UNSAT result. Before coefficient search,
+one-sided monomial columns eliminate weights that cannot participate in a
+nonnegative refutation; this pruning repeats until the support stops shrinking.
+If setting every free polynomial variable to zero satisfies the local bounds,
+search stops immediately. This shortcut excludes operation and algebraic atoms
+whose values may be constrained by additional semantics. It makes no SAT claim
+about the submitted query. Products reuse newly derived bounds; scalar copies
+and products of known zero equalities are left to existing linear combination
+and equality reduction. Oversized optional power identities do not discard an
+already established power sign.
+Sign-query caches follow connected monomial columns of the linearized bounds.
+A new independent fact does not invalidate unrelated queries; a connecting
+fact does. Nonnegative linear combinations add no information to this search
+space and preserve cached results. This changes scheduling only: every retained
+deduction still records its premises and must pass exact replay.
 
 When the initial arithmetic configuration returns a known arithmetic or proof
 production limitation, capture retries with Z3 arithmetic solver 6, the exact

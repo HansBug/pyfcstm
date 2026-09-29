@@ -403,13 +403,13 @@ class PolynomialStep:
 
     :param coefficients: Sparse monomial/coefficient pairs; an empty monomial is constant.
     :param strict: Whether the polynomial is strictly positive.
-    :param rule: Input relation, square, product or nonnegative linear combination.
+    :param rule: Input relation, semantic fact, square, product or nonnegative sum.
     :param premises: Earlier step indices used by the deduction.
     :param weights: Nonnegative rational weights of a linear combination.
-    :param term_id: Original local literal for an input step.
+    :param term_id: Original local literal or typed operation for semantic evidence.
     :param negated: Whether the input negates a conclusion alternative.
-    :param multiplier: Equality orientation for an input step.
-    :param factor: Polynomial being squared for a square step.
+    :param multiplier: Equality orientation for an input or power-identity step.
+    :param factor: Square base, equality multiplier, or remaining positive-factor cofactor.
     """
 
     coefficients: Tuple[Tuple[Tuple[str, ...], str], ...]

@@ -348,7 +348,8 @@ def _validate(value):
                 any(weight.denominator != 1 for weight in total.values())):
             raise ValueError('divisibility sum must equate an integer with a noninteger')
     elif isinstance(value, proof.PolynomialStep):
-        _choice(value.rule, ('input', 'square', 'product', 'sum'))
+        _choice(value.rule, ('input', 'square', 'square_zero', 'product', 'cancel_positive', 'positive_factor',
+                             'sum', 'power_sign', 'power_identity', 'equality_product'))
         for polynomial in (value.coefficients, value.factor):
             _distinct(tuple(monomial for monomial, _ in polynomial))
             for monomial, coefficient in polynomial:
@@ -360,8 +361,8 @@ def _validate(value):
             _rational(weight)
             if Fraction(weight) < 0:
                 raise ValueError('polynomial combination weights must be nonnegative')
-        if (value.rule == 'input') != (value.term_id is not None):
-            raise ValueError('only polynomial inputs reference a literal')
+        if (value.rule in ('input', 'power_sign', 'power_identity')) != (value.term_id is not None):
+            raise ValueError('only polynomial inputs or semantic steps reference a term')
     elif isinstance(value, proof.PolynomialCertificate):
         if not value.steps:
             raise ValueError('polynomial derivation must contain a contradiction')

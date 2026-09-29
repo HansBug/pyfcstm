@@ -412,6 +412,25 @@ def _render(reading, language, detail):
                         reason = choose('Normalize local premise: ', '归一化局部前提：') + literal
                     elif step.rule == 'square':
                         reason = choose('Square is nonnegative: ', '平方非负：') + '(%s)^2' % _polynomial_text(step.factor, terms)
+                    elif step.rule == 'square_zero':
+                        reason = choose('A square bounded above by zero has a zero factor: ', '平方不大于零，其因子必为零：') + 'Q%d' % (step.premises[0] + 1)
+                    elif step.rule == 'cancel_positive':
+                        reason = choose('Cancel the strictly positive factor: ', '消去严格正因子：') + 'Q%d / Q%d' % tuple(
+                            parent + 1 for parent in step.premises)
+                    elif step.rule == 'positive_factor':
+                        reason = choose('A nonnegative factor of a nonzero product is positive: ',
+                                        '非零乘积中的非负因子必为正：') + ', '.join(
+                            'Q%d' % (parent + 1) for parent in step.premises) + choose(
+                            '; cofactor: ', '；其余因子：') + _polynomial_text(step.factor, terms)
+                    elif step.rule == 'power_sign':
+                        reason = choose('Power sign from base domain: ', '由底数定义域推导幂的符号：') + terms[step.term_id] + '; ' + ', '.join(
+                            'Q%d' % (parent + 1) for parent in step.premises)
+                    elif step.rule == 'power_identity':
+                        reason = choose('Rational power identity from base domain: ', '由底数定义域推导有理数幂恒等式：') + terms[step.term_id] + '; ' + ', '.join(
+                            'Q%d' % (parent + 1) for parent in step.premises)
+                    elif step.rule == 'equality_product':
+                        reason = choose('Multiply the established equality by ', '已证明的等式乘以 ') + _polynomial_text(step.factor, terms) + '; ' + ', '.join(
+                            'Q%d' % (parent + 1) for parent in step.premises)
                     elif step.rule == 'product':
                         reason = choose('Multiply nonnegative factors: ', '非负因子相乘：') + ' * '.join(
                             'Q%d' % (parent + 1) for parent in step.premises)

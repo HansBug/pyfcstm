@@ -111,6 +111,13 @@ with trusted mechanical rules. ``core.subset_minimality="proven",
 proof_scope="full"`` is possible when reduced reproof fails: the core evidence
 and chosen graph have separately qualified guarantees.
 
+The same query can have different valid native proof paths across platforms,
+solver configurations or versions. Reading completeness does not promise a
+unique sequence of deductions or identical text for a newly generated proof.
+For reproducible rendering, preserve the canonical report and render that
+fixed evidence; live proof generation and fixed-evidence formatting are tested
+separately, with full-text comparisons in both cases.
+
 Evidence and reading data
 -------------------------
 

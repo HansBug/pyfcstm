@@ -45,8 +45,9 @@ def test_public_power_sign_families_have_complete_readings(predicate, text_align
     assert report.reading_status == 'complete'
     assert report.gaps == ()
     restored = UnsatReport.from_canonical(report.to_canonical())
-    for detail in ('brief', 'standard', 'detailed'):
-        text_aligner.assert_equal(report.reading.to_text(detail=detail), restored.reading.to_text(detail=detail))
+    for language in ('en', 'zh'):
+        for detail in ('brief', 'standard', 'detailed'):
+            text_aligner.assert_equal(report.reading.to_text(language, detail), restored.reading.to_text(language, detail))
 
 
 @pytest.mark.parametrize('exponent', ['1/2', '1/3', '1/5', '2/3', 'y', -2, 0])
@@ -177,12 +178,16 @@ def test_odd_power_order_is_parameterized(degree, expanded):
     'x >= 0 && y >= 0 && sqrt(x*y) != sqrt(x)*sqrt(y)',
     'x >= 0 && sqrt(sqrt(x)) ** 4 != x',
 ])
-def test_public_composed_algebraic_readings(predicate):
+def test_public_composed_algebraic_readings(predicate, text_aligner):
     report = _expression_report(predicate)
     assert report.solver_status == 'unsat'
     assert report.reading_status == 'complete'
     assert report.gaps == ()
-    assert UnsatReport.from_canonical(report.to_canonical()).reading_status == 'complete'
+    restored = UnsatReport.from_canonical(report.to_canonical())
+    assert restored.reading_status == 'complete'
+    for language in ('en', 'zh'):
+        for detail in ('brief', 'standard', 'detailed'):
+            text_aligner.assert_equal(report.reading.to_text(language, detail), restored.reading.to_text(language, detail))
 
 
 @pytest.mark.parametrize('prefix', ['normal', 'renamed'])
@@ -277,18 +282,30 @@ def test_generated_polynomial_evidence_is_replayed_before_it_is_accepted(monkeyp
         assert polynomial_certificate(graph.node('target'), graph, SolveBudget(None)) is None
 
 
-@pytest.mark.parametrize('name,predicate', [
-    ('positive_power', 'x>0 && y>0 && x**y<=0'),
-    ('rational_power', 'x>=0 && x**(1.0/3.0)<0'),
-    ('nested_root', 'x>=0 && sqrt(sqrt(x))**4!=x'),
-])
+@pytest.mark.parametrize('name', ['positive_power', 'rational_power', 'nested_root'])
 @pytest.mark.parametrize('language', ['en', 'zh'])
-def test_semantic_readings_match_complete_text_fixtures(name, predicate, language, text_aligner):
+def test_semantic_readings_match_complete_text_fixtures(name, language, text_aligner, monkeypatch):
+    import json
     from pathlib import Path
+    import z3
 
-    report = _expression_report(predicate)
+    def unexpected_search(*args, **kwargs):
+        raise AssertionError('Rendering fixed evidence must not request a new native proof')
+
+    monkeypatch.setattr(z3, 'Solver', unexpected_search)
+
+    # These are actual captured public reports. Native nonlinear proof search
+    # can choose different valid paths across platforms; freeze its output for
+    # rendering tests and exercise fresh proofs in the public integration tests.
+    directory = Path(__file__).with_name('proof_readings')
+    report = UnsatReport.from_canonical(json.loads(
+        (directory / ('semantic_%s.json' % name)).read_text(encoding='utf-8')))
     assert report.reading_status == 'complete'
-    expected = Path(__file__).with_name('proof_readings') / ('semantic_%s.%s.txt' % (name, language))
+    assert report.gaps == ()
+    for node in report.proof.nodes:
+        if node.polynomial is not None:
+            assert check_polynomial_certificate(node, report.proof, node.polynomial)
+    expected = directory / ('semantic_%s.%s.txt' % (name, language))
     text_aligner.assert_equal(expected.read_text(encoding='utf-8'),
                               report.reading.to_text(language=language, detail='detailed'))
 

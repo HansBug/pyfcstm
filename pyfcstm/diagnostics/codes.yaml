@@ -4147,3 +4147,43 @@ E_PARAM_WRITE:
       description: Authored file containing an invalid imported declaration or assignment.
   example_dsl: |
     param int value = 1; state Root { during { value = 2; } }
+
+W_INITIAL_LIVELOCK:
+  severity: warning
+  span_object: state_identifier
+  capability: pure_static
+  emit_tier: static_pipeline
+  description: >-
+    A closed same-cycle initial or pseudo routing component can cycle without
+    reaching a stoppable state or machine termination. Composite entry is
+    distinct from continuation after child exit. Guards and events are
+    overapproximated; any structural escape suppresses this warning.
+  refs:
+    state_paths:
+      type: list[str]
+      required: true
+      description: Sorted state paths participating in the closed routing component.
+    transitions:
+      type: dict
+      required: true
+      description: Transition endpoints, events, and guards keyed by inspect transition index.
+  for_llm:
+    summary: >-
+      Initial descent, pseudo routing, and parent continuations form a potential
+      same-cycle livelock with no structural escape to a stoppable state.
+    recommended_actions:
+      - kind: add_stoppable_route
+        target: transition
+        rationale: Route to a non-pseudo leaf or an exit that terminates the machine.
+      - kind: remove_cyclic_reset
+        target: transition
+        rationale: Remove or redirect the reset that re-enters the same initial chain.
+    do_not:
+      - "Do not reject the model based on this warning alone; guards and events are overapproximated."
+      - "Do not merely increase DFS limits; a closed same-cycle loop has no stable continuation."
+  example_dsl: |
+    state Root {
+        pseudo state P;
+        [*] -> P;
+        P -> P;
+    }

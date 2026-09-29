@@ -197,6 +197,11 @@ This catalog is synchronized with ``pyfcstm.diagnostics.codes.CODE_REGISTRY``. T
      - ``static_pipeline``
      - ``pure_static``
      - ``state_identifier``
+   * - :ref:`W_INITIAL_LIVELOCK <diag-code-w-initial-livelock>`
+     - ``warning``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``state_identifier``
    * - :ref:`W_INITIAL_UNCONDITIONAL_MISSING <diag-code-w-initial-unconditional-missing>`
      - ``warning``
      - ``static_pipeline``
@@ -5517,6 +5522,153 @@ Do not treat every loop as a bug; long-running control loops are common state-ma
 
 Compatibility-only and miscellaneous diagnostics
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. _diag-code-w-initial-livelock:
+
+W_INITIAL_LIVELOCK
+^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta W_INITIAL_LIVELOCK severity=warning emit_tier=static_pipeline capability=pure_static span_object=state_identifier
+.. diagnostics-ref W_INITIAL_LIVELOCK state_paths type=list[str] required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_INITIAL_LIVELOCK transitions type=dict required=true enum=- item_enum=- exact_values=-
+.. diagnostics-boundary W_INITIAL_LIVELOCK kind=inspect_json
+
+**Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``state_identifier``.
+
+**Meaning.** Initial descent, pseudo-state routing, and continuation after a
+child exits form a closed cycle within one execution cycle. Every route inside
+that component stays there; none enters a non-pseudo leaf or terminates the
+machine. This is a potential livelock warning, not a model-validation error.
+It is available in ordinary inspect reports without ``--enable-verify``.
+
+Composite entry and continuation after child exit are analyzed separately.
+Entering a non-pseudo leaf stops this analysis, even if that leaf has an
+outgoing reset. An exit to ``[*]`` from a root child terminates the machine;
+an exit from a deeper child instead resumes its parent. Consequently,
+adding just any ``[*]`` exit does not necessarily break a loop.
+
+**Boundary.** Guards and events are treated as potentially enabled, without
+proving they can hold together. Any route out of the component suppresses the
+warning, even a guarded route that is disabled for current variable values.
+The analyzer considers all state regions, not only the current initial route.
+An absent warning therefore does not prove runtime progress. Models with
+unresolved transition endpoints are left to their existing build diagnostics.
+
+**Repair.** Redirect the cyclic reset, add a route to a non-pseudo leaf, or add
+an exit route that actually terminates the machine. Confirm that the intended
+guards and events permit the repair. Raising a DFS limit does not repair a
+closed cycle, and this warning alone is not a reason to reject the model.
+
+.. list-table:: Refs schema
+   :header-rows: 1
+   :widths: 22 16 14 48
+
+   * - Field
+     - Type
+     - Required
+     - Meaning
+   * - ``state_paths``
+     - ``list[str]``
+     - yes
+     - Sorted, unique dotted paths participating in the closed component;
+       this is a component inventory, not an ordered runtime trace.
+   * - ``transitions``
+     - ``dict``
+     - yes
+     - Relevant expanded inspect transitions, keyed by the decimal string of
+       their zero-based ``transition_index``. Each value contains ``from_path``,
+       ``to_path``, ``event``, and ``guard``. Endpoints are dotted paths or
+       ``[*]``; event and guard values are strings or ``null``. Initial and
+       forced-transition expansions are included when they belong to the cycle.
+
+The diagnostic span identifies the first state in ``state_paths``. Transition
+keys refer to the inspected model's transition ordering, not permanent IDs
+across model edits.
+
+.. diagnostics-example W_INITIAL_LIVELOCK 1 repro_cli
+
+**Example 1** (``repro_cli``) — a nested forced reset.
+Save the following as ``nested.fcstm`` and run
+``pyfcstm inspect -i nested.fcstm --format json``. The command succeeds with
+exit status 0, writes the report to stdout, and leaves the input unchanged.
+The ``diagnostics[]`` array contains one ``W_INITIAL_LIVELOCK`` with
+``state_paths`` equal to ``["R.A", "R.A.B", "R.A.B.P"]``.
+
+.. code-block:: fcstm
+
+   state R {
+       state A {
+           state B {
+               pseudo state P;
+               [*] -> P;
+           }
+           [*] -> B;
+       }
+       state Idle;
+       [*] -> Idle;
+       Idle -> A :: go;
+       !A -> A :: loop;
+   }
+
+The structural cycle enters ``A``, descends through ``B`` to ``P``, exits back
+through the parent continuations, then resets ``A``. Starting in ``Idle`` does
+not hide that region. Relevant transition keys are ``"0"``, ``"3"``, ``"4"``,
+``"5"``, and ``"6"``; the reset entry is:
+
+.. code-block:: json
+
+   {"from_path": "R.A", "to_path": "R.A", "event": "R.A.loop", "guard": null}
+
+.. diagnostics-example W_INITIAL_LIVELOCK 2 repro_cli
+
+**Example 2** (``repro_cli``) — a pseudo-state self-loop.
+Inspect this model with the same command, substituting its file name. It emits
+one warning with ``state_paths`` equal to ``["R.P"]`` and transition key
+``"1"``. Replacing ``P -> P;`` with ``P -> [*];`` removes this warning because
+``P`` is a direct child of the root and that exit terminates the machine.
+
+.. code-block:: fcstm
+
+   state R {
+       pseudo state P;
+       [*] -> P;
+       P -> P;
+   }
+
+.. diagnostics-example W_INITIAL_LIVELOCK 3 boundary_only
+
+**Example 3** (``boundary_only``) — stable entry and guarded escape.
+Neither model below emits ``W_INITIAL_LIVELOCK``. The first enters a stoppable
+leaf before any later reset; that reset is not an endless initial descent.
+
+.. code-block:: fcstm
+
+   state R {
+       state A;
+       [*] -> A;
+       !A -> A :: reset;
+   }
+
+The second has a structural escape to ``Done``. It suppresses this warning even
+though ``ready`` starts at 0 and the escape guard is initially false. Runtime
+validation remains responsible for the enabled paths; other diagnostics may
+still appear in either report.
+
+.. code-block:: fcstm
+
+   def int ready = 0;
+   state R {
+       pseudo state P;
+       state Done;
+       [*] -> P;
+       P -> P;
+       P -> Done : if [ready > 0];
+   }
+
+**Source facts.** ``pyfcstm/diagnostics/analyzers/initial_livelock.py`` defines
+the same-cycle graph and closed-component rule; ``pyfcstm/diagnostics/codes.yaml``
+defines the payload contract. ``test/diagnostics/test_initial_livelock.py``
+checks these examples through the public inspect API.
 
 .. _diag-code-w-initial-unconditional-missing:
 

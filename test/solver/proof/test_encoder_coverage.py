@@ -79,15 +79,15 @@ def test_encoder_theory_proof_text_is_complete_and_portable(name, language, text
     case = next(case for case in EXPRESSION_CASES if case[0] == name)
     report = _expression_report(*case)
     expected = (Path(__file__).parent / 'proof_readings' / (name + '.' + language + '.txt')).read_text(encoding='utf-8')
-    text_aligner.assert_equal(expected, report.reading.to_text(language))
-    text_aligner.assert_equal(expected, UnsatReport.from_canonical(report.to_canonical()).reading.to_text(language))
+    text_aligner.assert_equal(expected, report.reading.to_text(language, detail='detailed'))
+    text_aligner.assert_equal(expected, UnsatReport.from_canonical(report.to_canonical()).reading.to_text(language, detail='detailed'))
 
 
 def test_constant_true_premise_does_not_justify_a_false_arithmetic_claim():
     import z3
     from dataclasses import replace
     from pyfcstm.solver.proof import ProofParameter, analyze_proof
-    from .test_proof_rules import _certificate_graph
+    from .test_rules import _certificate_graph
 
     graph = _certificate_graph((z3.RealVal(0) <= 0,), (), z3.RealVal(0) < 0)
     graph = replace(graph, nodes=graph.nodes[:-1] + (replace(graph.nodes[-1], parameters=(

@@ -1,0 +1,14 @@
+
+def int a=0; def int b=0; def int c=0;
+def int cap_a=0; def int cap_b=0; def int cap_c=0;
+def int pool=0; def int budget=0; def int reserve=0; def int limit=0;
+def int subtotal=0; def int total=0;
+state Order {
+    event Start;
+    state Idle; state Quote; state Packed; state Done; state Rejected;
+    [*]->Idle;
+    Idle->Quote: Start effect { subtotal=(a>=0)?a+b:b; }
+    Idle->Rejected: Start;
+    Quote->Packed effect { subtotal=subtotal+c; }
+    Packed->Done effect { total=subtotal+reserve; }
+}

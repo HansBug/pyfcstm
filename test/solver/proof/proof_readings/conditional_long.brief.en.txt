@@ -1,0 +1,60 @@
+Query: conditional
+Solver result: UNSAT
+Reading: complete
+View: brief
+Guide only; use standard or detailed for the derivation.
+
+P1  Internal definition / defining clause
+  Therefore: ((not (CHOICE) or (VALUE = (1 + x))) and (CHOICE or (VALUE = (2 + x))))
+
+P2  Internal definition / defining clause
+  Therefore: ((not (((x + (-1 * VALUE)) >= -2)) or not (((x + (-1 * VALUE)) <= -2))) or ((x + (-1 * VALUE)) <= -2))
+
+P3  Exact linear combination
+  To refute the negated conclusion, temporarily assume:
+    ((x + (-1 * VALUE)) <= -2)
+    not (((x + (-1 * VALUE)) <= -1))
+  Combination: 2 inequalities; sum 2 <= 0; contradiction.
+  Discharge these temporary assumptions.
+  Therefore: (not (((x + (-1 * VALUE)) <= -2)) or ((x + (-1 * VALUE)) <= -1))
+
+P4  Input
+  Input origins: initial
+  Therefore: (x >= 0)
+
+P5  Input
+  Input origins: update
+  Therefore: ((if [[t12]] then (x + 1) else (x + 2)) = 0)
+
+P6  Propagate premises; Logical consequence
+  From: P5
+  Therefore: (VALUE <= 0)
+  Expandable proof steps: 2
+
+P7  Assume
+  Under assumptions: P7
+  Therefore: ((x + (-1 * VALUE)) <= -1)
+
+P8  Exact linear combination
+  From: P4, P6, P7
+  Under assumptions: P7
+  Combination: 3 inequalities; sum 1 <= 0; contradiction.
+  Therefore: false
+
+P9  Discharge local assumptions
+  From: P8
+  Closed: P7
+  Therefore: not (((x + (-1 * VALUE)) <= -1))
+
+P10  Internal definition / defining clause
+  Therefore: ((not (((x + (-1 * VALUE)) >= -1)) or not (((x + (-1 * VALUE)) <= -1))) or ((x + (-1 * VALUE)) <= -1))
+
+P11  Propagate premises; Resolve the clauses
+  From: P1, P2, P3, P9, P10
+  Therefore: false
+  Expandable proof steps: 7
+
+Formula references (expand with get_term_text):
+  [[t12]]
+
+Conclusion: the submitted conjunction is inconsistent.

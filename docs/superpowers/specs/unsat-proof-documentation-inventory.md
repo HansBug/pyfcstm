@@ -3,7 +3,7 @@
 | Field | Concrete ownership and evidence |
 |---|---|
 | Scope | Standalone `pyfcstm.solver` native proof API. Existing BMC CLI and explanation migration are outside this change. |
-| Source facts | `solver/proof.py`, `_z3_proof.py`, `proof_rules.py`, `proof_text.py`, `proof_io.py`, `unsat.py`, `symbols.py`, `budget.py`; public tests in `test/solver/test_proof*.py` and `test_unsat.py`. |
+| Source facts | `solver/proof.py`, `_z3_proof.py`, `proof_rules.py`, `proof_text.py`, `proof_io.py`, `unsat.py`, `symbols.py`, `budget.py`; public tests in `test/solver/proof/test_*.py` and `test_unsat.py`. |
 | Capability list | Exact named conjunction/background; native evidence capture; arithmetic/scope analysis; readable EN/ZH output; source bindings; rule and reading extensions; subset minimization and reproof; cooperative deadlines; canonical offline loading. |
 | Tutorial path | `tutorials/unsat_proofs/index{,_zh}.rst`: construct three contradictory conditions and one irrelevant condition, obtain the full actual proof, read the weighted contradiction. |
 | How-to tasks | `how_to/unsat_proofs/index{,_zh}.rst`: minimize groups, retain background, map caller sources, fold a checked proof slice, add a native-rule interpreter, export/load, handle unavailable evidence. |

@@ -5,7 +5,7 @@ import z3
 
 from pyfcstm.solver import UnsatConstraint, UnsatQuery, UnsatReport, explain_unsat
 from pyfcstm.solver.proof import analyze_proof
-from .test_proof_rules import _certificate_graph
+from .test_rules import _certificate_graph
 
 pytestmark = pytest.mark.unittest
 
@@ -112,7 +112,7 @@ def test_interval_implication_text_displays_and_discharges_temporary_assumptions
     from pathlib import Path
 
     expected = (Path(__file__).parent / 'proof_readings' / ('interval_implication.' + language + '.txt')).read_text(encoding='utf-8')
-    text_aligner.assert_equal(expected, _interval_implication_reading().to_text(language))
+    text_aligner.assert_equal(expected, _interval_implication_reading().to_text(language, detail='detailed'))
 
 
 @pytest.mark.parametrize('language', ['en', 'zh'])
@@ -127,7 +127,7 @@ def test_explicit_extension_gap_remains_visible_in_full_text(language, text_alig
         ProofRuleHandler('th-lemma', lambda node, graph: RuleAnalysis('opaque', 'unsupported')),)))
     assert report.reading_status == 'partial'
     expected = (Path(__file__).parent / 'proof_readings' / ('unknown_rule.' + language + '.txt')).read_text(encoding='utf-8')
-    text_aligner.assert_equal(expected, report.reading.to_text(language))
+    text_aligner.assert_equal(expected, report.reading.to_text(language, detail='detailed'))
 
 
 def _singleton_equality_report():
@@ -161,8 +161,8 @@ def test_singleton_equality_full_text_and_offline_roundtrip(language, text_align
 
     report = _singleton_equality_report()
     expected = (Path(__file__).parent / 'proof_readings' / ('singleton.' + language + '.txt')).read_text(encoding='utf-8')
-    text_aligner.assert_equal(expected, report.reading.to_text(language))
-    text_aligner.assert_equal(expected, UnsatReport.from_canonical(report.to_canonical()).reading.to_text(language))
+    text_aligner.assert_equal(expected, report.reading.to_text(language, detail='detailed'))
+    text_aligner.assert_equal(expected, UnsatReport.from_canonical(report.to_canonical()).reading.to_text(language, detail='detailed'))
 
 
 @pytest.mark.parametrize('mutation', ['both_results', 'no_result', 'not_singleton', 'wrong_conclusion'])

@@ -50,7 +50,7 @@ P3  Resolve the clauses
   Therefore: false
 
 Conclusion: the submitted conjunction is inconsistent.
-''', report.reading.to_text())
+''', report.reading.to_text(detail='detailed'))
 
 
 def test_bindings_do_not_add_conditions_or_match_by_symbol_spelling():

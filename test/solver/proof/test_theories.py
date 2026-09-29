@@ -74,9 +74,9 @@ def test_counting_proof_text_exposes_every_bound_and_roundtrips(language, text_a
     auxiliary = report.proof.term(unknown.term_id).value
     expected = (Path(__file__).parent / 'proof_readings' / ('cardinality_%s.txt' % language)).read_text('utf-8')
     expected = expected.replace('AUX', auxiliary)
-    text_aligner.assert_equal(expected, report.reading.to_text(language))
+    text_aligner.assert_equal(expected, report.reading.to_text(language, detail='detailed'))
     loaded = UnsatReport.from_canonical(report.to_canonical())
-    text_aligner.assert_equal(expected, loaded.reading.to_text(language))
+    text_aligner.assert_equal(expected, loaded.reading.to_text(language, detail='detailed'))
 
 
 def _counting_graph(operator, weights, threshold, required, assignments, constant=False):
@@ -243,7 +243,7 @@ P4  Boolean counting contradiction
   Therefore: false
 
 Conclusion: the submitted conjunction is inconsistent.
-''', reading.to_text())
+''', reading.to_text(detail='detailed'))
 
 
 @pytest.mark.parametrize('term_id', ['a', 'pb', 'c'])
@@ -337,9 +337,9 @@ def test_nonlinear_order_and_interval_reading_is_complete(language, text_aligner
     x = z3.Int('x')
     report = explain_unsat(UnsatQuery('nonlinear', (UnsatConstraint('square', (x * x == 2,)),)))
     expected = (Path(__file__).parent / 'proof_readings' / ('nonlinear.' + language + '.txt')).read_text(encoding='utf-8')
-    text_aligner.assert_equal(expected, report.reading.to_text(language))
+    text_aligner.assert_equal(expected, report.reading.to_text(language, detail='detailed'))
     restored = UnsatReport.from_canonical(report.to_canonical())
-    text_aligner.assert_equal(expected, restored.reading.to_text(language))
+    text_aligner.assert_equal(expected, restored.reading.to_text(language, detail='detailed'))
 
 
 def test_native_division_order_lemmas_normalize_shared_nonlinear_atoms():
@@ -390,9 +390,9 @@ def test_remainder_reading_explains_nonzero_condition_in_full(language, text_ali
         UnsatConstraint('negative_remainder', (x % d < 0,)),
     )))
     expected = (Path(__file__).parent / 'proof_readings' / ('remainder.' + language + '.txt')).read_text(encoding='utf-8')
-    text_aligner.assert_equal(expected, report.reading.to_text(language))
+    text_aligner.assert_equal(expected, report.reading.to_text(language, detail='detailed'))
     restored = UnsatReport.from_canonical(report.to_canonical())
-    text_aligner.assert_equal(expected, restored.reading.to_text(language))
+    text_aligner.assert_equal(expected, restored.reading.to_text(language, detail='detailed'))
 
 
 @pytest.mark.parametrize('mutation', ['missing', 'no_guard', 'wrong_guard', 'wrong_zero',
@@ -590,8 +590,8 @@ def test_power_and_root_proof_text_in_full(expression, language, text_aligner):
     constraints = (x ** 2 < 0,) if expression == 'power' else (x >= 0, z3.Sqrt(x) < 0)
     report = explain_unsat(UnsatQuery(expression, (UnsatConstraint('impossible', constraints),)))
     expected = (Path(__file__).parent / 'proof_readings' / (expression + '.' + language + '.txt')).read_text(encoding='utf-8')
-    text_aligner.assert_equal(expected, report.reading.to_text(language))
-    text_aligner.assert_equal(expected, UnsatReport.from_canonical(report.to_canonical()).reading.to_text(language))
+    text_aligner.assert_equal(expected, report.reading.to_text(language, detail='detailed'))
+    text_aligner.assert_equal(expected, UnsatReport.from_canonical(report.to_canonical()).reading.to_text(language, detail='detailed'))
 
 
 @pytest.mark.parametrize('value,identity,expected', [

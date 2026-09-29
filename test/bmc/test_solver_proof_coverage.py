@@ -5,11 +5,12 @@ import pytest
 from pyfcstm.bmc import BmcEngine, build_bmc_core_formula, compile_bmc_property
 from pyfcstm.model import load_state_machine_from_text
 from pyfcstm.solver import UnsatConstraint, UnsatQuery, explain_unsat
+from pyfcstm.solver.proof import UnsatReport
 
 pytestmark = pytest.mark.unittest
 
 
-def test_three_event_cardinality_has_a_complete_native_proof():
+def test_three_event_cardinality_has_a_complete_native_proof(text_aligner):
     """FBMCQ's actual AtMost encoding is covered, including native PB lemmas."""
     model = load_state_machine_from_text('''
 state Root {
@@ -41,10 +42,11 @@ check reach <= 1: active("Root.A");
     assert report.scope_check == 'passed'
     assert report.reading_status == 'complete'
     assert report.gaps == ()
+    _check_reading_levels(report, text_aligner)
     assert any(node.cardinality is not None for node in report.proof.nodes)
 
 
-def test_remainder_guard_cannot_reach_target_with_positive_divisor():
+def test_remainder_guard_cannot_reach_target_with_positive_divisor(text_aligner):
     """Exercise definedness, transition implication and FBMCQ source formulas."""
     model = load_state_machine_from_text('''
 def int x = 0;
@@ -75,12 +77,13 @@ check reach <= 1: active("Root.B");
     assert report.scope_check == 'passed'
     assert report.reading_status == 'complete'
     assert report.gaps == ()
+    _check_reading_levels(report, text_aligner)
     assert any(node.inference_kind == 'remainder_lower' for node in report.proof.nodes)
 
 
 @pytest.mark.parametrize('guard,kind', [('sqrt(x) < 0.0', 'root_nonnegative'),
                                        ('x ** 2 < 0.0', 'even_power')])
-def test_root_and_power_guards_cannot_reach_target(guard, kind):
+def test_root_and_power_guards_cannot_reach_target(guard, kind, text_aligner):
     model = load_state_machine_from_text('''
 def float x = 0.0;
 state Root {
@@ -108,6 +111,7 @@ check reach <= 1: active("Root.B");
     assert report.scope_check == 'passed'
     assert report.reading_status == 'complete'
     assert report.gaps == ()
+    _check_reading_levels(report, text_aligner)
     assert any(node.inference_kind == kind for node in report.proof.nodes)
 
 
@@ -120,7 +124,7 @@ check reach <= 1: active("Root.B");
     ('def int x = -5; def int d = 2;',
      'assume always: var("x") == -5; assume always: var("d") == 2;', 'x / d != -3'),
 ])
-def test_actual_nonlinear_fbmcq_formulas_have_complete_interval_proofs(declarations, assumptions, objective):
+def test_actual_nonlinear_fbmcq_formulas_have_complete_interval_proofs(declarations, assumptions, objective, text_aligner):
     model = load_state_machine_from_text(declarations + ' state Root { state A; [*] -> A; }')
     query = 'init state("Root.A"); %s check reach <= 1: %s;' % (assumptions, objective)
     core = build_bmc_core_formula(BmcEngine(model).prepare(query))
@@ -137,6 +141,7 @@ def test_actual_nonlinear_fbmcq_formulas_have_complete_interval_proofs(declarati
     assert report.scope_check == 'passed'
     assert report.reading_status == 'complete'
     assert report.gaps == ()
+    _check_reading_levels(report, text_aligner)
 
 
 @pytest.mark.parametrize('name,source,query', [
@@ -156,7 +161,7 @@ def test_actual_nonlinear_fbmcq_formulas_have_complete_interval_proofs(declarati
      'state Root { event Go; state A; state B; state C; [*]->A; A->B: Go; A->C: Go; }',
      'init state("Root.A"); assume event("Root.Go",0)==true; check reach <= 1: active("Root.C");'),
 ])
-def test_control_flow_encodings_have_complete_proofs(name, source, query):
+def test_control_flow_encodings_have_complete_proofs(name, source, query, text_aligner):
     core = build_bmc_core_formula(BmcEngine(load_state_machine_from_text(source)).prepare(query))
     prop = compile_bmc_property(core)
     report = explain_unsat(UnsatQuery(name, tuple(UnsatConstraint(key, (expression,)) for key, expression in (
@@ -169,9 +174,10 @@ def test_control_flow_encodings_have_complete_proofs(name, source, query):
     assert report.scope_check == 'passed'
     assert report.reading_status == 'complete'
     assert report.gaps == ()
+    _check_reading_levels(report, text_aligner)
 
 
-def test_guard_after_prefix_effect_is_proved_at_its_actual_anchor():
+def test_guard_after_prefix_effect_is_proved_at_its_actual_anchor(text_aligner):
     import z3
 
     model = load_state_machine_from_text('''
@@ -197,10 +203,11 @@ state Root {
     assert report.scope_check == 'passed'
     assert report.reading_status == 'complete'
     assert report.gaps == ()
+    _check_reading_levels(report, text_aligner)
 
 
 
-def test_shared_square_equality_is_explained_in_actual_fbmcq():
+def test_shared_square_equality_is_explained_in_actual_fbmcq(text_aligner):
     model = load_state_machine_from_text(
         'def float x=0.0; def float y=0.0; state Root { state A; [*]->A; }')
     core = build_bmc_core_formula(BmcEngine(model).prepare(
@@ -217,5 +224,17 @@ def test_shared_square_equality_is_explained_in_actual_fbmcq():
     assert report.scope_check == 'passed'
     assert report.reading_status == 'complete'
     assert report.gaps == ()
+    _check_reading_levels(report, text_aligner)
     assert any(step.substitutions for node in report.proof.nodes if node.interval is not None
                for step in node.interval.steps)
+
+
+def _check_reading_levels(report, text_aligner):
+    """All views of real BMC encodings survive offline loading unchanged."""
+    before = report.to_canonical()
+    restored = UnsatReport.from_canonical(before)
+    for language in ('en', 'zh'):
+        for detail in ('brief', 'standard', 'detailed'):
+            text_aligner.assert_equal(report.reading.to_text(language, detail),
+                                      restored.reading.to_text(language, detail))
+    assert report.to_canonical() == before

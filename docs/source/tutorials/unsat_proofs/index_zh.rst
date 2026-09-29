@@ -83,6 +83,40 @@ solver API 接受任意应用提供的公式。本教程不运行 BMC，也不�
 
     PYTHONPATH=. python docs/source/tutorials/unsat_proofs/proof.demo.py --case linear --language zh
 
+选择阅读档位
+------------
+
+默认档位是 ``standard``。同一份已捕获的证明可以直接展示为三个档位，无需重新求解：
+
+.. code-block:: python
+
+    for detail in ("brief", "standard", "detailed"):
+        print(report.reading.to_text(language="zh", detail=detail))
+
+``brief`` 是带公式引用的导读；``standard`` 保留算术证据并折叠机械性前提；
+``detailed`` 还会展开已保存的领域折叠。
+切换档位不会改变核心最小性、证明检查或已捕获的证据。
+可以使用 ``get_term_text(term_id)`` 离线展开引用的完整公式。
+
+演示脚本支持 ``--detail all``，一次展示每份证明的三个档位，也可指定单个档位。
+以下快照还使用了真实 FCSTM/FBMCQ 构造器，捕获版本为 Z3 4.15.4。
+来源投影使用 BMC provenance 的实验适配器，并不代表 BMC CLI 已切换为新合同。
+
+* 订单流程：:download:`模型 <reading_examples/order_branch.fcstm>`、
+  :download:`查询 <reading_examples/order_branch.fbmcq>`、
+  :download:`简要档 <reading_examples/order_branch.brief.txt>`、
+  :download:`标准档 <reading_examples/order_branch.standard.txt>`、
+  :download:`详细档 <reading_examples/order_branch.detailed.txt>`。
+* 九条条件共同造成的查询矛盾：
+  :download:`模型 <reading_examples/query_conflict.fcstm>`、
+  :download:`查询 <reading_examples/query_conflict.fbmcq>`、
+  :download:`简要档 <reading_examples/query_conflict.brief.txt>`、
+  :download:`标准档 <reading_examples/query_conflict.standard.txt>`、
+  :download:`详细档 <reading_examples/query_conflict.detailed.txt>`。
+
+同一个例子的三档输出共享同一份捕获的证明图。
+两个例子都是阅读完整、独立规则检查为 partial；档位不会改变这一区别。
+
 脚本还提供 ``--case branches``、``--case sources``、
 ``--case square``（整数 ``x*x == 2``）和 ``--case product``
 （``x >= 2``、``y >= 3``、``x*y < 6``），以及 ``--case shared_square``

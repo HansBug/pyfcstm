@@ -107,6 +107,7 @@ def test_a_domain_fold_keeps_expandable_original_evidence(text_aligner):
 Query: interval
 Solver result: UNSAT
 Reading: complete
+View: standard
 
 P1  Input
   Input origins: lower
@@ -122,11 +123,12 @@ P3  Incompatible lower and upper bounds
   Expandable proof steps: 2
 
 Conclusion: the submitted conjunction is inconsistent.
-''', reading.to_text())
+''', reading.to_text(detail='standard'))
     text_aligner.assert_equal('''\
 查询：interval
 求解结果：UNSAT
 阅读完整度：complete
+阅读档位：standard
 
 P1  输入条件
   输入来源：lower
@@ -142,7 +144,7 @@ P3  上下界不相容
   可展开的证明步骤：2
 
 结论：提交的条件合取不可满足。
-''', reading.to_text(language='zh'))
+''', reading.to_text(language='zh', detail='standard'))
 
 
 @pytest.mark.parametrize('change,message', [
@@ -284,10 +286,11 @@ def test_closed_branch_proof_can_be_folded_without_erasing_its_derivation(text_a
 Query: branches
 Solver result: UNSAT
 Reading: complete
+View: standard
 
 P1  Both cases contradict the goal
   Therefore: false
   Expandable proof steps: 18
 
 Conclusion: the submitted conjunction is inconsistent.
-''', report.reading.to_text())
+''', report.reading.to_text(detail='standard'))

@@ -272,7 +272,7 @@ P1  Input
   Therefore: false
 
 Conclusion: the submitted conjunction is inconsistent.
-''', restored.reading.to_text())
+''', restored.reading.to_text(detail='detailed'))
 
 
 @pytest.mark.parametrize('reference', ['hidden_hypothesis', 'input_hypothesis', 'hidden_premise', 'gap'])

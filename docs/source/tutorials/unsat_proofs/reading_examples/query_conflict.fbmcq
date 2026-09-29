@@ -1,0 +1,11 @@
+init state("Root.Active") havoc { a,b,c,d,e,f,g,h };
+assume at 0: a>=1;
+assume at 0: (a>0) implies (b>=a+2);
+assume at 0: c>=b+3;
+assume at 0: d>=c+4;
+assume at 0: e>=d+5;
+assume at 0: f>=e+6;
+assume at 0: g>=f+7;
+assume at 0: h>=g+8;
+assume at 0: h<=35;
+check reach <= 1: active("Root.Active");

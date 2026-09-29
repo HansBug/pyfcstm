@@ -92,6 +92,44 @@ checkout on ``PYTHONPATH``:
 
     PYTHONPATH=. python docs/source/tutorials/unsat_proofs/proof.demo.py --case linear --language en
 
+Choose reading detail
+---------------------
+
+The default is ``standard``. Render the same captured proof at all three levels
+without solving again:
+
+.. code-block:: python
+
+    for detail in ("brief", "standard", "detailed"):
+        print(report.reading.to_text(language="en", detail=detail))
+
+``brief`` is a guide with expandable formula references. ``standard`` retains
+the arithmetic evidence and folds mechanical premises. ``detailed`` expands
+stored domain folds as well. None of these options changes core minimality,
+proof checking or the captured evidence. Use ``get_term_text(term_id)`` to
+expand a referenced formula offline.
+
+The runnable demo accepts ``--detail all`` to print all three views of each
+captured proof, or an individual level. The following snapshots also exercise
+actual FCSTM/FBMCQ builders. They were captured with Z3 4.15.4; source projection
+uses an experimental adapter over BMC provenance, not a new BMC CLI contract.
+
+* Order flow: :download:`model <reading_examples/order_branch.fcstm>`,
+  :download:`query <reading_examples/order_branch.fbmcq>`,
+  :download:`brief <reading_examples/order_branch.brief.txt>`,
+  :download:`standard <reading_examples/order_branch.standard.txt>`,
+  :download:`detailed <reading_examples/order_branch.detailed.txt>`.
+* Nine jointly contradictory query assumptions:
+  :download:`model <reading_examples/query_conflict.fcstm>`,
+  :download:`query <reading_examples/query_conflict.fbmcq>`,
+  :download:`brief <reading_examples/query_conflict.brief.txt>`,
+  :download:`standard <reading_examples/query_conflict.standard.txt>`,
+  :download:`detailed <reading_examples/query_conflict.detailed.txt>`.
+
+Within each example all three outputs share the same captured graph. Both
+examples have a complete reading and partial independent rule checking; the
+reading level does not alter that distinction.
+
 The script also offers ``--case branches``, ``--case sources``,
 ``--case square`` (integer ``x*x == 2``) and ``--case product``
 (``x >= 2``, ``y >= 3``, ``x*y < 6``), plus ``--case shared_square``

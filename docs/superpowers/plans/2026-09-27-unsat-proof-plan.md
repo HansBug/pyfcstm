@@ -51,7 +51,7 @@ checked `explain_unsat_core`; keep BMC dependencies out of these modules.
 ## Task 2: Native evidence and portable data
 
 **Files:** `pyfcstm/solver/proof.py`, `_z3_proof.py`;
-`test/solver/test_proof.py`.
+`test/solver/proof/test_core.py`.
 
 **Interfaces:** Produce ProofGraph, ProofNode, shared typed terms and input
 bindings; exact translated query yields captured native proof or SAT/UNKNOWN.
@@ -66,7 +66,7 @@ bindings; exact translated query yields captured native proof or SAT/UNKNOWN.
 ## Task 3: Scope and inference analysis
 
 **Files:** `pyfcstm/solver/proof_rules.py`, `proof.py`, `_z3_proof.py`;
-`test/solver/test_proof_rules.py`.
+`test/solver/proof/test_rules.py`.
 
 **Interfaces:** Produce ProofRuleHandler and RuleAnalysis, scope/check states and
 exact arithmetic certificates; consume Task 2 terms/nodes.
@@ -81,7 +81,7 @@ exact arithmetic certificates; consume Task 2 terms/nodes.
 ## Task 4: Readable deductions and checked domain folds
 
 **Files:** `pyfcstm/solver/proof_text.py`, `proof.py`;
-`test/solver/test_proof_reading.py`.
+`test/solver/proof/test_reading.py`.
 
 **Interfaces:** Produce SourceDescription/SourceAdapter, SourceLink,
 ProofExtensions, ReadingFolder/FoldProposal, ProofReading and ReadingBlock.
@@ -97,7 +97,7 @@ ProofExtensions, ReadingFolder/FoldProposal, ProofReading and ReadingBlock.
 ## Task 5: Orchestration and optional minimization
 
 **Files:** `pyfcstm/solver/proof.py`, `_z3_proof.py`, `unsat.py`;
-`test/solver/test_proof.py`, `test_unsat.py`.
+`test/solver/proof/test_core.py`, `test_unsat.py`.
 
 **Interfaces:** `explain_unsat(query, *, mode='proof', minimize=False,
 timeout_ms=None, names=None, extensions=None) -> UnsatReport`.
@@ -112,7 +112,7 @@ timeout_ms=None, names=None, extensions=None) -> UnsatReport`.
 
 **Files:** `pyfcstm/solver/__init__.py`, public module docstrings, generated
 `docs/source/api_doc/solver/`, solver user guide and executable examples;
-`test/solver/test_proof_reading.py`, public-import tests.
+`test/solver/proof/test_reading.py`, public-import tests.
 
 **Interfaces:** Lazy package exports, canonical roundtrip/loader and documented
 calling examples; source/reading extensions require no BMC imports.

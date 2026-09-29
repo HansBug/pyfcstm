@@ -28,7 +28,7 @@ coarse. Keep the original graph, scope and source identities intact.
 
 ## Task 1: Native logical rules
 
-**Files:** solver/proof/rules.py; test/solver/test_proof_rules.py.
+**Files:** solver/proof/rules.py; test/solver/proof/test_rules.py.
 **Interfaces:** existing analyze_proof(ProofGraph), ProofNode local_check/kind.
 - [x] Write public analyzer regressions for true-axiom and trans*; reject false
   axioms, incompatible relations and disconnected endpoint chains.
@@ -38,7 +38,7 @@ coarse. Keep the original graph, scope and source identities intact.
 
 ## Task 2: Generated formula inventory and theory evidence
 
-**Files:** test/solver/test_proof_theories.py; test/bmc/test_solver_proof_coverage.py;
+**Files:** test/solver/proof/test_theories.py; test/bmc/test_solver_proof_coverage.py;
 solver/proof/{core,rules,text,io,interval}.py.
 **Interfaces:** explain_unsat remains the entry point; portable certificates
 supply exact facts/derivations to analyze_proof and ProofReading.to_text.
@@ -52,7 +52,7 @@ supply exact facts/derivations to analyze_proof and ProofReading.to_text.
 
 ## Task 3: Nonlinear deductions and local reconstruction
 
-**Files:** theory evidence files from Task 2; test/solver/test_proof_theories.py.
+**Files:** theory evidence files from Task 2; test/solver/proof/test_theories.py.
 **Interfaces:** theory deductions are part of the same graph/reading; preserve
 exact original native nodes and distinguish reconstructed derivations.
 - [x] Survey real multiplication, powers/root and rounding proof paths and write

@@ -92,20 +92,24 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--case', choices=('all', 'linear', 'branches', 'sources', 'square', 'product', 'shared_square', 'equal_squares'), default='all')
     parser.add_argument('--language', choices=('all', 'en', 'zh'), default='all')
+    parser.add_argument('--detail', choices=('all', 'brief', 'standard', 'detailed'), default='standard')
     parser.add_argument('--minimize', action='store_true')
     parser.add_argument('--fold', action='store_true')
     options = parser.parse_args()
     cases = ('linear', 'branches', 'sources', 'square', 'product', 'shared_square', 'equal_squares') if options.case == 'all' else (options.case,)
     languages = ('en', 'zh') if options.language == 'all' else (options.language,)
+    details = ('brief', 'standard', 'detailed') if options.detail == 'all' else (options.detail,)
     for case in cases:
         query, names, adapter = build(case)
         extensions = ProofExtensions(source_adapter=adapter,
                                      reading_folders=(ReadingFolder(summarize),) if options.fold else ())
         report = explain_unsat(query, names=names, extensions=extensions, minimize=options.minimize)
         for language in languages:
-            print('BEGIN %s %s' % (case, language))
-            print(report.reading.to_text(language), end='')
-            print('END %s %s' % (case, language))
+            for detail in details:
+                suffix = ' ' + detail if options.detail == 'all' else ''
+                print('BEGIN %s %s%s' % (case, language, suffix))
+                print(report.reading.to_text(language, detail), end='')
+                print('END %s %s%s' % (case, language, suffix))
         if report.core is not None:
             print('core_ids=%r; subset_minimality=%s; proof_scope=%s' % (
                 report.core.core_ids, report.core.subset_minimality, report.proof_scope))

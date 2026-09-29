@@ -28,7 +28,7 @@ def test_linear_reading_shows_inputs_the_combination_and_contradiction(text_alig
     for language in ('en', 'zh'):
         expected = Path(__file__).with_name('proof_readings') / ('increment.%s.txt' % language)
         text_aligner.assert_equal(expected.read_text(encoding='utf-8'),
-                                  report.reading.to_text(language=language))
+                                  report.reading.to_text(language=language, detail='detailed'))
     assert len(report.reading.blocks) < len(report.proof.nodes)
 
 
@@ -46,7 +46,7 @@ def test_branch_reading_states_local_assumptions_and_their_discharge(text_aligne
     introduced, = (term.value for term in report.proof.terms
                    if term.kind == 'constant' and term.operator not in ('x', 'y'))
     text_aligner.assert_equal(expected.read_text(encoding='utf-8').replace('z3name!0', introduced),
-                              reading.to_text())
+                              reading.to_text(detail='detailed'))
     root = reading.get_block(reading.root_id)
     assert root.active_hypotheses == ()
     assert reading.expand(root.block_id)
@@ -94,7 +94,7 @@ def test_a_business_source_adapter_needs_no_bmc_types(text_aligner):
     assert report.reading.get_source('min').document_id == 'limits.cfg'
     assert report.reading.get_source('max').excerpt == 'limit = 0'
     expected = Path(__file__).with_name('proof_readings') / 'config.en.txt'
-    text_aligner.assert_equal(expected.read_text(encoding='utf-8'), report.reading.to_text())
+    text_aligner.assert_equal(expected.read_text(encoding='utf-8'), report.reading.to_text(detail='detailed'))
     assert {link.relation for block in report.reading.blocks for link in block.source_links} == {'logical'}
 
 
@@ -106,7 +106,7 @@ def test_nonlinear_reading_exposes_every_interval_deduction(text_aligner):
     assert report.reading_status == 'complete'
     assert report.source_status == 'absent'
     expected = Path(__file__).with_name('proof_readings') / 'nonlinear.en.txt'
-    text_aligner.assert_equal(expected.read_text(encoding='utf-8'), report.reading.to_text())
+    text_aligner.assert_equal(expected.read_text(encoding='utf-8'), report.reading.to_text(detail='detailed'))
     assert report.reading.gaps == ()
 
 
@@ -119,7 +119,7 @@ Solver result: SAT
 Reading: not_requested
 
 No refutation is available.
-""", report.reading.to_text())
+""", report.reading.to_text(detail='detailed'))
     assert report.reading.blocks == ()
 
 
@@ -157,7 +157,7 @@ P4  Resolve the clauses
   Therefore: false
 
 Conclusion: the submitted conjunction is inconsistent.
-''', report.reading.to_text())
+''', report.reading.to_text(detail='detailed'))
 
 
 def test_uninterpreted_operator_name_is_not_rendered_as_a_builtin(text_aligner):
@@ -188,7 +188,7 @@ P3  Resolve the clauses
   Therefore: false
 
 Conclusion: the submitted conjunction is inconsistent.
-''', report.reading.to_text())
+''', report.reading.to_text(detail='detailed'))
 
 
 def test_each_arithmetic_bound_names_a_displayed_premise_or_a_temporary_assumption():
@@ -226,7 +226,7 @@ P2  Logical consequence
   Therefore: false
 
 Conclusion: the submitted conjunction is inconsistent.
-''', report.reading.to_text())
+''', report.reading.to_text(detail='detailed'))
 
 
 def test_duplicate_input_occurrences_are_candidates_not_two_necessary_causes(text_aligner):
@@ -245,7 +245,7 @@ P1  Input
   Therefore: false
 
 Conclusion: the submitted conjunction is inconsistent.
-''', report.reading.to_text())
+''', report.reading.to_text(detail='detailed'))
 
 
 def test_array_lambda_is_not_mislabeled_as_an_existential_quantifier(text_aligner):
@@ -271,7 +271,7 @@ P2  Logical consequence
   Therefore: false
 
 Conclusion: the submitted conjunction is inconsistent.
-''', report.reading.to_text())
+''', report.reading.to_text(detail='detailed'))
 
 
 def test_indexed_operators_and_nonarithmetic_literals_keep_their_exact_values(text_aligner):
@@ -301,4 +301,4 @@ P2  Logical consequence
   Therefore: false
 
 Conclusion: the submitted conjunction is inconsistent.
-''', report.reading.to_text())
+''', report.reading.to_text(detail='detailed'))

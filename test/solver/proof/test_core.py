@@ -192,7 +192,7 @@ Solver result: UNSAT
 Reading: not_requested
 
 No refutation is available.
-''', report.reading.to_text())
+''', report.reading.to_text(detail='detailed'))
 
 
 @pytest.mark.parametrize('option,value', [('minimize', 1), ('names', {}), ('extensions', {})])

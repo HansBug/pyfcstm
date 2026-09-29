@@ -188,8 +188,30 @@ production limitation, capture retries with Z3 arithmetic solver 6, the exact
 original assertions and the same total deadline. Only the resulting execution
 is exported. Timeout and unresolved UNKNOWN outcomes remain explicit.
 
-``reading.to_text(language="en")`` accepts ``en`` or ``zh`` and returns complete
-plain text with a final newline. ``get_block(id)`` and ``get_source(id)`` look
+``reading.to_text(language="en", detail="standard")`` accepts ``en`` or ``zh``
+and returns plain text with a final newline. Reading detail is independent of
+core minimization and rule checking:
+
+* ``brief`` gives a guide: inputs, key deductions and the contradiction. Linear
+  combinations show their result rather than every coefficient. Long formulas
+  are references; this view is explicitly not a standalone derivation.
+* ``standard`` is the default. It folds exclusively used mechanical premises
+  into their consuming deduction, keeping arithmetic certificates, local
+  assumptions, discharge boundaries and unsupported steps visible. Shared long
+  formulas have complete definitions at the end of the text.
+* ``detailed`` renders the full reading and expands caller-supplied domain folds.
+  It does not print every native solver node; the captured graph remains the
+  separate evidence artifact.
+
+Changing detail does not solve again, mutate the report, minimize its core or
+upgrade ``rule_check``. All levels preserve explicit gaps. Formula references
+such as ``[[t12]]`` identify terms in the report graph;
+``reading.get_term_text("t12")`` returns the exact unabridged formula offline.
+Unknown term IDs raise ``KeyError``; a reading without a graph raises
+``ValueError``. The detailed view and formula expansion also work after loading
+a serialized report without Z3.
+
+``get_block(id)`` and ``get_source(id)`` look
 up records. ``expand(id)`` returns folded details when present, otherwise direct
 premise blocks. These methods raise ``KeyError`` for unknown IDs.
 ``to_canonical()`` returns detached JSON-compatible data. At the report level,

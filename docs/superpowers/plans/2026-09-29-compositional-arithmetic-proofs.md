@@ -61,5 +61,33 @@ Files: test/bmc/test_solver_proof_coverage.py, proof_readings, proof documentati
 - [x] Run make unittest RANGE_DIR=./solver/proof, full lightweight repository
   tests, boundary/resource gates, generated API docs and bilingual docs builds.
 - [x] Obtain independent public-surface review and resolve findings with TDD.
-- [ ] Commit/push, publish a new PR comment with actual complete proof text,
+- [x] Commit/push, publish a new PR comment with actual complete proof text,
   inspect current-head CI and perform requirement-by-requirement completion audit.
+
+## Verified handoff
+
+The implementation and portability tests at
+[08c598aa](https://github.com/HansBug/pyfcstm/commit/08c598aad3a8c1d8169655e23ae4ba158c40324d)
+passed the [Code Test workflow](https://github.com/HansBug/pyfcstm/actions/runs/36596873387)
+and [Docs Check workflow](https://github.com/HansBug/pyfcstm/actions/runs/36596879721).
+All 23 platform/Python unit-test combinations passed, including the previously
+failing macOS/Python 3.14 full-text regression. The aggregate gate passed.
+
+- The proof module plus real BMC consumers: 757 passed; 3127 statements and
+  1702 branches covered, with no missing lines or branches.
+- The requested proof-directory make entry: 729 passed.
+- The full lightweight repository regression: 52003 passed, 1010 skipped.
+- Bilingual documentation, test-boundary, resource-ownership and API toctree
+  checks passed. Documentation builds retained 19 existing warnings each.
+- Native proof generation remains live in integration tests. Fixed captured
+  reports independently replay their polynomial evidence and compare complete
+  bilingual text with text_aligner; rendering cannot start a new solver.
+- No runtime dependency or backend was added. Scope, domains, exact arithmetic,
+  replay rejection and selected-evidence pruning retain dedicated tests.
+- The [new capability comment](https://github.com/HansBug/pyfcstm/pull/505#issuecomment-5893630812)
+  contains executable public API usage, complete generated proof text, actual
+  BMC input, verification results and explicit completeness/minimality limits.
+
+This handoff records the tested implementation; it does not broaden the stated
+arithmetic completeness boundary or migrate the old BMC explanation API.
+The pull request is left open for the maintainer to merge.

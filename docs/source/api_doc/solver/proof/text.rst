@@ -31,7 +31,7 @@ ProofReading
 -----------------------------------------------------
 
 .. autoclass:: ProofReading
-    :members: __post_init__,get_block,expand,get_source,to_canonical,to_text,query_id,solver_status,root_id,status,blocks,sources,gaps,graph,detail_blocks
+    :members: __post_init__,get_block,expand,get_source,to_canonical,get_term_text,to_text,query_id,solver_status,root_id,status,blocks,sources,gaps,graph,detail_blocks
 
 
 build\_reading

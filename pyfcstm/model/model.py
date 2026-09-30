@@ -755,8 +755,13 @@ class Transition(AstExportable):
     Represents a transition between states in a state machine.
 
     A transition defines how the state machine moves from one state to another,
-    potentially triggered by an event, guarded by a condition, and with effects
-    that execute when the transition occurs.
+    triggered by either an event or a guard, with effects that execute when the
+    transition occurs. ``event`` and ``guard`` are mutually exclusive: construction
+    or assignment raises :class:`ValueError` if both would be non-``None``.
+    Both may be ``None`` for an unconditional transition. Clear the existing
+    trigger before assigning the other; rejected assignments leave it unchanged.
+    Sequential combo triggers expand into separate edges, not an event and guard
+    on the same edge.
 
     :param from_state: The source state name or special state marker
     :type from_state: Union[str, dsl_nodes._StateSingletonMark]
@@ -856,6 +861,13 @@ class Transition(AstExportable):
     target_history: Optional[str] = field(default=None, compare=False)
     history_role: Optional[str] = field(default=None, compare=False)
     history_user_guard: Optional[Expr] = field(default=None, compare=False)
+
+    def __setattr__(self, name, value):
+        if name in ("event", "guard") and value is not None:
+            other = "guard" if name == "event" else "event"
+            if getattr(self, other, None) is not None:
+                raise ValueError("event and guard are mutually exclusive")
+        super().__setattr__(name, value)
 
     @property
     def parent(self) -> Optional["State"]:

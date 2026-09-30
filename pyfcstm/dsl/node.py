@@ -1541,6 +1541,10 @@ class TransitionDefinition(ASTNode):
     Transitions define how the state machine moves from one state to another in response
     to events and conditions.
 
+    ``event_id`` and ``condition_expr`` are mutually exclusive. Construction or
+    assignment raises :class:`ValueError` if both would be non-``None``; rejected
+    assignments leave the node unchanged. Both may be ``None``.
+
     :param from_state: The source state name or :data:`INIT_STATE` singleton
     :type from_state: Union[str, _StateSingletonMark]
     :param to_state: The target state name or :data:`EXIT_STATE` singleton
@@ -1590,6 +1594,13 @@ class TransitionDefinition(ASTNode):
     doc: Optional[str] = None
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
     target_history: Optional[str] = None
+
+    def __setattr__(self, name, value):
+        if name in ("event_id", "condition_expr") and value is not None:
+            other = "condition_expr" if name == "event_id" else "event_id"
+            if getattr(self, other, None) is not None:
+                raise ValueError("event_id and condition_expr are mutually exclusive")
+        super().__setattr__(name, value)
 
     def __str__(self) -> str:
         """
@@ -1650,6 +1661,10 @@ class ForceTransitionDefinition(ASTNode):
     Forced transitions override normal transitions and are used for special cases
     like error handling or interrupts.
 
+    ``event_id`` and ``condition_expr`` are mutually exclusive. Construction or
+    assignment raises :class:`ValueError` if both would be non-``None``; rejected
+    assignments leave the node unchanged. Both may be ``None``.
+
     :param from_state: The source state name or :data:`ALL` singleton
     :type from_state: Union[str, _StateSingletonMark]
     :param to_state: The target state name or :data:`EXIT_STATE` singleton
@@ -1680,6 +1695,13 @@ class ForceTransitionDefinition(ASTNode):
     doc: Optional[str] = None
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
     target_history: Optional[str] = None
+
+    def __setattr__(self, name, value):
+        if name in ("event_id", "condition_expr") and value is not None:
+            other = "condition_expr" if name == "event_id" else "event_id"
+            if getattr(self, other, None) is not None:
+                raise ValueError("event_id and condition_expr are mutually exclusive")
+        super().__setattr__(name, value)
 
     def __str__(self) -> str:
         """

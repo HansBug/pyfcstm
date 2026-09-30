@@ -292,6 +292,13 @@ dotted path, resolved relative to the owner.
 Transition forms
 ----------------
 
+The Python model fields ``Transition.event`` and ``Transition.guard`` are mutually
+exclusive. The same applies to ``event_id`` and ``condition_expr`` on ordinary and
+forced AST transitions. Construction or assignment raises ``ValueError`` if both
+would be non-``None``; rejected assignments leave the object unchanged. Clear the
+existing field before setting the other. Both may be ``None`` for an unconditional
+edge. Sequential combo terms still expand into separate model edges.
+
 .. list-table:: Transition families
    :header-rows: 1
 

@@ -5518,7 +5518,7 @@ class TestCompositeInitGuardsIncomplete:
 
         assert result == AlgorithmResult(kind="timeout")
 
-    def test_internal_guarded_event_init_transition_requires_both_triggers(self):
+    def test_guarded_initial_transition_rejects_event_assignment(self):
         machine = parse_machine(
             """
             def int x = 0;
@@ -5531,13 +5531,15 @@ class TestCompositeInitGuardsIncomplete:
             """
         )
         transition = machine.root_state.init_transitions[0]
-        transition.event = Event("E", machine.root_state.path)
+        guard = transition.guard
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            transition.event = Event("E", machine.root_state.path)
+        assert transition.event is None
+        assert transition.guard is guard
 
         result = composite_init_guards_incomplete(machine, variables(machine))
 
-        assert result.kind == "sat"
-        diag = assert_single_diag(result, "W_COMPOSITE_INIT_INCOMPLETE")
-        assert diag["data"]["state"] == "System"
+        assert result.kind == "unsat"
 
     def test_bitwise_init_guard_translation_failure_is_undecidable(self):
         machine = parse_machine(

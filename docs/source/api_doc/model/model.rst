@@ -57,7 +57,7 @@ Transition
 -----------------------------------------------------
 
 .. autoclass:: Transition
-    :members: parent,parent,to_ast_node,from_state,to_state,event,guard,effects,event_scope,is_forced,forced_origin,combo_origin_refs,combo_projection_key,combo_projection_order_key,combo_reuse_group_id,combo_priority_run_identity,combo_priority_run_index,doc,parent_ref,target_history,history_role,history_user_guard
+    :members: __setattr__,parent,parent,to_ast_node,from_state,to_state,event,guard,effects,event_scope,is_forced,forced_origin,combo_origin_refs,combo_projection_key,combo_projection_order_key,combo_reuse_group_id,combo_priority_run_identity,combo_priority_run_index,doc,parent_ref,target_history,history_role,history_user_guard
 
 
 OnStage

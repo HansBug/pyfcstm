@@ -280,6 +280,11 @@ AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供 ``CONTROL``
 转换形式
 ------------
 
+Python 模型的 ``Transition.event`` 与 ``Transition.guard`` 严格互斥；普通及强制 AST 转换的
+``event_id`` 与 ``condition_expr`` 也相同。构造或赋值若使二者同时非 ``None``，会抛出
+``ValueError``，被拒绝的赋值不会改变原对象。切换触发方式时应先清空已有字段。
+二者均为 ``None`` 表示无条件边；组合触发器仍按顺序展开为多条模型边。
+
 .. list-table:: 转换族
    :header-rows: 1
 

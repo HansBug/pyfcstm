@@ -2447,9 +2447,10 @@ def _lower_bool_template(
                 symbols,
                 step_index,
             )
-            _append_guarded_constraints(
-                definedness, expr, lowered.definedness_constraints
-            )
+            if lowered.definedness_constraints:
+                _append_guarded_constraints(
+                    definedness, expr, lowered.definedness_constraints
+                )
             expr = z3.And(expr, lowered.expr)
         return _LoweredBoolTemplate(expr, tuple(definedness))
     if template.kind == "or":
@@ -2464,9 +2465,10 @@ def _lower_bool_template(
                 symbols,
                 step_index,
             )
-            _append_guarded_constraints(
-                definedness, z3.Not(expr), lowered.definedness_constraints
-            )
+            if lowered.definedness_constraints:
+                _append_guarded_constraints(
+                    definedness, z3.Not(expr), lowered.definedness_constraints
+                )
             expr = z3.Or(expr, lowered.expr)
         return _LoweredBoolTemplate(expr, tuple(definedness))
     if template.kind == "atom":
@@ -2587,8 +2589,13 @@ def _build_step_relation(
         for case in case_list
     }
     condition_cache: Dict[str, _LoweredBoolTemplate] = {}
+    # Priority masks name the same accepted cases over and over; each one is
+    # lowered once per step instead of once per occurrence.
+    accepted_cache: Dict[str, _LoweredBoolTemplate] = {}
 
     def accepted_lookup(label: str, active: Set[str]) -> _LoweredBoolTemplate:
+        if label in accepted_cache:
+            return accepted_cache[label]
         if (
             label not in lowerings
         ):  # pragma: no cover - macro validation keeps accepted labels local.
@@ -2601,12 +2608,13 @@ def _build_step_relation(
             accepted_case.source_state_id
         )
         condition = condition_for(label, active)
-        return _LoweredBoolTemplate(
+        accepted_cache[label] = _LoweredBoolTemplate(
             _and((source_guard, condition.expr)),
             _guarded_domain_constraints(
                 source_guard, condition.definedness_constraints
             ),
         )
+        return accepted_cache[label]
 
     def condition_for(label: str, active: Set[str]) -> _LoweredBoolTemplate:
         if label in condition_cache:

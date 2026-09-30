@@ -1,0 +1,26 @@
+// Nested composites whose initial transitions are all guarded: the entry
+// macro-step from Paused reads 13 guard and event atoms.
+def int m = 0;
+state Washer {
+    state Paused;
+    state Program {
+        state Idle;
+        state Wash {
+            state Fill;
+            state Agitate;
+            [*] -> Fill : if [m == 0];
+            [*] -> Agitate : if [m == 1];
+            [*] -> Fill : if [m == 2];
+            [*] -> Agitate : if [m == 3];
+            Fill -> Agitate :: Filled;
+        }
+        [*] -> Idle : if [m == 0];
+        [*] -> Wash : if [m == 1];
+        [*] -> Idle : if [m == 2];
+        [*] -> Wash : if [m == 3];
+        Idle -> Wash :: Start;
+    }
+    [*] -> Paused;
+    Paused -> Program :: Fresh;
+    !Program -> Paused :: Pause;
+}

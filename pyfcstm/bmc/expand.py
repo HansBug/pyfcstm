@@ -94,9 +94,9 @@ class MacroExpansionOptions:
     :param verify_partition: Whether to run the source-local partition
         self-check after building cases, defaults to ``True``.
     :type verify_partition: bool, optional
-    :param partition_max_assignments: Assignment budget for the fallback
-        truth-table checker, defaults to ``4096``.  Structurally recognized
-        accepted/fallback masks can validate without enumerating this budget.
+    :param partition_max_assignments: Largest truth table the partition
+        self-check enumerates, defaults to ``4096``.  Larger partitions are
+        proved from their priority shape or decided symbolically instead.
     :type partition_max_assignments: int, optional
 
     Example::

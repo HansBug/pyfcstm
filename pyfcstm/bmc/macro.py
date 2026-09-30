@@ -973,45 +973,43 @@ def _accepted_atom_labels(condition: BoolTemplate) -> Tuple[str, ...]:
     )
 
 
-def _condition_uses_expected_accepted_prefix(
-    condition: BoolTemplate, labels: Sequence[str]
-) -> bool:
-    """Return whether ``condition`` has exactly the expected accepted mask."""
-    expected = tuple(labels)
-    if not expected:
-        return not _accepted_atom_labels(condition)
-    expected_mask = BoolTemplate.not_(
-        BoolTemplate.or_(
-            *[
-                BoolTemplate.atom("%s%s" % (_ACCEPTED_ATOM_PREFIX, label))
-                for label in expected
-            ]
-        )
-    )
-    expected_mask_key = _canonical_key(expected_mask)
-    if _canonical_key(condition) == expected_mask_key:
-        return True
-    if condition.kind != "and":
-        return False
-    mask_count = 0
-    for operand in condition.operands:
-        if _canonical_key(operand) == expected_mask_key:
-            mask_count += 1
+def _excluded_accepted_labels(condition: BoolTemplate) -> Optional[Set[str]]:
+    """Return the case labels ``condition`` rules out through top-level masks.
+
+    A top-level conjunct ``not accepted:Y`` (or ``not (accepted:Y or ...)``)
+    makes ``condition`` false whenever case ``Y`` holds, so the two buckets are
+    disjoint.  An accepted atom anywhere else carries no such guarantee, and the
+    shape is then not recognized.
+
+    :param condition: Case condition before accepted-atom resolution.
+    :type condition: BoolTemplate
+    :return: Excluded case labels, or ``None`` for an unrecognized shape.
+    :rtype: Optional[Set[str]]
+    """
+    conjuncts = condition.operands if condition.kind == "and" else (condition,)
+    excluded: Set[str] = set()
+    for conjunct in conjuncts:
+        if conjunct.kind != "not":
+            if _accepted_atom_labels(conjunct):
+                return None
             continue
-        if _accepted_atom_labels(operand):
-            return False
-    return mask_count == 1
+        inner = conjunct.operands[0]
+        for item in inner.operands if inner.kind == "or" else (inner,):
+            if item.kind == "atom" and item._atom_name().startswith(
+                _ACCEPTED_ATOM_PREFIX
+            ):
+                excluded.add(item._atom_name()[len(_ACCEPTED_ATOM_PREFIX) :])
+            elif _accepted_atom_labels(item):
+                return None
+    return excluded
 
 
 def _condition_uses_exact_accepted_complement(
-    condition: BoolTemplate,
-    labels: Sequence[str],
-    extra_exclusions: Sequence[BoolTemplate] = (),
+    condition: BoolTemplate, labels: Sequence[str]
 ) -> bool:
     exclusions = [
         BoolTemplate.atom("%s%s" % (_ACCEPTED_ATOM_PREFIX, label)) for label in labels
     ]
-    exclusions.extend(extra_exclusions)
     expected = (
         BoolTemplate.not_(BoolTemplate.or_(*exclusions))
         if exclusions
@@ -1361,9 +1359,10 @@ class CycleCase:
 class PartitionCheckResult:
     """Summary of a source-local boolean partition self-check.
 
-    :param variables: Boolean atom names enumerated by the truth-table check.
+    :param variables: Free boolean atom names of the partition.
     :type variables: Tuple[str, ...]
-    :param assignment_count: Number of assignments checked.
+    :param assignment_count: Number of truth-table assignments enumerated, or
+        ``0`` when the partition was proved without enumeration.
     :type assignment_count: int
     :param bucket_count: Number of partition buckets.
     :type bucket_count: int
@@ -1572,15 +1571,20 @@ class MacroStepFormal:
         )
 
     def verify_partition(self, max_assignments: int = 4096) -> PartitionCheckResult:
-        """Verify local case buckets with structural and truth-table self-checks.
+        """Verify that the local case buckets are complete and pairwise disjoint.
 
-        :param max_assignments: Maximum assignments to enumerate, defaults to
-            ``4096``.
+        This delegates to :func:`verify_source_partition`: small partitions are
+        enumerated, and larger ones are proved from their priority shape or
+        decided symbolically.
+
+        :param max_assignments: Largest truth table to enumerate; larger
+            partitions are decided without enumeration, defaults to ``4096``.
         :type max_assignments: int, optional
         :return: Partition self-check summary.
         :rtype: PartitionCheckResult
-        :raises BmcBuildError: If the buckets overlap, leave a gap, or exceed
-            the assignment budget for a non-structural shape.
+        :raises BmcBuildError: If the buckets overlap or leave a gap, an accepted
+            atom names an unknown case or forms a cycle, or ``max_assignments``
+            is not a positive integer.
 
         Example::
 
@@ -1918,66 +1922,248 @@ def build_semantic_delta_case(
     )
 
 
-def _resolve_accepted_atoms(
-    condition: BoolTemplate,
+def _validate_accepted_references(
     registry: Mapping[str, BoolTemplate],
-    active: Optional[Set[str]] = None,
-    completed: Optional[Dict[int, BoolTemplate]] = None,
-) -> BoolTemplate:
-    if active is None:
-        active = set()
-    if completed is None:
-        completed = {}
-    ident = id(condition)
-    if ident in completed:
-        return completed[ident]
-    if condition.kind == "atom":
-        atom = condition._atom_name()
-        if not atom.startswith(_ACCEPTED_ATOM_PREFIX):
-            resolved = condition
-        else:
-            label = atom[len(_ACCEPTED_ATOM_PREFIX) :]
-            if label not in registry:
+) -> Tuple[str, ...]:
+    """Reject unknown and cyclic accepted references and order the cases.
+
+    An accepted atom ``accepted:Y`` stands for the condition of case ``Y``.
+    The references must therefore name known cases and be acyclic; the
+    returned order lists every case after all the cases its condition names.
+
+    :param registry: Case condition by case label.
+    :type registry: Mapping[str, BoolTemplate]
+    :return: Case labels, each after the labels it references.
+    :rtype: Tuple[str, ...]
+    :raises BmcBuildError: If a condition names an unknown case label or the
+        accepted references form a cycle.
+    """
+    references = {
+        label: _accepted_atom_labels(condition) for label, condition in registry.items()
+    }
+    for targets in references.values():
+        for target in targets:
+            if target not in references:
                 raise BmcBuildError(
-                    "accepted atom references unknown case label: %r." % label
+                    "accepted atom references unknown case label: %r." % target
                 )
-            if label in active:
+    finished: Set[str] = set()
+    order: List[str] = []
+    for root in references:
+        if root in finished:
+            continue
+        # Iterative depth-first search: long priority chains must not hit the
+        # interpreter recursion limit.
+        visiting = {root}
+        stack = [(root, iter(references[root]))]
+        while stack:
+            label, pending = stack[-1]
+            target = next(pending, None)
+            if target is None:
+                visiting.discard(label)
+                finished.add(label)
+                order.append(label)
+                stack.pop()
+            elif target in visiting:
                 raise BmcBuildError(
-                    "accepted atom cycle detected for case label: %r." % label
+                    "accepted atom cycle detected for case label: %r." % target
                 )
-            active.add(label)
-            resolved = _resolve_accepted_atoms(
-                registry[label], registry, active, completed
+            elif target not in finished:
+                visiting.add(target)
+                stack.append((target, iter(references[target])))
+    return tuple(order)
+
+
+def _partition_variables(
+    cases: Sequence[CycleCase], diagnostics: Sequence[BoolTemplate]
+) -> Tuple[str, ...]:
+    """Return the free atoms of a source partition without resolving it.
+
+    Case conditions contribute their event and guard atoms; accepted atoms are
+    definitions of other buckets, not inputs.  Build diagnostics are taken
+    verbatim, exactly as the truth-table path uses them.
+
+    :param cases: Success and delta cases.
+    :type cases: Sequence[CycleCase]
+    :param diagnostics: Build diagnostic conditions.
+    :type diagnostics: Sequence[BoolTemplate]
+    :return: Sorted free atom names.
+    :rtype: Tuple[str, ...]
+    """
+    names: Set[str] = set()
+    for case in cases:
+        names.update(
+            atom
+            for atom in case.condition.variables
+            if not atom.startswith(_ACCEPTED_ATOM_PREFIX)
+        )
+    for item in diagnostics:
+        names.update(item.variables)
+    return tuple(sorted(names))
+
+
+def _truth_table_partition_result(
+    cases: Sequence[CycleCase],
+    diagnostics: Sequence[BoolTemplate],
+    variables: Sequence[str],
+    order: Sequence[str],
+) -> PartitionCheckResult:
+    """Enumerate every assignment of the free atoms and check each bucket.
+
+    Accepted atoms are evaluated by definition: under each assignment the cases
+    are evaluated in ``order`` and ``accepted:Y`` reads the value already
+    computed for case ``Y``.  That equals evaluating the conditions with every
+    accepted atom inlined, at a cost linear in the case conditions instead of
+    in their inlined size.  Build diagnostics form one extra bucket, taken
+    verbatim.
+
+    :param cases: Success and delta cases whose accepted references are valid.
+    :type cases: Sequence[CycleCase]
+    :param diagnostics: Build diagnostic conditions.
+    :type diagnostics: Sequence[BoolTemplate]
+    :param variables: Free atom names to enumerate.
+    :type variables: Sequence[str]
+    :param order: Case labels, each after the labels it references.
+    :type order: Sequence[str]
+    :return: Partition self-check summary.
+    :rtype: PartitionCheckResult
+    :raises BmcBuildError: If the buckets overlap or leave a gap.
+    """
+    registry = {case.label: case.condition for case in cases}
+    diagnostic = BoolTemplate.or_(*diagnostics) if diagnostics else None
+    names = tuple(variables)
+    gaps = []
+    overlaps = []
+    for values in itertools.product((False, True), repeat=len(names)):
+        assignment = dict(zip(names, values))
+        environment = dict(assignment)
+        for label in order:
+            environment[_ACCEPTED_ATOM_PREFIX + label] = registry[label].evaluate(
+                environment
             )
-            active.remove(label)
-    elif condition.kind in {"true", "false"}:
-        resolved = condition
-    elif condition.kind == "not":
-        resolved = BoolTemplate.not_(
-            _resolve_accepted_atoms(condition.operands[0], registry, active, completed)
+        truths = [environment[_ACCEPTED_ATOM_PREFIX + case.label] for case in cases]
+        if diagnostic is not None:
+            truths.append(diagnostic.evaluate(assignment))
+        true_indexes = [index for index, value in enumerate(truths) if value]
+        if len(true_indexes) > 1:
+            overlaps.append((assignment, true_indexes))
+        elif not true_indexes:
+            gaps.append(assignment)
+    if overlaps or gaps:
+        parts = []
+        if overlaps:
+            assignment, true_indexes = overlaps[0]
+            parts.append("overlap at assignment %r: %r" % (assignment, true_indexes))
+        if gaps:
+            parts.append("gap at assignment %r" % gaps[0])
+        raise BmcBuildError("partition violation: %s." % "; ".join(parts))
+    return PartitionCheckResult(
+        names, 2 ** len(names), len(cases) + (1 if diagnostics else 0)
+    )
+
+
+def _symbolic_partition_result(
+    cases: Sequence[CycleCase],
+    diagnostics: Sequence[BoolTemplate],
+    variables: Sequence[str],
+) -> PartitionCheckResult:
+    """Decide a source partition exactly with z3 instead of a truth table.
+
+    Each case becomes one boolean defined by its condition, and accepted atoms
+    refer to those definitions rather than being inlined, so the formula stays
+    linear in the size of the cases.  Two queries settle the partition: no
+    assignment may make two buckets true, and none may make every bucket false.
+    Build diagnostics form one extra bucket, taken verbatim as in the
+    truth-table path.
+
+    :param cases: Success and delta cases whose accepted references are valid.
+    :type cases: Sequence[CycleCase]
+    :param diagnostics: Build diagnostic conditions.
+    :type diagnostics: Sequence[BoolTemplate]
+    :param variables: Free atom names reported in the result.
+    :type variables: Sequence[str]
+    :return: Partition self-check summary with ``assignment_count == 0``.
+    :rtype: PartitionCheckResult
+    :raises BmcBuildError: If the buckets overlap, leave a gap, or the solver
+        cannot decide the check.
+    """
+    # Imported here so that importing macro contracts stays solver-free.
+    import z3
+
+    free: Dict[str, Any] = {}
+    defined = {case.label: z3.Bool("case:" + case.label) for case in cases}
+    encoded: Dict[Tuple[int, bool], Any] = {}
+
+    def encode(template: BoolTemplate, resolve: bool) -> Any:
+        key = (id(template), resolve)
+        if key in encoded:
+            return encoded[key]
+        if template.kind in ("true", "false"):
+            value = z3.BoolVal(template.kind == "true")
+        elif template.kind == "atom":
+            name = template._atom_name()
+            if resolve and name.startswith(_ACCEPTED_ATOM_PREFIX):
+                value = defined[name[len(_ACCEPTED_ATOM_PREFIX) :]]
+            else:
+                if name not in free:
+                    free[name] = z3.Bool(name)
+                value = free[name]
+        else:
+            operands = [encode(item, resolve) for item in template.operands]
+            if template.kind == "not":
+                value = z3.Not(operands[0])
+            elif template.kind == "and":
+                value = z3.And(*operands)
+            else:
+                value = z3.Or(*operands)
+        encoded[key] = value
+        return value
+
+    solver = z3.Solver()
+    for case in cases:
+        solver.add(defined[case.label] == encode(case.condition, True))
+    buckets = [defined[case.label] for case in cases]
+    if diagnostics:
+        buckets.append(encode(BoolTemplate.or_(*diagnostics), False))
+
+    def counterexample(violation: Any) -> Optional[Any]:
+        solver.push()
+        solver.add(violation)
+        status = solver.check()
+        model = solver.model() if status == z3.sat else None
+        solver.pop()
+        if (
+            status == z3.unknown
+        ):  # pragma: no cover - propositional checks always decide.
+            raise BmcBuildError(
+                "partition check could not be decided: %s." % solver.reason_unknown()
+            )
+        return model
+
+    def assignment(model: Any) -> Dict[str, bool]:
+        return {
+            name: z3.is_true(model.eval(free[name], model_completion=True))
+            for name in variables
+            if name in free
+        }
+
+    parts = []
+    overlap = counterexample(z3.Sum([z3.If(item, 1, 0) for item in buckets]) >= 2)
+    if overlap is not None:
+        true_indexes = [
+            index
+            for index, item in enumerate(buckets)
+            if z3.is_true(overlap.eval(item, model_completion=True))
+        ]
+        parts.append(
+            "overlap at assignment %r: %r" % (assignment(overlap), true_indexes)
         )
-    elif condition.kind == "and":
-        resolved = BoolTemplate.and_(
-            *[
-                _resolve_accepted_atoms(item, registry, active, completed)
-                for item in condition.operands
-            ]
-        )
-    elif condition.kind == "or":
-        resolved = BoolTemplate.or_(
-            *[
-                _resolve_accepted_atoms(item, registry, active, completed)
-                for item in condition.operands
-            ]
-        )
-    else:
-        raise _internal_bmc_error(  # pragma: no cover
-            "unsupported boolean template kind while resolving accepted atoms: %r."
-            % condition.kind
-        )
-    # Insert only after successful recursion so cycles and missing labels still fail.
-    completed[ident] = resolved
-    return resolved
+    gap = counterexample(z3.Not(z3.Or(*buckets)))
+    if gap is not None:
+        parts.append("gap at assignment %r" % assignment(gap))
+    if parts:
+        raise BmcBuildError("partition violation: %s." % "; ".join(parts))
+    return PartitionCheckResult(tuple(variables), 0, len(buckets))
 
 
 def _validate_sentinel_absorb_partition(
@@ -2054,22 +2240,30 @@ def _structural_partition_result(
         _validate_sentinel_absorb_partition(success, sentinel_id, sentinel_path)
         return PartitionCheckResult(tuple(variables), 0, 1)
 
+    if diagnostics:
+        # The shape says nothing about whether a build diagnostic overlaps an
+        # accepted case, so such partitions are left to the exact check.
+        return None
     cases = tuple(success) + tuple(delta)
     accepted_cases = [case for case in cases if case.kind in _ACCEPTED_CASE_KINDS]
     terminal_cases = [case for case in cases if case.kind not in _ACCEPTED_CASE_KINDS]
-    accepted_labels: List[str] = []
-    remaining: List[CycleCase] = list(accepted_cases)
-    while remaining:
-        candidates = [
-            case
-            for case in remaining
-            if _condition_uses_expected_accepted_prefix(case.condition, accepted_labels)
-        ]
-        if len(candidates) != 1:
+    # Nested declaration-priority choosers yield a tree, not one flat chain:
+    # each accepted case masks only the cases of its earlier siblings, level by
+    # level.  Any two accepted cases are still disjoint when one of them masks
+    # the other, which is checked pairwise without enumerating atoms.
+    exclusions: Dict[str, Set[str]] = {}
+    for case in accepted_cases:
+        excluded = _excluded_accepted_labels(case.condition)
+        if excluded is None:
             return None
-        selected = candidates[0]
-        accepted_labels.append(selected.label)
-        remaining.remove(selected)
+        exclusions[case.label] = excluded
+    for first, second in itertools.combinations(accepted_cases, 2):
+        if (
+            second.label not in exclusions[first.label]
+            and first.label not in exclusions[second.label]
+        ):
+            return None
+    accepted_labels = [case.label for case in accepted_cases]
 
     if len(terminal_cases) != 1:
         return None
@@ -2091,23 +2285,22 @@ def _structural_partition_result(
                 "public preflight."
             )
         if not _condition_uses_exact_accepted_complement(
-            terminal.condition, accepted_labels, diagnostics
+            terminal.condition, accepted_labels
         ):
             return None
     else:  # pragma: no cover - public preflight admits only fallback/delta here.
         return None
 
-    if diagnostics and (not source.allows_semantic_delta or not delta):
-        # The fallback branch rejects build-time buckets above, public preflight
-        # rejects non-delta-capable sources, and the only accepted diagnostic
-        # shape has a delta bucket. Keep this as a loud structural guard for
-        # corrupted internal callers.
-        raise _internal_bmc_error(  # pragma: no cover
-            "build-condition structural partition reached an unsupported source or "
-            "missing delta bucket after public preflight."
-        )
-    bucket_count = len(cases) + (1 if diagnostics else 0)
-    return PartitionCheckResult(tuple(variables), 0, bucket_count)
+    return PartitionCheckResult(tuple(variables), 0, len(cases))
+
+
+def _validate_max_assignments(max_assignments: object) -> None:
+    if (
+        isinstance(max_assignments, bool)
+        or not isinstance(max_assignments, int)
+        or max_assignments <= 0
+    ):
+        raise BmcBuildError("max_assignments must be a positive integer.")
 
 
 def verify_boolean_partition(
@@ -2143,10 +2336,7 @@ def verify_boolean_partition(
         raise BmcBuildError("partition must contain at least one bucket.")
     if not all(isinstance(item, BoolTemplate) for item in items):
         raise BmcBuildError("partition buckets must be BoolTemplate objects.")
-    if isinstance(max_assignments, bool) or not isinstance(max_assignments, int):
-        raise BmcBuildError("max_assignments must be a positive integer.")
-    if max_assignments <= 0:
-        raise BmcBuildError("max_assignments must be a positive integer.")
+    _validate_max_assignments(max_assignments)
     if variables is None:
         names = sorted(
             set(itertools.chain.from_iterable(item.variables for item in items))
@@ -2195,11 +2385,16 @@ def verify_source_partition(
 ) -> PartitionCheckResult:
     """Verify one source's local case partition.
 
-    Canonical accepted/fallback masks are verified structurally to avoid
-    rejecting large declaration-priority partitions merely because their event
-    or guard atom count exceeds the fallback truth-table budget.  Non-canonical
-    shapes are resolved through the source-local accepted-case registry and then
-    checked by bounded truth-table enumeration.
+    Accepted atoms read the condition of the case they name, by definition and
+    never by inlining.  A partition whose truth table fits ``max_assignments``
+    is enumerated over its event and guard atoms.  A larger one is never
+    rejected for its size: when every pair of accepted cases is separated by a
+    negated accepted conjunct -- the declaration-priority tree that macro
+    expansion builds, however deeply choosers nest -- and the terminal bucket is
+    the exact complement, the shape itself proves the partition.  Any other
+    shape, and any partition with build diagnostics, is decided exactly with a
+    z3 encoding that keeps accepted atoms as definitions instead of inlining
+    them.
 
     :param source: Macro-step source profile.
     :type source: MacroStepSource
@@ -2210,15 +2405,18 @@ def verify_source_partition(
     :param build_diagnostic_conditions: Build diagnostic conditions, defaults
         to ``()``.
     :type build_diagnostic_conditions: Sequence[BoolTemplate], optional
-    :param max_assignments: Maximum truth-table assignments, defaults to
-        ``4096``.
+    :param max_assignments: Largest truth table to enumerate; larger
+        partitions are decided without enumeration, defaults to ``4096``.
     :type max_assignments: int, optional
-    :return: Partition self-check summary.
+    :return: Partition self-check summary; ``assignment_count`` is ``0`` when
+        no truth table was enumerated.
     :rtype: PartitionCheckResult
-    :raises BmcBuildError: If the buckets are not complete and disjoint.
+    :raises BmcBuildError: If the buckets are not complete and disjoint, an
+        accepted atom names an unknown case or forms a cycle, or
+        ``max_assignments`` is not a positive integer.
     :raises InvalidBmcEncoding: If the source/case buckets have an invalid
-        shape, including unsupported delta buckets or malformed sentinel absorb
-        partitions.
+        shape, including duplicate case labels, unsupported delta buckets or
+        malformed sentinel absorb partitions.
 
     Example::
 
@@ -2247,9 +2445,13 @@ def verify_source_partition(
             )
     if delta and not source.allows_semantic_delta:
         raise InvalidBmcEncoding("delta cases require an entry source.")
+    labels: Set[str] = set()
     for case in success + delta:
         if not isinstance(case, CycleCase):
             raise InvalidBmcEncoding("partition cases must be CycleCase objects.")
+        if case.label in labels:
+            raise InvalidBmcEncoding("Duplicate cycle case label: %r." % case.label)
+        labels.add(case.label)
         if case.source_state_id != source.source_state_id:
             raise InvalidBmcEncoding("partition case source id mismatch.")
         if case.source_state_path != source.source_state_path:
@@ -2265,6 +2467,8 @@ def verify_source_partition(
             "build_diagnostic_conditions must contain BoolTemplate objects."
         )
 
+    _validate_max_assignments(max_assignments)
+
     if source.kind == "terminated":
         structural = _structural_partition_result(
             source, success, delta, diagnostics, ()
@@ -2272,34 +2476,27 @@ def verify_source_partition(
         if structural is not None:
             return structural
 
+    if not success and not delta and not diagnostics:
+        raise BmcBuildError("partition must contain at least one bucket.")
     _validate_partition_atom_prefixes(
         [case.condition for case in success + delta] + list(diagnostics)
     )
-    registry = {case.label: case.condition for case in success + delta}
-    # Input trees remain owned by the cases and registry throughout this call,
-    # so their identities cannot be reused. Identity keys avoid recursive hashing
-    # of shared immutable trees; no completed result survives this partition.
-    completed: Dict[int, BoolTemplate] = {}
-    buckets = [
-        _resolve_accepted_atoms(case.condition, registry, completed=completed)
-        for case in success
-    ]
-    buckets.extend(
-        _resolve_accepted_atoms(case.condition, registry, completed=completed)
-        for case in delta
+    # Accepted atoms are never inlined: an inlined condition grows exponentially
+    # with chooser nesting.  Every path below reads them as definitions.
+    order = _validate_accepted_references(
+        {case.label: case.condition for case in success + delta}
     )
-    if diagnostics:
-        buckets.append(BoolTemplate.or_(*diagnostics))
-    variables = sorted(
-        set(itertools.chain.from_iterable(bucket.variables for bucket in buckets))
-    )
-    if 2 ** len(variables) > max_assignments:
-        structural = _structural_partition_result(
-            source, success, delta, diagnostics, variables
+    variables = _partition_variables(success + delta, diagnostics)
+    if 2 ** len(variables) <= max_assignments:
+        return _truth_table_partition_result(
+            success + delta, diagnostics, variables, order
         )
-        if structural is not None:
-            return structural
-    return verify_boolean_partition(buckets, max_assignments=max_assignments)
+    structural = _structural_partition_result(
+        source, success, delta, diagnostics, variables
+    )
+    if structural is not None:
+        return structural
+    return _symbolic_partition_result(success + delta, diagnostics, variables)
 
 
 __all__ = [

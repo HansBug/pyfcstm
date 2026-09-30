@@ -96,6 +96,7 @@ from .solver import (
     BmcSolveStatus,
     _SolveBudget,
     _check_with_budget,
+    _free_symbols,
     _solver_for_profile,
 )
 from pyfcstm.dsl.role import VariableRole
@@ -6008,7 +6009,7 @@ def _decode_step(
         # Fallback/Delta conditions also read guards of rejected candidates;
         # those guards live in the lowered acceptance dependency formula.
         condition_symbols = {
-            symbol.get_id() for symbol in z3.z3util.get_vars(relation.antecedent)
+            symbol.get_id() for symbol in _free_symbols(relation.antecedent)
         }
         reads.update(
             name

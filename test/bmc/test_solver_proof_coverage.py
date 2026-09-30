@@ -10,15 +10,18 @@ from pyfcstm.solver.proof import UnsatReport
 pytestmark = pytest.mark.unittest
 
 
-@pytest.mark.parametrize('product,status', [(3, 'unsat'), (6, 'sat')])
-def test_fbmcq_remainder_product_contradiction_uses_integer_evidence(product, status, text_aligner):
+@pytest.mark.parametrize('residues,product,status', [
+    ('x%2==0', 3, 'unsat'), ('x%2==0', 6, 'sat'),
+    ('x%3==1 && y%3==2', 3, 'unsat'), ('x%3==1 && y%3==2', 2, 'sat'),
+])
+def test_fbmcq_remainder_product_contradiction_uses_integer_evidence(residues, product, status, text_aligner):
     model = load_state_machine_from_text('def int x=0; def int y=0; state Root { state A; [*]->A; }')
     core = build_bmc_core_formula(BmcEngine(model).prepare('''
         init state("Root.A") havoc {x,y};
-        assume at 0: x%%2==0;
+        assume at 0: %s;
         assume at 0: x*y==%d;
         check reach <= 1: active("Root.A");
-    ''' % product))
+    ''' % (residues, product)))
     objective = compile_bmc_property(core)
     report = explain_unsat(UnsatQuery('query_integer_product', tuple(
         UnsatConstraint(key, (expression,)) for key, expression in (

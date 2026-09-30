@@ -297,7 +297,7 @@ P44  Exact interval deduction
   I7: mod(counter, 2) in (-inf, 0]; isolate the term; round integer bounds inward; B6
   I8: mod(counter, 2) in [0, +inf); isolate the term; round integer bounds inward; B7
   I9: mod(counter, 2) in [0, 0]; intersect ranges; I7, I8
-  I10: counter in [-3, -3]; divide the product range by a strictly positive factor range; I6, I3
+  I10: counter in [-3, -3]; divide the product range by a factor range that excludes zero; I6, I3
   I11: div(counter, 2) in (-inf, -2]; isolate the term; round integer bounds inward; I10, I9, B1
   I12: counter in (-inf, -4]; isolate the term; round integer bounds inward; I9, I11, B8
   Incompatible ranges: I10, I12; contradiction.

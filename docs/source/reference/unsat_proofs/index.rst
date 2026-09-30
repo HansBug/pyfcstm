@@ -199,6 +199,9 @@ literal. These checks also recognize direct contradictions from local premises;
 they do not use unrelated query assertions to justify an intermediate step.
 Interval deductions use exact rational bounds, open endpoints, integer rounding,
 products, repeated-factor squares and conditionally selected arithmetic branches.
+A product can constrain either factor by division through a positive or negative
+factor interval excluding zero, including open zero endpoints; intervals containing
+zero do not justify that inverse step.
 Only local premises and temporary negations of conclusion alternatives establish
 bounds. The text exposes those assumptions, every retained range deduction and
 the final contradiction or singleton equality. Bounded propagation can leave a

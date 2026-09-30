@@ -56,6 +56,16 @@ class _Range:
                       all(opened for value, opened in endpoints if value == lower) and not (lower == 0 and zero),
                       all(opened for value, opened in endpoints if value == upper) and not (upper == 0 and zero))
 
+    def reciprocal(self):
+        """Invert a nonempty interval excluding zero, retaining open endpoints."""
+        if self.empty() or self.contains_zero():
+            return None
+        lower = (-inf if self.upper == 0 else Fraction(0) if self.upper == inf
+                 else Fraction(1) / self.upper)
+        upper = (inf if self.lower == 0 else Fraction(0) if self.lower == -inf
+                 else Fraction(1) / self.lower)
+        return _Range(lower, upper, self.upper_open, self.lower_open)
+
     def square(self):
         if self.lower >= 0:
             return _Range(self.lower ** 2, self.upper ** 2, self.lower_open, self.upper_open)
@@ -333,9 +343,8 @@ class _Propagation:
         if self.conflict is None and term.operator == '*' and len(args) == 2 and term.term_id in self.indices:
             for child, divisor in ((args[0], args[1]), (args[1], args[0])):
                 factor = self.values.get(divisor, _Range())
-                if factor.lower > 0:
-                    inverse = _Range(Fraction(0) if factor.upper == inf else Fraction(1) / factor.upper,
-                                     Fraction(1) / factor.lower, factor.upper_open, factor.lower_open)
+                inverse = factor.reciprocal()
+                if inverse is not None:
                     self.record(child, self.values[term.term_id].multiply(inverse), 'product_inverse',
                                 (self.indices[term.term_id], self.indices[divisor]))
                     if self.conflict is not None:
@@ -483,13 +492,12 @@ def _replay_step(step, certificate, graph, budget):
             return ()
         product, divisor = (graph.term(parent.term_id) for parent in parents)
         factor = _step_range(parents[1])
+        inverse = factor.reciprocal()
         if (product.operator_kind != 'builtin' or product.operator != '*' or
                 len(product.arguments) != 2 or
                 product.arguments not in ((step.term_id, divisor.term_id), (divisor.term_id, step.term_id)) or
-                factor.lower <= 0):
+                inverse is None):
             return ()
-        inverse = _Range(Fraction(0) if factor.upper == inf else Fraction(1) / factor.upper,
-                         Fraction(1) / factor.lower, factor.upper_open, factor.lower_open)
         return (_step_range(parents[0]).multiply(inverse),)
     if term.operator_kind != 'builtin':
         return ()

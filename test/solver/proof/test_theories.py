@@ -791,3 +791,18 @@ def test_integer_product_reading_shows_the_full_checked_derivation(language, det
     assert report.reading_status == 'complete'
     expected = (fixtures / ('integer_product.%s.%s.txt' % (language, detail))).read_text('utf-8')
     text_aligner.assert_equal(expected, report.reading.to_text(language, detail))
+
+
+def test_two_nonzero_remainders_compose_with_an_integer_product(text_aligner):
+    x, y = z3.Ints('x y')
+    report = explain_unsat(UnsatQuery('residue_product', (
+        UnsatConstraint('left_residue', (x % 3 == 1,)),
+        UnsatConstraint('product', (x*y == 3,)),
+        UnsatConstraint('right_residue', (y % 3 == 2,)),
+    )), timeout_ms=30000)
+    assert report.solver_status == 'unsat'
+    assert report.reading_status == 'complete'
+    assert report.gaps == ()
+    restored = UnsatReport.from_canonical(report.to_canonical())
+    for language in ('en', 'zh'):
+        text_aligner.assert_equal(report.reading.to_text(language), restored.reading.to_text(language))

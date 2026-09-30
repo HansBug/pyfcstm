@@ -42,7 +42,13 @@ that the current BMC numeric language supports bit vectors.
 The remainder/product regression varies sign of divisor/product, assertion
 order, variable names, multiplication operand order and Int-to-Real casts. All
 variants must retain UNSAT, complete reading, no gaps, and canonical text
-roundtrips. A satisfiable product and unconstrained Real-product controls prevent
+roundtrips. A further nonzero-residue product regression (`x%3=1`, `x*y=3`, `y%3=2`)
+requires inverse propagation through a negative factor. The shared reciprocal
+operation excludes zero, reverses endpoints for both signs, and preserves open
+zero and infinite endpoints; generation and certificate replay use it. Actual
+FBMCQ and satisfiable product controls cover this path.
+
+A satisfiable product and unconstrained Real-product controls prevent
 integrality from being guessed.
 
 `integer_round` replays a polynomial's monomial lattices, including rational

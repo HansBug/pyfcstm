@@ -51,7 +51,7 @@ def test_interval_reconstruction_uses_only_local_arithmetic(case, expected):
         assert node.interval is None
 
 
-@pytest.mark.parametrize('case', ['square', 'product', 'conditional', 'cast', 'equality'])
+@pytest.mark.parametrize('case', ['square', 'product', 'conditional', 'cast', 'equality', 'negative_inverse'])
 def test_interval_replay_rejects_changed_endpoints_at_every_step(case):
     from dataclasses import replace
     from fractions import Fraction
@@ -66,6 +66,7 @@ def test_interval_replay_rejects_changed_endpoints_at_every_step(case):
         'conditional': (x <= -2, z3.If(x >= 0, x, -x) < 2),
         'cast': (i >= 2, y >= 2, z3.ToReal(i)*y < 4),
         'equality': (x*x == 2, y*y == 3, x == y),
+        'negative_inverse': (i == -2, i*z3.Int('j') == 3),
     }[case]
     graph = _certificate_graph(premises, ())
     node = graph.node(graph.root_id)
@@ -424,3 +425,30 @@ def test_congruence_handles_deep_arithmetic_without_python_recursion():
     assert report.solver_status == 'unsat'
     assert report.reading_status == 'complete'
     assert report.gaps == ()
+
+
+@pytest.mark.parametrize('endpoints,expected', [
+    ((-4, -2, False, False), ('-1/2', '-1/4', False, False)),
+    ((-4, -2, True, True), ('-1/2', '-1/4', True, True)),
+    ((None, -2, True, False), ('-1/2', '0', False, True)),
+    ((-4, 0, False, True), (None, '-1/4', True, False)),
+    ((0, 4, True, False), ('1/4', None, False, True)),
+    ((2, None, False, True), ('0', '1/2', True, False)),
+    ((-1, 1, False, False), None),
+    ((0, 1, False, False), None),
+    ((-1, 0, False, False), None),
+    ((0, 0, True, True), None),
+    ((2, 1, False, False), None),
+])
+def test_product_inverse_preserves_sign_and_open_endpoints(endpoints, expected):
+    from fractions import Fraction
+    from math import inf
+    from pyfcstm.solver.proof.interval import _Range
+
+    def interval(values):
+        lower, upper, lower_open, upper_open = values
+        return _Range(-inf if lower is None else Fraction(lower),
+                      inf if upper is None else Fraction(upper), lower_open, upper_open)
+
+    result = interval(endpoints).reciprocal()
+    assert result == (None if expected is None else interval(expected))

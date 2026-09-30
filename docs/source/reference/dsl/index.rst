@@ -544,8 +544,13 @@ Declarations
      - Both kinds share one record.
      - A second ``[H]`` in the same owner: ``duplicate``.
    * - Owner is a composite other than the root
-     - The root is never left and re-entered.
-     - ``[H]`` in the root: ``root_owner``.
+     - The root is never left and re-entered, and a leaf has nothing to
+       remember. A module's root is no longer the root once imported: a history
+       it declares belongs to the importing state and is entered as
+       ``Alias.[H]``, while the module file on its own still reports
+       ``root_owner``.
+     - ``[H]`` in the root: ``root_owner``; in a leaf such as
+       ``state L { [H] -> L; }``: ``leaf_owner``.
    * - Declared kind is used
      - A kind no ``Owner.[H]`` / ``Owner.[H*]`` target enters adds nothing.
      - ``W_HISTORY_UNUSED`` (warning); no record or route is generated.
@@ -652,8 +657,10 @@ Diagnostics
    * - ``E_HISTORY_DECLARATION_INVALID``
      - error
      - Malformed declaration. Refs ``owner_path``, ``kind``, ``default``,
-       ``reason`` (``root_owner``, ``duplicate``, ``default_not_direct_child``,
-       ``default_not_found``, ``default_pseudo``).
+       ``reason`` (``root_owner``, ``leaf_owner``, ``duplicate``,
+       ``default_not_direct_child``, ``default_not_found``, ``default_pseudo``).
+       The targets of an invalid declaration are not reported again as
+       undeclared.
    * - ``E_HISTORY_TARGET_UNDECLARED``
      - error
      - ``Owner.[H]`` / ``Owner.[H*]`` without the matching declaration, or on a
@@ -693,14 +700,23 @@ Consumers of the lowered machine
        ``init`` command.
    * - Export
      - ``to_ast_node()`` and ``pyfcstm`` DSL export write the lowered, plain
-       FCSTM. Re-reading it gives the same behavior and only
-       ``W_HISTORY_RESERVED_PREFIX`` warnings; it carries no history metadata.
+       FCSTM. Re-reading it gives the same behavior but carries no history
+       metadata: the lowered names report ``W_HISTORY_RESERVED_PREFIX``, and the
+       restore conditions are now guards the author wrote, so a composite whose
+       initials all became guarded reports ``W_INITIAL_UNCONDITIONAL_MISSING``.
    * - Inspect
-     - Reports the lowered variables and edges. Initial targets produced or
-       changed by lowering carry ``history_role``
-       (``route``, ``merged``, ``gated``, ``gate``);
-       ``is_unconditional`` and ``W_INITIAL_UNCONDITIONAL_MISSING`` judge the
-       initial the author wrote.
+     - Judges the model as written. ``transitions`` and ``initial_targets``
+       show the guards and effects the author wrote; ``history_role`` marks the
+       edges lowering generated (``route``, ``gate``) or extended (``merged``,
+       ``gated``), and ``target_history`` marks a transition entering a history.
+       An evented initial routed through a gate is listed as ``[*] -> X :: E``.
+       Generated edges follow every authored transition, so adding history
+       renumbers no ``transition_index``. Findings, metrics and statistics
+       leave out the generated variables, gate states and edges, and
+       reachability follows a history entry to its default rather than to every
+       route: adding history changes no finding, except that a state reachable
+       only as a history default is no longer unreachable.
+       :func:`pyfcstm.verify.topology.unreachable_states` applies the same rule.
    * - BMC
      - Checks the lowered machine. Queries may read ``var("__hist_goto")`` and
        ``var("__hist_<owner>")``. A havocked history variable is constrained to
@@ -719,8 +735,10 @@ Verify with:
    pyfcstm inspect -i docs/source/tutorials/dsl/history_washer.fcstm --format json
 
 In the JSON report, ``variables`` contains ``__hist_goto`` and
-``__hist_Program``, and the ``initial_targets`` of ``Washer.Program`` and
-``Washer.Program.Wash`` carry ``history_role`` values.
+``__hist_Program``, the ``initial_targets`` of ``Washer.Program`` and
+``Washer.Program.Wash`` carry ``history_role`` values, and the transitions
+entering ``Program.[H]`` and ``Program.[H*]`` carry ``target_history``
+(``shallow`` and ``deep``).
 
 .. _dsl-events-scopes:
 

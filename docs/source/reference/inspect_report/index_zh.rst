@@ -124,9 +124,9 @@ Inspect 报告参考
    * - 对象
      - 必填字段和说明
    * - ``StateInfo``
-     - ``path``、``name``、``parent_path``、叶/伪/组合布尔值、子状态、初始目标、生命周期动作数组、切面数组和 ``has_abstract_action``。由历史展开生成或改写的 ``initial_targets`` 条目带有可选字段 ``history_role``\ （\ ``route``\ 、\ ``merged``\ 、\ ``gated``\ 、\ ``gate``\ ），这时它的 ``is_unconditional`` 反映作者书写的初始转换。见 :ref:`dsl-history-reference-zh`\ 。
+     - ``path``、``name``、``parent_path``、叶/伪/组合布尔值、子状态、初始目标、生命周期动作数组、切面数组和 ``has_abstract_action``。由历史展开生成或改写的 ``initial_targets`` 条目带有可选字段 ``history_role``\ （\ ``route``\ 、\ ``merged``\ 、\ ``gated``\ ）；它的 ``guard``\ 、\ ``event``\ 与 ``is_unconditional`` 始终是作者书写的内容，经闸门路由的带事件初始转换按原样列出，角色为 ``gated``\ 。见 :ref:`dsl-history-reference-zh`\ 。
    * - ``TransitionInfo``
-     - 源/目标、事件、事件作用域、守卫、效果动作、自赋值、强制来源、索引和组合投影 / 来源字段。
+     - 源/目标、事件、事件作用域、守卫、效果动作、自赋值、强制来源、索引和组合投影 / 来源字段。可选字段 ``history_role``\ （\ ``route``\ 、\ ``gate``\ 、\ ``merged``\ 、\ ``gated``\ ）标出历史展开生成或扩展的边，\ ``target_history``\ （\ ``shallow``\ 、\ ``deep``\ ）标出进入历史的转换；\ ``guard``\ 与 ``effect``\ 是作者书写的文本。生成的边排在所有作者书写的转换之后，因此它们的 ``transition_index`` 位于最后。
    * - ``ComboOriginInfo``
      - ``origin_id``、转换 span、触发器 span 和有序 ``terms``。
    * - ``ComboOriginTermInfo``

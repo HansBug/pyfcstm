@@ -511,7 +511,7 @@ DSL 把数值表达式（numeric expression）和条件表达式（condition exp
 * **所有者活动时看不到原始记录。**\ 这时 ``__hist_<所有者>`` 会随叶的退出而变化；请在所有者不活动时用 ``history_record()`` 读取。
 * **历史不会让卡住的模型变得可运行。**\ 恢复可能到达普通进入永远到达不了的配置（例如跳过的初始转换效果动作让某个变量保持另一个值）。如果那个配置会在伪状态之间循环，运行时报告的循环与不用历史、直接写出同一配置时完全一样。
 
-单元测试之外的证据：与 XState 5.33.2 的随机差分（1489 个模型、120609 步、12978 次恢复）在活动叶和退出/进入顺序上没有任何差异；覆盖伪状态、守卫、组合转换与强制转换的 FCSTM 专属判定器（oracle）在 1451 个随机模型上没有失败。该判定器的固定种子版本在单元测试中运行。
+单元测试之外的证据：维护命令 ``python tools/check_history_xstate.py --models 1500 --events 80``\ （先执行 ``npm ci --prefix tools/history_xstate``\ ）在 FCSTM 与 XState 5.33.2 上运行每个生成的模型，并在每个事件之后比较活动叶以及退出/进入顺序，输出 ``models=1489 steps=120609 transitions=84488 restores=12978 mismatching_models=0``\ 。这些模型覆盖两个引擎共有的语义；伪状态、守卫、组合转换与被阻塞的恢复在 XState 中的建模方式不同，它们由单元测试中的 FCSTM 专属判定器（oracle）在 120 个固定种子的随机模型上检查。
 
 .. _dsl-import-assembly-semantics-zh:
 

@@ -131,9 +131,9 @@ Nested object contracts
    * - Object
      - Required fields and notes
    * - ``StateInfo``
-     - ``path``, ``name``, ``parent_path``, ``is_leaf``, ``is_pseudo``, ``is_composite``, ``substates``, ``initial_targets``, lifecycle action arrays, aspect arrays, and ``has_abstract_action``. An ``initial_targets`` item carries the optional ``history_role`` (``route``, ``merged``, ``gated``, ``gate``) when history lowering produced or changed it; its ``is_unconditional`` then reflects the initial the author wrote. See :ref:`dsl-history-reference`.
+     - ``path``, ``name``, ``parent_path``, ``is_leaf``, ``is_pseudo``, ``is_composite``, ``substates``, ``initial_targets``, lifecycle action arrays, aspect arrays, and ``has_abstract_action``. An ``initial_targets`` item carries the optional ``history_role`` (``route``, ``merged``, ``gated``) when history lowering produced or changed it; its ``guard``, ``event`` and ``is_unconditional`` are always the ones the author wrote, and an evented initial routed through a gate is listed as written, as ``gated``. See :ref:`dsl-history-reference`.
    * - ``TransitionInfo``
-     - ``from_path``, ``to_path``, ``event``, ``event_scope``, ``guard``, ``effect``, ``effect_self_assigns``, ``is_forced``, ``forced_origin``, ``transition_index``, and combo projection/provenance fields.
+     - ``from_path``, ``to_path``, ``event``, ``event_scope``, ``guard``, ``effect``, ``effect_self_assigns``, ``is_forced``, ``forced_origin``, ``transition_index``, and combo projection/provenance fields. The optional ``history_role`` (``route``, ``gate``, ``merged``, ``gated``) marks an edge history lowering generated or extended, and ``target_history`` (``shallow``, ``deep``) a transition that enters a history; ``guard`` and ``effect`` are the text the author wrote. Generated edges follow every authored transition, so their ``transition_index`` values come last.
    * - ``ComboOriginInfo``
      - ``origin_id``, ``transition_span``, ``trigger_span``, and ordered ``terms``.
    * - ``ComboOriginTermInfo``

@@ -558,8 +558,8 @@ AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供 ``CONTROL``
      - 两种历史共用同一份记录。
      - 同一所有者第二次声明 ``[H]``\ ：\ ``duplicate``\ 。
    * - 所有者是根状态以外的复合状态
-     - 根状态永远不会被离开再重新进入。
-     - 在根状态里声明 ``[H]``\ ：\ ``root_owner``\ 。
+     - 根状态永远不会被离开再重新进入，叶状态也没有可以记住的内容。模块的根状态被导入后就不再是根状态：它声明的历史属于导入它的状态，通过 ``Alias.[H]`` 进入；而单独打开该模块文件时仍会报 ``root_owner``\ 。
+     - 在根状态里声明 ``[H]``\ ：\ ``root_owner``\ ；在叶状态里（例如 ``state L { [H] -> L; }``\ ）：\ ``leaf_owner``\ 。
    * - 声明的历史被使用
      - 没有任何 ``Owner.[H]`` / ``Owner.[H*]`` 目标进入的那种历史不会产生任何内容。
      - ``W_HISTORY_UNUSED``\ （警告）；不生成记录和路由。
@@ -651,7 +651,7 @@ AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供 ``CONTROL``
      - 触发条件与引用字段
    * - ``E_HISTORY_DECLARATION_INVALID``
      - error
-     - 声明不合法。引用字段 ``owner_path``\ 、\ ``kind``\ 、\ ``default``\ 、\ ``reason``\ （\ ``root_owner``\ 、\ ``duplicate``\ 、\ ``default_not_direct_child``\ 、\ ``default_not_found``\ 、\ ``default_pseudo``\ ）。
+     - 声明不合法。引用字段 ``owner_path``\ 、\ ``kind``\ 、\ ``default``\ 、\ ``reason``\ （\ ``root_owner``\ 、\ ``leaf_owner``\ 、\ ``duplicate``\ 、\ ``default_not_direct_child``\ 、\ ``default_not_found``\ 、\ ``default_pseudo``\ ）。不合法声明的目标不会再被报告为未声明。
    * - ``E_HISTORY_TARGET_UNDECLARED``
      - error
      - ``Owner.[H]`` / ``Owner.[H*]`` 没有对应声明，或指向叶状态。引用字段 ``owner_path``\ 、\ ``kind``\ 。
@@ -679,9 +679,9 @@ AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供 ``CONTROL``
    * - 仿真器
      - 原样执行展开后的状态机。热启动要像其他持久变量一样提供展开变量；\ ``__hist_goto``\ 不为 ``0``\ ，或记录不是所有者下某个可停留叶的编号时，抛出 ``ValueError`` 并列出合法编号。\ ``pyfcstm simulate``\ 的 ``init`` 命令同样适用。
    * - 导出
-     - ``to_ast_node()`` 与 DSL 导出写出展开后的普通 FCSTM。重新读入后行为不变，只会出现 ``W_HISTORY_RESERVED_PREFIX`` 警告；其中不再携带历史元数据。
+     - ``to_ast_node()`` 与 DSL 导出写出展开后的普通 FCSTM。重新读入后行为不变，但不再携带历史元数据：展开生成的名字会报 ``W_HISTORY_RESERVED_PREFIX``\ ，恢复条件也变成了作者书写的守卫，因此初始转换全部带守卫的复合状态会报 ``W_INITIAL_UNCONDITIONAL_MISSING``\ 。
    * - 检查
-     - 报告展开后的变量和边。由展开生成或改写的初始目标带有 ``history_role``\ （\ ``route``\ 、\ ``merged``\ 、\ ``gated``\ 、\ ``gate``\ ）；\ ``is_unconditional``\ 与 ``W_INITIAL_UNCONDITIONAL_MISSING`` 按作者书写的初始转换判断。
+     - 按作者书写的模型进行判断。\ ``transitions``\ 与 ``initial_targets``\ 显示作者书写的守卫和效果动作；\ ``history_role``\ 标出展开生成（\ ``route``\ 、\ ``gate``\ ）或扩展（\ ``merged``\ 、\ ``gated``\ ）的边，\ ``target_history``\ 标出进入历史的转换。经闸门路由的带事件初始转换按 ``[*] -> X :: E`` 列出。生成的边排在所有作者书写的转换之后，因此加入历史不会改变任何 ``transition_index``\ 。诊断、度量与统计不计入生成的变量、闸门状态和边；可达性分析让历史入口到达它的默认目标，而不是所有路由。因此加入历史不会改变任何诊断，唯一的例外是只作为历史默认目标可达的状态不再被报告为不可达。\ :func:`pyfcstm.verify.topology.unreachable_states`\ 采用同样的规则。
    * - BMC
      - 检查展开后的状态机。查询可以读取 ``var("__hist_goto")`` 与 ``var("__hist_<所有者>")``\ 。被 ``havoc`` 的历史变量会被约束在执行可能取到的值上（目标变量为 ``0``\ ；记录为 ``0`` 或所有者下某个叶的编号），因此 ``havoc *`` 会从任意合法记录出发，并且每个见证都能重放。
    * - 模板与 PlantUML
@@ -693,7 +693,7 @@ AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供 ``CONTROL``
 
    pyfcstm inspect -i docs/source/tutorials/dsl/history_washer.fcstm --format json
 
-在 JSON 报告中，\ ``variables``\ 包含 ``__hist_goto`` 与 ``__hist_Program``\ ，\ ``Washer.Program`` 与 ``Washer.Program.Wash`` 的 ``initial_targets`` 带有 ``history_role`` 值。
+在 JSON 报告中，\ ``variables``\ 包含 ``__hist_goto`` 与 ``__hist_Program``\ ，\ ``Washer.Program`` 与 ``Washer.Program.Wash`` 的 ``initial_targets`` 带有 ``history_role`` 值，进入 ``Program.[H]`` 与 ``Program.[H*]`` 的转换带有 ``target_history``\ （\ ``shallow`` 与 ``deep``\ ）。
 
 .. _dsl-events-scopes-zh:
 

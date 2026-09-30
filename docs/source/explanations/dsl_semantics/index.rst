@@ -629,11 +629,15 @@ Boundaries and counterexamples
   loops through pseudo states, the runtime reports the loop exactly as it would
   for the same configuration written without history.
 
-Evidence beyond the unit tests: a random differential against XState 5.33.2
-(1489 models, 120609 steps, 12978 restores) found no difference in the active
-leaf or the exit/entry order, and an FCSTM-specific oracle over 1451 random
-models with pseudo states, guards, combo and forced transitions found no
-failure. A fixed-seed version of that oracle runs in the unit tests.
+Evidence beyond the unit tests: the maintenance command
+``python tools/check_history_xstate.py --models 1500 --events 80`` (after
+``npm ci --prefix tools/history_xstate``) runs each generated model on FCSTM and
+on XState 5.33.2 and compares the active leaf and the exit/entry order after
+every event. It reports ``models=1489 steps=120609 transitions=84488
+restores=12978 mismatching_models=0``. Its models cover the semantics both
+engines share; pseudo states, guards, combo transitions and blocked restores,
+which XState does not model the same way, are checked in the unit tests against
+an FCSTM-specific oracle on 120 fixed-seed random models.
 
 .. _dsl-import-assembly-semantics:
 

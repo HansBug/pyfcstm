@@ -536,7 +536,7 @@ JSON 中重点看：
       :language: text
 
    深历史精确恢复到 ``Wash.Agitate``\ ：\ ``fill_entries``\ 仍为 1，\ ``wash_initials``\ 也仍为 1，因为恢复路径上的初始转换不会执行。浅历史只记住直接子状态 ``Wash``\ ，所以进入 ``Wash`` 后会再次执行它的普通初始转换（\ ``wash_initials``\ 变为 2）。两个 ``__hist_*`` 变量就是展开后的历史，见第 5 步。
-4. **检查模型。**\ 展开本身不会产生额外的诊断：
+4. **检查模型。**\ 检查按作者书写的模型进行判断，因此历史本身不会产生额外的诊断：
 
    .. code-block:: bash
 
@@ -591,8 +591,8 @@ JSON 中重点看：
    * - ``E_HISTORY_DECLARATION_INVALID``\ ，\ ``reason: default_not_direct_child``
      - ``[H] -> W.W1;``\ ——浅历史只记住直接子状态。
      - 改成 ``[H] -> W;``\ ，或者声明 ``[H*] -> W.W1;``\ 。
-   * - ``E_HISTORY_DECLARATION_INVALID``\ ，原因为 ``default_not_found``\ 、\ ``default_pseudo`` 或 ``root_owner``
-     - 默认目标不存在或是伪状态，或者根状态声明了历史。
+   * - ``E_HISTORY_DECLARATION_INVALID``\ ，原因为 ``default_not_found``\ 、\ ``default_pseudo``\ 、\ ``root_owner`` 或 ``leaf_owner``
+     - 默认目标不存在或是伪状态，或者根状态、叶状态声明了历史。
      - 让默认目标指向所有者下真实存在的状态；把历史声明在会被离开又重新进入的复合状态里。
    * - ``W_HISTORY_UNUSED``
      - 声明了某种历史，但没有任何 ``Owner.[H]`` / ``Owner.[H*]`` 目标使用它。
@@ -604,12 +604,30 @@ JSON 中重点看：
      - 恢复路径受阻，例如记录中的子状态的初始转换守卫为假。整条转换会被有意拒绝，绝不会退化为普通进入。
      - 让记录的路径可以进入，或者为这种情况单独写一条普通进入。见 :ref:`dsl-history-semantics-zh`\ 。
 
-用 ``pyfcstm inspect --collect-errors`` 复现第一种错误：
+复现第一种错误：把下面的模型保存为 ``undeclared.fcstm``\ ，其中 ``O`` 没有声明历史，
+
+.. code-block:: fcstm
+
+   state R {
+       state A;
+       state O { state B; [*] -> B; }
+       [*] -> A;
+       A -> O.[H] :: Resume;
+   }
+
+再用 ``--collect-errors`` 检查：
+
+.. code-block:: bash
+
+   pyfcstm inspect -i undeclared.fcstm --collect-errors --format human --color never
+
+预期输出片段：
 
 .. code-block:: text
 
    [ERROR] E_HISTORY_TARGET_UNDECLARED
      R.O does not declare shallow history ([H] -> ...;), so it cannot be entered through O.[H].
+     --> undeclared.fcstm:5:5
 
 全部写法、诊断与展开生成的名字见 :ref:`dsl-history-reference-zh`\ ；执行规则及其成立的原因见 :ref:`dsl-history-semantics-zh`\ 。
 

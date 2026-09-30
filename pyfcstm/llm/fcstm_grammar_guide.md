@@ -445,7 +445,7 @@ Rules:
   is only the default used while the owner has no record.
 - Declare a kind before targeting it: `Owner.[H]` needs `[H] -> ...;` inside
   `Owner`, and `Owner.[H*]` needs `[H*] -> ...;`. Each owner declares at most one
-  of each, and the root state cannot own history.
+  of each; only a composite state other than the root can own history.
 - History targets work on normal transitions with any trigger and effect, on a
   parent's initial `[*] -> Owner.[H*];`, and on forced `!State -> Owner.[H]` and
   `!* -> Owner.[H]`.

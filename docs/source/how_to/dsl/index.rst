@@ -589,7 +589,8 @@ shallow history, or through its deep history.
    run. Shallow history only remembers the direct child ``Wash``, so it enters
    ``Wash`` and runs its ordinary initial again (``wash_initials`` becomes 2).
    The two ``__hist_*`` variables are the lowered history; see step 5.
-4. **Check the model.** Lowering adds no finding of its own:
+4. **Check the model.** Inspect judges the model as written, so history adds
+   no finding of its own:
 
    .. code-block:: bash
 
@@ -656,8 +657,8 @@ Common mistakes and repairs:
    * - ``E_HISTORY_DECLARATION_INVALID`` with ``reason: default_not_direct_child``
      - ``[H] -> W.W1;`` -- shallow history remembers a direct child only.
      - Use ``[H] -> W;`` or declare ``[H*] -> W.W1;``.
-   * - ``E_HISTORY_DECLARATION_INVALID`` with ``default_not_found``, ``default_pseudo`` or ``root_owner``
-     - The default names a missing or pseudo state, or the root declares history.
+   * - ``E_HISTORY_DECLARATION_INVALID`` with ``default_not_found``, ``default_pseudo``, ``root_owner`` or ``leaf_owner``
+     - The default names a missing or pseudo state, or the root or a leaf declares history.
      - Point the default at a real state below the owner; declare history in the composite that is left and re-entered.
    * - ``W_HISTORY_UNUSED``
      - A declared kind that no ``Owner.[H]`` / ``Owner.[H*]`` target uses.
@@ -672,12 +673,31 @@ Common mistakes and repairs:
      - Make the remembered path enterable, or add a separate ordinary entry for
        that situation. See :ref:`dsl-history-semantics`.
 
-Reproduce the first mistake with ``pyfcstm inspect --collect-errors``:
+Reproduce the first mistake: save this model as ``undeclared.fcstm``, where
+``O`` declares no history,
+
+.. code-block:: fcstm
+
+   state R {
+       state A;
+       state O { state B; [*] -> B; }
+       [*] -> A;
+       A -> O.[H] :: Resume;
+   }
+
+and inspect it with ``--collect-errors``:
+
+.. code-block:: bash
+
+   pyfcstm inspect -i undeclared.fcstm --collect-errors --format human --color never
+
+Expected excerpt:
 
 .. code-block:: text
 
    [ERROR] E_HISTORY_TARGET_UNDECLARED
      R.O does not declare shallow history ([H] -> ...;), so it cannot be entered through O.[H].
+     --> undeclared.fcstm:5:5
 
 All forms, diagnostics and lowered names are listed in
 :ref:`dsl-history-reference`; the execution rules and why they hold are in

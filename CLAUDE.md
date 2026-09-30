@@ -818,8 +818,10 @@ no docstring and no gate file.
   `[H*] -> Child.Leaf;` (deep, descendant path); transitions in its parent scope
   enter it with `Owner.[H]` / `Owner.[H*]` (normal, initial and forced forms).
   Model conversion lowers history into `__hist_*` variables, leaf exits and
-  guarded initials, so every consumer sees plain FCSTM; a blocked restore rejects
-  the whole transition instead of falling back to ordinary entry.
+  guarded initials, so every executing consumer sees plain FCSTM, while inspect
+  judges the model as written (`pyfcstm.model.history.authored_guard` and its
+  siblings); a blocked restore rejects the whole transition instead of falling
+  back to ordinary entry.
 - Arithmetic (`num_expression`) and logical (`cond_expression`) expressions are
   separate. Assignments require arithmetic expressions; guards require boolean
   conditions; comparisons bridge numeric expressions into conditions.

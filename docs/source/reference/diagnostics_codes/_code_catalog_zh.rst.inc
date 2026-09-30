@@ -197,6 +197,11 @@
      - ``static_pipeline``
      - ``pure_static``
      - ``state_identifier``
+   * - :ref:`W_INITIAL_LIVELOCK <diag-code-w-initial-livelock-zh>`
+     - ``warning``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``state_identifier``
    * - :ref:`W_INITIAL_UNCONDITIONAL_MISSING <diag-code-w-initial-unconditional-missing-zh>`
      - ``warning``
      - ``static_pipeline``
@@ -5510,6 +5515,140 @@ I_TOPOLOGICAL_NON_TERMINATING
 
 兼容边界和其他诊断
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. _diag-code-w-initial-livelock-zh:
+
+W_INITIAL_LIVELOCK
+^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta W_INITIAL_LIVELOCK severity=warning emit_tier=static_pipeline capability=pure_static span_object=state_identifier
+.. diagnostics-ref W_INITIAL_LIVELOCK state_paths type=list[str] required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_INITIAL_LIVELOCK transitions type=dict required=true enum=- item_enum=- exact_values=-
+.. diagnostics-boundary W_INITIAL_LIVELOCK kind=inspect_json
+
+**注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``state_identifier``。
+
+**含义。** 初始下钻、伪状态路由和子状态退出后的父状态续接，在同一个执行周期内形成封闭循环。
+该分量中的所有路径都留在分量内部，既不能进入非伪叶状态，也不能终止状态机。
+这是潜在活锁警告，不是模型验证错误；普通检查报告就会包含它，无需 ``--enable-verify``。
+
+分析会区分组合状态的初次进入与子状态退出后的续接。进入非伪叶状态时，分析就在该路径上停止，
+即使这个叶状态还有后续复位转换。从根状态的直接子状态退出到 ``[*]`` 会终止状态机；
+从更深层的子状态退出则会续接父状态。因此，随意增加一条 ``[*]`` 退出转换未必能打破循环。
+
+**边界。** 分析把守卫和事件都视为可能成立，不证明它们能否同时满足。
+只要有一条路径离开循环分量，就不会发出此警告；即使该路径带有在当前变量取值下不成立的守卫，
+也同样如此。分析会检查所有状态区域，而不只检查当前初始路径。
+因此，没有警告不等于运行时一定能够继续推进。存在未解析转换端点的模型交由已有的构建诊断处理。
+
+**修复方向。** 修改造成循环的复位目标，增加到非伪叶状态的路径，或增加真正终止状态机的退出路径。
+同时确认预期的守卫和事件允许走通修复后的路径。调高 DFS 上限不能修复封闭循环，
+也不应仅凭这条警告就拒绝模型。
+
+.. list-table:: ``refs`` 字段
+   :header-rows: 1
+   :widths: 22 16 14 48
+
+   * - 字段
+     - 类型
+     - 必填
+     - 含义
+   * - ``state_paths``
+     - ``list[str]``
+     - 是
+     - 参与封闭分量的点分状态路径，已排序并去重。这是分量成员清单，不是按执行顺序排列的运行轨迹。
+   * - ``transitions``
+     - ``dict``
+     - 是
+     - 循环内展开后的检查转换，以从零开始的 ``transition_index`` 的十进制字符串为键。
+       每个值包含 ``from_path``、``to_path``、``event`` 和 ``guard``。
+       端点为点分路径或 ``[*]``，事件和守卫为字符串或 ``null``。
+       属于循环的初始转换及强制转换展开结果也会包含在内。
+
+诊断源码范围对应 ``state_paths`` 中的第一个状态。
+转换键仅对应当前模型的检查顺序，不是跨模型修改保持不变的永久标识。
+
+.. diagnostics-example W_INITIAL_LIVELOCK 1 repro_cli
+
+**示例 1**\ （\ ``repro_cli``\ ）——嵌套强制复位。
+将以下内容保存为 ``nested.fcstm``，执行
+``pyfcstm inspect -i nested.fcstm --format json``。
+命令以退出码 0 成功结束，将报告写入标准输出，不修改输入文件。
+``diagnostics[]`` 数组包含一条 ``W_INITIAL_LIVELOCK``，其中
+``state_paths`` 为 ``["R.A", "R.A.B", "R.A.B.P"]``。
+
+.. code-block:: fcstm
+
+   state R {
+       state A {
+           state B {
+               pseudo state P;
+               [*] -> P;
+           }
+           [*] -> B;
+       }
+       state Idle;
+       [*] -> Idle;
+       Idle -> A :: go;
+       !A -> A :: loop;
+   }
+
+结构上的循环先进入 ``A``，经 ``B`` 下钻至 ``P``，再沿父状态续接退出，最后复位 ``A``。
+从 ``Idle`` 开始运行不会让分析忽略这个区域。
+相关转换键为 ``"0"``、``"3"``、``"4"``、``"5"`` 和 ``"6"``；复位转换对应的值如下：
+
+.. code-block:: json
+
+   {"from_path": "R.A", "to_path": "R.A", "event": "R.A.loop", "guard": null}
+
+.. diagnostics-example W_INITIAL_LIVELOCK 2 repro_cli
+
+**示例 2**\ （\ ``repro_cli``\ ）——伪状态自循环。
+使用同一命令检查以下模型，只需替换输入文件名。
+报告包含一条警告，``state_paths`` 为 ``["R.P"]``，转换键为 ``"1"``。
+将 ``P -> P;`` 改为 ``P -> [*];`` 后，该警告消失：
+``P`` 是根状态的直接子状态，这条退出转换会终止整个状态机。
+
+.. code-block:: fcstm
+
+   state R {
+       pseudo state P;
+       [*] -> P;
+       P -> P;
+   }
+
+.. diagnostics-example W_INITIAL_LIVELOCK 3 boundary_only
+
+**示例 3**\ （\ ``boundary_only``\ ）——稳定入口与带守卫的出口。
+以下两个模型都不会发出 ``W_INITIAL_LIVELOCK``。
+第一个模型先进入可停留的叶状态，之后才可能复位，因此该复位不是无限初始下钻。
+
+.. code-block:: fcstm
+
+   state R {
+       state A;
+       [*] -> A;
+       !A -> A :: reset;
+   }
+
+第二个模型在结构上存在到 ``Done`` 的出口，因此不会发出此警告，
+即使 ``ready`` 的初始值为 0、出口守卫最初不成立也是如此。
+实际启用路径仍由运行时验证；两个模型的报告中也都可能出现其他诊断。
+
+.. code-block:: fcstm
+
+   def int ready = 0;
+   state R {
+       pseudo state P;
+       state Done;
+       [*] -> P;
+       P -> P;
+       P -> Done : if [ready > 0];
+   }
+
+**实现依据。** ``pyfcstm/diagnostics/analyzers/initial_livelock.py`` 定义同周期图与封闭分量判定规则；
+``pyfcstm/diagnostics/codes.yaml`` 定义载荷契约；
+``test/diagnostics/test_initial_livelock.py`` 通过公开检查 API 验证上述示例。
 
 .. _diag-code-w-initial-unconditional-missing-zh:
 

@@ -230,7 +230,7 @@ def _safe_runtime_repr(value: Any) -> str:
 
 class SimulationRuntimeDfsError(RuntimeError):
     """
-    Raised when speculative validation exceeds safety limits without converging.
+    Raised when validation finds a closed loop or exceeds safety limits.
 
     This exception indicates that the state machine contains an invalid
     unbounded execution chain that prevents the runtime from reaching a
@@ -241,7 +241,10 @@ class SimulationRuntimeDfsError(RuntimeError):
     2. **Depth Limit**: Maximum 64 structural stack frames
 
     When either limit is exceeded, validation aborts and raises this exception
-    to prevent infinite loops or stack overflow.
+    to prevent infinite loops or stack overflow. A repeated execution signature
+    on one search path is pruned; if no candidate can reach a stoppable state or
+    termination and a cyclic path was found, this exception also reports that
+    path. Candidates with a valid alternative remain executable.
 
     **Why This Happens**:
 
@@ -289,6 +292,19 @@ class SimulationRuntimeDfsError(RuntimeError):
     """
 
     pass
+
+
+class _SimulationRuntimeLivelockError(SimulationRuntimeDfsError):
+    """A repeated execution path has no stoppable continuation."""
+
+    def __init__(self, signatures):
+        paths = [".".join(signature[0][-1][0]) for signature in signatures]
+        super().__init__(
+            "Cannot reach a stoppable state in the same cycle; suspected loop: "
+            + " -> ".join(paths)
+            + ". Add an exit to a stoppable leaf, a terminating guard, or separate "
+            "the events driving exit and re-entry."
+        )
 
 
 class SimulationRuntimeTerminalStateError(IndexError):
@@ -2389,6 +2405,12 @@ class SimulationRuntime:
                     previous_parent = collector.parent
                     collector.parent = record['id']
                 accepted = validator(stack, vars_, transition, d_events)
+            except _SimulationRuntimeLivelockError:
+                # _SimulationRuntimeLivelockError: validator rejected a cyclic path;
+                # retain its evidence if a later stable candidate is selected.
+                if record is not None:
+                    record.update(successor_result=False, outcome="successor_rejected")
+                raise
             finally:
                 if collector is not None:
                     collector.parent = previous_parent
@@ -2587,23 +2609,41 @@ class SimulationRuntime:
         if state.is_leaf_state:
             return False
 
-        transitions = state.init_transitions
+        transition = self._select_valid_candidate(
+            stack, vars_, d_events, state.init_transitions,
+            self._validate_initial_transition,
+        )
+        if transition is None:
+            return False
+        self._execute_initial_transition_on_context(
+            stack,
+            vars_,
+            transition,
+            d_events,
+            consumed_events=consumed_events,
+            is_validation_mode=is_validation_mode,
+            attempt_initial_transition=not is_validation_mode,
+        )
+        return True
+
+    def _select_valid_candidate(self, stack, vars_, d_events, transitions, validator):
+        """Try later candidates before reporting a proven cyclic dead end."""
+        loop_error = None
         for transition in transitions:
-            if self._check_candidate(
-                stack, vars_, d_events, transition,
-                validator=self._validate_initial_transition,
-            ):
-                self._execute_initial_transition_on_context(
-                    stack,
-                    vars_,
-                    transition,
-                    d_events,
-                    consumed_events=consumed_events,
-                    is_validation_mode=is_validation_mode,
-                    attempt_initial_transition=not is_validation_mode,
+            try:
+                accepted = self._check_candidate(
+                    stack, vars_, d_events, transition, validator=validator,
                 )
-                return True
-        return False
+            except _SimulationRuntimeLivelockError as error:
+                # _SimulationRuntimeLivelockError: _check_candidate proved a loop
+                # with no stable continuation; a later candidate may still work.
+                loop_error = error
+                continue
+            if accepted:
+                return transition
+        if loop_error is not None:
+            raise loop_error
+        return None
 
     def _execute_initial_transition_on_context(
         self,
@@ -2772,7 +2812,10 @@ class SimulationRuntime:
             is_validation_mode=True,
             attempt_initial_transition=False,
         )
-        return self._validation_search_reaches_stable(sim_stack, sim_vars, d_events)
+        return self._validation_search_reaches_stable(
+            sim_stack, sim_vars, d_events,
+            trail=(self._create_execution_signature(stack, vars_),),
+        )
 
     def _finalize_exit_to_parent(
         self,
@@ -2933,6 +2976,7 @@ class SimulationRuntime:
             d_events,
             consumed_events=consumed_events,
             is_validation_mode=is_validation_mode,
+            attempt_initial_transition=not is_validation_mode,
         )
         current_state_path = ".".join(current_state.path)
         target_state_path = ".".join(target_state.path)
@@ -2989,19 +3033,17 @@ class SimulationRuntime:
             if validate_stoppable and (current_state.is_stoppable or force_validate)
             else None
         )
-        for transition in transitions:
-            if not self._check_candidate(
-                stack, vars_, d_events, transition, validator=validator,
-            ):
-                continue
+        transition = self._select_valid_candidate(
+            stack, vars_, d_events, transitions, validator,
+        )
+        if transition is not None:
             current_state_path = ".".join(current_state.path)
             self.logger.debug(
                 f"Transition selected: "
                 f"{current_state_path} -> {transition.to_state} "
                 f"(event={transition.event.path_name if transition.event else 'none'})"
             )
-            return transition
-        return None
+        return transition
 
     def _validate_transition(
         self,
@@ -3062,6 +3104,7 @@ class SimulationRuntime:
             d_events,
             ended=ended,
             validate_post_child_exit=True,
+            trail=(self._create_execution_signature(stack, vars_),),
         )
         sim_stack_repr = [
             (".".join(frame.state.path), frame.mode) for frame in sim_stack
@@ -3084,6 +3127,7 @@ class SimulationRuntime:
         *,
         ended: bool = False,
         validate_post_child_exit: bool = True,
+        trail: tuple = (),
     ) -> bool:
         """
         Search for a stable continuation without recursive Python calls.
@@ -3108,22 +3152,26 @@ class SimulationRuntime:
         :param validate_post_child_exit: Whether post-child-exit transitions
             should be considered during search, defaults to ``True``.
         :type validate_post_child_exit: bool, optional
+        :param trail: Execution signatures already visited by the candidate,
+            including its source configuration.
+        :type trail: tuple
         :return: ``True`` if a stable continuation is reachable.
         :rtype: bool
-        :raises SimulationRuntimeDfsError: If the worklist exceeds safety
-            limits before reaching a stable continuation.
+        :raises SimulationRuntimeDfsError: If all continuations fail and a
+            cyclic path exists, or the worklist exceeds safety limits.
         """
         if ended:
             stack.clear()
             vars_.clear()
             return True
 
-        worklist = [(self._clone_stack(stack), copy.deepcopy(vars_), False)]
+        worklist = [(self._clone_stack(stack), copy.deepcopy(vars_), False, trail)]
+        loop_error = None
         seen_signatures = set()
         steps_taken = 0
 
         while worklist:
-            current_stack, current_vars, current_ended = worklist.pop()
+            current_stack, current_vars, current_ended, trail = worklist.pop()
             if current_ended:
                 stack.clear()
                 vars_.clear()
@@ -3144,9 +3192,17 @@ class SimulationRuntime:
                 )
 
             signature = self._create_execution_signature(current_stack, current_vars)
+            if signature in trail:
+                loop_error = _SimulationRuntimeLivelockError(
+                    trail[trail.index(signature):] + (signature,)
+                )
+                continue
             if signature in seen_signatures:
                 continue
             seen_signatures.add(signature)
+            # ponytail: copying paths is bounded by the 1000-step safety limit;
+            # use linked ancestry if that limit grows substantially.
+            next_trail = trail + (signature,)
 
             if steps_taken >= self._DFS_STEP_LIMIT:
                 raise SimulationRuntimeDfsError(
@@ -3169,11 +3225,12 @@ class SimulationRuntime:
                     vars_.clear()
                     vars_.update(next_vars)
                     return True
-                worklist.append((next_stack, next_vars, False))
+                worklist.append((next_stack, next_vars, False, next_trail))
                 continue
 
             if state.is_leaf_state:
-                progressed = False
+                # Stoppable leaf entries returned above; only pseudo routing
+                # remains, and a pseudo with no enabled edge is a dead end.
                 for transition in reversed(state.transitions_from):
                     if not self._check_candidate(
                         current_stack, current_vars, d_events, transition, search=True,
@@ -3188,19 +3245,7 @@ class SimulationRuntime:
                         d_events,
                         is_validation_mode=True,
                     )
-                    worklist.append((next_stack, next_vars, next_ended))
-                    progressed = True
-                if progressed:
-                    continue
-
-                if not state.is_stoppable:
-                    continue
-
-                next_stack = self._clone_stack(current_stack)
-                next_vars = copy.deepcopy(current_vars)
-                self._run_leaf_during(state, next_vars, is_validation_mode=True)
-                next_stack[-1].mode = "after_entry"
-                worklist.append((next_stack, next_vars, False))
+                    worklist.append((next_stack, next_vars, next_ended, next_trail))
                 continue
 
             if frame.mode == "init_wait":
@@ -3220,7 +3265,7 @@ class SimulationRuntime:
                         is_validation_mode=True,
                         attempt_initial_transition=False,
                     )
-                    worklist.append((next_stack, next_vars, False))
+                    worklist.append((next_stack, next_vars, False, next_trail))
                     progressed = True
                 if not progressed:
                     continue
@@ -3243,9 +3288,11 @@ class SimulationRuntime:
                         d_events,
                         is_validation_mode=True,
                     )
-                    worklist.append((next_stack, next_vars, next_ended))
+                    worklist.append((next_stack, next_vars, next_ended, next_trail))
                 continue
 
+        if loop_error is not None:
+            raise loop_error
         return False
 
     def _initialize_context(

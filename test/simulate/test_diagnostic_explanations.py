@@ -128,8 +128,6 @@ def test_combo_report_explains_authored_path_and_committed_boundary(
         focused = report.to_text(check_id=guard.id)
         assert "#%s " % guard.parent_id in focused
         assert "Root.Start -> Root.Target [combo: A + B]" in focused
-        assert "folded" in text
-        assert "folded" not in report.to_text(verbose=True)
     if target == "Target.Good":
         skipped = next(d for d in report.decisions if d.blocked_by is not None)
         focused = report.to_text(check_id=skipped.id)
@@ -287,3 +285,15 @@ def test_imported_combo_origins_use_parent_paths_and_events(tmp_path):
     assert {r["target_path"] for r in refs} == {"Root.Worker.B"}
     assert report.state_after == ("Root", "Worker", "B")
     assert "child.fcstm" in report.to_text(verbose=True)
+
+
+def test_repeated_blocked_initial_checks_are_folded_without_losing_evidence():
+    runtime = machine("state R { state Ready; [*] -> Ready : if [false]; }")
+    report = runtime.cycle(diagnostics=True).diagnostics
+    assert report.outcome == "delta"
+    rejected = [item for item in report.decisions if item.guard_result is False]
+    assert len(rejected) >= 2
+    assert "folded" in str(report)
+    assert "folded" not in report.to_text(verbose=True)
+    for item in rejected:
+        assert "#%s" % item.id in str(report)

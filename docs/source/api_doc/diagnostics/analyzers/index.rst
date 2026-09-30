@@ -13,6 +13,7 @@ pyfcstm.diagnostics.analyzers
     const_fold
     data_flow
     design_health
+    initial_livelock
     naming
     numeric
     redundancy

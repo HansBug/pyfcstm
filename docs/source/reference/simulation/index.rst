@@ -396,8 +396,10 @@ Public failures and boundaries
      - Unsupported, unresolved, or foreign event input.
    * - ``SimulationRuntimeDfsError``
      - Python API; command layer reports an unbounded execution-chain message
-     - Speculative validation exceeded DFS or stack-depth safety limits while
-       looking for a stoppable state or termination.
+     - No candidate has a stable continuation and validation found a repeated
+       execution path in the same cycle, or exceeded DFS/stack-depth limits.
+       Loop errors include state paths and repair guidance. A cyclic candidate
+       is skipped when a later candidate can reach a stoppable state or termination.
    * - ``SimulationRuntimeTerminalStateError``
      - Python API ``current_state`` after termination
      - Runtime has ended and the active stack is empty.

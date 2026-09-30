@@ -3,6 +3,7 @@
 from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Set
 
 from ...utils.validate import ModelDiagnostic
+from .initial_livelock import collect_initial_livelock_warnings
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..inspect import ActionInfo, ForcedTransitionInfo, StateInfo, TransitionInfo
@@ -21,6 +22,7 @@ def collect_structural_warnings(
     actions = list(actions)
     forced_transitions = list(forced_transitions)
     diagnostics: List[ModelDiagnostic] = []
+    diagnostics.extend(collect_initial_livelock_warnings(states, transitions))
     diagnostics.extend(_deadlock_leaf_warnings(states, transitions))
     diagnostics.extend(_initial_unconditional_missing_warnings(states))
     diagnostics.extend(_forced_never_expands_warnings(forced_transitions))

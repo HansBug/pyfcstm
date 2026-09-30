@@ -437,19 +437,25 @@ def test_history_entries_reach_the_states_of_their_default(text, unreachable):
 
 @pytest.mark.unittest
 @pytest.mark.parametrize(
-    "text",
+    ["text", "codes"],
     [
         # a misspelled source of a history entry
-        "state R { state Off; state O { state A; state B; [*] -> A; [H] -> B; } "
-        "[*] -> Off; Of -> O.[H] :: Resume; !O -> Off :: Stop; }",
+        (
+            "state R { state Off; state O { state A; state B; [*] -> A; [H] -> B; } "
+            "[*] -> Off; Of -> O.[H] :: Resume; !O -> Off :: Stop; }",
+            {"E_MISSING_STATE", "E_DANGLING_TRANSITION"},
+        ),
         # a misspelled target inside an owner a deep history entry restores
-        "state R { state Off; state O { state A; [*] -> A; [H*] -> A; A -> Typo :: e; } "
-        "[*] -> Off; Off -> O.[H*] :: Resume; !O -> Off :: Stop; }",
+        (
+            "state R { state Off; state O { state A; [*] -> A; [H*] -> A; A -> Typo :: e; } "
+            "[*] -> Off; Off -> O.[H*] :: Resume; !O -> Off :: Stop; }",
+            {"E_DANGLING_TRANSITION"},
+        ),
     ],
 )
-def test_a_misspelling_near_a_history_entry_is_reported_not_raised(text):
+def test_a_misspelling_near_a_history_entry_is_reported_not_raised(text, codes):
     report = _report(text, **VERIFY_STRUCTURAL)
-    assert {"E_MISSING_STATE", "E_DANGLING_TRANSITION"} & {item.code for item in report.diagnostics}
+    assert codes <= {item.code for item in report.diagnostics}
 
 
 @pytest.mark.unittest

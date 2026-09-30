@@ -68,7 +68,7 @@
     "structure_statistics": { "$ref": "#/definitions/StructureStatistics" },
     "reachability_graph": {
       "type": "object",
-      "description": "Mapping state path -> reachable state paths in the default inspect graph. Guards are ignored; composite initial edges are followed; entry and exit pseudo markers are not exposed.",
+      "description": "Mapping state path -> reachable state paths in the default inspect graph. Guards are ignored; composite initial edges are followed; entry and exit pseudo markers are not exposed. A transition into Owner.[H] / Owner.[H*] also reaches the states of the default path and what a restore can re-enter.",
       "additionalProperties": {
         "type": "array",
         "items": { "type": "string" }

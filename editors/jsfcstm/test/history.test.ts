@@ -420,6 +420,26 @@ describe('jsfcstm history diagnostics', () => {
         assert.ok(unreachable.includes('Host.O.C.X'), unreachable.join(','));
     });
 
+    it('uses the first valid declaration of a kind for reachability, as pyfcstm does', async () => {
+        const unreachable = async (lines: string[]) => (await packageModule.collectDocumentDiagnostics(document(lines.join('\n'))))
+            .filter(item => item.code === 'W_UNREACHABLE_STATE')
+            .map(item => /State "([^"]+)"/.exec(item.message)![1])
+            .sort();
+        const shell = (body: string, kind: string) => [
+            'state Host {',
+            '    state Off;',
+            `    state O { state A; state Z; pseudo state P; state C { state X; [*] -> X; } [*] -> A; ${body} }`,
+            '    [*] -> Off;',
+            `    Off -> O.${kind} :: Go;`,
+            '    !O -> Off :: Stop;',
+            '}',
+        ];
+        // a shallow default names one child, so the second declaration is kept
+        assert.deepEqual(await unreachable(shell('[H] -> C.X; [H] -> Z;', '[H]')), ['Host.O.C', 'Host.O.C.X', 'Host.O.P']);
+        // a default never names a pseudo state
+        assert.deepEqual(await unreachable(shell('[H*] -> P; [H*] -> C.X;', '[H*]')), ['Host.O.P', 'Host.O.Z']);
+    });
+
     it('leaves a default that enters an imported module to the assembled model', async () => {
         const text = [
             'state Host {',

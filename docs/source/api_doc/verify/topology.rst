@@ -22,7 +22,7 @@ LeafLevelGraph
 -----------------------------------------------------
 
 .. autoclass:: LeafLevelGraph
-    :members: __post_init__,nodes,edges,history
+    :members: __post_init__,nodes,edges
 
 
 FinitenessReport

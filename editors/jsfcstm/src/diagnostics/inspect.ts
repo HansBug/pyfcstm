@@ -2367,8 +2367,9 @@ function buildStructureStatistics(
  * Guard-agnostic reachability closure, aligned with pyfcstm. ``historyDefaults``
  * maps ``[owner path, kind]`` (as JSON) to the states from the owner's child
  * down to the declared default; a transition entering that history reaches
- * each of them as an ordinary target, besides the owner -- an
- * over-approximation of what a restore reaches.
+ * each of them as an ordinary target, besides the owner, and what a restore
+ * can re-enter (for [H*] every root-reachable leaf of the owner, for [H]
+ * every direct child with one) -- an over-approximation of every entry.
  */
 function buildReachabilityGraph(
     states: StateInfo[],

@@ -409,12 +409,17 @@ function collectReachableStateIds(semantic: FcstmSemanticDocument): Set<string> 
         }
         return path;
     };
-    // The first declaration of the kind that resolves, as pyfcstm keeps.
+    // The first valid declaration of the kind, as pyfcstm keeps: a shallow
+    // default names one child, and no default names a pseudo state.
     const historyDefault = (ownerId: string, kind: string): string[] => {
         for (const declaration of statesById.get(ownerId)?.ast.histories ?? []) {
             if (declaration.historyKind !== kind) continue;
+            if (kind === 'shallow' && declaration.defaultPath.length !== 1) continue;
             const path = resolveDefault(ownerId, declaration.defaultPath);
-            if (path) return path;
+            const target = path && path.length === declaration.defaultPath.length
+                ? statesById.get(path[path.length - 1])
+                : undefined;
+            if (path && !target?.pseudo) return path;
         }
         return [];
     };

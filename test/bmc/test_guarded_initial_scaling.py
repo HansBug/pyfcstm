@@ -135,7 +135,10 @@ def test_guarded_initial_selectors_report_verdicts_without_internal_errors(tmp_p
     result = run_bmc(
         model, 'check reach <= 2: active("Washer.Program.Wash.Agitate");', tmp_path
     )
+    # The human report of the original failing command: a bounded verdict
+    # (exit code 1 for an unrealizable reach goal), not an internal error.
     assert result.exit_code == 1
+    assert "NOT SATISFIED WITHIN BOUND" in result.output
     assert "partition check" not in result.output
 
 

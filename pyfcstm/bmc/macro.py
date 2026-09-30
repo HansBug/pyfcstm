@@ -2387,13 +2387,14 @@ def verify_source_partition(
 
     Accepted atoms read the condition of the case they name, by definition and
     never by inlining.  A partition whose truth table fits ``max_assignments``
-    is enumerated over its event and guard atoms.  A larger one is
-    never rejected for its size: when every pair of accepted cases is separated
-    by a negated accepted conjunct -- the declaration-priority tree that macro
+    is enumerated over its event and guard atoms.  A larger one is never
+    rejected for its size: when every pair of accepted cases is separated by a
+    negated accepted conjunct -- the declaration-priority tree that macro
     expansion builds, however deeply choosers nest -- and the terminal bucket is
     the exact complement, the shape itself proves the partition.  Any other
-    shape, and any partition with build diagnostics, is decided exactly with a z3 encoding that keeps accepted atoms as
-    definitions instead of inlining them.
+    shape, and any partition with build diagnostics, is decided exactly with a
+    z3 encoding that keeps accepted atoms as definitions instead of inlining
+    them.
 
     :param source: Macro-step source profile.
     :type source: MacroStepSource

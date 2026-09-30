@@ -1,0 +1,28 @@
+def int trace = 0;
+state R {
+    state Off;
+    state P {
+        enter { trace = trace * 10 + 1; }
+        exit { trace = trace * 10 + 2; }
+        during before { trace = trace * 10 + 3; }
+        state A {
+            enter { trace = trace * 10 + 4; }
+            exit { trace = trace * 10 + 5; }
+        }
+        state W {
+            enter { trace = trace * 10 + 6; }
+            state W1 {
+                enter { trace = trace * 10 + 7; }
+                exit { trace = trace * 10 + 8; }
+            }
+            [*] -> W1 effect { trace = trace * 10 + 9; }
+        }
+        [*] -> A;
+        [H*] -> A;
+        A -> W :: Go;
+    }
+    [*] -> Off;
+    Off -> P :: Fresh effect { trace = 0; }
+    Off -> P.[H*] :: Resume effect { trace = 0; }
+    !P -> Off :: Stop;
+}

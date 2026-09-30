@@ -1,0 +1,15 @@
+state R {
+    state Off;
+    state O {
+        event Kick;
+        state A;
+        state B;
+        [*] -> A :: Kick;
+        [H] -> B;
+        A -> B :: Next;
+    }
+    [*] -> Off;
+    Off -> O :: Fresh;
+    Off -> O.[H] :: Resume;
+    !O -> Off :: Stop;
+}

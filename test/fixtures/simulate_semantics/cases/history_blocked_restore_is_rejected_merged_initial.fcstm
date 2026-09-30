@@ -1,0 +1,22 @@
+def int ready = 1;
+def int fresh_entries = 0;
+state R {
+    state Off;
+    state O {
+        state Idle;
+        state K {
+            state K1;
+            [*] -> K1 : if [ready == 1];
+        }
+        [*] -> Idle;
+        [H] -> Idle;
+        [H*] -> K;
+        Idle -> K :: Go;
+    }
+    [*] -> Off;
+    Off -> O :: Fresh;
+    Off -> O.[H] :: Resume;
+    Off -> O.[H*] :: ResumeDeep;
+    !O -> Off :: Stop;
+    Off -> Off :: Block effect { ready = 0; }
+}

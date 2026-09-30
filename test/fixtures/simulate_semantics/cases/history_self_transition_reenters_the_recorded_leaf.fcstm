@@ -1,0 +1,13 @@
+def int enters = 0;
+state R {
+    state O {
+        enter { enters = enters + 1; }
+        state A;
+        state B;
+        [*] -> A;
+        [H*] -> A;
+        A -> B :: Next;
+    }
+    [*] -> O;
+    !O -> O.[H*] :: Reenter;
+}

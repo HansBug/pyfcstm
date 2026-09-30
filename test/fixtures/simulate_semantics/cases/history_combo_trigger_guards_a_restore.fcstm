@@ -1,0 +1,16 @@
+def int online = 0;
+state R {
+    state Off;
+    state S {
+        state A;
+        state B;
+        [*] -> A;
+        [H*] -> A;
+        A -> B :: Next;
+    }
+    [*] -> Off;
+    Off -> S :: Fresh;
+    Off -> S.[H*] :: Resume + [online > 0];
+    Off -> Off :: Online effect { online = 1; }
+    !* -> Off :: Halt;
+}

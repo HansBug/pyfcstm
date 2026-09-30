@@ -1,0 +1,54 @@
+title: A hot start supplies a history record through its lowered variable
+origin:
+  files:
+  - test/model/test_history_lowering.py
+  notes:
+  - The record value is the preorder id of Washer.Program.Wash.Agitate (StateMachine.history_variables
+    computes it from the leaf path).
+categories:
+- runtime
+- template_alignment
+- history
+- hot_start
+initial:
+  state: Washer.Paused
+  vars:
+    program_entries: 0
+    fill_entries: 0
+    agitate_entries: 0
+    wash_initials: 0
+    __hist_goto: 0
+    __hist_Program: 7
+steps:
+- cycle: []
+  expect:
+    state: Washer.Paused
+    vars:
+      program_entries: 0
+      fill_entries: 0
+      agitate_entries: 0
+      wash_initials: 0
+- cycle: Washer.Paused.Deep
+  expect:
+    state: Washer.Program.Wash.Agitate
+    vars:
+      program_entries: 1
+      fill_entries: 0
+      agitate_entries: 1
+      wash_initials: 0
+- cycle: Washer.Program.Pause
+  expect:
+    state: Washer.Paused
+    vars:
+      program_entries: 1
+      fill_entries: 0
+      agitate_entries: 1
+      wash_initials: 0
+- cycle: Washer.Paused.Shallow
+  expect:
+    state: Washer.Program.Wash.Fill
+    vars:
+      program_entries: 2
+      fill_entries: 1
+      agitate_entries: 1
+      wash_initials: 1

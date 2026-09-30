@@ -1,0 +1,41 @@
+title: A deep history default that names a composite state continues with that state's initial
+origin:
+  files:
+  - test/model/test_history_lowering.py
+  notes:
+  - Without a record the restore goes to K and runs K's initial; with a record it resumes K2 exactly.
+categories:
+- runtime
+- template_alignment
+- history
+steps:
+- cycle: []
+  expect:
+    state: R.Off
+    vars:
+      k_initials: 0
+      __hist_goto: 0
+- cycle: R.Off.Resume
+  expect:
+    state: R.O.K.K1
+    vars:
+      k_initials: 1
+      __hist_goto: 0
+- cycle: R.O.K.K1.Next
+  expect:
+    state: R.O.K.K2
+    vars:
+      k_initials: 1
+      __hist_goto: 0
+- cycle: R.O.Stop
+  expect:
+    state: R.Off
+    vars:
+      k_initials: 1
+      __hist_goto: 0
+- cycle: R.Off.Resume
+  expect:
+    state: R.O.K.K2
+    vars:
+      k_initials: 1
+      __hist_goto: 0

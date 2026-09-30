@@ -1,0 +1,19 @@
+state R {
+    state Off;
+    state O {
+        state S1;
+        state S2 {
+            state A2;
+            state B2;
+            [*] -> A2;
+            [H*] -> A2;
+            A2 -> B2 :: Next;
+        }
+        [*] -> S2.[H*];
+        [H] -> S1;
+    }
+    [*] -> Off;
+    Off -> O :: Fresh;
+    Off -> O.[H] :: Resume;
+    !O -> Off :: Stop;
+}

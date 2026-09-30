@@ -156,6 +156,63 @@ class _Normalizer:
         return ((polynomial, (term.operator in ('<', '>')) != inverse, '1'),)
 
 
+def _complete_squares(polynomial, budget):
+    """Complete rational squares, allowing bounded higher-degree monomials.
+
+    For quadratics this is exact rational elimination of the symmetric form.
+    Higher degrees use the same elimination on leading square monomials; a
+    failed decomposition says nothing about the sign of the polynomial.
+    """
+    remainder, factors = dict(polynomial), []
+    while any(remainder_key for remainder_key in remainder):
+        budget.checkpoint('polynomial square decomposition')
+        leading = min((m for m in remainder if m), key=lambda m: (-len(m), m))
+        pivot = remainder[leading]
+        if pivot < 0 or any(leading.count(atom) % 2 for atom in set(leading)):
+            return ()
+        base = tuple(sorted(atom for atom in set(leading) for _ in range(leading.count(atom) // 2)))
+        factor = {base: Fraction(1)}
+        for monomial, coefficient in remainder.items():
+            if monomial == leading or any(monomial.count(atom) < base.count(atom) for atom in set(base)):
+                continue
+            other = list(monomial)
+            for atom in base:
+                other.remove(atom)
+            factor[tuple(other)] = coefficient / (2 * pivot)
+        remainder = _add(remainder, _multiply(factor, factor, budget), -pivot)
+        factors.append(factor)
+        # ponytail: bounded exact completion, not a complete SOS decision
+        # procedure; larger witnesses remain an explicit search-limit gap.
+        if len(factors) >= 256:
+            raise _SearchLimit('polynomial square decomposition limit')
+    return tuple(factors) if remainder.get((), 0) >= 0 else ()
+
+
+def _residual_squares(polynomial, candidates, budget):
+    """Try exact completion after removing one suggested nonnegative square."""
+    degree = max((len(m) for m in polynomial), default=0)
+    if degree <= 2 or polynomial[min(polynomial, key=lambda m: (-len(m), m))] < 0:
+        return
+    attempts, seen = 0, set()
+    for factor in candidates:
+        identity = _packed(factor)
+        if identity in seen or any(2 * len(m) > degree for m in factor):
+            continue
+        seen.add(identity)
+        square = _multiply(factor, factor, budget)
+        if not square or not set(square) <= set(polynomial):
+            continue
+        for weight in sorted({polynomial[m] / value for m, value in square.items()
+                              if polynomial[m] / value > 0}):
+            budget.checkpoint('polynomial residual square candidates')
+            attempts += 1
+            # ponytail: bounded candidate search over observed monomials; a
+            # larger SOS search needs a separate verified witness proposal.
+            if attempts > 256:
+                raise _SearchLimit('polynomial residual square candidate limit')
+            yield from _complete_squares(_add(polynomial, square, -weight), budget)
+
+
 def _local_literals(node, graph):
     if node.conclusion is None:
         return ()
@@ -479,19 +536,70 @@ class _Search:
             return result
         atoms = {atom for polynomial, _ in self.initial for monomial in polynomial for atom in monomial}
         squares = []
+        bases = {()}
         for polynomial, _ in self.initial:
             for monomial in polynomial:
                 self.budget.checkpoint('polynomial square candidates')
                 if monomial and all(monomial.count(atom) % 2 == 0 for atom in set(monomial)):
                     half = tuple(sorted(atom for atom in set(monomial) for _ in range(monomial.count(atom) // 2)))
                     squares.append({half: Fraction(1)})
+                    bases.add(half)
         squares.extend({(left,): Fraction(1), (right,): Fraction(-1)} for left, right in combinations(sorted(atoms), 2))
+        # Original terms suggest unconditional square identities only. Their
+        # branch assumptions never become facts in this local inference.
+        explicit_bases = set()
+        for term in self.graph.terms:
+            self.budget.checkpoint('polynomial square candidates')
+            if term.operator_kind != 'builtin' or term.sort not in ('Int', 'Real'):
+                continue
+            if term.operator == '^' and len(term.arguments) == 2:
+                exponent = self.graph.term(term.arguments[1])
+                if (exponent.kind == 'literal' and exponent.operator_kind == 'builtin' and
+                        Fraction(exponent.value) == 2):
+                    explicit_bases.add(term.arguments[0])
+            elif term.operator == '*' and len(term.arguments) == 2 and term.arguments[0] == term.arguments[1]:
+                explicit_bases.add(term.arguments[0])
+        for term_id in sorted(explicit_bases):
+            try:
+                squares.append(self.normalizer.polynomial(term_id))
+            except _SearchLimit as error:
+                # A suggested factor from another input can exceed sparse
+                # expansion limits; it must not abort checking local evidence.
+                self.limits.add(str(error))
+        squares.extend({left: Fraction(1), right: Fraction(-1)}
+                       for left, right in combinations(sorted(bases), 2))
+        residual_bases = tuple(squares)
+        for polynomial, _ in self.initial:
+            for sign in (1, -1):
+                try:
+                    oriented = _scale(polynomial, sign)
+                    completed = _complete_squares(oriented, self.budget)
+                    squares.extend(completed)
+                    if not completed:
+                        squares.extend(_residual_squares(oriented, residual_bases, self.budget))
+                except _SearchLimit as error:
+                    # Candidate completion can exceed its bound without making
+                    # existing local facts or other candidate factors invalid.
+                    self.limits.add(str(error))
+        seen = set()
+        degree = max((len(m) for p, _ in self.initial for m in p), default=0)
         for polynomial in squares:
+            identity = _packed(polynomial)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            if (any(len(m) * 2 > degree for m in polynomial) or
+                    any(atom not in atoms for m in polynomial for atom in m)):
+                continue
             square = _multiply(polynomial, polynomial, self.budget)
             if any(set(square) <= set(bound) for bound, _ in self.initial):
                 self.square(polynomial)
                 bound = self.sign(_scale(square, -1))
                 if bound is not None:
+                    if self.facts[bound][1]:
+                        # The square is already strictly negative. Close this
+                        # contradiction before deriving unnecessary zero factors.
+                        return self.finish()
                     for orientation in (1, -1):
                         factor = _scale(polynomial, orientation)
                         self.record(factor, False, 'square_zero', premises=(bound,), factor=_packed(factor))

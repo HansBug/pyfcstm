@@ -707,3 +707,14 @@ def test_power_domain_helpers_do_not_guess_algebraic_values(algebraic_symbol):
     base = graph.node('target').conclusion
     assert not _nonzero_assumption(base, ((graph.node('fact0').conclusion, True),), graph)
     assert not _strictly_above(base, 0, (), graph)
+
+
+@pytest.mark.parametrize('language', ['en', 'zh'])
+def test_expanded_composite_square_text_has_the_complete_checked_derivation(language, text_aligner):
+    import json
+    from pathlib import Path
+
+    fixtures = Path(__file__).parent / 'proof_readings'
+    report = UnsatReport.from_canonical(json.loads((fixtures / 'expanded_square.json').read_text('utf-8')))
+    expected = (fixtures / ('expanded_square.%s.txt' % language)).read_text('utf-8')
+    text_aligner.assert_equal(expected, report.reading.to_text(language, 'detailed'))

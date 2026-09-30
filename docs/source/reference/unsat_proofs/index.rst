@@ -199,6 +199,16 @@ bounds with exact cancelling weights. Positive integral powers can propagate
 ranges when the exponent has a checked singleton value. All finite endpoints
 remain exact rationals, including extremely small or large values.
 
+Square candidates include composite factors retained in the original input,
+differences of observed monomials, and exact rational completion of expanded
+polynomials. Higher-degree completion can remove a suggested square and complete
+the remainder; both searches have explicit work limits. These are witness
+proposals, not a complete sum-of-squares decision procedure. A square identity
+is unconditional, so a factor from another branch may suggest a witness, but
+that branch's assumptions never enter the local inference. Every accepted
+witness still replays from its own local premises. An oversized unused factor
+does not abort other candidate checks.
+
 Polynomial evidence is compositional. Its rules are ``input``, ``square``,
 ``square_zero``, ``product``, ``positive_factor``, ``cancel_positive``, ``sum``, ``equality_product``,
 ``power_sign`` and ``power_identity``. They cover exact polynomial identities,

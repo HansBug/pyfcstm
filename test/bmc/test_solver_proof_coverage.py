@@ -376,3 +376,27 @@ def test_integer_modular_conditions_have_complete_bmc_proofs(predicate, text_ali
     assert report.reading_status == 'complete'
     assert report.gaps == ()
     _check_reading_levels(report, text_aligner)
+
+
+@pytest.mark.parametrize('predicate', [
+    '(x*y-1)**2+(x-y)**2<0',
+    '(2*x+3*y-1)**2+(x-y)**2<0',
+    'x**4+y**4<2*x*x*y*y',
+    '5*x*x+10*x*y+10*y*y-4*x-6*y+1<0',
+])
+def test_composite_square_proofs_survive_bmc_embedding(predicate, text_aligner):
+    model = load_state_machine_from_text(
+        'def float x=0; def float y=0; state Root { state A; [*]->A; }')
+    core = build_bmc_core_formula(BmcEngine(model).prepare(
+        'init state("Root.A") havoc {x,y}; check reach <= 1: %s;' % predicate))
+    prop = compile_bmc_property(core)
+    report = explain_unsat(UnsatQuery('square_sum', tuple(
+        UnsatConstraint(key, (expression,)) for key, expression in (
+            ('domain', core.domain_formula), ('initial', core.initial_formula),
+            ('transitions', core.transition_formula), ('environment', core.environment_formula),
+            ('objective', prop.objective_formula),
+        ))), timeout_ms=120000)
+    assert report.solver_status == 'unsat'
+    assert report.reading_status == 'complete'
+    assert report.gaps == ()
+    _check_reading_levels(report, text_aligner)

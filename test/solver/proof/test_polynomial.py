@@ -667,3 +667,117 @@ def test_late_arithmetic_facts_are_checked_after_the_power_stage(monkeypatch):
     monkeypatch.setattr(polynomial._Search, 'power_orders', produce_product)
     _certificate(graph)
     assert reached == [True]
+
+
+@pytest.mark.parametrize('over_expansion_limit', [False, True])
+def test_irrelevant_large_square_does_not_block_a_local_polynomial_proof(over_expansion_limit):
+    import z3
+    from pyfcstm.solver import UnsatConstraint, UnsatQuery, explain_unsat
+
+    x, y, z, w = z3.Reals('x y z w')
+    base = (z + w) ** 32
+    irrelevant = (base * z if over_expansion_limit else base) ** 2
+    report = explain_unsat(UnsatQuery('local_square', (
+        UnsatConstraint('impossible', ((2*x + 3*y - 1)**2 + (x-y)**2 < 0,)),
+        UnsatConstraint('irrelevant', (irrelevant == irrelevant,)),
+    )))
+    assert report.solver_status == 'unsat'
+    assert report.reading_status == 'complete'
+    assert report.gaps == ()
+
+
+@pytest.mark.parametrize('coefficients,expected', [
+    ({('x', 'x'): 1, ('x', 'y'): 2, ('y', 'y'): 1},
+     ({('x',): '1', ('y',): '1'},)),
+    ({('x', 'x'): 5, ('x', 'y'): 10, ('y', 'y'): 10, ('x',): -4, ('y',): -6, (): 1},
+     ({('x',): '1', ('y',): '1', (): '-2/5'}, {('y',): '1', (): '-1/5'})),
+    ({('x', 'x'): 1, ('y', 'y'): -1}, ()),
+    ({('x',): 1}, ()),
+    ({(): -1}, ()),
+    ({('x', 'x', 'x'): 1}, ()),
+])
+def test_rational_square_decomposition_checks_zero_and_negative_pivots(coefficients, expected):
+    from fractions import Fraction
+    from pyfcstm.solver.proof.polynomial import _complete_squares
+
+    result = _complete_squares({m: Fraction(v) for m, v in coefficients.items()}, SolveBudget(None))
+    assert result == tuple({m: Fraction(v) for m, v in factor.items()} for factor in expected)
+
+
+@pytest.mark.parametrize('kind', ['affine', 'product', 'quartic'])
+def test_square_candidates_do_not_refute_satisfiable_perturbations(kind):
+    import z3
+    from pyfcstm.solver import UnsatConstraint, UnsatQuery, explain_unsat
+
+    x, y = z3.Reals('x y')
+    expressions = {'affine': (2*x+3*y-1)**2-(x-y)**2,
+                   'product': (x*y-1)**2-(x-y)**2,
+                   'quartic': x**4+y**4-3*x*x*y*y}
+    report = explain_unsat(UnsatQuery('square_control', (
+        UnsatConstraint('condition', (expressions[kind] < 0,)),
+    )))
+    assert report.solver_status == 'sat'
+    assert report.proof is None
+
+
+@pytest.mark.parametrize('expanded', [False, True])
+def test_composite_square_with_rational_factors_survives_expansion(expanded):
+    import z3
+    from pyfcstm.solver import UnsatConstraint, UnsatQuery, explain_unsat
+
+    x, y = z3.Reals('frame_x frame_y')
+    value = (2*x*y + 3*x - 1)**2 + (x-y)**2
+    if expanded:
+        value = z3.simplify(value, som=True)
+    report = explain_unsat(UnsatQuery('composite_square', (
+        UnsatConstraint('impossible', (value < 0,)),
+    )), timeout_ms=30000)
+    assert report.solver_status == 'unsat'
+    assert report.reading_status == 'complete'
+    assert report.gaps == ()
+
+
+def test_exact_square_completion_has_a_checked_work_limit():
+    from fractions import Fraction
+    from pyfcstm.solver.proof.polynomial import _complete_squares, _SearchLimit
+
+    polynomial = {(('x%03d' % i),) * 2: Fraction(1) for i in range(256)}
+    with pytest.raises(_SearchLimit, match='square decomposition limit'):
+        _complete_squares(polynomial, SolveBudget(None))
+
+
+def test_residual_square_candidates_have_a_checked_work_limit():
+    from fractions import Fraction
+    from pyfcstm.solver.proof.polynomial import _residual_squares, _SearchLimit
+
+    polynomial = {('x',)*4: Fraction(1), ('x',)*2: Fraction(-1), (): Fraction(1)}
+    candidates = [{('x',)*2: Fraction(1), (): Fraction(i)} for i in range(1, 259)]
+    with pytest.raises(_SearchLimit, match='residual square candidate limit'):
+        tuple(_residual_squares(polynomial, candidates, SolveBudget(None)))
+
+
+def test_square_sum_refutation_stops_before_deriving_unneeded_zero_factors():
+    expanded = ('+', 1, ('*', -6, 'x'), ('*', -6, 'x', 'y'),
+                ('*', 4, 'x', 'x', 'y', 'y'), ('*', 12, 'x', 'x', 'y'),
+                ('*', 10, 'x', 'x'), ('*', 'y', 'y'))
+    certificate = _certificate(_graph((('<', expanded, 0),)))
+    assert tuple(step.rule for step in certificate.steps) == ('input', 'square', 'square', 'sum')
+
+
+def test_square_completion_limit_keeps_other_exact_candidates_available(monkeypatch):
+    import z3
+    from pyfcstm.solver import UnsatConstraint, UnsatQuery, explain_unsat
+    from pyfcstm.solver.proof import polynomial
+
+    def exhausted(polynomial_value, budget):
+        raise polynomial._SearchLimit('polynomial square decomposition limit')
+
+    # The direct limit test exercises the real bound. Here inject the same
+    # candidate failure to pin isolation without constructing a huge native proof.
+    monkeypatch.setattr(polynomial, '_complete_squares', exhausted)
+    x, y = z3.Reals('x y')
+    report = explain_unsat(UnsatQuery('bounded_candidates', (
+        UnsatConstraint('impossible', ((2*x+3*y-1)**2+(x-y)**2 < 0,)),
+    )))
+    assert report.reading_status == 'complete'
+    assert report.gaps == ()

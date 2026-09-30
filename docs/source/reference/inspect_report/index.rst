@@ -106,7 +106,7 @@ these required top-level fields.
        generated combo edges and forced expansions are folded to authored
        transitions. This section does not emit warnings or a health score.
    * - ``reachability_graph``
-     - Default inspect graph: guards ignored, composite initial edges followed.
+     - Default inspect graph: guards ignored, composite initial edges followed. A transition into ``Owner.[H]`` / ``Owner.[H*]`` also reaches the states of the default path and what a restore can re-enter; see :ref:`dsl-history-reference`.
    * - ``event_emission_map``
      - Event name to source states that can emit it.
    * - ``var_dataflow``

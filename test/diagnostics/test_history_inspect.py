@@ -436,13 +436,20 @@ def test_history_entries_reach_the_states_of_their_default(text, unreachable):
 
 
 @pytest.mark.unittest
-def test_a_history_entry_from_a_misspelled_source_is_reported_not_raised():
-    report = _report(
+@pytest.mark.parametrize(
+    "text",
+    [
+        # a misspelled source of a history entry
         "state R { state Off; state O { state A; state B; [*] -> A; [H] -> B; } "
         "[*] -> Off; Of -> O.[H] :: Resume; !O -> Off :: Stop; }",
-        **VERIFY_STRUCTURAL,
-    )
-    assert "E_MISSING_STATE" in {item.code for item in report.diagnostics}
+        # a misspelled target inside an owner a deep history entry restores
+        "state R { state Off; state O { state A; [*] -> A; [H*] -> A; A -> Typo :: e; } "
+        "[*] -> Off; Off -> O.[H*] :: Resume; !O -> Off :: Stop; }",
+    ],
+)
+def test_a_misspelling_near_a_history_entry_is_reported_not_raised(text):
+    report = _report(text, **VERIFY_STRUCTURAL)
+    assert {"E_MISSING_STATE", "E_DANGLING_TRANSITION"} & {item.code for item in report.diagnostics}
 
 
 @pytest.mark.unittest

@@ -100,7 +100,7 @@ Inspect 报告参考
    * - ``structure_statistics``
      - 面向 LLM 的描述性结构计数和比例。初始边被排除，生成的组合边和强制展开边按作者写的一条转换折叠；该段不会产生告警或综合健康分数。
    * - ``reachability_graph``
-     - 默认检查图：忽略守卫，跟随组合状态初始边。
+     - 默认检查图：忽略守卫，跟随组合状态初始边。进入 ``Owner.[H]`` / ``Owner.[H*]`` 的转换还会到达默认路径上的状态以及恢复能重新进入的状态，见 :ref:`dsl-history-reference-zh`\ 。
    * - ``event_emission_map``
      - 事件名到可发射它的源状态集合。
    * - ``var_dataflow``

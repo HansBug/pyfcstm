@@ -2428,11 +2428,18 @@ function buildReachabilityGraph(
         // leaf of the owner, for [H] any direct child with one, as in pyfcstm.
         const byPath = new Map(states.map(state => [state.path, state]));
         const reached = Array.from(closure(states[0].path));
+        const restores = new Map<string, string[]>();
         for (const t of historyEntries) {
-            const inside = reached.filter(path => path.startsWith(`${t.to_path}.`));
-            addEdges(t, t.target_history === 'deep'
-                ? inside.filter(path => byPath.get(path)!.is_leaf)
-                : byPath.get(t.to_path)!.substates.filter(child => inside.some(path => path === child || path.startsWith(`${child}.`))));
+            const restoreKey = JSON.stringify([t.to_path, t.target_history]);
+            if (!restores.has(restoreKey)) {
+                // Only known states: a target naming none (an import alias, a
+                // misspelling) can still sit in the reachable set.
+                const inside = reached.filter(path => path.startsWith(`${t.to_path}.`) && byPath.has(path));
+                restores.set(restoreKey, t.target_history === 'deep'
+                    ? inside.filter(path => byPath.get(path)!.is_leaf)
+                    : byPath.get(t.to_path)!.substates.filter(child => inside.some(path => path === child || path.startsWith(`${child}.`))));
+            }
+            addEdges(t, restores.get(restoreKey)!);
         }
     }
     const out: Record<string, string[]> = {};

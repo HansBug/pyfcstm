@@ -370,6 +370,56 @@ describe('jsfcstm history diagnostics', () => {
         assert.deepEqual(report.reachability_graph['Root.P'], ['Root.O', 'Root.O.A', 'Root.O.Y']);
     });
 
+    it('does not fail when a deep owner holds a transition into an import alias', async () => {
+        const text = [
+            'state R {',
+            '    state Off;',
+            '    state O { import "./module.fcstm" as M; state A; [*] -> A; [H*] -> A; A -> M :: Go; }',
+            '    [*] -> Off;',
+            '    Off -> O.[H*] :: Enter;',
+            '    !O -> Off :: Stop;',
+            '}',
+        ].join('\n');
+        const diagnostics = await packageModule.collectDocumentDiagnostics(document(text));
+        assert.deepEqual(diagnostics.filter(item => (item.code ?? '').includes('HISTORY')), []);
+    });
+
+    it('leaves an owner whose children all come from imports to the assembled model', async () => {
+        const text = [
+            'state R {',
+            '    state Off;',
+            '    state O { import "./module.fcstm" as M; [*] -> M; [H*] -> M.B; [H] -> M; }',
+            '    [*] -> Off;',
+            '    Off -> O.[H*] :: Deep;',
+            '    Off -> O.[H] :: Shallow;',
+            '    !O -> Off :: Stop;',
+            '}',
+        ].join('\n');
+        const codes = (await packageModule.collectDocumentDiagnostics(document(text))).map(item => item.code ?? '');
+        assert.deepEqual(codes.filter(code => code.includes('HISTORY')), []);
+    });
+
+    it('still reports the states behind a misspelled default', async () => {
+        const text = [
+            'state Host {',
+            '    state Off;',
+            '    state O {',
+            '        state C { state X; [*] -> X; }',
+            '        state A;',
+            '        [*] -> A;',
+            '        [H*] -> C.Typo;',
+            '    }',
+            '    [*] -> Off;',
+            '    Off -> O.[H*] :: Go;',
+            '    !O -> Off :: Stop;',
+            '}',
+        ].join('\n');
+        const unreachable = (await packageModule.collectDocumentDiagnostics(document(text)))
+            .filter(item => item.code === 'W_UNREACHABLE_STATE')
+            .map(item => /State "([^"]+)"/.exec(item.message)![1]);
+        assert.ok(unreachable.includes('Host.O.C.X'), unreachable.join(','));
+    });
+
     it('leaves a default that enters an imported module to the assembled model', async () => {
         const text = [
             'state Host {',

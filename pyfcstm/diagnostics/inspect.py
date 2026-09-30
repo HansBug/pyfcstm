@@ -873,7 +873,9 @@ class ModelInspect:
     :type structure_statistics: StructureStatistics
     :param reachability_graph: Mapping from every state path to state paths
         reachable through normal transitions and composite initial edges.
-        Guards are ignored; ``[*]`` entry/exit markers are not exposed.
+        Guards are ignored; ``[*]`` entry/exit markers are not exposed. A
+        transition into a history also reaches the states of its default path
+        and what a restore can re-enter.
     :type reachability_graph: Dict[str, Tuple[str, ...]]
     :param event_emission_map: Mapping event qualified name → list of
         source state paths that can emit it.
@@ -2719,16 +2721,25 @@ def _build_reachability_graph(
         # the other states gain them.
         by_path = {state.path: state for state in states}
         reached = closure(states[0].path)
+        restores: Dict[Tuple[str, str], List[str]] = {}
         for transition in history_entries:
-            owner = transition.to_path
-            inside = [path for path in reached if path.startswith(owner + '.')]
-            if transition.target_history == 'deep':
-                add_edges(transition, [path for path in inside if by_path[path].is_leaf])
-            else:
-                add_edges(transition, [
-                    child for child in by_path[owner].substates
-                    if any(path == child or path.startswith(child + '.') for path in inside)
-                ])
+            owner, kind = transition.to_path, transition.target_history
+            if (owner, kind) not in restores:
+                # Only known states: a target naming none (a misspelling kept
+                # by collect mode) can still sit in the reachable set.
+                inside = [
+                    path for path in reached
+                    if path.startswith(owner + '.') and path in by_path
+                ]
+                restores[(owner, kind)] = (
+                    [path for path in inside if by_path[path].is_leaf]
+                    if kind == 'deep'
+                    else [
+                        child for child in by_path[owner].substates
+                        if any(path == child or path.startswith(child + '.') for path in inside)
+                    ]
+                )
+            add_edges(transition, restores[(owner, kind)])
 
     return {state.path: tuple(sorted(closure(state.path))) for state in states}
 

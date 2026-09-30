@@ -45,7 +45,7 @@ Example::
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import (
     TYPE_CHECKING,
@@ -93,6 +93,10 @@ class LeafLevelGraph:
         :data:`EXIT_ROOT_SINK`, to sorted successor paths. The mapping is copied
         into a read-only proxy during initialization.
     :type edges: Mapping[str, Tuple[str, ...]]
+    :param history: How history entries were projected, so helpers that take
+        the graph project their start states the same way; ``None`` for a
+        machine without history, defaults to ``None``
+    :type history: Optional[_HistoryProjection], optional
 
     Example::
 
@@ -112,6 +116,7 @@ class LeafLevelGraph:
 
     nodes: Tuple[str, ...]
     edges: Mapping[str, Tuple[str, ...]]
+    history: Optional["_HistoryProjection"] = field(default=None, compare=False, repr=False)
 
     def __post_init__(self) -> None:
         """
@@ -416,15 +421,19 @@ def _project_entry(
         for name in owner.defaults[kind]:
             state = state.substates[name]
             projected.extend(_initial_leaf_targets(state, history))
-        # Both kinds share one record, which names any leaf reached below the owner.
-        inside = [leaf for leaf in history.reached if leaf.startswith(owner_path + ".")]
-        if kind == "deep":
-            projected.extend(inside)
-        else:
-            for child in owner_state.substates.values():
-                child_path = _state_path(child)
-                if any(leaf == child_path or leaf.startswith(child_path + ".") for leaf in inside):
-                    projected.extend(_initial_leaf_targets(child, history))
+        if (owner_path, kind) not in history.restores:
+            # Both kinds share one record, which names any leaf reached below the owner.
+            inside = [leaf for leaf in history.reached if leaf.startswith(owner_path + ".")]
+            restored: List[str] = []
+            if kind == "deep":
+                restored.extend(inside)
+            else:
+                for child in owner_state.substates.values():
+                    child_path = _state_path(child)
+                    if any(leaf == child_path or leaf.startswith(child_path + ".") for leaf in inside):
+                        restored.extend(_initial_leaf_targets(child, history))
+            history.restores[(owner_path, kind)] = tuple(restored)
+        projected.extend(history.restores[(owner_path, kind)])
     return _dedupe_sorted(projected)
 
 
@@ -448,10 +457,12 @@ def build_leaf_level_macro_graph(machine: StateMachine) -> LeafLevelGraph:
     built model is unaffected.
 
     In a machine with ``[H]`` / ``[H*]`` history, an entry into a history
-    reaches its owner as an ordinary entry does and, as ordinary targets, every
-    state on the default path of the kind it names; the route initials of a
-    lowered machine are not followed. This over-approximates what a restore
-    reaches.
+    reaches its owner as an ordinary entry does, every state on the default
+    path of the kind it names as an ordinary target, and what a restore can
+    re-enter -- for ``[H*]`` every root-reachable leaf of the owner, for
+    ``[H]`` the initial descent of every direct child with one; the route
+    initials of a lowered machine are not followed. This over-approximates
+    every history entry.
 
     :param machine: State machine to project.
     :type machine: StateMachine
@@ -493,6 +504,10 @@ class _HistoryProjection:
 
     owners: Mapping[str, "HistoryOwner"]
     reached: FrozenSet[str] = frozenset()
+    # Restore targets by (owner path, kind), filled on first use.
+    restores: Dict[Tuple[str, str], Tuple[str, ...]] = field(
+        default_factory=dict, compare=False, repr=False
+    )
 
 
 def _history_projection(machine: StateMachine) -> Optional[_HistoryProjection]:
@@ -567,7 +582,7 @@ def _macro_graph(
 
     edges = {node: tuple(sorted(targets)) for node, targets in edge_sets.items()}
     edges.setdefault(EXIT_ROOT_SINK, tuple())
-    return LeafLevelGraph(nodes=nodes, edges=edges)
+    return LeafLevelGraph(nodes=nodes, edges=edges, history=history)
 
 
 def _closure_from(
@@ -884,7 +899,7 @@ def _root_reachable_leaf_paths(
         ['Root.A']
     """
     reachable = _closure_from(
-        graph.edges, _initial_leaf_targets(machine.root_state, _history_projection(machine))
+        graph.edges, _initial_leaf_targets(machine.root_state, graph.history)
     )
     reachable.discard(EXIT_ROOT_SINK)
     return reachable
@@ -1057,7 +1072,7 @@ def _root_reachable_initial_state_paths(
         >>> sorted(_root_reachable_initial_state_paths(machine, graph))
         ['Root']
     """
-    history = _history_projection(machine)
+    history = graph.history
     reachable_leaves = _root_reachable_leaf_paths(machine, graph)
     reachable_paths = {_state_path(machine.root_state)}
 

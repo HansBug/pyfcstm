@@ -395,18 +395,28 @@ function collectReachableStateIds(semantic: FcstmSemanticDocument): Set<string> 
             worklist.push(stateId);
         }
     };
-    const historyDefault = (ownerId: string, kind: string): string[] => {
+    // The states a default enters, or undefined when it names no state. A
+    // default through an import alias leaves the local model, so the states
+    // before the alias are what it enters here.
+    const resolveDefault = (ownerId: string, defaultPath: string[]): string[] | undefined => {
         let current = statesById.get(ownerId);
-        const declaration = current?.ast.histories.find(item => item.historyKind === kind);
         const path: string[] = [];
-        for (const name of declaration?.defaultPath ?? []) {
-            current = current?.childStateIds.map(id => statesById.get(id)).find(child => child?.name === name);
-            // A default through an import alias leaves the local model; the
-            // states before the alias are still entered.
-            if (!current) return path;
-            path.push(current.identity.id);
+        for (const name of defaultPath) {
+            const next = current?.childStateIds.map(id => statesById.get(id)).find(child => child?.name === name);
+            if (!next) return current?.ast.imports.some(item => item.alias === name) ? path : undefined;
+            current = next;
+            path.push(next.identity.id);
         }
         return path;
+    };
+    // The first declaration of the kind that resolves, as pyfcstm keeps.
+    const historyDefault = (ownerId: string, kind: string): string[] => {
+        for (const declaration of statesById.get(ownerId)?.ast.histories ?? []) {
+            if (declaration.historyKind !== kind) continue;
+            const path = resolveDefault(ownerId, declaration.defaultPath);
+            if (path) return path;
+        }
+        return [];
     };
 
     while (worklist.length > 0) {

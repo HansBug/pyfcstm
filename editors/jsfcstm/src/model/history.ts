@@ -214,7 +214,9 @@ class HistoryLowering {
                 const declaredKey = JSON.stringify([key(path), decl.historyKind]);
                 let reason: string | undefined;
                 if (owner === this.input.rootState) reason = 'root_owner';
-                else if (owner.isLeafState) reason = 'leaf_owner';
+                // A state whose children all come from imports looks like a leaf
+                // before assembly; pyfcstm checks it after assembly.
+                else if (owner.isLeafState && node.imports.length === 0) reason = 'leaf_owner';
                 else if (declared.get(key(path))?.has(decl.historyKind) || deferred.has(declaredKey)) reason = 'duplicate';
                 else if (decl.historyKind === 'shallow' && decl.defaultPath.length !== 1) reason = 'default_not_direct_child';
                 else if (!target && this.entersImport(owner, decl.defaultPath, astByPath)) {

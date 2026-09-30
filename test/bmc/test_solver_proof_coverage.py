@@ -483,3 +483,39 @@ def test_exit_transition_and_entry_effects_compose_in_the_proof(comparison, stat
         _check_reading_levels(report, text_aligner)
     else:
         assert report.proof is None
+
+
+@pytest.mark.parametrize('predicate,status', [
+    ('call_count("Root.A.Before", step=0..1, where x>=2)>0', 'unsat'),
+    ('call_count("Root.A.Before", step=0..1, where x>=0)==2', 'sat'),
+    ('call_count("Root.A.After", step=0..1, where x>=1)!=2', 'unsat'),
+    ('called("Root.A.After", step=-1) && !called("Root.A.After", step=+1)', 'sat'),
+])
+def test_call_history_filters_use_the_recorded_action_snapshot(predicate, status, text_aligner):
+    model = load_state_machine_from_text('''
+        def int x=0;
+        state Root {
+            state A {
+                during abstract Before;
+                during { x=x+1; }
+                during abstract After;
+            }
+            [*]->A;
+        }
+    ''')
+    core = build_bmc_core_formula(BmcEngine(model).prepare(
+        'init state("Root.A"); check reach <= 2: cycle==2 && (%s);' % predicate))
+    objective = compile_bmc_property(core)
+    report = explain_unsat(UnsatQuery('call_history', tuple(
+        UnsatConstraint(key, (expression,)) for key, expression in (
+            ('domain', core.domain_formula), ('initial', core.initial_formula),
+            ('transitions', core.transition_formula), ('environment', core.environment_formula),
+            ('objective', objective.objective_formula),
+        ))), timeout_ms=30000)
+    assert report.solver_status == status
+    if status == 'unsat':
+        assert report.reading_status == 'complete'
+        assert report.gaps == ()
+        _check_reading_levels(report, text_aligner)
+    else:
+        assert report.proof is None

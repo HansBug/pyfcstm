@@ -19,6 +19,7 @@ They do not establish that the production BMC explanation CLI has been migrated.
 | Priority and false guards | `macro.py` case construction; `relation.py::_lower_guard_requirement` | `test_control_flow_encodings_have_complete_proofs`, `test_guard_after_prefix_effect_is_proved_at_its_actual_anchor` |
 | Conditional true/false guards and definedness | `relation.py::_guarded_domain_constraints`, solver expression/domain encoding | `test/solver/proof/test_guards.py`; consistent-context prerequisite and undefinedness are separate |
 | Exit, transition and entry actions; unchanged variables | `relation.py::_execute_action_block`, `_prepare_case_lowering` | `test_exit_transition_and_entry_effects_compose_in_the_proof`, with SAT perturbation |
+| Action call history, absolute/relative windows and snapshot filters | `properties.py::_effective_call_steps`, `_call_match_expr`, `_lower_call_count` | `test_call_history_filters_use_the_recorded_action_snapshot`; two-frame before/after actions, SAT and UNSAT cases |
 | Event capacity | `relation.py::_build_environment_formula` | `test_three_event_cardinality_has_a_complete_native_proof`; weighted/signed counting and portable mutation controls in `test_theories.py` |
 | Numeric comparison, addition, subtraction, multiplication, casts | `relation.py::_z3_arith_binary`, `_z3_comparison`; `solver/expr.py` | Arithmetic/interval/polynomial replay; real BMC arithmetic and assignment composition tests |
 | Division and remainder | `relation.py::_z3_arith_binary` and expression definedness | Positive/negative integer division, nonzero-divisor guard and modular BMC tests; integer remainder/product SAT and UNSAT pair |
@@ -28,9 +29,11 @@ They do not establish that the production BMC explanation CLI has been migrated.
 | Shared algebraic constants across contexts | `solver/proof/_z3_proof.py::capture_proof` | Batched translation preserves assertion/source identity; `test_algebraic_equality_contradiction_has_an_original_input_proof`, `test_algebraic_source_binding_shares_the_assertions_translated_value` |
 | Operator spelling versus builtin identity | Typed proof capture and normalization | Authored-function negative controls in encoder/theory/semantic tests prevent name-based inference |
 
-BMC trace-history selectors and lifecycle/control-state combinations still need
-an explicit final pass against the current public syntax. Do not interpret the
-rows above as a completed exhaustive construction audit. Reserved bitwise branches
+Call-history coverage uses the supported call windows and action snapshots.
+Frame-local predicates accept omitted/current selectors; `binding.py` rejects
+explicit numeric frame selectors outside event assumptions, and `var` has no
+historical-frame argument. The tests do not invent unsupported selector syntax.
+Reserved bitwise branches
 in `_z3_arith_binary` are marked for a future BitVec profile; they are not evidence
 that the current BMC numeric language supports bit vectors.
 

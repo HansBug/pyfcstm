@@ -9,6 +9,7 @@ import json
 
 import pytest
 
+from pyfcstm.model import load_state_machine_from_text
 from test.bmc.test_guarded_initial_scaling import (
     assert_bound_is_tight,
     bmc_status,
@@ -79,39 +80,54 @@ def test_a_restore_without_a_record_never_skips_fill(tmp_path):
 
 
 @pytest.mark.unittest
-def test_havoc_all_keeps_history_records_empty(tmp_path):
+def test_havoc_all_starts_from_any_valid_history_record(tmp_path):
+    # A havocked start may remember any leaf, so Deep restores Agitate in one
+    # step; no restore is ever in flight at the start.
     model = _model(tmp_path, WASHER)
     query = (
         'init state("Washer.Paused") havoc *;\n'
-        'check reach <= 3: active("Washer.Program.Wash.Agitate");'
+        'check reach <= 1: active("Washer.Program.Wash.Agitate");'
     )
     result = run_bmc(model, query, tmp_path, "--json")
     payload = json.loads(result.stdout)
     assert payload["result"]["status"] == "sat"
     assert payload["replay"]["ok"] is True
     initial = payload["witness"]["frames"][0]["vars"]
-    assert initial["__hist_goto"] == 0 and initial["__hist_Program"] == 0
-    # With empty records one step from Paused reaches Idle or Fill at most; a
-    # havocked record could restore Agitate directly.
-    deep_first = (
-        'init state("Washer.Paused") havoc *;\n'
-        'check reach <= 1: active("Washer.Program.Wash.Agitate");'
-    )
-    assert bmc_status(model, deep_first, tmp_path) == "unsat"
+    owner = load_state_machine_from_text(WASHER).history_owners[0]
+    assert initial["__hist_goto"] == 0
+    assert owner.decode(initial["__hist_Program"]) == ("Wash", "Agitate")
 
 
 @pytest.mark.unittest
-@pytest.mark.parametrize("name", ["__hist_goto", "__hist_Program"])
-def test_history_variables_cannot_be_havocked(name, tmp_path):
+@pytest.mark.parametrize(
+    ["name", "value"],
+    [("__hist_goto", 5), ("__hist_Program", 2), ("__hist_Program", 99)],
+)
+def test_havocked_history_variables_cannot_take_unreachable_values(name, value, tmp_path):
     model = _model(tmp_path, WASHER)
-    result = run_bmc(
-        model,
-        'init state("Washer.Paused") havoc { %s };\ncheck reach <= 2: active("Washer.Paused");' % name,
-        tmp_path,
+    query = (
+        'init state("Washer.Paused") havoc { %s } where var("%s") == %d;\n'
+        'check reach <= 2: active("Washer.Paused");' % (name, name, value)
     )
-    assert result.exit_code != 0
-    assert "history lowering" in result.output
-    assert name in result.output
+    result = run_bmc(model, query, tmp_path, "--json")
+    payload = json.loads(result.stdout)
+    assert payload["result"]["feasibility"]["infeasible_stage"] == "initialization"
+    assert payload["result"]["feasibility"]["initialization"]["status"] == "unsat"
+    for mode in ("formal", "proof"):
+        explained = run_bmc(model, query, tmp_path, "--explain-infeasibility", mode)
+        assert "SCENARIO INFEASIBLE" in explained.output
+
+
+@pytest.mark.unittest
+def test_a_havocked_start_from_a_real_record_replays(tmp_path):
+    model = _model(tmp_path, WASHER)
+    owner = load_state_machine_from_text(WASHER).history_owners[0]
+    record = owner.record_value(("Idle",))
+    query = (
+        'init state("Washer.Paused") havoc { __hist_Program } where var("__hist_Program") == %d;\n'
+        'check reach <= 1: active("Washer.Program.Idle");' % record
+    )
+    assert bmc_status(model, query, tmp_path) == "sat"
 
 
 @pytest.mark.unittest

@@ -2674,6 +2674,44 @@ def _build_step_relation(
     )
 
 
+def _append_history_domain_constraints(
+    context: BmcPreparedContext,
+    env: Mapping[str, _Z3Expr],
+    havoc_names: Set[str],
+    constraints: List[z3.ExprRef],
+    groups: List[BmcTrackedConstraint],
+) -> None:
+    """Keep havocked history variables within the values an execution holds.
+
+    History lowering keeps a restore target that is ``0`` at every stable
+    point and, per owner, a record that is ``0`` or the id of a stoppable leaf
+    below the owner.  A havocked start may pick any such record, but not a
+    restore already in flight or a record naming no leaf, which no execution
+    of the machine can reach and the simulator refuses to replay.
+    """
+    for owner in context.model.history_owners:
+        allowed = {
+            owner.goto_variable: (0,),
+            owner.record_variable: (0, *owner.leaf_ids.values()),
+        }
+        for name, values in allowed.items():
+            if name not in havoc_names:
+                continue
+            constraint = _or(env[name] == z3.IntVal(value) for value in values)
+            constraints.append(constraint)
+            _append_tracked_group(
+                groups,
+                stable_id="initial.history.%s" % name,
+                stage="initialization",
+                category="domain.history_variable",
+                expressions=(constraint,),
+                source_ref=context._source_registry.model_reference(
+                    context.model.defines[name]
+                ),
+                refs={"variable": name, "frame": 0},
+            )
+
+
 def _initial_source(context: BmcPreparedContext):
     source = source_from_initial_spec(
         context.domain, context.bound_query.initial.source
@@ -2825,6 +2863,7 @@ def _build_initial_formula(
             source_ref=define_ref,
             refs={"variable": var.name, "frame": 0},
         )
+    _append_history_domain_constraints(context, env, havoc_names, constraints, groups)
     predicate = context.bound_query.initial.predicate
     if predicate is not None:
         lowered = _lower_bmc_cond_expr(predicate, symbols, frame_index=0)

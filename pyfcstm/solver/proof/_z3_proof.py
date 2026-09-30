@@ -2,6 +2,7 @@
 
 from uuid import uuid4
 from dataclasses import replace
+from fractions import Fraction
 import warnings
 
 import z3
@@ -78,7 +79,11 @@ class _Terms:
                     operator_kind = 'uninterpreted'
                 operator = 'ite' if z3.is_app_of(node, z3.Z3_OP_ITE) else str(node.decl().name())
                 if z3.is_int_value(node) or z3.is_rational_value(node):
-                    kind, value = 'literal', str(node)
+                    # Native pretty printing can round rationals and append '?'.
+                    # Evidence must retain the exact value independently of it.
+                    kind = 'literal'
+                    value = (str(node.as_long()) if z3.is_int_value(node) else
+                             str(Fraction(node.numerator_as_long(), node.denominator_as_long())))
                 elif z3.is_algebraic_value(node):
                     kind, value = 'algebraic', node.sexpr()
                 elif z3.is_true(node) or z3.is_false(node):

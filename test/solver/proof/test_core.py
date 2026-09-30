@@ -331,3 +331,86 @@ def test_quantifier_instantiation_parameters_preserve_the_exact_expression():
     parameters = tuple(parameter.value for node in report.proof.nodes if node.rule == 'quant-inst'
                        for parameter in node.parameters if parameter.kind == 'expression')
     assert parameters == ('7',)
+
+
+@pytest.mark.parametrize('decimal', [False, True])
+@pytest.mark.parametrize('precision', [2, 10, 30])
+def test_exact_numeric_capture_is_independent_of_native_display(decimal, precision, text_aligner):
+    import subprocess
+    import sys
+
+    # A separate interpreter isolates process-wide Z3 presentation options.
+    program = '''
+import z3
+import json
+from pyfcstm.solver import UnsatConstraint, UnsatQuery, UnsatReport, explain_unsat
+z3.set_option(rational_to_decimal=%r, precision=%d)
+for lower, upper in [('1/3', '1/4'), ('-1/4', '-1/3'),
+                     ('123456789012345678901234567890', '0')]:
+    x = z3.Real('x')
+    report = explain_unsat(UnsatQuery('exact', (
+        UnsatConstraint('lower', (x >= z3.RealVal(lower),)),
+        UnsatConstraint('upper', (x <= z3.RealVal(upper),)),
+    )))
+    assert report.solver_status == 'unsat'
+    assert report.proof_status == 'captured'
+    assert report.reading_status == 'complete'
+    values = {term.value for term in report.proof.terms if term.kind == 'literal'}
+    assert lower in values, values
+    assert upper in values, values
+    restored = UnsatReport.from_canonical(report.to_canonical())
+    assert restored.proof == report.proof
+    if lower == '1/3':
+        print(json.dumps(restored.reading.to_text('en', detail='detailed')))
+i = z3.Int('i')
+r = explain_unsat(UnsatQuery('integer', (
+    UnsatConstraint('lower', (i >= 123456789012345678901234567890,)),
+    UnsatConstraint('upper', (i <= 0,)),
+)))
+assert r.reading_status == 'complete'
+assert any(t.value == '123456789012345678901234567890' for t in r.proof.terms)
+a = z3.Real('a')
+root = z3.simplify(z3.Sqrt(2))
+r = explain_unsat(UnsatQuery('algebraic', (
+    UnsatConstraint('equal', (a == root,)),
+    UnsatConstraint('false', (z3.BoolVal(False),)),
+)))
+assert r.reading_status == 'complete'
+assert {t.value for t in r.proof.terms if t.kind == 'algebraic'} == {
+    '(root-obj (+ (^ x 2) (- 2)) 2)'}
+assert UnsatReport.from_canonical(r.to_canonical()).proof == r.proof
+''' % (decimal, precision)
+    completed = subprocess.run([sys.executable, '-c', program],
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               universal_newlines=True, timeout=60)
+    assert completed.returncode == 0, completed.stderr
+    text_aligner.assert_equal("""\
+Query: exact
+Solver result: UNSAT
+Reading: complete
+
+P1  Exact linear combination
+  To refute the negated conclusion, temporarily assume:
+    (x <= 1/4)
+    (x >= 1/3)
+  1 * [x + -1/4 <= 0]
+  1 * [-1 * x + 1/3 <= 0]
+  Sum: 1/12 <= 0; contradiction.
+  Discharge these temporary assumptions.
+  Therefore: (not ((x <= 1/4)) or not ((x >= 1/3)))
+
+P2  Input
+  Input origins: lower
+  Therefore: (1/3 <= x)
+
+P3  Input
+  Input origins: upper
+  Therefore: (1/4 >= x)
+
+P4  Resolve the clauses
+  From: P1, P2, P3
+  Therefore: false
+
+Conclusion: the submitted conjunction is inconsistent.
+
+""", json.loads(completed.stdout))

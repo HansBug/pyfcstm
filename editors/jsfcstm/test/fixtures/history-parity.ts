@@ -308,41 +308,18 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
             ],
             "Washer.Program": [
                 {
-                    "target": "Washer.Program.Wash",
-                    "guard": "__hist_goto >= 5 && __hist_goto <= 7",
-                    "event": null,
-                    "is_unconditional": false,
-                    "history_role": "route"
-                },
-                {
                     "target": "Washer.Program.Idle",
                     "guard": null,
                     "event": null,
-                    "is_unconditional": true,
-                    "history_role": "merged"
+                    "is_unconditional": true
                 }
             ],
             "Washer.Program.Wash": [
                 {
                     "target": "Washer.Program.Wash.Fill",
-                    "guard": "__hist_goto == 6",
-                    "event": null,
-                    "is_unconditional": false,
-                    "history_role": "route"
-                },
-                {
-                    "target": "Washer.Program.Wash.Agitate",
-                    "guard": "__hist_goto == 7",
-                    "event": null,
-                    "is_unconditional": false,
-                    "history_role": "route"
-                },
-                {
-                    "target": "Washer.Program.Wash.Fill",
                     "guard": null,
                     "event": null,
-                    "is_unconditional": true,
-                    "history_role": "gated"
+                    "is_unconditional": true
                 }
             ]
         },
@@ -354,7 +331,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 0,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -364,7 +340,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 1,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -374,7 +349,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 2,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -384,7 +358,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 3,
-                "history_role": null,
                 "target_history": "shallow"
             },
             {
@@ -394,7 +367,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 4,
-                "history_role": null,
                 "target_history": "deep"
             },
             {
@@ -404,7 +376,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 5,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -414,7 +385,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 6,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -424,7 +394,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 7,
-                "history_role": "merged",
                 "target_history": null
             },
             {
@@ -434,7 +403,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 8,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -444,7 +412,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 9,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -454,7 +421,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 10,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -464,7 +430,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": "wash_initials = wash_initials + 1;",
                 "transition_index": 11,
-                "history_role": "gated",
                 "target_history": null
             },
             {
@@ -474,37 +439,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 12,
-                "history_role": null,
-                "target_history": null
-            },
-            {
-                "from_path": "[*]",
-                "to_path": "Washer.Program.Wash",
-                "event": null,
-                "guard": "__hist_goto >= 5 && __hist_goto <= 7",
-                "effect": null,
-                "transition_index": 13,
-                "history_role": "route",
-                "target_history": null
-            },
-            {
-                "from_path": "[*]",
-                "to_path": "Washer.Program.Wash.Fill",
-                "event": null,
-                "guard": "__hist_goto == 6",
-                "effect": null,
-                "transition_index": 14,
-                "history_role": "route",
-                "target_history": null
-            },
-            {
-                "from_path": "[*]",
-                "to_path": "Washer.Program.Wash.Agitate",
-                "event": null,
-                "guard": "__hist_goto == 7",
-                "effect": null,
-                "transition_index": 15,
-                "history_role": "route",
                 "target_history": null
             }
         ],
@@ -596,25 +530,10 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
             ],
             "R.O": [
                 {
-                    "target": "R.O.K",
-                    "guard": "__hist_goto >= 5 && __hist_goto <= 6",
-                    "event": null,
-                    "is_unconditional": false,
-                    "history_role": "route"
-                },
-                {
-                    "target": "R.O.Idle",
-                    "guard": "__hist_goto == 4",
-                    "event": null,
-                    "is_unconditional": false,
-                    "history_role": "route"
-                },
-                {
                     "target": "R.O.Idle",
                     "guard": null,
                     "event": null,
-                    "is_unconditional": true,
-                    "history_role": "gated"
+                    "is_unconditional": true
                 }
             ],
             "R.O.K": [
@@ -622,8 +541,7 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                     "target": "R.O.K.K1",
                     "guard": "ready == 1",
                     "event": null,
-                    "is_unconditional": false,
-                    "history_role": "merged"
+                    "is_unconditional": false
                 }
             ]
         },
@@ -635,7 +553,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 0,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -645,7 +562,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 1,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -655,7 +571,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 2,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -665,7 +580,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 3,
-                "history_role": null,
                 "target_history": "shallow"
             },
             {
@@ -675,7 +589,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 4,
-                "history_role": null,
                 "target_history": "deep"
             },
             {
@@ -685,7 +598,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": "ready = 0;",
                 "transition_index": 5,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -695,7 +607,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 6,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -705,7 +616,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 7,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -715,7 +625,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": "fresh_entries = fresh_entries + 1;",
                 "transition_index": 8,
-                "history_role": "gated",
                 "target_history": null
             },
             {
@@ -725,7 +634,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 9,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -735,7 +643,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 10,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -745,27 +652,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": "ready == 1",
                 "effect": null,
                 "transition_index": 11,
-                "history_role": "merged",
-                "target_history": null
-            },
-            {
-                "from_path": "[*]",
-                "to_path": "R.O.K",
-                "event": null,
-                "guard": "__hist_goto >= 5 && __hist_goto <= 6",
-                "effect": null,
-                "transition_index": 12,
-                "history_role": "route",
-                "target_history": null
-            },
-            {
-                "from_path": "[*]",
-                "to_path": "R.O.Idle",
-                "event": null,
-                "guard": "__hist_goto == 4",
-                "effect": null,
-                "transition_index": 13,
-                "history_role": "route",
                 "target_history": null
             }
         ],
@@ -859,18 +745,10 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
             ],
             "R.O": [
                 {
-                    "target": "R.O.K",
-                    "guard": "__hist_goto >= 5 && __hist_goto <= 6",
-                    "event": null,
-                    "is_unconditional": false,
-                    "history_role": "route"
-                },
-                {
                     "target": "R.O.Idle",
                     "guard": null,
                     "event": null,
-                    "is_unconditional": true,
-                    "history_role": "merged"
+                    "is_unconditional": true
                 }
             ],
             "R.O.K": [
@@ -878,8 +756,7 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                     "target": "R.O.K.K1",
                     "guard": "ready == 1",
                     "event": null,
-                    "is_unconditional": false,
-                    "history_role": "merged"
+                    "is_unconditional": false
                 }
             ]
         },
@@ -891,7 +768,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 0,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -901,7 +777,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 1,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -911,7 +786,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 2,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -921,7 +795,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 3,
-                "history_role": null,
                 "target_history": "shallow"
             },
             {
@@ -931,7 +804,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 4,
-                "history_role": null,
                 "target_history": "deep"
             },
             {
@@ -941,7 +813,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": "ready = 0;",
                 "transition_index": 5,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -951,7 +822,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 6,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -961,7 +831,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 7,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -971,7 +840,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 8,
-                "history_role": "merged",
                 "target_history": null
             },
             {
@@ -981,7 +849,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 9,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -991,7 +858,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 10,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -1001,17 +867,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": "ready == 1",
                 "effect": null,
                 "transition_index": 11,
-                "history_role": "merged",
-                "target_history": null
-            },
-            {
-                "from_path": "[*]",
-                "to_path": "R.O.K",
-                "event": null,
-                "guard": "__hist_goto >= 5 && __hist_goto <= 6",
-                "effect": null,
-                "transition_index": 12,
-                "history_role": "route",
                 "target_history": null
             }
         ],
@@ -1113,25 +968,10 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
             ],
             "R.O": [
                 {
-                    "target": "R.O.B",
-                    "guard": "__hist_goto == 5",
-                    "event": null,
-                    "is_unconditional": false,
-                    "history_role": "route"
-                },
-                {
-                    "target": "R.O.A",
-                    "guard": "__hist_goto == 4",
-                    "event": null,
-                    "is_unconditional": false,
-                    "history_role": "route"
-                },
-                {
                     "target": "R.O.A",
                     "guard": null,
                     "event": "Kick",
-                    "is_unconditional": false,
-                    "history_role": "gated"
+                    "is_unconditional": false
                 }
             ]
         },
@@ -1143,7 +983,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 0,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -1153,7 +992,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 1,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -1163,7 +1001,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 2,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -1173,7 +1010,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 3,
-                "history_role": null,
                 "target_history": "shallow"
             },
             {
@@ -1183,7 +1019,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 4,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -1193,7 +1028,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 5,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -1203,7 +1037,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 6,
-                "history_role": "gated",
                 "target_history": null
             },
             {
@@ -1213,37 +1046,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 7,
-                "history_role": null,
-                "target_history": null
-            },
-            {
-                "from_path": "[*]",
-                "to_path": "R.O.B",
-                "event": null,
-                "guard": "__hist_goto == 5",
-                "effect": null,
-                "transition_index": 8,
-                "history_role": "route",
-                "target_history": null
-            },
-            {
-                "from_path": "[*]",
-                "to_path": "R.O.A",
-                "event": null,
-                "guard": "__hist_goto == 4",
-                "effect": null,
-                "transition_index": 9,
-                "history_role": "route",
-                "target_history": null
-            },
-            {
-                "from_path": "[*]",
-                "to_path": "R.O.__hist_gate_1",
-                "event": null,
-                "guard": "__hist_goto == 0",
-                "effect": null,
-                "transition_index": 10,
-                "history_role": "gate",
                 "target_history": null
             }
         ],
@@ -1345,41 +1147,18 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
             ],
             "R.O": [
                 {
-                    "target": "R.O.S1",
-                    "guard": "__hist_goto == 4",
-                    "event": null,
-                    "is_unconditional": false,
-                    "history_role": "route"
-                },
-                {
-                    "target": "R.O.S2",
-                    "guard": "__hist_goto >= 5 && __hist_goto <= 7",
-                    "event": null,
-                    "is_unconditional": false,
-                    "history_role": "route"
-                },
-                {
                     "target": "R.O.S2",
                     "guard": null,
                     "event": null,
-                    "is_unconditional": true,
-                    "history_role": "gated"
+                    "is_unconditional": true
                 }
             ],
             "R.O.S2": [
                 {
-                    "target": "R.O.S2.B2",
-                    "guard": "__hist_goto == 7",
-                    "event": null,
-                    "is_unconditional": false,
-                    "history_role": "route"
-                },
-                {
                     "target": "R.O.S2.A2",
                     "guard": null,
                     "event": null,
-                    "is_unconditional": true,
-                    "history_role": "merged"
+                    "is_unconditional": true
                 }
             ]
         },
@@ -1391,7 +1170,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 0,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -1401,7 +1179,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 1,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -1411,7 +1188,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 2,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -1421,7 +1197,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 3,
-                "history_role": null,
                 "target_history": "shallow"
             },
             {
@@ -1431,7 +1206,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 4,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -1441,7 +1215,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 5,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -1451,7 +1224,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 6,
-                "history_role": "gated",
                 "target_history": "deep"
             },
             {
@@ -1461,7 +1233,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 7,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -1471,7 +1242,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 8,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -1481,7 +1251,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 9,
-                "history_role": "merged",
                 "target_history": null
             },
             {
@@ -1491,37 +1260,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 10,
-                "history_role": null,
-                "target_history": null
-            },
-            {
-                "from_path": "[*]",
-                "to_path": "R.O.S1",
-                "event": null,
-                "guard": "__hist_goto == 4",
-                "effect": null,
-                "transition_index": 11,
-                "history_role": "route",
-                "target_history": null
-            },
-            {
-                "from_path": "[*]",
-                "to_path": "R.O.S2",
-                "event": null,
-                "guard": "__hist_goto >= 5 && __hist_goto <= 7",
-                "effect": null,
-                "transition_index": 12,
-                "history_role": "route",
-                "target_history": null
-            },
-            {
-                "from_path": "[*]",
-                "to_path": "R.O.S2.B2",
-                "event": null,
-                "guard": "__hist_goto == 7",
-                "effect": null,
-                "transition_index": 13,
-                "history_role": "route",
                 "target_history": null
             }
         ],
@@ -1599,50 +1337,26 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
             ],
             "R.P": [
                 {
-                    "target": "R.P.P2",
-                    "guard": "__hist_goto == 5",
-                    "event": null,
-                    "is_unconditional": false,
-                    "history_role": "route"
-                },
-                {
                     "target": "R.P.P1",
                     "guard": null,
                     "event": null,
-                    "is_unconditional": true,
-                    "history_role": "merged"
+                    "is_unconditional": true
                 }
             ],
             "R.Q": [
                 {
-                    "target": "R.Q.Q2",
-                    "guard": "__hist_goto >= 8 && __hist_goto <= 10",
-                    "event": null,
-                    "is_unconditional": false,
-                    "history_role": "route"
-                },
-                {
                     "target": "R.Q.Q1",
                     "guard": null,
                     "event": null,
-                    "is_unconditional": true,
-                    "history_role": "merged"
+                    "is_unconditional": true
                 }
             ],
             "R.Q.Q2": [
                 {
-                    "target": "R.Q.Q2.Q22",
-                    "guard": "__hist_goto == 10",
-                    "event": null,
-                    "is_unconditional": false,
-                    "history_role": "route"
-                },
-                {
                     "target": "R.Q.Q2.Q21",
                     "guard": null,
                     "event": null,
-                    "is_unconditional": true,
-                    "history_role": "merged"
+                    "is_unconditional": true
                 }
             ]
         },
@@ -1654,7 +1368,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 0,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -1664,7 +1377,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 1,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -1674,7 +1386,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 2,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -1684,7 +1395,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 3,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -1694,7 +1404,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 4,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -1704,7 +1413,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 5,
-                "history_role": null,
                 "target_history": "deep"
             },
             {
@@ -1714,7 +1422,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 6,
-                "history_role": null,
                 "target_history": "deep"
             },
             {
@@ -1724,7 +1431,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 7,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -1734,7 +1440,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 8,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -1744,7 +1449,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 9,
-                "history_role": "merged",
                 "target_history": null
             },
             {
@@ -1754,7 +1458,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 10,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -1764,7 +1467,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 11,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -1774,7 +1476,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 12,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -1784,7 +1485,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 13,
-                "history_role": "merged",
                 "target_history": null
             },
             {
@@ -1794,7 +1494,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 14,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -1804,7 +1503,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 15,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -1814,7 +1512,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 16,
-                "history_role": null,
                 "target_history": null
             },
             {
@@ -1824,7 +1521,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 17,
-                "history_role": "merged",
                 "target_history": null
             },
             {
@@ -1834,37 +1530,6 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 "guard": null,
                 "effect": null,
                 "transition_index": 18,
-                "history_role": null,
-                "target_history": null
-            },
-            {
-                "from_path": "[*]",
-                "to_path": "R.P.P2",
-                "event": null,
-                "guard": "__hist_goto == 5",
-                "effect": null,
-                "transition_index": 19,
-                "history_role": "route",
-                "target_history": null
-            },
-            {
-                "from_path": "[*]",
-                "to_path": "R.Q.Q2",
-                "event": null,
-                "guard": "__hist_goto >= 8 && __hist_goto <= 10",
-                "effect": null,
-                "transition_index": 20,
-                "history_role": "route",
-                "target_history": null
-            },
-            {
-                "from_path": "[*]",
-                "to_path": "R.Q.Q2.Q22",
-                "event": null,
-                "guard": "__hist_goto == 10",
-                "effect": null,
-                "transition_index": 21,
-                "history_role": "route",
                 "target_history": null
             }
         ],
@@ -1946,18 +1611,10 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
             ],
             "R.S": [
                 {
-                    "target": "R.S.B",
-                    "guard": "__hist_goto == 5",
-                    "event": null,
-                    "is_unconditional": false,
-                    "history_role": "route"
-                },
-                {
                     "target": "R.S.A",
                     "guard": null,
                     "event": null,
-                    "is_unconditional": true,
-                    "history_role": "merged"
+                    "is_unconditional": true
                 }
             ]
         },

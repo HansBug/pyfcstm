@@ -362,23 +362,48 @@ function collectReachableStateIds(semantic: FcstmSemanticDocument): Set<string> 
     // A forced transition such as `!* -> X :: E` is expanded in the semantics layer
     // into one synthetic edge per affected descendant: any state in that index
     // contributes an outgoing edge to the expanded target (issue #99).
-    const forcedExpandedBySource = new Map<string, Set<string>>();
+    const forcedExpandedBySource = new Map<string, Array<[string, string | undefined]>>();
     for (const transition of semantic.transitions) {
         if (!transition.forced) {
             continue;
         }
+        const kind = (transition.ast as {targetHistory?: string}).targetHistory;
         for (const expanded of transition.expandedTransitions) {
             if (!expanded.targetStateId) {
                 continue;
             }
             let targets = forcedExpandedBySource.get(expanded.sourceStateId);
             if (!targets) {
-                targets = new Set<string>();
+                targets = [];
                 forcedExpandedBySource.set(expanded.sourceStateId, targets);
             }
-            targets.add(expanded.targetStateId);
+            targets.push([expanded.targetStateId, kind]);
         }
     }
+
+    // A history entry also reaches the default of the kind it names, entered
+    // exactly there: the states above a deep default are active, but their
+    // own initials do not run, so they are reachable without being expanded.
+    const statesById = new Map(semantic.states.map(state => [state.identity.id, state]));
+    const expanded = new Set<string>(worklist);
+    const enter = (stateId: string): void => {
+        reachable.add(stateId);
+        if (!expanded.has(stateId)) {
+            expanded.add(stateId);
+            worklist.push(stateId);
+        }
+    };
+    const historyDefault = (ownerId: string, kind: string): string[] => {
+        let current = statesById.get(ownerId);
+        const declaration = current?.ast.histories.find(item => item.historyKind === kind);
+        const path: string[] = [];
+        for (const name of declaration?.defaultPath ?? []) {
+            current = current?.childStateIds.map(id => statesById.get(id)).find(child => child?.name === name);
+            if (!current) return [];
+            path.push(current.identity.id);
+        }
+        return path;
+    };
 
     while (worklist.length > 0) {
         const stateId = worklist.pop() as string;
@@ -387,20 +412,21 @@ function collectReachableStateIds(semantic: FcstmSemanticDocument): Set<string> 
             || item.sourceStateId === stateId
         ));
 
-        for (const transition of outgoing) {
-            if (transition.targetStateId && !reachable.has(transition.targetStateId)) {
-                reachable.add(transition.targetStateId);
-                worklist.push(transition.targetStateId);
-            }
-        }
-
-        const forcedTargets = forcedExpandedBySource.get(stateId);
-        if (forcedTargets) {
-            for (const targetId of forcedTargets) {
-                if (!reachable.has(targetId)) {
-                    reachable.add(targetId);
-                    worklist.push(targetId);
-                }
+        const targets: Array<[string, string | undefined]> = [
+            ...outgoing
+                .filter(transition => transition.targetStateId)
+                .map((transition): [string, string | undefined] => [
+                    transition.targetStateId!,
+                    (transition.ast as {targetHistory?: string}).targetHistory,
+                ]),
+            ...(forcedExpandedBySource.get(stateId) ?? []),
+        ];
+        for (const [targetId, kind] of targets) {
+            enter(targetId);
+            if (kind) {
+                const path = historyDefault(targetId, kind);
+                path.slice(0, -1).forEach(id => reachable.add(id));
+                if (path.length > 0) enter(path[path.length - 1]);
             }
         }
     }

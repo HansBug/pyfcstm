@@ -98,8 +98,6 @@ def _guard_vars_never_change_diagnostics(
 ) -> List[ModelDiagnostic]:
     if machine is None:
         return []
-    from ...model.history import authored_guard, is_history_generated
-
     written_vars = {
         variable.name
         for variable in variables
@@ -109,11 +107,10 @@ def _guard_vars_never_change_diagnostics(
     diagnostics: List[ModelDiagnostic] = []
     for state in machine.walk_states():
         for transition in state.transitions:
-            guard = authored_guard(transition)
-            if guard is None or is_history_generated(transition):
+            if transition.guard is None:
                 continue
             guard_vars = sorted(
-                v for v in collect_expr_variables(guard)
+                v for v in collect_expr_variables(transition.guard)
                 if v in declared_vars
             )
             if not guard_vars:

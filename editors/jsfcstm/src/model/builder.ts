@@ -325,7 +325,7 @@ class StateMachineModelBuilder {
     private readonly stateAstByPath = new Map<string, FcstmAstStateDefinition>();
     private readonly eventsByPath = new Map<string, FcstmModelEvent>();
     private readonly namedFunctionsByPath = new Map<string, FcstmModelNamedFunction>();
-    constructor(private readonly ast: FcstmAstDocument) {
+    constructor(private readonly ast: FcstmAstDocument, private readonly lower = true) {
         this.filePath = ast.filePath;
         this.rootStateName = ast.rootState?.name || '';
     }
@@ -352,8 +352,9 @@ class StateMachineModelBuilder {
             allActions: this.allActions,
             statesByPath: this.statesByPath,
             filePath: this.filePath,
+            apply: this.lower,
         });
-        if (history.owners.length > 0) {
+        if (this.lower && history.owners.length > 0) {
             // Routes and gates rewrote per-state lists; the flat lists are their
             // preorder concatenation, gate states included where pyfcstm walks them.
             const orderedStates: FcstmModelState[] = [];
@@ -1648,7 +1649,13 @@ export function buildStateMachineModelFromAst(
     }
 
     if (collectVariableRoleDiagnostics(ast).length > 0) return null;
-    return new StateMachineModelBuilder(ast).build();
+    const machine = new StateMachineModelBuilder(ast).build();
+    if (machine && machine.historyOwners.length > 0) {
+        // Inspect judges the model as written, as pyfcstm does: keep it too,
+        // built from the same AST without lowering.
+        machine.authoredView = new StateMachineModelBuilder(ast, false).build() ?? undefined;
+    }
+    return machine;
 }
 
 /**

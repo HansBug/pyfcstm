@@ -701,22 +701,25 @@ Consumers of the lowered machine
    * - Export
      - ``to_ast_node()`` and ``pyfcstm`` DSL export write the lowered, plain
        FCSTM. Re-reading it gives the same behavior but carries no history
-       metadata: the lowered names report ``W_HISTORY_RESERVED_PREFIX``, and the
-       restore conditions are now guards the author wrote, so a composite whose
-       initials all became guarded reports ``W_INITIAL_UNCONDITIONAL_MISSING``.
+       metadata, so inspect then judges the lowered machine: the lowered names
+       report ``W_HISTORY_RESERVED_PREFIX``, a composite whose initials all
+       became guarded reports ``W_INITIAL_UNCONDITIONAL_MISSING``, and a finding
+       about an author's guard that lowering extended, such as
+       ``W_GUARD_CONST_FALSE``, no longer appears.
    * - Inspect
-     - Judges the model as written. ``transitions`` and ``initial_targets``
-       show the guards and effects the author wrote; ``history_role`` marks the
-       edges lowering generated (``route``, ``gate``) or extended (``merged``,
-       ``gated``), and ``target_history`` marks a transition entering a history.
-       An evented initial routed through a gate is listed as ``[*] -> X :: E``.
-       Generated edges follow every authored transition, so adding history
-       renumbers no ``transition_index``. Findings, metrics and statistics
-       leave out the generated variables, gate states and edges, and
-       reachability follows a history entry to its default rather than to every
-       route: adding history changes no finding, except that a state reachable
-       only as a history default is no longer unreachable.
-       :func:`pyfcstm.verify.topology.unreachable_states` applies the same rule.
+     - Judges the model as written. Model conversion keeps the machine before
+       lowering, and ``pyfcstm inspect`` -- including ``--enable-verify`` -- and
+       the jsfcstm editor report that machine: it contains no lowered variable,
+       gate state, route or record-writing exit, a history entry is an ordinary
+       transition to the owner marked with ``target_history``, and
+       ``transition_index`` numbers only authored transitions. Every finding,
+       statistic and metric is therefore that of the same model written without
+       history, except reachability: a history entry also reaches the default of
+       the kind it names, entered exactly there, so a state reachable only as a
+       default is not reported unreachable, while a state a deep default skips
+       over still is. :func:`pyfcstm.verify.topology.unreachable_states` applies
+       the same rule to a lowered machine; the other :mod:`pyfcstm.verify`
+       functions, called directly, analyse the machine they are given.
    * - BMC
      - Checks the lowered machine. Queries may read ``var("__hist_goto")`` and
        ``var("__hist_<owner>")``. A havocked history variable is constrained to
@@ -734,11 +737,9 @@ Verify with:
 
    pyfcstm inspect -i docs/source/tutorials/dsl/history_washer.fcstm --format json
 
-In the JSON report, ``variables`` contains ``__hist_goto`` and
-``__hist_Program``, the ``initial_targets`` of ``Washer.Program`` and
-``Washer.Program.Wash`` carry ``history_role`` values, and the transitions
+In the JSON report, no name starts with ``__hist_``, and the transitions
 entering ``Program.[H]`` and ``Program.[H*]`` carry ``target_history``
-(``shallow`` and ``deep``).
+(``shallow`` and ``deep``) with ``to_path`` ``Washer.Program``.
 
 .. _dsl-events-scopes:
 

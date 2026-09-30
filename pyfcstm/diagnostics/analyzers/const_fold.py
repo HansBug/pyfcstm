@@ -87,8 +87,6 @@ def collect_const_fold_warnings(
     """Collect diagnostics that depend on constant folding."""
     if machine is None:
         return []
-    from ...model.history import authored_guard, is_history_generated
-
     diagnostics: List[ModelDiagnostic] = []
     defined_vars = set(machine.defines)
     transition_indexes = _transition_indexes(machine)
@@ -97,12 +95,9 @@ def collect_const_fold_warnings(
         for transition in state.transitions:
             if getattr(transition, 'combo_origin_refs', ()):  # combo analyzer maps guard terms to original spans
                 continue
-            if is_history_generated(transition):
-                continue
-            guard = authored_guard(transition)
             folded_guard = (
-                None if guard is None
-                else fold_condition_expression(guard)
+                None if transition.guard is None
+                else fold_condition_expression(transition.guard)
             )
             if folded_guard is True:
                 diagnostics.append(
@@ -278,12 +273,13 @@ def _expr_text(expr) -> Optional[str]:
 
 
 def _transition_indexes(machine: 'StateMachine') -> dict:
-    from ...model.history import ordered_transitions
-
-    return {
-        id(transition): index
-        for index, (_, transition) in enumerate(ordered_transitions(machine.root_state))
-    }
+    indexes = {}
+    index = 0
+    for state in machine.walk_states():
+        for transition in state.transitions:
+            indexes[id(transition)] = index
+            index += 1
+    return indexes
 
 
 def _guard_const_diagnostic(
@@ -291,8 +287,6 @@ def _guard_const_diagnostic(
     value: bool,
     transition_index: Optional[int],
 ) -> ModelDiagnostic:
-    from ...model.history import authored_guard
-
     code = 'W_GUARD_CONST_TRUE' if value else 'W_GUARD_CONST_FALSE'
     label = 'true' if value else 'false'
     source_label = _transition_endpoint_label(transition.from_state)
@@ -310,7 +304,7 @@ def _guard_const_diagnostic(
             'folded_value': value,
             'from_path': _transition_endpoint_path(transition, is_source=True),
             'to_path': _transition_endpoint_path(transition, is_source=False),
-            'guard_text': _expr_text(authored_guard(transition)),
+            'guard_text': _expr_text(transition.guard),
             'transition_index': transition_index,
         },
     )

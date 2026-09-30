@@ -263,6 +263,31 @@ describe('jsfcstm history diagnostics', () => {
         });
     }
 
+    it('reports only the states no history default reaches as unreachable in the editor', async () => {
+        const text = [
+            'state R {',
+            '    state Off;',
+            '    state O { state A; state Lost; state Def; [*] -> A; [H] -> Def; }',
+            '    state D {',
+            '        state A;',
+            '        state W { state W1; state W2; [*] -> W1; }',
+            '        [*] -> A;',
+            '        [H*] -> W.W2;',
+            '    }',
+            '    [*] -> Off;',
+            '    Off -> O.[H] :: Go;',
+            '    !O -> Off :: Stop;',
+            '    !Off -> D.[H*] :: Deep;',
+            '}',
+        ].join('\n');
+        const unreachable = (await packageModule.collectDocumentDiagnostics(document(text)))
+            .filter(item => /unreachable/.test(item.message) && /State "/.test(item.message))
+            .map(item => /State "([^"]+)"/.exec(item.message)![1])
+            .sort();
+        // A deep default skips the initials on its path, so W1 stays unreachable.
+        assert.deepEqual(unreachable, ['R.D.W.W1', 'R.O.Lost']);
+    });
+
     it('points declaration errors at the declaration', async () => {
         const text = HISTORY_DIAGNOSTIC_CASES['default-not-direct-child'].source;
         const doc = document(text);
@@ -290,11 +315,11 @@ describe('jsfcstm history inspect', () => {
             );
             assert.deepEqual(targets, testCase.initial_targets);
             if (testCase.transitions) {
-                // Authored guards and effects, generated edges last, and the same numbering.
+                // The model as written: no lowered edge, history entries marked.
                 assert.deepEqual(
                     report.transitions.map(t => ({
                         from_path: t.from_path, to_path: t.to_path, event: t.event, guard: t.guard, effect: t.effect,
-                        transition_index: t.transition_index, history_role: t.history_role, target_history: t.target_history,
+                        transition_index: t.transition_index, target_history: t.target_history,
                     })),
                     testCase.transitions,
                 );

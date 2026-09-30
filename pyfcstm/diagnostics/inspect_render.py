@@ -303,7 +303,7 @@ def render_inspect_human(
         )
     )
     lines.append(f"  transitions: {len(report.transitions)}")
-    lines.append(f"  variables: {len(report.variables)}")
+    lines.append(f"  variables: {report.metrics.n_variables}")
     for variable in report.variables:
         lines.append(
             f"    {variable.name}: {variable.role}; external supply: {variable.external_supply}"
@@ -691,7 +691,7 @@ def _llm_packet(
             "states": len(report.states),
             "leaf_states": report.metrics.n_states_leaf,
             "transitions": len(report.transitions),
-            "variables": len(report.variables),
+            "variables": report.metrics.n_variables,
             "structure_statistics": _structure_statistics_dict(report),
         },
         "diagnostics": [

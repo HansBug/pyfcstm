@@ -679,9 +679,9 @@ AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供 ``CONTROL``
    * - 仿真器
      - 原样执行展开后的状态机。热启动要像其他持久变量一样提供展开变量；\ ``__hist_goto``\ 不为 ``0``\ ，或记录不是所有者下某个可停留叶的编号时，抛出 ``ValueError`` 并列出合法编号。\ ``pyfcstm simulate``\ 的 ``init`` 命令同样适用。
    * - 导出
-     - ``to_ast_node()`` 与 DSL 导出写出展开后的普通 FCSTM。重新读入后行为不变，但不再携带历史元数据：展开生成的名字会报 ``W_HISTORY_RESERVED_PREFIX``\ ，恢复条件也变成了作者书写的守卫，因此初始转换全部带守卫的复合状态会报 ``W_INITIAL_UNCONDITIONAL_MISSING``\ 。
+     - ``to_ast_node()`` 与 DSL 导出写出展开后的普通 FCSTM。重新读入后行为不变，但不再携带历史元数据，因此检查随后判断的是展开后的状态机：展开生成的名字会报 ``W_HISTORY_RESERVED_PREFIX``\ ，初始转换全部带守卫的复合状态会报 ``W_INITIAL_UNCONDITIONAL_MISSING``\ ，而针对被展开扩展过的作者守卫的诊断（例如 ``W_GUARD_CONST_FALSE``\ ）不再出现。
    * - 检查
-     - 按作者书写的模型进行判断。\ ``transitions``\ 与 ``initial_targets``\ 显示作者书写的守卫和效果动作；\ ``history_role``\ 标出展开生成（\ ``route``\ 、\ ``gate``\ ）或扩展（\ ``merged``\ 、\ ``gated``\ ）的边，\ ``target_history``\ 标出进入历史的转换。经闸门路由的带事件初始转换按 ``[*] -> X :: E`` 列出。生成的边排在所有作者书写的转换之后，因此加入历史不会改变任何 ``transition_index``\ 。诊断、度量与统计不计入生成的变量、闸门状态和边；可达性分析让历史入口到达它的默认目标，而不是所有路由。因此加入历史不会改变任何诊断，唯一的例外是只作为历史默认目标可达的状态不再被报告为不可达。\ :func:`pyfcstm.verify.topology.unreachable_states`\ 采用同样的规则。
+     - 按作者书写的模型进行判断。模型转换会保留展开前的状态机，\ ``pyfcstm inspect``\ （包括 ``--enable-verify``\ ）与 jsfcstm 编辑器报告的都是它：其中没有展开生成的变量、闸门状态、路由或写记录的退出动作，历史入口是一条指向所有者、带有 ``target_history`` 标记的普通转换，\ ``transition_index``\ 只为作者书写的转换编号。因此每一条诊断、统计与度量都与不写历史的同一模型相同，唯一的例外是可达性：历史入口还会到达它所写种类的默认目标，并且恰好进入那里，因此只作为默认目标可达的状态不会被报告为不可达，而深默认路径跳过的状态仍然会。\ :func:`pyfcstm.verify.topology.unreachable_states`\ 对展开后的状态机采用同样的规则；直接调用的其他 :mod:`pyfcstm.verify` 函数分析的是传入的那台状态机。
    * - BMC
      - 检查展开后的状态机。查询可以读取 ``var("__hist_goto")`` 与 ``var("__hist_<所有者>")``\ 。被 ``havoc`` 的历史变量会被约束在执行可能取到的值上（目标变量为 ``0``\ ；记录为 ``0`` 或所有者下某个叶的编号），因此 ``havoc *`` 会从任意合法记录出发，并且每个见证都能重放。
    * - 模板与 PlantUML
@@ -693,7 +693,7 @@ AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供 ``CONTROL``
 
    pyfcstm inspect -i docs/source/tutorials/dsl/history_washer.fcstm --format json
 
-在 JSON 报告中，\ ``variables``\ 包含 ``__hist_goto`` 与 ``__hist_Program``\ ，\ ``Washer.Program`` 与 ``Washer.Program.Wash`` 的 ``initial_targets`` 带有 ``history_role`` 值，进入 ``Program.[H]`` 与 ``Program.[H*]`` 的转换带有 ``target_history``\ （\ ``shallow`` 与 ``deep``\ ）。
+在 JSON 报告中，没有任何名字以 ``__hist_`` 开头，进入 ``Program.[H]`` 与 ``Program.[H*]`` 的转换带有 ``target_history``\ （\ ``shallow`` 与 ``deep``\ ），其 ``to_path`` 为 ``Washer.Program``\ 。
 
 .. _dsl-events-scopes-zh:
 

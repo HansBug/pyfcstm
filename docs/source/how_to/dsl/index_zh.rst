@@ -547,15 +547,14 @@ JSON 中重点看：
    .. code-block:: text
 
       states: 7 total / 4 leaf
-      transitions: 16
-      variables: 6
+      transitions: 13
+      variables: 4
+        program_entries: control; external supply: none
         ...
-        __hist_goto: control; external supply: none
-        __hist_Program: control; external supply: none
       diagnostics: 0 errors / 4 warnings / 0 infos
 
-   四条警告是计数变量的 ``W_UNREFERENCED_VAR``\ 。\ ``transitions: 16``\ 包含了展开生成的恢复路由和加了闸门的初始转换。
-5. **带着记录热启动。**\ 历史会展开成所有使用方都能看到的普通 ``int`` 变量：\ ``__hist_goto``\ （进行中的恢复，在稳定点上总是 ``0``\ ）以及每个所有者一个 ``__hist_<所有者>`` 记录。热启动必须像其他持久变量一样提供它们。请用 :meth:`pyfcstm.model.model.StateMachine.history_variables` 从源码层面的记录换算，而不要手写编号：
+   四条警告是计数变量的 ``W_UNREFERENCED_VAR``\ 。报告描述的是展开前的模型：它列出四个计数变量，但没有任何 ``__hist_*`` 变量；\ ``transitions: 13``\ 只统计文件中书写的转换（强制转换 ``!Program`` 已展开），不包含展开生成的路由。
+5. **带着记录热启动。**\ 历史会展开成仿真器、生成代码与 BMC 都能看到的普通 ``int`` 变量：\ ``__hist_goto``\ （进行中的恢复，在稳定点上总是 ``0``\ ）以及每个所有者一个 ``__hist_<所有者>`` 记录。热启动必须像其他持久变量一样提供它们。请用 :meth:`pyfcstm.model.model.StateMachine.history_variables` 从源码层面的记录换算，而不要手写编号：
 
    .. code-block:: python
 

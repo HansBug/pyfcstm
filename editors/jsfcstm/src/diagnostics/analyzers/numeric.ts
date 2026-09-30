@@ -17,7 +17,6 @@ import {
 } from '../../model/runtime';
 import {exprText, type ModelDiagnosticJson} from '../inspect';
 import {foldNumericExpression} from './const-fold';
-import {authoredEffects, authoredGuard, isHistoryGenerated} from '../../model/history';
 
 const TARGET_FAMILY = 'c_family';
 const TARGET_TEMPLATES = ['c', 'c_poll', 'cpp', 'cpp_poll'];
@@ -132,15 +131,13 @@ function* expressionContexts(machine: StateMachine): Generator<ExpressionContext
 
     for (const state of machine.allStates) {
         for (const transition of state.transitions) {
-            if (isHistoryGenerated(transition)) continue;
-            const guard = authoredGuard(transition);
-            if (guard) {
+            if (transition.guard) {
                 yield {
-                    expr: guard,
+                    expr: transition.guard,
                     context: 'guard',
                 };
             }
-            for (const statement of authoredEffects(transition)) {
+            for (const statement of transition.effects) {
                 yield* statementExpressionContexts(statement, 'transition_effect');
             }
         }

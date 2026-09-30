@@ -388,14 +388,7 @@
                 "description": "Normalized inspect expression text shared by pyfcstm and jsfcstm."
               },
               "event": { "type": ["string", "null"] },
-              "is_unconditional": {
-                "type": "boolean",
-                "description": "Whether the entry fires without guard or event, as the author wrote it."
-              },
-              "history_role": {
-                "enum": ["route", "merged", "gated"],
-                "description": "Present only on initial transitions history lowering produced or changed: a generated restore route, or an authored initial merged with a route or gated against restores. An evented initial lowering routed through a gate is listed as written, with role gated. Guard and event are always the ones the author wrote."
-              }
+              "is_unconditional": { "type": "boolean" }
             }
           }
         },
@@ -440,7 +433,7 @@
         "transition_index": {
           "type": ["integer", "null"],
           "minimum": 0,
-          "description": "Zero-based parent-first model transition order, including forced expansions at their declaring state; the edges history lowering generated follow every authored transition."
+          "description": "Zero-based parent-first model transition order, including forced expansions at their declaring state."
         },
         "source_path": {
           "type": ["string", "null"],
@@ -480,11 +473,6 @@
           "type": ["integer", "null"],
           "minimum": 0,
           "description": "Preorder index of this generated combo edge inside combo projection."
-        },
-        "history_role": {
-          "type": ["string", "null"],
-          "enum": ["route", "merged", "gated", "gate", null],
-          "description": "How history lowering produced this initial transition: route and gate edges are generated; merged and gated initials are authored ones extended with restore conditions. Guard and effect always show what the author wrote."
         },
         "target_history": {
           "type": ["string", "null"],

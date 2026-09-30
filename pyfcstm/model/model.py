@@ -292,11 +292,6 @@ def _attach_model_source_metadata(
             # disagreeing with its container, and that number is worth nothing on its
             # own: those fixtures hold no cross-file transition, so the count reads the
             # same whether the code is right or wrong.  The grammar is the reason.
-            #
-            # A history route is the exception: lowering generated it and its
-            # statements, so, like the route itself, they name no source file.
-            if transition.history_role == "route":
-                continue
             for effect in transition.effects:
                 attach_operation(effect, state_source)
         for event in model_state.events.values():
@@ -2793,6 +2788,11 @@ class StateMachine(AstExportable, PlantUMLExportable):
     history_owners: Tuple["HistoryOwner", ...] = field(
         default_factory=tuple, compare=False, repr=False
     )
+    # The same model built without lowering its history, which static
+    # analyses judge instead: see ``pyfcstm.diagnostics.inspect.inspect_model``.
+    _authored_view: Optional["StateMachine"] = field(
+        default=None, compare=False, repr=False
+    )
 
     _validation_sink: InitVar[Optional[DiagnosticSink]] = None
 
@@ -3498,7 +3498,48 @@ def parse_dsl_node_to_state_machine(
     # one -- an empty path names no document -- so the disagreement is a small
     # correction rather than a loss.
     dnode = assemble_state_machine_imports(dnode, path=path, collect_into=sink)
+    machine = _build_assembled_state_machine(dnode, sink, lower=True)
+    if machine.history_owners:
+        # Inspect and verify judge the model as written: keep it too, built
+        # from the same assembled AST without lowering. Its diagnostics repeat
+        # the ones already collected, so they go to a throwaway sink.
+        machine._authored_view = _build_assembled_state_machine(
+            dnode, DiagnosticSink(collect=True), lower=False
+        )
 
+    if collect:
+        # In collect mode we always return the tuple. ``machine`` is the
+        # best-effort build even when diagnostics were emitted; downstream
+        # callers should consult ``has_errors()`` (or the diagnostics list)
+        # before treating it as valid.
+        return machine, sink.diagnostics
+
+    # Strict mode: sink already raised on any error diagnostic at emit
+    # time, so reaching here means the build is clean. ``finalize_or_raise``
+    # is a no-op for strict mode but kept for symmetry / future-proofing.
+    sink.finalize_or_raise()
+    return machine
+
+
+def _build_assembled_state_machine(
+    dnode: dsl_nodes.StateMachineDSLProgram,
+    sink: DiagnosticSink,
+    *,
+    lower: bool,
+) -> StateMachine:
+    """
+    Build the model of an import-assembled program.
+
+    :param dnode: Program AST after import assembly
+    :type dnode: pyfcstm.dsl.node.StateMachineDSLProgram
+    :param sink: Sink that receives every diagnostic of the build
+    :type sink: pyfcstm.diagnostics.sink.DiagnosticSink
+    :param lower: Whether to lower history constructs; when ``False`` the
+        history owners are still validated and described
+    :type lower: bool
+    :return: The built machine
+    :rtype: StateMachine
+    """
     d_defines: Dict[str, VarDefine] = {}
     # Track first-declaration spans so duplicate diagnostics can point at
     # the previous definition.
@@ -5548,7 +5589,7 @@ def parse_dsl_node_to_state_machine(
     # edges, so every history entry is already attached to its final edge.
     from .history import lower_history
 
-    history_owners = lower_history(dnode.root_state, root_state, d_defines, sink)
+    history_owners = lower_history(dnode.root_state, root_state, d_defines, sink, apply=lower)
 
     def _iter_lifecycle_actions(state: State) -> Iterator[Union[OnStage, OnAspect]]:
         for func_item in [
@@ -5600,16 +5641,4 @@ def parse_dsl_node_to_state_machine(
         _validation_sink=sink,
     )
     _attach_model_source_metadata(machine, dnode)
-
-    if collect:
-        # In collect mode we always return the tuple. ``machine`` is the
-        # best-effort build even when diagnostics were emitted; downstream
-        # callers should consult ``has_errors()`` (or the diagnostics list)
-        # before treating it as valid.
-        return machine, sink.diagnostics
-
-    # Strict mode: sink already raised on any error diagnostic at emit
-    # time, so reaching here means the build is clean. ``finalize_or_raise``
-    # is a no-op for strict mode but kept for symmetry / future-proofing.
-    sink.finalize_or_raise()
     return machine

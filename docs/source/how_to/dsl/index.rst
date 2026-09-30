@@ -601,17 +601,19 @@ shallow history, or through its deep history.
    .. code-block:: text
 
       states: 7 total / 4 leaf
-      transitions: 16
-      variables: 6
+      transitions: 13
+      variables: 4
+        program_entries: control; external supply: none
         ...
-        __hist_goto: control; external supply: none
-        __hist_Program: control; external supply: none
       diagnostics: 0 errors / 4 warnings / 0 infos
 
    The four warnings are the ``W_UNREFERENCED_VAR`` warnings of the counters.
-   ``transitions: 16`` counts the lowered restore routes and gated initials.
+   The report describes the model before lowering: it lists the four counters
+   but no ``__hist_*`` variable, and ``transitions: 13`` counts only the
+   transitions written in the file (with the forced ``!Program`` exits
+   expanded), not the lowered routes.
 5. **Hot start with a record.** History is lowered into ordinary ``int``
-   variables that every consumer sees: ``__hist_goto`` (the restore in
+   variables that the simulator, generated code and BMC see: ``__hist_goto`` (the restore in
    progress, always ``0`` at a stable point) and one ``__hist_<owner>`` record
    per owner. A hot start must supply them like any persistent variable. Use
    :meth:`pyfcstm.model.model.StateMachine.history_variables` to compute them

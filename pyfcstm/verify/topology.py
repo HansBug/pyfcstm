@@ -278,7 +278,7 @@ def _successors(edges: Mapping[str, Tuple[str, ...]], node: str) -> Tuple[str, .
 def _project_target(
     parent_state: State,
     target: object,
-    history_defaults: Optional[Mapping[str, Tuple[str, ...]]] = None,
+    history_defaults: Optional[Mapping[str, Tuple[Tuple[str, ...], ...]]] = None,
 ) -> Tuple[str, ...]:
     """Project a transition target into leaf-level graph successors.
 
@@ -290,7 +290,7 @@ def _project_target(
     :param history_defaults: When given, project entries the way
         :func:`_initial_leaf_targets` does with the same mapping, defaults to
         ``None``
-    :type history_defaults: Optional[Mapping[str, Tuple[str, ...]]], optional
+    :type history_defaults: Optional[Mapping[str, Tuple[Tuple[str, ...], ...]]], optional
     :return: Leaf-level successor paths reached by taking the target.
     :rtype: Tuple[str, ...]
     :raises TypeError: If ``target`` is not an FCSTM transition endpoint shape.
@@ -349,21 +349,22 @@ def _project_target(
 
 def _initial_leaf_targets(
     state: State,
-    history_defaults: Optional[Mapping[str, Tuple[str, ...]]] = None,
+    history_defaults: Optional[Mapping[str, Tuple[Tuple[str, ...], ...]]] = None,
 ) -> Tuple[str, ...]:
     """Project entering ``state`` to the leaves reached by initial descent.
 
     With ``history_defaults`` the descent is the one root reachability needs
-    in a machine with history: route initials are not followed, because a
-    restore with a record only re-enters leaves reached before, and each
-    child listed for a composite is followed as one more initial, because an
-    entry with no record goes to the history default.
+    in a machine with history: route initials of a lowered machine are not
+    followed, because a restore with a record only re-enters leaves reached
+    before, and each default listed for an owner is entered as one more
+    target, exactly there (see
+    :func:`pyfcstm.model.history.history_default_targets`).
 
     :param state: State being entered by a transition or root initialization.
     :type state: State
-    :param history_defaults: Dotted composite path to the child names history
-        defaults enter, defaults to ``None`` (follow every initial)
-    :type history_defaults: Optional[Mapping[str, Tuple[str, ...]]], optional
+    :param history_defaults: Dotted owner path to its default paths, relative
+        to the owner, defaults to ``None`` (follow every initial)
+    :type history_defaults: Optional[Mapping[str, Tuple[Tuple[str, ...], ...]]], optional
     :return: Leaf paths reached after following initial transitions.
     :rtype: Tuple[str, ...]
 
@@ -385,8 +386,11 @@ def _initial_leaf_targets(
             continue
         projected.extend(_project_target(state, transition.to_state, history_defaults))
     if history_defaults is not None:
-        for name in history_defaults.get(_state_path(state), ()):
-            projected.extend(_project_target(state, name, history_defaults))
+        for relative in history_defaults.get(_state_path(state), ()):
+            target = state
+            for name in relative:
+                target = target.substates[name]
+            projected.extend(_initial_leaf_targets(target, history_defaults))
     return _dedupe_sorted(projected)
 
 
@@ -438,7 +442,7 @@ def build_leaf_level_macro_graph(machine: StateMachine) -> LeafLevelGraph:
 
 def _macro_graph(
     machine: StateMachine,
-    history_defaults: Optional[Mapping[str, Tuple[str, ...]]] = None,
+    history_defaults: Optional[Mapping[str, Tuple[Tuple[str, ...], ...]]] = None,
 ) -> LeafLevelGraph:
     """Build the leaf-level macro graph, optionally with history-default entries.
 
@@ -446,7 +450,7 @@ def _macro_graph(
     :type machine: StateMachine
     :param history_defaults: See :func:`_initial_leaf_targets`, defaults to
         ``None``
-    :type history_defaults: Optional[Mapping[str, Tuple[str, ...]]], optional
+    :type history_defaults: Optional[Mapping[str, Tuple[Tuple[str, ...], ...]]], optional
     :return: Leaf-level macro graph.
     :rtype: LeafLevelGraph
     """
@@ -599,15 +603,15 @@ def unreachable_states(machine: StateMachine) -> Tuple[str, ...]:
         >>> unreachable_states(machine)
         ('Root.Lost',)
     """
-    from ..model.history import history_default_edges
+    from ..model.history import history_default_targets
 
     root_path = _state_path(machine.root_state)
     # History routes lead to every leaf a restore could re-enter, but a restore
     # only re-enters leaves already reached; only the defaults add reachability.
-    history_defaults: Dict[str, Tuple[str, ...]] = {}
-    for parent, child in history_default_edges(machine):
-        key = ".".join(parent)
-        history_defaults[key] = (*history_defaults.get(key, ()), child[-1])
+    history_defaults: Dict[str, Tuple[Tuple[str, ...], ...]] = {}
+    for owner, target in history_default_targets(machine):
+        key = ".".join(owner)
+        history_defaults[key] = (*history_defaults.get(key, ()), target[len(owner):])
     graph = _macro_graph(machine, history_defaults)
     reachable = _closure_from(
         graph.edges, _initial_leaf_targets(machine.root_state, history_defaults)

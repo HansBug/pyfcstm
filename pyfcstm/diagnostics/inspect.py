@@ -267,11 +267,8 @@ class TransitionInfo:
     :param transition_index: Zero-based index in parent-first model
         transition order, including expanded forced transitions at their
         declaring state before ordinary transitions and descendant-state
-        transitions; the edges history lowering generated follow every
-        authored transition (see
-        :func:`pyfcstm.model.history.ordered_transitions`). Downstream tooling
-        may use this as a best-effort source-range disambiguation hint when
-        spans are not available.
+        transitions. Downstream tooling may use this as a best-effort
+        source-range disambiguation hint when spans are not available.
     :type transition_index: Optional[int]
     :param source_path: Source file that authored this transition, when the
         model carries source metadata. This is distinct from the state paths
@@ -297,12 +294,6 @@ class TransitionInfo:
     :param combo_priority_run_index: Preorder index of the generated combo
         edge inside the projection.
     :type combo_priority_run_index: Optional[int]
-    :param history_role: How history lowering produced this initial
-        transition: ``'route'`` or ``'gate'`` for an edge it generated,
-        ``'merged'`` or ``'gated'`` for an authored initial it extended with
-        restore conditions; ``None`` otherwise. ``guard`` and ``effect`` of an
-        authored transition are always the text the author wrote.
-    :type history_role: Optional[str]
     :param target_history: ``'shallow'`` or ``'deep'`` when the transition
         enters ``Target.[H]`` or ``Target.[H*]``, otherwise ``None``;
         ``to_path`` then names the history owner.
@@ -331,7 +322,6 @@ class TransitionInfo:
     # Keep this new optional field after the pre-existing positional fields so
     # callers that pass ``span`` positionally retain their binding.
     source_path: Optional[str] = None
-    history_role: Optional[str] = None
     target_history: Optional[str] = None
 
 @dataclass(frozen=True)
@@ -1321,48 +1311,22 @@ def _state_actions(
 
 def _initial_targets(state: Any) -> Tuple[Dict[str, Any], ...]:
     """Collect every ``[*] -> X`` initial transition declared inside the state."""
-    from ..model.history import authored_guard
-
     out: List[Dict[str, Any]] = []
-    behind_gate = {
-        transition.from_state: transition
-        for transition in state.transitions
-        if _history_gate_of(state, transition) is not None
-    }
     for transition in state.transitions:
         if not _is_init_source(transition.from_state):
             continue
-        if transition.history_role == 'gate':
-            # Report the authored evented initial the generated gate guards,
-            # at the position the author wrote it.
-            transition = behind_gate[transition.to_state]
         target_name = transition.to_state
         target_path = _resolve_sibling_path(state, target_name) if isinstance(target_name, str) else _EXIT_MARK
-        # A merged or gated initial reports the guard the author wrote, not
-        # the restore conditions history lowering added to it.
-        guard_text = _expr_text(authored_guard(transition))
+        guard_text = _expr_text(transition.guard)
         event = transition.event
         event_name = event.name if event is not None else None
-        role = transition.history_role
-        is_unconditional = guard_text is None and event_name is None
-        item = {
+        out.append({
             'target': target_path,
             'guard': guard_text,
             'event': event_name,
-            'is_unconditional': is_unconditional,
-        }
-        if role is not None:
-            item['history_role'] = role
-        out.append(item)
+            'is_unconditional': guard_text is None and event_name is None,
+        })
     return tuple(out)
-
-
-def _history_gate_of(state: Any, transition: Any) -> Any:
-    """Return the history gate ``transition`` leaves, if it leaves one."""
-    if not isinstance(transition.from_state, str):
-        return None
-    source = state.substates.get(transition.from_state)
-    return source if source is not None and source.is_history_gate else None
 
 
 def _is_init_source(from_state: Any) -> bool:
@@ -1492,72 +1456,62 @@ def _build_combo_origin_infos(
 
 
 def _build_transition_infos(machine: 'StateMachine') -> Tuple[TransitionInfo, ...]:
-    from ..model.history import authored_effects, authored_guard, ordered_transitions
-
     out: List[TransitionInfo] = []
     transition_index = 0
-    for state, transition in ordered_transitions(machine.root_state):
-        if _history_gate_of(state, transition) is not None:
-            # The author wrote this evented initial as ``[*] -> X :: E``;
-            # history lowering moved its source to a generated gate.
-            from_path = _INIT_MARK
-        else:
+    for state in machine.walk_states():
+        for transition in state.transitions:
             from_path = _transition_endpoint(state, transition.from_state, is_source=True)
-        to_path = _transition_endpoint(state, transition.to_state, is_source=False)
-        qualified_event = _qualified_event_name(transition, state)
-        scope = (
-            getattr(transition, 'event_scope', None)
-            or _event_scope(transition.event, state, transition.from_state, machine)
-            if transition.event is not None
-            else None
-        )
-        is_forced = _is_forced_transition(transition)
-        forced_origin = getattr(transition, 'forced_origin', None) if is_forced else None
-        # History lowering rewrites guards and effects; report what the
-        # author wrote and mark the edges it generated or extended.
-        effects = authored_effects(transition)
-        out.append(TransitionInfo(
-            from_path=from_path,
-            to_path=to_path,
-            event=qualified_event,
-            event_scope=scope,
-            guard=_expr_text(authored_guard(transition)),
-            effect=_effects_text(effects),
-            effect_self_assigns=_effect_self_assigns(effects),
-            is_forced=is_forced,
-            forced_origin=forced_origin,
-            transition_index=transition_index,
-            source_path=getattr(transition, '_source_path', None),
-            span=getattr(transition, '_span', None),
-            effect_spans=tuple(
-                span
-                for span in (getattr(effect, '_span', None) for effect in effects)
-                if span is not None
-            ),
-            effect_self_assign_spans=_effect_self_assign_spans(effects),
-            combo_origin_refs=tuple(
-                _combo_origin_ref_info(ref)
-                for ref in getattr(transition, 'combo_origin_refs', ())
-            ),
-            combo_projection_key=_combo_tuple(
-                getattr(transition, 'combo_projection_key', None)
-            ),
-            combo_projection_order_key=_combo_tuple(
-                getattr(transition, 'combo_projection_order_key', None)
-            ),
-            combo_reuse_group_id=getattr(
-                transition, 'combo_reuse_group_id', None
-            ),
-            combo_priority_run_identity=_combo_tuple(
-                getattr(transition, 'combo_priority_run_identity', None)
-            ),
-            combo_priority_run_index=getattr(
-                transition, 'combo_priority_run_index', None
-            ),
-            history_role=transition.history_role,
-            target_history=transition.target_history,
-        ))
-        transition_index += 1
+            to_path = _transition_endpoint(state, transition.to_state, is_source=False)
+            qualified_event = _qualified_event_name(transition, state)
+            scope = (
+                getattr(transition, 'event_scope', None)
+                or _event_scope(transition.event, state, transition.from_state, machine)
+                if transition.event is not None
+                else None
+            )
+            is_forced = _is_forced_transition(transition)
+            forced_origin = getattr(transition, 'forced_origin', None) if is_forced else None
+            out.append(TransitionInfo(
+                from_path=from_path,
+                to_path=to_path,
+                event=qualified_event,
+                event_scope=scope,
+                guard=_expr_text(transition.guard),
+                effect=_effects_text(transition.effects),
+                effect_self_assigns=_effect_self_assigns(transition.effects),
+                is_forced=is_forced,
+                forced_origin=forced_origin,
+                transition_index=transition_index,
+                source_path=getattr(transition, '_source_path', None),
+                span=getattr(transition, '_span', None),
+                effect_spans=tuple(
+                    span
+                    for span in (getattr(effect, '_span', None) for effect in transition.effects)
+                    if span is not None
+                ),
+                effect_self_assign_spans=_effect_self_assign_spans(transition.effects),
+                combo_origin_refs=tuple(
+                    _combo_origin_ref_info(ref)
+                    for ref in getattr(transition, 'combo_origin_refs', ())
+                ),
+                combo_projection_key=_combo_tuple(
+                    getattr(transition, 'combo_projection_key', None)
+                ),
+                combo_projection_order_key=_combo_tuple(
+                    getattr(transition, 'combo_projection_order_key', None)
+                ),
+                combo_reuse_group_id=getattr(
+                    transition, 'combo_reuse_group_id', None
+                ),
+                combo_priority_run_identity=_combo_tuple(
+                    getattr(transition, 'combo_priority_run_identity', None)
+                ),
+                combo_priority_run_index=getattr(
+                    transition, 'combo_priority_run_index', None
+                ),
+                target_history=transition.target_history,
+            ))
+            transition_index += 1
     return tuple(out)
 
 
@@ -1618,13 +1572,7 @@ def _variable_access_sites(machine: 'StateMachine') -> Dict[str, Dict[str, List[
                            located(owner, branch, branch_path))
                     statements(branch.statements, owner, branch_path)
 
-    from ..model.history import ordered_transitions
-
-    # Same numbering as the transition records.
-    transition_indexes = {
-        id(transition): index
-        for index, (_, transition) in enumerate(ordered_transitions(machine.root_state))
-    }
+    transition_index = 0
     action_index = 0
     for state in machine.walk_states():
         path = _state_path(state)
@@ -1642,12 +1590,13 @@ def _variable_access_sites(machine: 'StateMachine') -> Dict[str, Dict[str, List[
         for transition in state.transitions:
             owner = VariableAccessSite(
                 kind='guard', state_path=path, action=None, action_index=None,
-                transition_index=transition_indexes[id(transition)], statement_path=(),
+                transition_index=transition_index, statement_path=(),
                 source_path=getattr(transition, '_source_path', None),
                 span=getattr(transition, '_span', None),
             )
             record(_walk_expr_variables(transition.guard), 'reads', owner)
             statements(transition.effects, replace(owner, kind='effect'))
+            transition_index += 1
     return sites
 
 
@@ -1932,17 +1881,7 @@ def _build_metrics(
         transitions: Tuple[TransitionInfo, ...],
         variables: Tuple[VariableInfo, ...],
         events: Tuple[EventInfo, ...],
-        generated_names: Sequence[str] = (),
 ) -> ModelMetrics:
-    # Metrics size what the author wrote: the variables, gate states and edges
-    # history lowering generates (``generated_names`` and ``history_role``)
-    # are left out.
-    generated = set(generated_names)
-    states = tuple(s for s in states if s.name not in generated)
-    variables = tuple(v for v in variables if v.name not in generated)
-    transitions = tuple(
-        t for t in transitions if t.history_role not in ('route', 'gate')
-    )
     n_pseudo = sum(1 for s in states if s.is_pseudo)
     n_leaf = sum(1 for s in states if s.is_leaf and not s.is_pseudo)
     n_composite = sum(1 for s in states if s.is_composite)
@@ -2674,7 +2613,7 @@ def _build_structure_statistics(
 def _build_reachability_graph(
         states: Tuple[StateInfo, ...],
         transitions: Tuple[TransitionInfo, ...],
-        history_defaults: Sequence[Tuple[str, str]] = (),
+        history_defaults: Sequence[Tuple[str, Sequence[str]]] = (),
 ) -> Dict[str, Tuple[str, ...]]:
     """Return the default inspect reachability graph.
 
@@ -2684,18 +2623,15 @@ def _build_reachability_graph(
     optional verify topology projection that only runs when callers pass
     ``enable_verify=True`` to :func:`inspect_model`.
 
-    History routes are not followed: a restore with a record only re-enters
-    states that were already reached. A history entry with no record goes to
-    its default instead, so each ``history_defaults`` pair is followed as one
-    more initial edge (see :func:`pyfcstm.model.history.history_default_edges`).
-
     :param states: Inspect state records, one per state path.
     :type states: Tuple[StateInfo, ...]
     :param transitions: Inspect transition records in model order.
     :type transitions: Tuple[TransitionInfo, ...]
-    :param history_defaults: ``(composite path, child path)`` entries history
-        defaults add, defaults to ``()``
-    :type history_defaults: Sequence[Tuple[str, str]], optional
+    :param history_defaults: For a history owner, the states from its child
+        down to the default a history entry reaches, defaults to ``()``. The
+        default is followed like an initial target; the states above it on a
+        deep default path are active but their own initials do not run.
+    :type history_defaults: Sequence[Tuple[str, Sequence[str]]], optional
     :return: Mapping from every state path to reachable state paths.
     :rtype: Dict[str, Tuple[str, ...]]
 
@@ -2739,25 +2675,31 @@ def _build_reachability_graph(
             continue
         for initial_target in state.initial_targets:
             target = initial_target['target']
-            if target != _EXIT_MARK and initial_target.get('history_role') != 'route':
+            if target != _EXIT_MARK:
                 initial_edges[state.path].add(target)
-    for parent, child in history_defaults:
-        initial_edges[parent].add(child)
+
+    passive: Dict[str, set] = {}
+    for owner, chain in history_defaults:
+        initial_edges[owner].add(chain[-1])
+        passive.setdefault(owner, set()).update(chain[:-1])
 
     graph: Dict[str, Tuple[str, ...]] = {}
     for state in states:
         seen = set()
+        expanded = set()
         queue = [state.path]
         while queue:
             current = queue.pop(0)
+            seen.update(path for path in passive.get(current, ()) if path != state.path)
             next_paths = adjacency.get(current, set()) | initial_edges.get(
                 current,
                 set(),
             )
             for next_path in sorted(next_paths):
-                if next_path in seen or next_path == state.path:
+                if next_path in expanded or next_path == state.path:
                     continue
                 seen.add(next_path)
+                expanded.add(next_path)
                 queue.append(next_path)
         graph[state.path] = tuple(sorted(seen))
     return graph
@@ -4349,6 +4291,14 @@ def inspect_model(
     graphs, and design-health diagnostics that can be computed from the
     inspect surface.
 
+    A machine that uses ``[H]`` / ``[H*]`` history is reported as written:
+    model conversion keeps the model before history lowering, and the report,
+    its findings and the optional verify run describe that model, with each
+    history entry an ordinary transition marked by ``target_history``. The
+    lowered variables, gate states and route initials therefore appear nowhere
+    in the report. Reachability additionally lets a history entry reach its
+    default (:func:`pyfcstm.model.history.history_default_targets`).
+
     :param machine: The state machine model to inspect.
     :type machine: pyfcstm.model.StateMachine
     :param deep_hierarchy_threshold: Maximum accepted hierarchy depth.
@@ -4430,6 +4380,10 @@ def inspect_model(
     structure_statistics_policy = _normalize_structure_statistics_policy(
         structure_statistics_policy,
     )
+    # A machine that uses history is judged as written: model conversion keeps
+    # the model before lowering, where a history entry is an ordinary
+    # transition that still carries its ``target_history``.
+    machine = getattr(machine, '_authored_view', None) or machine
     states = _build_state_infos(machine)
     transitions = _build_transition_infos(machine)
     variables = _build_variable_infos(machine, states)
@@ -4438,20 +4392,18 @@ def inspect_model(
     forced_transitions = _build_forced_transition_infos(machine)
     combo_transitions = _build_combo_transition_infos(transitions)
     combo_origins = _build_combo_origin_infos(transitions)
-    from ..model.history import history_default_edges
+    metrics = _build_metrics(states, transitions, variables, events)
+    from ..model.history import history_default_targets
 
-    generated_names = [
-        name
-        for owner in machine.history_owners
-        for name in (owner.record_variable, owner.goto_variable)
-    ] + [state.name for state in machine.walk_states() if state.is_history_gate]
-    metrics = _build_metrics(states, transitions, variables, events, generated_names)
     reachability_graph = _build_reachability_graph(
         states,
         transitions,
         [
-            ('.'.join(parent), '.'.join(child))
-            for parent, child in history_default_edges(machine)
+            (
+                '.'.join(owner),
+                ['.'.join(target[:depth]) for depth in range(len(owner) + 1, len(target) + 1)],
+            )
+            for owner, target in history_default_targets(machine)
         ],
     )
     root_state_path = _state_path(machine.root_state)

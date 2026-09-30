@@ -1,9 +1,10 @@
-"""Inspect reports on history models describe what the author wrote.
+"""Inspect reports on history models describe the model as written.
 
-History lowering adds variables, gate states, route initials and restore
-conditions.  Inspect findings, statistics and metrics must be those of the same
-model written without history; only the defaults a history entry reaches may
-change reachability.
+History lowering adds variables, gate states, route initials, exit actions and
+restore conditions.  None of them may reach an inspect report: its findings,
+statistics and metrics -- with or without the verify run -- must be those of
+the same model written without history, and only the defaults a history entry
+reaches may change reachability.
 """
 
 import dataclasses
@@ -59,11 +60,11 @@ def _without_history(text):
     return re.sub(r"\.\[H\*?\]", blank, text)
 
 
-def _report(text):
+def _report(text, **options):
     machine, diagnostics = parse_dsl_node_to_state_machine(
         parse_with_grammar_entry(text, "state_machine_dsl"), collect=True
     )
-    return inspect_model(machine, model_diagnostics=diagnostics)
+    return inspect_model(machine, model_diagnostics=diagnostics, **options)
 
 
 def _findings(report):
@@ -172,27 +173,13 @@ def _random_models(count, seed):
     return models
 
 
-@pytest.mark.unittest
-@pytest.mark.parametrize("name", sorted(MODELS))
-def test_lowering_adds_or_hides_no_inspect_finding(name):
-    text = MODELS[name]
-    plain = _without_history(text)
-    assert "[H" not in plain
-    assert _summary(_report(text)) == _summary(_report(plain))
+VERIFY_STRUCTURAL = {"enable_verify": True}
+VERIFY_SMT = {"enable_verify": True, "max_complexity_tier": "smt_linear"}
 
-
-@pytest.mark.unittest
-def test_random_history_models_report_what_their_plain_twins_report():
-    for text in _random_models(120, seed=20260930):
-        report = _report(text)
-        assert _summary(report) == _summary(_report(_without_history(text))), text
-        for item in report.diagnostics:
-            assert "__hist" not in item.message, (item.code, item.message)
-
-
-@pytest.mark.unittest
-def test_guard_warnings_on_owner_initials_survive_lowering():
-    text = """
+# Shapes where analysing the lowered machine used to change a finding.
+COUNTEREXAMPLES = {
+    # the guards of initials that lowering extends
+    "owner-initial-guards": """
     def int x = 0;
     state R {
         state Off;
@@ -201,63 +188,142 @@ def test_guard_warnings_on_owner_initials_survive_lowering():
         Off -> O.[H] :: Resume;
         !O -> Off :: Stop;
     }
-    """
-    codes = [item.code for item in _report(text).diagnostics]
-    assert "W_GUARD_CONST_FALSE" in codes
-    assert "W_GUARD_VARS_NEVER_CHANGE" in codes
-    assert _summary(_report(text)) == _summary(_report(_without_history(text)))
-
-
-@pytest.mark.unittest
-def test_hidden_variables_count_toward_no_metric():
-    text = """
-    def int a = 0;
-    def int b = 0;
-    def int c = 0;
+    """,
+    # route edges escaping an initial livelock
+    "initial-livelock": """
     state R {
         state Off;
-        state O { state A; [*] -> A; [H] -> A; A -> A :: Tick effect { a = b + c; } }
+        state O {
+            state A;
+            state K { pseudo state P; state Z; [*] -> P; P -> [*]; }
+            [*] -> A;
+            A -> K :: Go;
+            K -> K;
+            A -> [*] :: Leave;
+            [H*] -> A;
+        }
+        [*] -> Off;
+        Off -> O.[H*] :: Resume;
+        O -> Off;
+    }
+    """,
+    # generated exit actions hiding a no-op self transition
+    "self-transition": """
+    state R {
+        state Off;
+        state O { state A; state B; [*] -> A; [H] -> A; A -> A; A -> B :: Next; }
         [*] -> Off;
         Off -> O.[H] :: Resume;
         !O -> Off :: Stop;
     }
-    """
-    report = _report(text)
-    assert report.metrics.n_variables == 3
-    assert report.metrics.var_to_leaf_ratio == 1.5
-    assert "W_HIGH_VAR_TO_LEAF_RATIO" not in {item.code for item in report.diagnostics}
-    assert {item.name for item in report.variables} >= {"__hist_O", "__hist_goto"}
-
-
-@pytest.mark.unittest
-def test_structure_statistics_count_only_authored_effects():
-    stats = _report(WASHER).structure_statistics
-    assert stats == _report(_without_history(WASHER)).structure_statistics
-    assert stats.missing_effect_transitions == stats.effect_eligible_transitions
-
-
-@pytest.mark.unittest
-def test_an_evented_initial_is_reported_as_written():
-    report = _report(EVENTED)
-    owner = {state.path: state for state in report.states}["R.O"]
-    authored = [item for item in owner.initial_targets if item.get("history_role") != "route"]
-    assert authored == [
-        {
-            "target": "R.O.A",
-            "guard": None,
-            "event": "Kick",
-            "is_unconditional": False,
-            "history_role": "gated",
+    """,
+    # a gate state counted as a child
+    "large-composite": """
+    state R {
+        state Off;
+        state O {
+            state c1; state c2; state c3; state c4; state c5; state c6;
+            state c7; state c8; state c9; state c10; state c11; state c12;
+            [*] -> c1 :: Kick;
+            [*] -> c2;
+            [H] -> c2;
+            c1 -> c2 :: Next;
         }
-    ]
-    (initial,) = [t for t in report.transitions if t.history_role == "gated"]
-    assert (initial.from_path, initial.to_path, initial.event) == ("[*]", "R.O.A", "R.O.Kick")
-    (gate,) = [t for t in report.transitions if t.history_role == "gate"]
-    assert gate.to_path.startswith("R.O.__hist_gate_")
+        [*] -> Off;
+        Off -> O.[H] :: Resume;
+        !O -> Off :: Stop;
+    }
+    """,
+    # a gate state counted as a level
+    "deep-hierarchy": """
+    state R {
+        state Off;
+        state L1 {
+            state L2 { state L3 { state L4 { state L5 {
+                state L6 { state a; state b; [*] -> a :: Kick; [*] -> b; a -> b :: Next; }
+                [*] -> L6; } [*] -> L5; } [*] -> L4; } [*] -> L3; }
+            [*] -> L2;
+            [H*] -> L2.L3.L4.L5.L6.b;
+        }
+        [*] -> Off;
+        Off -> L1.[H*] :: Resume;
+        !L1 -> Off :: Stop;
+    }
+    """,
+    # restore routes in verify's topology and event reachability
+    "verify-topology": """
+    state R {
+        state Off;
+        state O { state A; state C; [*] -> A; [H] -> A; C -> A :: Poke; }
+        [*] -> Off;
+        Off -> O.[H] :: Go;
+        !O -> Off :: Stop;
+    }
+    """,
+    # restore conditions in verify's SMT checks
+    "verify-smt": """
+    def int x = 0;
+    def int y = 0;
+    state R {
+        state Off;
+        state O {
+            state A; state B; state C;
+            [*] -> A : if [x > 0 && x < 0];
+            [*] -> B : if [x > 0 || x <= 0];
+            [*] -> C;
+            [H] -> C;
+            A -> B :: Next;
+            B -> C :: Go effect { y = y; }
+            C -> A :: Back effect { x = x + 1; }
+        }
+        state P {
+            state P1; state P2;
+            [*] -> P1 : if [x > 0];
+            [*] -> P2 : if [x <= 0];
+            [H] -> P1;
+            P1 -> P2 :: Flip;
+        }
+        [*] -> Off;
+        Off -> O.[H] :: Resume;
+        Off -> P.[H] :: ResumeP;
+        Off -> O.[H] : if [y == 0] effect { y = 0; }
+        !O -> Off :: Stop;
+        !P -> Off :: StopP;
+    }
+    """,
+}
 
 
 @pytest.mark.unittest
-def test_transition_records_show_authored_guards_and_effects():
+@pytest.mark.parametrize("options", [{}, VERIFY_STRUCTURAL, VERIFY_SMT], ids=["plain", "verify", "verify-smt"])
+@pytest.mark.parametrize("name", sorted({**MODELS, **COUNTEREXAMPLES}))
+def test_history_adds_or_hides_no_inspect_finding(name, options):
+    text = {**MODELS, **COUNTEREXAMPLES}[name]
+    plain = _without_history(text)
+    assert "[H" not in plain
+    assert _summary(_report(text, **options)) == _summary(_report(plain, **options))
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("options", [{}, VERIFY_STRUCTURAL], ids=["plain", "verify"])
+def test_random_history_models_report_what_their_plain_twins_report(options):
+    for text in _random_models(120 if not options else 40, seed=20260930):
+        report = _report(text, **options)
+        assert _summary(report) == _summary(_report(_without_history(text), **options)), text
+        assert "__hist" not in json.dumps(report.to_json()), text
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("name", sorted({**MODELS, **COUNTEREXAMPLES}))
+def test_reports_name_no_lowered_construct(name):
+    payload = _report({**MODELS, **COUNTEREXAMPLES}[name], **VERIFY_STRUCTURAL).to_json()
+    assert "__hist" not in json.dumps(payload)
+    kinds = {item["target_history"] for item in payload["transitions"]}
+    assert kinds - {None} and kinds <= {None, "shallow", "deep"}
+
+
+@pytest.mark.unittest
+def test_transition_records_mark_history_entries():
     text = """
     def int n = 0;
     def int x = 0;
@@ -269,12 +335,15 @@ def test_transition_records_show_authored_guards_and_effects():
         !O -> Off :: Stop;
     }
     """
-    transitions = _report(text).transitions
-    (entry,) = [t for t in transitions if t.target_history is not None]
+    report = _report(text)
+    (entry,) = [t for t in report.transitions if t.target_history is not None]
     assert (entry.to_path, entry.target_history, entry.effect) == ("R.O", "shallow", "n = n + 1;")
-    merged = [t for t in transitions if t.history_role == "merged"]
-    assert [t.guard for t in merged] == ["x > 0", None]
-    assert all(t.history_role is None for t in transitions if t.from_path != "[*]")
+    owner = {state.path: state for state in report.states}["R.O"]
+    assert [(item["target"], item["guard"]) for item in owner.initial_targets] == [
+        ("R.O.A", "x > 0"),
+        ("R.O.B", None),
+    ]
+    assert report.metrics.n_variables == 2
 
 
 @pytest.mark.unittest
@@ -295,19 +364,20 @@ def test_only_history_defaults_add_reachability(inner, outer, unreachable):
         "state R { state Off; state O { state A; state Lost; state Def; %s } "
         "[*] -> Off; %s !O -> Off :: Stop; }" % (inner, outer)
     )
-    report = _report(text)
+    report = _report(text, **VERIFY_STRUCTURAL)
     found = sorted(
         item.refs["state_path"]
         for item in report.diagnostics
         if item.code == "W_UNREACHABLE_STATE"
     )
     assert found == unreachable
-    assert list(unreachable_states(load_state_machine_from_text(text))) == unreachable
+    machine = load_state_machine_from_text(text)
+    assert list(unreachable_states(machine)) == unreachable
     assert "R.O.Lost" not in report.reachability_graph["R"]
 
 
 @pytest.mark.unittest
-def test_a_deep_default_reaches_its_whole_path():
+def test_a_deep_default_skips_the_initials_on_its_path():
     text = """
     state R {
         state Off;
@@ -323,10 +393,12 @@ def test_a_deep_default_reaches_its_whole_path():
     }
     """
     report = _report(text)
-    assert {"R.O.W", "R.O.W.W2"} <= set(report.reachability_graph["R"])
-    assert list(unreachable_states(load_state_machine_from_text(text))) == ["R.O.W.W3"]
+    reachable = set(report.reachability_graph["R"])
+    assert {"R.O.W", "R.O.W.W2"} <= reachable and "R.O.W.W1" not in reachable
     found = [item.refs["state_path"] for item in report.diagnostics if item.code == "W_UNREACHABLE_STATE"]
-    assert found == ["R.O.W.W3"]
+    assert found == ["R.O.W.W1", "R.O.W.W3"]
+    machine = load_state_machine_from_text(text)
+    assert list(unreachable_states(machine)) == ["R.O.W.W1", "R.O.W.W3"]
 
 
 @pytest.mark.unittest
@@ -351,8 +423,3 @@ def test_history_reports_validate_against_the_shipped_schema(name):
     payload = _report(MODELS[name]).to_json()
     schema = json.loads(Path(pyfcstm.diagnostics.__file__).with_name("schema.json").read_text())
     jsonschema.Draft7Validator(schema).validate(payload)
-    roles = {item["history_role"] for item in payload["transitions"]}
-    assert roles & {"route", "merged", "gated", "gate"}
-    assert roles <= {None, "route", "merged", "gated", "gate"}
-    kinds = {item["target_history"] for item in payload["transitions"]}
-    assert kinds - {None} and kinds <= {None, "shallow", "deep"}

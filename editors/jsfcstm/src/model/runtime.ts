@@ -1610,6 +1610,11 @@ export class StateMachine extends ModelNode {
     history_owners: RawFcstmModelHistoryOwner[];
     /** Diagnostics raised while lowering history. */
     historyDiagnostics: FcstmModelHistoryDiagnostic[];
+    /**
+     * The same model built without lowering its history, which static
+     * analyses judge instead (see ``inspectModel``); unset without history.
+     */
+    authoredView?: StateMachine;
 
     constructor(raw: RawFcstmModelStateMachine, rootState: State, lookups: FcstmModelLookups) {
         super(raw.kind, raw.pyModelType, raw.range, raw.text);

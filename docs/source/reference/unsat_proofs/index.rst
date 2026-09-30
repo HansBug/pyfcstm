@@ -285,6 +285,11 @@ When the initial arithmetic configuration returns a known arithmetic or proof
 production limitation, capture retries with Z3 arithmetic solver 6, the exact
 original assertions and the same total deadline. Only the resulting execution
 is exported. Timeout and unresolved UNKNOWN outcomes remain explicit.
+Native arithmetic literal propagation remains enabled. Arithmetic hint labels
+select fast paths; they do not prevent existing certificate producers from
+proving the same local obligation. Unit-weight propagation proposals are
+accepted only when their exact weighted inequalities establish a contradiction;
+other layouts use the existing reconstruction and checking paths.
 
 ``reading.to_text(language="en", detail="standard")`` accepts ``en`` or ``zh``
 and returns plain text with a final newline. Reading detail is independent of
@@ -293,10 +298,15 @@ core minimization and rule checking:
 * ``brief`` gives a guide: inputs, key deductions and the contradiction. Linear
   combinations show their result rather than every coefficient. Long formulas
   are references; this view is explicitly not a standalone derivation.
+  Listings above 64 KiB switch to closed semantic steps and original block IDs.
+  Internal conditional derivations remain accessible with ``get_block`` and
+  ``expand``, and every gap remains visible. Large source descriptions or
+  diagnostics may still exceed this threshold; no text is silently truncated.
 * ``standard`` is the default. It folds exclusively used mechanical premises
   into their consuming deduction, keeping arithmetic certificates, local
   assumptions, discharge boundaries and unsupported steps visible. Shared long
-  formulas have complete definitions at the end of the text.
+  formulas, premise/hypothesis collections and weighted inequality combinations
+  have complete shared definitions at the end of the text.
 * ``detailed`` renders the full reading and expands caller-supplied domain folds.
   It does not print every native solver node; the captured graph remains the
   separate evidence artifact.
@@ -305,6 +315,9 @@ Changing detail does not solve again, mutate the report, minimize its core or
 upgrade ``rule_check``. All levels preserve explicit gaps. Formula references
 such as ``[[t12]]`` identify terms in the report graph;
 ``reading.get_term_text("t12")`` returns the exact unabridged formula offline.
+Standard-view aliases such as ``[[share0]]`` instead name collections defined
+in that text; they are not graph term IDs and are expanded using those printed
+definitions. They never alter the stored proof or its input dependencies.
 Unknown term IDs raise ``KeyError``; a reading without a graph raises
 ``ValueError``. The detailed view and formula expansion also work after loading
 a serialized report without Z3.
@@ -316,6 +329,13 @@ premise blocks. These methods raise ``KeyError`` for unknown IDs.
 ``UnsatReport.from_canonical(data)`` reconstructs and validates it without Z3.
 Unsupported fields, wrong types, duplicate identities, missing references,
 cycles and inconsistent report states raise ``ValueError``.
+Loading also replays arithmetic, divisibility, polynomial, interval, Boolean
+counting and linear equality certificates against their recorded local premises.
+Changed endpoints, contributions or combination weights cannot pass merely
+because the snapshot says ``checked``. Reading claims, hypotheses, root and
+external premises must agree with their evidence, including folded blocks.
+These checks do not authenticate a snapshot or independently verify trusted
+native mechanical rules and application extensions.
 
 Extension and source contracts
 ------------------------------

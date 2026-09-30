@@ -242,7 +242,7 @@ def _branch_query():
     ('assumption', 'hypotheses used outside'),
     ('open_root', 'hypotheses at its root'),
 ])
-def test_domain_fold_cannot_hide_external_dependencies_or_assumptions(choice, message):
+def test_domain_fold_cannot_hide_external_dependencies_or_assumptions(choice, message, captured_branch_proof):
     from pyfcstm.solver.proof import FoldProposal, ReadingFolder
 
     def propose(reading):
@@ -269,7 +269,7 @@ def test_domain_fold_cannot_hide_external_dependencies_or_assumptions(choice, me
         explain_unsat(_branch_query(), extensions=ProofExtensions(reading_folders=(ReadingFolder(propose),)))
 
 
-def test_closed_branch_proof_can_be_folded_without_erasing_its_derivation(text_aligner):
+def test_closed_branch_proof_can_be_folded_without_erasing_its_derivation(text_aligner, captured_branch_proof):
     from pyfcstm.solver.proof import FoldProposal, ReadingFolder
 
     def propose(reading):

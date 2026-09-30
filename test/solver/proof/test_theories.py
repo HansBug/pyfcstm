@@ -452,14 +452,20 @@ def test_division_axiom_rejects_changed_arithmetic_claim(kind):
     assert analyze_proof(graph).graph.node(node.node_id).local_check == 'unsupported'
 
 
-def test_unknown_arithmetic_hint_remains_an_explicit_gap():
+def test_unknown_arithmetic_hint_can_use_independently_checked_local_reasoning():
     from dataclasses import replace
     from pyfcstm.solver.proof import ProofParameter, analyze_proof
 
     graph = _order_graph((('=', 'x', 'y', False), ('<=', 'x', 'y', True)))
     graph = replace(graph, nodes=(replace(graph.nodes[0], parameters=(
         ProofParameter('symbol', 'arith'), ProofParameter('symbol', 'unrecognized'))),))
-    assert analyze_proof(graph).graph.node('root').local_check == 'unsupported'
+    result = analyze_proof(graph)
+    assert result.graph.node('root').local_check == 'checked'
+    from pyfcstm.solver.proof.rules import check_arithmetic_certificate
+
+    root = result.graph.node('root')
+    assert root.certificate is not None
+    assert check_arithmetic_certificate(root, result.graph, root.certificate)
 
 
 @pytest.mark.parametrize('expression', ['power', 'sqrt'])

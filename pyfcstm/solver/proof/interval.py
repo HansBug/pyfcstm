@@ -344,14 +344,14 @@ class _Propagation:
 
 def interval_certificate(node, graph, budget):
     """Refute local premises plus the negated conclusion by exact intervals."""
-    from .rules import _bound, _is_false
+    from .rules import _bound, _clause_literals, _is_false
 
     if node.conclusion is None:
         return None
     literals = [(graph.node(parent).conclusion, False) for parent in node.parents]
     if not _is_false(node.conclusion, graph):
         conclusion = graph.term(node.conclusion)
-        clauses = conclusion.arguments if conclusion.operator == 'or' else (node.conclusion,)
+        clauses = _clause_literals(conclusion)
         literals.extend((clause, True) for clause in clauses)
     bounds = tuple(bound for term, negated in literals
                    for bound in (_bound(term, negated, graph, True),) if bound is not None)
@@ -373,8 +373,7 @@ def interval_certificate(node, graph, budget):
         if state.conflict is not None:
             return state.certificate()
         conclusion = graph.term(node.conclusion)
-        candidates = (conclusion.arguments if conclusion.operator_kind == 'builtin' and
-                      conclusion.operator == 'or' else (node.conclusion,))
+        candidates = _clause_literals(conclusion)
         for candidate in candidates:
             equality = graph.term(candidate)
             if (equality.operator_kind == 'builtin' and equality.operator == '=' and
@@ -386,3 +385,195 @@ def interval_certificate(node, graph, budget):
         if len(state.steps) == previous:
             break
     return None
+
+
+def _step_range(step):
+    return _Range(-inf if step.lower is None else Fraction(step.lower),
+                  inf if step.upper is None else Fraction(step.upper),
+                  step.lower_open, step.upper_open)
+
+
+def _congruent_signatures(graph, equalities, budget):
+    """Canonicalize exact local equalities and builtin expression structure."""
+    from .rules import _square_base
+
+    groups = {}
+    for equality in equalities:
+        members = groups.get(equality.left_id, {equality.left_id}) | groups.get(equality.right_id, {equality.right_id})
+        for key in members:
+            groups[key] = members
+    signatures, interned = {}, {}
+    for term in graph.terms:
+        budget.checkpoint('proof analysis')
+        if term.term_id in groups:
+            key = ('equal', min(groups[term.term_id]))
+        elif term.kind == 'application' and term.operator_kind == 'builtin':
+            base = _square_base(term, graph)
+            key = (('square', term.sort, signatures[base]) if base is not None else
+                   (term.kind, term.sort, term.operator, term.parameters,
+                    tuple(signatures[child] for child in term.arguments)))
+        else:
+            key = ('term', term.term_id)
+        signatures[term.term_id] = interned.setdefault(key, len(interned))
+    return signatures
+
+
+def _replay_step(step, certificate, graph, budget):
+    """Compute a single proposed range from its recorded premises only."""
+    from .rules import _affine, _bound
+
+    term = graph.term(step.term_id)
+    parents = tuple(certificate.steps[index] for index in step.premises)
+    values = {}
+    for parent in parents:
+        values[parent.term_id] = values.get(parent.term_id, _Range()).intersect(_step_range(parent))
+    args = term.arguments
+    operands = [values.get(key, _Range()) for key in args]
+    if step.rule == 'intersection':
+        if len(parents) == 2 and all(parent.term_id == step.term_id for parent in parents):
+            return (values[step.term_id],)
+        return ()
+    if step.rule in ('congruence', 'congruence_sum'):
+        if any(equality not in _equalities(certificate.bounds, graph) for equality in step.substitutions):
+            return ()
+        signatures = _congruent_signatures(graph, step.substitutions, budget)
+        if step.rule == 'congruence':
+            if len(parents) == 1 and signatures[parents[0].term_id] == signatures[step.term_id]:
+                return (_step_range(parents[0]),)
+            return ()
+        vector = _affine(step.term_id, graph, True)
+        if vector is None:
+            return ()
+        constant, total = vector.pop(None, Fraction(0)), {}
+        for key, weight in vector.items():
+            signature = signatures[key]
+            total[signature] = total.get(signature, Fraction(0)) + weight
+        return (_Range(constant, constant, False, False),) if not any(total.values()) else ()
+    if step.rule == 'linear':
+        bound = certificate.bounds[step.bound_index]
+        coefficients = {key: Fraction(value) for key, value in bound.coefficients}
+        ranges = []
+        vector = _affine(step.term_id, graph, True)
+        if vector is None:
+            return ()
+        constant = vector.pop(None, Fraction(0))
+        if len(vector) > 1 and set(vector) == set(coefficients):
+            first = next(iter(vector))
+            factor = coefficients[first] / vector[first]
+            if factor and all(coefficients[key] == factor * value for key, value in vector.items()):
+                endpoint = constant - Fraction(bound.constant) / factor
+                ranges.append(_Range(endpoint, endpoint, False, False) if bound.relation == 'eq' else
+                              _Range(-inf, endpoint, True, bound.relation == 'lt') if factor > 0 else
+                              _Range(endpoint, inf, bound.relation == 'lt', True))
+        if step.term_id in coefficients:
+            for sign in ((1, -1) if bound.relation == 'eq' else (1,)):
+                other = _Range(Fraction(bound.constant) * sign, Fraction(bound.constant) * sign, False, False)
+                for key, weight in coefficients.items():
+                    if key != step.term_id:
+                        other = other.add(values.get(key, _Range()).scale(sign * weight))
+                if other.lower == -inf:
+                    continue
+                weight = coefficients[step.term_id] * sign
+                endpoint, opened = -other.lower / weight, other.lower_open or bound.relation == 'lt'
+                ranges.append(_Range(-inf, endpoint, True, opened) if weight > 0 else
+                              _Range(endpoint, inf, opened, True))
+        return tuple(ranges)
+    if step.rule == 'product_inverse':
+        if len(parents) != 2:
+            return ()
+        product, divisor = (graph.term(parent.term_id) for parent in parents)
+        factor = _step_range(parents[1])
+        if (product.operator_kind != 'builtin' or product.operator != '*' or
+                len(product.arguments) != 2 or
+                product.arguments not in ((step.term_id, divisor.term_id), (divisor.term_id, step.term_id)) or
+                factor.lower <= 0):
+            return ()
+        inverse = _Range(Fraction(0) if factor.upper == inf else Fraction(1) / factor.upper,
+                         Fraction(1) / factor.lower, factor.upper_open, factor.lower_open)
+        return (_step_range(parents[0]).multiply(inverse),)
+    if term.operator_kind != 'builtin':
+        return ()
+    if step.rule == 'literal' and term.kind == 'literal' and not parents:
+        value = Fraction(term.value)
+        return (_Range(value, value, False, False),)
+    if step.rule == 'square' and term.operator == '*' and len(args) == 2 and args[0] == args[1]:
+        return (operands[0].square(),)
+    if step.rule == 'product' and term.operator == '*' and args:
+        value = _Range(Fraction(1), Fraction(1), False, False)
+        for operand in operands:
+            value = value.multiply(operand)
+        return (value,)
+    if step.rule == 'sum' and term.operator in ('+', '-', 'uminus') and args:
+        value = operands[0].scale(-1) if len(args) == 1 and term.operator != '+' else operands[0]
+        for operand in operands[1:]:
+            value = value.add(operand.scale(1 if term.operator == '+' else -1))
+        return (value,)
+    if step.rule == 'cast' and term.operator == 'to_real' and len(args) == 1:
+        return (operands[0],)
+    if step.rule == 'power' and term.operator == '^' and len(args) == 2:
+        exponent = operands[1]
+        if (exponent.lower == exponent.upper and abs(exponent.lower) != inf and exponent.lower > 0 and
+                not exponent.lower_open and not exponent.upper_open and Fraction(exponent.lower).denominator == 1):
+            power = int(exponent.lower)
+            base = operands[0] if power % 2 else operands[0].square()
+            degree = power if power % 2 else power // 2
+            return (_Range(_power_endpoint(base.lower, degree), _power_endpoint(base.upper, degree),
+                           base.lower_open, base.upper_open),)
+    if step.rule == 'conditional' and term.operator == 'ite' and len(args) == 3:
+        bound = _bound(args[0], False, graph, True)
+        if bound is None or bound.relation == 'eq':
+            return ()
+        value = _Range(Fraction(bound.constant), Fraction(bound.constant), False, False)
+        for key, weight in bound.coefficients:
+            value = value.add(values.get(key, _Range()).scale(Fraction(weight)))
+        holds = value.upper < 0 or value.upper == 0 and (bound.relation == 'le' or value.upper_open)
+        fails = value.lower > 0 or value.lower == 0 and (bound.relation == 'lt' or value.lower_open)
+        if holds or fails:
+            return (operands[1] if holds else operands[2],)
+    return ()
+
+
+def check_interval_certificate(node, graph, certificate, *, budget=None):
+    """Replay recorded interval steps; never run the propagation search."""
+    from .rules import _bound, _clause_literals, _is_false
+    from ..budget import SolveBudget
+
+    budget = SolveBudget(None) if budget is None else budget
+    if node.conclusion is None or not certificate.steps:
+        return False
+    literals = {(graph.node(parent).conclusion, False) for parent in node.parents}
+    if not _is_false(node.conclusion, graph):
+        literals.update((key, True) for key in _clause_literals(graph.term(node.conclusion)))
+    for bound in certificate.bounds:
+        budget.checkpoint('proof analysis')
+        if ((bound.term_id, bound.negated) not in literals or
+                bound != _bound(bound.term_id, bound.negated, graph, True)):
+            return False
+    for index, step in enumerate(certificate.steps):
+        budget.checkpoint('proof analysis')
+        if (any(parent < 0 or parent >= index for parent in step.premises) or
+                graph.term(step.term_id).sort not in ('Int', 'Real') or
+                (step.rule == 'linear') != (step.bound_index is not None) or
+                step.bound_index is not None and not 0 <= step.bound_index < len(certificate.bounds) or
+                step.substitutions and step.rule not in ('congruence', 'congruence_sum')):
+            return False
+        candidates = _replay_step(step, certificate, graph, budget)
+        if graph.term(step.term_id).sort == 'Int':
+            candidates = tuple(value.integer() for value in candidates)
+        if _step_range(step) not in candidates:
+            return False
+    if (certificate.conflict is None) == (certificate.equality is None):
+        return False
+    result = certificate.conflict if certificate.conflict is not None else certificate.equality
+    if any(index < 0 or index >= len(certificate.steps) for index in result):
+        return False
+    left, right = (certificate.steps[index] for index in result)
+    first, second = _step_range(left), _step_range(right)
+    if certificate.conflict is not None:
+        return left.term_id == right.term_id and first.intersect(second).empty()
+    if not (first.lower == first.upper == second.lower == second.upper and abs(first.lower) != inf and
+            not any((first.lower_open, first.upper_open, second.lower_open, second.upper_open))):
+        return False
+    return any(graph.term(key).operator_kind == 'builtin' and graph.term(key).operator == '=' and
+               graph.term(key).arguments == (left.term_id, right.term_id)
+               for key in _clause_literals(graph.term(node.conclusion)))

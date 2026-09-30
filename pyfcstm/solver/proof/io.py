@@ -120,6 +120,8 @@ def _validate_graph(graph):
             if not check_arithmetic_certificate(node, graph, node.certificate):
                 raise ValueError('invalid arithmetic derivation')
         if node.linear_equality is not None:
+            from .rules import check_linear_equality_certificate
+
             equality = node.linear_equality
             _references((equality.term_id,), terms)
             term = graph.term(equality.term_id)
@@ -133,6 +135,8 @@ def _validate_graph(graph):
             for certificate in (equality.less, equality.greater):
                 for bound in certificate.bounds:
                     _references((bound.term_id,) + tuple(key for key, _ in bound.coefficients), terms)
+            if not check_linear_equality_certificate(node, graph, equality):
+                raise ValueError('invalid linear equality derivation')
         if node.divisibility is not None:
             for pair in node.divisibility.bound_pairs:
                 for bound in pair:
@@ -154,6 +158,8 @@ def _validate_graph(graph):
             if not check_polynomial_certificate(node, graph, node.polynomial):
                 raise ValueError('invalid polynomial derivation')
         if node.interval is not None:
+            from .interval import check_interval_certificate
+
             for bound in node.interval.bounds:
                 _references((bound.term_id,) + tuple(term for term, _ in bound.coefficients), terms)
             for step in node.interval.steps:
@@ -174,7 +180,11 @@ def _validate_graph(graph):
                 if not any(term.operator_kind == 'builtin' and term.operator == '=' and
                            term.arguments == result_terms for term in matches):
                     raise ValueError('interval equality must match a conclusion alternative')
+            if not check_interval_certificate(node, graph, node.interval):
+                raise ValueError('invalid interval derivation')
         if node.cardinality is not None:
+            from .rules import check_cardinality_certificate
+
             certificate = node.cardinality
             references = ((certificate.constraint_id,) + certificate.assumptions +
                           tuple(term for term, _ in certificate.assignments) +
@@ -182,6 +192,8 @@ def _validate_graph(graph):
             _references(references, terms)
             if any(graph.term(term).sort != 'Bool' for term in references):
                 raise ValueError('cardinality evidence requires Boolean terms')
+            if not check_cardinality_certificate(node, graph, certificate):
+                raise ValueError('invalid cardinality derivation')
         known.add(node.node_id)
     _references((graph.root_id,), nodes)
     for binding in graph.source_bindings:
@@ -207,6 +219,9 @@ def _validate_reading(reading):
                           if block.evidence_node_ids} & hypotheses
     terms = {term.term_id for term in graph.terms}
     occurrences = {item.occurrence_id for item in graph.inputs}
+    by_id = {block.block_id: block for block in blocks}
+    if by_id[reading.root_id].evidence_node_ids[:1] != (graph.root_id,):
+        raise ValueError('reading root and proof root disagree')
     for block in blocks:
         _references(block.premise_block_ids + block.detail_block_ids, identities)
         _references(block.claims, terms)
@@ -214,6 +229,23 @@ def _validate_reading(reading):
         _references(block.active_hypotheses, hypotheses)
         if not block.evidence_node_ids:
             raise ValueError('reading block requires evidence')
+        root = graph.node(block.evidence_node_ids[0])
+        if block.claims != (() if root.conclusion is None else (root.conclusion,)):
+            raise ValueError('reading claims disagree with evidence')
+        if block.active_hypotheses != root.open_hypotheses:
+            raise ValueError('reading hypotheses disagree with evidence')
+        selected = set(block.evidence_node_ids)
+        reached, pending = set(), [root.node_id]
+        while pending:
+            key = pending.pop()
+            if key not in reached:
+                reached.add(key)
+                pending.extend(parent for parent in graph.node(key).parents if parent in selected)
+        boundary = {parent for key in selected for parent in graph.node(key).parents if parent not in selected}
+        premises = {by_id[key].evidence_node_ids[0] for key in block.premise_block_ids
+                    if by_id[key].evidence_node_ids}
+        if reached != selected or premises != boundary:
+            raise ValueError('reading premises disagree with evidence boundary')
         if block.block_id in visible:
             _references(block.premise_block_ids, visible)
             _references(block.active_hypotheses, visible_hypotheses)

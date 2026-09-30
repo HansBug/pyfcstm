@@ -32,12 +32,8 @@ def test_linear_reading_shows_inputs_the_combination_and_contradiction(text_alig
     assert len(report.reading.blocks) < len(report.proof.nodes)
 
 
-def test_branch_reading_states_local_assumptions_and_their_discharge(text_aligner):
-    x, y = z3.Ints('x y')
-    report = solver.explain_unsat(solver.UnsatQuery('branches', (
-        solver.UnsatConstraint('update', (y == z3.If(x >= 0, x + 1, 0),)),
-        solver.UnsatConstraint('goal', (y < 0,)),
-    )))
+def test_branch_reading_states_local_assumptions_and_their_discharge(text_aligner, proof_snapshot):
+    report = proof_snapshot('branches')
     reading = report.reading
     assert reading.status == 'complete'
     expected = Path(__file__).with_name('proof_readings') / 'branches.en.txt'

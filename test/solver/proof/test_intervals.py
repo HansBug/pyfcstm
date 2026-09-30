@@ -38,6 +38,8 @@ def test_interval_reconstruction_uses_only_local_arithmetic(case, expected):
     assert node.local_check == expected
     if expected == 'checked':
         assert node.interval is not None
+        from pyfcstm.solver.proof.interval import check_interval_certificate
+        assert check_interval_certificate(node, graph, node.interval)
         used, pending = set(), list(node.interval.conflict)
         while pending:
             index = pending.pop()
@@ -47,6 +49,62 @@ def test_interval_reconstruction_uses_only_local_arithmetic(case, expected):
         assert used == set(range(len(node.interval.steps)))
     else:
         assert node.interval is None
+
+
+@pytest.mark.parametrize('case', ['square', 'product', 'conditional', 'cast', 'equality'])
+def test_interval_replay_rejects_changed_endpoints_at_every_step(case):
+    from dataclasses import replace
+    from fractions import Fraction
+    from pyfcstm.solver.budget import SolveBudget
+    from pyfcstm.solver.proof.interval import interval_certificate, check_interval_certificate
+
+    x, y = z3.Reals('x y')
+    i = z3.Int('i')
+    premises = {
+        'square': (x >= -2, x <= 3, x*x > 9),
+        'product': (x > 1, y >= 2, x*y <= 2),
+        'conditional': (x <= -2, z3.If(x >= 0, x, -x) < 2),
+        'cast': (i >= 2, y >= 2, z3.ToReal(i)*y < 4),
+        'equality': (x*x == 2, y*y == 3, x == y),
+    }[case]
+    graph = _certificate_graph(premises, ())
+    node = graph.node(graph.root_id)
+    certificate = interval_certificate(node, graph, SolveBudget(None))
+    assert certificate is not None
+    assert check_interval_certificate(node, graph, certificate)
+    for index, step in enumerate(certificate.steps):
+        changed = replace(step, lower=str(Fraction(step.lower or '0') + 123456), lower_open=False)
+        mutation = replace(certificate, steps=certificate.steps[:index] + (changed,) + certificate.steps[index + 1:])
+        assert not check_interval_certificate(node, graph, mutation), (case, index, step.rule)
+
+
+@pytest.mark.parametrize('mutation', ['no_conclusion', 'no_steps', 'forward_premise', 'missing_bound',
+                                     'two_results', 'bad_result', 'not_singleton'])
+def test_interval_replay_validates_structure_before_using_proposed_ranges(mutation):
+    from dataclasses import replace
+    from pyfcstm.solver.proof.interval import check_interval_certificate
+
+    x = z3.Int('x')
+    graph = explain_unsat(UnsatQuery('square', (UnsatConstraint('condition', (x*x == 2,)),))).proof
+    node = next(node for node in graph.nodes if node.interval is not None)
+    certificate = node.interval
+    assert check_interval_certificate(node, graph, certificate)
+    if mutation == 'no_conclusion':
+        node = replace(node, conclusion=None)
+    elif mutation == 'no_steps':
+        certificate = replace(certificate, steps=())
+    elif mutation in ('forward_premise', 'missing_bound'):
+        first = certificate.steps[0]
+        first = (replace(first, premises=(0,)) if mutation == 'forward_premise' else
+                 replace(first, bound_index=len(certificate.bounds)))
+        certificate = replace(certificate, steps=(first,) + certificate.steps[1:])
+    elif mutation == 'two_results':
+        certificate = replace(certificate, equality=certificate.conflict)
+    elif mutation == 'bad_result':
+        certificate = replace(certificate, conflict=(0, len(certificate.steps)))
+    else:
+        certificate = replace(certificate, equality=certificate.conflict, conflict=None)
+    assert not check_interval_certificate(node, graph, certificate)
 
 
 @pytest.mark.parametrize('mutation', ['term', 'sort', 'infinite_closed', 'linear_bound_missing',

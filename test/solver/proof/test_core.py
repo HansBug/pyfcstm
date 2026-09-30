@@ -130,6 +130,60 @@ def test_native_ite_proof_preserves_shared_typed_terms():
                for node in graph.nodes for parent in node.parents)
 
 
+def test_conditional_arithmetic_propagation_has_checked_local_certificates(monkeypatch):
+    from pyfcstm.solver.proof import rules
+    from pyfcstm.solver.proof.rules import check_arithmetic_certificate
+
+    original = rules._linear_certificate
+    searches = []
+
+    def reconstruct(node, graph, budget):
+        searches.append(node.node_id)
+        return original(node, graph, budget)
+
+    monkeypatch.setattr(rules, '_linear_certificate', reconstruct)
+    values = z3.Ints(' '.join('stage%d' % i for i in range(21)))
+    formulas = [values[0] == 0] + [
+        z3.Implies(values[i] >= 0, values[i + 1] == values[i] + 1) for i in range(20)
+    ] + [values[-1] < 0]
+    report = solver.explain_unsat(solver.UnsatQuery('propagation', tuple(
+        solver.UnsatConstraint('condition%d' % i, (formula,)) for i, formula in enumerate(formulas)
+    )))
+    assert report.reading_status == 'complete'
+    assert report.gaps == ()
+    arithmetic = [node for node in report.proof.nodes if node.rule == 'th-lemma']
+    assert arithmetic
+    for node in arithmetic:
+        assert node.certificate is not None
+        assert check_arithmetic_certificate(node, report.proof, node.certificate)
+    # Native unit-weight proposals should replay without a coefficient search.
+    assert searches == []
+
+
+@pytest.mark.parametrize('kind,scale', [('int', '2'), ('int', '3'), ('real', '1/3'), ('real', '2/5')])
+def test_scaled_conditional_propagation_and_satisfiable_perturbation(kind, scale):
+    from pyfcstm.solver.proof import UnsatReport
+
+    constructor = z3.Int if kind == 'int' else z3.Real
+    number = z3.IntVal if kind == 'int' else z3.RealVal
+    values = [constructor('scaled%d' % i) for i in range(9)]
+    for offset, expected in ((1, 'unsat'), (-1, 'sat')):
+        formulas = [values[0] == 0] + [
+            z3.Implies(values[i] >= 0, values[i + 1] == number(scale) * values[i] + offset)
+            for i in range(8)
+        ] + [values[-1] < 0]
+        report = solver.explain_unsat(solver.UnsatQuery('scaled-chain', tuple(
+            solver.UnsatConstraint('condition%d' % i, (formula,)) for i, formula in enumerate(formulas)
+        )))
+        assert report.solver_status == expected
+        if expected == 'unsat':
+            assert report.reading_status == 'complete'
+            assert report.gaps == ()
+            assert UnsatReport.from_canonical(report.to_canonical()) == report
+        else:
+            assert report.proof is None
+
+
 @pytest.mark.parametrize('mode', ['formal', '', None])
 def test_invalid_proof_modes_are_rejected(mode):
     with pytest.raises(ValueError, match='mode'):

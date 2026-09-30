@@ -11,16 +11,13 @@ import pyfcstm.solver as solver
 pytestmark = pytest.mark.unittest
 
 
-def test_branch_refutation_closes_hypotheses_before_the_root():
-    x, y = z3.Ints('x y')
-    query = solver.UnsatQuery('branch', (
-        solver.UnsatConstraint('update', (y == z3.If(x >= 0, x + 1, 0),)),
-        solver.UnsatConstraint('goal', (y < 0,)),
-    ))
-    report = solver.explain_unsat(query)
-    assert report.scope_check == 'passed'
-    assert report.proof.node(report.proof.root_id).open_hypotheses == ()
-    lemmas = [node for node in report.proof.nodes if node.rule == 'lemma']
+def test_branch_refutation_closes_hypotheses_before_the_root(proof_snapshot):
+    from pyfcstm.solver.proof import analyze_proof
+
+    analysis = analyze_proof(proof_snapshot('branches').proof)
+    assert analysis.scope_check == 'passed'
+    assert analysis.graph.node(analysis.graph.root_id).open_hypotheses == ()
+    lemmas = [node for node in analysis.graph.nodes if node.rule == 'lemma']
     assert lemmas
     assert all(node.discharged_hypotheses for node in lemmas)
     assert all(node.local_check == 'checked' for node in lemmas)
@@ -177,6 +174,21 @@ def _certificate_graph(expressions, weights, conclusion=None):
         ProofParameter('rational', str(weight)) for weight in weights)
     root = ProofNode('combination', 'th-lemma', tuple(node.node_id for node in nodes), claim, parameters=params)
     return replace(graph, root_id=root.node_id, nodes=nodes + (root,))
+
+
+@pytest.mark.parametrize('weights', [(1,), (2,), (1, 1)])
+def test_propagation_hints_cannot_prove_satisfiable_local_bounds(weights):
+    from dataclasses import replace
+    from pyfcstm.solver.proof import ProofParameter, analyze_proof
+
+    x, y = z3.Reals('x y')
+    graph = _certificate_graph((x >= 0, y < 0), weights)
+    root = graph.nodes[-1]
+    root = replace(root, parameters=(root.parameters[0], ProofParameter('symbol', 'assign-bounds')) +
+                   root.parameters[2:])
+    analysis = analyze_proof(replace(graph, nodes=graph.nodes[:-1] + (root,)))
+    assert analysis.graph.node(root.node_id).local_check == 'unsupported'
+    assert analysis.graph.node(root.node_id).certificate is None
 
 
 @pytest.mark.parametrize('case,expected', [

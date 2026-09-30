@@ -24,6 +24,19 @@ def test_no_refutation_has_an_explicit_reading_level(detail, text_aligner):
         '\nNo refutation is available.\n', reading.to_text(detail=detail))
 
 
+def test_large_unavailable_diagnostic_does_not_require_a_proof_graph(text_aligner):
+    from dataclasses import replace
+    from pyfcstm.solver.proof import ProofGap
+
+    reading = explain_unsat(UnsatQuery('empty', ())).reading
+    diagnostic = 'unavailable ' * 7000
+    reading = replace(reading, graph=None, gaps=(ProofGap('unavailable', None, diagnostic),))
+    text_aligner.assert_equal('Query: empty\nSolver result: SAT\nReading: not_requested\n'
+                              'View: brief\n\nNo refutation is available.\n'
+                              'Unexplained or invalid evidence:\n  unavailable: ' + diagnostic + '\n',
+                              reading.to_text(detail='brief'))
+
+
 def test_default_detail_is_standard(text_aligner):
     reading = explain_unsat(UnsatQuery('empty', ())).reading
     text_aligner.assert_equal(
@@ -226,13 +239,8 @@ Conclusion: the submitted conjunction is inconsistent.
 @pytest.mark.parametrize('language', ['en', 'zh'])
 @pytest.mark.parametrize('detail', ['brief', 'standard', 'detailed'])
 def test_conditional_with_a_large_guard_keeps_scopes_and_only_referenced_formulas(
-        language, detail, text_aligner):
-    predicates = z3.Bools(' '.join('condition_%02d' % i for i in range(12)))
-    x = z3.Int('x')
-    report = explain_unsat(UnsatQuery('conditional', (
-        UnsatConstraint('update', (z3.If(z3.Or(*predicates), x + 1, x + 2) == 0,)),
-        UnsatConstraint('initial', (x >= 0,)),
-    )))
+        language, detail, text_aligner, proof_snapshot):
+    report = proof_snapshot('conditional_long')
     assert report.reading_status == 'complete'
     snapshot = Path(__file__).with_name('proof_readings') / ('conditional_long.%s.%s.txt' % (detail, language))
     # Z3's auxiliary-name counters are process-wide. Normalize only those two
@@ -322,3 +330,194 @@ def test_reading_renders_certificate_atoms_outside_native_proof_roots(detail, te
     output = report.reading.to_text(detail=detail)
     loaded = UnsatReport.from_canonical(report.to_canonical())
     text_aligner.assert_equal(output, loaded.reading.to_text(detail=detail))
+
+
+def test_mechanical_steps_inside_a_scope_fold_without_hiding_its_boundary(proof_snapshot):
+    from pyfcstm.solver.proof.text import _compact_reading
+
+    report = proof_snapshot('branches')
+    before = report.to_canonical()
+    compact = _compact_reading(report.reading)
+    assert any(block.detail_block_ids and block.active_hypotheses for block in compact.blocks)
+    boundaries = {block.block_id for block in report.reading.blocks
+                  if block.kind in ('assumption', 'discharge')}
+    assert boundaries <= {block.block_id for block in compact.blocks}
+    assert {key for block in compact.blocks for key in block.evidence_node_ids} == {
+        key for block in report.reading.blocks for key in block.evidence_node_ids}
+    assert compact.get_block(compact.root_id).claims == report.reading.get_block(report.reading.root_id).claims
+    assert compact.get_block(compact.root_id).active_hypotheses == ()
+    assert report.to_canonical() == before
+
+
+def test_automatic_compaction_builds_the_reading_index_once(monkeypatch, text_aligner):
+    from pyfcstm.solver.proof.text import ProofReading
+
+    values = z3.Ints(' '.join('x%d' % i for i in range(17)))
+    formulas = [values[0] == 0] + [
+        z3.Implies(values[i] >= 0, values[i+1] == values[i]+1) for i in range(16)
+    ] + [values[-1] < 0]
+    report = explain_unsat(UnsatQuery('indexed_chain', tuple(
+        UnsatConstraint('condition_%d' % i, (formula,)) for i, formula in enumerate(formulas)
+    )))
+    expected = report.reading.to_text()
+    original = ProofReading.__post_init__
+    rebuilds = []
+
+    def counted(reading, graph):
+        rebuilds.append(len(reading.blocks))
+        original(reading, graph)
+
+    monkeypatch.setattr(ProofReading, '__post_init__', counted)
+    text_aligner.assert_equal(expected, report.reading.to_text())
+    assert len(rebuilds) <= 1
+
+
+def test_standard_chain_reading_shares_repeated_reference_sequences(text_aligner):
+    values = z3.Ints(' '.join('x%d' % i for i in range(51)))
+    formulas = [values[0] == 0] + [
+        z3.Implies(values[i] >= 0, values[i+1] == values[i]+1) for i in range(50)
+    ] + [values[-1] < 0]
+    report = explain_unsat(UnsatQuery('chain', tuple(
+        UnsatConstraint('a%d' % i, (formula,)) for i, formula in enumerate(formulas)
+    )))
+    before = report.to_canonical()
+    output = report.reading.to_text(detail='standard')
+    assert len(output.encode('utf-8')) <= 96 * 1024
+    restored = UnsatReport.from_canonical(before)
+    text_aligner.assert_equal(output, restored.reading.to_text(detail='standard'))
+    assert report.to_canonical() == before
+
+
+def test_long_conditional_chain_has_bounded_guide_and_standard_views():
+    values = z3.Ints(' '.join('x%d' % i for i in range(251)))
+    formulas = [values[0] == 0] + [
+        z3.Implies(values[i] >= 0, values[i + 1] == values[i] + 1) for i in range(250)
+    ] + [values[-1] < 0]
+    report = explain_unsat(UnsatQuery('long-chain', tuple(
+        UnsatConstraint('a%d' % i, (formula,)) for i, formula in enumerate(formulas)
+    )))
+    assert report.reading_status == 'complete'
+    assert report.gaps == ()
+    sizes = {detail: len(report.reading.to_text(detail=detail).encode('utf-8'))
+             for detail in ('brief', 'standard')}
+    assert sizes['brief'] <= 64 * 1024, sizes
+    assert sizes['standard'] <= 512 * 1024, sizes
+
+
+@pytest.mark.parametrize('language', ['en', 'zh'])
+def test_closed_step_guide_retains_original_block_references(language, proof_snapshot, text_aligner):
+    from pyfcstm.solver.proof.text import _render_guide
+
+    report = proof_snapshot('branches')
+    before = report.to_canonical()
+    output = _render_guide(report.reading, language)
+    expected = Path(__file__).with_name('proof_readings') / ('branches.guide.%s.txt' % language)
+    text_aligner.assert_equal(expected.read_text(encoding='utf-8'), output)
+    for key in re.findall(r'^(p\d+)  ', output, re.MULTILINE):
+        block = report.reading.get_block(key)
+        assert block.active_hypotheses == ()
+        assert report.reading.expand(key) == tuple(report.reading.get_block(parent)
+                                                  for parent in block.premise_block_ids)
+    assert report.to_canonical() == before
+
+
+def test_guide_preserves_source_alternatives_and_omits_unused_sources(text_aligner):
+    from pyfcstm.solver.proof import SourceDescription
+    from pyfcstm.solver.proof.text import _render_guide
+
+    report = explain_unsat(UnsatQuery('source-guide', (
+        UnsatConstraint('first', (z3.BoolVal(False),),
+                        SourceDescription('s1', 'First condition', 'rules.cfg', (1, 1, 1, 6), 'false')),
+        UnsatConstraint('duplicate', (z3.BoolVal(False),), SourceDescription('s2', 'Second condition')),
+        UnsatConstraint('unused', (z3.BoolVal(True),), SourceDescription('unused', 'Unused condition')),
+    )))
+    text_aligner.assert_equal('''\
+Query: source-guide
+Solver result: UNSAT
+Reading: complete
+View: brief
+Guide only: key semantic steps. Internal branches and mechanical steps remain in standard/detailed.
+Block IDs work with get_block(id) and expand(id); formulas expand with get_term_text(id).
+
+p0  Input: false
+  Input origin alternatives: first, duplicate
+  Source links: logical:s1, logical:s2
+
+Sources:
+  s1: First condition [rules.cfg] 1:1-1:6
+    false
+  s2: Second condition
+
+Conclusion: the submitted conjunction is inconsistent.
+''', _render_guide(report.reading, 'en'))
+
+
+def test_guide_keeps_domain_fold_identity(text_aligner, captured_branch_proof):
+    from pyfcstm.solver.proof.text import _render_guide
+    from .test_extensions import _branch_query
+
+    def propose(reading):
+        root = reading.get_block(reading.root_id)
+        return (FoldProposal(root.block_id, tuple(block.block_id for block in reading.blocks), (),
+                             root.claims, (), 'Both cases contradict the goal', '两个分支均与目标矛盾'),)
+
+    report = explain_unsat(_branch_query(), extensions=ProofExtensions(reading_folders=(ReadingFolder(propose),)))
+    text_aligner.assert_equal('''\
+Query: branches
+Solver result: UNSAT
+Reading: complete
+View: brief
+Guide only: key semantic steps. Internal branches and mechanical steps remain in standard/detailed.
+Block IDs work with get_block(id) and expand(id); formulas expand with get_term_text(id).
+
+fold:p47  Both cases contradict the goal: false
+
+Conclusion: the submitted conjunction is inconsistent.
+''', _render_guide(report.reading, 'en'))
+    assert report.reading.expand('fold:p47')
+
+
+def test_guide_of_a_local_refutation_keeps_its_condition_and_gap(proof_snapshot, text_aligner):
+    from dataclasses import replace
+    from pyfcstm.solver.proof import ProofGap
+    from pyfcstm.solver.proof.text import _render_guide
+
+    reading = proof_snapshot('branches').reading
+    root = reading.get_block('p43')
+    assert root.active_hypotheses == ('n38',)
+    index = reading.blocks.index(root)
+    local = replace(reading, graph=reading._graph, root_id=root.block_id,
+                    blocks=reading.blocks[:index + 1], status='partial',
+                    gaps=(ProofGap('analysis_incomplete', 'n43', 'local excerpt'),))
+    text_aligner.assert_equal('''\
+Query: branches
+Solver result: UNSAT
+Reading: partial
+View: brief
+Guide only: key semantic steps. Internal branches and mechanical steps remain in standard/detailed.
+Block IDs work with get_block(id) and expand(id); formulas expand with get_term_text(id).
+
+p0  Input: (y < 0)
+  Input origins: goal
+p7  Input: (y = (if (x >= 0) then (x + 1) else 0))
+  Input origins: update
+p43  Exact linear combination: false
+  Conditional on hypotheses (graph.node): n38
+  Combine 4 bounds: 2 <= 0; contradiction.
+
+The root conclusion still depends on local hypotheses.
+Unexplained or invalid evidence:
+  analysis_incomplete [n43]: local excerpt
+''', _render_guide(local, 'en'))
+
+
+def test_shared_collections_reserve_graph_ids_and_preserve_repeated_items(text_aligner):
+    from pyfcstm.solver.proof.text import _References
+
+    definitions = {}
+    references = _References(definitions, ('share0',))
+    items = tuple('a%d' % i for i in range(17)) + ('a0',)
+    assert references.join(items, ' + ', True) == '[[share1]] + a16'
+    text_aligner.assert_equal('''\
+share1 = (a0 + a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7 + a8 + a9 + a10 + a11 + a12 + a13 + a14 + a15)
+''', ''.join('%s = %s\n' % item for item in definitions.items()))

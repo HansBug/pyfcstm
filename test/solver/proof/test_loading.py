@@ -13,6 +13,74 @@ from pyfcstm.solver import UnsatConstraint, UnsatQuery, UnsatReport, explain_uns
 pytestmark = pytest.mark.unittest
 
 
+@pytest.mark.parametrize('mutation', ['contribution', 'assignment', 'required', 'assumptions'])
+def test_loading_replays_counting_from_local_premises(mutation):
+    p, q, s = z3.Bools('p q s')
+    report = explain_unsat(UnsatQuery('count', (
+        UnsatConstraint('limit', (z3.AtMost(p, q, s, 1),)),
+        UnsatConstraint('p', (p,)), UnsatConstraint('q', (q,)),
+    )))
+    data = json.loads(json.dumps(report.to_canonical()))
+    evidence = next(node['cardinality'] for node in data['proof']['nodes'] if node['cardinality'])
+    if mutation == 'contribution':
+        for item in evidence['contributions']:
+            item['minimum'] = item['maximum'] = 1
+    elif mutation == 'assignment':
+        evidence['assignments'][0][1] = not evidence['assignments'][0][1]
+    elif mutation == 'required':
+        evidence['constraint_value'] = not evidence['constraint_value']
+    else:
+        evidence['assumptions'] = []
+    with pytest.raises(ValueError, match='invalid cardinality derivation'):
+        UnsatReport.from_canonical(data)
+
+
+@pytest.mark.parametrize('mutation', ['endpoint', 'bound', 'rule'])
+def test_loading_replays_interval_steps_from_local_premises(mutation):
+    x = z3.Int('x')
+    report = explain_unsat(UnsatQuery('square', (UnsatConstraint('condition', (x*x == 2,)),)))
+    data = json.loads(json.dumps(report.to_canonical()))
+    evidence = next(node['interval'] for node in data['proof']['nodes'] if node['interval'])
+    if mutation == 'endpoint':
+        evidence['steps'][0]['lower'] = '123456'
+    elif mutation == 'bound':
+        evidence['bounds'][0]['constant'] = '123456'
+    else:
+        evidence['steps'][0]['rule'] = 'literal'
+        evidence['steps'][0]['bound_index'] = None
+    with pytest.raises(ValueError, match='invalid interval derivation'):
+        UnsatReport.from_canonical(data)
+
+
+@pytest.mark.parametrize('family', ['interval', 'cardinality'])
+def test_generated_certificate_replay_failure_warns_and_keeps_the_gap(monkeypatch, family):
+    from dataclasses import replace
+    from pyfcstm.solver.proof import interval, rules
+
+    p, q, s = z3.Bools('p q s')
+    x = z3.Int('x')
+    expressions = (x*x == 2,) if family == 'interval' else (z3.AtMost(p, q, s, 1), p, q)
+    query = UnsatQuery(family, (UnsatConstraint('conditions', expressions),))
+    module, name = (interval, 'interval_certificate') if family == 'interval' else (rules, '_cardinality_certificate')
+    original = getattr(module, name)
+
+    def corrupt(*args, **kwargs):
+        certificate = original(*args, **kwargs)
+        if certificate is None:
+            return None
+        if family == 'interval':
+            return replace(certificate, steps=(replace(certificate.steps[0], lower='123456'),) + certificate.steps[1:])
+        return replace(certificate, constraint_value=not certificate.constraint_value)
+
+    monkeypatch.setattr(module, name, corrupt)
+    with pytest.warns(RuntimeWarning, match='invalid_' + family + '_certificate'):
+        report = explain_unsat(query)
+    assert report.solver_status == 'unsat'
+    assert report.reading_status == 'partial'
+    assert any(gap.reason == 'invalid_' + family + '_certificate' for gap in report.gaps)
+    assert all(getattr(node, family) is None for node in report.proof.nodes)
+
+
 def _report():
     x = z3.Real('x')
     return explain_unsat(UnsatQuery('interval', (
@@ -29,6 +97,32 @@ def test_json_roundtrip_preserves_all_proof_and_reading_data(text_aligner):
         text_aligner.assert_equal(original.reading.to_text(language), restored.reading.to_text(language))
     decoded['proof']['nodes'].clear()
     assert restored.proof.nodes == original.proof.nodes
+
+
+def test_reading_claim_must_match_its_evidence():
+    report = explain_unsat(UnsatQuery('false_input', (
+        UnsatConstraint('false', (z3.BoolVal(False),)),
+        UnsatConstraint('true', (z3.BoolVal(True),)),
+    )))
+    data = report.to_canonical()
+    true_id = next(term.term_id for term in report.proof.terms if term.value == 'true')
+    data['reading']['blocks'][0]['claims'] = (true_id,)
+    with pytest.raises(ValueError, match='reading claims disagree with evidence'):
+        UnsatReport.from_canonical(data)
+
+
+@pytest.mark.parametrize('mutation', ['scope', 'premises', 'root'])
+def test_reading_cannot_change_the_native_derivation_boundary(proof_snapshot, mutation):
+    data = proof_snapshot('branches').to_canonical()
+    blocks = data['reading']['blocks']
+    if mutation == 'scope':
+        next(block for block in blocks if block['active_hypotheses'])['active_hypotheses'] = ()
+    elif mutation == 'premises':
+        next(block for block in blocks if block['premise_block_ids'])['premise_block_ids'] = ()
+    else:
+        data['reading']['root_id'] = blocks[0]['block_id']
+    with pytest.raises(ValueError, match='reading .* disagree'):
+        UnsatReport.from_canonical(data)
 
 
 def test_offline_loading_does_not_import_z3_or_the_bmc_stack(tmp_path, text_aligner):
@@ -405,6 +499,60 @@ def test_loader_rejects_linear_evidence_for_a_different_conclusion():
     data = UnsatReport('linear_equality', 'unsat', 'captured', graph).to_canonical()
     with pytest.raises(ValueError, match='must prove an arithmetic conclusion alternative'):
         UnsatReport.from_canonical(data)
+
+
+@pytest.mark.parametrize('direction', ['less', 'greater'])
+@pytest.mark.parametrize('mutation', ['weight', 'constant', 'strict', 'opposite_direction'])
+def test_loader_replays_both_directions_of_linear_equality(direction, mutation):
+    from dataclasses import replace
+    from .test_polynomial import _graph
+    from pyfcstm.solver.budget import SolveBudget
+    from pyfcstm.solver.proof.rules import _linear_equality
+
+    graph = _graph((('<=', 'x', 'y'), ('<=', 'y', 'x')), ('=', 'x', 'y'))
+    root = graph.node('target')
+    certificate = _linear_equality(root, graph, SolveBudget(None))
+    assert certificate is not None
+    graph = replace(graph, nodes=graph.nodes[:-1] + (replace(root, linear_equality=certificate),))
+    original = UnsatReport('linear_equality', 'unsat', 'captured', graph, proof_scope='full')
+    assert UnsatReport.from_canonical(original.to_canonical()).to_canonical() == original.to_canonical()
+    data = json.loads(json.dumps(original.to_canonical()))
+    evidence = data['proof']['nodes'][-1]['linear_equality']
+    combination = evidence[direction]
+    if mutation == 'weight':
+        combination['weights'][0] = '123456'
+    elif mutation == 'constant':
+        combination['constant'] = '123456'
+    elif mutation == 'strict':
+        combination['strict'] = not combination['strict']
+    else:
+        evidence[direction] = evidence['greater' if direction == 'less' else 'less']
+    with pytest.raises(ValueError, match='invalid linear equality derivation'):
+        UnsatReport.from_canonical(data)
+
+
+def test_generated_linear_equality_replay_rejects_a_corrupted_direction(monkeypatch):
+    from dataclasses import replace
+    from .test_polynomial import _graph
+    from pyfcstm.solver.proof import ProofParameter, analyze_proof, rules
+
+    graph = _graph((('<=', 'x', 'y'), ('<=', 'y', 'x')), ('=', 'x', 'y'))
+    root = replace(graph.nodes[-1], parameters=(ProofParameter('symbol', 'arith'),))
+    graph = replace(graph, nodes=graph.nodes[:-1] + (root,))
+    original = rules._linear_equality
+
+    def corrupt(*args):
+        certificate = original(*args)
+        assert certificate is not None
+        return replace(certificate, greater=certificate.less)
+
+    monkeypatch.setattr(rules, '_linear_equality', corrupt)
+    with pytest.warns(RuntimeWarning) as recorded:
+        result = analyze_proof(graph)
+    assert any('invalid_linear_equality_certificate' in str(item.message) for item in recorded)
+    assert result.graph.node(root.node_id).linear_equality is None
+    assert result.graph.node(root.node_id).local_check == 'unsupported'
+    assert any(gap.reason == 'invalid_linear_equality_certificate' for gap in result.gaps)
 
 
 @pytest.mark.parametrize('mutation', ['bound', 'weight', 'sum', 'strict', 'empty', 'nonlocal'])

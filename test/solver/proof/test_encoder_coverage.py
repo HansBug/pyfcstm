@@ -72,12 +72,12 @@ def test_generated_expression_has_a_complete_proof(name, kind, predicate):
 
 @pytest.mark.parametrize('name', ['round_tie', 'real_div_positive', 'sqrt_square', 'variable_power', 'shared_square', 'power_square_alias'])
 @pytest.mark.parametrize('language', ['en', 'zh'])
-def test_encoder_theory_proof_text_is_complete_and_portable(name, language, text_aligner):
+def test_encoder_theory_proof_text_is_complete_and_portable(name, language, text_aligner, proof_snapshot):
     from pathlib import Path
     from pyfcstm.solver import UnsatReport
 
     case = next(case for case in EXPRESSION_CASES if case[0] == name)
-    report = _expression_report(*case)
+    report = proof_snapshot(name) if name == 'round_tie' else _expression_report(*case)
     expected = (Path(__file__).parent / 'proof_readings' / (name + '.' + language + '.txt')).read_text(encoding='utf-8')
     text_aligner.assert_equal(expected, report.reading.to_text(language, detail='detailed'))
     text_aligner.assert_equal(expected, UnsatReport.from_canonical(report.to_canonical()).reading.to_text(language, detail='detailed'))

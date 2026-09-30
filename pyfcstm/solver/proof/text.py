@@ -1,5 +1,6 @@
 """Evidence-preserving readable deductions, usable without a native solver."""
 
+from collections import Counter
 from dataclasses import InitVar, asdict, dataclass, replace
 from fractions import Fraction
 import re
@@ -142,6 +143,9 @@ class ProofReading:
             ``standard`` (default) folds mechanical premises and includes
             shared formula definitions; ``detailed`` expands stored folds.
             All levels preserve gaps and the captured evidence remains unchanged.
+            Brief listings above 64 KiB become a guide of closed semantic
+            steps with original block IDs; this is not a hard limit on source
+            descriptions or diagnostics.
         :return: Plain text with a final newline. Brief text is a guide, not
             a standalone derivation; exact formulas remain available through
             :meth:`get_term_text` and all deductions through the detailed view.
@@ -152,25 +156,71 @@ class ProofReading:
         if detail not in ('brief', 'standard', 'detailed'):
             raise ValueError('detail must be brief, standard or detailed')
         reading = _expanded_reading(self) if detail == 'detailed' else _compact_reading(self)
-        return _render(reading, language, detail)
+        output = _render(reading, language, detail)
+        if detail == 'brief' and self.root_id is not None and len(output.encode('utf-8')) > 64 * 1024:
+            return _render_guide(self, language)
+        return output
+
+
+class _References:
+    """Share commutative collections in the text view; never change proof terms."""
+
+    def __init__(self, definitions, reserved, uses=None):
+        self.uses = uses or {}
+        self.definitions, self.reserved = definitions, set(reserved)
+        self.identities = {}
+        self.items = {}
+        self.next_id = 0
+
+    def join(self, items, separator, grouped=False):
+        items = tuple(items)
+        if len(items) <= 16:
+            return separator.join(items)
+        # All callers join commutative formulas, weighted inequalities or
+        # dependency sets. Stable item buckets keep shared chunks intact when
+        # another item is inserted into an otherwise identical collection.
+        ranks = self.items.setdefault((separator, grouped), {})
+        buckets = {}
+        for item in items:
+            rank = ranks.setdefault(item, len(ranks))
+            buckets.setdefault(rank // 16, []).append(item)
+        parts = []
+        for bucket in sorted(buckets):
+            chunk = tuple(sorted(buckets[bucket], key=ranks.__getitem__))
+            if len(chunk) == 1:
+                parts.append(chunk[0])
+                continue
+            identity = separator, grouped, chunk
+            if identity not in self.identities:
+                key = 'share%d' % self.next_id
+                while key in self.reserved or key in self.definitions:
+                    self.next_id += 1
+                    key = 'share%d' % self.next_id
+                self.next_id += 1
+                self.identities[identity] = key
+                value = separator.join(chunk)
+                self.definitions[key] = '(' + value + ')' if grouped else value
+            parts.append('[[%s]]' % self.identities[identity])
+        return separator.join(parts)
 
 
 class _TermTexts(dict):
     """Render additional certificate references only when the reader uses them."""
 
-    def __init__(self, graph, definitions):
+    def __init__(self, graph, definitions, references=None):
         super().__init__()
         self.graph, self.definitions = graph, definitions
+        self.references = references
 
     def __missing__(self, key):
         _term_texts(self.graph, (key,), self.definitions, self)
         return self[key]
 
 
-def _term_texts(graph, roots, definitions=None, values=None):
+def _term_texts(graph, roots, definitions=None, values=None, references=None):
     pending = [(key, False) for key in roots]
     if values is None:
-        values = _TermTexts(graph, definitions)
+        values = _TermTexts(graph, definitions, references)
     while pending:
         key, ready = pending.pop()
         if key in values:
@@ -197,12 +247,17 @@ def _term_texts(graph, roots, definitions=None, values=None):
         elif term.operator == 'ite':
             text = '(if %s then %s else %s)' % tuple(args)
         elif term.operator in ('=', '<', '<=', '>', '>=', '+', '*', 'and', 'or', '=>', '~'):
-            text = '(' + (' %s ' % term.operator).join(args) + ')'
+            separator = ' %s ' % term.operator
+            joined = (values.references.join(args, separator, True)
+                      if values.references is not None and term.operator in ('and', 'or', '+', '*')
+                      else separator.join(args))
+            text = '(' + joined + ')'
         elif term.operator in ('-', 'uminus'):
             text = '(-%s)' % args[0] if len(args) == 1 else '(' + ' - '.join(args) + ')'
         else:
             text = '%s(%s)' % (term.operator, ', '.join(args))
-        if definitions is not None and args and len(text) > 120:
+        shared = (values.references is not None and values.references.uses.get(key, 0) > 1 and len(text) > 12)
+        if definitions is not None and args and (len(text) > 120 or shared):
             definitions[term.term_id] = text
             text = '[[%s]]' % term.term_id
         values[term.term_id] = text
@@ -230,33 +285,80 @@ def _polynomial_text(coefficients, terms):
     return ' + '.join(parts) or '0'
 
 
-def _render(reading, language, detail):
-    zh = language == 'zh'
-    choose = lambda english, chinese: chinese if zh else english
+def _render_guide(reading, language):
+    """List key semantic steps with durable links to the original reading."""
+    choose = lambda english, chinese: chinese if language == 'zh' else english
+    titles = _titles(choose)
+    definitions = {}
+    mechanical = {'definition', 'logical', 'equality', 'rewrite', 'resolution', 'assumption'}
+    selected = tuple(block for block in reading.blocks if block.block_id == reading.root_id or
+                     not block.active_hypotheses and block.kind not in mechanical)
+    terms = _term_texts(reading._graph, tuple(key for block in selected for key in block.claims), definitions)
+    inputs = {item.occurrence_id: item for item in reading._graph.inputs}
     lines = [choose('Query: ', '查询：') + reading.query_id,
              choose('Solver result: ', '求解结果：') + reading.solver_status.upper(),
-             choose('Reading: ', '阅读完整度：') + reading.status]
-    if detail != 'detailed':
-        lines.append(choose('View: ', '阅读档位：') + detail)
-    if detail == 'brief' and reading.root_id is not None:
-        lines.append(choose('Guide only; use standard or detailed for the derivation.',
-                            '此档为导读；完整推导请使用 standard 或 detailed。'))
-    lines.append('')
-    if reading.root_id is None:
-        lines.append(choose('No refutation is available.', '没有可用的反证。'))
-        if reading.gaps:
-            lines.append(choose('Unexplained or invalid evidence:', '尚未解释或无效的证据：'))
-            lines.extend('  %s: %s' % (gap.reason, gap.detail) for gap in reading.gaps)
-        return '\n'.join(lines) + '\n'
-    graph = reading._graph
-    definitions = {}
-    roots = tuple(key for node in graph.nodes for key in
-                  ((node.conclusion,) if node.conclusion is not None else ()) + node.operands)
-    terms = _term_texts(graph, roots, definitions if detail != 'detailed' else None)
-    inputs = {item.occurrence_id: item for item in graph.inputs}
-    labels = {block.block_id: 'P%d' % (i + 1) for i, block in enumerate(reading.blocks)}
-    node_labels = {block.evidence_node_ids[0]: labels[block.block_id] for block in reading.blocks}
-    titles = {
+             choose('Reading: ', '阅读完整度：') + reading.status,
+             choose('View: brief', '阅读档位：brief'),
+             choose('Guide only: key semantic steps. Internal branches and mechanical steps remain in standard/detailed.',
+                    '仅作导读：展示关键语义步骤。分支内部与机械推导保留在 standard/detailed 中。'),
+             choose('Block IDs work with get_block(id) and expand(id); formulas expand with get_term_text(id).',
+                    '步骤 ID 可用于 get_block(id) 和 expand(id)；公式可用 get_term_text(id) 展开。'), '']
+    sources = set()
+    for block in selected:
+        node = reading._graph.node(block.evidence_node_ids[0])
+        title = choose(block.title_en, block.title_zh) if block.kind == 'domain' else titles[block.kind]
+        claim = '; '.join(terms[key] for key in block.claims)
+        lines.append('%s  %s%s%s' % (block.block_id, title, choose(': ', '：'), claim))
+        if block.active_hypotheses:
+            lines.append('  ' + choose('Conditional on hypotheses (graph.node): ', '依赖局部假设（graph.node）：') +
+                         ', '.join(block.active_hypotheses))
+        if node.input_occurrences:
+            origins = tuple(dict.fromkeys(inputs[key].constraint_id for key in node.input_occurrences))
+            prefix = (choose('Input origin alternatives: ', '输入来源候选：') if len(origins) > 1 else
+                      choose('Input origins: ', '输入来源：'))
+            lines.append('  ' + prefix + ', '.join(origins))
+        if node.certificate is not None and block.kind != 'domain':
+            certificate = node.certificate
+            lines.append('  ' + choose('Combine %d bounds: ', '组合 %d 条界：') % len(certificate.bounds) +
+                         '%s %s 0' % (certificate.constant, '<' if certificate.strict else '<=') +
+                         choose('; contradiction', '；矛盾') +
+                         (choose(' under the negated claim.', '（暂时否定上述结论）。')
+                          if any(bound.negated for bound in certificate.bounds) else choose('.', '。')))
+        if node.discharged_hypotheses:
+            lines.append('  ' + choose('Discharged %d local assumptions.', '已关闭 %d 个局部假设。') %
+                         len(node.discharged_hypotheses))
+        if block.source_links:
+            links = tuple(dict.fromkeys('%s:%s' % (link.relation, link.source_id) for link in block.source_links))
+            sources.update(link.source_id for link in block.source_links)
+            lines.append('  ' + choose('Source links: ', '源码关联：') + ', '.join(links))
+    references = set(re.findall(r'\[\[([^\]\n]+)\]\]', '\n'.join(lines)))
+    if references:
+        lines.extend(('', choose('Formula references:', '公式引用：')))
+        lines.extend('  [[%s]]' % key for key in definitions if key in references)
+    if sources:
+        lines.extend(('', choose('Sources:', '源码：')))
+        for source in reading.sources:
+            if source.source_id not in sources:
+                continue
+            location = '' if source.document_id is None else ' [%s]' % source.document_id
+            if source.span is not None:
+                location += ' %d:%d-%d:%d' % source.span
+            lines.append('  %s: %s%s' % (source.source_id, source.title, location))
+            if source.excerpt:
+                lines.append('    ' + source.excerpt)
+    conditional = reading.get_block(reading.root_id).active_hypotheses
+    lines.extend(('', choose('The root conclusion still depends on local hypotheses.',
+                             '根结论仍依赖局部假设。') if conditional else
+                  choose('Conclusion: the submitted conjunction is inconsistent.',
+                         '结论：提交的条件合取不可满足。')))
+    if reading.gaps:
+        lines.append(choose('Unexplained or invalid evidence:', '尚未解释或无效的证据：'))
+        lines.extend('  %s [%s]: %s' % (gap.reason, gap.node_id, gap.detail) for gap in reading.gaps)
+    return '\n'.join(lines) + '\n'
+
+
+def _titles(choose):
+    return {
         'input': choose('Input', '输入条件'), 'assumption': choose('Assume', '局部假设'),
         'discharge': choose('Discharge local assumptions', '关闭局部假设'),
         'arithmetic': choose('Exact linear combination', '精确线性组合'),
@@ -286,6 +388,39 @@ def _render(reading, language, detail):
         'rewrite': choose('Equivalent rewriting', '等价改写'),
         'opaque': choose('Unsupported inference', '尚未解释的推导'),
     }
+
+
+def _render(reading, language, detail):
+    zh = language == 'zh'
+    choose = lambda english, chinese: chinese if zh else english
+    lines = [choose('Query: ', '查询：') + reading.query_id,
+             choose('Solver result: ', '求解结果：') + reading.solver_status.upper(),
+             choose('Reading: ', '阅读完整度：') + reading.status]
+    if detail != 'detailed':
+        lines.append(choose('View: ', '阅读档位：') + detail)
+    if detail == 'brief' and reading.root_id is not None:
+        lines.append(choose('Guide only; use standard or detailed for the derivation.',
+                            '此档为导读；完整推导请使用 standard 或 detailed。'))
+    lines.append('')
+    if reading.root_id is None:
+        lines.append(choose('No refutation is available.', '没有可用的反证。'))
+        if reading.gaps:
+            lines.append(choose('Unexplained or invalid evidence:', '尚未解释或无效的证据：'))
+            lines.extend('  %s: %s' % (gap.reason, gap.detail) for gap in reading.gaps)
+        return '\n'.join(lines) + '\n'
+    graph = reading._graph
+    definitions = {}
+    uses = Counter(child for term in graph.terms for child in term.arguments) if len(reading.blocks) > 64 else {}
+    references = _References(definitions, (term.term_id for term in graph.terms), uses) if detail == 'standard' else None
+    roots = tuple(key for block in reading.blocks for key in block.claims)
+    terms = _term_texts(graph, roots, definitions if detail != 'detailed' else None, references=references)
+
+    def block_references(keys):
+        return references.join(keys, ', ') if references is not None else ', '.join(keys)
+    inputs = {item.occurrence_id: item for item in graph.inputs}
+    labels = {block.block_id: 'P%d' % (i + 1) for i, block in enumerate(reading.blocks)}
+    node_labels = {block.evidence_node_ids[0]: labels[block.block_id] for block in reading.blocks}
+    titles = _titles(choose)
     interval_rules = {
         'congruence_sum': choose('substitute equal terms and cancel opposite coefficients',
                                  '替换相等项并消去相反系数'),
@@ -309,7 +444,7 @@ def _render(reading, language, detail):
             title = choose('Propagate premises; ', '前提推导；') + title
         lines.append('%s  %s' % (labels[block.block_id], title))
         if block.premise_block_ids:
-            lines.append('  ' + choose('From: ', '根据：') + ', '.join(labels[key] for key in block.premise_block_ids))
+            lines.append('  ' + choose('From: ', '根据：') + block_references(labels[key] for key in block.premise_block_ids))
         if node.input_occurrences:
             origins = tuple(dict.fromkeys(inputs[key].constraint_id for key in node.input_occurrences))
             lines.append('  ' + choose('Input origins: ', '输入来源：') + ', '.join(origins))
@@ -317,10 +452,10 @@ def _render(reading, language, detail):
                 lines.append('  ' + choose('These are alternative occurrences of the same formula.',
                                           '这些是同一公式的不同来源候选。'))
         if block.active_hypotheses:
-            lines.append('  ' + choose('Under assumptions: ', '当前假设：') + ', '.join(
+            lines.append('  ' + choose('Under assumptions: ', '当前假设：') + block_references(
                 node_labels[key] for key in block.active_hypotheses))
         if node.discharged_hypotheses and block.kind != 'domain':
-            lines.append('  ' + choose('Closed: ', '已关闭：') + ', '.join(
+            lines.append('  ' + choose('Closed: ', '已关闭：') + block_references(
                 node_labels[key] for key in node.discharged_hypotheses))
         if block.kind in ('division_identity', 'remainder_lower', 'remainder_upper'):
             lines.append('  ' + choose(
@@ -370,19 +505,30 @@ def _render(reading, language, detail):
             if temporary:
                 lines.append('  ' + choose('To refute the negated conclusion, temporarily assume:',
                                           '为反驳结论的否定，暂时假设：'))
+                assumptions = []
                 for bound in temporary:
                     literal = graph.term(bound.term_id)
                     assumption = (terms[literal.arguments[0]] if literal.operator == 'not'
                                   else 'not (%s)' % terms[bound.term_id])
-                    lines.append('    ' + assumption)
+                    assumptions.append(assumption)
+                if detail == 'standard' and len(assumptions) > 16:
+                    lines.append('    ' + references.join(assumptions, ' and ', True))
+                elif detail == 'brief' and len(assumptions) > 16:
+                    lines.append('    not (%s)' % terms[node.conclusion])
+                else:
+                    lines.extend('    ' + assumption for assumption in assumptions)
             relation = '<' if certificate.strict else '<='
             if detail == 'brief':
                 lines.append('  ' + choose('Combination: %d inequalities; sum ', '组合 %d 条不等式；相加得到 ') %
                              len(certificate.bounds) + '%s %s 0; ' % (certificate.constant, relation) +
                              choose('contradiction.', '矛盾。'))
             else:
-                for bound, weight in zip(certificate.bounds, certificate.weights):
-                    lines.append('  %s * [%s]' % (weight, _linear_text(bound, terms)))
+                weighted = tuple('%s * [%s]' % (weight, _linear_text(bound, terms))
+                                 for bound, weight in zip(certificate.bounds, certificate.weights))
+                if detail == 'standard' and len(weighted) > 16:
+                    lines.append('  ' + choose('Combination: ', '组合：') + references.join(weighted, ' + '))
+                else:
+                    lines.extend('  ' + item for item in weighted)
                 lines.append('  ' + choose('Sum: ', '相加得到：') + '%s %s 0; ' % (certificate.constant, relation) +
                              choose('contradiction.', '矛盾。'))
             if temporary:
@@ -557,6 +703,7 @@ def _render(reading, language, detail):
     if references:
         lines.append(choose('Formula references (expand with get_term_text):',
                             '公式引用（使用 get_term_text 展开）：') if detail == 'brief' else
+                     choose('Shared definitions:', '共享定义：') if any(key.startswith('share') for key in references) else
                      choose('Formula definitions:', '公式定义：'))
         for key, value in definitions.items():
             if key in references:
@@ -598,12 +745,14 @@ def _expanded_reading(reading):
 
 
 def _compact_reading(reading):
-    """Absorb exclusively used mechanical premises into semantic steps.
+    """Fold exclusive mechanical slices without rebuilding the DAG per slice.
 
-    Hypothesis boundaries, unsupported steps and caller-defined folds remain
-    visible. The existing fold validator checks each resulting proof slice.
+    Assumption/discharge boundaries and unsupported evidence stay visible.
+    Only a slice's root may have outside users; its claims and open hypotheses
+    are preserved. Caller-defined folds still use the full proposal validator.
     """
     blocks = {block.block_id: block for block in reading.blocks}
+    order = {key: index for index, key in enumerate(blocks)}
     users = {key: set() for key in blocks}
     for block in reading.blocks:
         for parent in block.premise_block_ids:
@@ -614,39 +763,44 @@ def _compact_reading(reading):
     mechanical = {block.block_id for block in reading.blocks
                   if block.kind in ('logical', 'equality', 'rewrite', 'resolution')
                   and block.block_id not in protected
-                  and not block.active_hypotheses
                   and not reading._graph.node(block.evidence_node_ids[0]).discharged_hypotheses}
-    consumed = set()
+    consumed, folded, details = set(), {}, list(reading.detail_blocks)
     for root in reversed(reading.blocks):
-        if (root.block_id in consumed or root.block_id in protected or root.active_hypotheses or
+        if (root.block_id in consumed or root.block_id in protected or
                 root.kind in ('input', 'assumption', 'discharge', 'opaque', 'domain')):
             continue
-        selected = {root.block_id}
-        changed = True
-        while changed:
-            changed = False
-            for key in tuple(selected):
-                for parent in blocks[key].premise_block_ids:
-                    if (parent in mechanical and parent not in selected and parent not in consumed
-                            and users[parent] <= selected):
-                        selected.add(parent)
-                        changed = True
+        selected, pending = {root.block_id}, [root.block_id]
+        while pending:
+            for parent in blocks[pending.pop()].premise_block_ids:
+                if (parent in mechanical and parent not in selected and parent not in consumed
+                        and users[parent] <= selected):
+                    selected.add(parent)
+                    pending.append(parent)
         if len(selected) == 1:
             continue
         consumed.update(selected)
-        boundary = {parent for key in selected for parent in blocks[key].premise_block_ids
-                    if parent not in selected}
-        proposal = FoldProposal(
-            root.block_id, tuple(key for key in blocks if key in selected),
-            tuple(key for key in blocks if key in boundary), root.claims, root.active_hypotheses,
-            'Propagate premises', '前提推导')
-        reading = _fold(reading, proposal)
-        # Keep the semantic root's certificate visible. Only its mechanical
-        # premises are folded; caller-defined domain folds remain opaque here.
-        reading = replace(reading, graph=reading._graph, blocks=tuple(
-            replace(block, kind=root.kind) if block.block_id == 'fold:' + root.block_id else block
-            for block in reading.blocks))
-    return reading
+        covered = tuple(blocks[key] for key in sorted(selected, key=order.__getitem__))
+        boundary = {parent for block in covered for parent in block.premise_block_ids if parent not in selected}
+        evidence = tuple(dict.fromkeys(root.evidence_node_ids + tuple(
+            key for block in covered for key in block.evidence_node_ids)))
+        folded[root.block_id] = ReadingBlock(
+            'fold:' + root.block_id, root.kind, root.claims,
+            tuple(sorted(boundary, key=order.__getitem__)), root.active_hypotheses, evidence,
+            tuple(dict.fromkeys(link for block in covered for link in block.source_links)),
+            tuple(block.block_id for block in covered), 'Propagate premises', '前提推导')
+        details.extend(covered)
+    if not folded:
+        return reading
+    aliases = {key: block.block_id for key, block in folded.items()}
+    result = []
+    for original in reading.blocks:
+        if original.block_id in consumed and original.block_id not in folded:
+            continue
+        block = folded.get(original.block_id, original)
+        result.append(replace(block, premise_block_ids=tuple(
+            aliases.get(key, key) for key in block.premise_block_ids)))
+    return replace(reading, graph=reading._graph, blocks=tuple(result),
+                   root_id=aliases.get(reading.root_id, reading.root_id), detail_blocks=tuple(details))
 
 
 def _fold(reading, proposal):

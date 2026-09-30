@@ -1,0 +1,17 @@
+Query: branches
+Solver result: UNSAT
+Reading: complete
+View: brief
+Guide only: key semantic steps. Internal branches and mechanical steps remain in standard/detailed.
+Block IDs work with get_block(id) and expand(id); formulas expand with get_term_text(id).
+
+p0  Input: (y < 0)
+  Input origins: goal
+p7  Input: (y = (if (x >= 0) then (x + 1) else 0))
+  Input origins: update
+p44  Discharge local assumptions: not ((x >= 0))
+  Discharged 1 local assumptions.
+p47  Exact linear combination: false
+  Combine 3 bounds: 1 <= 0; contradiction.
+
+Conclusion: the submitted conjunction is inconsistent.

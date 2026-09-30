@@ -131,7 +131,6 @@ def capture_proof(query, budget, names, source_adapter):
         context = z3.Context(proof=True)
         native = z3.Solver(ctx=context)
         native.set('arith.solver', 2)
-        native.set('arith.propagation_mode', 0)
         groups = query.background + query.constraints
         original_context = groups[0].expressions[0].ctx if groups else None
         source_bindings = tuple(source_adapter.bindings())

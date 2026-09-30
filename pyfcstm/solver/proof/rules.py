@@ -93,6 +93,12 @@ def _invalid_gap(node, reason, detail):
     return ProofGap(reason, node.node_id, detail)
 
 
+def _clause_literals(term):
+    """Split only an actual Boolean disjunction, never an authored namesake."""
+    return (term.arguments if term.operator_kind == 'builtin' and term.operator == 'or'
+            and term.sort == 'Bool' else (term.term_id,))
+
+
 def _add(left, right, weight=Fraction(1)):
     result = dict(left)
     for term, coefficient in right.items():
@@ -229,14 +235,22 @@ def _bound(term_id, negated, graph, nonlinear_atoms=False, tighten=True):
 
 def _certificate(node, graph):
     parameters = tuple(parameter.value for parameter in node.parameters)
-    if parameters[:2] != ('arith', 'farkas'):
+    propagation = parameters[:2] == ('arith', 'assign-bounds')
+    if not propagation and parameters[:2] != ('arith', 'farkas'):
         return None, 'unsupported'
     literals = [(graph.node(parent).conclusion, False) for parent in node.parents]
     conclusion = graph.term(node.conclusion)
     if not _is_false(node.conclusion, graph):
-        clauses = conclusion.arguments if conclusion.operator == 'or' else (node.conclusion,)
+        clauses = _clause_literals(conclusion)
         literals.extend((clause, True) for clause in clauses)
     weights = tuple(Fraction(value) for value in parameters[2:])
+    if propagation:
+        # Bound propagation supplies antecedent coefficients, not a full Farkas
+        # vector. Unit coefficients propose an order-independent combination
+        # including the negated propagated bound. Replay still has to close it.
+        if len(weights) + 1 != len(literals) or any(abs(value) != 1 for value in weights):
+            return None, 'unsupported'
+        weights = (Fraction(1),) * len(literals)
     if len(weights) != len(literals):
         return None, 'unsupported'
     bounds = tuple(_bound(term, negated, graph) for term, negated in literals)
@@ -252,7 +266,7 @@ def _certificate(node, graph):
         constant += weight * Fraction(bound.constant)
         strict = strict or (weight > 0 and bound.relation == 'lt')
     if total or constant < 0 or (constant == 0 and not strict):
-        return None, 'invalid'
+        return None, 'unsupported' if propagation else 'invalid'
     return ArithmeticCertificate(bounds, tuple(str(value) for value in weights),
                                  str(constant), strict), 'checked'
 
@@ -270,16 +284,23 @@ def check_arithmetic_certificate(node, graph, certificate):
     literals = {(graph.node(parent).conclusion, False) for parent in node.parents}
     if not _is_false(node.conclusion, graph):
         conclusion = graph.term(node.conclusion)
-        clauses = (conclusion.arguments if conclusion.operator_kind == 'builtin' and
-                   conclusion.operator == 'or' else (node.conclusion,))
+        clauses = _clause_literals(conclusion)
         literals.update((clause, True) for clause in clauses)
-    total, constant, strict = {}, Fraction(0), False
-    for bound, value in zip(certificate.bounds, certificate.weights):
+    for bound in certificate.bounds:
         if (bound.term_id, bound.negated) not in literals:
             return False
         if not any(bound == _bound(bound.term_id, bound.negated, graph, nonlinear)
                    for nonlinear in (False, True)):
             return False
+    return _check_weighted_sum(certificate)
+
+
+def _check_weighted_sum(certificate):
+    """Add already justified bounds with exact signed weights."""
+    if not certificate.bounds or len(certificate.bounds) != len(certificate.weights):
+        return False
+    total, constant, strict = {}, Fraction(0), False
+    for bound, value in zip(certificate.bounds, certificate.weights):
         weight = Fraction(value)
         if weight < 0 and bound.relation != 'eq':
             return False
@@ -296,7 +317,7 @@ def _local_pair_certificate(node, graph):
         return None
     conclusion = graph.term(node.conclusion)
     if not _is_false(node.conclusion, graph):
-        clauses = conclusion.arguments if conclusion.operator_kind == 'builtin' and conclusion.operator == 'or' else (node.conclusion,)
+        clauses = _clause_literals(conclusion)
         literals.extend((clause, True) for clause in clauses)
     bounds = tuple(bound for term, negated in literals for bound in (_bound(term, negated, graph, True),)
                    if bound is not None)
@@ -330,7 +351,7 @@ def _linear_certificate(node, graph, budget):
     literals = [(graph.node(parent).conclusion, False) for parent in node.parents]
     if not _is_false(node.conclusion, graph):
         conclusion = graph.term(node.conclusion)
-        clauses = conclusion.arguments if conclusion.operator == 'or' else (node.conclusion,)
+        clauses = _clause_literals(conclusion)
         literals.extend((clause, True) for clause in clauses)
     bounds = tuple(bound for term, negated in literals
                    for bound in (_bound(term, negated, graph, True),) if bound is not None)
@@ -387,7 +408,7 @@ def _linear_equality(node, graph, budget):
     if node.conclusion is None:
         return None
     conclusion = graph.term(node.conclusion)
-    clauses = conclusion.arguments if conclusion.operator == 'or' else (node.conclusion,)
+    clauses = _clause_literals(conclusion)
     literals = [(graph.node(parent).conclusion, False) for parent in node.parents]
     literals.extend((clause, True) for clause in clauses)
     bounds = tuple(bound for term, negated in literals
@@ -416,11 +437,42 @@ def _linear_equality(node, graph, budget):
     return None
 
 
+def check_linear_equality_certificate(node, graph, certificate):
+    """Check both strict-order refutations against their own temporary bound."""
+    if node.conclusion is None:
+        return False
+    clauses = _clause_literals(graph.term(node.conclusion))
+    if certificate.term_id not in clauses:
+        return False
+    term = graph.term(certificate.term_id)
+    if term.operator_kind != 'builtin' or term.operator != '=' or len(term.arguments) != 2:
+        return False
+    equality = _bound(certificate.term_id, False, graph, True)
+    if equality is None:
+        return False
+    literals = [(graph.node(parent).conclusion, False) for parent in node.parents]
+    literals.extend((clause, True) for clause in clauses)
+    bounds = tuple(bound for key, negated in literals
+                   for bound in (_bound(key, negated, graph, True),) if bound is not None)
+    integer = all(graph.term(key).sort == 'Int' for key in term.arguments)
+    for sign, combination in ((1, certificate.less), (-1, certificate.greater)):
+        assumption = replace(equality, negated=True,
+                             coefficients=tuple((key, str(sign * Fraction(value)))
+                                                for key, value in equality.coefficients),
+                             constant=str(sign * Fraction(equality.constant) + int(integer)),
+                             relation='le' if integer else 'lt')
+        if any(bound not in bounds + (assumption,) for bound in combination.bounds):
+            return False
+        if not _check_weighted_sum(combination):
+            return False
+    return True
+
+
 def _arithmetic_identity(node, graph):
     if node.conclusion is None:
         return False
     conclusion = graph.term(node.conclusion)
-    clauses = conclusion.arguments if conclusion.operator_kind == 'builtin' and conclusion.operator == 'or' else (node.conclusion,)
+    clauses = _clause_literals(conclusion)
     for clause in clauses:
         bound = _bound(clause, False, graph, True)
         if bound is not None and not bound.coefficients:
@@ -506,7 +558,7 @@ def _floor_axiom(node, graph, budget):
     if node.conclusion is None:
         return None
     conclusion = graph.term(node.conclusion)
-    clauses = conclusion.arguments if conclusion.operator_kind == 'builtin' and conclusion.operator == 'or' else (node.conclusion,)
+    clauses = _clause_literals(conclusion)
     for clause in clauses:
         bound = _bound(clause, False, graph, True)
         if bound is None:
@@ -785,8 +837,10 @@ def _boolean_literal(term_id, value, graph):
     return term_id, value
 
 
-def _cardinality_certificate(node, graph, budget):
-    """Bound a native PB lemma using only its premises and negated conclusion."""
+def _counting_context(node, graph, budget):
+    """Recover Boolean assignments from this inference alone."""
+    if node.conclusion is None:
+        return None
     conclusion = graph.term(node.conclusion)
     assumptions = (() if _is_false(node.conclusion, graph) else
                    conclusion.arguments if conclusion.operator == 'or' and
@@ -802,45 +856,78 @@ def _cardinality_certificate(node, graph, budget):
         if term_id in assignments and assignments[term_id] != value:
             return None
         assignments[term_id] = value
+    return tuple(assumptions), assignments
+
+
+def _counting_constraint(term_id, required, assumptions, assignments, graph, budget):
+    """Recompute one weighted Boolean range and its conflicting requirement."""
     operators = {'at-most': 'le', 'at-least': 'ge', 'pble': 'le', 'pbge': 'ge', 'pbeq': 'eq'}
-    for term_id, required in assignments.items():
-        term = graph.term(term_id)
-        if term.operator_kind != 'builtin' or term.operator not in operators:
-            continue
-        if any(graph.term(argument).sort != 'Bool' for argument in term.arguments):
-            return None
-        parameters = tuple(parameter.value for parameter in term.parameters)
-        expected = 1 if term.operator in ('at-most', 'at-least') else 1 + len(term.arguments)
-        if len(parameters) != expected or any(parameter.kind != 'integer' for parameter in term.parameters):
-            return None
-        threshold = int(parameters[0])
-        weights = (1,) * len(term.arguments) if expected == 1 else tuple(int(p) for p in parameters[1:])
-        contributions = []
-        for argument, weight in zip(term.arguments, weights):
-            budget.checkpoint('proof analysis')
-            atom, positive = _boolean_literal(argument, True, graph)
-            fact = graph.term(atom)
-            value = assignments.get(atom)
-            if fact.kind == 'literal' and fact.sort == 'Bool':
-                value = fact.value == 'true'
-            if value is None:
-                low, high = min(0, weight), max(0, weight)
-            else:
-                low = high = weight * int(value == positive)
-            contributions.append(CountContribution(argument, weight, low, high))
-        certificate = CardinalityCertificate(tuple(assumptions), term_id, required,
-                                             tuple(assignments.items()), tuple(contributions))
-        low, high = certificate.minimum, certificate.maximum
-        relation = operators[term.operator]
-        if relation == 'le':
-            actual = True if high <= threshold else False if low > threshold else None
-        elif relation == 'ge':
-            actual = True if low >= threshold else False if high < threshold else None
+    term = graph.term(term_id)
+    if term.operator_kind != 'builtin' or term.operator not in operators:
+        return None
+    if any(graph.term(argument).sort != 'Bool' for argument in term.arguments):
+        return None
+    parameters = tuple(parameter.value for parameter in term.parameters)
+    expected = 1 if term.operator in ('at-most', 'at-least') else 1 + len(term.arguments)
+    if len(parameters) != expected or any(parameter.kind != 'integer' for parameter in term.parameters):
+        return None
+    threshold = int(parameters[0])
+    weights = (1,) * len(term.arguments) if expected == 1 else tuple(int(p) for p in parameters[1:])
+    contributions = []
+    for argument, weight in zip(term.arguments, weights):
+        budget.checkpoint('proof analysis')
+        atom, positive = _boolean_literal(argument, True, graph)
+        fact = graph.term(atom)
+        value = assignments.get(atom)
+        if fact.kind == 'literal' and fact.sort == 'Bool':
+            value = fact.value == 'true'
+        if value is None:
+            low, high = min(0, weight), max(0, weight)
         else:
-            actual = True if low == high == threshold else False if high < threshold or low > threshold else None
-        if actual is not None and actual != required:
+            low = high = weight * int(value == positive)
+        contributions.append(CountContribution(argument, weight, low, high))
+    certificate = CardinalityCertificate(tuple(assumptions), term_id, required,
+                                         tuple(assignments.items()), tuple(contributions))
+    low, high = certificate.minimum, certificate.maximum
+    relation = operators[term.operator]
+    if relation == 'le':
+        actual = True if high <= threshold else False if low > threshold else None
+    elif relation == 'ge':
+        actual = True if low >= threshold else False if high < threshold else None
+    else:
+        actual = True if low == high == threshold else False if high < threshold or low > threshold else None
+    if actual is not None and actual != required:
+        return certificate
+    return None
+
+
+def _cardinality_certificate(node, graph, budget):
+    """Select a counting contradiction among the local Boolean constraints."""
+    context = _counting_context(node, graph, budget)
+    if context is None:
+        return None
+    assumptions, assignments = context
+    for term_id, required in assignments.items():
+        certificate = _counting_constraint(term_id, required, assumptions, assignments, graph, budget)
+        if certificate is not None:
             return certificate
     return None
+
+
+def check_cardinality_certificate(node, graph, certificate, *, budget=None):
+    """Replay the recorded constraint using local facts, without proof search."""
+    from ..budget import SolveBudget
+
+    budget = SolveBudget(None) if budget is None else budget
+    context = _counting_context(node, graph, budget)
+    if context is None:
+        return False
+    assumptions, assignments = context
+    if certificate.constraint_id not in assignments:
+        return False
+    expected = _counting_constraint(certificate.constraint_id, assignments[certificate.constraint_id],
+                                    assumptions, assignments, graph, budget)
+    return expected is not None and certificate == expected
 
 
 def analyze_proof(graph: ProofGraph, rule_handlers=(), budget=None) -> ProofAnalysis:
@@ -886,7 +973,7 @@ def analyze_proof(graph: ProofGraph, rule_handlers=(), budget=None) -> ProofAnal
             elif node.rule == 'lemma':
                 kind = 'discharge'
                 fact = graph.term(node.conclusion)
-                literals = fact.arguments if fact.operator == 'or' else (node.conclusion,)
+                literals = _clause_literals(fact)
                 single = len(opened) == 1 and _complement(
                     analyzed[next(iter(opened))].conclusion, node.conclusion, graph,
                 )
@@ -939,8 +1026,9 @@ def analyze_proof(graph: ProofGraph, rule_handlers=(), budget=None) -> ProofAnal
                 else:
                     certificate, local = _certificate(node, graph)
                     kind = 'arithmetic' if certificate is not None else 'opaque'
-                if local == 'unsupported' and tuple(p.value for p in node.parameters[:2]) in (
-                        ('arith',), ('arith', 'farkas'), ('arith', 'eq-propagate'), ('arith', 'gcd-test')):
+                if local == 'unsupported' and node.parameters and node.parameters[0].value == 'arith':
+                    # Native labels select fast paths, not the set of local
+                    # conclusions our independent arithmetic checkers can prove.
                     certificate = (_local_pair_certificate(node, graph) or
                                    _linear_certificate(node, graph, budget))
                     if certificate is not None:
@@ -950,19 +1038,31 @@ def analyze_proof(graph: ProofGraph, rule_handlers=(), budget=None) -> ProofAnal
                         interval = interval_certificate(node, graph, budget)
                         if interval is not None:
                             local, kind = 'checked', 'interval'
-                if local == 'unsupported' and tuple(p.value for p in node.parameters[:2]) in (
-                        ('arith',), ('arith', 'farkas'), ('arith', 'eq-propagate'), ('arith', 'gcd-test')):
-                    linear_equality = _linear_equality(node, graph, budget)
-                    if linear_equality is not None:
-                        local, kind = 'checked', 'linear_equality'
-                if local == 'unsupported' and tuple(p.value for p in node.parameters[:2]) in (
-                        ('arith',), ('arith', 'farkas'), ('arith', 'eq-propagate'), ('arith', 'gcd-test')):
-                    from .polynomial import polynomial_certificate
-                    polynomial = polynomial_certificate(node, graph, budget, diagnostics=diagnostics)
-                    if polynomial is not None:
-                        local, kind = 'checked', 'polynomial'
+                    if local == 'unsupported':
+                        linear_equality = _linear_equality(node, graph, budget)
+                        if linear_equality is not None:
+                            local, kind = 'checked', 'linear_equality'
+                    if local == 'unsupported':
+                        from .polynomial import polynomial_certificate
+                        polynomial = polynomial_certificate(node, graph, budget, diagnostics=diagnostics)
+                        if polynomial is not None:
+                            local, kind = 'checked', 'polynomial'
             elif kind == 'opaque':
                 local = 'unsupported'
+            if linear_equality is not None and not check_linear_equality_certificate(node, graph, linear_equality):
+                diagnostics.append(_invalid_gap(node, 'invalid_linear_equality_certificate',
+                                                'generated equality evidence failed replay'))
+                linear_equality, local, kind = None, 'unsupported', 'opaque'
+            if cardinality is not None and not check_cardinality_certificate(node, graph, cardinality, budget=budget):
+                diagnostics.append(_invalid_gap(node, 'invalid_cardinality_certificate',
+                                                'generated counting evidence failed replay'))
+                cardinality, local, kind = None, 'unsupported', 'opaque'
+            if interval is not None:
+                from .interval import check_interval_certificate
+                if not check_interval_certificate(node, graph, interval, budget=budget):
+                    diagnostics.append(_invalid_gap(node, 'invalid_interval_certificate',
+                                                    'generated interval evidence failed replay'))
+                    interval, local, kind = None, 'unsupported', 'opaque'
             if local == 'invalid':
                 rules = 'failed'
                 gaps.append(_invalid_gap(node, 'invalid_inference',

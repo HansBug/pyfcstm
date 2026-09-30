@@ -27,34 +27,30 @@ P5  Input
   Input origins: update
   Therefore: ((if [[t12]] then (x + 1) else (x + 2)) = 0)
 
-P6  Propagate premises; Logical consequence
-  From: P5
-  Therefore: (VALUE <= 0)
-  Expandable proof steps: 2
-
-P7  Assume
-  Under assumptions: P7
+P6  Assume
+  Under assumptions: P6
   Therefore: ((x + (-1 * VALUE)) <= -1)
 
-P8  Exact linear combination
-  From: P4, P6, P7
-  Under assumptions: P7
+P7  Propagate premises; Exact linear combination
+  From: P4, P5, P6
+  Under assumptions: P6
   1 * [-1 * x <= 0]
   1 * [VALUE <= 0]
   1 * [x + -1 * VALUE + 1 <= 0]
   Sum: 1 <= 0; contradiction.
   Therefore: false
+  Expandable proof steps: 3
 
-P9  Discharge local assumptions
-  From: P8
-  Closed: P7
+P8  Discharge local assumptions
+  From: P7
+  Closed: P6
   Therefore: not (((x + (-1 * VALUE)) <= -1))
 
-P10  Internal definition / defining clause
+P9  Internal definition / defining clause
   Therefore: ((not (((x + (-1 * VALUE)) >= -1)) or not (((x + (-1 * VALUE)) <= -1))) or ((x + (-1 * VALUE)) <= -1))
 
-P11  Propagate premises; Resolve the clauses
-  From: P1, P2, P3, P9, P10
+P10  Propagate premises; Resolve the clauses
+  From: P1, P2, P3, P8, P9
   Therefore: false
   Expandable proof steps: 7
 

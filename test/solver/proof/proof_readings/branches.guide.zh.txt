@@ -1,0 +1,17 @@
+查询：branches
+求解结果：UNSAT
+阅读完整度：complete
+阅读档位：brief
+仅作导读：展示关键语义步骤。分支内部与机械推导保留在 standard/detailed 中。
+步骤 ID 可用于 get_block(id) 和 expand(id)；公式可用 get_term_text(id) 展开。
+
+p0  输入条件：(y < 0)
+  输入来源：goal
+p7  输入条件：(y = (if (x >= 0) then (x + 1) else 0))
+  输入来源：update
+p44  关闭局部假设：not ((x >= 0))
+  已关闭 1 个局部假设。
+p47  精确线性组合：false
+  组合 3 条界：1 <= 0；矛盾。
+
+结论：提交的条件合取不可满足。

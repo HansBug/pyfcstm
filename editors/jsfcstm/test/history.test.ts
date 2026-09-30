@@ -322,6 +322,54 @@ describe('jsfcstm history diagnostics', () => {
         });
     }
 
+    it('still reports declaration errors unrelated to an imported default', async () => {
+        const cases: Array<[string, string[]]> = [
+            ['state Host { import "./module.fcstm" as M; state A; [*] -> A; [H*] -> M.B; }', ['root_owner']],
+            ['state Host { state Off; state O { import "./module.fcstm" as M; state A; [*] -> A; [H*] -> M.B; [H*] -> M.C; } [*] -> Off; Off -> O.[H*] :: Go; }', ['duplicate']],
+            ['state Host { state Off; state O { import "./module.fcstm" as M; state A; [*] -> A; [H] -> M.B; } [*] -> Off; Off -> O.[H] :: Go; }', ['default_not_direct_child']],
+        ];
+        for (const [text, reasons] of cases) {
+            const diagnostics = await packageModule.collectDocumentDiagnostics(document(text));
+            assert.deepEqual(
+                diagnostics.filter(item => item.code === 'E_HISTORY_DECLARATION_INVALID').map(item => (item.data as {reason: string}).reason),
+                reasons,
+            );
+        }
+    });
+
+    it('enters the local states of a default that continues into an imported module', async () => {
+        const text = [
+            'state Host {',
+            '    state Off;',
+            '    state O {',
+            '        state C { import "./module.fcstm" as M; state X; [*] -> X; }',
+            '        state A;',
+            '        [*] -> A;',
+            '        [H*] -> C.M.B;',
+            '    }',
+            '    [*] -> Off;',
+            '    Off -> O.[H*] :: Go;',
+            '    !O -> Off :: Stop;',
+            '}',
+        ].join('\n');
+        const codes = (await packageModule.collectDocumentDiagnostics(document(text))).map(item => item.code ?? '');
+        assert.deepEqual(codes.filter(code => code.includes('HISTORY') || code === 'W_UNREACHABLE_STATE'), []);
+    });
+
+    it('lets a history entry reach what a restore re-enters in the reachability graph', async () => {
+        const report = packageModule.inspectModel(await model([
+            'state Root {',
+            '    state S; state P;',
+            '    state O { state A; state Y; [*] -> A; [H] -> A; [H*] -> Y; Y -> [*]; }',
+            '    [*] -> S;',
+            '    S -> O.[H*] :: Deep;',
+            '    O -> P;',
+            '    P -> O.[H] :: Back;',
+            '}',
+        ].join('\n')));
+        assert.deepEqual(report.reachability_graph['Root.P'], ['Root.O', 'Root.O.A', 'Root.O.Y']);
+    });
+
     it('leaves a default that enters an imported module to the assembled model', async () => {
         const text = [
             'state Host {',

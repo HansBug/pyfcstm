@@ -174,6 +174,21 @@ class HistoryLowering {
         }
     }
 
+    /**
+     * Whether resolving ``path`` below ``owner`` fails at the alias of an import
+     * of the state reached so far: the local model does not assemble imports.
+     */
+    private entersImport(owner: State, path: Path, astByPath: Map<string, FcstmAstStateDefinition>): boolean {
+        let state: State = owner;
+        const failing = path.find(name => {
+            const next = state.substates[name];
+            if (next) state = next;
+            return !next;
+        });
+        return failing !== undefined
+            && (astByPath.get(key(state.path))?.imports ?? []).some(item => item.alias === failing);
+    }
+
     private resolveDefault(owner: State, path: Path): State | undefined {
         let state: State | undefined = owner;
         for (const name of path) {
@@ -185,25 +200,28 @@ class HistoryLowering {
 
     private declarations(): Map<string, Map<FcstmHistoryKind, [Path, FcstmAstHistoryDefinition]>> {
         const declared = new Map<string, Map<FcstmHistoryKind, [Path, FcstmAstHistoryDefinition]>>();
+        const astByPath = new Map(walkAst(this.input.astRoot).map(([path, node]) => [key(path), node]));
+        // Declarations whose default enters an imported module: pyfcstm validates
+        // and lowers them after assembly, so the editor neither reports nor lowers
+        // them, but they still count as declared for the duplicate check.
+        const deferred = new Set<string>();
         for (const [path, node] of walkAst(this.input.astRoot)) {
             for (const decl of node.histories) {
                 const owner = this.states.get(key(path));
                 /* c8 ignore next -- every AST state is built into the model. */
                 if (!owner) continue;
                 const target = this.resolveDefault(owner, decl.defaultPath);
-                if (!target && node.imports.some(item => item.alias === decl.defaultPath[0])) {
-                    // The default enters an imported module, which this local model
-                    // does not assemble; pyfcstm validates and lowers it after
-                    // assembly. Neither report it nor its targets here.
-                    this.invalid.add(JSON.stringify([key(path), decl.historyKind]));
-                    continue;
-                }
+                const declaredKey = JSON.stringify([key(path), decl.historyKind]);
                 let reason: string | undefined;
                 if (owner === this.input.rootState) reason = 'root_owner';
                 else if (owner.isLeafState) reason = 'leaf_owner';
-                else if (declared.get(key(path))?.has(decl.historyKind)) reason = 'duplicate';
+                else if (declared.get(key(path))?.has(decl.historyKind) || deferred.has(declaredKey)) reason = 'duplicate';
                 else if (decl.historyKind === 'shallow' && decl.defaultPath.length !== 1) reason = 'default_not_direct_child';
-                else if (!target) reason = 'default_not_found';
+                else if (!target && this.entersImport(owner, decl.defaultPath, astByPath)) {
+                    deferred.add(declaredKey);
+                    this.invalid.add(declaredKey);
+                    continue;
+                } else if (!target) reason = 'default_not_found';
                 else if (target.isPseudo) reason = 'default_pseudo';
                 if (reason) {
                     this.invalid.add(JSON.stringify([key(path), decl.historyKind]));

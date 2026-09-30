@@ -720,9 +720,14 @@ Consumers of the lowered machine
        therefore not reported unreachable. The rule over-approximates what a
        restore reaches, so it never reports a reachable state, though a state a
        deep default skips over is not reported either.
-       The functions of :mod:`pyfcstm.verify.topology` apply the same rule to a
-       lowered machine; the other :mod:`pyfcstm.verify` functions, called
-       directly, analyse the machine they are given.
+       The topology checks of ``--enable-verify`` and the functions of
+       :mod:`pyfcstm.verify.topology` -- also on a lowered machine -- use the
+       same rule and add what a restore re-enters, so cycles closed through a
+       restore are found; because the rule over-approximates, a topology
+       warning can concern a state only the approximation reaches. The other
+       :mod:`pyfcstm.verify` functions, called directly, analyse the machine
+       they are given. The editor does not assemble imports, so it leaves a
+       default that continues into an imported module to pyfcstm.
    * - BMC
      - Checks the lowered machine. Queries may read ``var("__hist_goto")`` and
        ``var("__hist_<owner>")``. A havocked history variable is constrained to

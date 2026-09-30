@@ -2630,8 +2630,9 @@ def _build_reachability_graph(
     :param history_defaults: For each ``(owner path, history kind)``, the
         states from the owner's child down to the declared default, defaults to
         ``None``. A transition entering that history reaches each of them as an
-        ordinary target, besides the owner itself -- an over-approximation of
-        what a restore reaches, so no reachable state is left out.
+        ordinary target, besides the owner itself, and what a restore can
+        re-enter -- an over-approximation of both, so no reachable state is
+        left out.
     :type history_defaults: Optional[Mapping[Tuple[str, str], Sequence[str]]], optional
     :return: Mapping from every state path to reachable state paths.
     :rtype: Dict[str, Tuple[str, ...]]
@@ -2671,16 +2672,21 @@ def _build_reachability_graph(
             continue
         adjacency[transition.from_path].add(transition.to_path)
 
-    for transition in transitions:
-        chain = (history_defaults or {}).get((transition.to_path, transition.target_history))
-        if not chain:
-            continue
+    history_entries = [
+        transition for transition in transitions
+        if (history_defaults or {}).get((transition.to_path, transition.target_history))
+    ]
+
+    def add_edges(transition: TransitionInfo, targets) -> None:
         if transition.from_path == _INIT_MARK:
-            initial_edges[transition.to_path.rsplit('.', 1)[0]].update(chain)
+            initial_edges[transition.to_path.rsplit('.', 1)[0]].update(targets)
         elif transition.from_path in adjacency:
             # A source that names no state (a misspelling kept by collect mode)
             # contributes no edge, as in the loop above.
-            adjacency[transition.from_path].update(chain)
+            adjacency[transition.from_path].update(targets)
+
+    for transition in history_entries:
+        add_edges(transition, history_defaults[(transition.to_path, transition.target_history)])
 
     for state in states:
         if not (state.is_composite and state.initial_targets):
@@ -2690,10 +2696,9 @@ def _build_reachability_graph(
             if target != _EXIT_MARK:
                 initial_edges[state.path].add(target)
 
-    graph: Dict[str, Tuple[str, ...]] = {}
-    for state in states:
+    def closure(start: str) -> set:
         seen = set()
-        queue = [state.path]
+        queue = [start]
         while queue:
             current = queue.pop(0)
             next_paths = adjacency.get(current, set()) | initial_edges.get(
@@ -2701,12 +2706,31 @@ def _build_reachability_graph(
                 set(),
             )
             for next_path in sorted(next_paths):
-                if next_path in seen or next_path == state.path:
+                if next_path in seen or next_path == start:
                     continue
                 seen.add(next_path)
                 queue.append(next_path)
-        graph[state.path] = tuple(sorted(seen))
-    return graph
+        return seen
+
+    if history_entries:
+        # A restore re-enters a leaf reached before: for ``[H*]`` any
+        # root-reachable leaf of the owner, for ``[H]`` any direct child with
+        # one. These targets are root-reachable already, so only the rows of
+        # the other states gain them.
+        by_path = {state.path: state for state in states}
+        reached = closure(states[0].path)
+        for transition in history_entries:
+            owner = transition.to_path
+            inside = [path for path in reached if path.startswith(owner + '.')]
+            if transition.target_history == 'deep':
+                add_edges(transition, [path for path in inside if by_path[path].is_leaf])
+            else:
+                add_edges(transition, [
+                    child for child in by_path[owner].substates
+                    if any(path == child or path.startswith(child + '.') for path in inside)
+                ])
+
+    return {state.path: tuple(sorted(closure(state.path))) for state in states}
 
 
 def _build_event_emission_map(
@@ -4296,8 +4320,8 @@ def inspect_model(
     inspect surface.
 
     A machine that uses ``[H]`` / ``[H*]`` history is reported as written:
-    model conversion can also build the model before history lowering
-    (``StateMachine._as_written()``), and the report,
+    model conversion can also build the model before history lowering, and
+    the report,
     its findings and the optional verify run describe that model, with each
     history entry an ordinary transition marked by ``target_history``. The
     lowered variables, gate states and route initials therefore appear nowhere

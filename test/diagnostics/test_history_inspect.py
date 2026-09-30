@@ -19,7 +19,7 @@ import pyfcstm.diagnostics
 from pyfcstm.diagnostics.inspect import inspect_model
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import load_state_machine_from_text, parse_dsl_node_to_state_machine
-from pyfcstm.verify.topology import unreachable_states
+from pyfcstm.verify.topology import strongly_connected_components, unreachable_states
 
 from test.model import test_history_lowering as lowering
 from test.model.test_history_lowering import BLOCKED, BLOCKED_INITIALS, WASHER
@@ -462,6 +462,72 @@ def test_verify_follows_history_defaults(options):
     assert not [item for item in report.diagnostics if "UNREACHABLE" in item.code], [
         (item.code, item.refs) for item in report.diagnostics
     ]
+
+
+# A shallow entry restores the leaf the deep default entered: Y and P cycle
+# forever, and A is never entered.
+RESTORE_CYCLE = """
+state Root {
+    state S;
+    state P;
+    state O {
+        state A;
+        state Y;
+        [*] -> A;
+        [H] -> A;
+        [H*] -> Y;
+        Y -> [*];
+    }
+    [*] -> S;
+    S -> O.[H*] :: Deep;
+    O -> P;
+    P -> O.[H] :: Back;
+}
+"""
+
+
+@pytest.mark.unittest
+def test_cycles_closed_through_a_restore_are_found():
+    from pyfcstm.simulate import SimulationRuntime
+
+    machine = load_state_machine_from_text(RESTORE_CYCLE)
+    runtime = SimulationRuntime(machine)
+    visited = set()
+    for events in [[], ["Root.S.Deep"]] + [[], ["Root.P.Back"]] * 3:
+        runtime.cycle(events)
+        visited.add(".".join(runtime.current_state.path))
+    assert visited == {"Root.S", "Root.O.Y", "Root.P"}
+
+    assert ("Root.O.Y", "Root.P") in strongly_connected_components(machine)
+    report = _report(RESTORE_CYCLE, **VERIFY_STRUCTURAL)
+    sccs = [item.refs for item in report.diagnostics if item.code == "I_NONTRIVIAL_SCC"]
+    assert sccs and any("Root.O.Y" in json.dumps(refs) for refs in sccs)
+    # the rows of the reachability graph include what a restore re-enters
+    assert "Root.O.Y" in report.reachability_graph["Root.P"]
+
+
+@pytest.mark.unittest
+def test_a_deep_default_restored_on_every_exit_cycles():
+    text = """
+    state Root {
+        state S;
+        state O {
+            state C {
+                state X;
+                state Y;
+                [*] -> X;
+                [H] -> X;
+                Y -> [*] :: Out;
+            }
+            [*] -> C;
+            [H*] -> C.Y;
+            C -> C.[H];
+        }
+        [*] -> S;
+        S -> O.[H*] :: Go;
+    }
+    """
+    assert ("Root.O.C.Y",) in strongly_connected_components(load_state_machine_from_text(text))
 
 
 @pytest.mark.unittest

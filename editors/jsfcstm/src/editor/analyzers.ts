@@ -401,7 +401,9 @@ function collectReachableStateIds(semantic: FcstmSemanticDocument): Set<string> 
         const path: string[] = [];
         for (const name of declaration?.defaultPath ?? []) {
             current = current?.childStateIds.map(id => statesById.get(id)).find(child => child?.name === name);
-            if (!current) return [];
+            // A default through an import alias leaves the local model; the
+            // states before the alias are still entered.
+            if (!current) return path;
             path.push(current.identity.id);
         }
         return path;

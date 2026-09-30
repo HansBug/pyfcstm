@@ -51,6 +51,7 @@ from typing import (
     TYPE_CHECKING,
     Deque,
     Dict,
+    FrozenSet,
     Iterable,
     List,
     Mapping,
@@ -279,7 +280,7 @@ def _successors(edges: Mapping[str, Tuple[str, ...]], node: str) -> Tuple[str, .
 def _project_target(
     parent_state: State,
     target: object,
-    history_owners: Optional[Mapping[str, "HistoryOwner"]] = None,
+    history: Optional["_HistoryProjection"] = None,
 ) -> Tuple[str, ...]:
     """Project a transition target into leaf-level graph successors.
 
@@ -288,10 +289,10 @@ def _project_target(
     :param target: Transition target, either a substate name or
         :data:`EXIT_STATE`.
     :type target: object
-    :param history_owners: When given, project entries the way
-        :func:`_initial_leaf_targets` does with the same mapping, defaults to
-        ``None``
-    :type history_owners: Optional[Mapping[str, pyfcstm.model.history.HistoryOwner]], optional
+    :param history: When given, project entries the way
+        :func:`_initial_leaf_targets` does with the same projection, defaults
+        to ``None``
+    :type history: Optional[_HistoryProjection], optional
     :return: Leaf-level successor paths reached by taking the target.
     :rtype: Tuple[str, ...]
     :raises TypeError: If ``target`` is not an FCSTM transition endpoint shape.
@@ -321,7 +322,7 @@ def _project_target(
         assert parent_parent is not None
         projected: List[str] = []
         for transition in parent_state.transitions_from:
-            projected.extend(_project_entry(parent_parent, transition, history_owners))
+            projected.extend(_project_entry(parent_parent, transition, history))
         return _dedupe_sorted(projected)
 
     if isinstance(target, str):
@@ -333,7 +334,7 @@ def _project_target(
             # model is handed out. The transition reaches no leaf, so it projects
             # to no successor.
             return ()
-        return _initial_leaf_targets(target_state, history_owners)
+        return _initial_leaf_targets(target_state, history)
 
     raise TypeError(  # pragma: no cover
         # Grammar-produced model transitions use only string state names and
@@ -345,20 +346,19 @@ def _project_target(
 
 def _initial_leaf_targets(
     state: State,
-    history_owners: Optional[Mapping[str, "HistoryOwner"]] = None,
+    history: Optional["_HistoryProjection"] = None,
 ) -> Tuple[str, ...]:
     """Project entering ``state`` to the leaves reached by initial descent.
 
-    With ``history_owners`` the descent is the one root reachability needs in
-    a machine with history: route initials of a lowered machine are not
-    followed, and an entry into a history reaches the states of its default
-    path besides the owner (see :func:`_project_entry`).
+    With ``history`` the descent is the one a machine with history needs:
+    route initials of a lowered machine are not followed, and an entry into a
+    history is projected by :func:`_project_entry`.
 
     :param state: State being entered by a transition or root initialization.
     :type state: State
-    :param history_owners: Lowered history owners by dotted path, defaults to
-        ``None`` (follow every initial, routes included)
-    :type history_owners: Optional[Mapping[str, pyfcstm.model.history.HistoryOwner]], optional
+    :param history: History projection of the machine, defaults to ``None``
+        (follow every initial, routes included)
+    :type history: Optional[_HistoryProjection], optional
     :return: Leaf paths reached after following initial transitions.
     :rtype: Tuple[str, ...]
 
@@ -376,43 +376,55 @@ def _initial_leaf_targets(
 
     projected: List[str] = []
     for transition in state.init_transitions:
-        if history_owners is not None and transition.history_role == "route":
+        if history is not None and transition.history_role == "route":
             continue
-        projected.extend(_project_entry(state, transition, history_owners))
+        projected.extend(_project_entry(state, transition, history))
     return _dedupe_sorted(projected)
 
 
 def _project_entry(
     parent_state: State,
     transition: "Transition",
-    history_owners: Optional[Mapping[str, "HistoryOwner"]],
+    history: Optional["_HistoryProjection"],
 ) -> Tuple[str, ...]:
     """Project taking ``transition``, declared in ``parent_state``.
 
     An entry into ``Owner.[H]`` / ``Owner.[H*]`` reaches the owner as an ordinary
-    entry does and, when ``history_owners`` is given, every state on the default
-    path of that kind, each entered as an ordinary target. That over-approximates
-    what a restore reaches -- a record only names states reached before -- so no
-    reachable leaf is left out.
+    entry does and, when ``history`` is given, every state on the default path
+    of that kind, each entered as an ordinary target, plus what a restore can
+    re-enter: for ``[H*]`` every leaf of the owner in ``history.reached``, for
+    ``[H]`` the initial descent of every direct child with a leaf there. A
+    record only names leaves reached before, so this over-approximates every
+    entry without adding a leaf outside ``history.reached``.
 
     :param parent_state: State that owns the transition.
     :type parent_state: State
     :param transition: The transition taken.
     :type transition: pyfcstm.model.model.Transition
-    :param history_owners: Lowered history owners by dotted path, or ``None``.
-    :type history_owners: Optional[Mapping[str, pyfcstm.model.history.HistoryOwner]]
+    :param history: History projection of the machine, or ``None``.
+    :type history: Optional[_HistoryProjection]
     :return: Leaf-level successor paths.
     :rtype: Tuple[str, ...]
     """
-    projected = list(_project_target(parent_state, transition.to_state, history_owners))
+    projected = list(_project_target(parent_state, transition.to_state, history))
     kind = getattr(transition, "target_history", None)
-    if history_owners is not None and kind is not None:
-        owner = history_owners.get(".".join((*parent_state.path, transition.to_state)))
-        if owner is not None and kind in owner.defaults:
-            state = parent_state.substates[transition.to_state]
-            for name in owner.defaults[kind]:
-                state = state.substates[name]
-                projected.extend(_initial_leaf_targets(state, history_owners))
+    owner_path = ".".join((*parent_state.path, str(transition.to_state)))
+    owner = None if history is None or kind is None else history.owners.get(owner_path)
+    if owner is not None and kind in owner.defaults:
+        owner_state = parent_state.substates[transition.to_state]
+        state = owner_state
+        for name in owner.defaults[kind]:
+            state = state.substates[name]
+            projected.extend(_initial_leaf_targets(state, history))
+        # Both kinds share one record, which names any leaf reached below the owner.
+        inside = [leaf for leaf in history.reached if leaf.startswith(owner_path + ".")]
+        if kind == "deep":
+            projected.extend(inside)
+        else:
+            for child in owner_state.substates.values():
+                child_path = _state_path(child)
+                if any(leaf == child_path or leaf.startswith(child_path + ".") for leaf in inside):
+                    projected.extend(_initial_leaf_targets(child, history))
     return _dedupe_sorted(projected)
 
 
@@ -465,40 +477,56 @@ def build_leaf_level_macro_graph(machine: StateMachine) -> LeafLevelGraph:
         >>> graph.edges["Root.Idle"]
         ('⊥_root',)
     """
-    return _macro_graph(machine, _history_owners(machine))
+    return _macro_graph(machine, _history_projection(machine))
 
 
-def _history_owners(machine: StateMachine) -> Optional[Dict[str, "HistoryOwner"]]:
-    """Return the machine's history owners by dotted path, or ``None`` without any.
+@dataclass(frozen=True)
+class _HistoryProjection:
+    """How topology projects the history entries of one machine.
 
-    Every topology projection of a machine with history follows its entries
-    into a history to the states of their default path and leaves route
-    initials out (see :func:`_project_entry`). A route stands for restores,
-    which only re-enter leaves reached before, and every such leaf is also
-    reached from its owner's initial descent or default, so the projection
-    keeps the reachable set and every reachability relation between leaves.
+    :param owners: History owners by dotted owner path.
+    :type owners: Mapping[str, pyfcstm.model.history.HistoryOwner]
+    :param reached: Root-reachable leaf paths without restores; a restore
+        re-enters only such leaves.
+    :type reached: FrozenSet[str]
+    """
+
+    owners: Mapping[str, "HistoryOwner"]
+    reached: FrozenSet[str] = frozenset()
+
+
+def _history_projection(machine: StateMachine) -> Optional[_HistoryProjection]:
+    """Return the history projection of ``machine``, or ``None`` without history.
+
+    Entries into a history are followed to the states of their default path,
+    and route initials are left out. The root-reachable leaves are computed
+    that way first; restores, which re-enter only such leaves, are then added
+    to every entry (see :func:`_project_entry`). The reachable set stays the
+    same, and every leaf-to-leaf relation a restore creates is kept.
 
     :param machine: State machine to project.
     :type machine: StateMachine
-    :return: Owners by dotted owner path, or ``None``.
-    :rtype: Optional[Dict[str, pyfcstm.model.history.HistoryOwner]]
+    :return: The projection, or ``None``.
+    :rtype: Optional[_HistoryProjection]
     """
     if not machine.history_owners:
         return None
-    return {".".join(owner.owner_path): owner for owner in machine.history_owners}
+    base = _HistoryProjection({".".join(o.owner_path): o for o in machine.history_owners})
+    graph = _macro_graph(machine, base)
+    reached = _closure_from(graph.edges, _initial_leaf_targets(machine.root_state, base))
+    return _HistoryProjection(base.owners, frozenset(reached))
 
 
 def _macro_graph(
     machine: StateMachine,
-    history_owners: Optional[Mapping[str, "HistoryOwner"]] = None,
+    history: Optional["_HistoryProjection"] = None,
 ) -> LeafLevelGraph:
     """Build the leaf-level macro graph, optionally with history-default entries.
 
     :param machine: State machine to project.
     :type machine: StateMachine
-    :param history_owners: See :func:`_initial_leaf_targets`, defaults to
-        ``None``
-    :type history_owners: Optional[Mapping[str, pyfcstm.model.history.HistoryOwner]], optional
+    :param history: See :func:`_initial_leaf_targets`, defaults to ``None``
+    :type history: Optional[_HistoryProjection], optional
     :return: Leaf-level macro graph.
     :rtype: LeafLevelGraph
     """
@@ -531,7 +559,7 @@ def _macro_graph(
 
             source_path = _state_path(source_state)
             edge_sets.setdefault(source_path, set()).update(
-                _project_entry(parent_state, transition, history_owners)
+                _project_entry(parent_state, transition, history)
             )
 
     if machine.root_state.is_leaf_state:
@@ -609,11 +637,12 @@ def topological_reachable_set(machine: StateMachine) -> Dict[str, Tuple[str, ...
         >>> topological_reachable_set(machine)["Root.A"]
         ('Root.B',)
     """
-    graph = build_leaf_level_macro_graph(machine)
+    history = _history_projection(machine)
+    graph = _macro_graph(machine, history)
     result: Dict[str, Tuple[str, ...]] = {}
     for state in machine.walk_states():
         state_path = _state_path(state)
-        starts = _initial_leaf_targets(state, _history_owners(machine))
+        starts = _initial_leaf_targets(state, history)
         reachable = _closure_from(graph.edges, starts)
         reachable.discard(EXIT_ROOT_SINK)
         if state.is_leaf_state:
@@ -656,10 +685,10 @@ def unreachable_states(machine: StateMachine) -> Tuple[str, ...]:
     root_path = _state_path(machine.root_state)
     # History routes lead to every leaf a restore could re-enter, but a restore
     # only re-enters leaves already reached; only the defaults add reachability.
-    history_owners = _history_owners(machine)
-    graph = _macro_graph(machine, history_owners)
+    history = _history_projection(machine)
+    graph = _macro_graph(machine, history)
     reachable = _closure_from(
-        graph.edges, _initial_leaf_targets(machine.root_state, history_owners)
+        graph.edges, _initial_leaf_targets(machine.root_state, history)
     )
     reachable.add(root_path)
     return tuple(
@@ -855,7 +884,7 @@ def _root_reachable_leaf_paths(
         ['Root.A']
     """
     reachable = _closure_from(
-        graph.edges, _initial_leaf_targets(machine.root_state, _history_owners(machine))
+        graph.edges, _initial_leaf_targets(machine.root_state, _history_projection(machine))
     )
     reachable.discard(EXIT_ROOT_SINK)
     return reachable
@@ -1028,13 +1057,14 @@ def _root_reachable_initial_state_paths(
         >>> sorted(_root_reachable_initial_state_paths(machine, graph))
         ['Root']
     """
+    history = _history_projection(machine)
     reachable_leaves = _root_reachable_leaf_paths(machine, graph)
     reachable_paths = {_state_path(machine.root_state)}
 
     for state in machine.walk_states():
         if state.is_leaf_state:
             continue
-        if reachable_leaves.intersection(_initial_leaf_targets(state, _history_owners(machine))):
+        if reachable_leaves.intersection(_initial_leaf_targets(state, history)):
             reachable_paths.add(_state_path(state))
     return reachable_paths
 

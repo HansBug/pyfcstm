@@ -2394,20 +2394,19 @@ function buildReachabilityGraph(
             }
         }
     }
-    for (const t of transitions) {
-        const chain = historyDefaults.get(JSON.stringify([t.to_path, t.target_history]));
-        if (!chain) continue;
+    const historyEntries = transitions.filter(t => historyDefaults.has(JSON.stringify([t.to_path, t.target_history])));
+    const addEdges = (t: TransitionInfo, targets: string[]): void => {
         const from = t.from_path === INIT_MARK ? t.to_path.slice(0, t.to_path.lastIndexOf('.')) : t.from_path;
         const edges = t.from_path === INIT_MARK ? initialEdges[from] : adjacency[from];
         // A source that names no local state (an import alias, a misspelling)
         // contributes no edge, as in the loop above.
-        if (!edges) continue;
-        chain.forEach(path => edges.add(path));
-    }
-    const out: Record<string, string[]> = {};
-    for (const s of states) {
+        if (!edges) return;
+        targets.forEach(path => edges.add(path));
+    };
+    for (const t of historyEntries) addEdges(t, historyDefaults.get(JSON.stringify([t.to_path, t.target_history]))!);
+    const closure = (start: string): Set<string> => {
         const seen = new Set<string>();
-        const queue: string[] = [s.path];
+        const queue: string[] = [start];
         while (queue.length > 0) {
             const cur = queue.shift()!;
             const next = Array.from(
@@ -2417,13 +2416,27 @@ function buildReachabilityGraph(
                 ]),
             ).sort();
             for (const nxt of next) {
-                if (seen.has(nxt) || nxt === s.path) continue;
+                if (seen.has(nxt) || nxt === start) continue;
                 seen.add(nxt);
                 queue.push(nxt);
             }
         }
-        out[s.path] = Array.from(seen).sort();
+        return seen;
+    };
+    if (historyEntries.length > 0) {
+        // A restore re-enters a leaf reached before: for [H*] any root-reachable
+        // leaf of the owner, for [H] any direct child with one, as in pyfcstm.
+        const byPath = new Map(states.map(state => [state.path, state]));
+        const reached = Array.from(closure(states[0].path));
+        for (const t of historyEntries) {
+            const inside = reached.filter(path => path.startsWith(`${t.to_path}.`));
+            addEdges(t, t.target_history === 'deep'
+                ? inside.filter(path => byPath.get(path)!.is_leaf)
+                : byPath.get(t.to_path)!.substates.filter(child => inside.some(path => path === child || path.startsWith(`${child}.`))));
+        }
     }
+    const out: Record<string, string[]> = {};
+    for (const s of states) out[s.path] = Array.from(closure(s.path)).sort();
     return out;
 }
 

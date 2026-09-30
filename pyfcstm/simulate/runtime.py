@@ -971,6 +971,8 @@ class SimulationRuntime:
                 )
                 source = f"variable '{name}' initializer"
             self.vars[name] = self._normalize_persistent_value(name, value, source)
+        if initial_vars is not None:
+            self._validate_history_variables()
 
         self._initialized = False
         self._ended = False
@@ -1004,6 +1006,38 @@ class SimulationRuntime:
         else:
             # Default mode: start from root state
             self.stack.append(_Frame(self.state_machine.root_state, "init_wait"))
+
+    def _validate_history_variables(self) -> None:
+        """
+        Reject caller-supplied values that no execution of the machine holds.
+
+        History lowering keeps a restore target that is ``0`` at every stable
+        point and one record per owner that names a stoppable leaf below it
+        (or ``0`` for no record).  Any other value would start a phantom
+        restore or a blocked one.
+
+        :raises ValueError: If a lowered history variable holds a value no
+            execution can produce.
+        """
+        for owner in self.state_machine.history_owners:
+            goto = self.vars.get(owner.goto_variable, 0)
+            if goto != 0:
+                raise ValueError(
+                    f"History variable {owner.goto_variable!r} must be 0 outside a "
+                    f"restore in progress, got {goto!r}."
+                )
+            record = self.vars.get(owner.record_variable, 0)
+            if record != 0 and owner.decode(record) is None:
+                choices = ", ".join(
+                    f"{value} ({'.'.join(leaf)})"
+                    for leaf, value in owner.leaf_ids.items()
+                )
+                raise ValueError(
+                    f"History variable {owner.record_variable!r} of owner "
+                    f"{'.'.join(owner.owner_path)!r} must be 0 (no record) or the id "
+                    f"of a stoppable leaf below it: {choices}; got {record!r}. "
+                    "StateMachine.history_variables() computes it from a leaf path."
+                )
 
     def _normalize_persistent_value(
         self, name: str, value: Any, source: str

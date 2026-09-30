@@ -1315,12 +1315,22 @@ def _initial_targets(state: Any) -> Tuple[Dict[str, Any], ...]:
         guard_text = _expr_text(transition.guard)
         event = transition.event
         event_name = event.name if event is not None else None
-        out.append({
+        role = getattr(transition, 'history_role', None)
+        if role in ('merged', 'gated'):
+            # History lowering extended the user's own initial with restore
+            # conditions; whether it is unconditional is what the user wrote.
+            is_unconditional = transition.history_user_guard is None and event_name is None
+        else:
+            is_unconditional = guard_text is None and event_name is None
+        item = {
             'target': target_path,
             'guard': guard_text,
             'event': event_name,
-            'is_unconditional': guard_text is None and event_name is None,
-        })
+            'is_unconditional': is_unconditional,
+        }
+        if role is not None:
+            item['history_role'] = role
+        out.append(item)
     return tuple(out)
 
 

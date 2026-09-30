@@ -388,7 +388,14 @@
                 "description": "Normalized inspect expression text shared by pyfcstm and jsfcstm."
               },
               "event": { "type": ["string", "null"] },
-              "is_unconditional": { "type": "boolean" }
+              "is_unconditional": {
+                "type": "boolean",
+                "description": "Whether the entry fires without guard or event. For an initial that history lowering merged or gated, this reflects the guard and event the author wrote."
+              },
+              "history_role": {
+                "enum": ["route", "merged", "gated", "gate"],
+                "description": "Present only on initial transitions produced or changed by history lowering: a generated restore route, a user initial merged with a route, a user initial gated against restores, or the entry of a generated gate pseudo state."
+              }
             }
           }
         },

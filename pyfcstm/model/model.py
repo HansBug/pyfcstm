@@ -50,7 +50,18 @@ from dataclasses import InitVar, dataclass, field, fields, is_dataclass
 from itertools import chain
 from textwrap import indent
 from types import MappingProxyType
-from typing import Any, Optional, Union, List, Dict, Tuple, Iterator, Set, Mapping
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Optional,
+    Union,
+    List,
+    Dict,
+    Tuple,
+    Iterator,
+    Set,
+    Mapping,
+)
 
 from .base import AstExportable, PlantUMLExportable
 from .expr import Expr, parse_expr_node_to_expr
@@ -91,6 +102,9 @@ __all__ = [
 ]
 
 from ..utils import aggregate_documentation, sequence_safe, to_identifier
+
+if TYPE_CHECKING:  # pragma: no cover - imported for annotations only.
+    from .history import HistoryOwner
 
 
 def _ast_doc_kwargs(node_type, doc: Optional[str]) -> Dict[str, object]:

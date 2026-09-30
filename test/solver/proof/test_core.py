@@ -414,3 +414,27 @@ P4  Resolve the clauses
 Conclusion: the submitted conjunction is inconsistent.
 
 """, json.loads(completed.stdout))
+
+
+def test_native_capture_classifies_each_shared_ast_only_once(monkeypatch):
+    from collections import Counter
+    from pyfcstm.solver.proof import _z3_proof
+
+    calls = Counter()
+    original = _z3_proof._is_proof
+
+    def counted(expression):
+        calls[expression.get_id()] += 1
+        return original(expression)
+
+    monkeypatch.setattr(_z3_proof, '_is_proof', counted)
+    values = z3.Ints(' '.join('x%d' % i for i in range(17)))
+    formulas = [values[0] == 0] + [
+        z3.Implies(values[i] >= 0, values[i+1] == values[i] + 1) for i in range(16)
+    ] + [values[-1] < 0]
+    report = solver.explain_unsat(solver.UnsatQuery('shared_capture', tuple(
+        solver.UnsatConstraint('condition_%d' % i, (formula,)) for i, formula in enumerate(formulas)
+    )))
+    assert report.reading_status == 'complete'
+    assert calls
+    assert max(calls.values()) == 1

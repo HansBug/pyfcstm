@@ -181,25 +181,34 @@ def capture_proof(query, budget, names, source_adapter):
 
         root = native.proof()
         identities, nodes = {}, []
-        pending = [(root, False)]
+        proof_kinds = {}
+
+        def is_proof(expression):
+            key = expression.get_id()
+            if key not in proof_kinds:
+                proof_kinds[key] = _is_proof(expression)
+            return proof_kinds[key]
+
+        pending = [(root, None)]
         while pending:
             budget.checkpoint('proof capture')
-            node, ready = pending.pop()
+            node, captured = pending.pop()
             if node.get_id() in identities:
                 continue
-            children = node.children()
-            rule = str(node.decl().name())
-            binder = children[0] if rule == 'proof-bind' else None
-            parents = ((binder.body(),) if binder is not None else
-                       tuple(child for child in children if _is_proof(child)))
-            if not ready:
-                pending.append((node, True))
-                pending.extend((parent, False) for parent in reversed(parents))
+            if captured is None:
+                children = node.children()
+                rule = str(node.decl().name())
+                binder = children[0] if rule == 'proof-bind' else None
+                parents = ((binder.body(),) if binder is not None else
+                           tuple(child for child in children if is_proof(child)))
+                pending.append((node, (children, rule, binder, parents)))
+                pending.extend((parent, None) for parent in reversed(parents))
                 continue
+            children, rule, binder, parents = captured
             fact = None if binder is not None else children[-1]
             conclusion = None if fact is None else terms.intern(fact)
             operands = tuple(terms.intern(child) for child in children[:-1]
-                             if not _is_proof(child))
+                             if not is_proof(child))
             node_id = 'n%d' % len(nodes)
             identities[node.get_id()] = node_id
             nodes.append(ProofNode(

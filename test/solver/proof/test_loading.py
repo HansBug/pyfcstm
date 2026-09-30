@@ -111,6 +111,71 @@ def test_reading_claim_must_match_its_evidence():
         UnsatReport.from_canonical(data)
 
 
+@pytest.mark.parametrize('mutation', ['wrong_occurrence', 'missing_occurrence', 'wrong_relation'])
+def test_logical_source_links_belong_to_the_displayed_evidence(mutation):
+    from pyfcstm.solver.proof import SourceDescription
+
+    report = explain_unsat(UnsatQuery('sources', (
+        UnsatConstraint('false', (z3.BoolVal(False),), SourceDescription('bad', 'Impossible condition')),
+        UnsatConstraint('true', (z3.BoolVal(True),), SourceDescription('unused', 'Unrelated condition')),
+    )))
+    data = report.to_canonical()
+    link = data['reading']['blocks'][0]['source_links'][0]
+    if mutation == 'wrong_occurrence':
+        link['occurrence_id'] = next(item.occurrence_id for item in report.proof.inputs if item.constraint_id == 'true')
+    elif mutation == 'missing_occurrence':
+        link['occurrence_id'] = None
+    else:
+        link['relation'] = 'context'
+    with pytest.raises(ValueError, match='source link disagrees with evidence'):
+        UnsatReport.from_canonical(data)
+
+
+@pytest.mark.parametrize('mutation', ['unrelated_binding', 'wrong_description'])
+def test_construction_source_links_match_an_occurrence_in_the_evidence(mutation):
+    from pyfcstm.solver.proof import ProofExtensions, SourceAdapter, SourceBinding, SourceDescription
+
+    x, y = z3.Ints('x y')
+    class Sources(SourceAdapter):
+        def bindings(self):
+            return (SourceBinding(x, SourceDescription('x-source', 'Relevant variable')),
+                    SourceBinding(y, SourceDescription('y-source', 'Unrelated variable')))
+
+    report = explain_unsat(UnsatQuery('sources', (
+        UnsatConstraint('lower', (x >= 1,)), UnsatConstraint('upper', (x <= 0,)),
+        UnsatConstraint('unused', (y >= 0,)),
+    )), extensions=ProofExtensions(source_adapter=Sources()))
+    data = report.to_canonical()
+    link = next(link for block in data['reading']['blocks'] for link in block['source_links'])
+    link['source_id'] = 'y-source'
+    if mutation == 'unrelated_binding':
+        link['term_id'] = next(term.term_id for term in report.proof.terms if term.value == 'y')
+    with pytest.raises(ValueError, match='source link disagrees with evidence'):
+        UnsatReport.from_canonical(data)
+
+
+@pytest.mark.parametrize('folded', [False, True])
+def test_multiple_expression_sources_survive_loading_and_folding(folded, text_aligner):
+    from .test_extensions import _interval_fold
+    from pyfcstm.solver.proof import ProofExtensions, ReadingFolder, SourceAdapter, SourceBinding, SourceDescription
+
+    x, y = z3.Ints('x y')
+    class Sources(SourceAdapter):
+        def bindings(self):
+            return (SourceBinding(x, SourceDescription('x-source', 'First variable')),
+                    SourceBinding(y, SourceDescription('y-source', 'Second variable')))
+
+    folders = (ReadingFolder(lambda reading: (_interval_fold(reading),)),) if folded else ()
+    report = explain_unsat(UnsatQuery('combined_sources', (
+        UnsatConstraint('lower', (x+y >= 1,)), UnsatConstraint('upper', (x+y <= 0,)),
+    )), extensions=ProofExtensions(source_adapter=Sources(), reading_folders=folders))
+    assert any(len(block.source_links) >= 2 for block in report.reading.blocks)
+    loaded = UnsatReport.from_canonical(report.to_canonical())
+    assert loaded.to_canonical() == report.to_canonical()
+    for language in ('en', 'zh'):
+        text_aligner.assert_equal(report.reading.to_text(language), loaded.reading.to_text(language))
+
+
 @pytest.mark.parametrize('mutation', ['scope', 'premises', 'root'])
 def test_reading_cannot_change_the_native_derivation_boundary(proof_snapshot, mutation):
     data = proof_snapshot('branches').to_canonical()
@@ -603,6 +668,20 @@ def test_loader_rejects_a_cycle_in_expansion_details():
     block = data['reading']['blocks'][0]
     block['detail_block_ids'] = (block['block_id'],)
     with pytest.raises(ValueError, match='cyclic reading references'):
+        UnsatReport.from_canonical(data)
+
+
+def test_fold_expansion_must_preserve_its_recorded_evidence():
+    from .test_extensions import _interval_query, _interval_fold
+    from pyfcstm.solver.proof import ProofExtensions, ReadingFolder
+
+    report = explain_unsat(_interval_query(), extensions=ProofExtensions(reading_folders=(
+        ReadingFolder(lambda reading: (_interval_fold(reading),)),)))
+    data = report.to_canonical()
+    root = next(block for block in data['reading']['blocks'] if block['block_id'] == data['reading']['root_id'])
+    assert len(root['detail_block_ids']) > 1
+    root['detail_block_ids'] = root['detail_block_ids'][-1:]
+    with pytest.raises(ValueError, match='reading expansion disagrees with evidence'):
         UnsatReport.from_canonical(data)
 
 

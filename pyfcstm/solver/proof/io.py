@@ -220,6 +220,8 @@ def _validate_reading(reading):
     terms = {term.term_id for term in graph.terms}
     occurrences = {item.occurrence_id for item in graph.inputs}
     by_id = {block.block_id: block for block in blocks}
+    bindings = {(binding.description.source_id, binding.relation, binding.term_id)
+                for binding in graph.source_bindings}
     if by_id[reading.root_id].evidence_node_ids[:1] != (graph.root_id,):
         raise ValueError('reading root and proof root disagree')
     for block in blocks:
@@ -252,13 +254,37 @@ def _validate_reading(reading):
             if block.kind != 'domain':
                 _references(graph.node(block.evidence_node_ids[0]).discharged_hypotheses,
                             visible_hypotheses)
+        used_occurrences = {occurrence for key in selected for occurrence in graph.node(key).input_occurrences}
+        used_terms = None
         for link in block.source_links:
             _references((link.source_id,), sources)
             if link.term_id is not None:
                 _references((link.term_id,), terms)
             if link.occurrence_id is not None:
                 _references((link.occurrence_id,), occurrences)
+            if link.relation == 'logical':
+                if link.occurrence_id not in used_occurrences or link.term_id is not None:
+                    raise ValueError('source link disagrees with evidence')
+            else:
+                if (link.occurrence_id is not None or
+                        (link.source_id, link.relation, link.term_id) not in bindings):
+                    raise ValueError('source link disagrees with evidence')
+                if used_terms is None:
+                    used_terms = set()
+                    pending = [graph.node(key).conclusion for key in selected
+                               if graph.node(key).conclusion is not None]
+                    while pending:
+                        key = pending.pop()
+                        if key not in used_terms:
+                            used_terms.add(key)
+                            pending.extend(graph.term(key).arguments)
+                if link.term_id not in used_terms:
+                    raise ValueError('source link disagrees with evidence')
     _acyclic({block.block_id: block.premise_block_ids + block.detail_block_ids for block in blocks})
+    for block in blocks:
+        if block.detail_block_ids and set(block.evidence_node_ids) != {
+                node for key in block.detail_block_ids for node in by_id[key].evidence_node_ids}:
+            raise ValueError('reading expansion disagrees with evidence')
 
 
 def _validate(value):

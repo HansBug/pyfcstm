@@ -34,10 +34,10 @@ Python 3.7–3.14; Windows/Linux/macOS; no new dependencies; public JSON contrac
 
 ## Local verification evidence
 
-- Clean full unittest run with branch coverage: 51,248 passed, 1,010 skipped.
+- Clean full unittest run with branch coverage: 51,265 passed, 1,010 skipped.
 - Changed production Python statements: 279/279; branch arcs: 184/184, measured against the base commit. No coverage exclusions added.
 - All five built-in template suites: 1,342 passed, 10 skipped (explicit native-toolchain matrix opt-in remains separate).
-- Full doctest: 1,124 passed. Both language HTML builds succeeded with 18 existing warnings each; rendered pages contain no problematic-reference spans.
+- Full doctest after main integration: 1,125 passed. Both language HTML builds succeeded with 18 existing warnings each; rendered pages contain no problematic-reference spans.
 - Generated API RST, documentation contents, lint/format, resource ownership, test boundaries, terminology, and diagram data parity checked.
 - Independent review found no actionable public-path defects; contract checks and event-scope round trips passed.
-- Remote PR creation, CI and ready status remain pending.
+- [PR #513](https://github.com/HansBug/pyfcstm/pull/513) is open as a draft. Latest main was integrated; its new BMC event-enumeration test was migrated to the trigger API. Full BMC integration run: 6,452 passed, 30 skipped. Independent integration review found no defects. Clean integrated full unittest passed with the counts above. Remote CI and ready status are tracked on the PR.

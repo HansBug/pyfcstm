@@ -18,7 +18,7 @@ import pytest
 from click.testing import CliRunner
 
 from pyfcstm.entry.cli import pyfcstmcli
-from pyfcstm.model import load_state_machine_from_text
+from pyfcstm.model import EventTrigger, load_state_machine_from_text
 from pyfcstm.simulate import SimulationRuntime
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -36,10 +36,10 @@ def earliest_step(model_text, predicate, bound):
     machine = load_state_machine_from_text(model_text)
     events = sorted(
         {
-            t.event.path_name
+            t.trigger.event.path_name
             for s in machine.walk_states()
             for t in s.transitions
-            if t.event
+            if isinstance(t.trigger, EventTrigger)
         }
     )
     subsets = [

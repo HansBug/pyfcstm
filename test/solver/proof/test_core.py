@@ -92,12 +92,13 @@ def test_capture_uses_an_isolated_context_and_keeps_the_original_query_usable():
     assert original.model().eval(x).as_long() == 2
 
 
+@pytest.mark.parametrize('minimize', [False, True])
 @pytest.mark.parametrize('groups', [(), ('true',)])
-def test_satisfiable_query_does_not_claim_a_proof(groups):
+def test_satisfiable_query_does_not_claim_a_proof(groups, minimize):
     query = solver.UnsatQuery('sat', tuple(
         solver.UnsatConstraint(name, (z3.BoolVal(True),)) for name in groups
     ))
-    report = solver.explain_unsat(query)
+    report = solver.explain_unsat(query, minimize=minimize)
     assert report.solver_status == 'sat'
     assert report.proof is None
     assert report.proof_status == 'unavailable'
@@ -140,7 +141,17 @@ def test_invalid_query_is_rejected_before_native_work():
         solver.explain_unsat('not a query')
 
 
-def test_minimization_retains_full_evidence_and_reproves_the_selected_groups():
+def test_minimization_proves_only_the_selected_groups(monkeypatch):
+    from pyfcstm.solver.proof import _z3_proof
+
+    original = _z3_proof.capture_proof
+    captured = []
+
+    def capture(query, *arguments):
+        captured.append(tuple(group.stable_id for group in query.constraints))
+        return original(query, *arguments)
+
+    monkeypatch.setattr(_z3_proof, 'capture_proof', capture)
     x, y, unrelated = z3.Ints('x y unrelated')
     query = solver.UnsatQuery('minimal', (
         solver.UnsatConstraint('initial', (x >= 0,)),
@@ -152,9 +163,8 @@ def test_minimization_retains_full_evidence_and_reproves_the_selected_groups():
     assert report.core.core_ids == ('goal', 'initial', 'update')
     assert report.core.subset_minimality == 'proven'
     assert report.proof_scope == 'core'
-    assert report.full_proof.execution_id != report.proof.execution_id
-    assert {item.constraint_id for item in report.full_proof.inputs} == {
-        'initial', 'update', 'goal', 'unrelated'}
+    assert captured == [('initial', 'update', 'goal')]
+    assert report.full_proof is None
     assert {item.constraint_id for item in report.proof.inputs} == {'initial', 'update', 'goal'}
     assert report.reading_status == 'complete'
     assert report.to_canonical()['core']['subset_minimality'] == 'proven'
@@ -201,13 +211,13 @@ def test_proof_options_are_checked_even_for_sat_queries(option, value):
         solver.explain_unsat(solver.UnsatQuery('empty', ()), **{option: value})
 
 
-def test_unknown_during_optional_minimization_preserves_the_full_proof(monkeypatch):
+def test_unknown_core_extraction_still_attempts_the_original_proof(monkeypatch):
     native_check = z3.Solver.check
     calls = []
 
     def check(native, *assumptions):
         calls.append(assumptions)
-        if len(calls) > 1:
+        if len(calls) == 1:
             return z3.unknown
         return native_check(native, *assumptions)
 
@@ -224,6 +234,105 @@ def test_unknown_during_optional_minimization_preserves_the_full_proof(monkeypat
     assert report.core.core_ids is None
     assert report.core.subset_minimality == 'not_proven'
     assert report.stop_reason == 'core extraction returned unknown'
+
+
+def test_minimization_keeps_verified_core_when_capture_has_no_budget(monkeypatch):
+    import time
+    from pyfcstm.solver.proof import _z3_proof, UnsatReport
+
+    now = [0.0]
+    original = _z3_proof.capture_proof
+
+    def capture(query, *arguments):
+        now[0] = 1.0
+        return original(query, *arguments)
+
+    monkeypatch.setattr(time, 'monotonic', lambda: now[0])
+    monkeypatch.setattr(_z3_proof, 'capture_proof', capture)
+    report = solver.explain_unsat(solver.UnsatQuery('small-core', (
+        solver.UnsatConstraint('false', (z3.BoolVal(False),)),
+        solver.UnsatConstraint('irrelevant', (z3.Bool('irrelevant'),)),
+    )), minimize=True, timeout_ms=100)
+    assert report.solver_status == 'unsat'
+    assert report.proof_status == 'unavailable'
+    assert report.proof_scope == 'none'
+    assert report.core.core_ids == ('false',)
+    assert report.core.core_check == 'verified'
+    assert report.core.subset_minimality == 'proven'
+    assert report.stop_reason == 'budget exhausted during proof capture'
+    assert UnsatReport.from_canonical(report.to_canonical()) == report
+
+
+def test_minimization_discards_large_irrelevant_control_flow_before_capture():
+    values = z3.Ints(' '.join('frame%d' % i for i in range(101)))
+    enabled = z3.Bool('enabled')
+    constraints = [solver.UnsatConstraint('init', (values[0] == 0,))] + [
+        solver.UnsatConstraint('update%d' % i, (
+            z3.Implies(values[i] >= 0, values[i + 1] == values[i] + 1),
+        )) for i in range(100)
+    ] + [solver.UnsatConstraint('enabled', (enabled,)),
+         solver.UnsatConstraint('disabled', (z3.Not(enabled),))]
+    report = solver.explain_unsat(solver.UnsatQuery('control-flow', tuple(constraints)),
+                                  minimize=True, timeout_ms=5000)
+    assert report.core.core_ids == ('disabled', 'enabled')
+    assert report.core.subset_minimality == 'proven'
+    assert report.reading_status == 'complete'
+    assert report.full_proof is None
+    assert {item.constraint_id for item in report.proof.inputs} == {'enabled', 'disabled'}
+
+
+@pytest.mark.parametrize('unknown_check,scope,reason', [
+    (2, 'full', 'selected core did not re-check as unsat (unknown)'),
+    (3, 'core', 'deletion trial returned unknown'),
+    (4, 'core', 'acceptance check for false did not return sat'),
+])
+def test_incomplete_core_checks_do_not_claim_minimality(monkeypatch, unknown_check, scope, reason):
+    from pyfcstm.solver.proof import UnsatReport
+
+    original = z3.Solver.check
+    checks = []
+
+    def check(native, *assumptions):
+        checks.append(assumptions)
+        return z3.unknown if len(checks) == unknown_check else original(native, *assumptions)
+
+    monkeypatch.setattr(z3.Solver, 'check', check)
+    monkeypatch.setattr(z3.Solver, 'reason_unknown', lambda native: 'injected core check unknown')
+    report = solver.explain_unsat(solver.UnsatQuery('incomplete-core', (
+        solver.UnsatConstraint('false', (z3.BoolVal(False),)),
+    )), minimize=True)
+    assert report.solver_status == 'unsat'
+    assert report.proof_status == 'captured'
+    assert report.proof_scope == scope
+    assert report.core.subset_minimality == 'not_proven'
+    assert report.core.stop_reason == reason
+    assert report.stop_reason == reason
+    assert report.reading_status == 'complete'
+    assert UnsatReport.from_canonical(report.to_canonical()) == report
+
+
+def test_minimized_duplicate_sources_are_alternatives_not_joint_requirements():
+    from pyfcstm.solver.proof import UnsatReport
+
+    x = z3.Int('x')
+    query = solver.UnsatQuery('duplicate-core', (
+        solver.UnsatConstraint('first', (x >= 0,)),
+        solver.UnsatConstraint('duplicate', (x >= 0,)),
+        solver.UnsatConstraint('equivalent', (x + 1 > 0,)),
+        solver.UnsatConstraint('negative', (x < 0,)),
+    ))
+    report = solver.explain_unsat(query, minimize=True)
+    assert report.core.subset_minimality == 'proven'
+    assert len(report.core.core_ids) == 2
+    assert 'negative' in report.core.core_ids
+    assert {item.constraint_id for item in report.proof.inputs} == set(report.core.core_ids)
+    for removed in report.core.core_ids:
+        native = z3.Solver()
+        native.add(*(expression for group in query.constraints
+                     if group.stable_id in report.core.core_ids and group.stable_id != removed
+                     for expression in group.expressions))
+        assert native.check() == z3.sat
+    assert UnsatReport.from_canonical(report.to_canonical()) == report
 
 
 def test_slow_rule_extension_exhausts_shared_deadline_without_losing_native_evidence(monkeypatch):
@@ -371,11 +480,13 @@ def test_minimization_and_reproof_share_the_original_deadline(monkeypatch):
     )), minimize=True, timeout_ms=60)
     assert len(checks) == 2
     assert report.solver_status == 'unsat'
-    assert report.proof_scope == 'full'
-    assert report.proof_status == 'captured'
-    assert report.core.core_ids is None
-    assert report.core.core_check == 'timeout'
-    assert report.reading_status == 'complete'
+    assert report.proof_scope == 'none'
+    assert report.proof_status == 'unavailable'
+    assert report.core.core_ids == ('false',)
+    assert report.core.core_check == 'verified'
+    assert report.core.subset_minimality == 'not_proven'
+    assert report.reading_status == 'not_requested'
+    assert report.reading.blocks == ()
 
 
 def test_deadline_during_native_export_keeps_unsat_but_does_not_publish_a_partial_graph(monkeypatch):
@@ -400,26 +511,27 @@ def test_deadline_during_native_export_keeps_unsat_but_does_not_publish_a_partia
     assert report.stop_reason == 'budget exhausted during proof capture'
 
 
-def test_reproof_unknown_preserves_original_proof_and_the_verified_core(monkeypatch):
+def test_reproof_unknown_preserves_the_verified_core_and_unsat_verdict(monkeypatch):
     original = z3.Solver.check
     count = [0]
 
     def check(native, *assumptions):
         count[0] += 1
-        return z3.unknown if count[0] == 6 else original(native, *assumptions)
+        return z3.unknown if count[0] == 5 else original(native, *assumptions)
 
     monkeypatch.setattr(z3.Solver, 'check', check)
     monkeypatch.setattr(z3.Solver, 'reason_unknown', lambda native: 'injected reproof unknown')
     report = solver.explain_unsat(solver.UnsatQuery('false', (
         solver.UnsatConstraint('false', (z3.BoolVal(False),)),
     )), minimize=True)
-    assert count[0] == 6
-    assert report.proof_status == 'captured'
-    assert report.proof_scope == 'full'
+    assert count[0] == 5
+    assert report.solver_status == 'unsat'
+    assert report.proof_status == 'unavailable'
+    assert report.proof_scope == 'none'
     assert report.core.core_ids == ('false',)
     assert report.core.subset_minimality == 'proven'
     assert report.stop_reason == 'injected reproof unknown'
-    assert report.reading_status == 'complete'
+    assert report.reading_status == 'not_requested'
 
 
 def test_quantifier_instantiation_parameters_preserve_the_exact_expression():

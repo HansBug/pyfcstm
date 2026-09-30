@@ -191,7 +191,7 @@ def test_domain_folds_and_source_relationships_survive_offline_roundtrip(text_al
     (('reading', 'blocks', 0, 'evidence_node_ids'), []),
     (('reading', 'blocks', 0, 'kind'), 'domain'),
     (('core', 'core_check'), 'unknown'),
-    (('full_proof',), None),
+    (('core',), None),
     (('scope_check',), 'partial'),
 ])
 def test_loader_reports_invalid_shapes_and_cross_field_invariants(location, value):
@@ -201,6 +201,20 @@ def test_loader_reports_invalid_shapes_and_cross_field_invariants(location, valu
         target = target[key]
     target[location[-1]] = value
     with pytest.raises(ValueError):
+        UnsatReport.from_canonical(data)
+
+
+@pytest.mark.parametrize('mutation', ['unverified', 'missing_input', 'wrong_background'])
+def test_core_proof_requires_its_verified_input_groups(mutation):
+    data = json.loads(json.dumps(_report().to_canonical()))
+    if mutation == 'unverified':
+        data['core'].update(core_ids=None, core_check='not_checked',
+                            subset_minimality='not_proven', reduction='raw')
+    elif mutation == 'missing_input':
+        data['core']['core_ids'] = data['core']['core_ids'][:-1]
+    else:
+        data['proof']['inputs'][0]['background'] = True
+    with pytest.raises(ValueError, match='core'):
         UnsatReport.from_canonical(data)
 
 

@@ -33,7 +33,7 @@ UNSAT 证明 API 参考
      - 请求原生证明，或仅请求经过检查的核证据。
    * - ``minimize``
      - ``False``；布尔值
-     - 删除可移除条件组；证明模式下对选定子集重新求证。不优化最小基数。
+     - 先缩减可移除条件组，再捕获选定子集的证明。不优化最小基数。
    * - ``timeout_ms``
      - ``None``；排除布尔值的正整数
      - 以毫秒计的共享协作式期限。``None`` 表示不限时。
@@ -73,7 +73,7 @@ UNSAT 证明 API 参考
    * - ``proof_scope``
      - ``full``、``core`` 或 ``none``，说明选定图所证明的条件合取。
    * - ``full_proof``
-     - 缩减图被接受后保存的原始图，否则为 ``None``。缩减失败时，原始图仍在 ``proof`` 中。
+     - 可选的独立捕获原始图。核优先 API 将其保留为 ``None``；需要原始查询报告时，单独调用且不启用最小化。
    * - ``input_check``
      - ``not_run``、``passed`` 或 ``failed``；检查断言叶子与精确输入的对应关系。
    * - ``scope_check``
@@ -112,8 +112,11 @@ UNSAT 证明 API 参考
 例如，捕获后组装超时，可以产生 ``solver_status="unsat", proof_status="captured",
 reading_status="not_requested"``。存在受信任的机械规则时，可以同时出现
 ``rule_check="partial", reading_status="complete"``。
-缩减子集重新求证失败时，可以出现 ``core.subset_minimality="proven", proof_scope="full"``：
-核证据与选定证明图各自保留独立的保证范围。
+选定子集的证明捕获失败时，可以出现
+``core.subset_minimality="proven", proof_status="unavailable"``：
+已验证的核和原始 UNSAT 结论仍然保留，不会伪造证明图。
+如果核提取未能建立已验证的子集，证明模式会使用剩余预算尝试原始条件合取。
+所有阶段共用同一个期限。
 
 同一个查询在不同平台、求解器配置或版本下，可能得到不同的有效原生证明路径。
 阅读完整不表示新生成的证明具有唯一推导顺序或完全相同的文本。

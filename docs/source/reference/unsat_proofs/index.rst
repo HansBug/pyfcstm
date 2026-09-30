@@ -34,7 +34,7 @@ are legal and SAT. Python ``True`` is not a Z3 expression; use
      - Native evidence or checked core evidence only.
    * - ``minimize``
      - ``False``; Boolean
-     - Delete removable groups and reprove the selected subset in proof mode. Not cardinality optimization.
+     - Reduce removable groups before proof capture, then prove the selected subset. Not cardinality optimization.
    * - ``timeout_ms``
      - ``None``; positive integer excluding Boolean
      - Shared cooperative deadline in milliseconds. ``None`` is unbounded.
@@ -77,7 +77,7 @@ Python and ``null`` in JSON.
    * - ``proof_scope``
      - ``full``, ``core`` or ``none``; identifies which conjunction the selected graph proves.
    * - ``full_proof``
-     - Original graph after a reduced graph is accepted; otherwise ``None``. On failed reduction, the original remains in ``proof``.
+     - Optional separately captured original graph. The core-first API leaves this ``None``; call without minimization for an original-query report.
    * - ``input_check``
      - ``not_run``, ``passed`` or ``failed``; asserted leaves versus exact inputs.
    * - ``scope_check``
@@ -120,8 +120,10 @@ For example, ``solver_status="unsat", proof_status="captured",
 reading_status="not_requested"`` is possible when assembly times out after
 capture. ``rule_check="partial", reading_status="complete"`` is possible
 with trusted mechanical rules. ``core.subset_minimality="proven",
-proof_scope="full"`` is possible when reduced reproof fails: the core evidence
-and chosen graph have separately qualified guarantees.
+proof_status="unavailable"`` is possible when selected-core proof capture fails:
+the verified core and original UNSAT verdict survive without a fabricated graph.
+If core extraction cannot establish a verified subset, proof mode attempts the
+original conjunction with the remaining budget. Every stage shares one deadline.
 
 The same query can have different valid native proof paths across platforms,
 solver configurations or versions. Reading completeness does not promise a

@@ -22,9 +22,11 @@ For the tutorial query the output is:
     ('goal', 'initial', 'update')
     proven core
 
-The original proof is retained as ``full_proof``. The selected subset is proved
-again in a separate execution; its graph is ``proof``. Compare the two
-``execution_id`` values rather than joining node IDs across graphs.
+Reduction runs before proof capture. The selected subset's graph is ``proof``;
+the API does not spend the shared budget capturing an additional original graph
+(``full_proof`` is ``None``). To inspect both, make a separate
+``explain_unsat(query, minimize=False)`` call. Node IDs belong to their own
+``execution_id`` and must not be joined across reports.
 ``proven`` means no surviving removable group can be deleted individually. It
 does not mean fewest groups or shortest proof. If a trial returns UNKNOWN,
 minimality can remain ``not_proven``; inspect ``stop_reason``.
@@ -175,9 +177,10 @@ Handle incomplete work
         print(report.reading.to_text())
     print(report.solver_status, report.proof_status, report.stop_reason)
 
-One deadline covers capture, minimization and assembly. An already completed
-full proof survives optional minimization/reproof failure. A captured graph can
-outlive timed-out assembly, with ``reading=None``. SAT, UNKNOWN and timeout do
+One deadline covers minimization, capture and assembly. A verified core survives
+failed or timed-out proof capture, and a stopped reduction never claims proven
+minimality. A captured graph and completed node checks can outlive timed-out
+assembly, with ``reading=None``. SAT, UNKNOWN and timeout do
 not produce a fabricated contradiction. Deadlines are cooperative: a running
 extension callback cannot be forcibly interrupted by this API.
 

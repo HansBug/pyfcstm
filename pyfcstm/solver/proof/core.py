@@ -498,7 +498,8 @@ class UnsatReport:
     :param reading_status: Complete, partial or not requested.
     :param source_status: Absent, partial or complete input source descriptions.
     :param proof_scope: Full conjunction, selected core, or no proof.
-    :param full_proof: Original graph retained after reduced reproof succeeds.
+    :param full_proof: Optional separately captured original graph. Minimization
+        does not capture this graph; it prioritizes the selected-core proof.
     :param core: Portable core/minimization evidence when requested.
     """
 
@@ -605,7 +606,8 @@ def explain_unsat(query, *, mode='proof', minimize=False, timeout_ms=None,
 
     :param query: An :class:`~pyfcstm.solver.unsat.UnsatQuery`.
     :param mode: ``proof`` for native evidence or ``core`` for a conflict core.
-    :param minimize: Whether to minimize removable condition groups.
+    :param minimize: Whether to minimize removable condition groups before
+        capturing the selected subset's proof. Only subset-minimality is claimed.
     :param timeout_ms: Shared positive millisecond budget, or ``None``.
     :param names: Optional construction-time symbol registry.
     :param extensions: Optional per-call rule/source/reading extensions.
@@ -642,23 +644,24 @@ def explain_unsat(query, *, mode='proof', minimize=False, timeout_ms=None,
         raise TypeError('extensions must be ProofExtensions')
     extensions = ProofExtensions() if extensions is None else extensions
     budget = SolveBudget(timeout_ms)
-    if mode == 'core':
+    result = None
+    if mode == 'core' or minimize:
         result = _explain_unsat_core(query, minimize=minimize, budget=budget)
-        report = UnsatReport(query.query_id, result.solver_status, 'not_requested', None,
-                             stop_reason=result.stop_reason, core=CoreEvidence.from_result(result))
-        return _assemble(report, query, extensions, budget)
+        if mode == 'core' or result.solver_status == 'sat':
+            report = UnsatReport(query.query_id, result.solver_status,
+                                 'not_requested' if mode == 'core' else 'unavailable', None,
+                                 stop_reason=result.stop_reason, core=CoreEvidence.from_result(result))
+            return _assemble(report, query, extensions, budget)
+        if result.core_ids is not None:
+            query = UnsatQuery(query.query_id, tuple(group for group in query.constraints
+                               if group.stable_id in result.core_ids), query.background)
     adapter = extensions.source_adapter or SourceAdapter()
-    report = _assemble(capture_proof(query, budget, names, adapter), query, extensions, budget)
-    if not minimize or report.proof_status != 'captured' or report.stop_reason is not None:
-        return report
-    result = _explain_unsat_core(query, minimize=True, budget=budget)
-    report = replace(report, core=CoreEvidence.from_result(result), stop_reason=result.stop_reason)
-    if result.core_ids is None:
-        return report
-    reduced_query = UnsatQuery(query.query_id, tuple(group for group in query.constraints
-                              if group.stable_id in result.core_ids), query.background)
-    reduced = _assemble(capture_proof(reduced_query, budget, names, adapter), reduced_query, extensions, budget)
-    if reduced.proof_status != 'captured' or reduced.stop_reason is not None:
-        return replace(report, stop_reason=reduced.stop_reason or 'reduced proof was not accepted')
-    return replace(reduced, proof_scope='core', full_proof=report.proof,
-                   core=report.core, stop_reason=report.stop_reason)
+    report = capture_proof(query, budget, names, adapter)
+    if result is not None:
+        # Unavailable reproof does not erase the original core solver's UNSAT.
+        status = ('unsat' if result.solver_status == 'unsat' and
+                  report.solver_status in ('timeout', 'unknown') else report.solver_status)
+        report = replace(report, solver_status=status, core=CoreEvidence.from_result(result),
+                         proof_scope='core' if result.core_ids is not None and report.proof is not None
+                         else report.proof_scope, stop_reason=report.stop_reason or result.stop_reason)
+    return _assemble(report, query, extensions, budget)

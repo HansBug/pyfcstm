@@ -436,8 +436,13 @@ def _validate(value):
             raise ValueError('proof scope and availability disagree')
         if value.proof is not None and value.solver_status != 'unsat':
             raise ValueError('proof requires an UNSAT result')
-        if value.proof_scope == 'core' and (value.core is None or value.full_proof is None):
-            raise ValueError('reduced proof requires the original graph and core')
+        if value.proof_scope == 'core':
+            if value.core is None or value.core.core_ids is None:
+                raise ValueError('reduced proof requires a verified core')
+            removable = {item.constraint_id for item in value.proof.inputs if not item.background}
+            background = {item.constraint_id for item in value.proof.inputs if item.background}
+            if removable != set(value.core.core_ids) or background != set(value.core.background_ids):
+                raise ValueError('reduced proof inputs must match the selected core and background')
         if value.proof is not None and value.scope_check == 'passed':
             root = value.proof.node(value.proof.root_id)
             term = None if root.conclusion is None else value.proof.term(root.conclusion)

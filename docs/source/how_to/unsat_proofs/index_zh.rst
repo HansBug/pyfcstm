@@ -21,8 +21,10 @@
     ('goal', 'initial', 'update')
     proven core
 
-原始证明保存在 ``full_proof``。选出的条件子集在独立执行中重新求证，其证明图为
-``proof``。请通过两个图的 ``execution_id`` 区分执行，不要跨图拼接节点 ID。
+先缩核，再捕获选定子集的证明，结果图为 ``proof``。
+API 不会消耗共享预算额外捕获原始图，``full_proof`` 为 ``None``。
+需要同时查看原始查询的证明时，另行调用 ``explain_unsat(query, minimize=False)``。
+节点 ID 属于各自的 ``execution_id``，不要跨报告拼接。
 ``proven`` 表示无法再单独删除任何保留的可移除条件组，不表示条件数量最少或证明最短。
 若某次尝试返回 UNKNOWN，最小性可能仍为 ``not_proven``；请查看 ``stop_reason``。
 
@@ -162,8 +164,9 @@
         print(report.reading.to_text())
     print(report.solver_status, report.proof_status, report.stop_reason)
 
-同一个期限覆盖证明捕获、最小化和组装。可选最小化或重新求证失败时，已经完成的完整证明会保留。
-组装超时后，可能仍有捕获的证明图，但 ``reading=None``。
+同一个期限覆盖最小化、证明捕获和组装。证明捕获失败或超时时，已验证的核仍然保留；
+缩核中断时不会宣称已证明最小性。组装超时后仍保留捕获的证明图和已完成的节点检查，
+但可能 ``reading=None``。
 SAT、UNKNOWN 和超时不会生成伪造的矛盾推导。
 期限是协作式的：此 API 不能强制中断正在执行的扩展回调。
 

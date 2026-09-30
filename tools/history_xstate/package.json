@@ -1,0 +1,9 @@
+{
+  "name": "pyfcstm-history-xstate-check",
+  "private": true,
+  "description": "XState reference runner for tools/check_history_xstate.py.",
+  "type": "module",
+  "dependencies": {
+    "xstate": "5.33.2"
+  }
+}

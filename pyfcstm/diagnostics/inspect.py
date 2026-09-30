@@ -2613,7 +2613,7 @@ def _build_structure_statistics(
 def _build_reachability_graph(
         states: Tuple[StateInfo, ...],
         transitions: Tuple[TransitionInfo, ...],
-        history_defaults: Sequence[Tuple[str, Sequence[str]]] = (),
+        history_defaults: Optional[Mapping[Tuple[str, str], Sequence[str]]] = None,
 ) -> Dict[str, Tuple[str, ...]]:
     """Return the default inspect reachability graph.
 
@@ -2627,11 +2627,12 @@ def _build_reachability_graph(
     :type states: Tuple[StateInfo, ...]
     :param transitions: Inspect transition records in model order.
     :type transitions: Tuple[TransitionInfo, ...]
-    :param history_defaults: For a history owner, the states from its child
-        down to the default a history entry reaches, defaults to ``()``. The
-        default is followed like an initial target; the states above it on a
-        deep default path are active but their own initials do not run.
-    :type history_defaults: Sequence[Tuple[str, Sequence[str]]], optional
+    :param history_defaults: For each ``(owner path, history kind)``, the
+        states from the owner's child down to the declared default, defaults to
+        ``None``. A transition entering that history reaches each of them as an
+        ordinary target, besides the owner itself -- an over-approximation of
+        what a restore reaches, so no reachable state is left out.
+    :type history_defaults: Optional[Mapping[Tuple[str, str], Sequence[str]]], optional
     :return: Mapping from every state path to reachable state paths.
     :rtype: Dict[str, Tuple[str, ...]]
 
@@ -2670,6 +2671,15 @@ def _build_reachability_graph(
             continue
         adjacency[transition.from_path].add(transition.to_path)
 
+    for transition in transitions:
+        chain = (history_defaults or {}).get((transition.to_path, transition.target_history))
+        if not chain:
+            continue
+        if transition.from_path == _INIT_MARK:
+            initial_edges[transition.to_path.rsplit('.', 1)[0]].update(chain)
+        else:
+            adjacency[transition.from_path].update(chain)
+
     for state in states:
         if not (state.is_composite and state.initial_targets):
             continue
@@ -2678,28 +2688,20 @@ def _build_reachability_graph(
             if target != _EXIT_MARK:
                 initial_edges[state.path].add(target)
 
-    passive: Dict[str, set] = {}
-    for owner, chain in history_defaults:
-        initial_edges[owner].add(chain[-1])
-        passive.setdefault(owner, set()).update(chain[:-1])
-
     graph: Dict[str, Tuple[str, ...]] = {}
     for state in states:
         seen = set()
-        expanded = set()
         queue = [state.path]
         while queue:
             current = queue.pop(0)
-            seen.update(path for path in passive.get(current, ()) if path != state.path)
             next_paths = adjacency.get(current, set()) | initial_edges.get(
                 current,
                 set(),
             )
             for next_path in sorted(next_paths):
-                if next_path in expanded or next_path == state.path:
+                if next_path in seen or next_path == state.path:
                     continue
                 seen.add(next_path)
-                expanded.add(next_path)
                 queue.append(next_path)
         graph[state.path] = tuple(sorted(seen))
     return graph
@@ -4296,8 +4298,8 @@ def inspect_model(
     its findings and the optional verify run describe that model, with each
     history entry an ordinary transition marked by ``target_history``. The
     lowered variables, gate states and route initials therefore appear nowhere
-    in the report. Reachability additionally lets a history entry reach its
-    default (:func:`pyfcstm.model.history.history_default_targets`).
+    in the report. For reachability, a history entry also reaches every state on
+    the default path of the kind it names.
 
     :param machine: The state machine model to inspect.
     :type machine: pyfcstm.model.StateMachine
@@ -4383,7 +4385,7 @@ def inspect_model(
     # A machine that uses history is judged as written: model conversion keeps
     # the model before lowering, where a history entry is an ordinary
     # transition that still carries its ``target_history``.
-    machine = getattr(machine, '_authored_view', None) or machine
+    machine = machine._as_written()
     states = _build_state_infos(machine)
     transitions = _build_transition_infos(machine)
     variables = _build_variable_infos(machine, states)
@@ -4393,18 +4395,17 @@ def inspect_model(
     combo_transitions = _build_combo_transition_infos(transitions)
     combo_origins = _build_combo_origin_infos(transitions)
     metrics = _build_metrics(states, transitions, variables, events)
-    from ..model.history import history_default_targets
-
     reachability_graph = _build_reachability_graph(
         states,
         transitions,
-        [
-            (
-                '.'.join(owner),
-                ['.'.join(target[:depth]) for depth in range(len(owner) + 1, len(target) + 1)],
-            )
-            for owner, target in history_default_targets(machine)
-        ],
+        {
+            ('.'.join(owner.owner_path), kind): [
+                '.'.join((*owner.owner_path, *path[:depth]))
+                for depth in range(1, len(path) + 1)
+            ]
+            for owner in machine.history_owners
+            for kind, path in owner.defaults.items()
+        },
     )
     root_state_path = _state_path(machine.root_state)
     # Model-build diagnostics come first so a report on a model built in collect

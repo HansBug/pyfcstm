@@ -377,28 +377,62 @@ def test_only_history_defaults_add_reachability(inner, outer, unreachable):
 
 
 @pytest.mark.unittest
-def test_a_deep_default_skips_the_initials_on_its_path():
-    text = """
-    state R {
-        state Off;
-        state O {
-            state A;
-            state W { state W1; state W2; state W3; [*] -> W1; }
-            [*] -> A;
-            [H*] -> W.W2;
-        }
-        [*] -> Off;
-        Off -> O.[H*] :: Go;
-        !O -> Off :: Stop;
-    }
-    """
-    report = _report(text)
-    reachable = set(report.reachability_graph["R"])
-    assert {"R.O.W", "R.O.W.W2"} <= reachable and "R.O.W.W1" not in reachable
-    found = [item.refs["state_path"] for item in report.diagnostics if item.code == "W_UNREACHABLE_STATE"]
-    assert found == ["R.O.W.W1", "R.O.W.W3"]
-    machine = load_state_machine_from_text(text)
-    assert list(unreachable_states(machine)) == ["R.O.W.W1", "R.O.W.W3"]
+@pytest.mark.parametrize(
+    ["text", "unreachable"],
+    [
+        # the states of a deep default path are entered as ordinary targets --
+        # W1 included, an over-approximation -- and their transitions followed
+        (
+            """
+            state R {
+                state Off;
+                state O {
+                    state A; state X;
+                    state W { state W1; state W2; state W3; [*] -> W1; }
+                    [*] -> A;
+                    [H*] -> W.W2;
+                    !W -> X :: Up;
+                }
+                [*] -> Off;
+                Off -> O.[H*] :: Go;
+                !O -> Off :: Stop;
+            }
+            """,
+            ["R.O.W.W3"],
+        ),
+        # a default opens only through the history entry, not any entry
+        (
+            """
+            state R {
+                state Off; state Dead;
+                state O { state A; state D; [*] -> A; [H] -> D; }
+                [*] -> Off;
+                Off -> O :: Go;
+                Dead -> O.[H] :: Resume;
+                !O -> Off :: Stop;
+            }
+            """,
+            ["R.Dead", "R.O.D"],
+        ),
+        # a forced entry opens the history of its target only
+        (
+            """
+            state R {
+                state T3 { state S4; state S6; [*] -> S4; [H] -> S6; }
+                state S11 { state T13; [*] -> T13; [H] -> T13; }
+                [*] -> T3;
+                !* -> S11.[H] :: Go;
+            }
+            """,
+            ["R.T3.S6"],
+        ),
+    ],
+)
+def test_history_entries_reach_the_states_of_their_default(text, unreachable):
+    report = _report(text, **VERIFY_STRUCTURAL)
+    found = sorted(item.refs["state_path"] for item in report.diagnostics if item.code == "W_UNREACHABLE_STATE")
+    assert found == unreachable
+    assert list(unreachable_states(load_state_machine_from_text(text))) == unreachable
 
 
 @pytest.mark.unittest

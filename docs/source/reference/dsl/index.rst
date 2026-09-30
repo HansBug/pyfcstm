@@ -711,15 +711,18 @@ Consumers of the lowered machine
        lowering, and ``pyfcstm inspect`` -- including ``--enable-verify`` -- and
        the jsfcstm editor report that machine: it contains no lowered variable,
        gate state, route or record-writing exit, a history entry is an ordinary
-       transition to the owner marked with ``target_history``, and
-       ``transition_index`` numbers only authored transitions. Every finding,
+       transition to the owner marked with ``target_history``, and no
+       ``transition_index`` numbers a lowered transition. Every finding,
        statistic and metric is therefore that of the same model written without
-       history, except reachability: a history entry also reaches the default of
-       the kind it names, entered exactly there, so a state reachable only as a
-       default is not reported unreachable, while a state a deep default skips
-       over still is. :func:`pyfcstm.verify.topology.unreachable_states` applies
-       the same rule to a lowered machine; the other :mod:`pyfcstm.verify`
-       functions, called directly, analyse the machine they are given.
+       history, except reachability: a history entry reaches its owner as an
+       ordinary entry does and, as ordinary targets, every state on the default
+       path of the kind it names. A state reachable only as a default is
+       therefore not reported unreachable. The rule over-approximates what a
+       restore reaches, so it never reports a reachable state, though a state a
+       deep default skips over is not reported either.
+       :func:`pyfcstm.verify.topology.unreachable_states` applies the same rule
+       to a lowered machine; the other :mod:`pyfcstm.verify` functions, called
+       directly, analyse the machine they are given.
    * - BMC
      - Checks the lowered machine. Queries may read ``var("__hist_goto")`` and
        ``var("__hist_<owner>")``. A havocked history variable is constrained to

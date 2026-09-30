@@ -29,9 +29,3 @@ lower\_history
 -----------------------------------------------------
 
 .. autofunction:: lower_history
-
-
-history\_default\_targets
------------------------------------------------------
-
-.. autofunction:: history_default_targets

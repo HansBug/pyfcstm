@@ -263,30 +263,64 @@ describe('jsfcstm history diagnostics', () => {
         });
     }
 
-    it('reports only the states no history default reaches as unreachable in the editor', async () => {
-        const text = [
-            'state R {',
-            '    state Off;',
-            '    state O { state A; state Lost; state Def; [*] -> A; [H] -> Def; }',
-            '    state D {',
-            '        state A;',
-            '        state W { state W1; state W2; [*] -> W1; }',
-            '        [*] -> A;',
-            '        [H*] -> W.W2;',
-            '    }',
-            '    [*] -> Off;',
-            '    Off -> O.[H] :: Go;',
-            '    !O -> Off :: Stop;',
-            '    !Off -> D.[H*] :: Deep;',
-            '}',
-        ].join('\n');
-        const unreachable = (await packageModule.collectDocumentDiagnostics(document(text)))
-            .filter(item => /unreachable/.test(item.message) && /State "/.test(item.message))
-            .map(item => /State "([^"]+)"/.exec(item.message)![1])
-            .sort();
-        // A deep default skips the initials on its path, so W1 stays unreachable.
-        assert.deepEqual(unreachable, ['R.D.W.W1', 'R.O.Lost']);
-    });
+    for (const [name, lines, expected] of [
+        [
+            'reach the defaults of the kinds they name',
+            [
+                'state R {',
+                '    state Off;',
+                '    state O { state A; state Lost; state Def; [*] -> A; [H] -> Def; }',
+                '    state D {',
+                '        state A; state X;',
+                '        state W { state W1; state W2; state W3; [*] -> W1; }',
+                '        [*] -> A;',
+                '        [H*] -> W.W2;',
+                '        !W -> X :: Up;',
+                '    }',
+                '    [*] -> Off;',
+                '    Off -> O.[H] :: Go;',
+                '    !O -> Off :: Stop;',
+                '    !Off -> D.[H*] :: Deep;',
+                '}',
+            ],
+            // the deep default path is entered as ordinary targets, W1 included
+            ['R.D.W.W3', 'R.O.Lost'],
+        ],
+        [
+            'open a default only through the history entry',
+            [
+                'state R {',
+                '    state Off; state Dead;',
+                '    state O { state A; state D; [*] -> A; [H] -> D; }',
+                '    [*] -> Off;',
+                '    Off -> O :: Go;',
+                '    Dead -> O.[H] :: Resume;',
+                '    !O -> Off :: Stop;',
+                '}',
+            ],
+            ['R.Dead', 'R.O.D'],
+        ],
+        [
+            'open the history of a forced target only',
+            [
+                'state R {',
+                '    state T3 { state S4; state S6; [*] -> S4; [H] -> S6; }',
+                '    state S11 { state T13; [*] -> T13; [H] -> T13; }',
+                '    [*] -> T3;',
+                '    !* -> S11.[H] :: Go;',
+                '}',
+            ],
+            ['R.T3.S6'],
+        ],
+    ] as Array<[string, string[], string[]]>) {
+        it(`reports unreachable states as pyfcstm does when history entries ${name}`, async () => {
+            const unreachable = (await packageModule.collectDocumentDiagnostics(document(lines.join('\n'))))
+                .filter(item => item.code === 'W_UNREACHABLE_STATE')
+                .map(item => /State "([^"]+)"/.exec(item.message)![1])
+                .sort();
+            assert.deepEqual(unreachable, expected);
+        });
+    }
 
     it('points declaration errors at the declaration', async () => {
         const text = HISTORY_DIAGNOSTIC_CASES['default-not-direct-child'].source;

@@ -377,19 +377,21 @@ function collectReachableStateIds(semantic: FcstmSemanticDocument): Set<string> 
                 targets = [];
                 forcedExpandedBySource.set(expanded.sourceStateId, targets);
             }
-            targets.push([expanded.targetStateId, kind]);
+            // Only the expanded edge into the declared target enters its history;
+            // the exit-chain edges of the expansion enter ordinary states.
+            targets.push([
+                expanded.targetStateId,
+                expanded.targetStateId === transition.targetStateId ? kind : undefined,
+            ]);
         }
     }
 
-    // A history entry also reaches the default of the kind it names, entered
-    // exactly there: the states above a deep default are active, but their
-    // own initials do not run, so they are reachable without being expanded.
+    // A history entry reaches its owner and, as ordinary targets, the states
+    // of the default path of the kind it names, as pyfcstm's inspect does.
     const statesById = new Map(semantic.states.map(state => [state.identity.id, state]));
-    const expanded = new Set<string>(worklist);
     const enter = (stateId: string): void => {
-        reachable.add(stateId);
-        if (!expanded.has(stateId)) {
-            expanded.add(stateId);
+        if (!reachable.has(stateId)) {
+            reachable.add(stateId);
             worklist.push(stateId);
         }
     };
@@ -423,11 +425,7 @@ function collectReachableStateIds(semantic: FcstmSemanticDocument): Set<string> 
         ];
         for (const [targetId, kind] of targets) {
             enter(targetId);
-            if (kind) {
-                const path = historyDefault(targetId, kind);
-                path.slice(0, -1).forEach(id => reachable.add(id));
-                if (path.length > 0) enter(path[path.length - 1]);
-            }
+            if (kind) historyDefault(targetId, kind).forEach(enter);
         }
     }
 

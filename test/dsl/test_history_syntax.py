@@ -1,7 +1,17 @@
 import pytest
 
 from pyfcstm.dsl import GrammarParseError, parse_with_grammar_entry
-from pyfcstm.dsl.node import *
+from pyfcstm.dsl.node import (
+    ALL,
+    BinaryOp,
+    ChainID,
+    HistoryDefinition,
+    INIT_STATE,
+    Integer,
+    Name,
+    StateDefinition,
+    TransitionDefinition,
+)
 
 
 def _state(text):

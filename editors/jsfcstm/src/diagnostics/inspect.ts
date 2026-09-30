@@ -31,7 +31,6 @@ import {
     Variable,
 } from '../model/runtime';
 import {collectDesignHealthWarnings} from './analyzers';
-import {historyDefaultTargets} from '../model/history';
 import {buildUseDefGraph, collectExprVariables} from './analyzers/use-def';
 import type {RawFcstmModelForcedTransition} from '../model/raw';
 import type {TextRange} from '../utils/text';
@@ -570,14 +569,16 @@ export function inspectModel(machine: StateMachine, options: InspectModelOptions
     const comboTransitions = transitions.filter(item => item.combo_origin_refs.length > 0);
     const comboOrigins = buildComboOriginInfos(comboTransitions);
     const metrics = buildMetrics(states, transitions, variables, events);
-    const reachabilityGraph = buildReachabilityGraph(
-        states,
-        transitions,
-        historyDefaultTargets(machine).map(([owner, target]): [string, string[]] => [
-            owner.join('.'),
-            target.slice(owner.length).map((_, index) => target.slice(0, owner.length + index + 1).join('.')),
-        ]),
-    );
+    const historyDefaults = new Map<string, string[]>();
+    for (const owner of machine.historyOwners) {
+        for (const [kind, path] of Object.entries(owner.defaults)) {
+            historyDefaults.set(
+                JSON.stringify([owner.ownerPath.join('.'), kind]),
+                path!.map((_, index) => [...owner.ownerPath, ...path!.slice(0, index + 1)].join('.')),
+            );
+        }
+    }
+    const reachabilityGraph = buildReachabilityGraph(states, transitions, historyDefaults);
     const diagnostics = collectDesignHealthWarnings(
         states,
         transitions,
@@ -2363,16 +2364,16 @@ function buildStructureStatistics(
 }
 
 /**
- * Guard-agnostic reachability closure, aligned with pyfcstm. For a history
- * owner, ``historyDefaults`` lists the states from its child down to the default
- * a history entry reaches: the default is followed like an initial target, and
- * the states above it on a deep default path are active without running their
- * own initials.
+ * Guard-agnostic reachability closure, aligned with pyfcstm. ``historyDefaults``
+ * maps ``[owner path, kind]`` (as JSON) to the states from the owner's child
+ * down to the declared default; a transition entering that history reaches
+ * each of them as an ordinary target, besides the owner -- an
+ * over-approximation of what a restore reaches.
  */
 function buildReachabilityGraph(
     states: StateInfo[],
     transitions: TransitionInfo[],
-    historyDefaults: Array<[string, string[]]> = [],
+    historyDefaults: ReadonlyMap<string, string[]> = new Map(),
 ): Record<string, string[]> {
     const adjacency: Record<string, Set<string>> = {};
     const initialEdges: Record<string, Set<string>> = {};
@@ -2393,21 +2394,19 @@ function buildReachabilityGraph(
             }
         }
     }
-    const passive: Record<string, string[]> = {};
-    for (const [owner, chain] of historyDefaults) {
-        initialEdges[owner].add(chain[chain.length - 1]);
-        passive[owner] = [...(passive[owner] ?? []), ...chain.slice(0, -1)];
+    for (const t of transitions) {
+        const chain = historyDefaults.get(JSON.stringify([t.to_path, t.target_history]));
+        if (!chain) continue;
+        const from = t.from_path === INIT_MARK ? t.to_path.slice(0, t.to_path.lastIndexOf('.')) : t.from_path;
+        const edges = t.from_path === INIT_MARK ? initialEdges[from] : adjacency[from];
+        chain.forEach(path => edges.add(path));
     }
     const out: Record<string, string[]> = {};
     for (const s of states) {
         const seen = new Set<string>();
-        const expanded = new Set<string>();
         const queue: string[] = [s.path];
         while (queue.length > 0) {
             const cur = queue.shift()!;
-            for (const path of passive[cur] ?? []) {
-                if (path !== s.path) seen.add(path);
-            }
             const next = Array.from(
                 new Set([
                     ...(adjacency[cur] ? Array.from(adjacency[cur]) : []),
@@ -2415,9 +2414,8 @@ function buildReachabilityGraph(
                 ]),
             ).sort();
             for (const nxt of next) {
-                if (expanded.has(nxt) || nxt === s.path) continue;
+                if (seen.has(nxt) || nxt === s.path) continue;
                 seen.add(nxt);
-                expanded.add(nxt);
                 queue.push(nxt);
             }
         }

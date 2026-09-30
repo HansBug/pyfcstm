@@ -26,7 +26,6 @@ import type {
     RawFcstmModelTransition as Transition,
     RawFcstmModelVarDefine,
 } from './raw';
-import type {State as ModelState, StateMachine as ModelStateMachine} from './runtime';
 
 export const HISTORY_PREFIX = '__hist_';
 export const HISTORY_MARKERS: Record<FcstmHistoryKind, string> = {shallow: '[H]', deep: '[H*]'};
@@ -569,31 +568,3 @@ export function lowerHistory(input: HistoryLoweringInput): HistoryLoweringResult
 }
 
 
-/**
- * ``[owner path, default path]`` pairs, in first-use order, for every history
- * kind some transition enters -- the defaults structural reachability adds to
- * an entry's ordinary initial descent, mirroring pyfcstm's
- * ``history_default_targets``. A restore with a record only re-enters states
- * already reached, so only the defaults add any.
- */
-export function historyDefaultTargets(machine: ModelStateMachine): Array<[string[], string[]]> {
-    const owners = new Map(machine.historyOwners.map(owner => [key(owner.ownerPath), owner]));
-    const found: Array<[string[], string[]]> = [];
-    const seen = new Set<string>();
-    const visit = (scope: ModelState): void => {
-        for (const transition of scope.transitions) {
-            const kind = transition.targetHistory;
-            if (!kind) continue;
-            const owner = owners.get(key([...scope.path, transition.toState]));
-            const defaultPath = owner?.defaults[kind];
-            if (!owner || !defaultPath) continue;
-            const target = [...owner.ownerPath, ...defaultPath];
-            if (seen.has(key(target))) continue;
-            seen.add(key(target));
-            found.push([owner.ownerPath, target]);
-        }
-        Object.values(scope.substates).forEach(visit);
-    };
-    visit(machine.rootState);
-    return found;
-}

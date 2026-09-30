@@ -2788,8 +2788,11 @@ class StateMachine(AstExportable, PlantUMLExportable):
     history_owners: Tuple["HistoryOwner", ...] = field(
         default_factory=tuple, compare=False, repr=False
     )
-    # The same model built without lowering its history, which static
-    # analyses judge instead: see ``pyfcstm.diagnostics.inspect.inspect_model``.
+    # The import-assembled program of a machine that lowered history, and the
+    # model built from it without lowering once ``_as_written`` needs it.
+    _assembled_program: Optional[dsl_nodes.StateMachineDSLProgram] = field(
+        default=None, compare=False, repr=False
+    )
     _authored_view: Optional["StateMachine"] = field(
         default=None, compare=False, repr=False
     )
@@ -2933,6 +2936,29 @@ class StateMachine(AstExportable, PlantUMLExportable):
         item = self._history_owner(owner)
         path = item.decode(variables.get(item.record_variable, 0))
         return None if path is None else ".".join(path)
+
+    def _as_written(self) -> "StateMachine":
+        """
+        Return this model as written, before history lowering.
+
+        Static analyses judge this model (see
+        :func:`pyfcstm.diagnostics.inspect.inspect_model`): a history entry is
+        an ordinary transition that still carries its ``target_history``, and
+        no lowered variable, gate state, route or record-writing exit exists.
+        It is built from the same import-assembled program on first use; its
+        diagnostics repeat those of the original build and are dropped. A
+        machine that lowered no history is its own model as written.
+
+        :return: The model before history lowering
+        :rtype: StateMachine
+        """
+        if self._assembled_program is None:
+            return self
+        if self._authored_view is None:
+            self._authored_view = _build_assembled_state_machine(
+                self._assembled_program, DiagnosticSink(collect=True), lower=False
+            )
+        return self._authored_view
 
     @property
     def control_variables(self) -> Mapping[str, VarDefine]:
@@ -3500,12 +3526,9 @@ def parse_dsl_node_to_state_machine(
     dnode = assemble_state_machine_imports(dnode, path=path, collect_into=sink)
     machine = _build_assembled_state_machine(dnode, sink, lower=True)
     if machine.history_owners:
-        # Inspect and verify judge the model as written: keep it too, built
-        # from the same assembled AST without lowering. Its diagnostics repeat
-        # the ones already collected, so they go to a throwaway sink.
-        machine._authored_view = _build_assembled_state_machine(
-            dnode, DiagnosticSink(collect=True), lower=False
-        )
+        # Inspect and verify judge the model as written; keep what is needed
+        # to build it on first use (see ``StateMachine._as_written``).
+        machine._assembled_program = dnode
 
     if collect:
         # In collect mode we always return the tuple. ``machine`` is the

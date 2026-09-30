@@ -37,14 +37,11 @@ The module contains:
 
 * :class:`HistoryOwner` - Source-level metadata of one lowered owner
 * :func:`lower_history` - Lower every history construct of a built machine
-* :func:`history_default_targets` - The defaults history entries reach, for
-  structural reachability
 
-Static analyses judge the model as written: model conversion also keeps the
-machine before lowering (see :func:`pyfcstm.diagnostics.inspect.inspect_model`),
+Static analyses judge the model as written: model conversion can also build
+the machine before lowering (see :func:`pyfcstm.diagnostics.inspect.inspect_model`),
 where a history entry is an ordinary transition that still carries its
-``target_history`` and :func:`history_default_targets` adds what the entry
-reaches beyond the owner's initial transitions.
+``target_history``.
 """
 
 import re
@@ -59,7 +56,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from ..diagnostics.sink import DiagnosticSink
     from .model import State, Transition, VarDefine
 
-__all__ = ["HistoryOwner", "lower_history", "HISTORY_PREFIX", "history_default_targets"]
+__all__ = ["HistoryOwner", "lower_history", "HISTORY_PREFIX"]
 
 HISTORY_PREFIX = "__hist_"
 """Reserved prefix of every name history lowering generates."""
@@ -648,60 +645,4 @@ def lower_history(
     :rtype: Tuple[HistoryOwner, ...]
     """
     return _Lowering(ast_root, root_state, defines, sink, apply).run()
-
-
-def history_default_targets(machine) -> Tuple[Tuple[_Path, _Path], ...]:
-    """
-    Return the history defaults that transitions of ``machine`` can reach.
-
-    An entry through ``O.[H]`` or ``O.[H*]`` with no record goes to the
-    declared default; a restore with a record only re-enters states that were
-    reached before.  Structural reachability therefore lets a history entry
-    reach its owner's initial descent, as an ordinary entry does, and the
-    default of the kind it names, entered exactly there: a deep default skips
-    the initials on its path, and a composite default continues with its own
-    initial.  Route initials of a lowered machine are not followed.
-
-    :param machine: Built state machine
-    :type machine: pyfcstm.model.model.StateMachine
-    :return: ``(owner path, default path)`` pairs in first-use order; the
-        default path is absolute
-    :rtype: Tuple[Tuple[Tuple[str, ...], Tuple[str, ...]], ...]
-
-    Example::
-
-        >>> from pyfcstm.model import load_state_machine_from_text
-        >>> from pyfcstm.model.history import history_default_targets
-        >>> machine = load_state_machine_from_text('''
-        ... state R {
-        ...     state Off;
-        ...     state O {
-        ...         state A;
-        ...         state W { state W1; state W2; [*] -> W1; }
-        ...         [*] -> A;
-        ...         [H] -> A;
-        ...         [H*] -> W.W2;
-        ...     }
-        ...     [*] -> Off;
-        ...     Off -> O.[H*] :: Resume;
-        ...     !O -> Off :: Stop;
-        ... }
-        ... ''')
-        >>> history_default_targets(machine)
-        ((('R', 'O'), ('R', 'O', 'W', 'W2')),)
-    """
-    owners = {owner.owner_path: owner for owner in machine.history_owners}
-    found: List[Tuple[_Path, _Path]] = []
-    for scope in machine.walk_states():
-        for transition in scope.transitions:
-            kind = transition.target_history
-            if kind is None:
-                continue
-            owner = owners.get((*scope.path, transition.to_state))
-            if owner is None or kind not in owner.defaults:
-                continue
-            item = (owner.owner_path, (*owner.owner_path, *owner.defaults[kind]))
-            if item not in found:
-                found.append(item)
-    return tuple(found)
 

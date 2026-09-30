@@ -11,10 +11,13 @@ pyfcstm.solver.proof
 
     arithmetic
     core
+    evidence
+    evidence_text
     integer
     interval
     io
     polynomial
+    reconstruction
     rules
     semantics
     text

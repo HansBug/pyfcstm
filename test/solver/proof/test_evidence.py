@@ -107,3 +107,63 @@ def test_catalog_replays_the_other_exact_certificate_families(family):
     assert isinstance(certificate, handler.payload_type)
     assert handler.replay(node, graph, certificate, SolveBudget(None))
     assert not handler.replay(node, graph, changed)
+
+
+def test_polynomial_generation_uses_the_same_replay_boundary(monkeypatch):
+    from pyfcstm.solver.proof.polynomial import polynomial_certificate
+    from .test_polynomial import _graph
+
+    handler_type = type(_handlers()[0])
+    graph = _graph((('<=', ('*', 'x', 'x'), -1),))
+    original = handler_type.replay
+
+    def reject_polynomial(self, node, current_graph, certificate, budget=None):
+        return self.field != 'polynomial' and original(self, node, current_graph, certificate, budget)
+
+    monkeypatch.setattr(handler_type, 'replay', reject_polynomial)
+    diagnostics = []
+    with pytest.warns(RuntimeWarning, match='invalid_generated_certificate'):
+        certificate = polynomial_certificate(graph.node(graph.root_id), graph, SolveBudget(None),
+                                             diagnostics=diagnostics)
+    assert certificate is None
+    assert [gap.reason for gap in diagnostics] == ['invalid_generated_certificate']
+
+
+@pytest.mark.parametrize('language', ['en', 'zh'])
+@pytest.mark.parametrize('detail', ['brief', 'standard', 'detailed'])
+def test_public_reading_dispatches_to_certificate_renderers_without_text_changes(
+        language, detail, proof_snapshot, monkeypatch, text_aligner):
+    from pyfcstm.solver.proof import evidence
+
+    handlers = _handlers()
+    assert all(callable(getattr(handler, 'render', None)) for handler in handlers), 'certificate render dispatch is missing'
+    report = proof_snapshot('integer_product')
+    expected = report.reading.to_text(language, detail)
+    calls = []
+
+    def traced(handler):
+        def render(certificate, node, context):
+            calls.append(handler.field)
+            return handler.render(certificate, node, context)
+        return replace(handler, render=render)
+
+    monkeypatch.setattr(evidence, 'certificate_handlers', lambda: tuple(traced(handler) for handler in handlers))
+    actual = report.reading.to_text(language, detail)
+    assert set(calls) == {'certificate', 'polynomial', 'interval'}
+    text_aligner.assert_equal(expected, actual)
+
+
+def test_multiple_evidence_fields_keep_the_original_presentation_order(proof_snapshot):
+    handlers = _handlers()
+    assert all(callable(getattr(handler, 'render', None)) for handler in handlers), 'certificate render dispatch is missing'
+    from pyfcstm.solver.proof.evidence import iter_evidence
+    from .test_integer import _graph, _check
+
+    graph = proof_snapshot('integer_product').proof
+    fields = {field: next(getattr(node, field) for node in graph.nodes if getattr(node, field) is not None)
+              for field in ('certificate', 'polynomial', 'interval')}
+    fields['divisibility'] = _check(_graph())
+    node = replace(ProofNode('display', 'th-lemma', (), None), **fields)
+    assert [handler.field for handler, _ in iter_evidence(node, reading=True)] == [
+        'certificate', 'polynomial', 'divisibility', 'interval',
+    ]

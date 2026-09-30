@@ -35,10 +35,10 @@ type and replay(node, graph, certificate, budget=None); certificate_handlers()
 returns the fixed catalog. iter_evidence(node) yields attached descriptors and
 payloads. Loading and later reconstruction share this dispatch.
 
-- [ ] Write catalog tests using real captured evidence: correct family selection, absent evidence, replay success and mutated evidence rejection; run RED.
-- [ ] Implement the minimal catalog and uniform checker signatures; run GREEN.
-- [ ] Route offline replay through the catalog, preserving all existing reference/sort checks and error messages.
-- [ ] Run pytest test/solver/proof/test_evidence.py test/solver/proof/test_loading.py test/solver/proof/test_integer.py; require all pass; commit.
+- [x] Write catalog tests using real captured evidence: correct family selection, absent evidence, replay success and mutated evidence rejection; run RED.
+- [x] Implement the minimal catalog and uniform checker signatures; run GREEN.
+- [x] Route offline replay through the catalog, preserving all existing reference/sort checks and error messages.
+- [x] Run pytest test/solver/proof/test_evidence.py test/solver/proof/test_loading.py test/solver/proof/test_integer.py; require all pass; commit.
 
 ## Task 2: Local reconstruction contract
 
@@ -49,9 +49,9 @@ Interface: reconstruct(node, graph, budget) returns a frozen Reconstruction
 containing kind, local_check, evidence fields and diagnostic gaps. Existing
 mathematical helpers stay reusable; analyzer owns scopes and extension priority.
 
-- [ ] Characterize native fast paths, linear/interval/equality/polynomial fallback order, invalid evidence and shared deadline using fixed graphs; add failing contract tests.
-- [ ] Move dispatch out of analyze_proof and use common evidence replay without changing search algorithms or warning semantics.
-- [ ] Run all proof tests and actual BMC proof regressions; compare fixed canonical evidence and text; commit.
+- [x] Characterize native fast paths, linear/interval/equality/polynomial fallback order, invalid evidence and shared deadline using fixed graphs; add failing contract tests.
+- [x] Move dispatch out of analyze_proof and use common evidence replay without changing search algorithms or warning semantics.
+- [x] Run all proof tests and actual BMC proof regressions; compare fixed canonical evidence and text; commit.
 
 ## Task 3: Certificate reading handlers
 
@@ -61,9 +61,9 @@ test/solver/proof/test_evidence.py and existing full-text tests.
 Interface: family reading functions receive existing graph/terms/detail/reference
 context and append the same lines; catalog selects the appropriate handler.
 
-- [ ] Add a failing dispatch test proving each attached family reaches its renderer; pin multiple-evidence presentation order.
-- [ ] Extract family rendering bodies without changing prose, formula aliases or layout. Keep generic folds/scopes/sources in text.py.
-- [ ] Run all full-text fixtures with text_aligner, canonical roundtrips and real BMC cases; commit.
+- [x] Add a failing dispatch test proving each attached family reaches its renderer; pin multiple-evidence presentation order.
+- [x] Extract family rendering bodies without changing prose, formula aliases or layout. Keep generic folds/scopes/sources in text.py.
+- [x] Run all full-text fixtures with text_aligner, canonical roundtrips and real BMC cases; commit.
 
 ## Task 4: Documentation, coverage and merge acceptance
 

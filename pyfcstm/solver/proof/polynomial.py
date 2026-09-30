@@ -937,6 +937,8 @@ def polynomial_certificate(node, graph, budget, *, diagnostics=None):
         algebraic search does not establish a local contradiction.
     :param diagnostics: Optional list receiving the local failure reason.
     """
+    from .evidence import certificate_handlers
+
     if node.conclusion is None:
         return None
     reason, detail = 'proof_search_exhausted', 'bounded polynomial search found no certificate'
@@ -945,7 +947,8 @@ def polynomial_certificate(node, graph, budget, *, diagnostics=None):
         certificate = search.generate()
         if search.limits:
             reason, detail = 'proof_search_limit', '; '.join(sorted(search.limits))
-        if certificate is not None and not check_polynomial_certificate(node, graph, certificate, budget=budget):
+        handler = next(item for item in certificate_handlers() if item.field == 'polynomial')
+        if certificate is not None and not handler.replay(node, graph, certificate, budget):
             from .rules import _invalid_gap
 
             reason, detail = 'invalid_generated_certificate', 'generated polynomial certificate failed replay'

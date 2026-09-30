@@ -50,6 +50,50 @@ exact coefficients. Rational coefficients use ``Fraction``, not floating point.
 Negative native inequality coefficients are interpreted using Z3's oriented
 absolute-weight convention; equality coefficients retain their signs.
 
+Maintaining the proof framework
+-------------------------------
+
+Native proof translation and local reconstruction have different jobs. Capture
+preserves Z3's graph. Reconstruction supplies exact, readable evidence for a
+theory lemma whose native hints do not already describe every arithmetic step.
+It does not replace the native conclusion or discharge its hypotheses.
+
+The internal implementation has three extension points:
+
+* ``reconstruction.py`` selects the existing native fast paths and ordered local
+  strategies. Its immutable ``Reconstruction`` result carries the inference
+  kind, check status, evidence fields and diagnostics. The common analyzer owns
+  hypothesis scopes, extension precedence and timeout handling.
+* ``evidence.py`` lists certificate families explicitly. Each immutable
+  ``CertificateHandler`` associates a canonical node field and payload type
+  with an exact checker and a reading function. Online reconstruction and
+  offline loading share replay dispatch; loading never reruns proof search.
+* ``evidence_text.py`` renders each family using the common formula, language,
+  detail and reference context. ``text.py`` retains source links, assumptions,
+  domain folds and final claims. Validation order and presentation order are
+  recorded separately to preserve existing multi-certificate snapshots.
+
+To support another rule within an existing family, extend its producer, exact
+checker and reading function where needed; add a failing example and a corrupt
+certificate negative control first. A genuinely new certificate family also
+needs a typed canonical record, strict decoding/reference validation in
+``io.py``, and a catalog entry. The catalog does not automatically make a new
+payload safe to deserialize. Preserve canonical roundtrips and compare complete
+readings with ``text_aligner``.
+
+The catalog is internal, fixed and has no mutable global plugin registration.
+Applications, including BMC, continue to use ``ProofExtensions`` for native-rule
+interpretation, source bindings and domain reading folds. Domain presentation
+cannot turn an unexplained inference into checked evidence.
+
+Strategy order remains part of behavior: local reconstruction stops at the
+first produced candidate, and a rejected candidate remains an observable gap
+rather than being hidden by another strategy. Polynomial production already
+replays its candidate before returning, so the dispatcher does not replay it a
+second time against the shared deadline. This organization introduces neither
+proof ranking nor a shortest-proof guarantee; group subset-minimality retains
+its existing meaning.
+
 Local assumptions are not global facts
 --------------------------------------
 

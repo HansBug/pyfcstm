@@ -946,6 +946,8 @@ def analyze_proof(graph: ProofGraph, rule_handlers=(), budget=None) -> ProofAnal
     :rtype: ProofAnalysis
     """
     from ..budget import BudgetExpired, SolveBudget
+    from .evidence import certificate_handlers
+    from .reconstruction import reconstruct
 
     budget = SolveBudget(None) if budget is None else budget
     handlers = _index_handlers(rule_handlers)
@@ -957,6 +959,7 @@ def analyze_proof(graph: ProofGraph, rule_handlers=(), budget=None) -> ProofAnal
         'not-or-elim': 'logical', 'iff-true': 'logical', 'iff-false': 'logical',
         'intro-def': 'definition', 'def-axiom': 'definition', 'apply-def': 'definition',
     }
+    empty_evidence = {handler.field: None for handler in certificate_handlers()}
     inputs = {item.occurrence_id: item for item in graph.inputs}
     nodes, analyzed, gaps = [], {}, []
     scope, rules = 'passed', 'complete'
@@ -964,9 +967,7 @@ def analyze_proof(graph: ProofGraph, rule_handlers=(), budget=None) -> ProofAnal
         for node in graph.nodes:
             budget.checkpoint('proof analysis')
             opened = set().union(*(analyzed[parent].open_hypotheses for parent in node.parents))
-            discharged, certificate, cardinality, interval, divisibility, polynomial = (), None, None, None, None, None
-            linear_equality = None
-            diagnostics = []
+            discharged, evidence, diagnostics = (), {}, ()
             local, kind = 'trusted', mechanical.get(node.rule, 'opaque')
             if node.rule == 'asserted':
                 kind = 'input'
@@ -1007,68 +1008,11 @@ def analyze_proof(graph: ProofGraph, rule_handlers=(), budget=None) -> ProofAnal
                 kind = 'equality'
                 local = 'checked' if _transitive_path(node, graph, budget) else 'invalid'
             elif node.rule == 'th-lemma':
-                if tuple(parameter.value for parameter in node.parameters[:2]) == ('arith', 'gcd-test'):
-                    from .integer import divisibility_certificate
-                    divisibility = divisibility_certificate(node, graph, budget)
-                    local = 'checked' if divisibility is not None else 'unsupported'
-                    kind = 'divisibility' if divisibility is not None else 'opaque'
-                elif tuple(parameter.value for parameter in node.parameters) == ('pb',):
-                    cardinality = _cardinality_certificate(node, graph, budget)
-                    local = 'checked' if cardinality is not None else 'unsupported'
-                    kind = 'cardinality' if cardinality is not None else 'opaque'
-                elif tuple(parameter.value for parameter in node.parameters) == ('arith', 'triangle-eq'):
-                    local = 'checked' if _order_tautology(node, graph, budget) else 'unsupported'
-                    kind = 'order' if local == 'checked' else 'opaque'
-                    if local == 'unsupported' and _arithmetic_identity(node, graph):
-                        local, kind = 'checked', 'arithmetic_identity'
-                elif tuple(parameter.value for parameter in node.parameters) == ('arith',):
-                    axiom = (_division_axiom(node, graph, budget) or _quotient_axiom(node, graph, budget) or
-                             _floor_axiom(node, graph, budget) or _power_axiom(node, graph, budget))
-                    local, kind = ('checked', axiom) if axiom is not None else ('unsupported', 'opaque')
-                    if axiom is None and _arithmetic_identity(node, graph):
-                        local, kind = 'checked', 'arithmetic_identity'
-                    elif axiom is None and _order_tautology(node, graph, budget):
-                        local, kind = 'checked', 'order'
-                else:
-                    certificate, local = _certificate(node, graph)
-                    kind = 'arithmetic' if certificate is not None else 'opaque'
-                if local == 'unsupported' and node.parameters and node.parameters[0].value == 'arith':
-                    # Native labels select fast paths, not the set of local
-                    # conclusions our independent arithmetic checkers can prove.
-                    certificate = (_local_pair_certificate(node, graph) or
-                                   _linear_certificate(node, graph, budget))
-                    if certificate is not None:
-                        local, kind = 'checked', 'arithmetic'
-                    else:
-                        from .interval import interval_certificate
-                        interval = interval_certificate(node, graph, budget)
-                        if interval is not None:
-                            local, kind = 'checked', 'interval'
-                    if local == 'unsupported':
-                        linear_equality = _linear_equality(node, graph, budget)
-                        if linear_equality is not None:
-                            local, kind = 'checked', 'linear_equality'
-                    if local == 'unsupported':
-                        from .polynomial import polynomial_certificate
-                        polynomial = polynomial_certificate(node, graph, budget, diagnostics=diagnostics)
-                        if polynomial is not None:
-                            local, kind = 'checked', 'polynomial'
+                result = reconstruct(node, graph, budget)
+                local, kind = result.local_check, result.kind
+                evidence, diagnostics = dict(result.evidence), result.diagnostics
             elif kind == 'opaque':
                 local = 'unsupported'
-            if linear_equality is not None and not check_linear_equality_certificate(node, graph, linear_equality):
-                diagnostics.append(_invalid_gap(node, 'invalid_linear_equality_certificate',
-                                                'generated equality evidence failed replay'))
-                linear_equality, local, kind = None, 'unsupported', 'opaque'
-            if cardinality is not None and not check_cardinality_certificate(node, graph, cardinality, budget=budget):
-                diagnostics.append(_invalid_gap(node, 'invalid_cardinality_certificate',
-                                                'generated counting evidence failed replay'))
-                cardinality, local, kind = None, 'unsupported', 'opaque'
-            if interval is not None:
-                from .interval import check_interval_certificate
-                if not check_interval_certificate(node, graph, interval, budget=budget):
-                    diagnostics.append(_invalid_gap(node, 'invalid_interval_certificate',
-                                                    'generated interval evidence failed replay'))
-                    interval, local, kind = None, 'unsupported', 'opaque'
             if local == 'invalid':
                 rules = 'failed'
                 gaps.append(_invalid_gap(node, 'invalid_inference',
@@ -1082,16 +1026,15 @@ def analyze_proof(graph: ProofGraph, rule_handlers=(), budget=None) -> ProofAnal
                     scope = 'partial'
             analyzed[node.node_id] = replace(node, local_check=local, inference_kind=kind,
                                             open_hypotheses=tuple(sorted(opened)),
-                                            discharged_hypotheses=discharged, certificate=certificate,
-                                            cardinality=cardinality, interval=interval, divisibility=divisibility, polynomial=polynomial, linear_equality=linear_equality)
+                                            discharged_hypotheses=discharged,
+                                            **dict(empty_evidence, **evidence))
             nodes.append(analyzed[node.node_id])
     except BudgetExpired as error:
         # Native arithmetic search and extension checkpoints share this deadline.
         # Keep finished checks; the interrupted node and its suffix are unexamined.
         pending = tuple(replace(node, local_check='not_run', inference_kind='opaque',
                                 open_hypotheses=(), discharged_hypotheses=(),
-                                certificate=None, cardinality=None, interval=None,
-                                divisibility=None, polynomial=None, linear_equality=None)
+                                **empty_evidence)
                         for node in graph.nodes[len(nodes):])
         gaps.append(ProofGap('analysis_incomplete', pending[0].node_id, str(error)))
         return ProofAnalysis(replace(graph, nodes=tuple(nodes) + pending), 'partial',

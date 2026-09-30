@@ -307,14 +307,14 @@ TransitionDefinition
 -----------------------------------------------------
 
 .. autoclass:: TransitionDefinition
-    :members: __str__,from_state,to_state,event_id,condition_expr,post_operations,event_scope,combo_trigger,doc
+    :members: __setattr__,__str__,from_state,to_state,event_id,condition_expr,post_operations,event_scope,combo_trigger,doc
 
 
 ForceTransitionDefinition
 -----------------------------------------------------
 
 .. autoclass:: ForceTransitionDefinition
-    :members: __str__,from_state,to_state,event_id,condition_expr,event_scope,source_raw,doc
+    :members: __setattr__,__str__,from_state,to_state,event_id,condition_expr,event_scope,source_raw,doc
 
 
 StateDefinition

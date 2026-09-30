@@ -359,6 +359,282 @@ expanded model inspectable.
      - Event and guard terms must be satisfied in sequence.
      - Many states respond to one emergency event or guard.
 
+.. _dsl-history-semantics:
+
+History semantics and lowering
+------------------------------
+
+Leaving a composite state and entering it again normally starts over at its
+initial transition. That suits "start again", not "pause and continue". History
+(``[H]`` / ``[H*]``) expresses the second: entering the owner through its history
+restores the configuration it had when it was last left. The syntax and the
+full list of forms are in :ref:`dsl-history-reference`; this section explains
+when a record is written, what a restore does, and why a plain machine can do
+exactly that.
+
+Three runtime facts
+~~~~~~~~~~~~~~~~~~~
+
+The design rests on three properties of the FCSTM runtime.
+
+.. list-table:: Runtime facts history relies on
+   :header-rows: 1
+   :widths: 8 46 46
+
+   * - Fact
+     - Property
+     - Consequence for history
+   * - F1
+     - Transitions only connect siblings. An owner's ``exit`` runs only when a
+       transition whose source is the owner commits; a forced ``!P -> Q`` also
+       expands into edges sourced at the owner.
+     - "The owner was left" and "a transition sourced at the owner committed"
+       are the same event, so there is one write point. A transition into
+       ``O.[H]`` always comes from outside ``O`` (or is ``O``'s own external
+       self transition).
+   * - F2
+     - A cycle runs from one stoppable leaf to the next; a composite cannot
+       rest in its initial-wait position.
+     - A cycle exits at most one stoppable leaf, leaf first and ancestors after,
+       so the configuration before the owner's exit is the leaf the cycle
+       started from.
+   * - F3
+     - Candidates run speculatively on a copy of the variables and are
+       discarded on failure; initial transitions are tried in declaration order
+       and a later one is tried when an earlier one cannot stabilize.
+     - Records roll back with a failed candidate for free. But a failing
+       restore route would silently fall through to an ordinary initial,
+       which is why ordinary initials are gated (see below).
+
+Execution rules
+~~~~~~~~~~~~~~~
+
+.. list-table:: History rules
+   :header-rows: 1
+   :widths: 18 82
+
+   * - Rule
+     - Content
+   * - Ownership
+     - Each owner declares at most one ``[H]`` and one ``[H*]``; both share one
+       record. Neither the root nor a leaf can own history.
+   * - Record
+     - The stoppable leaf the owner was last left from, relative to the owner.
+       Shallow history uses its first segment, deep history the whole path.
+   * - Write
+     - Only when a transition sourced at the owner commits. Transitions inside
+       the owner, leaving only an inner composite, ordinary entries and restores
+       never write; a failed candidate rolls its write back.
+   * - Pseudo states
+     - Never recorded. An activation that only passes pseudo states and leaves
+       again keeps the previous record.
+   * - ``O.[H]``
+     - With a record: enter the recorded direct child, then continue with that
+       child's ordinary initial. Without: the shallow default.
+   * - ``O.[H*]``
+     - With a record: restore the exact path. The ordinary initials on that path
+       (their guards, events and effects) do not run; ``enter`` actions and
+       plain ``during before`` on the path do. Without: the deep default.
+   * - Reading
+     - Ordinary entry ignores and keeps the record; a restore reads it without
+       consuming it. Only the latest record is kept.
+   * - All or nothing
+     - If the restore path cannot reach a stoppable leaf in this cycle -- for
+       example the remembered child's initial is guarded off -- the whole
+       history transition is rejected like any other failed candidate. It never
+       falls back to an ordinary entry.
+   * - Business data
+     - Variables are not restored; lifecycle actions on the path run again.
+   * - ``-> [*]``
+     - FCSTM has no final state. ``X -> [*]`` leaves the owner like any other
+       exit, so the record is the last stoppable leaf.
+
+The record changes only when the owner is left. Cycle by cycle on the washer
+example of :ref:`dsl-history-task`:
+
+.. list-table:: Current configuration versus record
+   :header-rows: 1
+   :widths: 22 38 40
+
+   * - Cycle / event
+     - Active leaf after the cycle
+     - Record of ``Program``
+   * - 1 initialization
+     - ``Paused``
+     - none
+   * - 2 ``Fresh``
+     - ``Program.Idle``
+     - none
+   * - 3 ``Start``
+     - ``Program.Wash.Fill``
+     - none
+   * - 4 ``Filled``
+     - ``Program.Wash.Agitate``
+     - none
+   * - 5 ``Pause``
+     - ``Paused``
+     - ``Wash.Agitate`` (first write)
+   * - 6 ``Shallow``
+     - ``Program.Wash.Fill``
+     - ``Wash.Agitate`` (a restore does not write)
+   * - 7 ``Pause``
+     - ``Paused``
+     - ``Wash.Fill`` (overwritten by this exit)
+   * - 8 ``Deep``
+     - ``Program.Wash.Fill``
+     - ``Wash.Fill``
+   * - 9 ``Pause``
+     - ``Paused``
+     - ``Wash.Fill``
+   * - 10 ``Fresh``
+     - ``Program.Idle``
+     - ``Wash.Fill`` (ordinary entry keeps it)
+   * - 11 ``Pause``
+     - ``Paused``
+     - ``Idle``
+   * - 12 ``Deep``
+     - ``Program.Idle``
+     - ``Idle``
+
+This exact sequence is a shared semantic fixture
+(``history_washer_shallow_and_deep_restore``) that the simulator, all five
+generated runtimes and BMC replay.
+
+Authored versus lowered
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Model conversion lowers history after forced and combo expansion, so every
+history entry is already a concrete edge. States are numbered in preorder, which
+makes every subtree one contiguous id range. Four rewrites implement the rules:
+
+1. **Record** -- every stoppable leaf's ``exit`` writes its id into the record
+   of each owner above it.
+2. **Entry** -- a transition into ``O.[H]`` / ``O.[H*]`` computes the restore
+   target once, at the end of its effect, into ``__hist_goto``.
+3. **Route** -- one guarded initial per composite and child on the way to any
+   possible target, ``[*] -> K : if [goto in range(K)]``; entering a leaf clears
+   ``goto``. A plain user initial to the same child is merged into that route.
+4. **Gate** -- the remaining user initials of those composites fire only while
+   no restore passes (``goto == 0``, or ``goto == id(C)`` when the composite
+   itself is a restore target) and clear ``goto`` first. An evented initial is
+   split through a ``__hist_gate_<n>`` pseudo state.
+
+The washer's ``Program`` lowers to two initials and ``Wash`` to three -- the same
+count as a careful hand-written equivalent. Condensed excerpt of the exported
+model (``str(machine.to_ast_node())``; unrelated lines are omitted and short
+blocks joined on one line):
+
+.. code-block:: fcstm
+
+   Paused -> Program :: Deep effect {
+       __hist_goto = (__hist_Program != 0) ? __hist_Program : 6;
+   }
+   // inside Program
+   [*] -> Wash : if [__hist_goto >= 5 && __hist_goto <= 7];
+   [*] -> Idle : if [__hist_goto == 0 || __hist_goto == 4] effect {
+       __hist_goto = 0;
+   }
+   // inside Wash
+   [*] -> Fill : if [__hist_goto == 6] effect { __hist_goto = 0; }
+   [*] -> Agitate : if [__hist_goto == 7] effect { __hist_goto = 0; }
+   [*] -> Fill : if [__hist_goto == 0 || __hist_goto == 5] effect {
+       __hist_goto = 0;
+       wash_initials = wash_initials + 1;
+   }
+   // every leaf below Program
+   state Agitate { exit { __hist_Program = 7; } }
+
+.. figure:: ../../tutorials/dsl/history_washer.fcstm.puml.svg
+   :alt: Lowered washer model with history routes
+   :align: center
+
+   The lowered washer as PlantUML draws it. The two history entries from
+   ``Paused`` compute ``__hist_goto``; ``Program`` has one route into ``Wash``
+   (range 5..7) merged with nothing and its own initial into ``Idle`` merged
+   with the route to ``Idle`` (id 4); ``Wash`` has routes to ``Fill`` (6) and
+   ``Agitate`` (7) plus its gated initial. The labels are code identifiers only,
+   so one figure serves both languages.
+
+Why each part is correct:
+
+* **The record is right.** By F2, the cycle that leaves the owner starts from
+  one stoppable leaf and exits leaf first, ancestors after, without entering and
+  leaving another stoppable leaf in between. The last write before the owner's
+  exit is therefore that leaf -- the configuration "before exiting the parent"
+  that SCXML prescribes.
+* **It only has to be right when read.** Only the owner's leaves write its
+  record, and they exit only while the owner is active, so the variable is
+  frozen while the owner is inactive. It is read only by a transition into the
+  owner, which by F1 happens while the owner is inactive.
+* **Routes are exclusive.** Sibling id ranges do not overlap, ``goto == 0``
+  excludes every route, and ``goto`` is ``0`` at every stable point because a
+  restore clears it on the leaf or on the composite target's ordinary initial.
+* **Failures are atomic.** All writes happen on the candidate's copy of the
+  variables (F3).
+
+Why ordinary initials are gated
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Without the gate, a blocked restore silently becomes an ordinary entry. Take
+the model of the shared fixture
+``history_blocked_restore_is_rejected_gated_initial``: ``K``'s initial is
+``[*] -> K1 : if [ready == 1];`` and ``Block`` sets ``ready = 0``.
+
+.. list-table:: A blocked restore, with and without gates
+   :header-rows: 1
+   :widths: 40 30 30
+
+   * - Scenario
+     - With gates (lowering)
+     - Without gates
+   * - ``Fresh``, ``Go``, ``Stop``, ``Block``, ``Resume``: the shallow record is
+       ``K``, whose initial is now blocked
+     - Stays in ``Off``; ``Resume`` is not consumed (all or nothing)
+     - Falls back to ``O.Idle``; history silently became an ordinary entry
+   * - ``Block``, ``ResumeDeep``: no record, the deep default ``K`` is blocked
+     - Stays in ``Off``
+     - Falls back to ``O.Idle``
+   * - ``Block``, ``Fresh``: ordinary entry
+     - ``O.Idle``
+     - ``O.Idle`` -- gates never change an ordinary entry
+
+The cause is F3: after a route fails validation, the runtime tries the next
+initial in the list. UML and SCXML initials carry no guards or events, so they
+never meet this; it is specific to FCSTM. The "clear ``goto`` first" order in
+rule 4 matters too: when a gated initial itself enters a nested history
+(``[*] -> S2.[H*];``), its own effect sets ``goto`` for the next owner, and
+clearing afterwards would erase it. The shared fixture
+``history_nested_owner_initial_enters_inner_history`` locks this down.
+
+Boundaries and counterexamples
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* **Not concurrency.** FCSTM has one active path; there are no orthogonal
+  regions whose histories would interact.
+* **Not persistence.** Records live in the machine's variables, like any other
+  state; saving them across processes is the host's job (a hot start restores
+  them through :meth:`pyfcstm.model.model.StateMachine.history_variables`).
+* **Not business data.** A restore does not roll variables back; the washer's
+  counters keep counting on every restore.
+* **No multi-level targets.** ``X -> P.O.[H]`` is rejected; enter ``P`` and let
+  ``P`` enter ``O.[H]`` from its own scope, or declare the history on ``P``.
+* **No default effect.** ``[H] -> Child effect { ... }`` is not a form; put the
+  effect on the history entry transition or in ``Child``'s ``enter``.
+* **The raw record is not observable while the owner is active.** The
+  ``__hist_<owner>`` variable follows leaf exits then; read it with
+  ``history_record()`` while the owner is inactive.
+* **History does not make a stuck model live.** A restore can reach a
+  configuration that ordinary entry never reaches (a skipped initial effect
+  leaves a variable at another value, for example). If that configuration
+  loops through pseudo states, the runtime reports the loop exactly as it would
+  for the same configuration written without history.
+
+Evidence beyond the unit tests: a random differential against XState 5.33.2
+(1489 models, 120609 steps, 12978 restores) found no difference in the active
+leaf or the exit/entry order, and an FCSTM-specific oracle over 1451 random
+models with pseudo states, guards, combo and forced transitions found no
+failure. A fixed-seed version of that oracle runs in the unit tests.
+
 .. _dsl-import-assembly-semantics:
 
 Import assembly semantics

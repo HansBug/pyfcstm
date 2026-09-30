@@ -273,7 +273,8 @@ AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供 ``CONTROL``
 
 部分带路径的形式会通过 ``chain_id`` 使用点分标识符，例如事件作用域、导入映射或动作引用。转换的 ``from_state`` 和
 ``to_state`` 端点则不同：它们是在拥有状态作用域中解析的普通标识符，不是点分路径。若需要进入嵌套叶状态，应把转换写在拥有该叶状态的复合状态内部，
-或转换到复合状态并让它的初始转换选择子状态。
+或转换到复合状态并让它的初始转换选择子状态。历史目标 ``Owner.[H]`` / ``Owner.[H*]`` 同样不是点分路径：\ ``Owner``\ 是普通的兄弟标识符，
+标记只决定以什么方式进入它。只有历史声明的默认目标（\ ``[H*] -> Wash.Fill;``\ ）是点分路径，并且相对所有者解析。
 
 .. _dsl-transition-forms-zh:
 
@@ -323,6 +324,14 @@ AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供 ``CONTROL``
      - ``!State -> [*] ...;`` 或 ``!* -> [*] ...;``
      - 否
      - 强制形式指向退出标记。
+   * - 历史声明
+     - 复合状态内部的 ``[H] -> Child;`` 或 ``[H*] -> Child.Leaf;``
+     - 否
+     - 声明外层复合状态的浅历史或深历史；右侧是尚无记录时的默认去向。见 :ref:`dsl-history-reference-zh`\ 。
+   * - 历史目标
+     - ``... -> Owner.[H] ...;`` 或 ``... -> Owner.[H*] ...;``
+     - 除强制形式外允许
+     - 普通转换、初始转换和强制转换（\ ``!State`` / ``!*``\ ）都接受，触发写法不限；通过历史进入 ``Owner``\ 。
 
 组合转换细节：
 
@@ -521,6 +530,170 @@ AST 导出保留声明拼写。``pyfcstm.model.VariableRole`` 提供 ``CONTROL``
 
 应看到 ``forced_transitions`` 摘要和多条带 ``forced_origin`` 的展开边。展开后的边仍是普通转换，因此来源状态的 ``exit`` 动作和目标状态的
 ``enter`` 动作照常遵循运行时顺序；强制转换本身不会绕过生命周期语义。
+
+.. _dsl-history-reference-zh:
+
+历史展开准规范
+--------------
+
+历史（history）用来恢复复合状态上一次被离开时的配置。与强制转换、组合转换一样，它是语法糖：模型转换阶段会把它展开（lowering）成普通变量、退出动作和初始转换，所有使用方（仿真器、生成的模板、BMC、检查、PlantUML）看到的都只是展开后的状态机。下面这些规则为什么成立，见 :ref:`dsl-history-semantics-zh`\ ；按任务走一遍的步骤见 :ref:`dsl-history-task-zh`\ 。
+
+声明
+~~~~
+
+.. list-table:: 历史声明规则
+   :header-rows: 1
+   :widths: 30 34 36
+
+   * - 写法
+     - 规则
+     - 违反时
+   * - ``[H] -> Child;``
+     - 外层复合状态（称为所有者）的浅历史（shallow history）。\ ``Child``\ 是直接的非伪子状态，也是所有者尚无记录时的去向。
+     - ``[H] -> W.W1;``\ 报 ``E_HISTORY_DECLARATION_INVALID``\ ，\ ``reason: default_not_direct_child``\ 。
+   * - ``[H*] -> A.B.C;``
+     - 深历史（deep history）。默认目标是相对所有者书写的、存在的非伪后代路径；默认目标为复合状态时，会继续执行它自己的初始转换。
+     - 状态不存在：\ ``default_not_found``\ ；是伪状态：\ ``default_pseudo``\ 。
+   * - 每个所有者至多一个 ``[H]`` 和一个 ``[H*]``
+     - 两种历史共用同一份记录。
+     - 同一所有者第二次声明 ``[H]``\ ：\ ``duplicate``\ 。
+   * - 所有者是根状态以外的复合状态
+     - 根状态永远不会被离开再重新进入。
+     - 在根状态里声明 ``[H]``\ ：\ ``root_owner``\ 。
+   * - 声明的历史被使用
+     - 没有任何 ``Owner.[H]`` / ``Owner.[H*]`` 目标进入的那种历史不会产生任何内容。
+     - ``W_HISTORY_UNUSED``\ （警告）；不生成记录和路由。
+
+合法的声明：
+
+.. code-block:: fcstm
+
+   state Program {
+       state Idle;
+       state Wash { state Fill; state Agitate; [*] -> Fill; }
+       [*] -> Idle;
+       [H] -> Idle;         // 浅历史默认目标：直接子状态
+       [H*] -> Wash.Fill;   // 深历史默认目标：后代路径
+   }
+
+   state Owner { state A; state K { state K1; [*] -> K1; } [*] -> A; [H*] -> K; }  // 复合状态作为默认目标
+   state Owner2 { state A; [*] -> A; [H] -> A; [H*] -> A; }                       // 两种历史，同一默认目标
+
+非法的声明（语法错误，不是诊断）：
+
+.. code-block:: fcstm
+
+   [H] -> A effect { x = 1; }   // 历史默认去向不能带效果动作
+   [H] -> A :: Go;              // ……也不能带触发
+   [ H ] -> A;                  // 标记是紧凑记号：[H] 和 [H*]
+
+目标
+~~~~
+
+``Owner.[H]`` 和 ``Owner.[H*]`` 像普通目标一样指名当前作用域中的兄弟状态 ``Owner``\ ，后面再跟上标记。所有者必须声明了对应的历史，否则报 ``E_HISTORY_TARGET_UNDECLARED``\ ；历史不会被隐式提供。
+
+.. list-table:: 历史目标写法
+   :header-rows: 1
+   :widths: 44 56
+
+   * - 合法写法
+     - 说明
+   * - ``Paused -> Program.[H] :: Shallow;``
+     - 本地事件触发。
+   * - ``Paused -> Program.[H*] : if [ready > 0] effect { n = n + 1; }``
+     - 守卫与效果动作；效果动作在选定恢复目标之前执行。
+   * - ``Offline -> Session.[H*] :: Resume + [online > 0];``
+     - 组合触发；只有最后一跳进入 ``Session`` 的那条边携带历史入口。
+   * - ``[*] -> Program.[H*];``
+     - 父状态的初始转换可以进入子状态的历史。
+   * - ``!Running -> Program.[H] :: Back;`` 与 ``!* -> Program.[H];``
+     - 强制写法；展开出的每条边都通过历史进入。
+   * - ``!Program -> Program.[H*] :: Reenter;``
+     - 外部自环：先离开所有者，再恢复。
+
+非法的目标：
+
+.. code-block:: fcstm
+
+   A -> P.O.[H];      // 所有者只能是来源状态的兄弟
+   A -> [*].[H];      // 退出标记没有历史
+   A -> O.[H].X;      // 标记后面不能再跟任何内容
+
+展开生成的名字
+~~~~~~~~~~~~~~
+
+.. list-table:: 展开会添加什么
+   :header-rows: 1
+   :widths: 28 72
+
+   * - 名字
+     - 含义
+   * - ``__hist_goto``
+     - 每个状态机一个 ``int``\ ：进行中的恢复要去往的状态编号。在每个稳定点上都是 ``0``\ 。
+   * - ``__hist_<所有者>``
+     - 每个历史被使用的所有者一个 ``int``\ ：所有者之下最近一次被离开的可停留叶的编号。所有者不活动时，它就是所有者的记录；\ ``0``\ 表示没有记录。\ ``<所有者>``\ 由根以下的所有者路径用 ``_`` 连接而成（\ ``Washer.Program.Wash``\ 得到 ``__hist_Program_Wash``\ ）；合并连续下划线后会冲突的名字依次追加 ``_2``\ 、\ ``_3``\ ……，并且保留 ``goto``\ 。
+   * - ``__hist_gate_<n>``
+     - 为所有者带事件的初始转换加闸门的伪状态。
+   * - 叶状态的 ``exit`` 动作、路由初始转换、加闸门的初始转换
+     - 追加到每个所有者之下的可停留叶，以及恢复途经的复合状态上；见 :ref:`dsl-history-semantics-zh`\ 。
+
+保留名字：在使用了历史的模型里，名字匹配 ``_+hist_``\ （\ ``__hist_x`` 或 ``_hist_x``\ ）的变量、状态或块内临时变量会报 ``E_HISTORY_RESERVED_PREFIX``\ ，因为目标语言会合并连续下划线。没有历史语法的模型只检查 ``__hist_`` 前缀，报 ``W_HISTORY_RESERVED_PREFIX``\ ；重新读入导出的 DSL 时看到的就是这条警告。
+
+诊断
+~~~~
+
+.. list-table:: 历史相关诊断
+   :header-rows: 1
+   :widths: 30 12 58
+
+   * - 诊断码
+     - 严重级别
+     - 触发条件与引用字段
+   * - ``E_HISTORY_DECLARATION_INVALID``
+     - error
+     - 声明不合法。引用字段 ``owner_path``\ 、\ ``kind``\ 、\ ``default``\ 、\ ``reason``\ （\ ``root_owner``\ 、\ ``duplicate``\ 、\ ``default_not_direct_child``\ 、\ ``default_not_found``\ 、\ ``default_pseudo``\ ）。
+   * - ``E_HISTORY_TARGET_UNDECLARED``
+     - error
+     - ``Owner.[H]`` / ``Owner.[H*]`` 没有对应声明，或指向叶状态。引用字段 ``owner_path``\ 、\ ``kind``\ 。
+   * - ``E_HISTORY_RESERVED_PREFIX``
+     - error
+     - 名字与展开生成的名字冲突。引用字段 ``identifier``\ 、\ ``identifier_kind``\ （\ ``variable``\ 、\ ``state``\ 、\ ``temporary``\ ）。
+   * - ``W_HISTORY_RESERVED_PREFIX``
+     - warning
+     - 没有历史的模型中出现 ``__hist_`` 名字。引用字段同上。
+   * - ``W_HISTORY_UNUSED``
+     - warning
+     - 声明的历史从未被进入。引用字段 ``owner_path``\ 、\ ``kind``\ 。
+
+展开后状态机的使用方
+~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: 各个使用方如何对待历史
+   :header-rows: 1
+   :widths: 24 76
+
+   * - 使用方
+     - 行为
+   * - 模型 API
+     - ``StateMachine.history_owners``\ 列出每个展开的所有者（\ :class:`pyfcstm.model.history.HistoryOwner`\ ：所有者路径、记录变量与目标变量的名字、默认目标、每个叶对应的记录值）。\ ``history_variables({"Owner.Path": "Leaf.Path"})``\ 为热启动计算展开变量；\ ``history_record(vars, "Owner.Path")``\ 解码记录。
+   * - 仿真器
+     - 原样执行展开后的状态机。热启动要像其他持久变量一样提供展开变量；\ ``__hist_goto``\ 不为 ``0``\ ，或记录不是所有者下某个可停留叶的编号时，抛出 ``ValueError`` 并列出合法编号。\ ``pyfcstm simulate``\ 的 ``init`` 命令同样适用。
+   * - 导出
+     - ``to_ast_node()`` 与 DSL 导出写出展开后的普通 FCSTM。重新读入后行为不变，只会出现 ``W_HISTORY_RESERVED_PREFIX`` 警告；其中不再携带历史元数据。
+   * - 检查
+     - 报告展开后的变量和边。由展开生成或改写的初始目标带有 ``history_role``\ （\ ``route``\ 、\ ``merged``\ 、\ ``gated``\ 、\ ``gate``\ ）；\ ``is_unconditional``\ 与 ``W_INITIAL_UNCONDITIONAL_MISSING`` 按作者书写的初始转换判断。
+   * - BMC
+     - 检查展开后的状态机。查询可以读取 ``var("__hist_goto")`` 与 ``var("__hist_<所有者>")``\ 。被 ``havoc`` 的历史变量会被约束在执行可能取到的值上（目标变量为 ``0``\ ；记录为 ``0`` 或所有者下某个叶的编号），因此 ``havoc *`` 会从任意合法记录出发，并且每个见证都能重放。
+   * - 模板与 PlantUML
+     - 消费展开后的状态机：生成的代码带有展开变量（生成代码的热启动同样要提供它们），图中显示展开后的路由，并对 ``__`` 做了转义。
+
+验证：
+
+.. code-block:: bash
+
+   pyfcstm inspect -i docs/source/tutorials/dsl/history_washer.fcstm --format json
+
+在 JSON 报告中，\ ``variables``\ 包含 ``__hist_goto`` 与 ``__hist_Program``\ ，\ ``Washer.Program`` 与 ``Washer.Program.Wash`` 的 ``initial_targets`` 带有 ``history_role`` 值。
 
 .. _dsl-events-scopes-zh:
 

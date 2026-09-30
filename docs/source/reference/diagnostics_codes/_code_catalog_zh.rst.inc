@@ -62,6 +62,16 @@
      - ``partial_static_pipeline``
      - ``pure_static``
      - ``state_identifier``
+   * - :ref:`W_HISTORY_RESERVED_PREFIX <diag-code-w-history-reserved-prefix-zh>`
+     - ``warning``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``variable_declaration``
+   * - :ref:`W_HISTORY_UNUSED <diag-code-w-history-unused-zh>`
+     - ``warning``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``transition``
    * - :ref:`I_COMBO_PSEUDO_NAME_EXTENDED <diag-code-i-combo-pseudo-name-extended-zh>`
      - ``info``
      - ``partial_static_pipeline``
@@ -107,6 +117,21 @@
      - ``static_pipeline``
      - ``pure_static``
      - ``transition``
+   * - :ref:`E_HISTORY_DECLARATION_INVALID <diag-code-e-history-declaration-invalid-zh>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``transition``
+   * - :ref:`E_HISTORY_TARGET_UNDECLARED <diag-code-e-history-target-undeclared-zh>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``transition``
+   * - :ref:`E_HISTORY_RESERVED_PREFIX <diag-code-e-history-reserved-prefix-zh>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``variable_declaration``
    * - :ref:`E_INITIAL_TRANSITION_INVALID <diag-code-e-initial-transition-invalid-zh>`
      - ``error``
      - ``static_pipeline``
@@ -1345,6 +1370,181 @@ E_DANGLING_TRANSITION
 **示例 3**\ （``boundary_only``）——针对 ``E_DANGLING_TRANSITION`` 的反例边界。
 不要这样处理：针对“转换的源状态或目标状态至少一端无法解析，无法接入调度图。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
 
+.. _diag-code-e-history-declaration-invalid-zh:
+
+E_HISTORY_DECLARATION_INVALID
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_HISTORY_DECLARATION_INVALID severity=error emit_tier=static_pipeline capability=pure_static span_object=transition
+.. diagnostics-ref E_HISTORY_DECLARATION_INVALID owner_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_HISTORY_DECLARATION_INVALID kind type=str required=true enum=shallow|deep item_enum=- exact_values=-
+.. diagnostics-ref E_HISTORY_DECLARATION_INVALID default type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_HISTORY_DECLARATION_INVALID reason type=str required=true enum=root_owner|duplicate|default_not_direct_child|default_not_found|default_pseudo item_enum=- exact_values=-
+
+
+.. diagnostics-boundary E_HISTORY_DECLARATION_INVALID kind=cli_error
+
+**注册表事实。** 严重级别 ``error``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``transition``。
+
+**含义。** 历史声明（\ ``[H] -> Child;`` 或 ``[H*] -> Child.Leaf;``\ ）出现在根状态中、重复声明了所有者已声明的种类，或者默认目标不是所有者下合法的状态。
+
+**面向 LLM 的修复摘要。** ``[H]`` / ``[H*]`` 声明不合法：根状态不能拥有历史，每个所有者每种历史至多声明一次，浅历史的默认目标必须是直接子状态，默认目标不能是伪状态或不存在的状态。
+
+.. list-table:: ``refs`` 字段
+   :header-rows: 1
+   :widths: 22 16 14 48
+
+   * - 字段
+     - 类型
+     - 必填
+     - 含义
+   * - ``owner_path``
+     - ``str``
+     - 是
+     - 字段含义：声明历史的复合状态的点分路径。
+   * - ``kind``
+     - ``str``
+     - 是
+     - 字段含义：声明的历史种类，取值为 ``shallow``\ 、\ ``deep``\ 。
+   * - ``default``
+     - ``str``
+     - 是
+     - 字段含义：按书写形式记录的默认目标，相对所有者。
+   * - ``reason``
+     - ``str``
+     - 是
+     - 字段含义：声明不合法的简短原因标签，取值为 ``root_owner``\ 、\ ``duplicate``\ 、\ ``default_not_direct_child``\ 、\ ``default_not_found``\ 、\ ``default_pseudo``\ 。
+
+.. diagnostics-example E_HISTORY_DECLARATION_INVALID 1 cli_error
+
+**示例 1**\ （``cli_error``）——复现边界。
+这个源码形状会通过 ``pyfcstm inspect`` 复现受控的模型校验失败。当前 CLI 格式会在生成成功的检查 JSON 报告之前以非零状态退出，所以应断言 stderr 与退出状态，而不是期待这个诊断码出现在 ``diagnostics[]`` 中；\ ``--collect-errors`` 会列出它。
+
+.. code-block:: fcstm
+
+   state Root { state Off; state O { state A; state W { state W1; [*] -> W1; } [*] -> A; [H] -> W.W1; } [*] -> Off; Off -> O.[H] :: Resume; }
+
+.. diagnostics-example E_HISTORY_DECLARATION_INVALID 2 boundary_only
+
+**示例 2**\ （``boundary_only``）——针对 ``E_HISTORY_DECLARATION_INVALID`` 的修复方向。
+典型修复是对 ``history_declaration`` 执行 ``fix_history_default``：让默认目标指向所有者下真实存在的非伪状态：\ ``[H]`` 用直接子状态，\ ``[H*]`` 可用任意后代路径；或者把声明移到会被离开又重新进入的复合状态里。
+
+.. diagnostics-example E_HISTORY_DECLARATION_INVALID 3 boundary_only
+
+**示例 3**\ （``boundary_only``）——``E_HISTORY_DECLARATION_INVALID`` 的反模式边界。
+不要在同一个复合状态里两次声明同一种历史。
+
+
+.. _diag-code-e-history-target-undeclared-zh:
+
+E_HISTORY_TARGET_UNDECLARED
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_HISTORY_TARGET_UNDECLARED severity=error emit_tier=static_pipeline capability=pure_static span_object=transition
+.. diagnostics-ref E_HISTORY_TARGET_UNDECLARED owner_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_HISTORY_TARGET_UNDECLARED kind type=str required=true enum=shallow|deep item_enum=- exact_values=-
+
+
+.. diagnostics-boundary E_HISTORY_TARGET_UNDECLARED kind=cli_error
+
+**注册表事实。** 严重级别 ``error``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``transition``。
+
+**含义。** 转换进入 ``State.[H]`` 或 ``State.[H*]``\ ，但该状态没有声明对应的历史种类。
+
+**面向 LLM 的修复摘要。** ``X -> O.[H]`` 需要 ``O`` 内部有 ``[H] -> Child;``\ （\ ``O.[H*]`` 需要 ``[H*] -> ...;``\ ）。历史不会被隐式提供，所有者自己的定义总是说明它是否记录与恢复。
+
+.. list-table:: ``refs`` 字段
+   :header-rows: 1
+   :widths: 22 16 14 48
+
+   * - 字段
+     - 类型
+     - 必填
+     - 含义
+   * - ``owner_path``
+     - ``str``
+     - 是
+     - 字段含义：通过历史进入的状态的点分路径。
+   * - ``kind``
+     - ``str``
+     - 是
+     - 字段含义：转换请求的历史种类，取值为 ``shallow``\ 、\ ``deep``\ 。
+
+.. diagnostics-example E_HISTORY_TARGET_UNDECLARED 1 cli_error
+
+**示例 1**\ （``cli_error``）——复现边界。
+这个源码形状会通过 ``pyfcstm inspect`` 复现受控的模型校验失败。当前 CLI 格式会在生成成功的检查 JSON 报告之前以非零状态退出，所以应断言 stderr 与退出状态，而不是期待这个诊断码出现在 ``diagnostics[]`` 中；\ ``--collect-errors`` 会列出它。
+
+.. code-block:: fcstm
+
+   state Root { state A; state O { state B; [*] -> B; } [*] -> A; A -> O.[H] :: Resume; }
+
+.. diagnostics-example E_HISTORY_TARGET_UNDECLARED 2 boundary_only
+
+**示例 2**\ （``boundary_only``）——针对 ``E_HISTORY_TARGET_UNDECLARED`` 的修复方向。
+典型修复是对 ``composite_state`` 执行 ``declare_history``：在目标复合状态中补上对应的 ``[H] -> Child;`` 或 ``[H*] -> Path;`` 声明；如果不打算恢复上次的配置，就普通地进入该状态。
+
+.. diagnostics-example E_HISTORY_TARGET_UNDECLARED 3 boundary_only
+
+**示例 3**\ （``boundary_only``）——``E_HISTORY_TARGET_UNDECLARED`` 的反模式边界。
+不要以叶状态的历史为目标；只有复合状态能拥有历史。
+
+
+.. _diag-code-e-history-reserved-prefix-zh:
+
+E_HISTORY_RESERVED_PREFIX
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_HISTORY_RESERVED_PREFIX severity=error emit_tier=static_pipeline capability=pure_static span_object=variable_declaration
+.. diagnostics-ref E_HISTORY_RESERVED_PREFIX identifier type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_HISTORY_RESERVED_PREFIX identifier_kind type=str required=true enum=variable|state|temporary item_enum=- exact_values=-
+
+
+.. diagnostics-boundary E_HISTORY_RESERVED_PREFIX kind=cli_error
+
+**注册表事实。** 严重级别 ``error``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``variable_declaration``。
+
+**含义。** 使用了历史的模型中，有变量、状态或块内临时变量的名字与历史展开生成的名字冲突。源码位置指向冲突标识符的声明。
+
+**面向 LLM 的修复摘要。** 历史会展开成隐藏的 ``__hist_*`` 变量和闸门状态。目标语言标识符会合并连续下划线，所以任何匹配 ``_+hist_`` 的名字都会在生成代码中与它们冲突。
+
+.. list-table:: ``refs`` 字段
+   :header-rows: 1
+   :widths: 22 16 14 48
+
+   * - 字段
+     - 类型
+     - 必填
+     - 含义
+   * - ``identifier``
+     - ``str``
+     - 是
+     - 字段含义：冲突的标识符。
+   * - ``identifier_kind``
+     - ``str``
+     - 是
+     - 字段含义：该标识符命名的对象种类，取值为 ``variable``\ 、\ ``state``\ 、\ ``temporary``\ 。
+
+.. diagnostics-example E_HISTORY_RESERVED_PREFIX 1 cli_error
+
+**示例 1**\ （``cli_error``）——复现边界。
+这个源码形状会通过 ``pyfcstm inspect`` 复现受控的模型校验失败。当前 CLI 格式会在生成成功的检查 JSON 报告之前以非零状态退出，所以应断言 stderr 与退出状态，而不是期待这个诊断码出现在 ``diagnostics[]`` 中；\ ``--collect-errors`` 会列出它。
+
+.. code-block:: fcstm
+
+   def int __hist_x = 0; state Root { state Off; state O { state A; [*] -> A; [H] -> A; } [*] -> Off; Off -> O.[H] :: Resume; }
+
+.. diagnostics-example E_HISTORY_RESERVED_PREFIX 2 boundary_only
+
+**示例 2**\ （``boundary_only``）——针对 ``E_HISTORY_RESERVED_PREFIX`` 的修复方向。
+典型修复是对 ``variable_declaration`` 执行 ``rename_identifier``：给该标识符改名，使它不以若干下划线加 ``hist_`` 开头。
+
+.. diagnostics-example E_HISTORY_RESERVED_PREFIX 3 boundary_only
+
+**示例 3**\ （``boundary_only``）——``E_HISTORY_RESERVED_PREFIX`` 的反模式边界。
+不要手写对隐藏 ``__hist_*`` 变量的赋值；它们属于历史展开。
+
+
 .. _diag-code-e-initial-transition-invalid-zh:
 
 E_INITIAL_TRANSITION_INVALID
@@ -2444,6 +2644,116 @@ W_COMBO_RELAY_PSEUDO_HAS_ACTIONS
 
 **示例 3**\ （``boundary_only``）——针对 ``W_COMBO_RELAY_PSEUDO_HAS_ACTIONS`` 的反例边界。
 不要这样处理：针对“组合中继命名空间里的伪状态包含生命周期动作或切面动作，因此不再是纯中继节点。”，不要只为消除诊断而做语义不明的删除、重命名、阈值放宽或占位写法；必须先确认真实控制意图。
+
+.. _diag-code-w-history-reserved-prefix-zh:
+
+W_HISTORY_RESERVED_PREFIX
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta W_HISTORY_RESERVED_PREFIX severity=warning emit_tier=static_pipeline capability=pure_static span_object=variable_declaration
+.. diagnostics-ref W_HISTORY_RESERVED_PREFIX identifier type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_HISTORY_RESERVED_PREFIX identifier_kind type=str required=true enum=variable|state|temporary item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_HISTORY_RESERVED_PREFIX kind=inspect_json
+
+**注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``variable_declaration``。
+
+**含义。** 没有历史语法的模型中，有变量、状态或块内临时变量以历史展开保留的前缀开头。源码位置指向该标识符的声明。
+
+**面向 LLM 的修复摘要。** ``__hist_`` 前缀保留给历史展开生成的名字。模型仍然可以构建；重新读入由使用历史的模型导出的 DSL 时出现这条警告是预期的，而一旦给模型加上历史，它就会变成冲突。
+
+.. list-table:: ``refs`` 字段
+   :header-rows: 1
+   :widths: 22 16 14 48
+
+   * - 字段
+     - 类型
+     - 必填
+     - 含义
+   * - ``identifier``
+     - ``str``
+     - 是
+     - 字段含义：使用保留前缀的标识符。
+   * - ``identifier_kind``
+     - ``str``
+     - 是
+     - 字段含义：该标识符命名的对象种类，取值为 ``variable``\ 、\ ``state``\ 、\ ``temporary``\ 。
+
+.. diagnostics-example W_HISTORY_RESERVED_PREFIX 1 repro_cli
+
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
+
+.. code-block:: fcstm
+
+   def int __hist_x = 0; state Root { state A; [*] -> A; }
+
+.. diagnostics-example W_HISTORY_RESERVED_PREFIX 2 boundary_only
+
+**示例 2**\ （``boundary_only``）——针对 ``W_HISTORY_RESERVED_PREFIX`` 的修复方向。
+典型修复是对 ``variable_declaration`` 执行 ``rename_identifier``：在给模型加上 ``[H]`` / ``[H*]`` 之前先给手写的标识符改名，否则它会变成错误。
+
+.. diagnostics-example W_HISTORY_RESERVED_PREFIX 3 boundary_only
+
+**示例 3**\ （``boundary_only``）——``W_HISTORY_RESERVED_PREFIX`` 的反模式边界。
+不要给导出 DSL 中的 ``__hist_*`` 变量改名；它们承载着展开后的历史行为。
+
+
+.. _diag-code-w-history-unused-zh:
+
+W_HISTORY_UNUSED
+^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta W_HISTORY_UNUSED severity=warning emit_tier=static_pipeline capability=pure_static span_object=transition
+.. diagnostics-ref W_HISTORY_UNUSED owner_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_HISTORY_UNUSED kind type=str required=true enum=shallow|deep item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_HISTORY_UNUSED kind=inspect_json
+
+**注册表事实。** 严重级别 ``warning``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``transition``。
+
+**含义。** 复合状态声明了某种历史，但没有任何转换进入它，因此不会为它记录任何内容。
+
+**面向 LLM 的修复摘要。** 一条 ``[H]`` / ``[H*]`` 声明没有对应的 ``Owner.[H]`` / ``Owner.[H*]`` 目标，展开不会为它生成记录或路由。
+
+.. list-table:: ``refs`` 字段
+   :header-rows: 1
+   :widths: 22 16 14 48
+
+   * - 字段
+     - 类型
+     - 必填
+     - 含义
+   * - ``owner_path``
+     - ``str``
+     - 是
+     - 字段含义：声明历史的复合状态的点分路径。
+   * - ``kind``
+     - ``str``
+     - 是
+     - 字段含义：声明了却从未被进入的历史种类，取值为 ``shallow``\ 、\ ``deep``\ 。
+
+.. diagnostics-example W_HISTORY_UNUSED 1 repro_cli
+
+**示例 1**\ （``repro_cli``）——复现边界。
+这个诊断可以出现在成功构建模型后的检查报告中。可用 ``pyfcstm inspect -i <file> --format json`` 复现，并读取 ``diagnostics[]`` 数组。
+
+.. code-block:: fcstm
+
+   state Root { state A; state O { state B; [*] -> B; [H] -> B; } [*] -> A; A -> O :: Go; }
+
+.. diagnostics-example W_HISTORY_UNUSED 2 boundary_only
+
+**示例 2**\ （``boundary_only``）——针对 ``W_HISTORY_UNUSED`` 的修复方向。
+典型修复是对 ``transition`` 执行 ``add_history_target``：在模型需要恢复所有者的地方，通过 ``Owner.[H]`` 或 ``Owner.[H*]`` 进入它；如果该复合状态总是重新进入，就删掉这条声明。
+
+.. diagnostics-example W_HISTORY_UNUSED 3 boundary_only
+
+**示例 3**\ （``boundary_only``）——``W_HISTORY_UNUSED`` 的反模式边界。
+不要以为单独一条声明就会改变该状态的进入方式。
+
 
 .. _diag-code-i-combo-pseudo-name-extended-zh:
 

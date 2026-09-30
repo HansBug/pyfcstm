@@ -124,7 +124,7 @@ Inspect 报告参考
    * - 对象
      - 必填字段和说明
    * - ``StateInfo``
-     - ``path``、``name``、``parent_path``、叶/伪/组合布尔值、子状态、初始目标、生命周期动作数组、切面数组和 ``has_abstract_action``。
+     - ``path``、``name``、``parent_path``、叶/伪/组合布尔值、子状态、初始目标、生命周期动作数组、切面数组和 ``has_abstract_action``。由历史展开生成或改写的 ``initial_targets`` 条目带有可选字段 ``history_role``\ （\ ``route``\ 、\ ``merged``\ 、\ ``gated``\ 、\ ``gate``\ ），这时它的 ``is_unconditional`` 反映作者书写的初始转换。见 :ref:`dsl-history-reference-zh`\ 。
    * - ``TransitionInfo``
      - 源/目标、事件、事件作用域、守卫、效果动作、自赋值、强制来源、索引和组合投影 / 来源字段。
    * - ``ComboOriginInfo``

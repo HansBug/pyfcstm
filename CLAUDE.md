@@ -814,6 +814,12 @@ no docstring and no gate file.
 - Forced transitions such as `!State -> Target :: Event;` and
   `!* -> Target :: Event;` expand to multiple normal transitions and cannot
   have `effect` blocks.
+- History: a composite declares `[H] -> Child;` (shallow, direct child) and/or
+  `[H*] -> Child.Leaf;` (deep, descendant path); transitions in its parent scope
+  enter it with `Owner.[H]` / `Owner.[H*]` (normal, initial and forced forms).
+  Model conversion lowers history into `__hist_*` variables, leaf exits and
+  guarded initials, so every consumer sees plain FCSTM; a blocked restore rejects
+  the whole transition instead of falling back to ordinary entry.
 - Arithmetic (`num_expression`) and logical (`cond_expression`) expressions are
   separate. Assignments require arithmetic expressions; guards require boolean
   conditions; comparisons bridge numeric expressions into conditions.

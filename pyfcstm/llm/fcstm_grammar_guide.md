@@ -357,6 +357,9 @@ Do not write `MissionMode -> FlyHome : /DataLinkLost;` at the outer scope when
 `FlyHome` is nested inside `MissionMode`. Put the transition inside
 `MissionMode`, or route the outer event through a declared request variable.
 
+A history target `Owner.[H]` / `Owner.[H*]` is not a nested path: `Owner` is an
+ordinary sibling target and the marker says how to enter it. See History.
+
 ## Events
 
 Event scopes are part of the model semantics:
@@ -397,6 +400,65 @@ state Plant {
     }
 }
 ```
+
+## History
+
+Use history when leaving a composite state and entering it again should resume
+where it stopped instead of starting over. Declare the history inside the
+composite state (the owner), then enter it from the owner's parent scope with
+`Owner.[H]` (shallow) or `Owner.[H*]` (deep).
+
+```fcstm
+def int agitate_count = 0;
+
+state Washer {
+    [*] -> Paused;
+    state Paused;
+
+    state Program {
+        [*] -> Idle;
+        [H] -> Idle;         // where shallow history goes while there is no record
+        [H*] -> Wash.Fill;   // a deep default may be a descendant path
+        state Idle;
+        state Wash {
+            [*] -> Fill;
+            state Fill;
+            state Agitate {
+                enter { agitate_count = agitate_count + 1; }
+            }
+            Fill -> Agitate :: Filled;
+        }
+        Idle -> Wash :: Start;
+    }
+
+    Paused -> Program :: Fresh;
+    Paused -> Program.[H] :: Resume;
+    Paused -> Program.[H*] :: ResumeExactly;
+    !Program -> Paused :: Pause;
+}
+```
+
+Rules:
+
+- `[H] -> Child;` names a direct, non-pseudo child; `[H*] -> A.B;` names any
+  non-pseudo descendant path written relative to the owner. The right-hand side
+  is only the default used while the owner has no record.
+- Declare a kind before targeting it: `Owner.[H]` needs `[H] -> ...;` inside
+  `Owner`, and `Owner.[H*]` needs `[H*] -> ...;`. Each owner declares at most one
+  of each, and the root state cannot own history.
+- History targets work on normal transitions with any trigger and effect, on a
+  parent's initial `[*] -> Owner.[H*];`, and on forced `!State -> Owner.[H]` and
+  `!* -> Owner.[H]`.
+- The owner is recorded when a transition leaves it. A deep restore returns to
+  the exact leaf and skips the initial transitions on that path; a shallow
+  restore enters the remembered child and runs that child's initial.
+- If the remembered path cannot be entered in this cycle (for example its
+  initial guard is false), the history transition is rejected. It never falls
+  back to the ordinary entry, so add a separate ordinary entry when the model
+  needs one.
+- History restores states, not variables.
+- A history declaration has no trigger and no effect. Do not name variables,
+  states or temporaries `__hist_*` or `_hist_*` in a model that uses history.
 
 ## Lifecycle Actions
 
@@ -584,6 +646,35 @@ state BadGuardScope {
 ```
 
 ```fcstm-invalid
+state BadUndeclaredHistory {
+    [*] -> Off;
+    state Off;
+    state Program {
+        [*] -> Idle;
+        state Idle;
+    }
+    Off -> Program.[H] :: Resume;
+}
+```
+
+```fcstm-invalid
+state BadShallowDefault {
+    [*] -> Off;
+    state Off;
+    state Program {
+        [*] -> Idle;
+        [H] -> Wash.Fill;
+        state Idle;
+        state Wash {
+            [*] -> Fill;
+            state Fill;
+        }
+    }
+    Off -> Program.[H] :: Resume;
+}
+```
+
+```fcstm-invalid
 def int count = 0;
 state BadForcedEffect {
     [*] -> Running;
@@ -655,4 +746,6 @@ Before producing final FCSTM source, check:
 - `=>`, `implies`, `xor`, and `iff` are used only in conditions
 - `^` is not used as boolean xor
 - forced transitions have no effect block
+- every `Owner.[H]` / `Owner.[H*]` target has a matching `[H]` / `[H*]`
+  declaration inside `Owner`, and a `[H]` default is a direct child
 - final output is raw `.fcstm` source, not Markdown

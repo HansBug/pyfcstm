@@ -808,7 +808,7 @@ class Transition(AstExportable):
     :type history_role: Optional[str]
     :param history_user_guard: The guard the user wrote on a ``'merged'`` or
         ``'gated'`` initial transition, before lowering extended it.
-    :type history_user_guard: Optional[Expr]
+    :type history_user_guard: Optional[pyfcstm.model.expr.Expr]
 
     Example::
 

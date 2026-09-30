@@ -131,7 +131,7 @@ Nested object contracts
    * - Object
      - Required fields and notes
    * - ``StateInfo``
-     - ``path``, ``name``, ``parent_path``, ``is_leaf``, ``is_pseudo``, ``is_composite``, ``substates``, ``initial_targets``, lifecycle action arrays, aspect arrays, and ``has_abstract_action``.
+     - ``path``, ``name``, ``parent_path``, ``is_leaf``, ``is_pseudo``, ``is_composite``, ``substates``, ``initial_targets``, lifecycle action arrays, aspect arrays, and ``has_abstract_action``. An ``initial_targets`` item carries the optional ``history_role`` (``route``, ``merged``, ``gated``, ``gate``) when history lowering produced or changed it; its ``is_unconditional`` then reflects the initial the author wrote. See :ref:`dsl-history-reference`.
    * - ``TransitionInfo``
      - ``from_path``, ``to_path``, ``event``, ``event_scope``, ``guard``, ``effect``, ``effect_self_assigns``, ``is_forced``, ``forced_origin``, ``transition_index``, and combo projection/provenance fields.
    * - ``ComboOriginInfo``

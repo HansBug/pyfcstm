@@ -511,6 +511,108 @@ JSON 中重点看：
    :language: fcstm
    :caption: 故意重复事件项的组合示例；预期诊断：``W_COMBO_DUPLICATE_EVENT`` 和 ``I_TRANSITION_NEVER_EVENT_TRIGGERED``\ 。
 
+.. _dsl-history-task-zh:
+
+用历史恢复复合状态
+------------------
+
+当离开一个复合状态之后再回来，需要从离开时的位置继续、而不是从头开始时，使用历史（history）。下面以洗衣机模型为起点：\ ``Program``\ 可以暂停，之后既可以重新进入，也可以通过浅历史（shallow history）或深历史（deep history）恢复。
+
+.. literalinclude:: ../../tutorials/dsl/history_washer.fcstm
+   :language: fcstm
+   :caption: ``Program``\ 上的浅历史与深历史；预期诊断：四个计数变量各有一条 ``W_UNREFERENCED_VAR`` 警告。
+
+1. **在复合状态内部声明历史**\ （这个复合状态称为历史的所有者）。\ ``[H] -> Idle;``\ 声明浅历史，\ ``[H*] -> Wash.Fill;``\ 声明深历史。箭头右侧只是所有者还没有记录时的去向：浅历史的默认目标必须是直接子状态，深历史的默认目标可以是相对所有者书写的任意后代路径。
+2. **在所有者的父作用域里通过历史进入。**\ 把所有者写成目标并加上标记：\ ``Paused -> Program.[H] :: Shallow;``\ 。所有普通转换写法都接受历史目标：事件与守卫触发、组合触发、\ ``effect``\ 块、\ ``!State``\ 与 ``!*`` 强制转换、父状态的初始转换 ``[*] -> Program.[H*];``\ ，以及外部自环 ``!Program -> Program.[H*] :: Reenter;``\ 。
+3. **运行模型。**\ 演示脚本在 ``Agitate`` 暂停，然后分别通过两种历史各恢复一次：
+
+   .. literalinclude:: ../../tutorials/dsl/history_washer.demo.sh
+      :language: bash
+      :caption: ``history_washer.demo.sh``
+
+   由脚本生成的输出：
+
+   .. literalinclude:: ../../tutorials/dsl/history_washer.demo.sh.txt
+      :language: text
+
+   深历史精确恢复到 ``Wash.Agitate``\ ：\ ``fill_entries``\ 仍为 1，\ ``wash_initials``\ 也仍为 1，因为恢复路径上的初始转换不会执行。浅历史只记住直接子状态 ``Wash``\ ，所以进入 ``Wash`` 后会再次执行它的普通初始转换（\ ``wash_initials``\ 变为 2）。两个 ``__hist_*`` 变量就是展开后的历史，见第 5 步。
+4. **检查模型。**\ 展开本身不会产生额外的诊断：
+
+   .. code-block:: bash
+
+      pyfcstm inspect -i docs/source/tutorials/dsl/history_washer.fcstm --format human --color never
+
+   预期输出片段（已截断）：
+
+   .. code-block:: text
+
+      states: 7 total / 4 leaf
+      transitions: 16
+      variables: 6
+        ...
+        __hist_goto: control; external supply: none
+        __hist_Program: control; external supply: none
+      diagnostics: 0 errors / 4 warnings / 0 infos
+
+   四条警告是计数变量的 ``W_UNREFERENCED_VAR``\ 。\ ``transitions: 16``\ 包含了展开生成的恢复路由和加了闸门的初始转换。
+5. **带着记录热启动。**\ 历史会展开成所有使用方都能看到的普通 ``int`` 变量：\ ``__hist_goto``\ （进行中的恢复，在稳定点上总是 ``0``\ ）以及每个所有者一个 ``__hist_<所有者>`` 记录。热启动必须像其他持久变量一样提供它们。请用 :meth:`pyfcstm.model.model.StateMachine.history_variables` 从源码层面的记录换算，而不要手写编号：
+
+   .. code-block:: python
+
+      from pyfcstm.model import load_state_machine_from_text
+      from pyfcstm.simulate import SimulationRuntime
+
+      machine = load_state_machine_from_text(open("history_washer.fcstm").read())
+      user = {"program_entries": 0, "fill_entries": 0, "agitate_entries": 0, "wash_initials": 0}
+      runtime = SimulationRuntime(
+          machine,
+          initial_state="Washer.Paused",
+          initial_vars={**user, **machine.history_variables({"Washer.Program": "Wash.Agitate"})},
+      )
+      runtime.cycle()
+      runtime.cycle(["Washer.Paused.Deep"])
+      print(".".join(runtime.current_state.path))   # Washer.Program.Wash.Agitate
+      print(machine.history_record(runtime.vars, "Washer.Program"))   # Wash.Agitate
+
+   ``history_record()``\ 把记录解码回叶路径，只在所有者不活动时有意义。如果热启动给出的 ``__hist_goto`` 不是 ``0``\ ，或者记录不是所有者下某个可停留叶的编号，仿真器会拒绝，并在报错里按叶路径列出合法编号。\ ``pyfcstm simulate``\ 的 ``init`` 命令接受同样的变量，例如 ``__hist_goto=0 __hist_Program=7``\ 。
+
+常见错误与修复：
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 34 36
+
+   * - 现象
+     - 原因
+     - 修复
+   * - ``E_HISTORY_TARGET_UNDECLARED``\ ：\ ``R.O does not declare shallow history``
+     - 写了 ``X -> O.[H]``\ ，但 ``O`` 内部没有 ``[H] -> ...;``\ 。历史不会被隐式提供。
+     - 在 ``O`` 中补上声明，或者普通地进入 ``O``\ 。
+   * - ``E_HISTORY_DECLARATION_INVALID``\ ，\ ``reason: default_not_direct_child``
+     - ``[H] -> W.W1;``\ ——浅历史只记住直接子状态。
+     - 改成 ``[H] -> W;``\ ，或者声明 ``[H*] -> W.W1;``\ 。
+   * - ``E_HISTORY_DECLARATION_INVALID``\ ，原因为 ``default_not_found``\ 、\ ``default_pseudo`` 或 ``root_owner``
+     - 默认目标不存在或是伪状态，或者根状态声明了历史。
+     - 让默认目标指向所有者下真实存在的状态；把历史声明在会被离开又重新进入的复合状态里。
+   * - ``W_HISTORY_UNUSED``
+     - 声明了某种历史，但没有任何 ``Owner.[H]`` / ``Owner.[H*]`` 目标使用它。
+     - 在需要恢复的地方加上目标，或者删掉这条声明。
+   * - ``E_HISTORY_RESERVED_PREFIX``
+     - 使用了历史的模型里，有变量、状态或临时变量命名为 ``__hist_x`` 或 ``_hist_x`` 这样的形式。
+     - 改名；目标语言会合并连续下划线，两者都会与展开生成的名字冲突。
+   * - 恢复事件没有被消费，状态机停在原地
+     - 恢复路径受阻，例如记录中的子状态的初始转换守卫为假。整条转换会被有意拒绝，绝不会退化为普通进入。
+     - 让记录的路径可以进入，或者为这种情况单独写一条普通进入。见 :ref:`dsl-history-semantics-zh`\ 。
+
+用 ``pyfcstm inspect --collect-errors`` 复现第一种错误：
+
+.. code-block:: text
+
+   [ERROR] E_HISTORY_TARGET_UNDECLARED
+     R.O does not declare shallow history ([H] -> ...;), so it cannot be entered through O.[H].
+
+全部写法、诊断与展开生成的名字见 :ref:`dsl-history-reference-zh`\ ；执行规则及其成立的原因见 :ref:`dsl-history-semantics-zh`\ 。
+
 .. _dsl-import-task-zh:
 
 组装导入

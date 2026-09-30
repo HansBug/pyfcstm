@@ -404,6 +404,20 @@ def test_long_conditional_chain_has_bounded_guide_and_standard_views():
     assert sizes['standard'] <= 512 * 1024, sizes
 
 
+@pytest.mark.parametrize('name', ['branches', 'conditional_long', 'round_tie'])
+def test_standard_definitions_are_all_referenced_and_resolvable(name, proof_snapshot):
+    import re
+    from collections import Counter
+
+    output = proof_snapshot(name).reading.to_text(detail='standard')
+    declarations = re.findall(r'^  \[\[([^\]\n]+)\]\] =', output, re.MULTILINE)
+    occurrences = Counter(re.findall(r'\[\[([^\]\n]+)\]\]', output))
+    assert bool(declarations) == (name != 'branches')
+    assert len(declarations) == len(set(declarations))
+    assert set(occurrences) == set(declarations)
+    assert all(count >= 2 for count in occurrences.values())
+
+
 @pytest.mark.parametrize('language', ['en', 'zh'])
 def test_closed_step_guide_retains_original_block_references(language, proof_snapshot, text_aligner):
     from pyfcstm.solver.proof.text import _render_guide

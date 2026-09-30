@@ -107,6 +107,53 @@ def test_interval_replay_validates_structure_before_using_proposed_ranges(mutati
     assert not check_interval_certificate(node, graph, certificate)
 
 
+@pytest.mark.parametrize('case', ['intersection', 'congruence', 'substitution', 'authored_literal',
+                                 'unknown_power', 'boolean_condition', 'equality_condition', 'unknown_condition',
+                                 'inverse_arity', 'inverse_zero', 'linear_scale', 'unbounded_linear',
+                                 'algebraic_linear', 'algebraic_congruence'])
+def test_interval_step_replay_requires_each_rules_actual_preconditions(case):
+    from dataclasses import replace
+    from .test_polynomial import _graph
+    from pyfcstm.solver.proof import IntervalCertificate, IntervalStep, TermEquality
+    from pyfcstm.solver.budget import SolveBudget
+    from pyfcstm.solver.proof.interval import _replay_step
+    from pyfcstm.solver.proof.rules import _bound
+
+    expressions = {
+        'intersection': ('+', 'x', 1), 'congruence': ('+', 'x', 1), 'substitution': 'x',
+        'authored_literal': 'x', 'unknown_power': ('^', 'x', 'y'),
+        'boolean_condition': ('ite', 'p', 'x', 'y'),
+        'equality_condition': ('ite', ('=', 'x', 'y'), 'x', 'y'),
+        'unknown_condition': ('ite', ('<=', 'x', 0), 'x', 'y'),
+        'inverse_arity': 'x', 'inverse_zero': 'x', 'linear_scale': ('+', 'x', 'y'),
+        'unbounded_linear': 'x', 'algebraic_linear': 'a', 'algebraic_congruence': 'a',
+    }
+    graph = _graph((('<=', ('+', 'x', ('*', 2, 'y')), 0), ('*', 'x', 'y')), expressions[case])
+    target = graph.nodes[-1].conclusion
+    ids = {term.value: term.term_id for term in graph.terms if term.kind == 'constant'}
+    rule = {'substitution': 'congruence', 'authored_literal': 'literal', 'unknown_power': 'power',
+            'boolean_condition': 'conditional', 'equality_condition': 'conditional', 'unknown_condition': 'conditional',
+            'inverse_arity': 'product_inverse', 'inverse_zero': 'product_inverse', 'linear_scale': 'linear',
+            'unbounded_linear': 'linear', 'algebraic_linear': 'linear', 'algebraic_congruence': 'congruence_sum'}.get(case, case)
+    parents = (IntervalStep(ids['x'], '0', '0', False, False, 'literal'),)
+    if case == 'inverse_zero':
+        parents = (replace(parents[0], term_id=graph.nodes[1].conclusion), parents[0])
+    if case.startswith('algebraic'):
+        graph = replace(graph, terms=tuple(replace(term, kind='algebraic', operator_kind='builtin',
+                                                  value='(root-obj (+ (^ x 2) (- 2)) 2)')
+                                          if term.term_id == target else term for term in graph.terms))
+    if case == 'boolean_condition':
+        graph = replace(graph, terms=tuple(replace(term, sort='Bool') if term.term_id == ids['p'] else term
+                                          for term in graph.terms))
+    bounds = (_bound(graph.nodes[0].conclusion, False, graph, True),)
+    step = IntervalStep(target, '0', '0', False, False, rule,
+                        tuple(range(len(parents))) if case in ('intersection', 'congruence', 'inverse_arity', 'inverse_zero') else (),
+                        0 if rule == 'linear' else None,
+                        (TermEquality(ids['x'], ids['y'], (0,)),) if case == 'substitution' else ())
+    certificate = IntervalCertificate(bounds, parents + (step,), (0, len(parents)))
+    assert _replay_step(step, certificate, graph, SolveBudget(None)) == ()
+
+
 @pytest.mark.parametrize('mutation', ['term', 'sort', 'infinite_closed', 'linear_bound_missing',
                                      'forward_step', 'bound_index', 'conflict_index',
                                      'different_terms', 'overlap'])

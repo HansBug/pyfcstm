@@ -691,28 +691,20 @@ def _render(reading, language, detail):
                       'context': choose('Context source: ', '上下文来源：')}[link.relation]
             lines.append('  ' + prefix + source.title + location)
         lines.append('')
-    # Only emit definitions reachable from the displayed text, including their
-    # shared subexpressions. No formula is truncated or silently discarded.
-    references = set(re.findall(r'\[\[([^\]\n]+)\]\]', '\n'.join(lines))) & definitions.keys()
-    pending = list(references)
-    while pending:
-        key = pending.pop()
-        children = set(re.findall(r'\[\[([^\]\n]+)\]\]', definitions[key])) & definitions.keys()
-        pending.extend(children - references)
-        references.update(children)
-    if references:
+    # Definitions are created on demand for displayed evidence; each nested
+    # definition is referenced by its parent's text. No second graph walk is needed.
+    if definitions:
         lines.append(choose('Formula references (expand with get_term_text):',
                             '公式引用（使用 get_term_text 展开）：') if detail == 'brief' else
-                     choose('Shared definitions:', '共享定义：') if any(key.startswith('share') for key in references) else
+                     choose('Shared definitions:', '共享定义：') if any(key.startswith('share') for key in definitions) else
                      choose('Formula definitions:', '公式定义：'))
         for key, value in definitions.items():
-            if key in references:
-                if detail == 'brief':
-                    lines.append('  [[%s]]' % key)
-                else:
-                    lines.extend(textwrap.wrap('[[%s]] = %s' % (key, value), width=80,
-                                               initial_indent='  ', subsequent_indent='    ',
-                                               break_long_words=False, break_on_hyphens=False))
+            if detail == 'brief':
+                lines.append('  [[%s]]' % key)
+            else:
+                lines.extend(textwrap.wrap('[[%s]] = %s' % (key, value), width=80,
+                                           initial_indent='  ', subsequent_indent='    ',
+                                           break_long_words=False, break_on_hyphens=False))
         lines.append('')
     lines.append(choose('Conclusion: the submitted conjunction is inconsistent.',
                         '结论：提交的条件合取不可满足。'))

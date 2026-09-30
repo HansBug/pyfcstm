@@ -555,6 +555,66 @@ def test_generated_linear_equality_replay_rejects_a_corrupted_direction(monkeypa
     assert any(gap.reason == 'invalid_linear_equality_certificate' for gap in result.gaps)
 
 
+@pytest.mark.parametrize('mutation', ['no_conclusion', 'nonlocal', 'not_equality', 'boolean', 'empty_sum'])
+def test_linear_equality_replay_rejects_missing_or_wrongly_typed_obligations(mutation):
+    from dataclasses import replace
+    from .test_polynomial import _graph
+    from pyfcstm.solver.budget import SolveBudget
+    from pyfcstm.solver.proof.rules import _linear_equality, check_linear_equality_certificate
+
+    graph = _graph((('<=', 'x', 'y'), ('<=', 'y', 'x')), ('=', 'x', 'y'))
+    node = graph.node(graph.root_id)
+    certificate = _linear_equality(node, graph, SolveBudget(None))
+    assert check_linear_equality_certificate(node, graph, certificate)
+    if mutation == 'no_conclusion':
+        node = replace(node, conclusion=None)
+    elif mutation == 'nonlocal':
+        node = replace(node, conclusion=graph.nodes[0].conclusion)
+    elif mutation == 'not_equality':
+        graph = replace(graph, terms=tuple(replace(term, operator='<=') if term.term_id == node.conclusion
+                                          else term for term in graph.terms))
+    elif mutation == 'boolean':
+        children = graph.term(node.conclusion).arguments
+        graph = replace(graph, terms=tuple(replace(term, sort='Bool') if term.term_id in children else term
+                                          for term in graph.terms))
+    else:
+        certificate = replace(certificate, less=replace(certificate.less, bounds=(), weights=()))
+    assert not check_linear_equality_certificate(node, graph, certificate)
+
+
+@pytest.mark.parametrize('mutation', ['no_conclusion', 'unavailable_constraint'])
+def test_counting_replay_rejects_missing_local_obligations(mutation):
+    from dataclasses import replace
+    from pyfcstm.solver.proof.rules import check_cardinality_certificate
+
+    p, q, s = z3.Bools('p q s')
+    report = explain_unsat(UnsatQuery('count', (UnsatConstraint('conditions', (z3.AtMost(p, q, s, 1), p, q)),)))
+    node = next(node for node in report.proof.nodes if node.cardinality is not None)
+    certificate = node.cardinality
+    if mutation == 'no_conclusion':
+        node = replace(node, conclusion=None)
+    else:
+        certificate = replace(certificate, constraint_id=report.proof.node(report.proof.root_id).conclusion)
+    assert not check_cardinality_certificate(node, report.proof, certificate)
+
+
+def test_loader_rejects_a_cycle_in_expansion_details():
+    data = _report().to_canonical()
+    block = data['reading']['blocks'][0]
+    block['detail_block_ids'] = (block['block_id'],)
+    with pytest.raises(ValueError, match='cyclic reading references'):
+        UnsatReport.from_canonical(data)
+
+
+def test_closed_refutation_is_validated_without_a_reading():
+    data = _report().to_canonical()
+    data['reading'] = None
+    data['reading_status'] = 'not_requested'
+    data['proof']['root_id'] = data['proof']['nodes'][0]['node_id']
+    with pytest.raises(ValueError, match='closed refutation must conclude False'):
+        UnsatReport.from_canonical(data)
+
+
 @pytest.mark.parametrize('mutation', ['bound', 'weight', 'sum', 'strict', 'empty', 'nonlocal'])
 def test_loader_rechecks_arithmetic_evidence_instead_of_trusting_stored_totals(mutation):
     x = z3.Real('x')

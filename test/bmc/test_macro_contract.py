@@ -274,18 +274,6 @@ def test_bool_template_canonical_helpers_cover_raw_values():
 
 
 @pytest.mark.unittest
-def test_structural_accepted_prefix_helper_recognizes_exact_masks():
-    """Accepted-mask recognition covers exact and clearly non-canonical shapes."""
-    mask = BoolTemplate.not_(BoolTemplate.atom("accepted:first"))
-
-    assert macro_module._condition_uses_expected_accepted_prefix(mask, ("first",))
-    assert not macro_module._condition_uses_expected_accepted_prefix(
-        BoolTemplate.atom("event:Root.Go"),
-        ("first",),
-    )
-
-
-@pytest.mark.unittest
 def test_bool_template_evaluate_rejects_missing_and_non_boolean_assignments():
     """BoolTemplate public evaluator fails loudly on malformed assignments."""
     atom = BoolTemplate.atom("event:Root.Go")
@@ -1552,7 +1540,10 @@ def test_partition_handles_sentinel_delta_and_accepted_atom_failures(macro_domai
             ),
         ),
     )
-    diagnostic_condition = BoolTemplate.atom("event:Root.Plant.Ping")
+    diagnostic_condition = BoolTemplate.and_(
+        BoolTemplate.atom("event:Root.Plant.Ping"),
+        BoolTemplate.not_(BoolTemplate.atom("event:Root.Go")),
+    )
     delta = build_semantic_delta_case(
         macro_domain,
         entry,
@@ -1568,6 +1559,25 @@ def test_partition_handles_sentinel_delta_and_accepted_atom_failures(macro_domai
     )
     assert result.assignment_count == 0
     assert result.bucket_count == 3
+
+    # A diagnostic that can fire together with the accepted case overlaps it,
+    # even though the delta bucket is still the exact complement of both.
+    overlapping_diagnostic = BoolTemplate.atom("event:Root.Plant.Ping")
+    overlapping_delta = build_semantic_delta_case(
+        macro_domain,
+        entry,
+        (accepted,),
+        build_diagnostic_conditions=(overlapping_diagnostic,),
+    )
+    for budget in (1, 4096):
+        with pytest.raises(BmcBuildError, match="partition violation: overlap"):
+            verify_source_partition(
+                entry,
+                (accepted,),
+                (overlapping_delta,),
+                (overlapping_diagnostic,),
+                max_assignments=budget,
+            )
 
     first = CycleCase(
         "transition",
@@ -1610,14 +1620,14 @@ def test_partition_handles_sentinel_delta_and_accepted_atom_failures(macro_domai
 
 
 @pytest.mark.unittest
-def test_structural_partition_negative_shapes_fall_back_to_truth_table_budget(
+def test_structural_partition_negative_shapes_fall_back_to_exact_check(
     macro_domain,
 ):
-    """Structural recognizer refuses malformed accepted/fallback/delta shapes."""
+    """Malformed shapes skip the structural proof but still get an exact verdict."""
     source = stable_leaf_source(macro_domain, "Root.Plant.Idle")
 
     accepted_only = make_large_priority_partition(source)[:-1]
-    with pytest.raises(BmcBuildError, match="assignment budget"):
+    with pytest.raises(BmcBuildError, match="partition violation: gap"):
         verify_source_partition(source, accepted_only, max_assignments=1)
 
     accepted = make_case(
@@ -1644,7 +1654,7 @@ def test_structural_partition_negative_shapes_fall_back_to_truth_table_budget(
         BoolTemplate.true(),
         (),
     )
-    with pytest.raises(BmcBuildError, match="assignment budget"):
+    with pytest.raises(BmcBuildError, match="partition violation: overlap"):
         verify_source_partition(source, (accepted, bad_fallback), max_assignments=1)
     with pytest.raises(BmcBuildError, match="overlap"):
         verify_source_partition(source, (accepted, bad_fallback), max_assignments=8)
@@ -1675,7 +1685,7 @@ def test_structural_partition_negative_shapes_fall_back_to_truth_table_budget(
         BoolTemplate.true(),
         (),
     )
-    with pytest.raises(BmcBuildError, match="assignment budget"):
+    with pytest.raises(BmcBuildError, match="partition violation: overlap"):
         verify_source_partition(
             entry, (accepted_entry, entry_fallback), max_assignments=1
         )
@@ -1689,7 +1699,7 @@ def test_structural_partition_negative_shapes_fall_back_to_truth_table_budget(
         BoolTemplate.true(),
         (),
     )
-    with pytest.raises(BmcBuildError, match="assignment budget"):
+    with pytest.raises(BmcBuildError, match="partition violation: overlap"):
         verify_source_partition(
             entry, (accepted_entry,), (bad_delta,), max_assignments=1
         )
@@ -1707,7 +1717,7 @@ def test_structural_partition_negative_shapes_fall_back_to_truth_table_budget(
         BoolTemplate.true(),
         (),
     )
-    with pytest.raises(BmcBuildError, match="assignment budget"):
+    with pytest.raises(BmcBuildError, match="partition violation: overlap"):
         verify_source_partition(
             entry, (accepted_entry, initial_terminal), max_assignments=1
         )
@@ -1922,8 +1932,8 @@ def test_structural_partition_checker_handles_large_priority_masks():
 
 
 @pytest.mark.unittest
-def test_structural_partition_checker_rejects_extra_accepted_atoms():
-    """Structural budget bypass applies only to exact canonical accepted masks."""
+def test_partition_checker_decides_extra_accepted_atoms_exactly():
+    """A positive accepted atom leaves the tree shape; the exact check still decides it."""
     source = stable_leaf_source(
         build_bmc_domain(load_state_machine_from_text("state Root;"), 1), "Root"
     )
@@ -1935,11 +1945,14 @@ def test_structural_partition_checker_rejects_extra_accepted_atoms():
             condition, BoolTemplate.atom("accepted:%s" % accepted[0].label)
         )
 
-    with pytest.raises(BmcBuildError, match="assignment budget"):
-        verify_source_partition(
-            source,
-            make_large_priority_partition(source, inject_positive_accepted),
-        )
+    # Case 1 now requires case 0 both accepted and not accepted, so it is empty
+    # and the buckets still partition every assignment.
+    result = verify_source_partition(
+        source,
+        make_large_priority_partition(source, inject_positive_accepted),
+    )
+    assert result.assignment_count == 0
+    assert result.bucket_count == 14
 
 
 @pytest.mark.unittest
@@ -2004,7 +2017,7 @@ def test_bmc_macro_import_does_not_load_z3_or_verify_modules():
 
 
 @pytest.mark.unittest
-def test_partition_reuses_shared_condition_expansion_per_call(monkeypatch):
+def test_partition_truth_table_is_repeatable_for_shared_conditions():
     source = MacroStepSource("entry", "initial", 0, "Root")
     atom = BoolTemplate.atom("event:Root.Go")
     shared = BoolTemplate.and_(atom, BoolTemplate.atom("event:Root.Ready"))
@@ -2021,20 +2034,10 @@ def test_partition_reuses_shared_condition_expansion_per_call(monkeypatch):
         )
         for index, condition in enumerate((shared, BoolTemplate.not_(shared)))
     )
-    original = macro_module._resolve_accepted_atoms
-    visits = []
-
-    def observe(condition, *args, **kwargs):
-        if condition is atom:
-            visits.append(condition)
-        return original(condition, *args, **kwargs)
-
-    monkeypatch.setattr(macro_module, "_resolve_accepted_atoms", observe)
     first = verify_source_partition(source, cases)
     assert first.assignment_count == 4
-    assert len(visits) == 1
+    assert first.variables == ("event:Root.Go", "event:Root.Ready")
     assert verify_source_partition(source, cases) == first
-    assert len(visits) == 2
 
 
 @pytest.mark.unittest

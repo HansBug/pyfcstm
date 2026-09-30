@@ -96,6 +96,9 @@ def _acyclic(edges):
 
 
 def _validate_graph(graph):
+    from .evidence import certificate_handlers
+
+    handlers = {handler.field: handler for handler in certificate_handlers()}
     _unique(graph.terms, 'term_id')
     nodes = _unique(graph.nodes, 'node_id')
     occurrences = _unique(graph.inputs, 'occurrence_id')
@@ -115,13 +118,9 @@ def _validate_graph(graph):
         if node.certificate is not None:
             for bound in node.certificate.bounds:
                 _references((bound.term_id,) + tuple(term for term, _ in bound.coefficients), terms)
-            from .rules import check_arithmetic_certificate
-
-            if not check_arithmetic_certificate(node, graph, node.certificate):
+            if not handlers['certificate'].replay(node, graph, node.certificate):
                 raise ValueError('invalid arithmetic derivation')
         if node.linear_equality is not None:
-            from .rules import check_linear_equality_certificate
-
             equality = node.linear_equality
             _references((equality.term_id,), terms)
             term = graph.term(equality.term_id)
@@ -135,7 +134,7 @@ def _validate_graph(graph):
             for certificate in (equality.less, equality.greater):
                 for bound in certificate.bounds:
                     _references((bound.term_id,) + tuple(key for key, _ in bound.coefficients), terms)
-            if not check_linear_equality_certificate(node, graph, equality):
+            if not handlers['linear_equality'].replay(node, graph, equality):
                 raise ValueError('invalid linear equality derivation')
         if node.divisibility is not None:
             for pair in node.divisibility.bound_pairs:
@@ -144,22 +143,16 @@ def _validate_graph(graph):
             _references(tuple(term for term, _ in node.divisibility.coefficients), terms)
             if any(graph.term(term).sort != 'Int' for term, _ in node.divisibility.coefficients):
                 raise ValueError('divisibility evidence requires integer terms')
-            from .integer import check_divisibility_certificate
-
-            if not check_divisibility_certificate(node, graph, node.divisibility):
+            if not handlers['divisibility'].replay(node, graph, node.divisibility):
                 raise ValueError('invalid divisibility derivation')
         if node.polynomial is not None:
-            from .polynomial import check_polynomial_certificate
-
             for step in node.polynomial.steps:
                 references = (() if step.term_id is None else (step.term_id,)) + tuple(
                     term for monomial, _ in step.coefficients + step.factor for term in monomial)
                 _references(references, terms)
-            if not check_polynomial_certificate(node, graph, node.polynomial):
+            if not handlers['polynomial'].replay(node, graph, node.polynomial):
                 raise ValueError('invalid polynomial derivation')
         if node.interval is not None:
-            from .interval import check_interval_certificate
-
             for bound in node.interval.bounds:
                 _references((bound.term_id,) + tuple(term for term, _ in bound.coefficients), terms)
             for step in node.interval.steps:
@@ -180,11 +173,9 @@ def _validate_graph(graph):
                 if not any(term.operator_kind == 'builtin' and term.operator == '=' and
                            term.arguments == result_terms for term in matches):
                     raise ValueError('interval equality must match a conclusion alternative')
-            if not check_interval_certificate(node, graph, node.interval):
+            if not handlers['interval'].replay(node, graph, node.interval):
                 raise ValueError('invalid interval derivation')
         if node.cardinality is not None:
-            from .rules import check_cardinality_certificate
-
             certificate = node.cardinality
             references = ((certificate.constraint_id,) + certificate.assumptions +
                           tuple(term for term, _ in certificate.assignments) +
@@ -192,7 +183,7 @@ def _validate_graph(graph):
             _references(references, terms)
             if any(graph.term(term).sort != 'Bool' for term in references):
                 raise ValueError('cardinality evidence requires Boolean terms')
-            if not check_cardinality_certificate(node, graph, certificate):
+            if not handlers['cardinality'].replay(node, graph, certificate):
                 raise ValueError('invalid cardinality derivation')
         known.add(node.node_id)
     _references((graph.root_id,), nodes)

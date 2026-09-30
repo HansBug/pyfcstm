@@ -271,12 +271,14 @@ def _certificate(node, graph):
                                  str(constant), strict), 'checked'
 
 
-def check_arithmetic_certificate(node, graph, certificate):
+def check_arithmetic_certificate(node, graph, certificate, *, budget=None):
     """Replay a weighted contradiction from this node's own local premises.
 
     Stored normalized bounds and totals are proposals. Recompute the bounds
     from portable terms, including integer lattices, and add their exact
     weighted values without invoking either search or a native solver.
+    ``budget`` is accepted for the common replay interface; this exact check
+    retains its existing uninterrupted arithmetic evaluation.
     """
     if (node.conclusion is None or not certificate.bounds or
             len(certificate.bounds) != len(certificate.weights)):
@@ -437,8 +439,12 @@ def _linear_equality(node, graph, budget):
     return None
 
 
-def check_linear_equality_certificate(node, graph, certificate):
-    """Check both strict-order refutations against their own temporary bound."""
+def check_linear_equality_certificate(node, graph, certificate, *, budget=None):
+    """Check both strict-order refutations against their own temporary bound.
+
+    ``budget`` is accepted for the common replay interface; this exact check
+    retains its existing uninterrupted arithmetic evaluation.
+    """
     if node.conclusion is None:
         return False
     clauses = _clause_literals(graph.term(node.conclusion))

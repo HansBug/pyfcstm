@@ -74,8 +74,12 @@ def _combine_pairs(pairs, weights):
     return total, lower, upper
 
 
-def check_divisibility_certificate(node, graph, certificate):
-    """Replay the local bounds and exact integer range, independently of search."""
+def check_divisibility_certificate(node, graph, certificate, *, budget=None):
+    """Replay the local bounds and exact integer range, independently of search.
+
+    ``budget`` is accepted for the common replay interface; this exact check
+    retains its existing uninterrupted arithmetic evaluation.
+    """
     from .rules import _add, _bound, _is_false
 
     if node.conclusion is None or not _is_false(node.conclusion, graph):

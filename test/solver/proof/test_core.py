@@ -249,6 +249,107 @@ def test_slow_rule_extension_exhausts_shared_deadline_without_losing_native_evid
     assert report.stop_reason == 'budget exhausted during proof analysis'
 
 
+def test_analysis_deadline_preserves_completed_certificates_and_pending_scope(monkeypatch):
+    import time
+    from pyfcstm.solver.proof import rules, UnsatReport
+
+    now = [0.0]
+    completed = []
+    original = rules._certificate
+
+    def certificate(node, graph):
+        result = original(node, graph)
+        if result[0] is not None:
+            completed.append((node.node_id, result[0]))
+            now[0] = 1.0
+        return result
+
+    # Elapsed time during a completed arithmetic check must not discard it.
+    monkeypatch.setattr(time, 'monotonic', lambda: now[0])
+    monkeypatch.setattr(rules, '_certificate', certificate)
+    x, y = z3.Ints('x y')
+    report = solver.explain_unsat(solver.UnsatQuery('progress', (
+        solver.UnsatConstraint('update', (y == z3.If(x >= 0, x + 1, 0),)),
+        solver.UnsatConstraint('goal', (y < 0,)),
+    )), timeout_ms=100)
+    assert completed
+    assert report.solver_status == 'unsat'
+    assert report.proof_status == 'captured'
+    for node_id, evidence in completed:
+        node = report.proof.node(node_id)
+        assert node.local_check == 'checked'
+        assert node.certificate == evidence
+    assert report.proof.node(report.proof.root_id).local_check == 'not_run'
+    assert report.scope_check == 'partial'
+    assert report.rule_check == 'partial'
+    assert report.stop_reason == 'budget exhausted during proof analysis'
+    assert any(gap.reason == 'analysis_incomplete' for gap in report.gaps)
+    assert report.reading is None
+    assert UnsatReport.from_canonical(report.to_canonical()) == report
+
+
+def test_source_description_deadline_preserves_finished_analysis(monkeypatch):
+    import time
+    from pyfcstm.solver.proof import ProofExtensions, SourceAdapter, SourceDescription, UnsatReport
+
+    now = [0.0]
+    monkeypatch.setattr(time, 'monotonic', lambda: now[0])
+
+    class SlowSources(SourceAdapter):
+        def describe(self, handle):
+            now[0] = 1.0
+            return SourceDescription(handle, handle)
+
+    report = solver.explain_unsat(solver.UnsatQuery('source-deadline', (
+        solver.UnsatConstraint('false', (z3.BoolVal(False),), source='original'),
+    )), timeout_ms=100, extensions=ProofExtensions(source_adapter=SlowSources()))
+    assert report.proof_status == 'captured'
+    assert report.scope_check == 'passed'
+    assert report.rule_check == 'complete'
+    assert report.reading is None
+    assert report.stop_reason == 'budget exhausted during proof reading'
+    assert UnsatReport.from_canonical(report.to_canonical()) == report
+
+
+def test_invalid_rule_extension_emits_warning_and_retains_diagnostic(text_aligner):
+    from pyfcstm.solver.proof import ProofExtensions, ProofRuleHandler, RuleAnalysis
+
+    x = z3.Real('x')
+    extensions = ProofExtensions(rule_handlers=(ProofRuleHandler(
+        'th-lemma', lambda node, graph: RuleAnalysis('logical', 'invalid'),
+    ),))
+    with pytest.warns(RuntimeWarning, match='invalid_inference.*th-lemma') as captured:
+        report = solver.explain_unsat(solver.UnsatQuery('rejected', (
+            solver.UnsatConstraint('lower', (x >= 2,)),
+            solver.UnsatConstraint('upper', (x < 1,)),
+        )), extensions=extensions)
+    invalid = [gap for gap in report.gaps if gap.reason == 'invalid_inference']
+    assert invalid
+    assert len(captured) == len(invalid)
+    assert all(gap.node_id in str(warning.message) for gap, warning in zip(invalid, captured))
+    assert report.proof_status == 'invalid'
+    assert report.reading_status == 'not_requested'
+    assert report.rule_check == 'failed'
+    text_aligner.assert_equal('''\
+Query: rejected
+Solver result: UNSAT
+Reading: not_requested
+
+No refutation is available.
+Unexplained or invalid evidence:
+  invalid_inference: rule handler rejected the inference
+''', report.reading.to_text(detail='detailed'))
+    text_aligner.assert_equal('''\
+查询：rejected
+求解结果：UNSAT
+阅读完整度：not_requested
+
+没有可用的反证。
+尚未解释或无效的证据：
+  invalid_inference: rule handler rejected the inference
+''', report.reading.to_text(language='zh', detail='detailed'))
+
+
 def test_minimization_and_reproof_share_the_original_deadline(monkeypatch):
     import time
 

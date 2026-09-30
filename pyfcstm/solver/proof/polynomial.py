@@ -11,7 +11,6 @@ from dataclasses import replace
 from fractions import Fraction
 from itertools import combinations
 from math import factorial
-import warnings
 
 from .core import PolynomialCertificate, PolynomialStep, ProofGap
 
@@ -901,9 +900,10 @@ def polynomial_certificate(node, graph, budget, *, diagnostics=None):
         if search.limits:
             reason, detail = 'proof_search_limit', '; '.join(sorted(search.limits))
         if certificate is not None and not check_polynomial_certificate(node, graph, certificate, budget=budget):
-            warnings.warn('generated polynomial certificate failed replay; retaining an unsupported inference',
-                          RuntimeWarning, stacklevel=2)
+            from .rules import _invalid_gap
+
             reason, detail = 'invalid_generated_certificate', 'generated polynomial certificate failed replay'
+            _invalid_gap(node, reason, detail)
         elif certificate is not None:
             return certificate
     except _SearchLimit as err:

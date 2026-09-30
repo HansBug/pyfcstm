@@ -18,7 +18,10 @@
 - Preserve local scopes, exact query meaning and one shared cooperative deadline.
 - No backwards-compatibility layer is required, but changed portable evidence must have matching IO, replay, text and documentation.
 - All durable fixtures belong under test/solver/proof or test/bmc; long text uses text_aligner.
-- This document is a repair proposal. Production code has not been changed for it.
+- Implementation is in progress. Numeric capture, integer lattices/ranges,
+  composite squares and capture caching have local commits. The checkboxes below
+  are the original checklist; consult the execution ledger and the
+  [remaining acceptance plan](2026-09-30-proof-merge-acceptance.md) for current status.
 
 ## Review Focus
 

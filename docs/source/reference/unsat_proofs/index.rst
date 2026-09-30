@@ -104,6 +104,18 @@ Python and ``null`` in JSON.
 (``raw|partial_minimized|subset_minimal``), and ``stop_reason`` for core work.
 A verified ``core_ids=()`` means the background alone is contradictory.
 
+If analysis reaches its deadline, completed node checks and certificates remain
+in ``proof``. Unexamined nodes retain ``local_check="not_run"``; scope checking
+is ``partial``, and rule checking is ``partial`` unless a failure was already
+found. An ``analysis_incomplete`` gap identifies the first unfinished node and
+``stop_reason`` names the stage. No further reading assembly runs on that expired
+budget. Direct ``analyze_proof`` calls expose the same progress and stop reason.
+
+Rejected local inferences, open root hypotheses, non-false roots and generated
+certificates that fail replay emit ``RuntimeWarning`` with the node, rule and
+reason, in addition to structured gaps. Expected unsupported rules and bounded
+search exhaustion are partial results, not invalid-evidence warnings.
+
 For example, ``solver_status="unsat", proof_status="captured",
 reading_status="not_requested"`` is possible when assembly times out after
 capture. ``rule_check="partial", reading_status="complete"`` is possible

@@ -99,6 +99,16 @@ UNSAT 证明 API 参考
 （ ``proven|not_proven`` ）、 ``reduction`` （ ``raw|partial_minimized|subset_minimal`` ）
 及核处理的 ``stop_reason``。经过验证的 ``core_ids=()`` 表示背景自身矛盾。
 
+分析达到时限时，``proof`` 保留已经完成的节点检查和证书。未检查的节点保持
+``local_check="not_run"``；作用域检查为 ``partial``，规则检查也为 ``partial``，
+除非此前已发现失败。``analysis_incomplete`` 缺口指出第一个未完成节点，
+``stop_reason`` 说明停止阶段。预算耗尽后不再继续组装阅读文本。
+直接调用 ``analyze_proof`` 同样可以取得这些进度和停止原因。
+
+局部推导被拒绝、根节点仍有开放假设、根结论不是 False，或生成证书未通过回放时，
+除了结构化缺口，还会发出包含节点、规则和原因的 ``RuntimeWarning``。
+正常的不支持规则和有限搜索耗尽属于部分结果，不作为无效证据警告。
+
 例如，捕获后组装超时，可以产生 ``solver_status="unsat", proof_status="captured",
 reading_status="not_requested"``。存在受信任的机械规则时，可以同时出现
 ``rule_check="partial", reading_status="complete"``。

@@ -588,7 +588,9 @@ def _assemble(report, query, extensions, budget):
             report = replace(report, proof=analysis.graph,
                              proof_status='captured' if valid else 'invalid',
                              scope_check=analysis.scope_check, rule_check=analysis.rule_check,
-                             gaps=analysis.gaps)
+                             gaps=analysis.gaps, stop_reason=analysis.stop_reason or report.stop_reason)
+            if analysis.stop_reason is not None:
+                return report
         reading, sources = build_reading(report, query, extensions, budget)
         return replace(report, reading=reading, reading_status=reading.status, source_status=sources)
     except BudgetExpired as error:

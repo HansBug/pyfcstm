@@ -244,6 +244,9 @@ def _render(reading, language, detail):
     lines.append('')
     if reading.root_id is None:
         lines.append(choose('No refutation is available.', '没有可用的反证。'))
+        if reading.gaps:
+            lines.append(choose('Unexplained or invalid evidence:', '尚未解释或无效的证据：'))
+            lines.extend('  %s: %s' % (gap.reason, gap.detail) for gap in reading.gaps)
         return '\n'.join(lines) + '\n'
     graph = reading._graph
     definitions = {}

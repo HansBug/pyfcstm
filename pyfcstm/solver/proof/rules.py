@@ -7,7 +7,8 @@ distinction is retained independently of whether their deductions are readable.
 
 from dataclasses import dataclass, replace
 from fractions import Fraction
-from typing import Callable, Tuple
+from typing import Callable, Optional, Tuple
+import warnings
 
 from .core import (ArithmeticCertificate, CardinalityCertificate, CountContribution,
                     LinearBound, LinearEqualityCertificate, ProofGap, ProofGraph)
@@ -75,12 +76,21 @@ class ProofAnalysis:
     :param scope_check: ``passed``, ``partial`` or ``failed``.
     :param rule_check: ``complete``, ``partial`` or ``failed``.
     :param gaps: Explicit unsupported or invalid deductions.
+    :param stop_reason: Deadline diagnostic when analysis stopped before completion.
     """
 
     graph: ProofGraph
     scope_check: str
     rule_check: str
     gaps: Tuple[ProofGap, ...]
+    stop_reason: Optional[str] = None
+
+
+def _invalid_gap(node, reason, detail):
+    """Keep a rejected inference observable in both warnings and portable evidence."""
+    warnings.warn('%s at node %s (rule %s): %s' %
+                  (reason, node.node_id, node.rule, detail), RuntimeWarning, stacklevel=3)
+    return ProofGap(reason, node.node_id, detail)
 
 
 def _add(left, right, weight=Fraction(1)):
@@ -842,7 +852,7 @@ def analyze_proof(graph: ProofGraph, rule_handlers=(), budget=None) -> ProofAnal
     :return: Scope status, local checks and explicit proof gaps.
     :rtype: ProofAnalysis
     """
-    from ..budget import SolveBudget
+    from ..budget import BudgetExpired, SolveBudget
 
     budget = SolveBudget(None) if budget is None else budget
     handlers = _index_handlers(rule_handlers)
@@ -857,120 +867,134 @@ def analyze_proof(graph: ProofGraph, rule_handlers=(), budget=None) -> ProofAnal
     inputs = {item.occurrence_id: item for item in graph.inputs}
     nodes, analyzed, gaps = [], {}, []
     scope, rules = 'passed', 'complete'
-    for node in graph.nodes:
-        budget.checkpoint('proof analysis')
-        opened = set().union(*(analyzed[parent].open_hypotheses for parent in node.parents))
-        discharged, certificate, cardinality, interval, divisibility, polynomial = (), None, None, None, None, None
-        linear_equality = None
-        diagnostics = []
-        local, kind = 'trusted', mechanical.get(node.rule, 'opaque')
-        if node.rule == 'asserted':
-            kind = 'input'
-            local = 'checked' if node.input_occurrences and all(
-                inputs[occurrence].term_id == node.conclusion for occurrence in node.input_occurrences
-            ) else 'invalid'
-        elif node.rule == 'hypothesis':
-            kind, local = 'assumption', 'checked'
-            opened.add(node.node_id)
-        elif node.rule == 'lemma':
-            kind = 'discharge'
-            fact = graph.term(node.conclusion)
-            literals = fact.arguments if fact.operator == 'or' else (node.conclusion,)
-            single = len(opened) == 1 and _complement(
-                analyzed[next(iter(opened))].conclusion, node.conclusion, graph,
-            )
-            valid = (len(node.parents) == 1 and
-                     _is_false(analyzed[node.parents[0]].conclusion, graph) and
-                     (single or all(any(_complement(analyzed[hyp].conclusion, literal, graph)
-                                        for literal in literals) for hyp in opened)))
-            local = 'checked' if valid else 'invalid'
-            if valid:
-                discharged = tuple(sorted(opened))
-                opened.clear()
-        elif node.rule in handlers:
-            result = handlers[node.rule].interpret(node, graph)
+    try:
+        for node in graph.nodes:
             budget.checkpoint('proof analysis')
-            if not isinstance(result, RuleAnalysis):
-                raise TypeError('rule handler must return RuleAnalysis')
-            local, kind = result.local_check, result.kind
-        elif node.rule == 'true-axiom':
-            kind = 'logical'
-            fact = None if node.conclusion is None else graph.term(node.conclusion)
-            local = 'checked' if (fact is not None and not node.parents and
-                                  (fact.kind, fact.sort, fact.value) ==
-                                  ('literal', 'Bool', 'true')) else 'invalid'
-        elif node.rule == 'trans*':
-            kind = 'equality'
-            local = 'checked' if _transitive_path(node, graph, budget) else 'invalid'
-        elif node.rule == 'th-lemma':
-            if tuple(parameter.value for parameter in node.parameters[:2]) == ('arith', 'gcd-test'):
-                from .integer import divisibility_certificate
-                divisibility = divisibility_certificate(node, graph, budget)
-                local = 'checked' if divisibility is not None else 'unsupported'
-                kind = 'divisibility' if divisibility is not None else 'opaque'
-            elif tuple(parameter.value for parameter in node.parameters) == ('pb',):
-                cardinality = _cardinality_certificate(node, graph, budget)
-                local = 'checked' if cardinality is not None else 'unsupported'
-                kind = 'cardinality' if cardinality is not None else 'opaque'
-            elif tuple(parameter.value for parameter in node.parameters) == ('arith', 'triangle-eq'):
-                local = 'checked' if _order_tautology(node, graph, budget) else 'unsupported'
-                kind = 'order' if local == 'checked' else 'opaque'
-                if local == 'unsupported' and _arithmetic_identity(node, graph):
-                    local, kind = 'checked', 'arithmetic_identity'
-            elif tuple(parameter.value for parameter in node.parameters) == ('arith',):
-                axiom = (_division_axiom(node, graph, budget) or _quotient_axiom(node, graph, budget) or
-                         _floor_axiom(node, graph, budget) or _power_axiom(node, graph, budget))
-                local, kind = ('checked', axiom) if axiom is not None else ('unsupported', 'opaque')
-                if axiom is None and _arithmetic_identity(node, graph):
-                    local, kind = 'checked', 'arithmetic_identity'
-                elif axiom is None and _order_tautology(node, graph, budget):
-                    local, kind = 'checked', 'order'
-            else:
-                certificate, local = _certificate(node, graph)
-                kind = 'arithmetic' if certificate is not None else 'opaque'
-            if local == 'unsupported' and tuple(p.value for p in node.parameters[:2]) in (
-                    ('arith',), ('arith', 'farkas'), ('arith', 'eq-propagate'), ('arith', 'gcd-test')):
-                certificate = (_local_pair_certificate(node, graph) or
-                               _linear_certificate(node, graph, budget))
-                if certificate is not None:
-                    local, kind = 'checked', 'arithmetic'
+            opened = set().union(*(analyzed[parent].open_hypotheses for parent in node.parents))
+            discharged, certificate, cardinality, interval, divisibility, polynomial = (), None, None, None, None, None
+            linear_equality = None
+            diagnostics = []
+            local, kind = 'trusted', mechanical.get(node.rule, 'opaque')
+            if node.rule == 'asserted':
+                kind = 'input'
+                local = 'checked' if node.input_occurrences and all(
+                    inputs[occurrence].term_id == node.conclusion for occurrence in node.input_occurrences
+                ) else 'invalid'
+            elif node.rule == 'hypothesis':
+                kind, local = 'assumption', 'checked'
+                opened.add(node.node_id)
+            elif node.rule == 'lemma':
+                kind = 'discharge'
+                fact = graph.term(node.conclusion)
+                literals = fact.arguments if fact.operator == 'or' else (node.conclusion,)
+                single = len(opened) == 1 and _complement(
+                    analyzed[next(iter(opened))].conclusion, node.conclusion, graph,
+                )
+                valid = (len(node.parents) == 1 and
+                         _is_false(analyzed[node.parents[0]].conclusion, graph) and
+                         (single or all(any(_complement(analyzed[hyp].conclusion, literal, graph)
+                                            for literal in literals) for hyp in opened)))
+                local = 'checked' if valid else 'invalid'
+                if valid:
+                    discharged = tuple(sorted(opened))
+                    opened.clear()
+            elif node.rule in handlers:
+                result = handlers[node.rule].interpret(node, graph)
+                budget.checkpoint('proof analysis')
+                if not isinstance(result, RuleAnalysis):
+                    raise TypeError('rule handler must return RuleAnalysis')
+                local, kind = result.local_check, result.kind
+            elif node.rule == 'true-axiom':
+                kind = 'logical'
+                fact = None if node.conclusion is None else graph.term(node.conclusion)
+                local = 'checked' if (fact is not None and not node.parents and
+                                      (fact.kind, fact.sort, fact.value) ==
+                                      ('literal', 'Bool', 'true')) else 'invalid'
+            elif node.rule == 'trans*':
+                kind = 'equality'
+                local = 'checked' if _transitive_path(node, graph, budget) else 'invalid'
+            elif node.rule == 'th-lemma':
+                if tuple(parameter.value for parameter in node.parameters[:2]) == ('arith', 'gcd-test'):
+                    from .integer import divisibility_certificate
+                    divisibility = divisibility_certificate(node, graph, budget)
+                    local = 'checked' if divisibility is not None else 'unsupported'
+                    kind = 'divisibility' if divisibility is not None else 'opaque'
+                elif tuple(parameter.value for parameter in node.parameters) == ('pb',):
+                    cardinality = _cardinality_certificate(node, graph, budget)
+                    local = 'checked' if cardinality is not None else 'unsupported'
+                    kind = 'cardinality' if cardinality is not None else 'opaque'
+                elif tuple(parameter.value for parameter in node.parameters) == ('arith', 'triangle-eq'):
+                    local = 'checked' if _order_tautology(node, graph, budget) else 'unsupported'
+                    kind = 'order' if local == 'checked' else 'opaque'
+                    if local == 'unsupported' and _arithmetic_identity(node, graph):
+                        local, kind = 'checked', 'arithmetic_identity'
+                elif tuple(parameter.value for parameter in node.parameters) == ('arith',):
+                    axiom = (_division_axiom(node, graph, budget) or _quotient_axiom(node, graph, budget) or
+                             _floor_axiom(node, graph, budget) or _power_axiom(node, graph, budget))
+                    local, kind = ('checked', axiom) if axiom is not None else ('unsupported', 'opaque')
+                    if axiom is None and _arithmetic_identity(node, graph):
+                        local, kind = 'checked', 'arithmetic_identity'
+                    elif axiom is None and _order_tautology(node, graph, budget):
+                        local, kind = 'checked', 'order'
                 else:
-                    from .interval import interval_certificate
-                    interval = interval_certificate(node, graph, budget)
-                    if interval is not None:
-                        local, kind = 'checked', 'interval'
-            if local == 'unsupported' and tuple(p.value for p in node.parameters[:2]) in (
-                    ('arith',), ('arith', 'farkas'), ('arith', 'eq-propagate'), ('arith', 'gcd-test')):
-                linear_equality = _linear_equality(node, graph, budget)
-                if linear_equality is not None:
-                    local, kind = 'checked', 'linear_equality'
-            if local == 'unsupported' and tuple(p.value for p in node.parameters[:2]) in (
-                    ('arith',), ('arith', 'farkas'), ('arith', 'eq-propagate'), ('arith', 'gcd-test')):
-                from .polynomial import polynomial_certificate
-                polynomial = polynomial_certificate(node, graph, budget, diagnostics=diagnostics)
-                if polynomial is not None:
-                    local, kind = 'checked', 'polynomial'
-        elif kind == 'opaque':
-            local = 'unsupported'
-        if local == 'invalid':
-            rules = 'failed'
-            gaps.append(ProofGap('invalid_inference', node.node_id, node.rule))
-        elif local != 'checked' and rules != 'failed':
-            rules = 'partial'
-        if local == 'unsupported':
-            gaps.extend(diagnostics or (ProofGap('unsupported_rule', node.node_id, node.rule),))
-            if node.rule != 'th-lemma':
-                scope = 'partial'
-        analyzed[node.node_id] = replace(node, local_check=local, inference_kind=kind,
-                                        open_hypotheses=tuple(sorted(opened)),
-                                        discharged_hypotheses=discharged, certificate=certificate,
-                                        cardinality=cardinality, interval=interval, divisibility=divisibility, polynomial=polynomial, linear_equality=linear_equality)
-        nodes.append(analyzed[node.node_id])
+                    certificate, local = _certificate(node, graph)
+                    kind = 'arithmetic' if certificate is not None else 'opaque'
+                if local == 'unsupported' and tuple(p.value for p in node.parameters[:2]) in (
+                        ('arith',), ('arith', 'farkas'), ('arith', 'eq-propagate'), ('arith', 'gcd-test')):
+                    certificate = (_local_pair_certificate(node, graph) or
+                                   _linear_certificate(node, graph, budget))
+                    if certificate is not None:
+                        local, kind = 'checked', 'arithmetic'
+                    else:
+                        from .interval import interval_certificate
+                        interval = interval_certificate(node, graph, budget)
+                        if interval is not None:
+                            local, kind = 'checked', 'interval'
+                if local == 'unsupported' and tuple(p.value for p in node.parameters[:2]) in (
+                        ('arith',), ('arith', 'farkas'), ('arith', 'eq-propagate'), ('arith', 'gcd-test')):
+                    linear_equality = _linear_equality(node, graph, budget)
+                    if linear_equality is not None:
+                        local, kind = 'checked', 'linear_equality'
+                if local == 'unsupported' and tuple(p.value for p in node.parameters[:2]) in (
+                        ('arith',), ('arith', 'farkas'), ('arith', 'eq-propagate'), ('arith', 'gcd-test')):
+                    from .polynomial import polynomial_certificate
+                    polynomial = polynomial_certificate(node, graph, budget, diagnostics=diagnostics)
+                    if polynomial is not None:
+                        local, kind = 'checked', 'polynomial'
+            elif kind == 'opaque':
+                local = 'unsupported'
+            if local == 'invalid':
+                rules = 'failed'
+                gaps.append(_invalid_gap(node, 'invalid_inference',
+                                         'rule handler rejected the inference' if node.rule in handlers else
+                                         'local inference check failed'))
+            elif local != 'checked' and rules != 'failed':
+                rules = 'partial'
+            if local == 'unsupported':
+                gaps.extend(diagnostics or (ProofGap('unsupported_rule', node.node_id, node.rule),))
+                if node.rule != 'th-lemma':
+                    scope = 'partial'
+            analyzed[node.node_id] = replace(node, local_check=local, inference_kind=kind,
+                                            open_hypotheses=tuple(sorted(opened)),
+                                            discharged_hypotheses=discharged, certificate=certificate,
+                                            cardinality=cardinality, interval=interval, divisibility=divisibility, polynomial=polynomial, linear_equality=linear_equality)
+            nodes.append(analyzed[node.node_id])
+    except BudgetExpired as error:
+        # Native arithmetic search and extension checkpoints share this deadline.
+        # Keep finished checks; the interrupted node and its suffix are unexamined.
+        pending = tuple(replace(node, local_check='not_run', inference_kind='opaque',
+                                open_hypotheses=(), discharged_hypotheses=(),
+                                certificate=None, cardinality=None, interval=None,
+                                divisibility=None, polynomial=None, linear_equality=None)
+                        for node in graph.nodes[len(nodes):])
+        gaps.append(ProofGap('analysis_incomplete', pending[0].node_id, str(error)))
+        return ProofAnalysis(replace(graph, nodes=tuple(nodes) + pending), 'partial',
+                             'failed' if rules == 'failed' else 'partial', tuple(gaps), str(error))
     root = analyzed[graph.root_id]
     if root.open_hypotheses:
         scope = 'failed'
-        gaps.append(ProofGap('open_hypotheses', root.node_id, 'refutation depends on local assumptions'))
+        gaps.append(_invalid_gap(root, 'open_hypotheses', 'refutation depends on local assumptions'))
     if not _is_false(root.conclusion, graph):
         scope = 'failed'
-        gaps.append(ProofGap('non_false_root', root.node_id, 'refutation must conclude False'))
+        gaps.append(_invalid_gap(root, 'non_false_root', 'refutation must conclude False'))
     return ProofAnalysis(replace(graph, nodes=tuple(nodes)), scope, rules, tuple(gaps))

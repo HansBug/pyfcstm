@@ -82,6 +82,54 @@ def test_asserted_false_is_a_closed_checked_refutation():
     assert report.gaps == ()
 
 
+def test_expired_reanalysis_does_not_reuse_old_checks(monkeypatch):
+    import time
+    from pyfcstm.solver.budget import SolveBudget
+    from pyfcstm.solver.proof import analyze_proof
+
+    x, y = z3.Reals('x y')
+    report = solver.explain_unsat(solver.UnsatQuery('reanalyze', (
+        solver.UnsatConstraint('lower', (x >= 0,)),
+        solver.UnsatConstraint('step', (y == x + 1,)),
+        solver.UnsatConstraint('upper', (y < 0,)),
+    )))
+    assert any(node.certificate is not None for node in report.proof.nodes)
+    now = [0.0]
+    monkeypatch.setattr(time, 'monotonic', lambda: now[0])
+    budget = SolveBudget(1)
+    now[0] = 1.0
+    analysis = analyze_proof(report.proof, budget=budget)
+    assert analysis.stop_reason == 'budget exhausted during proof analysis'
+    assert analysis.scope_check == 'partial'
+    assert analysis.rule_check == 'partial'
+    assert analysis.gaps[0].node_id == report.proof.nodes[0].node_id
+    assert all(node.local_check == 'not_run' and node.certificate is None and
+               node.open_hypotheses == () and node.discharged_hypotheses == ()
+               for node in analysis.graph.nodes)
+
+
+def test_analysis_deadline_keeps_an_already_rejected_inference(monkeypatch):
+    import time
+    from pyfcstm.solver.budget import SolveBudget
+    from pyfcstm.solver.proof import ProofGraph, ProofInput, ProofNode, ProofTerm, analyze_proof
+
+    # A False true-axiom is invalid regardless of the later asserted False.
+    graph = ProofGraph('rejected-prefix', 'input', (
+        ProofNode('bad', 'true-axiom', (), 'false'),
+        ProofNode('input', 'asserted', (), 'false', input_occurrences=('i',)),
+    ), (ProofTerm('false', 'literal', 'Bool', 'false', value='false'),),
+        (ProofInput('i', 'false', 0, 'false', False),))
+    ticks = iter((0.0, 0.0, 1.0))
+    monkeypatch.setattr(time, 'monotonic', lambda: next(ticks))
+    with pytest.warns(RuntimeWarning, match='invalid_inference at node bad'):
+        analysis = analyze_proof(graph, budget=SolveBudget(1))
+    assert analysis.rule_check == 'failed'
+    assert analysis.scope_check == 'partial'
+    assert analysis.graph.node('bad').local_check == 'invalid'
+    assert analysis.graph.node('input').local_check == 'not_run'
+    assert tuple(gap.reason for gap in analysis.gaps) == ('invalid_inference', 'analysis_incomplete')
+
+
 def test_valid_scoped_public_graph_can_be_analyzed_without_native_objects():
     from pyfcstm.solver.proof import ProofGraph, ProofInput, ProofNode, ProofTerm
     from pyfcstm.solver.proof import analyze_proof

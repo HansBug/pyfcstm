@@ -6,6 +6,18 @@ pyfcstm.solver.proof.arithmetic
 .. automodule:: pyfcstm.solver.proof.arithmetic
 
 
+multiply\_lattices
+-----------------------------------------------------
+
+.. autofunction:: multiply_lattices
+
+
+lattice\_ceiling
+-----------------------------------------------------
+
+.. autofunction:: lattice_ceiling
+
+
 integer\_lattice
 -----------------------------------------------------
 

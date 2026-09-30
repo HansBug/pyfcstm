@@ -10,3 +10,9 @@ interval\_certificate
 -----------------------------------------------------
 
 .. autofunction:: interval_certificate
+
+
+check\_interval\_certificate
+-----------------------------------------------------
+
+.. autofunction:: check_interval_certificate

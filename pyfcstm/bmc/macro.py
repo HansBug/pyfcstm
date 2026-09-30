@@ -1005,14 +1005,11 @@ def _excluded_accepted_labels(condition: BoolTemplate) -> Optional[Set[str]]:
 
 
 def _condition_uses_exact_accepted_complement(
-    condition: BoolTemplate,
-    labels: Sequence[str],
-    extra_exclusions: Sequence[BoolTemplate] = (),
+    condition: BoolTemplate, labels: Sequence[str]
 ) -> bool:
     exclusions = [
         BoolTemplate.atom("%s%s" % (_ACCEPTED_ATOM_PREFIX, label)) for label in labels
     ]
-    exclusions.extend(extra_exclusions)
     expected = (
         BoolTemplate.not_(BoolTemplate.or_(*exclusions))
         if exclusions
@@ -1362,9 +1359,10 @@ class CycleCase:
 class PartitionCheckResult:
     """Summary of a source-local boolean partition self-check.
 
-    :param variables: Boolean atom names enumerated by the truth-table check.
+    :param variables: Free boolean atom names of the partition.
     :type variables: Tuple[str, ...]
-    :param assignment_count: Number of assignments checked.
+    :param assignment_count: Number of truth-table assignments enumerated, or
+        ``0`` when the partition was proved without enumeration.
     :type assignment_count: int
     :param bucket_count: Number of partition buckets.
     :type bucket_count: int
@@ -1573,14 +1571,20 @@ class MacroStepFormal:
         )
 
     def verify_partition(self, max_assignments: int = 4096) -> PartitionCheckResult:
-        """Verify local case buckets with structural and truth-table self-checks.
+        """Verify that the local case buckets are complete and pairwise disjoint.
+
+        This delegates to :func:`verify_source_partition`: small partitions are
+        enumerated, and larger ones are proved from their priority shape or
+        decided symbolically.
 
         :param max_assignments: Largest truth table to enumerate; larger
             partitions are decided without enumeration, defaults to ``4096``.
         :type max_assignments: int, optional
         :return: Partition self-check summary.
         :rtype: PartitionCheckResult
-        :raises BmcBuildError: If the buckets overlap or leave a gap.
+        :raises BmcBuildError: If the buckets overlap or leave a gap, an accepted
+            atom names an unknown case or forms a cycle, or ``max_assignments``
+            is not a positive integer.
 
         Example::
 
@@ -1918,7 +1922,9 @@ def build_semantic_delta_case(
     )
 
 
-def _validate_accepted_references(registry: Mapping[str, BoolTemplate]) -> Tuple[str, ...]:
+def _validate_accepted_references(
+    registry: Mapping[str, BoolTemplate],
+) -> Tuple[str, ...]:
     """Reject unknown and cyclic accepted references and order the cases.
 
     An accepted atom ``accepted:Y`` stands for the condition of case ``Y``.
@@ -2126,7 +2132,9 @@ def _symbolic_partition_result(
         status = solver.check()
         model = solver.model() if status == z3.sat else None
         solver.pop()
-        if status == z3.unknown:  # pragma: no cover - propositional checks always decide.
+        if (
+            status == z3.unknown
+        ):  # pragma: no cover - propositional checks always decide.
             raise BmcBuildError(
                 "partition check could not be decided: %s." % solver.reason_unknown()
             )
@@ -2232,6 +2240,10 @@ def _structural_partition_result(
         _validate_sentinel_absorb_partition(success, sentinel_id, sentinel_path)
         return PartitionCheckResult(tuple(variables), 0, 1)
 
+    if diagnostics:
+        # The shape says nothing about whether a build diagnostic overlaps an
+        # accepted case, so such partitions are left to the exact check.
+        return None
     cases = tuple(success) + tuple(delta)
     accepted_cases = [case for case in cases if case.kind in _ACCEPTED_CASE_KINDS]
     terminal_cases = [case for case in cases if case.kind not in _ACCEPTED_CASE_KINDS]
@@ -2273,23 +2285,22 @@ def _structural_partition_result(
                 "public preflight."
             )
         if not _condition_uses_exact_accepted_complement(
-            terminal.condition, accepted_labels, diagnostics
+            terminal.condition, accepted_labels
         ):
             return None
     else:  # pragma: no cover - public preflight admits only fallback/delta here.
         return None
 
-    if diagnostics and (not source.allows_semantic_delta or not delta):
-        # The fallback branch rejects build-time buckets above, public preflight
-        # rejects non-delta-capable sources, and the only accepted diagnostic
-        # shape has a delta bucket. Keep this as a loud structural guard for
-        # corrupted internal callers.
-        raise _internal_bmc_error(  # pragma: no cover
-            "build-condition structural partition reached an unsupported source or "
-            "missing delta bucket after public preflight."
-        )
-    bucket_count = len(cases) + (1 if diagnostics else 0)
-    return PartitionCheckResult(tuple(variables), 0, bucket_count)
+    return PartitionCheckResult(tuple(variables), 0, len(cases))
+
+
+def _validate_max_assignments(max_assignments: object) -> None:
+    if (
+        isinstance(max_assignments, bool)
+        or not isinstance(max_assignments, int)
+        or max_assignments <= 0
+    ):
+        raise BmcBuildError("max_assignments must be a positive integer.")
 
 
 def verify_boolean_partition(
@@ -2325,12 +2336,7 @@ def verify_boolean_partition(
         raise BmcBuildError("partition must contain at least one bucket.")
     if not all(isinstance(item, BoolTemplate) for item in items):
         raise BmcBuildError("partition buckets must be BoolTemplate objects.")
-    if (
-        isinstance(max_assignments, bool)
-        or not isinstance(max_assignments, int)
-        or max_assignments <= 0
-    ):
-        raise BmcBuildError("max_assignments must be a positive integer.")
+    _validate_max_assignments(max_assignments)
     if variables is None:
         names = sorted(
             set(itertools.chain.from_iterable(item.variables for item in items))
@@ -2386,7 +2392,7 @@ def verify_source_partition(
     by a negated accepted conjunct -- the declaration-priority tree that macro
     expansion builds, however deeply choosers nest -- and the terminal bucket is
     the exact complement, the shape itself proves the partition.  Any other
-    shape is decided exactly with a z3 encoding that keeps accepted atoms as
+    shape, and any partition with build diagnostics, is decided exactly with a z3 encoding that keeps accepted atoms as
     definitions instead of inlining them.
 
     :param source: Macro-step source profile.
@@ -2408,8 +2414,8 @@ def verify_source_partition(
         accepted atom names an unknown case or forms a cycle, or
         ``max_assignments`` is not a positive integer.
     :raises InvalidBmcEncoding: If the source/case buckets have an invalid
-        shape, including unsupported delta buckets or malformed sentinel absorb
-        partitions.
+        shape, including duplicate case labels, unsupported delta buckets or
+        malformed sentinel absorb partitions.
 
     Example::
 
@@ -2438,9 +2444,13 @@ def verify_source_partition(
             )
     if delta and not source.allows_semantic_delta:
         raise InvalidBmcEncoding("delta cases require an entry source.")
+    labels: Set[str] = set()
     for case in success + delta:
         if not isinstance(case, CycleCase):
             raise InvalidBmcEncoding("partition cases must be CycleCase objects.")
+        if case.label in labels:
+            raise InvalidBmcEncoding("Duplicate cycle case label: %r." % case.label)
+        labels.add(case.label)
         if case.source_state_id != source.source_state_id:
             raise InvalidBmcEncoding("partition case source id mismatch.")
         if case.source_state_path != source.source_state_path:
@@ -2456,12 +2466,7 @@ def verify_source_partition(
             "build_diagnostic_conditions must contain BoolTemplate objects."
         )
 
-    if (
-        isinstance(max_assignments, bool)
-        or not isinstance(max_assignments, int)
-        or max_assignments <= 0
-    ):
-        raise BmcBuildError("max_assignments must be a positive integer.")
+    _validate_max_assignments(max_assignments)
 
     if source.kind == "terminated":
         structural = _structural_partition_result(
@@ -2470,6 +2475,8 @@ def verify_source_partition(
         if structural is not None:
             return structural
 
+    if not success and not delta and not diagnostics:
+        raise BmcBuildError("partition must contain at least one bucket.")
     _validate_partition_atom_prefixes(
         [case.condition for case in success + delta] + list(diagnostics)
     )

@@ -1540,7 +1540,10 @@ def test_partition_handles_sentinel_delta_and_accepted_atom_failures(macro_domai
             ),
         ),
     )
-    diagnostic_condition = BoolTemplate.atom("event:Root.Plant.Ping")
+    diagnostic_condition = BoolTemplate.and_(
+        BoolTemplate.atom("event:Root.Plant.Ping"),
+        BoolTemplate.not_(BoolTemplate.atom("event:Root.Go")),
+    )
     delta = build_semantic_delta_case(
         macro_domain,
         entry,
@@ -1556,6 +1559,25 @@ def test_partition_handles_sentinel_delta_and_accepted_atom_failures(macro_domai
     )
     assert result.assignment_count == 0
     assert result.bucket_count == 3
+
+    # A diagnostic that can fire together with the accepted case overlaps it,
+    # even though the delta bucket is still the exact complement of both.
+    overlapping_diagnostic = BoolTemplate.atom("event:Root.Plant.Ping")
+    overlapping_delta = build_semantic_delta_case(
+        macro_domain,
+        entry,
+        (accepted,),
+        build_diagnostic_conditions=(overlapping_diagnostic,),
+    )
+    for budget in (1, 4096):
+        with pytest.raises(BmcBuildError, match="partition violation: overlap"):
+            verify_source_partition(
+                entry,
+                (accepted,),
+                (overlapping_delta,),
+                (overlapping_diagnostic,),
+                max_assignments=budget,
+            )
 
     first = CycleCase(
         "transition",

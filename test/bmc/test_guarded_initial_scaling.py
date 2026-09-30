@@ -35,7 +35,12 @@ def earliest_step(model_text, predicate, bound):
     """
     machine = load_state_machine_from_text(model_text)
     events = sorted(
-        {t.event.path_name for s in machine.walk_states() for t in s.transitions if t.event}
+        {
+            t.event.path_name
+            for s in machine.walk_states()
+            for t in s.transitions
+            if t.event
+        }
     )
     subsets = [
         list(chosen)
@@ -101,8 +106,16 @@ def assert_bound_is_tight(model_path, predicate, formula, tmp_path, horizon=8):
     """BMC is unsat one step before the simulated earliest step and sat at it."""
     earliest = earliest_step(model_path.read_text(encoding="utf-8"), predicate, horizon)
     assert earliest is not None and earliest > 1
-    assert bmc_status(model_path, "check reach <= %d: %s;" % (earliest - 1, formula), tmp_path) == "unsat"
-    assert bmc_status(model_path, "check reach <= %d: %s;" % (earliest, formula), tmp_path) == "sat"
+    assert (
+        bmc_status(
+            model_path, "check reach <= %d: %s;" % (earliest - 1, formula), tmp_path
+        )
+        == "unsat"
+    )
+    assert (
+        bmc_status(model_path, "check reach <= %d: %s;" % (earliest, formula), tmp_path)
+        == "sat"
+    )
 
 
 @pytest.mark.unittest
@@ -119,7 +132,9 @@ def test_guarded_initial_selectors_are_checked_by_bmc(tmp_path):
 @pytest.mark.unittest
 def test_guarded_initial_selectors_report_verdicts_without_internal_errors(tmp_path):
     model = FIXTURES / "guarded_initial_selectors.fcstm"
-    result = run_bmc(model, 'check reach <= 2: active("Washer.Program.Wash.Agitate");', tmp_path)
+    result = run_bmc(
+        model, 'check reach <= 2: active("Washer.Program.Wash.Agitate");', tmp_path
+    )
     assert result.exit_code == 1
     assert "partition check" not in result.output
 
@@ -128,11 +143,16 @@ def test_guarded_initial_selectors_report_verdicts_without_internal_errors(tmp_p
 @pytest.mark.parametrize(
     ("predicate", "formula"),
     [
-        (active("Washer.Program.Wash.Agitate"), 'active("Washer.Program.Wash.Agitate")'),
         (
-            lambda runtime: ".".join(runtime.current_state.path) == "Washer.Program.Wash.Agitate"
-            and runtime.vars["entries"] == 2
-            and runtime.vars["inits"] == 1,
+            active("Washer.Program.Wash.Agitate"),
+            'active("Washer.Program.Wash.Agitate")',
+        ),
+        (
+            lambda runtime: (
+                ".".join(runtime.current_state.path) == "Washer.Program.Wash.Agitate"
+                and runtime.vars["entries"] == 2
+                and runtime.vars["inits"] == 1
+            ),
             'active("Washer.Program.Wash.Agitate") && var("entries") == 2 && var("inits") == 1',
         ),
     ],
@@ -158,7 +178,10 @@ def selector_family(entries, fanout, depth):
         for child in children:
             composite(child, level + 1, indent + 1)
         for value in range(entries):
-            lines.append("%s    [*] -> %s : if [m == %d];" % (pad, children[value % fanout], value))
+            lines.append(
+                "%s    [*] -> %s : if [m == %d];"
+                % (pad, children[value % fanout], value)
+            )
         lines.append("%s}" % pad)
 
     composite("S", 0, 1)
@@ -179,7 +202,9 @@ def selector_family(entries, fanout, depth):
         (4, 4, 2, "R.S.S_3.S_3_3"),
     ],
 )
-def test_generated_guarded_selector_family_is_checked_by_bmc(entries, fanout, depth, target, tmp_path):
+def test_generated_guarded_selector_family_is_checked_by_bmc(
+    entries, fanout, depth, target, tmp_path
+):
     model = tmp_path / "selectors.fcstm"
     model.write_text(selector_family(entries, fanout, depth), encoding="utf-8")
     assert_bound_is_tight(model, active(target), 'active("%s")' % target, tmp_path)

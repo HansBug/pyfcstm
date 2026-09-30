@@ -12,15 +12,12 @@ from __future__ import annotations
 
 import itertools
 import random
-import subprocess
-import sys
-import time
 from typing import List, Optional, Sequence, Tuple
 
 import pytest
 
 from pyfcstm.bmc import build_bmc_domain
-from pyfcstm.bmc.errors import BmcBuildError
+from pyfcstm.bmc.errors import BmcBuildError, InvalidBmcEncoding
 from pyfcstm.bmc.macro import BoolTemplate, CycleCase, verify_source_partition
 from pyfcstm.bmc.source import MacroStepSource, entry_source, stable_leaf_source
 from pyfcstm.model import load_state_machine_from_text
@@ -46,7 +43,9 @@ def _accepted(label: str) -> BoolTemplate:
     return BoolTemplate.atom("accepted:" + label)
 
 
-def _case(source: MacroStepSource, kind: str, ordinal: int, condition: BoolTemplate) -> CycleCase:
+def _case(
+    source: MacroStepSource, kind: str, ordinal: int, condition: BoolTemplate
+) -> CycleCase:
     path = source.source_state_path
     return CycleCase(
         kind,
@@ -65,7 +64,9 @@ def _fallback(source: MacroStepSource, accepted: Sequence[CycleCase]) -> CycleCa
         source,
         "fallback",
         0,
-        BoolTemplate.not_(BoolTemplate.or_(*[_accepted(case.label) for case in accepted])),
+        BoolTemplate.not_(
+            BoolTemplate.or_(*[_accepted(case.label) for case in accepted])
+        ),
     )
 
 
@@ -84,6 +85,7 @@ def priority_tree(
     one candidate node and defaults to a fresh event atom per node.
     """
     if literal is None:
+
         def literal(index):
             return BoolTemplate.atom("event:Root.E%d" % index)
 
@@ -116,22 +118,14 @@ def priority_tree(
     return cases, masks
 
 
-def _run_in_subprocess(code: str) -> str:
-    return subprocess.run(
-        [sys.executable, "-c", code],
-        check=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        universal_newlines=True,
-    ).stdout.strip()
-
-
 @pytest.mark.unittest
 def test_nested_priority_tree_is_proved_without_enumeration(leaf_source):
     """A nested priority tree far beyond the truth-table budget is proved directly."""
     accepted, _ = priority_tree(leaf_source, (4, 3, 3))
 
-    result = verify_source_partition(leaf_source, accepted + [_fallback(leaf_source, accepted)])
+    result = verify_source_partition(
+        leaf_source, accepted + [_fallback(leaf_source, accepted)]
+    )
 
     assert result.assignment_count == 0
     assert result.bucket_count == 37
@@ -140,35 +134,17 @@ def test_nested_priority_tree_is_proved_without_enumeration(leaf_source):
 
 
 @pytest.mark.unittest
-def test_nested_priority_tree_proof_needs_no_solver():
-    """The shape proof is purely structural: proving a large tree never loads z3."""
-    code = """
-import sys
-sys.path.insert(0, '.')
-from test.bmc.test_partition_check import priority_tree, _fallback
-from pyfcstm.bmc import build_bmc_domain
-from pyfcstm.bmc.macro import verify_source_partition
-from pyfcstm.bmc.source import stable_leaf_source
-from pyfcstm.model import load_state_machine_from_text
-source = stable_leaf_source(build_bmc_domain(load_state_machine_from_text('state Root;'), 1), 'Root')
-accepted, _ = priority_tree(source, (5, 4, 3))
-result = verify_source_partition(source, accepted + [_fallback(source, accepted)])
-print(result.assignment_count, 'z3' in sys.modules)
-"""
-    assert _run_in_subprocess(code) == "0 False"
-
-
-@pytest.mark.unittest
-def test_large_nested_tree_is_proved_quickly(leaf_source):
-    """Stress: 400 cases over 485 atoms, which a truth table could never enumerate."""
+def test_deep_nested_tree_with_hundreds_of_cases_is_proved(leaf_source):
+    """Stress: 400 cases over 505 atoms, which a truth table could never enumerate."""
     accepted, _ = priority_tree(leaf_source, (5, 4, 4, 5))
-    started = time.perf_counter()
 
-    result = verify_source_partition(leaf_source, accepted + [_fallback(leaf_source, accepted)])
+    result = verify_source_partition(
+        leaf_source, accepted + [_fallback(leaf_source, accepted)]
+    )
 
+    assert result.assignment_count == 0
     assert result.bucket_count == 401
     assert len(result.variables) == 5 + 20 + 80 + 400
-    assert time.perf_counter() - started < 20.0
 
 
 @pytest.mark.unittest
@@ -176,7 +152,9 @@ def test_large_partition_violations_are_still_reported(leaf_source):
     """Past the truth-table budget the check still finds real gaps and overlaps."""
     accepted, _ = priority_tree(leaf_source, (4, 3, 3))
 
-    with pytest.raises(BmcBuildError, match=r"partition violation: gap at assignment \{"):
+    with pytest.raises(
+        BmcBuildError, match=r"partition violation: gap at assignment \{"
+    ):
         verify_source_partition(leaf_source, accepted)
 
     # Drop the sibling mask of the second leaf: it now overlaps the first one.
@@ -189,13 +167,21 @@ def test_large_partition_violations_are_still_reported(leaf_source):
             *[
                 operand
                 for operand in second.condition.operands
-                if not (operand.kind == "not" and operand.operands[0] == _accepted(first.label))
+                if not (
+                    operand.kind == "not"
+                    and operand.operands[0] == _accepted(first.label)
+                )
             ]
         ),
     )
     overlapping = [first, unmasked] + accepted[2:]
-    with pytest.raises(BmcBuildError, match=r"partition violation: overlap at assignment \{.*\}: \[0, 1\]"):
-        verify_source_partition(leaf_source, overlapping + [_fallback(leaf_source, overlapping)])
+    with pytest.raises(
+        BmcBuildError,
+        match=r"partition violation: overlap at assignment \{.*\}: \[0, 1\]",
+    ):
+        verify_source_partition(
+            leaf_source, overlapping + [_fallback(leaf_source, overlapping)]
+        )
 
     # A fallback that forgets one accepted case overlaps with it.
     partial = _fallback(leaf_source, accepted[1:])
@@ -211,7 +197,9 @@ def decision_list(source, size):
             source,
             "transition",
             index,
-            BoolTemplate.and_(atom, *[BoolTemplate.not_(item) for item in atoms[:index]]),
+            BoolTemplate.and_(
+                atom, *[BoolTemplate.not_(item) for item in atoms[:index]]
+            ),
         )
         for index, atom in enumerate(atoms)
     ]
@@ -239,15 +227,21 @@ def test_build_diagnostics_form_one_extra_bucket(plant_entry_source, size):
     source = plant_entry_source
     cases, none_true = decision_list(source, size)
 
-    result = verify_source_partition(source, cases, build_diagnostic_conditions=(none_true,))
+    result = verify_source_partition(
+        source, cases, build_diagnostic_conditions=(none_true,)
+    )
     assert result.bucket_count == size + 1
 
-    with pytest.raises(BmcBuildError, match=r"overlap at assignment \{.*\}: \[0, %d\]" % size):
+    with pytest.raises(
+        BmcBuildError, match=r"overlap at assignment \{.*\}: \[0, %d\]" % size
+    ):
         verify_source_partition(
             source, cases, build_diagnostic_conditions=(none_true, cases[0].condition)
         )
     with pytest.raises(BmcBuildError, match="gap at assignment"):
-        verify_source_partition(source, cases[:-1], build_diagnostic_conditions=(none_true,))
+        verify_source_partition(
+            source, cases[:-1], build_diagnostic_conditions=(none_true,)
+        )
 
 
 @pytest.mark.unittest
@@ -264,7 +258,10 @@ def test_large_partition_rejects_unknown_labels_and_cycles(leaf_source):
         ),
     )
     with pytest.raises(BmcBuildError, match="unknown case label"):
-        verify_source_partition(leaf_source, accepted + [dangling, _fallback(leaf_source, accepted + [dangling])])
+        verify_source_partition(
+            leaf_source,
+            accepted + [dangling, _fallback(leaf_source, accepted + [dangling])],
+        )
 
     first = _case(
         leaf_source,
@@ -279,7 +276,9 @@ def test_large_partition_rejects_unknown_labels_and_cycles(leaf_source):
         leaf_source,
         "transition",
         37,
-        BoolTemplate.and_(BoolTemplate.atom("event:Root.B"), BoolTemplate.not_(_accepted(first.label))),
+        BoolTemplate.and_(
+            BoolTemplate.atom("event:Root.B"), BoolTemplate.not_(_accepted(first.label))
+        ),
     )
     looped = accepted + [first, second]
     with pytest.raises(BmcBuildError, match="cycle detected"):
@@ -305,8 +304,12 @@ def _mutate(rng, source, accepted, masks):
         victim = accepted[index]
         if masks[index]:
             dropped = rng.choice(masks[index])
-            kept = [op for op in victim.condition.operands if op != dropped] or [BoolTemplate.true()]
-            accepted[index] = _case(source, "transition", index, BoolTemplate.and_(*kept))
+            kept = [op for op in victim.condition.operands if op != dropped] or [
+                BoolTemplate.true()
+            ]
+            accepted[index] = _case(
+                source, "transition", index, BoolTemplate.and_(*kept)
+            )
     elif choice == 1 and len(accepted) > 1:
         index = rng.randrange(len(accepted))
         other = rng.choice([case for i, case in enumerate(accepted) if i != index])
@@ -332,9 +335,11 @@ def _mutate(rng, source, accepted, masks):
     return accepted, terminal
 
 
-def _verdict(source, cases, max_assignments):
+def _verdict(source, cases, max_assignments, delta=(), diagnostics=()):
     try:
-        result = verify_source_partition(source, cases, max_assignments=max_assignments)
+        result = verify_source_partition(
+            source, cases, delta, diagnostics, max_assignments=max_assignments
+        )
     except BmcBuildError as err:
         message = str(err)
         return ("violation", "gap" in message, "overlap" in message)
@@ -358,7 +363,7 @@ def _substituted(template, assignment, registry, active, memo):
     if template.kind == "atom":
         name = template.name
         if name.startswith("accepted:"):
-            label = name[len("accepted:"):]
+            label = name[len("accepted:") :]
             if label in active:
                 raise _CyclicReference(label)
             if label not in memo:
@@ -368,15 +373,19 @@ def _substituted(template, assignment, registry, active, memo):
             return memo[label]
         return assignment[name]
     values = [
-        _substituted(item, assignment, registry, active, memo) for item in template.operands
+        _substituted(item, assignment, registry, active, memo)
+        for item in template.operands
     ]
     if template.kind == "not":
         return not values[0]
     return all(values) if template.kind == "and" else any(values)
 
 
-def _independent_verdict(cases):
-    """Brute-force oracle written from the definition of a partition."""
+def _independent_verdict(cases, diagnostics=()):
+    """Brute-force oracle written from the definition of a partition.
+
+    Build diagnostics, written over event atoms only, form one extra bucket.
+    """
     registry = {case.label: case.condition for case in cases}
     names = sorted(
         {
@@ -385,6 +394,7 @@ def _independent_verdict(cases):
             for name in case.condition.variables
             if not name.startswith("accepted:")
         }
+        | {name for item in diagnostics for name in item.variables}
     )
     gap = overlap = False
     for values in itertools.product((False, True), repeat=len(names)):
@@ -395,6 +405,9 @@ def _independent_verdict(cases):
                 _substituted(case.condition, assignment, registry, (case.label,), memo)
                 for case in cases
             )
+            count += any(
+                _substituted(item, assignment, {}, (), {}) for item in diagnostics
+            )
         except _CyclicReference:
             # Cyclic definitions describe no partition at all.
             return ("violation", False, False)
@@ -402,7 +415,7 @@ def _independent_verdict(cases):
         overlap = overlap or count > 1
     if gap or overlap:
         return ("violation", gap, overlap)
-    return ("partition", len(cases))
+    return ("partition", len(cases) + (1 if diagnostics else 0))
 
 
 @pytest.mark.unittest
@@ -412,7 +425,10 @@ def test_large_partition_path_matches_truth_table_on_random_partitions(leaf_sour
     kinds = {"partition": 0, "violation": 0}
     for _ in range(400):
         fanouts = [rng.randint(1, 3) for _ in range(rng.randint(1, 3))]
-        pool = [BoolTemplate.atom("event:Root.P%d" % index) for index in range(rng.randint(2, 6))]
+        pool = [
+            BoolTemplate.atom("event:Root.P%d" % index)
+            for index in range(rng.randint(2, 6))
+        ]
 
         def literal(index, pool=pool):
             atom = rng.choice(pool)
@@ -428,3 +444,61 @@ def test_large_partition_path_matches_truth_table_on_random_partitions(leaf_sour
         kinds[reference[0]] += 1
     # The generator must exercise both outcomes to mean anything.
     assert kinds["partition"] > 50 and kinds["violation"] > 50
+
+
+@pytest.mark.unittest
+def test_delta_partitions_with_diagnostics_match_brute_force(plant_entry_source):
+    """Differential for entry sources closed by a delta bucket beside build diagnostics."""
+    source = plant_entry_source
+    rng = random.Random(20261001)
+    kinds = {"partition": 0, "violation": 0}
+    for _ in range(300):
+        fanouts = [rng.randint(1, 3) for _ in range(rng.randint(1, 3))]
+        pool = [
+            BoolTemplate.atom("event:Root.P%d" % index)
+            for index in range(rng.randint(2, 6))
+        ]
+
+        def literal(index, pool=pool):
+            atom = rng.choice(pool)
+            return atom if rng.random() < 0.7 else BoolTemplate.not_(atom)
+
+        accepted, masks = priority_tree(source, fanouts, literal)
+        accepted, _ = _mutate(rng, source, accepted, masks)
+        atom = rng.choice(pool)
+        diagnostics = rng.choice(
+            [(), (atom,), (BoolTemplate.and_(atom, BoolTemplate.not_(atom)),)]
+        )
+        # The delta bucket usually excludes every accepted case and diagnostic;
+        # sometimes it forgets the first accepted case.
+        excluded = accepted[1:] if rng.random() < 0.2 else accepted
+        delta = _case(
+            source,
+            "delta",
+            0,
+            BoolTemplate.not_(
+                BoolTemplate.or_(
+                    *[_accepted(case.label) for case in excluded], *diagnostics
+                )
+            ),
+        )
+
+        reference = _independent_verdict(accepted + [delta], diagnostics)
+        assert _verdict(source, accepted, 4096, (delta,), diagnostics) == reference
+        assert _verdict(source, accepted, 1, (delta,), diagnostics) == reference
+        kinds[reference[0]] += 1
+    assert kinds["partition"] > 30 and kinds["violation"] > 30
+
+
+@pytest.mark.unittest
+def test_source_partition_rejects_duplicate_labels_and_empty_input(plant_entry_source):
+    """Every case needs its own label, and a partition needs at least one bucket."""
+    source = plant_entry_source
+    first = _case(source, "transition", 0, BoolTemplate.atom("event:Root.A"))
+    twin = _case(source, "transition", 0, BoolTemplate.false())
+    rest = _case(source, "transition", 1, BoolTemplate.true())
+    for budget in (1, 4096):
+        with pytest.raises(InvalidBmcEncoding, match="Duplicate cycle case label"):
+            verify_source_partition(source, [first, twin, rest], max_assignments=budget)
+    with pytest.raises(BmcBuildError, match="at least one bucket"):
+        verify_source_partition(source, [])

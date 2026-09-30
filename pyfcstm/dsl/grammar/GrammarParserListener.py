@@ -293,6 +293,30 @@ class GrammarParserListener(ParseTreeListener):
     ):
         pass
 
+    # Enter a parse tree produced by GrammarParser#history_marker.
+    def enterHistory_marker(self, ctx: GrammarParser.History_markerContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#history_marker.
+    def exitHistory_marker(self, ctx: GrammarParser.History_markerContext):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#history_definition.
+    def enterHistory_definition(self, ctx: GrammarParser.History_definitionContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#history_definition.
+    def exitHistory_definition(self, ctx: GrammarParser.History_definitionContext):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#history_default_path.
+    def enterHistory_default_path(self, ctx: GrammarParser.History_default_pathContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#history_default_path.
+    def exitHistory_default_path(self, ctx: GrammarParser.History_default_pathContext):
+        pass
+
     # Enter a parse tree produced by GrammarParser#enterOperations.
     def enterEnterOperations(self, ctx: GrammarParser.EnterOperationsContext):
         pass

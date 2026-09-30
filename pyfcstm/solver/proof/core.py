@@ -405,7 +405,7 @@ class PolynomialStep:
 
     :param coefficients: Sparse monomial/coefficient pairs; an empty monomial is constant.
     :param strict: Whether the polynomial is strictly positive.
-    :param rule: Input relation, semantic fact, square, product or nonnegative sum.
+    :param rule: Input relation, semantic fact, square, product, lattice strengthening or nonnegative sum.
     :param premises: Earlier step indices used by the deduction.
     :param weights: Nonnegative rational weights of a linear combination.
     :param term_id: Original local literal or typed operation for semantic evidence.

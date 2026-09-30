@@ -781,3 +781,46 @@ def test_square_completion_limit_keeps_other_exact_candidates_available(monkeypa
     )))
     assert report.reading_status == 'complete'
     assert report.gaps == ()
+
+
+@pytest.mark.parametrize('constant', [3, -3])
+def test_integer_polynomial_lattice_refutes_nonintegral_product(constant):
+    graph = _graph((('=', ('*', 2, 'x', 'y'), constant),))
+    graph = replace(graph, terms=tuple(replace(term, sort='Int') if term.sort == 'Real' else term
+                                       for term in graph.terms))
+    certificate = _certificate(graph)
+    assert 'integer_round' in [step.rule for step in certificate.steps]
+
+
+@pytest.mark.parametrize('mutation', ['parent', 'weights', 'factor', 'coefficient', 'strict', 'real_sort'])
+def test_integer_polynomial_lattice_rejects_changed_evidence(mutation):
+    from pyfcstm.solver.proof.polynomial import check_polynomial_certificate
+
+    graph = _graph((('=', ('*', 2, 'x', 'y'), 3),))
+    graph = replace(graph, terms=tuple(replace(term, sort='Int') if term.sort == 'Real' else term
+                                       for term in graph.terms))
+    certificate = _certificate(graph)
+    steps = list(certificate.steps)
+    index = next(i for i, step in enumerate(steps) if step.rule == 'integer_round')
+    step = steps[index]
+    if mutation == 'real_sort':
+        graph = replace(graph, terms=tuple(replace(term, sort='Real') if term.sort == 'Int' else term
+                                           for term in graph.terms))
+    else:
+        changes = {
+            'parent': {'premises': ()},
+            'weights': {'weights': ('1',)},
+            'factor': {'factor': (((), '1'),)},
+            'coefficient': {'coefficients': (((), '-1'),)},
+            'strict': {'strict': True},
+        }
+        steps[index] = replace(step, **changes[mutation])
+        certificate = replace(certificate, steps=tuple(steps))
+    assert not check_polynomial_certificate(graph.node(graph.root_id), graph, certificate)
+
+
+def test_real_polynomial_product_has_no_integer_rounding_refutation():
+    from pyfcstm.solver.proof.polynomial import polynomial_certificate
+
+    graph = _graph((('=', ('*', 2, 'x', 'y'), 3),))
+    assert polynomial_certificate(graph.node(graph.root_id), graph, SolveBudget(None)) is None

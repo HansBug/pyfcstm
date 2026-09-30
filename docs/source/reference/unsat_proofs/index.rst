@@ -225,7 +225,7 @@ does not abort other candidate checks.
 
 Polynomial evidence is compositional. Its rules are ``input``, ``square``,
 ``square_zero``, ``product``, ``positive_factor``, ``cancel_positive``, ``sum``, ``equality_product``,
-``power_sign`` and ``power_identity``. They cover exact polynomial identities,
+``integer_round``, ``power_sign`` and ``power_identity``. They cover exact polynomial identities,
 nonnegative products, cancellation of a strictly positive factor, and the fact
 that a square bounded above by zero has a zero factor. A nonnegative factor of
 a strictly signed product is strictly positive; its evidence records both the
@@ -233,6 +233,12 @@ product and the factor's nonnegative bound before cancellation. Negated real equ
 become strictly positive squares. Domain-conditioned power rules establish
 positivity for positive bases and rational-power identities on valid domains;
 no missing domain condition is added to the submitted query.
+
+The ``integer_round`` step strengthens a polynomial bound using the rational
+value lattices of its monomials. Products of integer atoms retain integrality;
+real atoms without a proved lattice prevent this strengthening. Exact replay
+recomputes the lattice and the resulting bound, including strict endpoints.
+For example, ``2*x*y = 3`` for integers yields incompatible rounded bounds.
 
 Search shares these facts across sign propagation, equality substitution and
 integer-power order identities. The odd-degree identity is parameterized by the

@@ -10,6 +10,31 @@ from pyfcstm.solver.proof import UnsatReport
 pytestmark = pytest.mark.unittest
 
 
+@pytest.mark.parametrize('product,status', [(3, 'unsat'), (6, 'sat')])
+def test_fbmcq_remainder_product_contradiction_uses_integer_evidence(product, status, text_aligner):
+    model = load_state_machine_from_text('def int x=0; def int y=0; state Root { state A; [*]->A; }')
+    core = build_bmc_core_formula(BmcEngine(model).prepare('''
+        init state("Root.A") havoc {x,y};
+        assume at 0: x%%2==0;
+        assume at 0: x*y==%d;
+        check reach <= 1: active("Root.A");
+    ''' % product))
+    objective = compile_bmc_property(core)
+    report = explain_unsat(UnsatQuery('query_integer_product', tuple(
+        UnsatConstraint(key, (expression,)) for key, expression in (
+            ('domain', core.domain_formula), ('initial', core.initial_formula),
+            ('transitions', core.transition_formula), ('environment', core.environment_formula),
+            ('objective', objective.objective_formula),
+        ))), timeout_ms=30000)
+    assert report.solver_status == status
+    if status == 'unsat':
+        assert report.reading_status == 'complete'
+        assert report.gaps == ()
+        _check_reading_levels(report, text_aligner)
+    else:
+        assert report.proof is None
+
+
 def test_three_event_cardinality_has_a_complete_native_proof(text_aligner):
     """FBMCQ's actual AtMost encoding is covered, including native PB lemmas."""
     model = load_state_machine_from_text('''
@@ -400,3 +425,61 @@ def test_composite_square_proofs_survive_bmc_embedding(predicate, text_aligner):
     assert report.reading_status == 'complete'
     assert report.gaps == ()
     _check_reading_levels(report, text_aligner)
+
+
+@pytest.mark.parametrize('predicate,status', [
+    ('abs(x)<0', 'unsat'), ('abs(x)>=0', 'sat'),
+    ('sign(x)>1', 'unsat'), ('sign(x)==1', 'sat'),
+    ('x>=0 && trunc(x)<0', 'unsat'), ('x>=0 && trunc(x)>=0', 'sat'),
+    ('x==2.5 && round(x)!=2', 'unsat'), ('x==2.5 && round(x)==2', 'sat'),
+    ('x==-2.5 && round(x)!=-2', 'unsat'), ('x==-2.5 && round(x)==-2', 'sat'),
+    ('x==-1 && (x<0 || sqrt(x)>0)', 'sat'),
+    ('x==-1 && !(x<0 || sqrt(x)>0)', 'unsat'),
+])
+def test_lowered_numeric_functions_and_short_circuit_domains(predicate, status, text_aligner):
+    model = load_state_machine_from_text('def float x=0; state Root { state A; [*]->A; }')
+    core = build_bmc_core_formula(BmcEngine(model).prepare(
+        'init state("Root.A") havoc {x}; check reach <= 1: %s;' % predicate))
+    objective = compile_bmc_property(core)
+    report = explain_unsat(UnsatQuery('numeric_functions', tuple(
+        UnsatConstraint(key, (expression,)) for key, expression in (
+            ('domain', core.domain_formula), ('initial', core.initial_formula),
+            ('transitions', core.transition_formula), ('environment', core.environment_formula),
+            ('objective', objective.objective_formula),
+        ))), timeout_ms=30000)
+    assert report.solver_status == status
+    if status == 'unsat':
+        assert report.reading_status == 'complete'
+        assert report.gaps == ()
+        _check_reading_levels(report, text_aligner)
+    else:
+        assert report.proof is None
+
+
+@pytest.mark.parametrize('comparison,status', [('!=', 'unsat'), ('==', 'sat')])
+def test_exit_transition_and_entry_effects_compose_in_the_proof(comparison, status, text_aligner):
+    model = load_state_machine_from_text('''
+        def int x=0; def int untouched=7;
+        state Root {
+            state A { exit { x=x+5; } }
+            state B { enter { x=x+2; } }
+            [*]->A;
+            A->B effect { x=x+3; }
+        }
+    ''')
+    core = build_bmc_core_formula(BmcEngine(model).prepare(
+        'init state("Root.A"); check reach <= 1: active("Root.B") && x%s10 && untouched==7;' % comparison))
+    objective = compile_bmc_property(core)
+    report = explain_unsat(UnsatQuery('lifecycle_effects', tuple(
+        UnsatConstraint(key, (expression,)) for key, expression in (
+            ('domain', core.domain_formula), ('initial', core.initial_formula),
+            ('transitions', core.transition_formula), ('environment', core.environment_formula),
+            ('objective', objective.objective_formula),
+        ))), timeout_ms=30000)
+    assert report.solver_status == status
+    if status == 'unsat':
+        assert report.reading_status == 'complete'
+        assert report.gaps == ()
+        _check_reading_levels(report, text_aligner)
+    else:
+        assert report.proof is None

@@ -418,7 +418,7 @@ def _validate(value):
             raise ValueError('divisibility sum must have an integer-free range')
     elif isinstance(value, proof.PolynomialStep):
         _choice(value.rule, ('input', 'square', 'square_zero', 'product', 'cancel_positive', 'positive_factor',
-                             'sum', 'power_sign', 'power_identity', 'equality_product'))
+                             'sum', 'power_sign', 'power_identity', 'equality_product', 'integer_round'))
         for polynomial in (value.coefficients, value.factor):
             _distinct(tuple(monomial for monomial, _ in polynomial))
             for monomial, coefficient in polynomial:

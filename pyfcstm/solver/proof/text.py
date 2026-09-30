@@ -580,6 +580,9 @@ def _render(reading, language, detail):
                     elif step.rule == 'equality_product':
                         reason = choose('Multiply the established equality by ', '已证明的等式乘以 ') + _polynomial_text(step.factor, terms) + '; ' + ', '.join(
                             'Q%d' % (parent + 1) for parent in step.premises)
+                    elif step.rule == 'integer_round':
+                        reason = choose('Strengthen using the proved value lattice: ',
+                                        '按已证明的离散取值收紧：') + 'Q%d' % (step.premises[0] + 1)
                     elif step.rule == 'product':
                         reason = choose('Multiply nonnegative factors: ', '非负因子相乘：') + ' * '.join(
                             'Q%d' % (parent + 1) for parent in step.premises)

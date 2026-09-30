@@ -142,10 +142,20 @@ def capture_proof(query, budget, names, source_adapter):
                 raise TypeError('source binding expression must be a Z3 expression')
             if original_context is not None and binding.expression.ctx != original_context:
                 raise ValueError('source binding must use the query context')
-        translated_names = () if names is None else tuple(
-            (entry.symbol.translate(context), entry.display)
-            for entry in names.entries if entry.symbol.ctx == original_context
-        )
+        entries = () if names is None else tuple(entry for entry in names.entries if entry.symbol.ctx == original_context)
+        originals = tuple(expression for group in groups for expression in group.expressions)
+        originals += tuple(entry.symbol for entry in entries)
+        if original_context is not None:
+            originals += tuple(binding.expression for binding in source_bindings)
+        # One translation preserves shared ASTs across assertions, names and
+        # source bindings. Separate translations duplicate algebraic values.
+        vector = z3.AstVector(ctx=original_context)
+        for expression in originals:
+            budget.checkpoint('proof capture')
+            vector.push(expression)
+        vector = vector.translate(context)
+        translated_terms = {expression.get_id(): vector[index] for index, expression in enumerate(originals)}
+        translated_names = tuple((translated_terms[entry.symbol.get_id()], entry.display) for entry in entries)
         # Keep handles alive: Z3 can reuse an AST id after its last reference dies.
         displays = {symbol.get_id(): display for symbol, display in translated_names}
         terms = _Terms(displays, budget)
@@ -154,7 +164,7 @@ def capture_proof(query, budget, names, source_adapter):
         for background, groups in ((True, query.background), (False, query.constraints)):
             for group in groups:
                 for index, expression in enumerate(group.expressions):
-                    translated = expression.translate(context)
+                    translated = translated_terms[expression.get_id()]
                     term_id = terms.intern(translated)
                     occurrence = 'i%d' % len(inputs)
                     inputs.append(ProofInput(occurrence, group.stable_id, index,
@@ -220,7 +230,7 @@ def capture_proof(query, budget, names, source_adapter):
         bound_sources = []
         for binding in source_bindings:
             budget.checkpoint('proof capture')
-            expression = binding.expression.translate(context)
+            expression = translated_terms[binding.expression.get_id()]
             if expression.get_id() in terms.identities:
                 description = source_adapter.describe(binding.source)
                 if not isinstance(description, SourceDescription):

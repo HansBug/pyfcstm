@@ -353,6 +353,32 @@ def _solve_weights(rows, budget, solver):
     return weights
 
 
+def _integer_bound(polynomial, strict, graph):
+    """Strengthen a polynomial using proved lattices of all its monomials."""
+    from .arithmetic import _gcd, integer_lattice, lattice_ceiling, multiply_lattices
+
+    offset, step, values = Fraction(0), Fraction(0), {}
+    for monomial, coefficient in polynomial.items():
+        product = Fraction(1), Fraction(0)
+        for atom in monomial:
+            lattice = integer_lattice(atom, graph, values)
+            if lattice is None:
+                return polynomial, strict
+            product = multiply_lattices(product, lattice)
+        offset += coefficient * product[0]
+        step = _gcd(step, abs(coefficient) * product[1])
+    if not step:
+        return polynomial, strict
+    largest = lattice_ceiling(-offset, step, 'lt' if strict else 'le')
+    result = dict(polynomial)
+    constant = result.get((), Fraction(0)) + largest
+    if constant:
+        result[()] = constant
+    else:
+        result.pop((), None)
+    return result, False
+
+
 class _Search:
     def __init__(self, node, graph, budget):
         import z3
@@ -524,6 +550,12 @@ class _Search:
 
     def deduce(self):
         before = len(self.facts)
+        for index in range(before):
+            self.budget.checkpoint('polynomial integer bounds')
+            polynomial, strict = self.facts[index]
+            rounded = _integer_bound(polynomial, strict, self.graph)
+            if rounded != (polynomial, strict):
+                self.record(*rounded, 'integer_round', premises=(index,))
         result = self.finish()
         if result is not None:
             return result
@@ -835,20 +867,34 @@ class _Search:
         from .semantics import add_semantic_facts
 
         add_semantic_facts(self)
+        # Eliminate authored variables before interpreted integer atoms such
+        # as div/mod, retaining their integral representation under substitution.
+        def monomial_order(monomial):
+            return len(monomial), tuple(sorted(
+                (self.graph.term(atom).operator_kind == 'uninterpreted', atom) for atom in monomial))
+
         equations = []
         for index, (polynomial, strict) in enumerate(self.facts):
             opposite = self.fact_indices.get((_packed(_scale(polynomial, -1)), False))
             if not strict and polynomial and opposite is not None and index < opposite:
-                leading = max(polynomial, key=lambda m: (len(m), m))
+                leading = max(polynomial, key=monomial_order)
                 if leading:
                     equations.append((index, opposite, leading))
-        equations.sort(key=lambda item: (len(item[2]), item[2], item[0]))
+        # Substitute sparse equalities first, preserving relations between the
+        # remaining atoms until known values have been propagated.
+        equations.sort(key=lambda item: (len(self.facts[item[0]][0]), len(item[2]), item[2], item[0]))
         for target, (original, strict) in enumerate(tuple(self.facts)):
             polynomial = original
             while polynomial:
                 replacement = None
-                for monomial in sorted(polynomial, key=lambda m: (len(m), m), reverse=True):
-                    for index, opposite, leading in equations:
+                for index, opposite, leading in equations:
+                    # An equation or a scalar copy cannot simplify itself.
+                    equality = self.facts[index][0]
+                    if (set(equality) == set(polynomial) and all(
+                            equality[key] * polynomial[leading] == polynomial[key] * equality[leading]
+                            for key in equality)):
+                        continue
+                    for monomial in sorted(polynomial, key=monomial_order, reverse=True):
                         remaining = list(monomial)
                         for atom in leading:
                             if atom not in remaining:
@@ -863,7 +909,7 @@ class _Search:
                     break
                 index, opposite, monomial, factor = replacement
                 equality = self.facts[index][0]
-                leading = max(equality, key=lambda m: (len(m), m))
+                leading = max(equality, key=monomial_order)
                 weight = -polynomial[monomial] / equality[leading]
                 multiplier = {factor: weight}
                 product = self.record(_multiply(equality, multiplier, self.budget), False,
@@ -986,6 +1032,11 @@ def check_polynomial_certificate(node, graph, certificate, *, budget=None):
                 left, right = (facts[parent] for parent in step.premises)
                 if (left[1] or right[1] or left[0] != _scale(right[0], -1) or
                         polynomial != _multiply(left[0], _unpacked(step.factor, graph), budget)):
+                    return False
+            elif step.rule == 'integer_round':
+                if len(step.premises) != 1 or step.weights or step.factor:
+                    return False
+                if (polynomial, step.strict) != _integer_bound(*facts[step.premises[0]], graph):
                     return False
             elif step.rule == 'sum':
                 if len(step.premises) != len(step.weights) or step.factor:

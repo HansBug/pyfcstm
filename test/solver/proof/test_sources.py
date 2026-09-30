@@ -10,6 +10,31 @@ from pyfcstm.solver.proof import ProofExtensions, SourceAdapter, SourceDescripti
 pytestmark = pytest.mark.unittest
 
 
+def test_algebraic_source_binding_shares_the_assertions_translated_value(text_aligner):
+    from pyfcstm.solver.proof import SourceBinding, UnsatReport
+
+    x = z3.Real('value')
+    root = z3.simplify(z3.Sqrt(z3.RealVal(2)))
+    description = SourceDescription('sqrt-two', 'Exact square root of two', 'constants.fcstm', (1, 1, 1, 8))
+
+    class Sources(SourceAdapter):
+        def bindings(self):
+            return (SourceBinding(root, description),)
+
+    report = explain_unsat(UnsatQuery('algebraic_source', (
+        UnsatConstraint('contradiction', (z3.And(x == root, x != root),)),
+    )), extensions=ProofExtensions(source_adapter=Sources()))
+    assert report.solver_status == 'unsat'
+    assert report.reading_status == 'complete'
+    binding, = report.proof.source_bindings
+    assert binding.description == description
+    assert report.proof.term(binding.term_id).kind == 'algebraic'
+    assert any(link.term_id == binding.term_id for block in report.reading.blocks for link in block.source_links)
+    loaded = UnsatReport.from_canonical(report.to_canonical())
+    for language in ('en', 'zh'):
+        text_aligner.assert_equal(report.reading.to_text(language), loaded.reading.to_text(language))
+
+
 def test_construction_binding_matches_an_actual_subterm_and_prints_its_role(text_aligner):
     from pyfcstm.solver.proof import SourceBinding
 

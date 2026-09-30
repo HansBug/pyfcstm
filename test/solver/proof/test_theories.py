@@ -8,6 +8,32 @@ from pyfcstm.solver import UnsatConstraint, UnsatQuery, UnsatReport, explain_uns
 pytestmark = pytest.mark.unittest
 
 
+@pytest.mark.parametrize('modulus,product', [(2, 3), (2, -3), (-2, 3)])
+@pytest.mark.parametrize('reverse', [False, True])
+@pytest.mark.parametrize('form', ['plain', 'cast', 'swapped'])
+def test_integer_remainder_and_product_share_checked_lattice_reasoning(modulus, product, reverse, form, text_aligner):
+    x, y = z3.Ints('counter factor' if form == 'plain' else 'z a')
+    expression = z3.ToReal(x)*z3.ToReal(y) if form == 'cast' else y*x if form == 'swapped' else x*y
+    groups = (UnsatConstraint('multiple', (x % modulus == 0,)),
+              UnsatConstraint('product', (expression == product,)))
+    report = explain_unsat(UnsatQuery('integer_product', tuple(reversed(groups)) if reverse else groups), timeout_ms=30000)
+    assert report.solver_status == 'unsat'
+    assert report.reading_status == 'complete'
+    assert report.gaps == ()
+    restored = UnsatReport.from_canonical(report.to_canonical())
+    for language in ('en', 'zh'):
+        text_aligner.assert_equal(report.reading.to_text(language), restored.reading.to_text(language))
+
+
+def test_compatible_remainder_and_product_stay_satisfiable():
+    x, y = z3.Ints('counter factor')
+    report = explain_unsat(UnsatQuery('compatible_product', (
+        UnsatConstraint('multiple', (x % 2 == 0,)), UnsatConstraint('product', (x*y == 6,)),
+    )), timeout_ms=5000)
+    assert report.solver_status == 'sat'
+    assert report.proof is None
+
+
 @pytest.mark.parametrize('count', [3, 8, 32])
 def test_event_cardinality_conflict_has_a_checked_counting_derivation(count):
     """Two enabled events exceed the declared one-event capacity."""
@@ -479,6 +505,34 @@ def test_arithmetic_capture_retries_when_legacy_profile_cannot_produce_proof(exp
     assert report.scope_check == 'passed'
 
 
+@pytest.mark.parametrize('radicand', [2, 3])
+@pytest.mark.parametrize('reverse', [False, True])
+def test_algebraic_equality_contradiction_has_an_original_input_proof(radicand, reverse, text_aligner):
+    x = z3.Real('algebraic_value')
+    value = z3.simplify(z3.Sqrt(z3.RealVal(radicand)))
+    groups = (UnsatConstraint('equal', (x == value,)), UnsatConstraint('different', (x != value,)))
+    query = UnsatQuery('algebraic_conflict', tuple(reversed(groups)) if reverse else groups)
+    report = explain_unsat(query, timeout_ms=5000)
+    assert report.solver_status == 'unsat'
+    assert report.input_check == 'passed'
+    assert report.scope_check == 'passed'
+    assert report.reading_status == 'complete'
+    assert report.gaps == ()
+    used = {occurrence for node in report.proof.nodes for occurrence in node.input_occurrences}
+    assert {item.constraint_id for item in report.proof.inputs if item.occurrence_id in used} == {'equal', 'different'}
+    restored = UnsatReport.from_canonical(report.to_canonical())
+    for language in ('en', 'zh'):
+        text_aligner.assert_equal(report.reading.to_text(language), restored.reading.to_text(language))
+
+
+def test_algebraic_equality_without_its_negation_stays_satisfiable():
+    x = z3.Real('algebraic_value')
+    value = z3.simplify(z3.Sqrt(z3.RealVal(2)))
+    report = explain_unsat(UnsatQuery('algebraic_value', (UnsatConstraint('equal', (x == value,)),)), timeout_ms=5000)
+    assert report.solver_status == 'sat'
+    assert report.proof is None
+
+
 @pytest.mark.parametrize('spent_seconds', [0.04, 0.2])
 def test_arithmetic_capture_retry_shares_deadline_and_keeps_unknown_honest(monkeypatch, spent_seconds):
     import time
@@ -724,3 +778,16 @@ def test_expanded_composite_square_text_has_the_complete_checked_derivation(lang
     report = UnsatReport.from_canonical(json.loads((fixtures / 'expanded_square.json').read_text('utf-8')))
     expected = (fixtures / ('expanded_square.%s.txt' % language)).read_text('utf-8')
     text_aligner.assert_equal(expected, report.reading.to_text(language, 'detailed'))
+
+
+@pytest.mark.parametrize('language', ['en', 'zh'])
+@pytest.mark.parametrize('detail', ['brief', 'standard', 'detailed'])
+def test_integer_product_reading_shows_the_full_checked_derivation(language, detail, text_aligner):
+    import json
+    from pathlib import Path
+
+    fixtures = Path(__file__).parent / 'proof_readings'
+    report = UnsatReport.from_canonical(json.loads((fixtures / 'integer_product.json').read_text('utf-8')))
+    assert report.reading_status == 'complete'
+    expected = (fixtures / ('integer_product.%s.%s.txt' % (language, detail))).read_text('utf-8')
+    text_aligner.assert_equal(expected, report.reading.to_text(language, detail))

@@ -11,6 +11,20 @@ def _gcd(left, right):
                     left.denominator * right.denominator)
 
 
+def multiply_lattices(left, right):
+    """Contain the product of two rational value lattices."""
+    offset, step = left
+    other_offset, other_step = right
+    return (offset * other_offset,
+            _gcd(_gcd(abs(offset) * other_step, abs(other_offset) * step), step * other_step))
+
+
+def lattice_ceiling(offset, step, relation):
+    """Largest lattice value satisfying a strict or closed upper bound of zero."""
+    index = ceil(-offset / step) - 1 if relation == 'lt' else floor(-offset / step)
+    return offset + step * index
+
+
 def integer_lattice(term_id, graph, values=None):
     """Return a proved (offset, step) containing all values, or None.
 
@@ -46,9 +60,7 @@ def integer_lattice(term_id, graph, values=None):
                 offset, step = Fraction(1), Fraction(0)
                 for other_offset, other_step in parts:
                     # (a+sZ)(b+tZ) is contained in ab+gcd(at,bs,st)Z.
-                    step = _gcd(_gcd(abs(offset) * other_step, abs(other_offset) * step),
-                                step * other_step)
-                    offset *= other_offset
+                    offset, step = multiply_lattices((offset, step), (other_offset, other_step))
                 values[key] = offset, step
             else:
                 offset, step = parts[0]
@@ -75,6 +87,5 @@ def strengthen_bound(coefficients, constant, relation, graph):
         step = _gcd(step, abs(coefficient) * other_step)
     if step == 0:
         return constant, relation
-    index = ceil(-offset / step) - 1 if relation == 'lt' else floor(-offset / step)
-    largest = offset + step * index
+    largest = lattice_ceiling(offset, step, relation)
     return constant - largest, 'le'

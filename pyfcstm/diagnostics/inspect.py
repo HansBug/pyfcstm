@@ -2677,7 +2677,9 @@ def _build_reachability_graph(
             continue
         if transition.from_path == _INIT_MARK:
             initial_edges[transition.to_path.rsplit('.', 1)[0]].update(chain)
-        else:
+        elif transition.from_path in adjacency:
+            # A source that names no state (a misspelling kept by collect mode)
+            # contributes no edge, as in the loop above.
             adjacency[transition.from_path].update(chain)
 
     for state in states:
@@ -4294,7 +4296,8 @@ def inspect_model(
     inspect surface.
 
     A machine that uses ``[H]`` / ``[H*]`` history is reported as written:
-    model conversion keeps the model before history lowering, and the report,
+    model conversion can also build the model before history lowering
+    (``StateMachine._as_written()``), and the report,
     its findings and the optional verify run describe that model, with each
     history entry an ordinary transition marked by ``target_history``. The
     lowered variables, gate states and route initials therefore appear nowhere

@@ -68,7 +68,7 @@ except ImportError:  # pragma: no cover - Python < 3.8 compatibility
 from ..dsl import EXIT_STATE, INIT_STATE
 
 if TYPE_CHECKING:  # pragma: no cover - imports used only by static type checkers
-    from ..model import State, StateMachine
+    from ..model import State, StateMachine, Transition
     from ..model.history import HistoryOwner
 
 EXIT_ROOT_SINK = "⊥_root"
@@ -384,7 +384,7 @@ def _initial_leaf_targets(
 
 def _project_entry(
     parent_state: State,
-    transition: object,
+    transition: "Transition",
     history_owners: Optional[Mapping[str, "HistoryOwner"]],
 ) -> Tuple[str, ...]:
     """Project taking ``transition``, declared in ``parent_state``.
@@ -435,6 +435,12 @@ def build_leaf_level_macro_graph(machine: StateMachine) -> LeafLevelGraph:
     it carries ``E_DANGLING_TRANSITION`` -- so the projection of a strictly
     built model is unaffected.
 
+    In a machine with ``[H]`` / ``[H*]`` history, an entry into a history
+    reaches its owner as an ordinary entry does and, as ordinary targets, every
+    state on the default path of the kind it names; the route initials of a
+    lowered machine are not followed. This over-approximates what a restore
+    reaches.
+
     :param machine: State machine to project.
     :type machine: StateMachine
     :return: Leaf-level macro graph.
@@ -459,7 +465,27 @@ def build_leaf_level_macro_graph(machine: StateMachine) -> LeafLevelGraph:
         >>> graph.edges["Root.Idle"]
         ('⊥_root',)
     """
-    return _macro_graph(machine)
+    return _macro_graph(machine, _history_owners(machine))
+
+
+def _history_owners(machine: StateMachine) -> Optional[Dict[str, "HistoryOwner"]]:
+    """Return the machine's history owners by dotted path, or ``None`` without any.
+
+    Every topology projection of a machine with history follows its entries
+    into a history to the states of their default path and leaves route
+    initials out (see :func:`_project_entry`). A route stands for restores,
+    which only re-enter leaves reached before, and every such leaf is also
+    reached from its owner's initial descent or default, so the projection
+    keeps the reachable set and every reachability relation between leaves.
+
+    :param machine: State machine to project.
+    :type machine: StateMachine
+    :return: Owners by dotted owner path, or ``None``.
+    :rtype: Optional[Dict[str, pyfcstm.model.history.HistoryOwner]]
+    """
+    if not machine.history_owners:
+        return None
+    return {".".join(owner.owner_path): owner for owner in machine.history_owners}
 
 
 def _macro_graph(
@@ -587,7 +613,7 @@ def topological_reachable_set(machine: StateMachine) -> Dict[str, Tuple[str, ...
     result: Dict[str, Tuple[str, ...]] = {}
     for state in machine.walk_states():
         state_path = _state_path(state)
-        starts = _initial_leaf_targets(state)
+        starts = _initial_leaf_targets(state, _history_owners(machine))
         reachable = _closure_from(graph.edges, starts)
         reachable.discard(EXIT_ROOT_SINK)
         if state.is_leaf_state:
@@ -602,7 +628,9 @@ def unreachable_states(machine: StateMachine) -> Tuple[str, ...]:
 
     The result uses topology reachability from the root initial descent and
     filters out pseudo leaf states. Composite states are not returned directly;
-    their unreachable leaf descendants are reported instead.
+    their unreachable leaf descendants are reported instead. History entries
+    follow the rule of :func:`build_leaf_level_macro_graph`, so a leaf reached
+    only as a history default is reachable.
 
     :param machine: State machine to inspect.
     :type machine: StateMachine
@@ -628,7 +656,7 @@ def unreachable_states(machine: StateMachine) -> Tuple[str, ...]:
     root_path = _state_path(machine.root_state)
     # History routes lead to every leaf a restore could re-enter, but a restore
     # only re-enters leaves already reached; only the defaults add reachability.
-    history_owners = {".".join(owner.owner_path): owner for owner in machine.history_owners}
+    history_owners = _history_owners(machine)
     graph = _macro_graph(machine, history_owners)
     reachable = _closure_from(
         graph.edges, _initial_leaf_targets(machine.root_state, history_owners)
@@ -826,7 +854,9 @@ def _root_reachable_leaf_paths(
         >>> sorted(_root_reachable_leaf_paths(machine, graph))
         ['Root.A']
     """
-    reachable = _closure_from(graph.edges, _initial_leaf_targets(machine.root_state))
+    reachable = _closure_from(
+        graph.edges, _initial_leaf_targets(machine.root_state, _history_owners(machine))
+    )
     reachable.discard(EXIT_ROOT_SINK)
     return reachable
 
@@ -1004,7 +1034,7 @@ def _root_reachable_initial_state_paths(
     for state in machine.walk_states():
         if state.is_leaf_state:
             continue
-        if reachable_leaves.intersection(_initial_leaf_targets(state)):
+        if reachable_leaves.intersection(_initial_leaf_targets(state, _history_owners(machine))):
             reachable_paths.add(_state_path(state))
     return reachable_paths
 

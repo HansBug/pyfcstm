@@ -436,6 +436,35 @@ def test_history_entries_reach_the_states_of_their_default(text, unreachable):
 
 
 @pytest.mark.unittest
+def test_a_history_entry_from_a_misspelled_source_is_reported_not_raised():
+    report = _report(
+        "state R { state Off; state O { state A; state B; [*] -> A; [H] -> B; } "
+        "[*] -> Off; Of -> O.[H] :: Resume; !O -> Off :: Stop; }",
+        **VERIFY_STRUCTURAL,
+    )
+    assert "E_MISSING_STATE" in {item.code for item in report.diagnostics}
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("options", [VERIFY_STRUCTURAL, VERIFY_SMT], ids=["verify", "verify-smt"])
+def test_verify_follows_history_defaults(options):
+    # B is entered only as the shallow default; the event it consumes is live.
+    text = """
+    state R {
+        state Off;
+        state O { state A; state B; [*] -> A; [H] -> B; B -> A :: Back; }
+        [*] -> Off;
+        Off -> O.[H] :: Resume;
+        !O -> Off :: Stop;
+    }
+    """
+    report = _report(text, **options)
+    assert not [item for item in report.diagnostics if "UNREACHABLE" in item.code], [
+        (item.code, item.refs) for item in report.diagnostics
+    ]
+
+
+@pytest.mark.unittest
 def test_history_defaults_make_their_targets_reachable():
     # Without history, R.O.S1 is only named by the ``[H] -> S1`` default and is
     # unreachable; with history it is the shallow default, so the report drops

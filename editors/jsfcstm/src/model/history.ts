@@ -191,6 +191,13 @@ class HistoryLowering {
                 /* c8 ignore next -- every AST state is built into the model. */
                 if (!owner) continue;
                 const target = this.resolveDefault(owner, decl.defaultPath);
+                if (!target && node.imports.some(item => item.alias === decl.defaultPath[0])) {
+                    // The default enters an imported module, which this local model
+                    // does not assemble; pyfcstm validates and lowers it after
+                    // assembly. Neither report it nor its targets here.
+                    this.invalid.add(JSON.stringify([key(path), decl.historyKind]));
+                    continue;
+                }
                 let reason: string | undefined;
                 if (owner === this.input.rootState) reason = 'root_owner';
                 else if (owner.isLeafState) reason = 'leaf_owner';

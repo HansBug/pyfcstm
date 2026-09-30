@@ -707,8 +707,8 @@ Consumers of the lowered machine
        about an author's guard that lowering extended, such as
        ``W_GUARD_CONST_FALSE``, no longer appears.
    * - Inspect
-     - Judges the model as written. Model conversion keeps the machine before
-       lowering, and ``pyfcstm inspect`` -- including ``--enable-verify`` -- and
+     - Judges the model as written. Model conversion can also build the machine
+       before lowering, and ``pyfcstm inspect`` -- including ``--enable-verify`` -- and
        the jsfcstm editor report that machine: it contains no lowered variable,
        gate state, route or record-writing exit, a history entry is an ordinary
        transition to the owner marked with ``target_history``, and no
@@ -720,8 +720,8 @@ Consumers of the lowered machine
        therefore not reported unreachable. The rule over-approximates what a
        restore reaches, so it never reports a reachable state, though a state a
        deep default skips over is not reported either.
-       :func:`pyfcstm.verify.topology.unreachable_states` applies the same rule
-       to a lowered machine; the other :mod:`pyfcstm.verify` functions, called
+       The functions of :mod:`pyfcstm.verify.topology` apply the same rule to a
+       lowered machine; the other :mod:`pyfcstm.verify` functions, called
        directly, analyse the machine they are given.
    * - BMC
      - Checks the lowered machine. Queries may read ``var("__hist_goto")`` and

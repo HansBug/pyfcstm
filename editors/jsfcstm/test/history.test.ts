@@ -322,6 +322,41 @@ describe('jsfcstm history diagnostics', () => {
         });
     }
 
+    it('leaves a default that enters an imported module to the assembled model', async () => {
+        const text = [
+            'state Host {',
+            '    state Off;',
+            '    state O {',
+            '        state A;',
+            '        import "./module.fcstm" as M;',
+            '        [*] -> A;',
+            '        [H*] -> M.B;',
+            '    }',
+            '    [*] -> Off;',
+            '    Off -> O.[H*] :: Deep;',
+            '    !O -> Off :: Stop;',
+            '}',
+        ].join('\n');
+        const codes = (await packageModule.collectDocumentDiagnostics(document(text))).map(item => item.code ?? '');
+        assert.deepEqual(codes.filter(code => code.includes('HISTORY')), []);
+    });
+
+    it('keeps reporting when a history entry leaves an unknown source', async () => {
+        const text = [
+            'state R {',
+            '    state Off;',
+            '    import "./module.fcstm" as M;',
+            '    state O { state A; state B; [*] -> A; [H] -> B; }',
+            '    [*] -> Off;',
+            '    Of -> O.[H] :: Resume;',
+            '    M -> O.[H] :: Back;',
+            '    !O -> Off :: Stop;',
+            '}',
+        ].join('\n');
+        const codes = (await packageModule.collectDocumentDiagnostics(document(text))).map(item => item.code);
+        assert.ok(codes.includes('E_MISSING_STATE'), codes.join(','));
+    });
+
     it('points declaration errors at the declaration', async () => {
         const text = HISTORY_DIAGNOSTIC_CASES['default-not-direct-child'].source;
         const doc = document(text);

@@ -2399,6 +2399,9 @@ function buildReachabilityGraph(
         if (!chain) continue;
         const from = t.from_path === INIT_MARK ? t.to_path.slice(0, t.to_path.lastIndexOf('.')) : t.from_path;
         const edges = t.from_path === INIT_MARK ? initialEdges[from] : adjacency[from];
+        // A source that names no local state (an import alias, a misspelling)
+        // contributes no edge, as in the loop above.
+        if (!edges) continue;
         chain.forEach(path => edges.add(path));
     }
     const out: Record<string, string[]> = {};

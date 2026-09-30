@@ -6,8 +6,8 @@ from pyfcstm.dsl.node import (
     INIT_STATE,
     BinaryOp,
     ChainID,
-    ComboEventTerm,
-    ComboGuardTerm,
+    EventTerm,
+    GuardTerm,
     Integer,
     Name,
 )
@@ -29,7 +29,7 @@ def _slice_by_span(source: str, span: Span) -> str:
 
 
 @pytest.mark.unittest
-class TestComboTransitionTriggerParsing:
+class TestTransitionTriggerParsing:
     @pytest.mark.parametrize(
         ["source", "expected_from", "expected_to", "expected_terms"],
         [
@@ -136,21 +136,21 @@ class TestComboTransitionTriggerParsing:
             or transition.from_state == expected_from
         )
         assert transition.to_state is expected_to or transition.to_state == expected_to
-        assert transition.combo_trigger is not None
-        assert transition.event_id is None
-        assert transition.event_scope is None
-        assert transition.condition_expr is None
-        assert len(transition.combo_trigger.terms) == len(expected_terms)
+        assert transition.trigger is not None
+        assert not hasattr(transition, "event_id")
+        assert not hasattr(transition, "event_scope")
+        assert not hasattr(transition, "condition_expr")
+        assert len(transition.trigger.terms) == len(expected_terms)
 
-        for term, expected in zip(transition.combo_trigger.terms, expected_terms):
+        for term, expected in zip(transition.trigger.terms, expected_terms):
             if expected[0] == "event":
                 _, scope, event_id = expected
-                assert isinstance(term, ComboEventTerm)
+                assert isinstance(term, EventTerm)
                 assert term.event_scope == scope
                 assert term.event_id == event_id
             else:
                 _, condition_text = expected
-                assert isinstance(term, ComboGuardTerm)
+                assert isinstance(term, GuardTerm)
                 assert str(term.condition_expr) == condition_text
 
     @pytest.mark.parametrize(
@@ -166,9 +166,9 @@ class TestComboTransitionTriggerParsing:
             source, entry_name="transition_definition"
         )
 
-        assert transition.combo_trigger is None
-        assert transition.event_id == expected_event
-        assert transition.event_scope == (
+        assert transition.trigger is not None
+        assert transition.trigger.terms[0].event_id == expected_event
+        assert transition.trigger.terms[0].event_scope == (
             "absolute" if expected_event.is_absolute else "chain"
         )
 
@@ -177,35 +177,39 @@ class TestComboTransitionTriggerParsing:
             "[*] -> S1 :: E1 + E2;", entry_name="transition_definition"
         )
 
-        assert transition.combo_trigger is not None
+        assert transition.trigger is not None
         assert [
-            (term.event_scope, term.event_id) for term in transition.combo_trigger.terms
+            (term.event_scope, term.event_id) for term in transition.trigger.terms
         ] == [
             ("chain", ChainID(["E1"])),
             ("chain", ChainID(["E2"])),
         ]
         assert str(transition) == "[*] -> S1 :: E1 + E2;"
 
-    def test_pure_guard_alias_uses_existing_condition_field(self):
+    def test_pure_guard_alias_uses_single_guard_term(self):
         transition = parse_with_grammar_entry(
             "S1 -> S2 : [x > 0];", entry_name="transition_definition"
         )
 
-        assert transition.combo_trigger is not None
-        assert not transition.combo_trigger.is_combo
-        assert transition.event_id is None
-        assert transition.condition_expr == BinaryOp(Name("x"), ">", Integer("0"))
+        assert transition.trigger is not None
+        assert not transition.trigger.is_combo
+        assert not hasattr(transition, "event_id")
+        assert transition.trigger.terms[0].condition_expr == BinaryOp(
+            Name("x"), ">", Integer("0")
+        )
         assert str(transition) == "S1 -> S2 : if [x > 0];"
 
-    def test_legacy_guard_keeps_legacy_condition_only(self):
+    def test_legacy_guard_uses_single_guard_term(self):
         transition = parse_with_grammar_entry(
             "S1 -> S2 : if [x > 0];", entry_name="transition_definition"
         )
 
-        assert transition.combo_trigger is None
-        assert transition.event_id is None
-        assert transition.event_scope is None
-        assert transition.condition_expr == BinaryOp(Name("x"), ">", Integer("0"))
+        assert transition.trigger is not None
+        assert not hasattr(transition, "event_id")
+        assert not hasattr(transition, "event_scope")
+        assert transition.trigger.terms[0].condition_expr == BinaryOp(
+            Name("x"), ">", Integer("0")
+        )
         assert str(transition) == "S1 -> S2 : if [x > 0];"
 
     @pytest.mark.parametrize(
@@ -245,17 +249,19 @@ class TestComboTransitionTriggerParsing:
         model = parse_dsl_node_to_state_machine(program)
         transition = model.root_state.transitions[1]
 
-        assert transition.event is None
-        assert str(transition.guard) == "x > 0"
+        from pyfcstm.model import GuardTrigger
+
+        assert isinstance(transition.trigger, GuardTrigger)
+        assert str(transition.trigger.condition) == "x > 0"
 
 
 @pytest.mark.unittest
-class TestComboTransitionTriggerSpans:
+class TestTransitionTriggerSpans:
     def test_combo_term_and_value_spans_slice_original_source(self):
         source = "def int x = 0;\nstate Root { state S1; state S2; S1 -> S2 :: E1 + [x > 0] + E2; }"
         ast = parse_with_grammar_entry(source, entry_name="state_machine_dsl")
         transition = ast.root_state.transitions[0]
-        trigger = transition.combo_trigger
+        trigger = transition.trigger
 
         assert (
             _slice_by_span(source, transition._span) == "S1 -> S2 :: E1 + [x > 0] + E2;"
@@ -275,7 +281,7 @@ class TestComboTransitionTriggerSpans:
         ]
 
         guard_term = trigger.terms[1]
-        assert isinstance(guard_term, ComboGuardTerm)
+        assert isinstance(guard_term, GuardTerm)
         assert _slice_by_span(source, guard_term.value_span) == "x > 0"
         assert trigger.canonical_text == ":: E1 + [x > 0] + E2"
 
@@ -286,12 +292,10 @@ class TestComboTransitionTriggerSpans:
         ast = parse_with_grammar_entry(source, entry_name="state_machine_dsl")
         transition = ast.root_state.transitions[0]
 
-        assert transition.combo_trigger is not None
-        assert not transition.combo_trigger.is_combo
-        guard_term = transition.combo_trigger.terms[0]
-        assert isinstance(guard_term, ComboGuardTerm)
-        assert str(transition.condition_expr) == "x > 0"
-        assert (
-            _slice_by_span(source, transition.combo_trigger.trigger_span) == ": [x > 0]"
-        )
+        assert transition.trigger is not None
+        assert not transition.trigger.is_combo
+        guard_term = transition.trigger.terms[0]
+        assert isinstance(guard_term, GuardTerm)
+        assert str(transition.trigger.terms[0].condition_expr) == "x > 0"
+        assert _slice_by_span(source, transition.trigger.trigger_span) == ": [x > 0]"
         assert _slice_by_span(source, guard_term.value_span) == "x > 0"

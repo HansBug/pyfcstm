@@ -86,7 +86,9 @@ C 家族辅助函数由 C 家族模板通过 ``type: import`` 显式注册。它
 
 .. code-block:: jinja
 
-   {{ transition.guard | expr_render(style='c_scope_expr') }}
+   {% if transition.trigger is guard_trigger %}
+     {{ transition.trigger.condition | expr_render(style='c_scope_expr') }}
+   {% endif %}
    {{ action.operations | stmts_render(style='c_runtime') }}
 
 旧辅助函数用途不同：

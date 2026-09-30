@@ -161,8 +161,8 @@ class TestModelStateFactory:
         assert len(state_factory.transitions) == 1
         assert state_factory.transitions[0].from_state == INIT_STATE
         assert state_factory.transitions[0].to_state == "Line"
-        assert state_factory.transitions[0].event is None
-        assert state_factory.transitions[0].guard is None
+        assert not isinstance(state_factory.transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_factory.transitions[0].trigger, GuardTrigger)
         assert state_factory.transitions[0].effects == []
         assert state_factory.transitions[0].doc is None
         assert state_factory.transitions[0].parent_ref().name == "Factory"
@@ -184,8 +184,8 @@ class TestModelStateFactory:
         assert len(state_factory.init_transitions) == 1
         assert state_factory.init_transitions[0].from_state == INIT_STATE
         assert state_factory.init_transitions[0].to_state == "Line"
-        assert state_factory.init_transitions[0].event is None
-        assert state_factory.init_transitions[0].guard is None
+        assert not isinstance(state_factory.init_transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_factory.init_transitions[0].trigger, GuardTrigger)
         assert state_factory.init_transitions[0].effects == []
         assert state_factory.init_transitions[0].doc is None
         assert state_factory.init_transitions[0].parent_ref().name == "Factory"
@@ -201,8 +201,8 @@ class TestModelStateFactory:
         assert len(state_factory.transitions_entering_children) == 1
         assert state_factory.transitions_entering_children[0].from_state == INIT_STATE
         assert state_factory.transitions_entering_children[0].to_state == "Line"
-        assert state_factory.transitions_entering_children[0].event is None
-        assert state_factory.transitions_entering_children[0].guard is None
+        assert not isinstance(state_factory.transitions_entering_children[0].trigger, EventTrigger)
+        assert not isinstance(state_factory.transitions_entering_children[0].trigger, GuardTrigger)
         assert state_factory.transitions_entering_children[0].effects == []
         assert state_factory.transitions_entering_children[0].doc is None
         assert (
@@ -220,8 +220,8 @@ class TestModelStateFactory:
         assert (
             state_factory.transitions_entering_children_simplified[0].to_state == "Line"
         )
-        assert state_factory.transitions_entering_children_simplified[0].event is None
-        assert state_factory.transitions_entering_children_simplified[0].guard is None
+        assert not isinstance(state_factory.transitions_entering_children_simplified[0].trigger, EventTrigger)
+        assert not isinstance(state_factory.transitions_entering_children_simplified[0].trigger, GuardTrigger)
         assert state_factory.transitions_entering_children_simplified[0].effects == []
         assert state_factory.transitions_entering_children_simplified[0].doc is None
         assert (
@@ -234,16 +234,16 @@ class TestModelStateFactory:
         assert len(state_factory.transitions_from) == 1
         assert state_factory.transitions_from[0].from_state == "Factory"
         assert state_factory.transitions_from[0].to_state == EXIT_STATE
-        assert state_factory.transitions_from[0].event is None
-        assert state_factory.transitions_from[0].guard is None
+        assert not isinstance(state_factory.transitions_from[0].trigger, EventTrigger)
+        assert not isinstance(state_factory.transitions_from[0].trigger, GuardTrigger)
         assert state_factory.transitions_from[0].effects == []
         assert state_factory.transitions_from[0].doc is None
         assert state_factory.transitions_from[0].parent_ref is None
         assert len(state_factory.transitions_to) == 1
         assert state_factory.transitions_to[0].from_state == INIT_STATE
         assert state_factory.transitions_to[0].to_state == "Factory"
-        assert state_factory.transitions_to[0].event is None
-        assert state_factory.transitions_to[0].guard is None
+        assert not isinstance(state_factory.transitions_to[0].trigger, EventTrigger)
+        assert not isinstance(state_factory.transitions_to[0].trigger, GuardTrigger)
         assert state_factory.transitions_to[0].effects == []
         assert state_factory.transitions_to[0].doc is None
         assert state_factory.transitions_to[0].parent_ref is None
@@ -288,20 +288,18 @@ class TestModelStateFactory:
                                 dsl_nodes.TransitionDefinition(
                                     from_state=INIT_STATE,
                                     to_state="Feeding",
-                                    event_id=None,
-                                    condition_expr=None,
+                                    trigger=None,
                                     post_operations=[],
                                     doc=None,
                                 ),
                                 dsl_nodes.TransitionDefinition(
                                     from_state="Feeding",
                                     to_state="Feeding",
-                                    event_id=None,
-                                    condition_expr=dsl_nodes.BinaryOp(
+                                    trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                                         expr1=dsl_nodes.Name(name="host_ticks"),
                                         op="<",
                                         expr2=dsl_nodes.Integer(raw="2"),
-                                    ),
+                                    )),), legacy_guard_syntax=True),
                                     post_operations=[
                                         dsl_nodes.OperationAssignment(
                                             name="host_ticks",
@@ -357,20 +355,18 @@ class TestModelStateFactory:
                                 dsl_nodes.TransitionDefinition(
                                     from_state=INIT_STATE,
                                     to_state="Picking",
-                                    event_id=None,
-                                    condition_expr=None,
+                                    trigger=None,
                                     post_operations=[],
                                     doc=None,
                                 ),
                                 dsl_nodes.TransitionDefinition(
                                     from_state="Picking",
                                     to_state="Picking",
-                                    event_id=None,
-                                    condition_expr=dsl_nodes.BinaryOp(
+                                    trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                                         expr1=dsl_nodes.Name(name="host_load"),
                                         op="<",
                                         expr2=dsl_nodes.Integer(raw="4"),
-                                    ),
+                                    )),), legacy_guard_syntax=True),
                                     post_operations=[
                                         dsl_nodes.OperationAssignment(
                                             name="host_ticks",
@@ -405,32 +401,29 @@ class TestModelStateFactory:
                         dsl_nodes.TransitionDefinition(
                             from_state=INIT_STATE,
                             to_state="Conveyor",
-                            event_id=None,
-                            condition_expr=None,
+                            trigger=None,
                             post_operations=[],
                             doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Conveyor",
                             to_state="Robot",
-                            event_id=None,
-                            condition_expr=dsl_nodes.BinaryOp(
+                            trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                                 expr1=dsl_nodes.Name(name="host_ticks"),
                                 op=">=",
                                 expr2=dsl_nodes.Integer(raw="2"),
-                            ),
+                            )),), legacy_guard_syntax=True),
                             post_operations=[],
                             doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Robot",
                             to_state="Conveyor",
-                            event_id=None,
-                            condition_expr=dsl_nodes.BinaryOp(
+                            trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                                 expr1=dsl_nodes.Name(name="host_load"),
                                 op=">=",
                                 expr2=dsl_nodes.Integer(raw="4"),
-                            ),
+                            )),), legacy_guard_syntax=True),
                             post_operations=[],
                             doc=None,
                         ),
@@ -448,8 +441,7 @@ class TestModelStateFactory:
                 dsl_nodes.TransitionDefinition(
                     from_state=INIT_STATE,
                     to_state="Line",
-                    event_id=None,
-                    condition_expr=None,
+                    trigger=None,
                     post_operations=[],
                     doc=None,
                 )
@@ -527,8 +519,8 @@ class TestModelStateFactory:
         assert len(state_factory_line.transitions) == 3
         assert state_factory_line.transitions[0].from_state == INIT_STATE
         assert state_factory_line.transitions[0].to_state == "Conveyor"
-        assert state_factory_line.transitions[0].event is None
-        assert state_factory_line.transitions[0].guard is None
+        assert not isinstance(state_factory_line.transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_factory_line.transitions[0].trigger, GuardTrigger)
         assert state_factory_line.transitions[0].effects == []
         assert state_factory_line.transitions[0].doc is None
         assert state_factory_line.transitions[0].parent_ref().name == "Line"
@@ -538,8 +530,8 @@ class TestModelStateFactory:
         )
         assert state_factory_line.transitions[1].from_state == "Conveyor"
         assert state_factory_line.transitions[1].to_state == "Robot"
-        assert state_factory_line.transitions[1].event is None
-        assert state_factory_line.transitions[1].guard == BinaryOp(
+        assert not isinstance(state_factory_line.transitions[1].trigger, EventTrigger)
+        assert state_factory_line.transitions[1].trigger.condition == BinaryOp(
             x=Variable(name="host_ticks"), op=">=", y=Integer(value=2)
         )
         assert state_factory_line.transitions[1].effects == []
@@ -551,8 +543,8 @@ class TestModelStateFactory:
         )
         assert state_factory_line.transitions[2].from_state == "Robot"
         assert state_factory_line.transitions[2].to_state == "Conveyor"
-        assert state_factory_line.transitions[2].event is None
-        assert state_factory_line.transitions[2].guard == BinaryOp(
+        assert not isinstance(state_factory_line.transitions[2].trigger, EventTrigger)
+        assert state_factory_line.transitions[2].trigger.condition == BinaryOp(
             x=Variable(name="host_load"), op=">=", y=Integer(value=4)
         )
         assert state_factory_line.transitions[2].effects == []
@@ -580,8 +572,8 @@ class TestModelStateFactory:
         assert len(state_factory_line.init_transitions) == 1
         assert state_factory_line.init_transitions[0].from_state == INIT_STATE
         assert state_factory_line.init_transitions[0].to_state == "Conveyor"
-        assert state_factory_line.init_transitions[0].event is None
-        assert state_factory_line.init_transitions[0].guard is None
+        assert not isinstance(state_factory_line.init_transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_factory_line.init_transitions[0].trigger, GuardTrigger)
         assert state_factory_line.init_transitions[0].effects == []
         assert state_factory_line.init_transitions[0].doc is None
         assert state_factory_line.init_transitions[0].parent_ref().name == "Line"
@@ -605,8 +597,8 @@ class TestModelStateFactory:
         assert (
             state_factory_line.transitions_entering_children[0].to_state == "Conveyor"
         )
-        assert state_factory_line.transitions_entering_children[0].event is None
-        assert state_factory_line.transitions_entering_children[0].guard is None
+        assert not isinstance(state_factory_line.transitions_entering_children[0].trigger, EventTrigger)
+        assert not isinstance(state_factory_line.transitions_entering_children[0].trigger, GuardTrigger)
         assert state_factory_line.transitions_entering_children[0].effects == []
         assert state_factory_line.transitions_entering_children[0].doc is None
         assert (
@@ -626,10 +618,10 @@ class TestModelStateFactory:
             == "Conveyor"
         )
         assert (
-            state_factory_line.transitions_entering_children_simplified[0].event is None
+            not isinstance(state_factory_line.transitions_entering_children_simplified[0].trigger, EventTrigger)
         )
         assert (
-            state_factory_line.transitions_entering_children_simplified[0].guard is None
+            not isinstance(state_factory_line.transitions_entering_children_simplified[0].trigger, GuardTrigger)
         )
         assert (
             state_factory_line.transitions_entering_children_simplified[0].effects == []
@@ -650,8 +642,8 @@ class TestModelStateFactory:
         assert len(state_factory_line.transitions_to) == 1
         assert state_factory_line.transitions_to[0].from_state == INIT_STATE
         assert state_factory_line.transitions_to[0].to_state == "Line"
-        assert state_factory_line.transitions_to[0].event is None
-        assert state_factory_line.transitions_to[0].guard is None
+        assert not isinstance(state_factory_line.transitions_to[0].trigger, EventTrigger)
+        assert not isinstance(state_factory_line.transitions_to[0].trigger, GuardTrigger)
         assert state_factory_line.transitions_to[0].effects == []
         assert state_factory_line.transitions_to[0].doc is None
         assert state_factory_line.transitions_to[0].parent_ref().name == "Factory"
@@ -691,20 +683,18 @@ class TestModelStateFactory:
                         dsl_nodes.TransitionDefinition(
                             from_state=INIT_STATE,
                             to_state="Feeding",
-                            event_id=None,
-                            condition_expr=None,
+                            trigger=None,
                             post_operations=[],
                             doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Feeding",
                             to_state="Feeding",
-                            event_id=None,
-                            condition_expr=dsl_nodes.BinaryOp(
+                            trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                                 expr1=dsl_nodes.Name(name="host_ticks"),
                                 op="<",
                                 expr2=dsl_nodes.Integer(raw="2"),
-                            ),
+                            )),), legacy_guard_syntax=True),
                             post_operations=[
                                 dsl_nodes.OperationAssignment(
                                     name="host_ticks",
@@ -760,20 +750,18 @@ class TestModelStateFactory:
                         dsl_nodes.TransitionDefinition(
                             from_state=INIT_STATE,
                             to_state="Picking",
-                            event_id=None,
-                            condition_expr=None,
+                            trigger=None,
                             post_operations=[],
                             doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Picking",
                             to_state="Picking",
-                            event_id=None,
-                            condition_expr=dsl_nodes.BinaryOp(
+                            trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                                 expr1=dsl_nodes.Name(name="host_load"),
                                 op="<",
                                 expr2=dsl_nodes.Integer(raw="4"),
-                            ),
+                            )),), legacy_guard_syntax=True),
                             post_operations=[
                                 dsl_nodes.OperationAssignment(
                                     name="host_ticks",
@@ -808,32 +796,29 @@ class TestModelStateFactory:
                 dsl_nodes.TransitionDefinition(
                     from_state=INIT_STATE,
                     to_state="Conveyor",
-                    event_id=None,
-                    condition_expr=None,
+                    trigger=None,
                     post_operations=[],
                     doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Conveyor",
                     to_state="Robot",
-                    event_id=None,
-                    condition_expr=dsl_nodes.BinaryOp(
+                    trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                         expr1=dsl_nodes.Name(name="host_ticks"),
                         op=">=",
                         expr2=dsl_nodes.Integer(raw="2"),
-                    ),
+                    )),), legacy_guard_syntax=True),
                     post_operations=[],
                     doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Robot",
                     to_state="Conveyor",
-                    event_id=None,
-                    condition_expr=dsl_nodes.BinaryOp(
+                    trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                         expr1=dsl_nodes.Name(name="host_load"),
                         op=">=",
                         expr2=dsl_nodes.Integer(raw="4"),
-                    ),
+                    )),), legacy_guard_syntax=True),
                     post_operations=[],
                     doc=None,
                 ),
@@ -919,8 +904,8 @@ class TestModelStateFactory:
         assert len(state_factory_line_conveyor.transitions) == 2
         assert state_factory_line_conveyor.transitions[0].from_state == INIT_STATE
         assert state_factory_line_conveyor.transitions[0].to_state == "Feeding"
-        assert state_factory_line_conveyor.transitions[0].event is None
-        assert state_factory_line_conveyor.transitions[0].guard is None
+        assert not isinstance(state_factory_line_conveyor.transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_factory_line_conveyor.transitions[0].trigger, GuardTrigger)
         assert state_factory_line_conveyor.transitions[0].effects == []
         assert state_factory_line_conveyor.transitions[0].doc is None
         assert (
@@ -933,8 +918,8 @@ class TestModelStateFactory:
         )
         assert state_factory_line_conveyor.transitions[1].from_state == "Feeding"
         assert state_factory_line_conveyor.transitions[1].to_state == "Feeding"
-        assert state_factory_line_conveyor.transitions[1].event is None
-        assert state_factory_line_conveyor.transitions[1].guard == BinaryOp(
+        assert not isinstance(state_factory_line_conveyor.transitions[1].trigger, EventTrigger)
+        assert state_factory_line_conveyor.transitions[1].trigger.condition == BinaryOp(
             x=Variable(name="host_ticks"), op="<", y=Integer(value=2)
         )
         assert state_factory_line_conveyor.transitions[1].effects == [
@@ -976,8 +961,8 @@ class TestModelStateFactory:
         assert len(state_factory_line_conveyor.init_transitions) == 1
         assert state_factory_line_conveyor.init_transitions[0].from_state == INIT_STATE
         assert state_factory_line_conveyor.init_transitions[0].to_state == "Feeding"
-        assert state_factory_line_conveyor.init_transitions[0].event is None
-        assert state_factory_line_conveyor.init_transitions[0].guard is None
+        assert not isinstance(state_factory_line_conveyor.init_transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_factory_line_conveyor.init_transitions[0].trigger, GuardTrigger)
         assert state_factory_line_conveyor.init_transitions[0].effects == []
         assert state_factory_line_conveyor.init_transitions[0].doc is None
         assert (
@@ -1008,10 +993,10 @@ class TestModelStateFactory:
             == "Feeding"
         )
         assert (
-            state_factory_line_conveyor.transitions_entering_children[0].event is None
+            not isinstance(state_factory_line_conveyor.transitions_entering_children[0].trigger, EventTrigger)
         )
         assert (
-            state_factory_line_conveyor.transitions_entering_children[0].guard is None
+            not isinstance(state_factory_line_conveyor.transitions_entering_children[0].trigger, GuardTrigger)
         )
         assert (
             state_factory_line_conveyor.transitions_entering_children[0].effects == []
@@ -1043,16 +1028,14 @@ class TestModelStateFactory:
             == "Feeding"
         )
         assert (
-            state_factory_line_conveyor.transitions_entering_children_simplified[
+            not isinstance(state_factory_line_conveyor.transitions_entering_children_simplified[
                 0
-            ].event
-            is None
+            ].trigger, EventTrigger)
         )
         assert (
-            state_factory_line_conveyor.transitions_entering_children_simplified[
+            not isinstance(state_factory_line_conveyor.transitions_entering_children_simplified[
                 0
-            ].guard
-            is None
+            ].trigger, GuardTrigger)
         )
         assert (
             state_factory_line_conveyor.transitions_entering_children_simplified[
@@ -1076,8 +1059,8 @@ class TestModelStateFactory:
         assert len(state_factory_line_conveyor.transitions_from) == 1
         assert state_factory_line_conveyor.transitions_from[0].from_state == "Conveyor"
         assert state_factory_line_conveyor.transitions_from[0].to_state == "Robot"
-        assert state_factory_line_conveyor.transitions_from[0].event is None
-        assert state_factory_line_conveyor.transitions_from[0].guard == BinaryOp(
+        assert not isinstance(state_factory_line_conveyor.transitions_from[0].trigger, EventTrigger)
+        assert state_factory_line_conveyor.transitions_from[0].trigger.condition == BinaryOp(
             x=Variable(name="host_ticks"), op=">=", y=Integer(value=2)
         )
         assert state_factory_line_conveyor.transitions_from[0].effects == []
@@ -1092,8 +1075,8 @@ class TestModelStateFactory:
         assert len(state_factory_line_conveyor.transitions_to) == 2
         assert state_factory_line_conveyor.transitions_to[0].from_state == INIT_STATE
         assert state_factory_line_conveyor.transitions_to[0].to_state == "Conveyor"
-        assert state_factory_line_conveyor.transitions_to[0].event is None
-        assert state_factory_line_conveyor.transitions_to[0].guard is None
+        assert not isinstance(state_factory_line_conveyor.transitions_to[0].trigger, EventTrigger)
+        assert not isinstance(state_factory_line_conveyor.transitions_to[0].trigger, GuardTrigger)
         assert state_factory_line_conveyor.transitions_to[0].effects == []
         assert state_factory_line_conveyor.transitions_to[0].doc is None
         assert state_factory_line_conveyor.transitions_to[0].parent_ref().name == "Line"
@@ -1103,8 +1086,8 @@ class TestModelStateFactory:
         )
         assert state_factory_line_conveyor.transitions_to[1].from_state == "Robot"
         assert state_factory_line_conveyor.transitions_to[1].to_state == "Conveyor"
-        assert state_factory_line_conveyor.transitions_to[1].event is None
-        assert state_factory_line_conveyor.transitions_to[1].guard == BinaryOp(
+        assert not isinstance(state_factory_line_conveyor.transitions_to[1].trigger, EventTrigger)
+        assert state_factory_line_conveyor.transitions_to[1].trigger.condition == BinaryOp(
             x=Variable(name="host_load"), op=">=", y=Integer(value=4)
         )
         assert state_factory_line_conveyor.transitions_to[1].effects == []
@@ -1143,20 +1126,18 @@ class TestModelStateFactory:
                 dsl_nodes.TransitionDefinition(
                     from_state=INIT_STATE,
                     to_state="Feeding",
-                    event_id=None,
-                    condition_expr=None,
+                    trigger=None,
                     post_operations=[],
                     doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Feeding",
                     to_state="Feeding",
-                    event_id=None,
-                    condition_expr=dsl_nodes.BinaryOp(
+                    trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                         expr1=dsl_nodes.Name(name="host_ticks"),
                         op="<",
                         expr2=dsl_nodes.Integer(raw="2"),
-                    ),
+                    )),), legacy_guard_syntax=True),
                     post_operations=[
                         dsl_nodes.OperationAssignment(
                             name="host_ticks",
@@ -1331,10 +1312,10 @@ class TestModelStateFactory:
             state_factory_line_conveyor_feeding.transitions_from[0].to_state
             == "Feeding"
         )
-        assert state_factory_line_conveyor_feeding.transitions_from[0].event is None
+        assert not isinstance(state_factory_line_conveyor_feeding.transitions_from[0].trigger, EventTrigger)
         assert state_factory_line_conveyor_feeding.transitions_from[
             0
-        ].guard == BinaryOp(x=Variable(name="host_ticks"), op="<", y=Integer(value=2))
+        ].trigger.condition == BinaryOp(x=Variable(name="host_ticks"), op="<", y=Integer(value=2))
         assert state_factory_line_conveyor_feeding.transitions_from[0].effects == [
             Operation(
                 var_name="host_ticks",
@@ -1363,8 +1344,8 @@ class TestModelStateFactory:
         assert (
             state_factory_line_conveyor_feeding.transitions_to[0].to_state == "Feeding"
         )
-        assert state_factory_line_conveyor_feeding.transitions_to[0].event is None
-        assert state_factory_line_conveyor_feeding.transitions_to[0].guard is None
+        assert not isinstance(state_factory_line_conveyor_feeding.transitions_to[0].trigger, EventTrigger)
+        assert not isinstance(state_factory_line_conveyor_feeding.transitions_to[0].trigger, GuardTrigger)
         assert state_factory_line_conveyor_feeding.transitions_to[0].effects == []
         assert state_factory_line_conveyor_feeding.transitions_to[0].doc is None
         assert (
@@ -1381,8 +1362,8 @@ class TestModelStateFactory:
         assert (
             state_factory_line_conveyor_feeding.transitions_to[1].to_state == "Feeding"
         )
-        assert state_factory_line_conveyor_feeding.transitions_to[1].event is None
-        assert state_factory_line_conveyor_feeding.transitions_to[1].guard == BinaryOp(
+        assert not isinstance(state_factory_line_conveyor_feeding.transitions_to[1].trigger, EventTrigger)
+        assert state_factory_line_conveyor_feeding.transitions_to[1].trigger.condition == BinaryOp(
             x=Variable(name="host_ticks"), op="<", y=Integer(value=2)
         )
         assert state_factory_line_conveyor_feeding.transitions_to[1].effects == [
@@ -1527,8 +1508,8 @@ class TestModelStateFactory:
         assert len(state_factory_line_robot.transitions) == 2
         assert state_factory_line_robot.transitions[0].from_state == INIT_STATE
         assert state_factory_line_robot.transitions[0].to_state == "Picking"
-        assert state_factory_line_robot.transitions[0].event is None
-        assert state_factory_line_robot.transitions[0].guard is None
+        assert not isinstance(state_factory_line_robot.transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_factory_line_robot.transitions[0].trigger, GuardTrigger)
         assert state_factory_line_robot.transitions[0].effects == []
         assert state_factory_line_robot.transitions[0].doc is None
         assert state_factory_line_robot.transitions[0].parent_ref().name == "Robot"
@@ -1539,8 +1520,8 @@ class TestModelStateFactory:
         )
         assert state_factory_line_robot.transitions[1].from_state == "Picking"
         assert state_factory_line_robot.transitions[1].to_state == "Picking"
-        assert state_factory_line_robot.transitions[1].event is None
-        assert state_factory_line_robot.transitions[1].guard == BinaryOp(
+        assert not isinstance(state_factory_line_robot.transitions[1].trigger, EventTrigger)
+        assert state_factory_line_robot.transitions[1].trigger.condition == BinaryOp(
             x=Variable(name="host_load"), op="<", y=Integer(value=4)
         )
         assert state_factory_line_robot.transitions[1].effects == [
@@ -1580,8 +1561,8 @@ class TestModelStateFactory:
         assert len(state_factory_line_robot.init_transitions) == 1
         assert state_factory_line_robot.init_transitions[0].from_state == INIT_STATE
         assert state_factory_line_robot.init_transitions[0].to_state == "Picking"
-        assert state_factory_line_robot.init_transitions[0].event is None
-        assert state_factory_line_robot.init_transitions[0].guard is None
+        assert not isinstance(state_factory_line_robot.init_transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_factory_line_robot.init_transitions[0].trigger, GuardTrigger)
         assert state_factory_line_robot.init_transitions[0].effects == []
         assert state_factory_line_robot.init_transitions[0].doc is None
         assert state_factory_line_robot.init_transitions[0].parent_ref().name == "Robot"
@@ -1608,8 +1589,8 @@ class TestModelStateFactory:
             state_factory_line_robot.transitions_entering_children[0].to_state
             == "Picking"
         )
-        assert state_factory_line_robot.transitions_entering_children[0].event is None
-        assert state_factory_line_robot.transitions_entering_children[0].guard is None
+        assert not isinstance(state_factory_line_robot.transitions_entering_children[0].trigger, EventTrigger)
+        assert not isinstance(state_factory_line_robot.transitions_entering_children[0].trigger, GuardTrigger)
         assert state_factory_line_robot.transitions_entering_children[0].effects == []
         assert state_factory_line_robot.transitions_entering_children[0].doc is None
         assert (
@@ -1635,12 +1616,10 @@ class TestModelStateFactory:
             == "Picking"
         )
         assert (
-            state_factory_line_robot.transitions_entering_children_simplified[0].event
-            is None
+            not isinstance(state_factory_line_robot.transitions_entering_children_simplified[0].trigger, EventTrigger)
         )
         assert (
-            state_factory_line_robot.transitions_entering_children_simplified[0].guard
-            is None
+            not isinstance(state_factory_line_robot.transitions_entering_children_simplified[0].trigger, GuardTrigger)
         )
         assert (
             state_factory_line_robot.transitions_entering_children_simplified[0].effects
@@ -1662,8 +1641,8 @@ class TestModelStateFactory:
         assert len(state_factory_line_robot.transitions_from) == 1
         assert state_factory_line_robot.transitions_from[0].from_state == "Robot"
         assert state_factory_line_robot.transitions_from[0].to_state == "Conveyor"
-        assert state_factory_line_robot.transitions_from[0].event is None
-        assert state_factory_line_robot.transitions_from[0].guard == BinaryOp(
+        assert not isinstance(state_factory_line_robot.transitions_from[0].trigger, EventTrigger)
+        assert state_factory_line_robot.transitions_from[0].trigger.condition == BinaryOp(
             x=Variable(name="host_load"), op=">=", y=Integer(value=4)
         )
         assert state_factory_line_robot.transitions_from[0].effects == []
@@ -1676,8 +1655,8 @@ class TestModelStateFactory:
         assert len(state_factory_line_robot.transitions_to) == 1
         assert state_factory_line_robot.transitions_to[0].from_state == "Conveyor"
         assert state_factory_line_robot.transitions_to[0].to_state == "Robot"
-        assert state_factory_line_robot.transitions_to[0].event is None
-        assert state_factory_line_robot.transitions_to[0].guard == BinaryOp(
+        assert not isinstance(state_factory_line_robot.transitions_to[0].trigger, EventTrigger)
+        assert state_factory_line_robot.transitions_to[0].trigger.condition == BinaryOp(
             x=Variable(name="host_ticks"), op=">=", y=Integer(value=2)
         )
         assert state_factory_line_robot.transitions_to[0].effects == []
@@ -1716,20 +1695,18 @@ class TestModelStateFactory:
                 dsl_nodes.TransitionDefinition(
                     from_state=INIT_STATE,
                     to_state="Picking",
-                    event_id=None,
-                    condition_expr=None,
+                    trigger=None,
                     post_operations=[],
                     doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Picking",
                     to_state="Picking",
-                    event_id=None,
-                    condition_expr=dsl_nodes.BinaryOp(
+                    trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                         expr1=dsl_nodes.Name(name="host_load"),
                         op="<",
                         expr2=dsl_nodes.Integer(raw="4"),
-                    ),
+                    )),), legacy_guard_syntax=True),
                     post_operations=[
                         dsl_nodes.OperationAssignment(
                             name="host_ticks",
@@ -1886,8 +1863,8 @@ class TestModelStateFactory:
         assert (
             state_factory_line_robot_picking.transitions_from[0].to_state == "Picking"
         )
-        assert state_factory_line_robot_picking.transitions_from[0].event is None
-        assert state_factory_line_robot_picking.transitions_from[0].guard == BinaryOp(
+        assert not isinstance(state_factory_line_robot_picking.transitions_from[0].trigger, EventTrigger)
+        assert state_factory_line_robot_picking.transitions_from[0].trigger.condition == BinaryOp(
             x=Variable(name="host_load"), op="<", y=Integer(value=4)
         )
         assert state_factory_line_robot_picking.transitions_from[0].effects == [
@@ -1915,8 +1892,8 @@ class TestModelStateFactory:
             state_factory_line_robot_picking.transitions_to[0].from_state == INIT_STATE
         )
         assert state_factory_line_robot_picking.transitions_to[0].to_state == "Picking"
-        assert state_factory_line_robot_picking.transitions_to[0].event is None
-        assert state_factory_line_robot_picking.transitions_to[0].guard is None
+        assert not isinstance(state_factory_line_robot_picking.transitions_to[0].trigger, EventTrigger)
+        assert not isinstance(state_factory_line_robot_picking.transitions_to[0].trigger, GuardTrigger)
         assert state_factory_line_robot_picking.transitions_to[0].effects == []
         assert state_factory_line_robot_picking.transitions_to[0].doc is None
         assert (
@@ -1932,8 +1909,8 @@ class TestModelStateFactory:
             state_factory_line_robot_picking.transitions_to[1].from_state == "Picking"
         )
         assert state_factory_line_robot_picking.transitions_to[1].to_state == "Picking"
-        assert state_factory_line_robot_picking.transitions_to[1].event is None
-        assert state_factory_line_robot_picking.transitions_to[1].guard == BinaryOp(
+        assert not isinstance(state_factory_line_robot_picking.transitions_to[1].trigger, EventTrigger)
+        assert state_factory_line_robot_picking.transitions_to[1].trigger.condition == BinaryOp(
             x=Variable(name="host_load"), op="<", y=Integer(value=4)
         )
         assert state_factory_line_robot_picking.transitions_to[1].effects == [

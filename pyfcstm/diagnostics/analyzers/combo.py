@@ -68,20 +68,22 @@ class _ComboTerm:
 
     @property
     def is_event(self) -> bool:
-        return self.transition.event is not None
+        from ...model import EventTrigger
+        return isinstance(self.transition.trigger, EventTrigger)
 
     @property
     def is_guard(self) -> bool:
-        return self.transition.guard is not None
+        from ...model import GuardTrigger
+        return isinstance(self.transition.trigger, GuardTrigger)
 
     @property
-    def event_name(self) -> Optional[str]:
-        event = self.transition.event
-        return None if event is None else event.path_name
+    def event_name(self) -> str:
+        return self.transition.trigger.event.path_name
 
     @property
     def guard(self) -> Optional["Expr"]:
-        return self.transition.guard
+        from ...model import GuardTrigger
+        return self.transition.trigger.condition if isinstance(self.transition.trigger, GuardTrigger) else None
 
 
 def collect_combo_warnings(machine: Optional["StateMachine"]) -> List[ModelDiagnostic]:
@@ -135,7 +137,7 @@ def _duplicate_event_warnings(terms: Sequence[_ComboTerm]) -> List[ModelDiagnost
     first_by_event: Dict[str, _ComboTerm] = {}
     diagnostics: List[ModelDiagnostic] = []
     for term in terms:
-        if not term.is_event or term.event_name is None:
+        if not term.is_event:
             continue
         first = first_by_event.get(term.event_name)
         if first is None:

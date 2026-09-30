@@ -99,8 +99,8 @@ class TestModelStateSystem:
         assert len(state_system.transitions) == 1
         assert state_system.transitions[0].from_state == INIT_STATE
         assert state_system.transitions[0].to_state == "LeftMotor"
-        assert state_system.transitions[0].event is None
-        assert state_system.transitions[0].guard is None
+        assert not isinstance(state_system.transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_system.transitions[0].trigger, GuardTrigger)
         assert state_system.transitions[0].effects == []
         assert state_system.transitions[0].doc is None
         assert state_system.transitions[0].parent_ref().name == "System"
@@ -122,8 +122,8 @@ class TestModelStateSystem:
         assert len(state_system.init_transitions) == 1
         assert state_system.init_transitions[0].from_state == INIT_STATE
         assert state_system.init_transitions[0].to_state == "LeftMotor"
-        assert state_system.init_transitions[0].event is None
-        assert state_system.init_transitions[0].guard is None
+        assert not isinstance(state_system.init_transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_system.init_transitions[0].trigger, GuardTrigger)
         assert state_system.init_transitions[0].effects == []
         assert state_system.init_transitions[0].doc is None
         assert state_system.init_transitions[0].parent_ref().name == "System"
@@ -139,8 +139,8 @@ class TestModelStateSystem:
         assert len(state_system.transitions_entering_children) == 1
         assert state_system.transitions_entering_children[0].from_state == INIT_STATE
         assert state_system.transitions_entering_children[0].to_state == "LeftMotor"
-        assert state_system.transitions_entering_children[0].event is None
-        assert state_system.transitions_entering_children[0].guard is None
+        assert not isinstance(state_system.transitions_entering_children[0].trigger, EventTrigger)
+        assert not isinstance(state_system.transitions_entering_children[0].trigger, GuardTrigger)
         assert state_system.transitions_entering_children[0].effects == []
         assert state_system.transitions_entering_children[0].doc is None
         assert (
@@ -158,8 +158,8 @@ class TestModelStateSystem:
             state_system.transitions_entering_children_simplified[0].to_state
             == "LeftMotor"
         )
-        assert state_system.transitions_entering_children_simplified[0].event is None
-        assert state_system.transitions_entering_children_simplified[0].guard is None
+        assert not isinstance(state_system.transitions_entering_children_simplified[0].trigger, EventTrigger)
+        assert not isinstance(state_system.transitions_entering_children_simplified[0].trigger, GuardTrigger)
         assert state_system.transitions_entering_children_simplified[0].effects == []
         assert state_system.transitions_entering_children_simplified[0].doc is None
         assert (
@@ -172,16 +172,16 @@ class TestModelStateSystem:
         assert len(state_system.transitions_from) == 1
         assert state_system.transitions_from[0].from_state == "System"
         assert state_system.transitions_from[0].to_state == EXIT_STATE
-        assert state_system.transitions_from[0].event is None
-        assert state_system.transitions_from[0].guard is None
+        assert not isinstance(state_system.transitions_from[0].trigger, EventTrigger)
+        assert not isinstance(state_system.transitions_from[0].trigger, GuardTrigger)
         assert state_system.transitions_from[0].effects == []
         assert state_system.transitions_from[0].doc is None
         assert state_system.transitions_from[0].parent_ref is None
         assert len(state_system.transitions_to) == 1
         assert state_system.transitions_to[0].from_state == INIT_STATE
         assert state_system.transitions_to[0].to_state == "System"
-        assert state_system.transitions_to[0].event is None
-        assert state_system.transitions_to[0].guard is None
+        assert not isinstance(state_system.transitions_to[0].trigger, EventTrigger)
+        assert not isinstance(state_system.transitions_to[0].trigger, GuardTrigger)
         assert state_system.transitions_to[0].effects == []
         assert state_system.transitions_to[0].doc is None
         assert state_system.transitions_to[0].parent_ref is None
@@ -249,8 +249,7 @@ class TestModelStateSystem:
                                 dsl_nodes.TransitionDefinition(
                                     from_state=INIT_STATE,
                                     to_state="Spin",
-                                    event_id=None,
-                                    condition_expr=None,
+                                    trigger=None,
                                     post_operations=[],
                                     doc=None,
                                 )
@@ -268,28 +267,25 @@ class TestModelStateSystem:
                         dsl_nodes.TransitionDefinition(
                             from_state=INIT_STATE,
                             to_state="Idle",
-                            event_id=None,
-                            condition_expr=None,
+                            trigger=None,
                             post_operations=[],
                             doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Idle",
                             to_state="Running",
-                            event_id=dsl_nodes.ChainID(
+                            trigger=dsl_nodes.TransitionTrigger('::', (dsl_nodes.EventTerm(dsl_nodes.ChainID(
                                 path=["Idle", "Start"], is_absolute=False
-                            ),
-                            condition_expr=None,
+                            ), 'local'),)),
                             post_operations=[],
                             doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Running",
                             to_state="Idle",
-                            event_id=dsl_nodes.ChainID(
+                            trigger=dsl_nodes.TransitionTrigger(':', (dsl_nodes.EventTerm(dsl_nodes.ChainID(
                                 path=["Reset"], is_absolute=False
-                            ),
-                            condition_expr=None,
+                            ), 'absolute'),)),
                             post_operations=[],
                             doc=None,
                         ),
@@ -309,8 +305,7 @@ class TestModelStateSystem:
                 dsl_nodes.TransitionDefinition(
                     from_state=INIT_STATE,
                     to_state="LeftMotor",
-                    event_id=None,
-                    condition_expr=None,
+                    trigger=None,
                     post_operations=[],
                     doc=None,
                 )
@@ -395,8 +390,8 @@ class TestModelStateSystem:
         assert len(state_system_leftmotor.transitions) == 3
         assert state_system_leftmotor.transitions[0].from_state == INIT_STATE
         assert state_system_leftmotor.transitions[0].to_state == "Idle"
-        assert state_system_leftmotor.transitions[0].event is None
-        assert state_system_leftmotor.transitions[0].guard is None
+        assert not isinstance(state_system_leftmotor.transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_system_leftmotor.transitions[0].trigger, GuardTrigger)
         assert state_system_leftmotor.transitions[0].effects == []
         assert state_system_leftmotor.transitions[0].doc is None
         assert state_system_leftmotor.transitions[0].parent_ref().name == "LeftMotor"
@@ -406,13 +401,13 @@ class TestModelStateSystem:
         )
         assert state_system_leftmotor.transitions[1].from_state == "Idle"
         assert state_system_leftmotor.transitions[1].to_state == "Running"
-        assert state_system_leftmotor.transitions[1].event == Event(
+        assert state_system_leftmotor.transitions[1].trigger.event == Event(
             name="Start",
             state_path=("System", "LeftMotor", "Idle"),
             extra_name=None,
             doc=None,
         )
-        assert state_system_leftmotor.transitions[1].guard is None
+        assert not isinstance(state_system_leftmotor.transitions[1].trigger, GuardTrigger)
         assert state_system_leftmotor.transitions[1].effects == []
         assert state_system_leftmotor.transitions[1].doc is None
         assert state_system_leftmotor.transitions[1].parent_ref().name == "LeftMotor"
@@ -422,10 +417,10 @@ class TestModelStateSystem:
         )
         assert state_system_leftmotor.transitions[2].from_state == "Running"
         assert state_system_leftmotor.transitions[2].to_state == "Idle"
-        assert state_system_leftmotor.transitions[2].event == Event(
+        assert state_system_leftmotor.transitions[2].trigger.event == Event(
             name="Reset", state_path=("System", "LeftMotor"), extra_name=None, doc=None
         )
-        assert state_system_leftmotor.transitions[2].guard is None
+        assert not isinstance(state_system_leftmotor.transitions[2].trigger, GuardTrigger)
         assert state_system_leftmotor.transitions[2].effects == []
         assert state_system_leftmotor.transitions[2].doc is None
         assert state_system_leftmotor.transitions[2].parent_ref().name == "LeftMotor"
@@ -548,8 +543,8 @@ class TestModelStateSystem:
         assert len(state_system_leftmotor.init_transitions) == 1
         assert state_system_leftmotor.init_transitions[0].from_state == INIT_STATE
         assert state_system_leftmotor.init_transitions[0].to_state == "Idle"
-        assert state_system_leftmotor.init_transitions[0].event is None
-        assert state_system_leftmotor.init_transitions[0].guard is None
+        assert not isinstance(state_system_leftmotor.init_transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_system_leftmotor.init_transitions[0].trigger, GuardTrigger)
         assert state_system_leftmotor.init_transitions[0].effects == []
         assert state_system_leftmotor.init_transitions[0].doc is None
         assert (
@@ -576,8 +571,8 @@ class TestModelStateSystem:
         assert (
             state_system_leftmotor.transitions_entering_children[0].to_state == "Idle"
         )
-        assert state_system_leftmotor.transitions_entering_children[0].event is None
-        assert state_system_leftmotor.transitions_entering_children[0].guard is None
+        assert not isinstance(state_system_leftmotor.transitions_entering_children[0].trigger, EventTrigger)
+        assert not isinstance(state_system_leftmotor.transitions_entering_children[0].trigger, GuardTrigger)
         assert state_system_leftmotor.transitions_entering_children[0].effects == []
         assert state_system_leftmotor.transitions_entering_children[0].doc is None
         assert (
@@ -599,12 +594,10 @@ class TestModelStateSystem:
             == "Idle"
         )
         assert (
-            state_system_leftmotor.transitions_entering_children_simplified[0].event
-            is None
+            not isinstance(state_system_leftmotor.transitions_entering_children_simplified[0].trigger, EventTrigger)
         )
         assert (
-            state_system_leftmotor.transitions_entering_children_simplified[0].guard
-            is None
+            not isinstance(state_system_leftmotor.transitions_entering_children_simplified[0].trigger, GuardTrigger)
         )
         assert (
             state_system_leftmotor.transitions_entering_children_simplified[0].effects
@@ -627,8 +620,8 @@ class TestModelStateSystem:
         assert len(state_system_leftmotor.transitions_to) == 1
         assert state_system_leftmotor.transitions_to[0].from_state == INIT_STATE
         assert state_system_leftmotor.transitions_to[0].to_state == "LeftMotor"
-        assert state_system_leftmotor.transitions_to[0].event is None
-        assert state_system_leftmotor.transitions_to[0].guard is None
+        assert not isinstance(state_system_leftmotor.transitions_to[0].trigger, EventTrigger)
+        assert not isinstance(state_system_leftmotor.transitions_to[0].trigger, GuardTrigger)
         assert state_system_leftmotor.transitions_to[0].effects == []
         assert state_system_leftmotor.transitions_to[0].doc is None
         assert state_system_leftmotor.transitions_to[0].parent_ref().name == "System"
@@ -687,8 +680,7 @@ class TestModelStateSystem:
                         dsl_nodes.TransitionDefinition(
                             from_state=INIT_STATE,
                             to_state="Spin",
-                            event_id=None,
-                            condition_expr=None,
+                            trigger=None,
                             post_operations=[],
                             doc=None,
                         )
@@ -706,26 +698,23 @@ class TestModelStateSystem:
                 dsl_nodes.TransitionDefinition(
                     from_state=INIT_STATE,
                     to_state="Idle",
-                    event_id=None,
-                    condition_expr=None,
+                    trigger=None,
                     post_operations=[],
                     doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Idle",
                     to_state="Running",
-                    event_id=dsl_nodes.ChainID(
+                    trigger=dsl_nodes.TransitionTrigger('::', (dsl_nodes.EventTerm(dsl_nodes.ChainID(
                         path=["Idle", "Start"], is_absolute=False
-                    ),
-                    condition_expr=None,
+                    ), 'local'),)),
                     post_operations=[],
                     doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Running",
                     to_state="Idle",
-                    event_id=dsl_nodes.ChainID(path=["Reset"], is_absolute=False),
-                    condition_expr=None,
+                    trigger=dsl_nodes.TransitionTrigger(':', (dsl_nodes.EventTerm(dsl_nodes.ChainID(path=["Reset"], is_absolute=False), 'absolute'),)),
                     post_operations=[],
                     doc=None,
                 ),
@@ -957,13 +946,13 @@ class TestModelStateSystem:
         assert len(state_system_leftmotor_idle.transitions_from) == 1
         assert state_system_leftmotor_idle.transitions_from[0].from_state == "Idle"
         assert state_system_leftmotor_idle.transitions_from[0].to_state == "Running"
-        assert state_system_leftmotor_idle.transitions_from[0].event == Event(
+        assert state_system_leftmotor_idle.transitions_from[0].trigger.event == Event(
             name="Start",
             state_path=("System", "LeftMotor", "Idle"),
             extra_name=None,
             doc=None,
         )
-        assert state_system_leftmotor_idle.transitions_from[0].guard is None
+        assert not isinstance(state_system_leftmotor_idle.transitions_from[0].trigger, GuardTrigger)
         assert state_system_leftmotor_idle.transitions_from[0].effects == []
         assert state_system_leftmotor_idle.transitions_from[0].doc is None
         assert (
@@ -977,8 +966,8 @@ class TestModelStateSystem:
         assert len(state_system_leftmotor_idle.transitions_to) == 2
         assert state_system_leftmotor_idle.transitions_to[0].from_state == INIT_STATE
         assert state_system_leftmotor_idle.transitions_to[0].to_state == "Idle"
-        assert state_system_leftmotor_idle.transitions_to[0].event is None
-        assert state_system_leftmotor_idle.transitions_to[0].guard is None
+        assert not isinstance(state_system_leftmotor_idle.transitions_to[0].trigger, EventTrigger)
+        assert not isinstance(state_system_leftmotor_idle.transitions_to[0].trigger, GuardTrigger)
         assert state_system_leftmotor_idle.transitions_to[0].effects == []
         assert state_system_leftmotor_idle.transitions_to[0].doc is None
         assert (
@@ -991,10 +980,10 @@ class TestModelStateSystem:
         )
         assert state_system_leftmotor_idle.transitions_to[1].from_state == "Running"
         assert state_system_leftmotor_idle.transitions_to[1].to_state == "Idle"
-        assert state_system_leftmotor_idle.transitions_to[1].event == Event(
+        assert state_system_leftmotor_idle.transitions_to[1].trigger.event == Event(
             name="Reset", state_path=("System", "LeftMotor"), extra_name=None, doc=None
         )
-        assert state_system_leftmotor_idle.transitions_to[1].guard is None
+        assert not isinstance(state_system_leftmotor_idle.transitions_to[1].trigger, GuardTrigger)
         assert state_system_leftmotor_idle.transitions_to[1].effects == []
         assert state_system_leftmotor_idle.transitions_to[1].doc is None
         assert (
@@ -1119,8 +1108,8 @@ class TestModelStateSystem:
         assert len(state_system_leftmotor_running.transitions) == 1
         assert state_system_leftmotor_running.transitions[0].from_state == INIT_STATE
         assert state_system_leftmotor_running.transitions[0].to_state == "Spin"
-        assert state_system_leftmotor_running.transitions[0].event is None
-        assert state_system_leftmotor_running.transitions[0].guard is None
+        assert not isinstance(state_system_leftmotor_running.transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_system_leftmotor_running.transitions[0].trigger, GuardTrigger)
         assert state_system_leftmotor_running.transitions[0].effects == []
         assert state_system_leftmotor_running.transitions[0].doc is None
         assert (
@@ -1154,8 +1143,8 @@ class TestModelStateSystem:
             state_system_leftmotor_running.init_transitions[0].from_state == INIT_STATE
         )
         assert state_system_leftmotor_running.init_transitions[0].to_state == "Spin"
-        assert state_system_leftmotor_running.init_transitions[0].event is None
-        assert state_system_leftmotor_running.init_transitions[0].guard is None
+        assert not isinstance(state_system_leftmotor_running.init_transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_system_leftmotor_running.init_transitions[0].trigger, GuardTrigger)
         assert state_system_leftmotor_running.init_transitions[0].effects == []
         assert state_system_leftmotor_running.init_transitions[0].doc is None
         assert (
@@ -1186,12 +1175,10 @@ class TestModelStateSystem:
             == "Spin"
         )
         assert (
-            state_system_leftmotor_running.transitions_entering_children[0].event
-            is None
+            not isinstance(state_system_leftmotor_running.transitions_entering_children[0].trigger, EventTrigger)
         )
         assert (
-            state_system_leftmotor_running.transitions_entering_children[0].guard
-            is None
+            not isinstance(state_system_leftmotor_running.transitions_entering_children[0].trigger, GuardTrigger)
         )
         assert (
             state_system_leftmotor_running.transitions_entering_children[0].effects
@@ -1226,16 +1213,14 @@ class TestModelStateSystem:
             == "Spin"
         )
         assert (
-            state_system_leftmotor_running.transitions_entering_children_simplified[
+            not isinstance(state_system_leftmotor_running.transitions_entering_children_simplified[
                 0
-            ].event
-            is None
+            ].trigger, EventTrigger)
         )
         assert (
-            state_system_leftmotor_running.transitions_entering_children_simplified[
+            not isinstance(state_system_leftmotor_running.transitions_entering_children_simplified[
                 0
-            ].guard
-            is None
+            ].trigger, GuardTrigger)
         )
         assert (
             state_system_leftmotor_running.transitions_entering_children_simplified[
@@ -1263,10 +1248,10 @@ class TestModelStateSystem:
             state_system_leftmotor_running.transitions_from[0].from_state == "Running"
         )
         assert state_system_leftmotor_running.transitions_from[0].to_state == "Idle"
-        assert state_system_leftmotor_running.transitions_from[0].event == Event(
+        assert state_system_leftmotor_running.transitions_from[0].trigger.event == Event(
             name="Reset", state_path=("System", "LeftMotor"), extra_name=None, doc=None
         )
-        assert state_system_leftmotor_running.transitions_from[0].guard is None
+        assert not isinstance(state_system_leftmotor_running.transitions_from[0].trigger, GuardTrigger)
         assert state_system_leftmotor_running.transitions_from[0].effects == []
         assert state_system_leftmotor_running.transitions_from[0].doc is None
         assert (
@@ -1280,13 +1265,13 @@ class TestModelStateSystem:
         assert len(state_system_leftmotor_running.transitions_to) == 1
         assert state_system_leftmotor_running.transitions_to[0].from_state == "Idle"
         assert state_system_leftmotor_running.transitions_to[0].to_state == "Running"
-        assert state_system_leftmotor_running.transitions_to[0].event == Event(
+        assert state_system_leftmotor_running.transitions_to[0].trigger.event == Event(
             name="Start",
             state_path=("System", "LeftMotor", "Idle"),
             extra_name=None,
             doc=None,
         )
-        assert state_system_leftmotor_running.transitions_to[0].guard is None
+        assert not isinstance(state_system_leftmotor_running.transitions_to[0].trigger, GuardTrigger)
         assert state_system_leftmotor_running.transitions_to[0].effects == []
         assert state_system_leftmotor_running.transitions_to[0].doc is None
         assert (
@@ -1328,8 +1313,7 @@ class TestModelStateSystem:
                 dsl_nodes.TransitionDefinition(
                     from_state=INIT_STATE,
                     to_state="Spin",
-                    event_id=None,
-                    condition_expr=None,
+                    trigger=None,
                     post_operations=[],
                     doc=None,
                 )
@@ -1485,8 +1469,8 @@ class TestModelStateSystem:
             == INIT_STATE
         )
         assert state_system_leftmotor_running_spin.transitions_to[0].to_state == "Spin"
-        assert state_system_leftmotor_running_spin.transitions_to[0].event is None
-        assert state_system_leftmotor_running_spin.transitions_to[0].guard is None
+        assert not isinstance(state_system_leftmotor_running_spin.transitions_to[0].trigger, EventTrigger)
+        assert not isinstance(state_system_leftmotor_running_spin.transitions_to[0].trigger, GuardTrigger)
         assert state_system_leftmotor_running_spin.transitions_to[0].effects == []
         assert state_system_leftmotor_running_spin.transitions_to[0].doc is None
         assert (

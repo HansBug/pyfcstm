@@ -50,7 +50,7 @@ from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
 
 from .errors import InvalidBmcDomain
 from pyfcstm.dsl.role import VariableRole
-from pyfcstm.model import Event, State, StateMachine
+from pyfcstm.model import Event, State, StateMachine, EventTrigger
 
 STATE_INIT_ID = -3
 # The retired -2 slot is intentionally never reused, so old diagnostic traces
@@ -1415,8 +1415,9 @@ def _collect_events(model: StateMachine) -> Tuple[Event, ...]:
         for event in state.events.values():
             events_by_path[event.path_name] = event
         for transition in state.transitions:
-            if transition.event is not None:
-                events_by_path[transition.event.path_name] = transition.event
+            if isinstance(transition.trigger, EventTrigger):
+                event = transition.trigger.event
+                events_by_path[event.path_name] = event
     return tuple(events_by_path[path] for path in sorted(events_by_path))
 
 

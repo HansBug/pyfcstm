@@ -89,7 +89,7 @@ def dead_guard(
 
         >>> from textwrap import dedent
         >>> from pyfcstm.dsl import parse_with_grammar_entry
-        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> from pyfcstm.model import GuardTrigger, parse_dsl_node_to_state_machine
         >>> from pyfcstm.verify import dead_guard
         >>> def parse_machine(source):
         ...     ast = parse_with_grammar_entry(dedent(source), "state_machine_dsl")
@@ -101,7 +101,7 @@ def dead_guard(
         ...         transition
         ...         for state in machine.walk_states()
         ...         for transition in state.transitions
-        ...         if transition.guard is not None
+        ...         if isinstance(transition.trigger, GuardTrigger)
         ...     )
         >>> # Negative guard space: x cannot be both greater than 1 and below 0.
         >>> machine = parse_machine('''
@@ -131,6 +131,8 @@ def dead_guard(
         >>> dead_guard(guarded_transition(machine), variables(machine)).kind
         'sat'
     """
+    from pyfcstm.model import GuardTrigger
+
     from pyfcstm.verify.encoding._core import (
         AlgorithmResult,
         _build_type_constraints,
@@ -141,7 +143,7 @@ def dead_guard(
         is_sat,
     )
 
-    if transition.guard is None:
+    if not isinstance(transition.trigger, GuardTrigger):
         return AlgorithmResult(kind="sat")
 
     guard_z3, z3_vars, guard_domains, result = _guard_z3_or_result(
@@ -231,7 +233,7 @@ def guard_tautology(
 
         >>> from textwrap import dedent
         >>> from pyfcstm.dsl import parse_with_grammar_entry
-        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> from pyfcstm.model import GuardTrigger, parse_dsl_node_to_state_machine
         >>> from pyfcstm.verify import guard_tautology
         >>> def parse_machine(source):
         ...     ast = parse_with_grammar_entry(dedent(source), "state_machine_dsl")
@@ -243,7 +245,7 @@ def guard_tautology(
         ...         transition
         ...         for state in machine.walk_states()
         ...         for transition in state.transitions
-        ...         if transition.guard is not None
+        ...         if isinstance(transition.trigger, GuardTrigger)
         ...     )
         >>> # Every integer is either non-negative or negative.
         >>> machine = parse_machine('''
@@ -273,6 +275,8 @@ def guard_tautology(
         >>> guard_tautology(guarded_transition(machine), variables(machine)).kind
         'sat'
     """
+    from pyfcstm.model import GuardTrigger
+
     from pyfcstm.verify.encoding._core import (
         AlgorithmResult,
         _build_type_constraints,
@@ -284,7 +288,7 @@ def guard_tautology(
         z3,
     )
 
-    if transition.guard is None:
+    if not isinstance(transition.trigger, GuardTrigger):
         return AlgorithmResult(kind="sat")
 
     guard_z3, z3_vars, guard_domains, result = _guard_z3_or_result(
@@ -377,7 +381,7 @@ def forced_guard_unsat_under_init(
 
         >>> from textwrap import dedent
         >>> from pyfcstm.dsl import parse_with_grammar_entry
-        >>> from pyfcstm.model import parse_dsl_node_to_state_machine
+        >>> from pyfcstm.model import GuardTrigger, parse_dsl_node_to_state_machine
         >>> from pyfcstm.verify import forced_guard_unsat_under_init
         >>> def parse_machine(source):
         ...     ast = parse_with_grammar_entry(dedent(source), "state_machine_dsl")
@@ -425,6 +429,8 @@ def forced_guard_unsat_under_init(
         ... ).kind
         'sat'
     """
+    from pyfcstm.model import GuardTrigger
+
     from pyfcstm.verify.encoding._core import (
         AlgorithmResult,
         _build_init_constraints_or_result,
@@ -436,7 +442,7 @@ def forced_guard_unsat_under_init(
         is_sat,
     )
 
-    if not transition.is_forced or transition.guard is None:
+    if not transition.is_forced or not isinstance(transition.trigger, GuardTrigger):
         return AlgorithmResult(kind="sat")
 
     z3_vars = _z3_vars(variables)
@@ -448,7 +454,7 @@ def forced_guard_unsat_under_init(
     if result is not None:
         return result
     guard_z3, guard_domains, result = _expr_z3_and_domains_or_result(
-        transition.guard,
+        transition.trigger.condition,
         z3_vars,
         context_constraints=init_constraints,
         smt_timeout_ms=smt_timeout_ms,

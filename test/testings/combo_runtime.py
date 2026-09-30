@@ -15,7 +15,7 @@ from textwrap import dedent
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from pyfcstm.dsl import EXIT_STATE, INIT_STATE, parse_with_grammar_entry
-from pyfcstm.model import parse_dsl_node_to_state_machine
+from pyfcstm.model import EventTrigger, GuardTrigger, parse_dsl_node_to_state_machine
 from pyfcstm.model.model import State, StateMachine, Transition
 from pyfcstm.simulate import SimulationRuntime
 
@@ -81,15 +81,15 @@ def _endpoint_label(
 
 
 def _event_name(transition: Transition) -> Optional[str]:
-    if transition.event is None:
+    if not isinstance(transition.trigger, EventTrigger):
         return None
-    return transition.event.path_name
+    return transition.trigger.event.path_name
 
 
 def _guard_text(transition: Transition) -> Optional[str]:
-    if transition.guard is None:
+    if not isinstance(transition.trigger, GuardTrigger):
         return None
-    return str(transition.guard)
+    return str(transition.trigger.condition)
 
 
 def _effect_texts(transition: Transition) -> Tuple[str, ...]:

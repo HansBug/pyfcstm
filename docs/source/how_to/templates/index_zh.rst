@@ -94,7 +94,9 @@
 
 .. code-block:: jinja
 
-   guard = {{ transition.guard | expr_render(style='py_runtime_expr') }}
+   {% if transition.trigger is guard_trigger %}
+     guard = {{ transition.trigger.condition | expr_render(style='py_runtime_expr') }}
+   {% endif %}
    {{ action.operations | stmts_render(style='py_runtime_stmt') }}
 
 生成可执行运行时代码时使用 ``stmt_render`` / ``stmts_render``。只有想输出 DSL 文本回显，用于注释、文档或调试时，才使用 ``operation_stmt_render`` / ``operation_stmts_render``。例如 DSL effect ``counter = counter + 1;`` 经过 ``operation_stmt_render`` 后仍是 DSL 形状，不是期望 ``scope[...]`` 访问的 Python 运行时赋值代码。

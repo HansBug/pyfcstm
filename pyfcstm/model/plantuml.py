@@ -146,7 +146,7 @@ def format_event_name(
         ... )
         >>> from pyfcstm.model.plantuml import collect_event_transitions
         >>> _state, transition = collect_event_transitions(sm)['System.Start'][0]
-        >>> event = transition.event
+        >>> event = transition.trigger.event
         >>> format_event_name(event, ('extra_name', 'name'))
         '启动模块 (Start)'
         >>> format_event_name(event, ('extra_name', 'relpath'))
@@ -167,9 +167,10 @@ def format_event_name(
                 abs_path = '/' + event.path[0]
             parts.append(abs_path)
         elif element == 'relpath':
-            # Relative path: use trans_node.event_id if available, otherwise fallback to path
-            if trans_node is not None and hasattr(trans_node, 'event_id') and trans_node.event_id is not None:
-                rel_path = str(trans_node.event_id)
+            # Exported event transitions have a single event term.
+            term = trans_node.trigger.terms[0] if trans_node is not None and trans_node.trigger is not None else None
+            if term is not None and hasattr(term, 'event_id'):
+                rel_path = str(term.event_id)
             else:
                 # Fallback to path format
                 rel_path = "/" + ('.'.join(event.path[1:]) if len(event.path) > 1 else event.path[0])
@@ -1118,12 +1119,13 @@ def collect_event_transitions(state_machine: 'StateMachine') -> Dict[str, List[T
         True
     """
     from collections import defaultdict
+    from .model import EventTrigger
     event_map = defaultdict(list)
 
     for state in state_machine.walk_states():
         for transition in state.transitions:
-            if transition.event is not None:
-                event_path = '.'.join(transition.event.path)
+            if isinstance(transition.trigger, EventTrigger):
+                event_path = '.'.join(transition.trigger.event.path)
                 event_map[event_path].append((state, transition))
 
     return dict(event_map)

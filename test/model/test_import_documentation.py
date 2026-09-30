@@ -32,8 +32,7 @@ def test_mapped_event_documentation_is_aggregated_into_host_event():
                 dsl_nodes.TransitionDefinition(
                     from_state="Idle",
                     to_state="Idle",
-                    event_id=dsl_nodes.ChainID(["Idle", "Start"]),
-                    condition_expr=None,
+                    trigger=dsl_nodes.TransitionTrigger('::', (dsl_nodes.EventTerm(dsl_nodes.ChainID(["Idle", "Start"]), 'local'),)),
                     post_operations=[],
                 )
             ],

@@ -355,17 +355,17 @@ class {{ machine_class_name(model) }}:
 {% for state in state_items %}{% for transition in state.init_transitions %}        {{ init_transition_id(state, loop.index) | tojson }}: {
             "target": {{ state_key(state.substates[transition.to_state]) | tojson }},
             "to_exit": False,
-            "event_path": {{ transition.event.path_name | tojson if transition.event is not none else "None" }},
-            "event_name": {{ transition.event.name | tojson if transition.event is not none else "None" }},
-            "guard": {{ init_guard_method_name(state, loop.index) | tojson if transition.guard is not none else "None" }},
+            "event_path": {{ transition.trigger.event.path_name | tojson if transition.trigger is event_trigger else "None" }},
+            "event_name": {{ transition.trigger.event.name | tojson if transition.trigger is event_trigger else "None" }},
+            "guard": {{ init_guard_method_name(state, loop.index) | tojson if transition.trigger is guard_trigger else "None" }},
             "effect": {{ init_effect_method_name(state, loop.index) | tojson if transition.effects else "None" }},
         },
 {% endfor %}{% for transition in state.transitions_from %}        {{ normal_transition_id(state, loop.index) | tojson }}: {
             "target": {{ state_key(state.parent.substates[transition.to_state]) | tojson if transition.to_state != EXIT_STATE else "None" }},
             "to_exit": {{ (transition.to_state == EXIT_STATE) | repr }},
-            "event_path": {{ transition.event.path_name | tojson if transition.event is not none else "None" }},
-            "event_name": {{ transition.event.name | tojson if transition.event is not none else "None" }},
-            "guard": {{ transition_guard_method_name(state, loop.index) | tojson if transition.guard is not none else "None" }},
+            "event_path": {{ transition.trigger.event.path_name | tojson if transition.trigger is event_trigger else "None" }},
+            "event_name": {{ transition.trigger.event.name | tojson if transition.trigger is event_trigger else "None" }},
+            "guard": {{ transition_guard_method_name(state, loop.index) | tojson if transition.trigger is guard_trigger else "None" }},
             "effect": {{ transition_effect_method_name(state, loop.index) | tojson if transition.effects else "None" }},
         },
 {% endfor %}{% endfor %}    }
@@ -1630,7 +1630,7 @@ def {{ init_guard_method_name(state, idx) }}(self, vars_=None):
     scope = vars_ if vars_ is not None else self._vars
     return bool(
         self._evaluate_runtime_expr(
-            lambda scope=scope: {{ transition.guard.to_ast_node() | expr_render(style='python_scope_expr') }},
+            lambda scope=scope: {{ transition.trigger.condition.to_ast_node() | expr_render(style='python_scope_expr') }},
             "transition guard",
         )
     )
@@ -1665,7 +1665,7 @@ def {{ transition_guard_method_name(state, idx) }}(self, vars_=None):
     scope = vars_ if vars_ is not None else self._vars
     return bool(
         self._evaluate_runtime_expr(
-            lambda scope=scope: {{ transition.guard.to_ast_node() | expr_render(style='python_scope_expr') }},
+            lambda scope=scope: {{ transition.trigger.condition.to_ast_node() | expr_render(style='python_scope_expr') }},
             "transition guard",
         )
     )
@@ -1718,7 +1718,7 @@ def {{ transition_effect_method_name(state, idx) }}(self, vars_=None):
 {%- endfor -%}
 {%- endfor -%}
 {%- for transition in state.init_transitions -%}
-{%- if transition.guard is not none -%}
+{%- if transition.trigger is guard_trigger -%}
 {%- set methods.items = methods.items + [render_init_guard_method(state, loop.index, transition)] -%}
 {%- endif -%}
 {%- if transition.effects -%}
@@ -1726,7 +1726,7 @@ def {{ transition_effect_method_name(state, idx) }}(self, vars_=None):
 {%- endif -%}
 {%- endfor -%}
 {%- for transition in state.transitions_from -%}
-{%- if transition.guard is not none -%}
+{%- if transition.trigger is guard_trigger -%}
 {%- set methods.items = methods.items + [render_transition_guard_method(state, loop.index, transition)] -%}
 {%- endif -%}
 {%- if transition.effects -%}

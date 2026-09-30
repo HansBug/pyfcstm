@@ -7,6 +7,7 @@ This module tests the plantuml.py module components:
 - collect_event_transitions() and assign_event_colors() helper functions
 """
 
+from pyfcstm.model import EventTrigger
 import pytest
 
 from pyfcstm.model.model import Event, State, StateMachine, Transition
@@ -295,7 +296,7 @@ class TestCollectEventTransitions:
             path=('Root',),
             substates={'Child1': child1, 'Child2': child2},
             transitions=[
-                Transition(from_state='Child1', to_state='Child2', event=event, guard=None, effects=[])
+                Transition(from_state='Child1', to_state='Child2', trigger=EventTrigger(event), effects=[])
             ],
         )
         sm = StateMachine(defines={}, root_state=root)
@@ -320,9 +321,9 @@ class TestCollectEventTransitions:
             path=('Root',),
             substates={'Child1': child1, 'Child2': child2, 'Child3': child3},
             transitions=[
-                Transition(from_state='Child1', to_state='Child2', event=event1, guard=None, effects=[]),
-                Transition(from_state='Child2', to_state='Child3', event=event1, guard=None, effects=[]),
-                Transition(from_state='Child3', to_state='Child1', event=event2, guard=None, effects=[]),
+                Transition(from_state='Child1', to_state='Child2', trigger=EventTrigger(event1), effects=[]),
+                Transition(from_state='Child2', to_state='Child3', trigger=EventTrigger(event1), effects=[]),
+                Transition(from_state='Child3', to_state='Child1', trigger=EventTrigger(event2), effects=[]),
             ],
         )
 
@@ -355,7 +356,7 @@ class TestCollectEventTransitions:
             path=('Root', 'Parent', 'Child'),
             substates={'GrandChild1': grandchild1, 'GrandChild2': grandchild2},
             transitions=[
-                Transition(from_state='GrandChild1', to_state='GrandChild2', event=event, guard=None, effects=[])
+                Transition(from_state='GrandChild1', to_state='GrandChild2', trigger=EventTrigger(event), effects=[])
             ],
         )
         parent = State(

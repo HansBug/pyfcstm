@@ -275,46 +275,46 @@ ImportStatement
     :members: __post_init__,__str__,source_path,alias,extra_name,mappings
 
 
-ComboTriggerTerm
+TriggerTerm
 -----------------------------------------------------
 
-.. autoclass:: ComboTriggerTerm
+.. autoclass:: TriggerTerm
     :members: canonical_text
 
 
-ComboEventTerm
+EventTerm
 -----------------------------------------------------
 
-.. autoclass:: ComboEventTerm
-    :members: canonical_text,event_id,event_scope,term_span,removal_span
+.. autoclass:: EventTerm
+    :members: __setattr__,canonical_text,event_id,event_scope,term_span,removal_span
 
 
-ComboGuardTerm
+GuardTerm
 -----------------------------------------------------
 
-.. autoclass:: ComboGuardTerm
-    :members: canonical_text,condition_expr,value_span,term_span,removal_span
+.. autoclass:: GuardTerm
+    :members: __setattr__,canonical_text,condition_expr,value_span,term_span,removal_span
 
 
-ComboTransitionTrigger
+TransitionTrigger
 -----------------------------------------------------
 
-.. autoclass:: ComboTransitionTrigger
-    :members: canonical_text,is_combo,scope_prefix,terms,trigger_span,legacy_guard_syntax
+.. autoclass:: TransitionTrigger
+    :members: __setattr__,__delattr__,canonical_text,is_combo,scope_prefix,terms,trigger_span,legacy_guard_syntax
 
 
 TransitionDefinition
 -----------------------------------------------------
 
 .. autoclass:: TransitionDefinition
-    :members: __str__,from_state,to_state,event_id,condition_expr,post_operations,event_scope,combo_trigger,doc
+    :members: __setattr__,__str__,from_state,to_state,trigger,post_operations,doc
 
 
 ForceTransitionDefinition
 -----------------------------------------------------
 
 .. autoclass:: ForceTransitionDefinition
-    :members: __str__,from_state,to_state,event_id,condition_expr,event_scope,source_raw,doc
+    :members: __setattr__,__str__,from_state,to_state,trigger,source_raw,doc
 
 
 StateDefinition

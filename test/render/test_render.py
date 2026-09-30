@@ -346,7 +346,7 @@ class TestRenderRender:
                 )
             with open(os.path.join(template_dir, "expr.txt.j2"), "w") as f:
                 f.write(
-                    "{{ model.root_state.init_transitions[0].guard.to_ast_node() "
+                    "{{ model.root_state.init_transitions[0].trigger.condition.to_ast_node() "
                     "| expr_render(style='python_vars') }}"
                 )
 
@@ -384,7 +384,7 @@ class TestRenderRender:
                 )
             with open(os.path.join(template_dir, "expr.txt.j2"), "w") as f:
                 f.write(
-                    "{{ model.root_state.init_transitions[0].guard.to_ast_node() "
+                    "{{ model.root_state.init_transitions[0].trigger.condition.to_ast_node() "
                     "| expr_render(style='python_names') }}"
                 )
 

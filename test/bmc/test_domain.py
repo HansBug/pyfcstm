@@ -15,7 +15,7 @@ from pyfcstm.bmc import (
     VarDomainEntry,
     build_bmc_domain,
 )
-from pyfcstm.model import load_state_machine_from_text
+from pyfcstm.model import load_state_machine_from_text, EventTrigger
 
 
 @pytest.fixture()
@@ -955,8 +955,7 @@ def test_domain_reports_inconsistent_event_owners_and_missing_input_slots():
             Transition(
                 from_state="Root",
                 to_state="Root",
-                event=Event("Ghost", ("Missing",)),
-                guard=None,
+                trigger=EventTrigger(Event("Ghost", ("Missing",))),
                 effects=[],
             )
         ],

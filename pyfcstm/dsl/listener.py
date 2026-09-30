@@ -789,25 +789,10 @@ class GrammarParseListener(GrammarListener):
         node._span = _owner_span(ctx)
         self.nodes[ctx] = node
 
-    def _first_combo_event_term(self, trigger: ComboTransitionTrigger):
-        for term in trigger.terms:
-            if isinstance(term, ComboEventTerm):
-                return term
-        return None
-
-    def _single_guard_alias_expr(self, trigger: ComboTransitionTrigger):
-        if (
-            trigger.scope_prefix == ":"
-            and len(trigger.terms) == 1
-            and isinstance(trigger.terms[0], ComboGuardTerm)
-        ):
-            return trigger.terms[0].condition_expr
-        return None
-
-    def _normalize_entry_combo_trigger(self, trigger: ComboTransitionTrigger) -> None:
+    def _normalize_entry_combo_trigger(self, trigger: TransitionTrigger) -> None:
         for term in trigger.terms:
             if (
-                isinstance(term, ComboEventTerm)
+                isinstance(term, EventTerm)
                 and term.event_scope == "local"
                 and not term.event_id.is_absolute
             ):
@@ -822,46 +807,26 @@ class GrammarParseListener(GrammarListener):
         post_operations,
         doc=None,
     ) -> TransitionDefinition:
-        combo_trigger = self.nodes[trigger_ctx] if trigger_ctx else None
-        event_id = None
-        condition_expr = None
-        event_scope = None
-        stored_combo_trigger = None
-        if combo_trigger is not None:
+        trigger = self.nodes[trigger_ctx] if trigger_ctx else None
+        if trigger is not None:
             if from_state is INIT_STATE:
-                self._normalize_entry_combo_trigger(combo_trigger)
-            if combo_trigger.is_combo:
-                stored_combo_trigger = combo_trigger
-            else:
-                condition_expr = self._single_guard_alias_expr(combo_trigger)
-                event_term = self._first_combo_event_term(combo_trigger)
-                if condition_expr is not None:
-                    if not combo_trigger.legacy_guard_syntax:
-                        stored_combo_trigger = combo_trigger
-                elif event_term is not None:
-                    event_id = event_term.event_id
-                    event_scope = event_term.event_scope
-                    if from_state is INIT_STATE and event_scope == "local":
-                        event_scope = "chain"
-                    if (
-                        event_scope == "local"
-                        and isinstance(from_state, str)
-                        and not event_id.is_absolute
-                        and len(event_id.path) == 1
-                    ):
-                        event_id = ChainID([from_state, event_id.path[0]])
-
-        node = TransitionDefinition(
+                self._normalize_entry_combo_trigger(trigger)
+            elif not trigger.is_combo:
+                term = trigger.terms[0]
+                if (
+                    isinstance(term, EventTerm)
+                    and term.event_scope == "local"
+                    and not term.event_id.is_absolute
+                    and len(term.event_id.path) == 1
+                ):
+                    term.event_id = ChainID([from_state, term.event_id.path[0]])
+        return TransitionDefinition(
             from_state=from_state,
             to_state=to_state,
-            event_id=event_id,
-            condition_expr=condition_expr,
+            trigger=trigger,
             post_operations=post_operations,
-            event_scope=event_scope,
-            combo_trigger=stored_combo_trigger,
             doc=doc,
         )
-        return node
 
     def exitEntryTransitionDefinition(
         self, ctx: GrammarParser.EntryTransitionDefinitionContext
@@ -974,7 +939,7 @@ class GrammarParseListener(GrammarListener):
 
         event_id = self.nodes[ctx.combo_event_term()]
         terms.append(
-            ComboEventTerm(
+            EventTerm(
                 event_id=event_id,
                 event_scope="absolute" if event_id.is_absolute else "chain",
                 term_span=_ctx_span(ctx.combo_event_term()),
@@ -986,7 +951,7 @@ class GrammarParseListener(GrammarListener):
         for term_ctx in ctx.entry_chain_combo_trigger_term():
             term_node = self.nodes[term_ctx]
             if isinstance(term_node, ChainID):
-                term = ComboEventTerm(
+                term = EventTerm(
                     event_id=term_node,
                     event_scope="absolute" if term_node.is_absolute else "chain",
                     term_span=_ctx_span(term_ctx),
@@ -1000,9 +965,9 @@ class GrammarParseListener(GrammarListener):
             )
 
         _assign_combo_removal_spans(terms, term_contexts)
-        self.nodes[ctx] = ComboTransitionTrigger(
+        self.nodes[ctx] = TransitionTrigger(
             scope_prefix="::",
-            terms=terms,
+            terms=tuple(terms),
             trigger_span=_ctx_span(ctx),
         )
 
@@ -1043,7 +1008,7 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.Combo_guard_termContext
         """
         super().exitCombo_guard_term(ctx)
-        node = ComboGuardTerm(
+        node = GuardTerm(
             condition_expr=self.nodes[ctx.cond_expression()],
             term_span=_ctx_span(ctx),
             removal_span=_ctx_span(ctx),
@@ -1072,7 +1037,7 @@ class GrammarParseListener(GrammarListener):
         *,
         scope_prefix: str,
         event_scope: str,
-    ) -> ComboTransitionTrigger:
+    ) -> TransitionTrigger:
         terms = []
         term_contexts = list(ctx.combo_trigger_term())
         for term_ctx in term_contexts:
@@ -1087,7 +1052,7 @@ class GrammarParseListener(GrammarListener):
                         path=list(term_node.path), is_absolute=False
                     )
                     scoped_event_scope = "local"
-                term = ComboEventTerm(
+                term = EventTerm(
                     event_id=scoped_event_id,
                     event_scope=scoped_event_scope,
                     term_span=_ctx_span(term_ctx),
@@ -1098,9 +1063,9 @@ class GrammarParseListener(GrammarListener):
             terms.append(term)
 
         _assign_combo_removal_spans(terms, term_contexts)
-        trigger = ComboTransitionTrigger(
+        trigger = TransitionTrigger(
             scope_prefix=scope_prefix,
-            terms=terms,
+            terms=tuple(terms),
             trigger_span=_ctx_span(ctx),
         )
         return trigger
@@ -1162,7 +1127,7 @@ class GrammarParseListener(GrammarListener):
 
         event_name = self.nodes[ctx.local_combo_event_term()]
         terms.append(
-            ComboEventTerm(
+            EventTerm(
                 event_id=ChainID([event_name]),
                 event_scope="local",
                 term_span=_ctx_span(ctx.local_combo_event_term()),
@@ -1174,7 +1139,7 @@ class GrammarParseListener(GrammarListener):
         for term_ctx in ctx.local_combo_trigger_term():
             term_node = self.nodes[term_ctx]
             if isinstance(term_node, str):
-                term = ComboEventTerm(
+                term = EventTerm(
                     event_id=ChainID([term_node]),
                     event_scope="local",
                     term_span=_ctx_span(term_ctx),
@@ -1188,9 +1153,9 @@ class GrammarParseListener(GrammarListener):
             )
 
         _assign_combo_removal_spans(terms, term_contexts)
-        self.nodes[ctx] = ComboTransitionTrigger(
+        self.nodes[ctx] = TransitionTrigger(
             scope_prefix="::",
-            terms=terms,
+            terms=tuple(terms),
             trigger_span=_ctx_span(ctx),
         )
 
@@ -1204,9 +1169,9 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.Chain_combo_guard_aliasContext
         """
         super().exitChain_combo_guard_alias(ctx)
-        self.nodes[ctx] = ComboTransitionTrigger(
+        self.nodes[ctx] = TransitionTrigger(
             scope_prefix=":",
-            terms=[self.nodes[ctx.combo_guard_term()]],
+            terms=(self.nodes[ctx.combo_guard_term()],),
             trigger_span=_ctx_span(ctx),
         )
 
@@ -1224,16 +1189,16 @@ class GrammarParseListener(GrammarListener):
             self.nodes[ctx] = self.nodes[ctx.chain_combo_guard_alias()]
         elif ctx.combo_event_term() is not None:
             event_id = self.nodes[ctx.combo_event_term()]
-            self.nodes[ctx] = ComboTransitionTrigger(
+            self.nodes[ctx] = TransitionTrigger(
                 scope_prefix=":",
-                terms=[
-                    ComboEventTerm(
+                terms=(
+                    EventTerm(
                         event_id=event_id,
                         event_scope="absolute" if event_id.is_absolute else "chain",
                         term_span=_ctx_span(ctx.combo_event_term()),
                         removal_span=_ctx_span(ctx.combo_event_term()),
-                    )
-                ],
+                    ),
+                ),
                 trigger_span=_ctx_span(ctx),
             )
         else:
@@ -1243,19 +1208,19 @@ class GrammarParseListener(GrammarListener):
                 event_scope="chain",
             )
 
-    def _guard_trigger_from_legacy_syntax(self, ctx) -> ComboTransitionTrigger:
+    def _guard_trigger_from_legacy_syntax(self, ctx) -> TransitionTrigger:
         cond = ctx.cond_expression()
         term_start = ctx.LBRACK().symbol
         term_stop = ctx.RBRACK().symbol
-        term = ComboGuardTerm(
+        term = GuardTerm(
             condition_expr=self.nodes[cond],
             term_span=_span_from_tokens(term_start, term_stop),
             removal_span=_span_from_tokens(term_start, term_stop),
             value_span=_ctx_span(cond),
         )
-        return ComboTransitionTrigger(
+        return TransitionTrigger(
             scope_prefix=":",
-            terms=[term],
+            terms=(term,),
             trigger_span=_ctx_span(ctx),
             legacy_guard_syntax=True,
         )
@@ -1642,6 +1607,34 @@ class GrammarParseListener(GrammarListener):
         node._span = _owner_span(ctx)
         self.nodes[ctx] = node
 
+    def _force_transition_trigger(self, ctx):
+        if ctx.cond_expression():
+            trigger = self._guard_trigger_from_legacy_syntax(ctx)
+            trigger.trigger_span = _span_from_tokens(
+                ctx.COLON().symbol, ctx.RBRACK().symbol
+            )
+            return trigger
+        if ctx.chain_id():
+            event_id = self.nodes[ctx.chain_id()]
+            event_scope = "absolute" if event_id.is_absolute else "chain"
+        elif getattr(ctx, "from_id", None):
+            event_id = ChainID([ctx.from_state.text, ctx.from_id.text])
+            event_scope = "local"
+        else:
+            return None
+        term_span = (
+            _ctx_span(ctx.chain_id())
+            if ctx.chain_id()
+            else _span_from_tokens(ctx.from_id, ctx.from_id)
+        )
+        prefix_token = (ctx.getToken(GrammarParser.COLONCOLON, 0) or ctx.COLON()).symbol
+        end_token = ctx.chain_id().stop if ctx.chain_id() else ctx.from_id
+        return TransitionTrigger(
+            prefix_token.text,
+            (EventTerm(event_id, event_scope, term_span, term_span),),
+            trigger_span=_span_from_tokens(prefix_token, end_token),
+        )
+
     def exitNormalForceTransitionDefinition(
         self, ctx: GrammarParser.NormalForceTransitionDefinitionContext
     ) -> None:
@@ -1652,23 +1645,10 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.NormalForceTransitionDefinitionContext
         """
         super().exitNormalForceTransitionDefinition(ctx)
-        event_id = None
-        if ctx.chain_id():
-            event_id = self.nodes[ctx.chain_id()]
-            event_scope = "absolute" if event_id.is_absolute else "chain"
-        elif ctx.from_id:
-            event_id = ChainID([ctx.from_state.text, ctx.from_id.text])
-            event_scope = "local"
-        else:
-            event_scope = None
         node = ForceTransitionDefinition(
             from_state=ctx.from_state.text,
             to_state=ctx.to_state.text,
-            event_id=event_id,
-            condition_expr=self.nodes[ctx.cond_expression()]
-            if ctx.cond_expression()
-            else None,
-            event_scope=event_scope,
+            trigger=self._force_transition_trigger(ctx),
             doc=self._documentation(ctx),
         )
         node._span = _owner_span(ctx)
@@ -1684,23 +1664,10 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.ExitForceTransitionDefinitionContext
         """
         super().exitExitForceTransitionDefinition(ctx)
-        event_id = None
-        if ctx.chain_id():
-            event_id = self.nodes[ctx.chain_id()]
-            event_scope = "absolute" if event_id.is_absolute else "chain"
-        elif ctx.from_id:
-            event_id = ChainID([ctx.from_state.text, ctx.from_id.text])
-            event_scope = "local"
-        else:
-            event_scope = None
         node = ForceTransitionDefinition(
             from_state=ctx.from_state.text,
             to_state=EXIT_STATE,
-            event_id=event_id,
-            condition_expr=self.nodes[ctx.cond_expression()]
-            if ctx.cond_expression()
-            else None,
-            event_scope=event_scope,
+            trigger=self._force_transition_trigger(ctx),
             doc=self._documentation(ctx),
         )
         node._span = _owner_span(ctx)
@@ -1719,17 +1686,7 @@ class GrammarParseListener(GrammarListener):
         node = ForceTransitionDefinition(
             from_state=ALL,
             to_state=ctx.to_state.text,
-            event_id=self.nodes[ctx.chain_id()] if ctx.chain_id() else None,
-            condition_expr=self.nodes[ctx.cond_expression()]
-            if ctx.cond_expression()
-            else None,
-            event_scope=(
-                "absolute"
-                if ctx.chain_id() and self.nodes[ctx.chain_id()].is_absolute
-                else "chain"
-                if ctx.chain_id()
-                else None
-            ),
+            trigger=self._force_transition_trigger(ctx),
             doc=self._documentation(ctx),
         )
         node._span = _owner_span(ctx)
@@ -1748,17 +1705,7 @@ class GrammarParseListener(GrammarListener):
         node = ForceTransitionDefinition(
             from_state=ALL,
             to_state=EXIT_STATE,
-            event_id=self.nodes[ctx.chain_id()] if ctx.chain_id() else None,
-            condition_expr=self.nodes[ctx.cond_expression()]
-            if ctx.cond_expression()
-            else None,
-            event_scope=(
-                "absolute"
-                if ctx.chain_id() and self.nodes[ctx.chain_id()].is_absolute
-                else "chain"
-                if ctx.chain_id()
-                else None
-            ),
+            trigger=self._force_transition_trigger(ctx),
             doc=self._documentation(ctx),
         )
         node._span = _owner_span(ctx)

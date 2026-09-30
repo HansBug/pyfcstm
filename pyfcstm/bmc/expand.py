@@ -48,6 +48,8 @@ from .source import TERMINATE_CASE_PATH, MacroStepSource
 from pyfcstm.dsl import EXIT_STATE
 from pyfcstm.model import (
     Boolean,
+    EventTrigger,
+    GuardTrigger,
     OnAspect,
     OnStage,
     OperationStatement,
@@ -544,16 +546,16 @@ class _MacroExpander:
         guard_requirements = frontier.guard_requirements
         owner = frontier.stack[-1].state
         transition_label = self._transition_label(owner, transition, transition_index)
-        if transition.event is not None:
-            path = transition.event.path_name
+        if isinstance(transition.trigger, EventTrigger):
+            path = transition.trigger.event.path_name
             conditions.append(BoolTemplate.atom("%s%s" % (_EVENT_ATOM_PREFIX, path)))
             used_events = _merge_event_uses(
                 used_events,
                 self._event_uses_for_paths((path,), "positive", "trigger"),
             )
-        if transition.guard is not None:
-            if isinstance(transition.guard, Boolean):
-                if transition.guard.value:
+        if isinstance(transition.trigger, GuardTrigger):
+            if isinstance(transition.trigger.condition, Boolean):
+                if transition.trigger.condition.value:
                     pass
                 else:
                     conditions.append(BoolTemplate.false())
@@ -566,7 +568,7 @@ class _MacroExpander:
                     self._state_id(owner_path),
                     owner_path,
                     transition_label,
-                    transition.guard,
+                    transition.trigger.condition,
                     "positive",
                     self._guard_reason(frontier, is_initial),
                     len(frontier.action_blocks),
@@ -579,8 +581,8 @@ class _MacroExpander:
             used_events=used_events,
             guard_requirements=guard_requirements,
             consumed_events=(
-                frontier.consumed_events + (transition.event.path_name,)
-                if transition.event is not None
+                frontier.consumed_events + (transition.trigger.event.path_name,)
+                if isinstance(transition.trigger, EventTrigger)
                 else frontier.consumed_events
             ),
         )

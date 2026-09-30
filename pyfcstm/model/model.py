@@ -15,6 +15,8 @@ The main public components are:
 * :class:`Operation` - Operation assignments used in actions and transitions.
 * :class:`Event` - Event definitions scoped to a state path.
 * :class:`ComboOriginRef` - Provenance reference from generated combo edges.
+* :class:`EventTrigger` - Event condition for a transition.
+* :class:`GuardTrigger` - Expression condition for a transition.
 * :class:`Transition` - Transition definitions with optional guards and effects.
 * :class:`OnStage` - Entry/during/exit actions for a state.
 * :class:`OnAspect` - Aspect-oriented during actions.
@@ -80,6 +82,8 @@ __all__ = [
     "IfBlock",
     "Event",
     "ComboOriginRef",
+    "EventTrigger",
+    "GuardTrigger",
     "Transition",
     "OnStage",
     "OnAspect",
@@ -499,7 +503,7 @@ class _ComboAlternative:
     """
 
     transnode: dsl_nodes.TransitionDefinition
-    terms: Tuple[dsl_nodes.ComboTriggerTerm, ...]
+    terms: Tuple[dsl_nodes.TriggerTerm, ...]
     origin_id: str
     declaration_index: int
     semantic_duplicate_discriminator: Optional[int] = None
@@ -730,28 +734,80 @@ class Event:
         )
 
 
+@dataclass(frozen=True)
+class EventTrigger:
+    """An event trigger with optional original DSL scope.
+
+    :param event: Event whose occurrence enables the transition.
+    :type event: pyfcstm.model.model.Event
+    :param scope: Original event scope: local, chain, absolute, or unknown.
+    :type scope: Optional[str]
+    :raises TypeError: If the event or scope has an invalid type.
+    :raises ValueError: If the scope name is unknown.
+
+    Example::
+
+        >>> trigger = EventTrigger(Event("Go", ("Root",)))
+        >>> trigger.event.path_name
+        'Root.Go'
+    """
+
+    event: Event
+    scope: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.event, Event):
+            raise TypeError("event must be an Event")
+        if self.scope is not None and not isinstance(self.scope, str):
+            raise TypeError("scope must be a string or None")
+        if self.scope not in (None, "local", "chain", "absolute"):
+            raise ValueError("scope must be local, chain, absolute, or None")
+
+
+@dataclass(frozen=True)
+class GuardTrigger:
+    """A boolean expression that enables a transition.
+
+    :param condition: Model expression evaluated when choosing the edge.
+    :type condition: pyfcstm.model.expr.Expr
+    :raises TypeError: If the condition is not a model expression.
+
+    Example::
+
+        >>> from pyfcstm.model import Boolean
+        >>> trigger = GuardTrigger(Boolean(True))
+        >>> trigger.condition.value
+        True
+    """
+
+    condition: Expr
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.condition, Expr):
+            raise TypeError("condition must be an Expr")
+
+
 @dataclass
 class Transition(AstExportable):
     """
     Represents a transition between states in a state machine.
 
     A transition defines how the state machine moves from one state to another,
-    potentially triggered by an event, guarded by a condition, and with effects
-    that execute when the transition occurs.
+    triggered by either an event or a condition, and with effects
+    that execute when the transition occurs. The single ``trigger`` is either
+    :class:`EventTrigger`, :class:`GuardTrigger`, or ``None`` for an unconditional
+    edge. Trigger wrappers are immutable; replacing ``trigger`` validates the
+    new value before changing the edge. Events and guards cannot coexist on one
+    edge. Ordered combo triggers are expanded into multiple edges instead.
 
     :param from_state: The source state name or special state marker
     :type from_state: Union[str, dsl_nodes._StateSingletonMark]
     :param to_state: The target state name or special state marker
     :type to_state: Union[str, dsl_nodes._StateSingletonMark]
-    :param event: The event that triggers this transition, if any
-    :type event: Optional[Event]
-    :param guard: The condition that must be true for the transition to occur, if any
-    :type guard: Optional[Expr]
+    :param trigger: Event or guard trigger, or None for an unconditional edge
+    :type trigger: Optional[Union[EventTrigger, GuardTrigger]]
     :param effects: Operation statements to execute when the transition occurs
     :type effects: List[OperationStatement]
-    :param event_scope: Original DSL trigger scope for ``event`` when
-        known. One of ``'local'``, ``'chain'``, or ``'absolute'``.
-    :type event_scope: Optional[str]
     :param is_forced: Whether this transition was expanded from a forced
         transition declaration.
     :type is_forced: bool
@@ -783,18 +839,15 @@ class Transition(AstExportable):
         >>> transition = Transition(
         ...     from_state="idle",
         ...     to_state="active",
-        ...     event=None,
-        ...     guard=None,
+        ...     trigger=None,
         ...     effects=[]
         ... )
     """
 
     from_state: Union[str, dsl_nodes._StateSingletonMark]
     to_state: Union[str, dsl_nodes._StateSingletonMark]
-    event: Optional[Event]
-    guard: Optional[Expr]
+    trigger: Optional[Union[EventTrigger, GuardTrigger]]
     effects: List[OperationStatement]
-    event_scope: Optional[str] = field(default=None, compare=False)
     is_forced: bool = field(default=False, compare=False)
     forced_origin: Optional[str] = field(default=None, compare=False)
     combo_origin_refs: Tuple[ComboOriginRef, ...] = field(
@@ -821,6 +874,17 @@ class Transition(AstExportable):
         default=None, repr=False, compare=False
     )
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
+
+    def __setattr__(self, name, value):
+        if name in ("event", "guard", "event_scope"):
+            raise AttributeError("Transition uses trigger instead of %s" % name)
+        if name == "effects" and not isinstance(value, list):
+            raise TypeError("effects must be a list of operation statements")
+        if name == "trigger" and value is not None and not isinstance(
+            value, (EventTrigger, GuardTrigger)
+        ):
+            raise TypeError("trigger must be None, EventTrigger, or GuardTrigger")
+        object.__setattr__(self, name, value)
 
     @property
     def parent(self) -> Optional["State"]:
@@ -1556,8 +1620,7 @@ class State(AstExportable, PlantUMLExportable):
                 Transition(
                     from_state=self.name,
                     to_state=EXIT_STATE,
-                    event=None,
-                    guard=None,
+                    trigger=None,
                     effects=[],
                     parent_ref=self.parent_ref,
                 )
@@ -1586,8 +1649,7 @@ class State(AstExportable, PlantUMLExportable):
                 Transition(
                     from_state=INIT_STATE,
                     to_state=self.name,
-                    event=None,
-                    guard=None,
+                    trigger=None,
                     effects=[],
                     parent_ref=self.parent_ref,
                 )
@@ -1626,11 +1688,9 @@ class State(AstExportable, PlantUMLExportable):
         for transition in self.transitions:
             if transition.from_state is INIT_STATE:
                 retval.append(transition)
-                if transition.event is None and transition.guard is None:
+                if transition.trigger is None:
                     break
-        if not retval or (
-            retval and not (retval[-1].event is None and retval[-1].guard is None)
-        ):
+        if not retval or retval[-1].trigger is not None:
             retval.append(None)
         return retval
 
@@ -1990,30 +2050,46 @@ class State(AstExportable, PlantUMLExportable):
         else:
             cur_path = ()
 
-        if transition.event:
+        trigger = transition.trigger
+        if isinstance(trigger, EventTrigger):
             if (
-                len(transition.event.path) > len(cur_path)
-                and transition.event.path[: len(cur_path)] == cur_path
+                len(trigger.event.path) > len(cur_path)
+                and trigger.event.path[: len(cur_path)] == cur_path
             ):
                 event_id = dsl_nodes.ChainID(
-                    path=list(transition.event.path[len(cur_path) :]), is_absolute=False
+                    path=list(trigger.event.path[len(cur_path) :]), is_absolute=False
                 )
             else:
                 event_id = dsl_nodes.ChainID(
-                    path=list(transition.event.path[1:]), is_absolute=True
+                    path=list(trigger.event.path[1:]), is_absolute=True
                 )
+            event_scope = _event_origin_from_id(
+                event_id, trigger.scope,
+                source_state=transition.from_state
+                if isinstance(transition.from_state, str) else None,
+            )
+            is_local_spelling = not event_id.is_absolute and (
+                (transition.from_state is INIT_STATE and len(event_id.path) == 1)
+                or (len(event_id.path) == 2 and event_id.path[0] == transition.from_state)
+            )
+            ast_trigger = dsl_nodes.TransitionTrigger(
+                scope_prefix="::" if is_local_spelling else ":",
+                terms=(dsl_nodes.EventTerm(event_id, event_scope),),
+            )
+        elif isinstance(trigger, GuardTrigger):
+            ast_trigger = dsl_nodes.TransitionTrigger(
+                scope_prefix=":",
+                terms=(dsl_nodes.GuardTerm(trigger.condition.to_ast_node()),),
+                legacy_guard_syntax=True,
+            )
         else:
-            event_id = None
+            ast_trigger = None
 
         node = dsl_nodes.TransitionDefinition(
             from_state=transition.from_state,
             to_state=transition.to_state,
-            event_id=event_id,
-            condition_expr=transition.guard.to_ast_node()
-            if transition.guard is not None
-            else None,
+            trigger=ast_trigger,
             post_operations=[item.to_ast_node() for item in transition.effects],
-            event_scope=transition.event_scope,
             **_ast_doc_kwargs(dsl_nodes.TransitionDefinition, transition.doc),
         )
         if transition.combo_origin_refs:
@@ -2021,7 +2097,7 @@ class State(AstExportable, PlantUMLExportable):
                 node,
                 _TrustedComboTransitionMetadata(
                     origin_refs=transition.combo_origin_refs,
-                    event_scope=transition.event_scope,
+                    event_scope=trigger.scope if isinstance(trigger, EventTrigger) else None,
                     projection_key=transition.combo_projection_key,
                     projection_order_key=transition.combo_projection_order_key,
                     reuse_group_id=transition.combo_reuse_group_id,
@@ -2186,9 +2262,9 @@ class State(AstExportable, PlantUMLExportable):
                         arrow_str = " -->"
                         if (
                             config.event_visualization_mode in ("color", "both")
-                            and trans.event is not None
+                            and isinstance(trans.trigger, EventTrigger)
                         ):
-                            event_path = ".".join(trans.event.path)
+                            event_path = ".".join(trans.trigger.event.path)
                             if event_path in event_colors:
                                 color = event_colors[event_path]
                                 arrow_str = f" -[{color}]->"
@@ -2205,17 +2281,17 @@ class State(AstExportable, PlantUMLExportable):
                         trans_node: dsl_nodes.TransitionDefinition = trans.to_ast_node()
 
                         # Show event if enabled
-                        if config.show_events and trans.event is not None:
+                        if config.show_events and isinstance(trans.trigger, EventTrigger):
                             from .plantuml import format_event_name
 
                             formatted_event = format_event_name(
-                                trans.event,
+                                trans.trigger.event,
                                 config.event_name_format,
                                 trans_node=trans_node,
                             )
                             print(f" : {formatted_event}", file=tf, end="")
-                        elif config.show_transition_guards and trans.guard is not None:
-                            print(f" : {trans.guard.to_ast_node()}", file=tf, end="")
+                        elif config.show_transition_guards and isinstance(trans.trigger, GuardTrigger):
+                            print(f" : {trans.trigger.condition.to_ast_node()}", file=tf, end="")
 
                         # Show transition effects if enabled
                         if config.show_transition_effects and len(trans.effects) > 0:
@@ -4185,13 +4261,16 @@ def parse_dsl_node_to_state_machine(
             if unresolved:
                 continue
 
+            term = f_transnode.trigger.terms[0] if f_transnode.trigger is not None else None
+            event_term = term if isinstance(term, dsl_nodes.EventTerm) else None
+            event_scope = event_term.event_scope if event_term is not None else None
             my_event_id, trans_event = None, None
-            if f_transnode.event_id is not None:
-                my_event_id = f_transnode.event_id
+            if event_term is not None:
+                my_event_id = event_term.event_id
                 source_state = from_state if isinstance(from_state, str) else None
                 origin = _event_origin_from_id(
                     my_event_id,
-                    f_transnode.event_scope,
+                    event_scope,
                     source_state=source_state,
                 )
                 if not my_event_id.is_absolute:
@@ -4252,9 +4331,10 @@ def parse_dsl_node_to_state_machine(
                             start_state.events[suffix_name].origins.append(origin)
                     trans_event = start_state.events[suffix_name]
 
-            condition_expr, guard = f_transnode.condition_expr, None
-            if f_transnode.condition_expr is not None:
-                guard = parse_expr_node_to_expr(f_transnode.condition_expr)
+            condition_expr = term.condition_expr if isinstance(term, dsl_nodes.GuardTerm) else None
+            guard = None
+            if condition_expr is not None:
+                guard = parse_expr_node_to_expr(condition_expr)
                 unknown_vars = []
                 for var in guard.list_variables():
                     if var.name not in d_defines:
@@ -4275,7 +4355,7 @@ def parse_dsl_node_to_state_machine(
                                 "var_name": unknown_var,
                                 "referenced_in": "guard",
                                 "state_path": ".".join(current_path),
-                                "expr_text": str(f_transnode.condition_expr),
+                                "expr_text": str(condition_expr),
                             },
                         )
                     )
@@ -4300,7 +4380,7 @@ def parse_dsl_node_to_state_machine(
                         if trans_event is not None
                         else None,
                         "event_scope": (
-                            f_transnode.event_scope if trans_event is not None else None
+                            event_scope if trans_event is not None else None
                         ),
                         "guard": str(condition_expr)
                         if condition_expr is not None
@@ -4319,7 +4399,7 @@ def parse_dsl_node_to_state_machine(
                     trans_event,
                     condition_expr,
                     guard,
-                    f_transnode.event_scope,
+                    event_scope,
                     getattr(f_transnode, "source_raw", None)
                     or str(f_transnode.without_docs()),
                     _node_span(f_transnode),
@@ -4354,11 +4434,13 @@ def parse_dsl_node_to_state_machine(
                         Transition(
                             from_state=subnode.name,
                             to_state=to_state,
-                            event=trans_event,
-                            guard=guard,
+                            trigger=(
+                                EventTrigger(trans_event, event_scope)
+                                if trans_event is not None
+                                else GuardTrigger(guard) if guard is not None else None
+                            ),
                             effects=[],
                             doc=forced_doc,
-                            event_scope=event_scope,
                             is_forced=True,
                             forced_origin=forced_origin,
                             _span=forced_span,
@@ -4369,9 +4451,17 @@ def parse_dsl_node_to_state_machine(
                     inherited = dsl_nodes.ForceTransitionDefinition(
                         from_state=dsl_nodes.ALL,
                         to_state=dsl_nodes.EXIT_STATE,
-                        event_id=my_event_id,
-                        condition_expr=condition_expr,
-                        event_scope=event_scope,
+                        trigger=(
+                            dsl_nodes.TransitionTrigger(
+                                scope_prefix="::" if event_scope == "local" else ":",
+                                terms=(dsl_nodes.EventTerm(my_event_id, event_scope),)
+                                if my_event_id is not None
+                                else (dsl_nodes.GuardTerm(condition_expr),),
+                                legacy_guard_syntax=my_event_id is None,
+                            )
+                            if my_event_id is not None or condition_expr is not None
+                            else None
+                        ),
                         source_raw=forced_origin,
                         _span=forced_span,
                     )
@@ -4551,9 +4641,9 @@ def parse_dsl_node_to_state_machine(
 
         def _combo_term_semantic_key(
             transnode,
-            term: dsl_nodes.ComboTriggerTerm,
+            term: dsl_nodes.TriggerTerm,
         ) -> Tuple[object, ...]:
-            if isinstance(term, dsl_nodes.ComboEventTerm):
+            if isinstance(term, dsl_nodes.EventTerm):
                 event_id = term.event_id
                 event_scope = _event_origin_from_id(
                     event_id,
@@ -4646,7 +4736,7 @@ def parse_dsl_node_to_state_machine(
                 consumes_term=consumes_term,
                 term_text=term.canonical_text,
                 transition_span=_node_span(alternative.transnode),
-                trigger_span=alternative.transnode.combo_trigger.trigger_span,
+                trigger_span=alternative.transnode.trigger.trigger_span,
                 term_span=getattr(term, "term_span", None),
                 value_span=getattr(term, "value_span", None),
                 removal_span=getattr(term, "removal_span", None),
@@ -4661,8 +4751,8 @@ def parse_dsl_node_to_state_machine(
         combo_exhausted_names: Set[str] = set()
         combo_exhausted_payload_names: Dict[str, str] = {}
 
-        def _term_name_slug(term: dsl_nodes.ComboTriggerTerm) -> str:
-            if isinstance(term, dsl_nodes.ComboGuardTerm):
+        def _term_name_slug(term: dsl_nodes.TriggerTerm) -> str:
+            if isinstance(term, dsl_nodes.GuardTerm):
                 text = f"if {term.condition_expr}"
                 for source, replacement in [
                     ("=>", " implies "),
@@ -4718,7 +4808,7 @@ def parse_dsl_node_to_state_machine(
                 f"{'.'.join(current_state.path)}:"
                 f"{_transition_endpoint_text(transnode.from_state)}->"
                 f"{_transition_endpoint_text(transnode.to_state)}:"
-                f"{transnode.combo_trigger.canonical_text}"
+                f"{transnode.trigger.canonical_text}"
             )
             effects = _combo_effect_signature(transnode)
             if effects:
@@ -4735,14 +4825,14 @@ def parse_dsl_node_to_state_machine(
                 _transition_endpoint_text(transnode.to_state),
                 tuple(
                     _combo_term_semantic_key(transnode, term)
-                    for term in transnode.combo_trigger.terms
+                    for term in transnode.trigger.terms
                 ),
                 _combo_effect_signature(transnode),
             )
 
         def _make_pseudo_state(
             chooser_key: Tuple[object, ...],
-            consumed_terms: Tuple[dsl_nodes.ComboTriggerTerm, ...],
+            consumed_terms: Tuple[dsl_nodes.TriggerTerm, ...],
             consumed_term_keys: Tuple[Tuple[object, ...], ...],
             run_anchor_origin_id: str,
             semantic_duplicate_discriminator: Optional[int],
@@ -4860,10 +4950,8 @@ def parse_dsl_node_to_state_machine(
         def _append_generated_transition(
             from_state,
             to_state,
-            event: Optional[Event],
-            guard: Optional[Expr],
+            trigger: Optional[Union[EventTrigger, GuardTrigger]],
             effects: List[OperationStatement],
-            event_scope: Optional[str],
             origin_refs: Tuple[ComboOriginRef, ...],
             projection_key: Tuple[object, ...],
             projection_order_key: Tuple[object, ...],
@@ -4877,11 +4965,9 @@ def parse_dsl_node_to_state_machine(
             transition = Transition(
                 from_state=from_state,
                 to_state=to_state,
-                event=event,
-                guard=guard,
+                trigger=trigger,
                 effects=effects,
                 doc=doc,
-                event_scope=event_scope,
                 combo_origin_refs=origin_refs,
                 combo_projection_key=projection_key,
                 combo_projection_order_key=projection_order_key,
@@ -4911,10 +4997,7 @@ def parse_dsl_node_to_state_machine(
         ) -> None:
             first_alt = alternatives[0]
             term = first_alt.terms[term_index]
-            event = None
-            guard = None
-            event_scope = None
-            if isinstance(term, dsl_nodes.ComboEventTerm):
+            if isinstance(term, dsl_nodes.EventTerm):
                 event_id = term.event_id
                 event_scope, event = _resolve_transition_event(
                     first_alt.transnode,
@@ -4926,9 +5009,10 @@ def parse_dsl_node_to_state_machine(
                         else None
                     ),
                 )
+                trigger = EventTrigger(event, event_scope) if event is not None else None
             else:
-                guard = _parse_transition_guard(
-                    first_alt.transnode, term.condition_expr
+                trigger = GuardTrigger(
+                    _parse_transition_guard(first_alt.transnode, term.condition_expr)
                 )
 
             origin_refs = tuple(
@@ -4943,10 +5027,8 @@ def parse_dsl_node_to_state_machine(
             _append_generated_transition(
                 from_state=from_state,
                 to_state=to_state,
-                event=event,
-                guard=guard,
+                trigger=trigger,
                 effects=effects,
-                event_scope=event_scope,
                 origin_refs=origin_refs,
                 projection_key=projection_key,
                 projection_order_key=projection_order_key,
@@ -4964,7 +5046,7 @@ def parse_dsl_node_to_state_machine(
             alternatives: Tuple[_ComboAlternative, ...],
             term_index: int,
             from_state,
-            consumed_terms: Tuple[dsl_nodes.ComboTriggerTerm, ...],
+            consumed_terms: Tuple[dsl_nodes.TriggerTerm, ...],
             consumed_term_keys: Tuple[Tuple[object, ...], ...],
             projection_key: Tuple[object, ...],
         ) -> None:
@@ -5092,10 +5174,12 @@ def parse_dsl_node_to_state_machine(
             trusted_combo_metadata = _get_trusted_generated_combo_transition_metadata(
                 transnode
             )
+            term = transnode.trigger.terms[0] if transnode.trigger is not None else None
+            event_term = term if isinstance(term, dsl_nodes.EventTerm) else None
             event_scope_hint = (
                 trusted_combo_metadata.event_scope
                 if trusted_combo_metadata is not None
-                else transnode.event_scope
+                else event_term.event_scope if event_term is not None else None
             )
             source_state_name = (
                 transnode.from_state if isinstance(transnode.from_state, str) else None
@@ -5116,28 +5200,28 @@ def parse_dsl_node_to_state_machine(
 
             trans_event = None
             event_scope = None
-            if transnode.event_id is not None:
+            if event_term is not None:
                 event_scope, trans_event = _resolve_transition_event(
                     transnode,
-                    transnode.event_id,
+                    event_term.event_id,
                     event_scope_hint,
                     source_state_name=source_state_name,
                 )
 
-            guard = _parse_transition_guard(transnode, transnode.condition_expr)
+            guard = _parse_transition_guard(
+                transnode, term.condition_expr if isinstance(term, dsl_nodes.GuardTerm) else None
+            )
             post_operations = _parse_transition_effects(transnode)
             return Transition(
                 from_state=from_state,
                 to_state=to_state,
-                event=trans_event,
-                guard=guard,
+                trigger=(
+                    EventTrigger(trans_event, event_scope_hint or event_scope)
+                    if trans_event is not None
+                    else GuardTrigger(guard) if guard is not None else None
+                ),
                 effects=post_operations,
                 doc=getattr(transnode, "doc", None),
-                event_scope=(
-                    trusted_combo_metadata.event_scope
-                    if trusted_combo_metadata is not None
-                    else event_scope
-                ),
                 combo_origin_refs=(
                     trusted_combo_metadata.origin_refs
                     if trusted_combo_metadata is not None
@@ -5187,8 +5271,8 @@ def parse_dsl_node_to_state_machine(
 
         def _is_combo_transition(transnode) -> bool:
             return (
-                getattr(transnode, "combo_trigger", None) is not None
-                and transnode.combo_trigger.is_combo
+                transnode.trigger is not None
+                and transnode.trigger.is_combo
             )
 
         transition_endpoint_cache: Dict[int, bool] = {}
@@ -5225,7 +5309,7 @@ def parse_dsl_node_to_state_machine(
                 continue
 
             projection_key = _combo_projection_key(transnode)
-            first_term = transnode.combo_trigger.terms[0]
+            first_term = transnode.trigger.terms[0]
             first_key = _combo_term_semantic_key(transnode, first_term)
             run = []
             j = i
@@ -5247,7 +5331,7 @@ def parse_dsl_node_to_state_machine(
                     continue
                 if candidate.from_state is dsl_nodes.INIT_STATE:
                     has_entry_trans = True
-                candidate_first = candidate.combo_trigger.terms[0]
+                candidate_first = candidate.trigger.terms[0]
                 candidate_key = _combo_term_semantic_key(candidate, candidate_first)
                 if candidate_key != first_key:
                     break
@@ -5258,7 +5342,7 @@ def parse_dsl_node_to_state_machine(
                 run.append(
                     _ComboAlternative(
                         transnode=candidate,
-                        terms=tuple(candidate.combo_trigger.terms),
+                        terms=tuple(candidate.trigger.terms),
                         origin_id=_combo_origin_id(
                             candidate,
                             duplicate_index if duplicate_index else None,

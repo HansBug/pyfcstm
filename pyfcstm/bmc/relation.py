@@ -108,7 +108,7 @@ from .source import (
 )
 from .provenance import BmcTrackedConstraint
 from pyfcstm.dsl.role import VariableRole
-from pyfcstm.model import Expr
+from pyfcstm.model import Expr, EventTrigger
 from pyfcstm.solver.domain import DomainConstraint, DomainSource, translate_expr_domain
 from pyfcstm.solver.operation import execute_operations_domain
 
@@ -524,11 +524,11 @@ def _transition_candidates(
                 continue
             if event_paths is not None:
                 if event_paths and (
-                    transition.event is None
-                    or transition.event.path_name not in event_paths
+                    not isinstance(transition.trigger, EventTrigger)
+                    or transition.trigger.event.path_name not in event_paths
                 ):
                     continue
-                if not event_paths and transition.event is not None:
+                if not event_paths and isinstance(transition.trigger, EventTrigger):
                     continue
             target_path = _transition_target_path(owner, transition, initial=False)
             if (
@@ -613,7 +613,7 @@ def _unique_combo_transition(context: BmcPreparedContext, case: CycleCase):
             if target_path is None:
                 continue
 
-            if transition.event is None:
+            if not isinstance(transition.trigger, EventTrigger):
                 routes.append(
                     (
                         target_path,
@@ -625,7 +625,7 @@ def _unique_combo_transition(context: BmcPreparedContext, case: CycleCase):
                 continue
             if event_index == len(event_paths):
                 continue
-            if transition.event.path_name != event_paths[event_index]:
+            if transition.trigger.event.path_name != event_paths[event_index]:
                 continue
             routes.append(
                 (

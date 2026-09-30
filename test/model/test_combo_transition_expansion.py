@@ -1,3 +1,4 @@
+from pyfcstm.model import EventTrigger, GuardTrigger
 import hashlib
 import re
 
@@ -24,8 +25,8 @@ def _transition_signature(transition):
         "to": "[*]"
         if str(transition.to_state) == "EXIT_STATE"
         else transition.to_state,
-        "event": transition.event.path_name if transition.event is not None else None,
-        "guard": str(transition.guard) if transition.guard is not None else None,
+        "event": transition.trigger.event.path_name if isinstance(transition.trigger, EventTrigger) else None,
+        "guard": str(transition.trigger.condition) if isinstance(transition.trigger, GuardTrigger) else None,
         "effects": [str(item.to_ast_node()) for item in transition.effects],
         "origins": [
             {
@@ -187,7 +188,7 @@ class TestComboModelExpansion:
         generated = [
             item for item in model.root_state.transitions if item.combo_origin_refs
         ]
-        assert [item.event.path_name for item in generated] == [
+        assert [item.trigger.event.path_name for item in generated] == [
             "Root.E1",
             "Root.E2",
             "Root.Bus.E1",
@@ -500,7 +501,7 @@ class TestComboModelExpansion:
 
         assert len(first_edges) == 1
         assert len(second_edges) == 2
-        assert {item.event.path_name for item in second_edges} == {
+        assert {item.trigger.event.path_name for item in second_edges} == {
             "Root.S1.E2",
             "Root.S1.E4",
         }
@@ -592,8 +593,8 @@ class TestComboModelExpansion:
             (
                 item.from_state,
                 item.to_state,
-                item.event_scope,
-                item.event.path_name if item.event is not None else None,
+                item.trigger.scope if isinstance(item.trigger, EventTrigger) else None,
+                item.trigger.event.path_name if isinstance(item.trigger, EventTrigger) else None,
                 len(item.combo_origin_refs),
                 item.combo_projection_key,
                 item.combo_projection_order_key,
@@ -604,8 +605,8 @@ class TestComboModelExpansion:
             (
                 item.from_state,
                 item.to_state,
-                item.event_scope,
-                item.event.path_name if item.event is not None else None,
+                item.trigger.scope if isinstance(item.trigger, EventTrigger) else None,
+                item.trigger.event.path_name if isinstance(item.trigger, EventTrigger) else None,
                 len(item.combo_origin_refs),
                 item.combo_projection_key,
                 item.combo_projection_order_key,
@@ -762,8 +763,8 @@ class TestComboModelExpansion:
 
         assert len(first_edges) == 2
         assert first_edges[0].to_state != first_edges[1].to_state
-        assert first_edges[0].event.path_name == "Root.A.Go"
-        assert first_edges[1].event.path_name == "Root.B.Go"
+        assert first_edges[0].trigger.event.path_name == "Root.A.Go"
+        assert first_edges[1].trigger.event.path_name == "Root.B.Go"
 
     def test_unrelated_transition_insert_does_not_rename_existing_combo_pseudo(self):
         base = _build_model(
@@ -994,7 +995,7 @@ class TestComboModelExpansion:
         generated = [
             item for item in model.root_state.transitions if item.combo_origin_refs
         ]
-        assert [item.event.path_name for item in generated] == [
+        assert [item.trigger.event.path_name for item in generated] == [
             "Root.S1.E1",
             "Root.S1.E2",
         ]

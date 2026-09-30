@@ -363,8 +363,8 @@ class TestModelModel:
         transition_from = root_state_1.transitions_from[0]
         assert transition_from.from_state == "LX"
         assert transition_from.to_state == dsl_nodes.EXIT_STATE
-        assert transition_from.event is None
-        assert transition_from.guard is None
+        assert not isinstance(transition_from.trigger, EventTrigger)
+        assert not isinstance(transition_from.trigger, GuardTrigger)
         assert transition_from.effects == []
         assert transition_from.parent is None
 
@@ -372,8 +372,8 @@ class TestModelModel:
         transition_to = root_state_1.transitions_to[0]
         assert transition_to.from_state == dsl_nodes.INIT_STATE
         assert transition_to.to_state == "LX"
-        assert transition_to.event is None
-        assert transition_to.guard is None
+        assert not isinstance(transition_to.trigger, EventTrigger)
+        assert not isinstance(transition_to.trigger, GuardTrigger)
         assert transition_to.effects == []
         assert transition_to.parent is None
 
@@ -383,16 +383,16 @@ class TestModelModel:
             == dsl_nodes.INIT_STATE
         )
         assert root_state_1.transitions_entering_children[0].to_state == "LX1"
-        assert root_state_1.transitions_entering_children[0].event is None
-        assert root_state_1.transitions_entering_children[0].guard is None
+        assert not isinstance(root_state_1.transitions_entering_children[0].trigger, EventTrigger)
+        assert not isinstance(root_state_1.transitions_entering_children[0].trigger, GuardTrigger)
         assert root_state_1.transitions_entering_children[0].parent is root_state_1
         assert (
             root_state_1.transitions_entering_children[1].from_state
             == dsl_nodes.INIT_STATE
         )
         assert root_state_1.transitions_entering_children[1].to_state == "LX2"
-        assert root_state_1.transitions_entering_children[1].event is not None
-        assert root_state_1.transitions_entering_children[1].guard is None
+        assert isinstance(root_state_1.transitions_entering_children[1].trigger, EventTrigger)
+        assert not isinstance(root_state_1.transitions_entering_children[1].trigger, GuardTrigger)
         assert root_state_1.transitions_entering_children[1].parent is root_state_1
 
         assert len(root_state_1.transitions_entering_children_simplified) == 1
@@ -403,8 +403,8 @@ class TestModelModel:
         assert (
             root_state_1.transitions_entering_children_simplified[0].to_state == "LX1"
         )
-        assert root_state_1.transitions_entering_children_simplified[0].event is None
-        assert root_state_1.transitions_entering_children_simplified[0].guard is None
+        assert not isinstance(root_state_1.transitions_entering_children_simplified[0].trigger, EventTrigger)
+        assert not isinstance(root_state_1.transitions_entering_children_simplified[0].trigger, GuardTrigger)
         assert (
             root_state_1.transitions_entering_children_simplified[0].parent
             is root_state_1
@@ -604,36 +604,36 @@ class TestModelModel:
         assert len(state_LX_LX1.transitions) == 10
         assert state_LX_LX1.transitions[0].from_state == dsl_nodes.INIT_STATE
         assert state_LX_LX1.transitions[0].to_state == "LX11"
-        assert state_LX_LX1.transitions[0].event is None
-        assert state_LX_LX1.transitions[0].guard is None
+        assert not isinstance(state_LX_LX1.transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_LX_LX1.transitions[0].trigger, GuardTrigger)
         assert len(state_LX_LX1.transitions[0].effects) == 0
         assert state_LX_LX1.transitions[0].parent is state_LX_LX1
         assert state_LX_LX1.transitions[1].from_state == "LX11"
         assert state_LX_LX1.transitions[1].to_state == "LX12"
-        assert state_LX_LX1.transitions[1].event is not None
-        assert state_LX_LX1.transitions[1].event.path == ("LX", "LX1", "LX11", "E1")
-        assert state_LX_LX1.transitions[1].guard is None
+        assert isinstance(state_LX_LX1.transitions[1].trigger, EventTrigger)
+        assert state_LX_LX1.transitions[1].trigger.event.path == ("LX", "LX1", "LX11", "E1")
+        assert not isinstance(state_LX_LX1.transitions[1].trigger, GuardTrigger)
         assert len(state_LX_LX1.transitions[1].effects) == 0
         assert state_LX_LX1.transitions[1].parent is state_LX_LX1
         assert state_LX_LX1.transitions[2].from_state == "LX12"
         assert state_LX_LX1.transitions[2].to_state == "LX13"
-        assert state_LX_LX1.transitions[2].event is not None
-        assert state_LX_LX1.transitions[2].event.path == ("LX", "LX1", "LX12", "E1")
-        assert state_LX_LX1.transitions[2].guard is None
+        assert isinstance(state_LX_LX1.transitions[2].trigger, EventTrigger)
+        assert state_LX_LX1.transitions[2].trigger.event.path == ("LX", "LX1", "LX12", "E1")
+        assert not isinstance(state_LX_LX1.transitions[2].trigger, GuardTrigger)
         assert len(state_LX_LX1.transitions[2].effects) == 0
         assert state_LX_LX1.transitions[2].parent is state_LX_LX1
         assert state_LX_LX1.transitions[3].from_state == "LX12"
         assert state_LX_LX1.transitions[3].to_state == "LX14"
-        assert state_LX_LX1.transitions[3].event is not None
-        assert state_LX_LX1.transitions[3].event.path == ("LX", "LX1", "LX12", "E2")
-        assert state_LX_LX1.transitions[3].guard is None
+        assert isinstance(state_LX_LX1.transitions[3].trigger, EventTrigger)
+        assert state_LX_LX1.transitions[3].trigger.event.path == ("LX", "LX1", "LX12", "E2")
+        assert not isinstance(state_LX_LX1.transitions[3].trigger, GuardTrigger)
         assert len(state_LX_LX1.transitions[3].effects) == 0
         assert state_LX_LX1.transitions[3].parent is state_LX_LX1
         assert state_LX_LX1.transitions[4].from_state == "LX13"
         assert state_LX_LX1.transitions[4].to_state == dsl_nodes.EXIT_STATE
-        assert state_LX_LX1.transitions[4].event is not None
-        assert state_LX_LX1.transitions[4].event.path == ("LX", "LX1", "LX13", "E1")
-        assert state_LX_LX1.transitions[4].guard is None
+        assert isinstance(state_LX_LX1.transitions[4].trigger, EventTrigger)
+        assert state_LX_LX1.transitions[4].trigger.event.path == ("LX", "LX1", "LX13", "E1")
+        assert not isinstance(state_LX_LX1.transitions[4].trigger, GuardTrigger)
         assert len(state_LX_LX1.transitions[4].effects) == 1
         assert state_LX_LX1.transitions[4].effects[0] == Operation(
             var_name="a", expr=Integer(value=2)
@@ -641,9 +641,9 @@ class TestModelModel:
         assert state_LX_LX1.transitions[4].parent is state_LX_LX1
         assert state_LX_LX1.transitions[5].from_state == "LX13"
         assert state_LX_LX1.transitions[5].to_state == dsl_nodes.EXIT_STATE
-        assert state_LX_LX1.transitions[5].event is not None
-        assert state_LX_LX1.transitions[5].event.path == ("LX", "LX1", "LX13", "E2")
-        assert state_LX_LX1.transitions[5].guard is None
+        assert isinstance(state_LX_LX1.transitions[5].trigger, EventTrigger)
+        assert state_LX_LX1.transitions[5].trigger.event.path == ("LX", "LX1", "LX13", "E2")
+        assert not isinstance(state_LX_LX1.transitions[5].trigger, GuardTrigger)
         assert len(state_LX_LX1.transitions[5].effects) == 1
         assert state_LX_LX1.transitions[5].effects[0] == Operation(
             var_name="a", expr=Integer(value=3)
@@ -651,30 +651,30 @@ class TestModelModel:
         assert state_LX_LX1.transitions[5].parent is state_LX_LX1
         assert state_LX_LX1.transitions[6].from_state == "LX13"
         assert state_LX_LX1.transitions[6].to_state == "LX14"
-        assert state_LX_LX1.transitions[6].event is not None
-        assert state_LX_LX1.transitions[6].event.path == ("LX", "LX1", "LX13", "E3")
-        assert state_LX_LX1.transitions[6].guard is None
+        assert isinstance(state_LX_LX1.transitions[6].trigger, EventTrigger)
+        assert state_LX_LX1.transitions[6].trigger.event.path == ("LX", "LX1", "LX13", "E3")
+        assert not isinstance(state_LX_LX1.transitions[6].trigger, GuardTrigger)
         assert len(state_LX_LX1.transitions[6].effects) == 0
         assert state_LX_LX1.transitions[6].parent is state_LX_LX1
         assert state_LX_LX1.transitions[7].from_state == "LX13"
         assert state_LX_LX1.transitions[7].to_state == "LX14"
-        assert state_LX_LX1.transitions[7].event is not None
-        assert state_LX_LX1.transitions[7].event.path == ("LX", "LX1", "LX13", "E4")
-        assert state_LX_LX1.transitions[7].guard is None
+        assert isinstance(state_LX_LX1.transitions[7].trigger, EventTrigger)
+        assert state_LX_LX1.transitions[7].trigger.event.path == ("LX", "LX1", "LX13", "E4")
+        assert not isinstance(state_LX_LX1.transitions[7].trigger, GuardTrigger)
         assert len(state_LX_LX1.transitions[7].effects) == 0
         assert state_LX_LX1.transitions[7].parent is state_LX_LX1
         assert state_LX_LX1.transitions[8].from_state == "LX14"
         assert state_LX_LX1.transitions[8].to_state == "LX12"
-        assert state_LX_LX1.transitions[8].event is not None
-        assert state_LX_LX1.transitions[8].event.path == ("LX", "LX1", "LX14", "E1")
-        assert state_LX_LX1.transitions[8].guard is None
+        assert isinstance(state_LX_LX1.transitions[8].trigger, EventTrigger)
+        assert state_LX_LX1.transitions[8].trigger.event.path == ("LX", "LX1", "LX14", "E1")
+        assert not isinstance(state_LX_LX1.transitions[8].trigger, GuardTrigger)
         assert len(state_LX_LX1.transitions[8].effects) == 0
         assert state_LX_LX1.transitions[8].parent is state_LX_LX1
         assert state_LX_LX1.transitions[9].from_state == "LX14"
         assert state_LX_LX1.transitions[9].to_state == dsl_nodes.EXIT_STATE
-        assert state_LX_LX1.transitions[9].event is not None
-        assert state_LX_LX1.transitions[9].event.path == ("LX", "LX1", "LX14", "E2")
-        assert state_LX_LX1.transitions[9].guard is None
+        assert isinstance(state_LX_LX1.transitions[9].trigger, EventTrigger)
+        assert state_LX_LX1.transitions[9].trigger.event.path == ("LX", "LX1", "LX14", "E2")
+        assert not isinstance(state_LX_LX1.transitions[9].trigger, GuardTrigger)
         assert len(state_LX_LX1.transitions[9].effects) == 1
         assert state_LX_LX1.transitions[9].effects[0] == Operation(
             var_name="a", expr=Integer(value=1)
@@ -684,38 +684,38 @@ class TestModelModel:
         assert len(state_LX_LX1.transitions_from) == 2
         assert state_LX_LX1.transitions_from[0].from_state == "LX1"
         assert state_LX_LX1.transitions_from[0].to_state == "LX2"
-        assert state_LX_LX1.transitions_from[0].event is None
-        assert state_LX_LX1.transitions_from[0].guard is not None
-        assert str(state_LX_LX1.transitions_from[0].guard) == "a == 2 || a == 3"
+        assert not isinstance(state_LX_LX1.transitions_from[0].trigger, EventTrigger)
+        assert isinstance(state_LX_LX1.transitions_from[0].trigger, GuardTrigger)
+        assert str(state_LX_LX1.transitions_from[0].trigger.condition) == "a == 2 || a == 3"
         assert len(state_LX_LX1.transitions_from[0].effects) == 0
         assert state_LX_LX1.transitions_from[0].parent is state_LX_LX1.parent
         assert state_LX_LX1.transitions_from[1].from_state == "LX1"
         assert state_LX_LX1.transitions_from[1].to_state == "LX1"
-        assert state_LX_LX1.transitions_from[1].event is None
-        assert state_LX_LX1.transitions_from[1].guard is not None
-        assert str(state_LX_LX1.transitions_from[1].guard) == "a == 1"
+        assert not isinstance(state_LX_LX1.transitions_from[1].trigger, EventTrigger)
+        assert isinstance(state_LX_LX1.transitions_from[1].trigger, GuardTrigger)
+        assert str(state_LX_LX1.transitions_from[1].trigger.condition) == "a == 1"
         assert len(state_LX_LX1.transitions_from[1].effects) == 0
         assert state_LX_LX1.transitions_from[1].parent is state_LX_LX1.parent
 
         assert len(state_LX_LX1.transitions_to) == 3
         assert state_LX_LX1.transitions_to[0].from_state == dsl_nodes.INIT_STATE
         assert state_LX_LX1.transitions_to[0].to_state == "LX1"
-        assert state_LX_LX1.transitions_to[0].event is None
-        assert state_LX_LX1.transitions_to[0].guard is None
+        assert not isinstance(state_LX_LX1.transitions_to[0].trigger, EventTrigger)
+        assert not isinstance(state_LX_LX1.transitions_to[0].trigger, GuardTrigger)
         assert len(state_LX_LX1.transitions_to[0].effects) == 0
         assert state_LX_LX1.transitions_to[0].parent is state_LX_LX1.parent
         assert state_LX_LX1.transitions_to[1].from_state == "LX1"
         assert state_LX_LX1.transitions_to[1].to_state == "LX1"
-        assert state_LX_LX1.transitions_to[1].event is None
-        assert state_LX_LX1.transitions_to[1].guard is not None
-        assert str(state_LX_LX1.transitions_to[1].guard) == "a == 1"
+        assert not isinstance(state_LX_LX1.transitions_to[1].trigger, EventTrigger)
+        assert isinstance(state_LX_LX1.transitions_to[1].trigger, GuardTrigger)
+        assert str(state_LX_LX1.transitions_to[1].trigger.condition) == "a == 1"
         assert len(state_LX_LX1.transitions_to[1].effects) == 0
         assert state_LX_LX1.transitions_to[1].parent is state_LX_LX1.parent
         assert state_LX_LX1.transitions_to[2].from_state == "LX2"
         assert state_LX_LX1.transitions_to[2].to_state == "LX1"
-        assert state_LX_LX1.transitions_to[2].event is None
-        assert state_LX_LX1.transitions_to[2].guard is not None
-        assert str(state_LX_LX1.transitions_to[2].guard) == "a == 1"
+        assert not isinstance(state_LX_LX1.transitions_to[2].trigger, EventTrigger)
+        assert isinstance(state_LX_LX1.transitions_to[2].trigger, GuardTrigger)
+        assert str(state_LX_LX1.transitions_to[2].trigger.condition) == "a == 1"
         assert len(state_LX_LX1.transitions_to[2].effects) == 0
         assert state_LX_LX1.transitions_to[2].parent is state_LX_LX1.parent
 
@@ -725,8 +725,8 @@ class TestModelModel:
             == dsl_nodes.INIT_STATE
         )
         assert state_LX_LX1.transitions_entering_children[0].to_state == "LX11"
-        assert state_LX_LX1.transitions_entering_children[0].event is None
-        assert state_LX_LX1.transitions_entering_children[0].guard is None
+        assert not isinstance(state_LX_LX1.transitions_entering_children[0].trigger, EventTrigger)
+        assert not isinstance(state_LX_LX1.transitions_entering_children[0].trigger, GuardTrigger)
         assert len(state_LX_LX1.transitions_entering_children[0].effects) == 0
         assert state_LX_LX1.transitions_entering_children[0].parent is state_LX_LX1
 
@@ -738,8 +738,8 @@ class TestModelModel:
         assert (
             state_LX_LX1.transitions_entering_children_simplified[0].to_state == "LX11"
         )
-        assert state_LX_LX1.transitions_entering_children_simplified[0].event is None
-        assert state_LX_LX1.transitions_entering_children_simplified[0].guard is None
+        assert not isinstance(state_LX_LX1.transitions_entering_children_simplified[0].trigger, EventTrigger)
+        assert not isinstance(state_LX_LX1.transitions_entering_children_simplified[0].trigger, GuardTrigger)
         assert (
             len(state_LX_LX1.transitions_entering_children_simplified[0].effects) == 0
         )
@@ -762,22 +762,22 @@ class TestModelModel:
         assert len(state_LX_LX1_LX11.transitions_from) == 1
         assert state_LX_LX1_LX11.transitions_from[0].from_state == "LX11"
         assert state_LX_LX1_LX11.transitions_from[0].to_state == "LX12"
-        assert state_LX_LX1_LX11.transitions_from[0].event is not None
-        assert state_LX_LX1_LX11.transitions_from[0].event.path == (
+        assert isinstance(state_LX_LX1_LX11.transitions_from[0].trigger, EventTrigger)
+        assert state_LX_LX1_LX11.transitions_from[0].trigger.event.path == (
             "LX",
             "LX1",
             "LX11",
             "E1",
         )
-        assert state_LX_LX1_LX11.transitions_from[0].guard is None
+        assert not isinstance(state_LX_LX1_LX11.transitions_from[0].trigger, GuardTrigger)
         assert len(state_LX_LX1_LX11.transitions_from[0].effects) == 0
         assert state_LX_LX1_LX11.transitions_from[0].parent is state_LX_LX1_LX11.parent
 
         assert len(state_LX_LX1_LX11.transitions_to) == 1
         assert state_LX_LX1_LX11.transitions_to[0].from_state == dsl_nodes.INIT_STATE
         assert state_LX_LX1_LX11.transitions_to[0].to_state == "LX11"
-        assert state_LX_LX1_LX11.transitions_to[0].event is None
-        assert state_LX_LX1_LX11.transitions_to[0].guard is None
+        assert not isinstance(state_LX_LX1_LX11.transitions_to[0].trigger, EventTrigger)
+        assert not isinstance(state_LX_LX1_LX11.transitions_to[0].trigger, GuardTrigger)
         assert len(state_LX_LX1_LX11.transitions_to[0].effects) == 0
         assert state_LX_LX1_LX11.transitions_to[0].parent is state_LX_LX1_LX11.parent
 
@@ -828,85 +828,79 @@ class TestModelModel:
     ):
         assert transition_1.from_state == dsl_nodes.INIT_STATE
         assert transition_1.to_state == "LX"
-        assert transition_1.event is None
-        assert transition_1.guard is None
+        assert not isinstance(transition_1.trigger, EventTrigger)
+        assert not isinstance(transition_1.trigger, GuardTrigger)
         assert transition_1.effects == []
         assert transition_1.parent is None
         assert transition_1.to_ast_node() == dsl_nodes.TransitionDefinition(
             from_state=dsl_nodes.INIT_STATE,
             to_state="LX",
-            event_id=None,
-            condition_expr=None,
+            trigger=None,
             post_operations=[],
         )
 
         assert transition_2.from_state == "LX"
         assert transition_2.to_state == dsl_nodes.EXIT_STATE
-        assert transition_2.event is None
-        assert transition_2.guard is None
+        assert not isinstance(transition_2.trigger, EventTrigger)
+        assert not isinstance(transition_2.trigger, GuardTrigger)
         assert transition_2.effects == []
         assert transition_2.parent is None
         assert transition_2.to_ast_node() == dsl_nodes.TransitionDefinition(
             from_state="LX",
             to_state=dsl_nodes.EXIT_STATE,
-            event_id=None,
-            condition_expr=None,
+            trigger=None,
             post_operations=[],
         )
 
         assert transition_3.from_state == dsl_nodes.INIT_STATE
         assert transition_3.to_state == "LX1"
-        assert transition_3.event is None
-        assert transition_3.guard is None
+        assert not isinstance(transition_3.trigger, EventTrigger)
+        assert not isinstance(transition_3.trigger, GuardTrigger)
         assert transition_3.effects == []
         assert transition_3.parent is root_state_1
         assert transition_3.to_ast_node() == dsl_nodes.TransitionDefinition(
             from_state=dsl_nodes.INIT_STATE,
             to_state="LX1",
-            event_id=None,
-            condition_expr=None,
+            trigger=None,
             post_operations=[],
         )
 
         assert transition_4.from_state == dsl_nodes.INIT_STATE
         assert transition_4.to_state == "LX2"
-        assert transition_4.event == Event(name="EEE", state_path=("LX",))
-        assert transition_4.guard is None
+        assert transition_4.trigger.event == Event(name="EEE", state_path=("LX",))
+        assert not isinstance(transition_4.trigger, GuardTrigger)
         assert transition_4.effects == []
         assert transition_4.parent is root_state_1
         assert transition_4.to_ast_node() == dsl_nodes.TransitionDefinition(
             from_state=dsl_nodes.INIT_STATE,
             to_state="LX2",
-            event_id=dsl_nodes.ChainID(["EEE"]),
-            condition_expr=None,
+            trigger=dsl_nodes.TransitionTrigger('::', (dsl_nodes.EventTerm(dsl_nodes.ChainID(["EEE"]), 'chain'),)),
             post_operations=[],
         )
 
         assert transition_5.from_state == "LX12"
         assert transition_5.to_state == "LX14"
-        assert transition_5.event == Event(name="E2", state_path=("LX", "LX1", "LX12"))
-        assert transition_5.guard is None
+        assert transition_5.trigger.event == Event(name="E2", state_path=("LX", "LX1", "LX12"))
+        assert not isinstance(transition_5.trigger, GuardTrigger)
         assert transition_5.effects == []
         assert transition_5.parent is state_LX_LX1
         assert transition_5.to_ast_node() == dsl_nodes.TransitionDefinition(
             from_state="LX12",
             to_state="LX14",
-            event_id=dsl_nodes.ChainID(["LX12", "E2"]),
-            condition_expr=None,
+            trigger=dsl_nodes.TransitionTrigger('::', (dsl_nodes.EventTerm(dsl_nodes.ChainID(["LX12", "E2"]), 'local'),)),
             post_operations=[],
         )
 
         assert transition_6.from_state == "LX13"
         assert transition_6.to_state == dsl_nodes.EXIT_STATE
-        assert transition_6.event == Event(name="E1", state_path=("LX", "LX1", "LX13"))
-        assert transition_6.guard is None
+        assert transition_6.trigger.event == Event(name="E1", state_path=("LX", "LX1", "LX13"))
+        assert not isinstance(transition_6.trigger, GuardTrigger)
         assert transition_6.effects == [Operation(var_name="a", expr=Integer(value=2))]
         assert transition_6.parent is state_LX_LX1
         assert transition_6.to_ast_node() == dsl_nodes.TransitionDefinition(
             from_state="LX13",
             to_state=dsl_nodes.EXIT_STATE,
-            event_id=dsl_nodes.ChainID(path=["LX13", "E1"]),
-            condition_expr=None,
+            trigger=dsl_nodes.TransitionTrigger('::', (dsl_nodes.EventTerm(dsl_nodes.ChainID(path=["LX13", "E1"]), 'local'),)),
             post_operations=[
                 dsl_nodes.OperationAssignment(name="a", expr=dsl_nodes.Integer(raw="2"))
             ],
@@ -914,8 +908,8 @@ class TestModelModel:
 
         assert transition_7.from_state == "LX2"
         assert transition_7.to_state == "LX1"
-        assert transition_7.event is None
-        assert transition_7.guard == BinaryOp(
+        assert not isinstance(transition_7.trigger, EventTrigger)
+        assert transition_7.trigger.condition == BinaryOp(
             x=Variable(name="a"), op="==", y=Integer(value=1)
         )
         assert transition_7.effects == []
@@ -923,12 +917,11 @@ class TestModelModel:
         assert transition_7.to_ast_node() == dsl_nodes.TransitionDefinition(
             from_state="LX2",
             to_state="LX1",
-            event_id=None,
-            condition_expr=dsl_nodes.BinaryOp(
+            trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                 expr1=dsl_nodes.Name(name="a"),
                 op="==",
                 expr2=dsl_nodes.Integer(raw="1"),
-            ),
+            )),), legacy_guard_syntax=True),
             post_operations=[],
         )
 

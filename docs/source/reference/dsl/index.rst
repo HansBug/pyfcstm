@@ -1096,3 +1096,38 @@ Fact-check notes
   ``pyfcstm/diagnostics/analyzers/``.
 * LLM-facing syntax guidance is in ``pyfcstm/llm/fcstm_grammar_guide.md``. This
   page does not modify that packaged guide.
+
+Python transition trigger contract
+----------------------------------
+
+The Python AST and executable model use different trigger representations.
+``TransitionDefinition.trigger`` is either ``None`` (unconditional) or a
+``TransitionTrigger`` with a nonempty tuple of ``EventTerm`` and ``GuardTerm``
+objects. One term describes an ordinary transition; multiple terms describe
+an ordered combo chain. The ``: if [condition]`` and ``: [condition]`` spellings
+both store one guard term, never a second copy in a scalar field.
+
+Model construction lowers a combo into pseudo relay states and ordinary edges.
+Each model ``Transition.trigger`` is exactly one of ``None``,
+``EventTrigger(event, scope=None)``, or ``GuardTrigger(condition)``. For example:
+
+.. code-block:: python
+
+   from pyfcstm.model import Event, EventTrigger, GuardTrigger, Transition, parse_expr
+
+   event_edge = Transition("A", "B", EventTrigger(Event("Go", ("Root",))), [])
+   guard_edge = Transition("A", "B", GuardTrigger(parse_expr("x > 0")), [])
+   plain_edge = Transition("A", "B", None, [])
+
+Trigger wrappers are immutable. A model transformation may replace an edge's
+``trigger`` with another valid trigger. Invalid assignments fail before changing
+the edge. The former ``event``, ``guard``, and ``event_scope`` fields are removed;
+passing them to the constructor or assigning them is rejected. Custom templates
+can distinguish wrappers with the ``event_trigger`` and ``guard_trigger`` Jinja
+tests, then read ``trigger.event`` or ``trigger.condition`` respectively.
+
+An event followed by a guard is represented by multiple combo terms and edges,
+not by putting two conditions on a model edge. This distinction is observable:
+source exit actions run on the event edge before a later guard term is evaluated.
+A guard checked on the source edge would instead observe the pre-exit variables.
+The public inspect and BMC JSON contracts retain their existing field names.

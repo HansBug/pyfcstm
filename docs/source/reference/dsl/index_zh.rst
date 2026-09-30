@@ -1323,3 +1323,35 @@ DSL 覆盖矩阵
 * 导入组装事实来自 ``pyfcstm/model/imports.py``。
 * 目标风险诊断来自 ``pyfcstm/diagnostics/codes.yaml`` 和 ``pyfcstm/diagnostics/analyzers/``。
 * 面向 LLM 的语法指南在 ``pyfcstm/llm/fcstm_grammar_guide.md`` 中。本页不修改该打包指南。
+
+Python 迁移触发器契约
+---------------------
+
+Python AST 与可执行模型使用不同的触发器表示。
+``TransitionDefinition.trigger`` 为 ``None`` 时表示无条件迁移，否则为
+``TransitionTrigger``，其中包含非空的 ``EventTerm``／``GuardTerm`` 元组。
+单项表示普通迁移，多项表示有顺序的组合链。
+``: if [condition]`` 与 ``: [condition]`` 都只保存一个条件项，不另存一份标量条件。
+
+构建模型时，组合链展开成伪状态中继和普通边。
+模型的 ``Transition.trigger`` 只能是 ``None``、
+``EventTrigger(event, scope=None)`` 或 ``GuardTrigger(condition)``：
+
+.. code-block:: python
+
+   from pyfcstm.model import Event, EventTrigger, GuardTrigger, Transition, parse_expr
+
+   event_edge = Transition("A", "B", EventTrigger(Event("Go", ("Root",))), [])
+   guard_edge = Transition("A", "B", GuardTrigger(parse_expr("x > 0")), [])
+   plain_edge = Transition("A", "B", None, [])
+
+触发器包装对象不可变。模型变换可以将一条边的 ``trigger`` 替换为另一种合法触发器；
+非法赋值会在修改对象前失败。原有的 ``event``、``guard`` 和 ``event_scope`` 字段已移除，
+构造时传入这些字段或直接赋值都会被拒绝。自定义模板可以用 Jinja 的
+``event_trigger`` 和 ``guard_trigger`` 测试区分类型，再分别读取
+``trigger.event`` 或 ``trigger.condition``。
+
+事件后接条件应表示为多个组合项和多条模型边，不能在同一条模型边上放入两个条件。
+这会影响执行结果：事件边先运行源状态的退出动作，后续条件项再求值；
+源状态边上的条件则会读取退出动作执行前的变量。
+公开的 inspect 与 BMC JSON 契约继续使用现有字段名。

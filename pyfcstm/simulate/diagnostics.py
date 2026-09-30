@@ -12,6 +12,7 @@ from types import MappingProxyType
 from typing import Mapping, Optional, Tuple, Union
 
 from ..dsl import EXIT_STATE, INIT_STATE
+from ..model import EventTrigger, GuardTrigger
 
 Number = Union[int, float]
 
@@ -461,8 +462,8 @@ class _DecisionCollector:
             transition_label=_transition_label(state, transition),
             phase="validation" if self.parent is not None or search else self.phase,
             state_path=state.path,
-            event=transition.event.path_name if transition.event is not None else None,
-            guard=str(transition.guard) if transition.guard is not None else None,
+            event=transition.trigger.event.path_name if isinstance(transition.trigger, EventTrigger) else None,
+            guard=str(transition.trigger.condition) if isinstance(transition.trigger, GuardTrigger) else None,
             vars=dict(vars_),
             inputs=dict(inputs),
             parameters=dict(parameters),

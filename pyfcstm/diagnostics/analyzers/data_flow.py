@@ -96,6 +96,7 @@ def _guard_vars_never_change_diagnostics(
         machine: Optional['StateMachine'],
         variable_spans: Dict[str, object],
 ) -> List[ModelDiagnostic]:
+    from ...model import GuardTrigger
     if machine is None:
         return []
     written_vars = {
@@ -107,10 +108,10 @@ def _guard_vars_never_change_diagnostics(
     diagnostics: List[ModelDiagnostic] = []
     for state in machine.walk_states():
         for transition in state.transitions:
-            if transition.guard is None:
+            if not isinstance(transition.trigger, GuardTrigger):
                 continue
             guard_vars = sorted(
-                v for v in collect_expr_variables(transition.guard)
+                v for v in collect_expr_variables(transition.trigger.condition)
                 if v in declared_vars
             )
             if not guard_vars:

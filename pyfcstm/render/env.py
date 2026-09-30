@@ -30,7 +30,7 @@ import jinja2
 
 from ..dsl import INIT_STATE, EXIT_STATE
 from ..dsl import node as dsl_nodes
-from ..model.model import OperationStatement
+from ..model.model import EventTrigger, GuardTrigger, OperationStatement
 from .statement import (
     create_stmt_render_template, fn_stmt_render, fn_stmts_render,
     _KNOWN_STMT_STYLES, _normalize_stmt_style,
@@ -113,6 +113,8 @@ def create_env() -> jinja2.Environment:
     """
     env = jinja2.Environment()
     env = add_settings_for_env(env)
+    env.tests['event_trigger'] = lambda value: isinstance(value, EventTrigger)
+    env.tests['guard_trigger'] = lambda value: isinstance(value, GuardTrigger)
     env.globals['INIT_STATE'] = INIT_STATE
     env.globals['EXIT_STATE'] = EXIT_STATE
     env.globals['operation_stmt_render'] = _render_operation_statement

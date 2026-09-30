@@ -2,6 +2,7 @@
 
 import pytest
 
+from pyfcstm.model import GuardTrigger
 from pyfcstm.verify import (
     dead_guard,
     guard_tautology,
@@ -22,7 +23,7 @@ def _combo_guard_transition(machine):
         transition
         for state in machine.walk_states()
         for transition in state.transitions
-        if transition.combo_origin_refs and transition.guard is not None
+        if transition.combo_origin_refs and isinstance(transition.trigger, GuardTrigger)
     )
 
 

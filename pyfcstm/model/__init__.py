@@ -28,6 +28,8 @@ The following public components are re-exported here:
 * :class:`IfBlock` - Conditional operation block
 * :class:`Event` - State-machine event model
 * :class:`ComboOriginRef` - Provenance reference from generated combo edges
+* :class:`EventTrigger` - Event condition for a transition.
+* :class:`GuardTrigger` - Expression condition for a transition.
 * :class:`Transition` - State transition model
 * :class:`OnStage` - Enter/during/exit action model
 * :class:`OnAspect` - Aspect-oriented during action model
@@ -90,6 +92,8 @@ from .model import (
     IfBlock,
     Event,
     ComboOriginRef,
+    EventTrigger,
+    GuardTrigger,
     Transition,
     OnStage,
     OnAspect,
@@ -134,6 +138,8 @@ __all__ = [
     "IfBlock",
     "Event",
     "ComboOriginRef",
+    "EventTrigger",
+    "GuardTrigger",
     "Transition",
     "OnStage",
     "OnAspect",

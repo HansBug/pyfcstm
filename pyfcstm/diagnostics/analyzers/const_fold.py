@@ -85,6 +85,7 @@ def collect_const_fold_warnings(
     machine: Optional['StateMachine'],
 ) -> List[ModelDiagnostic]:
     """Collect diagnostics that depend on constant folding."""
+    from ...model import GuardTrigger
     if machine is None:
         return []
     diagnostics: List[ModelDiagnostic] = []
@@ -96,8 +97,8 @@ def collect_const_fold_warnings(
             if getattr(transition, 'combo_origin_refs', ()):  # combo analyzer maps guard terms to original spans
                 continue
             folded_guard = (
-                None if transition.guard is None
-                else fold_condition_expression(transition.guard)
+                None if not isinstance(transition.trigger, GuardTrigger)
+                else fold_condition_expression(transition.trigger.condition)
             )
             if folded_guard is True:
                 diagnostics.append(
@@ -304,7 +305,7 @@ def _guard_const_diagnostic(
             'folded_value': value,
             'from_path': _transition_endpoint_path(transition, is_source=True),
             'to_path': _transition_endpoint_path(transition, is_source=False),
-            'guard_text': _expr_text(transition.guard),
+            'guard_text': _expr_text(transition.trigger.condition),
             'transition_index': transition_index,
         },
     )

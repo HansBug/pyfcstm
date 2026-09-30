@@ -105,16 +105,16 @@ class TestModelStateL1:
         assert len(state_l1.transitions) == 2
         assert state_l1.transitions[0].from_state == INIT_STATE
         assert state_l1.transitions[0].to_state == "L21"
-        assert state_l1.transitions[0].event is None
-        assert state_l1.transitions[0].guard is None
+        assert not isinstance(state_l1.transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_l1.transitions[0].trigger, GuardTrigger)
         assert state_l1.transitions[0].effects == []
         assert state_l1.transitions[0].doc is None
         assert state_l1.transitions[0].parent_ref().name == "L1"
         assert state_l1.transitions[0].parent_ref().path == ("L1",)
         assert state_l1.transitions[1].from_state == "L21"
         assert state_l1.transitions[1].to_state == "L22"
-        assert state_l1.transitions[1].event is None
-        assert state_l1.transitions[1].guard == BinaryOp(
+        assert not isinstance(state_l1.transitions[1].trigger, EventTrigger)
+        assert state_l1.transitions[1].trigger.condition == BinaryOp(
             x=Variable(name="x"), op=">", y=Integer(value=0)
         )
         assert state_l1.transitions[1].effects == []
@@ -342,8 +342,8 @@ class TestModelStateL1:
         assert len(state_l1.init_transitions) == 1
         assert state_l1.init_transitions[0].from_state == INIT_STATE
         assert state_l1.init_transitions[0].to_state == "L21"
-        assert state_l1.init_transitions[0].event is None
-        assert state_l1.init_transitions[0].guard is None
+        assert not isinstance(state_l1.init_transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_l1.init_transitions[0].trigger, GuardTrigger)
         assert state_l1.init_transitions[0].effects == []
         assert state_l1.init_transitions[0].doc is None
         assert state_l1.init_transitions[0].parent_ref().name == "L1"
@@ -447,8 +447,8 @@ class TestModelStateL1:
         assert len(state_l1.transitions_entering_children) == 1
         assert state_l1.transitions_entering_children[0].from_state == INIT_STATE
         assert state_l1.transitions_entering_children[0].to_state == "L21"
-        assert state_l1.transitions_entering_children[0].event is None
-        assert state_l1.transitions_entering_children[0].guard is None
+        assert not isinstance(state_l1.transitions_entering_children[0].trigger, EventTrigger)
+        assert not isinstance(state_l1.transitions_entering_children[0].trigger, GuardTrigger)
         assert state_l1.transitions_entering_children[0].effects == []
         assert state_l1.transitions_entering_children[0].doc is None
         assert state_l1.transitions_entering_children[0].parent_ref().name == "L1"
@@ -459,8 +459,8 @@ class TestModelStateL1:
             == INIT_STATE
         )
         assert state_l1.transitions_entering_children_simplified[0].to_state == "L21"
-        assert state_l1.transitions_entering_children_simplified[0].event is None
-        assert state_l1.transitions_entering_children_simplified[0].guard is None
+        assert not isinstance(state_l1.transitions_entering_children_simplified[0].trigger, EventTrigger)
+        assert not isinstance(state_l1.transitions_entering_children_simplified[0].trigger, GuardTrigger)
         assert state_l1.transitions_entering_children_simplified[0].effects == []
         assert state_l1.transitions_entering_children_simplified[0].doc is None
         assert (
@@ -473,16 +473,16 @@ class TestModelStateL1:
         assert len(state_l1.transitions_from) == 1
         assert state_l1.transitions_from[0].from_state == "L1"
         assert state_l1.transitions_from[0].to_state == EXIT_STATE
-        assert state_l1.transitions_from[0].event is None
-        assert state_l1.transitions_from[0].guard is None
+        assert not isinstance(state_l1.transitions_from[0].trigger, EventTrigger)
+        assert not isinstance(state_l1.transitions_from[0].trigger, GuardTrigger)
         assert state_l1.transitions_from[0].effects == []
         assert state_l1.transitions_from[0].doc is None
         assert state_l1.transitions_from[0].parent_ref is None
         assert len(state_l1.transitions_to) == 1
         assert state_l1.transitions_to[0].from_state == INIT_STATE
         assert state_l1.transitions_to[0].to_state == "L1"
-        assert state_l1.transitions_to[0].event is None
-        assert state_l1.transitions_to[0].guard is None
+        assert not isinstance(state_l1.transitions_to[0].trigger, EventTrigger)
+        assert not isinstance(state_l1.transitions_to[0].trigger, GuardTrigger)
         assert state_l1.transitions_to[0].effects == []
         assert state_l1.transitions_to[0].doc is None
         assert state_l1.transitions_to[0].parent_ref is None
@@ -596,20 +596,18 @@ class TestModelStateL1:
                 dsl_nodes.TransitionDefinition(
                     from_state=INIT_STATE,
                     to_state="L21",
-                    event_id=None,
-                    condition_expr=None,
+                    trigger=None,
                     post_operations=[],
                     doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="L21",
                     to_state="L22",
-                    event_id=None,
-                    condition_expr=dsl_nodes.BinaryOp(
+                    trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                         expr1=dsl_nodes.Name(name="x"),
                         op=">",
                         expr2=dsl_nodes.Integer(raw="0"),
-                    ),
+                    )),), legacy_guard_syntax=True),
                     post_operations=[],
                     doc=None,
                 ),
@@ -1105,8 +1103,8 @@ class TestModelStateL1:
         assert len(state_l1_l21.transitions_from) == 1
         assert state_l1_l21.transitions_from[0].from_state == "L21"
         assert state_l1_l21.transitions_from[0].to_state == "L22"
-        assert state_l1_l21.transitions_from[0].event is None
-        assert state_l1_l21.transitions_from[0].guard == BinaryOp(
+        assert not isinstance(state_l1_l21.transitions_from[0].trigger, EventTrigger)
+        assert state_l1_l21.transitions_from[0].trigger.condition == BinaryOp(
             x=Variable(name="x"), op=">", y=Integer(value=0)
         )
         assert state_l1_l21.transitions_from[0].effects == []
@@ -1116,8 +1114,8 @@ class TestModelStateL1:
         assert len(state_l1_l21.transitions_to) == 1
         assert state_l1_l21.transitions_to[0].from_state == INIT_STATE
         assert state_l1_l21.transitions_to[0].to_state == "L21"
-        assert state_l1_l21.transitions_to[0].event is None
-        assert state_l1_l21.transitions_to[0].guard is None
+        assert not isinstance(state_l1_l21.transitions_to[0].trigger, EventTrigger)
+        assert not isinstance(state_l1_l21.transitions_to[0].trigger, GuardTrigger)
         assert state_l1_l21.transitions_to[0].effects == []
         assert state_l1_l21.transitions_to[0].doc is None
         assert state_l1_l21.transitions_to[0].parent_ref().name == "L1"
@@ -1716,8 +1714,8 @@ class TestModelStateL1:
         assert len(state_l1_l22.transitions_to) == 1
         assert state_l1_l22.transitions_to[0].from_state == "L21"
         assert state_l1_l22.transitions_to[0].to_state == "L22"
-        assert state_l1_l22.transitions_to[0].event is None
-        assert state_l1_l22.transitions_to[0].guard == BinaryOp(
+        assert not isinstance(state_l1_l22.transitions_to[0].trigger, EventTrigger)
+        assert state_l1_l22.transitions_to[0].trigger.condition == BinaryOp(
             x=Variable(name="x"), op=">", y=Integer(value=0)
         )
         assert state_l1_l22.transitions_to[0].effects == []

@@ -146,6 +146,7 @@ def _diagnostics_for_expr(
 
 
 def _iter_expression_contexts(machine: "StateMachine") -> Iterable[_Context]:
+    from ...model import GuardTrigger
     for var_name, var_define in machine.defines.items():
         if var_define.init is None:
             continue
@@ -158,9 +159,9 @@ def _iter_expression_contexts(machine: "StateMachine") -> Iterable[_Context]:
 
     for state in machine.walk_states():
         for transition in state.transitions:
-            if transition.guard is not None:
+            if isinstance(transition.trigger, GuardTrigger):
                 yield _Context(
-                    transition.guard,
+                    transition.trigger.condition,
                     "guard",
                     getattr(transition, "_span", None),
                 )

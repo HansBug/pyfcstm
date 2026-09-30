@@ -1239,6 +1239,8 @@ def _core_model_build() -> CheckOutcome:
         from pyfcstm.model import StateMachine, load_state_machine_from_text
         from pyfcstm.utils.validate import ModelValidationError
 
+        from pyfcstm.model import EventTrigger
+
         model = load_state_machine_from_text(_FUNCTION_DSL)
         if not isinstance(model, StateMachine):
             return _fail(
@@ -1256,8 +1258,8 @@ def _core_model_build() -> CheckOutcome:
             and transition is not None
             and transition.from_state == "Idle"
             and transition.to_state == "Done"
-            and transition.event is not None
-            and transition.event.name == "Go"
+            and isinstance(transition.trigger, EventTrigger)
+            and transition.trigger.event.name == "Go"
             and len(transition.effects) == 1
         )
         if not valid:

@@ -120,6 +120,7 @@ from ..utils.validate import ModelLookupError, ModelValueError
 
 from ..dsl import INIT_STATE, EXIT_STATE
 from ..model import (
+    EventTrigger, GuardTrigger,
     Event,
     IfBlock,
     OnAspect,
@@ -2347,9 +2348,9 @@ class SimulationRuntime:
         :return: ``True`` if the event portion of the transition is satisfied.
         :rtype: bool
         """
-        if transition.event is None:
+        if not isinstance(transition.trigger, EventTrigger):
             return True
-        return transition.event.path_name in d_events
+        return transition.trigger.event.path_name in d_events
 
     def _transition_matches_guard(
         self, transition: Transition, vars_: Dict[str, Union[int, float]]
@@ -2367,11 +2368,11 @@ class SimulationRuntime:
         :return: ``True`` if the guard passes.
         :rtype: bool
         """
-        if transition.guard is None:
+        if not isinstance(transition.trigger, GuardTrigger):
             return True
         return bool(
             self._evaluate_runtime_expr(
-                transition.guard,
+                transition.trigger.condition,
                 {**self._parameters, **self._active_inputs, **vars_},
                 usage="transition guard",
             )
@@ -2690,9 +2691,9 @@ class SimulationRuntime:
         if (
             consumed_events is not None
             and not is_validation_mode
-            and transition.event is not None
+            and isinstance(transition.trigger, EventTrigger)
         ):
-            consumed_events.append(transition.event.path_name)
+            consumed_events.append(transition.trigger.event.path_name)
         self._execute_transition_effect(
             transition,
             vars_,
@@ -2913,20 +2914,20 @@ class SimulationRuntime:
                 "[VALIDATION] Execute transition: %s -> %s (event=%s)",
                 current_state_path,
                 target_desc,
-                transition.event.path_name if transition.event else "none",
+                transition.trigger.event.path_name if isinstance(transition.trigger, EventTrigger) else "none",
             )
         else:
             self.logger.info(
                 f"Execute transition: "
                 f"{current_state_path} -> {target_desc} "
-                f"(event={transition.event.path_name if transition.event else 'none'})"
+                f"(event={transition.trigger.event.path_name if isinstance(transition.trigger, EventTrigger) else 'none'})"
             )
             if (
-                transition.event is not None
+                isinstance(transition.trigger, EventTrigger)
                 and consumed_events is not None
                 and not is_validation_mode
             ):
-                consumed_events.append(transition.event.path_name)
+                consumed_events.append(transition.trigger.event.path_name)
 
         for on_exit in current_state.on_exits:
             self._execute_func(on_exit, vars_, is_validation_mode=is_validation_mode)
@@ -3041,7 +3042,7 @@ class SimulationRuntime:
             self.logger.debug(
                 f"Transition selected: "
                 f"{current_state_path} -> {transition.to_state} "
-                f"(event={transition.event.path_name if transition.event else 'none'})"
+                f"(event={transition.trigger.event.path_name if isinstance(transition.trigger, EventTrigger) else 'none'})"
             )
         return transition
 

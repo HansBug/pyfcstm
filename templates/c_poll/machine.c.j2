@@ -56,10 +56,10 @@
 {{- '{' -}}{{ cstr(state_key(state)) }}, {{ cstr(state.name) }}, {{ state_enum(state.parent) if state.parent is not none else "-1" }}, {{ 1 if state.is_leaf_state else 0 }}, {{ 1 if state.is_pseudo else 0 }}, {% if state.list_on_enters(with_ids=True) | list %}_{{ state_slug(state) }}_enter_actions{% else %}NULL{% endif %}, {{ (state.list_on_enters(with_ids=True) | list) | length }}, {% if state.list_on_durings(aspect=None, with_ids=True) | list %}_{{ state_slug(state) }}_during_actions{% else %}NULL{% endif %}, {{ (state.list_on_durings(aspect=None, with_ids=True) | list) | length }}, {% if state.list_on_exits(with_ids=True) | list %}_{{ state_slug(state) }}_exit_actions{% else %}NULL{% endif %}, {{ (state.list_on_exits(with_ids=True) | list) | length }}, {% if state.list_on_durings(aspect='before', with_ids=True) | list %}_{{ state_slug(state) }}_during_before_actions{% else %}NULL{% endif %}, {{ (state.list_on_durings(aspect='before', with_ids=True) | list) | length }}, {% if state.list_on_durings(aspect='after', with_ids=True) | list %}_{{ state_slug(state) }}_during_after_actions{% else %}NULL{% endif %}, {{ (state.list_on_durings(aspect='after', with_ids=True) | list) | length }}, {% if state.list_on_during_aspects(aspect='before', with_ids=True) | list %}_{{ state_slug(state) }}_aspect_before_actions{% else %}NULL{% endif %}, {{ (state.list_on_during_aspects(aspect='before', with_ids=True) | list) | length }}, {% if state.list_on_during_aspects(aspect='after', with_ids=True) | list %}_{{ state_slug(state) }}_aspect_after_actions{% else %}NULL{% endif %}, {{ (state.list_on_during_aspects(aspect='after', with_ids=True) | list) | length }}, {% if state.init_transitions | list %}_{{ state_slug(state) }}_init_transition_ids{% else %}NULL{% endif %}, {{ (state.init_transitions | list) | length }}, {% if state.transitions_from | list %}_{{ state_slug(state) }}_transition_ids{% else %}NULL{% endif %}, {{ (state.transitions_from | list) | length }}{{- '}' -}}
 {%- endmacro %}
 {%- macro render_init_transition_item(state, transition, idx) -%}
-{{- '{' -}}{{ state_enum(state.substates[transition.to_state]) }}, 0, {{ all_events.items.index(transition.event.path_name) if transition.event is not none else "-1" }}, {{ init_guard_method_name(state, idx) if transition.guard is not none else "NULL" }}, {{ init_effect_method_name(state, idx) if transition.effects else "NULL" }}{{- '}' -}}
+{{- '{' -}}{{ state_enum(state.substates[transition.to_state]) }}, 0, {{ all_events.items.index(transition.trigger.event.path_name) if transition.trigger is event_trigger else "-1" }}, {{ init_guard_method_name(state, idx) if transition.trigger is guard_trigger else "NULL" }}, {{ init_effect_method_name(state, idx) if transition.effects else "NULL" }}{{- '}' -}}
 {%- endmacro %}
 {%- macro render_normal_transition_item(state, transition, idx) -%}
-{{- '{' -}}{{ state_enum(state.parent.substates[transition.to_state]) if transition.to_state != EXIT_STATE else "-1" }}, {{ 1 if transition.to_state == EXIT_STATE else 0 }}, {{ all_events.items.index(transition.event.path_name) if transition.event is not none else "-1" }}, {{ transition_guard_method_name(state, idx) if transition.guard is not none else "NULL" }}, {{ transition_effect_method_name(state, idx) if transition.effects else "NULL" }}{{- '}' -}}
+{{- '{' -}}{{ state_enum(state.parent.substates[transition.to_state]) if transition.to_state != EXIT_STATE else "-1" }}, {{ 1 if transition.to_state == EXIT_STATE else 0 }}, {{ all_events.items.index(transition.trigger.event.path_name) if transition.trigger is event_trigger else "-1" }}, {{ transition_guard_method_name(state, idx) if transition.trigger is guard_trigger else "NULL" }}, {{ transition_effect_method_name(state, idx) if transition.effects else "NULL" }}{{- '}' -}}
 {%- endmacro %}
 
 /*
@@ -712,10 +712,10 @@ static int {{ action_method_name(state, 'aspect_after', id_) }}({{ machine_class
 {% endif -%}
 {% endfor -%}
 {% for transition in state.init_transitions -%}
-{% if transition.guard is not none -%}
+{% if transition.trigger is guard_trigger -%}
 static int {{ init_guard_method_name(state, loop.index) }}({{ machine_class_name(model) }} *machine, const {{ machine_class_name(model) }}Vars *scope, int *result)
 {
-{{ render_c_condition_body(transition.guard.to_ast_node(), model.defines, machine_class_name(model), machine_macro_name(model), "transition guard") }}
+{{ render_c_condition_body(transition.trigger.condition.to_ast_node(), model.defines, machine_class_name(model), machine_macro_name(model), "transition guard") }}
 }
 
 {% endif -%}
@@ -728,10 +728,10 @@ static int {{ init_effect_method_name(state, loop.index) }}({{ machine_class_nam
 {% endif -%}
 {% endfor -%}
 {% for transition in state.transitions_from -%}
-{% if transition.guard is not none -%}
+{% if transition.trigger is guard_trigger -%}
 static int {{ transition_guard_method_name(state, loop.index) }}({{ machine_class_name(model) }} *machine, const {{ machine_class_name(model) }}Vars *scope, int *result)
 {
-{{ render_c_condition_body(transition.guard.to_ast_node(), model.defines, machine_class_name(model), machine_macro_name(model), "transition guard") }}
+{{ render_c_condition_body(transition.trigger.condition.to_ast_node(), model.defines, machine_class_name(model), machine_macro_name(model), "transition guard") }}
 }
 
 {% endif -%}
@@ -1215,14 +1215,14 @@ static int {{ select_transition_state_name(state) }}(
         int enabled_transition_id = -1;
 {% for transition in state.transitions_from -%}
 {% set event_condition -%}
-{% if transition.event is not none -%}
-_{{ machine_class_name(model) }}_event_set_has(machine, context, event_set, {{ all_events.items.index(transition.event.path_name) }})
+{% if transition.trigger is event_trigger -%}
+_{{ machine_class_name(model) }}_event_set_has(machine, context, event_set, {{ all_events.items.index(transition.trigger.event.path_name) }})
 {% else -%}
 1
 {% endif -%}
 {%- endset %}
         if ({{ event_condition | trim | replace('\n', ' ') }}) {
-{% if transition.guard is not none %}
+{% if transition.trigger is guard_trigger %}
             int guard_result = 0;
             if ({{ transition_guard_method_name(state, loop.index) }}(machine, &context->vars, &guard_result) != {{ machine_macro_name(model) }}_SUCCESS) {
                 return -1;
@@ -1243,8 +1243,8 @@ _{{ machine_class_name(model) }}_event_set_has(machine, context, event_set, {{ a
     }
 {% for transition in state.transitions_from -%}
 {% set event_condition -%}
-{% if transition.event is not none -%}
-_{{ machine_class_name(model) }}_event_set_has(machine, context, event_set, {{ all_events.items.index(transition.event.path_name) }})
+{% if transition.trigger is event_trigger -%}
+_{{ machine_class_name(model) }}_event_set_has(machine, context, event_set, {{ all_events.items.index(transition.trigger.event.path_name) }})
 {% else -%}
 1
 {% endif -%}
@@ -1274,7 +1274,7 @@ if (validate_stoppable) {
 }
 {%- endset %}
     if ({{ event_condition | trim | replace('\n', ' ') }}) {
-{% if transition.guard is not none %}
+{% if transition.trigger is guard_trigger %}
         int guard_result = 0;
         if ({{ transition_guard_method_name(state, loop.index) }}(machine, &context->vars, &guard_result) != {{ machine_macro_name(model) }}_SUCCESS) {
             return -1;
@@ -1308,8 +1308,8 @@ static int {{ attempt_init_state_name(state) }}(
 {% if state.init_transitions | list -%}
 {% for transition in state.init_transitions -%}
 {% set event_condition -%}
-{% if transition.event is not none -%}
-_{{ machine_class_name(model) }}_event_set_has(machine, context, event_set, {{ all_events.items.index(transition.event.path_name) }})
+{% if transition.trigger is event_trigger -%}
+_{{ machine_class_name(model) }}_event_set_has(machine, context, event_set, {{ all_events.items.index(transition.trigger.event.path_name) }})
 {% else -%}
 1
 {% endif -%}
@@ -1340,7 +1340,7 @@ _{{ machine_class_name(model) }}_event_set_has(machine, context, event_set, {{ a
 }
 {%- endset %}
     if ({{ event_condition | trim | replace('\n', ' ') }}) {
-{% if transition.guard is not none %}
+{% if transition.trigger is guard_trigger %}
         int guard_result = 0;
         if ({{ init_guard_method_name(state, loop.index) }}(machine, &context->vars, &guard_result) != {{ machine_macro_name(model) }}_SUCCESS) {
             return 0;

@@ -31,6 +31,7 @@ from pyfcstm.bmc.provenance import (
 )
 from pyfcstm.bmc.relation import _append_tracked_group
 from pyfcstm.model import (
+    EventTrigger,
     load_state_machine_from_file,
     load_state_machine_from_text,
     parse_dsl_node_to_state_machine,
@@ -1126,18 +1127,18 @@ def test_public_model_loading_preserves_event_scope_origins() -> None:
 
     system = model.root_state.substates["System"]
     transitions = {
-        transition.event.name: transition
+        transition.trigger.event.name: transition
         for transition in system.transitions
-        if transition.event is not None
+        if isinstance(transition.trigger, EventTrigger)
     }
 
-    assert transitions["Local"].event_scope == "local"
-    assert transitions["Parent"].event_scope == "chain"
-    assert transitions["Global"].event_scope == "absolute"
+    assert transitions["Local"].trigger.scope == "local"
+    assert transitions["Parent"].trigger.scope == "chain"
+    assert transitions["Global"].trigger.scope == "absolute"
 
 
-def test_programmatic_event_metadata_fallback_infers_scope_origins() -> None:
-    """Public AST inputs without explicit event scopes use structural inference."""
+def test_programmatic_event_scope_rejection_preserves_scope_origins() -> None:
+    """Invalid AST scope assignment leaves each original event scope intact."""
     program = parse_with_grammar_entry(
         dedent(
             """
@@ -1162,22 +1163,24 @@ def test_programmatic_event_metadata_fallback_infers_scope_origins() -> None:
     )
     ast_system = program.root_state.substates[0]
     ast_transitions = {
-        item.event_id.path[-1]: item
+        item.trigger.terms[0].event_id.path[-1]: item
         for item in ast_system.transitions
-        if item.event_id is not None
+        if item.trigger is not None
+        and isinstance(item.trigger.terms[0], dsl_nodes.EventTerm)
     }
     for transition in ast_transitions.values():
-        transition.event_scope = None
+        with pytest.raises(ValueError, match="event_scope"):
+            transition.trigger.terms[0].event_scope = None
 
     model = parse_dsl_node_to_state_machine(program)
     system = model.root_state.substates["System"]
     transitions = {
-        transition.event.name: transition
+        transition.trigger.event.name: transition
         for transition in system.transitions
-        if transition.event is not None
+        if isinstance(transition.trigger, EventTrigger)
     }
 
-    assert {name: item.event_scope for name, item in transitions.items()} == {
+    assert {name: item.trigger.scope for name, item in transitions.items()} == {
         "Local": "local",
         "Parent": "chain",
         "Global": "absolute",
@@ -2325,7 +2328,6 @@ state Root {
     A -> B :: Go;
 }"""
 
-
 def _fact_groups(query: str, machine: str = None):
     """Return the tracked groups a real build produces, keyed by category.
 
@@ -2554,7 +2556,6 @@ state Root {
     B -> [*];
 }"""
 
-
 def _event_fact_groups(query: str, machine: str):
     """Return the event-assumption groups a real build produces, in order.
 
@@ -2679,7 +2680,6 @@ state Root {
     A -> B effect { x = x + y; }
     B -> [*];
 }"""
-
 
 @pytest.mark.unittest
 def test_a_step_that_carries_an_effect_publishes_the_assignment_it_makes() -> None:
@@ -3571,7 +3571,6 @@ state Root {
     A -> B : if [y > 1] effect { x = x + y; }
     B -> [*];
 }"""
-
 
 @pytest.mark.unittest
 def test_a_guarded_transition_carries_its_guard_in_the_condition() -> None:

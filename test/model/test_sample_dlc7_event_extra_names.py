@@ -89,40 +89,40 @@ class TestModelStateRoot:
         assert len(state_root.transitions) == 4
         assert state_root.transitions[0].from_state == INIT_STATE
         assert state_root.transitions[0].to_state == "state1"
-        assert state_root.transitions[0].event == Event(
+        assert state_root.transitions[0].trigger.event == Event(
             name="E1", state_path=("Root",), extra_name="事件1", doc=None
         )
-        assert state_root.transitions[0].guard is None
+        assert not isinstance(state_root.transitions[0].trigger, GuardTrigger)
         assert state_root.transitions[0].effects == []
         assert state_root.transitions[0].doc is None
         assert state_root.transitions[0].parent_ref().name == "Root"
         assert state_root.transitions[0].parent_ref().path == ("Root",)
         assert state_root.transitions[1].from_state == "state1"
         assert state_root.transitions[1].to_state == "state2"
-        assert state_root.transitions[1].event == Event(
+        assert state_root.transitions[1].trigger.event == Event(
             name="E1", state_path=("Root", "state1"), extra_name="S1 -> 事件1", doc=None
         )
-        assert state_root.transitions[1].guard is None
+        assert not isinstance(state_root.transitions[1].trigger, GuardTrigger)
         assert state_root.transitions[1].effects == []
         assert state_root.transitions[1].doc is None
         assert state_root.transitions[1].parent_ref().name == "Root"
         assert state_root.transitions[1].parent_ref().path == ("Root",)
         assert state_root.transitions[2].from_state == "state2"
         assert state_root.transitions[2].to_state == "state3"
-        assert state_root.transitions[2].event == Event(
+        assert state_root.transitions[2].trigger.event == Event(
             name="E1", state_path=("Root",), extra_name="事件1", doc=None
         )
-        assert state_root.transitions[2].guard is None
+        assert not isinstance(state_root.transitions[2].trigger, GuardTrigger)
         assert state_root.transitions[2].effects == []
         assert state_root.transitions[2].doc is None
         assert state_root.transitions[2].parent_ref().name == "Root"
         assert state_root.transitions[2].parent_ref().path == ("Root",)
         assert state_root.transitions[3].from_state == "state3"
         assert state_root.transitions[3].to_state == "state4"
-        assert state_root.transitions[3].event == Event(
+        assert state_root.transitions[3].trigger.event == Event(
             name="E2", state_path=("Root", "state3"), extra_name="S3 -> 事件2", doc=None
         )
-        assert state_root.transitions[3].guard is None
+        assert not isinstance(state_root.transitions[3].trigger, GuardTrigger)
         assert state_root.transitions[3].effects == []
         assert state_root.transitions[3].doc is None
         assert state_root.transitions[3].parent_ref().name == "Root"
@@ -149,10 +149,10 @@ class TestModelStateRoot:
         assert len(state_root.init_transitions) == 1
         assert state_root.init_transitions[0].from_state == INIT_STATE
         assert state_root.init_transitions[0].to_state == "state1"
-        assert state_root.init_transitions[0].event == Event(
+        assert state_root.init_transitions[0].trigger.event == Event(
             name="E1", state_path=("Root",), extra_name="事件1", doc=None
         )
-        assert state_root.init_transitions[0].guard is None
+        assert not isinstance(state_root.init_transitions[0].trigger, GuardTrigger)
         assert state_root.init_transitions[0].effects == []
         assert state_root.init_transitions[0].doc is None
         assert state_root.init_transitions[0].parent_ref().name == "Root"
@@ -168,10 +168,10 @@ class TestModelStateRoot:
         assert len(state_root.transitions_entering_children) == 1
         assert state_root.transitions_entering_children[0].from_state == INIT_STATE
         assert state_root.transitions_entering_children[0].to_state == "state1"
-        assert state_root.transitions_entering_children[0].event == Event(
+        assert state_root.transitions_entering_children[0].trigger.event == Event(
             name="E1", state_path=("Root",), extra_name="事件1", doc=None
         )
-        assert state_root.transitions_entering_children[0].guard is None
+        assert not isinstance(state_root.transitions_entering_children[0].trigger, GuardTrigger)
         assert state_root.transitions_entering_children[0].effects == []
         assert state_root.transitions_entering_children[0].doc is None
         assert state_root.transitions_entering_children[0].parent_ref().name == "Root"
@@ -186,10 +186,10 @@ class TestModelStateRoot:
         assert (
             state_root.transitions_entering_children_simplified[0].to_state == "state1"
         )
-        assert state_root.transitions_entering_children_simplified[0].event == Event(
+        assert state_root.transitions_entering_children_simplified[0].trigger.event == Event(
             name="E1", state_path=("Root",), extra_name="事件1", doc=None
         )
-        assert state_root.transitions_entering_children_simplified[0].guard is None
+        assert not isinstance(state_root.transitions_entering_children_simplified[0].trigger, GuardTrigger)
         assert state_root.transitions_entering_children_simplified[0].effects == []
         assert state_root.transitions_entering_children_simplified[0].doc is None
         assert (
@@ -203,16 +203,16 @@ class TestModelStateRoot:
         assert len(state_root.transitions_from) == 1
         assert state_root.transitions_from[0].from_state == "Root"
         assert state_root.transitions_from[0].to_state == EXIT_STATE
-        assert state_root.transitions_from[0].event is None
-        assert state_root.transitions_from[0].guard is None
+        assert not isinstance(state_root.transitions_from[0].trigger, EventTrigger)
+        assert not isinstance(state_root.transitions_from[0].trigger, GuardTrigger)
         assert state_root.transitions_from[0].effects == []
         assert state_root.transitions_from[0].doc is None
         assert state_root.transitions_from[0].parent_ref is None
         assert len(state_root.transitions_to) == 1
         assert state_root.transitions_to[0].from_state == INIT_STATE
         assert state_root.transitions_to[0].to_state == "Root"
-        assert state_root.transitions_to[0].event is None
-        assert state_root.transitions_to[0].guard is None
+        assert not isinstance(state_root.transitions_to[0].trigger, EventTrigger)
+        assert not isinstance(state_root.transitions_to[0].trigger, GuardTrigger)
         assert state_root.transitions_to[0].effects == []
         assert state_root.transitions_to[0].doc is None
         assert state_root.transitions_to[0].parent_ref is None
@@ -298,36 +298,32 @@ class TestModelStateRoot:
                 dsl_nodes.TransitionDefinition(
                     from_state=INIT_STATE,
                     to_state="state1",
-                    event_id=dsl_nodes.ChainID(path=["E1"], is_absolute=False),
-                    condition_expr=None,
+                    trigger=dsl_nodes.TransitionTrigger('::', (dsl_nodes.EventTerm(dsl_nodes.ChainID(path=["E1"], is_absolute=False), 'chain'),)),
                     post_operations=[],
                     doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="state1",
                     to_state="state2",
-                    event_id=dsl_nodes.ChainID(
+                    trigger=dsl_nodes.TransitionTrigger('::', (dsl_nodes.EventTerm(dsl_nodes.ChainID(
                         path=["state1", "E1"], is_absolute=False
-                    ),
-                    condition_expr=None,
+                    ), 'local'),)),
                     post_operations=[],
                     doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="state2",
                     to_state="state3",
-                    event_id=dsl_nodes.ChainID(path=["E1"], is_absolute=False),
-                    condition_expr=None,
+                    trigger=dsl_nodes.TransitionTrigger(':', (dsl_nodes.EventTerm(dsl_nodes.ChainID(path=["E1"], is_absolute=False), 'chain'),)),
                     post_operations=[],
                     doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="state3",
                     to_state="state4",
-                    event_id=dsl_nodes.ChainID(
+                    trigger=dsl_nodes.TransitionTrigger('::', (dsl_nodes.EventTerm(dsl_nodes.ChainID(
                         path=["state3", "E2"], is_absolute=False
-                    ),
-                    condition_expr=None,
+                    ), 'local'),)),
                     post_operations=[],
                     doc=None,
                 ),
@@ -441,10 +437,10 @@ class TestModelStateRoot:
         assert len(state_root_state1.transitions_from) == 1
         assert state_root_state1.transitions_from[0].from_state == "state1"
         assert state_root_state1.transitions_from[0].to_state == "state2"
-        assert state_root_state1.transitions_from[0].event == Event(
+        assert state_root_state1.transitions_from[0].trigger.event == Event(
             name="E1", state_path=("Root", "state1"), extra_name="S1 -> 事件1", doc=None
         )
-        assert state_root_state1.transitions_from[0].guard is None
+        assert not isinstance(state_root_state1.transitions_from[0].trigger, GuardTrigger)
         assert state_root_state1.transitions_from[0].effects == []
         assert state_root_state1.transitions_from[0].doc is None
         assert state_root_state1.transitions_from[0].parent_ref().name == "Root"
@@ -452,10 +448,10 @@ class TestModelStateRoot:
         assert len(state_root_state1.transitions_to) == 1
         assert state_root_state1.transitions_to[0].from_state == INIT_STATE
         assert state_root_state1.transitions_to[0].to_state == "state1"
-        assert state_root_state1.transitions_to[0].event == Event(
+        assert state_root_state1.transitions_to[0].trigger.event == Event(
             name="E1", state_path=("Root",), extra_name="事件1", doc=None
         )
-        assert state_root_state1.transitions_to[0].guard is None
+        assert not isinstance(state_root_state1.transitions_to[0].trigger, GuardTrigger)
         assert state_root_state1.transitions_to[0].effects == []
         assert state_root_state1.transitions_to[0].doc is None
         assert state_root_state1.transitions_to[0].parent_ref().name == "Root"
@@ -587,10 +583,10 @@ class TestModelStateRoot:
         assert len(state_root_state2.transitions_from) == 1
         assert state_root_state2.transitions_from[0].from_state == "state2"
         assert state_root_state2.transitions_from[0].to_state == "state3"
-        assert state_root_state2.transitions_from[0].event == Event(
+        assert state_root_state2.transitions_from[0].trigger.event == Event(
             name="E1", state_path=("Root",), extra_name="事件1", doc=None
         )
-        assert state_root_state2.transitions_from[0].guard is None
+        assert not isinstance(state_root_state2.transitions_from[0].trigger, GuardTrigger)
         assert state_root_state2.transitions_from[0].effects == []
         assert state_root_state2.transitions_from[0].doc is None
         assert state_root_state2.transitions_from[0].parent_ref().name == "Root"
@@ -598,10 +594,10 @@ class TestModelStateRoot:
         assert len(state_root_state2.transitions_to) == 1
         assert state_root_state2.transitions_to[0].from_state == "state1"
         assert state_root_state2.transitions_to[0].to_state == "state2"
-        assert state_root_state2.transitions_to[0].event == Event(
+        assert state_root_state2.transitions_to[0].trigger.event == Event(
             name="E1", state_path=("Root", "state1"), extra_name="S1 -> 事件1", doc=None
         )
-        assert state_root_state2.transitions_to[0].guard is None
+        assert not isinstance(state_root_state2.transitions_to[0].trigger, GuardTrigger)
         assert state_root_state2.transitions_to[0].effects == []
         assert state_root_state2.transitions_to[0].doc is None
         assert state_root_state2.transitions_to[0].parent_ref().name == "Root"
@@ -738,10 +734,10 @@ class TestModelStateRoot:
         assert len(state_root_state3.transitions_from) == 1
         assert state_root_state3.transitions_from[0].from_state == "state3"
         assert state_root_state3.transitions_from[0].to_state == "state4"
-        assert state_root_state3.transitions_from[0].event == Event(
+        assert state_root_state3.transitions_from[0].trigger.event == Event(
             name="E2", state_path=("Root", "state3"), extra_name="S3 -> 事件2", doc=None
         )
-        assert state_root_state3.transitions_from[0].guard is None
+        assert not isinstance(state_root_state3.transitions_from[0].trigger, GuardTrigger)
         assert state_root_state3.transitions_from[0].effects == []
         assert state_root_state3.transitions_from[0].doc is None
         assert state_root_state3.transitions_from[0].parent_ref().name == "Root"
@@ -749,10 +745,10 @@ class TestModelStateRoot:
         assert len(state_root_state3.transitions_to) == 1
         assert state_root_state3.transitions_to[0].from_state == "state2"
         assert state_root_state3.transitions_to[0].to_state == "state3"
-        assert state_root_state3.transitions_to[0].event == Event(
+        assert state_root_state3.transitions_to[0].trigger.event == Event(
             name="E1", state_path=("Root",), extra_name="事件1", doc=None
         )
-        assert state_root_state3.transitions_to[0].guard is None
+        assert not isinstance(state_root_state3.transitions_to[0].trigger, GuardTrigger)
         assert state_root_state3.transitions_to[0].effects == []
         assert state_root_state3.transitions_to[0].doc is None
         assert state_root_state3.transitions_to[0].parent_ref().name == "Root"
@@ -885,10 +881,10 @@ class TestModelStateRoot:
         assert len(state_root_state4.transitions_to) == 1
         assert state_root_state4.transitions_to[0].from_state == "state3"
         assert state_root_state4.transitions_to[0].to_state == "state4"
-        assert state_root_state4.transitions_to[0].event == Event(
+        assert state_root_state4.transitions_to[0].trigger.event == Event(
             name="E2", state_path=("Root", "state3"), extra_name="S3 -> 事件2", doc=None
         )
-        assert state_root_state4.transitions_to[0].guard is None
+        assert not isinstance(state_root_state4.transitions_to[0].trigger, GuardTrigger)
         assert state_root_state4.transitions_to[0].effects == []
         assert state_root_state4.transitions_to[0].doc is None
         assert state_root_state4.transitions_to[0].parent_ref().name == "Root"

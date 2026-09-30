@@ -115,7 +115,9 @@ renderers:
 
 .. code-block:: jinja
 
-   {{ transition.guard | expr_render(style='c_scope_expr') }}
+   {% if transition.trigger is guard_trigger %}
+     {{ transition.trigger.condition | expr_render(style='c_scope_expr') }}
+   {% endif %}
    {{ action.operations | stmts_render(style='c_runtime') }}
 
 The older helpers have a different purpose:

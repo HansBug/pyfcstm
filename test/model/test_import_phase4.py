@@ -3,6 +3,7 @@ import pathlib
 import textwrap
 
 import pytest
+from pyfcstm.model import EventTrigger
 from hbutils.testing import isolated_directory
 
 from pyfcstm.dsl import parse_state_machine_dsl
@@ -73,7 +74,7 @@ class TestImportPhase4Assembly:
             if any(item.term_index == 1 for item in transition.combo_origin_refs)
         )
 
-        assert str(combo_guard.guard) == "Worker_w == 1"
+        assert str(combo_guard.trigger.condition) == "Worker_w == 1"
 
     def test_variable_mapping_template_invalid_reports_structured_refs(self):
         with isolated_directory():
@@ -251,7 +252,7 @@ class TestImportPhase4Assembly:
         worker_state = system_state.substates["Worker"]
         assert "Start" in system_state.events
         promoted_event = system_state.events["Start"]
-        assert worker_state.transitions[1].event is promoted_event
+        assert worker_state.transitions[1].trigger.event is promoted_event
         assert promoted_event.path == ("Root", "System", "Start")
 
     def test_event_mapping_absolute_target_promotes_to_root_scope(self):
@@ -284,7 +285,7 @@ class TestImportPhase4Assembly:
         worker_state = state_machine.root_state.substates["System"].substates["Worker"]
         assert "Start" in motors_state.events
         promoted_event = motors_state.events["Start"]
-        assert worker_state.transitions[1].event is promoted_event
+        assert worker_state.transitions[1].trigger.event is promoted_event
         assert promoted_event.path == ("Root", "Motors", "Start")
 
     def test_unmapped_module_absolute_event_stays_in_instance_scope(self):
@@ -309,7 +310,7 @@ class TestImportPhase4Assembly:
 
         worker_state = state_machine.root_state.substates["Worker"]
         assert "Start" in worker_state.events
-        assert worker_state.transitions[1].event is worker_state.events["Start"]
+        assert worker_state.transitions[1].trigger.event is worker_state.events["Start"]
         assert "Start" not in state_machine.root_state.events
 
     def test_event_mapping_preserves_shared_event_identity_for_multiple_transitions(
@@ -341,9 +342,9 @@ class TestImportPhase4Assembly:
 
         worker_state = state_machine.root_state.substates["Worker"]
         shared_event = state_machine.root_state.events["SharedTick"]
-        assert worker_state.transitions[1].event is shared_event
-        assert worker_state.transitions[2].event is shared_event
-        assert worker_state.transitions[3].event is shared_event
+        assert worker_state.transitions[1].trigger.event is shared_event
+        assert worker_state.transitions[2].trigger.event is shared_event
+        assert worker_state.transitions[3].trigger.event is shared_event
 
     def test_multiple_imports_can_share_same_host_event(self):
         state_machine = _build_state_machine(
@@ -373,8 +374,8 @@ class TestImportPhase4Assembly:
         shared_event = state_machine.root_state.events["Start"]
         left_worker = state_machine.root_state.substates["LeftWorker"]
         right_worker = state_machine.root_state.substates["RightWorker"]
-        assert left_worker.transitions[1].event is shared_event
-        assert right_worker.transitions[1].event is shared_event
+        assert left_worker.transitions[1].trigger.event is shared_event
+        assert right_worker.transitions[1].trigger.event is shared_event
 
     def test_event_mapping_named_override_applies_to_target_event(self):
         state_machine = _build_state_machine(
@@ -432,7 +433,7 @@ class TestImportPhase4Assembly:
         assert "Start" in system_state.events
         assert system_state.events["Start"].extra_name == "Mapped Start"
         assert "Start" not in worker_state.events
-        assert worker_state.transitions[1].event is system_state.events["Start"]
+        assert worker_state.transitions[1].trigger.event is system_state.events["Start"]
 
     def test_event_mapping_applies_to_force_transitions(self):
         state_machine = _build_state_machine(
@@ -465,7 +466,7 @@ class TestImportPhase4Assembly:
         alarm_transitions = [
             transition
             for transition in worker_state.transitions
-            if transition.event is bus_alarm
+            if isinstance(transition.trigger, EventTrigger) and transition.trigger.event is bus_alarm
         ]
         assert [(item.from_state, item.to_state) for item in alarm_transitions] == [
             ("Idle", "Error"),
@@ -503,7 +504,7 @@ class TestImportPhase4Assembly:
 
         worker_state = state_machine.root_state.substates["Worker"]
         combo_events = [
-            transition.event
+            transition.trigger.event
             for transition in worker_state.transitions
             if transition.combo_origin_refs
         ]
@@ -591,15 +592,13 @@ class TestImportPhase4Assembly:
                     dsl_nodes.TransitionDefinition(
                         from_state=dsl_nodes.INIT_STATE,
                         to_state="Idle",
-                        event_id=None,
-                        condition_expr=None,
+                        trigger=None,
                         post_operations=[],
                     ),
                     dsl_nodes.TransitionDefinition(
                         from_state="Idle",
                         to_state="Idle",
-                        event_id=dsl_nodes.ChainID(path=["Start"], is_absolute=True),
-                        condition_expr=None,
+                        trigger=dsl_nodes.TransitionTrigger(':', (dsl_nodes.EventTerm(dsl_nodes.ChainID(path=["Start"], is_absolute=True), 'absolute'),)),
                         post_operations=[],
                     ),
                 ],
@@ -688,15 +687,13 @@ class TestImportPhase4Assembly:
                     dsl_nodes.TransitionDefinition(
                         from_state=dsl_nodes.INIT_STATE,
                         to_state="Idle",
-                        event_id=None,
-                        condition_expr=None,
+                        trigger=None,
                         post_operations=[],
                     ),
                     dsl_nodes.TransitionDefinition(
                         from_state="Idle",
                         to_state="Idle",
-                        event_id=dsl_nodes.ChainID(path=["Start"], is_absolute=True),
-                        condition_expr=None,
+                        trigger=dsl_nodes.TransitionTrigger(':', (dsl_nodes.EventTerm(dsl_nodes.ChainID(path=["Start"], is_absolute=True), 'absolute'),)),
                         post_operations=[],
                     ),
                 ],
@@ -752,15 +749,13 @@ class TestImportPhase4Assembly:
                     dsl_nodes.TransitionDefinition(
                         from_state=dsl_nodes.INIT_STATE,
                         to_state="Idle",
-                        event_id=None,
-                        condition_expr=None,
+                        trigger=None,
                         post_operations=[],
                     ),
                     dsl_nodes.TransitionDefinition(
                         from_state="Idle",
                         to_state="Idle",
-                        event_id=dsl_nodes.ChainID(path=["Start"], is_absolute=False),
-                        condition_expr=None,
+                        trigger=dsl_nodes.TransitionTrigger(':', (dsl_nodes.EventTerm(dsl_nodes.ChainID(path=["Start"], is_absolute=False), 'chain'),)),
                         post_operations=[],
                     ),
                 ],
@@ -823,22 +818,19 @@ class TestImportPhase4Assembly:
                     dsl_nodes.TransitionDefinition(
                         from_state=dsl_nodes.INIT_STATE,
                         to_state="Idle",
-                        event_id=None,
-                        condition_expr=None,
+                        trigger=None,
                         post_operations=[],
                     ),
                     dsl_nodes.TransitionDefinition(
                         from_state="Idle",
                         to_state="Idle",
-                        event_id=dsl_nodes.ChainID(path=["Start"], is_absolute=True),
-                        condition_expr=None,
+                        trigger=dsl_nodes.TransitionTrigger(':', (dsl_nodes.EventTerm(dsl_nodes.ChainID(path=["Start"], is_absolute=True), 'absolute'),)),
                         post_operations=[],
                     ),
                     dsl_nodes.TransitionDefinition(
                         from_state="Idle",
                         to_state="Idle",
-                        event_id=dsl_nodes.ChainID(path=["Stop"], is_absolute=True),
-                        condition_expr=None,
+                        trigger=dsl_nodes.TransitionTrigger(':', (dsl_nodes.EventTerm(dsl_nodes.ChainID(path=["Stop"], is_absolute=True), 'absolute'),)),
                         post_operations=[],
                     ),
                 ],
@@ -915,22 +907,19 @@ class TestImportPhase4Assembly:
                     dsl_nodes.TransitionDefinition(
                         from_state=dsl_nodes.INIT_STATE,
                         to_state="Idle",
-                        event_id=None,
-                        condition_expr=None,
+                        trigger=None,
                         post_operations=[],
                     ),
                     dsl_nodes.TransitionDefinition(
                         from_state="Idle",
                         to_state="Idle",
-                        event_id=dsl_nodes.ChainID(path=["Start"], is_absolute=True),
-                        condition_expr=None,
+                        trigger=dsl_nodes.TransitionTrigger(':', (dsl_nodes.EventTerm(dsl_nodes.ChainID(path=["Start"], is_absolute=True), 'absolute'),)),
                         post_operations=[],
                     ),
                     dsl_nodes.TransitionDefinition(
                         from_state="Idle",
                         to_state="Done",
-                        event_id=dsl_nodes.ChainID(path=["Start"], is_absolute=True),
-                        condition_expr=None,
+                        trigger=dsl_nodes.TransitionTrigger(':', (dsl_nodes.EventTerm(dsl_nodes.ChainID(path=["Start"], is_absolute=True), 'absolute'),)),
                         post_operations=[],
                     ),
                 ],
@@ -992,15 +981,13 @@ class TestImportPhase4Assembly:
                     dsl_nodes.TransitionDefinition(
                         from_state=dsl_nodes.INIT_STATE,
                         to_state="Idle",
-                        event_id=None,
-                        condition_expr=None,
+                        trigger=None,
                         post_operations=[],
                     ),
                     dsl_nodes.TransitionDefinition(
                         from_state="Idle",
                         to_state="Idle",
-                        event_id=dsl_nodes.ChainID(path=["Start"], is_absolute=True),
-                        condition_expr=None,
+                        trigger=dsl_nodes.TransitionTrigger(':', (dsl_nodes.EventTerm(dsl_nodes.ChainID(path=["Start"], is_absolute=True), 'absolute'),)),
                         post_operations=[],
                     ),
                 ],
@@ -1172,11 +1159,11 @@ class TestImportPhase4Assembly:
         plant_state = state_machine.root_state.substates["Plant"]
         worker_state = plant_state.substates["Worker"]
         assert (
-            worker_state.transitions[1].event
+            worker_state.transitions[1].trigger.event
             is state_machine.root_state.events["GlobalFault"]
         )
         assert (
-            worker_state.transitions[2].event
+            worker_state.transitions[2].trigger.event
             is plant_state.substates["Bus"].events["Stop"]
         )
 
@@ -1241,10 +1228,10 @@ class TestImportPhase4Assembly:
         left_worker = state_machine.root_state.substates["LeftWorker"]
         right_worker = state_machine.root_state.substates["RightWorker"]
 
-        assert left_worker.transitions[1].event is shared_start
-        assert left_worker.transitions[2].event is shared_stop
-        assert right_worker.transitions[1].event is shared_start
-        assert right_worker.transitions[2].event is shared_stop
+        assert left_worker.transitions[1].trigger.event is shared_start
+        assert left_worker.transitions[2].trigger.event is shared_stop
+        assert right_worker.transitions[1].trigger.event is shared_start
+        assert right_worker.transitions[2].trigger.event is shared_stop
 
         text_aligner.assert_equal(
             expect=textwrap.dedent(
@@ -1315,8 +1302,8 @@ class TestImportPhase4Assembly:
         child_state = state_machine.root_state.substates["Child"]
         grand_state = child_state.substates["Grand"]
 
-        assert grand_state.transitions[1].event is bus_state.events["Start"]
-        assert grand_state.transitions[2].event is bus_state.events["Stop"]
+        assert grand_state.transitions[1].trigger.event is bus_state.events["Start"]
+        assert grand_state.transitions[2].trigger.event is bus_state.events["Stop"]
         assert bus_state.events["Start"].extra_name == "Top Start"
         assert bus_state.events["Stop"].extra_name == "Top Stop"
         assert "Start" not in child_state.events

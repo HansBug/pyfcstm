@@ -53,11 +53,25 @@ Event
     :members: __post_init__,path,path_name,to_ast_node,name,state_path,extra_name,declared,origins,doc
 
 
+EventTrigger
+-----------------------------------------------------
+
+.. autoclass:: EventTrigger
+    :members: __post_init__,event,scope
+
+
+GuardTrigger
+-----------------------------------------------------
+
+.. autoclass:: GuardTrigger
+    :members: __post_init__,condition
+
+
 Transition
 -----------------------------------------------------
 
 .. autoclass:: Transition
-    :members: parent,parent,to_ast_node,from_state,to_state,event,guard,effects,event_scope,is_forced,forced_origin,combo_origin_refs,combo_projection_key,combo_projection_order_key,combo_reuse_group_id,combo_priority_run_identity,combo_priority_run_index,doc,parent_ref
+    :members: __setattr__,parent,parent,to_ast_node,from_state,to_state,trigger,effects,is_forced,forced_origin,combo_origin_refs,combo_projection_key,combo_projection_order_key,combo_reuse_group_id,combo_priority_run_identity,combo_priority_run_index,doc,parent_ref
 
 
 OnStage

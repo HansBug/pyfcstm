@@ -209,16 +209,16 @@ class TestModelStatePlant:
         assert len(state_plant.transitions) == 2
         assert state_plant.transitions[0].from_state == INIT_STATE
         assert state_plant.transitions[0].to_state == "LeftUnit"
-        assert state_plant.transitions[0].event is None
-        assert state_plant.transitions[0].guard is None
+        assert not isinstance(state_plant.transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_plant.transitions[0].trigger, GuardTrigger)
         assert state_plant.transitions[0].effects == []
         assert state_plant.transitions[0].doc is None
         assert state_plant.transitions[0].parent_ref().name == "Plant"
         assert state_plant.transitions[0].parent_ref().path == ("Plant",)
         assert state_plant.transitions[1].from_state == "LeftUnit"
         assert state_plant.transitions[1].to_state == "RightUnit"
-        assert state_plant.transitions[1].event is None
-        assert state_plant.transitions[1].guard is None
+        assert not isinstance(state_plant.transitions[1].trigger, EventTrigger)
+        assert not isinstance(state_plant.transitions[1].trigger, GuardTrigger)
         assert state_plant.transitions[1].effects == []
         assert state_plant.transitions[1].doc is None
         assert state_plant.transitions[1].parent_ref().name == "Plant"
@@ -240,8 +240,8 @@ class TestModelStatePlant:
         assert len(state_plant.init_transitions) == 1
         assert state_plant.init_transitions[0].from_state == INIT_STATE
         assert state_plant.init_transitions[0].to_state == "LeftUnit"
-        assert state_plant.init_transitions[0].event is None
-        assert state_plant.init_transitions[0].guard is None
+        assert not isinstance(state_plant.init_transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_plant.init_transitions[0].trigger, GuardTrigger)
         assert state_plant.init_transitions[0].effects == []
         assert state_plant.init_transitions[0].doc is None
         assert state_plant.init_transitions[0].parent_ref().name == "Plant"
@@ -257,8 +257,8 @@ class TestModelStatePlant:
         assert len(state_plant.transitions_entering_children) == 1
         assert state_plant.transitions_entering_children[0].from_state == INIT_STATE
         assert state_plant.transitions_entering_children[0].to_state == "LeftUnit"
-        assert state_plant.transitions_entering_children[0].event is None
-        assert state_plant.transitions_entering_children[0].guard is None
+        assert not isinstance(state_plant.transitions_entering_children[0].trigger, EventTrigger)
+        assert not isinstance(state_plant.transitions_entering_children[0].trigger, GuardTrigger)
         assert state_plant.transitions_entering_children[0].effects == []
         assert state_plant.transitions_entering_children[0].doc is None
         assert state_plant.transitions_entering_children[0].parent_ref().name == "Plant"
@@ -274,8 +274,8 @@ class TestModelStatePlant:
             state_plant.transitions_entering_children_simplified[0].to_state
             == "LeftUnit"
         )
-        assert state_plant.transitions_entering_children_simplified[0].event is None
-        assert state_plant.transitions_entering_children_simplified[0].guard is None
+        assert not isinstance(state_plant.transitions_entering_children_simplified[0].trigger, EventTrigger)
+        assert not isinstance(state_plant.transitions_entering_children_simplified[0].trigger, GuardTrigger)
         assert state_plant.transitions_entering_children_simplified[0].effects == []
         assert state_plant.transitions_entering_children_simplified[0].doc is None
         assert (
@@ -288,16 +288,16 @@ class TestModelStatePlant:
         assert len(state_plant.transitions_from) == 1
         assert state_plant.transitions_from[0].from_state == "Plant"
         assert state_plant.transitions_from[0].to_state == EXIT_STATE
-        assert state_plant.transitions_from[0].event is None
-        assert state_plant.transitions_from[0].guard is None
+        assert not isinstance(state_plant.transitions_from[0].trigger, EventTrigger)
+        assert not isinstance(state_plant.transitions_from[0].trigger, GuardTrigger)
         assert state_plant.transitions_from[0].effects == []
         assert state_plant.transitions_from[0].doc is None
         assert state_plant.transitions_from[0].parent_ref is None
         assert len(state_plant.transitions_to) == 1
         assert state_plant.transitions_to[0].from_state == INIT_STATE
         assert state_plant.transitions_to[0].to_state == "Plant"
-        assert state_plant.transitions_to[0].event is None
-        assert state_plant.transitions_to[0].guard is None
+        assert not isinstance(state_plant.transitions_to[0].trigger, EventTrigger)
+        assert not isinstance(state_plant.transitions_to[0].trigger, GuardTrigger)
         assert state_plant.transitions_to[0].effects == []
         assert state_plant.transitions_to[0].doc is None
         assert state_plant.transitions_to[0].parent_ref is None
@@ -351,20 +351,18 @@ class TestModelStatePlant:
                         dsl_nodes.TransitionDefinition(
                             from_state=INIT_STATE,
                             to_state="Idle",
-                            event_id=None,
-                            condition_expr=None,
+                            trigger=None,
                             post_operations=[],
                             doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Idle",
                             to_state="Busy",
-                            event_id=None,
-                            condition_expr=dsl_nodes.BinaryOp(
+                            trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                                 expr1=dsl_nodes.Name(name="shared_ready"),
                                 op=">",
                                 expr2=dsl_nodes.Integer(raw="0"),
-                            ),
+                            )),), legacy_guard_syntax=True),
                             post_operations=[
                                 dsl_nodes.OperationAssignment(
                                     name="left_result",
@@ -380,12 +378,11 @@ class TestModelStatePlant:
                         dsl_nodes.TransitionDefinition(
                             from_state="Busy",
                             to_state="Idle",
-                            event_id=None,
-                            condition_expr=dsl_nodes.BinaryOp(
+                            trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                                 expr1=dsl_nodes.Name(name="shared_counter"),
                                 op="<",
                                 expr2=dsl_nodes.Name(name="left_limit"),
-                            ),
+                            )),), legacy_guard_syntax=True),
                             post_operations=[
                                 dsl_nodes.OperationAssignment(
                                     name="shared_counter",
@@ -452,20 +449,18 @@ class TestModelStatePlant:
                         dsl_nodes.TransitionDefinition(
                             from_state=INIT_STATE,
                             to_state="Idle",
-                            event_id=None,
-                            condition_expr=None,
+                            trigger=None,
                             post_operations=[],
                             doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Idle",
                             to_state="Busy",
-                            event_id=None,
-                            condition_expr=dsl_nodes.BinaryOp(
+                            trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                                 expr1=dsl_nodes.Name(name="shared_ready"),
                                 op=">",
                                 expr2=dsl_nodes.Integer(raw="0"),
-                            ),
+                            )),), legacy_guard_syntax=True),
                             post_operations=[
                                 dsl_nodes.OperationAssignment(
                                     name="right_result",
@@ -481,12 +476,11 @@ class TestModelStatePlant:
                         dsl_nodes.TransitionDefinition(
                             from_state="Busy",
                             to_state="Idle",
-                            event_id=None,
-                            condition_expr=dsl_nodes.BinaryOp(
+                            trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                                 expr1=dsl_nodes.Name(name="shared_counter"),
                                 op=">=",
                                 expr2=dsl_nodes.Name(name="right_limit"),
-                            ),
+                            )),), legacy_guard_syntax=True),
                             post_operations=[
                                 dsl_nodes.OperationAssignment(
                                     name="shared_counter",
@@ -517,16 +511,14 @@ class TestModelStatePlant:
                 dsl_nodes.TransitionDefinition(
                     from_state=INIT_STATE,
                     to_state="LeftUnit",
-                    event_id=None,
-                    condition_expr=None,
+                    trigger=None,
                     post_operations=[],
                     doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="LeftUnit",
                     to_state="RightUnit",
-                    event_id=None,
-                    condition_expr=None,
+                    trigger=None,
                     post_operations=[],
                     doc=None,
                 ),
@@ -604,8 +596,8 @@ class TestModelStatePlant:
         assert len(state_plant_leftunit.transitions) == 3
         assert state_plant_leftunit.transitions[0].from_state == INIT_STATE
         assert state_plant_leftunit.transitions[0].to_state == "Idle"
-        assert state_plant_leftunit.transitions[0].event is None
-        assert state_plant_leftunit.transitions[0].guard is None
+        assert not isinstance(state_plant_leftunit.transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_plant_leftunit.transitions[0].trigger, GuardTrigger)
         assert state_plant_leftunit.transitions[0].effects == []
         assert state_plant_leftunit.transitions[0].doc is None
         assert state_plant_leftunit.transitions[0].parent_ref().name == "LeftUnit"
@@ -615,8 +607,8 @@ class TestModelStatePlant:
         )
         assert state_plant_leftunit.transitions[1].from_state == "Idle"
         assert state_plant_leftunit.transitions[1].to_state == "Busy"
-        assert state_plant_leftunit.transitions[1].event is None
-        assert state_plant_leftunit.transitions[1].guard == BinaryOp(
+        assert not isinstance(state_plant_leftunit.transitions[1].trigger, EventTrigger)
+        assert state_plant_leftunit.transitions[1].trigger.condition == BinaryOp(
             x=Variable(name="shared_ready"), op=">", y=Integer(value=0)
         )
         assert state_plant_leftunit.transitions[1].effects == [
@@ -637,8 +629,8 @@ class TestModelStatePlant:
         )
         assert state_plant_leftunit.transitions[2].from_state == "Busy"
         assert state_plant_leftunit.transitions[2].to_state == "Idle"
-        assert state_plant_leftunit.transitions[2].event is None
-        assert state_plant_leftunit.transitions[2].guard == BinaryOp(
+        assert not isinstance(state_plant_leftunit.transitions[2].trigger, EventTrigger)
+        assert state_plant_leftunit.transitions[2].trigger.condition == BinaryOp(
             x=Variable(name="shared_counter"), op="<", y=Variable(name="left_limit")
         )
         assert state_plant_leftunit.transitions[2].effects == [
@@ -674,8 +666,8 @@ class TestModelStatePlant:
         assert len(state_plant_leftunit.init_transitions) == 1
         assert state_plant_leftunit.init_transitions[0].from_state == INIT_STATE
         assert state_plant_leftunit.init_transitions[0].to_state == "Idle"
-        assert state_plant_leftunit.init_transitions[0].event is None
-        assert state_plant_leftunit.init_transitions[0].guard is None
+        assert not isinstance(state_plant_leftunit.init_transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_plant_leftunit.init_transitions[0].trigger, GuardTrigger)
         assert state_plant_leftunit.init_transitions[0].effects == []
         assert state_plant_leftunit.init_transitions[0].doc is None
         assert state_plant_leftunit.init_transitions[0].parent_ref().name == "LeftUnit"
@@ -698,8 +690,8 @@ class TestModelStatePlant:
             == INIT_STATE
         )
         assert state_plant_leftunit.transitions_entering_children[0].to_state == "Idle"
-        assert state_plant_leftunit.transitions_entering_children[0].event is None
-        assert state_plant_leftunit.transitions_entering_children[0].guard is None
+        assert not isinstance(state_plant_leftunit.transitions_entering_children[0].trigger, EventTrigger)
+        assert not isinstance(state_plant_leftunit.transitions_entering_children[0].trigger, GuardTrigger)
         assert state_plant_leftunit.transitions_entering_children[0].effects == []
         assert state_plant_leftunit.transitions_entering_children[0].doc is None
         assert (
@@ -719,12 +711,10 @@ class TestModelStatePlant:
             == "Idle"
         )
         assert (
-            state_plant_leftunit.transitions_entering_children_simplified[0].event
-            is None
+            not isinstance(state_plant_leftunit.transitions_entering_children_simplified[0].trigger, EventTrigger)
         )
         assert (
-            state_plant_leftunit.transitions_entering_children_simplified[0].guard
-            is None
+            not isinstance(state_plant_leftunit.transitions_entering_children_simplified[0].trigger, GuardTrigger)
         )
         assert (
             state_plant_leftunit.transitions_entering_children_simplified[0].effects
@@ -745,8 +735,8 @@ class TestModelStatePlant:
         assert len(state_plant_leftunit.transitions_from) == 1
         assert state_plant_leftunit.transitions_from[0].from_state == "LeftUnit"
         assert state_plant_leftunit.transitions_from[0].to_state == "RightUnit"
-        assert state_plant_leftunit.transitions_from[0].event is None
-        assert state_plant_leftunit.transitions_from[0].guard is None
+        assert not isinstance(state_plant_leftunit.transitions_from[0].trigger, EventTrigger)
+        assert not isinstance(state_plant_leftunit.transitions_from[0].trigger, GuardTrigger)
         assert state_plant_leftunit.transitions_from[0].effects == []
         assert state_plant_leftunit.transitions_from[0].doc is None
         assert state_plant_leftunit.transitions_from[0].parent_ref().name == "Plant"
@@ -754,8 +744,8 @@ class TestModelStatePlant:
         assert len(state_plant_leftunit.transitions_to) == 1
         assert state_plant_leftunit.transitions_to[0].from_state == INIT_STATE
         assert state_plant_leftunit.transitions_to[0].to_state == "LeftUnit"
-        assert state_plant_leftunit.transitions_to[0].event is None
-        assert state_plant_leftunit.transitions_to[0].guard is None
+        assert not isinstance(state_plant_leftunit.transitions_to[0].trigger, EventTrigger)
+        assert not isinstance(state_plant_leftunit.transitions_to[0].trigger, GuardTrigger)
         assert state_plant_leftunit.transitions_to[0].effects == []
         assert state_plant_leftunit.transitions_to[0].doc is None
         assert state_plant_leftunit.transitions_to[0].parent_ref().name == "Plant"
@@ -804,20 +794,18 @@ class TestModelStatePlant:
                 dsl_nodes.TransitionDefinition(
                     from_state=INIT_STATE,
                     to_state="Idle",
-                    event_id=None,
-                    condition_expr=None,
+                    trigger=None,
                     post_operations=[],
                     doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Idle",
                     to_state="Busy",
-                    event_id=None,
-                    condition_expr=dsl_nodes.BinaryOp(
+                    trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                         expr1=dsl_nodes.Name(name="shared_ready"),
                         op=">",
                         expr2=dsl_nodes.Integer(raw="0"),
-                    ),
+                    )),), legacy_guard_syntax=True),
                     post_operations=[
                         dsl_nodes.OperationAssignment(
                             name="left_result",
@@ -833,12 +821,11 @@ class TestModelStatePlant:
                 dsl_nodes.TransitionDefinition(
                     from_state="Busy",
                     to_state="Idle",
-                    event_id=None,
-                    condition_expr=dsl_nodes.BinaryOp(
+                    trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                         expr1=dsl_nodes.Name(name="shared_counter"),
                         op="<",
                         expr2=dsl_nodes.Name(name="left_limit"),
-                    ),
+                    )),), legacy_guard_syntax=True),
                     post_operations=[
                         dsl_nodes.OperationAssignment(
                             name="shared_counter",
@@ -971,8 +958,8 @@ class TestModelStatePlant:
         assert len(state_plant_leftunit_idle.transitions_from) == 1
         assert state_plant_leftunit_idle.transitions_from[0].from_state == "Idle"
         assert state_plant_leftunit_idle.transitions_from[0].to_state == "Busy"
-        assert state_plant_leftunit_idle.transitions_from[0].event is None
-        assert state_plant_leftunit_idle.transitions_from[0].guard == BinaryOp(
+        assert not isinstance(state_plant_leftunit_idle.transitions_from[0].trigger, EventTrigger)
+        assert state_plant_leftunit_idle.transitions_from[0].trigger.condition == BinaryOp(
             x=Variable(name="shared_ready"), op=">", y=Integer(value=0)
         )
         assert state_plant_leftunit_idle.transitions_from[0].effects == [
@@ -997,8 +984,8 @@ class TestModelStatePlant:
         assert len(state_plant_leftunit_idle.transitions_to) == 2
         assert state_plant_leftunit_idle.transitions_to[0].from_state == INIT_STATE
         assert state_plant_leftunit_idle.transitions_to[0].to_state == "Idle"
-        assert state_plant_leftunit_idle.transitions_to[0].event is None
-        assert state_plant_leftunit_idle.transitions_to[0].guard is None
+        assert not isinstance(state_plant_leftunit_idle.transitions_to[0].trigger, EventTrigger)
+        assert not isinstance(state_plant_leftunit_idle.transitions_to[0].trigger, GuardTrigger)
         assert state_plant_leftunit_idle.transitions_to[0].effects == []
         assert state_plant_leftunit_idle.transitions_to[0].doc is None
         assert (
@@ -1010,8 +997,8 @@ class TestModelStatePlant:
         )
         assert state_plant_leftunit_idle.transitions_to[1].from_state == "Busy"
         assert state_plant_leftunit_idle.transitions_to[1].to_state == "Idle"
-        assert state_plant_leftunit_idle.transitions_to[1].event is None
-        assert state_plant_leftunit_idle.transitions_to[1].guard == BinaryOp(
+        assert not isinstance(state_plant_leftunit_idle.transitions_to[1].trigger, EventTrigger)
+        assert state_plant_leftunit_idle.transitions_to[1].trigger.condition == BinaryOp(
             x=Variable(name="shared_counter"), op="<", y=Variable(name="left_limit")
         )
         assert state_plant_leftunit_idle.transitions_to[1].effects == [
@@ -1167,8 +1154,8 @@ class TestModelStatePlant:
         assert len(state_plant_leftunit_busy.transitions_from) == 1
         assert state_plant_leftunit_busy.transitions_from[0].from_state == "Busy"
         assert state_plant_leftunit_busy.transitions_from[0].to_state == "Idle"
-        assert state_plant_leftunit_busy.transitions_from[0].event is None
-        assert state_plant_leftunit_busy.transitions_from[0].guard == BinaryOp(
+        assert not isinstance(state_plant_leftunit_busy.transitions_from[0].trigger, EventTrigger)
+        assert state_plant_leftunit_busy.transitions_from[0].trigger.condition == BinaryOp(
             x=Variable(name="shared_counter"), op="<", y=Variable(name="left_limit")
         )
         assert state_plant_leftunit_busy.transitions_from[0].effects == [
@@ -1192,8 +1179,8 @@ class TestModelStatePlant:
         assert len(state_plant_leftunit_busy.transitions_to) == 1
         assert state_plant_leftunit_busy.transitions_to[0].from_state == "Idle"
         assert state_plant_leftunit_busy.transitions_to[0].to_state == "Busy"
-        assert state_plant_leftunit_busy.transitions_to[0].event is None
-        assert state_plant_leftunit_busy.transitions_to[0].guard == BinaryOp(
+        assert not isinstance(state_plant_leftunit_busy.transitions_to[0].trigger, EventTrigger)
+        assert state_plant_leftunit_busy.transitions_to[0].trigger.condition == BinaryOp(
             x=Variable(name="shared_ready"), op=">", y=Integer(value=0)
         )
         assert state_plant_leftunit_busy.transitions_to[0].effects == [
@@ -1316,8 +1303,8 @@ class TestModelStatePlant:
         assert len(state_plant_rightunit.transitions) == 3
         assert state_plant_rightunit.transitions[0].from_state == INIT_STATE
         assert state_plant_rightunit.transitions[0].to_state == "Idle"
-        assert state_plant_rightunit.transitions[0].event is None
-        assert state_plant_rightunit.transitions[0].guard is None
+        assert not isinstance(state_plant_rightunit.transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_plant_rightunit.transitions[0].trigger, GuardTrigger)
         assert state_plant_rightunit.transitions[0].effects == []
         assert state_plant_rightunit.transitions[0].doc is None
         assert state_plant_rightunit.transitions[0].parent_ref().name == "RightUnit"
@@ -1327,8 +1314,8 @@ class TestModelStatePlant:
         )
         assert state_plant_rightunit.transitions[1].from_state == "Idle"
         assert state_plant_rightunit.transitions[1].to_state == "Busy"
-        assert state_plant_rightunit.transitions[1].event is None
-        assert state_plant_rightunit.transitions[1].guard == BinaryOp(
+        assert not isinstance(state_plant_rightunit.transitions[1].trigger, EventTrigger)
+        assert state_plant_rightunit.transitions[1].trigger.condition == BinaryOp(
             x=Variable(name="shared_ready"), op=">", y=Integer(value=0)
         )
         assert state_plant_rightunit.transitions[1].effects == [
@@ -1349,8 +1336,8 @@ class TestModelStatePlant:
         )
         assert state_plant_rightunit.transitions[2].from_state == "Busy"
         assert state_plant_rightunit.transitions[2].to_state == "Idle"
-        assert state_plant_rightunit.transitions[2].event is None
-        assert state_plant_rightunit.transitions[2].guard == BinaryOp(
+        assert not isinstance(state_plant_rightunit.transitions[2].trigger, EventTrigger)
+        assert state_plant_rightunit.transitions[2].trigger.condition == BinaryOp(
             x=Variable(name="shared_counter"), op=">=", y=Variable(name="right_limit")
         )
         assert state_plant_rightunit.transitions[2].effects == [
@@ -1386,8 +1373,8 @@ class TestModelStatePlant:
         assert len(state_plant_rightunit.init_transitions) == 1
         assert state_plant_rightunit.init_transitions[0].from_state == INIT_STATE
         assert state_plant_rightunit.init_transitions[0].to_state == "Idle"
-        assert state_plant_rightunit.init_transitions[0].event is None
-        assert state_plant_rightunit.init_transitions[0].guard is None
+        assert not isinstance(state_plant_rightunit.init_transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_plant_rightunit.init_transitions[0].trigger, GuardTrigger)
         assert state_plant_rightunit.init_transitions[0].effects == []
         assert state_plant_rightunit.init_transitions[0].doc is None
         assert (
@@ -1412,8 +1399,8 @@ class TestModelStatePlant:
             == INIT_STATE
         )
         assert state_plant_rightunit.transitions_entering_children[0].to_state == "Idle"
-        assert state_plant_rightunit.transitions_entering_children[0].event is None
-        assert state_plant_rightunit.transitions_entering_children[0].guard is None
+        assert not isinstance(state_plant_rightunit.transitions_entering_children[0].trigger, EventTrigger)
+        assert not isinstance(state_plant_rightunit.transitions_entering_children[0].trigger, GuardTrigger)
         assert state_plant_rightunit.transitions_entering_children[0].effects == []
         assert state_plant_rightunit.transitions_entering_children[0].doc is None
         assert (
@@ -1433,12 +1420,10 @@ class TestModelStatePlant:
             == "Idle"
         )
         assert (
-            state_plant_rightunit.transitions_entering_children_simplified[0].event
-            is None
+            not isinstance(state_plant_rightunit.transitions_entering_children_simplified[0].trigger, EventTrigger)
         )
         assert (
-            state_plant_rightunit.transitions_entering_children_simplified[0].guard
-            is None
+            not isinstance(state_plant_rightunit.transitions_entering_children_simplified[0].trigger, GuardTrigger)
         )
         assert (
             state_plant_rightunit.transitions_entering_children_simplified[0].effects
@@ -1461,8 +1446,8 @@ class TestModelStatePlant:
         assert len(state_plant_rightunit.transitions_to) == 1
         assert state_plant_rightunit.transitions_to[0].from_state == "LeftUnit"
         assert state_plant_rightunit.transitions_to[0].to_state == "RightUnit"
-        assert state_plant_rightunit.transitions_to[0].event is None
-        assert state_plant_rightunit.transitions_to[0].guard is None
+        assert not isinstance(state_plant_rightunit.transitions_to[0].trigger, EventTrigger)
+        assert not isinstance(state_plant_rightunit.transitions_to[0].trigger, GuardTrigger)
         assert state_plant_rightunit.transitions_to[0].effects == []
         assert state_plant_rightunit.transitions_to[0].doc is None
         assert state_plant_rightunit.transitions_to[0].parent_ref().name == "Plant"
@@ -1511,20 +1496,18 @@ class TestModelStatePlant:
                 dsl_nodes.TransitionDefinition(
                     from_state=INIT_STATE,
                     to_state="Idle",
-                    event_id=None,
-                    condition_expr=None,
+                    trigger=None,
                     post_operations=[],
                     doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Idle",
                     to_state="Busy",
-                    event_id=None,
-                    condition_expr=dsl_nodes.BinaryOp(
+                    trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                         expr1=dsl_nodes.Name(name="shared_ready"),
                         op=">",
                         expr2=dsl_nodes.Integer(raw="0"),
-                    ),
+                    )),), legacy_guard_syntax=True),
                     post_operations=[
                         dsl_nodes.OperationAssignment(
                             name="right_result",
@@ -1540,12 +1523,11 @@ class TestModelStatePlant:
                 dsl_nodes.TransitionDefinition(
                     from_state="Busy",
                     to_state="Idle",
-                    event_id=None,
-                    condition_expr=dsl_nodes.BinaryOp(
+                    trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                         expr1=dsl_nodes.Name(name="shared_counter"),
                         op=">=",
                         expr2=dsl_nodes.Name(name="right_limit"),
-                    ),
+                    )),), legacy_guard_syntax=True),
                     post_operations=[
                         dsl_nodes.OperationAssignment(
                             name="shared_counter",
@@ -1679,8 +1661,8 @@ class TestModelStatePlant:
         assert len(state_plant_rightunit_idle.transitions_from) == 1
         assert state_plant_rightunit_idle.transitions_from[0].from_state == "Idle"
         assert state_plant_rightunit_idle.transitions_from[0].to_state == "Busy"
-        assert state_plant_rightunit_idle.transitions_from[0].event is None
-        assert state_plant_rightunit_idle.transitions_from[0].guard == BinaryOp(
+        assert not isinstance(state_plant_rightunit_idle.transitions_from[0].trigger, EventTrigger)
+        assert state_plant_rightunit_idle.transitions_from[0].trigger.condition == BinaryOp(
             x=Variable(name="shared_ready"), op=">", y=Integer(value=0)
         )
         assert state_plant_rightunit_idle.transitions_from[0].effects == [
@@ -1705,8 +1687,8 @@ class TestModelStatePlant:
         assert len(state_plant_rightunit_idle.transitions_to) == 2
         assert state_plant_rightunit_idle.transitions_to[0].from_state == INIT_STATE
         assert state_plant_rightunit_idle.transitions_to[0].to_state == "Idle"
-        assert state_plant_rightunit_idle.transitions_to[0].event is None
-        assert state_plant_rightunit_idle.transitions_to[0].guard is None
+        assert not isinstance(state_plant_rightunit_idle.transitions_to[0].trigger, EventTrigger)
+        assert not isinstance(state_plant_rightunit_idle.transitions_to[0].trigger, GuardTrigger)
         assert state_plant_rightunit_idle.transitions_to[0].effects == []
         assert state_plant_rightunit_idle.transitions_to[0].doc is None
         assert (
@@ -1719,8 +1701,8 @@ class TestModelStatePlant:
         )
         assert state_plant_rightunit_idle.transitions_to[1].from_state == "Busy"
         assert state_plant_rightunit_idle.transitions_to[1].to_state == "Idle"
-        assert state_plant_rightunit_idle.transitions_to[1].event is None
-        assert state_plant_rightunit_idle.transitions_to[1].guard == BinaryOp(
+        assert not isinstance(state_plant_rightunit_idle.transitions_to[1].trigger, EventTrigger)
+        assert state_plant_rightunit_idle.transitions_to[1].trigger.condition == BinaryOp(
             x=Variable(name="shared_counter"), op=">=", y=Variable(name="right_limit")
         )
         assert state_plant_rightunit_idle.transitions_to[1].effects == [
@@ -1888,8 +1870,8 @@ class TestModelStatePlant:
         assert len(state_plant_rightunit_busy.transitions_from) == 1
         assert state_plant_rightunit_busy.transitions_from[0].from_state == "Busy"
         assert state_plant_rightunit_busy.transitions_from[0].to_state == "Idle"
-        assert state_plant_rightunit_busy.transitions_from[0].event is None
-        assert state_plant_rightunit_busy.transitions_from[0].guard == BinaryOp(
+        assert not isinstance(state_plant_rightunit_busy.transitions_from[0].trigger, EventTrigger)
+        assert state_plant_rightunit_busy.transitions_from[0].trigger.condition == BinaryOp(
             x=Variable(name="shared_counter"), op=">=", y=Variable(name="right_limit")
         )
         assert state_plant_rightunit_busy.transitions_from[0].effects == [
@@ -1913,8 +1895,8 @@ class TestModelStatePlant:
         assert len(state_plant_rightunit_busy.transitions_to) == 1
         assert state_plant_rightunit_busy.transitions_to[0].from_state == "Idle"
         assert state_plant_rightunit_busy.transitions_to[0].to_state == "Busy"
-        assert state_plant_rightunit_busy.transitions_to[0].event is None
-        assert state_plant_rightunit_busy.transitions_to[0].guard == BinaryOp(
+        assert not isinstance(state_plant_rightunit_busy.transitions_to[0].trigger, EventTrigger)
+        assert state_plant_rightunit_busy.transitions_to[0].trigger.condition == BinaryOp(
             x=Variable(name="shared_ready"), op=">", y=Integer(value=0)
         )
         assert state_plant_rightunit_busy.transitions_to[0].effects == [

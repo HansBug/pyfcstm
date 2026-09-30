@@ -246,7 +246,9 @@ Use it from templates:
 
 .. code-block:: jinja
 
-   {{ transition.guard | expr_render(style='c_scope_expr') }}
+   {% if transition.trigger is guard_trigger %}
+     {{ transition.trigger.condition | expr_render(style='c_scope_expr') }}
+   {% endif %}
 
 Canonical style names and aliases are exact:
 

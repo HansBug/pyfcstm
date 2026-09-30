@@ -185,8 +185,8 @@ class TestModelStateLab:
         assert len(state_lab.transitions) == 1
         assert state_lab.transitions[0].from_state == INIT_STATE
         assert state_lab.transitions[0].to_state == "Worker"
-        assert state_lab.transitions[0].event is None
-        assert state_lab.transitions[0].guard is None
+        assert not isinstance(state_lab.transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_lab.transitions[0].trigger, GuardTrigger)
         assert state_lab.transitions[0].effects == []
         assert state_lab.transitions[0].doc is None
         assert state_lab.transitions[0].parent_ref().name == "Lab"
@@ -208,8 +208,8 @@ class TestModelStateLab:
         assert len(state_lab.init_transitions) == 1
         assert state_lab.init_transitions[0].from_state == INIT_STATE
         assert state_lab.init_transitions[0].to_state == "Worker"
-        assert state_lab.init_transitions[0].event is None
-        assert state_lab.init_transitions[0].guard is None
+        assert not isinstance(state_lab.init_transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_lab.init_transitions[0].trigger, GuardTrigger)
         assert state_lab.init_transitions[0].effects == []
         assert state_lab.init_transitions[0].doc is None
         assert state_lab.init_transitions[0].parent_ref().name == "Lab"
@@ -225,8 +225,8 @@ class TestModelStateLab:
         assert len(state_lab.transitions_entering_children) == 1
         assert state_lab.transitions_entering_children[0].from_state == INIT_STATE
         assert state_lab.transitions_entering_children[0].to_state == "Worker"
-        assert state_lab.transitions_entering_children[0].event is None
-        assert state_lab.transitions_entering_children[0].guard is None
+        assert not isinstance(state_lab.transitions_entering_children[0].trigger, EventTrigger)
+        assert not isinstance(state_lab.transitions_entering_children[0].trigger, GuardTrigger)
         assert state_lab.transitions_entering_children[0].effects == []
         assert state_lab.transitions_entering_children[0].doc is None
         assert state_lab.transitions_entering_children[0].parent_ref().name == "Lab"
@@ -239,8 +239,8 @@ class TestModelStateLab:
         assert (
             state_lab.transitions_entering_children_simplified[0].to_state == "Worker"
         )
-        assert state_lab.transitions_entering_children_simplified[0].event is None
-        assert state_lab.transitions_entering_children_simplified[0].guard is None
+        assert not isinstance(state_lab.transitions_entering_children_simplified[0].trigger, EventTrigger)
+        assert not isinstance(state_lab.transitions_entering_children_simplified[0].trigger, GuardTrigger)
         assert state_lab.transitions_entering_children_simplified[0].effects == []
         assert state_lab.transitions_entering_children_simplified[0].doc is None
         assert (
@@ -253,16 +253,16 @@ class TestModelStateLab:
         assert len(state_lab.transitions_from) == 1
         assert state_lab.transitions_from[0].from_state == "Lab"
         assert state_lab.transitions_from[0].to_state == EXIT_STATE
-        assert state_lab.transitions_from[0].event is None
-        assert state_lab.transitions_from[0].guard is None
+        assert not isinstance(state_lab.transitions_from[0].trigger, EventTrigger)
+        assert not isinstance(state_lab.transitions_from[0].trigger, GuardTrigger)
         assert state_lab.transitions_from[0].effects == []
         assert state_lab.transitions_from[0].doc is None
         assert state_lab.transitions_from[0].parent_ref is None
         assert len(state_lab.transitions_to) == 1
         assert state_lab.transitions_to[0].from_state == INIT_STATE
         assert state_lab.transitions_to[0].to_state == "Lab"
-        assert state_lab.transitions_to[0].event is None
-        assert state_lab.transitions_to[0].guard is None
+        assert not isinstance(state_lab.transitions_to[0].trigger, EventTrigger)
+        assert not isinstance(state_lab.transitions_to[0].trigger, GuardTrigger)
         assert state_lab.transitions_to[0].effects == []
         assert state_lab.transitions_to[0].doc is None
         assert state_lab.transitions_to[0].parent_ref is None
@@ -386,32 +386,29 @@ class TestModelStateLab:
                         dsl_nodes.TransitionDefinition(
                             from_state=INIT_STATE,
                             to_state="Idle",
-                            event_id=None,
-                            condition_expr=None,
+                            trigger=None,
                             post_operations=[],
                             doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Idle",
                             to_state="Active",
-                            event_id=None,
-                            condition_expr=dsl_nodes.BinaryOp(
+                            trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                                 expr1=dsl_nodes.Name(name="sensor_temp"),
                                 op=">",
                                 expr2=dsl_nodes.Name(name="set_status_flag"),
-                            ),
+                            )),), legacy_guard_syntax=True),
                             post_operations=[],
                             doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Active",
                             to_state="Idle",
-                            event_id=None,
-                            condition_expr=dsl_nodes.BinaryOp(
+                            trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                                 expr1=dsl_nodes.Name(name="fallback_timeout"),
                                 op=">",
                                 expr2=dsl_nodes.Name(name="pair_main_low_a_main_b_low"),
-                            ),
+                            )),), legacy_guard_syntax=True),
                             post_operations=[
                                 dsl_nodes.OperationAssignment(
                                     name="exact_counter",
@@ -438,8 +435,7 @@ class TestModelStateLab:
                 dsl_nodes.TransitionDefinition(
                     from_state=INIT_STATE,
                     to_state="Worker",
-                    event_id=None,
-                    condition_expr=None,
+                    trigger=None,
                     post_operations=[],
                     doc=None,
                 )
@@ -517,16 +513,16 @@ class TestModelStateLab:
         assert len(state_lab_worker.transitions) == 3
         assert state_lab_worker.transitions[0].from_state == INIT_STATE
         assert state_lab_worker.transitions[0].to_state == "Idle"
-        assert state_lab_worker.transitions[0].event is None
-        assert state_lab_worker.transitions[0].guard is None
+        assert not isinstance(state_lab_worker.transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_lab_worker.transitions[0].trigger, GuardTrigger)
         assert state_lab_worker.transitions[0].effects == []
         assert state_lab_worker.transitions[0].doc is None
         assert state_lab_worker.transitions[0].parent_ref().name == "Worker"
         assert state_lab_worker.transitions[0].parent_ref().path == ("Lab", "Worker")
         assert state_lab_worker.transitions[1].from_state == "Idle"
         assert state_lab_worker.transitions[1].to_state == "Active"
-        assert state_lab_worker.transitions[1].event is None
-        assert state_lab_worker.transitions[1].guard == BinaryOp(
+        assert not isinstance(state_lab_worker.transitions[1].trigger, EventTrigger)
+        assert state_lab_worker.transitions[1].trigger.condition == BinaryOp(
             x=Variable(name="sensor_temp"), op=">", y=Variable(name="set_status_flag")
         )
         assert state_lab_worker.transitions[1].effects == []
@@ -535,8 +531,8 @@ class TestModelStateLab:
         assert state_lab_worker.transitions[1].parent_ref().path == ("Lab", "Worker")
         assert state_lab_worker.transitions[2].from_state == "Active"
         assert state_lab_worker.transitions[2].to_state == "Idle"
-        assert state_lab_worker.transitions[2].event is None
-        assert state_lab_worker.transitions[2].guard == BinaryOp(
+        assert not isinstance(state_lab_worker.transitions[2].trigger, EventTrigger)
+        assert state_lab_worker.transitions[2].trigger.condition == BinaryOp(
             x=Variable(name="fallback_timeout"),
             op=">",
             y=Variable(name="pair_main_low_a_main_b_low"),
@@ -572,8 +568,8 @@ class TestModelStateLab:
         assert len(state_lab_worker.init_transitions) == 1
         assert state_lab_worker.init_transitions[0].from_state == INIT_STATE
         assert state_lab_worker.init_transitions[0].to_state == "Idle"
-        assert state_lab_worker.init_transitions[0].event is None
-        assert state_lab_worker.init_transitions[0].guard is None
+        assert not isinstance(state_lab_worker.init_transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_lab_worker.init_transitions[0].trigger, GuardTrigger)
         assert state_lab_worker.init_transitions[0].effects == []
         assert state_lab_worker.init_transitions[0].doc is None
         assert state_lab_worker.init_transitions[0].parent_ref().name == "Worker"
@@ -595,8 +591,8 @@ class TestModelStateLab:
             state_lab_worker.transitions_entering_children[0].from_state == INIT_STATE
         )
         assert state_lab_worker.transitions_entering_children[0].to_state == "Idle"
-        assert state_lab_worker.transitions_entering_children[0].event is None
-        assert state_lab_worker.transitions_entering_children[0].guard is None
+        assert not isinstance(state_lab_worker.transitions_entering_children[0].trigger, EventTrigger)
+        assert not isinstance(state_lab_worker.transitions_entering_children[0].trigger, GuardTrigger)
         assert state_lab_worker.transitions_entering_children[0].effects == []
         assert state_lab_worker.transitions_entering_children[0].doc is None
         assert (
@@ -617,10 +613,10 @@ class TestModelStateLab:
             == "Idle"
         )
         assert (
-            state_lab_worker.transitions_entering_children_simplified[0].event is None
+            not isinstance(state_lab_worker.transitions_entering_children_simplified[0].trigger, EventTrigger)
         )
         assert (
-            state_lab_worker.transitions_entering_children_simplified[0].guard is None
+            not isinstance(state_lab_worker.transitions_entering_children_simplified[0].trigger, GuardTrigger)
         )
         assert (
             state_lab_worker.transitions_entering_children_simplified[0].effects == []
@@ -639,8 +635,8 @@ class TestModelStateLab:
         assert len(state_lab_worker.transitions_to) == 1
         assert state_lab_worker.transitions_to[0].from_state == INIT_STATE
         assert state_lab_worker.transitions_to[0].to_state == "Worker"
-        assert state_lab_worker.transitions_to[0].event is None
-        assert state_lab_worker.transitions_to[0].guard is None
+        assert not isinstance(state_lab_worker.transitions_to[0].trigger, EventTrigger)
+        assert not isinstance(state_lab_worker.transitions_to[0].trigger, GuardTrigger)
         assert state_lab_worker.transitions_to[0].effects == []
         assert state_lab_worker.transitions_to[0].doc is None
         assert state_lab_worker.transitions_to[0].parent_ref().name == "Lab"
@@ -749,32 +745,29 @@ class TestModelStateLab:
                 dsl_nodes.TransitionDefinition(
                     from_state=INIT_STATE,
                     to_state="Idle",
-                    event_id=None,
-                    condition_expr=None,
+                    trigger=None,
                     post_operations=[],
                     doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Idle",
                     to_state="Active",
-                    event_id=None,
-                    condition_expr=dsl_nodes.BinaryOp(
+                    trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                         expr1=dsl_nodes.Name(name="sensor_temp"),
                         op=">",
                         expr2=dsl_nodes.Name(name="set_status_flag"),
-                    ),
+                    )),), legacy_guard_syntax=True),
                     post_operations=[],
                     doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Active",
                     to_state="Idle",
-                    event_id=None,
-                    condition_expr=dsl_nodes.BinaryOp(
+                    trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                         expr1=dsl_nodes.Name(name="fallback_timeout"),
                         op=">",
                         expr2=dsl_nodes.Name(name="pair_main_low_a_main_b_low"),
-                    ),
+                    )),), legacy_guard_syntax=True),
                     post_operations=[
                         dsl_nodes.OperationAssignment(
                             name="exact_counter",
@@ -1019,8 +1012,8 @@ class TestModelStateLab:
         assert len(state_lab_worker_idle.transitions_from) == 1
         assert state_lab_worker_idle.transitions_from[0].from_state == "Idle"
         assert state_lab_worker_idle.transitions_from[0].to_state == "Active"
-        assert state_lab_worker_idle.transitions_from[0].event is None
-        assert state_lab_worker_idle.transitions_from[0].guard == BinaryOp(
+        assert not isinstance(state_lab_worker_idle.transitions_from[0].trigger, EventTrigger)
+        assert state_lab_worker_idle.transitions_from[0].trigger.condition == BinaryOp(
             x=Variable(name="sensor_temp"), op=">", y=Variable(name="set_status_flag")
         )
         assert state_lab_worker_idle.transitions_from[0].effects == []
@@ -1033,8 +1026,8 @@ class TestModelStateLab:
         assert len(state_lab_worker_idle.transitions_to) == 2
         assert state_lab_worker_idle.transitions_to[0].from_state == INIT_STATE
         assert state_lab_worker_idle.transitions_to[0].to_state == "Idle"
-        assert state_lab_worker_idle.transitions_to[0].event is None
-        assert state_lab_worker_idle.transitions_to[0].guard is None
+        assert not isinstance(state_lab_worker_idle.transitions_to[0].trigger, EventTrigger)
+        assert not isinstance(state_lab_worker_idle.transitions_to[0].trigger, GuardTrigger)
         assert state_lab_worker_idle.transitions_to[0].effects == []
         assert state_lab_worker_idle.transitions_to[0].doc is None
         assert state_lab_worker_idle.transitions_to[0].parent_ref().name == "Worker"
@@ -1044,8 +1037,8 @@ class TestModelStateLab:
         )
         assert state_lab_worker_idle.transitions_to[1].from_state == "Active"
         assert state_lab_worker_idle.transitions_to[1].to_state == "Idle"
-        assert state_lab_worker_idle.transitions_to[1].event is None
-        assert state_lab_worker_idle.transitions_to[1].guard == BinaryOp(
+        assert not isinstance(state_lab_worker_idle.transitions_to[1].trigger, EventTrigger)
+        assert state_lab_worker_idle.transitions_to[1].trigger.condition == BinaryOp(
             x=Variable(name="fallback_timeout"),
             op=">",
             y=Variable(name="pair_main_low_a_main_b_low"),
@@ -1427,8 +1420,8 @@ class TestModelStateLab:
         assert len(state_lab_worker_active.transitions_from) == 1
         assert state_lab_worker_active.transitions_from[0].from_state == "Active"
         assert state_lab_worker_active.transitions_from[0].to_state == "Idle"
-        assert state_lab_worker_active.transitions_from[0].event is None
-        assert state_lab_worker_active.transitions_from[0].guard == BinaryOp(
+        assert not isinstance(state_lab_worker_active.transitions_from[0].trigger, EventTrigger)
+        assert state_lab_worker_active.transitions_from[0].trigger.condition == BinaryOp(
             x=Variable(name="fallback_timeout"),
             op=">",
             y=Variable(name="pair_main_low_a_main_b_low"),
@@ -1452,8 +1445,8 @@ class TestModelStateLab:
         assert len(state_lab_worker_active.transitions_to) == 1
         assert state_lab_worker_active.transitions_to[0].from_state == "Idle"
         assert state_lab_worker_active.transitions_to[0].to_state == "Active"
-        assert state_lab_worker_active.transitions_to[0].event is None
-        assert state_lab_worker_active.transitions_to[0].guard == BinaryOp(
+        assert not isinstance(state_lab_worker_active.transitions_to[0].trigger, EventTrigger)
+        assert state_lab_worker_active.transitions_to[0].trigger.condition == BinaryOp(
             x=Variable(name="sensor_temp"), op=">", y=Variable(name="set_status_flag")
         )
         assert state_lab_worker_active.transitions_to[0].effects == []

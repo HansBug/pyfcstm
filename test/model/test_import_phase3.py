@@ -89,19 +89,17 @@ class TestImportPhase3Assembly:
                     dsl_nodes.TransitionDefinition(
                         from_state=dsl_nodes.INIT_STATE,
                         to_state="Idle",
-                        event_id=None,
-                        condition_expr=None,
+                        trigger=None,
                         post_operations=[],
                     ),
                     dsl_nodes.TransitionDefinition(
                         from_state="Idle",
                         to_state="Busy",
-                        event_id=None,
-                        condition_expr=dsl_nodes.ConditionalOp(
+                        trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.ConditionalOp(
                             cond=dsl_nodes.Name("src"),
                             value_true=dsl_nodes.Name("src"),
                             value_false=dsl_nodes.Name("flag"),
-                        ),
+                        )),), legacy_guard_syntax=True),
                         post_operations=[
                             dsl_nodes.OperationAssignment(
                                 "src",
@@ -114,8 +112,7 @@ class TestImportPhase3Assembly:
                     dsl_nodes.ForceTransitionDefinition(
                         from_state="Busy",
                         to_state="Idle",
-                        event_id=None,
-                        condition_expr=dsl_nodes.UnaryOp("not", dsl_nodes.Name("flag")),
+                        trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.UnaryOp("not", dsl_nodes.Name("flag"))),), legacy_guard_syntax=True),
                     )
                 ],
                 substates=[
@@ -169,8 +166,8 @@ class TestImportPhase3Assembly:
         assert str(worker_state.durings[0].operations[0].expr) == "(host_src)"
         assert str(worker_state.exits[0].operations[0].expr) == "abs(host_src)"
         assert str(worker_state.during_aspects[0].operations[0].expr) == "host_src + host_src"
-        assert "host_src" in str(worker_state.transitions[1].condition_expr)
-        assert "host_flag" in str(worker_state.force_transitions[0].condition_expr)
+        assert "host_src" in str(worker_state.transitions[1].trigger.terms[0].condition_expr)
+        assert "host_flag" in str(worker_state.force_transitions[0].trigger.terms[0].condition_expr)
         assert str(worker_state.transitions[1].post_operations[0].expr) == "-host_src"
 
     def test_public_ast_mapping_rejects_unknown_selector_type(self):
@@ -373,10 +370,10 @@ class TestImportPhase3Assembly:
 
         idle_to_busy = worker_state.transitions[1]
         busy_to_idle = worker_state.transitions[2]
-        assert sorted(v.name for v in idle_to_busy.guard.list_variables()) == [
+        assert sorted(v.name for v in idle_to_busy.trigger.condition.list_variables()) == [
             "host_guard"
         ]
-        assert sorted(v.name for v in busy_to_idle.guard.list_variables()) == [
+        assert sorted(v.name for v in busy_to_idle.trigger.condition.list_variables()) == [
             "host_counter",
             "host_limit",
         ]

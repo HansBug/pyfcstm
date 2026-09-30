@@ -1,5 +1,6 @@
 """Regression tests for the issue-392 documentation boundaries."""
 
+from pyfcstm.model import EventTrigger
 from dataclasses import fields
 
 import pytest
@@ -214,7 +215,7 @@ def test_synthesized_event_does_not_steal_transition_documentation():
     )
 
     transition = next(
-        item for item in machine.root_state.transitions if item.event is not None
+        item for item in machine.root_state.transitions if isinstance(item.trigger, EventTrigger)
     )
     event = machine.root_state.substates["A"].events["Go"]
 

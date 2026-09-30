@@ -5,6 +5,7 @@ This module tests the PlantUML generation methods of State and StateMachine
 classes, ensuring proper integration with PlantUMLOptions configuration.
 """
 
+from pyfcstm.model import EventTrigger
 import pytest
 
 from pyfcstm.model.model import (
@@ -422,13 +423,7 @@ class TestTransitionEffectModes:
             path=('Root',),
             substates={'Child1': child1, 'Child2': child2},
             transitions=[
-                Transition(
-                    from_state='Child1',
-                    to_state='Child2',
-                    event=None,
-                    guard=None,
-                    effects=[operation],
-                )
+                Transition(from_state='Child1', to_state='Child2', trigger=None, effects=[operation])
             ],
         )
 
@@ -465,13 +460,7 @@ class TestTransitionEffectModes:
             path=('Root',),
             substates={'Child1': child1, 'Child2': child2},
             transitions=[
-                Transition(
-                    from_state='Child1',
-                    to_state='Child2',
-                    event=None,
-                    guard=None,
-                    effects=[operation],
-                )
+                Transition(from_state='Child1', to_state='Child2', trigger=None, effects=[operation])
             ],
         )
 
@@ -531,13 +520,7 @@ class TestTransitionEffectModes:
             path=('Root',),
             substates={'Child1': child1, 'Child2': child2},
             transitions=[
-                Transition(
-                    from_state='Child1',
-                    to_state='Child2',
-                    event=None,
-                    guard=None,
-                    effects=[effect],
-                )
+                Transition(from_state='Child1', to_state='Child2', trigger=None, effects=[effect])
             ],
         )
 
@@ -577,20 +560,8 @@ class TestTransitionEffectModes:
             path=('Root',),
             substates={'Child1': child1, 'Child2': child2},
             transitions=[
-                Transition(
-                    from_state='Child1',
-                    to_state='Child2',
-                    event=event1,
-                    guard=None,
-                    effects=[],
-                ),
-                Transition(
-                    from_state='Child1',
-                    to_state='Child2',
-                    event=event2,
-                    guard=None,
-                    effects=[],
-                ),
+                Transition(from_state='Child1', to_state='Child2', trigger=EventTrigger(event1), effects=[]),
+                Transition(from_state='Child1', to_state='Child2', trigger=EventTrigger(event2), effects=[]),
             ],
         )
 
@@ -1356,13 +1327,7 @@ class TestEventVisualization:
             path=('Root',),
             substates={'Child1': child1, 'Child2': child2},
             transitions=[
-                Transition(
-                    from_state='Child1',
-                    to_state='Child2',
-                    event=event,
-                    guard=None,
-                    effects=[],
-                )
+                Transition(from_state='Child1', to_state='Child2', trigger=EventTrigger(event), effects=[])
             ],
         )
 
@@ -1406,20 +1371,8 @@ class TestEventVisualization:
             path=('Root',),
             substates={'Child1': child1, 'Child2': child2, 'Child3': child3},
             transitions=[
-                Transition(
-                    from_state='Child1',
-                    to_state='Child2',
-                    event=event,
-                    guard=None,
-                    effects=[],
-                ),
-                Transition(
-                    from_state='Child2',
-                    to_state='Child3',
-                    event=event,
-                    guard=None,
-                    effects=[],
-                )
+                Transition(from_state='Child1', to_state='Child2', trigger=EventTrigger(event), effects=[]),
+                Transition(from_state='Child2', to_state='Child3', trigger=EventTrigger(event), effects=[])
             ],
         )
 
@@ -1453,13 +1406,7 @@ class TestEventVisualization:
             path=('Root',),
             substates={'Child1': child1, 'Child2': child2},
             transitions=[
-                Transition(
-                    from_state='Child1',
-                    to_state='Child2',
-                    event=event,
-                    guard=None,
-                    effects=[],
-                )
+                Transition(from_state='Child1', to_state='Child2', trigger=EventTrigger(event), effects=[])
             ],
         )
 
@@ -1501,20 +1448,8 @@ class TestEventVisualization:
             path=('Root',),
             substates={'Child1': child1, 'Child2': child2, 'Child3': child3},
             transitions=[
-                Transition(
-                    from_state='Child1',
-                    to_state='Child2',
-                    event=event,
-                    guard=None,
-                    effects=[],
-                ),
-                Transition(
-                    from_state='Child2',
-                    to_state='Child3',
-                    event=event,
-                    guard=None,
-                    effects=[],
-                )
+                Transition(from_state='Child1', to_state='Child2', trigger=EventTrigger(event), effects=[]),
+                Transition(from_state='Child2', to_state='Child3', trigger=EventTrigger(event), effects=[])
             ],
         )
 
@@ -1555,20 +1490,8 @@ class TestEventVisualization:
             path=('Root',),
             substates={'Child1': child1, 'Child2': child2, 'Child3': child3},
             transitions=[
-                Transition(
-                    from_state='Child1',
-                    to_state='Child2',
-                    event=event,
-                    guard=None,
-                    effects=[],
-                ),
-                Transition(
-                    from_state='Child2',
-                    to_state='Child3',
-                    event=event,
-                    guard=None,
-                    effects=[],
-                )
+                Transition(from_state='Child1', to_state='Child2', trigger=EventTrigger(event), effects=[]),
+                Transition(from_state='Child2', to_state='Child3', trigger=EventTrigger(event), effects=[])
             ],
         )
 
@@ -1618,34 +1541,10 @@ class TestEventVisualization:
             path=('Root',),
             substates={'Child1': child1, 'Child2': child2, 'Child3': child3, 'Child4': child4},
             transitions=[
-                Transition(
-                    from_state='Child1',
-                    to_state='Child2',
-                    event=event1,
-                    guard=None,
-                    effects=[],
-                ),
-                Transition(
-                    from_state='Child2',
-                    to_state='Child3',
-                    event=event1,
-                    guard=None,
-                    effects=[],
-                ),
-                Transition(
-                    from_state='Child3',
-                    to_state='Child4',
-                    event=event2,
-                    guard=None,
-                    effects=[],
-                ),
-                Transition(
-                    from_state='Child4',
-                    to_state='Child1',
-                    event=event2,
-                    guard=None,
-                    effects=[],
-                ),
+                Transition(from_state='Child1', to_state='Child2', trigger=EventTrigger(event1), effects=[]),
+                Transition(from_state='Child2', to_state='Child3', trigger=EventTrigger(event1), effects=[]),
+                Transition(from_state='Child3', to_state='Child4', trigger=EventTrigger(event2), effects=[]),
+                Transition(from_state='Child4', to_state='Child1', trigger=EventTrigger(event2), effects=[]),
             ],
         )
 

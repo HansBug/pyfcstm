@@ -1233,7 +1233,8 @@ def _is_abstract(stage_or_aspect: Any) -> bool:
 
 
 def _qualified_event_name(transition: 'Transition', parent_state: Any) -> Optional[str]:
-    event = transition.event
+    from ..model import EventTrigger
+    event = transition.trigger.event if isinstance(transition.trigger, EventTrigger) else None
     if event is None:
         return None
     # ``Event.path_name`` is the canonical dot-separated identifier used
@@ -1260,7 +1261,7 @@ def _event_scope(
     """
     if event is None:  # pragma: no cover
         # Defensive: callers (``_qualified_event_name``) already guard
-        # on ``transition.event is None`` and short-circuit; reaching
+        # on ``not isinstance(transition.trigger, EventTrigger)`` and short-circuit; reaching
         # here would mean the caller forgot the guard.
         return 'absolute'
     owner_path = tuple(event.state_path)
@@ -1306,14 +1307,15 @@ def _state_actions(
 
 def _initial_targets(state: Any) -> Tuple[Dict[str, Any], ...]:
     """Collect every ``[*] -> X`` initial transition declared inside the state."""
+    from ..model import EventTrigger, GuardTrigger
     out: List[Dict[str, Any]] = []
     for transition in state.transitions:
         if not _is_init_source(transition.from_state):
             continue
         target_name = transition.to_state
         target_path = _resolve_sibling_path(state, target_name) if isinstance(target_name, str) else _EXIT_MARK
-        guard_text = _expr_text(transition.guard)
-        event = transition.event
+        guard_text = _expr_text(transition.trigger.condition) if isinstance(transition.trigger, GuardTrigger) else None
+        event = transition.trigger.event if isinstance(transition.trigger, EventTrigger) else None
         event_name = event.name if event is not None else None
         out.append({
             'target': target_path,
@@ -1451,6 +1453,7 @@ def _build_combo_origin_infos(
 
 
 def _build_transition_infos(machine: 'StateMachine') -> Tuple[TransitionInfo, ...]:
+    from ..model import EventTrigger, GuardTrigger
     out: List[TransitionInfo] = []
     transition_index = 0
     for state in machine.walk_states():
@@ -1459,9 +1462,9 @@ def _build_transition_infos(machine: 'StateMachine') -> Tuple[TransitionInfo, ..
             to_path = _transition_endpoint(state, transition.to_state, is_source=False)
             qualified_event = _qualified_event_name(transition, state)
             scope = (
-                getattr(transition, 'event_scope', None)
-                or _event_scope(transition.event, state, transition.from_state, machine)
-                if transition.event is not None
+                transition.trigger.scope
+                or _event_scope(transition.trigger.event, state, transition.from_state, machine)
+                if isinstance(transition.trigger, EventTrigger)
                 else None
             )
             is_forced = _is_forced_transition(transition)
@@ -1471,7 +1474,7 @@ def _build_transition_infos(machine: 'StateMachine') -> Tuple[TransitionInfo, ..
                 to_path=to_path,
                 event=qualified_event,
                 event_scope=scope,
-                guard=_expr_text(transition.guard),
+                guard=_expr_text(transition.trigger.condition) if isinstance(transition.trigger, GuardTrigger) else None,
                 effect=_effects_text(transition.effects),
                 effect_self_assigns=_effect_self_assigns(transition.effects),
                 is_forced=is_forced,
@@ -1535,6 +1538,7 @@ def _collect_action_reads_writes(state: Any) -> Tuple[Dict[str, bool], Dict[str,
 
 def _variable_access_sites(machine: 'StateMachine') -> Dict[str, Dict[str, List[VariableAccessSite]]]:
     """Collect static accesses without collapsing distinct imported instances."""
+    from ..model import GuardTrigger
     from ..model.model import Operation
 
     sites = {name: {'reads': [], 'writes': []} for name in machine.defines}
@@ -1588,7 +1592,7 @@ def _variable_access_sites(machine: 'StateMachine') -> Dict[str, Dict[str, List[
                 source_path=getattr(transition, '_source_path', None),
                 span=getattr(transition, '_span', None),
             )
-            record(_walk_expr_variables(transition.guard), 'reads', owner)
+            record(_walk_expr_variables(transition.trigger.condition if isinstance(transition.trigger, GuardTrigger) else None), 'reads', owner)
             statements(transition.effects, replace(owner, kind='effect'))
             transition_index += 1
     return sites
@@ -1598,6 +1602,7 @@ def _build_variable_infos(
         machine: 'StateMachine',
         states: Tuple[StateInfo, ...],
 ) -> Tuple[VariableInfo, ...]:
+    from ..model import GuardTrigger
     access_sites = _variable_access_sites(machine)
     var_reads_by_state: Dict[str, List[str]] = {name: [] for name in machine.defines}
     var_writes_by_state: Dict[str, List[str]] = {name: [] for name in machine.defines}
@@ -1639,7 +1644,7 @@ def _build_variable_infos(
         for transition in state.transitions:
             from_path = _transition_endpoint(state, transition.from_state, is_source=True)
             to_path = _transition_endpoint(state, transition.to_state, is_source=False)
-            for v in _walk_expr_variables(transition.guard):
+            for v in _walk_expr_variables(transition.trigger.condition if isinstance(transition.trigger, GuardTrigger) else None):
                 if v in var_read_guards:
                     var_read_guards[v].append((from_path, to_path))
             for stmt in transition.effects:
@@ -1774,12 +1779,12 @@ def _build_event_infos(machine: 'StateMachine', transitions: Tuple[TransitionInf
             to_path = _transition_endpoint(state, transition.to_state, is_source=False)
             event_users.setdefault(qn, []).append((from_path, to_path))
             event_scope[qn] = (
-                getattr(transition, 'event_scope', None)
-                or _event_scope(transition.event, state, transition.from_state, machine)
+                transition.trigger.scope
+                or _event_scope(transition.trigger.event, state, transition.from_state, machine)
             )
             event_declared.setdefault(
                 qn,
-                bool(getattr(transition.event, 'declared', False)),
+                bool(getattr(transition.trigger.event, 'declared', False)),
             )
     out: List[EventInfo] = []
     for qn in sorted(set(event_users.keys()) | set(event_declared.keys())):

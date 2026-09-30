@@ -491,74 +491,40 @@ class TestSimulationCompleterRuntimeEvents:
         assert 'post-exit continuation' in completion_meta['Root.System1.Switch']
 
 
-class _NoCurrentStateRuntime:
-    is_ended = False
-
-    @property
-    def current_state(self):
-        raise IndexError('no active state')
-
-
-class _NoneCurrentStateRuntime:
-    is_ended = False
-    current_state = None
-
-
-class _FakeEvent:
-    def __init__(self, path_name, name):
-        self.path_name = path_name
-        self.name = name
-
-
-class _FakeTransition:
-    def __init__(self, event, to_state='Other'):
-        self.event = event
-        self.to_state = to_state
-
-
-class _FakeState:
-    def __init__(self, transitions, parent=None, is_root_state=False):
-        self.is_root_state = is_root_state
-        self.parent = parent
-        self.transitions_from = transitions
-
-
-class _FakeRuntime:
-    is_ended = False
-
-    def __init__(self, current_state):
-        self.current_state = current_state
-
-
 @pytest.mark.unittest
 class TestEventDisplayItems:
-    def test_display_items_return_empty_without_active_state(self):
-        assert get_current_event_display_items(_NoCurrentStateRuntime()) == []
-        assert get_current_event_display_items(_NoneCurrentStateRuntime()) == []
+    def test_display_items_return_empty_before_entry_and_after_termination(self):
+        runtime, _ = _build_runtime('state Root { state A; [*] -> A; A -> [*]; }')
+        assert get_current_event_display_items(runtime) == []
+        runtime.cycle()
+        runtime.cycle()
+        assert runtime.is_ended
+        assert get_current_event_display_items(runtime) == []
 
     def test_display_items_deduplicate_event_paths(self):
-        event = _FakeEvent('System.A.Go', 'Go')
-        state = _FakeState([
-            _FakeTransition(event),
-            _FakeTransition(event),
-        ])
-
-        assert get_current_event_display_items(_FakeRuntime(state)) == [('System.A.Go', 'Go')]
+        runtime, _ = _build_runtime("""
+            state System { state A; state B; [*] -> A;
+                A -> B :: Go; A -> A :: Go; }
+        """)
+        runtime.cycle()
+        assert get_current_event_display_items(runtime) == [('System.A.Go', 'Go')]
 
     def test_display_items_omits_root_boundary_continuation(self):
-        root = _FakeState([], is_root_state=True)
-        state = _FakeState([_FakeTransition(None, to_state=EXIT_STATE)], parent=root)
-
-        assert get_current_event_display_items(_FakeRuntime(state)) == []
+        runtime, _ = _build_runtime('state Root { state A; [*] -> A; A -> [*]; }')
+        runtime.cycle()
+        assert get_current_event_display_items(runtime) == []
 
     def test_display_items_deduplicate_continuation_event_paths(self):
-        event = _FakeEvent('Root.Parent.Switch', 'Switch')
-        parent = _FakeState([
-            _FakeTransition(event),
-            _FakeTransition(event),
-        ])
-        state = _FakeState([_FakeTransition(None, to_state=EXIT_STATE)], parent=parent)
-
-        assert get_current_event_display_items(_FakeRuntime(state)) == [
+        runtime, _ = _build_runtime("""
+            state Root {
+                state Parent { state A; [*] -> A; A -> [*]; }
+                state Other;
+                [*] -> Parent;
+                Parent -> Other :: Switch;
+                Parent -> Parent :: Switch;
+            }
+        """)
+        runtime.cycle()
+        assert get_current_event_display_items(runtime) == [
             ('Root.Parent.Switch', 'post-exit continuation'),
         ]

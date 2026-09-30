@@ -660,21 +660,21 @@ class TestModelModelDLC1:
     def test_transition_dlcs(self, transition_1, transition_2, transition_3):
         assert transition_1.from_state == "Idle"
         assert transition_1.to_state == "Idle"
-        assert transition_1.event.name == "E2"
-        assert transition_1.event.state_path == ("TrafficLight", "Idle")
-        assert transition_1.event.path == ("TrafficLight", "Idle", "E2")
+        assert transition_1.trigger.event.name == "E2"
+        assert transition_1.trigger.event.state_path == ("TrafficLight", "Idle")
+        assert transition_1.trigger.event.path == ("TrafficLight", "Idle", "E2")
 
         assert transition_2.from_state == "Green"
         assert transition_2.to_state == "Yellow"
-        assert transition_2.event.name == "E2"
-        assert transition_2.event.state_path == ("TrafficLight", "Idle")
-        assert transition_2.event.path == ("TrafficLight", "Idle", "E2")
+        assert transition_2.trigger.event.name == "E2"
+        assert transition_2.trigger.event.state_path == ("TrafficLight", "Idle")
+        assert transition_2.trigger.event.path == ("TrafficLight", "Idle", "E2")
 
         assert transition_3.from_state == "Yellow"
         assert transition_3.to_state == "Yellow"
-        assert transition_3.event.name == "E2"
-        assert transition_3.event.state_path == ("TrafficLight",)
-        assert transition_3.event.path == ("TrafficLight", "E2")
+        assert transition_3.trigger.event.name == "E2"
+        assert transition_3.trigger.event.state_path == ("TrafficLight",)
+        assert transition_3.trigger.event.path == ("TrafficLight", "E2")
 
     def test_to_ast_node_to_str(
             self, demo_model_1, expected_to_str_result, text_aligner

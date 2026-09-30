@@ -528,8 +528,7 @@ class TestDSLIfStatementIntegration:
                 TransitionDefinition(
                     from_state="A",
                     to_state="B",
-                    event_id=None,
-                    condition_expr=None,
+                    trigger=None,
                     post_operations=[
                         OperationIf(
                             branches=[

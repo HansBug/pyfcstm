@@ -15,7 +15,7 @@ from pyfcstm.diagnostics.analyzers.use_def import (
     collect_expr_variables,
 )
 from .errors import BmcBuildError
-from pyfcstm.model import IfBlock, Operation
+from pyfcstm.model import IfBlock, Operation, GuardTrigger
 from pyfcstm.model.expr import BinaryOp, Integer, UnaryOp, Variable
 
 
@@ -147,8 +147,8 @@ def build_cone_slice(context):
                     return ConeSlice(names, (), "abstract_actions", frozenset(names))
                 blocks.append(action.operations or ())
         for transition in state.transitions:
-            if transition.guard is not None:
-                seeds.update(collect_expr_variables(transition.guard))
+            if isinstance(transition.trigger, GuardTrigger):
+                seeds.update(collect_expr_variables(transition.trigger.condition))
             blocks.append(transition.effects or ())
     # Persistent declarations constrain action boundaries, not intermediate
     # scope values. Propagate unsafe writes before treating integer reads as

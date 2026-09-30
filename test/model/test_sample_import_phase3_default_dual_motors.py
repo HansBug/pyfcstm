@@ -152,16 +152,16 @@ class TestModelStateFleet:
         assert len(state_fleet.transitions) == 2
         assert state_fleet.transitions[0].from_state == INIT_STATE
         assert state_fleet.transitions[0].to_state == "LeftMotor"
-        assert state_fleet.transitions[0].event is None
-        assert state_fleet.transitions[0].guard is None
+        assert not isinstance(state_fleet.transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_fleet.transitions[0].trigger, GuardTrigger)
         assert state_fleet.transitions[0].effects == []
         assert state_fleet.transitions[0].doc is None
         assert state_fleet.transitions[0].parent_ref().name == "Fleet"
         assert state_fleet.transitions[0].parent_ref().path == ("Fleet",)
         assert state_fleet.transitions[1].from_state == "LeftMotor"
         assert state_fleet.transitions[1].to_state == "RightMotor"
-        assert state_fleet.transitions[1].event is None
-        assert state_fleet.transitions[1].guard is None
+        assert not isinstance(state_fleet.transitions[1].trigger, EventTrigger)
+        assert not isinstance(state_fleet.transitions[1].trigger, GuardTrigger)
         assert state_fleet.transitions[1].effects == []
         assert state_fleet.transitions[1].doc is None
         assert state_fleet.transitions[1].parent_ref().name == "Fleet"
@@ -183,8 +183,8 @@ class TestModelStateFleet:
         assert len(state_fleet.init_transitions) == 1
         assert state_fleet.init_transitions[0].from_state == INIT_STATE
         assert state_fleet.init_transitions[0].to_state == "LeftMotor"
-        assert state_fleet.init_transitions[0].event is None
-        assert state_fleet.init_transitions[0].guard is None
+        assert not isinstance(state_fleet.init_transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_fleet.init_transitions[0].trigger, GuardTrigger)
         assert state_fleet.init_transitions[0].effects == []
         assert state_fleet.init_transitions[0].doc is None
         assert state_fleet.init_transitions[0].parent_ref().name == "Fleet"
@@ -200,8 +200,8 @@ class TestModelStateFleet:
         assert len(state_fleet.transitions_entering_children) == 1
         assert state_fleet.transitions_entering_children[0].from_state == INIT_STATE
         assert state_fleet.transitions_entering_children[0].to_state == "LeftMotor"
-        assert state_fleet.transitions_entering_children[0].event is None
-        assert state_fleet.transitions_entering_children[0].guard is None
+        assert not isinstance(state_fleet.transitions_entering_children[0].trigger, EventTrigger)
+        assert not isinstance(state_fleet.transitions_entering_children[0].trigger, GuardTrigger)
         assert state_fleet.transitions_entering_children[0].effects == []
         assert state_fleet.transitions_entering_children[0].doc is None
         assert state_fleet.transitions_entering_children[0].parent_ref().name == "Fleet"
@@ -217,8 +217,8 @@ class TestModelStateFleet:
             state_fleet.transitions_entering_children_simplified[0].to_state
             == "LeftMotor"
         )
-        assert state_fleet.transitions_entering_children_simplified[0].event is None
-        assert state_fleet.transitions_entering_children_simplified[0].guard is None
+        assert not isinstance(state_fleet.transitions_entering_children_simplified[0].trigger, EventTrigger)
+        assert not isinstance(state_fleet.transitions_entering_children_simplified[0].trigger, GuardTrigger)
         assert state_fleet.transitions_entering_children_simplified[0].effects == []
         assert state_fleet.transitions_entering_children_simplified[0].doc is None
         assert (
@@ -231,16 +231,16 @@ class TestModelStateFleet:
         assert len(state_fleet.transitions_from) == 1
         assert state_fleet.transitions_from[0].from_state == "Fleet"
         assert state_fleet.transitions_from[0].to_state == EXIT_STATE
-        assert state_fleet.transitions_from[0].event is None
-        assert state_fleet.transitions_from[0].guard is None
+        assert not isinstance(state_fleet.transitions_from[0].trigger, EventTrigger)
+        assert not isinstance(state_fleet.transitions_from[0].trigger, GuardTrigger)
         assert state_fleet.transitions_from[0].effects == []
         assert state_fleet.transitions_from[0].doc is None
         assert state_fleet.transitions_from[0].parent_ref is None
         assert len(state_fleet.transitions_to) == 1
         assert state_fleet.transitions_to[0].from_state == INIT_STATE
         assert state_fleet.transitions_to[0].to_state == "Fleet"
-        assert state_fleet.transitions_to[0].event is None
-        assert state_fleet.transitions_to[0].guard is None
+        assert not isinstance(state_fleet.transitions_to[0].trigger, EventTrigger)
+        assert not isinstance(state_fleet.transitions_to[0].trigger, GuardTrigger)
         assert state_fleet.transitions_to[0].effects == []
         assert state_fleet.transitions_to[0].doc is None
         assert state_fleet.transitions_to[0].parent_ref is None
@@ -294,20 +294,18 @@ class TestModelStateFleet:
                         dsl_nodes.TransitionDefinition(
                             from_state=INIT_STATE,
                             to_state="Idle",
-                            event_id=None,
-                            condition_expr=None,
+                            trigger=None,
                             post_operations=[],
                             doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Idle",
                             to_state="Running",
-                            event_id=None,
-                            condition_expr=dsl_nodes.BinaryOp(
+                            trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                                 expr1=dsl_nodes.Name(name="LeftMotor_counter"),
                                 op="<",
                                 expr2=dsl_nodes.Name(name="LeftMotor_limit"),
-                            ),
+                            )),), legacy_guard_syntax=True),
                             post_operations=[
                                 dsl_nodes.OperationAssignment(
                                     name="LeftMotor_counter",
@@ -323,12 +321,11 @@ class TestModelStateFleet:
                         dsl_nodes.TransitionDefinition(
                             from_state="Running",
                             to_state="Idle",
-                            event_id=None,
-                            condition_expr=dsl_nodes.BinaryOp(
+                            trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                                 expr1=dsl_nodes.Name(name="LeftMotor_counter"),
                                 op=">=",
                                 expr2=dsl_nodes.Name(name="LeftMotor_limit"),
-                            ),
+                            )),), legacy_guard_syntax=True),
                             post_operations=[
                                 dsl_nodes.OperationAssignment(
                                     name="LeftMotor_counter",
@@ -387,20 +384,18 @@ class TestModelStateFleet:
                         dsl_nodes.TransitionDefinition(
                             from_state=INIT_STATE,
                             to_state="Idle",
-                            event_id=None,
-                            condition_expr=None,
+                            trigger=None,
                             post_operations=[],
                             doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Idle",
                             to_state="Running",
-                            event_id=None,
-                            condition_expr=dsl_nodes.BinaryOp(
+                            trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                                 expr1=dsl_nodes.Name(name="RightMotor_counter"),
                                 op="<",
                                 expr2=dsl_nodes.Name(name="RightMotor_limit"),
-                            ),
+                            )),), legacy_guard_syntax=True),
                             post_operations=[
                                 dsl_nodes.OperationAssignment(
                                     name="RightMotor_counter",
@@ -416,12 +411,11 @@ class TestModelStateFleet:
                         dsl_nodes.TransitionDefinition(
                             from_state="Running",
                             to_state="Idle",
-                            event_id=None,
-                            condition_expr=dsl_nodes.BinaryOp(
+                            trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                                 expr1=dsl_nodes.Name(name="RightMotor_counter"),
                                 op=">=",
                                 expr2=dsl_nodes.Name(name="RightMotor_limit"),
-                            ),
+                            )),), legacy_guard_syntax=True),
                             post_operations=[
                                 dsl_nodes.OperationAssignment(
                                     name="RightMotor_counter",
@@ -444,16 +438,14 @@ class TestModelStateFleet:
                 dsl_nodes.TransitionDefinition(
                     from_state=INIT_STATE,
                     to_state="LeftMotor",
-                    event_id=None,
-                    condition_expr=None,
+                    trigger=None,
                     post_operations=[],
                     doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="LeftMotor",
                     to_state="RightMotor",
-                    event_id=None,
-                    condition_expr=None,
+                    trigger=None,
                     post_operations=[],
                     doc=None,
                 ),
@@ -531,8 +523,8 @@ class TestModelStateFleet:
         assert len(state_fleet_leftmotor.transitions) == 3
         assert state_fleet_leftmotor.transitions[0].from_state == INIT_STATE
         assert state_fleet_leftmotor.transitions[0].to_state == "Idle"
-        assert state_fleet_leftmotor.transitions[0].event is None
-        assert state_fleet_leftmotor.transitions[0].guard is None
+        assert not isinstance(state_fleet_leftmotor.transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_fleet_leftmotor.transitions[0].trigger, GuardTrigger)
         assert state_fleet_leftmotor.transitions[0].effects == []
         assert state_fleet_leftmotor.transitions[0].doc is None
         assert state_fleet_leftmotor.transitions[0].parent_ref().name == "LeftMotor"
@@ -542,8 +534,8 @@ class TestModelStateFleet:
         )
         assert state_fleet_leftmotor.transitions[1].from_state == "Idle"
         assert state_fleet_leftmotor.transitions[1].to_state == "Running"
-        assert state_fleet_leftmotor.transitions[1].event is None
-        assert state_fleet_leftmotor.transitions[1].guard == BinaryOp(
+        assert not isinstance(state_fleet_leftmotor.transitions[1].trigger, EventTrigger)
+        assert state_fleet_leftmotor.transitions[1].trigger.condition == BinaryOp(
             x=Variable(name="LeftMotor_counter"),
             op="<",
             y=Variable(name="LeftMotor_limit"),
@@ -564,8 +556,8 @@ class TestModelStateFleet:
         )
         assert state_fleet_leftmotor.transitions[2].from_state == "Running"
         assert state_fleet_leftmotor.transitions[2].to_state == "Idle"
-        assert state_fleet_leftmotor.transitions[2].event is None
-        assert state_fleet_leftmotor.transitions[2].guard == BinaryOp(
+        assert not isinstance(state_fleet_leftmotor.transitions[2].trigger, EventTrigger)
+        assert state_fleet_leftmotor.transitions[2].trigger.condition == BinaryOp(
             x=Variable(name="LeftMotor_counter"),
             op=">=",
             y=Variable(name="LeftMotor_limit"),
@@ -597,8 +589,8 @@ class TestModelStateFleet:
         assert len(state_fleet_leftmotor.init_transitions) == 1
         assert state_fleet_leftmotor.init_transitions[0].from_state == INIT_STATE
         assert state_fleet_leftmotor.init_transitions[0].to_state == "Idle"
-        assert state_fleet_leftmotor.init_transitions[0].event is None
-        assert state_fleet_leftmotor.init_transitions[0].guard is None
+        assert not isinstance(state_fleet_leftmotor.init_transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_fleet_leftmotor.init_transitions[0].trigger, GuardTrigger)
         assert state_fleet_leftmotor.init_transitions[0].effects == []
         assert state_fleet_leftmotor.init_transitions[0].doc is None
         assert (
@@ -623,8 +615,8 @@ class TestModelStateFleet:
             == INIT_STATE
         )
         assert state_fleet_leftmotor.transitions_entering_children[0].to_state == "Idle"
-        assert state_fleet_leftmotor.transitions_entering_children[0].event is None
-        assert state_fleet_leftmotor.transitions_entering_children[0].guard is None
+        assert not isinstance(state_fleet_leftmotor.transitions_entering_children[0].trigger, EventTrigger)
+        assert not isinstance(state_fleet_leftmotor.transitions_entering_children[0].trigger, GuardTrigger)
         assert state_fleet_leftmotor.transitions_entering_children[0].effects == []
         assert state_fleet_leftmotor.transitions_entering_children[0].doc is None
         assert (
@@ -644,12 +636,10 @@ class TestModelStateFleet:
             == "Idle"
         )
         assert (
-            state_fleet_leftmotor.transitions_entering_children_simplified[0].event
-            is None
+            not isinstance(state_fleet_leftmotor.transitions_entering_children_simplified[0].trigger, EventTrigger)
         )
         assert (
-            state_fleet_leftmotor.transitions_entering_children_simplified[0].guard
-            is None
+            not isinstance(state_fleet_leftmotor.transitions_entering_children_simplified[0].trigger, GuardTrigger)
         )
         assert (
             state_fleet_leftmotor.transitions_entering_children_simplified[0].effects
@@ -671,8 +661,8 @@ class TestModelStateFleet:
         assert len(state_fleet_leftmotor.transitions_from) == 1
         assert state_fleet_leftmotor.transitions_from[0].from_state == "LeftMotor"
         assert state_fleet_leftmotor.transitions_from[0].to_state == "RightMotor"
-        assert state_fleet_leftmotor.transitions_from[0].event is None
-        assert state_fleet_leftmotor.transitions_from[0].guard is None
+        assert not isinstance(state_fleet_leftmotor.transitions_from[0].trigger, EventTrigger)
+        assert not isinstance(state_fleet_leftmotor.transitions_from[0].trigger, GuardTrigger)
         assert state_fleet_leftmotor.transitions_from[0].effects == []
         assert state_fleet_leftmotor.transitions_from[0].doc is None
         assert state_fleet_leftmotor.transitions_from[0].parent_ref().name == "Fleet"
@@ -680,8 +670,8 @@ class TestModelStateFleet:
         assert len(state_fleet_leftmotor.transitions_to) == 1
         assert state_fleet_leftmotor.transitions_to[0].from_state == INIT_STATE
         assert state_fleet_leftmotor.transitions_to[0].to_state == "LeftMotor"
-        assert state_fleet_leftmotor.transitions_to[0].event is None
-        assert state_fleet_leftmotor.transitions_to[0].guard is None
+        assert not isinstance(state_fleet_leftmotor.transitions_to[0].trigger, EventTrigger)
+        assert not isinstance(state_fleet_leftmotor.transitions_to[0].trigger, GuardTrigger)
         assert state_fleet_leftmotor.transitions_to[0].effects == []
         assert state_fleet_leftmotor.transitions_to[0].doc is None
         assert state_fleet_leftmotor.transitions_to[0].parent_ref().name == "Fleet"
@@ -730,20 +720,18 @@ class TestModelStateFleet:
                 dsl_nodes.TransitionDefinition(
                     from_state=INIT_STATE,
                     to_state="Idle",
-                    event_id=None,
-                    condition_expr=None,
+                    trigger=None,
                     post_operations=[],
                     doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Idle",
                     to_state="Running",
-                    event_id=None,
-                    condition_expr=dsl_nodes.BinaryOp(
+                    trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                         expr1=dsl_nodes.Name(name="LeftMotor_counter"),
                         op="<",
                         expr2=dsl_nodes.Name(name="LeftMotor_limit"),
-                    ),
+                    )),), legacy_guard_syntax=True),
                     post_operations=[
                         dsl_nodes.OperationAssignment(
                             name="LeftMotor_counter",
@@ -759,12 +747,11 @@ class TestModelStateFleet:
                 dsl_nodes.TransitionDefinition(
                     from_state="Running",
                     to_state="Idle",
-                    event_id=None,
-                    condition_expr=dsl_nodes.BinaryOp(
+                    trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                         expr1=dsl_nodes.Name(name="LeftMotor_counter"),
                         op=">=",
                         expr2=dsl_nodes.Name(name="LeftMotor_limit"),
-                    ),
+                    )),), legacy_guard_syntax=True),
                     post_operations=[
                         dsl_nodes.OperationAssignment(
                             name="LeftMotor_counter", expr=dsl_nodes.Integer(raw="0")
@@ -889,8 +876,8 @@ class TestModelStateFleet:
         assert len(state_fleet_leftmotor_idle.transitions_from) == 1
         assert state_fleet_leftmotor_idle.transitions_from[0].from_state == "Idle"
         assert state_fleet_leftmotor_idle.transitions_from[0].to_state == "Running"
-        assert state_fleet_leftmotor_idle.transitions_from[0].event is None
-        assert state_fleet_leftmotor_idle.transitions_from[0].guard == BinaryOp(
+        assert not isinstance(state_fleet_leftmotor_idle.transitions_from[0].trigger, EventTrigger)
+        assert state_fleet_leftmotor_idle.transitions_from[0].trigger.condition == BinaryOp(
             x=Variable(name="LeftMotor_counter"),
             op="<",
             y=Variable(name="LeftMotor_limit"),
@@ -915,8 +902,8 @@ class TestModelStateFleet:
         assert len(state_fleet_leftmotor_idle.transitions_to) == 2
         assert state_fleet_leftmotor_idle.transitions_to[0].from_state == INIT_STATE
         assert state_fleet_leftmotor_idle.transitions_to[0].to_state == "Idle"
-        assert state_fleet_leftmotor_idle.transitions_to[0].event is None
-        assert state_fleet_leftmotor_idle.transitions_to[0].guard is None
+        assert not isinstance(state_fleet_leftmotor_idle.transitions_to[0].trigger, EventTrigger)
+        assert not isinstance(state_fleet_leftmotor_idle.transitions_to[0].trigger, GuardTrigger)
         assert state_fleet_leftmotor_idle.transitions_to[0].effects == []
         assert state_fleet_leftmotor_idle.transitions_to[0].doc is None
         assert (
@@ -929,8 +916,8 @@ class TestModelStateFleet:
         )
         assert state_fleet_leftmotor_idle.transitions_to[1].from_state == "Running"
         assert state_fleet_leftmotor_idle.transitions_to[1].to_state == "Idle"
-        assert state_fleet_leftmotor_idle.transitions_to[1].event is None
-        assert state_fleet_leftmotor_idle.transitions_to[1].guard == BinaryOp(
+        assert not isinstance(state_fleet_leftmotor_idle.transitions_to[1].trigger, EventTrigger)
+        assert state_fleet_leftmotor_idle.transitions_to[1].trigger.condition == BinaryOp(
             x=Variable(name="LeftMotor_counter"),
             op=">=",
             y=Variable(name="LeftMotor_limit"),
@@ -1094,8 +1081,8 @@ class TestModelStateFleet:
         assert len(state_fleet_leftmotor_running.transitions_from) == 1
         assert state_fleet_leftmotor_running.transitions_from[0].from_state == "Running"
         assert state_fleet_leftmotor_running.transitions_from[0].to_state == "Idle"
-        assert state_fleet_leftmotor_running.transitions_from[0].event is None
-        assert state_fleet_leftmotor_running.transitions_from[0].guard == BinaryOp(
+        assert not isinstance(state_fleet_leftmotor_running.transitions_from[0].trigger, EventTrigger)
+        assert state_fleet_leftmotor_running.transitions_from[0].trigger.condition == BinaryOp(
             x=Variable(name="LeftMotor_counter"),
             op=">=",
             y=Variable(name="LeftMotor_limit"),
@@ -1115,8 +1102,8 @@ class TestModelStateFleet:
         assert len(state_fleet_leftmotor_running.transitions_to) == 1
         assert state_fleet_leftmotor_running.transitions_to[0].from_state == "Idle"
         assert state_fleet_leftmotor_running.transitions_to[0].to_state == "Running"
-        assert state_fleet_leftmotor_running.transitions_to[0].event is None
-        assert state_fleet_leftmotor_running.transitions_to[0].guard == BinaryOp(
+        assert not isinstance(state_fleet_leftmotor_running.transitions_to[0].trigger, EventTrigger)
+        assert state_fleet_leftmotor_running.transitions_to[0].trigger.condition == BinaryOp(
             x=Variable(name="LeftMotor_counter"),
             op="<",
             y=Variable(name="LeftMotor_limit"),
@@ -1254,8 +1241,8 @@ class TestModelStateFleet:
         assert len(state_fleet_rightmotor.transitions) == 3
         assert state_fleet_rightmotor.transitions[0].from_state == INIT_STATE
         assert state_fleet_rightmotor.transitions[0].to_state == "Idle"
-        assert state_fleet_rightmotor.transitions[0].event is None
-        assert state_fleet_rightmotor.transitions[0].guard is None
+        assert not isinstance(state_fleet_rightmotor.transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_fleet_rightmotor.transitions[0].trigger, GuardTrigger)
         assert state_fleet_rightmotor.transitions[0].effects == []
         assert state_fleet_rightmotor.transitions[0].doc is None
         assert state_fleet_rightmotor.transitions[0].parent_ref().name == "RightMotor"
@@ -1265,8 +1252,8 @@ class TestModelStateFleet:
         )
         assert state_fleet_rightmotor.transitions[1].from_state == "Idle"
         assert state_fleet_rightmotor.transitions[1].to_state == "Running"
-        assert state_fleet_rightmotor.transitions[1].event is None
-        assert state_fleet_rightmotor.transitions[1].guard == BinaryOp(
+        assert not isinstance(state_fleet_rightmotor.transitions[1].trigger, EventTrigger)
+        assert state_fleet_rightmotor.transitions[1].trigger.condition == BinaryOp(
             x=Variable(name="RightMotor_counter"),
             op="<",
             y=Variable(name="RightMotor_limit"),
@@ -1287,8 +1274,8 @@ class TestModelStateFleet:
         )
         assert state_fleet_rightmotor.transitions[2].from_state == "Running"
         assert state_fleet_rightmotor.transitions[2].to_state == "Idle"
-        assert state_fleet_rightmotor.transitions[2].event is None
-        assert state_fleet_rightmotor.transitions[2].guard == BinaryOp(
+        assert not isinstance(state_fleet_rightmotor.transitions[2].trigger, EventTrigger)
+        assert state_fleet_rightmotor.transitions[2].trigger.condition == BinaryOp(
             x=Variable(name="RightMotor_counter"),
             op=">=",
             y=Variable(name="RightMotor_limit"),
@@ -1320,8 +1307,8 @@ class TestModelStateFleet:
         assert len(state_fleet_rightmotor.init_transitions) == 1
         assert state_fleet_rightmotor.init_transitions[0].from_state == INIT_STATE
         assert state_fleet_rightmotor.init_transitions[0].to_state == "Idle"
-        assert state_fleet_rightmotor.init_transitions[0].event is None
-        assert state_fleet_rightmotor.init_transitions[0].guard is None
+        assert not isinstance(state_fleet_rightmotor.init_transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_fleet_rightmotor.init_transitions[0].trigger, GuardTrigger)
         assert state_fleet_rightmotor.init_transitions[0].effects == []
         assert state_fleet_rightmotor.init_transitions[0].doc is None
         assert (
@@ -1348,8 +1335,8 @@ class TestModelStateFleet:
         assert (
             state_fleet_rightmotor.transitions_entering_children[0].to_state == "Idle"
         )
-        assert state_fleet_rightmotor.transitions_entering_children[0].event is None
-        assert state_fleet_rightmotor.transitions_entering_children[0].guard is None
+        assert not isinstance(state_fleet_rightmotor.transitions_entering_children[0].trigger, EventTrigger)
+        assert not isinstance(state_fleet_rightmotor.transitions_entering_children[0].trigger, GuardTrigger)
         assert state_fleet_rightmotor.transitions_entering_children[0].effects == []
         assert state_fleet_rightmotor.transitions_entering_children[0].doc is None
         assert (
@@ -1371,12 +1358,10 @@ class TestModelStateFleet:
             == "Idle"
         )
         assert (
-            state_fleet_rightmotor.transitions_entering_children_simplified[0].event
-            is None
+            not isinstance(state_fleet_rightmotor.transitions_entering_children_simplified[0].trigger, EventTrigger)
         )
         assert (
-            state_fleet_rightmotor.transitions_entering_children_simplified[0].guard
-            is None
+            not isinstance(state_fleet_rightmotor.transitions_entering_children_simplified[0].trigger, GuardTrigger)
         )
         assert (
             state_fleet_rightmotor.transitions_entering_children_simplified[0].effects
@@ -1399,8 +1384,8 @@ class TestModelStateFleet:
         assert len(state_fleet_rightmotor.transitions_to) == 1
         assert state_fleet_rightmotor.transitions_to[0].from_state == "LeftMotor"
         assert state_fleet_rightmotor.transitions_to[0].to_state == "RightMotor"
-        assert state_fleet_rightmotor.transitions_to[0].event is None
-        assert state_fleet_rightmotor.transitions_to[0].guard is None
+        assert not isinstance(state_fleet_rightmotor.transitions_to[0].trigger, EventTrigger)
+        assert not isinstance(state_fleet_rightmotor.transitions_to[0].trigger, GuardTrigger)
         assert state_fleet_rightmotor.transitions_to[0].effects == []
         assert state_fleet_rightmotor.transitions_to[0].doc is None
         assert state_fleet_rightmotor.transitions_to[0].parent_ref().name == "Fleet"
@@ -1449,20 +1434,18 @@ class TestModelStateFleet:
                 dsl_nodes.TransitionDefinition(
                     from_state=INIT_STATE,
                     to_state="Idle",
-                    event_id=None,
-                    condition_expr=None,
+                    trigger=None,
                     post_operations=[],
                     doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Idle",
                     to_state="Running",
-                    event_id=None,
-                    condition_expr=dsl_nodes.BinaryOp(
+                    trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                         expr1=dsl_nodes.Name(name="RightMotor_counter"),
                         op="<",
                         expr2=dsl_nodes.Name(name="RightMotor_limit"),
-                    ),
+                    )),), legacy_guard_syntax=True),
                     post_operations=[
                         dsl_nodes.OperationAssignment(
                             name="RightMotor_counter",
@@ -1478,12 +1461,11 @@ class TestModelStateFleet:
                 dsl_nodes.TransitionDefinition(
                     from_state="Running",
                     to_state="Idle",
-                    event_id=None,
-                    condition_expr=dsl_nodes.BinaryOp(
+                    trigger=dsl_nodes.TransitionTrigger(":", (dsl_nodes.GuardTerm(dsl_nodes.BinaryOp(
                         expr1=dsl_nodes.Name(name="RightMotor_counter"),
                         op=">=",
                         expr2=dsl_nodes.Name(name="RightMotor_limit"),
-                    ),
+                    )),), legacy_guard_syntax=True),
                     post_operations=[
                         dsl_nodes.OperationAssignment(
                             name="RightMotor_counter", expr=dsl_nodes.Integer(raw="0")
@@ -1608,8 +1590,8 @@ class TestModelStateFleet:
         assert len(state_fleet_rightmotor_idle.transitions_from) == 1
         assert state_fleet_rightmotor_idle.transitions_from[0].from_state == "Idle"
         assert state_fleet_rightmotor_idle.transitions_from[0].to_state == "Running"
-        assert state_fleet_rightmotor_idle.transitions_from[0].event is None
-        assert state_fleet_rightmotor_idle.transitions_from[0].guard == BinaryOp(
+        assert not isinstance(state_fleet_rightmotor_idle.transitions_from[0].trigger, EventTrigger)
+        assert state_fleet_rightmotor_idle.transitions_from[0].trigger.condition == BinaryOp(
             x=Variable(name="RightMotor_counter"),
             op="<",
             y=Variable(name="RightMotor_limit"),
@@ -1634,8 +1616,8 @@ class TestModelStateFleet:
         assert len(state_fleet_rightmotor_idle.transitions_to) == 2
         assert state_fleet_rightmotor_idle.transitions_to[0].from_state == INIT_STATE
         assert state_fleet_rightmotor_idle.transitions_to[0].to_state == "Idle"
-        assert state_fleet_rightmotor_idle.transitions_to[0].event is None
-        assert state_fleet_rightmotor_idle.transitions_to[0].guard is None
+        assert not isinstance(state_fleet_rightmotor_idle.transitions_to[0].trigger, EventTrigger)
+        assert not isinstance(state_fleet_rightmotor_idle.transitions_to[0].trigger, GuardTrigger)
         assert state_fleet_rightmotor_idle.transitions_to[0].effects == []
         assert state_fleet_rightmotor_idle.transitions_to[0].doc is None
         assert (
@@ -1648,8 +1630,8 @@ class TestModelStateFleet:
         )
         assert state_fleet_rightmotor_idle.transitions_to[1].from_state == "Running"
         assert state_fleet_rightmotor_idle.transitions_to[1].to_state == "Idle"
-        assert state_fleet_rightmotor_idle.transitions_to[1].event is None
-        assert state_fleet_rightmotor_idle.transitions_to[1].guard == BinaryOp(
+        assert not isinstance(state_fleet_rightmotor_idle.transitions_to[1].trigger, EventTrigger)
+        assert state_fleet_rightmotor_idle.transitions_to[1].trigger.condition == BinaryOp(
             x=Variable(name="RightMotor_counter"),
             op=">=",
             y=Variable(name="RightMotor_limit"),
@@ -1820,8 +1802,8 @@ class TestModelStateFleet:
             state_fleet_rightmotor_running.transitions_from[0].from_state == "Running"
         )
         assert state_fleet_rightmotor_running.transitions_from[0].to_state == "Idle"
-        assert state_fleet_rightmotor_running.transitions_from[0].event is None
-        assert state_fleet_rightmotor_running.transitions_from[0].guard == BinaryOp(
+        assert not isinstance(state_fleet_rightmotor_running.transitions_from[0].trigger, EventTrigger)
+        assert state_fleet_rightmotor_running.transitions_from[0].trigger.condition == BinaryOp(
             x=Variable(name="RightMotor_counter"),
             op=">=",
             y=Variable(name="RightMotor_limit"),
@@ -1841,8 +1823,8 @@ class TestModelStateFleet:
         assert len(state_fleet_rightmotor_running.transitions_to) == 1
         assert state_fleet_rightmotor_running.transitions_to[0].from_state == "Idle"
         assert state_fleet_rightmotor_running.transitions_to[0].to_state == "Running"
-        assert state_fleet_rightmotor_running.transitions_to[0].event is None
-        assert state_fleet_rightmotor_running.transitions_to[0].guard == BinaryOp(
+        assert not isinstance(state_fleet_rightmotor_running.transitions_to[0].trigger, EventTrigger)
+        assert state_fleet_rightmotor_running.transitions_to[0].trigger.condition == BinaryOp(
             x=Variable(name="RightMotor_counter"),
             op="<",
             y=Variable(name="RightMotor_limit"),

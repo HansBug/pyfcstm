@@ -73,7 +73,6 @@ if TYPE_CHECKING:  # pragma: no cover - imports used only by static type checker
 EXIT_ROOT_SINK = "⊥_root"
 """Synthetic sink used for transitions that exit the root state."""
 
-
 @dataclass(frozen=True)
 class LeafLevelGraph:
     """
@@ -1057,6 +1056,8 @@ def _event_consumer_reachability(
         >>> _event_consumer_reachability(machine, graph)
         {'Root.Go': [True]}
     """
+    from pyfcstm.model import EventTrigger
+
     active_leaves = _root_reachable_leaf_paths(machine, graph)
     init_sources = _root_reachable_initial_state_paths(machine, graph)
     boundary_sources = _root_reachable_boundary_state_paths(machine, graph)
@@ -1065,11 +1066,10 @@ def _event_consumer_reachability(
     for parent_state in machine.walk_states():
         parent_path = _state_path(parent_state)
         for transition in parent_state.transitions:
-            event = transition.event
-            if event is None:
+            if not isinstance(transition.trigger, EventTrigger):
                 continue
 
-            event_name = event.path_name
+            event_name = transition.trigger.event.path_name
             if transition.from_state is INIT_STATE:
                 reachable = parent_path in init_sources
             elif isinstance(transition.from_state, str):

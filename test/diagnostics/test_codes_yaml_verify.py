@@ -16,7 +16,7 @@ import pytest
 
 from pyfcstm.diagnostics import CODE_REGISTRY, inspect_model
 from pyfcstm.dsl import parse_with_grammar_entry
-from pyfcstm.model import parse_dsl_node_to_state_machine
+from pyfcstm.model import GuardTrigger, parse_dsl_node_to_state_machine
 from pyfcstm.utils import ModelDiagnostic
 from pyfcstm.verify import (
     REGISTRY,
@@ -72,7 +72,7 @@ def _guarded_transition(machine):
         transition
         for state in machine.walk_states()
         for transition in state.transitions
-        if transition.guard is not None
+        if isinstance(transition.trigger, GuardTrigger)
     )
 
 

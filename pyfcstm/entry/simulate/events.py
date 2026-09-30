@@ -10,6 +10,7 @@ presentation layer: final event applicability is still decided by
 from typing import List, Optional, Tuple
 
 from ...dsl import EXIT_STATE
+from ...model import EventTrigger
 
 
 POST_EXIT_CONTINUATION_LABEL = "post-exit continuation"
@@ -111,23 +112,23 @@ def get_current_event_display_items(runtime) -> List[Tuple[str, Optional[str]]]:
     seen_events = set()
 
     for transition in current_state.transitions_from:
-        if not transition.event:
+        if not isinstance(transition.trigger, EventTrigger):
             continue
-        event_path = _event_path(transition.event)
+        event_path = _event_path(transition.trigger.event)
         if event_path in seen_events:
             continue
         seen_events.add(event_path)
-        short_name = transition.event.name
+        short_name = transition.trigger.event.name
         events.append((event_path, short_name if short_name != event_path else None))
 
     for state in _iter_post_exit_continuation_states(current_state):
         for transition in state.transitions_from:
-            if not transition.event:
+            if not isinstance(transition.trigger, EventTrigger):
                 continue
             _add_event_display_item(
                 events,
                 seen_events,
-                transition.event,
+                transition.trigger.event,
                 POST_EXIT_CONTINUATION_LABEL,
             )
 

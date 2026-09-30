@@ -97,29 +97,29 @@ class TestModelModelDLC3:
         assert len(lst) == 4
         assert lst[0].from_state == "LX2"
         assert lst[0].to_state == "ERROR"
-        assert lst[0].event == Event(name="E1", state_path=("LX",))
-        assert lst[0].guard is None
+        assert lst[0].trigger.event == Event(name="E1", state_path=("LX",))
+        assert not isinstance(lst[0].trigger, GuardTrigger)
         assert lst[0].effects == []
         assert lst[0].parent is lx
 
         assert lst[1].from_state == "ERROR"
         assert lst[1].to_state == "ERROR"
-        assert lst[1].event == Event(name="E1", state_path=("LX",))
-        assert lst[1].guard is None
+        assert lst[1].trigger.event == Event(name="E1", state_path=("LX",))
+        assert not isinstance(lst[1].trigger, GuardTrigger)
         assert lst[1].effects == []
         assert lst[1].parent is lx
 
         assert lst[2].from_state == dsl_nodes.INIT_STATE
         assert lst[2].to_state == "LX2"
-        assert lst[2].event is None
-        assert lst[2].guard is None
+        assert not isinstance(lst[2].trigger, EventTrigger)
+        assert not isinstance(lst[2].trigger, GuardTrigger)
         assert lst[2].effects == []
         assert lst[2].parent is lx
 
         assert lst[3].from_state == "ERROR"
         assert lst[3].to_state == dsl_nodes.EXIT_STATE
-        assert lst[3].event is None
-        assert lst[3].guard is None
+        assert not isinstance(lst[3].trigger, EventTrigger)
+        assert not isinstance(lst[3].trigger, GuardTrigger)
         assert lst[3].effects == []
         assert lst[3].parent is lx
 
@@ -128,15 +128,15 @@ class TestModelModelDLC3:
         assert len(lst) == 2
         assert lst[0].from_state == "start"
         assert lst[0].to_state == dsl_nodes.EXIT_STATE
-        assert lst[0].event == Event(name="E1", state_path=("LX",))
-        assert lst[0].guard is None
+        assert lst[0].trigger.event == Event(name="E1", state_path=("LX",))
+        assert not isinstance(lst[0].trigger, GuardTrigger)
         assert lst[0].effects == []
         assert lst[0].parent is lx2
 
         assert lst[1].from_state == dsl_nodes.INIT_STATE
         assert lst[1].to_state == "start"
-        assert lst[1].event is None
-        assert lst[1].guard is None
+        assert not isinstance(lst[1].trigger, EventTrigger)
+        assert not isinstance(lst[1].trigger, GuardTrigger)
         assert lst[1].effects == []
         assert lst[1].parent is lx2
 
@@ -145,15 +145,15 @@ class TestModelModelDLC3:
         assert len(lst) == 2
         assert lst[0].from_state == "LX4"
         assert lst[0].to_state == dsl_nodes.EXIT_STATE
-        assert lst[0].event == Event(name="E1", state_path=("LX",))
-        assert lst[0].guard is None
+        assert lst[0].trigger.event == Event(name="E1", state_path=("LX",))
+        assert not isinstance(lst[0].trigger, GuardTrigger)
         assert lst[0].effects == []
         assert lst[0].parent is start
 
         assert lst[1].from_state == dsl_nodes.INIT_STATE
         assert lst[1].to_state == "LX4"
-        assert lst[1].event is None
-        assert lst[1].guard is None
+        assert not isinstance(lst[1].trigger, EventTrigger)
+        assert not isinstance(lst[1].trigger, GuardTrigger)
         assert lst[1].effects == []
         assert lst[1].parent is start
 
@@ -162,15 +162,15 @@ class TestModelModelDLC3:
         assert len(lst) == 2
         assert lst[0].from_state == "LX5"
         assert lst[0].to_state == dsl_nodes.EXIT_STATE
-        assert lst[0].event == Event(name="E1", state_path=("LX",))
-        assert lst[0].guard is None
+        assert lst[0].trigger.event == Event(name="E1", state_path=("LX",))
+        assert not isinstance(lst[0].trigger, GuardTrigger)
         assert lst[0].effects == []
         assert lst[0].parent is lx4
 
         assert lst[1].from_state == dsl_nodes.INIT_STATE
         assert lst[1].to_state == "LX5"
-        assert lst[1].event is None
-        assert lst[1].guard is None
+        assert not isinstance(lst[1].trigger, EventTrigger)
+        assert not isinstance(lst[1].trigger, GuardTrigger)
         assert lst[1].effects == []
         assert lst[1].parent is lx4
 

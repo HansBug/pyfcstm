@@ -408,8 +408,7 @@ class TestDSLImport:
                             TransitionDefinition(
                                 from_state=INIT_STATE,
                                 to_state="Local",
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             )
                         ],

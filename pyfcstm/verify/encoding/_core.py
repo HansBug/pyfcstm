@@ -306,9 +306,11 @@ def _event_name(transition: Transition) -> Optional[str]:
         >>> _event_name(machine.root_state.transitions[1])
         'Root.A.Go'
     """
-    if transition.event is None:
+    from pyfcstm.model import EventTrigger
+
+    if not isinstance(transition.trigger, EventTrigger):
         return None
-    return transition.event.path_name
+    return transition.trigger.event.path_name
 
 
 def _transition_index_map(root) -> Dict[int, int]:
@@ -378,12 +380,17 @@ def _transition_payload(transition: Transition) -> dict:
         >>> _transition_payload(machine.root_state.transitions[1])["guard"]
         'x > 0'
     """
+    from pyfcstm.model import GuardTrigger
+
     return {
         "parent": _state_path(transition.parent),
         "from_state": _state_name(transition.from_state),
         "to_state": _state_name(transition.to_state),
         "event": _event_name(transition),
-        "guard": str(transition.guard) if transition.guard is not None else None,
+        "guard": (
+            str(transition.trigger.condition)
+            if isinstance(transition.trigger, GuardTrigger) else None
+        ),
         "is_forced": transition.is_forced,
         "transition_index": _transition_index(transition),
     }
@@ -1431,7 +1438,7 @@ def _transition_trigger_or_result(
 ]:
     """Build a transition trigger expression in the supplied environment.
 
-    :param transition: Transition whose event and guard should be encoded.
+    :param transition: Transition whose event or guard trigger should be encoded.
     :type transition: Transition
     :param z3_vars: Symbolic variable environment at the trigger point.
     :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
@@ -1462,20 +1469,21 @@ def _transition_trigger_or_result(
         >>> trigger, domains, result
         (__event__4:Root1:A2:Go, (), None)
     """
+    from pyfcstm.model import EventTrigger, GuardTrigger
+
     parts: List[z3.ExprRef] = []
     domain_constraints: List[z3.ExprRef] = []
-    event_expr = None
-    if transition.event is not None:
+    if isinstance(transition.trigger, EventTrigger):
         event_key = _event_bool_name(transition)
         if event_vars is None:
             event_expr = z3.Bool(event_key)
         else:
             event_expr = event_vars.setdefault(event_key, z3.Bool(event_key))
-        parts.append(event_expr)
+        return event_expr, (), None
 
-    if transition.guard is not None:
+    if isinstance(transition.trigger, GuardTrigger):
         guard_expr, guard_domains, result = _expr_z3_and_domains_or_result(
-            transition.guard,
+            transition.trigger.condition,
             z3_vars,
             context_constraints=context_constraints,
             smt_timeout_ms=smt_timeout_ms,
@@ -1486,12 +1494,7 @@ def _transition_trigger_or_result(
         parts.extend(guard_domains or ())
         parts.append(guard_expr)
 
-    if event_expr is not None:
-        trigger_domains = tuple(
-            z3.Implies(event_expr, item) for item in domain_constraints
-        )
-    else:
-        trigger_domains = tuple(domain_constraints)
+    trigger_domains = tuple(domain_constraints)
 
     if not parts:
         return z3.BoolVal(True), trigger_domains, None
@@ -1873,7 +1876,7 @@ def _guard_z3_or_result(
 ]:
     """Translate a transition guard.
 
-    :param transition: Transition with a non-``None`` guard.
+    :param transition: Transition carrying a :class:`GuardTrigger`.
     :type transition: Transition
     :param variables: FCSTM variable definitions.
     :type variables: Sequence[VarDefine]
@@ -1905,7 +1908,7 @@ def _guard_z3_or_result(
     if context_constraints is None:
         context_constraints = _build_type_constraints(variables, z3_vars)
     guard_expr, guard_domains, result = _expr_z3_and_domains_or_result(
-        transition.guard,
+        transition.trigger.condition,
         z3_vars,
         context_constraints=context_constraints,
         smt_timeout_ms=smt_timeout_ms,
@@ -2030,12 +2033,14 @@ def _effect_guard_context_or_result(
         >>> guard, constraints, result
         (0 < x, (), None)
     """
-    if transition.guard is None:
+    from pyfcstm.model import GuardTrigger
+
+    if not isinstance(transition.trigger, GuardTrigger):
         guard_z3 = z3.BoolVal(True)
         guard_domains: Tuple[z3.ExprRef, ...] = ()
     else:
         guard_z3, guard_domains, result = _expr_z3_and_domains_or_result(
-            transition.guard,
+            transition.trigger.condition,
             z3_vars,
             smt_timeout_ms=smt_timeout_ms,
         )
@@ -2268,7 +2273,7 @@ def _state_has_definite_stable_entry(state: State) -> bool:
         return False
 
     transition = state.init_transitions[0]
-    if transition.event is not None or transition.guard is not None:
+    if transition.trigger is not None:
         return False
     if not isinstance(transition.to_state, str):
         return False
@@ -2741,8 +2746,6 @@ def _event_bool_name(transition: Transition) -> str:
         >>> _event_bool_name(machine.root_state.transitions[1])
         '__event__4:Root1:A2:Go'
     """
-    if transition.event is None:
-        return "__event__anonymous"
     return "__event__" + "".join(
-        f"{len(part)}:{part}" for part in transition.event.path
+        f"{len(part)}:{part}" for part in transition.trigger.event.path
     )

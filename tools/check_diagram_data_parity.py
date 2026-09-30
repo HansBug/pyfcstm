@@ -17,7 +17,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from pyfcstm.dsl.node import INIT_STATE  # noqa: E402
-from pyfcstm.model import (  # noqa: E402
+from pyfcstm.model import (
+    EventTrigger,  # noqa: E402
     Event,
     State,
     StateMachine,
@@ -81,17 +82,14 @@ def _programmatic_machine() -> StateMachine:
             Transition(
                 from_state=INIT_STATE,
                 to_state="Idle",
-                event=None,
-                guard=None,
+                trigger=None,
                 effects=[],
             ),
             Transition(
                 from_state="Idle",
                 to_state="Running",
-                event=go,
-                guard=None,
+                trigger=EventTrigger(go, "local"),
                 effects=[],
-                event_scope="local",
             ),
         ],
     )

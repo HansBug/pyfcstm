@@ -106,33 +106,37 @@ class TestDSLTransition:
                             TransitionDefinition(
                                 from_state=INIT_STATE,
                                 to_state="Ready",
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Ready",
                                 to_state="Processing",
-                                event_id=None,
-                                condition_expr=BinaryOp(
-                                    expr1=Name(name="timer"),
-                                    op=">",
-                                    expr2=Integer(raw="10"),
+                                trigger=TransitionTrigger(
+                                    ":",
+                                    (
+                                        GuardTerm(
+                                            BinaryOp(
+                                                expr1=Name(name="timer"),
+                                                op=">",
+                                                expr2=Integer(raw="10"),
+                                            )
+                                        ),
+                                    ),
+                                    legacy_guard_syntax=True,
                                 ),
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Processing",
                                 to_state="Done",
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Done",
                                 to_state=EXIT_STATE,
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                         ],
@@ -160,29 +164,29 @@ class TestDSLTransition:
                             TransitionDefinition(
                                 from_state=INIT_STATE,
                                 to_state="Idle",
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Idle",
                                 to_state="Active",
-                                event_id=None,
-                                condition_expr=Boolean(raw="true"),
+                                trigger=TransitionTrigger(
+                                    ":",
+                                    (GuardTerm(Boolean(raw="true")),),
+                                    legacy_guard_syntax=True,
+                                ),
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Active",
                                 to_state="Complete",
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Complete",
                                 to_state=EXIT_STATE,
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                         ],
@@ -214,8 +218,7 @@ class TestDSLTransition:
                             TransitionDefinition(
                                 from_state=INIT_STATE,
                                 to_state="Counting",
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[
                                     OperationAssignment(
                                         name="count",
@@ -230,19 +233,25 @@ class TestDSLTransition:
                             TransitionDefinition(
                                 from_state="Counting",
                                 to_state="Done",
-                                event_id=None,
-                                condition_expr=BinaryOp(
-                                    expr1=Name(name="count"),
-                                    op=">",
-                                    expr2=Integer(raw="10"),
+                                trigger=TransitionTrigger(
+                                    ":",
+                                    (
+                                        GuardTerm(
+                                            BinaryOp(
+                                                expr1=Name(name="count"),
+                                                op=">",
+                                                expr2=Integer(raw="10"),
+                                            )
+                                        ),
+                                    ),
+                                    legacy_guard_syntax=True,
                                 ),
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Done",
                                 to_state=EXIT_STATE,
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                         ],
@@ -305,51 +314,78 @@ class TestDSLTransition:
                             TransitionDefinition(
                                 from_state=INIT_STATE,
                                 to_state="Idle",
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Idle",
                                 to_state="Heating",
-                                event_id=None,
-                                condition_expr=BinaryOp(
-                                    expr1=Name(name="temperature"),
-                                    op="<",
-                                    expr2=Float(raw="20.0"),
+                                trigger=TransitionTrigger(
+                                    ":",
+                                    (
+                                        GuardTerm(
+                                            BinaryOp(
+                                                expr1=Name(name="temperature"),
+                                                op="<",
+                                                expr2=Float(raw="20.0"),
+                                            )
+                                        ),
+                                    ),
+                                    legacy_guard_syntax=True,
                                 ),
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Idle",
                                 to_state="Cooling",
-                                event_id=None,
-                                condition_expr=BinaryOp(
-                                    expr1=Name(name="temperature"),
-                                    op=">",
-                                    expr2=Float(raw="26.0"),
+                                trigger=TransitionTrigger(
+                                    ":",
+                                    (
+                                        GuardTerm(
+                                            BinaryOp(
+                                                expr1=Name(name="temperature"),
+                                                op=">",
+                                                expr2=Float(raw="26.0"),
+                                            )
+                                        ),
+                                    ),
+                                    legacy_guard_syntax=True,
                                 ),
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Heating",
                                 to_state="Idle",
-                                event_id=None,
-                                condition_expr=BinaryOp(
-                                    expr1=Name(name="temperature"),
-                                    op=">=",
-                                    expr2=Float(raw="22.0"),
+                                trigger=TransitionTrigger(
+                                    ":",
+                                    (
+                                        GuardTerm(
+                                            BinaryOp(
+                                                expr1=Name(name="temperature"),
+                                                op=">=",
+                                                expr2=Float(raw="22.0"),
+                                            )
+                                        ),
+                                    ),
+                                    legacy_guard_syntax=True,
                                 ),
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Cooling",
                                 to_state="Idle",
-                                event_id=None,
-                                condition_expr=BinaryOp(
-                                    expr1=Name(name="temperature"),
-                                    op="<=",
-                                    expr2=Float(raw="24.0"),
+                                trigger=TransitionTrigger(
+                                    ":",
+                                    (
+                                        GuardTerm(
+                                            BinaryOp(
+                                                expr1=Name(name="temperature"),
+                                                op="<=",
+                                                expr2=Float(raw="24.0"),
+                                            )
+                                        ),
+                                    ),
+                                    legacy_guard_syntax=True,
                                 ),
                                 post_operations=[],
                             ),
@@ -404,11 +440,18 @@ class TestDSLTransition:
                                     TransitionDefinition(
                                         from_state="A1",
                                         to_state="A2",
-                                        event_id=None,
-                                        condition_expr=BinaryOp(
-                                            expr1=Name(name="x"),
-                                            op=">",
-                                            expr2=Integer(raw="5"),
+                                        trigger=TransitionTrigger(
+                                            ":",
+                                            (
+                                                GuardTerm(
+                                                    BinaryOp(
+                                                        expr1=Name(name="x"),
+                                                        op=">",
+                                                        expr2=Integer(raw="5"),
+                                                    )
+                                                ),
+                                            ),
+                                            legacy_guard_syntax=True,
                                         ),
                                         post_operations=[],
                                     )
@@ -430,11 +473,18 @@ class TestDSLTransition:
                             TransitionDefinition(
                                 from_state="A",
                                 to_state="B",
-                                event_id=None,
-                                condition_expr=BinaryOp(
-                                    expr1=Name(name="x"),
-                                    op=">",
-                                    expr2=Integer(raw="10"),
+                                trigger=TransitionTrigger(
+                                    ":",
+                                    (
+                                        GuardTerm(
+                                            BinaryOp(
+                                                expr1=Name(name="x"),
+                                                op=">",
+                                                expr2=Integer(raw="10"),
+                                            )
+                                        ),
+                                    ),
+                                    legacy_guard_syntax=True,
                                 ),
                                 post_operations=[],
                             )
@@ -470,8 +520,7 @@ class TestDSLTransition:
                             TransitionDefinition(
                                 from_state=INIT_STATE,
                                 to_state="Start",
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[
                                     OperationAssignment(
                                         name="counter",
@@ -486,18 +535,27 @@ class TestDSLTransition:
                             TransitionDefinition(
                                 from_state="Start",
                                 to_state="Middle",
-                                event_id=ChainID(path=["chain_id"]),
-                                condition_expr=None,
+                                trigger=TransitionTrigger(
+                                    ":",
+                                    (EventTerm(ChainID(path=["chain_id"]), "chain"),),
+                                ),
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Middle",
                                 to_state="End",
-                                event_id=None,
-                                condition_expr=BinaryOp(
-                                    expr1=Name(name="counter"),
-                                    op=">",
-                                    expr2=Integer(raw="5"),
+                                trigger=TransitionTrigger(
+                                    ":",
+                                    (
+                                        GuardTerm(
+                                            BinaryOp(
+                                                expr1=Name(name="counter"),
+                                                op=">",
+                                                expr2=Integer(raw="5"),
+                                            )
+                                        ),
+                                    ),
+                                    legacy_guard_syntax=True,
                                 ),
                                 post_operations=[
                                     OperationAssignment(
@@ -513,8 +571,7 @@ class TestDSLTransition:
                             TransitionDefinition(
                                 from_state="End",
                                 to_state=EXIT_STATE,
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                         ],
@@ -558,22 +615,19 @@ class TestDSLTransition:
                                     TransitionDefinition(
                                         from_state=INIT_STATE,
                                         to_state="Computing",
-                                        event_id=None,
-                                        condition_expr=None,
+                                        trigger=None,
                                         post_operations=[],
                                     ),
                                     TransitionDefinition(
                                         from_state="Computing",
                                         to_state="Done",
-                                        event_id=None,
-                                        condition_expr=None,
+                                        trigger=None,
                                         post_operations=[],
                                     ),
                                     TransitionDefinition(
                                         from_state="Done",
                                         to_state=EXIT_STATE,
-                                        event_id=None,
-                                        condition_expr=None,
+                                        trigger=None,
                                         post_operations=[],
                                     ),
                                 ],
@@ -588,22 +642,19 @@ class TestDSLTransition:
                                     TransitionDefinition(
                                         from_state=INIT_STATE,
                                         to_state="Computing",
-                                        event_id=None,
-                                        condition_expr=None,
+                                        trigger=None,
                                         post_operations=[],
                                     ),
                                     TransitionDefinition(
                                         from_state="Computing",
                                         to_state="Done",
-                                        event_id=None,
-                                        condition_expr=None,
+                                        trigger=None,
                                         post_operations=[],
                                     ),
                                     TransitionDefinition(
                                         from_state="Done",
                                         to_state=EXIT_STATE,
-                                        event_id=None,
-                                        condition_expr=None,
+                                        trigger=None,
                                         post_operations=[],
                                     ),
                                 ],
@@ -616,18 +667,36 @@ class TestDSLTransition:
                             TransitionDefinition(
                                 from_state=INIT_STATE,
                                 to_state="Add",
-                                event_id=None,
-                                condition_expr=BinaryOp(
-                                    expr1=Name(name="x"), op="<", expr2=Name(name="y")
+                                trigger=TransitionTrigger(
+                                    ":",
+                                    (
+                                        GuardTerm(
+                                            BinaryOp(
+                                                expr1=Name(name="x"),
+                                                op="<",
+                                                expr2=Name(name="y"),
+                                            )
+                                        ),
+                                    ),
+                                    legacy_guard_syntax=True,
                                 ),
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state=INIT_STATE,
                                 to_state="Multiply",
-                                event_id=None,
-                                condition_expr=BinaryOp(
-                                    expr1=Name(name="x"), op=">=", expr2=Name(name="y")
+                                trigger=TransitionTrigger(
+                                    ":",
+                                    (
+                                        GuardTerm(
+                                            BinaryOp(
+                                                expr1=Name(name="x"),
+                                                op=">=",
+                                                expr2=Name(name="y"),
+                                            )
+                                        ),
+                                    ),
+                                    legacy_guard_syntax=True,
                                 ),
                                 post_operations=[],
                             ),
@@ -666,8 +735,7 @@ class TestDSLTransition:
                             TransitionDefinition(
                                 from_state=INIT_STATE,
                                 to_state="Checking",
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[
                                     OperationAssignment(
                                         name="status",
@@ -682,11 +750,18 @@ class TestDSLTransition:
                             TransitionDefinition(
                                 from_state="Checking",
                                 to_state="Success",
-                                event_id=None,
-                                condition_expr=BinaryOp(
-                                    expr1=Name(name="status"),
-                                    op=">",
-                                    expr2=Integer(raw="0"),
+                                trigger=TransitionTrigger(
+                                    ":",
+                                    (
+                                        GuardTerm(
+                                            BinaryOp(
+                                                expr1=Name(name="status"),
+                                                op=">",
+                                                expr2=Integer(raw="0"),
+                                            )
+                                        ),
+                                    ),
+                                    legacy_guard_syntax=True,
                                 ),
                                 post_operations=[
                                     OperationAssignment(
@@ -697,11 +772,18 @@ class TestDSLTransition:
                             TransitionDefinition(
                                 from_state="Checking",
                                 to_state="Failure",
-                                event_id=None,
-                                condition_expr=BinaryOp(
-                                    expr1=Name(name="status"),
-                                    op="<=",
-                                    expr2=Integer(raw="0"),
+                                trigger=TransitionTrigger(
+                                    ":",
+                                    (
+                                        GuardTerm(
+                                            BinaryOp(
+                                                expr1=Name(name="status"),
+                                                op="<=",
+                                                expr2=Integer(raw="0"),
+                                            )
+                                        ),
+                                    ),
+                                    legacy_guard_syntax=True,
                                 ),
                                 post_operations=[
                                     OperationAssignment(
@@ -713,15 +795,13 @@ class TestDSLTransition:
                             TransitionDefinition(
                                 from_state="Success",
                                 to_state=EXIT_STATE,
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Failure",
                                 to_state=EXIT_STATE,
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                         ],
@@ -751,26 +831,31 @@ class TestDSLTransition:
                             TransitionDefinition(
                                 from_state=INIT_STATE,
                                 to_state="Start",
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Start",
                                 to_state="End",
-                                event_id=None,
-                                condition_expr=BinaryOp(
-                                    expr1=Name(name="value"),
-                                    op="==",
-                                    expr2=HexInt(raw="0x1A"),
+                                trigger=TransitionTrigger(
+                                    ":",
+                                    (
+                                        GuardTerm(
+                                            BinaryOp(
+                                                expr1=Name(name="value"),
+                                                op="==",
+                                                expr2=HexInt(raw="0x1A"),
+                                            )
+                                        ),
+                                    ),
+                                    legacy_guard_syntax=True,
                                 ),
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="End",
                                 to_state=EXIT_STATE,
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                         ],
@@ -805,19 +890,25 @@ class TestDSLTransition:
                             TransitionDefinition(
                                 from_state=INIT_STATE,
                                 to_state="Processing",
-                                event_id=None,
-                                condition_expr=BinaryOp(
-                                    expr1=Name(name="pi_val"),
-                                    op=">",
-                                    expr2=Name(name="e_val"),
+                                trigger=TransitionTrigger(
+                                    ":",
+                                    (
+                                        GuardTerm(
+                                            BinaryOp(
+                                                expr1=Name(name="pi_val"),
+                                                op=">",
+                                                expr2=Name(name="e_val"),
+                                            )
+                                        ),
+                                    ),
+                                    legacy_guard_syntax=True,
                                 ),
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Processing",
                                 to_state=EXIT_STATE,
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                         ],
@@ -851,52 +942,63 @@ class TestDSLTransition:
                             TransitionDefinition(
                                 from_state=INIT_STATE,
                                 to_state="Evaluate",
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Evaluate",
                                 to_state="TrueState",
-                                event_id=None,
-                                condition_expr=ConditionalOp(
-                                    cond=BinaryOp(
-                                        expr1=Name(name="a"),
-                                        op="<",
-                                        expr2=Name(name="b"),
+                                trigger=TransitionTrigger(
+                                    ":",
+                                    (
+                                        GuardTerm(
+                                            ConditionalOp(
+                                                cond=BinaryOp(
+                                                    expr1=Name(name="a"),
+                                                    op="<",
+                                                    expr2=Name(name="b"),
+                                                ),
+                                                value_true=Boolean(raw="true"),
+                                                value_false=Boolean(raw="false"),
+                                            )
+                                        ),
                                     ),
-                                    value_true=Boolean(raw="true"),
-                                    value_false=Boolean(raw="false"),
+                                    legacy_guard_syntax=True,
                                 ),
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Evaluate",
                                 to_state="FalseState",
-                                event_id=None,
-                                condition_expr=ConditionalOp(
-                                    cond=BinaryOp(
-                                        expr1=Name(name="a"),
-                                        op=">",
-                                        expr2=Name(name="b"),
+                                trigger=TransitionTrigger(
+                                    ":",
+                                    (
+                                        GuardTerm(
+                                            ConditionalOp(
+                                                cond=BinaryOp(
+                                                    expr1=Name(name="a"),
+                                                    op=">",
+                                                    expr2=Name(name="b"),
+                                                ),
+                                                value_true=Boolean(raw="true"),
+                                                value_false=Boolean(raw="false"),
+                                            )
+                                        ),
                                     ),
-                                    value_true=Boolean(raw="true"),
-                                    value_false=Boolean(raw="false"),
+                                    legacy_guard_syntax=True,
                                 ),
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="TrueState",
                                 to_state=EXIT_STATE,
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="FalseState",
                                 to_state=EXIT_STATE,
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                         ],
@@ -926,26 +1028,33 @@ class TestDSLTransition:
                             TransitionDefinition(
                                 from_state=INIT_STATE,
                                 to_state="Calculate",
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Calculate",
                                 to_state="Result",
-                                event_id=None,
-                                condition_expr=BinaryOp(
-                                    expr1=UFunc(func="sin", expr=Name(name="angle")),
-                                    op="<",
-                                    expr2=Float(raw="0.5"),
+                                trigger=TransitionTrigger(
+                                    ":",
+                                    (
+                                        GuardTerm(
+                                            BinaryOp(
+                                                expr1=UFunc(
+                                                    func="sin", expr=Name(name="angle")
+                                                ),
+                                                op="<",
+                                                expr2=Float(raw="0.5"),
+                                            )
+                                        ),
+                                    ),
+                                    legacy_guard_syntax=True,
                                 ),
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Result",
                                 to_state=EXIT_STATE,
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                         ],
@@ -975,32 +1084,37 @@ class TestDSLTransition:
                             TransitionDefinition(
                                 from_state=INIT_STATE,
                                 to_state="Process",
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Process",
                                 to_state="Done",
-                                event_id=None,
-                                condition_expr=BinaryOp(
-                                    expr1=Paren(
-                                        expr=BinaryOp(
-                                            expr1=Name(name="flag"),
-                                            op="&",
-                                            expr2=Integer(raw="1"),
-                                        )
+                                trigger=TransitionTrigger(
+                                    ":",
+                                    (
+                                        GuardTerm(
+                                            BinaryOp(
+                                                expr1=Paren(
+                                                    expr=BinaryOp(
+                                                        expr1=Name(name="flag"),
+                                                        op="&",
+                                                        expr2=Integer(raw="1"),
+                                                    )
+                                                ),
+                                                op="==",
+                                                expr2=Integer(raw="1"),
+                                            )
+                                        ),
                                     ),
-                                    op="==",
-                                    expr2=Integer(raw="1"),
+                                    legacy_guard_syntax=True,
                                 ),
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Done",
                                 to_state=EXIT_STATE,
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                         ],
@@ -1034,60 +1148,71 @@ class TestDSLTransition:
                             TransitionDefinition(
                                 from_state=INIT_STATE,
                                 to_state="Check",
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Check",
                                 to_state="Success",
-                                event_id=None,
-                                condition_expr=BinaryOp(
-                                    expr1=BinaryOp(
-                                        expr1=Name(name="x"),
-                                        op="<",
-                                        expr2=Name(name="y"),
+                                trigger=TransitionTrigger(
+                                    ":",
+                                    (
+                                        GuardTerm(
+                                            BinaryOp(
+                                                expr1=BinaryOp(
+                                                    expr1=Name(name="x"),
+                                                    op="<",
+                                                    expr2=Name(name="y"),
+                                                ),
+                                                op="&&",
+                                                expr2=BinaryOp(
+                                                    expr1=Name(name="x"),
+                                                    op=">",
+                                                    expr2=Integer(raw="0"),
+                                                ),
+                                            )
+                                        ),
                                     ),
-                                    op="&&",
-                                    expr2=BinaryOp(
-                                        expr1=Name(name="x"),
-                                        op=">",
-                                        expr2=Integer(raw="0"),
-                                    ),
+                                    legacy_guard_syntax=True,
                                 ),
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Check",
                                 to_state="Failure",
-                                event_id=None,
-                                condition_expr=BinaryOp(
-                                    expr1=BinaryOp(
-                                        expr1=Name(name="x"),
-                                        op=">=",
-                                        expr2=Name(name="y"),
+                                trigger=TransitionTrigger(
+                                    ":",
+                                    (
+                                        GuardTerm(
+                                            BinaryOp(
+                                                expr1=BinaryOp(
+                                                    expr1=Name(name="x"),
+                                                    op=">=",
+                                                    expr2=Name(name="y"),
+                                                ),
+                                                op="||",
+                                                expr2=BinaryOp(
+                                                    expr1=Name(name="x"),
+                                                    op="<=",
+                                                    expr2=Integer(raw="0"),
+                                                ),
+                                            )
+                                        ),
                                     ),
-                                    op="||",
-                                    expr2=BinaryOp(
-                                        expr1=Name(name="x"),
-                                        op="<=",
-                                        expr2=Integer(raw="0"),
-                                    ),
+                                    legacy_guard_syntax=True,
                                 ),
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Success",
                                 to_state=EXIT_STATE,
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Failure",
                                 to_state=EXIT_STATE,
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                         ],
@@ -1118,29 +1243,25 @@ class TestDSLTransition:
                             TransitionDefinition(
                                 from_state=INIT_STATE,
                                 to_state="Start",
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Start",
                                 to_state="Middle",
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Middle",
                                 to_state="End",
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="End",
                                 to_state=EXIT_STATE,
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                         ],
@@ -1181,8 +1302,7 @@ class TestDSLTransition:
                             TransitionDefinition(
                                 from_state="Inner",
                                 to_state=EXIT_STATE,
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             )
                         ],
@@ -1214,80 +1334,91 @@ class TestDSLTransition:
                             TransitionDefinition(
                                 from_state=INIT_STATE,
                                 to_state="Check",
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Check",
                                 to_state="Hot",
-                                event_id=None,
-                                condition_expr=BinaryOp(
-                                    expr1=BinaryOp(
-                                        expr1=Name(name="temp"),
-                                        op=">",
-                                        expr2=Float(raw="25.0"),
+                                trigger=TransitionTrigger(
+                                    ":",
+                                    (
+                                        GuardTerm(
+                                            BinaryOp(
+                                                expr1=BinaryOp(
+                                                    expr1=Name(name="temp"),
+                                                    op=">",
+                                                    expr2=Float(raw="25.0"),
+                                                ),
+                                                op="&&",
+                                                expr2=Paren(
+                                                    expr=BinaryOp(
+                                                        expr1=BinaryOp(
+                                                            expr1=Name(name="temp"),
+                                                            op="<",
+                                                            expr2=Float(raw="30.0"),
+                                                        ),
+                                                        op="||",
+                                                        expr2=BinaryOp(
+                                                            expr1=Name(name="temp"),
+                                                            op="==",
+                                                            expr2=Float(raw="35.0"),
+                                                        ),
+                                                    )
+                                                ),
+                                            )
+                                        ),
                                     ),
-                                    op="&&",
-                                    expr2=Paren(
-                                        expr=BinaryOp(
-                                            expr1=BinaryOp(
-                                                expr1=Name(name="temp"),
-                                                op="<",
-                                                expr2=Float(raw="30.0"),
-                                            ),
-                                            op="||",
-                                            expr2=BinaryOp(
-                                                expr1=Name(name="temp"),
-                                                op="==",
-                                                expr2=Float(raw="35.0"),
-                                            ),
-                                        )
-                                    ),
+                                    legacy_guard_syntax=True,
                                 ),
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Check",
                                 to_state="Cold",
-                                event_id=None,
-                                condition_expr=BinaryOp(
-                                    expr1=BinaryOp(
-                                        expr1=Name(name="temp"),
-                                        op="<",
-                                        expr2=Float(raw="20.0"),
+                                trigger=TransitionTrigger(
+                                    ":",
+                                    (
+                                        GuardTerm(
+                                            BinaryOp(
+                                                expr1=BinaryOp(
+                                                    expr1=Name(name="temp"),
+                                                    op="<",
+                                                    expr2=Float(raw="20.0"),
+                                                ),
+                                                op="&&",
+                                                expr2=Paren(
+                                                    expr=BinaryOp(
+                                                        expr1=BinaryOp(
+                                                            expr1=Name(name="temp"),
+                                                            op=">",
+                                                            expr2=Float(raw="15.0"),
+                                                        ),
+                                                        op="||",
+                                                        expr2=BinaryOp(
+                                                            expr1=Name(name="temp"),
+                                                            op="==",
+                                                            expr2=Float(raw="10.0"),
+                                                        ),
+                                                    )
+                                                ),
+                                            )
+                                        ),
                                     ),
-                                    op="&&",
-                                    expr2=Paren(
-                                        expr=BinaryOp(
-                                            expr1=BinaryOp(
-                                                expr1=Name(name="temp"),
-                                                op=">",
-                                                expr2=Float(raw="15.0"),
-                                            ),
-                                            op="||",
-                                            expr2=BinaryOp(
-                                                expr1=Name(name="temp"),
-                                                op="==",
-                                                expr2=Float(raw="10.0"),
-                                            ),
-                                        )
-                                    ),
+                                    legacy_guard_syntax=True,
                                 ),
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Hot",
                                 to_state=EXIT_STATE,
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Cold",
                                 to_state=EXIT_STATE,
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                         ],
@@ -1337,30 +1468,35 @@ class TestDSLTransition:
                             TransitionDefinition(
                                 from_state=INIT_STATE,
                                 to_state="Calculate",
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Calculate",
                                 to_state="Result",
-                                event_id=None,
-                                condition_expr=BinaryOp(
-                                    expr1=BinaryOp(
-                                        expr1=Name(name="a"),
-                                        op="*",
-                                        expr2=Name(name="b"),
+                                trigger=TransitionTrigger(
+                                    ":",
+                                    (
+                                        GuardTerm(
+                                            BinaryOp(
+                                                expr1=BinaryOp(
+                                                    expr1=Name(name="a"),
+                                                    op="*",
+                                                    expr2=Name(name="b"),
+                                                ),
+                                                op=">",
+                                                expr2=Float(raw="20.0"),
+                                            )
+                                        ),
                                     ),
-                                    op=">",
-                                    expr2=Float(raw="20.0"),
+                                    legacy_guard_syntax=True,
                                 ),
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="Result",
                                 to_state=EXIT_STATE,
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                         ],
@@ -1458,8 +1594,15 @@ class TestDSLTransition:
                                             TransitionDefinition(
                                                 from_state=INIT_STATE,
                                                 to_state="EX",
-                                                event_id=ChainID(path=["E1"]),
-                                                condition_expr=None,
+                                                trigger=TransitionTrigger(
+                                                    ":",
+                                                    (
+                                                        EventTerm(
+                                                            ChainID(path=["E1"]),
+                                                            "chain",
+                                                        ),
+                                                    ),
+                                                ),
                                                 post_operations=[],
                                             )
                                         ],
@@ -1486,18 +1629,27 @@ class TestDSLTransition:
                                     TransitionDefinition(
                                         from_state=INIT_STATE,
                                         to_state="D",
-                                        event_id=ChainID(path=["E2"]),
-                                        condition_expr=None,
+                                        trigger=TransitionTrigger(
+                                            "::",
+                                            (EventTerm(ChainID(path=["E2"]), "chain"),),
+                                        ),
                                         post_operations=[],
                                     ),
                                     TransitionDefinition(
                                         from_state="D",
                                         to_state=EXIT_STATE,
-                                        event_id=None,
-                                        condition_expr=BinaryOp(
-                                            expr1=Name(name="x"),
-                                            op=">",
-                                            expr2=Integer(raw="0"),
+                                        trigger=TransitionTrigger(
+                                            ":",
+                                            (
+                                                GuardTerm(
+                                                    BinaryOp(
+                                                        expr1=Name(name="x"),
+                                                        op=">",
+                                                        expr2=Integer(raw="0"),
+                                                    )
+                                                ),
+                                            ),
+                                            legacy_guard_syntax=True,
                                         ),
                                         post_operations=[
                                             OperationAssignment(
@@ -1560,18 +1712,27 @@ class TestDSLTransition:
                             TransitionDefinition(
                                 from_state="B",
                                 to_state="C",
-                                event_id=ChainID(path=["B", "E1"]),
-                                condition_expr=None,
+                                trigger=TransitionTrigger(
+                                    "::",
+                                    (EventTerm(ChainID(path=["B", "E1"]), "local"),),
+                                ),
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="C",
                                 to_state="C",
-                                event_id=None,
-                                condition_expr=BinaryOp(
-                                    expr1=Name(name="x"),
-                                    op="==",
-                                    expr2=Integer(raw="1"),
+                                trigger=TransitionTrigger(
+                                    ":",
+                                    (
+                                        GuardTerm(
+                                            BinaryOp(
+                                                expr1=Name(name="x"),
+                                                op="==",
+                                                expr2=Integer(raw="1"),
+                                            )
+                                        ),
+                                    ),
+                                    legacy_guard_syntax=True,
                                 ),
                                 post_operations=[
                                     OperationAssignment(name="x", expr=Integer(raw="0"))
@@ -1580,29 +1741,35 @@ class TestDSLTransition:
                             TransitionDefinition(
                                 from_state=INIT_STATE,
                                 to_state="B",
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="C",
                                 to_state=EXIT_STATE,
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="C",
                                 to_state="B",
-                                event_id=ChainID(path=["C", "E2"]),
-                                condition_expr=None,
+                                trigger=TransitionTrigger(
+                                    "::",
+                                    (EventTerm(ChainID(path=["C", "E2"]), "local"),),
+                                ),
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="C",
                                 to_state="B",
-                                event_id=ChainID(path=["C", "D", "E1"]),
-                                condition_expr=None,
+                                trigger=TransitionTrigger(
+                                    ":",
+                                    (
+                                        EventTerm(
+                                            ChainID(path=["C", "D", "E1"]), "chain"
+                                        ),
+                                    ),
+                                ),
                                 post_operations=[],
                             ),
                         ],
@@ -1768,36 +1935,63 @@ class TestDSLTransition:
                                     TransitionDefinition(
                                         from_state=INIT_STATE,
                                         to_state="LX11",
-                                        event_id=None,
-                                        condition_expr=None,
+                                        trigger=None,
                                         post_operations=[],
                                     ),
                                     TransitionDefinition(
                                         from_state="LX11",
                                         to_state="LX12",
-                                        event_id=ChainID(path=["LX11", "E1"]),
-                                        condition_expr=None,
+                                        trigger=TransitionTrigger(
+                                            "::",
+                                            (
+                                                EventTerm(
+                                                    ChainID(path=["LX11", "E1"]),
+                                                    "local",
+                                                ),
+                                            ),
+                                        ),
                                         post_operations=[],
                                     ),
                                     TransitionDefinition(
                                         from_state="LX12",
                                         to_state="LX13",
-                                        event_id=ChainID(path=["LX12", "E1"]),
-                                        condition_expr=None,
+                                        trigger=TransitionTrigger(
+                                            "::",
+                                            (
+                                                EventTerm(
+                                                    ChainID(path=["LX12", "E1"]),
+                                                    "local",
+                                                ),
+                                            ),
+                                        ),
                                         post_operations=[],
                                     ),
                                     TransitionDefinition(
                                         from_state="LX12",
                                         to_state="LX14",
-                                        event_id=ChainID(path=["LX12", "E2"]),
-                                        condition_expr=None,
+                                        trigger=TransitionTrigger(
+                                            "::",
+                                            (
+                                                EventTerm(
+                                                    ChainID(path=["LX12", "E2"]),
+                                                    "local",
+                                                ),
+                                            ),
+                                        ),
                                         post_operations=[],
                                     ),
                                     TransitionDefinition(
                                         from_state="LX13",
                                         to_state=EXIT_STATE,
-                                        event_id=ChainID(path=["LX13", "E1"]),
-                                        condition_expr=None,
+                                        trigger=TransitionTrigger(
+                                            "::",
+                                            (
+                                                EventTerm(
+                                                    ChainID(path=["LX13", "E1"]),
+                                                    "local",
+                                                ),
+                                            ),
+                                        ),
                                         post_operations=[
                                             OperationAssignment(
                                                 name="a", expr=HexInt(raw="0x2")
@@ -1807,8 +2001,15 @@ class TestDSLTransition:
                                     TransitionDefinition(
                                         from_state="LX13",
                                         to_state=EXIT_STATE,
-                                        event_id=ChainID(path=["LX13", "E2"]),
-                                        condition_expr=None,
+                                        trigger=TransitionTrigger(
+                                            "::",
+                                            (
+                                                EventTerm(
+                                                    ChainID(path=["LX13", "E2"]),
+                                                    "local",
+                                                ),
+                                            ),
+                                        ),
                                         post_operations=[
                                             OperationAssignment(
                                                 name="a", expr=HexInt(raw="0x3")
@@ -1818,29 +2019,57 @@ class TestDSLTransition:
                                     TransitionDefinition(
                                         from_state="LX13",
                                         to_state="LX14",
-                                        event_id=ChainID(path=["LX13", "E3"]),
-                                        condition_expr=None,
+                                        trigger=TransitionTrigger(
+                                            "::",
+                                            (
+                                                EventTerm(
+                                                    ChainID(path=["LX13", "E3"]),
+                                                    "local",
+                                                ),
+                                            ),
+                                        ),
                                         post_operations=[],
                                     ),
                                     TransitionDefinition(
                                         from_state="LX13",
                                         to_state="LX14",
-                                        event_id=ChainID(path=["LX13", "E4"]),
-                                        condition_expr=None,
+                                        trigger=TransitionTrigger(
+                                            "::",
+                                            (
+                                                EventTerm(
+                                                    ChainID(path=["LX13", "E4"]),
+                                                    "local",
+                                                ),
+                                            ),
+                                        ),
                                         post_operations=[],
                                     ),
                                     TransitionDefinition(
                                         from_state="LX14",
                                         to_state="LX12",
-                                        event_id=ChainID(path=["LX14", "E1"]),
-                                        condition_expr=None,
+                                        trigger=TransitionTrigger(
+                                            "::",
+                                            (
+                                                EventTerm(
+                                                    ChainID(path=["LX14", "E1"]),
+                                                    "local",
+                                                ),
+                                            ),
+                                        ),
                                         post_operations=[],
                                     ),
                                     TransitionDefinition(
                                         from_state="LX14",
                                         to_state=EXIT_STATE,
-                                        event_id=ChainID(path=["LX14", "E2"]),
-                                        condition_expr=None,
+                                        trigger=TransitionTrigger(
+                                            "::",
+                                            (
+                                                EventTerm(
+                                                    ChainID(path=["LX14", "E2"]),
+                                                    "local",
+                                                ),
+                                            ),
+                                        ),
                                         post_operations=[
                                             OperationAssignment(
                                                 name="a", expr=HexInt(raw="0x1")
@@ -1888,30 +2117,53 @@ class TestDSLTransition:
                                             TransitionDefinition(
                                                 from_state=INIT_STATE,
                                                 to_state="LX211",
-                                                event_id=None,
-                                                condition_expr=BinaryOp(
-                                                    expr1=Name(name="a"),
-                                                    op="==",
-                                                    expr2=HexInt(raw="0x2"),
+                                                trigger=TransitionTrigger(
+                                                    ":",
+                                                    (
+                                                        GuardTerm(
+                                                            BinaryOp(
+                                                                expr1=Name(name="a"),
+                                                                op="==",
+                                                                expr2=HexInt(raw="0x2"),
+                                                            )
+                                                        ),
+                                                    ),
+                                                    legacy_guard_syntax=True,
                                                 ),
                                                 post_operations=[],
                                             ),
                                             TransitionDefinition(
                                                 from_state=INIT_STATE,
                                                 to_state="LX212",
-                                                event_id=None,
-                                                condition_expr=BinaryOp(
-                                                    expr1=Name(name="a"),
-                                                    op="==",
-                                                    expr2=HexInt(raw="0x3"),
+                                                trigger=TransitionTrigger(
+                                                    ":",
+                                                    (
+                                                        GuardTerm(
+                                                            BinaryOp(
+                                                                expr1=Name(name="a"),
+                                                                op="==",
+                                                                expr2=HexInt(raw="0x3"),
+                                                            )
+                                                        ),
+                                                    ),
+                                                    legacy_guard_syntax=True,
                                                 ),
                                                 post_operations=[],
                                             ),
                                             TransitionDefinition(
                                                 from_state="LX211",
                                                 to_state=EXIT_STATE,
-                                                event_id=ChainID(path=["LX211", "E1"]),
-                                                condition_expr=None,
+                                                trigger=TransitionTrigger(
+                                                    "::",
+                                                    (
+                                                        EventTerm(
+                                                            ChainID(
+                                                                path=["LX211", "E1"]
+                                                            ),
+                                                            "local",
+                                                        ),
+                                                    ),
+                                                ),
                                                 post_operations=[
                                                     OperationAssignment(
                                                         name="a", expr=HexInt(raw="0x1")
@@ -1921,15 +2173,33 @@ class TestDSLTransition:
                                             TransitionDefinition(
                                                 from_state="LX211",
                                                 to_state="LX212",
-                                                event_id=ChainID(path=["LX211", "E2"]),
-                                                condition_expr=None,
+                                                trigger=TransitionTrigger(
+                                                    "::",
+                                                    (
+                                                        EventTerm(
+                                                            ChainID(
+                                                                path=["LX211", "E2"]
+                                                            ),
+                                                            "local",
+                                                        ),
+                                                    ),
+                                                ),
                                                 post_operations=[],
                                             ),
                                             TransitionDefinition(
                                                 from_state="LX212",
                                                 to_state=EXIT_STATE,
-                                                event_id=ChainID(path=["LX212", "E1"]),
-                                                condition_expr=None,
+                                                trigger=TransitionTrigger(
+                                                    "::",
+                                                    (
+                                                        EventTerm(
+                                                            ChainID(
+                                                                path=["LX212", "E1"]
+                                                            ),
+                                                            "local",
+                                                        ),
+                                                    ),
+                                                ),
                                                 post_operations=[
                                                     OperationAssignment(
                                                         name="a", expr=HexInt(raw="0x1")
@@ -1939,8 +2209,15 @@ class TestDSLTransition:
                                             TransitionDefinition(
                                                 from_state="LX212",
                                                 to_state="LX211",
-                                                event_id=ChainID(path=["E2"]),
-                                                condition_expr=None,
+                                                trigger=TransitionTrigger(
+                                                    ":",
+                                                    (
+                                                        EventTerm(
+                                                            ChainID(path=["E2"]),
+                                                            "chain",
+                                                        ),
+                                                    ),
+                                                ),
                                                 post_operations=[],
                                             ),
                                         ],
@@ -1953,18 +2230,24 @@ class TestDSLTransition:
                                     TransitionDefinition(
                                         from_state=INIT_STATE,
                                         to_state="LX21",
-                                        event_id=None,
-                                        condition_expr=None,
+                                        trigger=None,
                                         post_operations=[],
                                     ),
                                     TransitionDefinition(
                                         from_state="LX21",
                                         to_state=EXIT_STATE,
-                                        event_id=None,
-                                        condition_expr=BinaryOp(
-                                            expr1=Name(name="a"),
-                                            op="==",
-                                            expr2=HexInt(raw="0x1"),
+                                        trigger=TransitionTrigger(
+                                            ":",
+                                            (
+                                                GuardTerm(
+                                                    BinaryOp(
+                                                        expr1=Name(name="a"),
+                                                        op="==",
+                                                        expr2=HexInt(raw="0x1"),
+                                                    )
+                                                ),
+                                            ),
+                                            legacy_guard_syntax=True,
                                         ),
                                         post_operations=[],
                                     ),
@@ -1978,48 +2261,68 @@ class TestDSLTransition:
                             TransitionDefinition(
                                 from_state=INIT_STATE,
                                 to_state="LX1",
-                                event_id=None,
-                                condition_expr=None,
+                                trigger=None,
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="LX1",
                                 to_state="LX2",
-                                event_id=None,
-                                condition_expr=BinaryOp(
-                                    expr1=BinaryOp(
-                                        expr1=Name(name="a"),
-                                        op="==",
-                                        expr2=HexInt(raw="0x2"),
+                                trigger=TransitionTrigger(
+                                    ":",
+                                    (
+                                        GuardTerm(
+                                            BinaryOp(
+                                                expr1=BinaryOp(
+                                                    expr1=Name(name="a"),
+                                                    op="==",
+                                                    expr2=HexInt(raw="0x2"),
+                                                ),
+                                                op="||",
+                                                expr2=BinaryOp(
+                                                    expr1=Name(name="a"),
+                                                    op="==",
+                                                    expr2=HexInt(raw="0x3"),
+                                                ),
+                                            )
+                                        ),
                                     ),
-                                    op="||",
-                                    expr2=BinaryOp(
-                                        expr1=Name(name="a"),
-                                        op="==",
-                                        expr2=HexInt(raw="0x3"),
-                                    ),
+                                    legacy_guard_syntax=True,
                                 ),
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="LX1",
                                 to_state="LX1",
-                                event_id=None,
-                                condition_expr=BinaryOp(
-                                    expr1=Name(name="a"),
-                                    op="==",
-                                    expr2=HexInt(raw="0x1"),
+                                trigger=TransitionTrigger(
+                                    ":",
+                                    (
+                                        GuardTerm(
+                                            BinaryOp(
+                                                expr1=Name(name="a"),
+                                                op="==",
+                                                expr2=HexInt(raw="0x1"),
+                                            )
+                                        ),
+                                    ),
+                                    legacy_guard_syntax=True,
                                 ),
                                 post_operations=[],
                             ),
                             TransitionDefinition(
                                 from_state="LX2",
                                 to_state="LX1",
-                                event_id=None,
-                                condition_expr=BinaryOp(
-                                    expr1=Name(name="a"),
-                                    op="==",
-                                    expr2=HexInt(raw="0x1"),
+                                trigger=TransitionTrigger(
+                                    ":",
+                                    (
+                                        GuardTerm(
+                                            BinaryOp(
+                                                expr1=Name(name="a"),
+                                                op="==",
+                                                expr2=HexInt(raw="0x1"),
+                                            )
+                                        ),
+                                    ),
+                                    legacy_guard_syntax=True,
                                 ),
                                 post_operations=[],
                             ),

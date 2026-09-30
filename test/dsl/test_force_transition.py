@@ -16,8 +16,7 @@ class TestDSLForceTransition:
                 ForceTransitionDefinition(
                     from_state="StateA",
                     to_state="StateB",
-                    event_id=None,
-                    condition_expr=None,
+                    trigger=None,
                 ),
             ),  # Basic normal force transition from StateA to StateB
             (
@@ -27,8 +26,15 @@ class TestDSLForceTransition:
                 ForceTransitionDefinition(
                     from_state="StateA",
                     to_state="StateB",
-                    event_id=ChainID(path=["StateA", "fromId"], is_absolute=False),
-                    condition_expr=None,
+                    trigger=TransitionTrigger(
+                        "::",
+                        (
+                            EventTerm(
+                                ChainID(path=["StateA", "fromId"], is_absolute=False),
+                                "local",
+                            ),
+                        ),
+                    ),
                 ),
             ),  # Normal force transition with from_id specified
             (
@@ -38,8 +44,15 @@ class TestDSLForceTransition:
                 ForceTransitionDefinition(
                     from_state="StateA",
                     to_state="StateB",
-                    event_id=ChainID(path=["chain", "id"], is_absolute=False),
-                    condition_expr=None,
+                    trigger=TransitionTrigger(
+                        ":",
+                        (
+                            EventTerm(
+                                ChainID(path=["chain", "id"], is_absolute=False),
+                                "chain",
+                            ),
+                        ),
+                    ),
                 ),
             ),  # Normal force transition with chain_id specified
             (
@@ -49,9 +62,18 @@ class TestDSLForceTransition:
                 ForceTransitionDefinition(
                     from_state="StateA",
                     to_state="StateB",
-                    event_id=None,
-                    condition_expr=BinaryOp(
-                        expr1=Name(name="x"), op="==", expr2=Integer(raw="10")
+                    trigger=TransitionTrigger(
+                        ":",
+                        (
+                            GuardTerm(
+                                BinaryOp(
+                                    expr1=Name(name="x"),
+                                    op="==",
+                                    expr2=Integer(raw="10"),
+                                )
+                            ),
+                        ),
+                        legacy_guard_syntax=True,
                     ),
                 ),
             ),  # Normal force transition with condition
@@ -62,8 +84,7 @@ class TestDSLForceTransition:
                 ForceTransitionDefinition(
                     from_state="StateA",
                     to_state=EXIT_STATE,
-                    event_id=None,
-                    condition_expr=None,
+                    trigger=None,
                 ),
             ),  # Basic exit force transition from StateA
             (
@@ -73,8 +94,15 @@ class TestDSLForceTransition:
                 ForceTransitionDefinition(
                     from_state="StateA",
                     to_state=EXIT_STATE,
-                    event_id=ChainID(path=["StateA", "fromId"], is_absolute=False),
-                    condition_expr=None,
+                    trigger=TransitionTrigger(
+                        "::",
+                        (
+                            EventTerm(
+                                ChainID(path=["StateA", "fromId"], is_absolute=False),
+                                "local",
+                            ),
+                        ),
+                    ),
                 ),
             ),  # Exit force transition with from_id specified
             (
@@ -84,8 +112,15 @@ class TestDSLForceTransition:
                 ForceTransitionDefinition(
                     from_state="StateA",
                     to_state=EXIT_STATE,
-                    event_id=ChainID(path=["chain", "id"], is_absolute=False),
-                    condition_expr=None,
+                    trigger=TransitionTrigger(
+                        ":",
+                        (
+                            EventTerm(
+                                ChainID(path=["chain", "id"], is_absolute=False),
+                                "chain",
+                            ),
+                        ),
+                    ),
                 ),
             ),  # Exit force transition with chain_id specified
             (
@@ -95,9 +130,18 @@ class TestDSLForceTransition:
                 ForceTransitionDefinition(
                     from_state="StateA",
                     to_state=EXIT_STATE,
-                    event_id=None,
-                    condition_expr=BinaryOp(
-                        expr1=Name(name="x"), op="==", expr2=Integer(raw="10")
+                    trigger=TransitionTrigger(
+                        ":",
+                        (
+                            GuardTerm(
+                                BinaryOp(
+                                    expr1=Name(name="x"),
+                                    op="==",
+                                    expr2=Integer(raw="10"),
+                                )
+                            ),
+                        ),
+                        legacy_guard_syntax=True,
                     ),
                 ),
             ),  # Exit force transition with condition
@@ -108,8 +152,7 @@ class TestDSLForceTransition:
                 ForceTransitionDefinition(
                     from_state=ALL,
                     to_state="StateB",
-                    event_id=None,
-                    condition_expr=None,
+                    trigger=None,
                 ),
             ),  # Basic normal all force transition to StateB
             (
@@ -119,8 +162,14 @@ class TestDSLForceTransition:
                 ForceTransitionDefinition(
                     from_state=ALL,
                     to_state="StateB",
-                    event_id=ChainID(path=["fromId"], is_absolute=False),
-                    condition_expr=None,
+                    trigger=TransitionTrigger(
+                        "::",
+                        (
+                            EventTerm(
+                                ChainID(path=["fromId"], is_absolute=False), "chain"
+                            ),
+                        ),
+                    ),
                 ),
             ),  # Normal all force transition with from_id specified
             (
@@ -130,8 +179,15 @@ class TestDSLForceTransition:
                 ForceTransitionDefinition(
                     from_state=ALL,
                     to_state="StateB",
-                    event_id=ChainID(path=["chain", "id"], is_absolute=False),
-                    condition_expr=None,
+                    trigger=TransitionTrigger(
+                        ":",
+                        (
+                            EventTerm(
+                                ChainID(path=["chain", "id"], is_absolute=False),
+                                "chain",
+                            ),
+                        ),
+                    ),
                 ),
             ),  # Normal all force transition with chain_id specified
             (
@@ -141,9 +197,18 @@ class TestDSLForceTransition:
                 ForceTransitionDefinition(
                     from_state=ALL,
                     to_state="StateB",
-                    event_id=None,
-                    condition_expr=BinaryOp(
-                        expr1=Name(name="x"), op="==", expr2=Integer(raw="10")
+                    trigger=TransitionTrigger(
+                        ":",
+                        (
+                            GuardTerm(
+                                BinaryOp(
+                                    expr1=Name(name="x"),
+                                    op="==",
+                                    expr2=Integer(raw="10"),
+                                )
+                            ),
+                        ),
+                        legacy_guard_syntax=True,
                     ),
                 ),
             ),  # Normal all force transition with condition
@@ -154,8 +219,7 @@ class TestDSLForceTransition:
                 ForceTransitionDefinition(
                     from_state=ALL,
                     to_state=EXIT_STATE,
-                    event_id=None,
-                    condition_expr=None,
+                    trigger=None,
                 ),
             ),  # Basic exit all force transition
             (
@@ -165,8 +229,14 @@ class TestDSLForceTransition:
                 ForceTransitionDefinition(
                     from_state=ALL,
                     to_state=EXIT_STATE,
-                    event_id=ChainID(path=["fromId"], is_absolute=False),
-                    condition_expr=None,
+                    trigger=TransitionTrigger(
+                        "::",
+                        (
+                            EventTerm(
+                                ChainID(path=["fromId"], is_absolute=False), "chain"
+                            ),
+                        ),
+                    ),
                 ),
             ),  # Exit all force transition with from_id specified
             (
@@ -176,8 +246,15 @@ class TestDSLForceTransition:
                 ForceTransitionDefinition(
                     from_state=ALL,
                     to_state=EXIT_STATE,
-                    event_id=ChainID(path=["chain", "id"], is_absolute=False),
-                    condition_expr=None,
+                    trigger=TransitionTrigger(
+                        ":",
+                        (
+                            EventTerm(
+                                ChainID(path=["chain", "id"], is_absolute=False),
+                                "chain",
+                            ),
+                        ),
+                    ),
                 ),
             ),  # Exit all force transition with chain_id specified
             (
@@ -187,9 +264,18 @@ class TestDSLForceTransition:
                 ForceTransitionDefinition(
                     from_state=ALL,
                     to_state=EXIT_STATE,
-                    event_id=None,
-                    condition_expr=BinaryOp(
-                        expr1=Name(name="x"), op="==", expr2=Integer(raw="10")
+                    trigger=TransitionTrigger(
+                        ":",
+                        (
+                            GuardTerm(
+                                BinaryOp(
+                                    expr1=Name(name="x"),
+                                    op="==",
+                                    expr2=Integer(raw="10"),
+                                )
+                            ),
+                        ),
+                        legacy_guard_syntax=True,
                     ),
                 ),
             ),  # Exit all force transition with condition
@@ -200,15 +286,26 @@ class TestDSLForceTransition:
                 ForceTransitionDefinition(
                     from_state="StateA",
                     to_state="StateB",
-                    event_id=None,
-                    condition_expr=BinaryOp(
-                        expr1=BinaryOp(
-                            expr1=Name(name="x"), op=">", expr2=Integer(raw="5")
+                    trigger=TransitionTrigger(
+                        ":",
+                        (
+                            GuardTerm(
+                                BinaryOp(
+                                    expr1=BinaryOp(
+                                        expr1=Name(name="x"),
+                                        op=">",
+                                        expr2=Integer(raw="5"),
+                                    ),
+                                    op="&&",
+                                    expr2=BinaryOp(
+                                        expr1=Name(name="y"),
+                                        op="<",
+                                        expr2=Integer(raw="10"),
+                                    ),
+                                )
+                            ),
                         ),
-                        op="&&",
-                        expr2=BinaryOp(
-                            expr1=Name(name="y"), op="<", expr2=Integer(raw="10")
-                        ),
+                        legacy_guard_syntax=True,
                     ),
                 ),
             ),  # Normal force transition with complex AND condition
@@ -219,15 +316,26 @@ class TestDSLForceTransition:
                 ForceTransitionDefinition(
                     from_state="StateA",
                     to_state=EXIT_STATE,
-                    event_id=None,
-                    condition_expr=BinaryOp(
-                        expr1=BinaryOp(
-                            expr1=Name(name="x"), op="==", expr2=Integer(raw="5")
+                    trigger=TransitionTrigger(
+                        ":",
+                        (
+                            GuardTerm(
+                                BinaryOp(
+                                    expr1=BinaryOp(
+                                        expr1=Name(name="x"),
+                                        op="==",
+                                        expr2=Integer(raw="5"),
+                                    ),
+                                    op="||",
+                                    expr2=BinaryOp(
+                                        expr1=Name(name="y"),
+                                        op="!=",
+                                        expr2=Integer(raw="10"),
+                                    ),
+                                )
+                            ),
                         ),
-                        op="||",
-                        expr2=BinaryOp(
-                            expr1=Name(name="y"), op="!=", expr2=Integer(raw="10")
-                        ),
+                        legacy_guard_syntax=True,
                     ),
                 ),
             ),  # Exit force transition with complex OR condition
@@ -238,15 +346,26 @@ class TestDSLForceTransition:
                 ForceTransitionDefinition(
                     from_state=ALL,
                     to_state="StateB",
-                    event_id=None,
-                    condition_expr=BinaryOp(
-                        expr1=BinaryOp(
-                            expr1=Name(name="flag"), op="==", expr2=Integer(raw="0")
+                    trigger=TransitionTrigger(
+                        ":",
+                        (
+                            GuardTerm(
+                                BinaryOp(
+                                    expr1=BinaryOp(
+                                        expr1=Name(name="flag"),
+                                        op="==",
+                                        expr2=Integer(raw="0"),
+                                    ),
+                                    op="&&",
+                                    expr2=BinaryOp(
+                                        expr1=Name(name="x"),
+                                        op=">",
+                                        expr2=Integer(raw="10"),
+                                    ),
+                                )
+                            ),
                         ),
-                        op="&&",
-                        expr2=BinaryOp(
-                            expr1=Name(name="x"), op=">", expr2=Integer(raw="10")
-                        ),
+                        legacy_guard_syntax=True,
                     ),
                 ),
             ),  # Normal all force transition with negation in condition
@@ -257,13 +376,22 @@ class TestDSLForceTransition:
                 ForceTransitionDefinition(
                     from_state=ALL,
                     to_state=EXIT_STATE,
-                    event_id=None,
-                    condition_expr=ConditionalOp(
-                        cond=BinaryOp(
-                            expr1=Name(name="x"), op=">", expr2=Integer(raw="5")
+                    trigger=TransitionTrigger(
+                        ":",
+                        (
+                            GuardTerm(
+                                ConditionalOp(
+                                    cond=BinaryOp(
+                                        expr1=Name(name="x"),
+                                        op=">",
+                                        expr2=Integer(raw="5"),
+                                    ),
+                                    value_true=Boolean(raw="true"),
+                                    value_false=Boolean(raw="false"),
+                                )
+                            ),
                         ),
-                        value_true=Boolean(raw="true"),
-                        value_false=Boolean(raw="false"),
+                        legacy_guard_syntax=True,
                     ),
                 ),
             ),  # Exit all force transition with conditional expression in condition
@@ -274,10 +402,17 @@ class TestDSLForceTransition:
                 ForceTransitionDefinition(
                     from_state="StateA",
                     to_state="StateB",
-                    event_id=ChainID(
-                        path=["absolute", "chain", "id"], is_absolute=True
+                    trigger=TransitionTrigger(
+                        ":",
+                        (
+                            EventTerm(
+                                ChainID(
+                                    path=["absolute", "chain", "id"], is_absolute=True
+                                ),
+                                "absolute",
+                            ),
+                        ),
                     ),
-                    condition_expr=None,
                 ),
             ),  # Normal force transition with absolute chain ID
             (
@@ -287,8 +422,15 @@ class TestDSLForceTransition:
                 ForceTransitionDefinition(
                     from_state="StateA",
                     to_state=EXIT_STATE,
-                    event_id=ChainID(path=["root", "path"], is_absolute=True),
-                    condition_expr=None,
+                    trigger=TransitionTrigger(
+                        ":",
+                        (
+                            EventTerm(
+                                ChainID(path=["root", "path"], is_absolute=True),
+                                "absolute",
+                            ),
+                        ),
+                    ),
                 ),
             ),  # Exit force transition with absolute chain ID
             (
@@ -298,8 +440,15 @@ class TestDSLForceTransition:
                 ForceTransitionDefinition(
                     from_state="StateA",
                     to_state="StateB",
-                    event_id=ChainID(path=["StateA", "Fire"], is_absolute=False),
-                    condition_expr=None,
+                    trigger=TransitionTrigger(
+                        ":",
+                        (
+                            EventTerm(
+                                ChainID(path=["StateA", "Fire"], is_absolute=False),
+                                "chain",
+                            ),
+                        ),
+                    ),
                 ),
             ),  # Normal force transition with equivalent relative local-event path
             (
@@ -309,8 +458,15 @@ class TestDSLForceTransition:
                 ForceTransitionDefinition(
                     from_state="StateA",
                     to_state=EXIT_STATE,
-                    event_id=ChainID(path=["StateA", "Stop"], is_absolute=False),
-                    condition_expr=None,
+                    trigger=TransitionTrigger(
+                        ":",
+                        (
+                            EventTerm(
+                                ChainID(path=["StateA", "Stop"], is_absolute=False),
+                                "chain",
+                            ),
+                        ),
+                    ),
                 ),
             ),  # Exit force transition with equivalent relative local-event path
             (
@@ -320,8 +476,14 @@ class TestDSLForceTransition:
                 ForceTransitionDefinition(
                     from_state=ALL,
                     to_state="StateB",
-                    event_id=ChainID(path=["Alarm"], is_absolute=False),
-                    condition_expr=None,
+                    trigger=TransitionTrigger(
+                        ":",
+                        (
+                            EventTerm(
+                                ChainID(path=["Alarm"], is_absolute=False), "chain"
+                            ),
+                        ),
+                    ),
                 ),
             ),  # All-state force transition with single-segment relative event path
             (
@@ -331,8 +493,14 @@ class TestDSLForceTransition:
                 ForceTransitionDefinition(
                     from_state=ALL,
                     to_state=EXIT_STATE,
-                    event_id=ChainID(path=["StopAll"], is_absolute=False),
-                    condition_expr=None,
+                    trigger=TransitionTrigger(
+                        ":",
+                        (
+                            EventTerm(
+                                ChainID(path=["StopAll"], is_absolute=False), "chain"
+                            ),
+                        ),
+                    ),
                 ),
             ),  # All-state exit force transition with single-segment relative event path
             (
@@ -342,8 +510,15 @@ class TestDSLForceTransition:
                 ForceTransitionDefinition(
                     from_state="StateA",
                     to_state="StateB",
-                    event_id=ChainID(path=["System", "Fail"], is_absolute=True),
-                    condition_expr=None,
+                    trigger=TransitionTrigger(
+                        ":",
+                        (
+                            EventTerm(
+                                ChainID(path=["System", "Fail"], is_absolute=True),
+                                "absolute",
+                            ),
+                        ),
+                    ),
                 ),
             ),  # Normal force transition with short absolute event path
             (
@@ -353,8 +528,15 @@ class TestDSLForceTransition:
                 ForceTransitionDefinition(
                     from_state=ALL,
                     to_state=EXIT_STATE,
-                    event_id=ChainID(path=["System", "Fail"], is_absolute=True),
-                    condition_expr=None,
+                    trigger=TransitionTrigger(
+                        ":",
+                        (
+                            EventTerm(
+                                ChainID(path=["System", "Fail"], is_absolute=True),
+                                "absolute",
+                            ),
+                        ),
+                    ),
                 ),
             ),  # All-state exit force transition with short absolute event path
             (
@@ -364,11 +546,18 @@ class TestDSLForceTransition:
                 ForceTransitionDefinition(
                     from_state="StateA",
                     to_state="StateB",
-                    event_id=None,
-                    condition_expr=BinaryOp(
-                        expr1=UnaryOp(op="!", expr=Boolean(raw="true")),
-                        op="||",
-                        expr2=Boolean(raw="false"),
+                    trigger=TransitionTrigger(
+                        ":",
+                        (
+                            GuardTerm(
+                                BinaryOp(
+                                    expr1=UnaryOp(op="!", expr=Boolean(raw="true")),
+                                    op="||",
+                                    expr2=Boolean(raw="false"),
+                                )
+                            ),
+                        ),
+                        legacy_guard_syntax=True,
                     ),
                 ),
             ),  # Normal force transition with keyword logical aliases in guard
@@ -379,11 +568,18 @@ class TestDSLForceTransition:
                 ForceTransitionDefinition(
                     from_state=ALL,
                     to_state="StateB",
-                    event_id=None,
-                    condition_expr=BinaryOp(
-                        expr1=UnaryOp(op="!", expr=Boolean(raw="false")),
-                        op="&&",
-                        expr2=Boolean(raw="true"),
+                    trigger=TransitionTrigger(
+                        ":",
+                        (
+                            GuardTerm(
+                                BinaryOp(
+                                    expr1=UnaryOp(op="!", expr=Boolean(raw="false")),
+                                    op="&&",
+                                    expr2=Boolean(raw="true"),
+                                )
+                            ),
+                        ),
+                        legacy_guard_syntax=True,
                     ),
                 ),
             ),  # All-state force transition with keyword logical aliases in guard

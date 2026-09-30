@@ -4,7 +4,7 @@ from textwrap import dedent
 
 import pytest
 from pyfcstm.dsl import parse_with_grammar_entry
-from pyfcstm.model import parse_dsl_node_to_state_machine
+from pyfcstm.model import parse_dsl_node_to_state_machine, EventTrigger, GuardTrigger
 from pyfcstm.solver.domain import BranchFeasibility, ExprDomain, TranslationFailure
 from pyfcstm.solver.operation import OperationExecution, OperationFailure
 from pyfcstm.verify import (
@@ -70,7 +70,10 @@ def transition_by_guard(machine, text):
     """Find a transition whose guard text contains a fragment."""
     for state in machine.walk_states():
         for transition in state.transitions:
-            if transition.guard is not None and text in str(transition.guard):
+            if (
+                isinstance(transition.trigger, GuardTrigger)
+                and text in str(transition.trigger.condition)
+            ):
                 return transition
     raise AssertionError("transition not found")
 
@@ -124,8 +127,7 @@ def test_raw_transition_payload_includes_guard_text():
     transition = Transition(
         from_state="A",
         to_state="B",
-        event=None,
-        guard=BinaryOp(Variable("x"), "&&", Boolean(True)),
+        trigger=GuardTrigger(BinaryOp(Variable("x"), "&&", Boolean(True))),
         effects=[],
     )
 
@@ -475,8 +477,7 @@ def test_guard_translation_failure_is_normalized():
     transition = Transition(
         from_state="A",
         to_state="B",
-        event=None,
-        guard=Variable("missing"),
+        trigger=GuardTrigger(Variable("missing")),
         effects=[],
     )
 
@@ -1214,8 +1215,7 @@ def test_transition_trigger_builds_private_event_bool_when_no_mapping_given():
     transition = Transition(
         from_state="A",
         to_state="B",
-        event=Event("Tick", ("System",)),
-        guard=None,
+        trigger=EventTrigger(Event("Tick", ("System",))),
         effects=[],
     )
 
@@ -1393,29 +1393,25 @@ def test_transition_stable_continuation_helper_covers_exit_and_bad_targets():
     exit_transition = Transition(
         from_state="A",
         to_state=encoding_core._dsl_nodes().EXIT_STATE,
-        event=None,
-        guard=None,
+        trigger=None,
         effects=[],
     )
     root_exit_transition = Transition(
         from_state="System",
         to_state=encoding_core._dsl_nodes().EXIT_STATE,
-        event=None,
-        guard=None,
+        trigger=None,
         effects=[],
     )
     bad_target_transition = Transition(
         from_state="A",
         to_state="Missing",
-        event=None,
-        guard=None,
+        trigger=None,
         effects=[],
     )
     non_string_transition = Transition(
         from_state="A",
         to_state=encoding_core._dsl_nodes().INIT_STATE,
-        event=None,
-        guard=None,
+        trigger=None,
         effects=[],
     )
 
@@ -1450,27 +1446,18 @@ def test_root_initial_leaf_helper_identifies_global_initial_path():
     assert not encoding_core._is_root_initial_leaf(machine.root_state.substates["Active"])
 
 
-def test_event_bool_name_falls_back_for_anonymous_transition():
-    """Internal event-bool naming has a deterministic anonymous fallback."""
-    transition = Transition("A", "B", event=None, guard=None, effects=[])
-
-    assert encoding_core._event_bool_name(transition) == "__event__anonymous"
-
-
 def test_event_bool_name_is_injective_for_underscore_and_path_boundaries():
     """Event Bool encoding keeps ``S.A__B`` distinct from ``S.A.B``."""
     flat = Transition(
         "X",
         "Y",
-        event=Event("A__B", ("S",)),
-        guard=None,
+        trigger=EventTrigger(Event("A__B", ("S",))),
         effects=[],
     )
     nested = Transition(
         "X",
         "Z",
-        event=Event("B", ("S", "A")),
-        guard=None,
+        trigger=EventTrigger(Event("B", ("S", "A"))),
         effects=[],
     )
 
@@ -2169,8 +2156,7 @@ class TestEffectNoOpUnderGuard:
         transition = Transition(
             from_state="A",
             to_state="B",
-            event=None,
-            guard=None,
+            trigger=None,
             effects=[Operation(var_name="tmp", expr=Integer(1))],
         )
 
@@ -2217,8 +2203,7 @@ class TestEffectNoOpUnderGuard:
         transition = Transition(
             from_state="A",
             to_state="B",
-            event=None,
-            guard=BinaryOp(Variable("missing"), ">", Integer(0)),
+            trigger=GuardTrigger(BinaryOp(Variable("missing"), ">", Integer(0))),
             effects=[
                 Operation(var_name="x", expr=BinaryOp(Variable("x"), "+", Integer(1)))
             ],
@@ -2260,8 +2245,7 @@ class TestEffectNoOpUnderGuard:
         transition = Transition(
             from_state="A",
             to_state="B",
-            event=None,
-            guard=None,
+            trigger=None,
             effects=[Operation(var_name="x", expr=Variable("missing"))],
         )
 
@@ -2545,8 +2529,7 @@ class TestEffectContradictsGuard:
         transition = Transition(
             from_state="A",
             to_state="B",
-            event=None,
-            guard=BinaryOp(Variable("missing"), ">", Integer(0)),
+            trigger=GuardTrigger(BinaryOp(Variable("missing"), ">", Integer(0))),
             effects=[Operation(var_name="x", expr=Integer(0))],
         )
 
@@ -2561,8 +2544,7 @@ class TestEffectContradictsGuard:
         transition = Transition(
             from_state="A",
             to_state="B",
-            event=None,
-            guard=BinaryOp(Variable("tmp"), ">", Integer(0)),
+            trigger=GuardTrigger(BinaryOp(Variable("tmp"), ">", Integer(0))),
             effects=[Operation(var_name="x", expr=Integer(0))],
         )
 
@@ -2577,8 +2559,7 @@ class TestEffectContradictsGuard:
         transition = Transition(
             from_state="A",
             to_state="B",
-            event=None,
-            guard=BinaryOp(Variable("tmp"), ">", Integer(0)),
+            trigger=GuardTrigger(BinaryOp(Variable("tmp"), ">", Integer(0))),
             effects=[Operation(var_name="tmp", expr=Integer(1))],
         )
 
@@ -2596,8 +2577,7 @@ class TestEffectContradictsGuard:
         transition = Transition(
             from_state="A",
             to_state="B",
-            event=None,
-            guard=BinaryOp(Variable("x"), ">", Integer(0)),
+            trigger=GuardTrigger(BinaryOp(Variable("x"), ">", Integer(0))),
             effects=[Operation(var_name="x", expr=Integer(1))],
         )
 
@@ -2646,8 +2626,7 @@ class TestEffectContradictsGuard:
         transition = Transition(
             from_state="A",
             to_state="B",
-            event=None,
-            guard=BinaryOp(Variable("x"), ">", Integer(0)),
+            trigger=GuardTrigger(BinaryOp(Variable("x"), ">", Integer(0))),
             effects=[Operation(var_name="x", expr=Variable("missing"))],
         )
 
@@ -3628,8 +3607,8 @@ class TestEnterPostconditionImpliesDuringPrecondition:
             }
             """
         )
-        machine.root_state.init_transitions[0].guard = BinaryOp(
-            Variable("missing"), "==", Integer(1)
+        machine.root_state.init_transitions[0].trigger = GuardTrigger(
+            BinaryOp(Variable("missing"), "==", Integer(1))
         )
         state = machine.root_state.substates["Idle"]
 
@@ -5518,7 +5497,7 @@ class TestCompositeInitGuardsIncomplete:
 
         assert result == AlgorithmResult(kind="timeout")
 
-    def test_internal_guarded_event_init_transition_requires_both_triggers(self):
+    def test_guarded_init_transition_rejects_adding_an_event(self):
         machine = parse_machine(
             """
             def int x = 0;
@@ -5531,13 +5510,12 @@ class TestCompositeInitGuardsIncomplete:
             """
         )
         transition = machine.root_state.init_transitions[0]
-        transition.event = Event("E", machine.root_state.path)
+        with pytest.raises(AttributeError):
+            transition.event = Event("E", machine.root_state.path)
 
         result = composite_init_guards_incomplete(machine, variables(machine))
 
-        assert result.kind == "sat"
-        diag = assert_single_diag(result, "W_COMPOSITE_INIT_INCOMPLETE")
-        assert diag["data"]["state"] == "System"
+        assert result.kind == "unsat"
 
     def test_bitwise_init_guard_translation_failure_is_undecidable(self):
         machine = parse_machine(

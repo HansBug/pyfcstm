@@ -313,6 +313,8 @@ def effect_contradicts_guard(
         ... ).kind
         'sat'
     """
+    from pyfcstm.model import GuardTrigger
+
     from pyfcstm.verify.encoding._core import (
         AlgorithmResult,
         _definedness_feasibility_or_result,
@@ -327,7 +329,7 @@ def effect_contradicts_guard(
         z3,
     )
 
-    if transition.guard is None or not transition.effects:
+    if not isinstance(transition.trigger, GuardTrigger) or not transition.effects:
         return AlgorithmResult(kind="sat")
 
     z3_vars = _z3_vars(variables)
@@ -351,7 +353,7 @@ def effect_contradicts_guard(
     if result is not None:
         return result
     guard_after, guard_after_domains, result = _expr_z3_and_domains_or_result(
-        transition.guard,
+        transition.trigger.condition,
         after_vars,
         context_constraints=[
             guard_before,

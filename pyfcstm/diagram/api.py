@@ -46,6 +46,8 @@ from pygments.formatters import HtmlFormatter
 from ..highlight import FcstmLexer
 from ..utils.logging import get_logger
 from ..model.model import (
+    EventTrigger,
+    GuardTrigger,
     Event,
     IfBlock,
     Operation,
@@ -236,10 +238,9 @@ def _action_label(action: Any) -> str:
 
 
 def _event_reference(transition: Transition) -> str:
-    event = transition.event
-    if event is None:
-        return ""
-    scope = transition.event_scope
+    """Format an edge already selected as an event edge by the exporter."""
+    event = transition.trigger.event
+    scope = transition.trigger.scope
     if scope == "local":
         return event.name
     if scope == "absolute":
@@ -290,12 +291,21 @@ def _event_dict(event: Event, include_ranges: bool) -> Dict[str, Any]:
 def _state_dict(state: State, include_ranges: bool) -> Dict[str, Any]:
     transitions = []
     for index, transition in enumerate(state.transitions):
+        event = (
+            transition.trigger.event
+            if isinstance(transition.trigger, EventTrigger)
+            else None
+        )
         source_init = _is_marker(transition.from_state, "INIT_STATE")
         target_exit = _is_marker(transition.to_state, "EXIT_STATE")
         source_label = "[*]" if source_init else _text(transition.from_state)
         target_label = "[*]" if target_exit else _text(transition.to_state)
-        trigger = _event_reference(transition) if transition.event else ""
-        guard = _text(transition.guard) if transition.guard is not None else None
+        trigger = _event_reference(transition) if event else ""
+        guard = (
+            _text(transition.trigger.condition)
+            if isinstance(transition.trigger, GuardTrigger)
+            else None
+        )
         effects = _effect_lines(transition)
         transition_id = _transition_id(state, index)
         transition_dict: Dict[str, Any] = {
@@ -305,15 +315,13 @@ def _state_dict(state: State, include_ranges: bool) -> Dict[str, Any]:
             "triggerLabel": trigger or None,
             "guardLabel": guard,
             "effectLines": effects,
-            "eventName": transition.event.name if transition.event else None,
-            "eventDisplayName": transition.event.extra_name
-            if transition.event
-            else None,
+            "eventName": event.name if event else None,
+            "eventDisplayName": event.extra_name if event else None,
             "eventRelativePath": trigger or None,
-            "eventAbsolutePath": ("/" + ".".join(transition.event.path[1:]))
-            if transition.event
+            "eventAbsolutePath": ("/" + ".".join(event.path[1:])) if event else None,
+            "triggerScope": transition.trigger.scope
+            if isinstance(transition.trigger, EventTrigger)
             else None,
-            "triggerScope": transition.event_scope,
             "label": "%s -> %s%s%s%s"
             % (
                 source_label,
@@ -327,9 +335,7 @@ def _state_dict(state: State, include_ranges: bool) -> Dict[str, Any]:
             "targetKind": "exit" if target_exit else "state",
             "sourceStatePath": _state_path_for(state, transition.from_state),
             "targetStatePath": _state_path_for(state, transition.to_state),
-            "eventQualifiedName": transition.event.path_name
-            if transition.event
-            else None,
+            "eventQualifiedName": event.path_name if event else None,
             "eventColor": None,
         }
         if include_ranges:
@@ -414,9 +420,9 @@ def _build_diagram_dict(machine: StateMachine, include_ranges: bool) -> Dict[str
     ]
     event_counts: Dict[str, int] = {}
     for transition in transitions:
-        if transition.event:
-            event_counts[transition.event.path_name] = (
-                event_counts.get(transition.event.path_name, 0) + 1
+        if isinstance(transition.trigger, EventTrigger):
+            event_counts[transition.trigger.event.path_name] = (
+                event_counts.get(transition.trigger.event.path_name, 0) + 1
             )
     palette = [
         "#4E79A7",

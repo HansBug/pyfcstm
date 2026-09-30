@@ -1,3 +1,4 @@
+from pyfcstm.model import EventTrigger, GuardTrigger
 import os
 import pathlib
 import textwrap
@@ -366,7 +367,7 @@ class TestImportPhase2Assembly:
         worker_state = state_machine.root_state.substates["Worker"]
         assert "Start" in worker_state.events
         transition = worker_state.transitions[1]
-        assert transition.event is worker_state.events["Start"]
+        assert transition.trigger.event is worker_state.events["Start"]
 
     def test_imported_root_rewrites_absolute_refs_for_all_supported_ref_kinds(self):
         with isolated_directory():
@@ -431,7 +432,7 @@ class TestImportPhase2Assembly:
         )
         assert forced_transition.from_state == "Idle"
         assert forced_transition.to_state == "Error"
-        assert forced_transition.event is None
+        assert not isinstance(forced_transition.trigger, EventTrigger)
 
     def test_imported_absolute_force_transition_event_rewrites_to_instance_scope(self):
         state_machine = _build_state_machine(
@@ -459,8 +460,8 @@ class TestImportPhase2Assembly:
             for item in worker_state.transitions
             if item.from_state == "Idle" and item.to_state == "Error"
         )
-        assert forced_transition.event is worker_state.events["Alarm"]
-        assert forced_transition.event.path == ("Root", "Worker", "Alarm")
+        assert forced_transition.trigger.event is worker_state.events["Alarm"]
+        assert forced_transition.trigger.event.path == ("Root", "Worker", "Alarm")
 
     def test_imported_file_parse_failure_is_reported_as_syntax_error(self, monkeypatch):
         with isolated_directory():
@@ -677,8 +678,7 @@ class TestImportPhase2Assembly:
                     dsl_nodes.TransitionDefinition(
                         from_state=INIT_STATE,
                         to_state=dsl_nodes.EXIT_STATE,
-                        event_id=None,
-                        condition_expr=None,
+                        trigger=None,
                         post_operations=[],
                     ),
                 ),
@@ -686,8 +686,7 @@ class TestImportPhase2Assembly:
                     dsl_nodes.ForceTransitionDefinition(
                         from_state=dsl_nodes.ALL,
                         to_state="Error",
-                        event_id=None,
-                        condition_expr=None,
+                        trigger=None,
                     ),
                 ),
                 substates=(dsl_nodes.StateDefinition(name="Error"),),
@@ -757,8 +756,8 @@ class TestImportPhase2Assembly:
         assert len(import_phase2_demo_root.transitions) == 1
         assert import_phase2_demo_root.transitions[0].from_state == INIT_STATE
         assert import_phase2_demo_root.transitions[0].to_state == "LeftMotor"
-        assert import_phase2_demo_root.transitions[0].event is None
-        assert import_phase2_demo_root.transitions[0].guard is None
+        assert not isinstance(import_phase2_demo_root.transitions[0].trigger, EventTrigger)
+        assert not isinstance(import_phase2_demo_root.transitions[0].trigger, GuardTrigger)
         assert import_phase2_demo_root.transitions[0].effects == []
         assert import_phase2_demo_root.transitions[0].parent_ref().name == "System"
         assert import_phase2_demo_root.transitions[0].parent_ref().path == ("System",)
@@ -857,8 +856,8 @@ class TestImportPhase2Assembly:
         assert len(import_phase2_demo_left_motor.transitions) == 3
         assert import_phase2_demo_left_motor.transitions[0].from_state == INIT_STATE
         assert import_phase2_demo_left_motor.transitions[0].to_state == "Idle"
-        assert import_phase2_demo_left_motor.transitions[0].event is None
-        assert import_phase2_demo_left_motor.transitions[0].guard is None
+        assert not isinstance(import_phase2_demo_left_motor.transitions[0].trigger, EventTrigger)
+        assert not isinstance(import_phase2_demo_left_motor.transitions[0].trigger, GuardTrigger)
         assert import_phase2_demo_left_motor.transitions[0].effects == []
         assert (
             import_phase2_demo_left_motor.transitions[0].parent_ref().name
@@ -871,14 +870,14 @@ class TestImportPhase2Assembly:
         assert import_phase2_demo_left_motor.transitions[1].from_state == "Idle"
         assert import_phase2_demo_left_motor.transitions[1].to_state == "Running"
         assert (
-            import_phase2_demo_left_motor.transitions[1].event
+            import_phase2_demo_left_motor.transitions[1].trigger.event
             == Event(
                 name="Start",
                 state_path=("System", "LeftMotor", "Idle"),
                 extra_name=None,
             )
         )
-        assert import_phase2_demo_left_motor.transitions[1].guard is None
+        assert not isinstance(import_phase2_demo_left_motor.transitions[1].trigger, GuardTrigger)
         assert import_phase2_demo_left_motor.transitions[1].effects == []
         assert (
             import_phase2_demo_left_motor.transitions[1].parent_ref().name
@@ -891,14 +890,14 @@ class TestImportPhase2Assembly:
         assert import_phase2_demo_left_motor.transitions[2].from_state == "Running"
         assert import_phase2_demo_left_motor.transitions[2].to_state == "Idle"
         assert (
-            import_phase2_demo_left_motor.transitions[2].event
+            import_phase2_demo_left_motor.transitions[2].trigger.event
             == Event(
                 name="Reset",
                 state_path=("System", "LeftMotor"),
                 extra_name=None,
             )
         )
-        assert import_phase2_demo_left_motor.transitions[2].guard is None
+        assert not isinstance(import_phase2_demo_left_motor.transitions[2].trigger, GuardTrigger)
         assert import_phase2_demo_left_motor.transitions[2].effects == []
         assert (
             import_phase2_demo_left_motor.transitions[2].parent_ref().name
@@ -911,7 +910,7 @@ class TestImportPhase2Assembly:
         assert len(import_phase2_demo_left_motor.init_transitions) == 1
         assert import_phase2_demo_left_motor.init_transitions[0].from_state == INIT_STATE
         assert import_phase2_demo_left_motor.init_transitions[0].to_state == "Idle"
-        assert import_phase2_demo_left_motor.init_transitions[0].event is None
+        assert not isinstance(import_phase2_demo_left_motor.init_transitions[0].trigger, EventTrigger)
 
     def test_import_demo_idle_state(self, import_phase2_demo_idle):
         assert import_phase2_demo_idle.name == "Idle"
@@ -941,8 +940,8 @@ class TestImportPhase2Assembly:
         assert len(import_phase2_demo_running.transitions) == 1
         assert import_phase2_demo_running.transitions[0].from_state == INIT_STATE
         assert import_phase2_demo_running.transitions[0].to_state == "Spin"
-        assert import_phase2_demo_running.transitions[0].event is None
-        assert import_phase2_demo_running.transitions[0].guard is None
+        assert not isinstance(import_phase2_demo_running.transitions[0].trigger, EventTrigger)
+        assert not isinstance(import_phase2_demo_running.transitions[0].trigger, GuardTrigger)
         assert import_phase2_demo_running.transitions[0].effects == []
         assert (
             import_phase2_demo_running.transitions[0].parent_ref().name == "Running"
@@ -1034,8 +1033,7 @@ class TestImportPhase2Assembly:
                                 dsl_nodes.TransitionDefinition(
                                     from_state=INIT_STATE,
                                     to_state="Spin",
-                                    event_id=None,
-                                    condition_expr=None,
+                                    trigger=None,
                                     post_operations=[],
                                 )
                             ],
@@ -1051,28 +1049,25 @@ class TestImportPhase2Assembly:
                         dsl_nodes.TransitionDefinition(
                             from_state=INIT_STATE,
                             to_state="Idle",
-                            event_id=None,
-                            condition_expr=None,
+                            trigger=None,
                             post_operations=[],
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Idle",
                             to_state="Running",
-                            event_id=dsl_nodes.ChainID(
+                            trigger=dsl_nodes.TransitionTrigger('::', (dsl_nodes.EventTerm(dsl_nodes.ChainID(
                                 path=["Idle", "Start"],
                                 is_absolute=False,
-                            ),
-                            condition_expr=None,
+                            ), 'local'),)),
                             post_operations=[],
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Running",
                             to_state="Idle",
-                            event_id=dsl_nodes.ChainID(
+                            trigger=dsl_nodes.TransitionTrigger(':', (dsl_nodes.EventTerm(dsl_nodes.ChainID(
                                 path=["Reset"],
                                 is_absolute=False,
-                            ),
-                            condition_expr=None,
+                            ), 'absolute'),)),
                             post_operations=[],
                         ),
                     ],
@@ -1093,8 +1088,7 @@ class TestImportPhase2Assembly:
                 dsl_nodes.TransitionDefinition(
                     from_state=INIT_STATE,
                     to_state="LeftMotor",
-                    event_id=None,
-                    condition_expr=None,
+                    trigger=None,
                     post_operations=[],
                 )
             ],

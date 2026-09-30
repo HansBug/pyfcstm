@@ -207,21 +207,21 @@ class TestModelModelDLC2:
     def test_transition_dlcs(self, transition_1, transition_2, transition_3):
         assert transition_1.from_state == "Idle"
         assert transition_1.to_state == "Idle"
-        assert transition_1.event.name == "E2"
-        assert transition_1.event.state_path == ("TrafficLight", "Idle")
-        assert transition_1.event.path == ("TrafficLight", "Idle", "E2")
+        assert transition_1.trigger.event.name == "E2"
+        assert transition_1.trigger.event.state_path == ("TrafficLight", "Idle")
+        assert transition_1.trigger.event.path == ("TrafficLight", "Idle", "E2")
 
         assert transition_2.from_state == "Green"
         assert transition_2.to_state == "Yellow"
-        assert transition_2.event.name == "E2"
-        assert transition_2.event.state_path == ("TrafficLight", "Idle")
-        assert transition_2.event.path == ("TrafficLight", "Idle", "E2")
+        assert transition_2.trigger.event.name == "E2"
+        assert transition_2.trigger.event.state_path == ("TrafficLight", "Idle")
+        assert transition_2.trigger.event.path == ("TrafficLight", "Idle", "E2")
 
         assert transition_3.from_state == "Yellow"
         assert transition_3.to_state == "Yellow"
-        assert transition_3.event.name == "E2"
-        assert transition_3.event.state_path == ("TrafficLight",)
-        assert transition_3.event.path == ("TrafficLight", "E2")
+        assert transition_3.trigger.event.name == "E2"
+        assert transition_3.trigger.event.state_path == ("TrafficLight",)
+        assert transition_3.trigger.event.path == ("TrafficLight", "E2")
 
     def test_to_ast_node_to_str(
             self, demo_model_1, expected_to_str_result, text_aligner
@@ -365,79 +365,79 @@ class TestModelModelDLC2:
         assert len(lst) == 12
         assert lst[0].from_state == "Red"
         assert lst[0].to_state == dsl_nodes.EXIT_STATE
-        assert lst[0].event == Event(
+        assert lst[0].trigger.event == Event(
             name="ServiceError", state_path=("TrafficLight", "InService")
         )
-        assert lst[0].guard is None
+        assert not isinstance(lst[0].trigger, GuardTrigger)
         assert lst[0].effects == []
         assert lst[0].parent is in_service
 
         assert lst[1].from_state == "Red"
         assert lst[1].to_state == dsl_nodes.EXIT_STATE
-        assert lst[1].event == Event(name="GodDamnFuckUp", state_path=("TrafficLight",))
-        assert lst[1].guard is None
+        assert lst[1].trigger.event == Event(name="GodDamnFuckUp", state_path=("TrafficLight",))
+        assert not isinstance(lst[1].trigger, GuardTrigger)
         assert lst[1].effects == []
         assert lst[1].parent is in_service
 
         assert lst[2].from_state == "Yellow"
         assert lst[2].to_state == dsl_nodes.EXIT_STATE
-        assert lst[2].event == Event(
+        assert lst[2].trigger.event == Event(
             name="ServiceError", state_path=("TrafficLight", "InService")
         )
-        assert lst[2].guard is None
+        assert not isinstance(lst[2].trigger, GuardTrigger)
         assert lst[2].effects == []
         assert lst[2].parent is in_service
 
         assert lst[3].from_state == "Yellow"
         assert lst[3].to_state == dsl_nodes.EXIT_STATE
-        assert lst[3].event == Event(name="GodDamnFuckUp", state_path=("TrafficLight",))
-        assert lst[3].guard is None
+        assert lst[3].trigger.event == Event(name="GodDamnFuckUp", state_path=("TrafficLight",))
+        assert not isinstance(lst[3].trigger, GuardTrigger)
         assert lst[3].effects == []
         assert lst[3].parent is in_service
 
         assert lst[4].from_state == "Green"
         assert lst[4].to_state == dsl_nodes.EXIT_STATE
-        assert lst[4].event == Event(
+        assert lst[4].trigger.event == Event(
             name="ServiceError", state_path=("TrafficLight", "InService")
         )
-        assert lst[4].guard is None
+        assert not isinstance(lst[4].trigger, GuardTrigger)
         assert lst[4].effects == []
         assert lst[4].parent is in_service
 
         assert lst[5].from_state == "Green"
         assert lst[5].to_state == dsl_nodes.EXIT_STATE
-        assert lst[5].event == Event(name="GodDamnFuckUp", state_path=("TrafficLight",))
-        assert lst[5].guard is None
+        assert lst[5].trigger.event == Event(name="GodDamnFuckUp", state_path=("TrafficLight",))
+        assert not isinstance(lst[5].trigger, GuardTrigger)
         assert lst[5].effects == []
         assert lst[5].parent is in_service
 
         assert lst[6].from_state == dsl_nodes.INIT_STATE
         assert lst[6].to_state == "Red"
-        assert lst[6].event == Event(
+        assert lst[6].trigger.event == Event(
             name="Start", state_path=("TrafficLight", "InService")
         )
-        assert lst[6].guard is None
+        assert not isinstance(lst[6].trigger, GuardTrigger)
         assert lst[6].effects == [Operation(var_name="b", expr=Integer(value=1))]
         assert lst[6].parent is in_service
 
         assert lst[7].from_state == "Red"
         assert lst[7].to_state == "Green"
-        assert lst[7].event is None
-        assert lst[7].guard is None
+        assert not isinstance(lst[7].trigger, EventTrigger)
+        assert not isinstance(lst[7].trigger, GuardTrigger)
         assert lst[7].effects == [Operation(var_name="b", expr=Integer(value=3))]
         assert lst[7].parent is in_service
 
         assert lst[8].from_state == "Green"
         assert lst[8].to_state == "Yellow"
-        assert lst[8].event is None
-        assert lst[8].guard is None
+        assert not isinstance(lst[8].trigger, EventTrigger)
+        assert not isinstance(lst[8].trigger, GuardTrigger)
         assert lst[8].effects == [Operation(var_name="b", expr=Integer(value=2))]
         assert lst[8].parent is in_service
 
         assert lst[9].from_state == "Yellow"
         assert lst[9].to_state == "Red"
-        assert lst[9].event is None
-        assert lst[9].guard == BinaryOp(
+        assert not isinstance(lst[9].trigger, EventTrigger)
+        assert lst[9].trigger.condition == BinaryOp(
             x=Variable(name="a"), op=">=", y=Integer(value=10)
         )
         assert lst[9].effects == [
@@ -453,15 +453,15 @@ class TestModelModelDLC2:
 
         assert lst[10].from_state == "Green"
         assert lst[10].to_state == "Yellow"
-        assert lst[10].event == Event(name="E2", state_path=("TrafficLight", "Idle"))
-        assert lst[10].guard is None
+        assert lst[10].trigger.event == Event(name="E2", state_path=("TrafficLight", "Idle"))
+        assert not isinstance(lst[10].trigger, GuardTrigger)
         assert lst[10].effects == []
         assert lst[10].parent is in_service
 
         assert lst[11].from_state == "Yellow"
         assert lst[11].to_state == "Yellow"
-        assert lst[11].event == Event(name="E2", state_path=("TrafficLight",))
-        assert lst[11].guard is None
+        assert lst[11].trigger.event == Event(name="E2", state_path=("TrafficLight",))
+        assert not isinstance(lst[11].trigger, GuardTrigger)
         assert lst[11].effects == []
         assert lst[11].parent is in_service
 
@@ -470,67 +470,67 @@ class TestModelModelDLC2:
         assert len(lst) == 8
         assert lst[0].from_state == "ToBe"
         assert lst[0].to_state == dsl_nodes.EXIT_STATE
-        assert lst[0].event == Event(
+        assert lst[0].trigger.event == Event(
             name="GiveUpThinking", state_path=("TrafficLight", "Idle")
         )
-        assert lst[0].guard is None
+        assert not isinstance(lst[0].trigger, GuardTrigger)
         assert lst[0].effects == []
         assert lst[0].parent is idle
 
         assert lst[1].from_state == "ToBe"
         assert lst[1].to_state == dsl_nodes.EXIT_STATE
-        assert lst[1].event == Event(name="GodDamnFuckUp", state_path=("TrafficLight",))
-        assert lst[1].guard is None
+        assert lst[1].trigger.event == Event(name="GodDamnFuckUp", state_path=("TrafficLight",))
+        assert not isinstance(lst[1].trigger, GuardTrigger)
         assert lst[1].effects == []
         assert lst[1].parent is idle
 
         assert lst[2].from_state == "NotToBe"
         assert lst[2].to_state == dsl_nodes.EXIT_STATE
-        assert lst[2].event == Event(
+        assert lst[2].trigger.event == Event(
             name="GiveUpThinking", state_path=("TrafficLight", "Idle")
         )
-        assert lst[2].guard is None
+        assert not isinstance(lst[2].trigger, GuardTrigger)
         assert lst[2].effects == []
         assert lst[2].parent is idle
 
         assert lst[3].from_state == "NotToBe"
         assert lst[3].to_state == dsl_nodes.EXIT_STATE
-        assert lst[3].event == Event(name="GodDamnFuckUp", state_path=("TrafficLight",))
-        assert lst[3].guard is None
+        assert lst[3].trigger.event == Event(name="GodDamnFuckUp", state_path=("TrafficLight",))
+        assert not isinstance(lst[3].trigger, GuardTrigger)
         assert lst[3].effects == []
         assert lst[3].parent is idle
 
         assert lst[4].from_state == dsl_nodes.INIT_STATE
         assert lst[4].to_state == "ToBe"
-        assert lst[4].event is None
-        assert lst[4].guard is None
+        assert not isinstance(lst[4].trigger, EventTrigger)
+        assert not isinstance(lst[4].trigger, GuardTrigger)
         assert lst[4].effects == []
         assert lst[4].parent is idle
 
         assert lst[5].from_state == "ToBe"
         assert lst[5].to_state == "NotToBe"
-        assert lst[5].event == Event(
+        assert lst[5].trigger.event == Event(
             name="E1", state_path=("TrafficLight", "Idle", "ToBe")
         )
-        assert lst[5].guard is None
+        assert not isinstance(lst[5].trigger, GuardTrigger)
         assert lst[5].effects == []
         assert lst[5].parent is idle
 
         assert lst[6].from_state == "NotToBe"
         assert lst[6].to_state == "ToBe"
-        assert lst[6].event == Event(
+        assert lst[6].trigger.event == Event(
             name="E1", state_path=("TrafficLight", "Idle", "NotToBe")
         )
-        assert lst[6].guard is None
+        assert not isinstance(lst[6].trigger, GuardTrigger)
         assert lst[6].effects == []
         assert lst[6].parent is idle
 
         assert lst[7].from_state == "NotToBe"
         assert lst[7].to_state == dsl_nodes.EXIT_STATE
-        assert lst[7].event == Event(
+        assert lst[7].trigger.event == Event(
             name="E2", state_path=("TrafficLight", "Idle", "NotToBe")
         )
-        assert lst[7].guard is None
+        assert not isinstance(lst[7].trigger, GuardTrigger)
         assert lst[7].effects == []
         assert lst[7].parent is idle
 
@@ -539,63 +539,63 @@ class TestModelModelDLC2:
         assert len(lst) == 8
         assert lst[0].from_state == "InService"
         assert lst[0].to_state == dsl_nodes.EXIT_STATE
-        assert lst[0].event == Event(
+        assert lst[0].trigger.event == Event(
             name="ServiceError", state_path=("TrafficLight", "InService")
         )
-        assert lst[0].guard is None
+        assert not isinstance(lst[0].trigger, GuardTrigger)
         assert lst[0].effects == []
         assert lst[0].parent is root_state_1
 
         assert lst[1].from_state == "InService"
         assert lst[1].to_state == dsl_nodes.EXIT_STATE
-        assert lst[1].event == Event(name="GodDamnFuckUp", state_path=("TrafficLight",))
-        assert lst[1].guard is None
+        assert lst[1].trigger.event == Event(name="GodDamnFuckUp", state_path=("TrafficLight",))
+        assert not isinstance(lst[1].trigger, GuardTrigger)
         assert lst[1].effects == []
         assert lst[1].parent is root_state_1
 
         assert lst[2].from_state == "Idle"
         assert lst[2].to_state == "InService"
-        assert lst[2].event == Event(
+        assert lst[2].trigger.event == Event(
             name="GiveUpThinking", state_path=("TrafficLight", "Idle")
         )
-        assert lst[2].guard is None
+        assert not isinstance(lst[2].trigger, GuardTrigger)
         assert lst[2].effects == []
         assert lst[2].parent is root_state_1
 
         assert lst[3].from_state == "Idle"
         assert lst[3].to_state == dsl_nodes.EXIT_STATE
-        assert lst[3].event == Event(name="GodDamnFuckUp", state_path=("TrafficLight",))
-        assert lst[3].guard is None
+        assert lst[3].trigger.event == Event(name="GodDamnFuckUp", state_path=("TrafficLight",))
+        assert not isinstance(lst[3].trigger, GuardTrigger)
         assert lst[3].effects == []
         assert lst[3].parent is root_state_1
 
         assert lst[4].from_state == dsl_nodes.INIT_STATE
         assert lst[4].to_state == "InService"
-        assert lst[4].event is None
-        assert lst[4].guard is None
+        assert not isinstance(lst[4].trigger, EventTrigger)
+        assert not isinstance(lst[4].trigger, GuardTrigger)
         assert lst[4].effects == []
         assert lst[4].parent is root_state_1
 
         assert lst[5].from_state == "InService"
         assert lst[5].to_state == "Idle"
-        assert lst[5].event == Event(
+        assert lst[5].trigger.event == Event(
             name="Maintain", state_path=("TrafficLight", "InService")
         )
-        assert lst[5].guard is None
+        assert not isinstance(lst[5].trigger, GuardTrigger)
         assert lst[5].effects == []
         assert lst[5].parent is root_state_1
 
         assert lst[6].from_state == "Idle"
         assert lst[6].to_state == "Idle"
-        assert lst[6].event == Event(name="E2", state_path=("TrafficLight", "Idle"))
-        assert lst[6].guard is None
+        assert lst[6].trigger.event == Event(name="E2", state_path=("TrafficLight", "Idle"))
+        assert not isinstance(lst[6].trigger, GuardTrigger)
         assert lst[6].effects == []
         assert lst[6].parent is root_state_1
 
         assert lst[7].from_state == "Idle"
         assert lst[7].to_state == dsl_nodes.EXIT_STATE
-        assert lst[7].event is None
-        assert lst[7].guard is None
+        assert not isinstance(lst[7].trigger, EventTrigger)
+        assert not isinstance(lst[7].trigger, GuardTrigger)
         assert lst[7].effects == []
         assert lst[7].parent is root_state_1
 

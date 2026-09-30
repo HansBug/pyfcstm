@@ -447,10 +447,7 @@ def composite_init_guards_incomplete(
         init_transitions = state.init_transitions
         if not init_transitions:
             continue
-        if any(
-            transition.guard is None and transition.event is None
-            for transition in init_transitions
-        ):
+        if any(transition.trigger is None for transition in init_transitions):
             continue
 
         z3_vars = _z3_vars(variables)

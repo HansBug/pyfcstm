@@ -116,8 +116,8 @@ class TestModelStatePlant:
         assert len(state_plant.transitions) == 1
         assert state_plant.transitions[0].from_state == INIT_STATE
         assert state_plant.transitions[0].to_state == "Worker"
-        assert state_plant.transitions[0].event is None
-        assert state_plant.transitions[0].guard is None
+        assert not isinstance(state_plant.transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_plant.transitions[0].trigger, GuardTrigger)
         assert state_plant.transitions[0].effects == []
         assert state_plant.transitions[0].doc is None
         assert state_plant.transitions[0].parent_ref().name == "Plant"
@@ -139,8 +139,8 @@ class TestModelStatePlant:
         assert len(state_plant.init_transitions) == 1
         assert state_plant.init_transitions[0].from_state == INIT_STATE
         assert state_plant.init_transitions[0].to_state == "Worker"
-        assert state_plant.init_transitions[0].event is None
-        assert state_plant.init_transitions[0].guard is None
+        assert not isinstance(state_plant.init_transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_plant.init_transitions[0].trigger, GuardTrigger)
         assert state_plant.init_transitions[0].effects == []
         assert state_plant.init_transitions[0].doc is None
         assert state_plant.init_transitions[0].parent_ref().name == "Plant"
@@ -156,8 +156,8 @@ class TestModelStatePlant:
         assert len(state_plant.transitions_entering_children) == 1
         assert state_plant.transitions_entering_children[0].from_state == INIT_STATE
         assert state_plant.transitions_entering_children[0].to_state == "Worker"
-        assert state_plant.transitions_entering_children[0].event is None
-        assert state_plant.transitions_entering_children[0].guard is None
+        assert not isinstance(state_plant.transitions_entering_children[0].trigger, EventTrigger)
+        assert not isinstance(state_plant.transitions_entering_children[0].trigger, GuardTrigger)
         assert state_plant.transitions_entering_children[0].effects == []
         assert state_plant.transitions_entering_children[0].doc is None
         assert state_plant.transitions_entering_children[0].parent_ref().name == "Plant"
@@ -172,8 +172,8 @@ class TestModelStatePlant:
         assert (
             state_plant.transitions_entering_children_simplified[0].to_state == "Worker"
         )
-        assert state_plant.transitions_entering_children_simplified[0].event is None
-        assert state_plant.transitions_entering_children_simplified[0].guard is None
+        assert not isinstance(state_plant.transitions_entering_children_simplified[0].trigger, EventTrigger)
+        assert not isinstance(state_plant.transitions_entering_children_simplified[0].trigger, GuardTrigger)
         assert state_plant.transitions_entering_children_simplified[0].effects == []
         assert state_plant.transitions_entering_children_simplified[0].doc is None
         assert (
@@ -186,16 +186,16 @@ class TestModelStatePlant:
         assert len(state_plant.transitions_from) == 1
         assert state_plant.transitions_from[0].from_state == "Plant"
         assert state_plant.transitions_from[0].to_state == EXIT_STATE
-        assert state_plant.transitions_from[0].event is None
-        assert state_plant.transitions_from[0].guard is None
+        assert not isinstance(state_plant.transitions_from[0].trigger, EventTrigger)
+        assert not isinstance(state_plant.transitions_from[0].trigger, GuardTrigger)
         assert state_plant.transitions_from[0].effects == []
         assert state_plant.transitions_from[0].doc is None
         assert state_plant.transitions_from[0].parent_ref is None
         assert len(state_plant.transitions_to) == 1
         assert state_plant.transitions_to[0].from_state == INIT_STATE
         assert state_plant.transitions_to[0].to_state == "Plant"
-        assert state_plant.transitions_to[0].event is None
-        assert state_plant.transitions_to[0].guard is None
+        assert not isinstance(state_plant.transitions_to[0].trigger, EventTrigger)
+        assert not isinstance(state_plant.transitions_to[0].trigger, GuardTrigger)
         assert state_plant.transitions_to[0].effects == []
         assert state_plant.transitions_to[0].doc is None
         assert state_plant.transitions_to[0].parent_ref is None
@@ -268,38 +268,34 @@ class TestModelStatePlant:
                         dsl_nodes.TransitionDefinition(
                             from_state=INIT_STATE,
                             to_state="Idle",
-                            event_id=None,
-                            condition_expr=None,
+                            trigger=None,
                             post_operations=[],
                             doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Idle",
                             to_state="Failed",
-                            event_id=dsl_nodes.ChainID(
+                            trigger=dsl_nodes.TransitionTrigger(':', (dsl_nodes.EventTerm(dsl_nodes.ChainID(
                                 path=["GlobalFault"], is_absolute=True
-                            ),
-                            condition_expr=None,
+                            ), 'chain'),)),
                             post_operations=[],
                             doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Failed",
                             to_state="Halted",
-                            event_id=dsl_nodes.ChainID(
+                            trigger=dsl_nodes.TransitionTrigger(':', (dsl_nodes.EventTerm(dsl_nodes.ChainID(
                                 path=["Bus", "Stop"], is_absolute=True
-                            ),
-                            condition_expr=None,
+                            ), 'absolute'),)),
                             post_operations=[],
                             doc=None,
                         ),
                         dsl_nodes.TransitionDefinition(
                             from_state="Halted",
                             to_state="Idle",
-                            event_id=dsl_nodes.ChainID(
+                            trigger=dsl_nodes.TransitionTrigger(':', (dsl_nodes.EventTerm(dsl_nodes.ChainID(
                                 path=["Bus", "Reset"], is_absolute=True
-                            ),
-                            condition_expr=None,
+                            ), 'chain'),)),
                             post_operations=[],
                             doc=None,
                         ),
@@ -339,8 +335,7 @@ class TestModelStatePlant:
                 dsl_nodes.TransitionDefinition(
                     from_state=INIT_STATE,
                     to_state="Worker",
-                    event_id=None,
-                    condition_expr=None,
+                    trigger=None,
                     post_operations=[],
                     doc=None,
                 )
@@ -422,8 +417,8 @@ class TestModelStatePlant:
         assert len(state_plant_worker.transitions) == 4
         assert state_plant_worker.transitions[0].from_state == INIT_STATE
         assert state_plant_worker.transitions[0].to_state == "Idle"
-        assert state_plant_worker.transitions[0].event is None
-        assert state_plant_worker.transitions[0].guard is None
+        assert not isinstance(state_plant_worker.transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_plant_worker.transitions[0].trigger, GuardTrigger)
         assert state_plant_worker.transitions[0].effects == []
         assert state_plant_worker.transitions[0].doc is None
         assert state_plant_worker.transitions[0].parent_ref().name == "Worker"
@@ -433,13 +428,13 @@ class TestModelStatePlant:
         )
         assert state_plant_worker.transitions[1].from_state == "Idle"
         assert state_plant_worker.transitions[1].to_state == "Failed"
-        assert state_plant_worker.transitions[1].event == Event(
+        assert state_plant_worker.transitions[1].trigger.event == Event(
             name="GlobalFault",
             state_path=("Plant",),
             extra_name="Global Fault",
             doc=None,
         )
-        assert state_plant_worker.transitions[1].guard is None
+        assert not isinstance(state_plant_worker.transitions[1].trigger, GuardTrigger)
         assert state_plant_worker.transitions[1].effects == []
         assert state_plant_worker.transitions[1].doc is None
         assert state_plant_worker.transitions[1].parent_ref().name == "Worker"
@@ -449,10 +444,10 @@ class TestModelStatePlant:
         )
         assert state_plant_worker.transitions[2].from_state == "Failed"
         assert state_plant_worker.transitions[2].to_state == "Halted"
-        assert state_plant_worker.transitions[2].event == Event(
+        assert state_plant_worker.transitions[2].trigger.event == Event(
             name="Stop", state_path=("Plant", "Bus"), extra_name="Plant Stop", doc=None
         )
-        assert state_plant_worker.transitions[2].guard is None
+        assert not isinstance(state_plant_worker.transitions[2].trigger, GuardTrigger)
         assert state_plant_worker.transitions[2].effects == []
         assert state_plant_worker.transitions[2].doc is None
         assert state_plant_worker.transitions[2].parent_ref().name == "Worker"
@@ -462,13 +457,13 @@ class TestModelStatePlant:
         )
         assert state_plant_worker.transitions[3].from_state == "Halted"
         assert state_plant_worker.transitions[3].to_state == "Idle"
-        assert state_plant_worker.transitions[3].event == Event(
+        assert state_plant_worker.transitions[3].trigger.event == Event(
             name="Reset",
             state_path=("Plant", "Bus"),
             extra_name="Local Reset",
             doc=None,
         )
-        assert state_plant_worker.transitions[3].guard is None
+        assert not isinstance(state_plant_worker.transitions[3].trigger, GuardTrigger)
         assert state_plant_worker.transitions[3].effects == []
         assert state_plant_worker.transitions[3].doc is None
         assert state_plant_worker.transitions[3].parent_ref().name == "Worker"
@@ -498,8 +493,8 @@ class TestModelStatePlant:
         assert len(state_plant_worker.init_transitions) == 1
         assert state_plant_worker.init_transitions[0].from_state == INIT_STATE
         assert state_plant_worker.init_transitions[0].to_state == "Idle"
-        assert state_plant_worker.init_transitions[0].event is None
-        assert state_plant_worker.init_transitions[0].guard is None
+        assert not isinstance(state_plant_worker.init_transitions[0].trigger, EventTrigger)
+        assert not isinstance(state_plant_worker.init_transitions[0].trigger, GuardTrigger)
         assert state_plant_worker.init_transitions[0].effects == []
         assert state_plant_worker.init_transitions[0].doc is None
         assert state_plant_worker.init_transitions[0].parent_ref().name == "Worker"
@@ -521,8 +516,8 @@ class TestModelStatePlant:
             state_plant_worker.transitions_entering_children[0].from_state == INIT_STATE
         )
         assert state_plant_worker.transitions_entering_children[0].to_state == "Idle"
-        assert state_plant_worker.transitions_entering_children[0].event is None
-        assert state_plant_worker.transitions_entering_children[0].guard is None
+        assert not isinstance(state_plant_worker.transitions_entering_children[0].trigger, EventTrigger)
+        assert not isinstance(state_plant_worker.transitions_entering_children[0].trigger, GuardTrigger)
         assert state_plant_worker.transitions_entering_children[0].effects == []
         assert state_plant_worker.transitions_entering_children[0].doc is None
         assert (
@@ -542,10 +537,10 @@ class TestModelStatePlant:
             == "Idle"
         )
         assert (
-            state_plant_worker.transitions_entering_children_simplified[0].event is None
+            not isinstance(state_plant_worker.transitions_entering_children_simplified[0].trigger, EventTrigger)
         )
         assert (
-            state_plant_worker.transitions_entering_children_simplified[0].guard is None
+            not isinstance(state_plant_worker.transitions_entering_children_simplified[0].trigger, GuardTrigger)
         )
         assert (
             state_plant_worker.transitions_entering_children_simplified[0].effects == []
@@ -566,8 +561,8 @@ class TestModelStatePlant:
         assert len(state_plant_worker.transitions_to) == 1
         assert state_plant_worker.transitions_to[0].from_state == INIT_STATE
         assert state_plant_worker.transitions_to[0].to_state == "Worker"
-        assert state_plant_worker.transitions_to[0].event is None
-        assert state_plant_worker.transitions_to[0].guard is None
+        assert not isinstance(state_plant_worker.transitions_to[0].trigger, EventTrigger)
+        assert not isinstance(state_plant_worker.transitions_to[0].trigger, GuardTrigger)
         assert state_plant_worker.transitions_to[0].effects == []
         assert state_plant_worker.transitions_to[0].doc is None
         assert state_plant_worker.transitions_to[0].parent_ref().name == "Plant"
@@ -631,32 +626,28 @@ class TestModelStatePlant:
                 dsl_nodes.TransitionDefinition(
                     from_state=INIT_STATE,
                     to_state="Idle",
-                    event_id=None,
-                    condition_expr=None,
+                    trigger=None,
                     post_operations=[],
                     doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Idle",
                     to_state="Failed",
-                    event_id=dsl_nodes.ChainID(path=["GlobalFault"], is_absolute=True),
-                    condition_expr=None,
+                    trigger=dsl_nodes.TransitionTrigger(':', (dsl_nodes.EventTerm(dsl_nodes.ChainID(path=["GlobalFault"], is_absolute=True), 'chain'),)),
                     post_operations=[],
                     doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Failed",
                     to_state="Halted",
-                    event_id=dsl_nodes.ChainID(path=["Bus", "Stop"], is_absolute=True),
-                    condition_expr=None,
+                    trigger=dsl_nodes.TransitionTrigger(':', (dsl_nodes.EventTerm(dsl_nodes.ChainID(path=["Bus", "Stop"], is_absolute=True), 'absolute'),)),
                     post_operations=[],
                     doc=None,
                 ),
                 dsl_nodes.TransitionDefinition(
                     from_state="Halted",
                     to_state="Idle",
-                    event_id=dsl_nodes.ChainID(path=["Bus", "Reset"], is_absolute=True),
-                    condition_expr=None,
+                    trigger=dsl_nodes.TransitionTrigger(':', (dsl_nodes.EventTerm(dsl_nodes.ChainID(path=["Bus", "Reset"], is_absolute=True), 'chain'),)),
                     post_operations=[],
                     doc=None,
                 ),
@@ -775,13 +766,13 @@ class TestModelStatePlant:
         assert len(state_plant_worker_idle.transitions_from) == 1
         assert state_plant_worker_idle.transitions_from[0].from_state == "Idle"
         assert state_plant_worker_idle.transitions_from[0].to_state == "Failed"
-        assert state_plant_worker_idle.transitions_from[0].event == Event(
+        assert state_plant_worker_idle.transitions_from[0].trigger.event == Event(
             name="GlobalFault",
             state_path=("Plant",),
             extra_name="Global Fault",
             doc=None,
         )
-        assert state_plant_worker_idle.transitions_from[0].guard is None
+        assert not isinstance(state_plant_worker_idle.transitions_from[0].trigger, GuardTrigger)
         assert state_plant_worker_idle.transitions_from[0].effects == []
         assert state_plant_worker_idle.transitions_from[0].doc is None
         assert state_plant_worker_idle.transitions_from[0].parent_ref().name == "Worker"
@@ -792,8 +783,8 @@ class TestModelStatePlant:
         assert len(state_plant_worker_idle.transitions_to) == 2
         assert state_plant_worker_idle.transitions_to[0].from_state == INIT_STATE
         assert state_plant_worker_idle.transitions_to[0].to_state == "Idle"
-        assert state_plant_worker_idle.transitions_to[0].event is None
-        assert state_plant_worker_idle.transitions_to[0].guard is None
+        assert not isinstance(state_plant_worker_idle.transitions_to[0].trigger, EventTrigger)
+        assert not isinstance(state_plant_worker_idle.transitions_to[0].trigger, GuardTrigger)
         assert state_plant_worker_idle.transitions_to[0].effects == []
         assert state_plant_worker_idle.transitions_to[0].doc is None
         assert state_plant_worker_idle.transitions_to[0].parent_ref().name == "Worker"
@@ -803,13 +794,13 @@ class TestModelStatePlant:
         )
         assert state_plant_worker_idle.transitions_to[1].from_state == "Halted"
         assert state_plant_worker_idle.transitions_to[1].to_state == "Idle"
-        assert state_plant_worker_idle.transitions_to[1].event == Event(
+        assert state_plant_worker_idle.transitions_to[1].trigger.event == Event(
             name="Reset",
             state_path=("Plant", "Bus"),
             extra_name="Local Reset",
             doc=None,
         )
-        assert state_plant_worker_idle.transitions_to[1].guard is None
+        assert not isinstance(state_plant_worker_idle.transitions_to[1].trigger, GuardTrigger)
         assert state_plant_worker_idle.transitions_to[1].effects == []
         assert state_plant_worker_idle.transitions_to[1].doc is None
         assert state_plant_worker_idle.transitions_to[1].parent_ref().name == "Worker"
@@ -951,10 +942,10 @@ class TestModelStatePlant:
         assert len(state_plant_worker_failed.transitions_from) == 1
         assert state_plant_worker_failed.transitions_from[0].from_state == "Failed"
         assert state_plant_worker_failed.transitions_from[0].to_state == "Halted"
-        assert state_plant_worker_failed.transitions_from[0].event == Event(
+        assert state_plant_worker_failed.transitions_from[0].trigger.event == Event(
             name="Stop", state_path=("Plant", "Bus"), extra_name="Plant Stop", doc=None
         )
-        assert state_plant_worker_failed.transitions_from[0].guard is None
+        assert not isinstance(state_plant_worker_failed.transitions_from[0].trigger, GuardTrigger)
         assert state_plant_worker_failed.transitions_from[0].effects == []
         assert state_plant_worker_failed.transitions_from[0].doc is None
         assert (
@@ -967,13 +958,13 @@ class TestModelStatePlant:
         assert len(state_plant_worker_failed.transitions_to) == 1
         assert state_plant_worker_failed.transitions_to[0].from_state == "Idle"
         assert state_plant_worker_failed.transitions_to[0].to_state == "Failed"
-        assert state_plant_worker_failed.transitions_to[0].event == Event(
+        assert state_plant_worker_failed.transitions_to[0].trigger.event == Event(
             name="GlobalFault",
             state_path=("Plant",),
             extra_name="Global Fault",
             doc=None,
         )
-        assert state_plant_worker_failed.transitions_to[0].guard is None
+        assert not isinstance(state_plant_worker_failed.transitions_to[0].trigger, GuardTrigger)
         assert state_plant_worker_failed.transitions_to[0].effects == []
         assert state_plant_worker_failed.transitions_to[0].doc is None
         assert state_plant_worker_failed.transitions_to[0].parent_ref().name == "Worker"
@@ -1117,13 +1108,13 @@ class TestModelStatePlant:
         assert len(state_plant_worker_halted.transitions_from) == 1
         assert state_plant_worker_halted.transitions_from[0].from_state == "Halted"
         assert state_plant_worker_halted.transitions_from[0].to_state == "Idle"
-        assert state_plant_worker_halted.transitions_from[0].event == Event(
+        assert state_plant_worker_halted.transitions_from[0].trigger.event == Event(
             name="Reset",
             state_path=("Plant", "Bus"),
             extra_name="Local Reset",
             doc=None,
         )
-        assert state_plant_worker_halted.transitions_from[0].guard is None
+        assert not isinstance(state_plant_worker_halted.transitions_from[0].trigger, GuardTrigger)
         assert state_plant_worker_halted.transitions_from[0].effects == []
         assert state_plant_worker_halted.transitions_from[0].doc is None
         assert (
@@ -1136,10 +1127,10 @@ class TestModelStatePlant:
         assert len(state_plant_worker_halted.transitions_to) == 1
         assert state_plant_worker_halted.transitions_to[0].from_state == "Failed"
         assert state_plant_worker_halted.transitions_to[0].to_state == "Halted"
-        assert state_plant_worker_halted.transitions_to[0].event == Event(
+        assert state_plant_worker_halted.transitions_to[0].trigger.event == Event(
             name="Stop", state_path=("Plant", "Bus"), extra_name="Plant Stop", doc=None
         )
-        assert state_plant_worker_halted.transitions_to[0].guard is None
+        assert not isinstance(state_plant_worker_halted.transitions_to[0].trigger, GuardTrigger)
         assert state_plant_worker_halted.transitions_to[0].effects == []
         assert state_plant_worker_halted.transitions_to[0].doc is None
         assert state_plant_worker_halted.transitions_to[0].parent_ref().name == "Worker"

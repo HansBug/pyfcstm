@@ -106,7 +106,9 @@ Use the filters in ``.j2`` files:
 
 .. code-block:: jinja
 
-   guard = {{ transition.guard | expr_render(style='py_runtime_expr') }}
+   {% if transition.trigger is guard_trigger %}
+     guard = {{ transition.trigger.condition | expr_render(style='py_runtime_expr') }}
+   {% endif %}
    {{ action.operations | stmts_render(style='py_runtime_stmt') }}
 
 Use ``stmt_render`` / ``stmts_render`` for executable runtime code. Use

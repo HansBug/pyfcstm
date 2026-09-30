@@ -26,11 +26,11 @@ The main public components include:
 Example::
 
     >>> from pyfcstm.dsl.node import (
-    ...     StateDefinition, TransitionDefinition, ChainID,
+    ...     StateDefinition, TransitionDefinition, TransitionTrigger, EventTerm, ChainID,
     ...     StateMachineDSLProgram, DefAssignment, Integer
     ... )
     >>> def_var = DefAssignment("counter", "int", Integer("0"))
-    >>> trans = TransitionDefinition("idle", "active", ChainID(["idle", "start"]), None, [])
+    >>> trans = TransitionDefinition("idle", "active", TransitionTrigger("::", (EventTerm(ChainID(["idle", "start"]), "local"),)), [])
     >>> root = StateDefinition("idle", transitions=[trans])
     >>> program = StateMachineDSLProgram([def_var], root)
     >>> print(program)
@@ -48,7 +48,7 @@ import os
 from abc import ABC
 from dataclasses import dataclass, field, fields, replace
 from textwrap import indent
-from typing import List, Union, Optional, Any
+from typing import List, Union, Optional, Any, Tuple
 
 from hbutils.design import SingletonMark
 
@@ -92,10 +92,10 @@ __all__ = [
     "Preamble",
     "Operation",
     "Condition",
-    "ComboTransitionTrigger",
-    "ComboTriggerTerm",
-    "ComboEventTerm",
-    "ComboGuardTerm",
+    "TransitionTrigger",
+    "TriggerTerm",
+    "EventTerm",
+    "GuardTerm",
     "TransitionDefinition",
     "ForceTransitionDefinition",
     "StateDefinition",
@@ -1359,9 +1359,9 @@ class ImportStatement(ASTNode):
 
 
 @dataclass
-class ComboTriggerTerm(ASTNode):
+class TriggerTerm(ASTNode):
     """
-    Base class for one term in a combo transition trigger.
+    Base class for one term in a transition trigger.
 
     Combo trigger terms preserve source provenance for later expansion,
     diagnostics, and quick fixes. A term span covers the whole written term,
@@ -1376,7 +1376,7 @@ class ComboTriggerTerm(ASTNode):
 
     Example::
 
-        >>> term = ComboEventTerm(ChainID(["Go"]), "chain")
+        >>> term = EventTerm(ChainID(["Go"]), "chain")
         >>> term.canonical_text
         'Go'
     """
@@ -1394,9 +1394,9 @@ class ComboTriggerTerm(ASTNode):
 
 
 @dataclass
-class ComboEventTerm(ComboTriggerTerm):
+class EventTerm(TriggerTerm):
     """
-    Event term inside a combo transition trigger.
+    Event term inside a transition trigger.
 
     :param event_id: Event identifier as parsed from the term.
     :type event_id: ChainID
@@ -1411,10 +1411,10 @@ class ComboEventTerm(ComboTriggerTerm):
 
     Example::
 
-        >>> local = ComboEventTerm(ChainID(["Idle", "Start"]), "local")
+        >>> local = EventTerm(ChainID(["Idle", "Start"]), "local")
         >>> local.canonical_text
         'Start'
-        >>> absolute = ComboEventTerm(ChainID(["Bus", "E1"], is_absolute=True), "absolute")
+        >>> absolute = EventTerm(ChainID(["Bus", "E1"], is_absolute=True), "absolute")
         >>> absolute.canonical_text
         '/Bus.E1'
     """
@@ -1423,6 +1423,15 @@ class ComboEventTerm(ComboTriggerTerm):
     event_scope: str
     term_span: Optional[Span] = field(default=None, repr=False, compare=False)
     removal_span: Optional[Span] = field(default=None, repr=False, compare=False)
+
+    def __setattr__(self, name, value):
+        if name == "condition_expr":
+            raise AttributeError("EventTerm cannot contain a guard condition")
+        if name == "event_id" and not isinstance(value, ChainID):
+            raise TypeError("event_id must be a ChainID")
+        if name == "event_scope" and value not in ("local", "chain", "absolute"):
+            raise ValueError("event_scope must be local, chain, or absolute")
+        super().__setattr__(name, value)
 
     @property
     def canonical_text(self) -> str:
@@ -1438,9 +1447,9 @@ class ComboEventTerm(ComboTriggerTerm):
 
 
 @dataclass
-class ComboGuardTerm(ComboTriggerTerm):
+class GuardTerm(TriggerTerm):
     """
-    Guard term inside a combo transition trigger.
+    Guard term inside a transition trigger.
 
     :param condition_expr: Guard condition expression.
     :type condition_expr: Expr
@@ -1455,7 +1464,7 @@ class ComboGuardTerm(ComboTriggerTerm):
 
     Example::
 
-        >>> guard = ComboGuardTerm(BinaryOp(Name("x"), ">", Integer("0")))
+        >>> guard = GuardTerm(BinaryOp(Name("x"), ">", Integer("0")))
         >>> guard.canonical_text
         '[x > 0]'
     """
@@ -1464,6 +1473,13 @@ class ComboGuardTerm(ComboTriggerTerm):
     value_span: Optional[Span] = field(default=None, repr=False, compare=False)
     term_span: Optional[Span] = field(default=None, repr=False, compare=False)
     removal_span: Optional[Span] = field(default=None, repr=False, compare=False)
+
+    def __setattr__(self, name, value):
+        if name in ("event_id", "event_scope"):
+            raise AttributeError("GuardTerm cannot contain an event")
+        if name == "condition_expr" and not isinstance(value, Expr):
+            raise TypeError("condition_expr must be an Expr")
+        super().__setattr__(name, value)
 
     @property
     def canonical_text(self) -> str:
@@ -1477,18 +1493,19 @@ class ComboGuardTerm(ComboTriggerTerm):
 
 
 @dataclass
-class ComboTransitionTrigger(ASTNode):
+class TransitionTrigger(ASTNode):
     """
-    Structured representation of a combo transition trigger.
+    Structured representation of an ordered transition trigger.
 
-    A combo trigger records the prefix used in the DSL and the ordered trigger
-    terms. It is intentionally an AST-level representation; later model construction logic
-    expands it into ordinary pseudo states and transitions.
+    A trigger records the prefix used in the DSL and its ordered terms. A single
+    term describes an ordinary trigger; multiple terms describe a sequential
+    combo expanded into ordinary pseudo states and transitions during model construction.
 
     :param scope_prefix: Written trigger prefix, either ``':'`` or ``'::'``.
     :type scope_prefix: str
-    :param terms: Ordered combo trigger terms.
-    :type terms: List[ComboTriggerTerm]
+    :param terms: Nonempty tuple of ordered trigger terms. Semantic trigger fields
+        are immutable; use :func:`dataclasses.replace` to change the sequence.
+    :type terms: Tuple[TriggerTerm, ...]
     :param trigger_span: Source span covering the trigger suffix.
     :type trigger_span: pyfcstm.utils.validate.Span, optional
     :param legacy_guard_syntax: Whether this object came from the legacy
@@ -1497,18 +1514,42 @@ class ComboTransitionTrigger(ASTNode):
 
     Example::
 
-        >>> trigger = ComboTransitionTrigger(
+        >>> trigger = TransitionTrigger(
         ...     "::",
-        ...     [ComboEventTerm(ChainID(["S", "E1"]), "local")],
+        ...     (EventTerm(ChainID(["S", "E1"]), "local"),),
         ... )
         >>> trigger.canonical_text
         ':: E1'
     """
 
     scope_prefix: str
-    terms: List[ComboTriggerTerm]
+    terms: Tuple[TriggerTerm, ...]
     trigger_span: Optional[Span] = field(default=None, repr=False, compare=False)
     legacy_guard_syntax: bool = field(default=False, repr=False, compare=False)
+
+    def __setattr__(self, name, value):
+        if (
+            name in ("scope_prefix", "terms", "legacy_guard_syntax")
+            and name in self.__dict__
+        ):
+            raise AttributeError(f"{name} is immutable; replace the trigger instead")
+        if name == "scope_prefix" and value not in (":", "::"):
+            raise ValueError("scope_prefix must be : or ::")
+        if name == "terms":
+            if not isinstance(value, tuple):
+                raise TypeError("terms must be a tuple")
+            if not value:
+                raise ValueError("terms must not be empty")
+            if any(not isinstance(term, (EventTerm, GuardTerm)) for term in value):
+                raise TypeError("terms must contain only EventTerm or GuardTerm")
+        if name == "legacy_guard_syntax" and not isinstance(value, bool):
+            raise TypeError("legacy_guard_syntax must be a bool")
+        super().__setattr__(name, value)
+
+    def __delattr__(self, name):
+        if name in ("scope_prefix", "terms", "legacy_guard_syntax"):
+            raise AttributeError(f"{name} is immutable; replace the trigger instead")
+        super().__delattr__(name)
 
     @property
     def canonical_text(self) -> str:
@@ -1518,7 +1559,10 @@ class ComboTransitionTrigger(ASTNode):
         :return: Canonical trigger suffix including the ``:`` or ``::`` prefix.
         :rtype: str
         """
-        return f"{self.scope_prefix} {' + '.join(term.canonical_text for term in self.terms)}"
+        prefix = (
+            f"{self.scope_prefix} if" if self.legacy_guard_syntax else self.scope_prefix
+        )
+        return f"{prefix} {' + '.join(term.canonical_text for term in self.terms)}"
 
     @property
     def is_combo(self) -> bool:
@@ -1529,6 +1573,22 @@ class ComboTransitionTrigger(ASTNode):
         :rtype: bool
         """
         return len(self.terms) > 1
+
+
+def _transition_trigger_text(trigger: TransitionTrigger, from_state) -> str:
+    """Render a trigger with the established single-transition spelling."""
+    if trigger.is_combo:
+        return trigger.canonical_text
+    term = trigger.terms[0]
+    if isinstance(term, GuardTerm):
+        return f": if [{term.condition_expr}]"
+    event_id = term.event_id
+    if not event_id.is_absolute and (
+        (from_state in (INIT_STATE, ALL) and len(event_id.path) == 1)
+        or (len(event_id.path) == 2 and event_id.path[0] == from_state)
+    ):
+        return f":: {event_id.path[-1]}"
+    return f": {event_id}"
 
 
 @dataclass
@@ -1543,46 +1603,42 @@ class TransitionDefinition(ASTNode):
     :type from_state: Union[str, _StateSingletonMark]
     :param to_state: The target state name or :data:`EXIT_STATE` singleton
     :type to_state: Union[str, _StateSingletonMark]
-    :param event_id: Optional event identifier that triggers the transition
-    :type event_id: Optional[ChainID]
-    :param event_scope: Original DSL trigger scope for ``event_id`` when
-        known. One of ``'local'``, ``'chain'``, or ``'absolute'``.
-    :type event_scope: Optional[str]
-    :param condition_expr: Optional condition expression that must be true for the transition
-    :type condition_expr: Optional[Expr]
-    :param post_operations: List of operation statements to perform after the transition
+    :param trigger: Optional ordered transition trigger; ``None`` is unconditional.
+    :type trigger: Optional[TransitionTrigger]
+    :param post_operations: Statements to perform after the transition.
     :type post_operations: List[OperationalStatement]
-    :param combo_trigger: Optional structured combo trigger metadata retained
-        for parser provenance and later pseudo-state expansion.
-    :type combo_trigger: Optional[ComboTransitionTrigger]
 
     :rtype: TransitionDefinition
 
     Example::
 
-        >>> init_trans = TransitionDefinition(INIT_STATE, "idle", None, None, [])
+        >>> init_trans = TransitionDefinition(INIT_STATE, "idle", None, [])
         >>> event_trans = TransitionDefinition(
-        ...     "idle", "active", ChainID(["idle", "start"]), None, []
+        ...     "idle", "active",
+        ...     TransitionTrigger("::", (EventTerm(ChainID(["idle", "start"]), "local"),)), []
         ... )
         >>> op = OperationAssignment("counter", Integer("0"))
         >>> cond_trans = TransitionDefinition(
-        ...     "active", "idle", None,
-        ...     BinaryOp(Name("counter"), ">", Integer("10")),
+        ...     "active", "idle",
+        ...     TransitionTrigger(":", (GuardTerm(BinaryOp(Name("counter"), ">", Integer("10"))),)),
         ...     [op],
         ... )
     """
 
     from_state: Union[str, _StateSingletonMark]
     to_state: Union[str, _StateSingletonMark]
-    event_id: Optional[ChainID]
-    condition_expr: Optional[Expr]
+    trigger: Optional[TransitionTrigger]
     post_operations: List["OperationalStatement"]
-    event_scope: Optional[str] = field(default=None, repr=False, compare=False)
-    combo_trigger: Optional[ComboTransitionTrigger] = field(
-        default=None, repr=False, compare=False
-    )
     doc: Optional[str] = None
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
+
+    def __setattr__(self, name, value):
+        if name in ("event_id", "condition_expr", "event_scope", "combo_trigger"):
+            raise AttributeError(f"{name} was removed; assign trigger instead")
+        if name == "trigger" and value is not None:
+            if not isinstance(value, TransitionTrigger):
+                raise TypeError("trigger must be a TransitionTrigger or None")
+        super().__setattr__(name, value)
 
     def __str__(self) -> str:
         """
@@ -1603,22 +1659,12 @@ class TransitionDefinition(ASTNode):
                 "[*]" if self.to_state is EXIT_STATE else self.to_state, file=sf, end=""
             )
 
-            if self.combo_trigger is not None and self.combo_trigger.is_combo:
-                print(f" {self.combo_trigger.canonical_text}", file=sf, end="")
-            elif self.event_id is not None:
-                if not self.event_id.is_absolute and (
-                    (self.from_state is INIT_STATE and len(self.event_id.path) == 1)
-                    or (
-                        self.from_state is not INIT_STATE
-                        and len(self.event_id.path) == 2
-                        and self.event_id.path[0] == self.from_state
-                    )
-                ):
-                    print(f" :: {self.event_id.path[-1]}", file=sf, end="")
-                else:
-                    print(f" : {self.event_id}", file=sf, end="")
-            elif self.condition_expr is not None:
-                print(f" : if [{self.condition_expr}]", file=sf, end="")
+            if self.trigger is not None:
+                print(
+                    f" {_transition_trigger_text(self.trigger, self.from_state)}",
+                    file=sf,
+                    end="",
+                )
 
             if len(self.post_operations) > 0:
                 print(" effect {", file=sf)
@@ -1646,28 +1692,34 @@ class ForceTransitionDefinition(ASTNode):
     :type from_state: Union[str, _StateSingletonMark]
     :param to_state: The target state name or :data:`EXIT_STATE` singleton
     :type to_state: Union[str, _StateSingletonMark]
-    :param event_id: Optional event identifier that triggers the transition
-    :type event_id: Optional[ChainID]
-    :param condition_expr: Optional condition expression that must be true for the transition
-    :type condition_expr: Optional[Expr]
+    :param trigger: Optional ordered transition trigger; ``None`` is unconditional.
+    :type trigger: Optional[TransitionTrigger]
 
     :rtype: ForceTransitionDefinition
 
     Example::
 
-        >>> force_trans = ForceTransitionDefinition(ALL, "error", None, None)
+        >>> force_trans = ForceTransitionDefinition(ALL, "error", None)
         >>> str(force_trans)
         '! * -> error;'
     """
 
     from_state: Union[str, _StateSingletonMark]
     to_state: Union[str, _StateSingletonMark]
-    event_id: Optional[ChainID]
-    condition_expr: Optional[Expr]
-    event_scope: Optional[str] = field(default=None, repr=False, compare=False)
+    trigger: Optional[TransitionTrigger]
     source_raw: Optional[str] = field(default=None, repr=False, compare=False)
     doc: Optional[str] = None
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
+
+    def __setattr__(self, name, value):
+        if name in ("event_id", "condition_expr", "event_scope", "combo_trigger"):
+            raise AttributeError(f"{name} was removed; assign trigger instead")
+        if name == "trigger" and value is not None:
+            if not isinstance(value, TransitionTrigger):
+                raise TypeError("trigger must be a TransitionTrigger or None")
+            if value.is_combo:
+                raise ValueError("forced transitions require a single trigger term")
+        super().__setattr__(name, value)
 
     def __str__(self) -> str:
         """
@@ -1685,20 +1737,12 @@ class ForceTransitionDefinition(ASTNode):
                 "[*]" if self.to_state is EXIT_STATE else self.to_state, file=sf, end=""
             )
 
-            if self.event_id is not None:
-                if not self.event_id.is_absolute and (
-                    (self.from_state is ALL and len(self.event_id.path) == 1)
-                    or (
-                        self.from_state is not ALL
-                        and len(self.event_id.path) == 2
-                        and self.event_id.path[0] == self.from_state
-                    )
-                ):
-                    print(f" :: {self.event_id.path[-1]}", file=sf, end="")
-                else:
-                    print(f" : {self.event_id}", file=sf, end="")
-            elif self.condition_expr is not None:
-                print(f" : if [{self.condition_expr}]", file=sf, end="")
+            if self.trigger is not None:
+                print(
+                    f" {_transition_trigger_text(self.trigger, self.from_state)}",
+                    file=sf,
+                    end="",
+                )
 
             print(";", file=sf, end="")
             return sf.getvalue()
@@ -1746,7 +1790,8 @@ class StateDefinition(ASTNode):
         'state idle;'
 
         >>> trans = TransitionDefinition(
-        ...     "idle", "active", ChainID(["idle", "start"]), None, []
+        ...     "idle", "active",
+        ...     TransitionTrigger("::", (EventTerm(ChainID(["idle", "start"]), "local"),)), []
         ... )
         >>> state_with_trans = StateDefinition("idle", transitions=[trans])
     """

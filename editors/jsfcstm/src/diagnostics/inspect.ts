@@ -113,6 +113,8 @@ export interface InitialTargetInfo {
     guard: string | null;
     event: string | null;
     is_unconditional: boolean;
+    /** Present only on initials produced or changed by history lowering. */
+    history_role?: 'route' | 'merged' | 'gated' | 'gate';
 }
 
 /**
@@ -824,12 +826,15 @@ function buildInitialTargets(state: {
             : EXIT_MARK;
         const guard = exprText(transition.guard);
         const event = transition.event ? transition.event.name : null;
-        out.push({
-            target,
-            guard,
-            event,
-            is_unconditional: guard === null && event === null,
-        });
+        const role = transition.historyRole;
+        // History lowering extended the user's own initial with restore
+        // conditions; whether it is unconditional is what the user wrote.
+        const isUnconditional = role === 'merged' || role === 'gated'
+            ? transition.historyUserGuard === undefined && event === null
+            : guard === null && event === null;
+        const item: InitialTargetInfo = {target, guard, event, is_unconditional: isUnconditional};
+        if (role !== undefined) item.history_role = role;
+        out.push(item);
     }
     return out;
 }

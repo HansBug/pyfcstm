@@ -13,6 +13,7 @@ import type {
     FcstmAstTransition,
     FcstmAstTransitionIndexRef,
     FcstmAstVariableDefinition,
+    FcstmHistoryKind,
 } from '../ast';
 import type {FcstmSemanticDocument} from '../semantics';
 import type {
@@ -42,6 +43,7 @@ import type {
 } from './raw';
 import {hydrateStateMachine, type FcstmModelStateMachine as FcstmRuntimeStateMachine} from './runtime';
 import {canonicalComboEffectSignature, pythonJsonArray} from './combo-origin';
+import {HISTORY_MARKERS, lowerHistory} from './history';
 
 const MATH_CONSTANTS: Record<string, number> = {
     E: Math.E,
@@ -108,6 +110,8 @@ interface InheritedForceTransition {
     transitionKind: FcstmModelTransition['transitionKind'];
     ast: FcstmAstForcedTransition;
     doc?: string;
+    /** Set only on the declared edge; the inherited ``!* -> [*]`` exits never enter a history. */
+    targetHistory?: FcstmHistoryKind;
 }
 
 function pathKey(path: Array<string | null>): string {
@@ -338,6 +342,28 @@ class StateMachineModelBuilder {
         const rootState = this.buildState(this.ast.rootState, undefined);
         this.finalizeActionReferences();
         this.finalizeTransitions(this.ast.rootState, rootState, []);
+        // History is lowered last, once forced and combo transitions are
+        // concrete edges, exactly as pyfcstm does.
+        const history = lowerHistory({
+            astRoot: this.ast.rootState,
+            rootState,
+            defines: this.defines,
+            allStates: this.allStates,
+            allActions: this.allActions,
+            statesByPath: this.statesByPath,
+            filePath: this.filePath,
+        });
+        if (history.owners.length > 0) {
+            // Routes and gates rewrote per-state lists; the flat list is their
+            // preorder concatenation.
+            const ordered: FcstmModelTransition[] = [];
+            const collect = (state: FcstmModelState): void => {
+                ordered.push(...state.transitions);
+                Object.values(state.substates).forEach(collect);
+            };
+            collect(rootState);
+            this.allTransitions.splice(0, this.allTransitions.length, ...ordered);
+        }
 
         const transitionsByParentPath: Record<string, FcstmModelTransition[]> = {};
         for (const transition of this.allTransitions) {
@@ -376,6 +402,9 @@ class StateMachineModelBuilder {
             allActions: this.allActions,
             all_actions: this.allActions,
             lookups,
+            historyOwners: history.owners,
+            history_owners: history.owners,
+            historyDiagnostics: history.diagnostics,
         };
         return hydrateStateMachine(rawStateMachine);
     }
@@ -630,6 +659,7 @@ class StateMachineModelBuilder {
                     triggerScope: force.triggerScope,
                     ast: force.ast,
                     doc: force.doc,
+                    targetHistory: force.targetHistory,
                 });
 
                 childInheritedTransitions.push({
@@ -680,6 +710,7 @@ class StateMachineModelBuilder {
                     triggerScope,
                     ast: transition,
                     doc: transition.doc,
+                    targetHistory: transition.targetHistory,
                 });
                 continue;
             }
@@ -767,6 +798,7 @@ class StateMachineModelBuilder {
             transitionKind: transition.transitionKind,
             ast: transition,
             doc: transition.doc,
+            targetHistory: transition.targetHistory,
         };
     }
 
@@ -806,8 +838,9 @@ class StateMachineModelBuilder {
     ): string {
         const fromState = transition.sourceKind === 'all' ? '*' : (transition.sourceStateName ?? '*');
         const toState = transition.targetKind === 'exit' ? '[*]' : (transition.targetStateName ?? '[*]');
+        const history = transition.targetHistory ? `.${HISTORY_MARKERS[transition.targetHistory]}` : '';
         const triggerText = this.formatForcedTransitionTrigger(transition, guard);
-        return `! ${fromState} -> ${toState}${triggerText};`;
+        return `! ${fromState} -> ${toState}${history}${triggerText};`;
     }
 
     private formatForcedTransitionTrigger(
@@ -1139,6 +1172,11 @@ class StateMachineModelBuilder {
                     'terminal',
                     this.buildOperationStatements(alternative.transition.postOperations),
                 );
+                // Only the edge that finally enters the target carries the
+                // history entry; relay hops before it stay plain.
+                const terminal = currentState.transitions[currentState.transitions.length - 1];
+                terminal.targetHistory = alternative.transition.targetHistory;
+                terminal.target_history = alternative.transition.targetHistory;
                 index += 1;
                 continue;
             }
@@ -1302,6 +1340,7 @@ class StateMachineModelBuilder {
         comboReuseGroupId?: string | null;
         comboPriorityRunIdentity?: unknown[] | null;
         comboPriorityRunIndex?: number | null;
+        targetHistory?: FcstmHistoryKind;
     }): void {
         const transitionIndex = this.nextTransitionIndex;
         const transition: FcstmModelTransition = {
@@ -1353,6 +1392,8 @@ class StateMachineModelBuilder {
             combo_reuse_group_id: params.comboReuseGroupId ?? null,
             combo_priority_run_identity: params.comboPriorityRunIdentity ?? null,
             combo_priority_run_index: params.comboPriorityRunIndex ?? null,
+            targetHistory: params.targetHistory,
+            target_history: params.targetHistory,
         };
         this.nextTransitionIndex += 1;
         if (params.ast) {

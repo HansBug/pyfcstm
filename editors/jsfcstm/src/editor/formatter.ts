@@ -64,7 +64,7 @@ type TokKind =
     | 'str'          // string literal
     | 'num'          // numeric literal (int / hex / bin / float / sci)
     | 'ident'        // identifier or keyword
-    | 'pseudoInit'   // ``[*]``
+    | 'pseudoInit'   // ``[*]`` and the ``[H]`` / ``[H*]`` history markers
     | 'punct';       // anything else: single- or multi-char operator / delimiter
 
 interface Tok {
@@ -206,6 +206,13 @@ function tokenize(src: string): Tok[] {
             i += 3;
             continue;
         }
+        // History markers ``[H]`` / ``[H*]`` (``[H > 1]`` stays a guard)
+        const historyMarker = src.startsWith('[H]', i) ? '[H]' : src.startsWith('[H*]', i) ? '[H*]' : null;
+        if (historyMarker) {
+            tokens.push({kind: 'pseudoInit', text: historyMarker});
+            i += historyMarker.length;
+            continue;
+        }
         // Numbers (hex, binary, decimal, optional fractional + exponent)
         if (c >= '0' && c <= '9') {
             let j = i;
@@ -311,8 +318,8 @@ function isOwnerDocumentation(tokens: Tok[], index: number): boolean {
         || first === 'enter' || first === 'exit' || first === 'during'
         || first === '>>' || first === '!') return true;
     if (first === 'pseudo' && next[1]?.text === 'state') return true;
-    if (next[0]?.kind === 'ident' && next[1]?.text === '->') return true;
-    if (next[0]?.text === '[*]' && next[1]?.text === '->') return true;
+    const head = next[0]?.kind;
+    if ((head === 'ident' || head === 'pseudoInit') && next[1]?.text === '->') return true;
     return false;
 }
 

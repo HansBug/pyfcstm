@@ -591,7 +591,9 @@ function transitionTargetName(transition: FcstmSemanticTransition): string {
         return '[*]';
     }
 
-    return transition.targetStateName || '?';
+    const history = transition.ast.targetHistory;
+    const marker = history === 'deep' ? '.[H*]' : history === 'shallow' ? '.[H]' : '';
+    return `${transition.targetStateName || '?'}${marker}`;
 }
 
 function transitionSymbolName(transition: FcstmSemanticTransition): string {
@@ -697,7 +699,15 @@ function buildSemanticStateSymbol(
     const transitions = (semantic.transitions || [])
         .filter(item => item.ownerStateId === state.identity.id)
         .map(item => buildSemanticTransitionSymbol(item, document));
-    const stateChildren: FcstmDocumentSymbol[] = [];
+    const histories = (state.ast?.histories ?? []).map(item => ({
+        name: `${item.historyKind === 'deep' ? '[H*]' : '[H]'} -> ${item.defaultPath.join('.')}`,
+        detail: `${item.historyKind} history`,
+        kind: 'function' as const,
+        range: item.range,
+        selectionRange: item.defaultPathRange,
+        children: [],
+    }));
+    const stateChildren: FcstmDocumentSymbol[] = [...histories];
 
     // Child layout for a state (in render order):
     //

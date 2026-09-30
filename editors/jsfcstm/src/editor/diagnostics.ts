@@ -493,6 +493,15 @@ export async function collectDocumentDiagnosticsByUri(
         diagnostics.push(...localTopologyDiagnostics);
         const localModel = buildStateMachineModel(node.semantic);
         if (localModel) {
+            // History lowering reports its model-build diagnostics, like pyfcstm.
+            diagnostics.push(...localModel.historyDiagnostics.map(item => ({
+                range: item.range,
+                message: item.message,
+                severity: item.severity,
+                source: 'fcstm',
+                code: item.code,
+                data: {...item.refs},
+            })));
             const localInspectDiagnostics = collectInspectModelDiagnostics(
                 document,
                 node.semantic,

@@ -72,7 +72,12 @@ from .imports import (
     _mark_generated_combo_pseudo_node,
     _mark_generated_combo_transition_node,
 )
-from .plantuml import PlantUMLOptions, PlantUMLOptionsInput, format_state_name
+from .plantuml import (
+    PlantUMLOptions,
+    PlantUMLOptionsInput,
+    escape_plantuml_creole,
+    format_state_name,
+)
 from ..diagnostics.sink import DiagnosticSink
 from ..diagnostics.sink import _emit as _emit_or_raise
 from ..dsl import node as dsl_nodes, INIT_STATE, EXIT_STATE
@@ -2260,7 +2265,13 @@ class State(AstExportable, PlantUMLExportable):
                                 print("note on link", file=tf)
                                 print("effect {", file=tf)
                                 for operation in trans.effects:
-                                    print(f"    {operation.to_ast_node()}", file=tf)
+                                    print(
+                                        "    "
+                                        + escape_plantuml_creole(
+                                            str(operation.to_ast_node())
+                                        ),
+                                        file=tf,
+                                    )
                                 print("}", file=tf)
                                 print("end note", file=tf, end="")
                             elif config.transition_effect_mode == "inline":
@@ -2333,7 +2344,7 @@ class State(AstExportable, PlantUMLExportable):
                                 )
                                 print(formatted_text, file=tf)
 
-                    action_text = (
+                    action_text = escape_plantuml_creole(
                         tf.getvalue().rstrip().replace("\r\n", "\n").replace("\r", "\n")
                     )
                     if action_text:  # Only show if there's actual content
@@ -3024,7 +3035,10 @@ class StateMachine(AstExportable, PlantUMLExportable):
                         # PlantUML is a semantic display and must not embed
                         # source documentation blocks.
                         print(
-                            f"    {def_item.to_ast_node().without_docs()}",
+                            "    "
+                            + escape_plantuml_creole(
+                                str(def_item.to_ast_node().without_docs())
+                            ),
                             file=sf,
                         )
                     print("}", file=sf)
@@ -3054,7 +3068,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
                         var_init_escaped = escape_plantuml_table_cell(str(var_init))
                         # All columns left-aligned
                         print(
-                            f"| {var_name} | {var_type} | {var_init_escaped} |"
+                            f"| {escape_plantuml_creole(var_name)} | {var_type} | {var_init_escaped} |"
                             + (f" {def_item.role.value} |" if show_roles else ""),
                             file=sf,
                         )

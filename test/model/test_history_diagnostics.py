@@ -1,5 +1,7 @@
 """Static checks of history declarations, targets and reserved names."""
 
+import re
+
 import pytest
 
 from pyfcstm.dsl import parse_with_grammar_entry
@@ -255,3 +257,30 @@ def test_history_diagnostics_match_the_code_registry(text):
         for name, value in item.refs.items():
             allowed = spec.refs_schema[name].enum
             assert not allowed or value in allowed
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("mode", ["legend", "note"])
+def test_plantuml_keeps_lowered_history_names_literal(mode):
+    from pyfcstm.model import PlantUMLOptions
+
+    machine = load_state_machine_from_text(WASHER)
+    source = machine.to_plantuml(
+        PlantUMLOptions(detail_level="full", variable_display_mode=mode)
+    )
+    # Creole treats ``__`` as underline markup, so notes, legends and state
+    # descriptions escape every lowered name; link labels are not Creole.
+    creole = []
+    for line in source.splitlines():
+        if "__hist_" not in line or "-->" in line:
+            continue
+        # A state description is ``alias : text``; the alias is an identifier.
+        head, sep, tail = line.partition(" : ")
+        if sep and re.fullmatch(r"\s*\w+", head):
+            line = tail
+        creole.append(line)
+    assert creole
+    assert all("__" not in line.replace("~__", "") for line in creole), creole
+    assert any("~__hist_goto = (~__hist_Program" in line for line in creole)
+    plain = load_state_machine_from_text("def int a = 0; state R { state A; [*] -> A; }")
+    assert "~" not in plain.to_plantuml(PlantUMLOptions(detail_level="full", variable_display_mode=mode))

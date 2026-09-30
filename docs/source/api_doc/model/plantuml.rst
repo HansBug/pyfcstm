@@ -49,6 +49,12 @@ escape\_plantuml\_table\_cell
 .. autofunction:: escape_plantuml_table_cell
 
 
+escape\_plantuml\_creole
+-----------------------------------------------------
+
+.. autofunction:: escape_plantuml_creole
+
+
 should\_show\_action
 -----------------------------------------------------
 

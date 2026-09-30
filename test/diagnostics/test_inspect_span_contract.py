@@ -42,11 +42,18 @@ def _diagnostics_for_code(code, spec):
         )
         return source, diagnostics
     source = spec.example_dsl
+    # Build the way ``pyfcstm inspect`` does: in collect mode, forwarding the
+    # model-builder diagnostics, so warnings raised while building the model
+    # are held to the same span contract as analyzer warnings.
+    machine, model_diagnostics = parse_dsl_node_to_state_machine(
+        parse_with_grammar_entry(source, "state_machine_dsl"), collect=True
+    )
     report = inspect_model(
-        _parse(source),
+        machine,
         deep_hierarchy_threshold=0,
         large_composite_threshold=2,
         var_to_leaf_ratio_threshold=0,
+        model_diagnostics=model_diagnostics,
     )
     return source, report.diagnostics
 

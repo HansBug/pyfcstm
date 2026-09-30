@@ -31,6 +31,12 @@ import {
     Variable,
 } from '../model/runtime';
 import {collectDesignHealthWarnings} from './analyzers';
+import {
+    authoredEffects,
+    authoredGuard,
+    historyDefaultEdges,
+    orderedTransitions,
+} from '../model/history';
 import {buildUseDefGraph, collectExprVariables} from './analyzers/use-def';
 import type {RawFcstmModelForcedTransition} from '../model/raw';
 import type {TextRange} from '../utils/text';
@@ -113,8 +119,11 @@ export interface InitialTargetInfo {
     guard: string | null;
     event: string | null;
     is_unconditional: boolean;
-    /** Present only on initials produced or changed by history lowering. */
-    history_role?: 'route' | 'merged' | 'gated' | 'gate';
+    /**
+     * Present only on initials history lowering produced or changed; an
+     * evented initial routed through a gate is listed as written, as ``gated``.
+     */
+    history_role?: 'route' | 'merged' | 'gated';
 }
 
 /**
@@ -180,6 +189,14 @@ export interface TransitionInfo {
     combo_reuse_group_id: string | null;
     combo_priority_run_identity: unknown[] | null;
     combo_priority_run_index: number | null;
+    /**
+     * How history lowering produced this initial: ``route`` / ``gate`` for a
+     * generated edge, ``merged`` / ``gated`` for an authored initial it
+     * extended. ``guard`` and ``effect`` always show what the author wrote.
+     */
+    history_role: 'route' | 'merged' | 'gated' | 'gate' | null;
+    /** History kind the transition enters; ``to_path`` then names the owner. */
+    target_history: 'shallow' | 'deep' | null;
     /**
      * Non-enumerable editor-only source range for analyzer-to-editor
      * handoff. It is intentionally omitted from ``toJson()`` output and from
@@ -564,8 +581,12 @@ export function inspectModel(machine: StateMachine, options: InspectModelOptions
     const forcedTransitions = buildForcedTransitionInfos(machine, transitions);
     const comboTransitions = transitions.filter(item => item.combo_origin_refs.length > 0);
     const comboOrigins = buildComboOriginInfos(comboTransitions);
-    const metrics = buildMetrics(states, transitions, variables, events);
-    const reachabilityGraph = buildReachabilityGraph(states, transitions);
+    const generatedNames = new Set([
+        ...machine.historyOwners.flatMap(owner => [owner.recordVariable, owner.gotoVariable]),
+        ...machine.allStates.filter(state => state.isHistoryGate).map(state => state.name),
+    ]);
+    const metrics = buildMetrics(states, transitions, variables, events, generatedNames);
+    const reachabilityGraph = buildReachabilityGraph(states, transitions, historyDefaultEdges(machine));
     const diagnostics = collectDesignHealthWarnings(
         states,
         transitions,
@@ -816,24 +837,33 @@ function aspectLabel(action: OnAspect): string {
 function buildInitialTargets(state: {
     path: string[];
     transitions: Transition[];
+    substates?: Record<string, State>;
 }): InitialTargetInfo[] {
     const out: InitialTargetInfo[] = [];
+    const behindGate = new Map<string, Transition>();
     for (const transition of state.transitions) {
+        if (historyGateOf(state, transition)) behindGate.set(transition.fromState, transition);
+    }
+    for (let transition of state.transitions) {
         if (transition.fromState !== 'INIT_STATE') continue;
+        if (transition.historyRole === 'gate') {
+            // Report the authored evented initial the generated gate guards,
+            // at the position the author wrote it.
+            transition = behindGate.get(transition.toState)!;
+        }
         const targetName = transition.toState;
         const target = typeof targetName === 'string' && targetName !== 'EXIT_STATE'
             ? resolveSiblingPath(state.path, targetName)
             : EXIT_MARK;
-        const guard = exprText(transition.guard);
+        // A merged or gated initial reports the guard the author wrote, not
+        // the restore conditions history lowering added to it.
+        const guard = exprText(authoredGuard(transition));
         const event = transition.event ? transition.event.name : null;
         const role = transition.historyRole;
-        // History lowering extended the user's own initial with restore
-        // conditions; whether it is unconditional is what the user wrote.
-        const isUnconditional = role === 'merged' || role === 'gated'
-            ? transition.historyUserGuard === undefined && event === null
-            : guard === null && event === null;
+        const isUnconditional = guard === null && event === null;
         const item: InitialTargetInfo = {target, guard, event, is_unconditional: isUnconditional};
-        if (role !== undefined) item.history_role = role;
+        // A gate entry was replaced by the evented initial it guards above.
+        if (role !== undefined) item.history_role = role as InitialTargetInfo['history_role'];
         out.push(item);
     }
     return out;
@@ -907,24 +937,36 @@ function comboOriginRefInfo(value: unknown): ComboOriginRefInfo | null {
     };
 }
 
+function historyGateOf(
+    state: {substates?: Record<string, State>},
+    transition: Transition,
+): State | undefined {
+    const source = state.substates?.[transition.fromState];
+    return source?.isHistoryGate ? source : undefined;
+}
+
 function buildTransitionInfos(machine: StateMachine): TransitionInfo[] {
     const out: TransitionInfo[] = [];
-    for (const state of machine.allStates) {
-        for (const t of state.transitions) {
+    orderedTransitions(machine.rootState).forEach(([state, t], transitionIndex) => {
             const comboOriginRefs = (t.combo_origin_refs ?? [])
                 .map(comboOriginRefInfo)
                 .filter((item): item is ComboOriginRefInfo => item !== null);
+            // History lowering rewrites guards and effects; report what the
+            // author wrote and mark the edges it generated or extended.
+            const effects = authoredEffects(t);
             const info: TransitionInfo = {
-                from_path: modelTransitionEndpoint(state, t, 'source'),
+                // The author wrote an evented initial lowering moved behind a
+                // gate as ``[*] -> X :: E``.
+                from_path: historyGateOf(state, t) ? INIT_MARK : modelTransitionEndpoint(state, t, 'source'),
                 to_path: modelTransitionEndpoint(state, t, 'target'),
                 event: t.event ? t.event.pathName : null,
                 event_scope: t.event ? (t.triggerScope ?? null) : null,
-                guard: exprText(t.guard),
-                effect: effectsText(t.effects),
-                effect_self_assigns: effectSelfAssigns(t.effects),
+                guard: exprText(authoredGuard(t)),
+                effect: effectsText(effects),
+                effect_self_assigns: effectSelfAssigns(effects),
                 is_forced: !!t.forced,
                 forced_origin: t.forced ? t.text : null,
-                transition_index: typeof t.transitionIndex === 'number' ? t.transitionIndex : null,
+                transition_index: transitionIndex,
                 source_path: t.sourcePath ?? t.source_path ?? null,
                 combo_origin_refs: comboOriginRefs,
                 combo_projection_key: Array.isArray(t.combo_projection_key) ? [...t.combo_projection_key] : null,
@@ -932,6 +974,8 @@ function buildTransitionInfos(machine: StateMachine): TransitionInfo[] {
                 combo_reuse_group_id: t.combo_reuse_group_id,
                 combo_priority_run_identity: Array.isArray(t.combo_priority_run_identity) ? [...t.combo_priority_run_identity] : null,
                 combo_priority_run_index: typeof t.combo_priority_run_index === 'number' ? t.combo_priority_run_index : null,
+                history_role: t.historyRole ?? null,
+                target_history: t.targetHistory ?? null,
             };
             Object.defineProperty(info, '__sourceRange', {
                 value: t.range,
@@ -940,8 +984,7 @@ function buildTransitionInfos(machine: StateMachine): TransitionInfo[] {
                 writable: false,
             });
             out.push(info);
-        }
-    }
+    });
     return out;
 }
 
@@ -1014,7 +1057,10 @@ function variableAccessSites(machine: StateMachine): Map<string, {reads: Variabl
             }
         });
     };
-    let transitionIndex = 0;
+    // Same numbering as the transition records.
+    const transitionIndexes = new Map(
+        orderedTransitions(machine.rootState).map(([, transition], index) => [transition, index]),
+    );
     let actionIndex = 0;
     for (const state of machine.allStates) {
         let sourceState: State | undefined = state;
@@ -1036,12 +1082,11 @@ function variableAccessSites(machine: StateMachine): Map<string, {reads: Variabl
         for (const transition of state.transitions) {
             const owner: VariableAccessSite = {
                 kind: 'guard', state_path: statePath, action: null, action_index: null,
-                transition_index: transitionIndex, statement_path: [],
+                transition_index: transitionIndexes.get(transition)!, statement_path: [],
                 source_path: transition.sourcePath ?? null, span: span(transition.range),
             };
             record(walkExprVariables(transition.guard), 'reads', owner);
             statements(transition.effects, {...owner, kind: 'effect'});
-            transitionIndex += 1;
         }
     }
     return sites;
@@ -1599,11 +1644,17 @@ function scopeFromEventOrigins(event: Event): 'local' | 'chain' | 'absolute' {
 }
 
 function buildMetrics(
-    states: StateInfo[],
-    transitions: TransitionInfo[],
-    variables: VariableInfo[],
+    allStates: StateInfo[],
+    allTransitions: TransitionInfo[],
+    allVariables: VariableInfo[],
     events: EventInfo[],
+    generatedNames: ReadonlySet<string> = new Set(),
 ): ModelMetrics {
+    // Metrics size what the author wrote: the variables, gate states and
+    // edges history lowering generates are left out.
+    const states = allStates.filter(s => !generatedNames.has(s.name));
+    const variables = allVariables.filter(v => !generatedNames.has(v.name));
+    const transitions = allTransitions.filter(t => t.history_role !== 'route' && t.history_role !== 'gate');
     const nPseudo = states.filter(s => s.is_pseudo).length;
     const nLeaf = states.filter(s => s.is_leaf && !s.is_pseudo).length;
     const nComposite = states.filter(s => s.is_composite).length;
@@ -1773,6 +1824,8 @@ function authoredTransitionEntries(
             combo_reuse_group_id: null,
             combo_priority_run_identity: null,
             combo_priority_run_index: null,
+            history_role: null,
+            target_history: null,
         } satisfies TransitionInfo;
         representatives.set(`forced:${index}`, {
             ...base,
@@ -2087,6 +2140,8 @@ function buildStructureStatistics(
             combo_reuse_group_id: null,
             combo_priority_run_identity: null,
             combo_priority_run_index: null,
+            history_role: null,
+            target_history: null,
         } satisfies TransitionInfo;
         representatives.set(`forced:${index}`, {
             ...base,
@@ -2350,9 +2405,16 @@ function buildStructureStatistics(
     };
 }
 
+/**
+ * Guard-agnostic reachability closure, aligned with pyfcstm. History routes
+ * are not followed -- a restore with a record only re-enters states already
+ * reached -- while each ``historyDefaults`` entry is followed as one more
+ * initial edge, because an entry with no record goes to the default.
+ */
 function buildReachabilityGraph(
     states: StateInfo[],
     transitions: TransitionInfo[],
+    historyDefaults: Array<[string, string]> = [],
 ): Record<string, string[]> {
     const adjacency: Record<string, Set<string>> = {};
     const initialEdges: Record<string, Set<string>> = {};
@@ -2367,12 +2429,13 @@ function buildReachabilityGraph(
     for (const s of states) {
         if (s.is_composite && s.initial_targets.length > 0) {
             for (const it of s.initial_targets) {
-                if (it.target !== EXIT_MARK) {
+                if (it.target !== EXIT_MARK && it.history_role !== 'route') {
                     initialEdges[s.path].add(it.target);
                 }
             }
         }
     }
+    for (const [parent, child] of historyDefaults) initialEdges[parent].add(child);
     const out: Record<string, string[]> = {};
     for (const s of states) {
         const seen = new Set<string>();

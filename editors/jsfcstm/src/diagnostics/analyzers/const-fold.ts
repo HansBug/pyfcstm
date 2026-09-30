@@ -11,6 +11,7 @@ import {
     Transition,
     UnaryOp,
 } from '../../model/runtime';
+import {authoredGuard, isHistoryGenerated, orderedTransitions} from '../../model/history';
 import {exprText, type ModelDiagnosticJson} from '../inspect';
 
 interface ExactInteger {
@@ -99,15 +100,19 @@ export function collectConstFoldWarnings(machine: StateMachine | null | undefine
     if (!machine) return [];
     const out: ModelDiagnosticJson[] = [];
     const definedVars = new Set(Object.keys(machine.defines));
+    const transitionIndexes = new Map(
+        orderedTransitions(machine.rootState).map(([, transition], index) => [transition, index]),
+    );
     for (const transition of machine.allTransitions) {
         if (transition.combo_origin_refs && transition.combo_origin_refs.length > 0) continue;
-        const guard = transition.guard;
+        if (isHistoryGenerated(transition)) continue;
+        const guard = authoredGuard(transition);
         const foldedGuard = guard ? foldConditionExpression(guard) : null;
         if (foldedGuard === true || foldedGuard === false) {
             out.push(guardConstDiagnostic(
                 transition,
                 foldedGuard,
-                transition.transition_index ?? machine.allTransitions.indexOf(transition),
+                transitionIndexes.get(transition)!,
             ));
         }
     }
@@ -219,7 +224,7 @@ function guardConstDiagnostic(
             folded_value: value,
             from_path: transitionSourcePath(transition.parentPath, transition.fromState, transition.sourceKind),
             to_path: transitionTargetPath(transition.parentPath, transition.toState, transition.targetKind),
-            guard_text: exprText(transition.guard),
+            guard_text: exprText(authoredGuard(transition)),
             transition_index: transitionIndex,
         },
     };

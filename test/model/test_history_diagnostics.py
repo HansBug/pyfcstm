@@ -67,8 +67,35 @@ class TestHistoryDeclarationErrors:
         assert item.refs["reason"] == reason
         assert item.refs["owner_path"] == "R.O"
         assert item.span is not None
+        # The invalid declaration is the one problem; its targets are not
+        # reported again as undeclared.
+        assert not [d for d in diagnostics if d.code == "E_HISTORY_TARGET_UNDECLARED"]
         with pytest.raises(ModelValidationError):
             load_state_machine_from_text(text)
+
+    def test_a_leaf_state_cannot_own_history(self):
+        text = "state R { state Off; state L { [H] -> L; } [*] -> Off; Off -> L.[H] :: Go; }"
+        _, diagnostics = _collect(text)
+        (item,) = _only(diagnostics, "E_HISTORY_DECLARATION_INVALID")
+        assert item.refs["reason"] == "leaf_owner"
+        assert item.refs["owner_path"] == "R.L"
+        assert [d.code for d in diagnostics] == ["E_HISTORY_DECLARATION_INVALID"]
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            # the owner's own initial is misspelled
+            "state R { state Off; state O { state A; [*] -> Nope; [H] -> A; } "
+            "[*] -> Off; Off -> O.[H] :: Resume; }",
+            # an initial on the way to a deep target is misspelled
+            "state R { state Off; state O { state A; state W { state W1; [*] -> Nope; } "
+            "[*] -> A; [H*] -> W.W1; } [*] -> Off; Off -> O.[H*] :: Resume; }",
+        ],
+    )
+    def test_a_dangling_initial_on_a_restore_path_is_collected(self, text):
+        _, diagnostics = _collect(text)
+        (item,) = _only(diagnostics, "E_DANGLING_TRANSITION")
+        assert item.refs["tgt"] == "Nope"
 
     def test_the_root_state_cannot_own_history(self):
         text = "state R { state A; [*] -> A; [H] -> A; }"

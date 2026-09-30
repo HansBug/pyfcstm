@@ -354,14 +354,17 @@ class StateMachineModelBuilder {
             filePath: this.filePath,
         });
         if (history.owners.length > 0) {
-            // Routes and gates rewrote per-state lists; the flat list is their
-            // preorder concatenation.
+            // Routes and gates rewrote per-state lists; the flat lists are their
+            // preorder concatenation, gate states included where pyfcstm walks them.
+            const orderedStates: FcstmModelState[] = [];
             const ordered: FcstmModelTransition[] = [];
             const collect = (state: FcstmModelState): void => {
+                orderedStates.push(state);
                 ordered.push(...state.transitions);
                 Object.values(state.substates).forEach(collect);
             };
             collect(rootState);
+            this.allStates.splice(0, this.allStates.length, ...orderedStates);
             this.allTransitions.splice(0, this.allTransitions.length, ...ordered);
         }
 

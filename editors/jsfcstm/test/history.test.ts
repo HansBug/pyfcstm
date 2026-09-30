@@ -273,6 +273,14 @@ describe('jsfcstm history diagnostics', () => {
     });
 });
 
+function canonical(value: unknown): string {
+    if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+    if (value !== null && typeof value === 'object') {
+        return `{${Object.keys(value).sort().map(name => `${JSON.stringify(name)}:${canonical((value as Record<string, unknown>)[name])}`).join(',')}}`;
+    }
+    return JSON.stringify(value);
+}
+
 describe('jsfcstm history inspect', () => {
     for (const [name, testCase] of Object.entries(HISTORY_MODEL_CASES)) {
         it(`builds the same initial targets and unconditional-entry findings as pyfcstm for ${name}`, async () => {
@@ -281,6 +289,22 @@ describe('jsfcstm history inspect', () => {
                 report.states.filter(state => state.initial_targets.length > 0).map(state => [state.path, state.initial_targets]),
             );
             assert.deepEqual(targets, testCase.initial_targets);
+            if (testCase.transitions) {
+                // Authored guards and effects, generated edges last, and the same numbering.
+                assert.deepEqual(
+                    report.transitions.map(t => ({
+                        from_path: t.from_path, to_path: t.to_path, event: t.event, guard: t.guard, effect: t.effect,
+                        transition_index: t.transition_index, history_role: t.history_role, target_history: t.target_history,
+                    })),
+                    testCase.transitions,
+                );
+                assert.deepEqual(report.reachability_graph[report.root_state_path], testCase.root_reachable);
+                assert.deepEqual(report.metrics, testCase.metrics);
+                assert.deepEqual(
+                    report.diagnostics.map(item => canonical({code: item.code, refs: item.refs})).sort(),
+                    testCase.findings!.map(canonical).sort(),
+                );
+            }
             assert.deepEqual(
                 report.diagnostics
                     .filter(item => item.code === 'W_INITIAL_UNCONDITIONAL_MISSING')

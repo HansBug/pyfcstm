@@ -37,6 +37,17 @@ The module contains:
 
 * :class:`HistoryOwner` - Source-level metadata of one lowered owner
 * :func:`lower_history` - Lower every history construct of a built machine
+* :func:`is_history_generated` - Whether lowering generated a transition
+* :func:`authored_guard` / :func:`authored_effects` - What the author wrote on
+  a transition lowering rewrote
+* :func:`history_default_edges` - Composite-to-child entries a history
+  default adds to structural reachability
+* :func:`ordered_transitions` - Transitions in the order reports number them
+
+Static analyses judge what the author wrote, so they read a lowered machine
+through the last four helpers: they skip generated edges, read guards and
+effects as written, and let a history entry reach its default instead of every
+route.
 """
 
 import re
@@ -51,7 +62,16 @@ if TYPE_CHECKING:  # pragma: no cover
     from ..diagnostics.sink import DiagnosticSink
     from .model import State, Transition, VarDefine
 
-__all__ = ["HistoryOwner", "lower_history", "HISTORY_PREFIX"]
+__all__ = [
+    "HistoryOwner",
+    "lower_history",
+    "HISTORY_PREFIX",
+    "is_history_generated",
+    "authored_guard",
+    "authored_effects",
+    "history_default_edges",
+    "ordered_transitions",
+]
 
 HISTORY_PREFIX = "__hist_"
 """Reserved prefix of every name history lowering generates."""
@@ -186,6 +206,9 @@ class _Lowering:
         self.states: Dict[_Path, "State"] = {s.path: s for s in _walk(root_state)}
         self.ids: Dict[_Path, int] = {path: i for i, path in enumerate(self.states, 1)}
         self.goto = HISTORY_PREFIX + _GOTO_TAG
+        # (owner path, kind) of every invalid declaration, so that the targets
+        # entering one are not reported a second time as undeclared
+        self.invalid: Set[Tuple[_Path, str]] = set()
 
     # -- diagnostics -------------------------------------------------------
 
@@ -253,6 +276,8 @@ class _Lowering:
                 target = self._resolve_default(owner, decl.default_path)
                 if owner is self.root:
                     reason = "root_owner"
+                elif owner.is_leaf_state:
+                    reason = "leaf_owner"
                 elif decl.kind in declared.get(path, {}):
                     reason = "duplicate"
                 elif decl.kind == "shallow" and len(decl.default_path) != 1:
@@ -262,6 +287,7 @@ class _Lowering:
                 elif target.is_pseudo:
                     reason = "default_pseudo"
                 if reason is not None:
+                    self.invalid.add((path, decl.kind))
                     self._emit(
                         "E_HISTORY_DECLARATION_INVALID",
                         "error",
@@ -296,6 +322,8 @@ class _Lowering:
                     continue
                 if kind in declared.get(owner.path, {}):
                     found.append((transition, owner.path, kind))
+                    continue
+                if (owner.path, kind) in self.invalid:
                     continue
                 key = (owner.path, kind, transition._span)
                 if key not in reported:
@@ -516,7 +544,6 @@ class _Lowering:
                 gate = BinaryOp(gate, "||", self._eq(self.goto, self.ids[comp_path]))
             pending = list(hops.get(comp_path, ()))
             for transition in list(comp.init_transitions):
-                child = comp.substates[transition.to_state]
                 user_guard = transition.guard
                 transition.history_user_guard = user_guard
                 if (
@@ -527,6 +554,7 @@ class _Lowering:
                     # Merge the user's plain initial with the route to the
                     # same child: one edge, both conditions.
                     pending.remove(transition.to_state)
+                    child = comp.substates[transition.to_state]
                     allowed = gate if user_guard is None else BinaryOp(gate, "&&", user_guard)
                     transition.guard = BinaryOp(allowed, "||", self._in_subtree(child.path))
                     transition.effects = [
@@ -624,3 +652,223 @@ def lower_history(
     :rtype: Tuple[HistoryOwner, ...]
     """
     return _Lowering(ast_root, root_state, defines, sink).run()
+
+
+_GENERATED_ROLES = ("route", "gate")
+_REWRITTEN_ROLES = ("merged", "gated")
+
+
+def is_history_generated(transition: "Transition") -> bool:
+    """
+    Tell whether history lowering generated ``transition``.
+
+    Route initials (``history_role == 'route'``) and the entries of evented-
+    initial gates (``'gate'``) exist only in the lowered machine; the author
+    wrote neither.
+
+    :param transition: Transition of a built machine
+    :type transition: pyfcstm.model.model.Transition
+    :return: ``True`` for a generated route or gate entry
+    :rtype: bool
+
+    Example::
+
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> machine = load_state_machine_from_text('''
+        ... state R {
+        ...     state Off;
+        ...     state O { state A; state B; [*] -> A; [H] -> A; A -> B :: Next; }
+        ...     [*] -> Off;
+        ...     Off -> O.[H] :: Resume;
+        ...     !O -> Off :: Stop;
+        ... }
+        ... ''')
+        >>> owner = machine.root_state.substates["O"]
+        >>> [(t.to_state, is_history_generated(t)) for t in owner.init_transitions]
+        [('B', True), ('A', False)]
+    """
+    return transition.history_role in _GENERATED_ROLES
+
+
+def authored_guard(transition: "Transition") -> Optional[Expr]:
+    """
+    Return the guard the author wrote on ``transition``.
+
+    Lowering conjoins restore conditions onto the initials of every composite
+    a restore passes through; for those (``history_role`` ``'merged'`` or
+    ``'gated'``) this is the guard before lowering.  Any other transition's
+    guard is returned unchanged.
+
+    :param transition: Transition of a built machine
+    :type transition: pyfcstm.model.model.Transition
+    :return: Authored guard, or ``None`` when the author wrote none
+    :rtype: Optional[pyfcstm.model.expr.Expr]
+
+    Example::
+
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> machine = load_state_machine_from_text('''
+        ... def int x = 0;
+        ... state R {
+        ...     state Off;
+        ...     state O { state A; state B; [*] -> A : if [x > 0]; [*] -> B; [H] -> B; }
+        ...     [*] -> Off;
+        ...     Off -> O.[H] :: Resume;
+        ...     !O -> Off :: Stop;
+        ... }
+        ... ''')
+        >>> merged = machine.root_state.substates["O"].init_transitions[0]
+        >>> merged.history_role, str(merged.guard)
+        ('merged', '__hist_goto == 0 && x > 0 || __hist_goto == 4')
+        >>> str(authored_guard(merged))
+        'x > 0'
+    """
+    if transition.history_role in _REWRITTEN_ROLES:
+        return transition.history_user_guard
+    return transition.guard
+
+
+def authored_effects(transition: "Transition") -> list:
+    """
+    Return the effect statements the author wrote on ``transition``.
+
+    Lowering prepends ``__hist_goto = 0;`` to the initials it gates and appends
+    the restore-target assignment to every history entry; this drops exactly
+    those statements.  A transition lowering did not rewrite keeps all of its
+    effects: a model without history may still name a variable ``__hist_goto``.
+
+    :param transition: Transition of a built machine
+    :type transition: pyfcstm.model.model.Transition
+    :return: The authored effect statements, in order
+    :rtype: list
+
+    Example::
+
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> machine = load_state_machine_from_text('''
+        ... def int n = 0;
+        ... state R {
+        ...     state Off;
+        ...     state O { state A; [*] -> A; [H] -> A; }
+        ...     [*] -> Off;
+        ...     Off -> O.[H] :: Resume effect { n = n + 1; }
+        ...     !O -> Off :: Stop;
+        ... }
+        ... ''')
+        >>> entry = [t for t in machine.root_state.transitions if t.target_history][0]
+        >>> [op.var_name for op in entry.effects]
+        ['n', '__hist_goto']
+        >>> [op.var_name for op in authored_effects(entry)]
+        ['n']
+    """
+    if transition.history_role is None and transition.target_history is None:
+        return list(transition.effects)
+    goto = HISTORY_PREFIX + _GOTO_TAG
+    return [op for op in transition.effects if getattr(op, "var_name", None) != goto]
+
+
+def history_default_edges(machine) -> Tuple[Tuple[_Path, _Path], ...]:
+    """
+    Return the composite-to-child entries history defaults add to reachability.
+
+    An entry through ``O.[H]`` or ``O.[H*]`` with no record goes to the declared
+    default, and a restore with a record re-enters only states that were
+    already reached.  Structural reachability of a lowered machine is therefore
+    the ordinary initial descent without route initials, plus these edges: one
+    per step of the default path of every history kind some transition enters.
+
+    :param machine: Built state machine
+    :type machine: pyfcstm.model.model.StateMachine
+    :return: ``(parent path, child path)`` pairs, in first-use order
+    :rtype: Tuple[Tuple[Tuple[str, ...], Tuple[str, ...]], ...]
+
+    Example::
+
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> machine = load_state_machine_from_text('''
+        ... state R {
+        ...     state Off;
+        ...     state O {
+        ...         state A;
+        ...         state W { state W1; state W2; [*] -> W1; }
+        ...         [*] -> A;
+        ...         [H*] -> W.W2;
+        ...     }
+        ...     [*] -> Off;
+        ...     Off -> O.[H*] :: Resume;
+        ...     !O -> Off :: Stop;
+        ... }
+        ... ''')
+        >>> history_default_edges(machine)
+        ((('R', 'O'), ('R', 'O', 'W')), (('R', 'O', 'W'), ('R', 'O', 'W', 'W2')))
+    """
+    owners = {owner.owner_path: owner for owner in machine.history_owners}
+    edges: List[Tuple[_Path, _Path]] = []
+    for scope in machine.walk_states():
+        for transition in scope.transitions:
+            kind = transition.target_history
+            if kind is None:
+                continue
+            owner = owners.get((*scope.path, transition.to_state))
+            if owner is None or kind not in owner.defaults:
+                continue
+            path = owner.owner_path
+            for name in owner.defaults[kind]:
+                edge = (path, (*path, name))
+                if edge not in edges:
+                    edges.append(edge)
+                path = edge[1]
+    return tuple(edges)
+
+
+def ordered_transitions(root_state: "State") -> List[Tuple["State", "Transition"]]:
+    """
+    Return every transition with its owning state, in the order reports number them.
+
+    Authored transitions come first, parent-first in the order they were
+    written; an evented initial that lowering moved behind a gate keeps the
+    place of its gate entry.  The edges lowering generated follow, parent-first.
+    Adding history to a model therefore renumbers none of its transitions, and
+    a machine without history keeps its plain parent-first order.
+
+    :param root_state: Root state of a built machine
+    :type root_state: pyfcstm.model.model.State
+    :return: ``(owning state, transition)`` pairs
+    :rtype: List[Tuple[pyfcstm.model.model.State, pyfcstm.model.model.Transition]]
+
+    Example::
+
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> machine = load_state_machine_from_text('''
+        ... state R {
+        ...     state Off;
+        ...     state O { state A; state B; [*] -> A; [H] -> A; A -> B :: Next; }
+        ...     [*] -> Off;
+        ...     Off -> O.[H] :: Resume;
+        ...     !O -> Off :: Stop;
+        ... }
+        ... ''')
+        >>> [(t.from_state, t.to_state, t.history_role)
+        ...  for _, t in ordered_transitions(machine.root_state)][-3:]
+        [(INIT_STATE, 'A', 'merged'), ('A', 'B', None), (INIT_STATE, 'B', 'route')]
+    """
+    authored: List[Tuple["State", "Transition"]] = []
+    generated: List[Tuple["State", "Transition"]] = []
+    for state in _walk(root_state):
+        behind_gate = {
+            transition.from_state: transition
+            for transition in state.transitions
+            if isinstance(transition.from_state, str)
+            and transition.from_state in state.substates
+            and state.substates[transition.from_state].is_history_gate
+        }
+        moved = {id(transition) for transition in behind_gate.values()}
+        for transition in state.transitions:
+            if transition.history_role == "gate":
+                authored.append((state, behind_gate[transition.to_state]))
+                generated.append((state, transition))
+            elif transition.history_role == "route":
+                generated.append((state, transition))
+            elif id(transition) not in moved:
+                authored.append((state, transition))
+    return authored + generated

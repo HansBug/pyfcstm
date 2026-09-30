@@ -2,7 +2,7 @@
 
 import pytest
 
-from pyfcstm.dsl import INIT_STATE, parse_with_grammar_entry
+from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import load_state_machine_from_text, parse_dsl_node_to_state_machine
 from pyfcstm.simulate import SimulationRuntime
 
@@ -530,3 +530,44 @@ class TestHistoryHotStartHelpers:
         runtime.cycle()
         runtime.cycle([EVENTS["Deep"]])
         assert _active(runtime) == "Washer.Program.Wash.Agitate"
+
+
+@pytest.mark.unittest
+class TestImportedModuleHistory:
+    MODULE = """
+    state Mod {
+        state A;
+        state B;
+        [*] -> A;
+        [H] -> A;
+        A -> B :: Next;
+    }
+    """
+    HOST = """
+    state Host {
+        import "./mod.fcstm" as M;
+        state Off;
+        [*] -> Off;
+        Off -> M.[H] :: Resume;
+        !M -> Off :: Stop;
+    }
+    """
+
+    def test_a_module_root_owns_history_once_imported(self, tmp_path):
+        (tmp_path / "mod.fcstm").write_text(self.MODULE)
+        host = tmp_path / "host.fcstm"
+        host.write_text(self.HOST)
+        machine = load_state_machine_from_text(self.HOST, path=host)
+        assert [owner.owner_path for owner in machine.history_owners] == [("Host", "M")]
+        runtime = SimulationRuntime(machine)
+        for events in ([], ["Host.Off.Resume"], ["Host.M.A.Next"], ["Host.M.Stop"], ["Host.Off.Resume"]):
+            runtime.cycle(events)
+        assert runtime.current_state.path == ("Host", "M", "B")
+
+    def test_the_same_module_on_its_own_has_a_root_owner(self):
+        _, diagnostics = parse_dsl_node_to_state_machine(
+            parse_with_grammar_entry(self.MODULE, "state_machine_dsl"), collect=True
+        )
+        assert [(item.code, item.refs["reason"]) for item in diagnostics] == [
+            ("E_HISTORY_DECLARATION_INVALID", "root_owner")
+        ]

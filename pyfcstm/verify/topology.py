@@ -275,7 +275,11 @@ def _successors(edges: Mapping[str, Tuple[str, ...]], node: str) -> Tuple[str, .
     return edges.get(node, tuple())
 
 
-def _project_target(parent_state: State, target: object) -> Tuple[str, ...]:
+def _project_target(
+    parent_state: State,
+    target: object,
+    history_defaults: Optional[Mapping[str, Tuple[str, ...]]] = None,
+) -> Tuple[str, ...]:
     """Project a transition target into leaf-level graph successors.
 
     :param parent_state: State that owns the transition target.
@@ -283,6 +287,10 @@ def _project_target(parent_state: State, target: object) -> Tuple[str, ...]:
     :param target: Transition target, either a substate name or
         :data:`EXIT_STATE`.
     :type target: object
+    :param history_defaults: When given, project entries the way
+        :func:`_initial_leaf_targets` does with the same mapping, defaults to
+        ``None``
+    :type history_defaults: Optional[Mapping[str, Tuple[str, ...]]], optional
     :return: Leaf-level successor paths reached by taking the target.
     :rtype: Tuple[str, ...]
     :raises TypeError: If ``target`` is not an FCSTM transition endpoint shape.
@@ -313,9 +321,11 @@ def _project_target(parent_state: State, target: object) -> Tuple[str, ...]:
         projected: List[str] = []
         for transition in parent_state.transitions_from:
             if transition.to_state is EXIT_STATE:
-                projected.extend(_project_target(parent_parent, EXIT_STATE))
+                projected.extend(_project_target(parent_parent, EXIT_STATE, history_defaults))
             else:
-                projected.extend(_project_target(parent_parent, transition.to_state))
+                projected.extend(
+                    _project_target(parent_parent, transition.to_state, history_defaults)
+                )
         return _dedupe_sorted(projected)
 
     if isinstance(target, str):
@@ -327,7 +337,7 @@ def _project_target(parent_state: State, target: object) -> Tuple[str, ...]:
             # model is handed out. The transition reaches no leaf, so it projects
             # to no successor.
             return ()
-        return _initial_leaf_targets(target_state)
+        return _initial_leaf_targets(target_state, history_defaults)
 
     raise TypeError(  # pragma: no cover
         # Grammar-produced model transitions use only string state names and
@@ -337,11 +347,23 @@ def _project_target(parent_state: State, target: object) -> Tuple[str, ...]:
     )
 
 
-def _initial_leaf_targets(state: State) -> Tuple[str, ...]:
+def _initial_leaf_targets(
+    state: State,
+    history_defaults: Optional[Mapping[str, Tuple[str, ...]]] = None,
+) -> Tuple[str, ...]:
     """Project entering ``state`` to the leaves reached by initial descent.
+
+    With ``history_defaults`` the descent is the one root reachability needs
+    in a machine with history: route initials are not followed, because a
+    restore with a record only re-enters leaves reached before, and each
+    child listed for a composite is followed as one more initial, because an
+    entry with no record goes to the history default.
 
     :param state: State being entered by a transition or root initialization.
     :type state: State
+    :param history_defaults: Dotted composite path to the child names history
+        defaults enter, defaults to ``None`` (follow every initial)
+    :type history_defaults: Optional[Mapping[str, Tuple[str, ...]]], optional
     :return: Leaf paths reached after following initial transitions.
     :rtype: Tuple[str, ...]
 
@@ -359,7 +381,12 @@ def _initial_leaf_targets(state: State) -> Tuple[str, ...]:
 
     projected: List[str] = []
     for transition in state.init_transitions:
-        projected.extend(_project_target(state, transition.to_state))
+        if history_defaults is not None and transition.history_role == "route":
+            continue
+        projected.extend(_project_target(state, transition.to_state, history_defaults))
+    if history_defaults is not None:
+        for name in history_defaults.get(_state_path(state), ()):
+            projected.extend(_project_target(state, name, history_defaults))
     return _dedupe_sorted(projected)
 
 
@@ -406,6 +433,23 @@ def build_leaf_level_macro_graph(machine: StateMachine) -> LeafLevelGraph:
         >>> graph.edges["Root.Idle"]
         ('⊥_root',)
     """
+    return _macro_graph(machine)
+
+
+def _macro_graph(
+    machine: StateMachine,
+    history_defaults: Optional[Mapping[str, Tuple[str, ...]]] = None,
+) -> LeafLevelGraph:
+    """Build the leaf-level macro graph, optionally with history-default entries.
+
+    :param machine: State machine to project.
+    :type machine: StateMachine
+    :param history_defaults: See :func:`_initial_leaf_targets`, defaults to
+        ``None``
+    :type history_defaults: Optional[Mapping[str, Tuple[str, ...]]], optional
+    :return: Leaf-level macro graph.
+    :rtype: LeafLevelGraph
+    """
     leaves = _leaf_states(machine)
     nodes = tuple(sorted(_state_path(state) for state in leaves))
     edge_sets: Dict[str, Set[str]] = {node: set() for node in nodes}
@@ -435,7 +479,7 @@ def build_leaf_level_macro_graph(machine: StateMachine) -> LeafLevelGraph:
 
             source_path = _state_path(source_state)
             edge_sets.setdefault(source_path, set()).update(
-                _project_target(parent_state, transition.to_state)
+                _project_target(parent_state, transition.to_state, history_defaults)
             )
 
     if machine.root_state.is_leaf_state:
@@ -555,8 +599,19 @@ def unreachable_states(machine: StateMachine) -> Tuple[str, ...]:
         >>> unreachable_states(machine)
         ('Root.Lost',)
     """
+    from ..model.history import history_default_edges
+
     root_path = _state_path(machine.root_state)
-    reachable = set(topological_reachable_set(machine).get(root_path, tuple()))
+    # History routes lead to every leaf a restore could re-enter, but a restore
+    # only re-enters leaves already reached; only the defaults add reachability.
+    history_defaults: Dict[str, Tuple[str, ...]] = {}
+    for parent, child in history_default_edges(machine):
+        key = ".".join(parent)
+        history_defaults[key] = (*history_defaults.get(key, ()), child[-1])
+    graph = _macro_graph(machine, history_defaults)
+    reachable = _closure_from(
+        graph.edges, _initial_leaf_targets(machine.root_state, history_defaults)
+    )
     reachable.add(root_path)
     return tuple(
         sorted(

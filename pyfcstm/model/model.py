@@ -292,6 +292,11 @@ def _attach_model_source_metadata(
             # disagreeing with its container, and that number is worth nothing on its
             # own: those fixtures hold no cross-file transition, so the count reads the
             # same whether the code is right or wrong.  The grammar is the reason.
+            #
+            # A history route is the exception: lowering generated it and its
+            # statements, so, like the route itself, they name no source file.
+            if transition.history_role == "route":
+                continue
             for effect in transition.effects:
                 attach_operation(effect, state_source)
         for event in model_state.events.values():

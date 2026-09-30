@@ -27,14 +27,6 @@ export const HISTORY_DIAGNOSTIC_CASES: Record<string, {source: string; expected:
                     "default": "W.W1",
                     "reason": "default_not_direct_child"
                 }
-            },
-            {
-                "code": "E_HISTORY_TARGET_UNDECLARED",
-                "severity": "error",
-                "refs": {
-                    "owner_path": "R.O",
-                    "kind": "shallow"
-                }
             }
         ]
     },
@@ -49,14 +41,6 @@ export const HISTORY_DIAGNOSTIC_CASES: Record<string, {source: string; expected:
                     "kind": "deep",
                     "default": "W.Nope",
                     "reason": "default_not_found"
-                }
-            },
-            {
-                "code": "E_HISTORY_TARGET_UNDECLARED",
-                "severity": "error",
-                "refs": {
-                    "owner_path": "R.O",
-                    "kind": "deep"
                 }
             }
         ]
@@ -73,14 +57,6 @@ export const HISTORY_DIAGNOSTIC_CASES: Record<string, {source: string; expected:
                     "default": "A.Deeper",
                     "reason": "default_not_found"
                 }
-            },
-            {
-                "code": "E_HISTORY_TARGET_UNDECLARED",
-                "severity": "error",
-                "refs": {
-                    "owner_path": "R.O",
-                    "kind": "deep"
-                }
             }
         ]
     },
@@ -96,14 +72,6 @@ export const HISTORY_DIAGNOSTIC_CASES: Record<string, {source: string; expected:
                     "default": "P",
                     "reason": "default_pseudo"
                 }
-            },
-            {
-                "code": "E_HISTORY_TARGET_UNDECLARED",
-                "severity": "error",
-                "refs": {
-                    "owner_path": "R.O",
-                    "kind": "deep"
-                }
             }
         ]
     },
@@ -118,6 +86,21 @@ export const HISTORY_DIAGNOSTIC_CASES: Record<string, {source: string; expected:
                     "kind": "shallow",
                     "default": "A",
                     "reason": "root_owner"
+                }
+            }
+        ]
+    },
+    "leaf-owner": {
+        "source": "state R { state Off; state L { [H] -> L; } [*] -> Off; Off -> L.[H] :: Go; }",
+        "expected": [
+            {
+                "code": "E_HISTORY_DECLARATION_INVALID",
+                "severity": "error",
+                "refs": {
+                    "owner_path": "R.L",
+                    "kind": "shallow",
+                    "default": "L",
+                    "reason": "leaf_owner"
                 }
             }
         ]
@@ -287,7 +270,7 @@ export const HISTORY_DIAGNOSTIC_CASES: Record<string, {source: string; expected:
     }
 };
 
-export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknown[]; initial_targets: Record<string, unknown[]>; unconditional_missing: unknown[]}> = {
+export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknown[]; initial_targets: Record<string, unknown[]>; transitions?: unknown[]; root_reachable?: string[]; metrics?: unknown; findings?: Array<{code: string; refs: Record<string, unknown>}>; unconditional_missing: unknown[]}> = {
     "washer": {
         "source": "\ndef int program_entries = 0;\ndef int fill_entries = 0;\ndef int agitate_entries = 0;\ndef int wash_initials = 0;\n\nstate Washer {\n    state Paused;\n    state Program {\n        enter { program_entries = program_entries + 1; }\n        state Idle;\n        state Wash {\n            state Fill {\n                enter { fill_entries = fill_entries + 1; }\n            }\n            state Agitate {\n                enter { agitate_entries = agitate_entries + 1; }\n            }\n            [*] -> Fill effect { wash_initials = wash_initials + 1; }\n            Fill -> Agitate :: Filled;\n        }\n        [*] -> Idle;\n        [H] -> Idle;\n        [H*] -> Wash.Fill;\n        Idle -> Wash :: Start;\n    }\n    [*] -> Paused;\n    Paused -> Program :: Fresh;\n    Paused -> Program.[H] :: Shallow;\n    Paused -> Program.[H*] :: Deep;\n    !Program -> Paused :: Pause;\n}\n",
         "owners": [
@@ -333,7 +316,7 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 },
                 {
                     "target": "Washer.Program.Idle",
-                    "guard": "__hist_goto == 0 || __hist_goto == 4",
+                    "guard": null,
                     "event": null,
                     "is_unconditional": true,
                     "history_role": "merged"
@@ -356,13 +339,226 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 },
                 {
                     "target": "Washer.Program.Wash.Fill",
-                    "guard": "__hist_goto == 0 || __hist_goto == 5",
+                    "guard": null,
                     "event": null,
                     "is_unconditional": true,
                     "history_role": "gated"
                 }
             ]
         },
+        "transitions": [
+            {
+                "from_path": "Washer.Program",
+                "to_path": "Washer.Paused",
+                "event": "Washer.Program.Pause",
+                "guard": null,
+                "effect": null,
+                "transition_index": 0,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "Washer.Paused",
+                "event": null,
+                "guard": null,
+                "effect": null,
+                "transition_index": 1,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "Washer.Paused",
+                "to_path": "Washer.Program",
+                "event": "Washer.Paused.Fresh",
+                "guard": null,
+                "effect": null,
+                "transition_index": 2,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "Washer.Paused",
+                "to_path": "Washer.Program",
+                "event": "Washer.Paused.Shallow",
+                "guard": null,
+                "effect": null,
+                "transition_index": 3,
+                "history_role": null,
+                "target_history": "shallow"
+            },
+            {
+                "from_path": "Washer.Paused",
+                "to_path": "Washer.Program",
+                "event": "Washer.Paused.Deep",
+                "guard": null,
+                "effect": null,
+                "transition_index": 4,
+                "history_role": null,
+                "target_history": "deep"
+            },
+            {
+                "from_path": "Washer.Program.Idle",
+                "to_path": "[*]",
+                "event": "Washer.Program.Pause",
+                "guard": null,
+                "effect": null,
+                "transition_index": 5,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "Washer.Program.Wash",
+                "to_path": "[*]",
+                "event": "Washer.Program.Pause",
+                "guard": null,
+                "effect": null,
+                "transition_index": 6,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "Washer.Program.Idle",
+                "event": null,
+                "guard": null,
+                "effect": null,
+                "transition_index": 7,
+                "history_role": "merged",
+                "target_history": null
+            },
+            {
+                "from_path": "Washer.Program.Idle",
+                "to_path": "Washer.Program.Wash",
+                "event": "Washer.Program.Idle.Start",
+                "guard": null,
+                "effect": null,
+                "transition_index": 8,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "Washer.Program.Wash.Fill",
+                "to_path": "[*]",
+                "event": "Washer.Program.Pause",
+                "guard": null,
+                "effect": null,
+                "transition_index": 9,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "Washer.Program.Wash.Agitate",
+                "to_path": "[*]",
+                "event": "Washer.Program.Pause",
+                "guard": null,
+                "effect": null,
+                "transition_index": 10,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "Washer.Program.Wash.Fill",
+                "event": null,
+                "guard": null,
+                "effect": "wash_initials = wash_initials + 1;",
+                "transition_index": 11,
+                "history_role": "gated",
+                "target_history": null
+            },
+            {
+                "from_path": "Washer.Program.Wash.Fill",
+                "to_path": "Washer.Program.Wash.Agitate",
+                "event": "Washer.Program.Wash.Fill.Filled",
+                "guard": null,
+                "effect": null,
+                "transition_index": 12,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "Washer.Program.Wash",
+                "event": null,
+                "guard": "__hist_goto >= 5 && __hist_goto <= 7",
+                "effect": null,
+                "transition_index": 13,
+                "history_role": "route",
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "Washer.Program.Wash.Fill",
+                "event": null,
+                "guard": "__hist_goto == 6",
+                "effect": null,
+                "transition_index": 14,
+                "history_role": "route",
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "Washer.Program.Wash.Agitate",
+                "event": null,
+                "guard": "__hist_goto == 7",
+                "effect": null,
+                "transition_index": 15,
+                "history_role": "route",
+                "target_history": null
+            }
+        ],
+        "root_reachable": [
+            "Washer.Paused",
+            "Washer.Program",
+            "Washer.Program.Idle",
+            "Washer.Program.Wash",
+            "Washer.Program.Wash.Agitate",
+            "Washer.Program.Wash.Fill"
+        ],
+        "metrics": {
+            "n_states_leaf": 4,
+            "n_states_composite": 3,
+            "n_states_pseudo": 0,
+            "max_hierarchy_depth": 3,
+            "n_transitions_normal": 8,
+            "n_transitions_forced": 5,
+            "n_events": 6,
+            "n_variables": 4,
+            "var_to_leaf_ratio": 1.0,
+            "aspect_coverage": {},
+            "abstract_action_inventory": []
+        },
+        "findings": [
+            {
+                "code": "W_UNREFERENCED_VAR",
+                "refs": {
+                    "var_name": "agitate_entries",
+                    "init_value": "0"
+                }
+            },
+            {
+                "code": "W_UNREFERENCED_VAR",
+                "refs": {
+                    "var_name": "fill_entries",
+                    "init_value": "0"
+                }
+            },
+            {
+                "code": "W_UNREFERENCED_VAR",
+                "refs": {
+                    "var_name": "program_entries",
+                    "init_value": "0"
+                }
+            },
+            {
+                "code": "W_UNREFERENCED_VAR",
+                "refs": {
+                    "var_name": "wash_initials",
+                    "init_value": "0"
+                }
+            }
+        ],
         "unconditional_missing": []
     },
     "blocked-gated": {
@@ -415,7 +611,7 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 },
                 {
                     "target": "R.O.Idle",
-                    "guard": "__hist_goto == 0",
+                    "guard": null,
                     "event": null,
                     "is_unconditional": true,
                     "history_role": "gated"
@@ -424,13 +620,202 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
             "R.O.K": [
                 {
                     "target": "R.O.K.K1",
-                    "guard": "(__hist_goto == 0 || __hist_goto == 5) && ready == 1 || __hist_goto == 6",
+                    "guard": "ready == 1",
                     "event": null,
                     "is_unconditional": false,
                     "history_role": "merged"
                 }
             ]
         },
+        "transitions": [
+            {
+                "from_path": "R.O",
+                "to_path": "R.Off",
+                "event": "R.O.Stop",
+                "guard": null,
+                "effect": null,
+                "transition_index": 0,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "R.Off",
+                "event": null,
+                "guard": null,
+                "effect": null,
+                "transition_index": 1,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "R.Off",
+                "to_path": "R.O",
+                "event": "R.Off.Fresh",
+                "guard": null,
+                "effect": null,
+                "transition_index": 2,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "R.Off",
+                "to_path": "R.O",
+                "event": "R.Off.Resume",
+                "guard": null,
+                "effect": null,
+                "transition_index": 3,
+                "history_role": null,
+                "target_history": "shallow"
+            },
+            {
+                "from_path": "R.Off",
+                "to_path": "R.O",
+                "event": "R.Off.ResumeDeep",
+                "guard": null,
+                "effect": null,
+                "transition_index": 4,
+                "history_role": null,
+                "target_history": "deep"
+            },
+            {
+                "from_path": "R.Off",
+                "to_path": "R.Off",
+                "event": "R.Off.Block",
+                "guard": null,
+                "effect": "ready = 0;",
+                "transition_index": 5,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "R.O.Idle",
+                "to_path": "[*]",
+                "event": "R.O.Stop",
+                "guard": null,
+                "effect": null,
+                "transition_index": 6,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "R.O.K",
+                "to_path": "[*]",
+                "event": "R.O.Stop",
+                "guard": null,
+                "effect": null,
+                "transition_index": 7,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "R.O.Idle",
+                "event": null,
+                "guard": null,
+                "effect": "fresh_entries = fresh_entries + 1;",
+                "transition_index": 8,
+                "history_role": "gated",
+                "target_history": null
+            },
+            {
+                "from_path": "R.O.Idle",
+                "to_path": "R.O.K",
+                "event": "R.O.Idle.Go",
+                "guard": null,
+                "effect": null,
+                "transition_index": 9,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "R.O.K.K1",
+                "to_path": "[*]",
+                "event": "R.O.Stop",
+                "guard": null,
+                "effect": null,
+                "transition_index": 10,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "R.O.K.K1",
+                "event": null,
+                "guard": "ready == 1",
+                "effect": null,
+                "transition_index": 11,
+                "history_role": "merged",
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "R.O.K",
+                "event": null,
+                "guard": "__hist_goto >= 5 && __hist_goto <= 6",
+                "effect": null,
+                "transition_index": 12,
+                "history_role": "route",
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "R.O.Idle",
+                "event": null,
+                "guard": "__hist_goto == 4",
+                "effect": null,
+                "transition_index": 13,
+                "history_role": "route",
+                "target_history": null
+            }
+        ],
+        "root_reachable": [
+            "R.O",
+            "R.O.Idle",
+            "R.O.K",
+            "R.O.K.K1",
+            "R.Off"
+        ],
+        "metrics": {
+            "n_states_leaf": 3,
+            "n_states_composite": 3,
+            "n_states_pseudo": 0,
+            "max_hierarchy_depth": 3,
+            "n_transitions_normal": 8,
+            "n_transitions_forced": 4,
+            "n_events": 6,
+            "n_variables": 2,
+            "var_to_leaf_ratio": 0.6666666666666666,
+            "aspect_coverage": {},
+            "abstract_action_inventory": []
+        },
+        "findings": [
+            {
+                "code": "W_INITIAL_UNCONDITIONAL_MISSING",
+                "refs": {
+                    "composite_path": "R.O.K",
+                    "existing_conditional_count": 1,
+                    "first_child_name": "K1",
+                    "suggested_fix": {
+                        "kind": "insert",
+                        "target": "unconditional_initial_transition",
+                        "anchor": {
+                            "type": "ref",
+                            "ref": "refs.composite_path"
+                        },
+                        "text": "[*] -> K1;\n",
+                        "rationale": "Add an unconditional fallback entry transition for the composite state."
+                    }
+                }
+            },
+            {
+                "code": "W_UNREFERENCED_VAR",
+                "refs": {
+                    "var_name": "fresh_entries",
+                    "init_value": "0"
+                }
+            }
+        ],
         "unconditional_missing": [
             {
                 "composite_path": "R.O.K",
@@ -482,7 +867,7 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 },
                 {
                     "target": "R.O.Idle",
-                    "guard": "__hist_goto == 0 || __hist_goto == 4",
+                    "guard": null,
                     "event": null,
                     "is_unconditional": true,
                     "history_role": "merged"
@@ -491,13 +876,203 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
             "R.O.K": [
                 {
                     "target": "R.O.K.K1",
-                    "guard": "(__hist_goto == 0 || __hist_goto == 5) && ready == 1 || __hist_goto == 6",
+                    "guard": "ready == 1",
                     "event": null,
                     "is_unconditional": false,
                     "history_role": "merged"
                 }
             ]
         },
+        "transitions": [
+            {
+                "from_path": "R.O",
+                "to_path": "R.Off",
+                "event": "R.O.Stop",
+                "guard": null,
+                "effect": null,
+                "transition_index": 0,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "R.Off",
+                "event": null,
+                "guard": null,
+                "effect": null,
+                "transition_index": 1,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "R.Off",
+                "to_path": "R.O",
+                "event": "R.Off.Fresh",
+                "guard": null,
+                "effect": null,
+                "transition_index": 2,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "R.Off",
+                "to_path": "R.O",
+                "event": "R.Off.Resume",
+                "guard": null,
+                "effect": null,
+                "transition_index": 3,
+                "history_role": null,
+                "target_history": "shallow"
+            },
+            {
+                "from_path": "R.Off",
+                "to_path": "R.O",
+                "event": "R.Off.ResumeDeep",
+                "guard": null,
+                "effect": null,
+                "transition_index": 4,
+                "history_role": null,
+                "target_history": "deep"
+            },
+            {
+                "from_path": "R.Off",
+                "to_path": "R.Off",
+                "event": "R.Off.Block",
+                "guard": null,
+                "effect": "ready = 0;",
+                "transition_index": 5,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "R.O.Idle",
+                "to_path": "[*]",
+                "event": "R.O.Stop",
+                "guard": null,
+                "effect": null,
+                "transition_index": 6,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "R.O.K",
+                "to_path": "[*]",
+                "event": "R.O.Stop",
+                "guard": null,
+                "effect": null,
+                "transition_index": 7,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "R.O.Idle",
+                "event": null,
+                "guard": null,
+                "effect": null,
+                "transition_index": 8,
+                "history_role": "merged",
+                "target_history": null
+            },
+            {
+                "from_path": "R.O.Idle",
+                "to_path": "R.O.K",
+                "event": "R.O.Idle.Go",
+                "guard": null,
+                "effect": null,
+                "transition_index": 9,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "R.O.K.K1",
+                "to_path": "[*]",
+                "event": "R.O.Stop",
+                "guard": null,
+                "effect": null,
+                "transition_index": 10,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "R.O.K.K1",
+                "event": null,
+                "guard": "ready == 1",
+                "effect": null,
+                "transition_index": 11,
+                "history_role": "merged",
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "R.O.K",
+                "event": null,
+                "guard": "__hist_goto >= 5 && __hist_goto <= 6",
+                "effect": null,
+                "transition_index": 12,
+                "history_role": "route",
+                "target_history": null
+            }
+        ],
+        "root_reachable": [
+            "R.O",
+            "R.O.Idle",
+            "R.O.K",
+            "R.O.K.K1",
+            "R.Off"
+        ],
+        "metrics": {
+            "n_states_leaf": 3,
+            "n_states_composite": 3,
+            "n_states_pseudo": 0,
+            "max_hierarchy_depth": 3,
+            "n_transitions_normal": 8,
+            "n_transitions_forced": 4,
+            "n_events": 6,
+            "n_variables": 2,
+            "var_to_leaf_ratio": 0.6666666666666666,
+            "aspect_coverage": {},
+            "abstract_action_inventory": []
+        },
+        "findings": [
+            {
+                "code": "W_INITIAL_UNCONDITIONAL_MISSING",
+                "refs": {
+                    "composite_path": "R.O.K",
+                    "existing_conditional_count": 1,
+                    "first_child_name": "K1",
+                    "suggested_fix": {
+                        "kind": "insert",
+                        "target": "unconditional_initial_transition",
+                        "anchor": {
+                            "type": "ref",
+                            "ref": "refs.composite_path"
+                        },
+                        "text": "[*] -> K1;\n",
+                        "rationale": "Add an unconditional fallback entry transition for the composite state."
+                    }
+                }
+            },
+            {
+                "code": "W_UNREFERENCED_VAR",
+                "refs": {
+                    "var_name": "fresh_entries",
+                    "init_value": "0",
+                    "definition_delete_anchor": "fresh_entries",
+                    "suggested_fix": {
+                        "kind": "delete",
+                        "target": "variable_definition",
+                        "anchor": {
+                            "type": "ref",
+                            "ref": "refs.definition_delete_anchor"
+                        },
+                        "text": "",
+                        "rationale": "Remove the declaration-only variable because it has no DSL reads or writes."
+                    }
+                }
+            }
+        ],
         "unconditional_missing": [
             {
                 "composite_path": "R.O.K",
@@ -552,14 +1127,165 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                     "history_role": "route"
                 },
                 {
-                    "target": "R.O.__hist_gate_1",
-                    "guard": "__hist_goto == 0",
-                    "event": null,
+                    "target": "R.O.A",
+                    "guard": null,
+                    "event": "Kick",
                     "is_unconditional": false,
-                    "history_role": "gate"
+                    "history_role": "gated"
                 }
             ]
         },
+        "transitions": [
+            {
+                "from_path": "R.O",
+                "to_path": "R.Off",
+                "event": "R.O.Stop",
+                "guard": null,
+                "effect": null,
+                "transition_index": 0,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "R.Off",
+                "event": null,
+                "guard": null,
+                "effect": null,
+                "transition_index": 1,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "R.Off",
+                "to_path": "R.O",
+                "event": "R.Off.Fresh",
+                "guard": null,
+                "effect": null,
+                "transition_index": 2,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "R.Off",
+                "to_path": "R.O",
+                "event": "R.Off.Resume",
+                "guard": null,
+                "effect": null,
+                "transition_index": 3,
+                "history_role": null,
+                "target_history": "shallow"
+            },
+            {
+                "from_path": "R.O.A",
+                "to_path": "[*]",
+                "event": "R.O.Stop",
+                "guard": null,
+                "effect": null,
+                "transition_index": 4,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "R.O.B",
+                "to_path": "[*]",
+                "event": "R.O.Stop",
+                "guard": null,
+                "effect": null,
+                "transition_index": 5,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "R.O.A",
+                "event": "R.O.Kick",
+                "guard": null,
+                "effect": null,
+                "transition_index": 6,
+                "history_role": "gated",
+                "target_history": null
+            },
+            {
+                "from_path": "R.O.A",
+                "to_path": "R.O.B",
+                "event": "R.O.A.Next",
+                "guard": null,
+                "effect": null,
+                "transition_index": 7,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "R.O.B",
+                "event": null,
+                "guard": "__hist_goto == 5",
+                "effect": null,
+                "transition_index": 8,
+                "history_role": "route",
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "R.O.A",
+                "event": null,
+                "guard": "__hist_goto == 4",
+                "effect": null,
+                "transition_index": 9,
+                "history_role": "route",
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "R.O.__hist_gate_1",
+                "event": null,
+                "guard": "__hist_goto == 0",
+                "effect": null,
+                "transition_index": 10,
+                "history_role": "gate",
+                "target_history": null
+            }
+        ],
+        "root_reachable": [
+            "R.O",
+            "R.O.A",
+            "R.O.B",
+            "R.Off"
+        ],
+        "metrics": {
+            "n_states_leaf": 3,
+            "n_states_composite": 2,
+            "n_states_pseudo": 0,
+            "max_hierarchy_depth": 2,
+            "n_transitions_normal": 5,
+            "n_transitions_forced": 3,
+            "n_events": 5,
+            "n_variables": 0,
+            "var_to_leaf_ratio": 0.0,
+            "aspect_coverage": {},
+            "abstract_action_inventory": []
+        },
+        "findings": [
+            {
+                "code": "W_INITIAL_UNCONDITIONAL_MISSING",
+                "refs": {
+                    "composite_path": "R.O",
+                    "existing_conditional_count": 1,
+                    "first_child_name": "A",
+                    "suggested_fix": {
+                        "kind": "insert",
+                        "target": "unconditional_initial_transition",
+                        "anchor": {
+                            "type": "ref",
+                            "ref": "refs.composite_path"
+                        },
+                        "text": "[*] -> A;\n",
+                        "rationale": "Add an unconditional fallback entry transition for the composite state."
+                    }
+                }
+            }
+        ],
         "unconditional_missing": [
             {
                 "composite_path": "R.O",
@@ -634,7 +1360,7 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 },
                 {
                     "target": "R.O.S2",
-                    "guard": "__hist_goto == 0",
+                    "guard": null,
                     "event": null,
                     "is_unconditional": true,
                     "history_role": "gated"
@@ -650,13 +1376,177 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 },
                 {
                     "target": "R.O.S2.A2",
-                    "guard": "__hist_goto == 0 || __hist_goto == 5 || __hist_goto == 6",
+                    "guard": null,
                     "event": null,
                     "is_unconditional": true,
                     "history_role": "merged"
                 }
             ]
         },
+        "transitions": [
+            {
+                "from_path": "R.O",
+                "to_path": "R.Off",
+                "event": "R.O.Stop",
+                "guard": null,
+                "effect": null,
+                "transition_index": 0,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "R.Off",
+                "event": null,
+                "guard": null,
+                "effect": null,
+                "transition_index": 1,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "R.Off",
+                "to_path": "R.O",
+                "event": "R.Off.Fresh",
+                "guard": null,
+                "effect": null,
+                "transition_index": 2,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "R.Off",
+                "to_path": "R.O",
+                "event": "R.Off.Resume",
+                "guard": null,
+                "effect": null,
+                "transition_index": 3,
+                "history_role": null,
+                "target_history": "shallow"
+            },
+            {
+                "from_path": "R.O.S1",
+                "to_path": "[*]",
+                "event": "R.O.Stop",
+                "guard": null,
+                "effect": null,
+                "transition_index": 4,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "R.O.S2",
+                "to_path": "[*]",
+                "event": "R.O.Stop",
+                "guard": null,
+                "effect": null,
+                "transition_index": 5,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "R.O.S2",
+                "event": null,
+                "guard": null,
+                "effect": null,
+                "transition_index": 6,
+                "history_role": "gated",
+                "target_history": "deep"
+            },
+            {
+                "from_path": "R.O.S2.A2",
+                "to_path": "[*]",
+                "event": "R.O.Stop",
+                "guard": null,
+                "effect": null,
+                "transition_index": 7,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "R.O.S2.B2",
+                "to_path": "[*]",
+                "event": "R.O.Stop",
+                "guard": null,
+                "effect": null,
+                "transition_index": 8,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "R.O.S2.A2",
+                "event": null,
+                "guard": null,
+                "effect": null,
+                "transition_index": 9,
+                "history_role": "merged",
+                "target_history": null
+            },
+            {
+                "from_path": "R.O.S2.A2",
+                "to_path": "R.O.S2.B2",
+                "event": "R.O.S2.A2.Next",
+                "guard": null,
+                "effect": null,
+                "transition_index": 10,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "R.O.S1",
+                "event": null,
+                "guard": "__hist_goto == 4",
+                "effect": null,
+                "transition_index": 11,
+                "history_role": "route",
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "R.O.S2",
+                "event": null,
+                "guard": "__hist_goto >= 5 && __hist_goto <= 7",
+                "effect": null,
+                "transition_index": 12,
+                "history_role": "route",
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "R.O.S2.B2",
+                "event": null,
+                "guard": "__hist_goto == 7",
+                "effect": null,
+                "transition_index": 13,
+                "history_role": "route",
+                "target_history": null
+            }
+        ],
+        "root_reachable": [
+            "R.O",
+            "R.O.S1",
+            "R.O.S2",
+            "R.O.S2.A2",
+            "R.O.S2.B2",
+            "R.Off"
+        ],
+        "metrics": {
+            "n_states_leaf": 4,
+            "n_states_composite": 3,
+            "n_states_pseudo": 0,
+            "max_hierarchy_depth": 3,
+            "n_transitions_normal": 6,
+            "n_transitions_forced": 5,
+            "n_events": 4,
+            "n_variables": 0,
+            "var_to_leaf_ratio": 0.0,
+            "aspect_coverage": {},
+            "abstract_action_inventory": []
+        },
+        "findings": [],
         "unconditional_missing": []
     },
     "siblings": {
@@ -717,7 +1607,7 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 },
                 {
                     "target": "R.P.P1",
-                    "guard": "__hist_goto == 0 || __hist_goto == 4",
+                    "guard": null,
                     "event": null,
                     "is_unconditional": true,
                     "history_role": "merged"
@@ -733,7 +1623,7 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 },
                 {
                     "target": "R.Q.Q1",
-                    "guard": "__hist_goto == 0 || __hist_goto == 7",
+                    "guard": null,
                     "event": null,
                     "is_unconditional": true,
                     "history_role": "merged"
@@ -749,13 +1639,279 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 },
                 {
                     "target": "R.Q.Q2.Q21",
-                    "guard": "__hist_goto == 0 || __hist_goto == 9",
+                    "guard": null,
                     "event": null,
                     "is_unconditional": true,
                     "history_role": "merged"
                 }
             ]
         },
+        "transitions": [
+            {
+                "from_path": "R.P",
+                "to_path": "R.Off",
+                "event": "R.P.Stop",
+                "guard": null,
+                "effect": null,
+                "transition_index": 0,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "R.Q",
+                "to_path": "R.Off",
+                "event": "R.Q.Stop",
+                "guard": null,
+                "effect": null,
+                "transition_index": 1,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "R.Off",
+                "event": null,
+                "guard": null,
+                "effect": null,
+                "transition_index": 2,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "R.Off",
+                "to_path": "R.P",
+                "event": "R.Off.FreshP",
+                "guard": null,
+                "effect": null,
+                "transition_index": 3,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "R.Off",
+                "to_path": "R.Q",
+                "event": "R.Off.FreshQ",
+                "guard": null,
+                "effect": null,
+                "transition_index": 4,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "R.Off",
+                "to_path": "R.P",
+                "event": "R.Off.ResumeP",
+                "guard": null,
+                "effect": null,
+                "transition_index": 5,
+                "history_role": null,
+                "target_history": "deep"
+            },
+            {
+                "from_path": "R.Off",
+                "to_path": "R.Q",
+                "event": "R.Off.ResumeQ",
+                "guard": null,
+                "effect": null,
+                "transition_index": 6,
+                "history_role": null,
+                "target_history": "deep"
+            },
+            {
+                "from_path": "R.P.P1",
+                "to_path": "[*]",
+                "event": "R.P.Stop",
+                "guard": null,
+                "effect": null,
+                "transition_index": 7,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "R.P.P2",
+                "to_path": "[*]",
+                "event": "R.P.Stop",
+                "guard": null,
+                "effect": null,
+                "transition_index": 8,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "R.P.P1",
+                "event": null,
+                "guard": null,
+                "effect": null,
+                "transition_index": 9,
+                "history_role": "merged",
+                "target_history": null
+            },
+            {
+                "from_path": "R.P.P1",
+                "to_path": "R.P.P2",
+                "event": "R.P.P1.Next",
+                "guard": null,
+                "effect": null,
+                "transition_index": 10,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "R.Q.Q1",
+                "to_path": "[*]",
+                "event": "R.Q.Stop",
+                "guard": null,
+                "effect": null,
+                "transition_index": 11,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "R.Q.Q2",
+                "to_path": "[*]",
+                "event": "R.Q.Stop",
+                "guard": null,
+                "effect": null,
+                "transition_index": 12,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "R.Q.Q1",
+                "event": null,
+                "guard": null,
+                "effect": null,
+                "transition_index": 13,
+                "history_role": "merged",
+                "target_history": null
+            },
+            {
+                "from_path": "R.Q.Q1",
+                "to_path": "R.Q.Q2",
+                "event": "R.Q.Q1.Next",
+                "guard": null,
+                "effect": null,
+                "transition_index": 14,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "R.Q.Q2.Q21",
+                "to_path": "[*]",
+                "event": "R.Q.Stop",
+                "guard": null,
+                "effect": null,
+                "transition_index": 15,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "R.Q.Q2.Q22",
+                "to_path": "[*]",
+                "event": "R.Q.Stop",
+                "guard": null,
+                "effect": null,
+                "transition_index": 16,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "R.Q.Q2.Q21",
+                "event": null,
+                "guard": null,
+                "effect": null,
+                "transition_index": 17,
+                "history_role": "merged",
+                "target_history": null
+            },
+            {
+                "from_path": "R.Q.Q2.Q21",
+                "to_path": "R.Q.Q2.Q22",
+                "event": "R.Q.Q2.Q21.Next",
+                "guard": null,
+                "effect": null,
+                "transition_index": 18,
+                "history_role": null,
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "R.P.P2",
+                "event": null,
+                "guard": "__hist_goto == 5",
+                "effect": null,
+                "transition_index": 19,
+                "history_role": "route",
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "R.Q.Q2",
+                "event": null,
+                "guard": "__hist_goto >= 8 && __hist_goto <= 10",
+                "effect": null,
+                "transition_index": 20,
+                "history_role": "route",
+                "target_history": null
+            },
+            {
+                "from_path": "[*]",
+                "to_path": "R.Q.Q2.Q22",
+                "event": null,
+                "guard": "__hist_goto == 10",
+                "effect": null,
+                "transition_index": 21,
+                "history_role": "route",
+                "target_history": null
+            }
+        ],
+        "root_reachable": [
+            "R.Off",
+            "R.P",
+            "R.P.P1",
+            "R.P.P2",
+            "R.Q",
+            "R.Q.Q1",
+            "R.Q.Q2",
+            "R.Q.Q2.Q21",
+            "R.Q.Q2.Q22"
+        ],
+        "metrics": {
+            "n_states_leaf": 6,
+            "n_states_composite": 4,
+            "n_states_pseudo": 0,
+            "max_hierarchy_depth": 3,
+            "n_transitions_normal": 11,
+            "n_transitions_forced": 8,
+            "n_events": 9,
+            "n_variables": 1,
+            "var_to_leaf_ratio": 0.16666666666666666,
+            "aspect_coverage": {},
+            "abstract_action_inventory": []
+        },
+        "findings": [
+            {
+                "code": "W_UNREFERENCED_VAR",
+                "refs": {
+                    "var_name": "n",
+                    "init_value": "0",
+                    "definition_delete_anchor": "n",
+                    "suggested_fix": {
+                        "kind": "delete",
+                        "target": "variable_definition",
+                        "anchor": {
+                            "type": "ref",
+                            "ref": "refs.definition_delete_anchor"
+                        },
+                        "text": "",
+                        "rationale": "Remove the declaration-only variable because it has no DSL reads or writes."
+                    }
+                }
+            }
+        ],
         "unconditional_missing": []
     },
     "combo": {
@@ -798,7 +1954,7 @@ export const HISTORY_MODEL_CASES: Record<string, {source: string; owners: unknow
                 },
                 {
                     "target": "R.S.A",
-                    "guard": "__hist_goto == 0 || __hist_goto == 4",
+                    "guard": null,
                     "event": null,
                     "is_unconditional": true,
                     "history_role": "merged"

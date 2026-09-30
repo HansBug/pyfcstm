@@ -1379,16 +1379,16 @@ E_HISTORY_DECLARATION_INVALID
 .. diagnostics-ref E_HISTORY_DECLARATION_INVALID owner_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_HISTORY_DECLARATION_INVALID kind type=str required=true enum=shallow|deep item_enum=- exact_values=-
 .. diagnostics-ref E_HISTORY_DECLARATION_INVALID default type=str required=true enum=- item_enum=- exact_values=-
-.. diagnostics-ref E_HISTORY_DECLARATION_INVALID reason type=str required=true enum=root_owner|duplicate|default_not_direct_child|default_not_found|default_pseudo item_enum=- exact_values=-
+.. diagnostics-ref E_HISTORY_DECLARATION_INVALID reason type=str required=true enum=root_owner|leaf_owner|duplicate|default_not_direct_child|default_not_found|default_pseudo item_enum=- exact_values=-
 
 
 .. diagnostics-boundary E_HISTORY_DECLARATION_INVALID kind=cli_error
 
 **Registry facts.** Severity ``error``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``transition``.
 
-**Meaning.** A history declaration (`[H] -> Child;` or `[H*] -> Child.Leaf;`) is declared by the root state, repeats a kind the owner already declares, or names a default target that is not a valid state below the owner.
+**Meaning.** A history declaration (`[H] -> Child;` or `[H*] -> Child.Leaf;`) is declared by the root state or by a leaf state, repeats a kind the owner already declares, or names a default target that is not a valid state below the owner.
 
-**LLM repair summary.** A ``[H]`` / ``[H*]`` declaration is malformed. The root state cannot own history, each owner declares each kind at most once, a ``[H]`` default is a direct child, and a default never names a pseudo state or a missing state.
+**LLM repair summary.** A ``[H]`` / ``[H*]`` declaration is malformed. Neither the root state nor a leaf state can own history, each owner declares each kind at most once, a ``[H]`` default is a direct child, and a default never names a pseudo state or a missing state.
 
 .. list-table:: Refs schema
    :header-rows: 1
@@ -1413,7 +1413,7 @@ E_HISTORY_DECLARATION_INVALID
    * - ``reason``
      - ``str``
      - yes
-     - Short tag describing why the declaration is invalid. (enum: ``root_owner``, ``duplicate``, ``default_not_direct_child``, ``default_not_found``, ``default_pseudo``)
+     - Short tag describing why the declaration is invalid. (enum: ``root_owner``, ``leaf_owner``, ``duplicate``, ``default_not_direct_child``, ``default_not_found``, ``default_pseudo``)
 
 .. diagnostics-example E_HISTORY_DECLARATION_INVALID 1 cli_error
 

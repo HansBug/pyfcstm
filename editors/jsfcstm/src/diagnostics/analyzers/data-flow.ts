@@ -1,6 +1,7 @@
 import type {ModelDiagnosticJson, VariableInfo} from '../inspect';
 import type {StateMachine} from '../../model/runtime';
 import {collectExprVariables} from './use-def';
+import {authoredGuard, isHistoryGenerated} from '../../model/history';
 
 const INIT_MARK = '[*]';
 const EXIT_MARK = '[*]';
@@ -90,8 +91,9 @@ function collectGuardVarsNeverChangeDiagnostics(
     const out: ModelDiagnosticJson[] = [];
     for (const state of machine.allStates) {
         for (const transition of state.transitions) {
-            if (!transition.guard) continue;
-            const guardVars = collectExprVariables(transition.guard)
+            const guard = authoredGuard(transition);
+            if (!guard || isHistoryGenerated(transition)) continue;
+            const guardVars = collectExprVariables(guard)
                 .filter(name => declaredVars.has(name))
                 .sort();
             if (guardVars.length === 0) continue;

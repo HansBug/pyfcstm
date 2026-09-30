@@ -26,6 +26,13 @@ import type {
     RawFcstmModelTransition as Transition,
     RawFcstmModelVarDefine,
 } from './raw';
+import type {
+    Expr as ModelExpr,
+    OperationStatement as ModelOperationStatement,
+    State as ModelState,
+    StateMachine as ModelStateMachine,
+    Transition as ModelTransition,
+} from './runtime';
 
 export const HISTORY_PREFIX = '__hist_';
 export const HISTORY_MARKERS: Record<FcstmHistoryKind, string> = {shallow: '[H]', deep: '[H*]'};
@@ -117,6 +124,8 @@ class HistoryLowering {
     private readonly ids = new Map<string, number>();
     private readonly goto = HISTORY_PREFIX + GOTO_TAG;
     private readonly diagnostics: FcstmModelHistoryDiagnostic[] = [];
+    // [owner path, kind] of every invalid declaration, as JSON keys.
+    private readonly invalid = new Set<string>();
 
     constructor(private readonly input: HistoryLoweringInput) {
         walk(input.rootState).forEach((state, index) => {
@@ -189,11 +198,13 @@ class HistoryLowering {
                 const target = this.resolveDefault(owner, decl.defaultPath);
                 let reason: string | undefined;
                 if (owner === this.input.rootState) reason = 'root_owner';
+                else if (owner.isLeafState) reason = 'leaf_owner';
                 else if (declared.get(key(path))?.has(decl.historyKind)) reason = 'duplicate';
                 else if (decl.historyKind === 'shallow' && decl.defaultPath.length !== 1) reason = 'default_not_direct_child';
                 else if (!target) reason = 'default_not_found';
                 else if (target.isPseudo) reason = 'default_pseudo';
                 if (reason) {
+                    this.invalid.add(JSON.stringify([key(path), decl.historyKind]));
                     this.emit(
                         'E_HISTORY_DECLARATION_INVALID',
                         'error',
@@ -232,6 +243,8 @@ class HistoryLowering {
                     found.push([transition, owner.path, kind]);
                     continue;
                 }
+                // An invalid declaration is already reported; its targets are not undeclared.
+                if (this.invalid.has(JSON.stringify([key(owner.path), kind]))) continue;
                 const reportKey = JSON.stringify([owner.path, kind, transition.range]);
                 if (reported.has(reportKey)) continue;
                 reported.add(reportKey);
@@ -340,6 +353,8 @@ class HistoryLowering {
         range: TextRange,
     ): Transition {
         const targetStatePath = parent.substates[toState].path;
+        // A route has no source text; a gate entry stands at the evented initial it guards.
+        const sourcePath = range === ZERO ? undefined : this.input.filePath;
         return {
             kind: 'transition', pyModelType: 'Transition', range, text: '',
             fromState: 'INIT_STATE', from_state: 'INIT_STATE', toState, to_state: toState,
@@ -348,7 +363,7 @@ class HistoryLowering {
             targetStatePath, target_state_path: targetStatePath,
             sourceKind: 'init', targetKind: 'state', transitionKind: 'entry', forced: false,
             declaredInStatePath: parent.path, declared_in_state_path: parent.path,
-            sourcePath: this.input.filePath, source_path: this.input.filePath,
+            sourcePath, source_path: sourcePath,
             combo_origin_refs: [], combo_projection_key: null, combo_projection_order_key: null,
             combo_reuse_group_id: null, combo_priority_run_identity: null, combo_priority_run_index: null,
             historyRole: role, history_role: role,
@@ -537,7 +552,7 @@ class HistoryLowering {
                     this.inSubtree(child.path),
                     child.isLeafState ? [assign(this.goto, integer(0))] : [],
                     'route',
-                    comp.range,
+                    ZERO,
                 );
             });
             comp.transitions.splice(0, 0, ...routes);
@@ -556,4 +571,99 @@ class HistoryLowering {
  */
 export function lowerHistory(input: HistoryLoweringInput): HistoryLoweringResult {
     return new HistoryLowering(input).run();
+}
+
+// Static analyses judge what the author wrote, so they read a lowered machine
+// through the helpers below, exactly as pyfcstm's do.
+
+const GENERATED_ROLES: ReadonlySet<string> = new Set(['route', 'gate']);
+const REWRITTEN_ROLES: ReadonlySet<string> = new Set(['merged', 'gated']);
+
+/** Whether history lowering generated ``transition``: a route initial or a gate entry. */
+export function isHistoryGenerated(transition: ModelTransition): boolean {
+    return transition.historyRole !== undefined && GENERATED_ROLES.has(transition.historyRole);
+}
+
+/** The guard the author wrote, before lowering conjoined restore conditions onto it. */
+export function authoredGuard(transition: ModelTransition): ModelExpr | undefined {
+    return transition.historyRole !== undefined && REWRITTEN_ROLES.has(transition.historyRole)
+        ? transition.historyUserGuard
+        : transition.guard;
+}
+
+/**
+ * The effect statements the author wrote, without the ``__hist_goto``
+ * assignments lowering adds. A transition lowering did not rewrite keeps all
+ * of its effects: a model without history may still name a variable
+ * ``__hist_goto``.
+ */
+export function authoredEffects(transition: ModelTransition): ModelOperationStatement[] {
+    if (transition.historyRole === undefined && transition.targetHistory === undefined) return transition.effects;
+    const goto = HISTORY_PREFIX + GOTO_TAG;
+    return transition.effects.filter(statement => (statement as {varName?: string}).varName !== goto);
+}
+
+/**
+ * ``[composite path, child path]`` entries history defaults add to structural
+ * reachability, as dotted paths in first-use order: one per step of the default
+ * path of every history kind some transition enters. A restore with a record
+ * only re-enters states already reached, so only the defaults add any.
+ */
+export function historyDefaultEdges(machine: ModelStateMachine): Array<[string, string]> {
+    const owners = new Map(machine.historyOwners.map(owner => [key(owner.ownerPath), owner]));
+    const edges: Array<[string, string]> = [];
+    const seen = new Set<string>();
+    const visit = (scope: ModelState): void => {
+        for (const transition of scope.transitions) {
+            const kind = transition.targetHistory;
+            if (!kind) continue;
+            const owner = owners.get(key([...scope.path, transition.toState]));
+            const defaultPath = owner?.defaults[kind];
+            if (!owner || !defaultPath) continue;
+            let path = owner.ownerPath;
+            for (const name of defaultPath) {
+                const child = [...path, name];
+                const edgeKey = JSON.stringify([path, child]);
+                if (!seen.has(edgeKey)) {
+                    seen.add(edgeKey);
+                    edges.push([key(path), key(child)]);
+                }
+                path = child;
+            }
+        }
+        Object.values(scope.substates).forEach(visit);
+    };
+    visit(machine.rootState);
+    return edges;
+}
+
+/**
+ * Every transition with its owning state, in the order reports number them:
+ * authored transitions parent-first as written, an evented initial lowering
+ * moved behind a gate at the place of its gate entry, then the edges lowering
+ * generated, parent-first. A machine without history keeps its plain order.
+ */
+export function orderedTransitions(root: ModelState): Array<[ModelState, ModelTransition]> {
+    const authored: Array<[ModelState, ModelTransition]> = [];
+    const generated: Array<[ModelState, ModelTransition]> = [];
+    const visit = (state: ModelState): void => {
+        const behindGate = new Map<string, ModelTransition>();
+        for (const transition of state.transitions) {
+            if (state.substates[transition.fromState]?.isHistoryGate) behindGate.set(transition.fromState, transition);
+        }
+        const moved = new Set(behindGate.values());
+        for (const transition of state.transitions) {
+            if (transition.historyRole === 'gate') {
+                authored.push([state, behindGate.get(transition.toState)!]);
+                generated.push([state, transition]);
+            } else if (transition.historyRole === 'route') {
+                generated.push([state, transition]);
+            } else if (!moved.has(transition)) {
+                authored.push([state, transition]);
+            }
+        }
+        Object.values(state.substates).forEach(visit);
+    };
+    visit(root);
+    return [...authored, ...generated];
 }

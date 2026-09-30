@@ -1379,16 +1379,16 @@ E_HISTORY_DECLARATION_INVALID
 .. diagnostics-ref E_HISTORY_DECLARATION_INVALID owner_path type=str required=true enum=- item_enum=- exact_values=-
 .. diagnostics-ref E_HISTORY_DECLARATION_INVALID kind type=str required=true enum=shallow|deep item_enum=- exact_values=-
 .. diagnostics-ref E_HISTORY_DECLARATION_INVALID default type=str required=true enum=- item_enum=- exact_values=-
-.. diagnostics-ref E_HISTORY_DECLARATION_INVALID reason type=str required=true enum=root_owner|duplicate|default_not_direct_child|default_not_found|default_pseudo item_enum=- exact_values=-
+.. diagnostics-ref E_HISTORY_DECLARATION_INVALID reason type=str required=true enum=root_owner|leaf_owner|duplicate|default_not_direct_child|default_not_found|default_pseudo item_enum=- exact_values=-
 
 
 .. diagnostics-boundary E_HISTORY_DECLARATION_INVALID kind=cli_error
 
 **注册表事实。** 严重级别 ``error``；发射层级 ``static_pipeline``；能力层级 ``pure_static``；源码对象 ``transition``。
 
-**含义。** 历史声明（\ ``[H] -> Child;`` 或 ``[H*] -> Child.Leaf;``\ ）出现在根状态中、重复声明了所有者已声明的种类，或者默认目标不是所有者下合法的状态。
+**含义。** 历史声明（\ ``[H] -> Child;`` 或 ``[H*] -> Child.Leaf;``\ ）出现在根状态或叶状态中、重复声明了所有者已声明的种类，或者默认目标不是所有者下合法的状态。
 
-**面向 LLM 的修复摘要。** ``[H]`` / ``[H*]`` 声明不合法：根状态不能拥有历史，每个所有者每种历史至多声明一次，浅历史的默认目标必须是直接子状态，默认目标不能是伪状态或不存在的状态。
+**面向 LLM 的修复摘要。** ``[H]`` / ``[H*]`` 声明不合法：根状态和叶状态都不能拥有历史，每个所有者每种历史至多声明一次，浅历史的默认目标必须是直接子状态，默认目标不能是伪状态或不存在的状态。
 
 .. list-table:: ``refs`` 字段
    :header-rows: 1
@@ -1413,7 +1413,7 @@ E_HISTORY_DECLARATION_INVALID
    * - ``reason``
      - ``str``
      - 是
-     - 字段含义：声明不合法的简短原因标签，取值为 ``root_owner``\ 、\ ``duplicate``\ 、\ ``default_not_direct_child``\ 、\ ``default_not_found``\ 、\ ``default_pseudo``\ 。
+     - 字段含义：声明不合法的简短原因标签，取值为 ``root_owner``\ 、\ ``leaf_owner``\ 、\ ``duplicate``\ 、\ ``default_not_direct_child``\ 、\ ``default_not_found``\ 、\ ``default_pseudo``\ 。
 
 .. diagnostics-example E_HISTORY_DECLARATION_INVALID 1 cli_error
 

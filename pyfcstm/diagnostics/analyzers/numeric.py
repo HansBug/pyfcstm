@@ -146,6 +146,8 @@ def _diagnostics_for_expr(
 
 
 def _iter_expression_contexts(machine: "StateMachine") -> Iterable[_Context]:
+    from ...model.history import authored_effects, authored_guard, is_history_generated
+
     for var_name, var_define in machine.defines.items():
         if var_define.init is None:
             continue
@@ -158,13 +160,16 @@ def _iter_expression_contexts(machine: "StateMachine") -> Iterable[_Context]:
 
     for state in machine.walk_states():
         for transition in state.transitions:
-            if transition.guard is not None:
+            if is_history_generated(transition):
+                continue
+            guard = authored_guard(transition)
+            if guard is not None:
                 yield _Context(
-                    transition.guard,
+                    guard,
                     "guard",
                     getattr(transition, "_span", None),
                 )
-            for stmt in transition.effects:
+            for stmt in authored_effects(transition):
                 yield from _iter_statement_expression_contexts(
                     stmt,
                     "transition_effect",

@@ -312,14 +312,13 @@ def _event_name(transition: Transition) -> Optional[str]:
 
 
 def _transition_index_map(root) -> Dict[int, int]:
-    """Build a parent-first transition index map for one verify run."""
-    index_map: Dict[int, int] = {}
-    index = 0
-    for state in root.walk_states():
-        for candidate in state.transitions:
-            index_map[id(candidate)] = index
-            index += 1
-    return index_map
+    """Build the inspect transition index map for one verify run."""
+    from ...model.history import ordered_transitions
+
+    return {
+        id(candidate): index
+        for index, (_, candidate) in enumerate(ordered_transitions(root))
+    }
 
 
 @contextmanager

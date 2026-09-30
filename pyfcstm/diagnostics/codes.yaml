@@ -1104,8 +1104,9 @@ E_HISTORY_DECLARATION_INVALID:
   span_object: transition
   description: >-
     A history declaration (`[H] -> Child;` or `[H*] -> Child.Leaf;`) is
-    declared by the root state, repeats a kind the owner already declares, or
-    names a default target that is not a valid state below the owner.
+    declared by the root state or by a leaf state, repeats a kind the owner
+    already declares, or names a default target that is not a valid state
+    below the owner.
   refs:
     owner_path:
       type: str
@@ -1126,14 +1127,15 @@ E_HISTORY_DECLARATION_INVALID:
       description: Short tag describing why the declaration is invalid.
       enum:
         - 'root_owner'
+        - 'leaf_owner'
         - 'duplicate'
         - 'default_not_direct_child'
         - 'default_not_found'
         - 'default_pseudo'
   for_llm:
     summary: >-
-      A ``[H]`` / ``[H*]`` declaration is malformed. The root state cannot own
-      history, each owner declares each kind at most once, a ``[H]`` default is
+      A ``[H]`` / ``[H*]`` declaration is malformed. Neither the root state nor
+      a leaf state can own history, each owner declares each kind at most once, a ``[H]`` default is
       a direct child, and a default never names a pseudo state or a missing
       state.
     recommended_actions:

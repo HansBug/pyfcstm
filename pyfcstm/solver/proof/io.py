@@ -115,6 +115,10 @@ def _validate_graph(graph):
         if node.certificate is not None:
             for bound in node.certificate.bounds:
                 _references((bound.term_id,) + tuple(term for term, _ in bound.coefficients), terms)
+            from .rules import check_arithmetic_certificate
+
+            if not check_arithmetic_certificate(node, graph, node.certificate):
+                raise ValueError('invalid arithmetic derivation')
         if node.linear_equality is not None:
             equality = node.linear_equality
             _references((equality.term_id,), terms)
@@ -136,6 +140,10 @@ def _validate_graph(graph):
             _references(tuple(term for term, _ in node.divisibility.coefficients), terms)
             if any(graph.term(term).sort != 'Int' for term, _ in node.divisibility.coefficients):
                 raise ValueError('divisibility evidence requires integer terms')
+            from .integer import check_divisibility_certificate
+
+            if not check_divisibility_certificate(node, graph, node.divisibility):
+                raise ValueError('invalid divisibility derivation')
         if node.polynomial is not None:
             from .polynomial import check_polynomial_certificate
 
@@ -327,26 +335,29 @@ def _validate(value):
         for weight in value.weights:
             _rational(weight)
     elif isinstance(value, proof.DivisibilityCertificate):
-        from .rules import _add, _bound_vector
+        from math import ceil, floor
+        from .integer import _combine_pairs
+        from .rules import _add
 
         if not value.bound_pairs or len(value.bound_pairs) != len(value.weights):
-            raise ValueError('divisibility equations and weights must align')
-        total = {}
+            raise ValueError('divisibility bounds and weights must align')
         for (first, second), weight in zip(value.bound_pairs, value.weights):
             _rational(weight)
             if (first.relation != 'le' or second.relation != 'le' or
-                    _add(_bound_vector(first), _bound_vector(second))):
-                raise ValueError('divisibility equations require opposing bounds')
-            total = _add(total, _bound_vector(first), Fraction(weight))
-        constant = total.pop(None, Fraction(0))
-        _rational(value.constant)
+                    _add({key: Fraction(v) for key, v in first.coefficients},
+                         {key: Fraction(v) for key, v in second.coefficients})):
+                raise ValueError('divisibility ranges require opposing coefficient vectors')
+        total, lower, upper = _combine_pairs(value.bound_pairs, value.weights)
+        _rational(value.lower)
+        _rational(value.upper)
         _distinct(tuple(term for term, _ in value.coefficients))
         for _, coefficient in value.coefficients:
             _rational(coefficient)
-        if (constant != Fraction(value.constant) or constant.denominator == 1 or
+        if (lower != Fraction(value.lower) or upper != Fraction(value.upper) or
+                ceil(lower) <= floor(upper) or
                 total != {term: Fraction(weight) for term, weight in value.coefficients} or
                 any(weight.denominator != 1 for weight in total.values())):
-            raise ValueError('divisibility sum must equate an integer with a noninteger')
+            raise ValueError('divisibility sum must have an integer-free range')
     elif isinstance(value, proof.PolynomialStep):
         _choice(value.rule, ('input', 'square', 'square_zero', 'product', 'cancel_positive', 'positive_factor',
                              'sum', 'power_sign', 'power_identity', 'equality_product'))

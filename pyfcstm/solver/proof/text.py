@@ -447,13 +447,27 @@ def _render(reading, language, detail):
             for index, ((first, second), weight) in enumerate(zip(certificate.bound_pairs, certificate.weights)):
                 lines.append('  B%d: %s; B%d: %s' % (2 * index + 1, _linear_text(first, terms),
                                                    2 * index + 2, _linear_text(second, terms)))
-                lines.append('  E%d: %s' % (index + 1, _linear_text(replace(first, relation='eq'), terms)))
-                lines.append('    ' + choose('Equation multiplier: ', '等式乘数：') + weight)
+                if Fraction(first.constant) == -Fraction(second.constant):
+                    lines.append('  E%d: %s' % (index + 1, _linear_text(replace(first, relation='eq'), terms)))
+                    lines.append('    ' + choose('Equation multiplier: ', '等式乘数：') + weight)
+                else:
+                    lines.append('    ' + choose('Range multiplier: ', '区间乘数：') + weight)
             from .core import LinearBound
-            equation = LinearBound('', False, certificate.coefficients, certificate.constant, 'eq')
-            lines.append('  ' + choose('Sum: ', '相加得到：') + _linear_text(equation, terms))
-            lines.append('  ' + choose('The variable sum is an integer; it cannot equal ',
-                                      '变量的整系数和为整数，不可能等于 ') + str(-Fraction(certificate.constant)) + '.')
+            if certificate.lower == certificate.upper:
+                equation = LinearBound('', False, certificate.coefficients, str(-Fraction(certificate.lower)), 'eq')
+                lines.append('  ' + choose('Sum: ', '相加得到：') + _linear_text(equation, terms))
+                lines.append('  ' + choose('The variable sum is an integer; it cannot equal ',
+                                          '变量的整系数和为整数，不可能等于 ') + certificate.lower + '.')
+            else:
+                lower = LinearBound('', False, tuple((key, str(-Fraction(v))) for key, v in certificate.coefficients),
+                                    certificate.lower, 'le')
+                upper = LinearBound('', False, certificate.coefficients, str(-Fraction(certificate.upper)), 'le')
+                lines.append('  ' + choose('Combined lower bound: ', '组合下界：') + _linear_text(lower, terms))
+                lines.append('  ' + choose('Combined upper bound: ', '组合上界：') + _linear_text(upper, terms))
+                lines.append('  ' + choose('The variable sum is an integer, but the closed interval ',
+                                          '变量的整系数和为整数，但闭区间 ') +
+                             '[%s, %s]' % (certificate.lower, certificate.upper) +
+                             choose(' contains no integer; contradiction.', ' 内没有整数，矛盾。'))
         if node.interval is not None and block.kind != 'domain':
             certificate = node.interval
             for index, bound in enumerate(certificate.bounds):

@@ -346,3 +346,23 @@ def test_native_integer_division_equality_chains_are_checked():
     assert all(node.local_check == 'checked' for node in chains)
     assert all(node.inference_kind == 'equality' for node in chains)
     assert report.scope_check == 'passed'
+
+
+@pytest.mark.parametrize('rounding', ['floor', 'ceil'])
+@pytest.mark.parametrize('scale,offset', [('1', '0'), ('1/2', '1/3'), ('3/2', '-2/3')])
+def test_integer_cast_bounds_keep_rounding_semantics(rounding, scale, offset):
+    x = z3.Real('frame_value')
+    factor, shift = z3.RealVal(scale), z3.RealVal(offset)
+    rounded = z3.ToReal(z3.ToInt(x)) if rounding == 'floor' else -z3.ToReal(z3.ToInt(-x))
+    domain = x >= 0 if rounding == 'floor' else x <= 0
+    bad = factor * rounded + shift < shift if rounding == 'floor' else factor * rounded + shift > shift
+    report = solver.explain_unsat(solver.UnsatQuery('rounded_bound', (
+        solver.UnsatConstraint('domain', (domain,)),
+        solver.UnsatConstraint('goal', (bad,)),
+    )))
+    assert report.solver_status == 'unsat'
+    assert report.proof_status == 'captured'
+    assert report.reading_status == 'complete'
+    assert report.gaps == ()
+    restored = solver.UnsatReport.from_canonical(report.to_canonical())
+    assert restored.proof == report.proof

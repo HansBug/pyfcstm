@@ -1,0 +1,36 @@
+Query: rounding
+Solver result: UNSAT
+Reading: complete
+
+P1  Input
+  Input origins: domain
+  Therefore: (x >= 0)
+
+P2  Input
+  Input origins: goal
+  Therefore: (to_real(to_int(x)) < 0)
+
+P3  Logical consequence
+  From: P2
+  Therefore: not ((to_real(to_int(x)) >= 0))
+
+P4  Floor differs by less than one
+  For every real x, to_int(x) <= x < to_int(x) + 1.
+  Therefore: (false or not (((x + (-1 * to_real(to_int(x)))) >= 1)))
+
+P5  Logical consequence
+  Therefore: true
+
+P6  Resolve the clauses
+  From: P4, P5
+  Therefore: not (((x + (-1 * to_real(to_int(x)))) >= 1))
+
+P7  Exact linear combination
+  From: P1, P3, P6
+  1 * [-1 * x <= 0]
+  1 * [to_int(x) + 1 <= 0]
+  1 * [x + -1 * to_int(x) + -1 < 0]
+  Sum: 0 < 0; contradiction.
+  Therefore: false
+
+Conclusion: the submitted conjunction is inconsistent.

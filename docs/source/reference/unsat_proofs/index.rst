@@ -150,7 +150,7 @@ Evidence and reading data
    * - ``IntervalStep``
      - ``term_id``, exact rational ``lower`` / ``upper`` (``None`` denotes infinity), ``lower_open`` / ``upper_open``, deduction ``rule``, prior-step ``premises`` and optional ``bound_index`` for a linear deduction. ``substitutions`` retains local equalities. A ``congruence`` step transfers its one source range; ``congruence_sum`` checks exact cancellation of equal terms and records the resulting constant singleton. Steps unrelated to the final result are removed.
    * - ``DivisibilityCertificate``
-     - Opposing ``bound_pairs``, signed rational ``weights``, integral ``coefficients`` and a nonintegral ``constant`` establish an impossible integer equation.
+     - Opposing coefficient vectors in ``bound_pairs``, signed rational ``weights`` and integral ``coefficients`` confine an integer sum to the closed interval ``[lower, upper]``. Exact endpoint rounding proves that this interval contains no integer. Equal endpoints cover the nonintegral equation case.
    * - ``LinearEqualityCertificate``
      - Equality ``term_id`` and arithmetic certificates ``less`` / ``greater`` refuting both strict order alternatives.
    * - ``PolynomialCertificate``

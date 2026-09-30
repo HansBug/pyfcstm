@@ -31,3 +31,9 @@ analyze\_proof
 -----------------------------------------------------
 
 .. autofunction:: analyze_proof
+
+
+check\_arithmetic\_certificate
+-----------------------------------------------------
+
+.. autofunction:: check_arithmetic_certificate

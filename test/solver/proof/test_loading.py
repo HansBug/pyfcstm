@@ -338,10 +338,14 @@ def test_loader_rejects_changed_polynomial_certificates(mutation, message):
 
 
 @pytest.mark.parametrize('mutation,message', [
-    ('missing_weights', 'equations and weights must align'),
-    ('not_opposing', 'require opposing bounds'),
-    ('wrong_sum', 'integer with a noninteger'),
+    ('missing_weights', 'bounds and weights must align'),
+    ('not_opposing', 'integer-free range'),
+    ('wrong_sum', 'integer-free range'),
     ('real_atom', 'requires integer terms'),
+    ('nonopposite_coefficients', 'opposing coefficient vectors'),
+    ('wrong_conclusion', 'invalid divisibility derivation'),
+    ('missing_premise', 'invalid divisibility derivation'),
+    ('changed_literal', 'invalid divisibility derivation'),
 ])
 def test_loader_rejects_changed_divisibility_certificates(mutation, message):
     from dataclasses import replace
@@ -357,7 +361,15 @@ def test_loader_rejects_changed_divisibility_certificates(mutation, message):
     elif mutation == 'not_opposing':
         certificate['bound_pairs'][0][1]['constant'] = '100'
     elif mutation == 'wrong_sum':
-        certificate['constant'] = '1/3'
+        certificate['lower'] = '1/3'
+    elif mutation == 'nonopposite_coefficients':
+        certificate['bound_pairs'][0][0]['coefficients'] = (('x', '1'),)
+    elif mutation == 'wrong_conclusion':
+        data['proof']['nodes'][-1]['conclusion'] = 'upper'
+    elif mutation == 'missing_premise':
+        data['proof']['nodes'][-1]['parents'] = ('y_upper', 'lower', 'y_lower')
+    elif mutation == 'changed_literal':
+        next(term for term in data['proof']['terms'] if term['term_id'] == 'one')['value'] = '2'
     else:
         next(term for term in data['proof']['terms'] if term['term_id'] == 'x')['sort'] = 'Real'
     with pytest.raises(ValueError, match=message):
@@ -378,4 +390,32 @@ def test_loader_rejects_linear_evidence_for_a_different_conclusion():
     graph = replace(graph, nodes=graph.nodes[:-1] + (changed,))
     data = UnsatReport('linear_equality', 'unsat', 'captured', graph).to_canonical()
     with pytest.raises(ValueError, match='must prove an arithmetic conclusion alternative'):
+        UnsatReport.from_canonical(data)
+
+
+@pytest.mark.parametrize('mutation', ['bound', 'weight', 'sum', 'strict', 'empty', 'nonlocal'])
+def test_loader_rechecks_arithmetic_evidence_instead_of_trusting_stored_totals(mutation):
+    x = z3.Real('x')
+    report = explain_unsat(UnsatQuery('rounding', (
+        UnsatConstraint('domain', (x >= 0,)),
+        UnsatConstraint('goal', (z3.ToReal(z3.ToInt(x)) < 0,)),
+    )))
+    data = json.loads(json.dumps(report.to_canonical()))
+    certificate = next(node['certificate'] for node in data['proof']['nodes']
+                       if node['certificate'] is not None)
+    if mutation == 'bound':
+        certificate['bounds'][0]['constant'] = '1234567'
+    elif mutation == 'weight':
+        certificate['weights'] = ['-1' for _ in certificate['weights']]
+    elif mutation == 'sum':
+        certificate['constant'] = '1234567'
+    elif mutation == 'empty':
+        certificate['bounds'] = []
+        certificate['weights'] = []
+    elif mutation == 'nonlocal':
+        certificate['bounds'][0]['term_id'] = data['proof']['inputs'][1]['term_id']
+        certificate['bounds'][0]['negated'] = False
+    else:
+        certificate['strict'] = not certificate['strict']
+    with pytest.raises(ValueError, match='arithmetic derivation'):
         UnsatReport.from_canonical(data)

@@ -328,3 +328,51 @@ def test_fbmcq_only_root_contradiction_uses_compositional_evidence(text_aligner)
     assert report.reading_status == 'complete'
     assert report.gaps == ()
     _check_reading_levels(report, text_aligner)
+
+
+@pytest.mark.parametrize('predicate', [
+    'x>=0 && floor(x)<0',
+    'x<=0 && ceil(x)>0',
+    'x>=0 && y>=0 && floor(x)*floor(y)>x*y',
+])
+def test_rounding_bounds_remain_complete_inside_bmc(predicate, text_aligner):
+    model = load_state_machine_from_text(
+        'def float x=0; def float y=0; state Root { state A; [*]->A; }')
+    core = build_bmc_core_formula(BmcEngine(model).prepare(
+        'init state("Root.A") havoc {x,y}; check reach <= 1: %s;' % predicate))
+    prop = compile_bmc_property(core)
+    report = explain_unsat(UnsatQuery('rounding', tuple(
+        UnsatConstraint(key, (expression,)) for key, expression in (
+            ('domain', core.domain_formula), ('initial', core.initial_formula),
+            ('transitions', core.transition_formula), ('environment', core.environment_formula),
+            ('objective', prop.objective_formula),
+        ))))
+    assert report.solver_status == 'unsat'
+    assert report.proof_status == 'captured'
+    assert report.reading_status == 'complete'
+    assert report.gaps == ()
+    _check_reading_levels(report, text_aligner)
+
+
+@pytest.mark.parametrize('predicate', [
+    'x%3==1 && (x+2)%3!=0',
+    'x>1 && y>1 && x*y==7',
+    'x>1 && y>1 && x*y==11',
+])
+def test_integer_modular_conditions_have_complete_bmc_proofs(predicate, text_aligner):
+    model = load_state_machine_from_text(
+        'def int x=0; def int y=0; state Root { state A; [*]->A; }')
+    core = build_bmc_core_formula(BmcEngine(model).prepare(
+        'init state("Root.A") havoc {x,y}; check reach <= 1: %s;' % predicate))
+    prop = compile_bmc_property(core)
+    report = explain_unsat(UnsatQuery('integer_conditions', tuple(
+        UnsatConstraint(key, (expression,)) for key, expression in (
+            ('domain', core.domain_formula), ('initial', core.initial_formula),
+            ('transitions', core.transition_formula), ('environment', core.environment_formula),
+            ('objective', prop.objective_formula),
+        ))), timeout_ms=30000)
+    assert report.solver_status == 'unsat'
+    assert report.proof_status == 'captured'
+    assert report.reading_status == 'complete'
+    assert report.gaps == ()
+    _check_reading_levels(report, text_aligner)

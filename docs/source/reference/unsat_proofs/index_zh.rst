@@ -142,7 +142,7 @@ reading_status="not_requested"``。存在受信任的机械规则时，可以同
    * - ``IntervalStep``
      - ``term_id``、精确有理数 ``lower`` / ``upper``（``None`` 表示无穷）、``lower_open`` / ``upper_open``、推导 ``rule``、先前步骤 ``premises``，以及线性推导可用的 ``bound_index``。``substitutions`` 保存局部等式。``congruence`` 从唯一的源范围传递边界；``congruence_sum`` 检查相等项的精确系数相消，记录所得常量单点。最终结果未使用的步骤会被移除。
    * - ``DivisibilityCertificate``
-     - 方向相反的 ``bound_pairs``、带符号有理数 ``weights``、整数 ``coefficients`` 和非整数 ``constant``，共同建立不可能成立的整数等式。
+     - ``bound_pairs`` 保存系数向量相反的边界，结合带符号有理数 ``weights`` 和整数 ``coefficients``，将整数和限制在闭区间 ``[lower, upper]`` 内。精确取整检查证明区间内没有整数；端点相等时覆盖非整数等式的情形。
    * - ``LinearEqualityCertificate``
      - 等式 ``term_id``，以及分别反驳两个严格大小关系的算术证书 ``less`` / ``greater``。
    * - ``PolynomialCertificate``

@@ -9,6 +9,7 @@ pyfcstm.solver.proof
 .. toctree::
     :maxdepth: 3
 
+    arithmetic
     core
     integer
     interval

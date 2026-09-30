@@ -369,18 +369,20 @@ class ArithmeticCertificate:
 
 @dataclass(frozen=True)
 class DivisibilityCertificate:
-    """Opposing inequalities establish equations with an impossible integer sum.
+    """Weighted bounds confine an integer sum to a range without an integer.
 
-    :param bound_pairs: Two opposing non-strict inequalities for each equation.
-    :param weights: Signed rational multiplier of the first bound in each pair.
+    :param bound_pairs: Opposite coefficient vectors with non-strict bounds.
+    :param weights: Signed rational multiplier of the first vector in each pair.
     :param coefficients: Integral coefficients of the resulting integer terms.
-    :param constant: Nonintegral constant in the resulting equation against zero.
+    :param lower: Exact closed lower endpoint of the resulting sum.
+    :param upper: Exact closed upper endpoint of the resulting sum.
     """
 
     bound_pairs: Tuple[Tuple[LinearBound, LinearBound], ...]
     weights: Tuple[str, ...]
     coefficients: Tuple[Tuple[str, str], ...]
-    constant: str
+    lower: str
+    upper: str
 
 
 @dataclass(frozen=True)

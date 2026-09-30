@@ -10,3 +10,9 @@ divisibility\_certificate
 -----------------------------------------------------
 
 .. autofunction:: divisibility_certificate
+
+
+check\_divisibility\_certificate
+-----------------------------------------------------
+
+.. autofunction:: check_divisibility_certificate

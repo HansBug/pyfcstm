@@ -129,7 +129,7 @@ DivisibilityCertificate
 -----------------------------------------------------
 
 .. autoclass:: DivisibilityCertificate
-    :members: bound_pairs,weights,coefficients,constant
+    :members: bound_pairs,weights,coefficients,lower,upper
 
 
 LinearEqualityCertificate

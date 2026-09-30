@@ -42,7 +42,7 @@ def test_interleaved_opposing_bounds_prove_integer_divisibility():
     assert certificate is not None
     assert certificate.weights == ('1/2', '1')
     assert certificate.coefficients == (('x', '1'), ('y', '1'))
-    assert certificate.constant == '-1/2'
+    assert certificate.lower == certificate.upper == '1/2'
     assert tuple((first.term_id, second.term_id) for first, second in certificate.bound_pairs) == (
         ('upper', 'lower'), ('y_upper', 'y_lower'))
 
@@ -99,7 +99,7 @@ def test_strict_integer_bound_is_normalized_before_pairing():
                   if term.term_id == 'upper' else term for term in graph.terms)
     certificate = _check(replace(graph, terms=terms))
     assert certificate is not None
-    assert certificate.constant == '-1/2'
+    assert certificate.lower == certificate.upper == '1/2'
 
 
 def test_negative_weights_preserve_equality_orientation():
@@ -110,7 +110,7 @@ def test_negative_weights_preserve_equality_orientation():
     certificate = _check(replace(graph, nodes=graph.nodes[:-1] + (root,)))
     assert certificate is not None
     assert certificate.coefficients == (('x', '-1'), ('y', '-1'))
-    assert certificate.constant == '1/2'
+    assert certificate.lower == certificate.upper == '-1/2'
 
 
 def test_repeated_bound_pairs_keep_each_contribution():
@@ -122,7 +122,7 @@ def test_repeated_bound_pairs_keep_each_contribution():
     assert certificate is not None
     assert len(certificate.bound_pairs) == 3
     assert certificate.coefficients == (('x', '3'),)
-    assert certificate.constant == '-3/2'
+    assert certificate.lower == certificate.upper == '3/2'
 
 
 def test_divisibility_analysis_obeys_shared_deadline():
@@ -160,7 +160,7 @@ def test_public_parity_proof_checks_every_native_divisibility_node():
         assert node.inference_kind == 'divisibility'
         certificate = node.divisibility
         assert certificate is not None
-        assert Fraction(certificate.constant).denominator == 2
+        assert Fraction(certificate.lower).denominator == 2
         assert all(Fraction(value).denominator == 1 and report.proof.term(term).sort == 'Int'
                    for term, value in certificate.coefficients)
         assert certificate == _check(replace(report.proof, root_id=node.node_id))
@@ -181,4 +181,27 @@ def test_zero_weight_equalities_are_absent_from_the_divisibility_path():
     assert tuple((first.term_id, second.term_id) for first, second in certificate.bound_pairs) == (
         ('upper', 'lower'),)
     assert certificate.coefficients == (('x', '1'),)
-    assert certificate.constant == '-1/2'
+    assert certificate.lower == certificate.upper == '1/2'
+
+
+@pytest.mark.parametrize('mutation', ['lower', 'upper', 'weight', 'coefficients', 'empty', 'opposite'])
+def test_divisibility_replay_checks_the_interval_arithmetic_itself(mutation):
+    from pyfcstm.solver.proof.integer import check_divisibility_certificate
+
+    graph = _graph()
+    certificate = _check(graph)
+    assert check_divisibility_certificate(graph.node('root'), graph, certificate)
+    if mutation == 'lower':
+        certificate = replace(certificate, lower='0')
+    elif mutation == 'upper':
+        certificate = replace(certificate, upper='1')
+    elif mutation == 'weight':
+        certificate = replace(certificate, weights=('0', '0'))
+    elif mutation == 'coefficients':
+        certificate = replace(certificate, coefficients=(('x', '2'), ('y', '1')))
+    elif mutation == 'empty':
+        certificate = replace(certificate, bound_pairs=(), weights=())
+    else:
+        first, second = certificate.bound_pairs[0]
+        certificate = replace(certificate, bound_pairs=((first, first),) + certificate.bound_pairs[1:])
+    assert not check_divisibility_certificate(graph.node('root'), graph, certificate)

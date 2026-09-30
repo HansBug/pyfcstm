@@ -177,7 +177,7 @@ def _affine_term(term, graph, values, nonlinear_atoms):
     return _nonlinear_atom(term, graph) if nonlinear_atoms else {term_id: Fraction(1)}
 
 
-def _bound(term_id, negated, graph, nonlinear_atoms=False):
+def _bound(term_id, negated, graph, nonlinear_atoms=False, tighten=True):
     original, original_negated = term_id, negated
     term = graph.term(term_id)
     while term.operator_kind == 'builtin' and term.operator == 'not':
@@ -202,9 +202,14 @@ def _bound(term_id, negated, graph, nonlinear_atoms=False):
     coefficients = _add(left_value, right_value, Fraction(-1))
     constant = coefficients.pop(None, Fraction(0))
     relation = 'eq' if operator == '=' else ('lt' if operator in ('<', '>') else 'le')
-    if relation == 'lt' and graph.term(left).sort == 'Int' and graph.term(right).sort == 'Int':
-        # Integer p < 0 is equivalent to p + 1 <= 0. Keeping real strictness
-        # here would miss certificates whose contradiction depends on integrality.
+    from .arithmetic import strengthen_bound
+
+    if tighten:
+        constant, relation = strengthen_bound(coefficients, constant, relation, graph)
+    elif relation == 'lt' and graph.term(left).sort == 'Int' and graph.term(right).sort == 'Int':
+        # Equality-pair witnesses use the native unit-step coordinates. Stronger
+        # lattice rounding can turn opposing bounds into an immediate conflict,
+        # destroying that equality witness even though the premises stay UNSAT.
         constant += 1
         relation = 'le'
     return LinearBound(original, original_negated,
@@ -240,6 +245,39 @@ def _certificate(node, graph):
         return None, 'invalid'
     return ArithmeticCertificate(bounds, tuple(str(value) for value in weights),
                                  str(constant), strict), 'checked'
+
+
+def check_arithmetic_certificate(node, graph, certificate):
+    """Replay a weighted contradiction from this node's own local premises.
+
+    Stored normalized bounds and totals are proposals. Recompute the bounds
+    from portable terms, including integer lattices, and add their exact
+    weighted values without invoking either search or a native solver.
+    """
+    if (node.conclusion is None or not certificate.bounds or
+            len(certificate.bounds) != len(certificate.weights)):
+        return False
+    literals = {(graph.node(parent).conclusion, False) for parent in node.parents}
+    if not _is_false(node.conclusion, graph):
+        conclusion = graph.term(node.conclusion)
+        clauses = (conclusion.arguments if conclusion.operator_kind == 'builtin' and
+                   conclusion.operator == 'or' else (node.conclusion,))
+        literals.update((clause, True) for clause in clauses)
+    total, constant, strict = {}, Fraction(0), False
+    for bound, value in zip(certificate.bounds, certificate.weights):
+        if (bound.term_id, bound.negated) not in literals:
+            return False
+        if not any(bound == _bound(bound.term_id, bound.negated, graph, nonlinear)
+                   for nonlinear in (False, True)):
+            return False
+        weight = Fraction(value)
+        if weight < 0 and bound.relation != 'eq':
+            return False
+        total = _add(total, {key: Fraction(coefficient) for key, coefficient in bound.coefficients}, weight)
+        constant += weight * Fraction(bound.constant)
+        strict = strict or (weight > 0 and bound.relation == 'lt')
+    return (not total and constant == Fraction(certificate.constant) and strict == certificate.strict and
+            (constant > 0 or constant == 0 and strict))
 
 
 def _local_pair_certificate(node, graph):
@@ -891,7 +929,7 @@ def analyze_proof(graph: ProofGraph, rule_handlers=(), budget=None) -> ProofAnal
                 certificate, local = _certificate(node, graph)
                 kind = 'arithmetic' if certificate is not None else 'opaque'
             if local == 'unsupported' and tuple(p.value for p in node.parameters[:2]) in (
-                    ('arith',), ('arith', 'farkas'), ('arith', 'eq-propagate')):
+                    ('arith',), ('arith', 'farkas'), ('arith', 'eq-propagate'), ('arith', 'gcd-test')):
                 certificate = (_local_pair_certificate(node, graph) or
                                _linear_certificate(node, graph, budget))
                 if certificate is not None:
@@ -902,12 +940,12 @@ def analyze_proof(graph: ProofGraph, rule_handlers=(), budget=None) -> ProofAnal
                     if interval is not None:
                         local, kind = 'checked', 'interval'
             if local == 'unsupported' and tuple(p.value for p in node.parameters[:2]) in (
-                    ('arith',), ('arith', 'farkas'), ('arith', 'eq-propagate')):
+                    ('arith',), ('arith', 'farkas'), ('arith', 'eq-propagate'), ('arith', 'gcd-test')):
                 linear_equality = _linear_equality(node, graph, budget)
                 if linear_equality is not None:
                     local, kind = 'checked', 'linear_equality'
             if local == 'unsupported' and tuple(p.value for p in node.parameters[:2]) in (
-                    ('arith',), ('arith', 'farkas'), ('arith', 'eq-propagate')):
+                    ('arith',), ('arith', 'farkas'), ('arith', 'eq-propagate'), ('arith', 'gcd-test')):
                 from .polynomial import polynomial_certificate
                 polynomial = polynomial_certificate(node, graph, budget, diagnostics=diagnostics)
                 if polynomial is not None:

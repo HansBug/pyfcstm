@@ -1,0 +1,44 @@
+title: An activation that only passes a pseudo state leaves the record untouched
+origin:
+  files:
+  - test/model/test_history_lowering.py
+categories:
+- runtime
+- template_alignment
+- history
+steps:
+- cycle: []
+  expect:
+    state: R.Off
+    vars:
+      bounce: 0
+- cycle: R.Off.Fresh
+  expect:
+    state: R.O.A
+    vars:
+      bounce: 0
+- cycle: R.O.A.Next
+  expect:
+    state: R.O.B
+    vars:
+      bounce: 0
+- cycle: R.O.Stop
+  expect:
+    state: R.Off
+    vars:
+      bounce: 0
+- cycle: R.Off.Arm
+  expect:
+    state: R.Off
+    vars:
+      bounce: 1
+- cycle: R.Off.Fresh
+  expect:
+    state: R.Off
+    vars:
+      bounce: 0
+- cycle: R.Off.Resume
+  expect:
+    state: R.O.B
+    vars:
+      bounce: 0

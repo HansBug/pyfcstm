@@ -205,7 +205,7 @@
         },
         {
           "name": "constant.language.pseudo-state.fcstm",
-          "match": "\\[\\*\\]"
+          "match": "\\[\\*\\]|\\[H\\*?\\]"
         },
         {
           "name": "keyword.operator.scope.fcstm",

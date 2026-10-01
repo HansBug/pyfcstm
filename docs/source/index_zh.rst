@@ -97,6 +97,7 @@ pyfcstm 遵循三阶段流水线：
     tutorials/inspect/index_zh
     tutorials/generation/index_zh
     tutorials/visualization/index_zh
+    tutorials/history/index_zh
     tutorials/bmc/index_zh
     tutorials/unsat_proofs/index_zh
 
@@ -107,6 +108,7 @@ pyfcstm 遵循三阶段流水线：
 * :doc:`tutorials/inspect/index_zh`
 * :doc:`tutorials/generation/index_zh`
 * :doc:`tutorials/visualization/index_zh`
+* :doc:`tutorials/history/index_zh`
 * :doc:`tutorials/bmc/index_zh`
 * :doc:`tutorials/unsat_proofs/index_zh`
 

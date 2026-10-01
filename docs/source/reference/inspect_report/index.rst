@@ -106,7 +106,7 @@ these required top-level fields.
        generated combo edges and forced expansions are folded to authored
        transitions. This section does not emit warnings or a health score.
    * - ``reachability_graph``
-     - Default inspect graph: guards ignored, composite initial edges followed.
+     - Default inspect graph: guards ignored, composite initial edges followed. A transition into ``Owner.[H]`` / ``Owner.[H*]`` also reaches the states of the default path and what a restore can re-enter; see :ref:`dsl-history-reference`.
    * - ``event_emission_map``
      - Event name to source states that can emit it.
    * - ``var_dataflow``
@@ -131,9 +131,9 @@ Nested object contracts
    * - Object
      - Required fields and notes
    * - ``StateInfo``
-     - ``path``, ``name``, ``parent_path``, ``is_leaf``, ``is_pseudo``, ``is_composite``, ``substates``, ``initial_targets``, lifecycle action arrays, aspect arrays, and ``has_abstract_action``.
+     - ``path``, ``name``, ``parent_path``, ``is_leaf``, ``is_pseudo``, ``is_composite``, ``substates``, ``initial_targets``, lifecycle action arrays, aspect arrays, and ``has_abstract_action``. A model that uses history is reported as written, before lowering, so no state or initial target is one that lowering generated. See :ref:`dsl-history-reference`.
    * - ``TransitionInfo``
-     - ``from_path``, ``to_path``, ``event``, ``event_scope``, ``guard``, ``effect``, ``effect_self_assigns``, ``is_forced``, ``forced_origin``, ``transition_index``, and combo projection/provenance fields.
+     - ``from_path``, ``to_path``, ``event``, ``event_scope``, ``guard``, ``effect``, ``effect_self_assigns``, ``is_forced``, ``forced_origin``, ``transition_index``, and combo projection/provenance fields. ``target_history`` (``shallow``, ``deep`` or null) marks a transition that enters ``Target.[H]`` / ``Target.[H*]``; its ``to_path`` names the history owner.
    * - ``ComboOriginInfo``
      - ``origin_id``, ``transition_span``, ``trigger_span``, and ordered ``terms``.
    * - ``ComboOriginTermInfo``

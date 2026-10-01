@@ -265,6 +265,8 @@ state System named "System State Machine" {
             state SubStateB;
 
             [*] -> SubStateA;
+            [H] -> SubStateA;                   // Shallow history default (history_definition)
+            [H*] -> SubStateB;                  // Deep history default
             SubStateA -> SubStateB :: SubEvent;
         }
 
@@ -283,6 +285,8 @@ state System named "System State Machine" {
 
         // Normal transition (normalTransitionDefinition)
         Active -> Processing;
+        Active -> SubSystem.[H] :: ResumeShallow;   // History target
+        Active -> SubSystem.[H*] :: ResumeDeep;
         Active -> Processing :: LocalEvent;
         Active -> Processing : ChainEvent;
         Active -> Processing : if [counter < 100];
@@ -642,9 +646,11 @@ SHARED_CHECKPOINT_SPECS: List[Dict[str, Any]] = [
     },
     {
         'name': 'Special Symbols',
-        'description': '[*] pseudo-state marker',
+        'description': '[*] pseudo-state marker and [H] / [H*] history markers',
         'items': [
             SharedExpectation('[*]', Token.Keyword.Pseudo, 'operators', 'constant.language.pseudo-state.fcstm'),
+            SharedExpectation('[H]', Token.Keyword.Pseudo, 'operators', 'constant.language.pseudo-state.fcstm'),
+            SharedExpectation('[H*]', Token.Keyword.Pseudo, 'operators', 'constant.language.pseudo-state.fcstm'),
         ],
     },
     {
@@ -1054,7 +1060,7 @@ def _validate_textmate_structure(grammar: Dict[str, Any], vscode_copy: Dict[str,
         '=>',
         ',',
         '\\{|\\}',
-        '\\[\\*\\]',
+        '\\[\\*\\]|\\[H\\*?\\]',
         '::',
         ':',
         '/',

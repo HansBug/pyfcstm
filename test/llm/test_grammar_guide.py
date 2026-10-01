@@ -294,6 +294,7 @@ def test_grammar_guide_prompt_metadata_is_deterministic():
         "## Nested State Targets",
         "## Events",
         "## Forced Transitions",
+        "## History",
         "## Lifecycle Actions",
         "## Aspect Actions",
         "## Expressions",

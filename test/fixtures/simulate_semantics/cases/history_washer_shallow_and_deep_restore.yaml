@@ -1,0 +1,120 @@
+title: Shallow and deep history restore the washer program cycle by cycle
+origin:
+  files:
+  - test/model/test_history_lowering.py
+  notes:
+  - Shallow restore re-runs the recorded child's initial; deep restore skips every initial on its path
+    (wash_initials does not move at the deep restore to Wash.Fill).
+categories:
+- runtime
+- template_alignment
+- history
+steps:
+- cycle: []
+  expect:
+    state: Washer.Paused
+    vars:
+      program_entries: 0
+      fill_entries: 0
+      agitate_entries: 0
+      wash_initials: 0
+      __hist_goto: 0
+- cycle: Washer.Paused.Fresh
+  expect:
+    state: Washer.Program.Idle
+    vars:
+      program_entries: 1
+      fill_entries: 0
+      agitate_entries: 0
+      wash_initials: 0
+      __hist_goto: 0
+- cycle: Washer.Program.Idle.Start
+  expect:
+    state: Washer.Program.Wash.Fill
+    vars:
+      program_entries: 1
+      fill_entries: 1
+      agitate_entries: 0
+      wash_initials: 1
+      __hist_goto: 0
+- cycle: Washer.Program.Wash.Fill.Filled
+  expect:
+    state: Washer.Program.Wash.Agitate
+    vars:
+      program_entries: 1
+      fill_entries: 1
+      agitate_entries: 1
+      wash_initials: 1
+      __hist_goto: 0
+- cycle: Washer.Program.Pause
+  expect:
+    state: Washer.Paused
+    vars:
+      program_entries: 1
+      fill_entries: 1
+      agitate_entries: 1
+      wash_initials: 1
+      __hist_goto: 0
+- cycle: Washer.Paused.Shallow
+  expect:
+    state: Washer.Program.Wash.Fill
+    vars:
+      program_entries: 2
+      fill_entries: 2
+      agitate_entries: 1
+      wash_initials: 2
+      __hist_goto: 0
+- cycle: Washer.Program.Pause
+  expect:
+    state: Washer.Paused
+    vars:
+      program_entries: 2
+      fill_entries: 2
+      agitate_entries: 1
+      wash_initials: 2
+      __hist_goto: 0
+- cycle: Washer.Paused.Deep
+  expect:
+    state: Washer.Program.Wash.Fill
+    vars:
+      program_entries: 3
+      fill_entries: 3
+      agitate_entries: 1
+      wash_initials: 2
+      __hist_goto: 0
+- cycle: Washer.Program.Pause
+  expect:
+    state: Washer.Paused
+    vars:
+      program_entries: 3
+      fill_entries: 3
+      agitate_entries: 1
+      wash_initials: 2
+      __hist_goto: 0
+- cycle: Washer.Paused.Fresh
+  expect:
+    state: Washer.Program.Idle
+    vars:
+      program_entries: 4
+      fill_entries: 3
+      agitate_entries: 1
+      wash_initials: 2
+      __hist_goto: 0
+- cycle: Washer.Program.Pause
+  expect:
+    state: Washer.Paused
+    vars:
+      program_entries: 4
+      fill_entries: 3
+      agitate_entries: 1
+      wash_initials: 2
+      __hist_goto: 0
+- cycle: Washer.Paused.Deep
+  expect:
+    state: Washer.Program.Idle
+    vars:
+      program_entries: 5
+      fill_entries: 3
+      agitate_entries: 1
+      wash_initials: 2
+      __hist_goto: 0

@@ -294,6 +294,10 @@ class TransitionInfo:
     :param combo_priority_run_index: Preorder index of the generated combo
         edge inside the projection.
     :type combo_priority_run_index: Optional[int]
+    :param target_history: ``'shallow'`` or ``'deep'`` when the transition
+        enters ``Target.[H]`` or ``Target.[H*]``, otherwise ``None``;
+        ``to_path`` then names the history owner.
+    :type target_history: Optional[str]
     """
 
     from_path: str
@@ -318,6 +322,7 @@ class TransitionInfo:
     # Keep this new optional field after the pre-existing positional fields so
     # callers that pass ``span`` positionally retain their binding.
     source_path: Optional[str] = None
+    target_history: Optional[str] = None
 
 @dataclass(frozen=True)
 class ComboOriginRefInfo:
@@ -868,7 +873,9 @@ class ModelInspect:
     :type structure_statistics: StructureStatistics
     :param reachability_graph: Mapping from every state path to state paths
         reachable through normal transitions and composite initial edges.
-        Guards are ignored; ``[*]`` entry/exit markers are not exposed.
+        Guards are ignored; ``[*]`` entry/exit markers are not exposed. A
+        transition into a history also reaches the states of its default path
+        and what a restore can re-enter.
     :type reachability_graph: Dict[str, Tuple[str, ...]]
     :param event_emission_map: Mapping event qualified name → list of
         source state paths that can emit it.
@@ -1504,6 +1511,7 @@ def _build_transition_infos(machine: 'StateMachine') -> Tuple[TransitionInfo, ..
                 combo_priority_run_index=getattr(
                     transition, 'combo_priority_run_index', None
                 ),
+                target_history=transition.target_history,
             ))
             transition_index += 1
     return tuple(out)
@@ -2607,6 +2615,7 @@ def _build_structure_statistics(
 def _build_reachability_graph(
         states: Tuple[StateInfo, ...],
         transitions: Tuple[TransitionInfo, ...],
+        history_defaults: Optional[Mapping[Tuple[str, str], Sequence[str]]] = None,
 ) -> Dict[str, Tuple[str, ...]]:
     """Return the default inspect reachability graph.
 
@@ -2620,6 +2629,13 @@ def _build_reachability_graph(
     :type states: Tuple[StateInfo, ...]
     :param transitions: Inspect transition records in model order.
     :type transitions: Tuple[TransitionInfo, ...]
+    :param history_defaults: For each ``(owner path, history kind)``, the
+        states from the owner's child down to the declared default, defaults to
+        ``None``. A transition entering that history reaches each of them as an
+        ordinary target, besides the owner itself, and what a restore can
+        re-enter -- an over-approximation of both, so no reachable state is
+        left out.
+    :type history_defaults: Optional[Mapping[Tuple[str, str], Sequence[str]]], optional
     :return: Mapping from every state path to reachable state paths.
     :rtype: Dict[str, Tuple[str, ...]]
 
@@ -2658,6 +2674,22 @@ def _build_reachability_graph(
             continue
         adjacency[transition.from_path].add(transition.to_path)
 
+    history_entries = [
+        transition for transition in transitions
+        if (history_defaults or {}).get((transition.to_path, transition.target_history))
+    ]
+
+    def add_edges(transition: TransitionInfo, targets) -> None:
+        if transition.from_path == _INIT_MARK:
+            initial_edges[transition.to_path.rsplit('.', 1)[0]].update(targets)
+        elif transition.from_path in adjacency:
+            # A source that names no state (a misspelling kept by collect mode)
+            # contributes no edge, as in the loop above.
+            adjacency[transition.from_path].update(targets)
+
+    for transition in history_entries:
+        add_edges(transition, history_defaults[(transition.to_path, transition.target_history)])
+
     for state in states:
         if not (state.is_composite and state.initial_targets):
             continue
@@ -2666,10 +2698,9 @@ def _build_reachability_graph(
             if target != _EXIT_MARK:
                 initial_edges[state.path].add(target)
 
-    graph: Dict[str, Tuple[str, ...]] = {}
-    for state in states:
+    def closure(start: str) -> set:
         seen = set()
-        queue = [state.path]
+        queue = [start]
         while queue:
             current = queue.pop(0)
             next_paths = adjacency.get(current, set()) | initial_edges.get(
@@ -2677,12 +2708,40 @@ def _build_reachability_graph(
                 set(),
             )
             for next_path in sorted(next_paths):
-                if next_path in seen or next_path == state.path:
+                if next_path in seen or next_path == start:
                     continue
                 seen.add(next_path)
                 queue.append(next_path)
-        graph[state.path] = tuple(sorted(seen))
-    return graph
+        return seen
+
+    if history_entries:
+        # A restore re-enters a leaf reached before: for ``[H*]`` any
+        # root-reachable leaf of the owner, for ``[H]`` any direct child with
+        # one. These targets are root-reachable already, so only the rows of
+        # the other states gain them.
+        by_path = {state.path: state for state in states}
+        reached = closure(states[0].path)
+        restores: Dict[Tuple[str, str], List[str]] = {}
+        for transition in history_entries:
+            owner, kind = transition.to_path, transition.target_history
+            if (owner, kind) not in restores:
+                # Only known states: a target naming none (a misspelling kept
+                # by collect mode) can still sit in the reachable set.
+                inside = [
+                    path for path in reached
+                    if path.startswith(owner + '.') and path in by_path
+                ]
+                restores[(owner, kind)] = (
+                    [path for path in inside if by_path[path].is_leaf]
+                    if kind == 'deep'
+                    else [
+                        child for child in by_path[owner].substates
+                        if any(path == child or path.startswith(child + '.') for path in inside)
+                    ]
+                )
+            add_edges(transition, restores[(owner, kind)])
+
+    return {state.path: tuple(sorted(closure(state.path))) for state in states}
 
 
 def _build_event_emission_map(
@@ -4262,7 +4321,7 @@ def inspect_model(
         max_complexity_tier: str = 'structural',
         max_call_count_scaling: str = 'linear_in_transitions',
         smt_timeout_ms: Optional[int] = None,
-        model_diagnostics: Sequence[ModelDiagnostic] = (),
+        model_diagnostics: Optional[Sequence[ModelDiagnostic]] = None,
 ) -> ModelInspect:
     """
     Build a structured inspection report for a state machine model.
@@ -4270,6 +4329,15 @@ def inspect_model(
     The report combines the structural payload, the five derived view
     graphs, and design-health diagnostics that can be computed from the
     inspect surface.
+
+    A machine that uses ``[H]`` / ``[H*]`` history is reported as written:
+    model conversion can also build the model before history lowering, and
+    the report,
+    its findings and the optional verify run describe that model, with each
+    history entry an ordinary transition marked by ``target_history``. The
+    lowered variables, gate states and route initials therefore appear nowhere
+    in the report. For reachability, a history entry also reaches every state on
+    the default path of the kind it names.
 
     :param machine: The state machine model to inspect.
     :type machine: pyfcstm.model.StateMachine
@@ -4305,9 +4373,11 @@ def inspect_model(
         prepended to the analyzer output. Callers that built the model with
         :func:`pyfcstm.model.parse_dsl_node_to_state_machine` in collect mode
         pass the returned diagnostic list here so the report carries the model
-        errors alongside the design-health warnings. Defaults to ``()``, which
-        reproduces the strict-mode report shape.
-    :type model_diagnostics: Sequence[pyfcstm.utils.validate.ModelDiagnostic], optional
+        errors alongside the design-health warnings. Defaults to ``None``,
+        which uses the warnings a strict build of ``machine`` emitted while
+        converting the model, such as ``W_HISTORY_UNUSED``, so a strictly
+        loaded model gets the same report as ``pyfcstm inspect``.
+    :type model_diagnostics: Optional[Sequence[pyfcstm.utils.validate.ModelDiagnostic]], optional
     :return: Structured view of the model.
     :rtype: ModelInspect
 
@@ -4352,6 +4422,12 @@ def inspect_model(
     structure_statistics_policy = _normalize_structure_statistics_policy(
         structure_statistics_policy,
     )
+    if model_diagnostics is None:
+        model_diagnostics = machine._build_warnings
+    # A machine that uses history is judged as written: model conversion keeps
+    # the model before lowering, where a history entry is an ordinary
+    # transition that still carries its ``target_history``.
+    machine = machine._as_written()
     states = _build_state_infos(machine)
     transitions = _build_transition_infos(machine)
     variables = _build_variable_infos(machine, states)
@@ -4361,7 +4437,18 @@ def inspect_model(
     combo_transitions = _build_combo_transition_infos(transitions)
     combo_origins = _build_combo_origin_infos(transitions)
     metrics = _build_metrics(states, transitions, variables, events)
-    reachability_graph = _build_reachability_graph(states, transitions)
+    reachability_graph = _build_reachability_graph(
+        states,
+        transitions,
+        {
+            ('.'.join(owner.owner_path), kind): [
+                '.'.join((*owner.owner_path, *path[:depth]))
+                for depth in range(1, len(path) + 1)
+            ]
+            for owner in machine.history_owners
+            for kind, path in owner.defaults.items()
+        },
+    )
     root_state_path = _state_path(machine.root_state)
     # Model-build diagnostics come first so a report on a model built in collect
     # mode leads with the errors that make it inconsistent, before the warnings

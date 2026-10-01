@@ -167,7 +167,11 @@ Hot start semantics
 Hot start builds the active stack directly from an ``initial_state`` and
 ``initial_vars``.  This represents an already-entered boundary:
 
-* all declared persistent variables must be provided;
+* all declared persistent variables must be provided, including the
+  ``__hist_*`` variables of lowered history; compute them from source-level
+  records with ``StateMachine.history_variables()``, and note that a restore
+  target other than ``0`` or a record naming no stoppable leaf of its owner is
+  rejected (see :ref:`dsl-history-reference`);
 * enter actions on the constructed path are skipped;
 * plain composite ``during before`` for the constructed boundary is not replayed;
 * later cycles run normal transition and during semantics;
@@ -183,7 +187,8 @@ Runtime history and export
 
 After each successful cycle, including Delta cycles, the runtime records the
 cycle number, active state, variables, input events, and boolean ``delta`` in
-history.  The REPL ``history`` command formats that in the
+history. This cycle log is unrelated to the ``[H]`` / ``[H*]`` history of
+composite states described in :ref:`dsl-history-semantics`.  The REPL ``history`` command formats that in the
 terminal, while ``export <path>`` writes the retained history to a file.  Export
 is an observation feature; it does not change the runtime state.
 

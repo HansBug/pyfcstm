@@ -1,0 +1,46 @@
+title: An owner whose ordinary initial enters a nested deep history
+origin:
+  files:
+  - test/model/test_history_lowering.py
+  notes:
+  - The gated initial clears the restore target before its own effect sets it for S2.
+categories:
+- runtime
+- template_alignment
+- history
+steps:
+- cycle: []
+  expect:
+    state: R.Off
+    vars:
+      __hist_goto: 0
+- cycle: R.Off.Fresh
+  expect:
+    state: R.O.S2.A2
+    vars:
+      __hist_goto: 0
+- cycle: R.O.S2.A2.Next
+  expect:
+    state: R.O.S2.B2
+    vars:
+      __hist_goto: 0
+- cycle: R.O.Stop
+  expect:
+    state: R.Off
+    vars:
+      __hist_goto: 0
+- cycle: R.Off.Fresh
+  expect:
+    state: R.O.S2.B2
+    vars:
+      __hist_goto: 0
+- cycle: R.O.Stop
+  expect:
+    state: R.Off
+    vars:
+      __hist_goto: 0
+- cycle: R.Off.Resume
+  expect:
+    state: R.O.S2.A2
+    vars:
+      __hist_goto: 0

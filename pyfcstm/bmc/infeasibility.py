@@ -82,7 +82,12 @@ from .provenance import (
     SourceDocumentRegistry,
     normalized_fact_for,
 )
-from .solver import _SolveBudget, _check_with_budget, _solver_for_profile
+from .solver import (
+    _SolveBudget,
+    _check_with_budget,
+    _free_symbols,
+    _solver_for_profile,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle guard for annotations only
     from .relation import BmcCoreFormula
@@ -2104,7 +2109,7 @@ def _binding_symbols(
     :rtype: Dict[Tuple[int, Any], Any]
     """
     indexed: Dict[Tuple[int, Any], Any] = {}
-    for symbol in z3.z3util.get_vars(expression):
+    for symbol in _free_symbols(expression):
         event = _event_identity_of(symbol, event_paths)
         if event is not None:
             # A third kind of key.  An event symbol carries its own step inside its
@@ -2296,14 +2301,14 @@ def _binding_symbol(expression, fact: Mapping[str, object], declared=None):
         # what this branch assumes.
         booleans = [
             symbol
-            for symbol in sorted(z3.z3util.get_vars(expression), key=str)
+            for symbol in sorted(_free_symbols(expression), key=str)
             if z3.is_bool(symbol)
         ]
         return booleans[0] if len(booleans) == 1 else None
     frame = fact.get("frame")
     if frame is None:
         return None
-    symbols = sorted(z3.z3util.get_vars(expression), key=lambda item: str(item))
+    symbols = sorted(_free_symbols(expression), key=lambda item: str(item))
     variable = fact.get("variable")
     if variable is None or fact.get("state_slot"):
         # A state fact speaks about the frame's own state slot rather than about a

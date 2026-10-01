@@ -362,23 +362,67 @@ function collectReachableStateIds(semantic: FcstmSemanticDocument): Set<string> 
     // A forced transition such as `!* -> X :: E` is expanded in the semantics layer
     // into one synthetic edge per affected descendant: any state in that index
     // contributes an outgoing edge to the expanded target (issue #99).
-    const forcedExpandedBySource = new Map<string, Set<string>>();
+    const forcedExpandedBySource = new Map<string, Array<[string, string | undefined]>>();
     for (const transition of semantic.transitions) {
         if (!transition.forced) {
             continue;
         }
+        const kind = (transition.ast as {targetHistory?: string}).targetHistory;
         for (const expanded of transition.expandedTransitions) {
             if (!expanded.targetStateId) {
                 continue;
             }
             let targets = forcedExpandedBySource.get(expanded.sourceStateId);
             if (!targets) {
-                targets = new Set<string>();
+                targets = [];
                 forcedExpandedBySource.set(expanded.sourceStateId, targets);
             }
-            targets.add(expanded.targetStateId);
+            // Only the expanded edge into the declared target enters its history;
+            // the exit-chain edges of the expansion enter ordinary states.
+            targets.push([
+                expanded.targetStateId,
+                expanded.targetStateId === transition.targetStateId ? kind : undefined,
+            ]);
         }
     }
+
+    // A history entry reaches its owner and, as ordinary targets, the states
+    // of the default path of the kind it names, as pyfcstm's inspect does.
+    const statesById = new Map(semantic.states.map(state => [state.identity.id, state]));
+    const enter = (stateId: string): void => {
+        if (!reachable.has(stateId)) {
+            reachable.add(stateId);
+            worklist.push(stateId);
+        }
+    };
+    // The states a default enters, or undefined when it names no state. A
+    // default through an import alias leaves the local model, so the states
+    // before the alias are what it enters here.
+    const resolveDefault = (ownerId: string, defaultPath: string[]): string[] | undefined => {
+        let current = statesById.get(ownerId);
+        const path: string[] = [];
+        for (const name of defaultPath) {
+            const next = current?.childStateIds.map(id => statesById.get(id)).find(child => child?.name === name);
+            if (!next) return current?.ast.imports.some(item => item.alias === name) ? path : undefined;
+            current = next;
+            path.push(next.identity.id);
+        }
+        return path;
+    };
+    // The first valid declaration of the kind, as pyfcstm keeps: a shallow
+    // default names one child, and no default names a pseudo state.
+    const historyDefault = (ownerId: string, kind: string): string[] => {
+        for (const declaration of statesById.get(ownerId)?.ast.histories ?? []) {
+            if (declaration.historyKind !== kind) continue;
+            if (kind === 'shallow' && declaration.defaultPath.length !== 1) continue;
+            const path = resolveDefault(ownerId, declaration.defaultPath);
+            const target = path && path.length === declaration.defaultPath.length
+                ? statesById.get(path[path.length - 1])
+                : undefined;
+            if (path && !target?.pseudo) return path;
+        }
+        return [];
+    };
 
     while (worklist.length > 0) {
         const stateId = worklist.pop() as string;
@@ -387,21 +431,18 @@ function collectReachableStateIds(semantic: FcstmSemanticDocument): Set<string> 
             || item.sourceStateId === stateId
         ));
 
-        for (const transition of outgoing) {
-            if (transition.targetStateId && !reachable.has(transition.targetStateId)) {
-                reachable.add(transition.targetStateId);
-                worklist.push(transition.targetStateId);
-            }
-        }
-
-        const forcedTargets = forcedExpandedBySource.get(stateId);
-        if (forcedTargets) {
-            for (const targetId of forcedTargets) {
-                if (!reachable.has(targetId)) {
-                    reachable.add(targetId);
-                    worklist.push(targetId);
-                }
-            }
+        const targets: Array<[string, string | undefined]> = [
+            ...outgoing
+                .filter(transition => transition.targetStateId)
+                .map((transition): [string, string | undefined] => [
+                    transition.targetStateId!,
+                    (transition.ast as {targetHistory?: string}).targetHistory,
+                ]),
+            ...(forcedExpandedBySource.get(stateId) ?? []),
+        ];
+        for (const [targetId, kind] of targets) {
+            enter(targetId);
+            if (kind) historyDefault(targetId, kind).forEach(enter);
         }
     }
 

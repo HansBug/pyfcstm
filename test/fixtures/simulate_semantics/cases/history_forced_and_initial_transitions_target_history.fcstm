@@ -1,0 +1,19 @@
+state R {
+    state Outer {
+        state O {
+            state A;
+            state B;
+            [*] -> A;
+            [H*] -> A;
+            A -> B :: Next;
+        }
+        state Side;
+        [*] -> O.[H*];
+        !O -> Side :: Leave;
+        Side -> O.[H*] :: Back;
+    }
+    state Away;
+    [*] -> Outer;
+    !Outer -> Away :: Out;
+    !Away -> Outer :: In;
+}

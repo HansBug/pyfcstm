@@ -1,0 +1,29 @@
+title: A forced self transition to its own deep history re-runs the owner enter and resumes the leaf
+origin:
+  files:
+  - test/model/test_history_lowering.py
+categories:
+- runtime
+- template_alignment
+- history
+steps:
+- cycle: []
+  expect:
+    state: R.O.A
+    vars:
+      enters: 1
+- cycle: R.O.A.Next
+  expect:
+    state: R.O.B
+    vars:
+      enters: 1
+- cycle: R.O.Reenter
+  expect:
+    state: R.O.B
+    vars:
+      enters: 2
+- cycle: R.O.Reenter
+  expect:
+    state: R.O.B
+    vars:
+      enters: 3

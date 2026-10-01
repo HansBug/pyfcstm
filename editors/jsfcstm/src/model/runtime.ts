@@ -29,6 +29,8 @@ import type {
 import {createRange, type TextRange} from '../utils/text';
 import type {
     FcstmModelActionPath,
+    FcstmModelHistoryDiagnostic,
+    FcstmModelHistoryRole,
     RawFcstmModelBinaryOp,
     RawFcstmModelBoolean,
     RawFcstmModelConditionalOp,
@@ -36,6 +38,7 @@ import type {
     RawFcstmModelExpression,
     RawFcstmModelFloat,
     RawFcstmModelForcedTransition,
+    RawFcstmModelHistoryOwner,
     RawFcstmModelIfBlock,
     RawFcstmModelIfBlockBranch,
     RawFcstmModelInteger,
@@ -361,6 +364,47 @@ export class Variable extends Expr {
 }
 
 /**
+ * Operator precedence mirrored from ``pyfcstm.model.expr._OP_PRECEDENCE``.
+ * Model expressions drop source parentheses, so AST export re-adds exactly
+ * the ones pyfcstm re-adds.
+ */
+const OP_PRECEDENCE: Record<string, number> = {
+    'unary+': 80, 'unary-': 80, '!': 80,
+    '**': 70,
+    '*': 60, '/': 60, '%': 60,
+    '+': 50, '-': 50,
+    '<<': 40, '>>': 40,
+    '&': 35, '^': 30, '|': 25,
+    '<': 20, '>': 20, '<=': 20, '>=': 20, '==': 20, '!=': 20, 'iff': 20,
+    '&&': 15, 'xor': 12, '||': 10, '=>': 7,
+    '?:': 5,
+};
+const RIGHT_ASSOCIATIVE_OPS = new Set(['**', '=>']);
+
+function opMark(expr: Expr): string | undefined {
+    if (expr instanceof BinaryOp) return expr.op;
+    if (expr instanceof UnaryOp) return expr.op === '+' || expr.op === '-' ? `unary${expr.op}` : expr.op;
+    if (expr instanceof ConditionalOp) return '?:';
+    return undefined;
+}
+
+function operandAstNode(operand: Expr, needsParen: (precedence: number) => boolean): FcstmAstExpression {
+    const node = operand.to_ast_node();
+    const mark = opMark(operand);
+    if (mark === undefined || !needsParen(OP_PRECEDENCE[mark])) return node;
+    return {
+        kind: 'expression',
+        pyNodeType: 'Paren',
+        expressionKind: 'parenthesized',
+        expressionType: node.expressionType,
+        range: cloneRange(operand.range),
+        text: `(${operand.text})`,
+        expression: node,
+        expr: node,
+    } as FcstmAstExpression;
+}
+
+/**
  * Unary operator expression aligned with ``pyfcstm.model.expr.UnaryOp``.
  */
 export class UnaryOp extends Expr {
@@ -377,7 +421,8 @@ export class UnaryOp extends Expr {
      * Convert the unary expression back into an AST node.
      */
     to_ast_node(): FcstmAstExpression {
-        const expr = this.x.to_ast_node();
+        const mine = OP_PRECEDENCE[opMark(this)!];
+        const expr = operandAstNode(this.x, pre => pre <= mine);
         return {
             kind: 'expression',
             pyNodeType: 'UnaryOp',
@@ -412,8 +457,11 @@ export class BinaryOp extends Expr {
      * Convert the binary expression back into an AST node.
      */
     to_ast_node(): FcstmAstExpression {
-        const left = this.x.to_ast_node();
-        const right = this.y.to_ast_node();
+        const mark = opMark(this)!;
+        const mine = OP_PRECEDENCE[mark];
+        const rightAssociative = RIGHT_ASSOCIATIVE_OPS.has(mark);
+        const left = operandAstNode(this.x, pre => (rightAssociative ? pre <= mine : pre < mine));
+        const right = operandAstNode(this.y, pre => (rightAssociative ? pre < mine : pre <= mine));
         return {
             kind: 'expression',
             pyNodeType: 'BinaryOp',
@@ -454,9 +502,10 @@ export class ConditionalOp extends Expr {
      * Convert the conditional expression back into an AST node.
      */
     to_ast_node(): FcstmAstExpression {
+        const mine = OP_PRECEDENCE['?:'];
         const cond = this.cond.to_ast_node();
-        const whenTrue = this.ifTrue.to_ast_node();
-        const whenFalse = this.ifFalse.to_ast_node();
+        const whenTrue = operandAstNode(this.ifTrue, pre => pre <= mine);
+        const whenFalse = operandAstNode(this.ifFalse, pre => pre <= mine);
         return {
             kind: 'expression',
             pyNodeType: 'ConditionalOp',
@@ -895,6 +944,12 @@ export class Transition extends ModelNode {
     combo_priority_run_identity: unknown[] | null;
     combo_priority_run_index: number | null;
     doc?: string;
+    targetHistory?: import('../ast').FcstmHistoryKind;
+    target_history?: import('../ast').FcstmHistoryKind;
+    historyRole?: FcstmModelHistoryRole;
+    history_role?: FcstmModelHistoryRole;
+    historyUserGuard?: Expr;
+    history_user_guard?: Expr;
     protected parentState?: State;
 
     constructor(raw: RawFcstmModelTransition, event: Event | undefined, guard: Expr | undefined, effects: OperationStatement[]) {
@@ -931,6 +986,10 @@ export class Transition extends ModelNode {
         this.combo_priority_run_identity = raw.combo_priority_run_identity ?? null;
         this.combo_priority_run_index = raw.combo_priority_run_index ?? null;
         this.doc = raw.doc;
+        this.targetHistory = raw.targetHistory;
+        this.target_history = raw.targetHistory;
+        this.historyRole = raw.historyRole;
+        this.history_role = raw.historyRole;
     }
 
     /**
@@ -987,6 +1046,8 @@ export class State extends ModelNode {
     importedFromFile?: string;
     imported_from_file?: string;
     doc?: string;
+    isHistoryGate: boolean;
+    is_history_gate: boolean;
     protected parentState?: State;
 
     constructor(raw: RawFcstmModelState) {
@@ -1022,6 +1083,8 @@ export class State extends ModelNode {
         this.importedFromFile = raw.importedFromFile;
         this.imported_from_file = raw.importedFromFile;
         this.doc = raw.doc;
+        this.isHistoryGate = Boolean(raw.isHistoryGate);
+        this.is_history_gate = this.isHistoryGate;
     }
 
     /**
@@ -1425,6 +1488,7 @@ export class State extends ModelNode {
             during_aspects: duringAspects,
             forceTransitions: [],
             force_transitions: [],
+            histories: [],
             importedFromFile: this.importedFromFile,
             doc: this.doc,
         };
@@ -1541,6 +1605,16 @@ export class StateMachine extends ModelNode {
     allActions: Array<OnStage | OnAspect>;
     all_actions: Array<OnStage | OnAspect>;
     lookups: FcstmModelLookups;
+    /** Composite states whose history is used, in preorder. */
+    historyOwners: RawFcstmModelHistoryOwner[];
+    history_owners: RawFcstmModelHistoryOwner[];
+    /** Diagnostics raised while lowering history. */
+    historyDiagnostics: FcstmModelHistoryDiagnostic[];
+    /**
+     * The same model built without lowering its history, which static
+     * analyses judge instead (see ``inspectModel``); unset without history.
+     */
+    authoredView?: StateMachine;
 
     constructor(raw: RawFcstmModelStateMachine, rootState: State, lookups: FcstmModelLookups) {
         super(raw.kind, raw.pyModelType, raw.range, raw.text);
@@ -1559,6 +1633,9 @@ export class StateMachine extends ModelNode {
         this.allActions = [];
         this.all_actions = this.allActions;
         this.lookups = lookups;
+        this.historyOwners = raw.historyOwners ?? [];
+        this.history_owners = this.historyOwners;
+        this.historyDiagnostics = raw.historyDiagnostics ?? [];
     }
 
     get control_variables(): Readonly<Record<string, VarDefine>> {
@@ -1822,6 +1899,10 @@ function hydrateTransition(
         raw.guard ? hydrateExpression(raw.guard, context) : undefined,
         raw.effects.map(effect => hydrateOperationStatement(effect, context))
     );
+    if (raw.historyUserGuard) {
+        transition.historyUserGuard = hydrateExpression(raw.historyUserGuard, context);
+        transition.history_user_guard = transition.historyUserGuard;
+    }
     context.cache.set(raw as object, transition);
     return transition;
 }

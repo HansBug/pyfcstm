@@ -98,6 +98,8 @@ __all__ = [
     "ComboGuardTerm",
     "TransitionDefinition",
     "ForceTransitionDefinition",
+    "HistoryDefinition",
+    "HISTORY_KINDS",
     "StateDefinition",
     "OperationalStatement",
     "OperationAssignment",
@@ -1539,6 +1541,10 @@ class TransitionDefinition(ASTNode):
     Transitions define how the state machine moves from one state to another in response
     to events and conditions.
 
+    ``event_id`` and ``condition_expr`` are mutually exclusive. Construction or
+    assignment raises :class:`ValueError` if both would be non-``None``; rejected
+    assignments leave the node unchanged. Both may be ``None``.
+
     :param from_state: The source state name or :data:`INIT_STATE` singleton
     :type from_state: Union[str, _StateSingletonMark]
     :param to_state: The target state name or :data:`EXIT_STATE` singleton
@@ -1555,6 +1561,10 @@ class TransitionDefinition(ASTNode):
     :param combo_trigger: Optional structured combo trigger metadata retained
         for parser provenance and later pseudo-state expansion.
     :type combo_trigger: Optional[ComboTransitionTrigger]
+    :param target_history: ``'shallow'`` or ``'deep'`` when the transition
+        enters ``to_state`` through its history (``to_state.[H]`` or
+        ``to_state.[H*]``), otherwise ``None``.
+    :type target_history: Optional[str]
 
     :rtype: TransitionDefinition
 
@@ -1583,6 +1593,14 @@ class TransitionDefinition(ASTNode):
     )
     doc: Optional[str] = None
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
+    target_history: Optional[str] = None
+
+    def __setattr__(self, name, value):
+        if name in ("event_id", "condition_expr") and value is not None:
+            other = "condition_expr" if name == "event_id" else "event_id"
+            if getattr(self, other, None) is not None:
+                raise ValueError("event_id and condition_expr are mutually exclusive")
+        super().__setattr__(name, value)
 
     def __str__(self) -> str:
         """
@@ -1602,6 +1620,7 @@ class TransitionDefinition(ASTNode):
             print(
                 "[*]" if self.to_state is EXIT_STATE else self.to_state, file=sf, end=""
             )
+            print(_render_history_target(self.target_history), file=sf, end="")
 
             if self.combo_trigger is not None and self.combo_trigger.is_combo:
                 print(f" {self.combo_trigger.canonical_text}", file=sf, end="")
@@ -1642,6 +1661,10 @@ class ForceTransitionDefinition(ASTNode):
     Forced transitions override normal transitions and are used for special cases
     like error handling or interrupts.
 
+    ``event_id`` and ``condition_expr`` are mutually exclusive. Construction or
+    assignment raises :class:`ValueError` if both would be non-``None``; rejected
+    assignments leave the node unchanged. Both may be ``None``.
+
     :param from_state: The source state name or :data:`ALL` singleton
     :type from_state: Union[str, _StateSingletonMark]
     :param to_state: The target state name or :data:`EXIT_STATE` singleton
@@ -1650,6 +1673,9 @@ class ForceTransitionDefinition(ASTNode):
     :type event_id: Optional[ChainID]
     :param condition_expr: Optional condition expression that must be true for the transition
     :type condition_expr: Optional[Expr]
+    :param target_history: ``'shallow'`` or ``'deep'`` when the forced
+        transition enters ``to_state`` through its history, otherwise ``None``.
+    :type target_history: Optional[str]
 
     :rtype: ForceTransitionDefinition
 
@@ -1668,6 +1694,14 @@ class ForceTransitionDefinition(ASTNode):
     source_raw: Optional[str] = field(default=None, repr=False, compare=False)
     doc: Optional[str] = None
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
+    target_history: Optional[str] = None
+
+    def __setattr__(self, name, value):
+        if name in ("event_id", "condition_expr") and value is not None:
+            other = "condition_expr" if name == "event_id" else "event_id"
+            if getattr(self, other, None) is not None:
+                raise ValueError("event_id and condition_expr are mutually exclusive")
+        super().__setattr__(name, value)
 
     def __str__(self) -> str:
         """
@@ -1684,6 +1718,7 @@ class ForceTransitionDefinition(ASTNode):
             print(
                 "[*]" if self.to_state is EXIT_STATE else self.to_state, file=sf, end=""
             )
+            print(_render_history_target(self.target_history), file=sf, end="")
 
             if self.event_id is not None:
                 if not self.event_id.is_absolute and (
@@ -1702,6 +1737,60 @@ class ForceTransitionDefinition(ASTNode):
 
             print(";", file=sf, end="")
             return sf.getvalue()
+
+
+HISTORY_KINDS = {"shallow": "[H]", "deep": "[H*]"}
+"""Map each history kind to its DSL marker."""
+
+
+def _render_history_target(kind: Optional[str]) -> str:
+    return "" if kind is None else "." + HISTORY_KINDS[kind]
+
+
+@dataclass
+class HistoryDefinition(ASTNode):
+    """
+    Declare the shallow or deep history of the enclosing composite state.
+
+    Written inside a composite state (the history *owner*) as ``[H] -> Child;``
+    or ``[H*] -> Child.Grandchild;``.  The path is resolved relative to the
+    owner and names where a history entry goes while the owner has no
+    record yet.  Transitions in the owner's parent scope enter the history
+    with the target ``Owner.[H]`` or ``Owner.[H*]``.
+
+    :param kind: ``'shallow'`` for ``[H]`` or ``'deep'`` for ``[H*]``
+    :type kind: str
+    :param default_path: State names of the default target, relative to the
+        owner
+    :type default_path: List[str]
+    :param doc: Optional leading documentation comment
+    :type doc: Optional[str]
+
+    :rtype: HistoryDefinition
+
+    Example::
+
+        >>> str(HistoryDefinition("deep", ["Wash", "Fill"]))
+        '[H*] -> Wash.Fill;'
+    """
+
+    kind: str
+    default_path: List[str]
+    doc: Optional[str] = None
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
+
+    def __str__(self) -> str:
+        """
+        Convert the history declaration to its string representation.
+
+        :return: String representation of the history declaration
+        :rtype: str
+        """
+        return "%s%s -> %s;" % (
+            _render_documentation_prefix(self.doc),
+            HISTORY_KINDS[self.kind],
+            ".".join(self.default_path),
+        )
 
 
 @dataclass
@@ -1736,6 +1825,9 @@ class StateDefinition(ASTNode):
     :type force_transitions: List[ForceTransitionDefinition]
     :param is_pseudo: Whether this is a pseudo state
     :type is_pseudo: bool
+    :param histories: History declarations (``[H]`` / ``[H*]``) owned by
+        this state
+    :type histories: List[HistoryDefinition]
 
     :rtype: StateDefinition
 
@@ -1765,11 +1857,13 @@ class StateDefinition(ASTNode):
     is_pseudo: bool = False
     doc: Optional[str] = None
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
+    histories: List["HistoryDefinition"] = None
 
     def __post_init__(self) -> None:
         """
         Initialize default empty lists for optional parameters.
         """
+        self.histories = self.histories or []
         self.events = self.events or []
         self.imports = self.imports or []
         self.substates = self.substates or []
@@ -1805,6 +1899,7 @@ class StateDefinition(ASTNode):
                 and not self.durings
                 and not self.exits
                 and not self.during_aspects
+                and not self.histories
             ):
                 print(f";", file=sf, end="")
             else:
@@ -1823,6 +1918,8 @@ class StateDefinition(ASTNode):
                     print(indent(str(substate), prefix="    "), file=sf)
                 for event in self.events:
                     print(indent(str(event), prefix="    "), file=sf)
+                for history in self.histories:
+                    print(indent(str(history), prefix="    "), file=sf)
                 for force_transition in self.force_transitions:
                     print(indent(str(force_transition), prefix="    "), file=sf)
                 for transition in self.transitions:

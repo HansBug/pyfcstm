@@ -1,0 +1,77 @@
+title: A blocked history restore rejects the whole transition (gated owner initial)
+origin:
+  files:
+  - test/model/test_history_lowering.py
+  notes:
+  - 'The shallow record names K, whose initial is blocked by ready == 0: Resume stays in Off instead of
+    silently entering O through its ordinary initial. The deep record names K1 exactly, so ResumeDeep
+    skips K''s guarded initial.'
+  - The owner's initial has an effect, so lowering gates it instead of merging it with a route.
+categories:
+- runtime
+- template_alignment
+- history
+steps:
+- cycle: []
+  expect:
+    state: R.Off
+    vars:
+      ready: 1
+      fresh_entries: 0
+      __hist_goto: 0
+- cycle: R.Off.Fresh
+  expect:
+    state: R.O.Idle
+    vars:
+      ready: 1
+      fresh_entries: 1
+      __hist_goto: 0
+- cycle: R.O.Idle.Go
+  expect:
+    state: R.O.K.K1
+    vars:
+      ready: 1
+      fresh_entries: 1
+      __hist_goto: 0
+- cycle: R.O.Stop
+  expect:
+    state: R.Off
+    vars:
+      ready: 1
+      fresh_entries: 1
+      __hist_goto: 0
+- cycle: R.Off.Block
+  expect:
+    state: R.Off
+    vars:
+      ready: 0
+      fresh_entries: 1
+      __hist_goto: 0
+- cycle: R.Off.Resume
+  expect:
+    state: R.Off
+    vars:
+      ready: 0
+      fresh_entries: 1
+      __hist_goto: 0
+- cycle: R.Off.ResumeDeep
+  expect:
+    state: R.O.K.K1
+    vars:
+      ready: 0
+      fresh_entries: 1
+      __hist_goto: 0
+- cycle: R.O.Stop
+  expect:
+    state: R.Off
+    vars:
+      ready: 0
+      fresh_entries: 1
+      __hist_goto: 0
+- cycle: R.Off.Fresh
+  expect:
+    state: R.O.Idle
+    vars:
+      ready: 0
+      fresh_entries: 2
+      __hist_goto: 0

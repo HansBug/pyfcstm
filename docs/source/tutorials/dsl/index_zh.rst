@@ -221,6 +221,9 @@
    * - 用一个声明覆盖多个来源状态
      - :ref:`dsl-forced-transition-task-zh`
      - 强制转换（forced transition）是展开简写，后文只称强制转换，因此有意不支持效果动作块。
+   * - 让复合状态从离开的地方继续
+     - :doc:`../history/index_zh`\ ，然后 :ref:`dsl-history-task-zh`
+     - 历史（history）记住最后活动的叶状态，并通过 ``Owner.[H]`` 或 ``Owner.[H*]`` 目标恢复它。
    * - 把模型拆成多个文件
      - :ref:`dsl-import-task-zh`
      - 导入会组装状态机模块，并按映射重写变量和事件。

@@ -62,6 +62,16 @@ This catalog is synchronized with ``pyfcstm.diagnostics.codes.CODE_REGISTRY``. T
      - ``partial_static_pipeline``
      - ``pure_static``
      - ``state_identifier``
+   * - :ref:`W_HISTORY_RESERVED_PREFIX <diag-code-w-history-reserved-prefix>`
+     - ``warning``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``variable_declaration``
+   * - :ref:`W_HISTORY_UNUSED <diag-code-w-history-unused>`
+     - ``warning``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``transition``
    * - :ref:`I_COMBO_PSEUDO_NAME_EXTENDED <diag-code-i-combo-pseudo-name-extended>`
      - ``info``
      - ``partial_static_pipeline``
@@ -107,6 +117,21 @@ This catalog is synchronized with ``pyfcstm.diagnostics.codes.CODE_REGISTRY``. T
      - ``static_pipeline``
      - ``pure_static``
      - ``transition``
+   * - :ref:`E_HISTORY_DECLARATION_INVALID <diag-code-e-history-declaration-invalid>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``transition``
+   * - :ref:`E_HISTORY_TARGET_UNDECLARED <diag-code-e-history-target-undeclared>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``transition``
+   * - :ref:`E_HISTORY_RESERVED_PREFIX <diag-code-e-history-reserved-prefix>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``variable_declaration``
    * - :ref:`E_INITIAL_TRANSITION_INVALID <diag-code-e-initial-transition-invalid>`
      - ``error``
      - ``static_pipeline``
@@ -193,6 +218,11 @@ This catalog is synchronized with ``pyfcstm.diagnostics.codes.CODE_REGISTRY``. T
      - ``pure_static``
      - ``event_declaration``
    * - :ref:`W_LEAF_NO_OUTGOING_TRANSITION <diag-code-w-leaf-no-outgoing-transition>`
+     - ``warning``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``state_identifier``
+   * - :ref:`W_INITIAL_LIVELOCK <diag-code-w-initial-livelock>`
      - ``warning``
      - ``static_pipeline``
      - ``pure_static``
@@ -1340,6 +1370,181 @@ A typical repair is ``fix_typo`` on ``transition``: If the dangling name is miss
 **Example 3** (``boundary_only``) — anti-pattern boundary for ``E_DANGLING_TRANSITION``.
 Do not pretend the transition resolves to ``[*]`` — that has a specific entry/exit semantics.
 
+.. _diag-code-e-history-declaration-invalid:
+
+E_HISTORY_DECLARATION_INVALID
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_HISTORY_DECLARATION_INVALID severity=error emit_tier=static_pipeline capability=pure_static span_object=transition
+.. diagnostics-ref E_HISTORY_DECLARATION_INVALID owner_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_HISTORY_DECLARATION_INVALID kind type=str required=true enum=shallow|deep item_enum=- exact_values=-
+.. diagnostics-ref E_HISTORY_DECLARATION_INVALID default type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_HISTORY_DECLARATION_INVALID reason type=str required=true enum=root_owner|leaf_owner|duplicate|default_not_direct_child|default_not_found|default_pseudo item_enum=- exact_values=-
+
+
+.. diagnostics-boundary E_HISTORY_DECLARATION_INVALID kind=cli_error
+
+**Registry facts.** Severity ``error``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``transition``.
+
+**Meaning.** A history declaration (`[H] -> Child;` or `[H*] -> Child.Leaf;`) is declared by the root state or by a leaf state, repeats a kind the owner already declares, or names a default target that is not a valid state below the owner.
+
+**LLM repair summary.** A ``[H]`` / ``[H*]`` declaration is malformed. Neither the root state nor a leaf state can own history, each owner declares each kind at most once, a ``[H]`` default is a direct child, and a default never names a pseudo state or a missing state.
+
+.. list-table:: Refs schema
+   :header-rows: 1
+   :widths: 22 16 14 48
+
+   * - Field
+     - Type
+     - Required
+     - Meaning
+   * - ``owner_path``
+     - ``str``
+     - yes
+     - Dotted path of the composite state that declares the history.
+   * - ``kind``
+     - ``str``
+     - yes
+     - History kind of the declaration. (enum: ``shallow``, ``deep``)
+   * - ``default``
+     - ``str``
+     - yes
+     - Default target as written, relative to the owner.
+   * - ``reason``
+     - ``str``
+     - yes
+     - Short tag describing why the declaration is invalid. (enum: ``root_owner``, ``leaf_owner``, ``duplicate``, ``default_not_direct_child``, ``default_not_found``, ``default_pseudo``)
+
+.. diagnostics-example E_HISTORY_DECLARATION_INVALID 1 cli_error
+
+**Example 1** (``cli_error``) — reproduction boundary.
+This source shape reproduces a controlled model-validation failure through ``pyfcstm inspect``. Current CLI formats exit non-zero before a successful inspect JSON report is produced, so assert the stderr/exit status rather than expecting this code inside ``diagnostics[]``; ``--collect-errors`` lists it.
+
+.. code-block:: fcstm
+
+   state Root { state Off; state O { state A; state W { state W1; [*] -> W1; } [*] -> A; [H] -> W.W1; } [*] -> Off; Off -> O.[H] :: Resume; }
+
+.. diagnostics-example E_HISTORY_DECLARATION_INVALID 2 boundary_only
+
+**Example 2** (``boundary_only``) — repair direction for ``E_HISTORY_DECLARATION_INVALID``.
+A typical repair is ``fix_history_default`` on ``history_declaration``: Point the default at a real non-pseudo state below the owner; use a direct child for ``[H]`` and any descendant path for ``[H*]``.
+
+.. diagnostics-example E_HISTORY_DECLARATION_INVALID 3 boundary_only
+
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``E_HISTORY_DECLARATION_INVALID``.
+Do not declare the same history kind twice in one composite state.
+
+
+.. _diag-code-e-history-target-undeclared:
+
+E_HISTORY_TARGET_UNDECLARED
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_HISTORY_TARGET_UNDECLARED severity=error emit_tier=static_pipeline capability=pure_static span_object=transition
+.. diagnostics-ref E_HISTORY_TARGET_UNDECLARED owner_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_HISTORY_TARGET_UNDECLARED kind type=str required=true enum=shallow|deep item_enum=- exact_values=-
+
+
+.. diagnostics-boundary E_HISTORY_TARGET_UNDECLARED kind=cli_error
+
+**Registry facts.** Severity ``error``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``transition``.
+
+**Meaning.** A transition enters `State.[H]` or `State.[H*]`, but that state does not declare the matching history kind.
+
+**LLM repair summary.** ``X -> O.[H]`` needs ``[H] -> Child;`` inside ``O`` (and ``O.[H*]`` needs ``[H*] -> ...;``). History is never provided implicitly, so the owner's own definition always says whether it records and restores.
+
+.. list-table:: Refs schema
+   :header-rows: 1
+   :widths: 22 16 14 48
+
+   * - Field
+     - Type
+     - Required
+     - Meaning
+   * - ``owner_path``
+     - ``str``
+     - yes
+     - Dotted path of the state entered through its history.
+   * - ``kind``
+     - ``str``
+     - yes
+     - History kind the transition asks for. (enum: ``shallow``, ``deep``)
+
+.. diagnostics-example E_HISTORY_TARGET_UNDECLARED 1 cli_error
+
+**Example 1** (``cli_error``) — reproduction boundary.
+This source shape reproduces a controlled model-validation failure through ``pyfcstm inspect``. Current CLI formats exit non-zero before a successful inspect JSON report is produced, so assert the stderr/exit status rather than expecting this code inside ``diagnostics[]``; ``--collect-errors`` lists it.
+
+.. code-block:: fcstm
+
+   state Root { state A; state O { state B; [*] -> B; } [*] -> A; A -> O.[H] :: Resume; }
+
+.. diagnostics-example E_HISTORY_TARGET_UNDECLARED 2 boundary_only
+
+**Example 2** (``boundary_only``) — repair direction for ``E_HISTORY_TARGET_UNDECLARED``.
+A typical repair is ``declare_history`` on ``composite_state``: Add the matching ``[H] -> Child;`` or ``[H*] -> Path;`` declaration to the target composite state.
+
+.. diagnostics-example E_HISTORY_TARGET_UNDECLARED 3 boundary_only
+
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``E_HISTORY_TARGET_UNDECLARED``.
+Do not target the history of a leaf state; only composite states can own history.
+
+
+.. _diag-code-e-history-reserved-prefix:
+
+E_HISTORY_RESERVED_PREFIX
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_HISTORY_RESERVED_PREFIX severity=error emit_tier=static_pipeline capability=pure_static span_object=variable_declaration
+.. diagnostics-ref E_HISTORY_RESERVED_PREFIX identifier type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_HISTORY_RESERVED_PREFIX identifier_kind type=str required=true enum=variable|state|temporary item_enum=- exact_values=-
+
+
+.. diagnostics-boundary E_HISTORY_RESERVED_PREFIX kind=cli_error
+
+**Registry facts.** Severity ``error``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``variable_declaration``.
+
+**Meaning.** A model that uses history also declares a variable, state or block-local temporary whose name collides with the names history lowering generates. The span is the declaration of the colliding identifier.
+
+**LLM repair summary.** History is lowered into hidden ``__hist_*`` variables and gate states. Target-language identifiers collapse repeated underscores, so any name matching ``_+hist_`` would collide with them in generated code.
+
+.. list-table:: Refs schema
+   :header-rows: 1
+   :widths: 22 16 14 48
+
+   * - Field
+     - Type
+     - Required
+     - Meaning
+   * - ``identifier``
+     - ``str``
+     - yes
+     - The colliding identifier.
+   * - ``identifier_kind``
+     - ``str``
+     - yes
+     - What the identifier names. (enum: ``variable``, ``state``, ``temporary``)
+
+.. diagnostics-example E_HISTORY_RESERVED_PREFIX 1 cli_error
+
+**Example 1** (``cli_error``) — reproduction boundary.
+This source shape reproduces a controlled model-validation failure through ``pyfcstm inspect``. Current CLI formats exit non-zero before a successful inspect JSON report is produced, so assert the stderr/exit status rather than expecting this code inside ``diagnostics[]``; ``--collect-errors`` lists it.
+
+.. code-block:: fcstm
+
+   def int __hist_x = 0; state Root { state Off; state O { state A; [*] -> A; [H] -> A; } [*] -> Off; Off -> O.[H] :: Resume; }
+
+.. diagnostics-example E_HISTORY_RESERVED_PREFIX 2 boundary_only
+
+**Example 2** (``boundary_only``) — repair direction for ``E_HISTORY_RESERVED_PREFIX``.
+A typical repair is ``rename_identifier`` on ``variable_declaration``: Rename the identifier so it does not start with underscores followed by ``hist_``.
+
+.. diagnostics-example E_HISTORY_RESERVED_PREFIX 3 boundary_only
+
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``E_HISTORY_RESERVED_PREFIX``.
+Do not assign to the hidden __hist_* variables by hand; they belong to history lowering.
+
+
 .. _diag-code-e-initial-transition-invalid:
 
 E_INITIAL_TRANSITION_INVALID
@@ -2439,6 +2644,116 @@ A typical repair is ``move_action`` on ``lifecycle_action``: Move the action to 
 
 **Example 3** (``boundary_only``) — anti-pattern boundary for ``W_COMBO_RELAY_PSEUDO_HAS_ACTIONS``.
 Do not add business logic to generated combo relay pseudo states.
+
+.. _diag-code-w-history-reserved-prefix:
+
+W_HISTORY_RESERVED_PREFIX
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta W_HISTORY_RESERVED_PREFIX severity=warning emit_tier=static_pipeline capability=pure_static span_object=variable_declaration
+.. diagnostics-ref W_HISTORY_RESERVED_PREFIX identifier type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_HISTORY_RESERVED_PREFIX identifier_kind type=str required=true enum=variable|state|temporary item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_HISTORY_RESERVED_PREFIX kind=inspect_json
+
+**Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``variable_declaration``.
+
+**Meaning.** A model without history syntax declares a variable, state or block-local temporary starting with the prefix reserved for history lowering. The span is the declaration of the identifier.
+
+**LLM repair summary.** ``__hist_`` is reserved for the names history lowering generates. The model still builds; this is expected when re-reading DSL exported from a model that used history, and a collision once history is added.
+
+.. list-table:: Refs schema
+   :header-rows: 1
+   :widths: 22 16 14 48
+
+   * - Field
+     - Type
+     - Required
+     - Meaning
+   * - ``identifier``
+     - ``str``
+     - yes
+     - The identifier using the reserved prefix.
+   * - ``identifier_kind``
+     - ``str``
+     - yes
+     - What the identifier names. (enum: ``variable``, ``state``, ``temporary``)
+
+.. diagnostics-example W_HISTORY_RESERVED_PREFIX 1 repro_cli
+
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
+
+.. code-block:: fcstm
+
+   def int __hist_x = 0; state Root { state A; [*] -> A; }
+
+.. diagnostics-example W_HISTORY_RESERVED_PREFIX 2 boundary_only
+
+**Example 2** (``boundary_only``) — repair direction for ``W_HISTORY_RESERVED_PREFIX``.
+A typical repair is ``rename_identifier`` on ``variable_declaration``: Rename a hand-written identifier before adding ``[H]`` / ``[H*]`` to the model, otherwise it becomes an error.
+
+.. diagnostics-example W_HISTORY_RESERVED_PREFIX 3 boundary_only
+
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_HISTORY_RESERVED_PREFIX``.
+Do not rename the __hist_* variables of exported DSL; they carry the lowered history behavior.
+
+
+.. _diag-code-w-history-unused:
+
+W_HISTORY_UNUSED
+^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta W_HISTORY_UNUSED severity=warning emit_tier=static_pipeline capability=pure_static span_object=transition
+.. diagnostics-ref W_HISTORY_UNUSED owner_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_HISTORY_UNUSED kind type=str required=true enum=shallow|deep item_enum=- exact_values=-
+
+
+.. diagnostics-boundary W_HISTORY_UNUSED kind=inspect_json
+
+**Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``transition``.
+
+**Meaning.** A composite state declares a history kind that no transition enters, so nothing is recorded for it.
+
+**LLM repair summary.** A ``[H]`` / ``[H*]`` declaration has no ``Owner.[H]`` / ``Owner.[H*]`` target, so lowering adds no record or route for it.
+
+.. list-table:: Refs schema
+   :header-rows: 1
+   :widths: 22 16 14 48
+
+   * - Field
+     - Type
+     - Required
+     - Meaning
+   * - ``owner_path``
+     - ``str``
+     - yes
+     - Dotted path of the composite state that declares the history.
+   * - ``kind``
+     - ``str``
+     - yes
+     - Declared history kind that is never entered. (enum: ``shallow``, ``deep``)
+
+.. diagnostics-example W_HISTORY_UNUSED 1 repro_cli
+
+**Example 1** (``repro_cli``) — reproduction boundary.
+This diagnostic can appear in a successful inspect report. Reproduce it with ``pyfcstm inspect -i <file> --format json`` and read the ``diagnostics[]`` array.
+
+.. code-block:: fcstm
+
+   state Root { state A; state O { state B; [*] -> B; [H] -> B; } [*] -> A; A -> O :: Go; }
+
+.. diagnostics-example W_HISTORY_UNUSED 2 boundary_only
+
+**Example 2** (``boundary_only``) — repair direction for ``W_HISTORY_UNUSED``.
+A typical repair is ``add_history_target`` on ``transition``: Enter the owner through ``Owner.[H]`` or ``Owner.[H*]`` where the model resumes it.
+
+.. diagnostics-example W_HISTORY_UNUSED 3 boundary_only
+
+**Example 3** (``boundary_only``) — anti-pattern boundary for ``W_HISTORY_UNUSED``.
+Do not expect a declaration alone to change how the state is entered.
+
 
 .. _diag-code-i-combo-pseudo-name-extended:
 
@@ -5517,6 +5832,153 @@ Do not treat every loop as a bug; long-running control loops are common state-ma
 
 Compatibility-only and miscellaneous diagnostics
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. _diag-code-w-initial-livelock:
+
+W_INITIAL_LIVELOCK
+^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta W_INITIAL_LIVELOCK severity=warning emit_tier=static_pipeline capability=pure_static span_object=state_identifier
+.. diagnostics-ref W_INITIAL_LIVELOCK state_paths type=list[str] required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref W_INITIAL_LIVELOCK transitions type=dict required=true enum=- item_enum=- exact_values=-
+.. diagnostics-boundary W_INITIAL_LIVELOCK kind=inspect_json
+
+**Registry facts.** Severity ``warning``; emit tier ``static_pipeline``; capability ``pure_static``; span object ``state_identifier``.
+
+**Meaning.** Initial descent, pseudo-state routing, and continuation after a
+child exits form a closed cycle within one execution cycle. Every route inside
+that component stays there; none enters a non-pseudo leaf or terminates the
+machine. This is a potential livelock warning, not a model-validation error.
+It is available in ordinary inspect reports without ``--enable-verify``.
+
+Composite entry and continuation after child exit are analyzed separately.
+Entering a non-pseudo leaf stops this analysis, even if that leaf has an
+outgoing reset. An exit to ``[*]`` from a root child terminates the machine;
+an exit from a deeper child instead resumes its parent. Consequently,
+adding just any ``[*]`` exit does not necessarily break a loop.
+
+**Boundary.** Guards and events are treated as potentially enabled, without
+proving they can hold together. Any route out of the component suppresses the
+warning, even a guarded route that is disabled for current variable values.
+The analyzer considers all state regions, not only the current initial route.
+An absent warning therefore does not prove runtime progress. Models with
+unresolved transition endpoints are left to their existing build diagnostics.
+
+**Repair.** Redirect the cyclic reset, add a route to a non-pseudo leaf, or add
+an exit route that actually terminates the machine. Confirm that the intended
+guards and events permit the repair. Raising a DFS limit does not repair a
+closed cycle, and this warning alone is not a reason to reject the model.
+
+.. list-table:: Refs schema
+   :header-rows: 1
+   :widths: 22 16 14 48
+
+   * - Field
+     - Type
+     - Required
+     - Meaning
+   * - ``state_paths``
+     - ``list[str]``
+     - yes
+     - Sorted, unique dotted paths participating in the closed component;
+       this is a component inventory, not an ordered runtime trace.
+   * - ``transitions``
+     - ``dict``
+     - yes
+     - Relevant expanded inspect transitions, keyed by the decimal string of
+       their zero-based ``transition_index``. Each value contains ``from_path``,
+       ``to_path``, ``event``, and ``guard``. Endpoints are dotted paths or
+       ``[*]``; event and guard values are strings or ``null``. Initial and
+       forced-transition expansions are included when they belong to the cycle.
+
+The diagnostic span identifies the first state in ``state_paths``. Transition
+keys refer to the inspected model's transition ordering, not permanent IDs
+across model edits.
+
+.. diagnostics-example W_INITIAL_LIVELOCK 1 repro_cli
+
+**Example 1** (``repro_cli``) — a nested forced reset.
+Save the following as ``nested.fcstm`` and run
+``pyfcstm inspect -i nested.fcstm --format json``. The command succeeds with
+exit status 0, writes the report to stdout, and leaves the input unchanged.
+The ``diagnostics[]`` array contains one ``W_INITIAL_LIVELOCK`` with
+``state_paths`` equal to ``["R.A", "R.A.B", "R.A.B.P"]``.
+
+.. code-block:: fcstm
+
+   state R {
+       state A {
+           state B {
+               pseudo state P;
+               [*] -> P;
+           }
+           [*] -> B;
+       }
+       state Idle;
+       [*] -> Idle;
+       Idle -> A :: go;
+       !A -> A :: loop;
+   }
+
+The structural cycle enters ``A``, descends through ``B`` to ``P``, exits back
+through the parent continuations, then resets ``A``. Starting in ``Idle`` does
+not hide that region. Relevant transition keys are ``"0"``, ``"3"``, ``"4"``,
+``"5"``, and ``"6"``; the reset entry is:
+
+.. code-block:: json
+
+   {"from_path": "R.A", "to_path": "R.A", "event": "R.A.loop", "guard": null}
+
+.. diagnostics-example W_INITIAL_LIVELOCK 2 repro_cli
+
+**Example 2** (``repro_cli``) — a pseudo-state self-loop.
+Inspect this model with the same command, substituting its file name. It emits
+one warning with ``state_paths`` equal to ``["R.P"]`` and transition key
+``"1"``. Replacing ``P -> P;`` with ``P -> [*];`` removes this warning because
+``P`` is a direct child of the root and that exit terminates the machine.
+
+.. code-block:: fcstm
+
+   state R {
+       pseudo state P;
+       [*] -> P;
+       P -> P;
+   }
+
+.. diagnostics-example W_INITIAL_LIVELOCK 3 boundary_only
+
+**Example 3** (``boundary_only``) — stable entry and guarded escape.
+Neither model below emits ``W_INITIAL_LIVELOCK``. The first enters a stoppable
+leaf before any later reset; that reset is not an endless initial descent.
+
+.. code-block:: fcstm
+
+   state R {
+       state A;
+       [*] -> A;
+       !A -> A :: reset;
+   }
+
+The second has a structural escape to ``Done``. It suppresses this warning even
+though ``ready`` starts at 0 and the escape guard is initially false. Runtime
+validation remains responsible for the enabled paths; other diagnostics may
+still appear in either report.
+
+.. code-block:: fcstm
+
+   def int ready = 0;
+   state R {
+       pseudo state P;
+       state Done;
+       [*] -> P;
+       P -> P;
+       P -> Done : if [ready > 0];
+   }
+
+**Source facts.** ``pyfcstm/diagnostics/analyzers/initial_livelock.py`` defines
+the same-cycle graph and closed-component rule; ``pyfcstm/diagnostics/codes.yaml``
+defines the payload contract. ``test/diagnostics/test_initial_livelock.py``
+checks these examples through the public inspect API.
 
 .. _diag-code-w-initial-unconditional-missing:
 

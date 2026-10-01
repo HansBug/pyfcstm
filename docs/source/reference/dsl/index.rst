@@ -282,11 +282,22 @@ example event scopes, import mappings, or action references. Transition
 identifiers resolved in the owning state scope, not dotted paths. To reach a
 nested leaf, put the transition inside the composite that owns that leaf, or
 transition to the composite and let its initial transition select the child.
+The history target ``Owner.[H]`` / ``Owner.[H*]`` is not a dotted path either:
+``Owner`` is a plain sibling identifier and the marker selects how it is
+entered. Only a history declaration's default (``[H*] -> Wash.Fill;``) is a
+dotted path, resolved relative to the owner.
 
 .. _dsl-transition-forms:
 
 Transition forms
 ----------------
+
+The Python model fields ``Transition.event`` and ``Transition.guard`` are mutually
+exclusive. The same applies to ``event_id`` and ``condition_expr`` on ordinary and
+forced AST transitions. Construction or assignment raises ``ValueError`` if both
+would be non-``None``; rejected assignments leave the object unchanged. Clear the
+existing field before setting the other. Both may be ``None`` for an unconditional
+edge. Sequential combo terms still expand into separate model edges.
 
 .. list-table:: Transition families
    :header-rows: 1
@@ -331,6 +342,14 @@ Transition forms
      - ``!State -> [*] ...;`` or ``!* -> [*] ...;``
      - No
      - Forced form targeting exit marker.
+   * - History declaration
+     - ``[H] -> Child;`` or ``[H*] -> Child.Leaf;`` inside a composite state
+     - No
+     - Declares shallow or deep history of the enclosing composite; the right-hand side is the default while there is no record. See :ref:`dsl-history-reference`.
+   * - History target
+     - ``... -> Owner.[H] ...;`` or ``... -> Owner.[H*] ...;``
+     - Yes, except forced forms
+     - Accepted on normal, initial and forced (``!State`` / ``!*``) transitions, with every trigger form; enters ``Owner`` through its history.
 
 Combo details:
 
@@ -494,6 +513,251 @@ The JSON report should contain a ``forced_transitions`` summary and multiple
 expanded edges with ``forced_origin``. Once expanded, those edges are ordinary
 transitions for lifecycle ordering: source ``exit`` and target ``enter`` still
 run according to runtime semantics.
+
+.. _dsl-history-reference:
+
+History expansion quasi-spec
+----------------------------
+
+History restores the configuration a composite state had when it was last
+left. Like forced and combo transitions it is syntactic sugar: model conversion
+lowers it into ordinary variables, exit actions and initial transitions, and
+every consumer (simulator, generated templates, BMC, inspect, PlantUML) sees
+only the lowered machine. Why the rules below hold is explained in
+:ref:`dsl-history-semantics`; the task walkthrough is :ref:`dsl-history-task`.
+
+Declarations
+~~~~~~~~~~~~
+
+.. list-table:: History declaration rules
+   :header-rows: 1
+   :widths: 30 34 36
+
+   * - Form
+     - Rule
+     - Violation
+   * - ``[H] -> Child;``
+     - Shallow history of the enclosing composite (the *owner*). ``Child`` is a
+       direct, non-pseudo child; it is where the history goes while the owner
+       has no record.
+     - ``[H] -> W.W1;`` reports ``E_HISTORY_DECLARATION_INVALID`` with
+       ``reason: default_not_direct_child``.
+   * - ``[H*] -> A.B.C;``
+     - Deep history. The default is any existing non-pseudo descendant path,
+       written relative to the owner. A composite default continues with its
+       own initial transition.
+     - Missing state: ``default_not_found``; pseudo state: ``default_pseudo``.
+   * - One ``[H]`` and one ``[H*]`` per owner
+     - Both kinds share one record.
+     - A second ``[H]`` in the same owner: ``duplicate``.
+   * - Owner is a composite other than the root
+     - The root is never left and re-entered, and a leaf has nothing to
+       remember. A module's root is no longer the root once imported: a history
+       it declares belongs to the importing state and is entered as
+       ``Alias.[H]``, while the module file on its own still reports
+       ``root_owner``.
+     - ``[H]`` in the root: ``root_owner``; in a leaf such as
+       ``state L { [H] -> L; }``: ``leaf_owner``.
+   * - Declared kind is used
+     - A kind no ``Owner.[H]`` / ``Owner.[H*]`` target enters adds nothing.
+     - ``W_HISTORY_UNUSED`` (warning); no record or route is generated.
+
+Legal declarations:
+
+.. code-block:: fcstm
+
+   state Program {
+       state Idle;
+       state Wash { state Fill; state Agitate; [*] -> Fill; }
+       [*] -> Idle;
+       [H] -> Idle;         // shallow default: direct child
+       [H*] -> Wash.Fill;   // deep default: descendant path
+   }
+
+   state Owner { state A; state K { state K1; [*] -> K1; } [*] -> A; [H*] -> K; }  // composite default
+   state Owner2 { state A; [*] -> A; [H] -> A; [H*] -> A; }                       // both kinds, same default
+
+Illegal declarations (syntax errors, not diagnostics):
+
+.. code-block:: fcstm
+
+   [H] -> A effect { x = 1; }   // a history default has no effect
+   [H] -> A :: Go;              // ... and no trigger
+   [ H ] -> A;                  // markers are compact tokens: [H] and [H*]
+
+Targets
+~~~~~~~
+
+``Owner.[H]`` and ``Owner.[H*]`` name a sibling ``Owner`` in the current scope,
+exactly like an ordinary target, followed by the marker. The owner must declare
+that kind, otherwise ``E_HISTORY_TARGET_UNDECLARED`` is reported; history is
+never provided implicitly.
+
+.. list-table:: History target forms
+   :header-rows: 1
+   :widths: 44 56
+
+   * - Legal form
+     - Notes
+   * - ``Paused -> Program.[H] :: Shallow;``
+     - Local event trigger.
+   * - ``Paused -> Program.[H*] : if [ready > 0] effect { n = n + 1; }``
+     - Guard and effect; the effect runs before the restore target is chosen.
+   * - ``Offline -> Session.[H*] :: Resume + [online > 0];``
+     - Combo trigger; only the final hop into ``Session`` carries the history entry.
+   * - ``[*] -> Program.[H*];``
+     - A parent's initial transition may enter a child's history.
+   * - ``!Running -> Program.[H] :: Back;`` and ``!* -> Program.[H];``
+     - Forced forms; every expanded edge enters the history.
+   * - ``!Program -> Program.[H*] :: Reenter;``
+     - External self transition: the owner is exited and restored.
+
+Illegal targets:
+
+.. code-block:: fcstm
+
+   A -> P.O.[H];      // only a sibling of the source can be the owner
+   A -> [*].[H];      // the exit marker has no history
+   A -> O.[H].X;      // nothing may follow the marker
+
+Lowered names
+~~~~~~~~~~~~~
+
+.. list-table:: What lowering adds
+   :header-rows: 1
+   :widths: 28 72
+
+   * - Name
+     - Meaning
+   * - ``__hist_goto``
+     - One ``int`` per machine: id of the state a restore in progress is heading
+       for. It is ``0`` at every stable point.
+   * - ``__hist_<owner>``
+     - One ``int`` per owner whose history is used: id of the last stoppable
+       leaf exited below the owner. While the owner is inactive this is its
+       record; ``0`` means no record. ``<owner>`` joins the owner path below the
+       root with ``_`` (``Washer.Program.Wash`` gives ``__hist_Program_Wash``);
+       a tag that would collide after underscore collapsing gets ``_2``,
+       ``_3``, ... and ``goto`` is reserved.
+   * - ``__hist_gate_<n>``
+     - A pseudo state that gates an owner's evented initial transition.
+   * - Leaf ``exit`` actions, route initials, gated initials
+     - Appended to the stoppable leaves below each owner and to the composites a
+       restore passes through; see :ref:`dsl-history-semantics`.
+
+Reserved names: in a model that uses history, a variable, state or block-local
+temporary whose name matches ``_+hist_`` (``__hist_x`` or ``_hist_x``) reports
+``E_HISTORY_RESERVED_PREFIX``, because target languages collapse repeated
+underscores. Without history syntax, only the ``__hist_`` prefix is reported,
+as ``W_HISTORY_RESERVED_PREFIX``; this is what re-reading exported DSL shows.
+
+Diagnostics
+~~~~~~~~~~~
+
+.. list-table:: History diagnostics
+   :header-rows: 1
+   :widths: 30 12 58
+
+   * - Code
+     - Severity
+     - When and refs
+   * - ``E_HISTORY_DECLARATION_INVALID``
+     - error
+     - Malformed declaration. Refs ``owner_path``, ``kind``, ``default``,
+       ``reason`` (``root_owner``, ``leaf_owner``, ``duplicate``,
+       ``default_not_direct_child``, ``default_not_found``, ``default_pseudo``).
+       The targets of an invalid declaration are not reported again as
+       undeclared.
+   * - ``E_HISTORY_TARGET_UNDECLARED``
+     - error
+     - ``Owner.[H]`` / ``Owner.[H*]`` without the matching declaration, or on a
+       leaf. Refs ``owner_path``, ``kind``.
+   * - ``E_HISTORY_RESERVED_PREFIX``
+     - error
+     - A name collides with the lowered names. Refs ``identifier``,
+       ``identifier_kind`` (``variable``, ``state``, ``temporary``).
+   * - ``W_HISTORY_RESERVED_PREFIX``
+     - warning
+     - A ``__hist_`` name in a model without history. Same refs.
+   * - ``W_HISTORY_UNUSED``
+     - warning
+     - A declared kind is never entered. Refs ``owner_path``, ``kind``.
+
+Consumers of the lowered machine
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: How each surface treats history
+   :header-rows: 1
+   :widths: 24 76
+
+   * - Surface
+     - Behavior
+   * - Model API
+     - ``StateMachine.history_owners`` lists each lowered owner
+       (:class:`pyfcstm.model.history.HistoryOwner`: owner path, record and
+       goto variable names, defaults, record value of every leaf).
+       ``history_variables({"Owner.Path": "Leaf.Path"})`` computes the lowered
+       variables for a hot start; ``history_record(vars, "Owner.Path")`` decodes a
+       record.
+   * - Simulator
+     - Executes the lowered machine unchanged. A hot start supplies the lowered
+       variables like any persistent variable; ``__hist_goto`` other than ``0``,
+       or a record naming no stoppable leaf of its owner, raises ``ValueError``
+       listing the valid ids. The same applies to ``pyfcstm simulate``'s
+       ``init`` command.
+   * - Export
+     - ``to_ast_node()`` and ``pyfcstm`` DSL export write the lowered, plain
+       FCSTM. Re-reading it gives the same behavior but carries no history
+       metadata, so inspect then judges the lowered machine: the lowered names
+       report ``W_HISTORY_RESERVED_PREFIX``, a composite whose initials all
+       became guarded reports ``W_INITIAL_UNCONDITIONAL_MISSING``, and a finding
+       about an author's guard that lowering extended, such as
+       ``W_GUARD_CONST_FALSE``, no longer appears.
+   * - Inspect
+     - Judges the model as written. Model conversion can also build the machine
+       before lowering, and ``pyfcstm inspect`` -- including ``--enable-verify`` -- and
+       the jsfcstm editor report that machine: it contains no lowered variable,
+       gate state, route or record-writing exit, a history entry is an ordinary
+       transition to the owner marked with ``target_history``, and no
+       ``transition_index`` numbers a lowered transition. Every finding,
+       statistic and metric is therefore that of the same model written without
+       history, except reachability: a history entry reaches its owner as an
+       ordinary entry does and, as ordinary targets, every state on the default
+       path of the kind it names. A state reachable only as a default is
+       therefore not reported unreachable. The rule over-approximates what a
+       restore reaches, so it never reports a reachable state, though a state a
+       deep default skips over is not reported either.
+       Besides, a history entry reaches what a restore can re-enter (for
+       ``[H*]`` every root-reachable leaf of the owner, for ``[H]`` every direct
+       child with one), which adds no reachable state but completes the
+       ``reachability_graph`` rows and closes cycles that pass through a
+       restore. The topology checks of ``--enable-verify`` and the functions of
+       :mod:`pyfcstm.verify.topology` -- also on a lowered machine -- use the
+       same rule; because it over-approximates, a topology warning can concern
+       a state or cycle only the approximation produces. The other
+       :mod:`pyfcstm.verify` functions, called directly, analyse the machine
+       they are given. The editor does not assemble imports, so it leaves a
+       default that continues into an imported module to pyfcstm.
+   * - BMC
+     - Checks the lowered machine. Queries may read ``var("__hist_goto")`` and
+       ``var("__hist_<owner>")``. A havocked history variable is constrained to
+       the values an execution holds (goto ``0``; a record ``0`` or a leaf id of
+       its owner), so ``havoc *`` starts from any valid record and every witness
+       replays.
+   * - Templates and PlantUML
+     - Consume the lowered machine: generated code carries the lowered
+       variables (a generated hot start supplies them as well), and diagrams show
+       the lowered routes with ``__`` escaped.
+
+Verify with:
+
+.. code-block:: bash
+
+   pyfcstm inspect -i docs/source/tutorials/dsl/history_washer.fcstm --format json
+
+In the JSON report, no name starts with ``__hist_``, and the transitions
+entering ``Program.[H]`` and ``Program.[H*]`` carry ``target_history``
+(``shallow`` and ``deep``) with ``to_path`` ``Washer.Program``.
 
 .. _dsl-events-scopes:
 

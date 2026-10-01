@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import math
 import time
-from typing import Optional, Sequence, Tuple, cast
+from typing import List, Optional, Sequence, Tuple, cast
 
 import z3
 
@@ -206,6 +206,43 @@ def _check_with_budget(
     if reason == "timeout":
         return "timeout", None, reason, elapsed_ms, True
     return "unknown", None, reason, elapsed_ms, True
+
+
+def _free_symbols(expression: z3.ExprRef) -> List[z3.ExprRef]:
+    """Return the uninterpreted constants of an expression in first-seen order.
+
+    This is :func:`z3.z3util.get_vars` with each shared subterm visited once.
+    Case conditions read the acceptance of earlier candidates, so they are
+    shared DAGs whose tree unfolding grows exponentially with nesting depth;
+    ``get_vars`` walks that unfolding.
+
+    :param expression: Expression to scan.
+    :type expression: z3.ExprRef
+    :return: Distinct constants in the preorder ``get_vars`` reports them.
+    :rtype: List[z3.ExprRef]
+
+    Example::
+
+        >>> import z3
+        >>> x, a = z3.Int("x"), z3.Bool("a")
+        >>> shared = z3.Or(a, x > 1)
+        >>> _free_symbols(z3.And(shared, z3.Not(shared), x == 2))
+        [a, x]
+    """
+    found: List[z3.ExprRef] = []
+    seen = set()
+    pending = [expression]
+    while pending:
+        term = pending.pop()
+        if term.get_id() in seen:
+            continue
+        seen.add(term.get_id())
+        if z3.is_const(term):
+            if term.decl().kind() == z3.Z3_OP_UNINTERPRETED:
+                found.append(term)
+        else:
+            pending.extend(reversed(term.children()))
+    return found
 
 
 __all__ = []

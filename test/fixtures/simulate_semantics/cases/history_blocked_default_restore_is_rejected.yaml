@@ -1,0 +1,40 @@
+title: A deep history default whose initial is blocked rejects the whole transition
+origin:
+  files:
+  - test/model/test_history_lowering.py
+  notes:
+  - Without a record ResumeDeep goes to the default K, whose initial is blocked, so it stays in Off; the
+    ordinary entry afterwards is unaffected.
+categories:
+- runtime
+- template_alignment
+- history
+steps:
+- cycle: []
+  expect:
+    state: R.Off
+    vars:
+      ready: 1
+      fresh_entries: 0
+      __hist_goto: 0
+- cycle: R.Off.Block
+  expect:
+    state: R.Off
+    vars:
+      ready: 0
+      fresh_entries: 0
+      __hist_goto: 0
+- cycle: R.Off.ResumeDeep
+  expect:
+    state: R.Off
+    vars:
+      ready: 0
+      fresh_entries: 0
+      __hist_goto: 0
+- cycle: R.Off.Fresh
+  expect:
+    state: R.O.Idle
+    vars:
+      ready: 0
+      fresh_entries: 1
+      __hist_goto: 0

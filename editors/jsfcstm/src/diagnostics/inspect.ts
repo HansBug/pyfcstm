@@ -178,6 +178,8 @@ export interface TransitionInfo {
     combo_reuse_group_id: string | null;
     combo_priority_run_identity: unknown[] | null;
     combo_priority_run_index: number | null;
+    /** History kind the transition enters; ``to_path`` then names the owner. */
+    target_history: 'shallow' | 'deep' | null;
     /**
      * Non-enumerable editor-only source range for analyzer-to-editor
      * handoff. It is intentionally omitted from ``toJson()`` output and from
@@ -538,6 +540,10 @@ export interface ModelDiagnosticJson {
  * Run the structural inspector against a jsfcstm state-machine model.
  */
 export function inspectModel(machine: StateMachine, options: InspectModelOptions = {}): ModelInspect {
+    // A machine that uses history is judged as written, as in pyfcstm: the
+    // builder keeps the model before lowering, where a history entry is an
+    // ordinary transition that still carries its ``targetHistory``.
+    machine = machine.authoredView ?? machine;
     const deepHierarchyThreshold = normalizeIntThreshold(
         'deepHierarchyThreshold',
         options.deepHierarchyThreshold ?? DEFAULT_DEEP_HIERARCHY_THRESHOLD,
@@ -563,7 +569,16 @@ export function inspectModel(machine: StateMachine, options: InspectModelOptions
     const comboTransitions = transitions.filter(item => item.combo_origin_refs.length > 0);
     const comboOrigins = buildComboOriginInfos(comboTransitions);
     const metrics = buildMetrics(states, transitions, variables, events);
-    const reachabilityGraph = buildReachabilityGraph(states, transitions);
+    const historyDefaults = new Map<string, string[]>();
+    for (const owner of machine.historyOwners) {
+        for (const [kind, path] of Object.entries(owner.defaults)) {
+            historyDefaults.set(
+                JSON.stringify([owner.ownerPath.join('.'), kind]),
+                path!.map((_, index) => [...owner.ownerPath, ...path!.slice(0, index + 1)].join('.')),
+            );
+        }
+    }
+    const reachabilityGraph = buildReachabilityGraph(states, transitions, historyDefaults);
     const diagnostics = collectDesignHealthWarnings(
         states,
         transitions,
@@ -927,6 +942,7 @@ function buildTransitionInfos(machine: StateMachine): TransitionInfo[] {
                 combo_reuse_group_id: t.combo_reuse_group_id,
                 combo_priority_run_identity: Array.isArray(t.combo_priority_run_identity) ? [...t.combo_priority_run_identity] : null,
                 combo_priority_run_index: typeof t.combo_priority_run_index === 'number' ? t.combo_priority_run_index : null,
+                target_history: t.targetHistory ?? null,
             };
             Object.defineProperty(info, '__sourceRange', {
                 value: t.range,
@@ -1768,6 +1784,7 @@ function authoredTransitionEntries(
             combo_reuse_group_id: null,
             combo_priority_run_identity: null,
             combo_priority_run_index: null,
+            target_history: null,
         } satisfies TransitionInfo;
         representatives.set(`forced:${index}`, {
             ...base,
@@ -2082,6 +2099,7 @@ function buildStructureStatistics(
             combo_reuse_group_id: null,
             combo_priority_run_identity: null,
             combo_priority_run_index: null,
+            target_history: null,
         } satisfies TransitionInfo;
         representatives.set(`forced:${index}`, {
             ...base,
@@ -2345,9 +2363,18 @@ function buildStructureStatistics(
     };
 }
 
+/**
+ * Guard-agnostic reachability closure, aligned with pyfcstm. ``historyDefaults``
+ * maps ``[owner path, kind]`` (as JSON) to the states from the owner's child
+ * down to the declared default; a transition entering that history reaches
+ * each of them as an ordinary target, besides the owner, and what a restore
+ * can re-enter (for [H*] every root-reachable leaf of the owner, for [H]
+ * every direct child with one) -- an over-approximation of every entry.
+ */
 function buildReachabilityGraph(
     states: StateInfo[],
     transitions: TransitionInfo[],
+    historyDefaults: ReadonlyMap<string, string[]> = new Map(),
 ): Record<string, string[]> {
     const adjacency: Record<string, Set<string>> = {};
     const initialEdges: Record<string, Set<string>> = {};
@@ -2368,10 +2395,19 @@ function buildReachabilityGraph(
             }
         }
     }
-    const out: Record<string, string[]> = {};
-    for (const s of states) {
+    const historyEntries = transitions.filter(t => historyDefaults.has(JSON.stringify([t.to_path, t.target_history])));
+    const addEdges = (t: TransitionInfo, targets: string[]): void => {
+        const from = t.from_path === INIT_MARK ? t.to_path.slice(0, t.to_path.lastIndexOf('.')) : t.from_path;
+        const edges = t.from_path === INIT_MARK ? initialEdges[from] : adjacency[from];
+        // A source that names no local state (an import alias, a misspelling)
+        // contributes no edge, as in the loop above.
+        if (!edges) return;
+        targets.forEach(path => edges.add(path));
+    };
+    for (const t of historyEntries) addEdges(t, historyDefaults.get(JSON.stringify([t.to_path, t.target_history]))!);
+    const closure = (start: string): Set<string> => {
         const seen = new Set<string>();
-        const queue: string[] = [s.path];
+        const queue: string[] = [start];
         while (queue.length > 0) {
             const cur = queue.shift()!;
             const next = Array.from(
@@ -2381,13 +2417,34 @@ function buildReachabilityGraph(
                 ]),
             ).sort();
             for (const nxt of next) {
-                if (seen.has(nxt) || nxt === s.path) continue;
+                if (seen.has(nxt) || nxt === start) continue;
                 seen.add(nxt);
                 queue.push(nxt);
             }
         }
-        out[s.path] = Array.from(seen).sort();
+        return seen;
+    };
+    if (historyEntries.length > 0) {
+        // A restore re-enters a leaf reached before: for [H*] any root-reachable
+        // leaf of the owner, for [H] any direct child with one, as in pyfcstm.
+        const byPath = new Map(states.map(state => [state.path, state]));
+        const reached = Array.from(closure(states[0].path));
+        const restores = new Map<string, string[]>();
+        for (const t of historyEntries) {
+            const restoreKey = JSON.stringify([t.to_path, t.target_history]);
+            if (!restores.has(restoreKey)) {
+                // Only known states: a target naming none (an import alias, a
+                // misspelling) can still sit in the reachable set.
+                const inside = reached.filter(path => path.startsWith(`${t.to_path}.`) && byPath.has(path));
+                restores.set(restoreKey, t.target_history === 'deep'
+                    ? inside.filter(path => byPath.get(path)!.is_leaf)
+                    : byPath.get(t.to_path)!.substates.filter(child => inside.some(path => path === child || path.startsWith(`${child}.`))));
+            }
+            addEdges(t, restores.get(restoreKey)!);
+        }
     }
+    const out: Record<string, string[]> = {};
+    for (const s of states) out[s.path] = Array.from(closure(s.path)).sort();
     return out;
 }
 

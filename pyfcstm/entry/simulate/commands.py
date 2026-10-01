@@ -378,13 +378,14 @@ class CommandProcessor:
             # Multiple cycles - use table format
             return self._handle_multiple_cycles(count, event_list, inputs)
 
-        except SimulationRuntimeDfsError:
+        except SimulationRuntimeDfsError as error:
             # SimulationRuntimeDfsError: runtime.cycle validation exceeded its
             # DFS safety limits for the user's state machine.
             return CommandResult(
                 "Cycle execution failed: State machine contains an unbounded execution chain.\n"
                 "This usually means there are too many automatic transitions without a stable state.\n"
-                "Please review your state machine definition for missing stoppable states.",
+                "Please review your state machine definition for missing stoppable states.\n"
+                f"{error}",
                 exit_code=1,
             )
         except (SimulationRuntimeEventError, SimulationRuntimeExpressionError, SimulationRuntimeInputSourceError) as e:

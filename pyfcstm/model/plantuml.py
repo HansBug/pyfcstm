@@ -210,6 +210,30 @@ def escape_plantuml_table_cell(text: str) -> str:
     return text.replace('|', '\\|')
 
 
+def escape_plantuml_creole(text: str) -> str:
+    """
+    Keep ``__`` literal in PlantUML text that is rendered as Creole.
+
+    Notes, legends and state descriptions are Creole text, where a pair of
+    ``__`` toggles underlining.  Identifiers such as the ``__hist_*`` variables
+    of lowered history would lose their underscores and underline the text in
+    between, so every ``__`` is escaped with PlantUML's ``~`` escape.
+
+    :param text: Text to escape
+    :type text: str
+    :return: Text whose double underscores render literally
+    :rtype: str
+
+    Example::
+
+        >>> escape_plantuml_creole("__hist_goto = (__hist_R == 4) ? 4 : 0;")
+        '~__hist_goto = (~__hist_R == 4) ? 4 : 0;'
+        >>> escape_plantuml_creole("plain_name")
+        'plain_name'
+    """
+    return text.replace('__', '~__')
+
+
 def should_show_action(action: 'Union[OnStage, OnAspect]', config: 'PlantUMLOptions') -> bool:
     """
     Determine if an action should be shown based on abstract/concrete filtering.

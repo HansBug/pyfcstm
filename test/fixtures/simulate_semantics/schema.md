@@ -86,6 +86,7 @@ Allowed categories:
 - `pseudo_chain`
 - `validation`
 - `lifecycle`
+- `history`
 
 ## Construction
 

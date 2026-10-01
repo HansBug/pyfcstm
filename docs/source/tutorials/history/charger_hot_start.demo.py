@@ -19,7 +19,7 @@ for event in [
     runtime.cycle(["Charger." + event] if event else [])
 
 # What a controller writes to non-volatile storage: the current state, its own
-# variables and the source-level record, but no lowered __hist_* number.
+# variables and the source-level record, but no generated __hist_* number.
 saved_state = ".".join(runtime.current_state.path)
 saved_record = machine.history_record(runtime.vars, OWNER)
 saved_vars = {k: v for k, v in runtime.vars.items() if not k.startswith("__hist_")}

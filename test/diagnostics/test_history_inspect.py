@@ -565,3 +565,26 @@ def test_history_reports_validate_against_the_shipped_schema(name):
     payload = _report(MODELS[name]).to_json()
     schema = json.loads(Path(pyfcstm.diagnostics.__file__).with_name("schema.json").read_text())
     jsonschema.Draft7Validator(schema).validate(payload)
+
+
+@pytest.mark.unittest
+def test_a_strictly_loaded_model_reports_its_model_build_warnings():
+    # W_HISTORY_UNUSED is emitted while the model is converted; inspect_model
+    # reads it from a strict build unless the caller passes its own list.
+    text = """
+        state R {
+            state Off;
+            state On { state A; [*] -> A; [H] -> A; }
+            [*] -> Off;
+            Off -> On :: Go;
+            On -> Off :: Stop;
+        }
+    """
+    machine = load_state_machine_from_text(text)
+    strict = [item.code for item in inspect_model(machine).diagnostics]
+    collected = [item.code for item in _report(text).diagnostics]
+    explicit = [item.code for item in inspect_model(machine, model_diagnostics=()).diagnostics]
+
+    assert strict.count("W_HISTORY_UNUSED") == 1
+    assert strict == collected
+    assert "W_HISTORY_UNUSED" not in explicit

@@ -4321,7 +4321,7 @@ def inspect_model(
         max_complexity_tier: str = 'structural',
         max_call_count_scaling: str = 'linear_in_transitions',
         smt_timeout_ms: Optional[int] = None,
-        model_diagnostics: Sequence[ModelDiagnostic] = (),
+        model_diagnostics: Optional[Sequence[ModelDiagnostic]] = None,
 ) -> ModelInspect:
     """
     Build a structured inspection report for a state machine model.
@@ -4373,9 +4373,11 @@ def inspect_model(
         prepended to the analyzer output. Callers that built the model with
         :func:`pyfcstm.model.parse_dsl_node_to_state_machine` in collect mode
         pass the returned diagnostic list here so the report carries the model
-        errors alongside the design-health warnings. Defaults to ``()``, which
-        reproduces the strict-mode report shape.
-    :type model_diagnostics: Sequence[pyfcstm.utils.validate.ModelDiagnostic], optional
+        errors alongside the design-health warnings. Defaults to ``None``,
+        which uses the warnings a strict build of ``machine`` emitted while
+        converting the model, such as ``W_HISTORY_UNUSED``, so a strictly
+        loaded model gets the same report as ``pyfcstm inspect``.
+    :type model_diagnostics: Optional[Sequence[pyfcstm.utils.validate.ModelDiagnostic]], optional
     :return: Structured view of the model.
     :rtype: ModelInspect
 
@@ -4420,6 +4422,8 @@ def inspect_model(
     structure_statistics_policy = _normalize_structure_statistics_policy(
         structure_statistics_policy,
     )
+    if model_diagnostics is None:
+        model_diagnostics = machine._build_warnings
     # A machine that uses history is judged as written: model conversion keeps
     # the model before lowering, where a history entry is an ordinary
     # transition that still carries its ``target_history``.

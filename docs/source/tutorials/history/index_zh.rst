@@ -128,7 +128,7 @@
    :language: bash
    :caption: ``charger_check.demo.sh``
 
-由脚本生成的输出（脚本保留每份报告的摘要、警告和错误块）：
+由脚本生成的输出（脚本保留第一份报告的摘要和警告，以及第二份报告的错误块）：
 
 .. literalinclude:: charger_check.demo.sh.txt
    :language: text

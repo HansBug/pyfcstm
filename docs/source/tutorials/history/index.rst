@@ -190,8 +190,8 @@ model error with a one-line message and no diagnostic code.
    :language: bash
    :caption: ``charger_check.demo.sh``
 
-Output, generated from the script, which keeps the summary, the warnings and
-the error block of each report:
+Output, generated from the script, which keeps the summary and warnings of the
+first report and the error block of the second:
 
 .. literalinclude:: charger_check.demo.sh.txt
    :language: text

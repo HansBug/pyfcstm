@@ -23,16 +23,12 @@ events = [
     "Idle.PlugIn",
 ]
 
-row = "{:>2}  {:<12} {:<32} {:>9} {:>6}  {}"
-print(
-    row.format(
-        "#", "event", "state below Charger", "precharge", "energy", "Session record"
-    )
-)
+row = "{:>2}  {:<12} {:<15} {:>9} {:>6}  {}"
+print(row.format("#", "event", "active leaf", "precharge", "energy", "Session record"))
 for step, event in enumerate(events):
     runtime.cycle(["Charger." + event] if event else [])
-    state = ".".join(runtime.current_state.path[1:])
-    if state.startswith("Session."):
+    path = runtime.current_state.path
+    if path[1] == "Session":
         record = "(Session active)"
     else:
         record = machine.history_record(runtime.vars, "Charger.Session") or "none"
@@ -40,7 +36,7 @@ for step, event in enumerate(events):
         row.format(
             step,
             event.split(".")[-1] if event else "-",
-            state,
+            path[-1],
             runtime.vars["precharge_runs"],
             runtime.vars["energy"],
             record,

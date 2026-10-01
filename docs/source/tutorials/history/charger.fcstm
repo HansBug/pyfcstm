@@ -34,7 +34,7 @@ state Charger {
     }
     [*] -> Idle;
     Idle -> Session :: PlugIn;
-    !Session -> Fault :: OverTemp;
+    !Session -> Fault :: OverTemp;      // every session phase can overheat
     Fault -> Session.[H*] :: Cleared;     // resume the exact phase
     Fault -> Session.[H] :: ManualReset;  // resume Charging, then precharge again
     !Session -> Idle :: Unplug;

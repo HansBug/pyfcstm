@@ -36,7 +36,6 @@ def resume(record):
         initial_state=saved_state,
         initial_vars={**saved_vars, **hidden},
     )
-    restored.cycle()
     restored.cycle(["Charger.Fault.Cleared"])
     return hidden, ".".join(restored.current_state.path), restored.vars
 

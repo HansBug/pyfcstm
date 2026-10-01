@@ -3,7 +3,8 @@ Resume an Interrupted Session with History
 
 This tutorial adds history to one existing model. You should already be able
 to read an FCSTM model (:doc:`../dsl/index`) and run a batch simulation
-(:doc:`../simulation/index`). You will see why a fault recovery that enters a
+(:doc:`../simulation/index`); step 6 also uses an inspect report
+(:doc:`../inspect/index`). You will see why a fault recovery that enters a
 composite state normally starts over, add history so that the recovery
 continues where the interruption happened, and check the result with the
 simulator, inspect and a Python hot start.
@@ -33,13 +34,14 @@ The first version recovers from a fault with ordinary transitions:
 
 .. literalinclude:: charger_restart.fcstm
    :language: fcstm
-   :caption: ``charger_restart.fcstm``; expected diagnostics: three ``W_UNREFERENCED_VAR`` warnings for the counters.
+   :caption: ``charger_restart.fcstm``; expected diagnostics: three ``W_UNREFERENCED_VAR`` warnings, one per variable, because no guard reads them.
 
 .. figure:: charger_restart.fcstm.puml.svg
    :alt: The charger without history: Idle, Session with Authenticating and Charging, and Fault
    :align: center
 
-   ``Session`` holds ``Authenticating`` and the three charging phases. The
+   ``Session`` holds ``Authenticating`` and ``Charging``, which holds the
+   three charging phases. The
    ``OverTemp`` and ``Unplug`` arrows from every phase are the expansion of the
    two forced transitions. ``Cleared`` and ``ManualReset`` both point at the
    ``Session`` box, which means an ordinary entry.
@@ -52,7 +54,8 @@ session into ``ConstantVoltage``, overheat it and let the fault clear:
    :language: bash
    :caption: ``charger_restart.demo.sh``
 
-Output, generated from the script:
+Output, generated from the script, which keeps only the final ``current``
+report of each run:
 
 .. literalinclude:: charger_restart.demo.sh.txt
    :language: text
@@ -61,8 +64,8 @@ The second report shows the problem. An ordinary entry runs ``Session``'s
 initial transition, so the charger is back in ``Authenticating``. The driver
 must authenticate again, and the next ``Authorized`` runs ``Precharge`` and its
 insulation test a second time. ``ManualReset`` behaves the same way in this
-model. ``energy`` and ``faults`` keep their values, because leaving and
-entering states never resets variables.
+model. ``energy`` keeps its value and ``faults`` counts the fault, because
+leaving and entering states never resets variables.
 
 2. Declare history inside the owner
 -----------------------------------
@@ -106,7 +109,7 @@ comment and the highlighted lines:
 .. literalinclude:: charger.fcstm
    :language: fcstm
    :emphasize-lines: 28,29,38,39
-   :caption: ``charger.fcstm``; expected diagnostics: the same three ``W_UNREFERENCED_VAR`` warnings.
+   :caption: ``charger.fcstm``; expected diagnostics: the same three ``W_UNREFERENCED_VAR`` warnings as ``charger_restart.fcstm``.
 
 4. Run the same session again
 -----------------------------
@@ -118,7 +121,8 @@ The script below runs the same session as step 1, interrupts it in
    :language: bash
    :caption: ``charger_resume.demo.sh``
 
-Output, generated from the script:
+Output, generated from the script, which keeps only the final ``current``
+report of each run:
 
 .. literalinclude:: charger_resume.demo.sh.txt
    :language: text
@@ -129,8 +133,9 @@ and ``[*] -> Precharge`` in ``Charging``, so ``precharge_runs`` stays 1.
 ``energy`` grows from 7 to 9 because the restored leaf runs its ``during`` in
 the cycle that enters it, as every entered leaf does.
 
-**Shallow history** remembers only the direct child of ``Session`` that leads
-to the recorded leaf, which is ``Charging``. ``Charging`` is entered and runs
+**Shallow history** reads the same record but restores only the direct child
+of ``Session`` that leads to the recorded leaf, which is ``Charging``. The
+output still shows ``__hist_Session = 8``, the full leaf. ``Charging`` is entered and runs
 its own initial transition, so the charger is in ``Precharge`` and
 ``precharge_runs`` becomes 2. The operator's reset repeats the insulation test
 but skips authentication.
@@ -177,13 +182,16 @@ Read the table from top to bottom:
 -----------------------------------------
 
 Inspect judges the model as you wrote it, before conversion. The script below
-inspects ``charger.fcstm``, then a copy without the ``[H*]`` declaration:
+inspects ``charger.fcstm``, then a copy without the ``[H*]`` declaration. The
+second run adds ``--collect-errors``: without it, inspect stops at the first
+model error with a one-line message and no diagnostic code.
 
 .. literalinclude:: charger_check.demo.sh
    :language: bash
    :caption: ``charger_check.demo.sh``
 
-Output, generated from the script:
+Output, generated from the script, which keeps the summary, the warnings and
+the error block of each report:
 
 .. literalinclude:: charger_check.demo.sh.txt
    :language: text
@@ -212,7 +220,8 @@ when it restarts. A hot start supplies every variable, including the
 the source-level record, not the numbers: the numbers are state ids that change
 when the model is edited.
 :meth:`~pyfcstm.model.model.StateMachine.history_variables` turns a saved
-record back into the lowered variables.
+record back into those variables. The hot start itself works as described in
+the "Hot start at a state" section of :doc:`/how_to/simulation/index`.
 
 .. literalinclude:: charger_hot_start.demo.py
    :language: python
@@ -265,7 +274,13 @@ Use the output to check what the earlier steps observed:
   ``[*] -> Precharge`` in ``Charging``, which is why the shallow restore
   repeats the precharge.
 
-``pyfcstm plantuml -i charger.fcstm`` draws this same converted model.
+.. figure:: charger.fcstm.puml.svg
+   :alt: The charger after model conversion, with guarded initial transitions and history variables
+   :align: center
+   :width: 100%
+
+   The same converted model as ``pyfcstm plantuml -i charger.fcstm`` draws it.
+   The labels are code identifiers only, so one figure serves both languages.
 
 Where to go next
 ----------------
@@ -283,11 +298,12 @@ history. Leave it when your question changes:
      - :ref:`dsl-history-task`, a task recipe with a troubleshooting table.
    * - Which forms are legal? History can also be entered from an initial
        transition, a forced transition or an external self transition.
-     - :ref:`dsl-history-reference`, with every form, diagnostic and lowered
+     - :ref:`dsl-history-reference`, with every form, diagnostic and generated
        name.
    * - Why is the record not cleared when the owner ends, and what happens
        when a restore is blocked by a false guard?
      - :ref:`dsl-history-semantics`. A blocked restore rejects the whole
        transition instead of falling back to an ordinary entry.
    * - How do BMC queries treat the ``__hist_*`` variables?
-     - :doc:`/reference/bmc_query/index`, the ``havoc`` row.
+     - :doc:`/reference/bmc_query/index`, section "Initial frame: ``init``,
+       ``havoc``, and ``where``".

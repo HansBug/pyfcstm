@@ -46,7 +46,9 @@ Follow this route if you have not used pyfcstm before.
    same model.
 5. Finish the first learning loop with :doc:`visualization/index` so the model
    can be explained with a diagram.
-6. Treat :doc:`bmc/index` as the advanced capstone after you can already read
+6. Read :doc:`history/index` when a composite state must resume where it was
+   interrupted instead of starting over.
+7. Treat :doc:`bmc/index` as the advanced capstone after you can already read
    an FCSTM model and one concrete runtime trace. It replaces one chosen event
    sequence with a bounded symbolic search over all allowed sequences.
 
@@ -62,6 +64,8 @@ that refreshes one workflow.
   :doc:`simulation/index` and then to :doc:`/how_to/simulation/index`.
 * Already know the model and need output files: jump to :doc:`generation/index`
   or :doc:`visualization/index` and then to the matching how-to page.
+* Already model composite states and need a recovery to continue where it was
+  interrupted: read :doc:`history/index`.
 * Already understand concrete traces and need evidence about every behavior up
   to a finite bound: finish with :doc:`bmc/index`.
 * Already need exact syntax, command options, or schema fields: skip tutorials
@@ -195,6 +199,23 @@ rule, or headless/CI boundary.
 
 Next step: use :doc:`/how_to/visualization/index` for diagram tasks and
 :doc:`/reference/visualization_options/index` for exact option behavior.
+
+History tutorial: :doc:`history/index`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Prerequisites: you can read a model with composite states and run a batch
+simulation, as taught by the DSL and Simulation tutorials.
+
+Outcome: you add shallow and deep history to a charger whose fault recovery
+restarted every session, see both kinds resume in a real trace, watch the
+record change, repair a missing declaration, and hot start from a saved record.
+
+Non-goal: it does not list every history form or diagnostic, and it does not
+derive the lowering rules or the blocked-restore semantics.
+
+Next step: use :ref:`dsl-history-task` for your own model, look up forms in
+:ref:`dsl-history-reference`, and read :ref:`dsl-history-semantics` for the
+execution rules.
 
 Bounded model checking: :doc:`bmc/index`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

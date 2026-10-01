@@ -518,6 +518,8 @@ JSON 中重点看：
 
 当离开一个复合状态之后再回来，需要从离开时的位置继续、而不是从头开始时，使用历史（history）。下面以洗衣机模型为起点：\ ``Program``\ 可以暂停，之后既可以重新进入，也可以通过浅历史（shallow history）或深历史（deep history）恢复。
 
+如果你还没用过历史，\ :doc:`/tutorials/history/index_zh`\ 会在一台充电桩模型上一步步建立同样的概念。
+
 .. literalinclude:: ../../tutorials/dsl/history_washer.fcstm
    :language: fcstm
    :caption: ``Program``\ 上的浅历史与深历史；预期诊断：四个计数变量各有一条 ``W_UNREFERENCED_VAR`` 警告。

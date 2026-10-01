@@ -557,6 +557,10 @@ where it stopped instead of starting over. The starting point is the washer
 model below: ``Program`` can be paused and later entered fresh, through its
 shallow history, or through its deep history.
 
+If you have not used history before, the guided path in
+:doc:`/tutorials/history/index` builds the same ideas step by step on a charger
+model.
+
 .. literalinclude:: ../../tutorials/dsl/history_washer.fcstm
    :language: fcstm
    :caption: Shallow and deep history on ``Program``; expected diagnostics: four ``W_UNREFERENCED_VAR`` warnings for the entry counters.

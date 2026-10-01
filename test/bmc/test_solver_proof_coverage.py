@@ -10,6 +10,78 @@ from pyfcstm.solver.proof import UnsatReport
 pytestmark = pytest.mark.unittest
 
 
+@pytest.mark.parametrize('query', [
+    'check reach <= 4: active("Washer.Program.Wash.Agitate") && fill_entries == 0;',
+    'check reach <= 4: __hist_goto != 0;',
+    'init state("Washer.Paused") havoc { __hist_Program } where __hist_Program == 99; '
+    'check reach <= 1: active("Washer.Paused");',
+    'init state("Washer.Paused") havoc { __hist_goto } where __hist_goto == 5; '
+    'check reach <= 1: active("Washer.Paused");',
+], ids=['cold-default', 'restore-completed', 'invalid-record', 'invalid-restore-target'])
+def test_history_domain_and_cold_entry_have_complete_proofs(query, text_aligner):
+    """History domains and cold defaults enter the same public proof pipeline."""
+    from test.model.test_history_lowering import WASHER
+
+    core = build_bmc_core_formula(BmcEngine(load_state_machine_from_text(WASHER)).prepare(query))
+    prop = compile_bmc_property(core)
+    report = explain_unsat(UnsatQuery('history_domain', tuple(
+        UnsatConstraint(key, (expression,)) for key, expression in (
+            ('domain', core.domain_formula), ('initial', core.initial_formula),
+            ('transitions', core.transition_formula), ('environment', core.environment_formula),
+            ('objective', prop.objective_formula),
+        ))))
+    assert report.solver_status == 'unsat'
+    assert report.input_check == 'passed'
+    assert report.scope_check == 'passed'
+    assert report.reading_status == 'complete'
+    assert report.gaps == ()
+    _check_reading_levels(report, text_aligner)
+
+
+@pytest.mark.parametrize('minimize', [False, True])
+@pytest.mark.parametrize('restore,leaf,fill_entries', [
+    ('Deep', 'Agitate', 1), ('Shallow', 'Fill', 2),
+])
+@pytest.mark.parametrize('status', ['sat', 'unsat'])
+def test_history_restore_proofs_follow_recorded_state_and_lifecycle(
+        minimize, restore, leaf, fill_entries, status, text_aligner):
+    """Record Agitate, leave its owner, then distinguish shallow/deep entry."""
+    from test.model.test_history_lowering import EVENTS, WASHER
+
+    schedule = ('Deep', 'Filled', 'Pause', restore)
+    assumptions = '\n'.join(
+        'assume event("%s", %d) == %s;' % (event, frame, str(name == selected).lower())
+        for frame, selected in enumerate(schedule) for name, event in EVENTS.items()
+    )
+    # Two owner entries require leaving and restoring, so the objective cannot
+    # accidentally be satisfied by an earlier frame of this bounded trace.
+    query = '''
+        init state("Washer.Paused");
+        %s
+        check reach <= 4: active("Washer.Program.Wash.%s")
+            && program_entries == 2 && fill_entries %s %d;
+    ''' % (assumptions, leaf, '==' if status == 'sat' else '!=', fill_entries)
+    core = build_bmc_core_formula(BmcEngine(load_state_machine_from_text(WASHER)).prepare(query))
+    prop = compile_bmc_property(core)
+    report = explain_unsat(UnsatQuery('history_restore', tuple(
+        UnsatConstraint(key, (expression,)) for key, expression in (
+            ('domain', core.domain_formula), ('initial', core.initial_formula),
+            ('transitions', core.transition_formula), ('environment', core.environment_formula),
+            ('objective', prop.objective_formula),
+        ))), minimize=minimize)
+    assert report.solver_status == status
+    if status == 'unsat':
+        assert report.input_check == 'passed'
+        assert report.scope_check == 'passed'
+        assert report.reading_status == 'complete'
+        assert report.gaps == ()
+        if minimize:
+            assert report.core.subset_minimality == 'proven'
+        _check_reading_levels(report, text_aligner)
+    else:
+        assert report.proof is None
+
+
 @pytest.mark.parametrize('residues,product,status', [
     ('x%2==0', 3, 'unsat'), ('x%2==0', 6, 'sat'),
     ('x%3==1 && y%3==2', 3, 'unsat'), ('x%3==1 && y%3==2', 2, 'sat'),

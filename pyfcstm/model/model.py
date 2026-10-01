@@ -2808,6 +2808,11 @@ class StateMachine(AstExportable, PlantUMLExportable):
     _authored_view: Optional["StateMachine"] = field(
         default=None, compare=False, repr=False
     )
+    # The warnings and infos a strict build emitted while converting the
+    # model; a collecting build returns them to its caller instead.
+    _build_warnings: Tuple[ModelDiagnostic, ...] = field(
+        default_factory=tuple, compare=False, repr=False
+    )
 
     _validation_sink: InitVar[Optional[DiagnosticSink]] = None
 
@@ -3553,6 +3558,9 @@ def parse_dsl_node_to_state_machine(
     # time, so reaching here means the build is clean. ``finalize_or_raise``
     # is a no-op for strict mode but kept for symmetry / future-proofing.
     sink.finalize_or_raise()
+    # The sink recorded every warning before checking for errors; keep them
+    # for strict callers that report them, such as ``pyfcstm inspect``.
+    machine._build_warnings = tuple(sink.diagnostics)
     return machine
 
 

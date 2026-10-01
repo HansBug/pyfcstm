@@ -257,7 +257,9 @@ def _load_model_for_inspect(
     """Load the model to inspect, optionally collecting model-build errors.
 
     Strict loading is the default so that an inspect run on a broken model keeps
-    failing with a controlled error. When ``collect_errors`` is set, the loader
+    failing with a controlled error. A model that loads cleanly still returns
+    its model-build warnings, such as ``W_HISTORY_UNUSED``, so the default
+    report carries them as well. When ``collect_errors`` is set, the loader
     returns every model diagnostic together with a possibly inconsistent model,
     which the caller forwards into :func:`pyfcstm.diagnostics.inspect_model` so
     the report can carry all of them at once.
@@ -274,7 +276,10 @@ def _load_model_for_inspect(
         at all.
     """
     if not collect_errors:
-        return load_state_machine_from_file(input_code_file), ()
+        machine = load_state_machine_from_file(input_code_file)
+        # A strict build that succeeded keeps the warnings it emitted while
+        # converting the model, such as W_HISTORY_UNUSED.
+        return machine, machine._build_warnings
     machine, diagnostics = load_state_machine_from_file(
         input_code_file, collect=True
     )

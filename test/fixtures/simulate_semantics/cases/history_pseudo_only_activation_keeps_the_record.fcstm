@@ -1,0 +1,20 @@
+def int bounce = 0;
+state R {
+    state Off;
+    state O {
+        pseudo state Router;
+        state A;
+        state B;
+        [*] -> Router : if [bounce == 1];
+        [*] -> A;
+        [H*] -> A;
+        A -> B :: Next;
+        Router -> [*];
+    }
+    [*] -> Off;
+    Off -> O :: Fresh;
+    Off -> O.[H*] :: Resume;
+    Off -> Off :: Arm effect { bounce = 1; }
+    O -> Off : if [bounce == 1] effect { bounce = 0; }
+    !O -> Off :: Stop;
+}

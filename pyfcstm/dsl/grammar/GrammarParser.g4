@@ -61,10 +61,10 @@ state_definition
     ;
 
 transition_definition
-    : leading_doc=MULTILINE_COMMENT? INIT_MARKER ARROW to_state=ID entry_combo_transition_trigger?
+    : leading_doc=MULTILINE_COMMENT? INIT_MARKER ARROW to_state=ID (DOT history_marker)? entry_combo_transition_trigger?
       (SEMI | EFFECT LBRACE operational_statement_set RBRACE)
         # entryTransitionDefinition
-    | leading_doc=MULTILINE_COMMENT? from_state=ID ARROW to_state=ID combo_transition_trigger?
+    | leading_doc=MULTILINE_COMMENT? from_state=ID ARROW to_state=ID (DOT history_marker)? combo_transition_trigger?
       (SEMI | EFFECT LBRACE operational_statement_set RBRACE)
         # normalTransitionDefinition
     | leading_doc=MULTILINE_COMMENT? from_state=ID ARROW INIT_MARKER combo_transition_trigger?
@@ -138,7 +138,7 @@ combo_guard_term
     ;
 
 transition_force_definition
-    : leading_doc=MULTILINE_COMMENT? BANG from_state=ID ARROW to_state=ID
+    : leading_doc=MULTILINE_COMMENT? BANG from_state=ID ARROW to_state=ID (DOT history_marker)?
       (COLONCOLON from_id=ID | COLON chain_id | COLON IF LBRACK cond_expression RBRACK)?
       SEMI
         # normalForceTransitionDefinition
@@ -146,7 +146,7 @@ transition_force_definition
       (COLONCOLON from_id=ID | COLON chain_id | COLON IF LBRACK cond_expression RBRACK)?
       SEMI
         # exitForceTransitionDefinition
-    | leading_doc=MULTILINE_COMMENT? BANG STAR ARROW to_state=ID
+    | leading_doc=MULTILINE_COMMENT? BANG STAR ARROW to_state=ID (DOT history_marker)?
       ((COLONCOLON | COLON) chain_id | COLON IF LBRACK cond_expression RBRACK)?
       SEMI
         # normalAllForceTransitionDefinition
@@ -154,6 +154,19 @@ transition_force_definition
       ((COLONCOLON | COLON) chain_id | COLON IF LBRACK cond_expression RBRACK)?
       SEMI
         # exitAllForceTransitionDefinition
+    ;
+
+history_marker
+    : HISTORY_SHALLOW_MARKER
+    | HISTORY_DEEP_MARKER
+    ;
+
+history_definition
+    : leading_doc=MULTILINE_COMMENT? history_marker ARROW history_default_path SEMI
+    ;
+
+history_default_path
+    : ID (DOT ID)*
     ;
 
 enter_definition
@@ -282,6 +295,7 @@ state_inner_statement
     : state_definition
     | transition_definition
     | transition_force_definition
+    | history_definition
     | enter_definition
     | during_definition
     | exit_definition

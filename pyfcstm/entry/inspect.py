@@ -253,11 +253,14 @@ def _load_model_for_inspect(
     input_code_file: str,
     *,
     collect_errors: bool,
-) -> Tuple["StateMachine", Tuple[ModelDiagnostic, ...]]:
+) -> Tuple["StateMachine", Optional[Tuple[ModelDiagnostic, ...]]]:
     """Load the model to inspect, optionally collecting model-build errors.
 
     Strict loading is the default so that an inspect run on a broken model keeps
-    failing with a controlled error. When ``collect_errors`` is set, the loader
+    failing with a controlled error. A model that loads cleanly keeps its
+    model-build warnings, such as ``W_HISTORY_UNUSED``, where
+    :func:`pyfcstm.diagnostics.inspect_model` reads them, so the default report
+    carries them as well. When ``collect_errors`` is set, the loader
     returns every model diagnostic together with a possibly inconsistent model,
     which the caller forwards into :func:`pyfcstm.diagnostics.inspect_model` so
     the report can carry all of them at once.
@@ -267,14 +270,17 @@ def _load_model_for_inspect(
     :param collect_errors: Whether to accumulate model errors instead of raising
         on the first one.
     :type collect_errors: bool
-    :return: The loaded model and its model-build diagnostics.
-    :rtype: Tuple[pyfcstm.model.StateMachine, Tuple[pyfcstm.utils.validate.ModelDiagnostic, ...]]
+    :return: The loaded model and its model-build diagnostics, or ``None`` in
+        strict mode, where :func:`pyfcstm.diagnostics.inspect_model` reads the
+        warnings the strict build kept on the model.
+    :rtype: Tuple[pyfcstm.model.StateMachine, Optional[Tuple[pyfcstm.utils.validate.ModelDiagnostic, ...]]]
     :raises pyfcstm.utils.validate.ModelValidationError: In strict mode on the
         first model error, and in collect mode when the model could not be built
         at all.
     """
     if not collect_errors:
-        return load_state_machine_from_file(input_code_file), ()
+        # inspect_model reads the warnings a strict build kept on the model.
+        return load_state_machine_from_file(input_code_file), None
     machine, diagnostics = load_state_machine_from_file(
         input_code_file, collect=True
     )

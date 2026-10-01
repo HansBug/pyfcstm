@@ -240,6 +240,9 @@ at a time and verify the inspect output after each change.
    * - Apply one declaration to many sources
      - :ref:`dsl-forced-transition-task`
      - Forced transitions are expansion shorthand and intentionally have no effect block.
+   * - Resume a composite state where it was left
+     - :doc:`../history/index`, then :ref:`dsl-history-task`
+     - History records the last active leaf and restores it through ``Owner.[H]`` or ``Owner.[H*]`` targets.
    * - Split a model across files
      - :ref:`dsl-import-task`
      - Imports assemble state-machine modules and rewrite variables/events according to mappings.

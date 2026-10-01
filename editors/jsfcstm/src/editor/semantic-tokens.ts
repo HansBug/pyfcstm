@@ -65,7 +65,7 @@ const KEYWORDS = [
 ];
 
 const TYPES = ['int', 'float'];
-const OPERATORS = ['::', '->', '=>', '>>', ':', '/', '[*]'];
+const OPERATORS = ['::', '->', '=>', '>>', ':', '/', '[*]', '[H*]', '[H]'];
 const KEYWORD_RE = /\b[A-Za-z_][A-Za-z0-9_]*\b/g;
 const STRING_RE = /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g;
 

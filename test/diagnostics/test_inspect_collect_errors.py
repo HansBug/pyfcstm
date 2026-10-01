@@ -37,6 +37,19 @@ SINGLE_FILE_CASES = {
     'E_DUPLICATE_STATE': 'state Root { state A; state A; }',
     'E_DANGLING_TRANSITION': 'state Root { state A; NoSuch -> A; }',
     'E_FORCED_TRANSITION_EXPANSION': 'state Root { state A; !NoSuch -> A; }',
+    'E_HISTORY_DECLARATION_INVALID': (
+        'state Root { state Off; state O { state A; [*] -> A; [H] -> Nope; }\n'
+        '[*] -> Off; Off -> O.[H] :: Resume; }'
+    ),
+    'E_HISTORY_TARGET_UNDECLARED': (
+        'state Root { state A; state O { state B; [*] -> B; }\n'
+        '[*] -> A; A -> O.[H] :: Resume; }'
+    ),
+    'E_HISTORY_RESERVED_PREFIX': (
+        'def int __hist_x = 0;\n'
+        'state Root { state Off; state O { state A; [*] -> A; [H] -> A; }\n'
+        '[*] -> Off; Off -> O.[H] :: Resume; }'
+    ),
     'E_INITIAL_TRANSITION_INVALID': 'state Root { state Outer { state Inner; } }',
     'E_DUPLICATE_FUNCTION_NAME': (
         'state Root { state A { enter f {} enter f {} } [*] -> A; }'

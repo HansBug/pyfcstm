@@ -34,7 +34,7 @@ Example::
 """
 
 import ast
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from .grammar import GrammarListener, GrammarParser
 from .node import *
@@ -783,6 +783,12 @@ class GrammarParseListener(GrammarListener):
                 if item in self.nodes
                 and isinstance(self.nodes[item], ForceTransitionDefinition)
             ],
+            histories=[
+                self.nodes[item]
+                for item in ctx.state_inner_statement()
+                if item in self.nodes
+                and isinstance(self.nodes[item], HistoryDefinition)
+            ],
             is_pseudo=bool(ctx.pseudo),
             doc=self._documentation(ctx),
         )
@@ -821,6 +827,7 @@ class GrammarParseListener(GrammarListener):
         trigger_ctx,
         post_operations,
         doc=None,
+        target_history=None,
     ) -> TransitionDefinition:
         combo_trigger = self.nodes[trigger_ctx] if trigger_ctx else None
         event_id = None
@@ -860,8 +867,53 @@ class GrammarParseListener(GrammarListener):
             event_scope=event_scope,
             combo_trigger=stored_combo_trigger,
             doc=doc,
+            target_history=target_history,
         )
         return node
+
+    def _history_target(self, ctx) -> Optional[str]:
+        marker = ctx.history_marker()
+        return self.nodes[marker] if marker is not None else None
+
+    def exitHistory_marker(self, ctx: GrammarParser.History_markerContext) -> None:
+        """
+        Record the history kind named by a ``[H]`` or ``[H*]`` marker.
+
+        :param ctx: Parse context for the history marker.
+        :type ctx: GrammarParser.History_markerContext
+        """
+        super().exitHistory_marker(ctx)
+        self.nodes[ctx] = "deep" if ctx.HISTORY_DEEP_MARKER() else "shallow"
+
+    def exitHistory_default_path(
+        self, ctx: GrammarParser.History_default_pathContext
+    ) -> None:
+        """
+        Collect the dotted default target of a history declaration.
+
+        :param ctx: Parse context for the history default path.
+        :type ctx: GrammarParser.History_default_pathContext
+        """
+        super().exitHistory_default_path(ctx)
+        self.nodes[ctx] = [item.getText() for item in ctx.ID()]
+
+    def exitHistory_definition(
+        self, ctx: GrammarParser.History_definitionContext
+    ) -> None:
+        """
+        Build a :class:`HistoryDefinition` node.
+
+        :param ctx: Parse context for the history declaration.
+        :type ctx: GrammarParser.History_definitionContext
+        """
+        super().exitHistory_definition(ctx)
+        node = HistoryDefinition(
+            kind=self.nodes[ctx.history_marker()],
+            default_path=self.nodes[ctx.history_default_path()],
+            doc=self._documentation(ctx),
+        )
+        node._span = _owner_span(ctx)
+        self.nodes[ctx] = node
 
     def exitEntryTransitionDefinition(
         self, ctx: GrammarParser.EntryTransitionDefinitionContext
@@ -881,6 +933,7 @@ class GrammarParseListener(GrammarListener):
             if ctx.operational_statement_set()
             else [],
             doc=self._documentation(ctx),
+            target_history=self._history_target(ctx),
         )
         node._span = _owner_span(ctx)
         self.nodes[ctx] = node
@@ -903,6 +956,7 @@ class GrammarParseListener(GrammarListener):
             if ctx.operational_statement_set()
             else [],
             doc=self._documentation(ctx),
+            target_history=self._history_target(ctx),
         )
         node._span = _owner_span(ctx)
         self.nodes[ctx] = node
@@ -1394,6 +1448,8 @@ class GrammarParseListener(GrammarListener):
             self.nodes[ctx] = self.nodes[ctx.during_aspect_definition()]
         elif ctx.transition_force_definition():
             self.nodes[ctx] = self.nodes[ctx.transition_force_definition()]
+        elif ctx.history_definition():
+            self.nodes[ctx] = self.nodes[ctx.history_definition()]
         elif ctx.event_definition():
             self.nodes[ctx] = self.nodes[ctx.event_definition()]
         elif ctx.import_statement():
@@ -1670,6 +1726,7 @@ class GrammarParseListener(GrammarListener):
             else None,
             event_scope=event_scope,
             doc=self._documentation(ctx),
+            target_history=self._history_target(ctx),
         )
         node._span = _owner_span(ctx)
         self.nodes[ctx] = node
@@ -1731,6 +1788,7 @@ class GrammarParseListener(GrammarListener):
                 else None
             ),
             doc=self._documentation(ctx),
+            target_history=self._history_target(ctx),
         )
         node._span = _owner_span(ctx)
         self.nodes[ctx] = node

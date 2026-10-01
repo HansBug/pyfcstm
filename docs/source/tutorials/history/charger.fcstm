@@ -1,0 +1,41 @@
+// The charger from charger_restart.fcstm with history on Session.
+// Cleared resumes the exact phase through deep history. ManualReset resumes
+// only the interrupted child of Session through shallow history, so Charging
+// runs its initial transition again and repeats Precharge.
+def int energy = 0;          // energy delivered so far, in 0.1 kWh
+def int precharge_runs = 0;  // every precharge repeats the insulation test
+def int faults = 0;
+
+state Charger {
+    state Idle;
+    state Session {
+        state Authenticating;
+        state Charging {
+            state Precharge {
+                enter { precharge_runs = precharge_runs + 1; }
+            }
+            state ConstantCurrent {
+                during { energy = energy + 5; }
+            }
+            state ConstantVoltage {
+                during { energy = energy + 2; }
+            }
+            [*] -> Precharge;
+            Precharge -> ConstantCurrent :: Ready;
+            ConstantCurrent -> ConstantVoltage :: NearFull;
+        }
+        [*] -> Authenticating;
+        [H] -> Authenticating;   // shallow history, used while no record exists
+        [H*] -> Authenticating;  // deep history, used while no record exists
+        Authenticating -> Charging :: Authorized;
+    }
+    state Fault {
+        enter { faults = faults + 1; }
+    }
+    [*] -> Idle;
+    Idle -> Session :: PlugIn;
+    !Session -> Fault :: OverTemp;      // every session phase can overheat
+    Fault -> Session.[H*] :: Cleared;     // resume the exact phase
+    Fault -> Session.[H] :: ManualReset;  // resume Charging, then precharge again
+    !Session -> Idle :: Unplug;
+}

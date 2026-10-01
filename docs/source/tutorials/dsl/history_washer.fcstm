@@ -1,0 +1,34 @@
+// A washer that can pause a program and later resume it.
+// Program declares shallow ([H]) and deep ([H*]) history; the Paused state
+// enters it fresh, through its shallow history, or through its deep history.
+def int program_entries = 0;
+def int fill_entries = 0;
+def int agitate_entries = 0;
+def int wash_initials = 0;
+
+state Washer {
+    state Paused;
+    state Program {
+        enter { program_entries = program_entries + 1; }
+        state Idle;
+        state Wash {
+            state Fill {
+                enter { fill_entries = fill_entries + 1; }
+            }
+            state Agitate {
+                enter { agitate_entries = agitate_entries + 1; }
+            }
+            [*] -> Fill effect { wash_initials = wash_initials + 1; }
+            Fill -> Agitate :: Filled;
+        }
+        [*] -> Idle;
+        [H] -> Idle;        // no record yet: shallow history enters Idle
+        [H*] -> Wash.Fill;  // no record yet: deep history enters Wash.Fill
+        Idle -> Wash :: Start;
+    }
+    [*] -> Paused;
+    Paused -> Program :: Fresh;
+    Paused -> Program.[H] :: Shallow;
+    Paused -> Program.[H*] :: Deep;
+    !Program -> Paused :: Pause;
+}

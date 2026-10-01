@@ -1,0 +1,27 @@
+title: Forced transitions and a parent initial enter a deep history
+origin:
+  files:
+  - test/model/test_history_lowering.py
+categories:
+- runtime
+- template_alignment
+- history
+steps:
+- cycle: []
+  expect:
+    state: R.Outer.O.A
+- cycle: R.Outer.O.A.Next
+  expect:
+    state: R.Outer.O.B
+- cycle: R.Outer.O.Leave
+  expect:
+    state: R.Outer.Side
+- cycle: R.Outer.Side.Back
+  expect:
+    state: R.Outer.O.B
+- cycle: R.Outer.Out
+  expect:
+    state: R.Away
+- cycle: R.Away.In
+  expect:
+    state: R.Outer.O.B

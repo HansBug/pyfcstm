@@ -256,8 +256,8 @@ class FcstmLexer(RegexLexer):
             # Logical implication
             (r'=>', Operator),
 
-            # Pseudo-state markers
-            (r'\[\*\]', Keyword.Pseudo),
+            # Pseudo-state markers: [*] and the [H] / [H*] history markers
+            (r'\[\*\]|\[H\*?\]', Keyword.Pseudo),
 
             # Event scope operators
             (r'::', Operator),

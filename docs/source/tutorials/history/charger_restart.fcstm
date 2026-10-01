@@ -1,0 +1,39 @@
+// A DC charger. A charging session authenticates the driver, then charges in
+// three phases: Precharge -> ConstantCurrent -> ConstantVoltage.
+// An over-temperature fault interrupts the session. In this first version both
+// recovery events enter Session normally, so every recovery starts over.
+def int energy = 0;          // energy delivered so far, in 0.1 kWh
+def int precharge_runs = 0;  // every precharge repeats the insulation test
+def int faults = 0;
+
+state Charger {
+    state Idle;
+    state Session {
+        state Authenticating;
+        state Charging {
+            state Precharge {
+                enter { precharge_runs = precharge_runs + 1; }
+            }
+            state ConstantCurrent {
+                during { energy = energy + 5; }
+            }
+            state ConstantVoltage {
+                during { energy = energy + 2; }
+            }
+            [*] -> Precharge;
+            Precharge -> ConstantCurrent :: Ready;
+            ConstantCurrent -> ConstantVoltage :: NearFull;
+        }
+        [*] -> Authenticating;
+        Authenticating -> Charging :: Authorized;
+    }
+    state Fault {
+        enter { faults = faults + 1; }
+    }
+    [*] -> Idle;
+    Idle -> Session :: PlugIn;
+    !Session -> Fault :: OverTemp;      // every session phase can overheat
+    Fault -> Session :: Cleared;        // the fault clears by itself
+    Fault -> Session :: ManualReset;    // an operator resets the charger
+    !Session -> Idle :: Unplug;
+}

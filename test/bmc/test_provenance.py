@@ -2190,6 +2190,11 @@ _PAIRING_CORPUS = (
         'assume events cardinality at_most_one {"Root.Go"}; '
         'check reach <= 2: active("Root.B");',
     ),
+    (
+        "state Root { state Off; state O { state A; [*] -> A; [H] -> A; }\n"
+        "[*] -> Off; Off -> O.[H] :: Resume; !O -> Off :: Stop; }",
+        'init state("Root.Off") havoc *; check reach <= 2: active("Root.O.A");',
+    ),
 )
 
 

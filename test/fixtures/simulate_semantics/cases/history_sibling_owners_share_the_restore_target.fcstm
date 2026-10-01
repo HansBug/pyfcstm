@@ -1,0 +1,25 @@
+def int n = 0;
+state R {
+    state Off;
+    state P {
+        state P1;
+        state P2;
+        [*] -> P1;
+        [H*] -> P1;
+        P1 -> P2 :: Next;
+    }
+    state Q {
+        state Q1;
+        state Q2 { state Q21; state Q22; [*] -> Q21; Q21 -> Q22 :: Next; }
+        [*] -> Q1;
+        [H*] -> Q1;
+        Q1 -> Q2 :: Next;
+    }
+    [*] -> Off;
+    Off -> P :: FreshP;
+    Off -> Q :: FreshQ;
+    Off -> P.[H*] :: ResumeP;
+    Off -> Q.[H*] :: ResumeQ;
+    !P -> Off :: Stop;
+    !Q -> Off :: Stop;
+}

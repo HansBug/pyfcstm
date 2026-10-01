@@ -47,6 +47,7 @@ type FcstmSyntaxCompletionContext =
     | { kind: 'absoluteEventPath'; rawPath: string }
     | { kind: 'actionRef' }
     | { kind: 'pseudoStateMarker'; partial?: string }
+    | { kind: 'historyTarget'; targetName: string; partial: string }
     // Narrow follow-up contexts. Each suppresses the broad keyword dump and
     // offers only the tokens that are syntactically valid at that position.
     | { kind: 'postTransitionTarget'; partial?: string }
@@ -541,7 +542,19 @@ function extractSyntaxCompletionContextFromLineTokens(
     }
 
     const transition = semantic ? findSemanticTransitionAtPosition(semantic, position) : undefined;
-    const afterArrow = tokens.slice(arrowIndex + 1);
+    let afterArrow = tokens.slice(arrowIndex + 1);
+    if (afterArrow[1]?.text === '.') {
+        if (!HISTORY_MARKER_TEXTS.includes(afterArrow[2]?.text ?? '')) {
+            // `A -> B.│` / `A -> B.[H│` — choosing B's history marker.
+            return {
+                kind: 'historyTarget',
+                targetName: afterArrow[0].text,
+                partial: afterArrow.slice(2).map(token => token.text).join(''),
+            };
+        }
+        // `B.[H]` / `B.[H*]` names one target.
+        afterArrow = [afterArrow[0], ...afterArrow.slice(3)];
+    }
     const sourceStateName = tokens[arrowIndex - 1]?.text;
     if (afterArrow.length === 0) {
         return {kind: 'transitionTarget', transition, partial: ''};
@@ -737,6 +750,28 @@ function getTriggerInsertTextPrefix(
     }
 
     return ' ';
+}
+
+const HISTORY_MARKER_TEXTS = ['[H]', '[H*]'];
+
+function makeHistoryMarkerItem(marker: string, sortText: string): FcstmCompletionItem {
+    return {
+        label: marker,
+        kind: 'keyword',
+        detail: marker === '[H]' ? 'Shallow history marker' : 'Deep history marker',
+        insertText: marker,
+        sortText,
+    };
+}
+
+/**
+ * History markers a target state declares, or both when the state cannot
+ * be resolved in the current scope.
+ */
+function declaredHistoryMarkers(scopeState: FcstmSemanticState | undefined, targetName: string): string[] {
+    const target = scopeState?.ast.substates.find(state => state.name === targetName);
+    if (!target) return HISTORY_MARKER_TEXTS;
+    return target.histories.map(item => (item.historyKind === 'deep' ? '[H*]' : '[H]'));
 }
 
 function makePseudoStateCompletionItem(): FcstmCompletionItem {
@@ -1575,6 +1610,18 @@ async function collectContextAwareCompletions(
 
     if (syntaxContext.kind === 'pseudoStateMarker') {
         pushPseudoStateMarker(items, syntaxContext.partial);
+        for (const marker of HISTORY_MARKER_TEXTS) {
+            items.push(makeHistoryMarkerItem(marker, `0_history_${marker}`));
+        }
+        return {matched: true, items};
+    }
+
+    if (syntaxContext.kind === 'historyTarget') {
+        for (const marker of declaredHistoryMarkers(currentScope, syntaxContext.targetName)) {
+            if (matchesPartial(marker, syntaxContext.partial)) {
+                items.push(makeHistoryMarkerItem(marker, `0_history_${marker}`));
+            }
+        }
         return {matched: true, items};
     }
 
@@ -1800,6 +1847,8 @@ function getStateBodyStarterCompletions(): FcstmCompletionItem[] {
         insertText: '[*]',
         sortText: '0_50_init_marker',
     });
+    items.push(makeHistoryMarkerItem('[H]', '0_51_history_shallow'));
+    items.push(makeHistoryMarkerItem('[H*]', '0_52_history_deep'));
     items.push({
         label: '!',
         kind: 'keyword',

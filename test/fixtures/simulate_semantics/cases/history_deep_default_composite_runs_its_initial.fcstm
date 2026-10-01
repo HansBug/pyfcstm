@@ -1,0 +1,18 @@
+def int k_initials = 0;
+state R {
+    state Off;
+    state O {
+        state Idle;
+        state K {
+            state K1;
+            state K2;
+            [*] -> K1 effect { k_initials = k_initials + 1; }
+            K1 -> K2 :: Next;
+        }
+        [*] -> Idle;
+        [H*] -> K;
+    }
+    [*] -> Off;
+    Off -> O.[H*] :: Resume;
+    !O -> Off :: Stop;
+}

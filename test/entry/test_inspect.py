@@ -786,6 +786,105 @@ def multi_error_code_file():
         yield code_file
 
 
+_MODEL_BUILD_WARNING_MODELS = {
+    "W_HISTORY_UNUSED": {
+        "model.fcstm": """
+            state Root {
+                state Off;
+                state On { state A; [*] -> A; [H] -> A; }
+                [*] -> Off;
+                Off -> On :: Go;
+                On -> Off :: Stop;
+            }
+        """,
+    },
+    "W_HISTORY_RESERVED_PREFIX": {
+        "model.fcstm": """
+            def int __hist_x = 0;
+            state Root { state A; [*] -> A; }
+        """,
+    },
+    "W_COMBO_RESERVED_PREFIX_STATE_KIND": {
+        "model.fcstm": """
+            state Root { state __combo_x; state A; [*] -> A; A -> __combo_x :: Go; }
+        """,
+    },
+    "W_COMBO_RELAY_PSEUDO_HAS_ACTIONS": {
+        "model.fcstm": """
+            def int x = 0;
+            state Root {
+                pseudo state __combo_user { enter { x = x + 1; } }
+                state Target;
+                [*] -> __combo_user;
+                __combo_user -> Target :: Done;
+            }
+        """,
+    },
+    # The warning comes from the imported module, not from the host file.
+    "W_HISTORY_UNUSED from an import": {
+        "model.fcstm": """
+            state Root {
+                import "./worker.fcstm" as W;
+                state Idle;
+                [*] -> Idle;
+                Idle -> W :: Go;
+            }
+        """,
+        "worker.fcstm": """
+            state Worker {
+                state Idle;
+                state Busy { state P; [*] -> P; [H] -> P; }
+                [*] -> Idle;
+                Idle -> Busy :: Start;
+            }
+        """,
+    },
+}
+
+
+def _write_model_files(directory, case):
+    for name, text in _MODEL_BUILD_WARNING_MODELS[case].items():
+        with open(os.path.join(directory, name), "w", encoding="utf-8") as f:
+            f.write(textwrap.dedent(text))
+    return os.path.join(directory, "model.fcstm")
+
+
+@pytest.mark.unittest
+class TestInspectModelBuildWarnings:
+    """A clean model's model-build warnings reach the default report.
+
+    These warnings are emitted while the model is converted, not by an inspect
+    analyzer, so a strict load that kept only the model would drop them.
+    """
+
+    @pytest.mark.parametrize("case", sorted(_MODEL_BUILD_WARNING_MODELS))
+    @pytest.mark.parametrize("output_format", ["human", "json"])
+    def test_default_run_reports_the_warning(self, case, output_format):
+        with TemporaryDirectory() as td:
+            code_file = _write_model_files(td, case)
+
+            result = _run_inspect("-i", code_file, "--format", output_format)
+
+        assert result.exitcode == 0
+        assert case.split()[0] in result.stdout
+
+    @pytest.mark.parametrize("case", sorted(_MODEL_BUILD_WARNING_MODELS))
+    def test_default_and_collecting_runs_agree_on_a_clean_model(self, case):
+        with TemporaryDirectory() as td:
+            code_file = _write_model_files(td, case)
+
+            default = json.loads(build_inspect_json(code_file))
+            collected = json.loads(build_inspect_json(code_file, collect_errors=True))
+            default_human = _run_inspect("-i", code_file, "--color", "never")
+            collected_human = _run_inspect(
+                "-i", code_file, "--collect-errors", "--color", "never"
+            )
+
+        assert default == collected
+        assert default_human.stdout == collected_human.stdout
+        assert default_human.exitcode == collected_human.exitcode == 0
+
+
 @pytest.mark.unittest
 class TestInspectCollectErrors:
     """``--collect-errors`` reports every ``E_*`` instead of only the first.

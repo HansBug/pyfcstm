@@ -1,0 +1,44 @@
+title: A combo trigger with a guard term enters a deep history only when the guard holds
+origin:
+  files:
+  - test/model/test_history_lowering.py
+categories:
+- runtime
+- template_alignment
+- history
+steps:
+- cycle: []
+  expect:
+    state: R.Off
+    vars:
+      online: 0
+- cycle: R.Off.Fresh
+  expect:
+    state: R.S.A
+    vars:
+      online: 0
+- cycle: R.S.A.Next
+  expect:
+    state: R.S.B
+    vars:
+      online: 0
+- cycle: R.Halt
+  expect:
+    state: R.Off
+    vars:
+      online: 0
+- cycle: R.Off.Resume
+  expect:
+    state: R.Off
+    vars:
+      online: 0
+- cycle: R.Off.Online
+  expect:
+    state: R.Off
+    vars:
+      online: 1
+- cycle: R.Off.Resume
+  expect:
+    state: R.S.B
+    vars:
+      online: 1

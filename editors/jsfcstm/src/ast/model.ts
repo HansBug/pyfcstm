@@ -15,6 +15,7 @@ export type FcstmPyNodeType =
     | 'EventDefinition'
     | 'TransitionDefinition'
     | 'ForceTransitionDefinition'
+    | 'HistoryDefinition'
     | 'ImportStatement'
     | 'ImportDefExactSelector'
     | 'ImportDefSetSelector'
@@ -136,6 +137,8 @@ export interface FcstmAstStateDefinition extends FcstmAstNodeBase {
     during_aspects: FcstmAstAction[];
     forceTransitions: FcstmAstForcedTransition[];
     force_transitions: FcstmAstForcedTransition[];
+    /** ``[H]`` / ``[H*]`` declarations owned by this state. */
+    histories: FcstmAstHistoryDefinition[];
     /**
      * Absolute path of the file this state's definition was imported
      * from, if it came in through an ``import`` statement in another
@@ -151,9 +154,28 @@ export type FcstmAstStateStatement =
     | FcstmAstStateDefinition
     | FcstmAstTransition
     | FcstmAstForcedTransition
+    | FcstmAstHistoryDefinition
     | FcstmAstAction
     | FcstmAstEventDefinition
     | FcstmAstImportStatement;
+
+export type FcstmHistoryKind = 'shallow' | 'deep';
+
+/**
+ * History declaration aligned with pyfcstm's ``HistoryDefinition`` node:
+ * ``[H] -> Child;`` or ``[H*] -> Child.Leaf;`` inside a composite state.
+ */
+export interface FcstmAstHistoryDefinition extends FcstmAstNodeBase {
+    kind: 'historyDefinition';
+    pyNodeType: 'HistoryDefinition';
+    historyKind: FcstmHistoryKind;
+    history_kind: FcstmHistoryKind;
+    /** Default target path, relative to the owner. */
+    defaultPath: string[];
+    default_path: string[];
+    defaultPathRange: TextRange;
+    doc?: string;
+}
 
 /**
  * Event definition aligned with pyfcstm's ``EventDefinition`` node.
@@ -232,6 +254,9 @@ export interface FcstmAstTransitionBase extends FcstmAstNodeBase {
     targetStateName?: string;
     sourceKind: 'init' | 'state' | 'all';
     targetKind: 'state' | 'exit';
+    /** ``shallow`` / ``deep`` when the target is written ``State.[H]`` / ``State.[H*]``. */
+    targetHistory?: FcstmHistoryKind;
+    target_history?: FcstmHistoryKind;
     trigger?: FcstmAstTrigger;
     comboTrigger?: FcstmAstComboTrigger;
     combo_trigger?: FcstmAstComboTrigger;

@@ -79,6 +79,7 @@ _ALLOWED_CATEGORIES = {
     "pseudo_chain",
     "validation",
     "lifecycle",
+    "history",
 }
 _DEFAULT_SHARED_RUNNERS = ("simulation", "generated_python_alignment")
 BMC_CORE_RUNNER = "bmc_core"

@@ -32,7 +32,8 @@
    想看结构和诊断反馈就读 :doc:`inspect/index_zh`。
 4. 想从同一个模型产出代码时读 :doc:`generation/index_zh`。
 5. 想用图向别人解释模型结构时读 :doc:`visualization/index_zh`。
-6. 最后把 :doc:`bmc/index_zh` 作为高级收官。此时你已经能读懂 FCSTM 模型和一条
+6. 当复合状态需要从被打断的地方继续、而不是从头开始时，读 :doc:`history/index_zh`。
+7. 最后把 :doc:`bmc/index_zh` 作为高级收官。此时你已经能读懂 FCSTM 模型和一条
    具体运行轨迹，再学习怎样把一组手工事件替换为对有限范围内全部允许事件序列的符号搜索。
 
 有经验用户路径
@@ -43,6 +44,7 @@
 * 已有 FCSTM 文件但不确定模型是否可靠：跳到 :doc:`inspect/index_zh`，再查 :doc:`/reference/diagnostics_codes/index_zh`。
 * 模型合法但需要行为证据：跳到 :doc:`simulation/index_zh`，再看 :doc:`/how_to/simulation/index_zh`。
 * 已经理解模型，只需要输出文件：跳到 :doc:`generation/index_zh` 或 :doc:`visualization/index_zh`。
+* 已经会写复合状态，需要让恢复从被打断的地方继续：读 :doc:`history/index_zh`。
 * 已经理解具体轨迹，需要检查有限边界内的全部行为：最后读 :doc:`bmc/index_zh`。
 * 需要精确语法、命令选项或报告字段：直接从 :doc:`/reference/index_zh` 开始。
 
@@ -151,6 +153,17 @@
 
 下一步：图任务看 :doc:`/how_to/visualization/index_zh`；
 精确选项行为查 :doc:`/reference/visualization_options/index_zh`。
+
+历史教程：:doc:`history/index_zh`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+读前条件：能读懂带复合状态的模型，也会运行批处理仿真，即语言教程和仿真教程教过的内容。
+
+读后能力：你能给一台每次故障恢复都从头开始的充电桩加上浅历史和深历史，在真实轨迹中看到两种恢复的区别，观察记录何时变化，修复缺失的声明，并从保存的记录热启动。
+
+不负责内容：它不列出全部历史写法和诊断，也不推导展开规则和恢复受阻时的语义。
+
+下一步：给自己的模型加历史看 :ref:`dsl-history-task-zh`\ ；查写法看 :ref:`dsl-history-reference-zh`\ ；执行规则看 :ref:`dsl-history-semantics-zh`\ 。
 
 有界模型检查：:doc:`bmc/index_zh`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

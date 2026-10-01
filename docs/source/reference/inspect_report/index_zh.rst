@@ -100,7 +100,7 @@ Inspect 报告参考
    * - ``structure_statistics``
      - 面向 LLM 的描述性结构计数和比例。初始边被排除，生成的组合边和强制展开边按作者写的一条转换折叠；该段不会产生告警或综合健康分数。
    * - ``reachability_graph``
-     - 默认检查图：忽略守卫，跟随组合状态初始边。
+     - 默认检查图：忽略守卫，跟随组合状态初始边。进入 ``Owner.[H]`` / ``Owner.[H*]`` 的转换还会到达默认路径上的状态以及恢复能重新进入的状态，见 :ref:`dsl-history-reference-zh`\ 。
    * - ``event_emission_map``
      - 事件名到可发射它的源状态集合。
    * - ``var_dataflow``
@@ -124,9 +124,9 @@ Inspect 报告参考
    * - 对象
      - 必填字段和说明
    * - ``StateInfo``
-     - ``path``、``name``、``parent_path``、叶/伪/组合布尔值、子状态、初始目标、生命周期动作数组、切面数组和 ``has_abstract_action``。
+     - ``path``、``name``、``parent_path``、叶/伪/组合布尔值、子状态、初始目标、生命周期动作数组、切面数组和 ``has_abstract_action``。使用了历史的模型按展开前的书写形式报告，因此不会出现展开生成的状态或初始目标。见 :ref:`dsl-history-reference-zh`\ 。
    * - ``TransitionInfo``
-     - 源/目标、事件、事件作用域、守卫、效果动作、自赋值、强制来源、索引和组合投影 / 来源字段。
+     - 源/目标、事件、事件作用域、守卫、效果动作、自赋值、强制来源、索引和组合投影 / 来源字段。``target_history``\ （\ ``shallow``\ 、\ ``deep`` 或 null）标出进入 ``Target.[H]`` / ``Target.[H*]`` 的转换，其 ``to_path`` 为历史所有者。
    * - ``ComboOriginInfo``
      - ``origin_id``、转换 span、触发器 span 和有序 ``terms``。
    * - ``ComboOriginTermInfo``

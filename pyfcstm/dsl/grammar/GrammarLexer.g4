@@ -78,6 +78,8 @@ IFF_KW: 'iff';
 XOR_KW: 'xor';
 
 INIT_MARKER: '[*]';
+HISTORY_DEEP_MARKER: '[H*]';
+HISTORY_SHALLOW_MARKER: '[H]';
 POW: '**';
 SHIFT_RIGHT: '>>';
 SHIFT_LEFT: '<<';

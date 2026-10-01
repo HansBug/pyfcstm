@@ -24,6 +24,7 @@ import type {
     FcstmAstExpression,
     FcstmAstForcedTransition,
     FcstmAstFunctionExpression,
+    FcstmAstHistoryDefinition,
     FcstmAstIdentifierExpression,
     FcstmAstIfBranch,
     FcstmAstIfStatement,
@@ -47,6 +48,7 @@ import type {
     FcstmAstStateStatement,
     FcstmAstTransition,
     FcstmAstTrigger,
+    FcstmHistoryKind,
     FcstmAstUnaryExpression,
     FcstmAstVariableDefinition,
 } from './model';
@@ -118,6 +120,8 @@ interface ParseTreeContext extends ParseTreeNode {
     isabs?: { text?: string };
     num_expression?: () => ParseTreeContext;
     combo_transition_trigger?: () => ParseTreeContext | undefined;
+    history_marker?: () => ParseTreeContext | undefined;
+    history_default_path?: () => ParseTreeContext | undefined;
     entry_combo_transition_trigger?: () => ParseTreeContext | undefined;
     entry_chain_combo_trigger?: () => ParseTreeContext | undefined;
     entry_chain_combo_leading_guard?: (index?: number | null) => ParseTreeContext[] | ParseTreeContext | undefined;
@@ -1266,6 +1270,8 @@ function buildTransitionLikeBase(
     const toState = targetKind === 'exit'
         ? 'EXIT_STATE'
         : tokenText(node.to_state);
+    const historyMarker = getNodeByMethod(node, 'history_marker');
+    const targetHistory = historyMarker ? historyKindOf(historyMarker) : undefined;
 
     return {
         range: declarationRange(node, document, nodeText(node)),
@@ -1275,6 +1281,8 @@ function buildTransitionLikeBase(
         targetStateName: tokenText(node.to_state),
         sourceKind,
         targetKind,
+        targetHistory,
+        target_history: targetHistory,
         trigger,
         comboTrigger,
         combo_trigger: comboTrigger,
@@ -1290,6 +1298,31 @@ function buildTransitionLikeBase(
         condition_expr: guard,
         postOperations: effect?.statements || [],
         post_operations: effect?.statements || [],
+    };
+}
+
+function historyKindOf(marker: ParseTreeContext): FcstmHistoryKind {
+    return nodeText(marker) === '[H*]' ? 'deep' : 'shallow';
+}
+
+function buildHistoryDefinition(
+    node: ParseTreeContext,
+    document: TextDocumentLike
+): FcstmAstHistoryDefinition {
+    const historyKind = historyKindOf(getNodeByMethod(node, 'history_marker')!);
+    const pathNode = getNodeByMethod(node, 'history_default_path')!;
+    const defaultPath = nodeText(pathNode).split('.');
+    return {
+        kind: 'historyDefinition',
+        pyNodeType: 'HistoryDefinition',
+        range: declarationRange(node, document, nodeText(node)),
+        text: nodeText(node),
+        historyKind,
+        history_kind: historyKind,
+        defaultPath,
+        default_path: defaultPath,
+        defaultPathRange: getNodeRange(pathNode, document, nodeText(pathNode)),
+        doc: nodeDocumentation(node),
     };
 }
 
@@ -1523,6 +1556,9 @@ function buildStateStatement(
     if (nodeName === 'LeafStateDefinitionContext' || nodeName === 'CompositeStateDefinitionContext') {
         return buildStateDefinition(inner, document);
     }
+    if (nodeName === 'History_definitionContext') {
+        return buildHistoryDefinition(inner, document);
+    }
     if (/ForceTransitionDefinitionContext$/.test(nodeName)) {
         return buildForcedTransition(inner, document);
     }
@@ -1582,6 +1618,7 @@ function buildStateDefinition(
     const forceTransitions = statements.filter(item => item.kind === 'forcedTransition') as FcstmAstForcedTransition[];
     const events = statements.filter(item => item.kind === 'eventDefinition') as FcstmAstEventDefinition[];
     const imports = statements.filter(item => item.kind === 'importStatement') as FcstmAstImportStatement[];
+    const histories = statements.filter(item => item.kind === 'historyDefinition') as FcstmAstHistoryDefinition[];
     // ``composite`` follows the pyfcstm semantic rule: it is true iff the
     // state has at least one substate (a direct ``state X;`` child) or
     // at least one ``import ... as Alias`` that gets merged in as a
@@ -1624,6 +1661,7 @@ function buildStateDefinition(
         during_aspects: duringAspects,
         forceTransitions,
         force_transitions: forceTransitions,
+        histories,
         doc: nodeDocumentation(node),
     };
 }

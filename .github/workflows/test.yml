@@ -1586,6 +1586,12 @@ jobs:
         # the gate with it.
         run: |
           make resource_ownership_check
+      - name: Check the operator semantics boundary
+        shell: bash
+        # A sub-second AST scan, kept beside the resource gate for the same
+        # reason: the Code Test job can be skipped by commit tokens.
+        run: |
+          make semantics_boundary_check
       - name: Check versioned deprecations
         shell: bash
         # Keep the deprecation inventory in the always-on lint job so an

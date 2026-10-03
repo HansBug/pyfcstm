@@ -1,4 +1,4 @@
-.PHONY: docs docs_en docs_zh docs_pdf docs_pdf_en docs_pdf_zh test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build build_info build_info_cli package clean rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check test_boundary_check resource_ownership_check deprecation_check fixture_corpus_check inspect_structure_parity_check public_payload_contract_check api_doc_toctree_check bmc_docs_check bmc_benchmark_check bmc_benchmark bmc_solving_benchmark_check bmc_solving_benchmark build_assets build_assets_clean diagram_assets_check diagram_rendering_check diagram_browser_check diagram_contract_check diagram_data_check diagram_options_check diagram_csp_check diagram_parity_check diagram_reference_check diagram_export_limits_check diagram_headless_check diagram_notebooks_check diagram_browser_headless_check diagram_engine_floor diagram_provenance_check diagram_viewer_gate_check diagram_webview_expander_check diagram_assets_verify diagram_package_check diagram_corpus diagram_viewer_option_flow_check doctest
+.PHONY: docs docs_en docs_zh docs_pdf docs_pdf_en docs_pdf_zh test unittest template_unittest resource antlr antlr_build fcstm_antlr_build fbmcq_antlr_build build build_info build_info_cli package clean rst_auto sha256 jsfcstm jsfcstm_clean vscode vscode_clean vscode_install vscode_uninstall logos logos_clean app_icons app_icons_clean help tpl tpl_clean templates_package template_packaging_check template_source_install_check docs_terminology_check test_boundary_check resource_ownership_check semantics_boundary_check semantics_check deprecation_check fixture_corpus_check inspect_structure_parity_check public_payload_contract_check api_doc_toctree_check bmc_docs_check bmc_benchmark_check bmc_benchmark bmc_solving_benchmark_check bmc_solving_benchmark build_assets build_assets_clean diagram_assets_check diagram_rendering_check diagram_browser_check diagram_contract_check diagram_data_check diagram_options_check diagram_csp_check diagram_parity_check diagram_reference_check diagram_export_limits_check diagram_headless_check diagram_notebooks_check diagram_browser_headless_check diagram_engine_floor diagram_provenance_check diagram_viewer_gate_check diagram_webview_expander_check diagram_assets_verify diagram_package_check diagram_corpus diagram_viewer_option_flow_check doctest
 
 PYTHON := $(shell which python)
 
@@ -144,6 +144,8 @@ help:
 	@echo "  make template_source_install_check - Validate source-install template extraction"
 	@echo "  make test_boundary_check - Validate pytest test-boundary rules"
 	@echo "  make resource_ownership_check - Report handlers opened while holding a resource"
+	@echo "  make semantics_boundary_check - Reject operator semantics defined outside the operator catalog"
+	@echo "  make semantics_check - Compare runnable and Z3 operator semantics, and BMC runtime safety with simulation"
 	@echo "  make deprecation_check - Audit versioned deprecations against the current version"
 	@echo "  make inspect_structure_parity_check - Check Python/jsfcstm structure-statistics fixtures"
 	@echo "  make public_payload_contract_check - Reject version markers in public inspect/BMC payloads"
@@ -381,6 +383,13 @@ test_boundary_check:
 
 resource_ownership_check:
 	$(PYTHON) tools/check_resource_ownership.py --check
+
+semantics_boundary_check:
+	$(PYTHON) tools/check_semantics_boundary.py --selfcheck
+	$(PYTHON) tools/check_semantics_boundary.py --check
+
+semantics_check:
+	$(PYTHON) tools/check_semantics_alignment.py --check
 	$(PYTHON) tools/check_resource_ownership.py
 
 deprecation_check:

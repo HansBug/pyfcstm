@@ -45,6 +45,15 @@ def _run(*args):
     return CliRunner().invoke(pyfcstmcli, ["bmc", "--color", "never", *args])
 
 
+def _stderr_text(result):
+    try:
+        return result.stderr
+    except ValueError:
+        # Older Click releases merge stderr into output and reject the stderr
+        # property instead of exposing a separately captured stream.
+        return result.output
+
+
 def _schema_errors(payload):
     jsonschema = pytest.importorskip("jsonschema")
     validator = jsonschema.Draft202012Validator(json.loads(SCHEMA.read_text(encoding="utf-8")))
@@ -194,7 +203,7 @@ def test_an_internal_error_prefix_failure_keeps_its_traceback(files, monkeypatch
     result = CliRunner().invoke(pyfcstmcli, ["bmc", *args, "--json"])
 
     assert result.exit_code == 1
-    assert "internal BMC witness consistency error" in result.stderr
+    assert "internal BMC witness consistency error" in _stderr_text(result)
 
 
 @pytest.mark.unittest

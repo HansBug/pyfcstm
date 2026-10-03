@@ -473,6 +473,35 @@ class {{ machine_class_name(model) }}:
         return result
 
     @staticmethod
+    def _math(function, value):
+        """
+        Apply a math function, reporting a domain error with one message.
+
+        Python reports an argument outside a function's domain with a
+        ``ValueError`` whose wording changed in Python 3.14; FCSTM reports it
+        as ``math domain error`` on every version.
+
+        :param function: Math function to apply.
+        :type function: Callable
+        :param value: Function argument.
+        :type value: Number
+        :return: The function value.
+        :rtype: Number
+        :raises ValueError: If the argument is outside the function's domain.
+
+        Example::
+
+            >>> {{ machine_class_name(model) }}._math(math.sqrt, 4)
+            2.0
+        """
+        try:
+            return function(value)
+        except ValueError:
+            # ValueError: the argument is outside the function's domain,
+            # such as sqrt of a negative number or floor of NaN.
+            raise ValueError("math domain error") from None
+
+    @staticmethod
     def _cbrt(value):
         """
         Return the real cube root, exact on perfect cubes.

@@ -234,9 +234,9 @@ def test_bmc_witness_fixture_runner_keeps_policy_counts_auditable() -> None:
         policy = policy_for_case(case.id)
         mode_counts[policy.mode] = mode_counts.get(policy.mode, 0) + 1
     assert mode_counts == {
-        "hard_pass": 202,
-        "runtime_error": 17,
-        "expected_unsupported": 8,
+        "hard_pass": 205,
+        "runtime_error": 19,
+        "expected_unsupported": 10,
         "temporary_exclude": 4
         + sum(
             1
@@ -246,7 +246,7 @@ def test_bmc_witness_fixture_runner_keeps_policy_counts_auditable() -> None:
         ),
         "long_term_exclude": 5,
     }
-    assert len(_hard_pass_cases()) == 202
+    assert len(_hard_pass_cases()) == 205
     zero_step_ids = set()
     for case in _hard_pass_cases():
         cycle_count = 0

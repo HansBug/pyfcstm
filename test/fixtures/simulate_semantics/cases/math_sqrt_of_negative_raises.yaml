@@ -1,0 +1,20 @@
+title: "Square root of a negative number raises a math domain error"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/522
+  notes:
+  - "sqrt(-1) has no real value."
+categories:
+- runtime
+- template_alignment
+steps:
+- cycle: []
+  expect:
+    raises:
+      type: SimulationRuntimeExpressionError
+      match: math domain error
+      match_kind: substring
+      cause_type: ValueError
+    vars:
+      r: 0.0
+    ended: false

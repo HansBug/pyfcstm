@@ -43,7 +43,7 @@ EXPECTED_DELTA_STEP_SEQUENCES = {
 def test_all_semantic_fixtures_load():
     cases = iter_semantic_cases()
 
-    assert len(cases) == 236
+    assert len(cases) == 243
     assert {case.id for case in cases}
 
 

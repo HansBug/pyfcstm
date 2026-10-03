@@ -132,7 +132,7 @@ python app.py
 {% endfor %}{% for item in model.inputs.values() %}| input | `{{ item.name }}` | 实现 `read_{{ item.name }}()`；模型通过 `get_input_{{ item.name }}()` 读取 |
 {% endfor %}
 {% endif %}
-`read_*()` 是需要应用覆写的输入接口，和 `_abstract_hook_*()` 生命周期动作回调是两回事。没有为某个 input 提供快照又没有实现读取方法时，会抛出 `NotImplementedError`。 `int` 输入必须返回 Python `int`（不接受 `bool`）；`float` 输入接受有限 `int`/`float`（不接受 `bool`）。非法输入抛出 `ValueError`，设备读取自身的异常原样传播。 `cycle()` 返回 `None`，正常返回才读取/发送 output；失败不会撤销已经发生的设备读取或外部副作用。
+`read_*()` 是需要应用覆写的输入接口，和 `_abstract_hook_*()` 生命周期动作回调是两回事。没有为某个 input 提供快照又没有实现读取方法时，会抛出 `NotImplementedError`。 `int` 输入接受 Python `int` 或整数值的 `float`，后者按 `int` 存储（不接受 `bool`）；`float` 输入接受有限 `int`/`float`（不接受 `bool`）。非法输入抛出 `ValueError`，设备读取自身的异常原样传播。 `cycle()` 返回 `None`，正常返回才读取/发送 output；失败不会撤销已经发生的设备读取或外部副作用。
 
 ### 回调职责
 

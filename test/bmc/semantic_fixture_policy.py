@@ -106,6 +106,7 @@ INTEGER_MODULO_ALIGNMENT_CASES = {
 RUNTIME_ERROR_PREFIX_CASES = {
     "arith_div_by_zero_raises",
     "arith_div_odd_raises",
+    "arith_pow_complex_result_raises",
     "arith_mod_by_zero_raises",
     "arith_mod_mixed_int_float_by_zero_raises",
     "arith_pow_float_zero_base_negative_exponent_raises",
@@ -119,8 +120,14 @@ RUNTIME_ERROR_PREFIX_CASES = {
     "expression_failure_transition_guard_raises_expression_error",
     "hot_start_leaf_defers_during_expression_error",
     "input_error_retry",
+    "math_sqrt_of_negative_raises",
     "persistent_default_int_initializer_rejects_non_integer_float",
     "persistent_operation_writeback_rejects_float_and_rolls_back",
+}
+
+UNENCODED_FUNCTION_CASES = {
+    "arith_cbrt_is_the_real_cube_root",
+    "math_log_of_zero_raises",
 }
 
 TEMPORARY_BMC_CORE_EXCLUDE_CASES = {
@@ -151,6 +158,7 @@ BMC_CORE_FIXTURE_LEDGER_CASES = (
     | HANDLER_CALL_ALIGNMENT_CASES
     | INTEGER_MODULO_ALIGNMENT_CASES
     | RUNTIME_ERROR_PREFIX_CASES
+    | UNENCODED_FUNCTION_CASES
     | TEMPORARY_BMC_CORE_EXCLUDE_CASES
     | SEARCH_LIMIT_EXCLUDE_CASES
     | CONSTRUCTOR_DIAGNOSTIC_EXCLUDE_CASES
@@ -198,6 +206,12 @@ def policy_for_case(case_id: str) -> BmcSemanticFixturePolicy:
             mode="expected_unsupported",
             bucket="numeric_unsupported",
             reason="Current Int bitwise / integer-normalization lowering is unsupported and must fail loudly.",
+        )
+    if case_id in UNENCODED_FUNCTION_CASES:
+        return BmcSemanticFixturePolicy(
+            mode="expected_unsupported",
+            bucket="unencoded_function",
+            reason="The function has no exact Z3 encoding, so lowering must fail loudly.",
         )
     if case_id in FLOAT_MODULO_ALIGNMENT_CASES:
         return BmcSemanticFixturePolicy(

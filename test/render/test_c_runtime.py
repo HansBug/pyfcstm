@@ -415,3 +415,11 @@ def test_the_sign_of_nan_is_minus_one():
     body = _action_body("n = sign(r);", {"n": "int", "r": "float"})
 
     assert "((scope->r) == 0 ? 0 : ((scope->r) > 0 ? 1 : -1))" in body
+
+
+@pytest.mark.unittest
+def test_cbrt_uses_the_shared_cube_root_algorithm():
+    # libm cbrt is not correctly rounded everywhere, so it is not called.
+    body = _action_body("r = cbrt(r);", {"r": "float"})
+
+    assert "_RootMachine_cbrt_f64(scope->r)" in body

@@ -58,7 +58,6 @@ __all__ = [
     "lookup",
     "coarse_result_type",
     "cbrt",
-    "cbrt_fallback",
 ]
 
 #: Result type of a condition.
@@ -394,13 +393,15 @@ def _power(base, exponent):
     return result
 
 
-def cbrt_fallback(value):
+def cbrt(value):
     """
-    Return the real cube root without :func:`math.cbrt`.
+    Return the real cube root, exact on perfect cubes.
 
-    This is the reference implementation on Python versions before 3.11.  It
-    refines ``abs(x) ** (1/3)`` with one Newton step and returns the exact
-    root of a perfect cube.
+    The platform's ``cbrt`` is not correctly rounded everywhere (glibc returns
+    ``3.0000000000000004`` for 27), so every runtime uses this algorithm
+    instead: refine ``abs(x) ** (1/3)`` with one Newton step and return the
+    exact root of a perfect cube.  The generated Python and C runtimes repeat
+    it operation for operation in double arithmetic.
 
     :param value: Number to take the cube root of.
     :type value: Union[int, float]
@@ -410,25 +411,19 @@ def cbrt_fallback(value):
 
     Example::
 
-        >>> from pyfcstm.semantics.catalog import cbrt_fallback
-        >>> cbrt_fallback(-8), cbrt_fallback(1000)
-        (-2.0, 10.0)
+        >>> from pyfcstm.semantics.catalog import cbrt
+        >>> cbrt(27), cbrt(-8), cbrt(1000)
+        (3.0, -2.0, 10.0)
     """
     value = float(value)
     if value == 0.0 or not math.isfinite(value):
         return value
     root = math.copysign(abs(value) ** (1.0 / 3.0), value)
     root -= (root * root * root - value) / (3.0 * root * root)
-    nearest = round(root)
+    nearest = float(math.floor(root + 0.5))
     if nearest * nearest * nearest == value:
-        return float(nearest)
+        return nearest
     return root
-
-
-#: Real cube root.  ``math.cbrt`` (Python 3.11+) calls the platform C library,
-#: so it agrees with generated C code on the same platform; older Pythons use
-#: :func:`cbrt_fallback`, which is exact on perfect cubes.
-cbrt = getattr(math, "cbrt", cbrt_fallback)
 
 
 def _sign(value):

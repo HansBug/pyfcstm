@@ -1,11 +1,13 @@
 def float a = 0.0;
 def float b = 0.0;
+def float c = 0.0;
 
 state Root {
     state A {
         during {
             a = cbrt(1000);
             b = cbrt(0 - 8);
+            c = cbrt(27);
         }
     }
 

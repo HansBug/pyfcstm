@@ -78,12 +78,6 @@ MATH\_DOMAIN\_MESSAGE
 .. autodata:: MATH_DOMAIN_MESSAGE
 
 
-cbrt
------------------------------------------------------
-
-.. autodata:: cbrt
-
-
 ErrorRule
 -----------------------------------------------------
 
@@ -116,7 +110,7 @@ coarse\_result\_type
 .. autofunction:: coarse_result_type
 
 
-cbrt\_fallback
+cbrt
 -----------------------------------------------------
 
-.. autofunction:: cbrt_fallback
+.. autofunction:: cbrt

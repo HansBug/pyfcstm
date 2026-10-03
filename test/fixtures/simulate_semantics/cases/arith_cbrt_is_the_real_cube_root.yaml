@@ -3,7 +3,7 @@ origin:
   files:
   - https://github.com/HansBug/pyfcstm/issues/522
   notes:
-  - "cbrt(1000) is exactly 10.0 and cbrt(-8) is -2.0, where x ** (1/3) would be inexact or undefined."
+  - "cbrt(1000) is exactly 10.0, cbrt(-8) is -2.0 and cbrt(27) is 3.0, where x ** (1/3) or a platform cbrt that is not correctly rounded would be inexact."
 categories:
 - runtime
 - template_alignment
@@ -14,6 +14,7 @@ steps:
     vars:
       a: 10.0
       b: -2.0
+      c: 3.0
     ended: false
 - cycle: []
   expect:
@@ -21,4 +22,5 @@ steps:
     vars:
       a: 10.0
       b: -2.0
+      c: 3.0
     ended: false

@@ -170,6 +170,21 @@ class _CNames:
         return "_%s_floormod_f64" % self.machine_class_name
 
     @property
+    def cbrt_f64(self) -> str:
+        """
+        Return the generated real cube-root helper name.
+
+        :return: Helper function name.
+        :rtype: str
+
+        Example::
+
+            >>> _CNames("Demo", "DEMO").cbrt_f64
+            '_Demo_cbrt_f64'
+        """
+        return "_%s_cbrt_f64" % self.machine_class_name
+
+    @property
     def ipow_i64(self) -> str:
         """
         Return the generated exact integer-power helper name.
@@ -702,7 +717,9 @@ def _render_expr(
                 else "llabs(%s)" % inner.text
             )
         elif expr.func == "cbrt":
-            text = "cbrt(%s)" % inner.text
+            # libm cbrt is not correctly rounded everywhere; the helper is the
+            # simulator's algorithm, exact on perfect cubes.
+            text = "%s(%s)" % (names.cbrt_f64, inner.text)
         elif expr.func == "round":
             # C's round() breaks ties away from zero regardless of the current
             # rounding direction, while the simulator uses Python's round(),

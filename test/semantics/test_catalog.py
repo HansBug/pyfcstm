@@ -150,21 +150,15 @@ class TestRunnableReference:
         assert cbrt(-math.inf) == -math.inf
         assert math.isnan(cbrt(math.nan))
 
-    def test_cbrt_fallback_matches_math_cbrt_where_available(self):
-        from pyfcstm.semantics import catalog
-
+    def test_cbrt_is_exact_on_perfect_cubes_and_accurate_elsewhere(self):
+        # The platform cbrt is not correctly rounded everywhere (glibc gives
+        # 3.0000000000000004 for 27), so the catalog does not use it.
+        cbrt = lookup("cbrt").concrete
+        for n in range(-300, 301):
+            assert cbrt(float(n ** 3)) == float(n)
         rng = random.Random(20261003)
-        values = [float(n ** 3) for n in range(-300, 301)]
-        values += [rng.uniform(-1e6, 1e6) for _ in range(200)]
-        for value in values:
-            fallback = catalog.cbrt_fallback(value)
-            assert fallback ** 3 == pytest.approx(value, rel=1e-12, abs=1e-300)
-            if float(value).is_integer() and value == round(fallback) ** 3:
-                assert fallback == float(round(fallback))
-        if hasattr(math, "cbrt"):
-            assert catalog.cbrt is math.cbrt
-        else:
-            assert catalog.cbrt is catalog.cbrt_fallback
+        for value in [rng.uniform(-1e6, 1e6) for _ in range(200)]:
+            assert cbrt(value) ** 3 == pytest.approx(value, rel=1e-12)
 
     def test_sign_of_nan_is_minus_one(self):
         assert lookup("sign").concrete(math.nan) == -1

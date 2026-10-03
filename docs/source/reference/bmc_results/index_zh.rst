@@ -1181,6 +1181,35 @@ UNSAT。``origin == "inferred"`` 只能表示可信的更强结果已经蕴含�
 
 把第一个守卫改成 ``d == 0`` 后，除法受到保护：检查报告 ``safe``\ ，性质照常评估。
 
+.. list-table:: 运行时错误示例与边界
+   :header-rows: 1
+   :widths: 34 26 40
+
+   * - 模型片段
+     - 查询
+     - 报告
+   * - ``A -> B : if [d == 1]; A -> C : if [10 / d > 1];``
+     - ``check reach <= 2: active("Root.B");``
+     - 退出状态 ``5``\ ；``guard g1 in transition Root.A::1::A->C`` 处
+       ``division_by_zero at step 1``。
+   * - ``def float x = sqrt(0 - 1); state Root;``
+     - ``check reach <= 1: active("Root");``
+     - 退出状态 ``5``\ ；``initializer for x`` 处 ``math_domain at initialization``\ ；
+       轨迹行为 ``init: RUNTIME ERROR math_domain (initializer for x)``\ ，
+       ``verdict.runtime_error.step`` 为 ``null``。
+   * - ``def int x = 0;`` 与 ``enter { x = x / 2; }``\ ，配合
+       ``init cold havoc *;`` 和 ``assume at 0: var("x") == 7;``
+     - ``check reach <= 2: terminated();``
+     - 退出状态 ``5``\ ；``writeback of x after action block state_enter in state Root.A``
+       处 ``writeback_non_integral at step 0``\ ：``7 / 2`` 为 ``3.5``\ ，``int`` 拒绝该值。
+   * - 第一行的模型，第一个守卫改为 ``d == 0``
+     - 同一查询
+     - ``runtime_safety.status`` 为 ``safe``\ ；除法从不会被求值，性质照常评估。
+   * - 第一行的模型，加上 ``--no-runtime-safety``
+     - 同一查询
+     - ``runtime_safety`` 为 ``null``\ ，性质只在不触发错误的执行上评估：退出状态 ``0``\ ，
+       给出见证。
+
 见证字段
 ------------
 

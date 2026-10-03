@@ -1365,6 +1365,37 @@ with its own role (abridged to the fields that carry it):
 Changing the first guard to ``d == 0`` protects the division: the check
 reports ``safe`` and the property is evaluated as usual.
 
+.. list-table:: Runtime-error examples and boundaries
+   :header-rows: 1
+   :widths: 34 26 40
+
+   * - Model fragment
+     - Query
+     - Report
+   * - ``A -> B : if [d == 1]; A -> C : if [10 / d > 1];``
+     - ``check reach <= 2: active("Root.B");``
+     - Exit ``5``; ``division_by_zero at step 1`` in
+       ``guard g1 in transition Root.A::1::A->C``.
+   * - ``def float x = sqrt(0 - 1); state Root;``
+     - ``check reach <= 1: active("Root");``
+     - Exit ``5``; ``math_domain at initialization`` in ``initializer for x``;
+       the trace line is ``init: RUNTIME ERROR math_domain (initializer for x)``
+       and ``verdict.runtime_error.step`` is null.
+   * - ``def int x = 0;`` and ``enter { x = x / 2; }``, with
+       ``init cold havoc *;`` and ``assume at 0: var("x") == 7;``
+     - ``check reach <= 2: terminated();``
+     - Exit ``5``; ``writeback_non_integral at step 0`` in
+       ``writeback of x after action block state_enter in state Root.A``:
+       ``7 / 2`` is ``3.5``, which an ``int`` rejects.
+   * - The first row with ``d == 0`` in the first guard
+     - The same query
+     - ``runtime_safety.status`` is ``safe``; the division is never evaluated
+       and the property is evaluated as usual.
+   * - The first row with ``--no-runtime-safety``
+     - The same query
+     - ``runtime_safety`` is null and the property is evaluated over the
+       executions that raise no error: exit ``0`` with a witness.
+
 Witness fields
 --------------
 

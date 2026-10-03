@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Iterable, List, Mapping, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
 
 import pytest
 import z3
@@ -18,13 +18,20 @@ from pyfcstm.bmc import (
     UnsupportedBmcQuery,
     build_bmc_core_formula,
     compile_bmc_property,
+    compile_bmc_query,
+    decode_bmc_result_trace,
+    replay_bmc_witness,
+    solve_bmc_property,
 )
 from pyfcstm.simulate import SimulationRuntime
+from pyfcstm.simulate.runtime import SimulationRuntimeExpressionError
 from test.bmc.semantic_fixture_policy import (
     BMC_CORE_FIXTURE_LEDGER_CASES,
     CONSTRUCTOR_DIAGNOSTIC_EXCLUDE_CASES,
     FLOAT_MODULO_ALIGNMENT_CASES,
     NUMERIC_UNSUPPORTED_CASES,
+    RUNTIME_ERROR_PREFIX_CASES,
+    SEARCH_LIMIT_EXCLUDE_CASES,
     TEMPORARY_BMC_CORE_EXCLUDE_CASES,
     policy_by_case,
     policy_for_case,
@@ -34,6 +41,7 @@ from test.testings.simulate_semantics import (
     SemanticCaseError,
     _build_simulation_runtime,
     _cycle_input_for_step,
+    _assert_text_matches,
     _effective_cycle_count,
     _register_fixture_handlers,
     _simulation_kwargs,
@@ -51,6 +59,7 @@ pytestmark = pytest.mark.filterwarnings(
 _SUPPORTED_POLICY_MODES = {
     "hard_pass",
     "partial",
+    "runtime_error",
     "expected_unsupported",
     "temporary_exclude",
     "long_term_exclude",
@@ -572,12 +581,88 @@ def _assert_expected_unsupported(case, cone_slicing=False) -> None:
         )
 
 
+def _collect_error_prefix(case):
+    """Run ``case`` in the simulator up to its first expected runtime error.
+
+    The steps after the error exercise the simulator's error recovery, which an
+    execution BMC considers has already ended in the error.
+
+    :return: Events and inputs of every cycle up to and including the failing
+        one, and the ``raises`` expectation of that cycle.
+    """
+    initial = case.data.get("initial") or {}
+    if "raises" in (initial.get("expect") or {}):
+        # A variable initializer fails while the runtime is constructed.
+        with pytest.raises(ValueError):
+            _build_simulation_runtime(case)
+        return (), (), initial["expect"]["raises"]
+    runtime = _build_simulation_runtime(case)
+    _register_fixture_handlers(runtime, case)
+    events: List[Tuple[str, ...]] = []
+    inputs: List[Dict[str, Any]] = []
+    for index, step in enumerate(case.data.get("steps") or []):
+        field_path = "steps[%d]" % index
+        expect = step.get("expect") or {}
+        cycle_input = _cycle_input_for_step(step, case.id, case.yaml_path, field_path)
+        runtime._fixture_input_source.snapshot = dict(step.get("inputs") or {})
+        for _ in range(_effective_cycle_count(step, case.id, case.yaml_path, field_path)):
+            try:
+                result = runtime.cycle(cycle_input)
+            except SimulationRuntimeExpressionError:
+                # SimulationRuntimeExpressionError: the fixture's expected
+                # runtime error.  Anything else fails the test.
+                assert "raises" in expect, "%s %s raised unexpectedly" % (case.id, field_path)
+                failing = [cycle_input] if isinstance(cycle_input, str) else list(cycle_input)
+                events.append(tuple(failing))
+                inputs.append(dict(runtime._fixture_input_source.snapshot))
+                return tuple(events), tuple(inputs), expect["raises"]
+            events.append(tuple(result.input_events))
+            inputs.append(dict(result.inputs))
+    raise AssertionError("%s raised no runtime error" % case.id)
+
+
+def _assert_semantic_fixture_raises_in_bmc(case):
+    events, inputs, raises = _collect_error_prefix(case)
+    step = len(events) - 1 if events else None
+    model = build_state_machine_from_case(case)
+    query_text = _query_text_for_case(
+        case, model, len(events), "check reach <= {bound}: terminated();", input_frames=inputs
+    )
+    domain_events = BmcEngine(model).prepare(query_text).domain.events
+    # Pinning every event of every cycle, through the public query surface,
+    # leaves the fixture's own execution as the only one in the bound.
+    pinned = [
+        'assume event(%s, %d) == %s;'
+        % (json.dumps(event.path), index, "true" if event.path in selected else "false")
+        for index, selected in enumerate(events)
+        for event in domain_events
+    ]
+    lines = query_text.splitlines()
+    query_text = "\n".join(lines[:-1] + pinned + lines[-1:])
+
+    result = solve_bmc_property(compile_bmc_query(model, query_text))
+
+    assert result.outcome == "runtime_error", (case.id, result.outcome, result.reason)
+    assert result.runtime_safety.error.step == step
+    replay = replay_bmc_witness(model, decode_bmc_result_trace(result, source="runtime_error"))
+    assert replay.ok, (case.id, replay.mismatches)
+    if "match" in raises:
+        _assert_text_matches(
+            replay.runtime_error["message"],
+            str(raises["match"]),
+            raises.get("match_kind", "substring"),
+            case,
+            "replay",
+            "runtime error message",
+        )
+
+
 @pytest.mark.unittest
 def test_bmc_semantic_fixture_policy_covers_known_gap_inventory() -> None:
     cases = {case.id: case for case in iter_semantic_cases()}
     assert len(cases) >= 194
     assert BMC_CORE_FIXTURE_LEDGER_CASES <= set(cases)
-    assert len(BMC_CORE_FIXTURE_LEDGER_CASES) == 60
+    assert len(BMC_CORE_FIXTURE_LEDGER_CASES) == 61
 
     excluded_in_yaml = {
         case.id for case in cases.values() if is_runner_excluded(case, BMC_CORE_RUNNER)
@@ -585,6 +670,7 @@ def test_bmc_semantic_fixture_policy_covers_known_gap_inventory() -> None:
     assert (
         excluded_in_yaml
         == TEMPORARY_BMC_CORE_EXCLUDE_CASES
+        | SEARCH_LIMIT_EXCLUDE_CASES
         | CONSTRUCTOR_DIAGNOSTIC_EXCLUDE_CASES
         | {
             case.id
@@ -594,6 +680,7 @@ def test_bmc_semantic_fixture_policy_covers_known_gap_inventory() -> None:
         }
     )
     assert not (NUMERIC_UNSUPPORTED_CASES & excluded_in_yaml)
+    assert not (RUNTIME_ERROR_PREFIX_CASES & excluded_in_yaml)
     assert not (FLOAT_MODULO_ALIGNMENT_CASES & excluded_in_yaml)
 
     policy_map = policy_by_case(BMC_CORE_FIXTURE_LEDGER_CASES)
@@ -603,17 +690,18 @@ def test_bmc_semantic_fixture_policy_covers_known_gap_inventory() -> None:
         for mode in _SUPPORTED_POLICY_MODES
     }
     assert mode_counts == {
-        "hard_pass": 200,
+        "hard_pass": 202,
         "partial": 0,
+        "runtime_error": 17,
         "expected_unsupported": 8,
-        "temporary_exclude": 23
+        "temporary_exclude": 4
         + sum(
             1
             for case in cases.values()
             if "variable_roles" in case.data["categories"]
             and is_runner_excluded(case, BMC_CORE_RUNNER)
         ),
-        "long_term_exclude": 4,
+        "long_term_exclude": 5,
     }
 
     for case_id in BMC_CORE_FIXTURE_LEDGER_CASES:
@@ -633,6 +721,9 @@ def test_bmc_core_matches_semantic_fixture_public_observations(case) -> None:
         pytest.skip("%s: %s" % (policy.bucket, policy.reason))
     if policy.mode == "expected_unsupported":
         _assert_expected_unsupported(case)
+        return
+    if policy.mode == "runtime_error":
+        _assert_semantic_fixture_raises_in_bmc(case)
         return
     _assert_semantic_fixture_matches_bmc_core(case, policy.ignored_expect_fields)
 

@@ -1533,6 +1533,7 @@ def test_bmc_schema_accepts_legacy_shape_envelope(bmc_files) -> None:
         "total_elapsed_ms",
         "feasibility",
         "available_model_roles",
+        "runtime_safety",
     ):
         legacy["result"].pop(key, None)
     for key in ("model_role", "verdict"):

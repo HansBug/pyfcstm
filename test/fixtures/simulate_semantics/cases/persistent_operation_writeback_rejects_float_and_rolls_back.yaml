@@ -9,8 +9,6 @@ categories:
 - temporary_vars
 - lifecycle
 - template_alignment
-exclude_runners:
-- bmc_core
 steps:
 - cycle: []
   expect:

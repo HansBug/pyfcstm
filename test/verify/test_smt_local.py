@@ -360,7 +360,7 @@ def test_initializer_satisfiable_runtime_domain_constraints_are_kept():
     assert constraints is not None
     constraint_text = {str(item) for item in constraints}
     assert "2 != 0" in constraint_text
-    assert "x == ToReal(1)/ToReal(2)" in constraint_text
+    assert "x == 1/2" in constraint_text
 
 
 def test_initializer_domain_checks_include_prior_initializers(monkeypatch):
@@ -400,7 +400,7 @@ def test_initializer_domain_checks_include_prior_initializers(monkeypatch):
     assert result is None
     assert constraints is not None
     assert calls[0] == ("2 != 0",)
-    assert calls[1] == ("2 != 0", "x == ToReal(1)/ToReal(2)", "4 != 0")
+    assert calls[1] == ("2 != 0", "x == 1/2", "4 != 0")
 
 
 def test_guard_translation_failure_is_normalized():
@@ -987,7 +987,7 @@ def test_operation_prefix_collection_qualifies_branch_condition_domains():
     assert result is None
     assert [" ".join(str(item).split()) for item in domain_constraints] == [
         "2 != 0",
-        "Implies(And(2 != 0, Not(ToReal(0) < ToReal(x)/ToReal(2))), 3 != 0)",
+        "Implies(And(2 != 0, Not(ToReal(0) < ToReal(x)/2)), 3 != 0)",
     ]
 
 

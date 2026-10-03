@@ -89,6 +89,7 @@ from .explanation import (
 from .properties import BmcPropertyFormula, _lower_predicate
 from .query import EventAssumption
 from .relation import BmcCaseRelation, _assumption_input_names
+from .safety import BmcRuntimeSafetyResult, _check_runtime_safety
 from .slicing import ConeSlice
 from .solver import (
     SOLVER_PROFILES,
@@ -411,12 +412,32 @@ def _validate_witness_verdict(model_role: str, verdict: Mapping[str, Any]) -> No
             "incomplete": True,
             "outcome": "incomplete",
         },
+        "runtime_error_prefix": {
+            "property_satisfied": None,
+            "witness_found": False,
+            "counterexample_found": False,
+            "incomplete": False,
+            "outcome": "runtime_error",
+        },
     }[model_role]
     for field_name, expected_value in expected.items():
         if verdict.get(field_name) != expected_value:
             raise BmcBuildError(
                 "verdict.%s is inconsistent with model_role=%r."
                 % (field_name, model_role)
+            )
+    if model_role == "runtime_error_prefix":
+        error = verdict.get("runtime_error")
+        if not isinstance(error, Mapping) or not {
+            "step",
+            "kind",
+            "location",
+            "events",
+            "inputs",
+        } <= set(error):
+            raise BmcBuildError(
+                "runtime_error_prefix verdict requires runtime_error with step, "
+                "kind, location, events and inputs."
             )
 
 
@@ -467,6 +488,7 @@ def _validate_role_aware_witness_property(
             "kind": "response",
             "polarity": "counterexample",
         },
+        "runtime_error_prefix": {},
     }[model_role]
     for field_name, expected_value in expected.items():
         if value[field_name] != expected_value:
@@ -512,6 +534,15 @@ def _validate_role_aware_witness_solver_metadata(
             )
         if value["incomplete_elapsed_ms"] is not None:
             raise BmcBuildError("primary model roles require no suffix elapsed time.")
+    elif model_role == "runtime_error_prefix":
+        if (
+            primary_status != "unknown"
+            or incomplete_status is not None
+            or value["incomplete_elapsed_ms"] is not None
+        ):
+            raise BmcBuildError(
+                "runtime_error_prefix requires an unevaluated primary check and no suffix."
+            )
     elif primary_status != "unsat" or incomplete_status != "sat":
         raise BmcBuildError(
             "incomplete_suffix requires primary unsat and incomplete sat."
@@ -519,10 +550,6 @@ def _validate_role_aware_witness_solver_metadata(
     elif value["incomplete_elapsed_ms"] is None:
         raise BmcBuildError(
             "incomplete_suffix requires a non-null suffix elapsed time."
-        )
-    if value["primary_reason"] is not None:
-        raise BmcBuildError(
-            "role-aware witness solver metadata requires primary_reason=None."
         )
     if (
         value["incomplete_status"] in {"sat", "unsat"}
@@ -1368,6 +1395,9 @@ def _solve_property_verdict(result: "BmcSolveResult") -> str:
         "unknown": "INCONCLUSIVE (PRIMARY CHECK UNKNOWN)",
         "timeout": "INCONCLUSIVE (PRIMARY CHECK TIMED OUT)",
         "incomplete": "INCONCLUSIVE (RESPONSE HORIZON INCOMPLETE)",
+        "runtime_error": "NOT EVALUATED (RUNTIME ERROR REACHABLE)",
+        "runtime_safety_timeout": "NOT EVALUATED (RUNTIME SAFETY CHECK TIMED OUT)",
+        "runtime_safety_unknown": "NOT EVALUATED (RUNTIME SAFETY CHECK UNKNOWN)",
     }
     if outcome not in verdicts:
         raise BmcBuildError("Unsupported BMC outcome: %s" % outcome)
@@ -1388,6 +1418,17 @@ def _solve_semantic_interpretation(
     the latter is meaningful only after the admissible bounded scenario is
     known to be feasible.
     """
+    if outcome == "runtime_error":
+        return (
+            "An admissible execution reaches a runtime error within the bound; "
+            "the model fails before the property can be evaluated, so the "
+            "property was not evaluated."
+        )
+    if outcome in {"runtime_safety_timeout", "runtime_safety_unknown"}:
+        return (
+            "The runtime-safety check could not decide whether a runtime error "
+            "is reachable; the property was not evaluated."
+        )
     if outcome == "witness_found":
         return (
             "A satisfying witness execution exists within the bound; this is "
@@ -1482,7 +1523,7 @@ def _solve_scenario(result: "BmcSolveResult", outcome: str) -> str:
         if feasibility.assumptions.origin == "checked":
             return "TIMED OUT"
         return "NOT CHECKED"
-    if outcome in {"unknown", "timeout"}:
+    if outcome in {"unknown", "timeout"} or outcome in _RUNTIME_SAFETY_OUTCOMES.values():
         return "NOT CHECKED"
     return "FEASIBLE"
 
@@ -1496,7 +1537,7 @@ def _solve_response_horizon(result: "BmcSolveResult", outcome: str) -> Optional[
         "feasibility_timeout",
         "unknown",
         "timeout",
-    }:
+    } or outcome in _RUNTIME_SAFETY_OUTCOMES.values():
         return None
     if outcome == "property_satisfied":
         return "CLOSED" if result.incomplete_status == "unsat" else "NOT NEEDED"
@@ -1566,6 +1607,18 @@ def _solve_exception_evidence(
     its Evidence section so callers do not have to inspect the Details table.
     """
     feasibility = result._validated_feasibility()
+    safety = result.runtime_safety
+    if outcome == "runtime_error":
+        error = safety.error
+        where = (
+            "initialization" if error.step is None else "step %d" % error.step
+        )
+        return (
+            "Runtime error: %s at %s" % (error.kind, where),
+            "Runtime error location: %s" % error.location,
+        )
+    if outcome in {"runtime_safety_timeout", "runtime_safety_unknown"}:
+        return ("Runtime safety reason: %s" % safety.reason,)
     if outcome in {"feasibility_unknown", "feasibility_timeout"}:
         assumptions = feasibility.assumptions
         if assumptions.origin == "checked":
@@ -1610,6 +1663,21 @@ def _solve_conclusion(
     bound = _solve_bound_phrase(result)
     kind = result.kind
     search_kind = _solve_search_kind(result).lower()
+    if outcome == "runtime_error":
+        return (
+            "The model reaches a runtime error within %s; fix the failing "
+            "operation or constrain its inputs before the property can be "
+            "evaluated." % bound
+        )
+    if outcome == "runtime_safety_timeout":
+        return (
+            "The runtime-safety check timed out; no property verdict is available."
+        )
+    if outcome == "runtime_safety_unknown":
+        return (
+            "The runtime-safety check returned unknown; no property verdict is "
+            "available."
+        )
     if outcome == "witness_found":
         return (
             "At least one admissible execution satisfies the %s objective "
@@ -1722,6 +1790,9 @@ def _solve_presentation(result: "BmcSolveResult") -> _BmcSolvePresentation:
         "unknown": "PROPERTY INCONCLUSIVE; PRIMARY CHECK UNKNOWN",
         "timeout": "PROPERTY INCONCLUSIVE; PRIMARY CHECK TIMED OUT",
         "incomplete": "PROPERTY INCONCLUSIVE; RESPONSE HORIZON INCOMPLETE",
+        "runtime_error": "RUNTIME ERROR REACHABLE WITHIN BOUND; PROPERTY NOT EVALUATED",
+        "runtime_safety_timeout": "RUNTIME SAFETY CHECK TIMED OUT; PROPERTY NOT EVALUATED",
+        "runtime_safety_unknown": "RUNTIME SAFETY CHECK UNKNOWN; PROPERTY NOT EVALUATED",
     }
     evidence = []
     if outcome == "scenario_infeasible":
@@ -1739,6 +1810,9 @@ def _solve_presentation(result: "BmcSolveResult") -> _BmcSolvePresentation:
     elif result.available_model_roles == ("incomplete_suffix",):
         evidence.append("Model role: INCOMPLETE SUFFIX")
         evidence.append("Model evidence: SAT suffix model available.")
+    elif result.available_model_roles == ("runtime_error_prefix",):
+        evidence.append("Model role: RUNTIME ERROR PREFIX")
+        evidence.append("Model evidence: SAT error-prefix model available.")
     else:
         evidence.append("Model evidence: no SAT model available.")
     severity = {
@@ -1746,6 +1820,7 @@ def _solve_presentation(result: "BmcSolveResult") -> _BmcSolvePresentation:
         "property_satisfied": "green",
         "no_witness": "red",
         "property_violated": "red",
+        "runtime_error": "red",
     }.get(outcome, "yellow")
     return _BmcSolvePresentation(
         headline=headlines[outcome],
@@ -2059,6 +2134,11 @@ def _z3_number_value(
         if declared_type == "int" and rational.denominator == 1:
             return rational.numerator
         return float(rational)
+    if z3.is_algebraic_value(value):
+        # An irrational solution, such as a square root, reaches the runtime
+        # as the nearest float; replay judges whether that float still
+        # reproduces the trace.
+        return float(value.approx(20).as_fraction())
     raise _internal_error(
         "Z3 expression did not evaluate to a numeric value: %s." % expr
     )
@@ -2157,6 +2237,7 @@ _BMC_MODEL_ROLES = {
     "primary_witness",
     "primary_counterexample",
     "incomplete_suffix",
+    "runtime_error_prefix",
 }
 
 
@@ -2937,6 +3018,18 @@ def _has_nonempty_incomplete_formula(formula: BmcPropertyFormula) -> bool:
     return not z3.is_false(formula.incomplete_formula)
 
 
+_RUNTIME_SAFETY_OUTCOMES = {
+    "violated": "runtime_error",
+    "timeout": "runtime_safety_timeout",
+    "unknown": "runtime_safety_unknown",
+}
+
+
+def _runtime_safety_blocks(result: "BmcSolveResult") -> bool:
+    safety = result.runtime_safety
+    return safety is not None and safety.status in _RUNTIME_SAFETY_OUTCOMES
+
+
 def _has_diagnostic(result: "BmcSolveResult", marker: str) -> bool:
     """Return whether a stable diagnostic marker is present."""
     return marker in result.diagnostics
@@ -3007,6 +3100,12 @@ class BmcSolveResult(_PrettyPrintableMixin):
         Keys vary with Z3 and the selected solver. ``rlimit count`` and
         ``num allocs`` are context-wide counters, not per-query measurements.
     :type solver_statistics: Mapping[str, Union[int, float]], optional
+    :param runtime_safety: Result of the runtime-safety check run before the
+        business property, or ``None`` when it was not run.  When it reports a
+        reachable runtime error or is undecided, the business property was
+        not evaluated: :attr:`status` is ``"unknown"`` and :attr:`outcome`
+        names the runtime-safety result, defaults to ``None``.
+    :type runtime_safety: pyfcstm.bmc.safety.BmcRuntimeSafetyResult, optional
     :raises pyfcstm.bmc.errors.BmcBuildError: If the solve result payload is
         malformed.
 
@@ -3040,6 +3139,7 @@ class BmcSolveResult(_PrettyPrintableMixin):
     solver_profile: str = "default"
     solver_logic: Optional[str] = None
     solver_statistics: Mapping[str, Any] = field(default_factory=dict)
+    runtime_safety: Optional[BmcRuntimeSafetyResult] = None
     _attempted_slice: Optional[ConeSlice] = field(
         default=None, repr=False, compare=False
     )
@@ -3071,6 +3171,13 @@ class BmcSolveResult(_PrettyPrintableMixin):
         _require_formula(self.formula)
         if self.status not in {"sat", "unsat", "unknown", "timeout"}:
             raise BmcBuildError("status must be sat, unsat, unknown, or timeout.")
+        if self.runtime_safety is not None:
+            if not isinstance(self.runtime_safety, BmcRuntimeSafetyResult):
+                raise BmcBuildError("runtime_safety must be BmcRuntimeSafetyResult or None.")
+            if _runtime_safety_blocks(self) and (self.status != "unknown" or self.model is not None):
+                raise BmcBuildError(
+                    "A result whose runtime safety check is not safe leaves the property unevaluated."
+                )
         if self.model is not None and not isinstance(self.model, z3.ModelRef):
             raise BmcBuildError("model must be z3.ModelRef or None.")
         if self.incomplete_status is not None and self.incomplete_status not in {
@@ -3431,7 +3538,10 @@ class BmcSolveResult(_PrettyPrintableMixin):
         :return: One of ``"property_satisfied"``, ``"property_violated"``,
             ``"witness_found"``, ``"no_witness"``, ``"incomplete"``,
             ``"scenario_infeasible"``, ``"feasibility_timeout"``,
-            ``"feasibility_unknown"``, ``"timeout"``, or ``"unknown"``.
+            ``"feasibility_unknown"``, ``"timeout"``, ``"unknown"``,
+            ``"runtime_error"`` (a runtime error is reachable within the
+            bound, so the property was not evaluated),
+            ``"runtime_safety_timeout"`` or ``"runtime_safety_unknown"``.
         :rtype: str
 
         Example::
@@ -3444,6 +3554,8 @@ class BmcSolveResult(_PrettyPrintableMixin):
             >>> solve_bmc_property(formula).outcome
             'no_witness'
         """
+        if _runtime_safety_blocks(self):
+            return _RUNTIME_SAFETY_OUTCOMES[self.runtime_safety.status]
         feasibility = self._validated_feasibility()
         if feasibility.scenario_infeasible:
             return "scenario_infeasible"
@@ -3549,6 +3661,9 @@ class BmcSolveResult(_PrettyPrintableMixin):
             "feasibility": feasibility.to_canonical(),
             "available_model_roles": list(self.available_model_roles),
             "diagnostics": list(self.diagnostics),
+            "runtime_safety": (
+                None if self.runtime_safety is None else self.runtime_safety.to_canonical()
+            ),
         }
 
     def _cone_metadata(self):
@@ -3586,6 +3701,8 @@ class BmcSolveResult(_PrettyPrintableMixin):
             if self.polarity == "witness":
                 return ("primary_witness",)
             return ("primary_counterexample",)
+        if self.runtime_safety is not None and self.runtime_safety.status == "violated":
+            return ("runtime_error_prefix",)
         feasibility = self._validated_feasibility()
         if (
             self.status == "unsat"
@@ -4627,6 +4744,11 @@ class BmcReplayResult(_PrettyPrintableMixin):
     :param model_role: Model role copied from the witness, defaults to ``None``
         for raw-model traces.
     :type model_role: str, optional
+    :param runtime_error: Runtime error the replay observed for a
+        ``runtime_error_prefix`` witness, as ``{"kind", "message"}``, or
+        ``None`` when none was observed or none was expected, defaults to
+        ``None``.
+    :type runtime_error: Mapping[str, object], optional
     :raises pyfcstm.bmc.errors.BmcBuildError: If the replay result payload is
         malformed.
 
@@ -4641,6 +4763,7 @@ class BmcReplayResult(_PrettyPrintableMixin):
     runtime_trace: BmcRuntimeTrace
     mismatches: Sequence[BmcReplayMismatch] = ()
     model_role: Optional[str] = None
+    runtime_error: Optional[Mapping[str, Any]] = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.witness, BmcWitnessTrace):
@@ -4698,6 +4821,10 @@ class BmcReplayResult(_PrettyPrintableMixin):
         }
         if self.model_role is not None:
             payload["model_role"] = self.model_role
+        if self.witness.model_role == "runtime_error_prefix":
+            payload["runtime_error"] = (
+                None if self.runtime_error is None else dict(self.runtime_error)
+            )
         return payload
 
 
@@ -5154,8 +5281,16 @@ def solve_bmc_property(
     check_incomplete: bool = True,
     infeasibility_explanation: str = "none",
     solver_profile: str = "default",
+    runtime_safety: bool = True,
 ) -> BmcSolveResult:
     """Solve a compiled BMC property formula.
+
+    By default the solve starts with the runtime-safety check of
+    :func:`pyfcstm.bmc.safety.check_runtime_safety`: when a runtime error is
+    reachable within the bound, or the check is undecided, the business
+    property is not evaluated and the result carries the runtime-safety
+    outcome instead.  The check runs on the unsliced model, because slicing
+    may drop operations that fail.
 
     The primary status comes from :attr:`BmcPropertyFormula.solve_formula`.
     A primary UNSAT result first checks the admissible scenario formula
@@ -5188,6 +5323,9 @@ def solve_bmc_property(
         Only the staged main checks use this choice. Explanation and proof
         checks always use the default solver to preserve assumption cores.
     :type solver_profile: str, optional
+    :param runtime_safety: Whether to run the runtime-safety check before the
+        business property, defaults to ``True``.
+    :type runtime_safety: bool, optional
     :return: Structured solve result.
     :rtype: BmcSolveResult
     :raises pyfcstm.bmc.errors.BmcBuildError: If arguments are malformed, or
@@ -5203,16 +5341,37 @@ def solve_bmc_property(
         'sat'
     """
     cone = _require_formula(formula).core.cone_slice
+    if not isinstance(runtime_safety, bool):
+        raise BmcBuildError("runtime_safety must be a bool.")
+    if solver_profile not in SOLVER_PROFILES:
+        raise BmcBuildError("solver_profile must be one of default, logic, or tactic.")
+    budget = None
+    safety = None
+    if runtime_safety:
+        safety, budget = _check_runtime_safety(formula.core, timeout_ms, solver_profile)
+        if safety.status in _RUNTIME_SAFETY_OUTCOMES:
+            return BmcSolveResult(
+                formula=formula,
+                status="unknown",
+                reason="property not evaluated: runtime safety %s" % safety.status,
+                timeout_ms=timeout_ms,
+                total_elapsed_ms=safety.elapsed_ms,
+                feasibility=_not_checked_feasibility(),
+                solver_profile=solver_profile,
+                runtime_safety=safety,
+            )
     if cone is None or not cone.dropped_variables:
-        return _solve_property(
+        result = _solve_property(
             formula,
             timeout_ms,
             check_incomplete,
             infeasibility_explanation,
             solver_profile,
+            budget,
         )
+        return _with_runtime_safety(result, safety)
     started = time.monotonic()
-    budget = _SolveBudget(timeout_ms)
+    budget = _SolveBudget(timeout_ms) if budget is None else budget
     result = _solve_property(
         formula,
         timeout_ms,
@@ -5255,8 +5414,22 @@ def solve_bmc_property(
         )
         verified_trace = None
     result = replace(result, total_elapsed_ms=(time.monotonic() - started) * 1000.0)
+    result = _with_runtime_safety(result, safety)
     object.__setattr__(result, "_verified_trace", verified_trace)
     return result
+
+
+def _with_runtime_safety(
+    result: BmcSolveResult, safety: Optional[BmcRuntimeSafetyResult]
+) -> BmcSolveResult:
+    if safety is None:
+        return result
+    total = result.total_elapsed_ms
+    return replace(
+        result,
+        runtime_safety=safety,
+        total_elapsed_ms=None if total is None else total + safety.elapsed_ms,
+    )
 
 
 def _solve_property(
@@ -6219,8 +6392,9 @@ def decode_bmc_result_trace(
 
     :param result: Structured result returned by :func:`solve_bmc_property`.
     :type result: BmcSolveResult
-    :param source: Model channel, either ``"primary"`` or
-        ``"incomplete_suffix"``, defaults to ``"primary"``.
+    :param source: Model channel: ``"primary"``, ``"incomplete_suffix"``, or
+        ``"runtime_error"`` for the error prefix of a result whose outcome is
+        ``"runtime_error"``, defaults to ``"primary"``.
     :type source: str, optional
     :param event_policy: Optional sparse event decode policy, defaults to
         ``None``.
@@ -6242,10 +6416,13 @@ def decode_bmc_result_trace(
     """
     if not isinstance(result, BmcSolveResult):
         raise BmcBuildError("result must be BmcSolveResult.")
-    if source not in {"primary", "incomplete_suffix"}:
+    if source not in {"primary", "incomplete_suffix", "runtime_error"}:
         raise BmcBuildError(
-            "source must be primary or incomplete_suffix, got %r." % source
+            "source must be primary, incomplete_suffix or runtime_error, got %r."
+            % source
         )
+    if source == "runtime_error":
+        return _decode_runtime_error_trace(result, event_policy)
     verified = result._verified_trace
     if (
         event_policy is None
@@ -6334,6 +6511,118 @@ def decode_bmc_result_trace(
         event_policy=event_policy,
         model_role="incomplete_suffix",
         solver_metadata=solver_metadata,
+        verdict=verdict,
+    )
+
+
+def _decode_runtime_error_trace(
+    result: BmcSolveResult, event_policy: Optional[BmcEventDecodePolicy]
+) -> BmcWitnessTrace:
+    """Decode the error prefix found by the runtime-safety check.
+
+    Frames run from the initial frame to the frame where the failing step
+    starts; steps are the completed steps before it.  The failing step itself
+    has no target frame, so its events and inputs are recorded in the
+    verdict next to the error site.
+    """
+    safety = result.runtime_safety
+    if safety is None or safety.status != "violated":
+        raise BmcBuildError(
+            "runtime_error model channel requires a violated runtime safety check."
+        )
+    from .properties import compile_bmc_property
+
+    formula = (
+        result.formula
+        if safety.core is result.formula.core
+        else compile_bmc_property(safety.core)
+    )
+    model = safety.model
+    error = safety.error
+    policy = BmcEventDecodePolicy() if event_policy is None else event_policy
+    if not isinstance(policy, BmcEventDecodePolicy):
+        raise BmcBuildError("event_policy must be BmcEventDecodePolicy or None.")
+    symbols = formula.core.symbols
+    domain = formula.core.context.domain
+    if error.step is None:
+        frames: Tuple[BmcWitnessFrame, ...] = ()
+        steps: Tuple[BmcWitnessStep, ...] = ()
+        events: list = []
+        inputs: Dict[str, Any] = {}
+    else:
+        frames = tuple(
+            _frame_for_index(formula, model, index) for index in range(error.step + 1)
+        )
+        steps = tuple(
+            _decode_step(formula, model, index, frames, policy)
+            for index in range(error.step)
+        )
+        events = [
+            event.path
+            for event in domain.events
+            if z3.is_true(
+                model.eval(symbols.event_input(error.step, event.path), model_completion=True)
+            )
+        ]
+        inputs = {
+            var.name: _z3_number_value(
+                model, symbols.step_inputs[error.step][var.name], var.declared_type
+            )
+            for var in domain.variables
+            if var.role == VariableRole.INPUT
+        }
+    parameters = {
+        var.name: _z3_number_value(model, symbols.parameter(var.name), var.declared_type)
+        for var in domain.variables
+        if var.role == VariableRole.PARAM
+    }
+    initial_source = formula.core.context.bound_query.initial.source
+    initial = (
+        _initial_metadata(formula, model, frames)
+        if frames
+        else {
+            "mode": initial_source.mode,
+            "state": None,
+            "sentinel": None,
+            "vars": {},
+            "parameters": dict(sorted(parameters.items())),
+        }
+    )
+    verdict = {
+        "property_satisfied": None,
+        "witness_found": False,
+        "counterexample_found": False,
+        "incomplete": False,
+        "outcome": "runtime_error",
+        "runtime_error": {
+            **error.to_canonical(),
+            "events": events,
+            "inputs": dict(sorted(inputs.items())),
+        },
+    }
+    solver_metadata = {
+        "model_status": "sat",
+        "primary_status": "unknown",
+        "incomplete_status": None,
+        "primary_reason": result.reason,
+        "incomplete_reason": None,
+        "primary_elapsed_ms": safety.elapsed_ms,
+        "incomplete_elapsed_ms": None,
+    }
+    return BmcWitnessTrace(
+        property={
+            "kind": formula.kind,
+            "polarity": formula.polarity,
+            "bound": formula.bound,
+            "case_label": formula.case_label,
+            "response_window": formula.response_window,
+        },
+        solver=solver_metadata,
+        initial=initial,
+        frames=frames,
+        steps=steps,
+        diagnostics=formula.diagnostics,
+        model_role="runtime_error_prefix",
         verdict=verdict,
     )
 
@@ -6704,6 +6993,12 @@ def _validate_replay_roles(model: StateMachine, witness: BmcWitnessTrace) -> Non
             raise BmcBuildError("input_reads must follow model declaration order.")
 
 
+def _runtime_error_of(witness: BmcWitnessTrace) -> Optional[Mapping[str, Any]]:
+    if witness.model_role != "runtime_error_prefix":
+        return None
+    return witness.verdict["runtime_error"]
+
+
 def _initial_runtime(
     state_machine: StateMachine, witness: BmcWitnessTrace
 ) -> Optional[SimulationRuntime]:
@@ -6717,9 +7012,14 @@ def _initial_runtime(
     # Witness-decoded parameters are always complete for role-aware models;
     # hot start requires the full mapping while cold start fills defaults.
     parameters = dict(witness.initial.get("parameters") or ()) or None
+    error = _runtime_error_of(witness)
+    error_inputs = (
+        [error["inputs"]] if error is not None and error["step"] is not None else []
+    )
     input_source = (
         ReplayInputPattern(
-            [step.inputs for step in witness.steps if step.case_kind != "absorb"],
+            [step.inputs for step in witness.steps if step.case_kind != "absorb"]
+            + error_inputs,
             input_names=tuple(state_machine.inputs),
         )
         if state_machine.inputs
@@ -6738,6 +7038,73 @@ def _initial_runtime(
         initial_vars=initial_vars,
         parameters=parameters,
         input_source=input_source,
+    )
+
+
+def _compare_runtime_error(
+    mismatches: list,
+    expected: Mapping[str, Any],
+    observed: Optional[Mapping[str, Any]],
+) -> None:
+    where = "initialization" if expected["step"] is None else "step %d" % expected["step"]
+    if observed is None:
+        mismatches.append(
+            BmcReplayMismatch(
+                "verdict.runtime_error",
+                expected["kind"],
+                None,
+                "expected runtime error at %s was not raised" % where,
+            )
+        )
+    elif observed["kind"] != expected["kind"]:
+        mismatches.append(
+            BmcReplayMismatch(
+                "verdict.runtime_error.kind",
+                expected["kind"],
+                observed["kind"],
+                "runtime error kind mismatch at %s" % where,
+            )
+        )
+    elif expected["step"] is not None and _raised_in_guard(expected["location"]) != (
+        observed["message"].startswith("transition guard ")
+    ):
+        # The step and kind leave one position open: a guard and an action of
+        # the same step can raise the same kind.  The runtime names a guard
+        # failure "transition guard evaluation failed".
+        mismatches.append(
+            BmcReplayMismatch(
+                "verdict.runtime_error.location",
+                expected["location"],
+                observed["message"],
+                "runtime error raised at a different operation at %s" % where,
+            )
+        )
+
+
+def _raised_in_guard(location: str) -> bool:
+    return location.startswith("guard ")
+
+
+def _replay_initialization_error(
+    state_machine: StateMachine,
+    witness: BmcWitnessTrace,
+    error: Mapping[str, Any],
+) -> BmcReplayResult:
+    observed = None
+    try:
+        _initial_runtime(state_machine, witness)
+    except (SimulationRuntimeExpressionError, ValueError) as err:
+        # SimulationRuntimeExpressionError: an initializer expression failed;
+        # ValueError: an initializer value was rejected by writeback.  Both
+        # report the catalog kind of the error.
+        observed = {"kind": getattr(err, "kind", None), "message": str(err)}
+    mismatches: list = []
+    _compare_runtime_error(mismatches, error, observed)
+    return BmcReplayResult(
+        witness=witness,
+        runtime_trace=BmcRuntimeTrace((), ()),
+        mismatches=tuple(mismatches),
+        runtime_error=observed,
     )
 
 
@@ -6785,6 +7152,9 @@ def replay_bmc_witness(
     if abstract_handlers is not None and not isinstance(abstract_handlers, Mapping):
         raise BmcBuildError("abstract_handlers must be a mapping or None.")
     _validate_replay_roles(state_machine, witness)
+    error = _runtime_error_of(witness)
+    if error is not None and error["step"] is None:
+        return _replay_initialization_error(state_machine, witness, error)
     runtime = _initial_runtime(state_machine, witness)
     recorder = _HandlerCallRecorder(_abstract_call_role_resolver(state_machine))
     frames = []
@@ -6867,6 +7237,21 @@ def replay_bmc_witness(
                 runtime_frame,
                 init_runtime_state,
             )
+    if error is not None:
+        observed = None
+        try:
+            runtime.cycle(error["events"])
+        except SimulationRuntimeExpressionError as err:
+            # SimulationRuntimeExpressionError: the expected outcome; the
+            # runtime reports the error with its catalog kind.
+            observed = {"kind": err.kind, "message": str(err)}
+        _compare_runtime_error(mismatches, error, observed)
+        return BmcReplayResult(
+            witness=witness,
+            runtime_trace=BmcRuntimeTrace(tuple(frames), tuple(steps)),
+            mismatches=tuple(mismatches),
+            runtime_error=observed,
+        )
     return BmcReplayResult(
         witness=witness,
         runtime_trace=BmcRuntimeTrace(tuple(frames), tuple(steps)),

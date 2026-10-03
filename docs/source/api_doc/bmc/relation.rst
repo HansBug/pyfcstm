@@ -26,6 +26,13 @@ BmcTraceSymbols
     :members: __post_init__,allocate,frame_state,frame_var,step_input,parameter,resolve_query_value,event_input,delta_flag,gamma_flag,active_state,case_selector,to_canonical,domain,frame_states,frame_vars,event_inputs,delta_flags,gamma_flags,case_selectors,step_inputs,parameters
 
 
+BmcRuntimeErrorSite
+-----------------------------------------------------
+
+.. autoclass:: BmcRuntimeErrorSite
+    :members: to_canonical,step,kind,location,condition
+
+
 BmcCaseRelation
 -----------------------------------------------------
 
@@ -37,7 +44,7 @@ BmcStepRelation
 -----------------------------------------------------
 
 .. autoclass:: BmcStepRelation
-    :members: __post_init__,case_registry,to_canonical,step_index,formals,case_relations,formula,delta_constraint,gamma_constraint,progress_mutex_constraint
+    :members: __post_init__,case_registry,to_canonical,step_index,formals,case_relations,formula,delta_constraint,gamma_constraint,progress_mutex_constraint,runtime_error_sites
 
 
 BmcCoreFormula

@@ -89,11 +89,11 @@ Public module structure:
    * - Macro-step case data
      - :class:`BoolTemplate`, :class:`EventUse`,
        :class:`GuardRequirement`, :class:`PriorityExclusion`,
-       :class:`ActionBlock`, :class:`CycleCase`,
+       :class:`ActionBlock`, :class:`EvaluationPoint`, :class:`CycleCase`,
        :class:`MacroStepFormal`, :class:`PartitionCheckResult`
      - Freeze case labels, control-path conditions, anchored guards,
-       runtime action blocks, ordered event consumption, source-local buckets,
-       and build-time partition summaries.
+       runtime action blocks, runtime evaluation order, ordered event
+       consumption, source-local buckets, and build-time partition summaries.
    * - Macro-step case helpers
      - :func:`case_path_condition`, :func:`terminated_absorb_case`,
        :func:`build_fallback_case`, :func:`build_semantic_delta_case`,
@@ -162,10 +162,17 @@ Public module structure:
    * - BMC relation builder
      - :class:`BmcAbstractCallRecord`, :class:`BmcTraceSymbols`,
        :class:`BmcCaseRelation`, :class:`BmcStepRelation`, :class:`BmcCoreFormula`,
-       :func:`build_bmc_core_formula`
+       :class:`BmcRuntimeErrorSite`, :func:`build_bmc_core_formula`
      - Lower prepared contexts and macro-step cases into ``Core_N`` while
-       exposing selected-case abstract-call records and leaving health gates,
-       objectives, solving, and witness replay to later modules.
+       exposing selected-case abstract-call records and runtime-error sites,
+       and leaving health gates, objectives, solving, and witness replay to
+       later modules.
+   * - BMC runtime-safety check
+     - :class:`BmcRuntimeSafetyResult`, :func:`check_runtime_safety`,
+       :func:`runtime_error_formula`
+     - Decide whether a runtime error such as a division by zero or a
+       rejected writeback is reachable within the bound; a reachable error is
+       the ``runtime_error`` outcome and leaves the property unevaluated.
    * - BMC property compiler
      - :class:`BmcPropertyFormula`, :func:`compile_bmc_property`
      - Compile the bound query ``check`` clause into a solver objective layered
@@ -346,6 +353,7 @@ _MACRO_EXPORTS = {
     "GuardRequirement",
     "PriorityExclusion",
     "ActionBlock",
+    "EvaluationPoint",
     "CycleCase",
     "PartitionCheckResult",
     "MacroStepFormal",
@@ -370,7 +378,14 @@ _RELATION_EXPORTS = {
     "BmcCaseRelation",
     "BmcStepRelation",
     "BmcCoreFormula",
+    "BmcRuntimeErrorSite",
     "build_bmc_core_formula",
+}
+
+_SAFETY_EXPORTS = {
+    "BmcRuntimeSafetyResult",
+    "check_runtime_safety",
+    "runtime_error_formula",
 }
 
 _PROPERTY_EXPORTS = {
@@ -443,6 +458,7 @@ _LAZY_EXPORT_MODULES = {
     "pyfcstm.bmc.expand": _EXPAND_EXPORTS,
     "pyfcstm.bmc.engine": _ENGINE_EXPORTS,
     "pyfcstm.bmc.relation": _RELATION_EXPORTS,
+    "pyfcstm.bmc.safety": _SAFETY_EXPORTS,
     "pyfcstm.bmc.properties": _PROPERTY_EXPORTS,
     "pyfcstm.bmc.pipeline": _PIPELINE_EXPORTS,
     "pyfcstm.bmc.witness": _WITNESS_EXPORTS,
@@ -504,6 +520,7 @@ def __dir__():
         | _EXPAND_EXPORTS
         | _ENGINE_EXPORTS
         | _RELATION_EXPORTS
+        | _SAFETY_EXPORTS
         | _PROPERTY_EXPORTS
         | _PIPELINE_EXPORTS
         | _WITNESS_EXPORTS
@@ -591,6 +608,7 @@ __all__ = [
     "GuardRequirement",
     "PriorityExclusion",
     "ActionBlock",
+    "EvaluationPoint",
     "CycleCase",
     "PartitionCheckResult",
     "MacroStepFormal",
@@ -609,7 +627,11 @@ __all__ = [
     "BmcCaseRelation",
     "BmcStepRelation",
     "BmcCoreFormula",
+    "BmcRuntimeErrorSite",
     "build_bmc_core_formula",
+    "BmcRuntimeSafetyResult",
+    "check_runtime_safety",
+    "runtime_error_formula",
     "BmcPropertyFormula",
     "compile_bmc_property",
     "compile_bmc_query",

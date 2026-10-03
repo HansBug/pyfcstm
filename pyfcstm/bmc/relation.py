@@ -1304,6 +1304,59 @@ class BmcTraceSymbols:
 
 
 @dataclass(frozen=True)
+class BmcRuntimeErrorSite:
+    """One place where a runtime error can stop a bounded execution.
+
+    :param step: Index of the macro step evaluating the operation, or ``None``
+        for a variable initializer evaluated before the first step.
+    :type step: Optional[int]
+    :param kind: Catalog error kind, such as ``"division_by_zero"`` or
+        ``"writeback_non_integral"``.
+    :type kind: str
+    :param location: Human-readable location of the operation, such as
+        ``"guard g0 in transition Root.A::0::A->B"``.
+    :type location: str
+    :param condition: Z3 condition under which the runtime evaluates the
+        operation and the operation raises the error; not compared.
+    :type condition: z3.BoolRef
+
+    Example::
+
+        >>> import z3
+        >>> site = BmcRuntimeErrorSite(0, "division_by_zero", "guard g0", z3.Bool("e"))
+        >>> site.to_canonical()
+        {'kind': 'division_by_zero', 'location': 'guard g0', 'step': 0}
+    """
+
+    step: Optional[int]
+    kind: str
+    location: str
+    condition: z3.BoolRef = field(compare=False, repr=False)
+
+    def to_canonical(self) -> _CanonicalDict:
+        """Return a JSON-stable description of the site.
+
+        :return: Step, kind and location.
+        :rtype: Dict[str, object]
+
+        Example::
+
+            >>> import z3
+            >>> BmcRuntimeErrorSite(None, "math_domain", "initializer for x", z3.BoolVal(False)).to_canonical()['step'] is None
+            True
+        """
+        return {"kind": self.kind, "location": self.location, "step": self.step}
+
+
+def _error_site(
+    step: Optional[int], item: DomainConstraint, condition: z3.BoolRef
+) -> BmcRuntimeErrorSite:
+    # Every definedness constraint carries the label of the operation that
+    # produced it and the catalog kind of the error it rules out.
+    return BmcRuntimeErrorSite(step, item.kind, item.source.label, condition)
+
+
+@dataclass(frozen=True)
 class BmcCaseRelation:
     """Lowered relation for one macro-step case.
 
@@ -1476,6 +1529,10 @@ class BmcStepRelation:
     :type gamma_constraint: z3.BoolRef
     :param progress_mutex_constraint: Mutual exclusion of delta and gamma.
     :type progress_mutex_constraint: z3.BoolRef
+    :param runtime_error_sites: Operations of this step that can raise a
+        runtime error, in runtime evaluation order; empty for a core whose
+        cone slice dropped variables; not compared, defaults to ``()``.
+    :type runtime_error_sites: Tuple[BmcRuntimeErrorSite, ...], optional
 
     Example::
 
@@ -1493,6 +1550,9 @@ class BmcStepRelation:
     gamma_constraint: z3.BoolRef = field(default_factory=lambda: z3.BoolVal(True))
     progress_mutex_constraint: z3.BoolRef = field(
         default_factory=lambda: z3.BoolVal(True)
+    )
+    runtime_error_sites: Tuple[BmcRuntimeErrorSite, ...] = field(
+        default=(), compare=False, repr=False
     )
 
     def __post_init__(self) -> None:
@@ -1607,6 +1667,9 @@ class BmcCoreFormula:
         default_factory=tuple, repr=False, compare=False
     )
     _tracked_case_groups: Tuple[BmcTrackedConstraint, ...] = field(
+        default_factory=tuple, repr=False, compare=False
+    )
+    _initial_error_sites: Tuple[BmcRuntimeErrorSite, ...] = field(
         default_factory=tuple, repr=False, compare=False
     )
 
@@ -1947,7 +2010,7 @@ def _guarded_domain_constraints(
     if z3.is_true(guard):
         return tuple(constraints)
     return tuple(
-        DomainConstraint(z3.Implies(guard, item.constraint), item.source)
+        DomainConstraint(z3.Implies(guard, item.constraint), item.source, item.kind)
         for item in constraints
     )
 
@@ -1964,9 +2027,9 @@ def _lower_guard_requirement(
     guard: GuardRequirement,
     env: Mapping[str, _Z3Expr],
     constraints: Sequence[DomainConstraint],
-    case_label: str,
+    where: str,
 ) -> Tuple[z3.BoolRef, Tuple[DomainConstraint, ...]]:
-    label = "guard %s in case %s" % (guard.requirement_id, case_label)
+    label = "guard %s in %s" % (guard.requirement_id, where)
     result = _translate_model_expr(guard.expr, env, label)
     guard_expr = _expect_bool(result.z3_expr, label)
     if (
@@ -2004,9 +2067,10 @@ def _stage_from_runtime_role(role: str) -> str:
 def _execute_action_block(
     block: ActionBlock,
     env: Mapping[str, _Z3Expr],
-    case_label: str,
+    where: str,
     persistent_names: Sequence[str],
     cone_slice: Optional[ConeSlice] = None,
+    int_names: Sequence[str] = (),
 ) -> Tuple[
     Mapping[str, z3.ArithRef],
     Tuple[DomainConstraint, ...],
@@ -2019,7 +2083,7 @@ def _execute_action_block(
         stage = _stage_from_runtime_role(block.runtime_role)
         snapshot = {
             name: _expect_arith(
-                value, "call snapshot %s in case %s" % (name, case_label)
+                value, "call snapshot %s in %s" % (name, where)
             )
             for name, value in env.items()
             if name in persistent_names
@@ -2043,7 +2107,7 @@ def _execute_action_block(
         ),
         dict(env),
         source=DomainSource(
-            label="action block %s in case %s" % (block.runtime_role, case_label)
+            label="action block %s in %s" % (block.runtime_role, where)
         ),
         prune_unreachable=True,
     )
@@ -2052,10 +2116,29 @@ def _execute_action_block(
         message = _failure_message(
             failure.kind,
             failure.reason,
-            "action block %s in case %s" % (block.runtime_role, case_label),
+            "action block %s in %s" % (block.runtime_role, where),
         )
         raise UnsupportedBmcQuery(message)
-    return dict(execution.env), tuple(execution.definedness_constraints), ()
+    definedness = list(execution.definedness_constraints)
+    for name in int_names:
+        value = execution.env[name]
+        if z3.is_int(value):
+            continue
+        # The runtime normalizes persistent variables after every block; an
+        # int variable rejects a non-integral value with a writeback error.
+        # Once that is ruled out the value equals its integer, so it stays as
+        # computed and the assignment keeps the shape provenance reads.
+        definedness.append(
+            DomainConstraint(
+                z3.IsInt(value),
+                DomainSource(
+                    label="writeback of %s after action block %s in %s"
+                    % (name, block.runtime_role, where)
+                ),
+                kind="writeback_non_integral",
+            )
+        )
+    return dict(execution.env), tuple(definedness), ()
 
 
 def _prepare_case_lowering(
@@ -2063,6 +2146,7 @@ def _prepare_case_lowering(
     pre_env: Mapping[str, _Z3Expr],
     persistent_names: Sequence[str],
     cone_slice: Optional[ConeSlice] = None,
+    int_names: Sequence[str] = (),
 ) -> _CaseLowering:
     guards_by_anchor: Dict[int, List[GuardRequirement]] = {}
     for guard in case.guard_requirements:
@@ -2077,14 +2161,19 @@ def _prepare_case_lowering(
             guards_by_anchor.get(anchor, ()), key=lambda item: item.requirement_id
         ):
             term, new_definedness = _lower_guard_requirement(
-                guard, env, definedness, case.label
+                guard, env, definedness, "case %s" % case.label
             )
             guard_terms[guard.requirement_id] = term
             guard_definedness[guard.requirement_id] = tuple(new_definedness)
             definedness = list(new_definedness)
         if anchor < len(case.action_blocks):
             env, block_definedness, block_call_records = _execute_action_block(
-                case.action_blocks[anchor], env, case.label, persistent_names, cone_slice
+                case.action_blocks[anchor],
+                env,
+                "case %s" % case.label,
+                persistent_names,
+                cone_slice,
+                int_names,
             )
             definedness.extend(block_definedness)
             for record in block_call_records:
@@ -2283,9 +2372,20 @@ def _build_step_relation(
     pre_env = dict(symbols.frame_vars[step_index])
     pre_env.update(symbols.step_inputs[step_index])
     pre_env.update(symbols.parameters)
+    int_names = tuple(
+        name
+        for name in symbols.domain.persistent_variable_names
+        if name in symbols.frame_vars[step_index]
+        and z3.is_int(symbols.frame_vars[step_index][name])
+        and (cone_slice is None or name not in cone_slice.dropped_variables)
+    )
     lowerings = {
         case.label: _prepare_case_lowering(
-            case, pre_env, symbols.domain.persistent_variable_names, cone_slice
+            case,
+            pre_env,
+            symbols.domain.persistent_variable_names,
+            cone_slice,
+            int_names,
         )
         for case in case_list
     }
@@ -2364,6 +2464,25 @@ def _build_step_relation(
         tuple(item.formula for item in relations)
         + (delta_constraint, gamma_constraint, progress_mutex_constraint)
     )
+    # A core whose slice dropped variables also dropped operations, so it
+    # cannot locate runtime errors; the runtime-safety check builds the
+    # unsliced core instead.
+    runtime_error_sites = (
+        ()
+        if cone_slice is not None and cone_slice.dropped_variables
+        else tuple(
+            site
+            for formal in formals
+            for site in _point_error_sites(
+                formal,
+                step_index,
+                symbols,
+                pre_env,
+                int_names,
+                accepted_lookup,
+            )
+        )
+    )
     return BmcStepRelation(
         step_index=step_index,
         formals=tuple(formals),
@@ -2372,7 +2491,63 @@ def _build_step_relation(
         delta_constraint=delta_constraint,
         gamma_constraint=gamma_constraint,
         progress_mutex_constraint=progress_mutex_constraint,
+        runtime_error_sites=runtime_error_sites,
     )
+
+
+def _point_error_sites(
+    formal: MacroStepFormal,
+    step_index: int,
+    symbols: BmcTraceSymbols,
+    pre_env: Mapping[str, _Z3Expr],
+    int_names: Sequence[str],
+    accepted_lookup,
+) -> List[BmcRuntimeErrorSite]:
+    # Each point is lowered once, on top of the values its parent left, so a
+    # path shared by several cases and failed probes is executed only once.
+    source_guard = symbols.frame_state(step_index) == z3.IntVal(
+        formal.source.source_state_id
+    )
+    envs: Dict[int, Mapping[str, _Z3Expr]] = {}
+    terms: Dict[int, Mapping[str, z3.BoolRef]] = {}
+    sites: List[BmcRuntimeErrorSite] = []
+    for point in formal.evaluation_points:
+        env = pre_env if point.parent is None else envs[id(point.parent)]
+        guard_terms = {} if point.parent is None else terms[id(point.parent)]
+        if point.guard is not None:
+            term, own = _lower_guard_requirement(
+                point.guard, env, (), "transition %s" % point.guard.transition_label
+            )
+            guard_terms = dict(guard_terms, **{point.guard.requirement_id: term})
+        else:
+            block = point.block
+            env, own, _calls = _execute_action_block(
+                block,
+                env,
+                "transition %s" % block.transition_label
+                if block.transition_label is not None
+                else "state %s" % block.owner_state_path,
+                symbols.domain.persistent_variable_names,
+                None,
+                int_names,
+            )
+        envs[id(point)] = env
+        terms[id(point)] = guard_terms
+        if not own:
+            continue
+        reached = _lower_bool_template(
+            point.condition,
+            _CaseLowering(None, guard_terms, {key: () for key in guard_terms}, env, ()),
+            accepted_lookup,
+            set(),
+            symbols,
+            step_index,
+        ).expr
+        sites.extend(
+            _error_site(step_index, item, _and((source_guard, reached, z3.Not(item.constraint))))
+            for item in own
+        )
+    return sites
 
 
 def _append_history_domain_constraints(
@@ -2508,6 +2683,7 @@ def _build_initial_formula(
     context: BmcPreparedContext,
     symbols: BmcTraceSymbols,
     groups: List[BmcTrackedConstraint],
+    error_sites: List[BmcRuntimeErrorSite],
 ) -> z3.BoolRef:
     source = _initial_source(context)
     constraints: List[z3.ExprRef] = []
@@ -2541,7 +2717,22 @@ def _build_initial_formula(
         )
         value = _expect_arith(result.z3_expr, "initializer for %s" % var.name)
         define_ref = context._source_registry.model_reference(define)
-        for defined_index, item in enumerate(result.definedness_constraints):
+        initializer_definedness = list(result.definedness_constraints)
+        if z3.is_int(env[var.name]) and not z3.is_int(value):
+            initializer_definedness.append(
+                DomainConstraint(
+                    z3.IsInt(value),
+                    DomainSource(label="initializer for %s" % var.name),
+                    kind="writeback_non_integral",
+                )
+            )
+        # An initializer runs once every earlier initializer succeeded.
+        prefix = tuple(constraints)
+        error_sites.extend(
+            _error_site(None, item, _and((*prefix, z3.Not(item.constraint))))
+            for item in initializer_definedness
+        )
+        for defined_index, item in enumerate(initializer_definedness):
             constraints.append(item.constraint)
             _append_tracked_group(
                 groups,
@@ -2798,7 +2989,8 @@ def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
     domain_formula = _formula_from_groups(groups[domain_start:])
 
     initial_start = len(groups)
-    _build_initial_formula(prepared, symbols, groups)
+    initial_error_sites: List[BmcRuntimeErrorSite] = []
+    _build_initial_formula(prepared, symbols, groups, initial_error_sites)
     initial_formula = _formula_from_groups(groups[initial_start:])
 
     transition_start = len(groups)
@@ -2864,11 +3056,13 @@ def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
         cone_slice=cone_slice,
         _tracked_groups=tuple(groups),
         _tracked_case_groups=tuple(case_groups),
+        _initial_error_sites=tuple(initial_error_sites),
     )
 
 
 __all__ = [
     "BmcAbstractCallRecord",
+    "BmcRuntimeErrorSite",
     "BmcTraceSymbols",
     "BmcCaseRelation",
     "BmcStepRelation",

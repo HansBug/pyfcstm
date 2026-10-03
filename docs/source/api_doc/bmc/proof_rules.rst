@@ -12,6 +12,12 @@ pyfcstm.bmc.proof\_rules
 .. autodata:: __all__
 
 
+ARITHMETIC\_TOKENS
+-----------------------------------------------------
+
+.. autodata:: ARITHMETIC_TOKENS
+
+
 UNREACHABLE\_RULE\_IDS
 -----------------------------------------------------
 

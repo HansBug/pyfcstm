@@ -107,7 +107,18 @@ def test_unread_division_preserves_infeasible_scenario_even_without_sat_witness(
     """
     _, formula = _compile(source, property_text)
     assert formula.core.cone_slice.dropped_variables == ("telemetry",)
+    # Entering B divides by zero: the runtime-safety check reports it even
+    # though slicing drops the variable the action also writes.
     result = solve_bmc_property(formula)
+    assert (result.status, result.property_satisfied, result.outcome) == (
+        "unknown",
+        None,
+        "runtime_error",
+    )
+    assert result.runtime_safety.error.kind == "division_by_zero"
+    # Without the check, slicing keeps the definedness that makes every
+    # execution reaching B impossible.
+    result = solve_bmc_property(formula, runtime_safety=False)
     assert (result.status, result.property_satisfied, result.outcome) == (
         "unsat",
         None,

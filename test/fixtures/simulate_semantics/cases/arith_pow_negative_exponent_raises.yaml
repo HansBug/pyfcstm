@@ -13,7 +13,7 @@ steps:
 - cycle: []
   expect:
     raises:
-      type: ValueError
+      type: SimulationRuntimeExpressionError
       match: non-integer float from operation block writeback
       match_kind: substring
     vars:

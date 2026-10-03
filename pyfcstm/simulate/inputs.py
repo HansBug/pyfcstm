@@ -29,6 +29,9 @@ if sys.version_info >= (3, 8):
 else:
     from typing_extensions import Protocol, runtime_checkable
 
+from ..semantics.concrete import normalize_persistent
+from ..semantics.errors import WritebackError
+
 Number = Union[int, float]
 
 
@@ -86,28 +89,34 @@ InputSourceSpec = Union[
 ]
 
 
+_NUMBER_MESSAGES = {
+    "writeback_type": "Expected a numeric value, got {!r}.",
+    "writeback_non_integral": "Expected an integer, got {!r}.",
+    "writeback_float_range": "Value exceeds finite float range.",
+    "writeback_non_finite": "Input values must be finite.",
+}
+
+
 def _number(value: Any, type_name: Optional[str] = None) -> Number:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise SimulationRuntimeInputSourceError(
-            "E_INPUT_SOURCE_TYPE", "Expected a numeric value, got {!r}.".format(value)
-        )
-    if type_name == "int" and not isinstance(value, int):
-        raise SimulationRuntimeInputSourceError(
-            "E_INPUT_SOURCE_TYPE", "Expected an integer, got {!r}.".format(value)
-        )
-    if type_name == "float":
+    # Inputs, parameters and persistent variables share one normalization
+    # rule; an integral float such as 2.0 is accepted for an int.
+    if type_name is None:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            kind = "writeback_type"
+        elif isinstance(value, float) and not math.isfinite(value):
+            kind = "writeback_non_finite"
+        else:
+            return value
+    else:
         try:
-            value = float(value)
-        except OverflowError as err:
-            # float(large_int) cannot represent a finite floating-point value.
-            raise SimulationRuntimeInputSourceError(
-                "E_INPUT_SOURCE_TYPE", "Value exceeds finite float range."
-            ) from err
-    if isinstance(value, float) and not math.isfinite(value):
-        raise SimulationRuntimeInputSourceError(
-            "E_INPUT_SOURCE_TYPE", "Input values must be finite."
-        )
-    return value
+            return normalize_persistent("input", type_name, value, "input value")
+        except WritebackError as err:
+            # WritebackError: the value is not a finite number of the
+            # declared type; report it with the input-source error code.
+            kind = err.kind
+    raise SimulationRuntimeInputSourceError(
+        "E_INPUT_SOURCE_TYPE", _NUMBER_MESSAGES[kind].format(value)
+    )
 
 
 def _names(names) -> Tuple[str, ...]:

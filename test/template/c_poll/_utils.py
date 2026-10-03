@@ -61,6 +61,10 @@ def _runtime_exception_from_message(message):
         or 'step safety limit' in message
     ):
         return SimulationRuntimeDfsError(message), None
+    if 'operation block writeback' in message:
+        # A failed writeback is a runtime error of the cycle, reported without
+        # a chained cause.
+        return SimulationRuntimeExpressionError(message), None
     if (
         'outside signed 64-bit range' in message
         or 'non-integer float' in message

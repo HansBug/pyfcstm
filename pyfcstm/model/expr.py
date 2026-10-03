@@ -49,7 +49,6 @@ Example::
 """
 
 import math
-import operator
 import warnings
 from dataclasses import dataclass
 from typing import Iterator, List, Any
@@ -211,24 +210,45 @@ class Expr(AstExportable):
                 vs.add(item.name)
         return retval
 
-    def _call(self, **kwargs: Any) -> Any:
-        """
-        Internal method to evaluate the expression with given variable values.
-
-        :param kwargs: Variable name to value mapping
-        :return: Result of the expression evaluation
-        :raises NotImplementedError: Must be implemented by subclasses
-        """
-        raise NotImplementedError  # pragma: no cover
-
     def __call__(self, **kwargs: Any) -> Any:
         """
         Evaluate the expression with given variable values.
 
+        Evaluation follows the FCSTM operator catalog
+        (:mod:`pyfcstm.semantics.catalog`): ``&&``, ``||`` and ``=>``
+        evaluate their right operand only when needed, ``/`` is true
+        division, ``%`` takes the sign of the divisor, and a runtime error
+        raises the Python exception of the failing operation.
+
         :param kwargs: Variable name to value mapping
         :return: Result of the expression evaluation
+        :raises ZeroDivisionError: If a division, modulo or power divides by
+            zero.
+        :raises ValueError: If a math function receives an argument outside
+            its domain, a shift count is negative, or a negative number is
+            raised to a fractional power.
+        :raises OverflowError: If a result does not fit a float.
+        :raises TypeError: If an operator rejects an operand type, such as a
+            float shift operand.
+        :raises KeyError: If a variable is missing from ``kwargs``.
+
+        Example::
+
+            >>> from pyfcstm.model.expr import parse_expr
+            >>> parse_expr("x != 0 => 10 / x > 1")(x=0)
+            True
+            >>> parse_expr("x % -2")(x=7)
+            -1
         """
-        return self._call(**kwargs)
+        from ..semantics.concrete import evaluate
+        from ..semantics.errors import EvaluationError
+
+        try:
+            return evaluate(self, kwargs)
+        except EvaluationError as err:
+            # EvaluationError: an operation raised a catalog runtime error;
+            # callers of the model API receive the Python exception itself.
+            raise err.error from None
 
     def __str__(self) -> str:
         """
@@ -1031,16 +1051,6 @@ class Integer(Expr):
     """
     value: int
 
-    def _call(self, **kwargs: Any) -> int:
-        """
-        Return the integer value.
-
-        :param kwargs: Ignored
-        :return: Integer value
-        :rtype: int
-        """
-        return self.value
-
     def to_ast_node(self) -> dsl_nodes.Expr:
         """
         Convert to an Integer AST node.
@@ -1060,16 +1070,6 @@ class Float(Expr):
     :type value: float
     """
     value: float
-
-    def _call(self, **kwargs: Any) -> float:
-        """
-        Return the float value.
-
-        :param kwargs: Ignored
-        :return: Float value
-        :rtype: float
-        """
-        return self.value
 
     def to_ast_node(self) -> dsl_nodes.Expr:
         """
@@ -1110,16 +1110,6 @@ class Boolean(Expr):
         Ensure the value is a boolean.
         """
         self.value = bool(self.value)
-
-    def _call(self, **kwargs: Any) -> bool:
-        """
-        Return the boolean value.
-
-        :param kwargs: Ignored
-        :return: Boolean value
-        :rtype: bool
-        """
-        return self.value
 
     def to_ast_node(self) -> dsl_nodes.Expr:
         """
@@ -1195,45 +1185,6 @@ _RIGHT_ASSOCIATIVE_BINARY_OPS = {
     "=>",
 }
 
-_OP_FUNCTIONS = {
-    # Unary operators
-    "unary+": operator.pos,
-    "unary-": operator.neg,
-    "!": lambda x: not bool(x),
-    "not": lambda x: not bool(x),
-
-    # Binary operators
-    "**": operator.pow,
-    "*": operator.mul,
-    "/": operator.truediv,
-    "%": operator.mod,
-    "+": operator.add,
-    "-": operator.sub,
-    "<<": operator.lshift,
-    ">>": operator.rshift,
-    "&": operator.and_,
-    "^": operator.xor,
-    "|": operator.or_,
-    "<": operator.lt,
-    ">": operator.gt,
-    "<=": operator.le,
-    ">=": operator.ge,
-    "==": operator.eq,
-    "!=": operator.ne,
-    # ``BinaryOp._call`` handles logical ``&&`` and ``||`` specially so the
-    # right-hand operand can stay lazy. Keep these strict value combiners in
-    # sync with that short-circuit branch.
-    "&&": lambda x, y: bool(x) and bool(y),
-    "and": lambda x, y: bool(x) and bool(y),
-    "xor": lambda x, y: bool(x) != bool(y),
-    "||": lambda x, y: bool(x) or bool(y),
-    "or": lambda x, y: bool(x) or bool(y),
-    "=>": lambda x, y: (not bool(x)) or bool(y),
-    "iff": lambda x, y: bool(x) == bool(y),
-
-    # Ternary operator
-    "?:": lambda condition, true_value, false_value: true_value if condition else false_value
-}
 
 
 @dataclass
@@ -1303,33 +1254,6 @@ class BinaryOp(Op):
         """
         yield self.x
         yield self.y
-
-    def _call(self, **kwargs: Any) -> Any:
-        """
-        Evaluate the binary operation.
-
-        :param kwargs: Variable name to value mapping
-        :type kwargs: Any
-        :return: Result of the operation.
-        :rtype: Any
-
-        Example::
-
-            >>> expr = BinaryOp(Variable("x").ne(0), "&&", Integer(10) / Variable("x"))
-            >>> expr(x=0)
-            False
-        """
-        if self.op_mark == "&&":
-            left = self.x._call(**kwargs)
-            if not bool(left):
-                return _OP_FUNCTIONS["&&"](left, False)
-            return _OP_FUNCTIONS["&&"](left, self.y._call(**kwargs))
-        if self.op_mark == "||":
-            left = self.x._call(**kwargs)
-            if bool(left):
-                return _OP_FUNCTIONS["||"](left, False)
-            return _OP_FUNCTIONS["||"](left, self.y._call(**kwargs))
-        return _OP_FUNCTIONS[self.op_mark](self.x._call(**kwargs), self.y._call(**kwargs))
 
     def to_ast_node(self) -> dsl_nodes.Expr:
         """
@@ -1414,15 +1338,6 @@ class UnaryOp(Op):
         """
         yield self.x
 
-    def _call(self, **kwargs: Any) -> Any:
-        """
-        Evaluate the unary operation.
-
-        :param kwargs: Variable name to value mapping
-        :return: Result of the operation
-        """
-        return _OP_FUNCTIONS[self.op_mark](self.x._call(**kwargs))
-
     def to_ast_node(self) -> dsl_nodes.Expr:
         """
         Convert to a UnaryOp AST node.
@@ -1441,44 +1356,6 @@ class UnaryOp(Op):
         return dsl_nodes.UnaryOp(op=self.op, expr=x_node)
 
 
-_MATH_FUNCTIONS = {
-    # Trigonometric functions
-    "sin": math.sin,
-    "cos": math.cos,
-    "tan": math.tan,
-    "asin": math.asin,
-    "acos": math.acos,
-    "atan": math.atan,
-
-    # Hyperbolic functions
-    "sinh": math.sinh,
-    "cosh": math.cosh,
-    "tanh": math.tanh,
-    "asinh": math.asinh,
-    "acosh": math.acosh,
-    "atanh": math.atanh,
-
-    # Root and power functions
-    "sqrt": math.sqrt,
-    "cbrt": lambda x: math.pow(x, 1 / 3),  # Cube root implementation
-    "exp": math.exp,
-
-    # Logarithmic functions
-    "log": math.log,  # Natural logarithm (base e)
-    "log10": math.log10,
-    "log2": math.log2,
-    "log1p": math.log1p,  # log(1+x)
-
-    # Rounding and absolute value functions
-    "abs": abs,  # Python's built-in abs function
-    "ceil": math.ceil,
-    "floor": math.floor,
-    "round": round,  # Python's built-in round function
-    "trunc": math.trunc,
-
-    # Sign function
-    "sign": lambda x: 0 if x == 0 else (1 if x > 0 else -1)  # Returns the sign of x
-}
 
 
 @dataclass
@@ -1504,15 +1381,6 @@ class UFunc(Expr):
         :rtype: Iterator[Expr]
         """
         yield self.x
-
-    def _call(self, **kwargs: Any) -> Any:
-        """
-        Evaluate the function.
-
-        :param kwargs: Variable name to value mapping
-        :return: Result of the function call
-        """
-        return _MATH_FUNCTIONS[self.func](self.x._call(**kwargs))
 
     def to_ast_node(self) -> dsl_nodes.Expr:
         """
@@ -1561,19 +1429,6 @@ class ConditionalOp(Op):
         yield self.if_true
         yield self.if_false
 
-    def _call(self, **kwargs: Any) -> Any:
-        """
-        Evaluate the conditional operation.
-
-        :param kwargs: Variable name to value mapping
-        :return: Result of either if_true or if_false based on condition
-        """
-        cond_value = self.cond._call(**kwargs)
-        if cond_value:
-            return self.if_true._call(**kwargs)
-        else:
-            return self.if_false._call(**kwargs)
-
     def to_ast_node(self) -> dsl_nodes.Expr:
         """
         Convert to a ConditionalOp AST node.
@@ -1621,16 +1476,6 @@ class Variable(Expr):
     :type name: str
     """
     name: str
-
-    def _call(self, **kwargs: Any) -> Any:
-        """
-        Lookup the variable value from kwargs.
-
-        :param kwargs: Variable name to value mapping
-        :return: Variable value
-        :raises KeyError: If variable name is not found in kwargs
-        """
-        return kwargs[self.name]
 
     def to_ast_node(self) -> dsl_nodes.Expr:
         """

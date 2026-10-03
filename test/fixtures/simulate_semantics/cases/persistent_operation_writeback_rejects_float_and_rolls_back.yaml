@@ -15,7 +15,7 @@ steps:
 - cycle: []
   expect:
     raises:
-      type: ValueError
+      type: SimulationRuntimeExpressionError
       match: count.*int.*non-integer float
       match_kind: regex
     state: Root

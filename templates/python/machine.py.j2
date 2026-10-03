@@ -448,14 +448,19 @@ class {{ machine_class_name(model) }}:
     def _execute_operation_block(self, operations, vars_, source):
         local_scope = dict(vars_)
         operations(local_scope)
-        normalized_updates = {
-            name: self._normalize_persistent_value(
-                name,
-                local_scope[name],
-                source,
-            )
-            for name in self.VARIABLE_NAMES
-        }
+        try:
+            normalized_updates = {
+                name: self._normalize_persistent_value(
+                    name,
+                    local_scope[name],
+                    source,
+                )
+                for name in self.VARIABLE_NAMES
+            }
+        except ValueError as err:
+            # ValueError: the block left a value its variable's declared type
+            # rejects; a failed writeback is a runtime error of the cycle.
+            raise SimulationRuntimeExpressionError(str(err)) from None
         for name, value in normalized_updates.items():
             vars_[name] = value
 

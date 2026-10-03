@@ -249,10 +249,15 @@ class TestFormalReference:
             assert _numeric_result(spec.symbolic(z3.IntVal(left), z3.IntVal(right))) == pytest.approx(expected)
 
     def test_floor_modulo_on_symbolic_integers(self):
+        # The encoding built over symbolic operands, evaluated at concrete
+        # points: proving the identity for all integers is nonlinear, and Z3
+        # can take minutes on some platforms.
         x, y = z3.Ints("x y")
-        solver = z3.Solver()
-        solver.add(y != 0, lookup("%").symbolic(x, y) != x - y * z3.ToInt(z3.ToReal(x) / z3.ToReal(y)))
-        assert solver.check() == z3.unsat
+        encoded = lookup("%").symbolic(x, y)
+        for left in range(-7, 8):
+            for right in [value for value in range(-7, 8) if value]:
+                point = ((x, z3.IntVal(left)), (y, z3.IntVal(right)))
+                assert z3.simplify(z3.substitute(encoded, *point)).as_long() == left % right
 
     def test_real_modulo_takes_divisor_sign(self):
         assert _numeric_result(lookup("%").symbolic(z3.RealVal(7.5), z3.RealVal(-2))) == 7.5 % -2

@@ -1,12 +1,33 @@
 expr_styles:
   python_expr:
+    # Functions that can reject their argument report it with the runtime's
+    # stable message; the same overrides apply to every runtime style.  The
+    # integer functions keep Python's own wording, as the catalog does.
+    <<: &runtime_math_functions
+      UFunc(sin): "self._math(math.sin, {{ node.expr | expr_render }})"
+      UFunc(cos): "self._math(math.cos, {{ node.expr | expr_render }})"
+      UFunc(tan): "self._math(math.tan, {{ node.expr | expr_render }})"
+      UFunc(asin): "self._math(math.asin, {{ node.expr | expr_render }})"
+      UFunc(acos): "self._math(math.acos, {{ node.expr | expr_render }})"
+      UFunc(acosh): "self._math(math.acosh, {{ node.expr | expr_render }})"
+      UFunc(atanh): "self._math(math.atanh, {{ node.expr | expr_render }})"
+      UFunc(sqrt): "self._math(math.sqrt, {{ node.expr | expr_render }})"
+      UFunc(log): "self._math(math.log, {{ node.expr | expr_render }})"
+      UFunc(log10): "self._math(math.log10, {{ node.expr | expr_render }})"
+      UFunc(log2): "self._math(math.log2, {{ node.expr | expr_render }})"
+      UFunc(log1p): "self._math(math.log1p, {{ node.expr | expr_render }})"
     base_lang: python
     Name: "self._vars[{{ node.name | tojson }}]"
     UFunc(sign): "self._sign({{ node.expr | expr_render }})"
+    UFunc(cbrt): "self._cbrt({{ node.expr | expr_render }})"
+    BinaryOp(**): "self._power({{ node.expr1 | expr_render }}, {{ node.expr2 | expr_render }})"
   python_scope_expr:
+    <<: *runtime_math_functions
     base_lang: python
     Name: "{% if _stmt_default_var_roles[node.name] == 'input' %}self.get_input_{{ node.name }}(){% elif _stmt_default_var_roles[node.name] == 'param' %}self.get_param_{{ node.name }}(){% else %}scope[{{ node.name | tojson }}]{% endif %}"
     UFunc(sign): "self._sign({{ node.expr | expr_render }})"
+    UFunc(cbrt): "self._cbrt({{ node.expr | expr_render }})"
+    BinaryOp(**): "self._power({{ node.expr1 | expr_render }}, {{ node.expr2 | expr_render }})"
 
 stmt_styles:
   python_runtime:
@@ -15,7 +36,10 @@ stmt_styles:
     state_var_target: "{% if _stmt_default_var_roles[name] == 'input' %}self.get_input_{{ name }}(){% elif _stmt_default_var_roles[name] == 'param' %}self.get_param_{{ name }}(){% else %}_v[{{ name | tojson }}]{% endif %}"
     temp_var_target: "{{ name }}"
     expr_templates:
+      <<: *runtime_math_functions
       UFunc(sign): "_s({{ node.expr | expr_render }})"
+      UFunc(cbrt): "_c({{ node.expr | expr_render }})"
+      BinaryOp(**): "_p({{ node.expr1 | expr_render }}, {{ node.expr2 | expr_render }})"
     assign: |-
       {{ target }} = self._evaluate_runtime_expr(
           lambda: {{ expr }},

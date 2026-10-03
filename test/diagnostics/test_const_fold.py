@@ -96,6 +96,9 @@ def test_fold_condition_literal_only_expressions(text, expected):
         ('(1 / 0) == 0', 'logical'),
         ('1.5 & 1', 'numeric'),
         ('(-1) ** 0.5', 'numeric'),
+        ('9007199254740993 % 2.0', 'numeric'),
+        ('0 ** -1', 'numeric'),
+        ('10.0 ** 400', 'numeric'),
     ],
 )
 def test_unsupported_or_runtime_dependent_expressions_do_not_fold(text, mode):

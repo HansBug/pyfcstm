@@ -51,7 +51,14 @@ def _runtime_exception_from_message(message):
             cause = ZeroDivisionError(cause_text)
         elif 'unsupported operand type' in cause_text:
             cause = TypeError(cause_text)
-        elif 'negative shift count' in cause_text:
+        elif (
+            'negative shift count' in cause_text
+            or 'math domain error' in cause_text
+            or 'fractional power' in cause_text
+        ):
+            # ValueError is what Python raises for a negative shift count, a
+            # math function outside its domain, and a power whose result
+            # would be complex.
             cause = ValueError(cause_text)
         else:
             cause = ArithmeticError(cause_text)
@@ -61,6 +68,10 @@ def _runtime_exception_from_message(message):
         or 'step safety limit' in message
     ):
         return SimulationRuntimeDfsError(message), None
+    if 'operation block writeback' in message:
+        # A failed writeback is a runtime error of the cycle, reported without
+        # a chained cause.
+        return SimulationRuntimeExpressionError(message), None
     if (
         'outside signed 64-bit range' in message
         or 'non-integer float' in message

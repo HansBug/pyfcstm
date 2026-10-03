@@ -9,13 +9,11 @@ categories:
 - temporary_vars
 - lifecycle
 - template_alignment
-exclude_runners:
-- bmc_core
 steps:
 - cycle: []
   expect:
     raises:
-      type: ValueError
+      type: SimulationRuntimeExpressionError
       match: count.*int.*non-integer float
       match_kind: regex
     state: Root

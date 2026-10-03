@@ -349,6 +349,27 @@ static PYFCSTM_GENERATED_UNUSED PYFCSTM_GENERATED_INT64 _{{ machine_class_name(m
     return remainder;
 }
 
+static PYFCSTM_GENERATED_UNUSED double _{{ machine_class_name(model) }}_cbrt_f64(
+    double value)
+{
+    double root;
+    double nearest;
+    /* Zero, NaN and infinities are their own cube roots. */
+    if (value == 0.0 || value != value || value - value != 0.0) {
+        return value;
+    }
+    /* The simulator's algorithm, step for step: libm cbrt is not correctly
+       rounded everywhere, so refine pow() by one Newton step and return the
+       exact root of a perfect cube. */
+    root = copysign(pow(fabs(value), 1.0 / 3.0), value);
+    root -= (root * root * root - value) / (3.0 * root * root);
+    nearest = floor(root + 0.5);
+    if (nearest * nearest * nearest == value) {
+        return nearest;
+    }
+    return root;
+}
+
 static PYFCSTM_GENERATED_UNUSED double _{{ machine_class_name(model) }}_floormod_f64(
     double dividend,
     double divisor)

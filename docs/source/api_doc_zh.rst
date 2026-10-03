@@ -24,6 +24,7 @@ API 文档
     api_doc/llm/index
     api_doc/model/index
     api_doc/render/index
+    api_doc/semantics/index
     api_doc/simulate/index
     api_doc/solver/index
     api_doc/template/index
@@ -42,6 +43,7 @@ API 文档
 * :doc:`api_doc/llm/index`
 * :doc:`api_doc/model/index`
 * :doc:`api_doc/render/index`
+* :doc:`api_doc/semantics/index`
 * :doc:`api_doc/simulate/index`
 * :doc:`api_doc/solver/index`
 * :doc:`api_doc/template/index`

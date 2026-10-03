@@ -45,6 +45,8 @@ JSON 类型和必需键以模式为准；执行顺序、标准输出/标准错�
 .. cli-ref-option: command=bmc option=--timeout-ms
 .. cli-ref-option: command=bmc option=--max-bound
 .. cli-ref-option: command=bmc option=--cone-slicing
+.. cli-ref-option: command=bmc option=--runtime-safety
+.. cli-ref-option: command=bmc option=--no-runtime-safety
 
 .. cli-ref-option: command=bmc option=--solver-profile choices=default,logic,tactic default=default
 .. cli-ref-option: command=bmc option=--explain-infeasibility choices=none,formal,proof default=none
@@ -102,6 +104,13 @@ JSON 类型和必需键以模式为准；执行顺序、标准输出/标准错�
      - 布尔开关
      - 关闭
      - 删除与当前查询无关且可证明计算安全的整数赋值；保留控制流、初值及危险运算的依赖。
+   * - ``--runtime-safety / --no-runtime-safety``
+     - 布尔开关
+     - 开启
+     - 在求解性质之前，先检查边界内是否可达运行时错误：除零或取模为零、数学定义域错误、
+       复数幂，或 ``int`` 写回被拒绝。可达时报告 ``runtime_error``，不评估性质。该检查
+       始终在未做锥切片的模型上运行。``--no-runtime-safety`` 跳过检查，只在不触发错误
+       的执行上评估性质。
    * - ``--solver-profile``
      - ``default``、``logic`` 或 ``tactic``
      - ``default``
@@ -260,8 +269,8 @@ Python 使用 ``solve_bmc_property(formula, solver_profile="logic")``；文件�
 退出状态与结论矩阵
 -----------------------
 
-退出优先级依次是重放不匹配 ``4``、无定论 ``3``，然后才是有界性质结论的
-``0`` 或 ``1``。决定性负结果不是进程/协议错误：它仍输出完整报告。
+退出优先级依次是重放不匹配 ``4``、可达运行时错误 ``5``、无定论 ``3``，然后才是
+有界性质结论的 ``0`` 或 ``1``。决定性负结果不是进程/协议错误：它仍输出完整报告。
 
 .. list-table:: 进程退出状态
    :header-rows: 1
@@ -284,8 +293,8 @@ Python 使用 ``solve_bmc_property(formula, solver_profile="logic")``；文件�
      - 标准错误上的用法；无报告。
      - 修复缺失/未知选项，数值必须为正整数。
    * - ``3``
-     - 求解器 ``unknown``/``timeout``、可行性检查无定论、场景不可行，或
-       ``response`` 边界 ``incomplete``。
+     - 求解器 ``unknown``/``timeout``、可行性检查无定论、场景不可行、
+       ``response`` 边界 ``incomplete``，或运行时安全检查返回 ``unknown``/``timeout``。
      - 完整报告；场景不可行和可行性无定论分支的 ``witness``/``replay`` 为
        ``null``；SAT suffix 可以同时存在两者。
      - 先看 ``result.outcome``，再决定增加超时还是边界。
@@ -293,6 +302,10 @@ Python 使用 ``solve_bmc_property(formula, solver_profile="logic")``；文件�
      - SAT 成功解码，且重放返回结构化结果，但 ``replay.ok == false``。
      - 完整结果、见证、重放和不匹配项。
      - 视形式化/运行时对齐为不可信，检查不匹配项。
+   * - ``5``
+     - 边界内可达运行时错误；性质未评估。错误前缀已解码，重放复现了该错误。
+     - 完整结果、错误前缀见证和重放。
+     - 修复出错的运算或约束其输入后重新运行。
 
 .. list-table:: 有报告分支的完整矩阵
    :header-rows: 1
@@ -365,6 +378,18 @@ Python 使用 ``solve_bmc_property(formula, solver_profile="logic")``；文件�
      - 对象 / 对象，重放未通过
      - ``4``
      - 重放信任门禁覆盖性质自身的退出码。
+   * - 运行时安全检查 SAT；重放复现错误
+     - ``unknown``
+     - ``runtime_error``
+     - 对象 / 对象，重放通过
+     - ``5``
+     - 证据是 ``runtime_error_prefix`` 模型；性质未评估，主搜索没有运行。
+   * - 运行时安全检查 ``unknown`` 或 ``timeout``
+     - ``unknown``
+     - ``runtime_safety_unknown`` 或 ``runtime_safety_timeout``
+     - ``null`` / ``null``
+     - ``3``
+     - 无法判定是否可达运行时错误，因此不发布性质结论。
 
 人类可读报告
 --------------
@@ -384,6 +409,9 @@ Python 使用 ``solve_bmc_property(formula, solver_profile="logic")``；文件�
    BMC <kind> <= <bound>: SCENARIO FEASIBILITY TIMED OUT; PROPERTY NOT EVALUATED
    BMC <kind> <= <bound>: SCENARIO FEASIBILITY NOT CHECKED; PROPERTY NOT EVALUATED
    BMC <kind> <= <bound>: SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED
+   BMC <kind> <= <bound>: RUNTIME ERROR REACHABLE WITHIN BOUND; PROPERTY NOT EVALUATED
+   BMC <kind> <= <bound>: RUNTIME SAFETY CHECK UNKNOWN; PROPERTY NOT EVALUATED
+   BMC <kind> <= <bound>: RUNTIME SAFETY CHECK TIMED OUT; PROPERTY NOT EVALUATED
    BMC <kind> <= <bound>: EVIDENCE/REPLAY MISMATCH; RESULT UNTRUSTED
 
 首个报告区块随后显示 ``Scenario``、``Property verdict``、
@@ -998,7 +1026,8 @@ JSON 使用 UTF-8、两空格缩进、递归键排序、保留非 ASCII 字符�
      - ``property_satisfied``、``property_violated``、``witness_found``、
        ``no_witness``、``incomplete``、``timeout``、``unknown``、
        ``scenario_infeasible``、``feasibility_timeout``、
-       ``feasibility_unknown``
+       ``feasibility_unknown``、``runtime_error``、``runtime_safety_unknown``、
+       ``runtime_safety_timeout``
      - 稳定的消费方分类，应与 ``exit_code`` 一起使用。
    * - ``reason``
      - 字符串或 ``null``
@@ -1051,8 +1080,15 @@ JSON 使用 UTF-8、两空格缩进、递归键排序、保留非 ASCII 字符�
        ``unknown``/``timeout`` 不能升级成 ``scenario_infeasible``。
    * - ``available_model_roles``
      - 封闭角色字符串数组
-     - ``primary_witness``、``primary_counterexample`` 或
-       ``incomplete_suffix``。
+     - ``primary_witness``、``primary_counterexample``、
+       ``incomplete_suffix`` 或 ``runtime_error_prefix``。
+   * - ``runtime_safety``
+     - 对象或 ``null``
+     - 关闭检查时为 ``null``。否则 ``status`` 为 ``safe``、``violated``、``unknown``、
+       ``timeout`` 或 ``not_applicable``\ （没有会出错的运算）；``sites`` 是检查的运算数；
+       ``elapsed_ms`` 是检查的求解时间；``reason`` 只在 ``unknown``/``timeout`` 时给出；
+       ``error`` 是第一个出错的运算，含 ``step``\ （变量初值时为 ``null``）、目录中的
+       ``kind`` 和 ``location``。
    * - ``diagnostics``
      - 字符串数组
      - 求解器/公式诊断；可含不确定的 ``incomplete_elapsed_ms=...``。
@@ -1084,6 +1120,95 @@ UNSAT。``origin == "inferred"`` 只能表示可信的更强结果已经蕴含�
 带角色信息的形状，并且携带与结果完全相同的角色；角色数组为空时，两者都必须为
 ``null``。这样即使每个对象单独看都符合结构，外部封装也不能拼接来自不同模型通道的
 证据。当前形状与兼容旧调用的形状依靠字段集合区分，不依靠载荷版本字段。
+
+运行时安全与错误前缀
+--------------------
+
+运行时安全检查（runtime-safety check）判断是否存在某条可接受的执行，到达一个会被运行时
+拒绝的运算。每次守卫求值和每个动作块都是一个求值点，按仿真器实际求值的顺序排列：
+源状态处按声明顺序惰性选择的候选，推测验证在每个嵌套选择处对全部候选的急切检查，
+以及位于之后失败、最终不会形成宏步分支的路径上的动作块。第 ``k`` 步的错误需要一个
+合法的 ``k`` 步前缀，以及直到第 ``k`` 步的假设实例；对之后的帧不做任何假设，因为
+运行时根本不会产生它们。
+
+错误可达时，结果唯一的模型角色是 ``runtime_error_prefix``。其见证包含出错步骤之前
+已完成的步骤，并在 ``verdict.runtime_error`` 中给出出错步骤的事件和输入及错误位置。
+重放先执行该前缀，再执行一个周期，必须在同一步、由同一类运算（守卫或动作）引发
+同一种错误；否则就是重放不匹配，退出状态为 ``4``。
+
+.. code-block:: fcstm
+
+   input int d;
+   state Root {
+       [*] -> A;
+       state A;
+       state B;
+       state C;
+       A -> B : if [d == 1];
+       A -> C : if [10 / d > 1];
+   }
+
+对 ``check reach <= 2: active("Root.B");``\ ，第一个守卫不成立时第二个守卫会除以
+``d``\ ，所以 ``d == 0`` 就是一个错误：
+
+.. code-block:: text
+
+   BMC reach <= 2: RUNTIME ERROR REACHABLE WITHIN BOUND; PROPERTY NOT EVALUATED
+   ...
+   Evidence:
+     Runtime error: division_by_zero at step 1
+     Runtime error location: guard g1 in transition Root.A::1::A->C
+     Model role: RUNTIME ERROR PREFIX
+     Model evidence: SAT error-prefix model available.
+     Replay: runtime error reproduced: transition guard evaluation failed: division by zero
+
+   Runtime safety check: VIOLATED in <elapsed> ms over 1 operation(s)
+   Solver: NOT RUN
+
+进程退出状态为 ``5``。在 JSON 中，同一个错误以三种角色出现（只保留承载它的字段）：
+
+.. code-block:: json
+
+   {
+     "result": {"outcome": "runtime_error", "runtime_safety": {"status": "violated", "sites": 1,
+       "error": {"kind": "division_by_zero", "location": "guard g1 in transition Root.A::1::A->C", "step": 1}}},
+     "witness": {"model_role": "runtime_error_prefix", "verdict": {"runtime_error": {
+       "events": [], "inputs": {"d": 0}, "kind": "division_by_zero",
+       "location": "guard g1 in transition Root.A::1::A->C", "step": 1}}},
+     "replay": {"runtime_error": {"kind": "division_by_zero",
+       "message": "transition guard evaluation failed: division by zero"}}
+   }
+
+把第一个守卫改成 ``d == 0`` 后，除法受到保护：检查报告 ``safe``\ ，性质照常评估。
+
+.. list-table:: 运行时错误示例与边界
+   :header-rows: 1
+   :widths: 34 26 40
+
+   * - 模型片段
+     - 查询
+     - 报告
+   * - ``A -> B : if [d == 1]; A -> C : if [10 / d > 1];``
+     - ``check reach <= 2: active("Root.B");``
+     - 退出状态 ``5``\ ；``guard g1 in transition Root.A::1::A->C`` 处
+       ``division_by_zero at step 1``。
+   * - ``def float x = sqrt(0 - 1); state Root;``
+     - ``check reach <= 1: active("Root");``
+     - 退出状态 ``5``\ ；``initializer for x`` 处 ``math_domain at initialization``\ ；
+       轨迹行为 ``init: RUNTIME ERROR math_domain (initializer for x)``\ ，
+       ``verdict.runtime_error.step`` 为 ``null``。
+   * - ``def int x = 0;`` 与 ``enter { x = x / 2; }``\ ，配合
+       ``init cold havoc *;`` 和 ``assume at 0: var("x") == 7;``
+     - ``check reach <= 2: terminated();``
+     - 退出状态 ``5``\ ；``writeback of x after action block state_enter in state Root.A``
+       处 ``writeback_non_integral at step 0``\ ：``7 / 2`` 为 ``3.5``\ ，``int`` 拒绝该值。
+   * - 第一行的模型，第一个守卫改为 ``d == 0``
+     - 同一查询
+     - ``runtime_safety.status`` 为 ``safe``\ ；除法从不会被求值，性质照常评估。
+   * - 第一行的模型，加上 ``--no-runtime-safety``
+     - 同一查询
+     - ``runtime_safety`` 为 ``null``\ ，性质只在不触发错误的执行上评估：退出状态 ``0``\ ，
+       给出见证。
 
 见证字段
 ------------

@@ -4741,3 +4741,21 @@ class TestModelExpr:
         expr = parse_expr_from_string(expr_text, mode="logical")
 
         assert expr(**kwargs) is expected_value
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "text, values, error",
+    [
+        ("10 / x", {"x": 0}, ZeroDivisionError),
+        ("sqrt(x)", {"x": -1}, ValueError),
+        ("x % y", {"x": 1, "y": 0}, ZeroDivisionError),
+    ],
+)
+def test_calling_an_expression_raises_the_python_error(text, values, error):
+    # The model API keeps raising the plain Python exception the operation
+    # raised; the catalog error kind is the simulator's concern.
+    from pyfcstm.model.expr import parse_expr
+
+    with pytest.raises(error):
+        parse_expr(text)(**values)

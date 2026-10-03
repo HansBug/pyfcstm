@@ -5,7 +5,6 @@ from textwrap import dedent
 import pytest
 from pyfcstm.dsl import parse_with_grammar_entry
 from pyfcstm.model import parse_dsl_node_to_state_machine
-from pyfcstm.solver.domain import BranchFeasibility, ExprDomain, TranslationFailure
 from pyfcstm.solver.operation import OperationExecution, OperationFailure
 from pyfcstm.verify import (
     AlgorithmResult,
@@ -186,27 +185,6 @@ def test_transition_index_scope_does_not_poison_parent_context_on_interrupt(monk
         encoding_core._TRANSITION_INDEX_SCOPE.reset(token)
 
 
-def test_expected_expression_translation_failures_are_normalized():
-    """Known expression-to-Z3 failures become algorithm results, not crashes."""
-    x = Variable("x")
-    missing_value, missing_result = encoding_core._expr_to_z3_or_result(x, {})
-    bad_op_value, bad_op_result = encoding_core._expr_to_z3_or_result(
-        BinaryOp(x, "@", Integer(1)),
-        {"x": encoding_core.z3.Int("x")},
-    )
-    real_mod_value, real_mod_result = encoding_core._expr_to_z3_or_result(
-        BinaryOp(x, "%", Integer(2)),
-        {"x": encoding_core.z3.Real("x")},
-    )
-
-    assert missing_value is None
-    assert missing_result.kind == "undecidable_skip"
-    assert bad_op_value is None
-    assert bad_op_result.kind == "undecidable_skip"
-    assert real_mod_value is None
-    assert real_mod_result.kind == "undecidable_skip"
-
-
 def test_expected_operation_translation_failures_are_normalized():
     """Operation symbolic execution normalizes expression translation failures."""
     value, result = encoding_core._execute_operations_or_result(
@@ -216,51 +194,6 @@ def test_expected_operation_translation_failures_are_normalized():
 
     assert value is None
     assert result.kind == "undecidable_skip"
-
-
-def test_expr_translation_not_implemented_is_undecidable_skip(monkeypatch):
-    """Unsupported function translation is normalized as undecidable."""
-
-    def fail_translation(*args, **kwargs):
-        return ExprDomain(
-            z3_expr=None,
-            failure=TranslationFailure("not_implemented", "unsupported function"),
-        )
-
-    monkeypatch.setattr(encoding_core, "translate_expr_domain", fail_translation)
-
-    value, result = encoding_core._expr_to_z3_or_result(
-        Variable("x"),
-        {"x": encoding_core.z3.Int("x")},
-    )
-
-    assert value is None
-    assert result.kind == "undecidable_skip"
-
-
-def test_expr_translation_unknown_feasibility_is_unknown(monkeypatch):
-    """Unknown branch feasibility is normalized as an unknown result."""
-
-    def translate_with_unknown_branch(*args, **kwargs):
-        return ExprDomain(
-            z3_expr=encoding_core.z3.IntVal(1),
-            feasibility_checks=(
-                BranchFeasibility(
-                    selector=encoding_core.z3.BoolVal(True),
-                    status="unknown",
-                ),
-            ),
-        )
-
-    monkeypatch.setattr(encoding_core, "translate_expr_domain", translate_with_unknown_branch)
-
-    value, result = encoding_core._expr_to_z3_or_result(
-        Variable("x"),
-        {"x": encoding_core.z3.Int("x")},
-    )
-
-    assert value is None
-    assert result.kind == "unknown"
 
 
 def test_operation_execution_success_returns_new_environment():
@@ -410,7 +343,7 @@ def test_initializer_satisfiable_runtime_domain_constraints_are_kept():
     """Valid initializer domain constraints remain in the init context."""
     machine = parse_machine(
         """
-        def int x = 1 / 2;
+        def float x = 1 / 2;
         state System {
             state A;
             [*] -> A;
@@ -420,7 +353,7 @@ def test_initializer_satisfiable_runtime_domain_constraints_are_kept():
 
     constraints, result = encoding_core._build_init_constraints_or_result(
         variables(machine),
-        {"x": encoding_core.z3.Int("x")},
+        {"x": encoding_core.z3.Real("x")},
     )
 
     assert result is None
@@ -434,8 +367,8 @@ def test_initializer_domain_checks_include_prior_initializers(monkeypatch):
     """Later initializer domain checks see prior initializer constraints."""
     machine = parse_machine(
         """
-        def int x = 1 / 2;
-        def int y = 3 / 4;
+        def float x = 1 / 2;
+        def float y = 3 / 4;
         state System {
             state A;
             [*] -> A;
@@ -461,7 +394,7 @@ def test_initializer_domain_checks_include_prior_initializers(monkeypatch):
 
     constraints, result = encoding_core._build_init_constraints_or_result(
         variables(machine),
-        {"x": encoding_core.z3.Int("x"), "y": encoding_core.z3.Int("y")},
+        {"x": encoding_core.z3.Real("x"), "y": encoding_core.z3.Real("y")},
     )
 
     assert result is None
@@ -599,75 +532,6 @@ def test_conditional_collection_includes_nested_ternary_conditions():
     )
 
 
-def test_path_sensitive_operator_helpers_normalize_z3_exceptions():
-    """Helper-level Z3 sort failures are normalized as undecidable skips."""
-
-    _, binary_result = encoding_core._binary_z3_or_result(
-        "&&",
-        encoding_core.z3.IntVal(1),
-        encoding_core.z3.BoolVal(True),
-    )
-    _, unary_result = encoding_core._unary_z3_or_result("!", encoding_core.z3.IntVal(1))
-
-    class BadOperand:
-        def __ge__(self, other):
-            raise encoding_core.z3.Z3Exception("synthetic Z3 ufunc failure")
-
-    _, ufunc_result = encoding_core._ufunc_z3_or_result("abs", BadOperand())
-
-    assert binary_result.kind == "undecidable_skip"
-    assert unary_result.kind == "undecidable_skip"
-    assert ufunc_result.kind == "undecidable_skip"
-
-
-def test_path_sensitive_ufunc_helper_covers_round_fallback_and_type_error():
-    """Synthetic ufunc edge cases stay normalized for private helper callers."""
-    round_value, round_result = encoding_core._ufunc_z3_or_result(
-        "round",
-        encoding_core.z3.BoolVal(True),
-    )
-    abs_value, abs_result = encoding_core._ufunc_z3_or_result(
-        "abs",
-        encoding_core.z3.BoolVal(True),
-    )
-
-    assert round_value is not None
-    assert round_result is None
-    assert abs_value is None
-    assert abs_result.kind == "undecidable_skip"
-
-
-def test_path_sensitive_ufunc_helper_matches_python_round_half_even():
-    """The path-sensitive round helper matches Python's half-even semantics."""
-    operand = encoding_core.z3.Real("x")
-    rounded, result = encoding_core._ufunc_z3_or_result("round", operand)
-
-    assert result is None
-    for raw_value, expected in [
-        ("-2.5", -2),
-        ("-1.5", -2),
-        ("1.5", 2),
-        ("2.5", 2),
-        ("3.6", 4),
-        ("-3.6", -4),
-    ]:
-        solver = encoding_core.z3.Solver()
-        solver.add(operand == encoding_core.z3.RealVal(raw_value), rounded != expected)
-
-        assert solver.check() == encoding_core.z3.unsat
-
-
-def test_path_sensitive_ufunc_helper_reports_bad_sqrt_sort():
-    """The ufunc helper covers direct unsupported sqrt operands."""
-    sqrt_value, sqrt_result = encoding_core._ufunc_z3_or_result(
-        "sqrt",
-        encoding_core.z3.BoolVal(True),
-    )
-
-    assert sqrt_value is None
-    assert sqrt_result.kind == "undecidable_skip"
-
-
 def test_path_sensitive_expression_translator_supports_all_base_node_shapes():
     """Path-sensitive expression conversion covers non-ternary expression forms."""
     from pyfcstm.model.expr import Float, UFunc, UnaryOp
@@ -691,9 +555,6 @@ def test_path_sensitive_expression_translator_supports_all_base_node_shapes():
         BinaryOp(Variable("x"), "!=", Integer(2)),
         BinaryOp(Boolean(True), "&&", Boolean(False)),
         BinaryOp(Boolean(True), "||", Boolean(False)),
-        BinaryOp(Boolean(True), "&", Boolean(False)),
-        BinaryOp(Boolean(True), "|", Boolean(False)),
-        BinaryOp(Boolean(True), "^", Boolean(False)),
         UnaryOp("-", Variable("x")),
         UnaryOp("+", Variable("x")),
         UnaryOp("!", Boolean(False)),
@@ -810,34 +671,14 @@ def test_path_sensitive_expression_translator_propagates_false_path_unknown(
     assert len(calls) == 2
 
 
-def test_path_sensitive_expression_translator_normalizes_if_merge_failure(
-    monkeypatch,
-):
-    """A Z3 failure while merging two reachable ternary branches is normalized."""
-
-    def raise_z3_exception(*args, **kwargs):
-        raise encoding_core.z3.Z3Exception("synthetic if merge failure")
-
-    monkeypatch.setattr(encoding_core.z3, "If", raise_z3_exception)
-
-    points, z3_expr, result = encoding_core._expr_conditions_and_z3_or_result(
-        Boolean(True).select(Integer(1), Integer(2)),
-        {},
-    )
-
-    assert points is None
-    assert z3_expr is None
-    assert result.kind == "undecidable_skip"
-
-
 def test_path_sensitive_expression_translator_normalizes_non_boolean_logic_left():
-    """Malformed logical operands are normalized after both sides are translated."""
+    """A non-Boolean left operand of a short-circuit operator is normalized."""
     points, z3_expr, result = encoding_core._expr_conditions_and_z3_or_result(
         BinaryOp(Integer(1), "&&", Boolean(True)),
         {},
     )
 
-    assert points == ()
+    assert points is None
     assert z3_expr is None
     assert result.kind == "undecidable_skip"
 
@@ -1144,9 +985,9 @@ def test_operation_prefix_collection_qualifies_branch_condition_domains():
     )
 
     assert result is None
-    assert [str(item) for item in domain_constraints] == [
+    assert [" ".join(str(item).split()) for item in domain_constraints] == [
         "2 != 0",
-        "Implies(And(2 != 0, Not(0 < x/2)), 3 != 0)",
+        "Implies(And(2 != 0, Not(ToReal(0) < ToReal(x)/2)), 3 != 0)",
     ]
 
 
@@ -1540,7 +1381,6 @@ def test_split_encoding_modules_reexport_expected_helpers():
     from pyfcstm.verify.encoding import operation, trigger
 
     expected = {
-        expr._expr_to_z3_or_result: encoding_core._expr_to_z3_or_result,
         expr._expr_z3_and_domains_or_result: (
             encoding_core._expr_z3_and_domains_or_result
         ),
@@ -2711,7 +2551,10 @@ class TestEffectContradictsGuard:
 
         assert result == AlgorithmResult(kind="sat")
 
-    def test_partially_undefined_post_guard_after_effect_is_undecidable(self):
+    def test_short_circuit_protected_post_guard_after_effect_is_contradiction(self):
+        # ``1 / d`` is evaluated only when ``d != 0``; after ``d = x`` with
+        # ``x >= 0`` the guard can no longer hold, and the division never runs
+        # undefined, so the contradiction is decided.
         machine = parse_machine(
             """
             def int x = 0;
@@ -2729,9 +2572,8 @@ class TestEffectContradictsGuard:
 
         result = effect_contradicts_guard(root_transition(machine), variables(machine))
 
-        assert result.kind == "undecidable_skip"
-        assert result.diagnostics == ()
-        assert "runtime definedness" in result.reason
+        assert result.kind == "unsat"
+        assert [item["code"] for item in result.diagnostics] == ["I_EFFECT_GUARD_CONTRADICT"]
 
     def test_post_guard_definedness_implication_timeout_propagates(self, monkeypatch):
         machine = parse_machine(
@@ -2938,7 +2780,34 @@ class TestTransitionShadowedByPredecessor:
         assert result == AlgorithmResult(kind="timeout")
         assert len(calls) == 2
 
-    def test_unconditional_predecessor_does_not_force_unknown_candidate_shadow(self):
+    def test_unconditional_predecessor_does_not_force_unknown_candidate_shadow(self, monkeypatch):
+        machine = parse_machine(
+            """
+            def int x = 0;
+            def int y = 0;
+            state System {
+                state A;
+                state B;
+                state C;
+                [*] -> A;
+                A -> B;
+                A -> C : if [x ** y > 0];
+            }
+            """
+        )
+
+        def solver_unknown(*args, **kwargs):
+            from pyfcstm.solver.logical import SatResult
+
+            return SatResult(kind="unknown")
+
+        monkeypatch.setattr(encoding_core, "is_sat", solver_unknown)
+
+        result = transition_shadowed_by_predecessor(machine, variables(machine))
+
+        assert result == AlgorithmResult(kind="unknown")
+
+    def test_unconditional_predecessor_shadows_a_decidable_power_guard(self):
         machine = parse_machine(
             """
             def int x = 0;
@@ -2956,7 +2825,8 @@ class TestTransitionShadowedByPredecessor:
 
         result = transition_shadowed_by_predecessor(machine, variables(machine))
 
-        assert result == AlgorithmResult(kind="unknown")
+        assert result.kind == "unsat"
+        assert [item["code"] for item in result.diagnostics] == ["W_TRANSITION_SHADOWED"]
 
     def test_unconditional_predecessor_does_not_shadow_dead_candidate_guard(self):
         machine = parse_machine(
@@ -3724,7 +3594,9 @@ class TestEnterPostconditionImpliesDuringPrecondition:
         )
 
         assert result == AlgorithmResult(kind="unknown")
-        assert len(calls) == 2
+        # The context check, then both branch reachability checks of the
+        # conditional; the unknown branch check stops the algorithm.
+        assert len(calls) == 3
 
     def test_context_unknown_is_recorded_when_diagnostic_exists(
         self,
@@ -4104,51 +3976,6 @@ class TestEnterPostconditionImpliesDuringPrecondition:
         assert result == AlgorithmResult(kind="timeout")
         assert len(calls) == 4
 
-    def test_condition_translation_failure_inside_condition_loop_is_aggregated(
-        self,
-        monkeypatch,
-    ):
-        machine = parse_machine(
-            """
-            def int mode = 0;
-            def int x = 0;
-            state System {
-                state Idle {
-                    during { x = (mode == 0) ? 10 : 20; }
-                }
-                [*] -> Idle;
-            }
-            """
-        )
-        state = machine.root_state.substates["Idle"]
-
-        def missing_condition_point(*args, **kwargs):
-            return (
-                (
-                    encoding_core._ConditionPoint(
-                        BinaryOp(Variable("missing"), "==", Integer(1)),
-                        encoding_core._z3_vars(variables(machine)),
-                    ),
-                ),
-                None,
-            )
-
-        def missing_condition_point_with_vars(*args, **kwargs):
-            condition_points, result = missing_condition_point(*args, **kwargs)
-            return condition_points, encoding_core._z3_vars(variables(machine)), (), result
-
-        monkeypatch.setattr(
-            encoding_core,
-            "_execute_operation_prefix_conditions_and_vars_or_result",
-            missing_condition_point_with_vars,
-        )
-
-        result = enter_postcondition_implies_during_precondition(
-            state, variables(machine)
-        )
-
-        assert result.kind == "undecidable_skip"
-
     def test_condition_translation_failure_returns_first_prior_indeterminate(
         self,
         monkeypatch,
@@ -4280,101 +4107,124 @@ class TestEnterPostconditionImpliesDuringPrecondition:
         diag = assert_single_diag(result, "I_ENTER_DURING_CONTRADICT")
         assert diag["data"]["branch_taken"] == "true"
 
-    def test_logical_or_unsupported_rhs_is_not_short_circuit_pruned(self):
+    def test_logical_or_unsupported_rhs_is_short_circuit_pruned(self):
+        """Short-circuiting skips a right operand the entry context never evaluates."""
         machine = parse_machine(
-            """
-            def int mode = 0;
-            def int flags = 0;
-            def int x = 0;
-            state System {
-                state Idle {
-                    during {
-                        x = (mode == 0 || (flags & 1) == 1) ? 10 : 20;
+                    """
+                    def int mode = 0;
+                    def int flags = 0;
+                    def int x = 0;
+                    state System {
+                        state Idle {
+                            during {
+                                x = (mode == 0 || (flags & 1) == 1) ? 10 : 20;
+                            }
+                        }
+                        [*] -> Idle;
                     }
-                }
-                [*] -> Idle;
-            }
-            """
-        )
+                    """
+                )
         state = machine.root_state.substates["Idle"]
 
         result = enter_postcondition_implies_during_precondition(
             state, variables(machine)
         )
 
-        assert result.kind == "undecidable_skip"
+        assert result.kind == "unsat"
+        (diagnostic,) = result.diagnostics
+        assert diagnostic["code"] == "I_ENTER_DURING_CONTRADICT"
+        assert diagnostic["data"]["condition"] == 'mode == 0 || flags & 1 == 1'
+        assert diagnostic["data"]["condition_source"] == 'expression'
+        assert diagnostic["data"]["branch_taken"] == 'true'
 
-    def test_logical_and_unsupported_rhs_is_not_short_circuit_pruned(self):
+    def test_logical_and_unsupported_rhs_is_short_circuit_pruned(self):
+        """Short-circuiting skips a right operand the entry context never evaluates."""
         machine = parse_machine(
-            """
-            def int mode = 0;
-            def int flags = 0;
-            def int x = 0;
-            state System {
-                state Idle {
-                    during {
-                        x = (mode == 1 && (flags & 1) == 1) ? 10 : 20;
+                    """
+                    def int mode = 0;
+                    def int flags = 0;
+                    def int x = 0;
+                    state System {
+                        state Idle {
+                            during {
+                                x = (mode == 1 && (flags & 1) == 1) ? 10 : 20;
+                            }
+                        }
+                        [*] -> Idle;
                     }
-                }
-                [*] -> Idle;
-            }
-            """
-        )
+                    """
+                )
         state = machine.root_state.substates["Idle"]
 
         result = enter_postcondition_implies_during_precondition(
             state, variables(machine)
         )
 
-        assert result.kind == "undecidable_skip"
+        assert result.kind == "unsat"
+        (diagnostic,) = result.diagnostics
+        assert diagnostic["code"] == "I_ENTER_DURING_CONTRADICT"
+        assert diagnostic["data"]["condition"] == 'mode == 1 && flags & 1 == 1'
+        assert diagnostic["data"]["condition_source"] == 'expression'
+        assert diagnostic["data"]["branch_taken"] == 'false'
 
-    def test_logical_if_condition_unsupported_rhs_is_not_short_circuit_pruned(self):
+    def test_logical_if_condition_unsupported_rhs_is_short_circuit_pruned(self):
+        """Short-circuiting skips a right operand the entry context never evaluates."""
         machine = parse_machine(
-            """
-            def int mode = 0;
-            def int flags = 0;
-            def int x = 0;
-            state System {
-                state Idle {
-                    during {
-                        if [mode == 0 || (flags & 1) == 1] { x = 1; }
-                        else { x = 2; }
+                    """
+                    def int mode = 0;
+                    def int flags = 0;
+                    def int x = 0;
+                    state System {
+                        state Idle {
+                            during {
+                                if [mode == 0 || (flags & 1) == 1] { x = 1; }
+                                else { x = 2; }
+                            }
+                        }
+                        [*] -> Idle;
                     }
-                }
-                [*] -> Idle;
-            }
-            """
-        )
+                    """
+                )
         state = machine.root_state.substates["Idle"]
 
         result = enter_postcondition_implies_during_precondition(
             state, variables(machine)
         )
 
-        assert result.kind == "undecidable_skip"
+        assert result.kind == "unsat"
+        (diagnostic,) = result.diagnostics
+        assert diagnostic["code"] == "I_ENTER_DURING_CONTRADICT"
+        assert diagnostic["data"]["condition"] == 'mode == 0 || flags & 1 == 1'
+        assert diagnostic["data"]["condition_source"] == 'branch'
+        assert diagnostic["data"]["branch_taken"] == 'true'
 
-    def test_logical_or_division_rhs_is_not_short_circuit_pruned(self):
+    def test_logical_or_division_rhs_is_short_circuit_pruned(self):
+        """Short-circuiting skips a right operand the entry context never evaluates."""
         machine = parse_machine(
-            """
-            def int x = 0;
-            def int y = 0;
-            state System {
-                state Idle {
-                    enter { x = 1; }
-                    during { y = (x == 1 || (x / (x - 1)) == 1) ? 1 : 2; }
-                }
-                [*] -> Idle;
-            }
-            """
-        )
+                    """
+                    def int x = 0;
+                    def int y = 0;
+                    state System {
+                        state Idle {
+                            enter { x = 1; }
+                            during { y = (x == 1 || (x / (x - 1)) == 1) ? 1 : 2; }
+                        }
+                        [*] -> Idle;
+                    }
+                    """
+                )
         state = machine.root_state.substates["Idle"]
 
         result = enter_postcondition_implies_during_precondition(
             state, variables(machine)
         )
 
-        assert result.kind == "undecidable_skip"
-        assert result.diagnostics == ()
+        assert result.kind == "unsat"
+        (diagnostic,) = result.diagnostics
+        assert diagnostic["code"] == "I_ENTER_DURING_CONTRADICT"
+        assert diagnostic["data"]["condition"] == 'x == 1 || x / (x - 1) == 1'
+        assert diagnostic["data"]["condition_source"] == 'expression'
+        assert diagnostic["data"]["branch_taken"] == 'true'
 
     def test_selected_value_branch_definedness_failure_is_undecidable(self):
         machine = parse_machine(
@@ -5268,27 +5118,16 @@ class TestCompositeInitGuardsIncomplete:
 
         assert result == AlgorithmResult(kind="unsat")
 
-    def test_skips_when_guard_translation_fails(self, monkeypatch):
+    def test_skips_when_guard_translation_fails(self):
         machine = parse_machine(
             """
             def int x = 0;
             state Root {
                 state A;
-                [*] -> A : if [x > 0];
+                [*] -> A : if [sin(x) > 0];
             }
             """
         )
-
-        def fail_guard_translation(*args, **kwargs):
-            return ExprDomain(
-                z3_expr=None,
-                failure=TranslationFailure(
-                    "value_error",
-                    "synthetic init guard failure",
-                ),
-            )
-
-        monkeypatch.setattr(encoding_core, "translate_expr_domain", fail_guard_translation)
 
         result = composite_init_guards_incomplete(machine, variables(machine))
 

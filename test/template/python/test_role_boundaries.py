@@ -144,8 +144,8 @@ def test_unknown_names_and_wrong_integer_type_are_rejected(role_module):
         machine._normalize_persistent_value("unknown", 1, "input")
     with pytest.raises(ValueError, match="Unknown inputs"):
         machine.cycle(inputs={"unknown": 1})
-    with pytest.raises(ValueError, match="must be int"):
-        machine.cycle(inputs={"divisor": 1.0, "pressure": 2.0})
+    with pytest.raises(ValueError, match="cannot assign float 1.5"):
+        machine.cycle(inputs={"divisor": 1.5, "pressure": 2.0})
     assert machine.last_inputs is None
 
 

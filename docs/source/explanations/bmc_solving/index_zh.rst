@@ -71,6 +71,33 @@ Z3 返回 ``unknown`` 后，实现会读取 ``reason_unknown()``：原因恰好�
 ``incomplete_elapsed_ms=...`` 保留。禁用尾部检查也会留下 ``incomplete_check=disabled``，而不会被误写成“已经证明不存在
 未完成后缀”。
 
+运行时安全检查先于性质
+----------------------
+
+在检查上述任何空间之前，求解先判断模型本身是否会出错。每次守卫求值和每个动作块都是
+一个求值点，按仿真器实际求值的顺序记录：源状态处按声明顺序惰性选择，推测验证在每个
+嵌套选择处对全部候选的急切检查，以及之后会失败的路径上的动作块。每个求值点给出错误
+位置 :math:`s`\ ，其条件 :math:`c_s` 恰好在运行时到达该运算且该运算出错时成立。记
+:math:`\mathcal{E}_k` 为第 :math:`k` 步的错误位置，:math:`\mathcal{E}_{\mathrm{init}}` 为变量
+初值的错误位置，:math:`ENV_{\le k}` 为关于直到第 :math:`k` 个帧与步的假设实例：
+
+.. math::
+   :label: bmc-runtime-error-stage
+
+   \mathrm{Err}_{\mathrm{init}} = D_N \land ENV_{\le 0} \land \bigvee_{s \in \mathcal{E}_{\mathrm{init}}} c_s,
+   \qquad
+   \mathrm{Err}_k = D_N \land I_0 \land \bigwedge_{j<k} T_j \land ENV_{\le k} \land \bigvee_{s \in \mathcal{E}_k} c_s.
+
+第 :math:`k` 步的错误只需要一个合法的 :math:`k` 步前缀，对之后的帧不做任何要求，因为
+运行时根本不会产生它们。各阶段逐个检查，先查初值：第一个 SAT 阶段包含最早的错误，
+报告的位置是模型触发的、按求值顺序排在最前的那个。结果为 ``runtime_error``\ ，性质不
+评估。所有阶段都 UNSAT 时结果为 ``safe``\ ，随后进行主查询；某阶段无法判定且之后没有
+SAT 阶段时，结果为 ``runtime_safety_unknown`` 或 ``runtime_safety_timeout``。该检查共享
+求解预算，并且始终在未做锥切片的核心上运行。
+
+反例：对 ``A -> B : if [d == 0]; A -> C : if [10 / d > 1];``\ ，``d == 0`` 时运行时走第一个
+转换后停止，除法从不会被求值；其错误位置条件不可满足，检查结果为 ``safe``。
+
 性质结论必须解释极性
 --------------------
 
@@ -383,7 +410,7 @@ delta、gamma 两个符号，并为每个步/分支对创建一个选择变量�
 可运行轨迹与公式台账
 --------------------
 
-五个公式可以用一个最小模型和两个查询审计。模型有意保持很小，让求解边界清晰可见：
+除了由其自身反例覆盖的 :eq:`bmc-runtime-error-stage`\ ，五个公式可以用一个最小模型和两个查询审计。模型有意保持很小，让求解边界清晰可见：
 
 .. code-block:: fcstm
 
@@ -415,6 +442,15 @@ delta、gamma 两个符号，并为每个步/分支对创建一个选择变量�
     ``test_compile_response_strict_successor_and_incomplete_suffix`` 与
     ``test_solver_unknown_and_timeout_paths_are_structured`` 覆盖。上文的
     ``response`` 查询在主目标上给出 UNSAT，在尾部给出 SAT。
+
+:eq:`bmc-runtime-error-stage` —— 运行时错误阶段
+    ``expand.py`` 中的 ``_record_point`` 与 ``_probe_candidates``\ 、``relation.py`` 中的
+    ``_point_error_sites``\ ，以及 ``safety.py`` 中的 ``_stages`` 与
+    ``_check_runtime_safety``。由 ``test/bmc/test_runtime_safety.py`` 中的
+    ``test_reachable_errors_replay_at_the_reported_step``\ 、
+    ``test_operations_the_runtime_never_evaluates_are_safe`` 与
+    ``test_an_undecided_stage_does_not_hide_a_later_error`` 覆盖。上面的反例就是其中一个
+    安全用例。
 
 :eq:`bmc-verdict-map` —— 极性感知的三值判定
     ``BmcSolveResult.property_satisfied`` 与 ``outcome``。``response`` 查询给出

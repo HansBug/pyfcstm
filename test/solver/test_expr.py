@@ -231,21 +231,26 @@ class TestExprToZ3:
                 expected = (lhs, rhs) in expected_true_assignments
                 assert solver.check() == (z3.sat if expected else z3.unsat)
 
-    @pytest.mark.parametrize('op', ['=>', 'xor', 'iff'])
+    @pytest.mark.parametrize('op', ['xor', 'iff'])
     def test_condition_logical_operators_reject_numeric_operands(self, op):
         """Test new condition logical operators do not coerce numeric Z3 terms."""
         z3_vars = {'x': z3.Int('x'), 'y': z3.Int('y')}
         expr = BinaryOp(x=Variable('x'), op=op, y=Variable('y'))
-
         with pytest.raises(ValueError, match='Boolean operands required'):
             expr_to_z3(expr, z3_vars)
 
-    def test_bitwise_caret_rejects_boolean_operands(self):
+    def test_implication_rejects_a_numeric_left_operand(self):
+        """``=>`` short-circuits like ``&&``, so its left operand must be Boolean."""
+        z3_vars = {'x': z3.Int('x'), 'y': z3.Int('y')}
+        expr = BinaryOp(x=Variable('x'), op='=>', y=Variable('y'))
+        with pytest.raises(TypeError, match="Logical operator '=>' requires a Boolean left operand"):
+            expr_to_z3(expr, z3_vars)
+
+    def test_bitwise_caret_has_no_default_encoding(self):
         """Test solver does not treat bitwise caret as condition bool xor."""
         expr = BinaryOp(x=Variable('a'), op='^', y=Variable('b'))
         z3_vars = {'a': z3.Bool('a'), 'b': z3.Bool('b')}
-
-        with pytest.raises(ValueError, match=r'Bitwise XOR \(\^\) requires non-boolean operands'):
+        with pytest.raises(NotImplementedError, match='fixed-width integer profile'):
             expr_to_z3(expr, z3_vars)
 
     # Note: Bitwise operators are not supported on Z3 Int types
@@ -625,79 +630,16 @@ class TestCreateZ3Vars:
 class TestExprToZ3EdgeCases:
     """Test edge cases and error handling for expression conversion."""
 
-    def test_bitwise_operators_with_warnings(self):
-        """Test bitwise operators produce warnings (but may fail on Int)."""
+    @pytest.mark.parametrize('op', ['&', '|', '^', '<<', '>>'])
+    def test_bitwise_operators_are_unsupported_without_warnings(self, op):
+        """Bitwise operators need a fixed-width profile and fail without warnings."""
         z3_vars = {'x': z3.Int('x'), 'y': z3.Int('y')}
-        x_var = Variable('x')
-        y_var = Variable('y')
-
-        # Test bitwise AND - produces warning but may fail on Int
-        expr_and = BinaryOp(x=x_var, op='&', y=y_var)
+        expr = BinaryOp(x=Variable('x'), op=op, y=Variable('y'))
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            try:
-                result_and = expr_to_z3(expr_and, z3_vars)
-                # If it succeeds, verify warning was issued
-                assert len(w) == 1
-                assert "bitwise and" in str(w[0].message).lower()
-                assert result_and is not None
-            except TypeError:
-                # Expected on Z3 Int - bitwise ops don't work
-                # But warning should still have been issued before the error
-                assert len(w) == 1
-                assert "bitwise and" in str(w[0].message).lower()
-
-        # Test bitwise OR
-        expr_or = BinaryOp(x=x_var, op='|', y=y_var)
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            try:
-                result_or = expr_to_z3(expr_or, z3_vars)
-                assert len(w) == 1
-                assert "bitwise or" in str(w[0].message).lower()
-                assert result_or is not None
-            except TypeError:
-                assert len(w) == 1
-                assert "bitwise or" in str(w[0].message).lower()
-
-        # Test bitwise XOR
-        expr_xor = BinaryOp(x=x_var, op='^', y=y_var)
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            try:
-                result_xor = expr_to_z3(expr_xor, z3_vars)
-                assert len(w) == 1
-                assert "bitwise xor" in str(w[0].message).lower()
-                assert result_xor is not None
-            except TypeError:
-                assert len(w) == 1
-                assert "bitwise xor" in str(w[0].message).lower()
-
-        # Test left shift
-        expr_lshift = BinaryOp(x=x_var, op='<<', y=Integer(2))
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            try:
-                result_lshift = expr_to_z3(expr_lshift, z3_vars)
-                assert len(w) == 1
-                assert "left shift" in str(w[0].message).lower()
-                assert result_lshift is not None
-            except TypeError:
-                assert len(w) == 1
-                assert "left shift" in str(w[0].message).lower()
-
-        # Test right shift
-        expr_rshift = BinaryOp(x=x_var, op='>>', y=Integer(2))
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            try:
-                result_rshift = expr_to_z3(expr_rshift, z3_vars)
-                assert len(w) == 1
-                assert "right shift" in str(w[0].message).lower()
-                assert result_rshift is not None
-            except TypeError:
-                assert len(w) == 1
-                assert "right shift" in str(w[0].message).lower()
+            with pytest.raises(NotImplementedError, match='fixed-width integer profile'):
+                expr_to_z3(expr, z3_vars)
+        assert w == []
 
     def test_nested_conditionals(self):
         """Test nested conditional expressions."""
@@ -830,27 +772,11 @@ class TestExprToZ3EdgeCases:
         solver.add(z3_vars['x'] == 5)
         assert solver.check() == z3.sat
 
-    def test_unary_bitwise_not(self):
-        """Test unary bitwise NOT operator with warning."""
-        z3_vars = {'x': z3.Int('x')}
-        x_var = Variable('x')
-
-        expr = UnaryOp(op='~', x=x_var)
-
-        # Should produce a warning (but may fail on Int)
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            try:
-                result = expr_to_z3(expr, z3_vars)
-                # If it succeeds, verify warning was issued
-                assert len(w) == 1
-                assert "bitwise not" in str(w[0].message).lower()
-                assert result is not None
-            except TypeError:
-                # Expected on Z3 Int - bitwise NOT doesn't work
-                # But warning should still have been issued before the error
-                assert len(w) == 1
-                assert "bitwise not" in str(w[0].message).lower()
+    def test_unary_bitwise_not_is_not_an_fcstm_operator(self):
+        """``~`` is not part of the language and has no translation."""
+        expr = UnaryOp(op='~', x=Variable('x'))
+        with pytest.raises(ValueError, match='Unsupported unary operator: ~'):
+            expr_to_z3(expr, {'x': z3.Int('x')})
 
     def test_logical_not_keyword(self):
         """Test logical NOT with 'not' keyword."""

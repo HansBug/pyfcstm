@@ -62,7 +62,8 @@
         0,
         1,
         3,
-        4
+        4,
+        5
       ]
     }
   },
@@ -169,7 +170,9 @@
                       "unknown",
                       "scenario_infeasible",
                       "feasibility_timeout",
-                      "feasibility_unknown"
+                      "feasibility_unknown",
+                      "runtime_safety_timeout",
+                      "runtime_safety_unknown"
                     ]
                   }
                 }
@@ -187,6 +190,39 @@
         "properties": {
           "exit_code": {
             "const": 3
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "allOf": [
+          {
+            "properties": {
+              "result": {
+                "required": [
+                  "available_model_roles",
+                  "outcome"
+                ],
+                "properties": {
+                  "outcome": {
+                    "const": "runtime_error"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "not": {
+              "$ref": "#/$defs/replayMismatchEnvelope"
+            }
+          }
+        ]
+      },
+      "then": {
+        "properties": {
+          "exit_code": {
+            "const": 5
           }
         }
       }
@@ -339,6 +375,39 @@
           },
           "replay": {
             "$ref": "#/$defs/incompleteSuffixReplay"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "result": {
+            "required": [
+              "available_model_roles"
+            ],
+            "properties": {
+              "available_model_roles": {
+                "prefixItems": [
+                  {
+                    "const": "runtime_error_prefix"
+                  }
+                ],
+                "items": false,
+                "minItems": 1,
+                "maxItems": 1
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "witness": {
+            "$ref": "#/$defs/runtimeErrorPrefixWitness"
+          },
+          "replay": {
+            "$ref": "#/$defs/runtimeErrorPrefixReplay"
           }
         }
       }
@@ -2969,7 +3038,8 @@
         "diagnostics",
         "solver_profile",
         "solver_logic",
-        "solver_statistics"
+        "solver_statistics",
+        "runtime_safety"
       ],
       "properties": {
         "node": {
@@ -3026,7 +3096,10 @@
             "unknown",
             "scenario_infeasible",
             "feasibility_timeout",
-            "feasibility_unknown"
+            "feasibility_unknown",
+            "runtime_error",
+            "runtime_safety_timeout",
+            "runtime_safety_unknown"
           ]
         },
         "reason": {
@@ -3073,7 +3146,8 @@
             "enum": [
               "primary_witness",
               "primary_counterexample",
-              "incomplete_suffix"
+              "incomplete_suffix",
+              "runtime_error_prefix"
             ]
           }
         },
@@ -3165,6 +3239,16 @@
                   }
                 }
               }
+            }
+          ]
+        },
+        "runtime_safety": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/runtimeSafety"
             }
           ]
         }
@@ -4237,8 +4321,17 @@
                   "unknown",
                   "timeout"
                 ]
+              },
+              "outcome": {
+                "enum": [
+                  "unknown",
+                  "timeout"
+                ]
               }
-            }
+            },
+            "required": [
+              "outcome"
+            ]
           },
           "then": {
             "properties": {
@@ -4303,6 +4396,150 @@
             "properties": {
               "solver_logic": {
                 "const": null
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "enum": [
+                  "runtime_error",
+                  "runtime_safety_timeout",
+                  "runtime_safety_unknown"
+                ]
+              }
+            },
+            "required": [
+              "outcome"
+            ]
+          },
+          "then": {
+            "properties": {
+              "status": {
+                "const": "unknown"
+              },
+              "property_satisfied": {
+                "const": null
+              },
+              "has_model": {
+                "const": false
+              },
+              "runtime_safety": {
+                "type": "object"
+              },
+              "witness_found": {
+                "const": false
+              },
+              "counterexample_found": {
+                "const": false
+              },
+              "incomplete": {
+                "const": true
+              },
+              "incomplete_status": {
+                "const": null
+              },
+              "incomplete_reason": {
+                "const": null
+              },
+              "incomplete_elapsed_ms": {
+                "const": null
+              },
+              "has_incomplete_model": {
+                "const": false
+              },
+              "feasibility": {
+                "$ref": "#/$defs/notCheckedFeasibility"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "const": "runtime_error"
+              }
+            },
+            "required": [
+              "outcome"
+            ]
+          },
+          "then": {
+            "properties": {
+              "available_model_roles": {
+                "const": [
+                  "runtime_error_prefix"
+                ]
+              },
+              "runtime_safety": {
+                "properties": {
+                  "status": {
+                    "const": "violated"
+                  },
+                  "error": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          },
+          "else": {
+            "not": {
+              "properties": {
+                "available_model_roles": {
+                  "contains": {
+                    "const": "runtime_error_prefix"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "const": "runtime_safety_timeout"
+              }
+            },
+            "required": [
+              "outcome"
+            ]
+          },
+          "then": {
+            "properties": {
+              "runtime_safety": {
+                "properties": {
+                  "status": {
+                    "const": "timeout"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "const": "runtime_safety_unknown"
+              }
+            },
+            "required": [
+              "outcome"
+            ]
+          },
+          "then": {
+            "properties": {
+              "runtime_safety": {
+                "properties": {
+                  "status": {
+                    "const": "unknown"
+                  }
+                }
               }
             }
           }
@@ -4646,7 +4883,8 @@
           "enum": [
             "primary_witness",
             "primary_counterexample",
-            "incomplete_suffix"
+            "incomplete_suffix",
+            "runtime_error_prefix"
           ]
         },
         "verdict": {
@@ -4679,8 +4917,12 @@
               "enum": [
                 "witness_found",
                 "property_violated",
-                "incomplete"
+                "incomplete",
+                "runtime_error"
               ]
+            },
+            "runtime_error": {
+              "$ref": "#/$defs/runtimeErrorPrefix"
             }
           }
         },
@@ -4721,7 +4963,7 @@
               ]
             },
             "primary_reason": {
-              "const": null
+              "$ref": "#/$defs/nullableString"
             },
             "incomplete_reason": {
               "const": null
@@ -4811,6 +5053,9 @@
                     },
                     "incomplete_status": {
                       "const": null
+                    },
+                    "primary_reason": {
+                      "const": null
                     }
                   }
                 },
@@ -4831,6 +5076,11 @@
                     "outcome": {
                       "const": "witness_found"
                     }
+                  },
+                  "not": {
+                    "required": [
+                      "runtime_error"
+                    ]
                   }
                 }
               }
@@ -4854,6 +5104,9 @@
                     },
                     "incomplete_status": {
                       "const": null
+                    },
+                    "primary_reason": {
+                      "const": null
                     }
                   }
                 },
@@ -4874,6 +5127,11 @@
                     "outcome": {
                       "const": "property_violated"
                     }
+                  },
+                  "not": {
+                    "required": [
+                      "runtime_error"
+                    ]
                   }
                 }
               }
@@ -4904,6 +5162,9 @@
                     "incomplete_elapsed_ms": {
                       "type": "number",
                       "minimum": 0
+                    },
+                    "primary_reason": {
+                      "const": null
                     }
                   }
                 },
@@ -4923,6 +5184,57 @@
                     },
                     "outcome": {
                       "const": "incomplete"
+                    }
+                  },
+                  "not": {
+                    "required": [
+                      "runtime_error"
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "properties": {
+                "model_role": {
+                  "const": "runtime_error_prefix"
+                },
+                "solver": {
+                  "properties": {
+                    "primary_status": {
+                      "const": "unknown"
+                    },
+                    "incomplete_status": {
+                      "const": null
+                    },
+                    "incomplete_elapsed_ms": {
+                      "const": null
+                    },
+                    "primary_reason": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "verdict": {
+                  "required": [
+                    "runtime_error"
+                  ],
+                  "properties": {
+                    "property_satisfied": {
+                      "const": null
+                    },
+                    "witness_found": {
+                      "const": false
+                    },
+                    "counterexample_found": {
+                      "const": false
+                    },
+                    "incomplete": {
+                      "const": false
+                    },
+                    "outcome": {
+                      "const": "runtime_error"
                     }
                   }
                 }
@@ -5173,7 +5485,8 @@
           "enum": [
             "primary_witness",
             "primary_counterexample",
-            "incomplete_suffix"
+            "incomplete_suffix",
+            "runtime_error_prefix"
           ]
         },
         "ok": {
@@ -5206,11 +5519,55 @@
           "items": {
             "$ref": "#/$defs/mismatch"
           }
+        },
+        "runtime_error": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "message"
+              ],
+              "properties": {
+                "kind": {
+                  "$ref": "#/$defs/nullableString"
+                },
+                "message": {
+                  "type": "string"
+                }
+              }
+            }
+          ]
         }
       },
       "allOf": [
         {
           "$ref": "#/$defs/replayConsistency"
+        },
+        {
+          "if": {
+            "properties": {
+              "model_role": {
+                "const": "runtime_error_prefix"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "runtime_error"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "runtime_error"
+              ]
+            }
+          }
         }
       ]
     },
@@ -7382,6 +7739,192 @@
           "const": "verified"
         }
       }
+    },
+    "runtimeErrorSite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "step",
+        "kind",
+        "location"
+      ],
+      "properties": {
+        "step": {
+          "$ref": "#/$defs/nullableInteger"
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "location": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "runtimeSafety": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "sites",
+        "elapsed_ms",
+        "reason",
+        "error"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "safe",
+            "violated",
+            "unknown",
+            "timeout",
+            "not_applicable"
+          ]
+        },
+        "sites": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "elapsed_ms": {
+          "type": "number",
+          "minimum": 0
+        },
+        "reason": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "error": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/runtimeErrorSite"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "violated"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "error": {
+                "type": "object"
+              },
+              "reason": {
+                "const": null
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "error": {
+                "const": null
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "unknown",
+                  "timeout"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "reason": {
+                "const": null
+              }
+            }
+          }
+        }
+      ]
+    },
+    "runtimeErrorPrefix": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "step",
+        "kind",
+        "location",
+        "events",
+        "inputs"
+      ],
+      "properties": {
+        "step": {
+          "$ref": "#/$defs/nullableInteger"
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "location": {
+          "type": "string",
+          "minLength": 1
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "inputs": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "runtimeErrorPrefixWitness": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/roleAwareWitness"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "model_role": {
+              "const": "runtime_error_prefix"
+            }
+          }
+        }
+      ]
+    },
+    "runtimeErrorPrefixReplay": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/roleAwareReplay"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "model_role": {
+              "const": "runtime_error_prefix"
+            }
+          }
+        }
+      ]
     }
   }
 }

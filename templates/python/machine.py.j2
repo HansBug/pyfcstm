@@ -435,7 +435,8 @@ class {{ machine_class_name(model) }}:
 
         :param value: Numeric expression value.
         :type value: Number
-        :return: ``-1`` for negative values, ``0`` for zero, and ``1`` for positive values.
+        :return: ``-1`` for negative values and NaN, ``0`` for zero, and ``1``
+            for positive values.
         :rtype: int
 
         Example::
@@ -443,19 +444,107 @@ class {{ machine_class_name(model) }}:
             >>> {{ machine_class_name(model) }}._sign(-3)
             -1
         """
-        return int((value > 0) - (value < 0))
+        return 0 if value == 0 else (1 if value > 0 else -1)
+
+    @staticmethod
+    def _power(base, exponent):
+        """
+        Return ``base ** exponent`` with FCSTM real-valued semantics.
+
+        Python returns a complex number for a negative base raised to a
+        fractional power; FCSTM has no complex values, so that is an error.
+
+        :param base: Power base.
+        :type base: Number
+        :param exponent: Power exponent.
+        :type exponent: Number
+        :return: The real power.
+        :rtype: Number
+        :raises ValueError: If the result would be complex.
+
+        Example::
+
+            >>> {{ machine_class_name(model) }}._power(-2, 2)
+            4
+        """
+        result = base**exponent
+        if isinstance(result, complex):
+            raise ValueError("negative number cannot be raised to a fractional power")
+        return result
+
+    @staticmethod
+    def _math(function, value):
+        """
+        Apply a math function, reporting a domain error with one message.
+
+        Python reports an argument outside a function's domain with a
+        ``ValueError`` whose wording changed in Python 3.14; FCSTM reports it
+        as ``math domain error`` on every version.
+
+        :param function: Math function to apply.
+        :type function: Callable
+        :param value: Function argument.
+        :type value: Number
+        :return: The function value.
+        :rtype: Number
+        :raises ValueError: If the argument is outside the function's domain.
+
+        Example::
+
+            >>> {{ machine_class_name(model) }}._math(math.sqrt, 4)
+            2.0
+        """
+        try:
+            return function(value)
+        except ValueError:
+            # ValueError: the argument is outside the function's domain,
+            # such as sqrt of a negative number or log of zero.
+            raise ValueError("math domain error") from None
+
+    @staticmethod
+    def _cbrt(value):
+        """
+        Return the real cube root, exact on perfect cubes.
+
+        The platform ``cbrt`` is not correctly rounded everywhere, so this
+        refines ``abs(x) ** (1/3)`` with one Newton step, as the simulator does.
+
+        :param value: Number to take the cube root of.
+        :type value: Number
+        :return: The real cube root.
+        :rtype: float
+
+        Example::
+
+            >>> {{ machine_class_name(model) }}._cbrt(-8)
+            -2.0
+        """
+        value = float(value)
+        if value == 0.0 or not math.isfinite(value):
+            return value
+        root = math.copysign(abs(value) ** (1.0 / 3.0), value)
+        root -= (root * root * root - value) / (3.0 * root * root)
+        nearest = float(math.floor(root + 0.5))
+        if nearest * nearest * nearest == value:
+            return nearest
+        return root
 
     def _execute_operation_block(self, operations, vars_, source):
         local_scope = dict(vars_)
         operations(local_scope)
-        normalized_updates = {
-            name: self._normalize_persistent_value(
-                name,
-                local_scope[name],
-                source,
-            )
-            for name in self.VARIABLE_NAMES
-        }
+        try:
+            normalized_updates = {
+                name: self._normalize_persistent_value(
+                    name,
+                    local_scope[name],
+                    source,
+                )
+                for name in self.VARIABLE_NAMES
+            }
+        except ValueError as err:
+            # ValueError: the block left a value its variable's declared type
+            # rejects; a failed writeback is a runtime error of the cycle.
+            raise SimulationRuntimeExpressionError(str(err)) from None
         for name, value in normalized_updates.items():
             vars_[name] = value
 
@@ -1458,9 +1547,7 @@ class {{ machine_class_name(model) }}:
             value = overrides[{{ item.name | tojson }}]
         else:
             value = self.read_{{ item.name }}()
-{% if item.type == "int" %}        if type(value) is not int:
-            raise ValueError("Input {{ item.name }} must be int")
-{% endif %}        values.append(
+        values.append(
             self._normalize_persistent_value(
                 {{ item.name | tojson }},
                 value,
@@ -1612,6 +1699,8 @@ def {{ action_method_name(state, method_kind, idx) }}(self, vars_=None):
     def operations(local_scope):
         _v = local_scope
         _s = self._sign
+        _p = self._power
+        _c = self._cbrt
 {{ item.operations | stmts_render(style='python_runtime', indent='    ', level=2) }}
 
     self._execute_operation_block(operations, scope, "operation block writeback")
@@ -1649,6 +1738,8 @@ def {{ init_effect_method_name(state, idx) }}(self, vars_=None):
     def operations(local_scope):
         _v = local_scope
         _s = self._sign
+        _p = self._power
+        _c = self._cbrt
 {{ transition.effects | stmts_render(style='python_runtime', indent='    ', level=2) }}
 
     self._execute_operation_block(operations, scope, "operation block writeback")
@@ -1684,6 +1775,8 @@ def {{ transition_effect_method_name(state, idx) }}(self, vars_=None):
     def operations(local_scope):
         _v = local_scope
         _s = self._sign
+        _p = self._power
+        _c = self._cbrt
 {{ transition.effects | stmts_render(style='python_runtime', indent='    ', level=2) }}
 
     self._execute_operation_block(operations, scope, "operation block writeback")

@@ -27,6 +27,7 @@ def test_relation_public_exports_are_lazy_and_complete() -> None:
         "BmcCaseRelation",
         "BmcStepRelation",
         "BmcCoreFormula",
+        "BmcRuntimeErrorSite",
         "build_bmc_core_formula",
     }
 

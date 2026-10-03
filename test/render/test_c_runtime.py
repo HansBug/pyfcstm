@@ -358,3 +358,68 @@ def test_float_input_writeback_checks_range_before_integer_cast():
 def test_readonly_value_identifiers_preserve_distinct_dsl_names(name, expected):
     from pyfcstm.render.c_runtime import readonly_value_identifier
     assert readonly_value_identifier(name) == expected
+
+
+def _action_body(text, var_types):
+    statements = parse_with_grammar_entry(text, entry_name="operational_statement_set")
+    return render_c_action_body(statements, var_types, "RootMachine", "ROOT_MACHINE")
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "call, condition",
+    [
+        ("sqrt(r)", "if ((scope->r) < 0) {"),
+        ("log(r)", "if ((scope->r) <= 0) {"),
+        ("log1p(r)", "if ((scope->r) <= -1) {"),
+        ("asin(r)", "if ((scope->r) < -1 || (scope->r) > 1) {"),
+        ("acosh(r)", "if ((scope->r) < 1) {"),
+        ("atanh(r)", "if ((scope->r) <= -1 || (scope->r) >= 1) {"),
+        ("sin(r)", "if ((scope->r) == (scope->r) && ((scope->r) - (scope->r)) != 0) {"),
+    ],
+)
+def test_math_functions_reject_arguments_outside_their_domain(call, condition):
+    body = _action_body("r = %s;" % call, {"r": "float"})
+
+    assert condition in body
+    assert "evaluation failed: math domain error" in body
+
+
+@pytest.mark.unittest
+def test_an_int_argument_cannot_be_infinite():
+    # An integer argument is always finite, and comparing an integer with
+    # itself would be a tautology clang warns about.
+    assert "== (scope->n)" not in _action_body("r = sin(n);", {"r": "float", "n": "int"})
+
+
+@pytest.mark.unittest
+def test_an_implication_checks_its_consequent_only_under_its_premise():
+    guard = parse_with_grammar_entry("d != 0 => 10 / d > 1", entry_name="cond_expression")
+    body = render_c_condition_body(guard, {"d": "int"}, "RootMachine", "ROOT_MACHINE", "transition guard")
+
+    assert body.index("if (((scope->d) != (0))) {") < body.index("if ((scope->d) == 0) {")
+
+
+@pytest.mark.unittest
+def test_a_fractional_power_of_a_negative_base_is_rejected():
+    body = _action_body("r = b ** e;", {"r": "float", "b": "float", "e": "float"})
+
+    assert "if ((scope->b) < 0 && (scope->e) != floor(scope->e)) {" in body
+    assert "negative number cannot be raised to a fractional power" in body
+    # An int exponent never yields a complex result.
+    assert "floor(" not in _action_body("r = b ** n;", {"r": "float", "b": "float", "n": "int"})
+
+
+@pytest.mark.unittest
+def test_the_sign_of_nan_is_minus_one():
+    body = _action_body("n = sign(r);", {"n": "int", "r": "float"})
+
+    assert "((scope->r) == 0 ? 0 : ((scope->r) > 0 ? 1 : -1))" in body
+
+
+@pytest.mark.unittest
+def test_cbrt_uses_the_shared_cube_root_algorithm():
+    # libm cbrt is not correctly rounded everywhere, so it is not called.
+    body = _action_body("r = cbrt(r);", {"r": "float"})
+
+    assert "_RootMachine_cbrt_f64(scope->r)" in body

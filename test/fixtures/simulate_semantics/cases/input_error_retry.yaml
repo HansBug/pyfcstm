@@ -6,8 +6,6 @@ categories:
 - runtime
 - variable_roles
 - inputs
-exclude_runners:
-- bmc_core
 steps:
 - cycle: []
   inputs:

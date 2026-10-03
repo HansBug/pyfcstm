@@ -36,7 +36,6 @@ _MIN_SIGNED_INT64_TEXT = str(_MIN_SIGNED_INT64)
 _MAX_SIGNED_INT64_TEXT = str(_MAX_SIGNED_INT64)
 _BITWISE_OPERATORS = {"&", "^", "|", "<<", ">>"}
 _ZERO_OPERATORS = {"/", "%"}
-_C_FAMILY_INTEGER_UFUNCS = {"ceil", "floor", "int", "round", "sign", "trunc"}
 _C_FAMILY_CONDITION_OPERATORS = {
     "&&",
     "||",
@@ -447,7 +446,10 @@ def _infer_numeric_type(
             return inner_type, inner_source
         return "unknown", "local_expression"
     if isinstance(expr, UFunc):
-        if expr.func in _C_FAMILY_INTEGER_UFUNCS:
+        # Imported here because the catalog loads Z3, which model loading avoids.
+        from ...semantics.catalog import coarse_result_type
+
+        if coarse_result_type(expr.func, None) == "int":
             return "int", "local_expression"
         if expr.func == "abs":
             inner_type, _inner_source = _infer_numeric_type(expr.x, var_types)

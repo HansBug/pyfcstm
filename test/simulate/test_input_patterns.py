@@ -90,9 +90,12 @@ def test_non_numeric_and_nonfinite_values_rejected(value):
         CallableInput(lambda step: value).get()
 
 
-def test_integer_constant_rejects_float():
-    with pytest.raises(SimulationRuntimeInputSourceError):
-        ConstantIntInput(1.0)
+def test_integer_constant_accepts_integral_float_only():
+    # Inputs follow the persistent-variable rule: 1.0 is the integer 1.
+    value = ConstantIntInput(1.0).get()
+    assert value == 1 and type(value) is int
+    with pytest.raises(SimulationRuntimeInputSourceError, match="Expected an integer, got 1.5"):
+        ConstantIntInput(1.5)
 
 
 @pytest.mark.parametrize(

@@ -37,6 +37,7 @@ from .macro import (
     ActionBlock,
     BoolTemplate,
     CycleCase,
+    EvaluationPoint,
     EventUse,
     GuardRequirement,
     MacroStepFormal,
@@ -149,6 +150,7 @@ class _MacroFrontier:
     path_signatures: Tuple[Tuple[Tuple[object, ...], int], ...] = ()
     depth: int = 0
     consumed_events: Tuple[str, ...] = ()
+    last_point: Optional[EvaluationPoint] = None
 
 
 @dataclass(frozen=True)
@@ -242,6 +244,7 @@ class _MacroExpander:
         self._failed_guard_requirements: Dict[str, GuardRequirement] = {}
         self._guard_counter = 0
         self._decision_counter = 0
+        self._points: List[EvaluationPoint] = []
 
     def expand(self) -> MacroStepFormal:
         """Return the expanded macro-step formal."""
@@ -273,7 +276,13 @@ class _MacroExpander:
                 "stable macro-step source produced unsupported build diagnostic "
                 "conditions."
             )
-        formal = MacroStepFormal(self.source, success_cases, delta_cases, diagnostics)
+        formal = MacroStepFormal(
+            self.source,
+            success_cases,
+            delta_cases,
+            diagnostics,
+            evaluation_points=tuple(self._points),
+        )
         if self.options.verify_partition:
             formal.verify_partition(
                 max_assignments=self.options.partition_max_assignments
@@ -462,11 +471,14 @@ class _MacroExpander:
         outcomes: List[_MacroOutcome] = []
         failed: List[BoolTemplate] = []
         diagnostics: List[BoolTemplate] = []
+        first_point = len(self._points)
+        triggered: List[Tuple[Transition, _MacroFrontier, _MacroFrontier]] = []
         for index, transition in enumerate(transitions):
-            candidate = self._apply_priority_exclusion(frontier, outcomes, is_initial)
+            excluded = self._apply_priority_exclusion(frontier, outcomes, is_initial)
             candidate = self._apply_transition_trigger(
-                candidate, transition, index, is_initial
+                excluded, transition, index, is_initial
             )
+            triggered.append((transition, excluded, candidate))
             if candidate.condition.kind == "false":
                 continue
             branch_expansion = self._expand_triggered_transition(
@@ -479,6 +491,13 @@ class _MacroExpander:
                 failed.append(candidate.condition)
             failed.extend(branch_expansion.failed)
             diagnostics.extend(branch_expansion.diagnostics)
+        if frontier.depth > 1:
+            # Only the choice at the formal's source is made lazily, in
+            # declaration order; every later choice is first explored by
+            # speculative validation, which probes all of its candidates.
+            self._points[first_point:first_point] = self._probe_candidates(
+                frontier, triggered, is_initial
+            )
         return _Expansion(tuple(outcomes), tuple(failed), tuple(diagnostics))
 
     def _apply_priority_exclusion(
@@ -542,6 +561,7 @@ class _MacroExpander:
         conditions = [frontier.condition]
         used_events = frontier.used_events
         guard_requirements = frontier.guard_requirements
+        last_point = frontier.last_point
         owner = frontier.stack[-1].state
         transition_label = self._transition_label(owner, transition, transition_index)
         if transition.event is not None:
@@ -572,12 +592,18 @@ class _MacroExpander:
                     len(frontier.action_blocks),
                 )
                 guard_requirements = guard_requirements + (guard,)
+                # The runtime checks the event before the guard, so the guard
+                # is evaluated under everything collected so far.
+                last_point = self._record_point(
+                    frontier, BoolTemplate.and_(*conditions), guard=guard
+                )
                 conditions.append(BoolTemplate.atom(guard.atom_name))
         return self._replace_frontier(
             frontier,
             condition=BoolTemplate.and_(*conditions),
             used_events=used_events,
             guard_requirements=guard_requirements,
+            last_point=last_point,
             consumed_events=(
                 frontier.consumed_events + (transition.event.path_name,)
                 if transition.event is not None
@@ -708,6 +734,10 @@ class _MacroExpander:
             frontier,
             stack=frontier.stack + (_FormalStackFrame(state, "active"),),
         )
+        if state.is_pseudo and not state.transitions_from and not state.init_transitions:
+            # A pseudo state with no outgoing transition is a dead end, and
+            # the runtime enters it without running any lifecycle action.
+            return (current,)
         for on_enter in state.on_enters:
             current = self._record_func(
                 current, state, on_enter, "state_action", "state_enter"
@@ -930,7 +960,60 @@ class _MacroExpander:
         return self._replace_frontier(
             frontier,
             action_blocks=frontier.action_blocks + (block,),
+            last_point=self._record_point(frontier, frontier.condition, block=block),
         )
+
+    def _record_point(
+        self,
+        frontier: _MacroFrontier,
+        condition: BoolTemplate,
+        guard: Optional[GuardRequirement] = None,
+        block: Optional[ActionBlock] = None,
+    ) -> EvaluationPoint:
+        # The expander walks paths in the runtime's own order, so recording
+        # order is evaluation order, failed speculative paths included; the
+        # eager probes of a nested choice are spliced in front of it.
+        point = EvaluationPoint(frontier.last_point, condition, guard=guard, block=block)
+        self._points.append(point)
+        return point
+
+    def _probe_candidates(
+        self,
+        frontier: _MacroFrontier,
+        triggered: Sequence[Tuple[Transition, _MacroFrontier, _MacroFrontier]],
+        is_initial: bool,
+    ) -> List[EvaluationPoint]:
+        # Speculative validation checks every candidate of a nested choice
+        # before exploring any: in reverse declaration order it evaluates the
+        # guard and, when the guard holds, performs the transition on a copy.
+        # These evaluations happen whatever the priority among the candidates.
+        recorded, self._points = self._points, []
+        for transition, before, after in reversed(triggered):
+            if after.condition.kind == "false":
+                continue
+            condition = frontier.condition
+            if transition.event is not None:
+                condition = BoolTemplate.and_(
+                    condition,
+                    BoolTemplate.atom(
+                        "%s%s" % (_EVENT_ATOM_PREFIX, transition.event.path_name)
+                    ),
+                )
+            probe = self._replace_frontier(frontier, condition=condition)
+            for guard in after.guard_requirements[len(before.guard_requirements) :]:
+                probe = self._replace_frontier(
+                    probe,
+                    condition=BoolTemplate.and_(
+                        condition, BoolTemplate.atom(guard.atom_name)
+                    ),
+                    last_point=self._record_point(probe, condition, guard=guard),
+                )
+            if is_initial:
+                self._execute_initial_transition(probe, transition)
+            else:
+                self._execute_transition(probe, transition)
+        probes, self._points = self._points, recorded
+        return probes
 
     def _active_leaf_path(
         self, frontier: _MacroFrontier, runtime_state_path: str
@@ -1216,6 +1299,7 @@ class _MacroExpander:
             "path_signatures": frontier.path_signatures,
             "depth": frontier.depth,
             "consumed_events": frontier.consumed_events,
+            "last_point": frontier.last_point,
         }
         values.update(updates)
         return _MacroFrontier(**values)

@@ -23,7 +23,7 @@ from test.testings.simulate_semantics import (
 class BmcSemanticFixturePolicy:
     """Expected BMC-core handling for one semantic fixture case.
 
-    :param mode: One of ``"hard_pass"``, ``"partial"``,
+    :param mode: One of ``"hard_pass"``, ``"partial"``, ``"runtime_error"``,
         ``"expected_unsupported"``, ``"temporary_exclude"``, or
         ``"long_term_exclude"``.
     :type mode: str
@@ -76,7 +76,7 @@ NUMERIC_UNSUPPORTED_CASES = {
     "arith_shr_negative",
 }
 
-FLOAT_MODULO_UNSUPPORTED_CASES = {
+FLOAT_MODULO_ALIGNMENT_CASES = {
     "arith_mod_float_negative_dividend",
     "arith_mod_float_negative_divisor",
 }
@@ -98,32 +98,49 @@ HANDLER_CALL_ALIGNMENT_CASES = {
     "ref_context_uses_callsite_stage",
 }
 
-TEMPORARY_BMC_CORE_EXCLUDE_CASES = {
-    # Arithmetic alignment fixtures whose values the current encoder computes
-    # differently, or whose step-level exception expectations it cannot build.
+INTEGER_MODULO_ALIGNMENT_CASES = {
+    "arith_mod_both_negative",
+    "arith_mod_negative_divisor",
+}
+
+RUNTIME_ERROR_PREFIX_CASES = {
     "arith_div_by_zero_raises",
     "arith_div_odd_raises",
-    "arith_mod_both_negative",
+    "arith_pow_complex_result_raises",
     "arith_mod_by_zero_raises",
     "arith_mod_mixed_int_float_by_zero_raises",
-    "arith_mod_negative_divisor",
     "arith_pow_float_zero_base_negative_exponent_raises",
     "arith_pow_negative_exponent_raises",
     "arith_pow_zero_base_negative_exponent_raises",
     "arith_pow_zero_base_negative_exponent_to_float_raises",
-    # Future runtime-error relation work.
-    "design_speculative_dfs_safety_limit",
     "expression_error_preserves_runtime_snapshot",
     "expression_failure_if_condition_raises_expression_error",
     "expression_failure_raises_expression_error",
     "expression_failure_transition_effect_raises_expression_error",
     "expression_failure_transition_guard_raises_expression_error",
-    "expression_type_error_wraps_transition_effect",
+    "hot_start_leaf_defers_during_expression_error",
+    "input_error_retry",
+    "math_sqrt_of_negative_raises",
+    "persistent_default_int_initializer_rejects_non_integer_float",
+    "persistent_operation_writeback_rejects_float_and_rolls_back",
+}
+
+UNENCODED_FUNCTION_CASES = {
+    "arith_cbrt_is_the_real_cube_root",
+    "math_log_of_zero_raises",
+}
+
+TEMPORARY_BMC_CORE_EXCLUDE_CASES = {
+    # Runtime errors raised by bitwise operators, which have no exact Z3
+    # encoding yet.
     "arith_shl_negative_count_in_guard_raises",
     "arith_shl_negative_count_raises",
     "arith_shr_negative_count_raises",
-    "hot_start_leaf_defers_during_expression_error",
-    "persistent_operation_writeback_rejects_float_and_rolls_back",
+    "expression_type_error_wraps_transition_effect",
+}
+
+SEARCH_LIMIT_EXCLUDE_CASES = {
+    "design_speculative_dfs_safety_limit",
     "pseudo_self_loop_step_limit_raises_dfs_error",
 }
 
@@ -131,16 +148,19 @@ CONSTRUCTOR_DIAGNOSTIC_EXCLUDE_CASES = {
     "hot_start_initial_vars_reject_bool_values",
     "hot_start_initial_vars_reject_string_values",
     "hot_start_rejects_overdeep_leaf_stack",
-    "persistent_default_int_initializer_rejects_non_integer_float",
 }
 
 BMC_CORE_FIXTURE_LEDGER_CASES = (
     PLAIN_BEFORE_ALIGNMENT_CASES
     | INITIAL_DELTA_ALIGNMENT_CASES
     | NUMERIC_UNSUPPORTED_CASES
-    | FLOAT_MODULO_UNSUPPORTED_CASES
+    | FLOAT_MODULO_ALIGNMENT_CASES
     | HANDLER_CALL_ALIGNMENT_CASES
+    | INTEGER_MODULO_ALIGNMENT_CASES
+    | RUNTIME_ERROR_PREFIX_CASES
+    | UNENCODED_FUNCTION_CASES
     | TEMPORARY_BMC_CORE_EXCLUDE_CASES
+    | SEARCH_LIMIT_EXCLUDE_CASES
     | CONSTRUCTOR_DIAGNOSTIC_EXCLUDE_CASES
 )
 
@@ -187,11 +207,17 @@ def policy_for_case(case_id: str) -> BmcSemanticFixturePolicy:
             bucket="numeric_unsupported",
             reason="Current Int bitwise / integer-normalization lowering is unsupported and must fail loudly.",
         )
-    if case_id in FLOAT_MODULO_UNSUPPORTED_CASES:
+    if case_id in UNENCODED_FUNCTION_CASES:
         return BmcSemanticFixturePolicy(
             mode="expected_unsupported",
-            bucket="float_modulo_unsupported",
-            reason="Floored float modulo lowering is unsupported and must fail loudly.",
+            bucket="unencoded_function",
+            reason="The function has no exact Z3 encoding, so lowering must fail loudly.",
+        )
+    if case_id in FLOAT_MODULO_ALIGNMENT_CASES:
+        return BmcSemanticFixturePolicy(
+            mode="hard_pass",
+            bucket="float_modulo",
+            reason="Floored float modulo follows the shared operator catalog encoding.",
         )
     if case_id in HANDLER_CALL_ALIGNMENT_CASES:
         return BmcSemanticFixturePolicy(
@@ -199,11 +225,29 @@ def policy_for_case(case_id: str) -> BmcSemanticFixturePolicy:
             bucket="abstract_handler_calls",
             reason="Abstract call records, call-time snapshots, and handler_calls expectations are covered by the current BMC relation.",
         )
+    if case_id in INTEGER_MODULO_ALIGNMENT_CASES:
+        return BmcSemanticFixturePolicy(
+            mode="hard_pass",
+            bucket="integer_modulo",
+            reason="Floored integer modulo follows the shared operator catalog encoding.",
+        )
+    if case_id in RUNTIME_ERROR_PREFIX_CASES:
+        return BmcSemanticFixturePolicy(
+            mode="runtime_error",
+            bucket="runtime_error_prefix",
+            reason="BMC reports the first runtime error as a replayed error prefix; later steps exercise simulator recovery, which a bounded execution never reaches.",
+        )
     if case_id in TEMPORARY_BMC_CORE_EXCLUDE_CASES:
         return BmcSemanticFixturePolicy(
             mode="temporary_exclude",
-            bucket="runtime_step_error",
-            reason="Runtime step-error semantics are scheduled for later BMC diagnostic research.",
+            bucket="bitwise_runtime_error",
+            reason="The runtime error comes from a bitwise operator, which has no exact Z3 encoding yet.",
+        )
+    if case_id in SEARCH_LIMIT_EXCLUDE_CASES:
+        return BmcSemanticFixturePolicy(
+            mode="long_term_exclude",
+            bucket="runtime_search_limit",
+            reason="Speculative-search safety limits bound the simulator's own search; BMC expansion enforces its own limits.",
         )
     if case_id in CONSTRUCTOR_DIAGNOSTIC_EXCLUDE_CASES:
         return BmcSemanticFixturePolicy(

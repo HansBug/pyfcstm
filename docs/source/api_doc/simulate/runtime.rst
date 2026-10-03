@@ -42,6 +42,7 @@ SimulationRuntimeExpressionError
 -----------------------------------------------------
 
 .. autoclass:: SimulationRuntimeExpressionError
+    :members: kind
 
 
 SimulationRuntimeActionReferenceError

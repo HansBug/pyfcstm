@@ -422,3 +422,59 @@ def test_an_undecided_check_explains_why_no_verdict_exists(monkeypatch):
 
     assert "RUNTIME SAFETY CHECK TIMED OUT; PROPERTY NOT EVALUATED" in text
     assert "The runtime-safety check timed out; no property verdict is available." in text
+
+
+TWO_STAGES = _machine(GUARD_ORDER_EXPOSES, "input int d;\ndef float x = 1.0;\ndef float y = 10 / 2;")
+
+
+@pytest.mark.unittest
+def test_an_undecided_stage_does_not_hide_a_later_error(monkeypatch):
+    # The initializer stage cannot fail; the solver gives up on it the way
+    # Z3 does on a hard query, and the step it can decide still reports.
+    model = load_state_machine_from_text(TWO_STAGES)
+    formula = compile_bmc_query(model, SHORT_QUERY)
+    assert formula.core._initial_error_sites
+    original = z3.Solver.check
+    calls = []
+
+    def check(self, *args):
+        calls.append(None)
+        return z3.unknown if len(calls) == 1 else original(self, *args)
+
+    monkeypatch.setattr(z3.Solver, "check", check)
+    monkeypatch.setattr(z3.Solver, "reason_unknown", lambda self: "incomplete")
+
+    result = solve_bmc_property(formula)
+
+    assert result.outcome == "runtime_error"
+    assert (result.runtime_safety.error.step, result.runtime_safety.error.kind) == (1, "division_by_zero")
+
+
+@pytest.mark.unittest
+def test_every_undecided_stage_reports_the_first_reason(monkeypatch):
+    model = load_state_machine_from_text(TWO_STAGES)
+    formula = compile_bmc_query(model, SHORT_QUERY)
+    reasons = iter(["incomplete", "timeout"])
+    monkeypatch.setattr(z3.Solver, "check", lambda self, *args: z3.unknown)
+    monkeypatch.setattr(z3.Solver, "reason_unknown", lambda self: next(reasons))
+
+    result = solve_bmc_property(formula)
+
+    assert (result.runtime_safety.status, result.runtime_safety.reason) == ("unknown", "incomplete")
+
+
+@pytest.mark.unittest
+def test_a_dead_end_pseudo_state_runs_no_action():
+    # The runtime enters a pseudo state without outgoing transitions without
+    # running its lifecycle actions, so its division is never evaluated.
+    model = load_state_machine_from_text(
+        _machine("[*] -> A; state A; state B; pseudo state P { enter { x = 10 / d; } } A -> P :: Go;")
+    )
+    result = solve_bmc_property(compile_bmc_query(model, 'check reach <= 3: terminated();'))
+
+    assert result.runtime_safety.status == "not_applicable"
+    assert result.outcome == "no_witness"
+    runtime = SimulationRuntime(model, input_source={"d": 0})
+    runtime.cycle()
+    runtime.cycle(["Root.A.Go"], inputs={"d": 0})
+    assert runtime.current_state.path == ("Root", "A")

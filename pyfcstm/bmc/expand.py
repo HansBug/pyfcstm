@@ -734,6 +734,10 @@ class _MacroExpander:
             frontier,
             stack=frontier.stack + (_FormalStackFrame(state, "active"),),
         )
+        if state.is_pseudo and not state.transitions_from and not state.init_transitions:
+            # A pseudo state with no outgoing transition is a dead end, and
+            # the runtime enters it without running any lifecycle action.
+            return (current,)
         for on_enter in state.on_enters:
             current = self._record_func(
                 current, state, on_enter, "state_action", "state_enter"

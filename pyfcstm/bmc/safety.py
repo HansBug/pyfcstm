@@ -200,22 +200,29 @@ def runtime_error_formula(core: BmcCoreFormula) -> Tuple[z3.BoolRef, Tuple[BmcRu
         >>> runtime_error_formula(core)
         (False, ())
     """
+    stages = _stages(core)
     sites = _sites(core)
-    disjuncts: List[z3.BoolRef] = []
+    if not stages:
+        return z3.BoolVal(False), sites
+    return (stages[0] if len(stages) == 1 else z3.Or(*stages)), sites
+
+
+def _stages(core: BmcCoreFormula) -> List[z3.BoolRef]:
+    # One formula per place an error can happen, earliest first: the
+    # initializers, then each step.
+    stages: List[z3.BoolRef] = []
     initial = [site.condition for site in core._initial_error_sites]
     if initial:
-        disjuncts.append(z3.And(core.domain_formula, *_environment_up_to(core, 0), z3.Or(*initial)))
+        stages.append(z3.And(core.domain_formula, *_environment_up_to(core, 0), z3.Or(*initial)))
     prefix: List[z3.BoolRef] = [core.domain_formula, core.initial_formula]
     for step in core.steps:
         step_sites = [site.condition for site in step.runtime_error_sites]
         if step_sites:
-            disjuncts.append(
+            stages.append(
                 z3.And(*prefix, *_environment_up_to(core, step.step_index), z3.Or(*step_sites))
             )
         prefix.append(step.formula)
-    if not disjuncts:
-        return z3.BoolVal(False), sites
-    return (disjuncts[0] if len(disjuncts) == 1 else z3.Or(*disjuncts)), sites
+    return stages
 
 
 def check_runtime_safety(
@@ -284,31 +291,48 @@ def _check_runtime_safety(
     # The shared budget starts only when a solver check is about to run, so a
     # model without runtime-error sites spends none of it.
     core = _unsliced(core)
-    formula, sites = runtime_error_formula(core)
+    sites = _sites(core)
     if not sites:
         return BmcRuntimeSafetyResult("not_applicable", 0, 0.0), None
     budget = _SolveBudget(timeout_ms)
-    solver, _logic = _solver_for_profile(solver_profile, (formula,))
-    solver.add(formula)
-    status, model, reason, elapsed_ms, _started = _check_with_budget(solver, budget)
-    if status == "unsat":
-        return BmcRuntimeSafetyResult("safe", len(sites), elapsed_ms), budget
-    if status != "sat":
-        return (
-            BmcRuntimeSafetyResult(status, len(sites), elapsed_ms, reason=reason or status),
-            budget,
-        )
+    elapsed_ms = 0.0
+    undecided: Optional[Tuple[str, str]] = None
+    # Each stage is checked on its own, earliest first.  A small query is
+    # easier for Z3 than the disjunction of all of them, the first SAT stage
+    # holds the earliest error, and a stage Z3 cannot decide does not hide a
+    # later one it can.
+    for stage in _stages(core):
+        solver, _logic = _solver_for_profile(solver_profile, (stage,))
+        solver.add(stage)
+        status, model, reason, stage_ms, _started = _check_with_budget(solver, budget)
+        elapsed_ms += stage_ms
+        if status == "sat":
+            return (
+                BmcRuntimeSafetyResult(
+                    "violated",
+                    len(sites),
+                    elapsed_ms,
+                    error=_first_raised(model, sites),
+                    model=model,
+                    core=core,
+                ),
+                budget,
+            )
+        if status != "unsat" and undecided is None:
+            undecided = (status, reason or status)
+    if undecided is not None:
+        status, reason = undecided
+        return BmcRuntimeSafetyResult(status, len(sites), elapsed_ms, reason=reason), budget
+    return BmcRuntimeSafetyResult("safe", len(sites), elapsed_ms), budget
+
+
+def _first_raised(model: z3.ModelRef, sites: Tuple[BmcRuntimeErrorSite, ...]) -> BmcRuntimeErrorSite:
     # Sites are listed in evaluation order and each one holds only where its
     # operation is reached, so the first one the model raises is the error
     # the runtime reports.
-    for error in sites:
-        if _holds(model, error.condition):
-            break
-    else:  # pragma: no cover - the model satisfies a disjunction of the sites.
-        raise BmcBuildError("runtime error model raises none of its sites.")
-    return (
-        BmcRuntimeSafetyResult(
-            "violated", len(sites), elapsed_ms, error=error, model=model, core=core
-        ),
-        budget,
+    for site in sites:
+        if _holds(model, site.condition):
+            return site
+    raise BmcBuildError(  # pragma: no cover - the model satisfies one stage.
+        "runtime error model raises none of its sites."
     )

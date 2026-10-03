@@ -1,0 +1,1 @@
+def int a=0; def int b=0; def int c=0; def int d=0; def int e=0; def int f=0; def int g=0; def int h=0; state Root { state Active; [*]->Active; }

@@ -1,0 +1,30 @@
+Query: remainder
+Solver result: UNSAT
+Reading: complete
+
+P1  Nonnegative remainder
+  For a nonzero integer divisor, dividend = divisor * quotient + remainder, with 0 <= remainder < abs(divisor).
+  The zero-divisor alternative is retained or ruled out by a nonzero literal divisor.
+  Therefore: ((d = 0) or (mod(x, d) >= 0))
+
+P2  Input
+  Input origins: negative_remainder
+  Therefore: (mod(x, d) < 0)
+
+P3  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not ((d = 0)) or (d <= 0))
+
+P4  Input
+  Input origins: divisor
+  Therefore: (d > 0)
+
+P5  Resolve the clauses
+  From: P3, P4
+  Therefore: not ((d = 0))
+
+P6  Resolve the clauses
+  From: P1, P2, P5
+  Therefore: false
+
+Conclusion: the submitted conjunction is inconsistent.

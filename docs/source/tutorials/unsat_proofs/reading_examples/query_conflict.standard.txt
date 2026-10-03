@@ -1,0 +1,76 @@
+Query: query_sources
+Solver result: UNSAT
+Reading: complete
+View: standard
+
+P1  Input
+  Input origins: assumption.0000.frame.0000
+  Therefore: (1 <= a@0)
+  Source: Assumption 1 [query_conflict.fbmcq]
+
+P2  Input
+  Input origins: assumption.0001.frame.0000
+  Therefore: ((0 < a@0) => (b@0 >= (a@0 + 2)))
+  Source: Assumption 2 [query_conflict.fbmcq]
+
+P3  Exact linear combination
+  To refute the negated conclusion, temporarily assume:
+    (a@0 <= 0)
+    (a@0 >= 1)
+  1 * [a@0 <= 0]
+  1 * [-1 * a@0 + 1 <= 0]
+  Sum: 1 <= 0; contradiction.
+  Discharge these temporary assumptions.
+  Therefore: (not ((a@0 <= 0)) or not ((a@0 >= 1)))
+
+P4  Input
+  Input origins: assumption.0002.frame.0000
+  Therefore: (c@0 >= (b@0 + 3))
+  Source: Assumption 3 [query_conflict.fbmcq]
+
+P5  Input
+  Input origins: assumption.0003.frame.0000
+  Therefore: (d@0 >= (c@0 + 4))
+  Source: Assumption 4 [query_conflict.fbmcq]
+
+P6  Input
+  Input origins: assumption.0004.frame.0000
+  Therefore: (e@0 >= (d@0 + 5))
+  Source: Assumption 5 [query_conflict.fbmcq]
+
+P7  Input
+  Input origins: assumption.0005.frame.0000
+  Therefore: (f@0 >= (e@0 + 6))
+  Source: Assumption 6 [query_conflict.fbmcq]
+
+P8  Input
+  Input origins: assumption.0006.frame.0000
+  Therefore: (g@0 >= (f@0 + 7))
+  Source: Assumption 7 [query_conflict.fbmcq]
+
+P9  Input
+  Input origins: assumption.0007.frame.0000
+  Therefore: (h@0 >= (g@0 + 8))
+  Source: Assumption 8 [query_conflict.fbmcq]
+
+P10  Input
+  Input origins: assumption.0008.frame.0000
+  Therefore: (35 >= h@0)
+  Source: Assumption 9 [query_conflict.fbmcq]
+
+P11  Propagate premises; Exact linear combination
+  From: P1, P2, P3, P4, P5, P6, P7, P8, P9, P10
+  1 * [-1 * a@0 + 1 <= 0]
+  1 * [a@0 + -1 * b@0 + 2 <= 0]
+  1 * [-1 * c@0 + b@0 + 3 <= 0]
+  1 * [c@0 + -1 * d@0 + 4 <= 0]
+  1 * [d@0 + -1 * e@0 + 5 <= 0]
+  1 * [e@0 + -1 * f@0 + 6 <= 0]
+  1 * [f@0 + -1 * g@0 + 7 <= 0]
+  1 * [g@0 + -1 * h@0 + 8 <= 0]
+  1 * [h@0 + -35 <= 0]
+  Sum: 1 <= 0; contradiction.
+  Therefore: false
+  Expandable proof steps: 11
+
+Conclusion: the submitted conjunction is inconsistent.

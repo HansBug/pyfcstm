@@ -1,0 +1,87 @@
+Query: branches
+Solver result: UNSAT
+Reading: complete
+
+P1  Input
+  Input origins: goal
+  Therefore: (y < 0)
+
+P2  Logical consequence
+  From: P1
+  Therefore: not ((y >= 0))
+
+P3  Input
+  Input origins: update
+  Therefore: (y = (if (x >= 0) then (x + 1) else 0))
+
+P4  Logical consequence
+  From: P3
+  Therefore: ((y + (-1 * (if (x >= 0) then (1 + x) else 0))) >= 0)
+
+P5  Logical consequence
+  From: P4
+  Therefore: ((y + (-1 * z3name!0)) >= 0)
+
+P6  Internal definition / defining clause
+  Therefore: ((not ((z3name!0 <= 0)) or not ((z3name!0 >= 0))) or (z3name!0 >= 0))
+
+P7  Internal definition / defining clause
+  Therefore: ((not ((x >= 0)) or (z3name!0 = (1 + x))) and ((x >= 0) or (z3name!0 = 0)))
+
+P8  Logical consequence
+  From: P7
+  Therefore: ((x >= 0) or not ((not ((z3name!0 <= 0)) or not ((z3name!0 >= 0)))))
+
+P9  Assume
+  Under assumptions: P9
+  Therefore: (x >= 0)
+
+P10  Internal definition / defining clause
+  Therefore: ((not (((x + (-1 * z3name!0)) >= -1)) or not (((x + (-1 * z3name!0)) <= -1))) or ((x + (-1 * z3name!0)) <= -1))
+
+P11  Logical consequence
+  From: P7
+  Therefore: (not ((x >= 0)) or not ((not (((x + (-1 * z3name!0)) >= -1)) or not (((x + (-1 * z3name!0)) <= -1)))))
+
+P12  Resolve the clauses
+  From: P11, P9
+  Under assumptions: P9
+  Therefore: not ((not (((x + (-1 * z3name!0)) >= -1)) or not (((x + (-1 * z3name!0)) <= -1))))
+
+P13  Resolve the clauses
+  From: P10, P12
+  Under assumptions: P9
+  Therefore: ((x + (-1 * z3name!0)) <= -1)
+
+P14  Exact linear combination
+  From: P9, P2, P5, P13
+  Under assumptions: P9
+  1 * [-1 * x <= 0]
+  1 * [y + 1 <= 0]
+  1 * [-1 * y + z3name!0 <= 0]
+  1 * [x + -1 * z3name!0 + 1 <= 0]
+  Sum: 2 <= 0; contradiction.
+  Therefore: false
+
+P15  Discharge local assumptions
+  From: P14
+  Closed: P9
+  Therefore: not ((x >= 0))
+
+P16  Resolve the clauses
+  From: P8, P15
+  Therefore: not ((not ((z3name!0 <= 0)) or not ((z3name!0 >= 0))))
+
+P17  Resolve the clauses
+  From: P6, P16
+  Therefore: (z3name!0 >= 0)
+
+P18  Exact linear combination
+  From: P2, P5, P17
+  1 * [y + 1 <= 0]
+  1 * [-1 * y + z3name!0 <= 0]
+  1 * [-1 * z3name!0 <= 0]
+  Sum: 1 <= 0; contradiction.
+  Therefore: false
+
+Conclusion: the submitted conjunction is inconsistent.

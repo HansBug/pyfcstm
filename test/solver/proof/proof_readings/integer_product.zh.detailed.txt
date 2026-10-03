@@ -1,0 +1,306 @@
+查询：integer_product
+求解结果：UNSAT
+阅读完整度：complete
+
+P1  等式与大小关系
+  这些分支覆盖了全部三种情况：同一个算术差值小于零、等于零或大于零。
+  得到：(not ((counter = ((2 * div(counter, 2)) + mod(counter, 2)))) or ((counter + (-1 * ((2 * div(counter, 2)) + mod(counter, 2)))) >= 0))
+
+P2  欧几里得整除恒等式
+  整数除数非零时，被除数 = 除数 * 商 + 余数，且 0 <= 余数 < abs(除数)。
+  除数为零的分支已保留，或由非零常量除数排除。
+  得到：(false or (counter = ((2 * div(counter, 2)) + mod(counter, 2))))
+
+P3  逻辑推导
+  得到：true
+
+P4  消解子句
+  根据：P2, P3
+  得到：(counter = ((2 * div(counter, 2)) + mod(counter, 2)))
+
+P5  消解子句
+  根据：P1, P4
+  得到：((counter + (-1 * ((2 * div(counter, 2)) + mod(counter, 2)))) >= 0)
+
+P6  精确区间推导
+  B1: counter + 2 <= 0
+    临时否定结论中的一个分支。
+  B2: -1 * (counter * factor) + -3 <= 0
+    临时否定结论中的一个分支。
+  B3: -1 * factor + 2 <= 0
+    临时否定结论中的一个分支。
+  I1: counter 范围为 (-inf, -2]; 移项求界；整数边界向内取整; B1
+  I2: (counter * factor) 范围为 [-3, +inf); 移项求界；整数边界向内取整; B2
+  I3: factor 范围为 [2, +inf); 移项求界；整数边界向内取整; B3
+  I4: (counter * factor) 范围为 (-inf, -4]; 操作数区间相乘; I1, I3
+  不相容的范围：I2, I4；矛盾。
+  关闭上述临时假设。
+  得到：((counter >= -1) or not (((counter * factor) >= -3)) or (factor <= 1))
+
+P7  等式与大小关系
+  这些分支覆盖了全部三种情况：同一个算术差值小于零、等于零或大于零。
+  得到：(not (((counter * factor) = -3)) or ((counter * factor) >= -3))
+
+P8  输入条件
+  输入来源：product
+  得到：((counter * factor) = -3)
+
+P9  消解子句
+  根据：P7, P8
+  得到：((counter * factor) >= -3)
+
+P10  局部假设
+  当前假设：P10
+  得到：not ((factor <= 1))
+
+P11  局部假设
+  当前假设：P11
+  得到：(counter >= -1)
+
+P12  等式与大小关系
+  这些分支覆盖了全部三种情况：同一个算术差值小于零、等于零或大于零。
+  得到：(not ((mod(counter, 2) = 0)) or (mod(counter, 2) <= 0))
+
+P13  输入条件
+  输入来源：multiple
+  得到：(mod(counter, 2) = 0)
+
+P14  消解子句
+  根据：P12, P13
+  得到：(mod(counter, 2) <= 0)
+
+P15  余数非负
+  整数除数非零时，被除数 = 除数 * 商 + 余数，且 0 <= 余数 < abs(除数)。
+  除数为零的分支已保留，或由非零常量除数排除。
+  得到：(false or (mod(counter, 2) >= 0))
+
+P16  消解子句
+  根据：P15, P3
+  得到：(mod(counter, 2) >= 0)
+
+P17  等式与大小关系
+  这些分支覆盖了全部三种情况：同一个算术差值小于零、等于零或大于零。
+  得到：((counter = 0) or not ((counter <= 0)) or not ((counter >= 0)))
+
+P18  精确区间推导
+  B1: (counter * factor) + 3 <= 0
+    临时否定结论中的一个分支。
+  B2: -1 * counter <= 0
+    临时否定结论中的一个分支。
+  B3: counter <= 0
+    临时否定结论中的一个分支。
+  I1: (counter * factor) 范围为 (-inf, -3]; 移项求界；整数边界向内取整; B1
+  I2: counter 范围为 [0, +inf); 移项求界；整数边界向内取整; B2
+  I3: counter 范围为 (-inf, 0]; 移项求界；整数边界向内取整; B3
+  I4: counter 范围为 [0, 0]; 区间求交; I2, I3
+  I5: (counter * factor) 范围为 [0, 0]; 操作数区间相乘; I4
+  不相容的范围：I1, I5；矛盾。
+  关闭上述临时假设。
+  得到：(not (((counter * factor) <= -3)) or not ((counter >= 0)) or not ((counter <= 0)))
+
+P19  等式与大小关系
+  这些分支覆盖了全部三种情况：同一个算术差值小于零、等于零或大于零。
+  得到：(not (((counter * factor) = -3)) or ((counter * factor) <= -3))
+
+P20  消解子句
+  根据：P19, P8
+  得到：((counter * factor) <= -3)
+
+P21  等式与大小关系
+  这些分支覆盖了全部三种情况：同一个算术差值小于零、等于零或大于零。
+  得到：(not ((counter = 0)) or (counter <= 0))
+
+P22  局部假设
+  当前假设：P22
+  得到：(counter = 0)
+
+P23  消解子句
+  根据：P21, P22
+  当前假设：P22
+  得到：(counter <= 0)
+
+P24  等式与大小关系
+  这些分支覆盖了全部三种情况：同一个算术差值小于零、等于零或大于零。
+  得到：(not ((counter = 0)) or (counter >= 0))
+
+P25  消解子句
+  根据：P24, P22
+  当前假设：P22
+  得到：(counter >= 0)
+
+P26  消解子句
+  根据：P18, P20, P23, P25
+  当前假设：P22
+  得到：false
+
+P27  关闭局部假设
+  根据：P26
+  已关闭：P22
+  得到：not ((counter = 0))
+
+P28  消解子句
+  根据：P17, P27
+  得到：(not ((counter <= 0)) or not ((counter >= 0)))
+
+P29  精确多项式推导
+  Q1: counter + -1 * mod(counter, 2) + -2 * div(counter, 2) >= 0
+    归一化局部前提：not (not (((counter + (-1 * ((2 * div(counter, 2)) + mod(counter, 2)))) >= 0)))
+  Q2: 3 + counter * factor >= 0
+    归一化局部前提：not (not (((counter * factor) >= -3)))
+  Q3: -1 * mod(counter, 2) >= 0
+    归一化局部前提：not (not ((mod(counter, 2) <= 0)))
+  Q4: mod(counter, 2) >= 0
+    归一化局部前提：not (not ((mod(counter, 2) >= 0)))
+  Q5: -1 * counter + mod(counter, 2) + 2 * div(counter, 2) >= 0
+    归一化局部前提：not (not (((counter + (-1 * ((2 * div(counter, 2)) + mod(counter, 2)))) <= 0)))
+  Q6: -3 + -1 * counter * factor >= 0
+    归一化局部前提：not (not (((counter * factor) <= -3)))
+  Q7: -1 * counter * factor + mod(counter, 2) * factor + 2 * factor * div(counter, 2) >= 0
+    已证明的等式乘以 -1 * factor; Q1, Q5
+  Q8: -1 * mod(counter, 2) * factor >= 0
+    已证明的等式乘以 factor; Q3, Q4
+  Q9: 3 + 2 * factor * div(counter, 2) >= 0
+    非负线性组合：1 * Q2 + 1 * Q7 + 1 * Q8
+  Q10: counter * factor + -1 * mod(counter, 2) * factor + -2 * factor * div(counter, 2) >= 0
+    已证明的等式乘以 factor; Q1, Q5
+  Q11: mod(counter, 2) * factor >= 0
+    已证明的等式乘以 -1 * factor; Q3, Q4
+  Q12: -3 + -2 * factor * div(counter, 2) >= 0
+    非负线性组合：1 * Q6 + 1 * Q10 + 1 * Q11
+  Q13: 2 + 2 * factor * div(counter, 2) >= 0
+    按已证明的离散取值收紧：Q9
+  Q14: -4 + -2 * factor * div(counter, 2) >= 0
+    按已证明的离散取值收紧：Q12
+  Q15: -2 >= 0
+    非负线性组合：1 * Q2 + 1 * Q6 + 1 * Q7 + 1 * Q10 + 1 * Q13 + 1 * Q14
+  最后得到的常数不可能满足该符号条件，矛盾。
+  得到：(not (((counter + (-1 * ((2 * div(counter, 2)) + mod(counter, 2)))) >= 0)) or not (((counter * factor) >= -3)) or not ((mod(counter, 2) <= 0)) or (counter <= 0) or not ((mod(counter, 2) >= 0)) or not (((counter + (-1 * ((2 * div(counter, 2)) + mod(counter, 2)))) <= 0)) or not (((counter * factor) <= -3)))
+
+P30  等式与大小关系
+  这些分支覆盖了全部三种情况：同一个算术差值小于零、等于零或大于零。
+  得到：(not ((counter = ((2 * div(counter, 2)) + mod(counter, 2)))) or ((counter + (-1 * ((2 * div(counter, 2)) + mod(counter, 2)))) <= 0))
+
+P31  消解子句
+  根据：P30, P4
+  得到：((counter + (-1 * ((2 * div(counter, 2)) + mod(counter, 2)))) <= 0)
+
+P32  局部假设
+  当前假设：P32
+  得到：not ((counter <= 0))
+
+P33  消解子句
+  根据：P29, P14, P16, P31, P5, P20, P9, P32
+  当前假设：P32
+  得到：false
+
+P34  关闭局部假设
+  根据：P33
+  已关闭：P32
+  得到：(counter <= 0)
+
+P35  消解子句
+  根据：P28, P34
+  得到：not ((counter >= 0))
+
+P36  精确区间推导
+  根据：P5, P11, P14, P16, P35, P31
+  当前假设：P11
+  B1: -1 * counter + mod(counter, 2) + 2 * div(counter, 2) <= 0
+  B2: -1 * counter + -1 <= 0
+  B3: mod(counter, 2) <= 0
+  B4: -1 * mod(counter, 2) <= 0
+  B5: counter + 1 <= 0
+  B6: counter + -1 * mod(counter, 2) + -2 * div(counter, 2) <= 0
+  I1: (counter + (-1 * ((2 * div(counter, 2)) + mod(counter, 2)))) 范围为 [0, +inf); 移项求界；整数边界向内取整; B1
+  I2: counter 范围为 [-1, +inf); 移项求界；整数边界向内取整; B2
+  I3: mod(counter, 2) 范围为 (-inf, 0]; 移项求界；整数边界向内取整; B3
+  I4: mod(counter, 2) 范围为 [0, +inf); 移项求界；整数边界向内取整; B4
+  I5: mod(counter, 2) 范围为 [0, 0]; 区间求交; I3, I4
+  I6: counter 范围为 (-inf, -1]; 移项求界；整数边界向内取整; B5
+  I7: counter 范围为 [-1, -1]; 区间求交; I2, I6
+  I8: (counter + (-1 * ((2 * div(counter, 2)) + mod(counter, 2)))) 范围为 (-inf, 0]; 移项求界；整数边界向内取整; B6
+  I9: (counter + (-1 * ((2 * div(counter, 2)) + mod(counter, 2)))) 范围为 [0, 0]; 区间求交; I1, I8
+  I10: div(counter, 2) 范围为 [0, +inf); 移项求界；整数边界向内取整; I7, I5, B6
+  I11: 2 范围为 [2, 2]; 精确常量
+  I12: (2 * div(counter, 2)) 范围为 [0, +inf); 操作数区间相乘; I11, I10
+  I13: ((2 * div(counter, 2)) + mod(counter, 2)) 范围为 [0, +inf); 操作数区间加减; I12, I5
+  I14: -1 范围为 [-1, -1]; 精确常量
+  I15: (-1 * ((2 * div(counter, 2)) + mod(counter, 2))) 范围为 (-inf, 0]; 操作数区间相乘; I14, I13
+  I16: (counter + (-1 * ((2 * div(counter, 2)) + mod(counter, 2)))) 范围为 (-inf, -1]; 操作数区间加减; I7, I15
+  不相容的范围：I9, I16；矛盾。
+  得到：false
+
+P37  关闭局部假设
+  根据：P36
+  已关闭：P11
+  得到：not ((counter >= -1))
+
+P38  消解子句
+  根据：P6, P9, P10, P37
+  当前假设：P10
+  得到：false
+
+P39  关闭局部假设
+  根据：P38
+  已关闭：P10
+  得到：(factor <= 1)
+
+P40  精确线性组合
+  为反驳结论的否定，暂时假设：
+    not ((factor >= 1))
+    not ((factor <= 0))
+  1 * [factor <= 0]
+  1 * [-1 * factor + 1 <= 0]
+  相加得到：1 <= 0; 矛盾。
+  关闭上述临时假设。
+  得到：((factor >= 1) or (factor <= 0))
+
+P41  精确区间推导
+  B1: factor <= 0
+    临时否定结论中的一个分支。
+  B2: counter + 1 <= 0
+    临时否定结论中的一个分支。
+  B3: (counter * factor) + 3 <= 0
+    临时否定结论中的一个分支。
+  I1: factor 范围为 (-inf, 0]; 移项求界；整数边界向内取整; B1
+  I2: counter 范围为 (-inf, -1]; 移项求界；整数边界向内取整; B2
+  I3: (counter * factor) 范围为 (-inf, -3]; 移项求界；整数边界向内取整; B3
+  I4: (counter * factor) 范围为 [0, +inf); 操作数区间相乘; I2, I1
+  不相容的范围：I3, I4；矛盾。
+  关闭上述临时假设。
+  得到：(not ((factor <= 0)) or (counter >= 0) or not (((counter * factor) <= -3)))
+
+P42  消解子句
+  根据：P41, P20, P35
+  得到：not ((factor <= 0))
+
+P43  消解子句
+  根据：P40, P42
+  得到：(factor >= 1)
+
+P44  精确区间推导
+  根据：P5, P39, P43, P20, P9, P14, P16, P31
+  B1: -1 * counter + mod(counter, 2) + 2 * div(counter, 2) <= 0
+  B2: factor + -1 <= 0
+  B3: -1 * factor + 1 <= 0
+  B4: (counter * factor) + 3 <= 0
+  B5: -1 * (counter * factor) + -3 <= 0
+  B6: mod(counter, 2) <= 0
+  B7: -1 * mod(counter, 2) <= 0
+  B8: counter + -1 * mod(counter, 2) + -2 * div(counter, 2) <= 0
+  I1: factor 范围为 (-inf, 1]; 移项求界；整数边界向内取整; B2
+  I2: factor 范围为 [1, +inf); 移项求界；整数边界向内取整; B3
+  I3: factor 范围为 [1, 1]; 区间求交; I1, I2
+  I4: (counter * factor) 范围为 (-inf, -3]; 移项求界；整数边界向内取整; B4
+  I5: (counter * factor) 范围为 [-3, +inf); 移项求界；整数边界向内取整; B5
+  I6: (counter * factor) 范围为 [-3, -3]; 区间求交; I4, I5
+  I7: mod(counter, 2) 范围为 (-inf, 0]; 移项求界；整数边界向内取整; B6
+  I8: mod(counter, 2) 范围为 [0, +inf); 移项求界；整数边界向内取整; B7
+  I9: mod(counter, 2) 范围为 [0, 0]; 区间求交; I7, I8
+  I10: counter 范围为 [-3, -3]; 用乘积区间除以不含零的因子区间; I6, I3
+  I11: div(counter, 2) 范围为 (-inf, -2]; 移项求界；整数边界向内取整; I10, I9, B1
+  I12: counter 范围为 (-inf, -4]; 移项求界；整数边界向内取整; I9, I11, B8
+  不相容的范围：I10, I12；矛盾。
+  得到：false
+
+结论：提交的条件合取不可满足。

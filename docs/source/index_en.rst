@@ -101,6 +101,7 @@ show the whole learning path directly from this home page.
     tutorials/visualization/index
     tutorials/history/index
     tutorials/bmc/index
+    tutorials/unsat_proofs/index
 
 * :doc:`Tutorial roadmap <tutorials/index>`
 * :doc:`tutorials/quick_start/index`
@@ -111,6 +112,7 @@ show the whole learning path directly from this home page.
 * :doc:`tutorials/visualization/index`
 * :doc:`tutorials/history/index`
 * :doc:`tutorials/bmc/index`
+* :doc:`tutorials/unsat_proofs/index`
 
 How-to Guides
 -------------
@@ -128,6 +130,7 @@ extra click through a category page.
     how_to/installation/index
     how_to/cli_workflows/index
     how_to/bmc/index
+    how_to/unsat_proofs/index
     how_to/dsl/index
     how_to/simulation/index
     how_to/simulation/diagnostics
@@ -141,6 +144,7 @@ extra click through a category page.
 * :doc:`how_to/installation/index`
 * :doc:`how_to/cli_workflows/index`
 * :doc:`how_to/bmc/index`
+* :doc:`how_to/unsat_proofs/index`
 * :doc:`how_to/dsl/index`
 * :doc:`how_to/simulation/index`
 * :doc:`how_to/inspect/index`
@@ -166,6 +170,7 @@ in the global navigation.
     explanations/dsl_semantics/index
     explanations/execution_semantics/index
     explanations/bmc_semantics/index
+    explanations/unsat_proofs/index
     explanations/bmc_properties/index
     explanations/bmc_solving/index
     explanations/diagnostics/index
@@ -178,6 +183,7 @@ in the global navigation.
 * :doc:`explanations/dsl_semantics/index`
 * :doc:`explanations/execution_semantics/index`
 * :doc:`explanations/bmc_semantics/index`
+* :doc:`explanations/unsat_proofs/index`
 * :doc:`explanations/bmc_properties/index`
 * :doc:`explanations/bmc_solving/index`
 * :doc:`explanations/diagnostics/index`
@@ -209,6 +215,7 @@ generated API documentation remains the last item in this reference area.
     reference/builtin_templates/index
     reference/bmc_query/index
     reference/bmc_results/index
+    reference/unsat_proofs/index
     API Documentation <api_doc_en>
 
 * :doc:`Reference map <reference/index>`
@@ -223,6 +230,7 @@ generated API documentation remains the last item in this reference area.
 * :doc:`reference/builtin_templates/index`
 * :doc:`reference/bmc_query/index`
 * :doc:`reference/bmc_results/index`
+* :doc:`reference/unsat_proofs/index`
 * :doc:`API Documentation <api_doc_en>`
 
 Release Notes

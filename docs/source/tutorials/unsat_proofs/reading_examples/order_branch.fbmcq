@@ -1,0 +1,10 @@
+init state("Order.Idle") havoc { a,b,c,cap_a,cap_b,cap_c,pool,budget,reserve,limit };
+assume at 0: a>=0;
+assume at 0: a <= cap_a;
+assume at 0: b <= cap_b;
+assume at 0: c <= cap_c;
+assume at 0: cap_a + cap_b <= pool;
+assume at 0: pool + cap_c <= budget;
+assume at 0: budget + reserve <= limit;
+assume event("Order.Start",0)==true;
+check reach <= 3: active("Order.Done") && total > limit;

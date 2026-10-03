@@ -64,15 +64,53 @@ Example::
     1
 """
 
-from .expr import expr_to_z3, create_z3_vars_from_models
-from .operation import parse_operations, execute_operations
-from .solve import solve, SolveResult
+from importlib import import_module
+from types import ModuleType
+import sys
 
-__all__ = [
-    "SolveResult",
-    "create_z3_vars_from_models",
-    "execute_operations",
-    "expr_to_z3",
-    "parse_operations",
-    "solve",
-]
+
+_EXPORTS = {
+    'expr_to_z3': 'expr', 'create_z3_vars_from_models': 'expr',
+    'parse_operations': 'operation', 'execute_operations': 'operation',
+    'solve': 'solve', 'SolveResult': 'solve',
+    'SymbolName': 'symbols', 'SymbolNames': 'symbols',
+    'UnsatConstraint': 'unsat', 'UnsatQuery': 'unsat',
+    'UnsatCoreResult': 'unsat', 'explain_unsat_core': 'unsat',
+    'explain_unsat': 'proof', 'UnsatReport': 'proof',
+    'ProofExtensions': 'proof', 'SourceAdapter': 'proof',
+    'SourceDescription': 'proof', 'SourceBinding': 'proof',
+    'ProofRuleHandler': 'proof', 'RuleAnalysis': 'proof',
+    'ReadingFolder': 'proof', 'FoldProposal': 'proof',
+}
+__all__ = list(_EXPORTS)
+
+
+def __getattr__(name):
+    """Load native dependencies only when a solver operation is requested."""
+    if name not in _EXPORTS:
+        raise AttributeError("module %r has no attribute %r" % (__name__, name))
+    module = import_module('.' + _EXPORTS[name], __name__)
+    value = getattr(module, name)
+    globals()[name] = value
+    return value
+
+
+def __dir__():
+    """Include lazily exported helpers in ordinary module introspection."""
+    return sorted(set(globals()) | set(__all__))
+
+
+class _SolverModule(ModuleType):
+    """Preserve the solve function when Python attaches its namesake module."""
+
+    def __getattribute__(self, name):
+        value = super().__getattribute__(name)
+        # A direct import of pyfcstm.solver.solve attaches the submodule after
+        # loading it. The historical package API exposes the function instead.
+        if name == 'solve' and isinstance(value, ModuleType):
+            value = value.solve
+            self.solve = value
+        return value
+
+
+sys.modules[__name__].__class__ = _SolverModule

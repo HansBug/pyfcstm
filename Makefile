@@ -383,6 +383,7 @@ test_boundary_check:
 
 resource_ownership_check:
 	$(PYTHON) tools/check_resource_ownership.py --check
+	$(PYTHON) tools/check_resource_ownership.py
 
 semantics_boundary_check:
 	$(PYTHON) tools/check_semantics_boundary.py --selfcheck
@@ -390,7 +391,6 @@ semantics_boundary_check:
 
 semantics_check:
 	$(PYTHON) tools/check_semantics_alignment.py --check
-	$(PYTHON) tools/check_resource_ownership.py
 
 deprecation_check:
 	$(PYTHON) tools/check_deprecations.py --self-check --check

@@ -51,7 +51,14 @@ def _runtime_exception_from_message(message):
             cause = ZeroDivisionError(cause_text)
         elif 'unsupported operand type' in cause_text:
             cause = TypeError(cause_text)
-        elif 'negative shift count' in cause_text:
+        elif (
+            'negative shift count' in cause_text
+            or 'math domain error' in cause_text
+            or 'fractional power' in cause_text
+        ):
+            # ValueError is what Python raises for a negative shift count, a
+            # math function outside its domain, and a power whose result
+            # would be complex.
             cause = ValueError(cause_text)
         else:
             cause = ArithmeticError(cause_text)

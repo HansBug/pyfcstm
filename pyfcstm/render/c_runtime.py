@@ -217,17 +217,31 @@ _MATH_FUNC_NAMES = {
 
 _INT_OPERATORS = {"<<", ">>", "&", "^", "|"}
 
+#: C condition, over the argument ``x``, under which a function's argument is
+#: outside the domain Python's math module accepts.  The runtime raises
+#: "math domain error" there; the C library would return NaN or an infinity.
+_MATH_DOMAIN_CHECKS = {
+    "sqrt": "(%(x)s) < 0",
+    "log": "(%(x)s) <= 0",
+    "log10": "(%(x)s) <= 0",
+    "log2": "(%(x)s) <= 0",
+    "log1p": "(%(x)s) <= -1",
+    "asin": "(%(x)s) < -1 || (%(x)s) > 1",
+    "acos": "(%(x)s) < -1 || (%(x)s) > 1",
+    "acosh": "(%(x)s) < 1",
+    "atanh": "(%(x)s) <= -1 || (%(x)s) >= 1",
+}
+
+#: Functions whose argument must be finite.  ``x == x && x - x != 0`` holds
+#: exactly for an infinity, and needs neither C99 ``isinf`` nor C++11.
+_FINITE_ARGUMENT_FUNCTIONS = {"sin", "cos", "tan"}
+
 _INT64_MIN = -(2**63)
 _INT64_MAX = 2**63 - 1
 
-_CONSTANT_FOLD_OPERATORS = {
-    "+": lambda left, right: left + right,
-    "-": lambda left, right: left - right,
-    "*": lambda left, right: left * right,
-    "&": lambda left, right: left & right,
-    "^": lambda left, right: left ^ right,
-    "|": lambda left, right: left | right,
-}
+#: Operators the static int64 folder evaluates.  Within int64 they agree with
+#: C, so their values come from the operator catalog.
+_CONSTANT_FOLD_OPERATORS = {"+", "-", "*", "&", "^", "|"}
 
 
 def _host_arithmetic_message(compute: Callable[[], Any]) -> str:
@@ -359,7 +373,11 @@ def _static_int_literal(expr: dsl_nodes.Expr) -> Optional[int]:
         right = _static_int_literal(expr.expr2)
         if left is None or right is None:
             return None
-        value = _CONSTANT_FOLD_OPERATORS[expr.op](left, right)
+        # Imported here because the catalog loads Z3, which code generation
+        # does not need.
+        from ..semantics.catalog import lookup
+
+        value = lookup(expr.op).concrete(left, right)
         if not _INT64_MIN <= value <= _INT64_MAX:
             return None
         return value
@@ -675,7 +693,8 @@ def _render_expr(
     if isinstance(expr, dsl_nodes.UFunc):
         inner = _render_expr(expr.expr, known_types, names, state_name_set)
         if expr.func == "sign":
-            text = "(((%s) > 0) - ((%s) < 0))" % (inner.text, inner.text)
+            # NaN is neither zero nor positive, so its sign is -1.
+            text = "((%s) == 0 ? 0 : ((%s) > 0 ? 1 : -1))" % (inner.text, inner.text)
         elif expr.func == "abs":
             text = (
                 "fabs(%s)" % inner.text
@@ -794,6 +813,10 @@ def _emit_expr_checks(
     indent: str,
     level: int,
 ) -> bool:
+    # The messages are the runtime's own; imported here because the catalog
+    # loads Z3, which code generation does not need.
+    from ..semantics.catalog import COMPLEX_POWER_MESSAGE, MATH_DOMAIN_MESSAGE
+
     expr = _coerce_expr(expr)
     state_name_set = set(state_names)
     if isinstance(expr, dsl_nodes.Paren):
@@ -805,9 +828,24 @@ def _emit_expr_checks(
             lines, expr.expr, known_types, state_name_set, names, usage, indent, level
         )
     if isinstance(expr, dsl_nodes.UFunc):
-        return _emit_expr_checks(
+        safe = _emit_expr_checks(
             lines, expr.expr, known_types, state_name_set, names, usage, indent, level
         )
+        argument = _render_expr(expr.expr, known_types, names, state_name_set)
+        domain = _MATH_DOMAIN_CHECKS.get(expr.func)
+        if expr.func in _FINITE_ARGUMENT_FUNCTIONS and argument.value_type != "int":
+            domain = "(%(x)s) == (%(x)s) && ((%(x)s) - (%(x)s)) != 0"
+        if domain is not None:
+            _line(lines, indent, level, "if (%s) {" % (domain % {"x": argument.text}))
+            _emit_error(
+                lines,
+                names,
+                indent,
+                level + 1,
+                "%s evaluation failed: %s" % (usage, MATH_DOMAIN_MESSAGE),
+            )
+            _line(lines, indent, level, "}")
+        return safe
     if isinstance(expr, dsl_nodes.ConditionalOp):
         cond = _render_expr(expr.cond, known_types, names, state_name_set).text
         safe = _emit_expr_checks(
@@ -847,6 +885,35 @@ def _emit_expr_checks(
         left = _render_expr(expr.expr1, known_types, names, state_name_set)
         right = _render_expr(expr.expr2, known_types, names, state_name_set)
         if expr.op == "&&":
+            safe = _emit_expr_checks(
+                lines,
+                expr.expr1,
+                known_types,
+                state_name_set,
+                names,
+                usage,
+                indent,
+                level,
+            )
+            _line(lines, indent, level, "if (%s) {" % left.text)
+            safe = (
+                _emit_expr_checks(
+                    lines,
+                    expr.expr2,
+                    known_types,
+                    state_name_set,
+                    names,
+                    usage,
+                    indent,
+                    level + 1,
+                )
+                and safe
+            )
+            _line(lines, indent, level, "}")
+            return safe
+        if expr.op == "=>":
+            # An implication evaluates its consequent only when the premise
+            # holds, exactly like ``&&``.
             safe = _emit_expr_checks(
                 lines,
                 expr.expr1,
@@ -957,6 +1024,25 @@ def _emit_expr_checks(
                     level + 1,
                     "%s evaluation failed: %s"
                     % (usage, _ZERO_BASE_NEGATIVE_POWER_MESSAGE),
+                )
+                _line(lines, indent, level, "}")
+            if right.value_type != "int":
+                # A negative base raised to a non-integral exponent has a
+                # complex result, which FCSTM rejects; pow() would return NaN.
+                # An int exponent never produces one.
+                _line(
+                    lines,
+                    indent,
+                    level,
+                    "if ((%s) < 0 && (%s) != floor(%s)) {"
+                    % (left.text, right.text, right.text),
+                )
+                _emit_error(
+                    lines,
+                    names,
+                    indent,
+                    level + 1,
+                    "%s evaluation failed: %s" % (usage, COMPLEX_POWER_MESSAGE),
                 )
                 _line(lines, indent, level, "}")
         if expr.op in _INT_OPERATORS:

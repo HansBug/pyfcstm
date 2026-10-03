@@ -18,6 +18,7 @@ from pyfcstm.semantics.catalog import (
     SHORT_IMPLIES,
     SHORT_OR,
     canonical_token,
+    coarse_result_type,
     lookup,
 )
 
@@ -394,3 +395,20 @@ class TestTyping:
                 right = rng.choice([rng.randint(1, 9), rng.uniform(1, 9)])
                 result = spec.concrete(left, right)
                 assert spec.typing((names[type(left)], names[type(right)]), (None, None)) == names[type(result)]
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "token, operands, expected",
+    [
+        ("sign", ("float",), "int"),
+        ("trunc", (None,), "int"),
+        ("sqrt", ("int",), "float"),
+        ("abs", ("int",), "int"),
+        ("abs", (None,), None),
+        ("+", ("int", "float"), "float"),
+        ("<", ("int", "int"), "bool"),
+    ],
+)
+def test_coarse_result_type_follows_the_catalog_typing(token, operands, expected):
+    assert coarse_result_type(token, *operands) == expected

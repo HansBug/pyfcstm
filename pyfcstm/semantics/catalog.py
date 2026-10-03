@@ -56,6 +56,7 @@ __all__ = [
     "CATALOG",
     "canonical_token",
     "lookup",
+    "coarse_result_type",
     "cbrt",
     "cbrt_fallback",
 ]
@@ -292,6 +293,38 @@ def lookup(token: str) -> OpSpec:
         '||'
     """
     return CATALOG[canonical_token(token)]
+
+
+def coarse_result_type(token: str, *operands: Optional[str]) -> Optional[str]:
+    """
+    Return the result type of an operation on coarse operand types.
+
+    Code generators and diagnostics track ``"int"``, ``"float"``, or ``None``
+    for a type they do not know.  Mapping those onto the catalog typing keeps
+    every one of them in agreement with the runtime about which operations
+    produce integers.
+
+    :param token: Operator token, alias or function name.
+    :type token: str
+    :param operands: Coarse type of each operand, ``None`` when unknown.
+    :type operands: Optional[str]
+    :return: ``"int"``, ``"float"``, ``"bool"``, or ``None`` when the result
+        type depends on operand types that are not known.
+    :rtype: Optional[str]
+    :raises KeyError: If the token is not part of the FCSTM language.
+
+    Example::
+
+        >>> from pyfcstm.semantics.catalog import coarse_result_type
+        >>> coarse_result_type("sign", "float")
+        'int'
+        >>> coarse_result_type("sqrt", "int")
+        'float'
+        >>> coarse_result_type("abs", None) is None
+        True
+    """
+    result = lookup(token).typing(tuple(NUMBER if item is None else item for item in operands))
+    return None if result == NUMBER else result
 
 
 # ---------------------------------------------------------------------------

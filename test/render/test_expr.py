@@ -492,6 +492,9 @@ class TestGoStyleTypeInference:
         [
             # abs(int) -> int(math.Abs(float64(...)))
             ('abs(-5)', 'int(math.Abs'),
+            # sign and trunc return integers, as in the runtime
+            ('abs(sign(3.5))', 'int(math.Abs'),
+            ('abs(trunc(3.5))', 'int(math.Abs'),
             # abs(float-via-Float) -> float math.Abs without int cast
             ('abs(3.14)', 'math.Abs'),
             # abs(hex-int literal) routes through HexInt -> 'int' branch

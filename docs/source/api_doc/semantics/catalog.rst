@@ -110,6 +110,12 @@ lookup
 .. autofunction:: lookup
 
 
+coarse\_result\_type
+-----------------------------------------------------
+
+.. autofunction:: coarse_result_type
+
+
 cbrt\_fallback
 -----------------------------------------------------
 

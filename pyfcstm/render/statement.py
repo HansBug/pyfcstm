@@ -418,11 +418,11 @@ def _infer_expr_type(node: dsl_nodes.Expr, known_types: Mapping[str, str]) -> Op
             return 'int'
         return _infer_expr_type(node.expr, known_types)
     if isinstance(node, dsl_nodes.UFunc):
-        if node.func in {'floor', 'ceil', 'round', 'int'}:
-            return 'int'
-        if node.func == 'abs':
-            return _infer_expr_type(node.expr, known_types)
-        return 'float'
+        # Function result types come from the operator catalog the runtime
+        # evaluates with; imported here because the catalog loads Z3.
+        from ..semantics.catalog import coarse_result_type
+
+        return coarse_result_type(node.func, _infer_expr_type(node.expr, known_types))
     if isinstance(node, dsl_nodes.BinaryOp):
         if node.op in {'<<', '>>', '&', '^', '|'}:
             return 'int'

@@ -30,14 +30,21 @@ Example::
 from typing import Any, Callable, Dict, Optional, Sequence
 
 from . import ir
-from .catalog import CATALOG, EAGER, SHORT_AND, SHORT_OR, lookup
+from .catalog import CATALOG, EAGER, SHORT_AND, SHORT_OR
 from .errors import EvaluationError
 
 __all__ = [
+    "OPERAND",
+    "BRANCH",
     "Interpretation",
     "compile_expression",
     "compile_statements",
 ]
+
+#: Role of the right operand of ``&&``, ``||`` and ``=>``.
+OPERAND = "operand"
+#: Role of a branch of a conditional expression.
+BRANCH = "branch"
 
 #: A compiled expression: ``run(env, ctx) -> value``.
 Compiled = Callable[[Any, Any], Any]
@@ -60,7 +67,7 @@ class Interpretation:
     * :meth:`symbol` - the value of a reference in the environment ``env``;
     * :meth:`apply` - the result of a catalog entry on operand values,
       including how runtime errors are handled;
-    * :meth:`missing_function` - a call to a function outside the catalog;
+    * :meth:`unknown_operation` - an operator or function outside the catalog;
     * :meth:`host_atom` - a host-specific atom;
     * :meth:`truth` and :meth:`negate` - conditions in the interpretation's
       domain;
@@ -74,7 +81,7 @@ class Interpretation:
     Example::
 
         >>> from pyfcstm.semantics.engine import Interpretation
-        >>> Interpretation().decide(True, None, None)
+        >>> Interpretation().decide(True, None, None, "branch")
         Traceback (most recent call last):
         ...
         NotImplementedError
@@ -92,27 +99,34 @@ class Interpretation:
         """Return the result of catalog entry ``spec`` on ``args``."""
         raise NotImplementedError
 
-    def missing_function(self, node: ir.Call, args: Sequence[Any], ctx: Any) -> Any:
-        """Handle a call to a function that is not in the catalog."""
+    def unknown_operation(self, node: ir.Expr, args: Sequence[Any], ctx: Any) -> Any:
+        """Handle an operator or function call whose token is not in the catalog."""
         raise NotImplementedError
 
     def host_atom(self, node: ir.HostAtom, args: Sequence[Any], env: Any, ctx: Any) -> Any:
         """Return the value of a host atom."""
         raise NotImplementedError
 
-    def truth(self, value: Any, node: ir.Expr, ctx: Any) -> Any:
-        """Return ``value`` as a condition."""
+    def truth(self, value: Any, node: ir.Node, ctx: Any) -> Any:
+        """Return ``value`` as a condition; ``node`` is the node testing it."""
         raise NotImplementedError
 
     def negate(self, condition: Any) -> Any:
         """Return the negation of a condition."""
         raise NotImplementedError
 
-    def decide(self, condition: Any, node: ir.Node, ctx: Any) -> Optional[bool]:
-        """Return ``True`` or ``False`` when ``condition`` is known, else ``None``."""
+    def decide(self, condition: Any, node: ir.Node, ctx: Any, role: str) -> Optional[bool]:
+        """
+        Return whether the lazily evaluated ``node`` is reached.
+
+        ``condition`` is the condition under which ``node`` is evaluated and
+        ``role`` is :data:`OPERAND` or :data:`BRANCH`.  Return ``False`` when
+        ``node`` is known not to be reached, ``True`` when it is known to be
+        reached, and ``None`` when that is undecided.
+        """
         raise NotImplementedError
 
-    def enter(self, ctx: Any, condition: Any, node: ir.Node, guard: bool) -> Any:
+    def enter(self, ctx: Any, condition: Any, node: ir.Node, role: str, guard: bool) -> Any:
         """
         Return the context for evaluating ``node`` only when ``condition`` holds.
 
@@ -131,8 +145,16 @@ class Interpretation:
         raise NotImplementedError
 
 
+def _compile_unknown(node: ir.Expr, operands: Sequence[ir.Expr], interp: Interpretation) -> Compiled:
+    args = tuple(compile_expression(operand, interp) for operand in operands)
+    unknown = interp.unknown_operation
+    return lambda env, ctx: unknown(node, tuple(arg(env, ctx) for arg in args), ctx)
+
+
 def _compile_binary(node: ir.Binary, interp: Interpretation) -> Compiled:
-    spec = lookup(node.op)
+    spec = CATALOG.get(node.op)
+    if spec is None:
+        return _compile_unknown(node, (node.left, node.right), interp)
     left = compile_expression(node.left, interp)
     right = compile_expression(node.right, interp)
     apply = interp.apply
@@ -146,12 +168,12 @@ def _compile_binary(node: ir.Binary, interp: Interpretation) -> Compiled:
 
     def run(env, ctx):
         left_value = left(env, ctx)
-        condition = truth(left_value, node.left, ctx)
+        condition = truth(left_value, node, ctx)
         if negate:
             condition = interp.negate(condition)
-        if decide(condition, node.right, ctx) is False:
+        if decide(condition, node.right, ctx, OPERAND) is False:
             return skipped
-        right_value = right(env, enter(ctx, condition, node.right, True))
+        right_value = right(env, enter(ctx, condition, node.right, OPERAND, True))
         return apply(node, spec, (left_value, right_value), ctx)
 
     return run
@@ -171,20 +193,20 @@ def _compile_conditional(node: ir.Conditional, interp: Interpretation) -> Compil
 
     def run(env, ctx):
         test_value = test(env, ctx)
-        condition = truth(test_value, node.test, ctx)
+        condition = truth(test_value, node, ctx)
         otherwise = negate(condition)
         # Both selectors are decided before either branch is evaluated.
-        true_reachable = decide(condition, node.if_true, ctx) is not False
-        false_reachable = decide(otherwise, node.if_false, ctx) is not False
+        true_reachable = decide(condition, node.if_true, ctx, BRANCH) is not False
+        false_reachable = decide(otherwise, node.if_false, ctx, BRANCH) is not False
         both = true_reachable and false_reachable
         if not both:
             if true_reachable:
-                return if_true(env, enter(ctx, condition, node.if_true, False))
+                return if_true(env, enter(ctx, condition, node.if_true, BRANCH, False))
             if false_reachable:
-                return if_false(env, enter(ctx, otherwise, node.if_false, False))
+                return if_false(env, enter(ctx, otherwise, node.if_false, BRANCH, False))
             return interp.no_branch(node, ctx)
-        true_value = if_true(env, enter(ctx, condition, node.if_true, True))
-        false_value = if_false(env, enter(ctx, otherwise, node.if_false, True))
+        true_value = if_true(env, enter(ctx, condition, node.if_true, BRANCH, True))
+        false_value = if_false(env, enter(ctx, otherwise, node.if_false, BRANCH, True))
         return apply(node, _CONDITIONAL, (test_value, true_value, false_value), ctx)
 
     return run
@@ -223,18 +245,19 @@ def compile_expression(node: ir.Expr, interp: Interpretation) -> Compiled:
     if isinstance(node, ir.Binary):
         return _compile_binary(node, interp)
     if isinstance(node, ir.Unary):
-        spec = lookup(node.op)
+        spec = CATALOG.get(node.op)
+        if spec is None:
+            return _compile_unknown(node, (node.operand,), interp)
         operand = compile_expression(node.operand, interp)
         apply = interp.apply
         return lambda env, ctx: apply(node, spec, (operand(env, ctx),), ctx)
     if isinstance(node, ir.Conditional):
         return _compile_conditional(node, interp)
     if isinstance(node, ir.Call):
-        args = tuple(compile_expression(arg, interp) for arg in node.args)
         spec = CATALOG.get(node.func)
         if spec is None:
-            missing = interp.missing_function
-            return lambda env, ctx: missing(node, tuple(arg(env, ctx) for arg in args), ctx)
+            return _compile_unknown(node, node.args, interp)
+        args = tuple(compile_expression(arg, interp) for arg in node.args)
         apply = interp.apply
         if len(args) == 1:
             (single,) = args
@@ -314,7 +337,6 @@ def _compile_statement(statement: ir.Stmt, interp: Interpretation) -> Callable[[
         arms = tuple(
             (
                 None if arm.test is None else compile_expression(arm.test, interp),
-                arm.test,
                 compile_statements(arm.body, interp),
             )
             for arm in statement.arms
@@ -322,10 +344,10 @@ def _compile_statement(statement: ir.Stmt, interp: Interpretation) -> Callable[[
         truth, decide = interp.truth, interp.decide
 
         def branch(env, ctx):
-            for arm, (test, test_node, body) in zip(statement.arms, arms):
+            for arm, (test, body) in zip(statement.arms, arms):
                 if test is not None:
                     try:
-                        selected = decide(truth(test(env, ctx), test_node, ctx), test_node, ctx)
+                        selected = decide(truth(test(env, ctx), arm, ctx), arm, ctx, BRANCH)
                     except EvaluationError as err:
                         # EvaluationError: the branch condition raised a
                         # runtime error; record the branch for the caller.

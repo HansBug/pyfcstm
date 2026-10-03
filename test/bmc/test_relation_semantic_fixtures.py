@@ -23,7 +23,7 @@ from pyfcstm.simulate import SimulationRuntime
 from test.bmc.semantic_fixture_policy import (
     BMC_CORE_FIXTURE_LEDGER_CASES,
     CONSTRUCTOR_DIAGNOSTIC_EXCLUDE_CASES,
-    FLOAT_MODULO_UNSUPPORTED_CASES,
+    FLOAT_MODULO_ALIGNMENT_CASES,
     NUMERIC_UNSUPPORTED_CASES,
     TEMPORARY_BMC_CORE_EXCLUDE_CASES,
     policy_by_case,
@@ -594,7 +594,7 @@ def test_bmc_semantic_fixture_policy_covers_known_gap_inventory() -> None:
         }
     )
     assert not (NUMERIC_UNSUPPORTED_CASES & excluded_in_yaml)
-    assert not (FLOAT_MODULO_UNSUPPORTED_CASES & excluded_in_yaml)
+    assert not (FLOAT_MODULO_ALIGNMENT_CASES & excluded_in_yaml)
 
     policy_map = policy_by_case(BMC_CORE_FIXTURE_LEDGER_CASES)
     assert set(policy_map) == BMC_CORE_FIXTURE_LEDGER_CASES
@@ -603,9 +603,9 @@ def test_bmc_semantic_fixture_policy_covers_known_gap_inventory() -> None:
         for mode in _SUPPORTED_POLICY_MODES
     }
     assert mode_counts == {
-        "hard_pass": 198,
+        "hard_pass": 200,
         "partial": 0,
-        "expected_unsupported": 10,
+        "expected_unsupported": 8,
         "temporary_exclude": 23
         + sum(
             1

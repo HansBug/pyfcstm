@@ -42,14 +42,13 @@ from typing import (
 
 import z3
 
-from pyfcstm.solver.domain import ExprDomain, translate_expr_domain
+from pyfcstm.solver.domain import _translate_expr_domain
 from pyfcstm.solver.expr import (
     create_z3_vars_from_models as _solver_create_z3_vars_from_models,
-    python_round_to_z3 as _solver_python_round_to_z3,
 )
 from pyfcstm.solver.logical import is_sat as _solver_is_sat
 from pyfcstm.solver.operation import execute_operations_domain
-from pyfcstm.verify.result import (
+from pyfcstm.verify.result import (  # noqa: F401 -- ResultKind and _make_diag are re-exported to algorithms
     AlgorithmResult,
     ResultKind,
     make_diag as _make_diag,
@@ -411,32 +410,6 @@ def _z3_vars(variables: Sequence[VarDefine]) -> _Z3Vars:
     return _solver_create_z3_vars_from_models(list(variables))
 
 
-def _domain_failure_result(domain: ExprDomain) -> Optional[AlgorithmResult]:
-    """Convert a solver-layer expression failure into a raw result.
-
-    :param domain: Solver-layer domain-aware expression result.
-    :type domain: ExprDomain
-    :return: Raw algorithm result for failures or unknown reachability, or
-        ``None`` when the expression is usable.
-    :rtype: Optional[AlgorithmResult]
-
-    Example::
-
-        >>> from pyfcstm.solver.domain import ExprDomain, TranslationFailure
-        >>> result = _domain_failure_result(
-        ...     ExprDomain(None, failure=TranslationFailure("value_error", "bad"))
-        ... )
-        >>> result.kind
-        'undecidable_skip'
-    """
-    if domain.failure is not None:
-        return _skip_result("undecidable_skip", domain.failure.reason)
-    for check in domain.feasibility_checks:
-        if check.status == "unknown":
-            return _skip_result("unknown", None)
-    return None
-
-
 def _build_type_constraints(
     variables: Sequence[VarDefine],
     z3_vars: _Z3Vars,
@@ -461,37 +434,6 @@ def _build_type_constraints(
     """
     _ = variables, z3_vars
     return ()
-
-
-def _expr_to_z3_or_result(
-    expr: Expr,
-    z3_vars: _Z3Vars,
-) -> Tuple[Optional[_Z3Expr], Optional[AlgorithmResult]]:
-    """Translate an expression to Z3, normalizing expected translation failures.
-
-    :param expr: Expression to translate.
-    :type expr: Expr
-    :param z3_vars: Z3 variable mapping.
-    :type z3_vars: Dict[str, Union[z3.ArithRef, z3.BoolRef]]
-    :return: Pair of translated expression and optional failure result.
-    :rtype: Tuple[Optional[Union[z3.ArithRef, z3.BoolRef]], Optional[AlgorithmResult]]
-
-    Example::
-
-        >>> import z3
-        >>> from pyfcstm.model.expr import BinaryOp, Integer, Variable
-        >>> expr = BinaryOp(Variable("x"), "+", Integer(1))
-        >>> value, result = _expr_to_z3_or_result(expr, {"x": z3.Int("x")})
-        >>> result is None
-        True
-        >>> value
-        x + 1
-    """
-    domain = translate_expr_domain(expr, z3_vars, prune_unreachable=False)
-    result = _domain_failure_result(domain)
-    if result is not None:
-        return None, result
-    return domain.z3_expr, None
 
 
 def _execute_operations_or_result(
@@ -524,197 +466,6 @@ def _execute_operations_or_result(
     return dict(execution.env), None
 
 
-def _binary_z3_or_result(
-    op: str,
-    left: _Z3Expr,
-    right: _Z3Expr,
-) -> Tuple[Optional[_Z3Expr], Optional[AlgorithmResult]]:
-    """Apply a binary operator to already translated Z3 operands.
-
-    This mirrors the solver-layer binary expression semantics for expression
-    trees whose children were translated path-sensitively.
-
-    :param op: DSL binary operator.
-    :type op: str
-    :param left: Left Z3 operand.
-    :type left: Union[z3.ArithRef, z3.BoolRef]
-    :param right: Right Z3 operand.
-    :type right: Union[z3.ArithRef, z3.BoolRef]
-    :return: Translated Z3 expression and optional normalized failure.
-    :rtype: Tuple[Optional[Union[z3.ArithRef, z3.BoolRef]], Optional[AlgorithmResult]]
-
-    Example::
-
-        >>> import z3
-        >>> value, result = _binary_z3_or_result("+", z3.IntVal(1), z3.IntVal(2))
-        >>> result is None
-        True
-        >>> value
-        1 + 2
-    """
-    try:
-        if op == "+":
-            return left + right, None
-        if op == "-":
-            return left - right, None
-        if op == "*":
-            return left * right, None
-        if op == "/":
-            return left / right, None
-        if op == "%":
-            return left % right, None
-        if op == "**":
-            return left**right, None
-        if op == "&":
-            return left & right, None
-        if op == "|":
-            return left | right, None
-        if op == "^":
-            return left ^ right, None
-        if op == "<<":
-            return left << right, None
-        if op == ">>":
-            return left >> right, None
-        if op == "<":
-            return left < right, None
-        if op == "<=":
-            return left <= right, None
-        if op == ">":
-            return left > right, None
-        if op == ">=":
-            return left >= right, None
-        if op == "==":
-            return left == right, None
-        if op == "!=":
-            return left != right, None
-        if op in ("&&", "and"):
-            return z3.And(left, right), None
-        if op in ("||", "or"):
-            return z3.Or(left, right), None
-        return None, _skip_result(
-            "undecidable_skip", f"Unsupported binary operator: {op}"
-        )
-    except TypeError as err:
-        # TypeError: Python/Z3 operator overloads reject unsupported operand
-        # combinations, for example bitwise Int expressions.
-        return None, _skip_result("undecidable_skip", str(err))
-    except z3.Z3Exception as err:
-        # Z3Exception: Z3 rejects sort/operator-domain mismatches.
-        return None, _skip_result("undecidable_skip", str(err))
-
-
-def _unary_z3_or_result(
-    op: str,
-    operand: _Z3Expr,
-) -> Tuple[Optional[_Z3Expr], Optional[AlgorithmResult]]:
-    """Apply a unary operator to an already translated Z3 operand.
-
-    :param op: DSL unary operator.
-    :type op: str
-    :param operand: Z3 operand.
-    :type operand: Union[z3.ArithRef, z3.BoolRef]
-    :return: Translated Z3 expression and optional normalized failure.
-    :rtype: Tuple[Optional[Union[z3.ArithRef, z3.BoolRef]], Optional[AlgorithmResult]]
-
-    Example::
-
-        >>> import z3
-        >>> value, result = _unary_z3_or_result("-", z3.IntVal(2))
-        >>> result is None
-        True
-        >>> z3.simplify(value)
-        -2
-    """
-    try:
-        if op == "-":
-            return -operand, None
-        if op == "+":
-            return operand, None
-        if op == "~":
-            return ~operand, None
-        if op in ("!", "not"):
-            return z3.Not(operand), None
-        return None, _skip_result(
-            "undecidable_skip", f"Unsupported unary operator: {op}"
-        )
-    except TypeError as err:
-        # TypeError: Python/Z3 operator overloads reject unsupported operand
-        # combinations, for example bitwise NOT on arithmetic references.
-        return None, _skip_result("undecidable_skip", str(err))
-    except z3.Z3Exception as err:
-        # Z3Exception: Z3 rejects sort/operator-domain mismatches.
-        return None, _skip_result("undecidable_skip", str(err))
-
-
-def _ufunc_z3_or_result(
-    func: str,
-    operand: _Z3Expr,
-) -> Tuple[Optional[_Z3Expr], Optional[AlgorithmResult]]:
-    """Apply a supported unary math function to a Z3 operand.
-
-    :param func: Function name.
-    :type func: str
-    :param operand: Z3 operand.
-    :type operand: Union[z3.ArithRef, z3.BoolRef]
-    :return: Translated Z3 expression and optional normalized failure.
-    :rtype: Tuple[Optional[Union[z3.ArithRef, z3.BoolRef]], Optional[AlgorithmResult]]
-
-    Example::
-
-        >>> import z3
-        >>> value, result = _ufunc_z3_or_result("abs", z3.IntVal(-2))
-        >>> result is None
-        True
-        >>> z3.simplify(value)
-        2
-    """
-    try:
-        if func == "abs":
-            return z3.If(operand >= 0, operand, -operand), None
-        if func == "sign":
-            zero = z3.IntVal(0) if z3.is_int(operand) else z3.RealVal(0)
-            one = z3.IntVal(1) if z3.is_int(operand) else z3.RealVal(1)
-            minus_one = z3.IntVal(-1) if z3.is_int(operand) else z3.RealVal(-1)
-            return z3.If(
-                operand == zero, zero, z3.If(operand > zero, one, minus_one)
-            ), None
-        if func == "floor":
-            return (z3.ToInt(operand) if z3.is_real(operand) else operand), None
-        if func == "ceil":
-            return (-z3.ToInt(-operand) if z3.is_real(operand) else operand), None
-        if func == "trunc":
-            if z3.is_real(operand):
-                zero = z3.RealVal(0)
-                return z3.If(
-                    operand >= zero, z3.ToInt(operand), -z3.ToInt(-operand)
-                ), None
-            return operand, None
-        if func == "sqrt":
-            if z3.is_real(operand):
-                return z3.Sqrt(operand), None
-            if z3.is_int(operand):
-                return z3.Sqrt(z3.ToReal(operand)), None
-            return None, _skip_result(
-                "undecidable_skip",
-                f"sqrt requires Real or Int operand, got {operand.sort()}.",
-            )
-        if func == "round":
-            return _solver_python_round_to_z3(operand), None
-        return None, _skip_result(
-            "undecidable_skip",
-            "Mathematical function {func!r} is not supported in Z3 conversion.".format(
-                func=func
-            ),
-        )
-    except TypeError as err:
-        # TypeError: Python/Z3 operator overloads reject unsupported operand
-        # combinations during function expansion.
-        return None, _skip_result("undecidable_skip", str(err))
-    except z3.Z3Exception as err:
-        # Z3Exception: Z3 rejects sort/operator-domain mismatches.
-        return None, _skip_result("undecidable_skip", str(err))
-
-
 def _expr_conditions_and_z3_or_result(
     expr: Expr,
     z3_vars: _Z3Vars,
@@ -728,12 +479,14 @@ def _expr_conditions_and_z3_or_result(
     Optional[_Z3Expr],
     Optional[AlgorithmResult],
 ]:
-    """Translate an expression while pruning unreachable ternary branches.
+    """Translate an expression while pruning unreachable lazy branches.
 
-    Expression-level ternaries have runtime short-circuit semantics: only the
-    selected value branch is evaluated.  When the caller supplies a symbolic
-    context, this helper avoids translating value branches that are unreachable
-    in that context, matching the path-sensitive handling used for operation
+    Translation uses the shared symbolic semantics of :mod:`pyfcstm.semantics`:
+    ``&&``, ``||`` and ``=>`` contribute right-operand definedness only under
+    the condition in which the right operand is evaluated, and conditional
+    expressions evaluate only the selected branch.  When the caller supplies a
+    symbolic context, value branches that are unreachable in that context are
+    not translated, matching the path-sensitive handling used for operation
     ``if`` blocks.
 
     :param expr: Expression to translate.
@@ -767,191 +520,53 @@ def _expr_conditions_and_z3_or_result(
         ...     domain_constraints=domains,
         ... )
         >>> points, value, result
-        ((), x/y, None)
+        ((), ToReal(x)/ToReal(y), None)
         >>> domains
         [y != 0]
     """
-    from pyfcstm.model.expr import BinaryOp, Boolean, Float, Integer, UFunc, UnaryOp
-
     if domain_constraints is None:
         domain_constraints = []
+    path_conditions = tuple(path_conditions)
+    statuses: List[str] = []
 
-    if isinstance(expr, (Integer, Float, Boolean, _variable_type())):
-        z3_expr, result = _expr_to_z3_or_result(expr, z3_vars)
-        return (), z3_expr, result
+    def check(facts: Sequence[z3.ExprRef], timeout_ms: Optional[int]) -> str:
+        # The module-level is_sat is looked up at call time, so it stays the
+        # single solver entry point of verify; raw kinds keep timeout and
+        # unknown apart.
+        kind = is_sat(tuple(facts), timeout_ms=timeout_ms).kind
+        statuses.append(kind)
+        return kind
 
-    if isinstance(expr, _conditional_op_type()):
-        points: List[_ConditionPoint] = []
-        condition_domains: List[z3.ExprRef] = []
-        cond_points, condition_z3, result = _expr_conditions_and_z3_or_result(
-            expr.cond,
-            z3_vars,
-            path_conditions,
-            context_constraints=context_constraints,
-            smt_timeout_ms=smt_timeout_ms,
-            domain_constraints=condition_domains,
-        )
-        if result is not None:
-            return None, None, result
-        domain_constraints.extend(condition_domains)
-        points.extend(cond_points or ())
-        points.append(
-            _ConditionPoint(
-                expr.cond,
-                dict(z3_vars),
-                (*path_conditions, *condition_domains),
-                z3_condition=condition_z3,
-            )
-        )
-
-        true_path = (*path_conditions, *condition_domains, condition_z3)
-        false_path = (*path_conditions, *condition_domains, z3.Not(condition_z3))
-        true_reachable, result = _path_reachability_or_result(
-            context_constraints,
-            true_path,
-            smt_timeout_ms=smt_timeout_ms,
-        )
-        if result is not None:
-            return None, None, result
-        false_reachable, result = _path_reachability_or_result(
-            context_constraints,
-            false_path,
-            smt_timeout_ms=smt_timeout_ms,
-        )
-        if result is not None:
-            return None, None, result
-
-        true_expr = false_expr = None
-        true_domains: List[z3.ExprRef] = []
-        false_domains: List[z3.ExprRef] = []
-        if true_reachable is not False:
-            true_points, true_expr, result = _expr_conditions_and_z3_or_result(
-                expr.if_true,
-                z3_vars,
-                true_path,
-                context_constraints=context_constraints,
-                smt_timeout_ms=smt_timeout_ms,
-                domain_constraints=true_domains,
-            )
-            if result is not None:
-                return None, None, result
-            points.extend(true_points or ())
-        if false_reachable is not False:
-            false_points, false_expr, result = _expr_conditions_and_z3_or_result(
-                expr.if_false,
-                z3_vars,
-                false_path,
-                context_constraints=context_constraints,
-                smt_timeout_ms=smt_timeout_ms,
-                domain_constraints=false_domains,
-            )
-            if result is not None:
-                return None, None, result
-            points.extend(false_points or ())
-
-        if true_reachable is False and false_reachable is False:
-            return (
-                None,
-                None,
-                _skip_result(
-                    "undecidable_skip",
-                    "Conditional expression has no reachable value branch.",
-                ),
-            )
-        if true_reachable is False:
-            domain_constraints.extend(false_domains)
-            return tuple(points), false_expr, None
-        if false_reachable is False:
-            domain_constraints.extend(true_domains)
-            return tuple(points), true_expr, None
-        for item in true_domains:
-            domain_constraints.append(z3.Implies(condition_z3, item))
-        for item in false_domains:
-            domain_constraints.append(z3.Implies(z3.Not(condition_z3), item))
-        try:
-            return tuple(points), z3.If(condition_z3, true_expr, false_expr), None
-        except z3.Z3Exception as err:
-            # Z3Exception: Z3 rejects If branches with incompatible sorts.
-            return None, None, _skip_result("undecidable_skip", str(err))
-
-    if isinstance(expr, BinaryOp):
-        points: List[_ConditionPoint] = []
-        left_points, left, result = _expr_conditions_and_z3_or_result(
-            expr.x,
-            z3_vars,
-            path_conditions,
-            context_constraints=context_constraints,
-            smt_timeout_ms=smt_timeout_ms,
-            domain_constraints=domain_constraints,
-        )
-        if result is not None:
-            return None, None, result
-        points.extend(left_points or ())
-
-        right_points, right, result = _expr_conditions_and_z3_or_result(
-            expr.y,
-            z3_vars,
-            path_conditions,
-            context_constraints=context_constraints,
-            smt_timeout_ms=smt_timeout_ms,
-            domain_constraints=domain_constraints,
-        )
-        if result is not None:
-            return None, None, result
-        points.extend(right_points or ())
-        if expr.op in ("/", "%"):
-            try:
-                domain_constraints.append(right != 0)
-            except (TypeError, z3.Z3Exception) as err:
-                # TypeError/Z3Exception: malformed arithmetic expressions can
-                # produce a denominator that Z3 cannot compare against zero.
-                return None, None, _skip_result("undecidable_skip", str(err))
-        z3_expr, result = _binary_z3_or_result(expr.op, left, right)
-        return tuple(points), z3_expr, result
-
-    if isinstance(expr, UnaryOp):
-        points, operand, result = _expr_conditions_and_z3_or_result(
-            expr.x,
-            z3_vars,
-            path_conditions,
-            context_constraints=context_constraints,
-            smt_timeout_ms=smt_timeout_ms,
-            domain_constraints=domain_constraints,
-        )
-        if result is not None:
-            return None, None, result
-        z3_expr, result = _unary_z3_or_result(expr.op, operand)
-        return points, z3_expr, result
-
-    if isinstance(expr, UFunc):
-        points, operand, result = _expr_conditions_and_z3_or_result(
-            expr.x,
-            z3_vars,
-            path_conditions,
-            context_constraints=context_constraints,
-            smt_timeout_ms=smt_timeout_ms,
-            domain_constraints=domain_constraints,
-        )
-        if result is not None:
-            return None, None, result
-        if expr.func == "sqrt":
-            try:
-                domain_constraints.append(operand >= 0)
-            except (TypeError, z3.Z3Exception) as err:
-                # TypeError/Z3Exception: malformed operands can be rejected
-                # before the Z3 sqrt expression is built.
-                return None, None, _skip_result("undecidable_skip", str(err))
-        z3_expr, result = _ufunc_z3_or_result(expr.func, operand)
-        return points, z3_expr, result
-
-    return (
-        None,
-        None,
-        _skip_result(
-            "undecidable_skip",
-            f"Unsupported expression type: {type(expr).__name__}",
-        ),
+    translation, observations = _translate_expr_domain(
+        expr,
+        z3_vars,
+        assumptions=tuple(context_constraints or ()),
+        path_conditions=path_conditions,
+        source=None,
+        prune_unreachable=context_constraints is not None,
+        timeout_ms=smt_timeout_ms,
+        observe_conditions=True,
+        checker=check,
     )
+    if translation.failure is not None:
+        return None, None, _skip_result("undecidable_skip", translation.failure.reason)
+    for kind in statuses:
+        if kind in ("unknown", "timeout"):
+            return None, None, _skip_result(kind, None)
+    domain_constraints.extend(
+        item.constraint for item in translation.definedness_constraints
+    )
+    points = tuple(
+        _ConditionPoint(
+            observation.node.test.origin,
+            dict(z3_vars),
+            (*path_conditions, *observation.path, *observation.definedness),
+            "expression",
+            observation.condition,
+        )
+        for observation in observations
+    )
+    return points, translation.z3_expr, None
 
 
 def _expr_z3_and_domains_or_result(
@@ -997,7 +612,7 @@ def _expr_z3_and_domains_or_result(
         ...     {"x": x, "y": y},
         ... )
         >>> value, domains, result
-        (x/y, (y != 0,), None)
+        (ToReal(x)/ToReal(y), (y != 0,), None)
     """
     domain_constraints: List[z3.ExprRef] = []
     _, z3_expr, result = _expr_conditions_and_z3_or_result(
@@ -2653,18 +2268,6 @@ def _enter_condition_descriptors_for_context(
     for condition_point in condition_points:
         condition = condition_point.condition
         condition_z3 = condition_point.z3_condition
-        if condition_z3 is None:
-            condition_z3, result = _expr_to_z3_or_result(
-                condition,
-                condition_point.z3_vars,
-            )
-            if result is not None:
-                first_indeterminate_result = _first_indeterminate(
-                    first_indeterminate_result,
-                    result.kind,
-                    result.reason,
-                )
-                continue
 
         point_context = [
             *init_constraints,

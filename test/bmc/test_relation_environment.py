@@ -7,7 +7,13 @@ import re
 import pytest
 import z3
 
-from pyfcstm.bmc import BmcEngine, UnsupportedBmcQuery, build_bmc_core_formula
+from pyfcstm.bmc import (
+    BmcEngine,
+    UnsupportedBmcQuery,
+    build_bmc_core_formula,
+    compile_bmc_property,
+    solve_bmc_property,
+)
 from pyfcstm.model import load_state_machine_from_text
 
 
@@ -308,7 +314,6 @@ def test_unsupported_frame_expression_reports_structured_bmc_error() -> None:
         ("(x ^ y) == 0", "^"),
         ("(x << y) == 0", "<<"),
         ("(x >> y) == 0", ">>"),
-        ("(f % 1.0) == 0", "%"),
     ],
 )
 def test_unsupported_numeric_operator_matrix_reports_structured_bmc_error(
@@ -328,6 +333,20 @@ def test_unsupported_numeric_operator_matrix_reports_structured_bmc_error(
         match="unsupported for operator %s" % re.escape(operator),
     ):
         build_bmc_core_formula(context)
+
+
+@pytest.mark.unittest
+def test_float_modulo_is_encoded_with_floor_semantics() -> None:
+    """Float ``%`` follows Python floor modulo instead of being rejected."""
+    model = load_state_machine_from_text(
+        "def int x = 4; def int y = 2; def float f = 1.5; state Root;"
+    )
+    context = BmcEngine(model).prepare(
+        "assume always: (f % 1.0) == 0.5;\ncheck reach <= 1: active(\"Root\");"
+    )
+
+    result = solve_bmc_property(compile_bmc_property(build_bmc_core_formula(context)))
+    assert result.property_satisfied is True
 
 
 @pytest.mark.unittest

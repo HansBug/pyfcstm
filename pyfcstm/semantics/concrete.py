@@ -90,19 +90,19 @@ class ConcreteInterpretation(Interpretation):
             reported = err if rule.message is None else type(err)(rule.message)
             raise EvaluationError(rule.kind, reported, node) from err
 
-    def missing_function(self, node: ir.Call, args: Sequence[Any], ctx: Any) -> Any:
-        raise KeyError(node.func)
+    def unknown_operation(self, node: ir.Expr, args: Sequence[Any], ctx: Any) -> Any:
+        raise KeyError(node.func if isinstance(node, ir.Call) else node.op)
 
-    def truth(self, value: Any, node: ir.Expr, ctx: Any) -> Any:
+    def truth(self, value: Any, node: ir.Node, ctx: Any) -> Any:
         return value
 
     def negate(self, condition: Any) -> bool:
         return not condition
 
-    def decide(self, condition: Any, node: ir.Node, ctx: Any) -> bool:
+    def decide(self, condition: Any, node: ir.Node, ctx: Any, role: str) -> bool:
         return bool(condition)
 
-    def enter(self, ctx: Any, condition: Any, node: ir.Node, guard: bool) -> Any:
+    def enter(self, ctx: Any, condition: Any, node: ir.Node, role: str, guard: bool) -> Any:
         return ctx
 
     def constant(self, value: bool, node: ir.Expr) -> bool:

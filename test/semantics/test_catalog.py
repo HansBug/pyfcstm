@@ -224,13 +224,13 @@ class TestErrorRules:
         ("sqrt", (-1,), True),
         ("sqrt", (0,), False),
     ])
-    def test_symbolic_violation_matches_reference_errors(self, token, args, violated):
+    def test_symbolic_definedness_matches_reference_errors(self, token, args, violated):
         spec = lookup(token)
-        condition = z3.BoolVal(False)
+        condition = z3.BoolVal(True)
         for rule in spec.errors:
-            if rule.violated is not None:
-                condition = z3.Or(condition, rule.violated(*map(_z3_value, args)))
-        assert z3.is_true(z3.simplify(condition)) is violated
+            if rule.defined is not None:
+                condition = z3.And(condition, rule.defined(*map(_z3_value, args)))
+        assert z3.is_false(z3.simplify(condition)) is violated
         if violated:
             with pytest.raises((ZeroDivisionError, ValueError)):
                 spec.concrete(*args)
@@ -321,11 +321,37 @@ class TestFormalReference:
         assert spec.symbolic is None
         assert "fixed-width" in spec.unsupported
 
-    @pytest.mark.parametrize("func", ["sin", "exp", "log", "cbrt", "atanh"])
-    def test_transcendental_functions_have_no_encoding(self, func):
+    @pytest.mark.parametrize("func, family", [
+        ("sin", "Trigonometric function"),
+        ("exp", "Mathematical function"),
+        ("log", "Logarithmic function"),
+        ("cbrt", "Mathematical function"),
+        ("atanh", "Hyperbolic function"),
+    ])
+    def test_transcendental_functions_have_no_encoding(self, func, family):
         spec = lookup(func)
         assert spec.symbolic is None
-        assert repr(func) in spec.unsupported
+        assert spec.unsupported.startswith("%s '%s' is not directly supported in Z3." % (family, func))
+
+    @pytest.mark.parametrize("base, exponent, expected", [
+        (z3.Int("x"), z3.IntVal(2), "True"),
+        (z3.IntVal(2), z3.Int("n"), "True"),
+        (z3.Int("x"), z3.Int("n"), "Or(x != 0, n >= 0)"),
+        (z3.Real("r"), z3.Int("n"), "Or(r != 0, n >= 0)"),
+    ])
+    def test_zero_negative_power_rule_is_static_when_operands_allow(self, base, exponent, expected):
+        rule = next(r for r in lookup("**").errors if r.kind == "zero_negative_power")
+        assert str(rule.defined(base, exponent)) == expected
+
+    @pytest.mark.parametrize("base, exponent, expected", [
+        (z3.Real("r"), z3.Int("n"), "True"),
+        (z3.RealVal(4), z3.Real("e"), "True"),
+        (z3.Real("r"), z3.RealVal(2), "True"),
+        (z3.Real("r"), z3.Real("e"), "Or(r >= 0, IsInt(e))"),
+    ])
+    def test_complex_result_rule_is_static_when_operands_allow(self, base, exponent, expected):
+        rule = next(r for r in lookup("**").errors if r.kind == "complex_result")
+        assert str(rule.defined(base, exponent)) == expected
 
 
 @pytest.mark.unittest

@@ -95,19 +95,20 @@ class ErrorRule:
 
     The runnable reference raises an ordinary Python exception for the error;
     :attr:`raises` lists the exception classes that identify it, so a caller
-    can tell which rule fired without parsing messages.  :attr:`violated`
-    gives the same error as a Z3 condition over the symbolic operands: the
-    operation is undefined exactly when that condition holds.
+    can tell which rule fired without parsing messages.  :attr:`defined`
+    gives the same rule as a Z3 condition over the symbolic operands: the
+    operation raises the error exactly when that condition does not hold.
 
     :param kind: Stable error code such as ``"division_by_zero"``.
     :type kind: str
     :param raises: Python exception classes the runnable reference raises for
         this error.
     :type raises: Tuple[Type[BaseException], ...]
-    :param violated: Function from Z3 operands to the Z3 condition under which
-        the operation raises this error, or ``None`` when the error has no
-        exact-real counterpart (for example floating-point overflow).
-    :type violated: Optional[Callable[..., z3.BoolRef]]
+    :param defined: Function from Z3 operands to the Z3 condition under which
+        the operation does not raise this error, or ``None`` when the error has
+        no exact-real counterpart (for example floating-point overflow).  It
+        returns ``True`` when the operands rule the error out statically.
+    :type defined: Optional[Callable[..., z3.BoolRef]]
     :param description: Short human-readable explanation of the error.
     :type description: str
     :param message: Message used instead of the Python exception text when
@@ -123,13 +124,13 @@ class ErrorRule:
         >>> rule = lookup("/").errors[0]
         >>> rule.kind
         'division_by_zero'
-        >>> rule.violated(z3.Int("a"), z3.Int("b"))
-        b == 0
+        >>> rule.defined(z3.Int("a"), z3.Int("b"))
+        b != 0
     """
 
     kind: str
     raises: Tuple[Type[BaseException], ...]
-    violated: Optional[Callable[..., z3.BoolRef]] = None
+    defined: Optional[Callable[..., z3.BoolRef]] = None
     description: str = ""
     message: Optional[str] = None
 
@@ -407,7 +408,13 @@ def _sign(value):
 # ---------------------------------------------------------------------------
 
 def _real(value):
-    return value if z3.is_real(value) else z3.ToReal(value)
+    if z3.is_real(value):
+        return value
+    if z3.is_int_value(value):
+        # An integer numeral becomes a real numeral, which keeps divisions by
+        # constants linear for Z3.
+        return z3.RealVal(value.as_long())
+    return z3.ToReal(value)
 
 
 def _numeral(value):
@@ -420,7 +427,7 @@ def _is_zero_numeral(value) -> bool:
 
 def _z3_true_division(left, right):
     if z3.is_int(left) and z3.is_int(right):
-        return z3.ToReal(left) / z3.ToReal(right)
+        return _real(left) / _real(right)
     return left / right
 
 
@@ -497,10 +504,32 @@ def _z3_logical(name, builder):
     return apply
 
 
-def _not_integral(value):
-    if z3.is_int(value):
-        return z3.BoolVal(False)
-    return z3.Not(z3.IsInt(_real(value)))
+def _numeral_value(value):
+    if z3.is_int_value(value):
+        return value.as_long()
+    if z3.is_rational_value(value):
+        return value.numerator_as_long() / value.denominator_as_long()
+    return None
+
+
+def _power_defined_at_zero(base, exponent):
+    base_value, exponent_value = _numeral_value(base), _numeral_value(exponent)
+    if (base_value is not None and base_value != 0) or (
+        exponent_value is not None and exponent_value >= 0
+    ):
+        return z3.BoolVal(True)
+    return z3.Or(base != 0, exponent >= 0)
+
+
+def _power_defined_real(base, exponent):
+    if z3.is_int(exponent):
+        return z3.BoolVal(True)
+    base_value, exponent_value = _numeral_value(base), _numeral_value(exponent)
+    if (base_value is not None and base_value >= 0) or (
+        exponent_value is not None and float(exponent_value).is_integer()
+    ):
+        return z3.BoolVal(True)
+    return z3.Or(base >= 0, z3.IsInt(exponent))
 
 
 # ---------------------------------------------------------------------------
@@ -515,25 +544,25 @@ _OVERFLOW = ErrorRule(
 _DIVISION_BY_ZERO = ErrorRule(
     "division_by_zero",
     (ZeroDivisionError,),
-    lambda left, right: right == 0,
+    lambda left, right: right != 0,
     "the divisor is zero",
 )
 _MODULO_BY_ZERO = ErrorRule(
     "modulo_by_zero",
     (ZeroDivisionError,),
-    lambda left, right: right == 0,
+    lambda left, right: right != 0,
     "the divisor is zero",
 )
 _ZERO_NEGATIVE_POWER = ErrorRule(
     "zero_negative_power",
     (ZeroDivisionError,),
-    lambda base, exponent: z3.And(base == 0, exponent < 0),
+    _power_defined_at_zero,
     "zero is raised to a negative power",
 )
 _COMPLEX_RESULT = ErrorRule(
     "complex_result",
     (ValueError,),
-    lambda base, exponent: z3.And(base < 0, _not_integral(exponent)),
+    _power_defined_real,
     "a negative number is raised to a non-integral power",
 )
 _INVALID_OPERAND = ErrorRule(
@@ -544,7 +573,7 @@ _INVALID_OPERAND = ErrorRule(
 _NEGATIVE_SHIFT_COUNT = ErrorRule(
     "negative_shift_count",
     (ValueError,),
-    lambda value, count: count < 0,
+    lambda value, count: count >= 0,
     "the shift count is negative",
 )
 _HUGE_SHIFT = ErrorRule(
@@ -554,11 +583,11 @@ _HUGE_SHIFT = ErrorRule(
 )
 
 
-def _math_domain(violated=None, message=MATH_DOMAIN_MESSAGE):
+def _math_domain(defined=None, message=MATH_DOMAIN_MESSAGE):
     return ErrorRule(
         "math_domain",
         (ValueError,),
-        violated,
+        defined,
         "the argument is outside the function's domain",
         message,
     )
@@ -571,9 +600,22 @@ _BITWISE_UNSUPPORTED = (
 
 
 def _transcendental_unsupported(name):
+    if name == "cbrt":
+        return (
+            "Mathematical function 'cbrt' is not directly supported in Z3. "
+            "Consider using uninterpreted functions or polynomial constraints (y^3 = x)."
+        )
+    if name == "exp":
+        family = "Mathematical function"
+    elif name.startswith("log"):
+        family = "Logarithmic function"
+    elif name in ("sinh", "cosh", "tanh", "asinh", "acosh", "atanh"):
+        family = "Hyperbolic function"
+    else:
+        family = "Trigonometric function"
     return (
-        "Mathematical function '%s' has no exact Z3 encoding; Z3 arithmetic "
-        "covers polynomials, division and integer conversion only." % (name,)
+        "%s '%s' is not directly supported in Z3. "
+        "Consider using uninterpreted functions or approximations." % (family, name)
     )
 
 
@@ -737,14 +779,22 @@ for _token, _function, _symbolic in (
             (_math_domain(message=None), _OVERFLOW),
         )
     )
+def _z3_sqrt(value):
+    if z3.is_bool(value):
+        raise NotImplementedError(
+            "sqrt requires Real or Int operand, got %s. Cannot convert to Real." % (value.sort(),)
+        )
+    return z3.Sqrt(_real(value))
+
+
 _register(
     OpSpec(
         "sqrt",
         "function",
         _always(FLOAT),
         math.sqrt,
-        lambda value: z3.Sqrt(_real(value)),
-        (_math_domain(lambda value: value < 0), _OVERFLOW),
+        _z3_sqrt,
+        (_math_domain(lambda value: value >= 0), _OVERFLOW),
     )
 )
 for _token, _function in (

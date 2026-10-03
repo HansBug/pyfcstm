@@ -76,7 +76,7 @@ NUMERIC_UNSUPPORTED_CASES = {
     "arith_shr_negative",
 }
 
-FLOAT_MODULO_UNSUPPORTED_CASES = {
+FLOAT_MODULO_ALIGNMENT_CASES = {
     "arith_mod_float_negative_dividend",
     "arith_mod_float_negative_divisor",
 }
@@ -138,7 +138,7 @@ BMC_CORE_FIXTURE_LEDGER_CASES = (
     PLAIN_BEFORE_ALIGNMENT_CASES
     | INITIAL_DELTA_ALIGNMENT_CASES
     | NUMERIC_UNSUPPORTED_CASES
-    | FLOAT_MODULO_UNSUPPORTED_CASES
+    | FLOAT_MODULO_ALIGNMENT_CASES
     | HANDLER_CALL_ALIGNMENT_CASES
     | TEMPORARY_BMC_CORE_EXCLUDE_CASES
     | CONSTRUCTOR_DIAGNOSTIC_EXCLUDE_CASES
@@ -187,11 +187,11 @@ def policy_for_case(case_id: str) -> BmcSemanticFixturePolicy:
             bucket="numeric_unsupported",
             reason="Current Int bitwise / integer-normalization lowering is unsupported and must fail loudly.",
         )
-    if case_id in FLOAT_MODULO_UNSUPPORTED_CASES:
+    if case_id in FLOAT_MODULO_ALIGNMENT_CASES:
         return BmcSemanticFixturePolicy(
-            mode="expected_unsupported",
-            bucket="float_modulo_unsupported",
-            reason="Floored float modulo lowering is unsupported and must fail loudly.",
+            mode="hard_pass",
+            bucket="float_modulo",
+            reason="Floored float modulo follows the shared operator catalog encoding.",
         )
     if case_id in HANDLER_CALL_ALIGNMENT_CASES:
         return BmcSemanticFixturePolicy(

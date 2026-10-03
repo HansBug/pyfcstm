@@ -156,9 +156,13 @@ class TestConcreteExpressions:
         with pytest.raises(KeyError):
             _run("x + 1")
 
-    def test_missing_function_is_rejected(self):
-        node = ir.Call("e", None, "hypot", (ir.Literal("e.0", None, 1),))
-        with pytest.raises(KeyError, match="hypot"):
+    @pytest.mark.parametrize("node, token", [
+        (ir.Call("e", None, "hypot", (ir.Literal("e.0", None, 1),)), "hypot"),
+        (ir.Unary("e", None, "~", ir.Literal("e.0", None, 1)), "~"),
+        (ir.Binary("e", None, "<=>", ir.Literal("e.0", None, 1), ir.Literal("e.1", None, 2)), "<=>"),
+    ])
+    def test_unknown_operations_are_rejected(self, node, token):
+        with pytest.raises(KeyError, match=token):
             compile_expression(node, CONCRETE)({}, None)
 
     def test_unexplained_exceptions_propagate_unchanged(self):
@@ -184,7 +188,7 @@ class TestConcreteExpressions:
 
     def test_conditional_without_selectable_branch_is_reported(self):
         class Never(type(CONCRETE)):
-            def decide(self, condition, node, ctx):
+            def decide(self, condition, node, ctx, role):
                 return False
 
             def no_branch(self, node, ctx):
@@ -200,12 +204,12 @@ class TestConcreteExpressions:
             lambda: base.literal(node),
             lambda: base.symbol(node, {}, None),
             lambda: base.apply(node, None, (), None),
-            lambda: base.missing_function(node, (), None),
+            lambda: base.unknown_operation(node, (), None),
             lambda: base.host_atom(node, (), {}, None),
             lambda: base.truth(1, node, None),
             lambda: base.negate(True),
-            lambda: base.decide(True, node, None),
-            lambda: base.enter(None, True, node, True),
+            lambda: base.decide(True, node, None, "branch"),
+            lambda: base.enter(None, True, node, "branch", True),
             lambda: base.constant(True, node),
             lambda: base.no_branch(node, None),
         ]

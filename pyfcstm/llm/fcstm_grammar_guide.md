@@ -551,6 +551,38 @@ Do not use `->` for implication. It is transition syntax. Do not use `^` for
 boolean xor in conditions; use `xor`. Numeric `^` remains bitwise xor inside
 numeric expressions.
 
+Arithmetic follows one set of rules in the simulator, generated code, and
+verification:
+
+- `/` is true division and always yields a float: `7 / 2` is `3.5`. Use
+  `floor(a / b)` or `trunc(a / b)` when an integer quotient is intended.
+- `%` is floored modulo; the result takes the sign of the divisor.
+- At the end of an action block, an `int` variable accepts an integral float
+  (`count = 6 / 2` stores `3`) but a non-integral value is a runtime error.
+- Division or modulo by zero, `sqrt` of a negative number, `log` of zero or a
+  negative number, and a negative base raised to a fractional power are
+  runtime errors. `&&`, `||`, and `=>` evaluate their right side only when it
+  decides the result, so a guard such as `d != 0 && 10 / d > 1` is safe.
+- `-2` is a signed literal, so `-2 ** 2` is `4`.
+
+```fcstm
+input int divisor;
+def int half = 0;
+def float ratio = 0.0;
+
+state Arithmetic {
+    [*] -> Idle;
+    state Idle;
+    state Ready {
+        enter {
+            half = floor(divisor / 2);
+        }
+    }
+
+    Idle -> Ready : if [divisor != 0 && 100 / divisor > 1];
+}
+```
+
 ## Cycle Semantics
 
 FCSTM models cycle-based control systems. One cycle executes active-state

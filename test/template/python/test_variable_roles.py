@@ -341,3 +341,12 @@ def test_transition_guard_reads_all_four_roles_through_current_getters():
         assert machine.current_state_path == ("Root", "Done")
         assert machine.parameters == {"limit": 4}
         assert machine.vars == {"count": 1, "reading": 3}
+
+
+def test_an_integer_function_of_nan_keeps_the_interpreter_wording():
+    # floor of NaN is rejected with Python's own message, which the simulator
+    # keeps as well; only real-valued functions report "math domain error".
+    source = "input float a; def int k = 0; state Root { [*] -> A; state A { during { k = floor(a * 1e308 - a * 1e308); } } }"
+    with _render_python_module(source) as module:
+        with pytest.raises(module.SimulationRuntimeExpressionError, match="cannot convert float NaN to integer"):
+            module.RootMachine().cycle(inputs={"a": 10.0})

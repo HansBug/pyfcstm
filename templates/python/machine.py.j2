@@ -498,7 +498,7 @@ class {{ machine_class_name(model) }}:
             return function(value)
         except ValueError:
             # ValueError: the argument is outside the function's domain,
-            # such as sqrt of a negative number or floor of NaN.
+            # such as sqrt of a negative number or log of zero.
             raise ValueError("math domain error") from None
 
     @staticmethod

@@ -1,7 +1,8 @@
 expr_styles:
   python_expr:
     # Functions that can reject their argument report it with the runtime's
-    # stable message; the same overrides apply to every runtime style.
+    # stable message; the same overrides apply to every runtime style.  The
+    # integer functions keep Python's own wording, as the catalog does.
     <<: &runtime_math_functions
       UFunc(sin): "self._math(math.sin, {{ node.expr | expr_render }})"
       UFunc(cos): "self._math(math.cos, {{ node.expr | expr_render }})"
@@ -15,10 +16,6 @@ expr_styles:
       UFunc(log10): "self._math(math.log10, {{ node.expr | expr_render }})"
       UFunc(log2): "self._math(math.log2, {{ node.expr | expr_render }})"
       UFunc(log1p): "self._math(math.log1p, {{ node.expr | expr_render }})"
-      UFunc(ceil): "self._math(math.ceil, {{ node.expr | expr_render }})"
-      UFunc(floor): "self._math(math.floor, {{ node.expr | expr_render }})"
-      UFunc(trunc): "self._math(math.trunc, {{ node.expr | expr_render }})"
-      UFunc(round): "self._math(round, {{ node.expr | expr_render }})"
     base_lang: python
     Name: "self._vars[{{ node.name | tojson }}]"
     UFunc(sign): "self._sign({{ node.expr | expr_render }})"

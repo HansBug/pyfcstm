@@ -982,3 +982,18 @@ def test_shift_count_message_separates_its_three_input_shapes(
 
     assert emitted, [diag.code for diag in report.diagnostics]
     assert emitted[0].message.startswith(expected_lead), emitted[0].message
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("call, warns", [("floor(f)", False), ("trunc(f)", False), ("sqrt(f)", True)])
+def test_float_bitwise_follows_the_function_result_type(call, warns):
+    from pyfcstm.diagnostics.analyzers import collect_numeric_warnings
+    from pyfcstm.model import load_state_machine_from_text
+
+    machine = load_state_machine_from_text(
+        "def float f = 1.5; def int n = 0; "
+        "state Root { state A { during { n = %s & 1; } } [*] -> A; }" % call
+    )
+    codes = [item.code for item in collect_numeric_warnings(machine)]
+
+    assert ("W_NUMERIC_FLOAT_BITWISE" in codes) is warns

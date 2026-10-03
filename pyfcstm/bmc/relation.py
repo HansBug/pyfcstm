@@ -1953,7 +1953,9 @@ def _query_failure_message(err: SymbolicFailure) -> str:
             node.op,
             err.reason,
         )
-    return "BMC query expression is unsupported: %s" % (err.reason,)
+    # The binder rejects every query failure except an unsupported function
+    # or operator before lowering.
+    return "BMC query expression is unsupported: %s" % (err.reason,)  # pragma: no cover
 
 
 def _lower_bmc_num_expr(

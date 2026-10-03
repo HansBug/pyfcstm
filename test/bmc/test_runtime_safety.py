@@ -478,3 +478,17 @@ def test_a_dead_end_pseudo_state_runs_no_action():
     runtime.cycle()
     runtime.cycle(["Root.A.Go"], inputs={"d": 0})
     assert runtime.current_state.path == ("Root", "A")
+
+
+@pytest.mark.unittest
+def test_the_error_formula_is_the_disjunction_of_its_stages():
+    model = load_state_machine_from_text(_machine(GUARD_ORDER_EXPOSES, "input int d;\ndef float y = 10 / 2;"))
+    core = build_bmc_core_formula(BmcEngine(model).prepare(QUERY))
+
+    formula, sites = runtime_error_formula(core)
+
+    assert z3.is_or(formula) and sites
+    assert [site.step for site in sites][0] is None
+    solver = z3.Solver()
+    solver.add(formula)
+    assert solver.check() == z3.sat

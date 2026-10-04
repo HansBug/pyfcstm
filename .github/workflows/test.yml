@@ -1130,7 +1130,7 @@ jobs:
           : > "$RUNNER_TEMP/plantuml-version.txt"
       - name: Set up Java runtime
         continue-on-error: true
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
@@ -1308,7 +1308,7 @@ jobs:
           : > "$RUNNER_TEMP/plantuml-service.log"
       - name: Set up Java runtime
         continue-on-error: true
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
@@ -1507,7 +1507,7 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
       - name: Set up Java (ANTLR runtime for JS parser generation)
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '17'

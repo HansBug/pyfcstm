@@ -57,7 +57,7 @@ jobs:
       fail_closed: ${{ steps.detect.outputs.fail_closed }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           submodules: 'recursive'
@@ -172,7 +172,7 @@ jobs:
     needs: detect_docs_routes
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 20
           submodules: 'recursive'
@@ -308,7 +308,7 @@ jobs:
           - 18080:8080
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 20
           submodules: 'recursive'
@@ -384,7 +384,7 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
       - name: Upload PDF build evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: docs-pdf-evidence
           if-no-files-found: warn
@@ -412,7 +412,7 @@ jobs:
           - 18080:8080
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 20
           submodules: 'recursive'

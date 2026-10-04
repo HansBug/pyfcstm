@@ -37,7 +37,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 20
       - name: Set up Node.js for diagram assets
@@ -87,7 +87,7 @@ jobs:
           PY
           ls -al dist
       - name: Upload packed files to artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: build-artifacts-source-pack
           path: ./dist/*
@@ -118,12 +118,12 @@ jobs:
         with:
           python-version: '3.7'
       - name: Set up Java runtime
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
       - name: Download only the built wheel artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: build-artifacts-source-pack
           path: ${{ runner.temp }}/pyfcstm-package-artifact
@@ -267,7 +267,7 @@ jobs:
           PY
       - name: Upload fresh Linux wheel evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pyfcstm-wheel-selfcheck-ubuntu-22.04
           if-no-files-found: error
@@ -308,12 +308,12 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Set up Java runtime
         continue-on-error: true
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
       - name: Download only the built wheel artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: build-artifacts-source-pack
           path: ${{ runner.temp }}/pyfcstm-package-artifact
@@ -476,7 +476,7 @@ jobs:
           PY
       - name: Upload fresh wheel evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pyfcstm-wheel-selfcheck-${{ matrix.os }}
           if-no-files-found: error
@@ -511,12 +511,12 @@ jobs:
         with:
           python-version: '3.7'
       - name: Set up Java runtime
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
       - name: Download only the built sdist artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: build-artifacts-source-pack
           path: ${{ runner.temp }}/pyfcstm-package-artifact
@@ -660,7 +660,7 @@ jobs:
           PY
       - name: Upload fresh sdist evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pyfcstm-sdist-selfcheck
           if-no-files-found: error
@@ -681,7 +681,7 @@ jobs:
     needs: source_release
     steps:
       - name: Checkout the export harness
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
       - name: Set up Python 3.11
@@ -689,7 +689,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Download only the built wheel artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: build-artifacts-source-pack
           path: ${{ runner.temp }}/pyfcstm-package-artifact
@@ -725,7 +725,7 @@ jobs:
           - 18080:8080
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 20
           submodules: 'recursive'
@@ -817,7 +817,7 @@ jobs:
           fi
           sha256sum "${staged_pdfs[@]}"
       - name: Upload bilingual PDFs to artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: build-artifacts-docs-pdf
           if-no-files-found: error
@@ -876,7 +876,7 @@ jobs:
         run: |
           echo "IS_PYPY=1" >> $GITHUB_ENV
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 20
           submodules: 'recursive'
@@ -1043,12 +1043,12 @@ jobs:
           ))
           PY
       - name: Upload packed files to artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pyfcstm-v${{ env.PACKAGE_VERSION }}-${{ env.OS_NAME }}-${{ env.CPU_ARCH }}-${{ env.GIT_COMMIT_ID }}
           path: ./dist/*
       - name: Upload exact CLI artifact for fresh verification
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pyfcstm-release-test-cli-${{ matrix.os }}
           if-no-files-found: error
@@ -1084,12 +1084,12 @@ jobs:
           : > "$RUNNER_TEMP/plantuml-service.log"
       - name: Set up Java runtime
         continue-on-error: true
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
       - name: Download only the built CLI artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: pyfcstm-release-test-cli-${{ matrix.os }}
           path: ${{ runner.temp }}/pyfcstm-release-test-cli
@@ -1245,7 +1245,7 @@ jobs:
           PY
       - name: Upload fresh CLI evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pyfcstm-release-test-cli-selfcheck-${{ matrix.os }}
           if-no-files-found: error
@@ -1317,12 +1317,12 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 20
 
       - name: Set up Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '11'
@@ -1400,7 +1400,7 @@ jobs:
         working-directory: editors/vscode
         run: node scripts/test-e2e.js
       - name: Upload VSCode extension to artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vscode-extension-${{ steps.ext_version.outputs.NAME }}-v${{ steps.ext_version.outputs.VERSION }}
           path: ${{ steps.find_vsix.outputs.VSIX_FILE }}

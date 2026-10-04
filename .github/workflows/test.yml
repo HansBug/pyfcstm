@@ -735,7 +735,7 @@ jobs:
         os:
           - 'ubuntu-22.04'
           - 'windows-2022'
-          - 'macos-14'
+          - 'macos-15'
         python-version:
           - '3.7'
           - '3.8'
@@ -746,7 +746,7 @@ jobs:
           - '3.13'
           - '3.14'
         exclude:
-          - os: 'macos-14'
+          - os: 'macos-15'
             python-version: '3.7'
 
     steps:
@@ -886,14 +886,14 @@ jobs:
         os:
           - 'ubuntu-22.04'
           - 'windows-2022'
-          - 'macos-14'
+          - 'macos-15'
         python-version:
           - '3.7'
         exclude:
-          - os: 'macos-14'
+          - os: 'macos-15'
             python-version: '3.7'
         include:
-          - os: 'macos-14'
+          - os: 'macos-15'
             python-version: '3.8'
 
     steps:
@@ -1290,8 +1290,8 @@ jobs:
           - os: windows-2022
             artifact: pyfcstm-cli-windows-2022
             exe: pyfcstm.exe
-          - os: macos-14
-            artifact: pyfcstm-cli-macos-14
+          - os: macos-15
+            artifact: pyfcstm-cli-macos-15
             exe: pyfcstm
     timeout-minutes: 20
     steps:
@@ -1415,7 +1415,7 @@ jobs:
           readiness_status=$?
           set -e
           unzip -q "$archive" -d "$root"
-          if [ "${{ matrix.os }}" = "macos-14" ]; then
+          if [ "${{ matrix.os }}" = "macos-15" ]; then
             xattr -dr com.apple.quarantine "$root" 2>/dev/null || true
           fi
           if find "$root" -type d -name pyfcstm -print -quit | grep -q .; then

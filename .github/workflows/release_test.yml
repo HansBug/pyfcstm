@@ -31,7 +31,7 @@ jobs:
       fail-fast: false
       matrix:
         os:
-          - 'ubuntu-latest'
+          - 'ubuntu-24.04'
         python-version:
           - '3.8'
 
@@ -69,7 +69,7 @@ jobs:
             echo "full_commit=$GITHUB_SHA"
             echo 'dirty=0'
             echo 'tag='
-            echo 'platform=ubuntu-latest'
+            echo 'platform=ubuntu-24.04'
           } > dist/build-identity.txt
           python - <<'PY' > dist/artifact-sha256.txt
           import hashlib
@@ -183,7 +183,7 @@ jobs:
             'schema=pyfcstm-build-identity/v1' \
             'artifact_kind=python-distributions' \
             "full_commit=$GITHUB_SHA" \
-            'dirty=0' 'tag=' 'platform=ubuntu-latest'
+            'dirty=0' 'tag=' 'platform=ubuntu-24.04'
           grep -F "full_commit=$GITHUB_SHA" "$identity"
           wheel_name=$(basename "$wheel")
           actual_digest=$(python - "$wheel" <<'PY'
@@ -287,7 +287,7 @@ jobs:
         include:
           - os: windows-2022
             python-version: '3.7'
-          - os: macos-14
+          - os: macos-15
             python-version: '3.8'
     timeout-minutes: 25
     steps:
@@ -392,7 +392,7 @@ jobs:
             'schema=pyfcstm-build-identity/v1' \
             'artifact_kind=python-distributions' \
             "full_commit=$GITHUB_SHA" \
-            'dirty=0' 'tag=' 'platform=ubuntu-latest'
+            'dirty=0' 'tag=' 'platform=ubuntu-24.04'
           grep -F "full_commit=$GITHUB_SHA" "$identity"
           wheel_name=$(basename "$wheel")
           expected_digest=$(awk -v file="$wheel_name" '$3 == "dist/" file || $3 == file {print $1}' "$digest_file")
@@ -576,7 +576,7 @@ jobs:
             'schema=pyfcstm-build-identity/v1' \
             'artifact_kind=python-distributions' \
             "full_commit=$GITHUB_SHA" \
-            'dirty=0' 'tag=' 'platform=ubuntu-latest'
+            'dirty=0' 'tag=' 'platform=ubuntu-24.04'
           grep -F "full_commit=$GITHUB_SHA" "$identity"
           sdist_name=$(basename "$sdist")
           actual_digest=$(python - "$sdist" <<'PY'
@@ -833,14 +833,14 @@ jobs:
         os:
           - 'ubuntu-22.04'
           - 'windows-2022'
-          - 'macos-14'
+          - 'macos-15'
         python-version:
           - '3.7'
         exclude:
-          - os: 'macos-14'
+          - os: 'macos-15'
             python-version: '3.7'
         include:
-          - os: 'macos-14'
+          - os: 'macos-15'
             python-version: '3.8'
 
     steps:
@@ -1068,7 +1068,7 @@ jobs:
         os:
           - ubuntu-22.04
           - windows-2022
-          - macos-14
+          - macos-15
     timeout-minutes: 25
     steps:
       - name: Prepare self-check evidence directory
@@ -1183,7 +1183,7 @@ jobs:
           cp "$identity" "$reports/build-identity.txt"
           cp "$digest_file" "$reports/artifact-sha256.txt"
           unzip -q "$archive" -d "$root"
-          if [ "${{ matrix.os }}" = "macos-14" ]; then
+          if [ "${{ matrix.os }}" = "macos-15" ]; then
             xattr -dr com.apple.quarantine "$root" 2>/dev/null || true
           fi
           if find "$root" -type d -name pyfcstm -print -quit | grep -q .; then
@@ -1312,7 +1312,7 @@ jobs:
 
   release_vscode_extension:
     name: VSCode Extension Build And Release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: "!contains(github.event.head_commit.message, 'ci skip')"
 
     steps:

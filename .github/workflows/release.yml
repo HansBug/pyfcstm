@@ -342,8 +342,8 @@ jobs:
       - name: Download staged macOS CLI artifact
         uses: actions/download-artifact@v4
         with:
-          name: pyfcstm-release-cli-macos-14
-          path: ${{ runner.temp }}/pyfcstm-release-gate/cli/pyfcstm-release-cli-macos-14
+          name: pyfcstm-release-cli-macos-15
+          path: ${{ runner.temp }}/pyfcstm-release-gate/cli/pyfcstm-release-cli-macos-15
       - name: Confirm fresh results and staged sidecars
         env:
           TARGET_COMMIT: ${{ needs.resolve_release_target.outputs.full_commit }}
@@ -434,7 +434,7 @@ jobs:
           if {path.name for path in cli_directories} != {
               "pyfcstm-release-cli-ubuntu-22.04",
               "pyfcstm-release-cli-windows-2022",
-              "pyfcstm-release-cli-macos-14",
+              "pyfcstm-release-cli-macos-15",
           }:
               raise SystemExit("CLI artifact matrix is incomplete: {}".format(cli_directories))
           for directory in cli_directories:
@@ -617,14 +617,14 @@ jobs:
         os:
           - 'ubuntu-22.04'
           - 'windows-2022'
-          - 'macos-14'
+          - 'macos-15'
         python-version:
           - '3.7'
         exclude:
-          - os: 'macos-14'
+          - os: 'macos-15'
             python-version: '3.7'
         include:
-          - os: 'macos-14'
+          - os: 'macos-15'
             python-version: '3.8'
 
     steps:
@@ -855,7 +855,7 @@ jobs:
         os:
           - ubuntu-22.04
           - windows-2022
-          - macos-14
+          - macos-15
     timeout-minutes: 25
     steps:
       - name: Prepare self-check evidence directory
@@ -964,7 +964,7 @@ jobs:
           readiness_status=$?
           set -e
           unzip -q "$archive" -d "$root"
-          if [ "${{ matrix.os }}" = "macos-14" ]; then
+          if [ "${{ matrix.os }}" = "macos-15" ]; then
             if xattr -lr "$root" 2>/dev/null | grep -q com.apple.quarantine; then
               xattr -dr com.apple.quarantine "$root"
             fi
@@ -1185,7 +1185,7 @@ jobs:
         os:
           - ubuntu-22.04
           - windows-2022
-          - macos-14
+          - macos-15
     steps:
       - name: Download the exact verified CLI artifact
         uses: actions/download-artifact@v4
@@ -1243,7 +1243,7 @@ jobs:
 
   release_vscode_extension:
     name: VSCode Extension Build And Release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: ${{ github.repository == 'hansbug/pyfcstm' && github.event_name == 'release' && github.event.action == 'published' }}
     steps:
       - name: Checkout code

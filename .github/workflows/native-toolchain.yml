@@ -110,7 +110,7 @@ jobs:
 
   native-macos:
     name: native-toolchain / macos-appleclang-o2
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 90
     if: github.event_name != 'workflow_dispatch' || inputs.profile == 'macos-appleclang-o2'
     steps:

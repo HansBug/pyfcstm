@@ -275,7 +275,7 @@ function sourceRange(transition: TransitionInfo): TextRange | null {
 function collectShadowedEventWarnings(events: EventInfo[]): ModelDiagnosticJson[] {
     const byName = new Map<string, EventInfo[]>();
     for (const event of events) {
-        const leaf = event.qualified_name.split('.').at(-1) ?? event.qualified_name;
+        const leaf = event.qualified_name.split('.').pop() ?? event.qualified_name;
         byName.set(leaf, [...(byName.get(leaf) ?? []), event]);
     }
     const out: ModelDiagnosticJson[] = [];

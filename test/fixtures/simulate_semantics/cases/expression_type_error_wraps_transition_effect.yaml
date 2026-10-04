@@ -26,6 +26,6 @@ steps:
       cause_match: unsupported operand type
       cause_match_kind: substring
     state: Root.A
-    vars_exact:
+    vars:
       x: 1
       y: 1.5

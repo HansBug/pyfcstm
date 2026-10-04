@@ -13,7 +13,7 @@ steps:
 - cycle: []
   expect:
     state: Root.A
-    vars_exact:
+    vars:
       d: 0.0
       r: 0.5
     ended: false
@@ -22,7 +22,7 @@ steps:
     raises:
       type: SimulationRuntimeExpressionError
       cause_type: ZeroDivisionError
-    vars_exact:
+    vars:
       d: 0.0
       r: 0.5
     ended: false

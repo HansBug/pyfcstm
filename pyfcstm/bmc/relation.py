@@ -81,6 +81,7 @@ from .ast import (
     Terminated,
     UFuncCall,
 )
+from .slicing import ConeSlice, build_cone_slice, slice_operations
 from .binding import BoundAssumption
 from .domain import (
     STATE_INIT_ID,
@@ -106,6 +107,7 @@ from .source import (
     terminated_source,
 )
 from .provenance import BmcTrackedConstraint
+from pyfcstm.dsl.role import VariableRole
 from pyfcstm.model import Expr
 from pyfcstm.solver.domain import DomainConstraint, DomainSource, translate_expr_domain
 from pyfcstm.solver.operation import execute_operations_domain
@@ -818,6 +820,10 @@ class BmcTraceSymbols:
     :type frame_states: Tuple[z3.ArithRef, ...]
     :param frame_vars: Per-frame persistent-variable symbols.
     :type frame_vars: Tuple[Mapping[str, z3.ArithRef], ...]
+    :param step_inputs: Independent input symbols for each of the N steps.
+    :type step_inputs: Tuple[Mapping[str, z3.ArithRef], ...]
+    :param parameters: Parameter symbols shared by every frame and step.
+    :type parameters: Mapping[str, z3.ArithRef]
     :param event_inputs: Per-step event-input symbols.
     :type event_inputs: Tuple[Mapping[str, z3.BoolRef], ...]
     :param delta_flags: Per-step semantic-delta observation symbols.
@@ -846,6 +852,8 @@ class BmcTraceSymbols:
     delta_flags: Tuple[z3.BoolRef, ...]
     gamma_flags: Tuple[z3.BoolRef, ...]
     case_selectors: Tuple[Mapping[str, z3.BoolRef], ...] = field(default_factory=tuple)
+    step_inputs: Tuple[Mapping[str, z3.ArithRef], ...] = field(default_factory=tuple)
+    parameters: Mapping[str, z3.ArithRef] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not isinstance(self.domain, BmcDomain):
@@ -866,6 +874,24 @@ class BmcTraceSymbols:
             raise BmcBuildError("gamma_flags must contain Z3 Boolean expressions.")
         if len(self.case_selectors) != self.domain.bound:
             raise BmcBuildError("case_selectors must contain bound mappings.")
+        step_inputs = self.step_inputs
+        if not step_inputs and not self.domain.input_names:
+            step_inputs = tuple({} for _ in self.domain.steps)
+        if len(step_inputs) != self.domain.bound:
+            raise BmcBuildError("step_inputs must contain bound mappings.")
+        for values in step_inputs:
+            if set(values) != set(self.domain.input_names):
+                raise BmcBuildError(
+                    "step_inputs must contain exactly the input names."
+                )
+        if set(self.parameters) != set(self.domain.parameter_names):
+            raise BmcBuildError(
+                "parameters must contain exactly the parameter names."
+            )
+        object.__setattr__(
+            self, "step_inputs", tuple(dict(values) for values in step_inputs)
+        )
+        object.__setattr__(self, "parameters", dict(self.parameters))
         object.__setattr__(
             self,
             "frame_vars",
@@ -926,6 +952,8 @@ class BmcTraceSymbols:
         for frame in domain.frames:
             mapping = {}
             for var in domain.variables:
+                if var.name not in domain.persistent_variable_names:
+                    continue
                 symbol_name = "F_%d_%s" % (frame.index, _safe_symbol_fragment(var.name))
                 if var.declared_type == "int":
                     mapping[var.name] = z3.Int(symbol_name)
@@ -937,6 +965,23 @@ class BmcTraceSymbols:
                         % var.declared_type
                     )
             frame_vars.append(mapping)
+        step_inputs = tuple(
+            {
+                var.name: (z3.Int if var.declared_type == "int" else z3.Real)(
+                    "I_%d_%s" % (step.index, _safe_symbol_fragment(var.name))
+                )
+                for var in domain.variables
+                if var.role == VariableRole.INPUT
+            }
+            for step in domain.steps
+        )
+        parameters = {
+            var.name: (z3.Int if var.declared_type == "int" else z3.Real)(
+                "P_%s" % _safe_symbol_fragment(var.name)
+            )
+            for var in domain.variables
+            if var.role == VariableRole.PARAM
+        }
         event_inputs = []
         for step in domain.steps:
             mapping = {}
@@ -967,6 +1012,8 @@ class BmcTraceSymbols:
             domain=domain,
             frame_states=frame_states,
             frame_vars=tuple(frame_vars),
+            step_inputs=step_inputs,
+            parameters=parameters,
             event_inputs=tuple(event_inputs),
             delta_flags=delta_flags,
             gamma_flags=gamma_flags,
@@ -1022,6 +1069,45 @@ class BmcTraceSymbols:
             # KeyError: the requested variable name is absent from this domain's
             # persistent-variable symbol mapping.
             raise BmcBuildError("Unknown frame variable: %r." % name) from err
+
+    def step_input(self, step_index: int, name: str) -> z3.ArithRef:
+        """Return the input sampled for one step in ``0..N-1``.
+
+        :param step_index: Zero-based macro-step index, strictly less than bound.
+        :param name: Assembled input name.
+        :return: Int or Real input symbol for this step.
+        :raises BmcBuildError: If the index or input name is invalid.
+        """
+        if (
+            isinstance(step_index, bool)
+            or not isinstance(step_index, int)
+            or not 0 <= step_index < len(self.step_inputs)
+        ):
+            raise BmcBuildError("step index out of range: %r." % step_index)
+        if name not in self.step_inputs[step_index]:
+            raise BmcBuildError("Unknown input: %r." % name)
+        return self.step_inputs[step_index][name]
+
+    def parameter(self, name: str) -> z3.ArithRef:
+        """Return a parameter symbol shared by the entire trace.
+
+        :param name: Assembled parameter name.
+        :return: The single Int or Real configuration symbol.
+        :raises BmcBuildError: If the parameter name is unknown.
+        """
+        if name not in self.parameters:
+            raise BmcBuildError("Unknown parameter: %r." % name)
+        return self.parameters[name]
+
+    def resolve_query_value(
+        self, frame_index: int, step_index: Optional[int], name: str
+    ) -> z3.ArithRef:
+        """Resolve a bound query reference in its frame or input-step scope."""
+        if name in self.parameters:
+            return self.parameter(name)
+        if step_index is not None and name in self.domain.input_names:
+            return self.step_input(step_index, name)
+        return self.frame_var(frame_index, name)
 
     def event_input(self, step_index: int, event_path: str) -> z3.BoolRef:
         """Return an event-input symbol for a step.
@@ -1190,6 +1276,13 @@ class BmcTraceSymbols:
                 {name: _z3_text(expr) for name, expr in sorted(mapping.items())}
                 for mapping in self.frame_vars
             ],
+            "step_inputs": [
+                {name: _z3_text(expr) for name, expr in mapping.items()}
+                for mapping in self.step_inputs
+            ],
+            "parameters": {
+                name: _z3_text(expr) for name, expr in self.parameters.items()
+            },
             "event_inputs": [
                 {name: _z3_text(expr) for name, expr in sorted(mapping.items())}
                 for mapping in self.event_inputs
@@ -1476,11 +1569,12 @@ class BmcCoreFormula:
     :type core: z3.BoolRef
     :param steps: Lowered step relations.
     :type steps: Tuple[BmcStepRelation, ...]
-    :param diagnostics: Reserved build-time diagnostics, defaults to ``()``.
-        Relation-level semantic-delta information is currently exposed through
-        case metadata, so this tuple is empty in the initial core-relation
-        builder.
+    :param diagnostics: Build-time diagnostics, including reasons requested
+        slicing was skipped, defaults to ``()``.
     :type diagnostics: Tuple[str, ...], optional
+    :param cone_slice: Conservative variable partition when slicing was
+        requested; ``None`` when disabled.
+    :type cone_slice: pyfcstm.bmc.slicing.ConeSlice, optional
 
     Example::
 
@@ -1501,6 +1595,7 @@ class BmcCoreFormula:
     core: z3.BoolRef
     steps: Tuple[BmcStepRelation, ...]
     diagnostics: Tuple[str, ...] = ()
+    cone_slice: Optional[ConeSlice] = None
     _tracked_groups: Tuple[BmcTrackedConstraint, ...] = field(
         default_factory=tuple, repr=False, compare=False
     )
@@ -1510,6 +1605,16 @@ class BmcCoreFormula:
 
     def __post_init__(self) -> None:
         _require_context(self.context)
+        if self.cone_slice is not None:
+            if not isinstance(self.cone_slice, ConeSlice):
+                raise BmcBuildError("cone_slice must be ConeSlice or None.")
+            partition = set(self.cone_slice.retained_variables) | set(
+                self.cone_slice.dropped_variables
+            )
+            if partition != set(self.context.domain.persistent_variable_names):
+                raise BmcBuildError(
+                    "cone_slice must partition the persistent variables."
+                )
         if not isinstance(self.symbols, BmcTraceSymbols):
             raise BmcBuildError("symbols must be BmcTraceSymbols.")
         for name in (
@@ -1752,9 +1857,13 @@ def _lower_bmc_num_expr(
     if isinstance(expr, FloatLiteral):
         return _LoweredValue(z3.RealVal(str(expr.value)))
     if isinstance(expr, NameRef):
-        return _LoweredValue(symbols.frame_var(frame_index, expr.name))
+        return _LoweredValue(
+            symbols.resolve_query_value(frame_index, step_index, expr.name)
+        )
     if isinstance(expr, FrameVar):
-        return _LoweredValue(symbols.frame_var(frame_index, expr.name))
+        return _LoweredValue(
+            symbols.resolve_query_value(frame_index, step_index, expr.name)
+        )
     if isinstance(expr, Cycle):
         return _LoweredValue(z3.IntVal(frame_index))
     if isinstance(expr, CallCount):
@@ -2195,6 +2304,8 @@ def _execute_action_block(
     block: ActionBlock,
     env: Mapping[str, _Z3Expr],
     case_label: str,
+    persistent_names: Sequence[str],
+    cone_slice: Optional[ConeSlice] = None,
 ) -> Tuple[
     Mapping[str, z3.ArithRef],
     Tuple[DomainConstraint, ...],
@@ -2210,6 +2321,7 @@ def _execute_action_block(
                 value, "call snapshot %s in case %s" % (name, case_label)
             )
             for name, value in env.items()
+            if name in persistent_names
         }
         record = BmcAbstractCallRecord(
             0,
@@ -2223,7 +2335,11 @@ def _execute_action_block(
         )
         return dict(env), (), (record,)
     execution = execute_operations_domain(
-        list(block.operations),
+        list(
+            slice_operations(block.operations, cone_slice)
+            if cone_slice is not None
+            else block.operations
+        ),
         dict(env),
         source=DomainSource(
             label="action block %s in case %s" % (block.runtime_role, case_label)
@@ -2242,7 +2358,10 @@ def _execute_action_block(
 
 
 def _prepare_case_lowering(
-    case: CycleCase, pre_env: Mapping[str, _Z3Expr]
+    case: CycleCase,
+    pre_env: Mapping[str, _Z3Expr],
+    persistent_names: Sequence[str],
+    cone_slice: Optional[ConeSlice] = None,
 ) -> _CaseLowering:
     guards_by_anchor: Dict[int, List[GuardRequirement]] = {}
     for guard in case.guard_requirements:
@@ -2264,7 +2383,7 @@ def _prepare_case_lowering(
             definedness = list(new_definedness)
         if anchor < len(case.action_blocks):
             env, block_definedness, block_call_records = _execute_action_block(
-                case.action_blocks[anchor], env, case.label
+                case.action_blocks[anchor], env, case.label, persistent_names, cone_slice
             )
             definedness.extend(block_definedness)
             for record in block_call_records:
@@ -2328,9 +2447,10 @@ def _lower_bool_template(
                 symbols,
                 step_index,
             )
-            _append_guarded_constraints(
-                definedness, expr, lowered.definedness_constraints
-            )
+            if lowered.definedness_constraints:
+                _append_guarded_constraints(
+                    definedness, expr, lowered.definedness_constraints
+                )
             expr = z3.And(expr, lowered.expr)
         return _LoweredBoolTemplate(expr, tuple(definedness))
     if template.kind == "or":
@@ -2345,9 +2465,10 @@ def _lower_bool_template(
                 symbols,
                 step_index,
             )
-            _append_guarded_constraints(
-                definedness, z3.Not(expr), lowered.definedness_constraints
-            )
+            if lowered.definedness_constraints:
+                _append_guarded_constraints(
+                    definedness, z3.Not(expr), lowered.definedness_constraints
+                )
             expr = z3.Or(expr, lowered.expr)
         return _LoweredBoolTemplate(expr, tuple(definedness))
     if template.kind == "atom":
@@ -2385,6 +2506,7 @@ def _build_case_relation(
     symbols: BmcTraceSymbols,
     lowering: _CaseLowering,
     antecedents: Mapping[str, _LoweredBoolTemplate],
+    cone_slice: Optional[ConeSlice] = None,
 ) -> BmcCaseRelation:
     case = lowering.case
     selector = symbols.case_selector(step_index, case.label)
@@ -2401,6 +2523,10 @@ def _build_case_relation(
         )
     post_var_exprs = {}
     for var in symbols.domain.variables:
+        if var.name not in symbols.domain.persistent_variable_names:
+            continue
+        if cone_slice is not None and var.name in cone_slice.dropped_variables:
+            continue
         try:
             value = lowering.final_env[var.name]
         except (
@@ -2446,22 +2572,30 @@ def _build_step_relation(
     step_index: int,
     symbols: BmcTraceSymbols,
     formals: Sequence[MacroStepFormal],
+    cone_slice: Optional[ConeSlice] = None,
 ) -> BmcStepRelation:
     case_list = [case for formal in formals for case in formal.cases]
     if len({case.label for case in case_list}) != len(
         case_list
     ):  # pragma: no cover - macro labels are unique.
         raise _internal_bmc_error("duplicate case labels in step %d." % step_index)
-    pre_env = {
-        var.name: symbols.frame_var(step_index, var.name)
-        for var in symbols.domain.variables
-    }
+    pre_env = dict(symbols.frame_vars[step_index])
+    pre_env.update(symbols.step_inputs[step_index])
+    pre_env.update(symbols.parameters)
     lowerings = {
-        case.label: _prepare_case_lowering(case, pre_env) for case in case_list
+        case.label: _prepare_case_lowering(
+            case, pre_env, symbols.domain.persistent_variable_names, cone_slice
+        )
+        for case in case_list
     }
     condition_cache: Dict[str, _LoweredBoolTemplate] = {}
+    # Priority masks name the same accepted cases over and over; each one is
+    # lowered once per step instead of once per occurrence.
+    accepted_cache: Dict[str, _LoweredBoolTemplate] = {}
 
     def accepted_lookup(label: str, active: Set[str]) -> _LoweredBoolTemplate:
+        if label in accepted_cache:
+            return accepted_cache[label]
         if (
             label not in lowerings
         ):  # pragma: no cover - macro validation keeps accepted labels local.
@@ -2474,12 +2608,13 @@ def _build_step_relation(
             accepted_case.source_state_id
         )
         condition = condition_for(label, active)
-        return _LoweredBoolTemplate(
+        accepted_cache[label] = _LoweredBoolTemplate(
             _and((source_guard, condition.expr)),
             _guarded_domain_constraints(
                 source_guard, condition.definedness_constraints
             ),
         )
+        return accepted_cache[label]
 
     def condition_for(label: str, active: Set[str]) -> _LoweredBoolTemplate:
         if label in condition_cache:
@@ -2509,7 +2644,7 @@ def _build_step_relation(
 
     relations = tuple(
         _build_case_relation(
-            step_index, symbols, lowerings[case.label], condition_cache
+            step_index, symbols, lowerings[case.label], condition_cache, cone_slice
         )
         for case in case_list
     )
@@ -2537,6 +2672,44 @@ def _build_step_relation(
         gamma_constraint=gamma_constraint,
         progress_mutex_constraint=progress_mutex_constraint,
     )
+
+
+def _append_history_domain_constraints(
+    context: BmcPreparedContext,
+    env: Mapping[str, _Z3Expr],
+    havoc_names: Set[str],
+    constraints: List[z3.ExprRef],
+    groups: List[BmcTrackedConstraint],
+) -> None:
+    """Keep havocked history variables within the values an execution holds.
+
+    History lowering keeps a restore target that is ``0`` at every stable
+    point and, per owner, a record that is ``0`` or the id of a stoppable leaf
+    below the owner.  A havocked start may pick any such record, but not a
+    restore already in flight or a record naming no leaf, which no execution
+    of the machine can reach and the simulator refuses to replay.
+    """
+    for owner in context.model.history_owners:
+        allowed = {
+            owner.goto_variable: (0,),
+            owner.record_variable: (0, *owner.leaf_ids.values()),
+        }
+        for name, values in allowed.items():
+            if name not in havoc_names:
+                continue
+            constraint = _or(env[name] == z3.IntVal(value) for value in values)
+            constraints.append(constraint)
+            _append_tracked_group(
+                groups,
+                stable_id="initial.history.%s" % name,
+                stage="initialization",
+                category="domain.history_variable",
+                expressions=(constraint,),
+                source_ref=context._source_registry.model_reference(
+                    context.model.defines[name]
+                ),
+                refs={"variable": name, "frame": 0},
+            )
 
 
 def _initial_source(context: BmcPreparedContext):
@@ -2650,14 +2823,18 @@ def _build_initial_formula(
         ),
         refs={"frame": 0, "target": source.source_state_id},
     )
-    env: Dict[str, _Z3Expr] = {
-        var.name: symbols.frame_var(0, var.name) for var in context.domain.variables
-    }
+    env: Dict[str, _Z3Expr] = dict(symbols.frame_vars[0])
+    env.update(symbols.parameters)
     havoc_names = set(context.bound_query.initial.havoc_names(context.domain))
     for var in context.domain.variables:
         if var.name in havoc_names:
             continue
         define = context.model.defines[var.name]
+        if var.role == VariableRole.INPUT:
+            # Inputs carry no declared initializer (the model layer
+            # rejects one); each step input is free unless constrained by
+            # an explicit assumption.
+            continue
         result = _translate_model_expr(
             define.init, env, "initializer for %s" % var.name
         )
@@ -2675,7 +2852,7 @@ def _build_initial_formula(
                 source_ref=define_ref,
                 refs=_definedness_refs(item, variable=var.name, kind="initializer"),
             )
-        assignment = symbols.frame_var(0, var.name) == value
+        assignment = env[var.name] == value
         constraints.append(assignment)
         _append_tracked_group(
             groups,
@@ -2686,6 +2863,7 @@ def _build_initial_formula(
             source_ref=define_ref,
             refs={"variable": var.name, "frame": 0},
         )
+    _append_history_domain_constraints(context, env, havoc_names, constraints, groups)
     predicate = context.bound_query.initial.predicate
     if predicate is not None:
         lowered = _lower_bmc_cond_expr(predicate, symbols, frame_index=0)
@@ -2717,6 +2895,17 @@ def _build_initial_formula(
     return _and(constraints)
 
 
+def _assumption_input_names(context: BmcPreparedContext, index: int) -> Tuple[str, ...]:
+    """Return input reads bound within one assumption, in declaration order."""
+    names = {
+        ref.name
+        for ref in context.bound_query.references
+        if ref.kind == "variable"
+        and ref.path.startswith("assumptions[%d].predicate" % index)
+    }
+    return tuple(name for name in context.domain.input_names if name in names)
+
+
 def _build_environment_formula(
     context: BmcPreparedContext,
     symbols: BmcTraceSymbols,
@@ -2738,8 +2927,9 @@ def _build_environment_formula(
                 raise _internal_bmc_error(
                     "frame bound assumption has wrong source type."
                 )
+            uses_inputs = bool(_assumption_input_names(context, assumption_index))
             frames = (
-                range(context.bound + 1)
+                range(context.bound if uses_inputs else context.bound + 1)
                 if source.kind == "always"
                 else (assumption.frame,)
             )
@@ -2749,7 +2939,10 @@ def _build_environment_formula(
                 ):  # pragma: no cover - binder sets frame for at-assumptions.
                     raise _internal_bmc_error("frame assumption has no frame index.")
                 lowered = _lower_bmc_cond_expr(
-                    source.predicate, symbols, frame_index=frame
+                    source.predicate,
+                    symbols,
+                    frame_index=frame,
+                    step_index=frame if uses_inputs else None,
                 )
                 source_ref = context._source_registry.query_reference(
                     context.query, source
@@ -2876,6 +3069,10 @@ def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
         'Bool'
     """
     prepared = _require_context(context)
+    cone_slice = build_cone_slice(prepared) if prepared.options.cone_slicing else None
+    effective_slice = (
+        cone_slice if cone_slice is not None and cone_slice.dropped_variables else None
+    )
     frame_domain = _relation_frame_domain(prepared)
     formals_by_step = _formals_by_step(prepared, frame_domain)
     case_labels_by_step = {
@@ -2885,7 +3082,7 @@ def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
     symbols = BmcTraceSymbols.allocate(prepared.domain, case_labels_by_step)
     groups: List[BmcTrackedConstraint] = []
     steps = tuple(
-        _build_step_relation(step_index, symbols, formals)
+        _build_step_relation(step_index, symbols, formals, effective_slice)
         for step_index, formals in enumerate(formals_by_step)
     )
     generated_ref = prepared._source_registry.reference("generated", None, None)
@@ -2958,7 +3155,12 @@ def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
         environment_formula=environment_formula,
         core=core,
         steps=steps,
-        diagnostics=(),
+        diagnostics=(
+            ("slicing_skipped:" + cone_slice.skipped_reason,)
+            if cone_slice is not None and cone_slice.skipped_reason
+            else ()
+        ),
+        cone_slice=cone_slice,
         _tracked_groups=tuple(groups),
         _tracked_case_groups=tuple(case_groups),
     )

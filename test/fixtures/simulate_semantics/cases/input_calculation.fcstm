@@ -1,0 +1,13 @@
+input float pressure;
+param float gain = 2.0;
+control int samples = 0;
+output float reading = 0.0;
+state Root {
+    state Running {
+        during {
+            samples = samples + 1;
+            reading = pressure * gain;
+        }
+    }
+    [*] -> Running;
+}

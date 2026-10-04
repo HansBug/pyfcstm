@@ -47,6 +47,7 @@ export interface FcstmWorkspaceGraphNode {
     semantic: FcstmSemanticDocument | null;
     model: FcstmStateMachineModel | null;
     modelAuthority: 'assembled' | 'local';
+    bindingDiagnostic?: ModelAssemblyError['bindingDiagnostic'];
     imports: FcstmImportResolution[];
 }
 
@@ -408,6 +409,7 @@ export class FcstmWorkspaceGraph {
                 }
                 node.model = buildStateMachineModel(node.semantic || node.ast);
                 node.modelAuthority = 'local';
+                node.bindingDiagnostic = err.bindingDiagnostic;
             }
         }
     }

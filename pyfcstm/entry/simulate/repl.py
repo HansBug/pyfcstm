@@ -14,7 +14,6 @@ from prompt_toolkit.history import FileHistory
 from prompt_toolkit.styles import Style
 
 from .commands import CommandProcessor
-from .completer import SimulationCompleter
 
 
 class AutoSuggestFromCompleter(AutoSuggest):
@@ -104,7 +103,7 @@ class SimulationREPL:
     :vartype session: PromptSession
     """
 
-    def __init__(self, runtime, state_machine=None, use_color: bool = True):
+    def __init__(self, runtime, state_machine=None, use_color: bool = True, *, input_source=None, diagnostics=False):
         """
         Initialize the REPL with prompt_toolkit features.
 
@@ -114,6 +113,9 @@ class SimulationREPL:
         :type state_machine: StateMachine, optional
         :param use_color: Whether to use ANSI colors, defaults to True
         :type use_color: bool, optional
+        :param input_source: Optional command-owned input adapter.
+        :param diagnostics: Initially enable candidate diagnostics.
+        :type diagnostics: bool
         """
         self.runtime = runtime
         self.state_machine = state_machine if state_machine is not None else runtime.state_machine
@@ -122,9 +124,11 @@ class SimulationREPL:
             state_machine=self.state_machine,
             use_color=use_color,
             runtime_replaced_callback=self._replace_runtime,
+            input_source=input_source,
+            diagnostics=diagnostics,
         )
         self.history = self._get_history()
-        self.completer = SimulationCompleter(runtime)
+        self.completer = self.command_processor.create_completer()
         self.session = PromptSession(
             history=self.history,
             auto_suggest=AutoSuggestFromCompleter(self.completer),

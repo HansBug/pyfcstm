@@ -174,16 +174,16 @@ state Root { state A; [*] -> A; }
     it('uses RHS-only constant folding for division and modulo by zero', async () => {
         const diagnostics = diagnosticsFor(await numericDiagnostics(`
 def int result = 0;
-def int input = 1;
+def int sensor_value = 1;
 def int denom = 0;
 state Root {
     state A;
     state B;
     [*] -> A;
     A -> B effect {
-        result = input / (1 - 1);
-        result = input % (2 - 2);
-        result = input / denom;
+        result = sensor_value / (1 - 1);
+        result = sensor_value % (2 - 2);
+        result = sensor_value / denom;
     };
 }
 `), 'W_NUMERIC_CONSTANT_DIVISION_BY_ZERO');

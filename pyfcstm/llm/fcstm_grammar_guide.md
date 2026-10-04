@@ -63,6 +63,63 @@ and should not be used as a second source of model facts. An unterminated
 and non-EOF swallowing in import lexer modes, are outside the supported guide
 contract.
 
+## Variable Roles
+
+All declarations precede the root state. Types are `int` and `float`.
+
+| Declaration | Role | Initializer | Model assignments |
+|---|---|---|---|
+| `control` or `def` | `control` | Required, name-free | Allowed |
+| `input` | `input` | Forbidden | Rejected |
+| `param` | `param` | Required, name-free default | Rejected |
+| `output` | `output` | Required, name-free | Allowed |
+
+`control`, `input`, `param`, and `output` are reserved
+keywords. They cannot be variable, state, event, or action identifiers.
+`dynamic` and `static` are ordinary identifiers, not input modifiers.
+Initializers retain the existing `init_expression` syntax; they cannot refer
+to other variables. Input writes are model errors in every lifecycle action,
+aspect, transition effect, and nested conditional. Output values may be written
+by multiple actions and need not be read internally.
+
+```fcstm
+input float pressure;
+param float trip_pressure = 80.0;
+control int count = 0;
+output int alarm = 0;
+state Controller {
+    during {
+        count = count + 1;
+        if [pressure >= trip_pressure] { alarm = 1; }
+    }
+}
+```
+
+The AST preserves declaration spelling. `pyfcstm.model.VariableRole` describes
+the normalized role; `VarDefine.init` is `None` only for inputs in a
+valid model. `StateMachine` exposes `control_variables`, `inputs`,
+`parameters`, `output_variables`, and `persistent_variables` as read-only
+mappings in global declaration order. The last combines control and output.
+Inspect exports a required `role` field; input/parameter read-only use and
+output write-only use do not trigger control-variable dead-use warnings.
+
+This syntax/model contract does not itself supply cycle input values. Runtime
+input sources, role-aware import merging, BMC input symbols, and generated
+runtime interfaces are documented in their respective guides.
+
+## Import variable roles
+
+Use `var child_name -> parent_name;` inside an import block (`def` is also supported). The following cells specify the **final parent role**, assuming an explicitly declared parent target and identical numeric types:
+
+| Child / parent | param | input | control | output |
+|---|---|---|---|---|
+| param | param | rejected | rejected | rejected |
+| input | param | input | control | output |
+| control | rejected | rejected | control | output |
+| output | rejected | rejected | control | output |
+
+Validate source input/param writes before binding; mapping cannot legalize them. Only explicit parent declarations permit role changes. Missing targets retain child roles; implicit shared inputs remain forbidden. Parent defaults win, and every nested boundary must satisfy the matrix. Binding directly references the one parent variable: input bound to mutable parent control/output reads the current value at each execution position, without a child snapshot or delay. Final input uses cycle snapshots, final param is fixed, and control/output persists. Generated interfaces and inspect partitions use the final role; child output bound to control is internal, while child control bound to output is externally exposed. Reverify the assembled model when standalone child proofs relied on frozen inputs.
+
 ## Top-Level Structure
 
 Variable definitions come before the root state:
@@ -300,6 +357,9 @@ Do not write `MissionMode -> FlyHome : /DataLinkLost;` at the outer scope when
 `FlyHome` is nested inside `MissionMode`. Put the transition inside
 `MissionMode`, or route the outer event through a declared request variable.
 
+A history target `Owner.[H]` / `Owner.[H*]` is not a nested path: `Owner` is an
+ordinary sibling target and the marker says how to enter it. See History.
+
 ## Events
 
 Event scopes are part of the model semantics:
@@ -340,6 +400,65 @@ state Plant {
     }
 }
 ```
+
+## History
+
+Use history when leaving a composite state and entering it again should resume
+where it stopped instead of starting over. Declare the history inside the
+composite state (the owner), then enter it from the owner's parent scope with
+`Owner.[H]` (shallow) or `Owner.[H*]` (deep).
+
+```fcstm
+def int agitate_count = 0;
+
+state Washer {
+    [*] -> Paused;
+    state Paused;
+
+    state Program {
+        [*] -> Idle;
+        [H] -> Idle;         // where shallow history goes while there is no record
+        [H*] -> Wash.Fill;   // a deep default may be a descendant path
+        state Idle;
+        state Wash {
+            [*] -> Fill;
+            state Fill;
+            state Agitate {
+                enter { agitate_count = agitate_count + 1; }
+            }
+            Fill -> Agitate :: Filled;
+        }
+        Idle -> Wash :: Start;
+    }
+
+    Paused -> Program :: Fresh;
+    Paused -> Program.[H] :: Resume;
+    Paused -> Program.[H*] :: ResumeExactly;
+    !Program -> Paused :: Pause;
+}
+```
+
+Rules:
+
+- `[H] -> Child;` names a direct, non-pseudo child; `[H*] -> A.B;` names any
+  non-pseudo descendant path written relative to the owner. The right-hand side
+  is only the default used while the owner has no record.
+- Declare a kind before targeting it: `Owner.[H]` needs `[H] -> ...;` inside
+  `Owner`, and `Owner.[H*]` needs `[H*] -> ...;`. Each owner declares at most one
+  of each; only a composite state other than the root can own history.
+- History targets work on normal transitions with any trigger and effect, on a
+  parent's initial `[*] -> Owner.[H*];`, and on forced `!State -> Owner.[H]` and
+  `!* -> Owner.[H]`.
+- The owner is recorded when a transition leaves it. A deep restore returns to
+  the exact leaf and skips the initial transitions on that path; a shallow
+  restore enters the remembered child and runs that child's initial.
+- If the remembered path cannot be entered in this cycle (for example its
+  initial guard is false), the history transition is rejected. It never falls
+  back to the ordinary entry, so add a separate ordinary entry when the model
+  needs one.
+- History restores states, not variables.
+- A history declaration has no trigger and no effect. Do not name variables,
+  states or temporaries `__hist_*` or `_hist_*` in a model that uses history.
 
 ## Lifecycle Actions
 
@@ -527,6 +646,35 @@ state BadGuardScope {
 ```
 
 ```fcstm-invalid
+state BadUndeclaredHistory {
+    [*] -> Off;
+    state Off;
+    state Program {
+        [*] -> Idle;
+        state Idle;
+    }
+    Off -> Program.[H] :: Resume;
+}
+```
+
+```fcstm-invalid
+state BadShallowDefault {
+    [*] -> Off;
+    state Off;
+    state Program {
+        [*] -> Idle;
+        [H] -> Wash.Fill;
+        state Idle;
+        state Wash {
+            [*] -> Fill;
+            state Fill;
+        }
+    }
+    Off -> Program.[H] :: Resume;
+}
+```
+
+```fcstm-invalid
 def int count = 0;
 state BadForcedEffect {
     [*] -> Running;
@@ -598,4 +746,6 @@ Before producing final FCSTM source, check:
 - `=>`, `implies`, `xor`, and `iff` are used only in conditions
 - `^` is not used as boolean xor
 - forced transitions have no effect block
+- every `Owner.[H]` / `Owner.[H*]` target has a matching `[H]` / `[H*]`
+  declaration inside `Owner`, and a `[H]` default is a direct child
 - final output is raw `.fcstm` source, not Markdown

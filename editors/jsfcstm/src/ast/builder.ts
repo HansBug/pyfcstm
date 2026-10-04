@@ -24,6 +24,7 @@ import type {
     FcstmAstExpression,
     FcstmAstForcedTransition,
     FcstmAstFunctionExpression,
+    FcstmAstHistoryDefinition,
     FcstmAstIdentifierExpression,
     FcstmAstIfBranch,
     FcstmAstIfStatement,
@@ -47,6 +48,7 @@ import type {
     FcstmAstStateStatement,
     FcstmAstTransition,
     FcstmAstTrigger,
+    FcstmHistoryKind,
     FcstmAstUnaryExpression,
     FcstmAstVariableDefinition,
 } from './model';
@@ -98,6 +100,7 @@ const EXPR_PRECEDENCE: Record<string, number> = {
 };
 
 interface ParseTreeContext extends ParseTreeNode {
+    keyword?: { text: 'var' | 'def' };
     var_name?: { text?: string };
     from_state?: { text?: string };
     to_state?: { text?: string };
@@ -117,6 +120,8 @@ interface ParseTreeContext extends ParseTreeNode {
     isabs?: { text?: string };
     num_expression?: () => ParseTreeContext;
     combo_transition_trigger?: () => ParseTreeContext | undefined;
+    history_marker?: () => ParseTreeContext | undefined;
+    history_default_path?: () => ParseTreeContext | undefined;
     entry_combo_transition_trigger?: () => ParseTreeContext | undefined;
     entry_chain_combo_trigger?: () => ParseTreeContext | undefined;
     entry_chain_combo_leading_guard?: (index?: number | null) => ParseTreeContext[] | ParseTreeContext | undefined;
@@ -301,8 +306,11 @@ function declarationRange(node: ParseTreeContext, document: TextDocumentLike, fa
     const range = getNodeRange(node, document, fallbackText || nodeText(node));
     if (!leading || !node.start || tokenText(node.start) !== tokenText(leading)) return range;
     const leadingToken = leading as unknown as {line?: number; column?: number; text?: string};
-    const first = terminalChildren(node)
-        .map(item => (item as unknown as {symbol?: {line?: number; column?: number; text?: string}}).symbol)
+    const first = node.children!
+        .map(item => {
+            const child = item as ParseTreeContext & {symbol?: {line?: number; column?: number; text?: string}};
+            return child.symbol || child.start;
+        })
         .find(item => {
             if (!item || !tokenText(item).trim()) return false;
             if (item.line != null && leadingToken.line != null && item.column != null && leadingToken.column != null) {
@@ -1262,6 +1270,8 @@ function buildTransitionLikeBase(
     const toState = targetKind === 'exit'
         ? 'EXIT_STATE'
         : tokenText(node.to_state);
+    const historyMarker = getNodeByMethod(node, 'history_marker');
+    const targetHistory = historyMarker ? historyKindOf(historyMarker) : undefined;
 
     return {
         range: declarationRange(node, document, nodeText(node)),
@@ -1271,6 +1281,8 @@ function buildTransitionLikeBase(
         targetStateName: tokenText(node.to_state),
         sourceKind,
         targetKind,
+        targetHistory,
+        target_history: targetHistory,
         trigger,
         comboTrigger,
         combo_trigger: comboTrigger,
@@ -1286,6 +1298,31 @@ function buildTransitionLikeBase(
         condition_expr: guard,
         postOperations: effect?.statements || [],
         post_operations: effect?.statements || [],
+    };
+}
+
+function historyKindOf(marker: ParseTreeContext): FcstmHistoryKind {
+    return nodeText(marker) === '[H*]' ? 'deep' : 'shallow';
+}
+
+function buildHistoryDefinition(
+    node: ParseTreeContext,
+    document: TextDocumentLike
+): FcstmAstHistoryDefinition {
+    const historyKind = historyKindOf(getNodeByMethod(node, 'history_marker')!);
+    const pathNode = getNodeByMethod(node, 'history_default_path')!;
+    const defaultPath = nodeText(pathNode).split('.');
+    return {
+        kind: 'historyDefinition',
+        pyNodeType: 'HistoryDefinition',
+        range: declarationRange(node, document, nodeText(node)),
+        text: nodeText(node),
+        historyKind,
+        history_kind: historyKind,
+        defaultPath,
+        default_path: defaultPath,
+        defaultPathRange: getNodeRange(pathNode, document, nodeText(pathNode)),
+        doc: nodeDocumentation(node),
     };
 }
 
@@ -1439,13 +1476,14 @@ function buildImportMapping(
     const inner = firstContextChild(node) || node;
     const nodeName = inner.constructor?.name || '';
 
-    if (nodeName === 'Import_def_mappingContext') {
+    if (nodeName === 'Import_variable_mappingContext') {
         const selectorNode = contextChildren(inner).find(child => /ImportDef.*SelectorContext$/.test(child.constructor?.name || ''));
         const templateNode = contextChildren(inner).find(child => child.constructor?.name === 'Import_def_target_templateContext');
         const targetTemplateNode = buildImportDefTargetTemplate(templateNode as ParseTreeContext, document);
         return {
             kind: 'importDefMapping',
-            pyNodeType: 'ImportDefMapping',
+            pyNodeType: inner.keyword!.text === 'var' ? 'ImportVariableMapping' : 'ImportDefMapping',
+            spelling: inner.keyword!.text,
             range: getNodeRange(inner, document, nodeText(inner)),
             text: nodeText(inner),
             selector: buildImportDefSelector(selectorNode as ParseTreeContext, document),
@@ -1518,6 +1556,9 @@ function buildStateStatement(
     if (nodeName === 'LeafStateDefinitionContext' || nodeName === 'CompositeStateDefinitionContext') {
         return buildStateDefinition(inner, document);
     }
+    if (nodeName === 'History_definitionContext') {
+        return buildHistoryDefinition(inner, document);
+    }
     if (/ForceTransitionDefinitionContext$/.test(nodeName)) {
         return buildForcedTransition(inner, document);
     }
@@ -1577,6 +1618,7 @@ function buildStateDefinition(
     const forceTransitions = statements.filter(item => item.kind === 'forcedTransition') as FcstmAstForcedTransition[];
     const events = statements.filter(item => item.kind === 'eventDefinition') as FcstmAstEventDefinition[];
     const imports = statements.filter(item => item.kind === 'importStatement') as FcstmAstImportStatement[];
+    const histories = statements.filter(item => item.kind === 'historyDefinition') as FcstmAstHistoryDefinition[];
     // ``composite`` follows the pyfcstm semantic rule: it is true iff the
     // state has at least one substate (a direct ``state X;`` child) or
     // at least one ``import ... as Alias`` that gets merged in as a
@@ -1619,6 +1661,7 @@ function buildStateDefinition(
         during_aspects: duringAspects,
         forceTransitions,
         force_transitions: forceTransitions,
+        histories,
         doc: nodeDocumentation(node),
     };
 }
@@ -1630,7 +1673,13 @@ function buildVariableDefinition(
     const expressionNode = contextChildren(node).find(child => /InitContext$/.test(child.constructor?.name || ''));
     const terminals = terminalChildren(node);
     const valueType = tokenText((node as ParseTreeContext).deftype) === 'float' ? 'float' : 'int';
-    const initializer = buildExpression(expressionNode as ParseTreeContext, document);
+    const initializer = expressionNode ? buildExpression(expressionNode as ParseTreeContext, document) : null;
+    const declaration = contextChildren(node).find(child => child.constructor!.name === 'Variable_declarationContext')!;
+    const spelling = terminalChildren(declaration).map(child => child.getText!()).join(' ');
+    const roles: Record<string, import('./model').VariableRole> = {
+        def: 'control', control: 'control', input: 'input',
+        param: 'param', output: 'output',
+    };
     const typeToken = (node as ParseTreeContext).deftype;
     const typeIndex = terminals.findIndex(
         item => item === typeToken || item.getText?.() === tokenText(typeToken)
@@ -1649,6 +1698,8 @@ function buildVariableDefinition(
         deftype: valueType,
         initializer,
         expr: initializer,
+        role: roles[spelling],
+        spelling,
         doc: nodeDocumentation(node),
     };
 }

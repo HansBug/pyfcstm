@@ -1,0 +1,46 @@
+// Slicing-positive corpus model: the stat_* counters are written by enter
+// blocks and transition effects inside a composite state, never read.
+// Halted lives inside Running because a composite's own guard transitions are
+// only relayed on entry, so the exit must come from a leaf in the same scope.
+def int items = 0;
+def int jam = 0;
+def int stat_processed = 0;
+def int stat_rejected = 0;
+def int stat_cycles = 0;
+def int stat_last_batch = 0;
+
+state Conveyor {
+    [*] -> Running;
+
+    state Running {
+        [*] -> Feed;
+
+        state Feed {
+            enter {
+                items = items + 1;
+            }
+        }
+        state Inspect;
+        state Pack {
+            enter {
+                stat_processed = stat_processed + 1;
+                stat_last_batch = items;
+            }
+        }
+
+        Feed -> Inspect : if [items > 0 && items < 4];
+        Inspect -> Pack : if [jam == 0] effect {
+            stat_cycles = stat_cycles + 1;
+        }
+        Inspect -> Feed : if [jam != 0] effect {
+            stat_rejected = stat_rejected + 1;
+            jam = 0;
+        }
+        Pack -> Feed : if [items < 4] effect {
+            jam = items % 2;
+        }
+        Feed -> Halted : if [items >= 4];
+
+        state Halted;
+    }
+}

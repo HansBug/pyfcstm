@@ -48,6 +48,7 @@ ignore:
   - "pyfcstm/dsl/grammar/**"
   - "pyfcstm/bmc/grammar/**"
   - "editors/jsfcstm/src/dsl/grammar/**"
+  - "editors/jsfcstm/dist/dsl/grammar/**"
   - "editors/jsfcstm/src/model/raw.ts"
   - "editors/jsfcstm/src/model/model.ts"
   - "editors/jsfcstm/src/diagram/model.ts"

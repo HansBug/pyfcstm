@@ -77,7 +77,7 @@ TransitionInfo
 -----------------------------------------------------
 
 .. autoclass:: TransitionInfo
-    :members: from_path,to_path,event,event_scope,guard,effect,effect_self_assigns,is_forced,forced_origin,transition_index,span,effect_spans,effect_self_assign_spans,combo_origin_refs,combo_projection_key,combo_projection_order_key,combo_reuse_group_id,combo_priority_run_identity,combo_priority_run_index,source_path
+    :members: from_path,to_path,event,event_scope,guard,effect,effect_self_assigns,is_forced,forced_origin,transition_index,span,effect_spans,effect_self_assign_spans,combo_origin_refs,combo_projection_key,combo_projection_order_key,combo_reuse_group_id,combo_priority_run_identity,combo_priority_run_index,source_path,target_history
 
 
 ComboOriginRefInfo
@@ -101,11 +101,18 @@ ComboOriginInfo
     :members: origin_id,transition_span,trigger_span,terms
 
 
+VariableAccessSite
+-----------------------------------------------------
+
+.. autoclass:: VariableAccessSite
+    :members: kind,state_path,action,action_index,transition_index,statement_path,source_path,span
+
+
 VariableInfo
 -----------------------------------------------------
 
 .. autoclass:: VariableInfo
-    :members: name,type,init_value,read_in_states,written_in_states,read_in_guards,written_in_effects,affects_guard_directly,affects_guard_indirectly,abstract_actions_in_scope,float_literal_assignments,span,float_literal_assignment_spans
+    :members: name,type,init_value,read_in_states,written_in_states,read_in_guards,written_in_effects,affects_guard_directly,affects_guard_indirectly,abstract_actions_in_scope,float_literal_assignments,span,float_literal_assignment_spans,role,external_supply,diagnostic_policy,read_sites,write_sites
 
 
 EventInfo

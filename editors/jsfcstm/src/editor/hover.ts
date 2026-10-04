@@ -79,6 +79,16 @@ export const HOVER_DOCS: Record<string, FcstmHoverDoc> = {
         description: 'Represents a pseudo-state for initial or final transitions. Used for entry and exit points.',
         example: '```fcstm\n[*] -> InitialState;  // Entry transition\nFinalState -> [*];    // Exit transition\n```'
     },
+    '[H]': {
+        title: 'Shallow History',
+        description: 'Declared inside a composite state as `[H] -> Child;`: entering `State.[H]` re-enters the child the state was last left from and continues with that child\'s ordinary initial transition. The declared child is used while there is no record yet.',
+        example: '```fcstm\nstate Program {\n    state Idle;\n    [*] -> Idle;\n    [H] -> Idle;\n}\nPaused -> Program.[H] :: Resume;\n```'
+    },
+    '[H*]': {
+        title: 'Deep History',
+        description: 'Declared inside a composite state as `[H*] -> Child.Leaf;`: entering `State.[H*]` restores the exact leaf the state was last left from, skipping the initial transitions on the way. The declared path is used while there is no record yet.',
+        example: '```fcstm\nstate Program {\n    state Wash { state Fill; [*] -> Fill; }\n    [*] -> Wash;\n    [H*] -> Wash.Fill;\n}\nPaused -> Program.[H*] :: Resume;\n```'
+    },
     'pseudo': {
         title: 'Pseudo State',
         description: 'Declares a pseudo state that skips ancestor aspect actions. Useful for junction or choice states.',
@@ -244,10 +254,11 @@ export function findHoverInfo(text: string, column: number, word: string): Fcstm
         }
     }
 
-    if (text.includes('[*]')) {
-        const bracketIndex = text.indexOf('[*]');
-        if (column >= bracketIndex && column <= bracketIndex + 2) {
-            return HOVER_DOCS['[*]'];
+    for (const marker of ['[*]', '[H*]', '[H]']) {
+        for (let index = text.indexOf(marker); index >= 0; index = text.indexOf(marker, index + 1)) {
+            if (column >= index && column < index + marker.length) {
+                return HOVER_DOCS[marker];
+            }
         }
     }
 

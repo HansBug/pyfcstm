@@ -95,6 +95,7 @@ from .model import (
     OnAspect,
     State,
     VarDefine,
+    VariableRole,
     StateMachine,
     parse_dsl_node_to_state_machine,
 )
@@ -138,6 +139,7 @@ __all__ = [
     "OnAspect",
     "State",
     "VarDefine",
+    "VariableRole",
     "StateMachine",
     "parse_dsl_node_to_state_machine",
     "DetailLevelLiteral",

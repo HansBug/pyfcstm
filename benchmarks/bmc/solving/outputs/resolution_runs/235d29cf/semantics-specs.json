@@ -1,0 +1,257 @@
+[
+  {
+    "case": "claude_distributed_elevator_can",
+    "query": "reach",
+    "arm": "baseline"
+  },
+  {
+    "case": "claude_distributed_elevator_can",
+    "query": "forbid",
+    "arm": "baseline"
+  },
+  {
+    "case": "claude_distributed_elevator_can",
+    "query": "invariant",
+    "arm": "baseline"
+  },
+  {
+    "case": "claude_platooning_join_protocol",
+    "query": "reach",
+    "arm": "baseline"
+  },
+  {
+    "case": "claude_platooning_join_protocol",
+    "query": "forbid",
+    "arm": "baseline"
+  },
+  {
+    "case": "claude_platooning_join_protocol",
+    "query": "invariant",
+    "arm": "baseline"
+  },
+  {
+    "case": "claude_traffic_emergency_priority",
+    "query": "reach",
+    "arm": "baseline"
+  },
+  {
+    "case": "claude_traffic_emergency_priority",
+    "query": "forbid",
+    "arm": "baseline"
+  },
+  {
+    "case": "claude_traffic_emergency_priority",
+    "query": "invariant",
+    "arm": "baseline"
+  },
+  {
+    "case": "claude_vtol_mission_supervision",
+    "query": "reach",
+    "arm": "baseline"
+  },
+  {
+    "case": "claude_vtol_mission_supervision",
+    "query": "forbid",
+    "arm": "baseline"
+  },
+  {
+    "case": "claude_vtol_mission_supervision",
+    "query": "invariant",
+    "arm": "baseline"
+  },
+  {
+    "case": "codex_deepseek_distributed_elevator_can",
+    "query": "reach",
+    "arm": "baseline"
+  },
+  {
+    "case": "codex_deepseek_distributed_elevator_can",
+    "query": "forbid",
+    "arm": "baseline"
+  },
+  {
+    "case": "codex_deepseek_distributed_elevator_can",
+    "query": "invariant",
+    "arm": "baseline"
+  },
+  {
+    "case": "codex_deepseek_platooning_join_protocol",
+    "query": "reach",
+    "arm": "baseline"
+  },
+  {
+    "case": "codex_deepseek_platooning_join_protocol",
+    "query": "forbid",
+    "arm": "baseline"
+  },
+  {
+    "case": "codex_deepseek_platooning_join_protocol",
+    "query": "invariant",
+    "arm": "baseline"
+  },
+  {
+    "case": "codex_deepseek_traffic_emergency_priority",
+    "query": "reach",
+    "arm": "baseline"
+  },
+  {
+    "case": "codex_deepseek_traffic_emergency_priority",
+    "query": "forbid",
+    "arm": "baseline"
+  },
+  {
+    "case": "codex_deepseek_traffic_emergency_priority",
+    "query": "invariant",
+    "arm": "baseline"
+  },
+  {
+    "case": "codex_deepseek_vtol_mission_supervision",
+    "query": "reach",
+    "arm": "baseline"
+  },
+  {
+    "case": "codex_deepseek_vtol_mission_supervision",
+    "query": "forbid",
+    "arm": "baseline"
+  },
+  {
+    "case": "codex_deepseek_vtol_mission_supervision",
+    "query": "invariant",
+    "arm": "baseline"
+  },
+  {
+    "case": "codex_distributed_elevator_can",
+    "query": "reach",
+    "arm": "baseline"
+  },
+  {
+    "case": "codex_distributed_elevator_can",
+    "query": "forbid",
+    "arm": "baseline"
+  },
+  {
+    "case": "codex_distributed_elevator_can",
+    "query": "invariant",
+    "arm": "baseline"
+  },
+  {
+    "case": "codex_platooning_join_protocol",
+    "query": "reach",
+    "arm": "baseline"
+  },
+  {
+    "case": "codex_platooning_join_protocol",
+    "query": "forbid",
+    "arm": "baseline"
+  },
+  {
+    "case": "codex_platooning_join_protocol",
+    "query": "invariant",
+    "arm": "baseline"
+  },
+  {
+    "case": "codex_traffic_emergency_priority",
+    "query": "reach",
+    "arm": "baseline"
+  },
+  {
+    "case": "codex_traffic_emergency_priority",
+    "query": "forbid",
+    "arm": "baseline"
+  },
+  {
+    "case": "codex_traffic_emergency_priority",
+    "query": "invariant",
+    "arm": "baseline"
+  },
+  {
+    "case": "codex_vtol_mission_supervision",
+    "query": "reach",
+    "arm": "baseline"
+  },
+  {
+    "case": "codex_vtol_mission_supervision",
+    "query": "forbid",
+    "arm": "baseline"
+  },
+  {
+    "case": "codex_vtol_mission_supervision",
+    "query": "invariant",
+    "arm": "baseline"
+  },
+  {
+    "case": "conveyor_counters",
+    "query": "reach",
+    "arm": "baseline"
+  },
+  {
+    "case": "conveyor_counters",
+    "query": "forbid",
+    "arm": "baseline"
+  },
+  {
+    "case": "conveyor_counters",
+    "query": "invariant",
+    "arm": "baseline"
+  },
+  {
+    "case": "heater_logging",
+    "query": "reach",
+    "arm": "baseline"
+  },
+  {
+    "case": "heater_logging",
+    "query": "forbid",
+    "arm": "baseline"
+  },
+  {
+    "case": "heater_logging",
+    "query": "invariant",
+    "arm": "baseline"
+  },
+  {
+    "case": "pump_supervisor_hooks",
+    "query": "reach",
+    "arm": "baseline"
+  },
+  {
+    "case": "pump_supervisor_hooks",
+    "query": "forbid",
+    "arm": "baseline"
+  },
+  {
+    "case": "pump_supervisor_hooks",
+    "query": "invariant",
+    "arm": "baseline"
+  },
+  {
+    "case": "ratio_estimator",
+    "query": "reach",
+    "arm": "baseline"
+  },
+  {
+    "case": "ratio_estimator",
+    "query": "forbid",
+    "arm": "baseline"
+  },
+  {
+    "case": "ratio_estimator",
+    "query": "invariant",
+    "arm": "baseline"
+  },
+  {
+    "case": "telemetry_outputs",
+    "query": "reach",
+    "arm": "baseline"
+  },
+  {
+    "case": "telemetry_outputs",
+    "query": "forbid",
+    "arm": "baseline"
+  },
+  {
+    "case": "telemetry_outputs",
+    "query": "invariant",
+    "arm": "baseline"
+  }
+]

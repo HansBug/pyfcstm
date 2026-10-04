@@ -11,29 +11,11 @@ Generated runtime semantics must stay aligned with the FCSTM model and simulator
 
 ## Documentation metadata contract
 
-The supported FCSTM owners (`State`, `Event`, `Transition`, `VarDefine`,
-`OnStage`, and `OnAspect`) carry one opaque `doc` value. A documentation block
-is consumed by the grammar as a leading block on its owner; abstract lifecycle
-actions also accept the historical trailing spelling, which canonical export
-normalizes to the same field. `None`, an empty string, and literal `*` are
-distinct values. Documentation is metadata: it is preserved by AST/Model
-round-trip and canonical exports, but is excluded from runtime identity,
-diagnostics, PlantUML display, and structured Diagram data.
+The supported FCSTM owners (`State`, `Event`, `Transition`, `VarDefine`, `OnStage`, and `OnAspect`) carry one opaque `doc` value. A documentation block is consumed by the grammar as a leading block on its owner; abstract lifecycle actions also accept the historical trailing spelling, which canonical export normalizes to the same field. `None`, an empty string, and literal `*` are distinct values. Documentation is metadata: it is preserved by AST/Model round-trip and canonical exports, but is excluded from runtime identity, diagnostics, PlantUML display, and structured Diagram data.
 
-Template authors should consume `doc` with an explicit `is not none` check and
-must not infer ownership from source lines. The canonical `model.to_ast_node()`
-export is the authoritative source for generated README/source text. It is not a
-secret boundary: generated artifacts may contain the complete documentation,
-so templates and generated READMEs must warn users not to store credentials,
-tokens, passwords, or private keys in a documentation block.
+Template authors should consume `doc` with an explicit `is not none` check and must not infer ownership from source lines. The canonical `model.to_ast_node()` export is the authoritative source for generated README/source text. It is not a secret boundary: generated artifacts may contain the complete documentation, so templates and generated READMEs must warn users not to store credentials, tokens, passwords, or private keys in a documentation block.
 
-The shared renderer exposes `markdown_fence` for README blocks and
-`escape_python_docstring` for Python triple-quoted docstrings. These helpers
-protect Markdown delimiters and target-language syntax without changing the
-Model `doc` value. C-family canonical strings must also protect C trigraph
-sequences such as `??/`; source templates own that escaping policy, while
-`doc` itself remains unmodified. The value domain still rejects `/*` and `*/`
-so every canonical export remains parseable.
+The shared renderer exposes `markdown_fence` for README blocks and `escape_python_docstring` for Python triple-quoted docstrings. These helpers protect Markdown delimiters and target-language syntax without changing the Model `doc` value. C-family canonical strings must also protect C trigraph sequences such as `??/`; source templates own that escaping policy, while `doc` itself remains unmodified. The value domain still rejects `/*` and `*/` so every canonical export remains parseable.
 
 ## Directory roles
 
@@ -182,40 +164,20 @@ A person or LLM that only sees a generated directory should be able to use the g
 
 ## Generated README authoring rules
 
-Generated `README.md.j2` and `README_zh.md.j2` files are user-facing runtime
-guides, not template-maintainer notes. Treat them as executable onboarding
-contracts for people and LLMs that only have the generated directory.
+Generated `README.md.j2` and `README_zh.md.j2` are complete integration guides for people who only have the generated directory. Template-level `README.md` / `README_zh.md` are maintenance guides: explain source ownership, invariants, coupled changes and verification commands. Keep this separation explicit.
 
-When editing generated README templates:
+- Maintain one user journey: complete Quick Start, inputs/actions/events, initialization and recovery, results/errors/lifetime, API reference, advanced build options and model reference. Put the first runnable program before long model listings or deployment discussions.
+- Keep one complete Quick Start per language and template. When adding an API, update its tutorial, examples and reference tables together; replace obsolete examples and delete duplicates. Do not append a second quick start or corrective paragraph to compensate for a stale earlier section.
+- A standalone example includes initialization, input readers, required action/event registration and checked cycle execution. A fragment identifies its prerequisite example and insertion point, continues using the same instance, and does not silently reinitialize it. C++ guides use wrapper methods consistently; document inherited C callback signatures explicitly.
+- Show how to construct with fixed `parameters`, sample every `input`, mount abstract actions, submit/poll events and consume committed control/output values. Distinguish eager numeric input sampling, execution-only action hooks and lazy cached event checks, including return conventions and borrowed/copied lifetimes.
+- Cold initialization may use defaults; hot restoration uses state, all persistent values and all parameters from the same checkpoint. Explain sampling failures, retry, Delta cycles, ended cycles and external effects that cannot be rolled back.
+- Keep every prose paragraph on one physical line in both source and rendered Markdown. Preserve necessary line breaks in code, lists, tables and Jinja control structure. Keep the English/Chinese section order equivalent and executable examples synchronized; use natural Chinese outside literal identifiers.
+- Render existing role fixtures, a combined input/param/control/output/action/event model and models without optional features. Read the rendered output: valid tables, anchors and code fences matter as well as successful Jinja expansion.
+- Execute generated examples through packaged/public rendering paths. Assert reader counts, action invocation, committed values, repeated cycles, errors/retry and recovery; exit code zero alone is insufficient. Keep these behavioral tests in pytest and source/documentation-only checks in maintenance tools.
+- Keep callback maps and public API inventories synchronized with the generated header/module. Use canonical / normalized model export wording for `model.to_ast_node()`. Keep internal engine layouts, CI artifact troubleshooting and packaging mechanics out of the onboarding path.
 
-- Render at least one moderately complex checked-in FCSTM fixture that includes
-  persistent variables, events, nested states, lifecycle behavior, and abstract
-  hooks when the target template supports them.
-- From the generated directory alone, write a small downstream program by
-  following the generated README. For compiled languages, compile and run that
-  program with the generated sources. For interpreted languages, import and run
-  the generated module from outside the repository test helpers.
-- Verify the downstream program exercises cold start, at least one eventful
-  cycle when events exist, state/variable inspection, and hook or event-check
-  installation when the generated model declares those extension points.
-- Keep snippets copy-adaptable. Do not reference an undefined callback,
-  variable, event-check field, hook field, include, or import unless the snippet
-  is explicitly marked as schematic and points to a complete example nearby.
-- For `c_poll`, every runnable cycle example for an eventful model must explain
-  that a complete `EventChecks` table is required before `cycle()`. Partial
-  tables are a runtime error, so examples must not imply that setting one field
-  is enough for every generated model.
-- Use canonical / normalized model export wording for text generated from
-  `model.to_ast_node()`. Do not call it raw or original source.
-- Keep generated README files focused on the generated runtime: file layout,
-  model text, model summary, variables, events, hooks, cold start, hot start,
-  cycle input, current-state/variable inspection, errors, and a complete
-  minimal flow. Renderer internals, packaging mechanics, and template
-  governance belong in root or template-level maintainer handbooks.
+For substantive guide changes, a fresh reviewer should use only the generated directory to complete a small integration. Resolve missing setup, undefined symbols, mismatched API surfaces and misleading examples before calling the change ready. Record what was actually compiled or executed; distinguish command counts from program counts.
 
-If a generated README example cannot be used to produce a small working
-consumer program after straightforward identifier substitution, fix the README
-template before claiming the template change is complete.
 
 ## Generated runtime policy
 
@@ -237,18 +199,9 @@ For target languages that manage memory or other resources explicitly, template 
 
 ## C/C++ deployment safety wording
 
-The current C-family templates (`c`, `c_poll`, `cpp`, and `cpp_poll`) provide a
-deployment-hardened engineering baseline for generated control-state-machine
-runtimes. That baseline includes C99 execution cores, C++98-compatible
-integration surfaces where applicable, caller-owned object and no-heap
-profiles, shared semantic alignment, and native toolchain matrix evidence.
+The current C-family templates (`c`, `c_poll`, `cpp`, and `cpp_poll`) provide a deployment-hardened engineering baseline for generated control-state-machine runtimes. That baseline includes C99 execution cores, C++98-compatible integration surfaces where applicable, caller-owned object and no-heap profiles, shared semantic alignment, and native toolchain matrix evidence.
 
-This is not a safety-certification claim. Maintainer and generated-output
-documentation must not describe these templates as MISRA, AUTOSAR, DO-178C, IEC
-61508, ISO 26262, or other certification-ready runtimes. The correct wording is
-that they are non-certified generated-code baselines intended to support later
-project-specific static analysis, coding-rule review, board-support integration,
-and certification evidence work.
+This is not a safety-certification claim. Maintainer and generated-output documentation must not describe these templates as MISRA, AUTOSAR, DO-178C, IEC 61508, ISO 26262, or other certification-ready runtimes. The correct wording is that they are non-certified generated-code baselines intended to support later project-specific static analysis, coding-rule review, board-support integration, and certification evidence work.
 
 Keep responsibilities separated:
 
@@ -262,12 +215,7 @@ Keep responsibilities separated:
   profiles, hook/event-check installation, concurrency assumptions, external
   I/O adapters, and certification wording.
 
-Generated C/C++ family READMEs must give downstream users a short integration
-preflight checklist. A user who only receives generated output should be able to
-see the compiler/profile boundary, memory-ownership choice, event/hook
-requirements, single-instance concurrency assumption, external-device adapter
-boundary, numeric-inspect entry point, and evidence-vs-certification boundary
-without reading this maintainer handbook.
+Generated C/C++ family READMEs must explain the integration boundaries alongside the relevant usage and build instructions. A user who only receives generated output should be able to see the compiler/profile boundary, memory-ownership choice, event/hook requirements, single-instance concurrency assumption, external-device adapter boundary, numeric-inspect entry point, and evidence-vs-certification boundary without reading this maintainer handbook.
 
 ## Source context contract
 
@@ -295,6 +243,22 @@ Before adding a new built-in template directory, confirm all items below:
 - Add representative generated-runtime tests and, when applicable, simulator alignment tests.
 - Run packaging checks so `pyfcstm/template/index.json`, zip archives, and `extract_template` agree with source templates.
 - Update this handbook only when the repository-wide contract changes; update the template-level README when only one template changes.
+
+<a id="native-template-verification"></a>
+
+## Native template verification
+
+Use the existing CMake harnesses for native pytest builds; do not add a second host-compiler orchestration layer. The existing README command tests may execute documented gcc/clang commands to verify those specific recipes. Runtime tests compare public observations against the shared semantic fixtures, including events and hooks.
+
+`PYFCSTM_GENERATED_NO_HEAP` is selected by symbol presence (`#if defined(...)` / `#ifdef`), including both `-DNAME` and `-DNAME=1`. Keep public heap declarations, implementations and their `<stdlib.h>` dependency removed together; preprocessing and symbol/link checks must show no heap helpers or `calloc/free` references. Preserve caller-owned storage, hooks and poll event checks. Propagate the same macro to the C core, wrappers and every consumer via CMake `PUBLIC` / `INTERFACE` or consistent final-target definitions.
+
+| Evidence | Required result |
+| --- | --- |
+| Hosted or emulated execution | Compile and run each shared semantic fixture; compare public values and lifecycle/event observations |
+| Compile only | Produce nonempty runtime, harness and C++ header-probe objects; do not claim runtime alignment |
+| Analyze only | Keep reports from tools such as cppcheck/clang-tidy; crashes, parse failures and missing reports fail the check |
+
+When adding a compiler profile, update the existing profile registry, workflow selection, expected artifacts and maintainer documentation together. Name profiles after toolchain behavior. Public hosted profiles fail when required tools are missing; licensed/vendor profiles stay manual or self-hosted until an appropriate runner is configured. Source ownership and compatibility changes require representative sanitizer/leak checks in addition to normal semantic alignment.
 
 ## Maintenance workflow
 

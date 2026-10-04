@@ -1,0 +1,2 @@
+init cold havoc { count } where count >= 1;
+check forbid <= 8: active("Estimator.Idle");

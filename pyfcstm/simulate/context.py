@@ -17,7 +17,7 @@ Example::
     ...     print(f"Counter: {ctx.get_var('counter')}")
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Mapping, Optional, Union, Tuple
 
@@ -91,6 +91,10 @@ class ReadOnlyExecutionContext:
     call_stage: Optional[str] = None
     abstract_target: Optional[str] = None
     named_ref: Optional[str] = None
+    parameters: Mapping[str, Union[int, float]] = field(
+        default_factory=dict, repr=False
+    )
+    inputs: Mapping[str, Union[int, float]] = field(default_factory=dict, repr=False)
 
     def __post_init__(self) -> None:
         """
@@ -120,6 +124,8 @@ class ReadOnlyExecutionContext:
         """
         object.__setattr__(self, "state_path", tuple(self.state_path))
         object.__setattr__(self, "vars", MappingProxyType(dict(self.vars)))
+        object.__setattr__(self, "parameters", MappingProxyType(dict(self.parameters)))
+        object.__setattr__(self, "inputs", MappingProxyType(dict(self.inputs)))
         active_leaf = self.state_path if self.active_leaf is None else self.active_leaf
         object.__setattr__(self, "active_leaf", tuple(active_leaf))
         call_stage = self.action_stage if self.call_stage is None else self.call_stage

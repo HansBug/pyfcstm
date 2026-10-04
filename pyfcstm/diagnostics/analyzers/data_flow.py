@@ -22,6 +22,8 @@ def collect_data_flow_warnings(
     variables = list(variables)
     variable_spans = {variable.name: variable.span for variable in variables}
     for variable in variables:
+        if variable.role != 'control':
+            continue
         read_states = set(variable.read_in_states)
         read_states.update(src for src, _ in variable.read_in_guards)
         write_states = set(variable.written_in_states)
@@ -99,7 +101,7 @@ def _guard_vars_never_change_diagnostics(
     written_vars = {
         variable.name
         for variable in variables
-        if variable.written_in_states or variable.written_in_effects
+        if variable.role != 'control' or variable.written_in_states or variable.written_in_effects
     }
     declared_vars = {variable.name for variable in variables}
     diagnostics: List[ModelDiagnostic] = []

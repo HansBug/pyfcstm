@@ -1,107 +1,64 @@
-# python 模板维护手册
+# python 模板维护指南
 
-`python` 是内置模板，用于为一个 FCSTM model 生成原生 Python 状态机运行时。本文件是
-`templates/python/` 模板源码的维护者手册，不会被复制到生成目录。生成目录里的用户手册由
-`README.md.j2` / `README_zh.md.j2` 生成。
+本手册面向 `python` 模板维护者。下游接入说明由 `README.md.j2` / `README_zh.md.j2` 生成；根级[模板手册](../README_zh.md)负责渲染器、元数据和打包契约。维护时先查看源码分工，确认必须保持的行为，再选择对应检查。
 
-## 目标与非目标
-
-当目标产物是一个可导入、无运行时第三方依赖的 Python runtime，并且需要嵌入应用、测试、示例或小型自动化脚本时，应使用该模板。
-
-该模板不是 simulator 实现，生成后不应依赖 `pyfcstm` runtime package。它也不应演变成围绕生成代码的大型框架：下游用户如果需要改变运行逻辑，应修改 FCSTM DSL 并重新生成，而不是长期手改生成出来的运行时代码。
-
-## 源码布局与生成产物
+## 源码分工与修改位置
 
 | 模板源码 | 维护职责 | 生成产物 |
 | --- | --- | --- |
-| `machine.py.j2` | runtime source template | `machine.py` |
+| `machine.py.j2` | 运行时源码模板 | `machine.py` |
 | `README.md.j2` | 英文生成物用户手册 | `README.md` |
 | `README_zh.md.j2` | 中文生成物用户手册 | `README_zh.md` |
-| `config.yaml` | renderer 配置、Python 语句渲染、Jinja helper 和 ignore 规则 | 不复制 |
-| `template.json` | 内置模板 metadata | 不复制 |
-| `README.md` / `README_zh.md` | 模板维护手册 | renderer 不复制，但会进入 packaged template archives |
+| `config.yaml` | 渲染器配置、Python 语句渲染、Jinja 辅助函数和忽略规则 | 不复制 |
+| `template.json` | 内置模板元数据 | 不复制 |
+| `README.md` / `README_zh.md` | 模板维护手册 | 渲染时不复制，但会收入模板源码包 |
 
-`config.yaml` 会忽略 `README.md`、`README_zh.md` 和 `template.json`，避免这些维护文件泄露到生成目录。但 `make tpl` 会打包完整模板源码目录，因此修改这些维护 README 后也必须通过 `make tpl` 刷新并验证本地生成的 `pyfcstm/template/python.zip`。该 archive 在普通 checkout 中被 git 忽略；setup 和 packaging 命令会从源码重新生成它。
+生成阶段的辅助函数在 pyfcstm 内运行，生成程序必须保持自包含。`config.yaml` 将本维护手册和 `template.json` 排除在生成输出之外；`make tpl` 仍会把它们收入模板源码归档，因此修改模板后必须刷新打包。
 
-## 兼容性与运行时依赖边界
+| 改动 | 修改与同步位置 |
+| --- | --- |
+| 生成指南 | 两份 README Jinja 模板、实际渲染示例和可执行文档测试 |
+| 角色接口或生命周期行为 | 运行时源码、生成指南/API 表、角色测试和语义对齐 |
+| 表达式/getter 生成 | `config.yaml` 中按角色区分的表达式/语句样式、`../../pyfcstm/render/render.py` 上下文，以及生成动作/守卫测试 |
 
-生成的 `machine.py` 默认应保持以下约束：
+## 运行时契约
 
-- 支持 Python 3.7 或更新版本。
-- 只依赖 Python 标准库。
-- 不从 `pyfcstm` 或仓库测试 helper 导入内容。
-- 不引入第三方 runtime dependency。
-- 不无故使用会抬高最低 Python 版本的语法。
+四种变量角色属于运行时契约，维护时必须保持其可观察的生命周期和失败行为：
 
-Jinja2、YAML 解析、renderer filters 和 statement renderers 这类 generation-time 依赖属于 `pyfcstm` 生成阶段，不能变成 generated runtime 的运行要求。
+| 角色 | 必须保持的行为 |
+| --- | --- |
+| `input` | 每个未结束周期对全部输入采样一次，包括未使用输入；验证和执行共享冻结值，无默认保持；显式快照绕过采样 |
+| `param` | 构造时复制并校验，冷启动缺省项用 DSL 默认值；热启动要求同一检查点的完整参数；周期内不可覆盖 |
+| `control` | 模型持久可写状态，可预设冷启动值；热启动提供完整快照，未写入时保持 |
+| `output` | 与 control 共用提交和回滚机制，应用在成功后读取；不生成执行器 setter |
 
-## 公开集成面
+采样或执行失败保留已提交变量和 `last_inputs`。成功的 Delta 周期保持持久状态，但发布本拍输入快照。构造和结束后的周期不采样。动作 Hook 仅在执行阶段调用，观察只读上下文，不能修改模型状态；其外部副作用无法撤销。
 
-生成代码的用户主要和一个由 root state 派生命名的 machine class 交互。稳定集成面应集中在：
+共享用例使用顶层 `parameters`、`initial.vars` / `initial.outputs`、逐步 `inputs` 和部分 `expect.vars` / `expect.outputs`。不要添加参数/输入预期，也不要增加逐步参数覆盖。测试必须实际执行生成运行时，并与仿真器比较数值、生命周期观察和失败行为。
 
-- 构造生成的 machine class；
-- 使用生成 API 支持的 event name 或 event collection 调用 `cycle(...)`；
-- 读取当前 state 和 persistent variable snapshot；
-- 使用显式 state 和完整变量快照进行 hot start；
-- 通过 subclass 覆盖 abstract lifecycle hook。
+生成代码保持 Python 3.7+ 和仅标准库依赖。保留 input/param 名称的准确后缀、`read_*` 覆写入口、仅关键字参数 `parameters` / `inputs`、只读参数/输入快照，以及示例子类完整的构造参数转发。代表性产物必须通过显式 Python 3.7 目标的 Ruff 检查与格式门禁。
 
-Abstract lifecycle actions 应保持可发现的稳定 protected hook method names。Hook 命名必须能清楚映射回 DSL abstract action name，使 DSL 作者可以借助 IDE 补全快速找到需要覆盖的方法。
+## 文档维护纪律
 
-## 语义与对齐预期
+以完整用户路径为单位维护。只保留一份完整快速开始，后续依次扩展同一实例、说明恢复、API 参考和高级集成。新增 API 应并入对应教程章节和参考表，同次修改替换过时示例并删除重复说明。不要通过追加第二份快速开始、末尾“完整示例”或补充声明来掩盖前面章节的问题。
 
-生成的 Python runtime 是产品化产物，不是 `pyfcstm.simulate.SimulationRuntime` 的薄封装。但它的可见行为仍必须和 simulator 在受支持的 FCSTM 语义上保持一致：
+独立示例必须包含所需的 input/action/event 接入、初始化和错误处理。片段明确依赖哪个示例及插入位置，不得悄悄重新创建实例。程序成功退出不足以证明正确，必须断言采样、动作调用和提交结果。
 
-- cold start 与 hot start；
-- initial transition 和 composite entry 顺序；
-- lifecycle action 顺序，包括 aspect actions；
-- event scoping 和 transition priority；
-- guard、effect、rollback 和 validation 行为；
-- abstract hook 的调用时机和 context values。
+源码 README 和实际生成 Markdown 的自然段均保持一段一行。代码、表格、列表及 Jinja 控制结构保留必要换行。中英文章节顺序一致，代码示例等价；中文正文使用自然中文，API 名称保持原样。必须审阅实际生成内容，不能只看 Jinja 差异。
 
-语义对齐测试在本 README 之外维护。只修改本文件这类文档时，不应改动这些测试；修改 runtime template 时则必须把它们作为正确性 gate。
+生成指南只承载接入说明，仓库 CI 排障和打包规则放维护手册。公共机制写入根级手册，当前模板的具体实现约束写在本文件。保留运行时边界和兼容性说明，避免多个章节重复警告。文字和结构检查放维护工具，可执行生成示例放 pytest。
 
-## 生成实现策略
+## 验证流程
 
-生成的 `machine.py` 可以为了可预测 runtime 行为采用直接的生成式控制流，而不是优先照顾人工阅读体验。Public class API 和 generated README 应保持清楚；实现主体可以更机械，只要它仍然确定、自包含并且 formatter-stable。
-
-Formatter 和 linter checks 是专业度和集成卫生的质量门槛。它们不应迫使 runtime design 牺牲 FCSTM 语义或性能。
-
-## 维护流程
-
-根据改动范围选择最小但足够的验证集：
-
-1. 只改模板维护 README 时，审阅中英文文件的章节对等和事实一致性。
-2. 提交仓库改动前运行 `make rst_auto`。本 README 通常不应触发 generated RST diff。
-3. 修改 `templates/python/` 下任何文件后都运行 `make tpl`，包括本 README，因为 packaged built-in template archives 会包含模板源码目录。
-4. 检查 packaged asset 变化。README-only 改动应刷新本地生成的 `pyfcstm/template/python.zip` archive；由于 zip archives 在普通 checkout 中被 git 忽略，tracked `pyfcstm/template/index.json` 通常应保持内容等价。
-5. 修改 runtime template 时，生成代表性产物并运行 Python template tests 和 simulator-alignment tests。
-
-常用命令：
+以下命令从仓库根目录执行。`make template_unittest` 会刷新模板包，并清除显式选中套件继承的慢测试跳过设置。直接运行 pytest 前必须先执行 `make tpl`，不能将默认轻量套件作为原生模板已完成的证据。
 
 ```bash
-make rst_auto
 make tpl
-pytest test/template/python -v
-SKIP_SLOW_TESTS=1 make unittest
+PYFCSTM_TEMPLATE_SUITES=python make template_unittest
+make test_boundary_check resource_ownership_check
+make rst_auto
 ```
 
-## 语言特定验证
+只修改生成指南时，执行生成示例及相关格式/构建测试。修改运行时则运行所选完整套件和适用的共享用例。
 
-代表性生成 `machine.py` 应满足：
-
-```bash
-ruff check path/to/generated/machine.py
-ruff format --check path/to/generated/machine.py
-```
-
-生成代码应在用户不手工修改的情况下保持 lint-clean 和 formatter-stable。如果极少数生成结构确实需要例外，例外应保持窄范围，并在模板中说明它服务的 runtime 语义或兼容性理由。
-
-## 文档分层
-
-保持三层文档职责分离：
-
-- 本文件说明如何维护 `python` 模板；
-- `README.md.j2` / `README_zh.md.j2` 说明如何使用某个生成目录；
-- 根级 `templates/README.md` / `README_zh.md` 说明仓库级模板系统规则。
-
-不要把 packaging internals 放进 generated README。只看到生成目录的下游用户或 LLM 应学习如何实例化并运行 machine，而不是学习仓库如何打包模板。
+使用同时包含四种角色和动作/事件的模型，以及无输入、无参数、多输入、未使用输入、作用域名称和失败重试模型。确认两种语言均能生成、锚点和代码块有效，示例无需修改生成状态机文件即可使用。发布前审查包内容、公开 API 差异和测试结果。

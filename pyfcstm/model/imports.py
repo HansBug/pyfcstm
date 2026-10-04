@@ -7,16 +7,19 @@ the DSL parser only produces AST nodes, while file loading, recursive import
 resolution, path handling, cycle detection, variable mapping, and state-tree
 inlining are all performed here in the model layer.
 
-At the current phase boundary, this module provides:
+The assembler provides:
 
 * Relative import paths resolve against the declaring file's directory.
 * Imported files are parsed recursively and inlined as child states.
 * Circular imports and alias conflicts are reported explicitly.
-* Imported root states are renamed to the declared alias and their display-name
-  priority follows the PR79 design.
-* Imported top-level ``def`` definitions are merged into the host model using
-  Phase 3 mapping and conflict checks.
-* Variable ``def`` mappings support exact / set / pattern / fallback rules,
+* Imported root states are renamed to the declared alias; an explicit host
+  display name takes precedence over the imported display name.
+* Imported declarations bind to explicit host roles with identical numeric types.
+  Inputs may bind to any host role, parameters only to parameters, and writable
+  declarations only to control/output. Host defaults take precedence.
+* Source inputs/parameters remain read-only before mapping. Final host roles
+  determine storage and interfaces; bindings add no input snapshot or delay.
+* Variable ``var`` mappings (also spelled ``def``) support exact / set / pattern / fallback rules,
   placeholder expansion, default alias-based isolation, and deep variable
   reference rewriting across definitions, guards, and operation blocks.
 * Module-local absolute paths are rewritten into the final host instance scope
@@ -24,26 +27,39 @@ At the current phase boundary, this module provides:
 
 Event mappings support module-absolute event promotion into host-relative or
 host-absolute event paths, including display-name propagation and conflict
-checks defined by PR79.
+checks. Declaration provenance retains authored names and recursive bindings.
 """
 
 import os
 import re
 import weakref
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import asdict, dataclass, fields, is_dataclass
 from typing import Any, Dict, List, Optional, Set, Tuple
+
+from antlr4 import InputStream
 
 from ..diagnostics.sink import DiagnosticSink, _emit as _emit_or_raise
 from ..dsl import node as dsl_nodes
+
 from ..dsl.error import GrammarParseError
+from ..dsl.grammar import GrammarLexer
 from ..dsl.parse import parse_state_machine_dsl
+from ..dsl.role import VariableRole
 from ..utils import auto_decode
 from ..utils.doc import aggregate_documentation
-from ..utils.validate import ModelDiagnostic, ModelValidationError
+from ..utils.validate import ModelDiagnostic, ModelValidationError, Span
 
 __all__ = [
     "assemble_state_machine_imports",
 ]
+
+
+_IMPORT_ROLE_TARGETS = {
+    VariableRole.PARAM: {VariableRole.PARAM},
+    VariableRole.INPUT: set(VariableRole),
+    VariableRole.CONTROL: {VariableRole.CONTROL, VariableRole.OUTPUT},
+    VariableRole.OUTPUT: {VariableRole.CONTROL, VariableRole.OUTPUT},
+}
 
 
 _TRUSTED_GENERATED_COMBO_PSEUDO_NODE_IDS: Set[int] = set()
@@ -201,7 +217,11 @@ def _get_trusted_generated_combo_transition_metadata(
 
 
 def _emit_import_diag(
-    sink: Optional[DiagnosticSink], code: str, message: str, **refs: Any
+    sink: Optional[DiagnosticSink],
+    code: str,
+    message: str,
+    span: Optional[Span] = None,
+    **refs: Any,
 ) -> None:
     """Emit a structured ``E_IMPORT_*`` diagnostic onto ``sink``.
 
@@ -227,6 +247,7 @@ def _emit_import_diag(
             code=code,
             severity="error",
             message=message,
+            span=span,
             refs=cleaned,
         ),
         exc_cls=ModelValidationError,
@@ -338,9 +359,9 @@ def _clone_ast_node(node):
         # The scalar pair travels with the clone: it is what inspect and the
         # diagram viewer read, and what the document map is later collected from,
         # so a clone without it would be a node with no source for every reader.
-        for attribute in ("_source_path", "_source_text"):
+        for attribute in ("_source_path", "_source_text", "_source_declarations"):
             if hasattr(node, attribute):
-                setattr(cloned, attribute, getattr(node, attribute))
+                setattr(cloned, attribute, _clone_ast_node(getattr(node, attribute)))
         if isinstance(node, dsl_nodes.TransitionDefinition):
             metadata = _get_trusted_generated_combo_transition_metadata(node)
             if metadata is not None:
@@ -438,6 +459,14 @@ def _assemble_program(
         return
 
     host_explicit_def_names = {item.name for item in program.definitions}
+    for definition in program.definitions:
+        if not hasattr(definition, "_source_declarations"):
+            definition._source_declarations = (
+                {
+                    "declaration": _clone_ast_node(definition),
+                    "bindings": (),
+                },
+            )
 
     _assemble_state(
         node=program.root_state,
@@ -517,12 +546,21 @@ def _assemble_state(
             # Read/parse/no-root-state in collect mode — skip merge.
             continue
 
+        diagnostic_count = len(sink.diagnostics)
         _assemble_program(
             program=imported_program,
             import_base_dir=os.path.dirname(resolved_file),
             import_stack=[*import_stack, resolved_file],
             sink=sink,
         )
+        readonly = {
+            definition.name: definition.role
+            for definition in imported_program.definitions
+            if definition.role in (VariableRole.INPUT, VariableRole.PARAM)
+        }
+        _validate_imported_readonly_writes(imported_program.root_state, readonly, sink)
+        if len(sink.diagnostics) != diagnostic_count:
+            continue
         # The mapping helpers (def / event) are sink-aware: in strict
         # mode (``DiagnosticSink(collect=False)``) the first emit raises
         # :class:`ModelValidationError`; in collect mode the diagnostics
@@ -541,14 +579,17 @@ def _assemble_state(
                 owner_state_path=current_state_path,
                 sink=sink,
             )
-            _merge_imported_definitions(
+            if len(sink.diagnostics) != diagnostic_count:
+                continue
+            if not _merge_imported_definitions(
                 host_program=host_program,
                 imported_program=imported_program,
                 host_explicit_def_names=host_explicit_def_names,
                 import_item=import_item,
                 owner_state_path=current_state_path,
                 sink=sink,
-            )
+            ):
+                continue
 
             imported_root = imported_program.root_state
             event_mappings = _resolve_import_event_mappings(
@@ -712,6 +753,46 @@ def _load_imported_program(
 
     _mark_ast_source_metadata(program, os.path.abspath(file_path), content)
 
+    # Reuse declaration validation before a host default can replace an invalid
+    # imported initializer. Import lazily because model construction uses this
+    # assembler after the model module has finished loading.
+    from .expr import parse_expr_node_to_expr
+    from .model import VarDefine
+
+    declaration_sink = DiagnosticSink(collect=True)
+    seen_definitions = {}
+    for definition in program.definitions:
+        if definition.name in seen_definitions:
+            declaration_sink.emit(
+                ModelDiagnostic(
+                    code="E_DUPLICATE_VAR",
+                    severity="error",
+                    message=f"Duplicated variable definition - {definition.name!r}.",
+                    span=definition._span,
+                    refs={
+                        "var_name": definition.name,
+                        "previous_span": seen_definitions[definition.name]._span,
+                    },
+                )
+            )
+            continue
+        seen_definitions[definition.name] = definition
+        VarDefine(
+            name=definition.name,
+            type=definition.type,
+            init=parse_expr_node_to_expr(definition.expr)
+            if definition.expr is not None
+            else None,
+            role=definition.role,
+            _span=definition._span,
+            _validation_sink=declaration_sink,
+        )
+    for diagnostic in declaration_sink.diagnostics:
+        diagnostic.refs["source_path"] = os.path.abspath(file_path)
+        sink.emit(diagnostic)
+    if declaration_sink.has_errors():
+        return None
+
     if program.root_state is None:  # pragma: no cover
         # Defensive: the grammar entry ``state_machine_dsl`` requires
         # at least one ``state X { ... }`` block, so any file that
@@ -731,6 +812,29 @@ def _load_imported_program(
         return None
 
     return program
+
+
+def _validate_imported_readonly_writes(node, readonly, sink: DiagnosticSink) -> None:
+    """Reject source writes before a binding can replace the declaration role."""
+    if isinstance(node, dsl_nodes.OperationAssignment):
+        if node.name in readonly:
+            sink.emit(
+                ModelDiagnostic(
+                    code="E_INPUT_WRITE"
+                    if readonly[node.name] is VariableRole.INPUT
+                    else "E_PARAM_WRITE",
+                    severity="error",
+                    message=f"Model operations cannot write input {node.name!r}.",
+                    span=node._span,
+                    refs={"var_name": node.name, "source_path": node._source_path},
+                )
+            )
+    elif isinstance(node, dsl_nodes.ASTNode):
+        for item in fields(node):
+            _validate_imported_readonly_writes(getattr(node, item.name), readonly, sink)
+    elif isinstance(node, list):
+        for item in node:
+            _validate_imported_readonly_writes(item, readonly, sink)
 
 
 def _rewrite_absolute_paths_for_imported_root(
@@ -1437,11 +1541,11 @@ def _apply_import_def_mappings(
     def_mappings = [
         item
         for item in import_item.mappings
-        if isinstance(item, dsl_nodes.ImportDefMapping)
+        if isinstance(item, dsl_nodes.ImportVariableMapping)
     ]
     if not def_mappings:
         def_mappings = [
-            dsl_nodes.ImportDefMapping(
+            dsl_nodes.ImportVariableMapping(
                 selector=dsl_nodes.ImportDefFallbackSelector(),
                 target_template=dsl_nodes.ImportDefTargetTemplate(
                     template=f"{import_item.alias}_*"
@@ -1452,9 +1556,11 @@ def _apply_import_def_mappings(
     if not program.definitions:
         return
 
+    diagnostic_count = len(sink.diagnostics)
     source_to_target = {}
     target_to_source = {}
     for def_item in program.definitions:
+        source_diagnostic_count = len(sink.diagnostics)
         target_name = _resolve_import_variable_target(
             source_name=def_item.name,
             mappings=def_mappings,
@@ -1462,6 +1568,26 @@ def _apply_import_def_mappings(
             owner_state_path=owner_state_path,
             sink=sink,
         )
+        if len(sink.diagnostics) != source_diagnostic_count:
+            continue
+        if (
+            re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", target_name) is None
+            or GrammarLexer(InputStream(target_name)).nextToken().type
+            != GrammarLexer.ID
+        ):
+            _emit_import_diag(
+                sink,
+                "E_IMPORT_MAPPING_INVALID",
+                f"Rendered variable mapping target {target_name!r} is not a DSL identifier.",
+                span=import_item._span,
+                source_path=getattr(import_item, "_source_path", None),
+                alias=import_item.alias,
+                mapping_kind="variable",
+                reason="target_invalid",
+                detail=target_name,
+                host_state_path=".".join(owner_state_path),
+            )
+            continue
         if (
             target_name in target_to_source
             and target_to_source[target_name] != def_item.name
@@ -1482,11 +1608,49 @@ def _apply_import_def_mappings(
         source_to_target[def_item.name] = target_name
         target_to_source[target_name] = def_item.name
 
+    if len(sink.diagnostics) != diagnostic_count:
+        return
+
     for def_item in program.definitions:
+        binding = {
+            "source_name": def_item.name,
+            "target_name": source_to_target[def_item.name],
+            "alias": import_item.alias,
+            "source_path": getattr(import_item, "_source_path", None),
+            "span": getattr(import_item, "_span", None),
+        }
+        def_item._source_declarations = tuple(
+            {
+                "declaration": item["declaration"],
+                "bindings": (*item["bindings"], binding),
+            }
+            for item in def_item._source_declarations
+        )
         def_item.expr = _rewrite_expr_variables(def_item.expr, source_to_target)
         def_item.name = source_to_target[def_item.name]
 
     _rewrite_state_variable_references(program.root_state, source_to_target)
+
+
+def _binding_source_refs(definition: dsl_nodes.DefAssignment) -> List[Dict[str, Any]]:
+    """Describe authored declarations without replacing their original names."""
+    sources = getattr(
+        definition, "_source_declarations", ({"declaration": definition},)
+    )
+    result = []
+    for source in sources:
+        declaration = source["declaration"]
+        span = getattr(declaration, "_span", None)
+        result.append(
+            {
+                "name": declaration.name,
+                "role": declaration.role.value,
+                "type": declaration.type,
+                "source_path": getattr(declaration, "_source_path", None),
+                "span": asdict(span) if span is not None else None,
+            }
+        )
+    return result
 
 
 def _merge_imported_definitions(
@@ -1496,73 +1660,91 @@ def _merge_imported_definitions(
     import_item: dsl_nodes.ImportStatement,
     owner_state_path: Tuple[str, ...],
     sink: DiagnosticSink,
-) -> None:
+) -> bool:
+    """Validate all bindings before committing declarations from one import."""
     existing_definitions = {item.name: item for item in host_program.definitions}
+    valid = True
     for def_item in imported_program.definitions:
         existing_item = existing_definitions.get(def_item.name)
         if existing_item is None:
-            host_program.definitions.append(def_item)
-            existing_definitions[def_item.name] = def_item
             continue
 
-        if existing_item.type != def_item.type:
-            if def_item.name in host_explicit_def_names:
-                _emit_import_diag(
-                    sink,
-                    "E_IMPORT_DUPLICATE_MAPPING",
-                    f"Variable mapping conflict: target variable {def_item.name!r} "
+        explicit = def_item.name in host_explicit_def_names
+        conflict = None
+        if existing_item.role not in _IMPORT_ROLE_TARGETS[def_item.role] or (
+            existing_item.role != def_item.role and not explicit
+        ):
+            reason = "role_mismatch"
+            conflict = (
+                f"has role {existing_item.role.value!r}, cannot bind imported "
+                f"role {def_item.role.value!r}"
+            )
+        elif existing_item.type != def_item.type:
+            reason = "type_mismatch"
+            if explicit:
+                conflict = (
                     f"already exists in host model as type {existing_item.type!r}, "
-                    f"cannot bind imported type {def_item.type!r}.",
-                    alias=import_item.alias,
-                    mapping_kind="variable",
-                    duplicated_name=def_item.name,
-                    direction="target_duplicated",
-                    host_state_path=".".join(owner_state_path),
+                    f"cannot bind imported type {def_item.type!r}"
                 )
             else:
-                _emit_import_diag(
-                    sink,
-                    "E_IMPORT_DUPLICATE_MAPPING",
-                    f"Variable mapping conflict: target variable {def_item.name!r} "
+                conflict = (
                     f"receives incompatible imported types {existing_item.type!r} "
-                    f"and {def_item.type!r}.",
-                    alias=import_item.alias,
-                    mapping_kind="variable",
-                    duplicated_name=def_item.name,
-                    direction="target_duplicated",
-                    host_state_path=".".join(owner_state_path),
+                    f"and {def_item.type!r}"
                 )
+        elif not explicit:
+            if def_item.role == VariableRole.INPUT:
+                reason = "implicit_input_sharing"
+                conflict = "requires an explicit host input declaration for sharing"
+            elif existing_item.expr != def_item.expr:
+                reason = "initializer_mismatch"
+                conflict = "has conflicting initial values"
 
-        if def_item.name in host_explicit_def_names:
-            if existing_item.type == def_item.type and existing_item.expr == def_item.expr:
-                existing_item.doc = aggregate_documentation(
-                    (existing_item.doc, def_item.doc)
-                )
-            continue
-
-        if existing_item.expr != def_item.expr:
+        if conflict is not None:
+            valid = False
             _emit_import_diag(
                 sink,
                 "E_IMPORT_DUPLICATE_MAPPING",
-                f"Variable mapping conflict: target variable {def_item.name!r} has "
-                f"conflicting initial values.",
+                f"Variable mapping conflict: target variable {def_item.name!r} "
+                f"{conflict}.",
+                span=getattr(import_item, "_span", None),
+                binding_reason=reason,
+                source_path=getattr(import_item, "_source_path", None),
+                binding={
+                    "source": _binding_source_refs(def_item),
+                    "target": _binding_source_refs(existing_item),
+                },
                 alias=import_item.alias,
                 mapping_kind="variable",
                 duplicated_name=def_item.name,
                 direction="target_duplicated",
                 host_state_path=".".join(owner_state_path),
             )
+
+    if not valid:
+        return False
+
+    for def_item in imported_program.definitions:
+        existing_item = existing_definitions.get(def_item.name)
+        if existing_item is None:
+            host_program.definitions.append(def_item)
+            existing_definitions[def_item.name] = def_item
         else:
-            existing_item.doc = aggregate_documentation(
-                (existing_item.doc, def_item.doc)
+            existing_item._source_declarations = (
+                *getattr(existing_item, "_source_declarations", ()),
+                *getattr(def_item, "_source_declarations", ()),
             )
+            if existing_item.expr == def_item.expr:
+                existing_item.doc = aggregate_documentation(
+                    (existing_item.doc, def_item.doc)
+                )
 
     imported_program.definitions = []
+    return True
 
 
 def _resolve_import_variable_target(
     source_name: str,
-    mappings: List[dsl_nodes.ImportDefMapping],
+    mappings: List[dsl_nodes.ImportVariableMapping],
     import_item: dsl_nodes.ImportStatement,
     owner_state_path: Tuple[str, ...],
     sink: DiagnosticSink,

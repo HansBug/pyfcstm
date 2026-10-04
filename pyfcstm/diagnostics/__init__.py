@@ -57,6 +57,7 @@ from .inspect import (
     StructureStatistics,
     StructureStatisticsPolicy,
     TransitionInfo,
+    VariableAccessSite,
     VariableInfo,
     inspect_model,
 )
@@ -94,6 +95,7 @@ __all__ = [
     "StructureStatisticsPolicy",
     "SuggestedFixSpec",
     "TransitionInfo",
+    "VariableAccessSite",
     "VariableInfo",
     "inspect_model",
     "load_codes",

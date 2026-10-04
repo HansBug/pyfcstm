@@ -1,0 +1,41 @@
+{
+  "name": "ratio_estimator",
+  "source": {
+    "kind": "handwritten"
+  },
+  "role": "definedness_trap",
+  "why": "mean is never read but is computed by a division whose divisor is zero on the first Report entry.",
+  "model": "model.fcstm",
+  "queries": [
+    {
+      "file": "reach.fbmcq",
+      "kind": "reach",
+      "expected": {
+        "status": "unsat",
+        "property_satisfied": null,
+        "outcome": "scenario_infeasible"
+      },
+      "why": "cold start divides by zero before Idle; the scenario is infeasible."
+    },
+    {
+      "file": "forbid.fbmcq",
+      "kind": "forbid",
+      "expected": {
+        "status": "sat",
+        "property_satisfied": false,
+        "outcome": "property_violated"
+      },
+      "why": "with a positive count the division is defined and Idle is reached."
+    },
+    {
+      "file": "invariant.fbmcq",
+      "kind": "invariant",
+      "expected": {
+        "status": "unsat",
+        "property_satisfied": true,
+        "outcome": "property_satisfied"
+      },
+      "why": "total only grows."
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+param int shared = 9;
+state Root {
+    import "../modules/configured_probe.fcstm" as Module {
+        var configured -> shared;
+        var reading -> reading;
+        var last -> last;
+    }
+    [*] -> Module;
+}

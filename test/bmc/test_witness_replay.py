@@ -540,6 +540,7 @@ def test_replay_accepts_later_init_sentinel_when_initial_cycle_stays_unstable() 
                 "unconsumed_events": [],
                 "abstract_calls": [],
                 "delta": True,
+                "inputs": {},
             }
         ],
     }
@@ -1848,3 +1849,20 @@ def test_named_ref_agrees_with_the_runtime_across_complex_ref_chains(shape) -> N
     # Each of these models has at least one named hop, so a rule that reported
     # nothing everywhere would pass the equality above.
     assert any(call.named_ref is not None for call in witness_calls), shape
+
+
+@pytest.mark.parametrize(
+    "action", ["enter abstract Observe;", "during abstract Observe;"]
+)
+def test_abstract_call_snapshot_excludes_inputs_and_parameters(action):
+    """Expression inputs do not leak into persistent abstract-call snapshots."""
+    model, trace = _trace(
+        "input int sensor; param int gain = 2; control int count = 1; "
+        "output int result = 4; state Root { %s }" % action,
+        'check reach <= 1: active("Root");',
+    )
+    call = trace.steps[0].abstract_calls[0]
+    assert call.snapshot == {"count": 1, "result": 4}
+    replay = replay_bmc_witness(model, trace)
+    assert replay.ok
+    assert replay.runtime_trace.steps[0].abstract_calls[0].snapshot == call.snapshot

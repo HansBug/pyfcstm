@@ -60,6 +60,9 @@
 .. cli-ref-option: command=simulate option=-e
 .. cli-ref-option: command=simulate option=--execute
 .. cli-ref-option: command=simulate option=--no-color
+.. cli-ref-option: command=simulate option=--diagnostics
+.. cli-ref-option: command=simulate option=--diagnostics-format choices=text,jsonl default=text
+.. cli-ref-option: command=simulate option=--param
 .. cli-ref-option: command=simulate option=--help
 .. cli-ref-command: name=visualize
 .. cli-ref-option: command=visualize option=-i
@@ -264,8 +267,7 @@ SAT 结果都必须经过见证与重放可信门禁。全部选项、颜色行�
 * 批处理模式向标准输出打印命令结果，脚本结束后退出。
 * 除非使用 shell 重定向，否则该命令没有文件副作用。
 * 输入、解析和模型验证失败会在进入模拟器命令层前以非零退出状态结束。
-* 批处理模式中的模拟器命令层失败（例如未知批处理命令或无法解析的事件名）目前属于转录级失败：消息打印到标准输出，
-  批处理进程仍以退出状态 ``0`` 结束。
+* 批处理命令失败（例如未知命令或无法解析的事件）会打印消息、停止后续命令并非零退出。
 * 典型失败包括输入不可读、解析错误、模型验证错误、未知模拟器命令、无效事件名、无效热启动状态或变量赋值。
 
 典型例子：
@@ -275,6 +277,8 @@ SAT 结果都必须经过见证与重放可信门禁。全部选项、颜色行�
    pyfcstm simulate -i machine.fcstm
    pyfcstm simulate -i machine.fcstm -e "current; cycle; current"
    pyfcstm simulate -i machine.fcstm -e "init System.Active counter=10; cycle 5"
+
+诊断选项：``--diagnostics`` 默认关闭；``--diagnostics-format text|jsonl`` 默认 ``text``，JSONL 要求 ``--diagnostics`` 和 ``-e``；可重复的 ``--param NAME=VALUE`` 在构造时设置参数。``cycle --input NAME=VALUE`` 每拍提供完整输入，``decisions`` 和 ``why <id|label>`` 查询最近证据。精确类型、非法情况及完整示例见 :doc:`../simulation/diagnostics_zh`。JSONL 模式的标准输出只含报告，转录和查询写入标准错误，不含 ANSI 的报告可直接重定向。
 
 ``inspect``
 -----------
@@ -693,7 +697,7 @@ JSON 写入标准输出；HTML 写到请求路径。使用 ``--open`` 且省略�
      - 用 -i 传入 DSL 文件。
    * - 未知批处理命令
      - ``pyfcstm simulate -i machine.fcstm -e "rewind"``
-     - 模拟器命令层把未知命令写入转录；批处理模式进程仍以退出状态 ``0`` 结束。
+     - 模拟器把未知命令写入转录，批处理停止并非零退出。
      - 查阅模拟命令参考。
    * - 非法热启动值
      - ``pyfcstm simulate -i machine.fcstm -e "init System.Active counter=oops"``
@@ -1051,6 +1055,14 @@ JSON 写入标准输出；HTML 写到请求路径。使用 ``--open`` 且省略�
      - 合法写法
      - 边界或反例
      - 应检查的证据
+   * - ``--cone-slicing``
+     - 显式启用保守切片；默认关闭。
+     - 危险运算及其依赖保留；含 abstract 动作的模型跳过切片。变量多不代表一定可切。
+     - 开启后检查 ``result.cone_slicing``；见证仍包含全部变量，回退与跳过原因可见。
+   * - ``--solver-profile``
+     - ``default`` 保留通用求解器；``logic`` 识别算术片段；``tactic`` 使用固定化简组合。默认是 ``default``。
+     - ``--solver-profile fast`` 是用法错误，退出 ``2``；不可行解释和证明始终使用默认求解器。
+     - JSON 的 ``result.solver_profile``、``result.solver_logic`` 和 ``result.solver_statistics``；SAT 见证必须重放通过。
    * - ``--explain-infeasibility``
      - ``none`` 只要强制判定；``formal`` 要分类与源组冲突核；``proof`` 要逐步核验过的证明。
      - 该深度从不改变判定，所以它无法把不确定的运行变成确定的。规则目录中没有规则能闭合冲突核时，``proof`` 会降级为 ``formal``；把缺失的 ``proof`` 键当成错误处理的调用方会误读这一点。
@@ -1136,8 +1148,8 @@ JSON 写入标准输出；HTML 写到请求路径。使用 ``--open`` 且省略�
      - 渲染或生成前先修复 DSL 语义问题。
    * - 模拟器命令层
      - 模型加载后出现未知批处理命令或事件名。
-     - 标准输出中的转录级失败；批处理模式目前仍以退出状态 ``0`` 结束。
-     - 修正模拟器命令脚本，不要只依赖退出状态判断这类失败。
+     - 文本模式打印错误转录，批处理非零退出；JSONL 模式把错误写入标准错误。
+     - 根据错误消息修正模拟器命令脚本；批处理退出状态现在会反映失败。
    * - 输出路径
      - 权限不足、后缀不匹配，或 ``--clear`` 指向不安全目录。
      - 写文件前或写文件时非零退出。

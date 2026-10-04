@@ -14,5 +14,6 @@ pyfcstm.entry.simulate
     completer
     display
     events
+    inputs
     logging
     repl

@@ -68,7 +68,7 @@
     "structure_statistics": { "$ref": "#/definitions/StructureStatistics" },
     "reachability_graph": {
       "type": "object",
-      "description": "Mapping state path -> reachable state paths in the default inspect graph. Guards are ignored; composite initial edges are followed; entry and exit pseudo markers are not exposed.",
+      "description": "Mapping state path -> reachable state paths in the default inspect graph. Guards are ignored; composite initial edges are followed; entry and exit pseudo markers are not exposed. A transition into Owner.[H] / Owner.[H*] also reaches the states of the default path and what a restore can re-enter.",
       "additionalProperties": {
         "type": "array",
         "items": { "type": "string" }
@@ -473,6 +473,11 @@
           "type": ["integer", "null"],
           "minimum": 0,
           "description": "Preorder index of this generated combo edge inside combo projection."
+        },
+        "target_history": {
+          "type": ["string", "null"],
+          "enum": ["shallow", "deep", null],
+          "description": "History kind the transition enters (Target.[H] / Target.[H*]); to_path names the history owner."
         }
       }
     },
@@ -536,20 +541,51 @@
         }
       }
     },
+    "VariableAccessSite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "state_path", "action", "action_index", "transition_index", "statement_path", "source_path", "span"],
+      "properties": {
+        "kind": { "enum": ["action", "guard", "effect"] },
+        "state_path": { "type": "string" },
+        "action": { "type": ["string", "null"] },
+        "action_index": { "type": ["integer", "null"], "minimum": 0 },
+        "transition_index": { "type": ["integer", "null"], "minimum": 0 },
+        "statement_path": { "type": "array", "items": { "type": "integer", "minimum": 0 } },
+        "source_path": { "type": ["string", "null"] },
+        "span": { "anyOf": [{ "$ref": "#/definitions/Span" }, { "type": "null" }] }
+      }
+    },
     "VariableInfo": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "name", "type", "init_value",
+        "name", "type", "init_value", "role",
         "read_in_states", "written_in_states",
         "read_in_guards", "written_in_effects",
         "affects_guard_directly", "affects_guard_indirectly",
-        "abstract_actions_in_scope", "float_literal_assignments"
+        "abstract_actions_in_scope", "float_literal_assignments",
+        "external_supply", "diagnostic_policy", "read_sites", "write_sites"
       ],
       "properties": {
         "name": { "type": "string" },
         "type": { "type": "string" },
         "init_value": { "type": "string" },
+        "role": { "type": "string", "enum": ["control", "input", "param", "output"] },
+        "external_supply": { "enum": ["none", "cycle", "construction"] },
+        "diagnostic_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["unused", "unwritten", "write_only", "constant_guard"],
+          "properties": {
+            "unused": { "type": "boolean" },
+            "unwritten": { "type": "boolean" },
+            "write_only": { "type": "boolean" },
+            "constant_guard": { "type": "boolean" }
+          }
+        },
+        "read_sites": { "type": "array", "items": { "$ref": "#/definitions/VariableAccessSite" } },
+        "write_sites": { "type": "array", "items": { "$ref": "#/definitions/VariableAccessSite" } },
         "read_in_states": { "type": "array", "items": { "type": "string" } },
         "written_in_states": { "type": "array", "items": { "type": "string" } },
         "read_in_guards": {

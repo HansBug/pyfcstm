@@ -62,7 +62,9 @@ class BmcOptions:
     :param max_bound: Maximum allowed query bound, or ``None`` for no limit,
         defaults to ``None``.
     :type max_bound: Optional[int], optional
-    :raises pyfcstm.bmc.errors.BmcBuildError: If ``max_bound`` is not ``None``
+    :param cone_slicing: Conservatively remove unobserved writes, defaults to ``False``.
+    :type cone_slicing: bool, optional
+    :raises pyfcstm.bmc.errors.BmcBuildError: If ``cone_slicing`` is not Boolean or ``max_bound`` is not ``None``
         and not a positive integer.
 
     Example::
@@ -72,8 +74,11 @@ class BmcOptions:
     """
 
     max_bound: Optional[int] = None
+    cone_slicing: bool = False
 
     def __post_init__(self) -> None:
+        if not isinstance(self.cone_slicing, bool):
+            raise BmcBuildError("cone_slicing must be bool.")
         if self.max_bound is None:
             return
         if isinstance(self.max_bound, bool) or not isinstance(self.max_bound, int):
@@ -90,9 +95,13 @@ class BmcOptions:
         Example::
 
             >>> BmcOptions().to_canonical()
-            {'node': 'bmc_options', 'max_bound': None}
+            {'node': 'bmc_options', 'max_bound': None, 'cone_slicing': False}
         """
-        return {"node": "bmc_options", "max_bound": self.max_bound}
+        return {
+            "node": "bmc_options",
+            "max_bound": self.max_bound,
+            "cone_slicing": self.cone_slicing,
+        }
 
 
 def _require_field(value: object, field_name: str, field_type: type) -> None:

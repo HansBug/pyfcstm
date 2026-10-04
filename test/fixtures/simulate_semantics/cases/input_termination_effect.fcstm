@@ -1,0 +1,2 @@
+input int finish; output int result = 0;
+state Root { state Ready; [*] -> Ready; Ready -> [*] : if [finish > 0] effect { result = finish; }; }

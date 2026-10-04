@@ -1,0 +1,1 @@
+check forbid <= 12: temp > 30;

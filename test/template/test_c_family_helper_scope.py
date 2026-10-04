@@ -22,6 +22,7 @@ _TEMPLATE_NAMES = ("c", "c_poll", "cpp", "cpp_poll")
 
 _C_HELPER_NAMES = {
     "to_c_identifier",
+    "readonly_value_identifier",
     "to_c_path_identifier",
     "to_c_public_identifier",
     "to_c_public_macro_identifier",

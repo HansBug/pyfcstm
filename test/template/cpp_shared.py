@@ -52,12 +52,12 @@ _NATIVE_HANDLE_CALL_RE = re.compile(r"\bnative_handle\s*\(")
 _TOKEN_PASTE_RE = re.compile(r"##")
 _DIRECT_C_TYPE_RE = re.compile(
     r"\b[A-Za-z_][A-Za-z0-9_]*Machine"
-    r"(Vars|StateId|EventId|Int|Hooks|EventChecks|ExecutionContext|EventContext)?\b"
+    r"(Vars|VarsPresent|Parameters|ParametersPresent|Inputs|InputProvider|InitOptions|StateId|EventId|Int|Hooks|EventChecks|ExecutionContext|EventContext)?\b"
 )
 _DIRECT_C_API_RE = re.compile(
     r"\b[A-Za-z_][A-Za-z0-9_]*Machine_"
-    r"(create_uninitialized|create|destroy|init|hot_start|set_hooks|"
-    r"set_event_checks|cycle|vars|is_ended|current_state_id|"
+    r"(create_uninitialized|create|destroy|init|init_with_options|hot_start|hot_start_with_parameters|set_hooks|set_input_provider|last_inputs|get_(?:param|input)_[A-Za-z_][A-Za-z0-9_]*|"
+    r"set_event_checks|cycle|cycle_with_inputs|vars|is_ended|current_state_id|"
     r"current_state_path|current_state_name|last_error|dsl_source)\b"
 )
 _WRAPPER_HEADER_BASENAME = "machine.hpp"
@@ -238,9 +238,9 @@ static void install_hooks(Wrapper *wrapper)
 {% endfor %}    wrapper->set_hooks(&hooks, NULL);
 }
 
-static int run_cycle(Wrapper *wrapper, const Wrapper::EventId *events, size_t event_count)
+static int run_cycle(Wrapper *wrapper, const Wrapper::EventId *events, size_t event_count, const Wrapper::Inputs *inputs)
 {
-    return wrapper->cycle(events, event_count);
+    return wrapper->cycle_with_inputs(*inputs, events, event_count);
 }
 
 static void write_observation(FILE *out, Wrapper *wrapper, int step_index, int cycle_index, const char **event_names, size_t event_count, const char *last_error)
@@ -303,6 +303,7 @@ static void write_initial_error(FILE *out, const char *last_error)
 int main(int argc, char **argv)
 {
     FILE *out;
+    Wrapper::InitOptions options;
     Wrapper wrapper;
     int api_return;
     size_t cycle_iter;
@@ -314,7 +315,10 @@ int main(int argc, char **argv)
     if (out == NULL) {
         return 2;
     }
-{% if not context.initial %}    if (!wrapper.init()) {
+    memset(&options, 0, sizeof(options));
+{% for storage in ['vars', 'parameters'] %}{% for assignment in context.configuration.get(storage, []) %}    options.{{ storage }}.{{ assignment.field }} = {{ assignment.value }};
+    options.{{ storage }}_present.{{ assignment.field }} = 1;
+{% endfor %}{% endfor %}{% if not context.initial %}    if (!wrapper.init(options)) {
 {% if context.initial_expect %}        write_initial_error(out, wrapper.last_error());
         fclose(out);
         return 0;
@@ -331,7 +335,7 @@ int main(int argc, char **argv)
         Wrapper::Vars initial_vars;
         memset(&initial_vars, 0, sizeof(initial_vars));
 {% for assignment in context.initial.assignments %}        initial_vars.{{ assignment.field }} = {{ assignment.value }};
-{% endfor %}        if (!wrapper.hot_start({{ context.machine_macro_name }}_{{ context.initial.state_macro }}, &initial_vars)) {
+{% endfor %}        if (!wrapper.hot_start({{ context.machine_macro_name }}_{{ context.initial.state_macro }}, initial_vars, options.parameters)) {
 {% if context.initial_expect %}            write_initial_error(out, wrapper.last_error());
             fclose(out);
             return 0;
@@ -352,6 +356,10 @@ int main(int argc, char **argv)
     return 0;
 {% endif %}
 {% for step in context.steps %}    {
+        Wrapper::Inputs inputs;
+        memset(&inputs, 0, sizeof(inputs));
+{% for assignment in step.inputs %}        inputs.{{ assignment.field }} = {{ assignment.value }};
+{% endfor %}
 {% if step.events %}        const char *event_names[] = {
 {% for event in step.events %}            {{ event.path | tojson }},
 {% endfor %}        };
@@ -366,8 +374,8 @@ int main(int argc, char **argv)
 {% endif %}        api_return = 1;
         last_error = NULL;
         for (cycle_iter = 0u; cycle_iter < {{ step.cycle_count }}u; ++cycle_iter) {
-{% if step.events %}            api_return = run_cycle(&wrapper, event_ids, {{ step.events | length }}u);
-{% else %}            api_return = run_cycle(&wrapper, NULL, 0u);
+{% if step.events %}            api_return = run_cycle(&wrapper, event_ids, {{ step.events | length }}u, &inputs);
+{% else %}            api_return = run_cycle(&wrapper, NULL, 0u, &inputs);
 {% endif %}            if (!api_return) {
                 last_error = wrapper.last_error();
                 if (last_error == NULL || last_error[0] == '\0') {
@@ -583,7 +591,7 @@ static void install_event_checks(Wrapper *wrapper)
 {% endfor %}    wrapper->set_event_checks(&event_checks, NULL);
 }
 
-static int run_cycle(Wrapper *wrapper, const Wrapper::EventId *events, size_t event_count)
+static int run_cycle(Wrapper *wrapper, const Wrapper::EventId *events, size_t event_count, const Wrapper::Inputs *inputs)
 {
     size_t i;
     if (event_count > sizeof(active_events) / sizeof(active_events[0])) {
@@ -593,7 +601,7 @@ static int run_cycle(Wrapper *wrapper, const Wrapper::EventId *events, size_t ev
     for (i = 0u; i < event_count; ++i) {
         active_events[i] = events[i];
     }
-    return wrapper->cycle();
+    return wrapper->cycle_with_inputs(*inputs);
 }
 
 static void write_observation(FILE *out, Wrapper *wrapper, int step_index, int cycle_index, const char **event_names, size_t event_count, const char *last_error)
@@ -656,6 +664,7 @@ static void write_initial_error(FILE *out, const char *last_error)
 int main(int argc, char **argv)
 {
     FILE *out;
+    Wrapper::InitOptions options;
     Wrapper wrapper;
     int api_return;
     size_t cycle_iter;
@@ -667,7 +676,10 @@ int main(int argc, char **argv)
     if (out == NULL) {
         return 2;
     }
-{% if not context.initial %}    if (!wrapper.init()) {
+    memset(&options, 0, sizeof(options));
+{% for storage in ['vars', 'parameters'] %}{% for assignment in context.configuration.get(storage, []) %}    options.{{ storage }}.{{ assignment.field }} = {{ assignment.value }};
+    options.{{ storage }}_present.{{ assignment.field }} = 1;
+{% endfor %}{% endfor %}{% if not context.initial %}    if (!wrapper.init(options)) {
 {% if context.initial_expect %}        write_initial_error(out, wrapper.last_error());
         fclose(out);
         return 0;
@@ -685,7 +697,7 @@ int main(int argc, char **argv)
         Wrapper::Vars initial_vars;
         memset(&initial_vars, 0, sizeof(initial_vars));
 {% for assignment in context.initial.assignments %}        initial_vars.{{ assignment.field }} = {{ assignment.value }};
-{% endfor %}        if (!wrapper.hot_start({{ context.machine_macro_name }}_{{ context.initial.state_macro }}, &initial_vars)) {
+{% endfor %}        if (!wrapper.hot_start({{ context.machine_macro_name }}_{{ context.initial.state_macro }}, initial_vars, options.parameters)) {
 {% if context.initial_expect %}            write_initial_error(out, wrapper.last_error());
             fclose(out);
             return 0;
@@ -706,6 +718,10 @@ int main(int argc, char **argv)
     return 0;
 {% endif %}
 {% for step in context.steps %}    {
+        Wrapper::Inputs inputs;
+        memset(&inputs, 0, sizeof(inputs));
+{% for assignment in step.inputs %}        inputs.{{ assignment.field }} = {{ assignment.value }};
+{% endfor %}
 {% if step.events %}        const char *event_names[] = {
 {% for event in step.events %}            {{ event.path | tojson }},
 {% endfor %}        };
@@ -720,8 +736,8 @@ int main(int argc, char **argv)
 {% endif %}        api_return = 1;
         last_error = NULL;
         for (cycle_iter = 0u; cycle_iter < {{ step.cycle_count }}u; ++cycle_iter) {
-{% if step.events %}            api_return = run_cycle(&wrapper, event_ids, {{ step.events | length }}u);
-{% else %}            api_return = run_cycle(&wrapper, NULL, 0u);
+{% if step.events %}            api_return = run_cycle(&wrapper, event_ids, {{ step.events | length }}u, &inputs);
+{% else %}            api_return = run_cycle(&wrapper, NULL, 0u, &inputs);
 {% endif %}            if (!api_return) {
                 last_error = wrapper.last_error();
                 if (last_error == NULL || last_error[0] == '\0') {

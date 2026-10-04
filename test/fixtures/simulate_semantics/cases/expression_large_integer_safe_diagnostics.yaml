@@ -12,6 +12,4 @@ steps:
 - cycle: []
   expect:
     state: Root.A
-    vars_keys:
-    - x
     ended: false

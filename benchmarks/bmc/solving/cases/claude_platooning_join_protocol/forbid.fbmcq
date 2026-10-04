@@ -1,0 +1,1 @@
+check forbid <= 10: gap_created < 0;

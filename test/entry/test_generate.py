@@ -184,9 +184,18 @@ class TestEntryGenerate:
                 readme = f.read()
             with open(os.path.join(td, "README_zh.md"), "r", encoding="utf-8") as f:
                 readme_zh = f.read()
-            assert "# TrafficLightMachine" in readme
-            assert "Overridable Abstract Hooks" in readme
-            assert "可覆写的 Abstract Hook 清单" in readme_zh
+            for generated_readme in (readme, readme_zh):
+                assert "# TrafficLightMachine" in generated_readme
+                assert "class Device(TrafficLightMachine):" in generated_readme
+                assert "machine = Device(sensor_values)" in generated_readme
+                assert "machine.cycle()" in generated_readme
+                assert (
+                    "def _abstract_hook_TrafficLight_InService_InServiceAbstractEnter(self, ctx):"
+                ) in generated_readme
+                assert (
+                    "| `TrafficLight.InService.InServiceAbstractEnter` | "
+                    "`_abstract_hook_TrafficLight_InService_InServiceAbstractEnter` |"
+                ) in generated_readme
 
     def test_generate_with_invalid_builtin_template_should_fail(self, input_code_file):
         with TemporaryDirectory() as td:

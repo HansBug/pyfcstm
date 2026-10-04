@@ -52,87 +52,281 @@
 {% endfor -%}
 {% endfor -%}
 {% endfor -%}
-# {{ machine_class_name(model) }}
+{% set m = machine_class_name(model) -%}
+{% set a = machine_macro_name(model) -%}
 
-这里存放 DSL 根状态 `{{ model.root_state.name }}` 对应的
-C99 / C++98 兼容生成运行时。
+# {{ m }}
 
-生成出的 `machine.h` 和 `machine.c` 会尽量贴近 4 空格缩进的
-`clang-format` 风格，这样后续再跑一次格式化时不应出现明显的样式抖动。
+本目录提供自包含的 C99 状态机运行时。将应用代码放在 `app.c` 中；模型行为变化时修改 DSL 并重新生成状态机文件。生成程序不依赖 Python 或第三方运行时库。
 
-## 生成文件
+**生成文件：**通过 `machine.h` 公开函数接入应用。`machine.c` 是生成的实现文件。`README.md` 提供对应英文指南。依次阅读[快速开始](#quick-start)、[接入说明](#integration)、[恢复](#recovery)和[编译](#build)。
 
-- `machine.h`：公开运行时头文件
-- `machine.c`：生成的运行时实现
-- `README.md`：当前状态机的英文使用说明
-- `README_zh.md`：当前状态机的中文使用说明
+<a id="quick-start"></a>
 
-## Model Text
+## 快速开始
 
-`{{ machine_class_name(model) }}_dsl_source()` 返回的是 canonical model
-export。该文本从已解析 model 重新导出，是 canonical / normalized model
-export，可能不同于用户输入文件中的格式、注释或空行。它适合用于诊断、
-追踪和把当前 generated runtime 的模型语义暴露给上层工具。
+将下面的完整程序保存为 `app.c`。程序按模型声明配置参数、连接输入并注册抽象动作。{% if model.inputs or model.parameters %}数值 `1` 仅用于演示，请替换为适合当前模型的读数和配置。{% endif %}动作回调打印观察值，可将其函数体替换为应用逻辑。初始化一次后，由应用调度器对同一个实例重复调用周期入口。
 
-canonical export 会包含模型文档块。不要在 FCSTM 文档中写入密码、token、
-私钥或其他秘密，因为这些文本会进入生成物。
+<!-- example:quick-start -->
 
-{% set canonical_model = model.to_ast_node() | string -%}
-{% set canonical_fence = canonical_model | markdown_fence -%}
-{{ canonical_fence }}fcstm
-{{ canonical_model }}
-{{ canonical_fence }}
+```c
+#include "machine.h"
+#include <stdio.h>
+#include <string.h>
 
-## Model Summary
+typedef struct AppData {
+    {{ m }}Inputs inputs;
+    int hook_calls;
+    int event_active;
+} AppData;
 
-### Variables
+{% for item in model.inputs.values() %}static int app_read_{{ item.name | readonly_value_identifier }}(void *user_data, {% if item.type == 'int' %}{{ m }}Int{% else %}double{% endif %} *value)
+{
+    AppData *data = (AppData *)user_data;
+    /* Replace this lookup with your sensor/driver call; return 0 on failure. */
+    *value = data->inputs.{{ item.name | readonly_value_identifier }};
+    return 1;
+}
 
-{% if model.defines.values() | list -%}
-| 名称 | 类型 | 初始 DSL |
+{% endfor %}{% if abstract_ns.rows %}static void app_action({{ m }} *machine, const {{ m }}ExecutionContext *ctx, void *user_data)
+{
+    AppData *data = (AppData *)user_data;
+    (void)machine;
+    ++data->hook_calls;
+{% for item in model.inputs.values() %}    printf("input {{ item.name }} = %.17g\n", (double){{ m }}_get_input_{{ item.name | readonly_value_identifier }}(machine));
+{% endfor %}{% for item in model.parameters.values() %}    printf("param {{ item.name }} = %.17g\n", (double){{ m }}_get_param_{{ item.name | readonly_value_identifier }}(machine));
+{% endfor %}    printf("action %d stage %d\n", (int)ctx->action_id, (int)ctx->action_stage_id);
+}
+
+{% endif %}
+int main(void)
+{
+    {{ m }}InitOptions options;
+    AppData data;
+    memset(&options, 0, sizeof(options));
+    memset(&data, 0, sizeof(data));
+{% for item in model.parameters.values() %}    options.parameters.{{ item.name | readonly_value_identifier }} = 1;
+    options.parameters_present.{{ item.name | readonly_value_identifier }} = 1;
+{% endfor %}    {{ m }} machine;
+    if (!{{ m }}_init_with_options(&machine, &options)) {
+        fprintf(stderr, "%s\n", {{ m }}_last_error(&machine));
+        return 1;
+    }
+{% if model.inputs %}
+    {{ m }}InputProvider provider;
+    memset(&provider, 0, sizeof(provider));
+{% for item in model.inputs.values() %}    data.inputs.{{ item.name | readonly_value_identifier }} = 1;
+    provider.read_{{ item.name | readonly_value_identifier }} = app_read_{{ item.name | readonly_value_identifier }};
+{% endfor %}    {{ m }}_set_input_provider(&machine, &provider, &data);
+{% endif %}{% if abstract_ns.rows %}
+    {{ m }}Hooks hooks = {{ m | upper }}_HOOKS_INIT;
+{% for row in abstract_ns.rows %}    hooks.{{ row['hook_name'] }} = app_action;
+{% endfor %}    {{ m }}_set_hooks(&machine, &hooks, &data);
+{% endif %}
+    /* Keep this instance and AppData alive for subsequent host-scheduled cycles. */
+    if (!{{ m }}_cycle(&machine, NULL, 0u)) {
+        fprintf(stderr, "%s\n", {{ m }}_last_error(&machine));
+        return 2;
+    }
+{% for item in model.parameters.values() %}    printf("param {{ item.name }} = %.17g\n", (double){{ m }}_get_param_{{ item.name | readonly_value_identifier }}(&machine));
+{% endfor %}{% for item in model.persistent_variables.values() %}    printf("{{ item.role.value }} {{ item.name }} = %.17g\n",
+           (double){{ m }}_vars(&machine)->{{ item.name | to_c_identifier }});
+{% endfor %}    printf("hook calls = %d\n", data.hook_calls);
+    /* Send committed outputs to your actuator/driver after success. */
+    return 0;
+}
+```
+
+```bash
+cc -std=c99 -Wall -Wextra -pedantic -O2 machine.c app.c -lm -o app
+./app
+```
+
+上述命令面向 POSIX 宿主工具链；Windows、CMake 和无堆配置见编译章节。后续每拍更新 `data.inputs`，或直接在输入提供器中读取设备，再调用同一周期入口。`is_ended()` 为真时停止。实例、回调表和应用数据须在整个运行期间保持有效。
+
+<a id="integration"></a>
+
+## 接入输入、动作与事件
+
+| 角色 | 应用负责什么 | 模型运行期间 |
 | --- | --- | --- |
-{% for def_item in model.defines.values() -%}
-| `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ def_item.init.to_ast_node() | string }}` |
+| `input` | 实现下方读取接口，或为当前周期提供显式快照 | 每周期重新获取；模型只读，没有默认保持 |
+| `param` | 构造/初始化时传入；省略项使用 DSL 默认值 | 实例固定，只有 getter，不需要实现回调 |
+| `control`（`def`，通常称 var） | 可在初始化时预设，运行后只读观察 | 模型内部可写；未赋值保持原值 |
+| `output` | 在成功周期之后读结果，并按需交给执行器 | 与 control 共用持久存储；未赋值保持原值 |
+
+`Vars` 保存 control/output，仅由 DSL 写入。初始化时复制并校验 `Parameters`。在 `InitOptions` 中为每个指定值设置对应存在标记，缺省项使用 DSL 默认值。输入可通过下表中的回调接入，也可提供完整类型化 `Inputs` 快照。执行前对全部输入采样一次，包括未使用的输入，验证和动作使用相同值。
+
+整数输入回调写入生成的有符号 64 位 `Int`，浮点输入回调写入有限 `double`。模型声明了输入时，缺少输入提供器、非有限数值或回调返回 0 都会使周期失败。input getter 要求周期正在执行，param getter 要求实例已初始化。
+
+{% if model.defines %}
+| 角色 | DSL 名称 | 访问入口 |
+| --- | --- | --- |
+{% for item in model.inputs.values() %}| input | `{{ item.name }}` | `InputProvider.read_{{ item.name | readonly_value_identifier }}`; `get_input_{{ item.name | readonly_value_identifier }}` |
+{% endfor %}{% for item in model.parameters.values() %}| param | `{{ item.name }}` | `InitOptions.parameters.{{ item.name | readonly_value_identifier }}` + `parameters_present.{{ item.name | readonly_value_identifier }}`; `get_param_{{ item.name | readonly_value_identifier }}` |
+{% endfor %}{% for item in model.persistent_variables.values() %}| {{ item.role.value }} | `{{ item.name }}` | `Vars.{{ item.name | to_c_identifier }}` |
+{% endfor %}
+
+{% else %}
+此模型没有 input、param、control 或 output 声明。
+{% endif %}
+
+### 回调职责
+
+| 接口 | 调用时机 | 返回值与所有权 |
+| --- | --- | --- |
+| `InputProvider.read_*` | 每个未结束周期对全部输入各调用一次；显式快照绕过输入提供器 | 写入指定类型的值并返回 1，返回 0 则采样失败。复制函数表，借用 `user_data` |
+| `Hooks` | 执行抽象生命周期动作时；推测验证阶段不调用 | 无返回值，未挂载的槽位不执行动作。借用函数表和 `user_data` |
+
+快速开始中的回调通过 `user_data` 共享 `AppData`。Hook 表应存放在拥有状态机的对象或其他足够长寿的作用域中，不能注册即将离开作用域的局部表。在动作中通过 `ctx->vars` 读取动作发生时的值，通过传入实例的 getter 读取 input/param。不要从回调修改持久状态，应在 DSL 中表达状态变化；若执行器必须反映已提交状态，应在周期成功后发送 output。
+
+### 已声明的动作
+
+{% if abstract_ns.rows %}
+| Hook 字段 | DSL 动作路径 | 所属状态 | 阶段 |
+| --- | --- | --- | --- |
+{% for row in abstract_ns.rows %}| `{{ row['hook_name'] }}` | `{{ row['func_name'] }}` | `{{ row['owner_path'] }}` | `{{ row['stage'] }}{% if row['aspect'] %} {{ row['aspect'] }}{% endif %}` |
 {% endfor %}
 {% else %}
-当前状态机没有定义持久变量。
-{% endif -%}
+此模型未声明抽象动作。
 
-### Events
+{% endif %}
+### 驱动事件
 
-{% if event_ns.items -%}
-{% for event_path in event_ns.items | unique | list -%}
-- `{{ event_path }}`
-{% endfor %}
+以下片段接在快速开始的 `main()` 内，不重新初始化实例，也不替换已安装的输入提供器。
+
+{% if event_ns.items %}
+```c
+{{ m }}EventId event = {{ a }}_EVENT_{{ event_ns.items[0].split(".") | to_c_path_identifier }};
+if (!{{ m }}_cycle(&machine, &event, 1u)) {
+    fprintf(stderr, "%s\n", {{ m }}_last_error(&machine));
+    return 2;
+}
+```
+
 {% else %}
-当前状态机没有声明任何事件。
-{% endif -%}
+此模型没有声明事件，直接使用快速开始中的无事件周期入口。
 
-### Abstract Hooks
+{% endif %}
+### 显式输入快照
 
-{% if abstract_ns.rows -%}
-{% for row in abstract_ns.rows -%}
-- `{{ row['func_name'] }}` -> `{{ row['hook_name'] }}`
+若应用已经采样，可使用下面的周期调用。必须提供全部输入，包括未使用的输入；本拍绕过全部数值输入回调。
+
+<!-- example:input-snapshot -->
+
+```c
+{{ m }}Inputs inputs = data.inputs;
+if (!{{ m }}_cycle_with_inputs(&machine, NULL, 0u, &inputs)) {
+    fprintf(stderr, "%s\n", {{ m }}_last_error(&machine));
+    return 2;
+}
+```
+
+<a id="recovery"></a>
+
+## 初始化与恢复
+
+在快速开始的构造或初始化调用前配置 `InitOptions`。`parameters_present` 或 `vars_present` 字段非零时选择对应值，并跳过其 DSL 初始化表达式；缺省参数和持久值采用 DSL 默认值。重新冷初始化表示开始新一轮运行，会清空已安装的回调，下一周期前必须重新挂载。运行中不能修改参数。
+
+预设 control/output 时，将下面片段插在快速开始的初始化调用之前。每个存在标记选中对应值；运行后模型可继续覆盖它。标记为零时保留 DSL 初始化表达式。
+
+<!-- example:initial-values -->
+
+```c
+{% if model.persistent_variables %}{% for item in model.persistent_variables.values() %}options.vars.{{ item.name | to_c_identifier }} = 1;
+options.vars_present.{{ item.name | to_c_identifier }} = 1;
+{% endfor %}{% else %}/* This model has no persistent variables to preset. */
+{% endif %}
+```
+
+### 热启动
+
+此片段接在快速开始的成功周期之后，获取同一检查点的状态、全部持久值和参数，并在不重放进入动作的情况下恢复。恢复已保存的检查点时使用保存的值，不要用当前默认参数或新配置替代检查点参数。组合状态目标从初始转换等待模式开始。热启动保留已挂载的输入提供器、Hook，失败则保留原运行状态。检查点获取和恢复必须与实例的其他访问串行执行。
+
+<!-- example:hot-start -->
+
+```c
+{{ m }}StateId state = {{ m }}_current_state_id(&machine);
+{{ m }}Vars initial_vars = *{{ m }}_vars(&machine);
+{{ m }}Parameters parameters;
+memset(&parameters, 0, sizeof(parameters));
+{% for item in model.parameters.values() %}parameters.{{ item.name | readonly_value_identifier }} = {{ m }}_get_param_{{ item.name | readonly_value_identifier }}(&machine);
 {% endfor %}
-{% else %}
-当前状态机没有声明 abstract hook。
-{% endif -%}
+if (state == {{ a }}_INVALID_STATE_ID) {
+    fprintf(stderr, "Cannot restore a completed machine as a live checkpoint\n");
+    return 3;
+}
+if (!{{ m }}_hot_start_with_parameters(&machine, state, &initial_vars, &parameters)) {
+    fprintf(stderr, "hot start failed: %s\n", {{ m }}_last_error(&machine));
+    return 3;
+}
+```
 
-## 运行时概览
+## 结果、失败与生命周期
 
-这份生成运行时是一个针对当前 DSL 模型专门生成的、自包含的
-C99 / C++98+ 状态机引擎。建议把它当作“黑盒运行时”来使用：
+初始化和周期入口成功返回 1，失败返回 0，失败后立即读取 `last_error()`。采样、验证或执行错误不会提交持久值和 `last_inputs`；修正原因后可重试，届时重新采样。外部读取、日志和动作副作用无法撤销。成功的 Delta 周期保持持久状态，同时发布本拍输入快照。
 
-- `machine.h` 是应用程序集成时真正应关注的接口面
-- `machine.c` 包含生成出来的执行逻辑，通常应视为实现细节
-- 事件通过整数 id 提交，而不是字符串
-- hot start 通过“完整变量快照 + 生成状态 id”恢复状态
-- speculative transition 失败时会回滚到上一次已提交状态
-- abstract hook 是对接外部系统的标准扩展点
-- 生成标识符会同时兼顾 C 和 C++，遇到 `class`、`template` 这类关键字冲突时会自动规避，
-  也会避开双下划线等 reserved public identifier 形态
+成功后通过 `vars()` 读取 control/output。返回值指向实例存储，不是历史副本；保留历史值应复制 `Vars`。input getter 仅在周期内有效，周期外通过 `last_inputs()` 读取，保留历史时复制 `Inputs`。上下文指针仅在回调期间有效。getter 要求实例已初始化且仍存活，结束后的周期调用不会采样。只有对应 create 函数分配的堆实例才调用 destroy，调用方拥有的对象不需要调用生成的销毁函数。
 
-头文件为了 ABI 简洁起见暴露了一些运行时布局结构体，但除非文档明确说明可直接使用，
-否则这些字段都应视为运行时内部实现细节，不应自行写入。
+## 公开 API 参考
+
+| 类型 | 用途 |
+| --- | --- |
+| `{{ m }}` | 调用方拥有的状态机实例，使用前必须初始化 |
+| `{{ m }}InitOptions` | 冷启动值和存在标记 |
+| `{{ m }}Parameters` | 完整参数快照 |
+| `{{ m }}Inputs` | 完整逐周期输入快照 |
+| `{{ m }}InputProvider` | 类型化输入回调表，安装时复制 |
+| `{{ m }}Vars` | control/output 持久存储 |
+| `{{ m }}Hooks` | 借用的动作回调表 |
+| `{{ m }}ExecutionContext` | 只读动作上下文 |
+| `{{ m }}Int` | 有符号 64 位整数别名 |
+| `{{ m }}StateId` | 生成的状态标识 |
+| `{{ m }}EventId` | 生成的事件标识 |
+
+### 函数
+
+下表省略 `{{ m }}_` 前缀；实例函数的第一个参数为 `machine` 指针，快照和函数表参数也为指针。
+
+| 入口 | 用途 |
+| --- | --- |
+| `init_with_options(machine, options)` | 通过可选值冷初始化 |
+| `init(machine)` | 使用 DSL 默认值冷初始化或重置 |
+| `hot_start_with_parameters(machine, state, vars, parameters)` | 恢复完整运行检查点 |
+| `hot_start(machine, state, vars)` | 仅无 param 模型可使用的完整持久值恢复入口 |
+| `set_input_provider(machine, provider, user_data)` | 复制输入回调表，NULL 清空 |
+| `set_hooks(machine, hooks, user_data)` | 借用动作表，NULL 卸载 |
+| `cycle(machine, events, count)` | 使用已安装的 input reader 执行周期 |
+| `cycle_with_inputs(machine, events, count, inputs)` | 通过显式输入执行周期 |
+| `last_inputs(machine)` | 最近成功周期的输入快照，初始为 NULL |
+| `vars(machine)` | 读取持久状态 |
+| `is_ended(machine)` | 判断是否结束 |
+| `last_cycle_was_delta(machine)` | 判断是否为成功的无进展周期 |
+| `current_state_id(machine)` | 当前状态标识（等待初始进入时可能是组合状态），或无效标记 |
+| `current_state_path(machine)` | 诊断路径，结束后为 NULL |
+| `last_error(machine)` | 错误文本或空字符串 |
+| `create() / create_uninitialized() / destroy(machine)` | 堆分配和生命周期；启用 PYFCSTM_GENERATED_NO_HEAP 时省略 |
+| `current_state_name(machine)` | 诊断用状态短名 |
+| `dsl_source()` | 内嵌规范化模型文本 |
+
+各 input/param 的准确 getter 名称见接入章节。不带参数的热启动重载仅适用于没有 param 的模型。即使头文件公开了 frame、stack 和临时存储布局，这些字段仍由运行时管理。
+
+### `{{ machine_class_name(model) }}ExecutionContext`
+
+| 字段 | 含义 |
+| --- | --- |
+| `state_id` | 对外报告的调用上下文状态标识；用生成的 `{{ machine_macro_name(model) }}_STATE_*` 宏比较 |
+| `vars` | 指向持久变量快照的只读指针 |
+| `action_id` | 解析后的 abstract 目标 action 标识；用生成的 `{{ machine_macro_name(model) }}_ACTION_*` 宏比较 |
+| `action_stage_id` | 这个调用点对外报告的生命周期阶段标识；用 `{{ machine_macro_name(model) }}_STAGE_*` 比较 |
+| `active_leaf_state_id` | 调用点可见的当前 active leaf 状态标识 |
+| `call_stage_id` | 解析 `ref` 链之前具体调用点的生命周期阶段标识 |
+| `abstract_target_id` | 解析 `ref` 链后的 abstract 目标 action 标识 |
+| `named_ref_id` | 调用点本身是具名 `ref` 时为该具名引用 action 标识，否则为 `{{ machine_macro_name(model) }}_INVALID_ACTION_ID`；从匿名 `ref` 起始的引用链，无论中途经过多少具名动作都保持无效值 |
+
+这个结构体只应用于观察上下文。尤其在抽象动作回调中，不应通过 `machine` 或任何运行时内部存储修改持久变量。所有生成期可枚举的元数据都故意使用数值标识：hot path 中应使用生成的宏，不要做字符串比较。
+
+<a id="build"></a>
 
 ## 编译
 
@@ -140,22 +334,11 @@ C99 / C++98+ 状态机引擎。建议把它当作“黑盒运行时”来使用�
 
 生成运行时支持三种集成方式：
 
-1. **默认宿主 C99**：保留 `{{ machine_class_name(model) }}_create()` 和
-   `{{ machine_class_name(model) }}_destroy()`。该方式可以使用 C 标准库，适合普通主机、
-   工业 PC、嵌入式 Linux 或 hosted RTOS 构建。
-2. **调用方拥有对象**：由调用方自己持有 `{{ machine_class_name(model) }}` 对象，
-   例如放在栈上或静态存储区，然后调用
-   `{{ machine_class_name(model) }}_init(&machine)` 或
-   `{{ machine_class_name(model) }}_hot_start(...)`。当对象生命周期由驱动、调度器或设备
-   owner 管理时，推荐使用这种方式。
-3. **无堆剖面**：为 `machine.c` 以及所有包含 `machine.h` 的消费端源码定义
-   `PYFCSTM_GENERATED_NO_HEAP`。在该剖面下，生成物不会声明或编译堆分配 API，
-   `machine.c` 也不会为了 `calloc` / `free` 引入 `<stdlib.h>`。
+1. **默认宿主 C99**：保留 `{{ machine_class_name(model) }}_create()` 和 `{{ machine_class_name(model) }}_destroy()`。该方式可以使用 C 标准库，适合普通主机、 工业 PC、嵌入式 Linux 或 hosted RTOS 构建。
+2. **调用方拥有对象**：由调用方自己持有 `{{ machine_class_name(model) }}` 对象，例如放在栈上或静态存储区，然后调用 `{{ machine_class_name(model) }}_init(&machine)` 或 `{{ machine_class_name(model) }}_hot_start(...)`。当对象生命周期由驱动、调度器或设备 owner 管理时，推荐使用这种方式。
+3. **无堆剖面**：为 `machine.c` 以及所有包含 `machine.h` 的消费端源码定义 `PYFCSTM_GENERATED_NO_HEAP`。在该剖面下，生成物不会声明或编译堆分配 API， `machine.c` 也不会为了 `calloc` / `free` 引入 `<stdlib.h>`。
 
-`PYFCSTM_GENERATED_NO_HEAP` 按“符号是否定义”判断，等价于
-`#if defined(PYFCSTM_GENERATED_NO_HEAP)` / `#ifdef` 语义。文档推荐写法是
-`-DPYFCSTM_GENERATED_NO_HEAP`；如果外部构建写成
-`-DPYFCSTM_GENERATED_NO_HEAP=1`，也必须选择同一个无堆剖面。
+`PYFCSTM_GENERATED_NO_HEAP` 按“符号是否定义”判断，等价于 `#if defined(PYFCSTM_GENERATED_NO_HEAP)` / `#ifdef` 语义。文档推荐写法是 `-DPYFCSTM_GENERATED_NO_HEAP`；如果外部构建写成 `-DPYFCSTM_GENERATED_NO_HEAP=1`，也必须选择同一个无堆剖面。
 
 ### 对象生命周期示例
 
@@ -163,8 +346,11 @@ C99 / C++98+ 状态机引擎。建议把它当作“黑盒运行时”来使用�
 {{ machine_class_name(model) }} stack_machine;
 static {{ machine_class_name(model) }} static_machine;
 
-{{ machine_class_name(model) }}_init(&stack_machine);
-{{ machine_class_name(model) }}_init(&static_machine);
+if (!{{ machine_class_name(model) }}_init(&stack_machine) ||
+    !{{ machine_class_name(model) }}_init(&static_machine)) {
+    fprintf(stderr, "initialization failed\n");
+    return 1;
+}
 ```
 
 默认宿主剖面还允许由生成运行时管理堆分配对象：
@@ -240,445 +426,43 @@ target_link_libraries(app PRIVATE machine)
 target_compile_definitions(machine PUBLIC PYFCSTM_GENERATED_NO_HEAP)
 ```
 
-如果 `machine.c` 被封装到 interface-style wrapper target，可以在 wrapper target 上使用
-`INTERFACE PYFCSTM_GENERATED_NO_HEAP`。`PRIVATE` 只适合 `machine.c` 和所有包含
-`machine.h` 的消费端源码都编译进同一个最终 target、并且都能看到同一个宏的情况。
+如果 `machine.c` 被封装到 interface-style 封装 target，可以在封装 target 上使用 `INTERFACE PYFCSTM_GENERATED_NO_HEAP`。`PRIVATE` 只适合 `machine.c` 和所有包含 `machine.h` 的消费端源码都编译进同一个最终 target、并且都能看到同一个宏的情况。
 
-### C++ 编译检查
+### 集成边界
 
-如果上层是 C++ 工程，也建议显式用 C++ 编译器做一次检查：
+同一实例不可重入（non-reentrant），所有访问应串行执行，不要从回调递归调用周期入口。volatile 设备寄存器、DMA 缓冲区和 I/O 由应用适配层管理，通过 input 输入提供器提供数值。`PYFCSTM_GENERATED_NO_HEAP` 只移除堆分配辅助函数，不等于严格 freestanding 保证，仍可能需要标准数学、字符串和诊断功能。
 
-```bash
-g++ -x c++ -std=c++98 -Wall -Wextra -Werror -pedantic-errors -c machine.c -o machine.o
-g++ -x c++ -std=c++17 -Wall -Wextra -Werror -pedantic-errors -c machine.c -o machine.o
-```
-
-
-### 原生工具链证据
-
-仓库级原生工具链矩阵会在 pytest 中生成代表性的 `c` 和 `c_poll` 产物，并复用仿真器与模板对齐测试使用的同一套共享语义用例。公开 profile 覆盖宿主 GCC / Clang 优化等级、Linux 32 位、AArch64 + QEMU、AppleClang、Windows MinGW / MSVC / clang-cl、sanitizer 运行、ARM bare-metal compile-only 检查，以及 `cppcheck`、`clang-tidy` 这类 report-only 静态分析。
-
-这些 profile 是工程兼容性基线，不是认证声明。它们只能作为可复现证据，说明 generated public API 和共享语义在常见编译器族与构建模式下保持稳定。安全标准、编码规则签核、板级支持包、链接脚本和项目自己的 warning policy 仍然属于下游集成流程。
-
-如果 native matrix job 失败，应检查上传的 `result.json`、`commands.json`、命令日志、生成文件和 harness 文件。可运行 profile 还会包含 `observations.jsonl`；compile-only 和 analyze-only profile 按设计不会产生运行时观察记录。
-
-### 边界说明
-
-- 无堆剖面只移除生成的堆分配辅助函数，不等于严格 freestanding 保证；生成运行时仍可能使用
-  `<math.h>`、`<string.h>` 或 `<stdio.h>` 等标准头。
-- 本生成运行时不宣称已经满足 MISRA、AUTOSAR、DO-178C、IEC 61508 或 ISO 26262 认证就绪要求。
-- 变量快照的二进制布局、端序转换和跨设备持久化不属于本公开契约。
-
-### 集成前检查清单
-
-把这份生成运行时接入 controller、firmware 或 hardware adapter 前，请在下游项目中确认：
-
-- C core 按 C99 编译，并选择一种内存剖面：默认宿主剖面、调用方拥有对象，或
-  `PYFCSTM_GENERATED_NO_HEAP`。无堆剖面只移除生成的分配辅助函数，不等于完整
-  freestanding 或安全认证剖面。
-- 安装应用依赖的所有 abstract hook。Hook 是只读扩展点；不要在 hook callback 中修改
-  generated persistent variables。
-- 通过 `{{ machine_class_name(model) }}_cycle(...)` 提交 generated integer event ids；不要在
-  application glue 中重新引入 runtime string event lookup。
-- 将同一个 `{{ machine_class_name(model) }}` 实例视为 non-reentrant。ISR、scheduler 或多线程代码可能接触同一实例时，应在外层串行化 `init`、`hot_start`、`cycle`、hook registration 以及 state/variable reads。
-- `volatile` registers、DMA buffers、communication frames 和 device I/O 应放在外层 adapter 中。不要为了直接访问硬件而把它们伪装成 generated persistent variables；应通过 event submission、hooks 或 application-owned adapter code 桥接。
-- C/C++ 部署前运行 `pyfcstm inspect` 并审阅 numeric warnings。这些 diagnostics 描述默认 C/C++ deployment-profile risks；Python generated runtime 的数值和异常语义不同。后续 BitVec / BMC / fixed-point proof 工作见 <https://github.com/HansBug/pyfcstm/issues/254>；未来 codegen numeric strategy 工作见 <https://github.com/HansBug/pyfcstm/issues/255>。
-- 生成的 `round()` 使用 `nearbyint()`，因此要求进程浮点舍入模式保持为 `FE_TONEAREST`（默认值）。如果要求与模拟器一致，请勿在调用生成 machine 前后修改该模式。
-- Native toolchain matrix results、sanitizer runs、`cppcheck` 和 `clang-tidy` 只能作为工程证据。它们本身不会让生成运行时达到 MISRA、AUTOSAR、DO-178C、IEC 61508、ISO 26262 或其他认证 ready。
+C/C++ 部署前运行 `pyfcstm inspect`，检查默认 C/C++ deployment-profile 的数值诊断；Python 数值行为不同。生成的 `round()` 使用 `nearbyint()` 并假定 `FE_TONEAREST`。整数溢出、目标 ABI 和跨设备序列化需要应用审查。编译器和 sanitizer 验证不代表通过 MISRA、AUTOSAR、DO-178C、IEC 61508 或 ISO 26262 认证。
 
 ### 链接与符号可见性
 
 - `{{ machine_macro_name(model) }}_API` 是所有公开函数统一使用的符号可见性宏。
-- 如果在 Windows 上把生成运行时本身编译成 DLL，应定义
-  `{{ machine_macro_name(model) }}_BUILD_SHARED`。
-- 如果在 Windows 上从外部代码使用这份 DLL，应定义
-  `{{ machine_macro_name(model) }}_USE_SHARED`。
+- 如果在 Windows 上把生成运行时本身编译成 DLL，应定义 `{{ machine_macro_name(model) }}_BUILD_SHARED`。
+- 如果在 Windows 上从外部代码使用这份 DLL，应定义 `{{ machine_macro_name(model) }}_USE_SHARED`。
 - 当 `machine.h` 被 C++ 包含时，只有公开 API 声明会自动使用 `extern "C"` 包裹。
-- 公开布局结构体和 hook typedef 会同时保持对 C 和 C++ 友好。
-- `{{ machine_class_name(model) }}Int` 是公开的有符号 64 位整数别名，
-  用于生成整数持久变量字段，并兼顾 C99 与 C++98+。
+- 公开布局结构体和回调类型声明会同时保持对 C 和 C++ 友好。
+- `{{ machine_class_name(model) }}Int` 是公开的有符号 64 位整数别名，用于生成整数持久变量字段，并兼顾 C99 与 C++98+。
 
-## 快速开始
+## 模型参考
 
-```c
-#include "machine.h"
+### 变量
 
-int main(void)
-{
-    {{ machine_class_name(model) }} machine;
-
-    if (!{{ machine_class_name(model) }}_init(&machine)) {
-        return 1;
-    }
-{% if event_ns.items %}
-    {
-        static const {{ machine_class_name(model) }}EventId event_ids[] = {
-            {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier }}
-        };
-        {{ machine_class_name(model) }}_cycle(&machine, event_ids, 1u);
-    }
-{% else %}
-    {{ machine_class_name(model) }}_cycle(&machine, NULL, 0u);
-{% endif %}
-    return 0;
-}
-```
-
-## 公开头文件参考
-
-### 核心宏
-
-| 宏 | 数值 | 含义 |
-| --- | ---: | --- |
-| `{{ machine_macro_name(model) }}_SUCCESS` | `1` | 成功返回值 |
-| `{{ machine_macro_name(model) }}_FAILURE` | `0` | 失败返回值 |
-| `{{ machine_macro_name(model) }}_MAX_STACK_DEPTH` | `64` | 内部最大状态栈深度 |
-| `{{ machine_macro_name(model) }}_MAX_DFS_STEPS` | `1000` | 内部 validation DFS 最大步数 |
-| `{{ machine_macro_name(model) }}_INVALID_STATE_ID` | `-1` | 无效状态 id 哨兵值 |
-| `{{ machine_macro_name(model) }}_INVALID_EVENT_ID` | `-1` | 无效事件 id 哨兵值 |
-| `{{ machine_macro_name(model) }}_STATE_COUNT` | `{{ state_items | length }}` | 生成的状态 id 数量 |
-| `{{ machine_macro_name(model) }}_EVENT_COUNT` | `{{ event_ns.items | length }}` | 生成的事件 id 数量 |
-| `{{ machine_class_name(model) | upper }}_HOOKS_INIT` | 生成的花括号零初始化器 | hook 表零初始化辅助宏 |
-
-### 公开类型
-
-| 类型 | 说明 |
-| --- | --- |
-| `{{ machine_class_name(model) }}` | 运行时实例类型 |
-| `{{ machine_class_name(model) }}ExecutionContext` | 传给 abstract hook 的只读上下文 |
-| `{{ machine_class_name(model) }}StateId` | 整数状态 id 类型 |
-| `{{ machine_class_name(model) }}EventId` | 整数事件 id 类型 |
-| `{{ machine_class_name(model) }}ActionId` | generated abstract action metadata 使用的整数 action id 类型 |
-| `{{ machine_class_name(model) }}StageId` | 生命周期阶段整数 id 类型 |
-| `{{ machine_class_name(model) }}Int` | 生成整数持久变量时使用的公开有符号 64 位别名 |
-| `{{ machine_class_name(model) }}Vars` | 持久变量快照类型 |
-| `{{ machine_class_name(model) }}HookFn` | abstract hook 回调函数类型 |
-| `{{ machine_class_name(model) }}Hooks` | hook 注册表 |
-| `{{ machine_class_name(model) }}Frame` | 对外可见的内部 frame 布局 |
-
-### `{{ machine_class_name(model) }}Vars`
-
-{% if model.defines.values() | list %}
-| 字段 | C 类型 | 初始 DSL |
-| --- | --- | --- |
-{% for def_item in model.defines.values() -%}
-| `{{ def_item.name | to_c_identifier }}` | `{% if def_item.type == 'int' %}{{ machine_class_name(model) }}Int{% else %}double{% endif %}` | `{{ def_item.init.to_ast_node() | string }}` |
-{% endfor %}
-{% else %}
-当前状态机没有定义持久变量。
-{% endif %}
-
-应通过 `{{ machine_class_name(model) }}_vars(&machine)` 读取当前持久变量。
-返回指针由运行时持有，只要 machine 对象仍然有效，这个指针就有效。
-
-### `{{ machine_class_name(model) }}ExecutionContext`
-
-| 字段 | 含义 |
-| --- | --- |
-| `state_id` | 对外报告的调用上下文状态 id；用 generated `{{ machine_macro_name(model) }}_STATE_*` macro 比较 |
-| `vars` | 指向持久变量快照的只读指针 |
-| `action_id` | 解析后的 abstract 目标 action id；用 generated `{{ machine_macro_name(model) }}_ACTION_*` macro 比较 |
-| `action_stage_id` | 这个调用点对外报告的生命周期阶段 id；用 `{{ machine_macro_name(model) }}_STAGE_*` 比较 |
-| `active_leaf_state_id` | 调用点可见的当前 active leaf 状态 id |
-| `call_stage_id` | 解析 `ref` 链之前具体调用点的生命周期阶段 id |
-| `abstract_target_id` | 解析 `ref` 链后的 abstract 目标 action id |
-| `named_ref_id` | 调用点本身是具名 `ref` 时为该具名引用 action id，否则为 `{{ machine_macro_name(model) }}_INVALID_ACTION_ID`；从匿名 `ref` 起始的引用链，无论中途经过多少具名动作都保持无效值 |
-
-这个结构体只应用于观察上下文。尤其在 abstract hook 中，不应通过 `machine`
-或任何运行时内部存储修改持久变量。所有生成期可枚举的 metadata 都故意使用
-numeric id：hot path 中应使用 generated macro，不要做字符串比较。
-
-### `{{ machine_class_name(model) }}HookFn`
-
-```c
-typedef void (*{{ machine_class_name(model) }}HookFn)(
-    {{ machine_class_name(model) }} *machine,
-    const {{ machine_class_name(model) }}ExecutionContext *ctx,
-    void *user_data
-);
-```
-
-- `machine`：当前运行时实例
-- `ctx`：只读执行上下文
-- `user_data`：此前传给 `{{ machine_class_name(model) }}_set_hooks(...)` 的用户指针
-
-### `{{ machine_class_name(model) }}Hooks`
-
-{% if abstract_ns.rows %}
-| Hook 字段 | DSL 动作路径 | 所属状态 | 阶段 |
+{% if model.defines %}
+| 角色 | 名称 | 类型 | DSL 初值 |
 | --- | --- | --- | --- |
-{% for row in abstract_ns.rows -%}
-| `{{ row['hook_name'] }}` | `{{ row['func_name'] }}` | `{{ row['owner_path'] }}` | `{{ row['stage'] }}{% if row['aspect'] %} {{ row['aspect'] }}{% endif %}` |
+{% for def_item in model.defines.values() %}| `{{ {'input': 'input', 'param': 'param', 'control': 'control (def)', 'output': 'output'}[def_item.role.value] }}` | `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ (def_item.init.to_ast_node() | string) if def_item.init is not none else '-' }}` |
 {% endfor %}
 {% else %}
-当前状态机没有声明 abstract action，因此 hook 表中没有可用槽位。
+当前模型没有变量声明。
 {% endif %}
-
-可先使用 `{{ machine_class_name(model) | upper }}_HOOKS_INIT` 初始化，再按需填充
-字段，最后通过 `{{ machine_class_name(model) }}_set_hooks(...)` 注册。
-
-### `{{ machine_class_name(model) }}Frame`
-
-`{{ machine_class_name(model) }}Frame` 虽然在头文件中可见，但主要是内部结构：
-
-| 字段 | 含义 |
-| --- | --- |
-| `state_id` | 运行时栈里存放的内部状态 id |
-| `mode` | 生成执行逻辑使用的内部 frame 模式 |
-
-应用代码应将其视为运行时私有布局。
-
-### `struct {{ machine_class_name(model) }}`
-
-machine 对象在 C 中不是 opaque type，但其中多数字段都属于运行时内部。
-
-| 字段 | 含义 | 外部使用建议 |
-| --- | --- | --- |
-| `vars` | 持久变量存储 | 建议通过 `{{ machine_class_name(model) }}_vars(...)` 读取 |
-| `_active_vars` | 内部活动变量指针 | 内部字段 |
-| `stack` | 内部执行栈 | 内部字段 |
-| `stack_size` | 当前内部栈深度 | 内部字段 |
-| `ended` | 内部结束标志 | 建议使用 `{{ machine_class_name(model) }}_is_ended(...)` |
-| `entered_root` | 内部根进入标志 | 内部字段 |
-| `hooks` | 已安装 hook 表指针 | 建议使用 `{{ machine_class_name(model) }}_set_hooks(...)` |
-| `hook_user_data` | 已安装用户指针 | 建议使用 `{{ machine_class_name(model) }}_set_hooks(...)` |
-| `last_error` | 内部错误缓冲区 | 建议使用 `{{ machine_class_name(model) }}_last_error(...)` |
-
-## 函数参考
-
-| 函数 | 作用 |
-| --- | --- |
-| `{{ machine_class_name(model) }}_create()` | 在堆上分配并初始化 machine；仅默认宿主剖面可用，定义 `PYFCSTM_GENERATED_NO_HEAP` 时省略 |
-| `{{ machine_class_name(model) }}_destroy(machine)` | 销毁堆分配的 machine；仅默认宿主剖面可用，定义 `PYFCSTM_GENERATED_NO_HEAP` 时省略 |
-| `{{ machine_class_name(model) }}_init(machine)` | 冷启动初始化或重置 machine |
-| `{{ machine_class_name(model) }}_hot_start(machine, state_id, vars)` | 从指定生成状态 id 和变量快照启动 |
-| `{{ machine_class_name(model) }}_set_hooks(machine, hooks, user_data)` | 注册 abstract hook |
-| `{{ machine_class_name(model) }}_cycle(machine, event_ids, event_count)` | 执行一个 cycle，并提交零个或多个事件 id |
-| `{{ machine_class_name(model) }}_vars(machine)` | 读取持久变量 |
-| `{{ machine_class_name(model) }}_is_ended(machine)` | 判断状态机是否结束 |
-| `{{ machine_class_name(model) }}_last_cycle_was_delta(machine)` | 读取最近一次成功周期是否为 Delta 无进展周期 |
-| `{{ machine_class_name(model) }}_current_state_id(machine)` | 读取当前叶子状态 id |
-| `{{ machine_class_name(model) }}_current_state_path(machine)` | 读取当前叶子状态完整路径，主要用于诊断 |
-| `{{ machine_class_name(model) }}_current_state_name(machine)` | 读取当前叶子状态短名称 |
-| `{{ machine_class_name(model) }}_last_error(machine)` | 读取最近一次错误信息 |
-| `{{ machine_class_name(model) }}_dsl_source()` | 读取内嵌的 canonical model export |
-
-### 函数使用说明
-
-- `{{ machine_class_name(model) }}_create()` / `{{ machine_class_name(model) }}_destroy()`：
-  适用于希望由生成运行时管理堆分配生命周期的场景。它们只属于默认宿主剖面；无堆剖面下应由调用方自行分配
-  machine 对象，并调用 `{{ machine_class_name(model) }}_init()` 或
-  `{{ machine_class_name(model) }}_hot_start(...)`。
-- `{{ machine_class_name(model) }}_init()`：
-  适用于栈上对象，或者对已有 machine 做重置。
-- `{{ machine_class_name(model) }}_hot_start()`：
-  `initial_vars` 必须是一个与 `initial_state_id` 兼容的完整持久变量快照。
-- `{{ machine_class_name(model) }}_cycle()`：
-  如果本轮不提交事件，应传 `NULL, 0u`。
-- `{{ machine_class_name(model) }}_vars()`：
-  返回的是只读指针；如果你需要一份可改的外部快照，请先把整个结构体拷贝出来。
-- `{{ machine_class_name(model) }}_last_error()`：
-  在任意 API 返回 `{{ machine_macro_name(model) }}_FAILURE` 后，应优先查看它。
-- `{{ machine_class_name(model) }}_dsl_source()`：
-  可用于诊断、追踪或把 canonical / normalized model export 暴露给上层工具。
-
-## Minimal Complete Flow
-
-```c
-#include "machine.h"
-#include <stdio.h>
-
-{% if abstract_ns.rows -%}
-static void generated_hook(
-    {{ machine_class_name(model) }} *machine,
-    const {{ machine_class_name(model) }}ExecutionContext *ctx,
-    void *user_data
-)
-{
-    (void)machine;
-    (void)user_data;
-    printf("hook: action=%d state=%d stage=%d\n", (int)ctx->action_id, (int)ctx->state_id, (int)ctx->action_stage_id);
-}
-
-{% endif -%}
-int main(void)
-{
-    {{ machine_class_name(model) }} machine;
-{% if abstract_ns.rows %}
-    {{ machine_class_name(model) }}Hooks hooks = {{ machine_class_name(model) | upper }}_HOOKS_INIT;
-{% endif %}
-
-    if (!{{ machine_class_name(model) }}_init(&machine)) {
-        return 1;
-    }
-{% if abstract_ns.rows %}
-    hooks.{{ abstract_ns.rows[0]['hook_name'] }} = generated_hook;
-    {{ machine_class_name(model) }}_set_hooks(&machine, &hooks, NULL);
-{% endif %}
-    if (!{{ machine_class_name(model) }}_cycle(&machine, NULL, 0u)) {
-        return 2;
-    }
-{% if event_ns.items %}
-    {
-        static const {{ machine_class_name(model) }}EventId event_ids[] = {
-            {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier }}
-        };
-        if (!{{ machine_class_name(model) }}_cycle(&machine, event_ids, 1u)) {
-            return 3;
-        }
-    }
-{% endif %}
-    printf("state id: %d\n", (int){{ machine_class_name(model) }}_current_state_id(&machine));
-    return 0;
-}
-```
-
-## 全面使用指南
-
-### 1. 冷启动
-
-```c
-{{ machine_class_name(model) }} machine;
-
-if (!{{ machine_class_name(model) }}_init(&machine)) {
-    fprintf(stderr, "init failed: %s\n", {{ machine_class_name(model) }}_last_error(&machine));
-    return 1;
-}
-```
-
-### 2. 提交事件
-
-应直接使用生成出来的事件 id，不要在运行时自己构造事件名字符串。
-
-```c
-{% if event_ns.items %}
-static const {{ machine_class_name(model) }}EventId event_ids[] = {
-    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier }}
-};
-
-{{ machine_class_name(model) }}_cycle(&machine, event_ids, 1u);
-{% else %}
-{{ machine_class_name(model) }}_cycle(&machine, NULL, 0u);
-{% endif %}
-```
-
-如果一轮里确实需要提交多个事件，也可以一次性传多个 id：
-
-```c
-{% if event_ns.items | length >= 2 %}
-static const {{ machine_class_name(model) }}EventId event_ids[] = {
-    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier }},
-    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[1].split('.') | to_c_path_identifier }}
-};
-{{ machine_class_name(model) }}_cycle(&machine, event_ids, 2u);
-{% elif event_ns.items %}
-static const {{ machine_class_name(model) }}EventId event_ids[] = {
-    {{ machine_macro_name(model) }}_EVENT_{{ event_ns.items[0].split('.') | to_c_path_identifier }}
-};
-{{ machine_class_name(model) }}_cycle(&machine, event_ids, 1u);
-{% else %}
-{{ machine_class_name(model) }}_cycle(&machine, NULL, 0u);
-{% endif %}
-```
-
-### 3. 读取变量
-
-```c
-const {{ machine_class_name(model) }}Vars *vars = {{ machine_class_name(model) }}_vars(&machine);
-{% if model.defines.values() | list %}
-{% if (model.defines.values() | list)[0].type == 'int' %}
-{{ machine_class_name(model) }}Int value = vars->{{ (model.defines.values() | list)[0].name | to_c_identifier }};
-(void)value;
-{% else %}
-double value = vars->{{ (model.defines.values() | list)[0].name | to_c_identifier }};
-(void)value;
-{% endif %}
-{% else %}
-(void)vars;
-{% endif %}
-```
-
-### 4. Hot Start
-
-hot start 的用法是“完整变量快照 + 生成状态 id”：
-
-请在目标 machine 已完成初始化、并按需安装 hook 或 event-check 后执行下面的代码。
-独立的 `default_machine` 只用于取得 DSL 默认值，不会重置目标 machine。
-`default_machine` 是完整的运行时暂存对象；若自动存储会超出栈预算，请改用静态或应用自有存储。
-并发 hot start 应各自使用暂存对象；若共享存储，则需要串行化访问。
-
-```c
-{{ machine_class_name(model) }} default_machine;
-{{ machine_class_name(model) }}Vars initial_vars;
-
-if (!{{ machine_class_name(model) }}_init(&default_machine)) {
-    fprintf(stderr, "default init failed: %s\n", {{ machine_class_name(model) }}_last_error(&default_machine));
-    return 1;
-}
-initial_vars = *{{ machine_class_name(model) }}_vars(&default_machine);
-
-/* Override initial_vars fields here when restoring a custom checkpoint. */
-
-if (!{{ machine_class_name(model) }}_hot_start(
-    &machine,
-    {{ machine_macro_name(model) }}_STATE_{{ model.root_state | state_slug }},
-    &initial_vars
-)) {
-    fprintf(stderr, "hot start failed: %s\n", {{ machine_class_name(model) }}_last_error(&machine));
-    return 2;
-}
-```
-
-### 5. 注册 Abstract Hook
-
-abstract hook 是只读扩展点。它适合做日志、指标、跟踪或外部副作用桥接，
-但不适合修改状态机持久变量。
-
-```c
-static void custom_hook(
-    {{ machine_class_name(model) }} *machine,
-    const {{ machine_class_name(model) }}ExecutionContext *ctx,
-    void *user_data
-)
-{
-    (void)machine;
-    (void)ctx;
-    (void)user_data;
-}
-
-int main(void)
-{
-    {{ machine_class_name(model) }} machine;
-    {{ machine_class_name(model) }}Hooks hooks = {{ machine_class_name(model) | upper }}_HOOKS_INIT;
-
-    {{ machine_class_name(model) }}_init(&machine);
-{% if abstract_ns.rows %}
-    hooks.{{ abstract_ns.rows[0]['hook_name'] }} = custom_hook;
-{% endif %}
-    {{ machine_class_name(model) }}_set_hooks(&machine, &hooks, NULL);
-    {{ machine_class_name(model) }}_cycle(&machine, NULL, 0u);
-    return 0;
-}
-```
-
-### 6. 查看状态和错误
-
-```c
-printf("state path: %s\n", {{ machine_class_name(model) }}_current_state_path(&machine));
-printf("state name: %s\n", {{ machine_class_name(model) }}_current_state_name(&machine));
-printf("ended: %d\n", {{ machine_class_name(model) }}_is_ended(&machine));
-printf("last error: %s\n", {{ machine_class_name(model) }}_last_error(&machine));
-```
-
-## 状态 ID
+### 状态 ID
 
 | 状态路径 | 宏 | 数值 |
 | --- | --- | ---: |
 {% for state in state_items -%}
 | `{{ state | state_path }}` | `{{ machine_macro_name(model) }}_STATE_{{ state | state_slug }}` | `{{ loop.index0 }}` |
 {% endfor %}
-
-## 事件 ID
+### 事件 ID
 
 {% if event_ns.items %}
 | 事件路径 | 宏 | 数值 |
@@ -689,8 +473,7 @@ printf("last error: %s\n", {{ machine_class_name(model) }}_last_error(&machine))
 {% else %}
 当前状态机没有定义事件。
 {% endif %}
-
-## Action 和 Stage ID
+### 动作 ID
 
 {% if action_scan.items %}
 {% set action_doc_ns = namespace(rows=[]) -%}
@@ -707,34 +490,24 @@ printf("last error: %s\n", {{ machine_class_name(model) }}_last_error(&machine))
 {% else %}
 该状态机没有定义 lifecycle action。
 {% endif %}
+### 生命周期阶段 ID
 
-| Stage | Macro | Value |
+| 阶段 | 宏 | 值 |
 | --- | --- | ---: |
 | `enter` | `{{ machine_macro_name(model) }}_STAGE_ENTER` | `0` |
 | `during` | `{{ machine_macro_name(model) }}_STAGE_DURING` | `1` |
 | `exit` | `{{ machine_macro_name(model) }}_STAGE_EXIT` | `2` |
 
+只有这些表里的 canonical 宏s 是稳定保证的 public contract。如果 header 同时为简单且不冲突的路径生成较短 compatibility alias，应把它们视为可选便利名：一旦 alias 会碰撞 `..._STATE_COUNT`、`..._EVENT_COUNT`、`..._ACTION_COUNT`、invalid-id sentinel、stage 宏或 canonical path-boundary-safe 标识等保留 public 宏，模板会故意省略它。
 
-只有这些表里的 canonical macros 是稳定保证的 public contract。如果 header 同时为简单且不冲突的路径生成较短 compatibility alias，应把它们视为可选便利名：一旦 alias 会碰撞 `..._STATE_COUNT`、`..._EVENT_COUNT`、`..._ACTION_COUNT`、invalid-id sentinel、stage macro 或 canonical path-boundary-safe id 等保留 public macro，模板会故意省略它。
+### 规范化模型文本
 
-## 性能建议
+`{{ machine_class_name(model) }}_dsl_source()` 返回规范化模型导出，由已解析模型生成 DSL；格式、注释和空行可能与原始文件不同，用于诊断和追溯生成运行时对应的模型语义。
 
-- 直接使用生成出来的事件 id 宏，不要在应用层重新引入字符串事件解析。
-- 对高频事件路径，尽量复用 `static const {{ machine_class_name(model) }}EventId[]`
-  数组，而不是每个 cycle 临时重建。
-- 无事件 cycle 直接传 `NULL, 0u`，不要额外构造空数组。
-- 性能关键路径上尽量少装 hook；已安装 hook 会引入额外回调成本。
-- 把生成运行时当作可复用的有状态基础设施：初始化一次，循环驱动很多次，
-  避免无意义的 create/destroy 抖动。
-- 生产构建建议至少启用 `-O2` 或 `-O3`，通常也应配合 `-DNDEBUG`。
-- 如果工具链和构建策略允许，`-flto` 往往还能进一步帮助编译器优化。
-- 如果你是在恢复已知检查点，优先考虑 hot start，而不是在外部重放大量普通 cycle。
-- 不要直接修改 `stack`、`stack_size`、`hooks`、`last_error` 等运行时内部字段；
-  通过公开 API 使用它们，才能保持生成运行时的优化假设成立。
+规范化导出会包含模型文档块。不要在 FCSTM 文档中写入密码、token、私钥或其他秘密，因为这些文本会进入生成物。
 
-## 兼容性说明
-
-- 生成运行时的目标是同时兼容 C99 以及 C++98 或更高版本。
-- 模板回归检查会同时用 C 编译器和 C++ 编译器编译代表性的生成产物。
-- 模板回归检查还会运行若干代表性的 C++ harness，覆盖基础行为、hot start、
-  回滚行为、关键字安全标识符以及 abstract hook 挂载。
+{% set canonical_model = model.to_ast_node() | string -%}
+{% set canonical_fence = canonical_model | markdown_fence -%}
+{{ canonical_fence }}fcstm
+{{ canonical_model }}
+{{ canonical_fence }}

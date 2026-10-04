@@ -166,14 +166,14 @@ static void install_event_checks(void)
 {% endfor %}    {{ context.machine_class_name }}_set_event_checks(&machine, &event_checks, NULL);
 }
 
-static int run_cycle(const {{ context.machine_class_name }}EventId *events, size_t event_count)
+static int run_cycle(const {{ context.machine_class_name }}EventId *events, size_t event_count, const {{ context.machine_class_name }}Inputs *inputs)
 {
     size_t i;
     active_event_count = event_count;
     for (i = 0u; i < event_count; ++i) {
         active_events[i] = events[i];
     }
-    return {{ context.machine_class_name }}_cycle(&machine);
+    return {{ context.machine_class_name }}_cycle_with_inputs(&machine, inputs);
 }
 
 static void write_observation(FILE *out, int step_index, int cycle_index, const char **event_names, size_t event_count, int api_return, const char *last_error)
@@ -236,6 +236,7 @@ static void write_initial_error(FILE *out, const char *last_error)
 int main(int argc, char **argv)
 {
     FILE *out;
+    {{ context.machine_class_name }}InitOptions options;
     int api_return;
     size_t cycle_iter;
     const char *last_error;
@@ -247,7 +248,10 @@ int main(int argc, char **argv)
         return 2;
     }
     memset(&machine, 0, sizeof(machine));
-{% if not context.initial %}    if (!{{ context.machine_class_name }}_init(&machine)) {
+    memset(&options, 0, sizeof(options));
+{% for storage in ['vars', 'parameters'] %}{% for assignment in context.configuration.get(storage, []) %}    options.{{ storage }}.{{ assignment.field }} = {{ assignment.value }};
+    options.{{ storage }}_present.{{ assignment.field }} = 1;
+{% endfor %}{% endfor %}{% if not context.initial %}    if (!{{ context.machine_class_name }}_init_with_options(&machine, &options)) {
 {% if context.initial_expect %}        write_initial_error(out, {{ context.machine_class_name }}_last_error(&machine));
         fclose(out);
         return 0;
@@ -266,7 +270,7 @@ int main(int argc, char **argv)
         {{ context.machine_class_name }}Vars initial_vars;
         memset(&initial_vars, 0, sizeof(initial_vars));
 {% for assignment in context.initial.assignments %}        initial_vars.{{ assignment.field }} = {{ assignment.value }};
-{% endfor %}        if (!{{ context.machine_class_name }}_hot_start(&machine, {{ context.machine_macro_name }}_{{ context.initial.state_macro }}, &initial_vars)) {
+{% endfor %}        if (!{{ context.machine_class_name }}_hot_start_with_parameters(&machine, {{ context.machine_macro_name }}_{{ context.initial.state_macro }}, &initial_vars, &options.parameters)) {
 {% if context.initial_expect %}            write_initial_error(out, {{ context.machine_class_name }}_last_error(&machine));
             fclose(out);
             return 0;
@@ -287,6 +291,10 @@ int main(int argc, char **argv)
     return 0;
 {% endif %}
 {% for step in context.steps %}    {
+        {{ context.machine_class_name }}Inputs inputs;
+        memset(&inputs, 0, sizeof(inputs));
+{% for assignment in step.inputs %}        inputs.{{ assignment.field }} = {{ assignment.value }};
+{% endfor %}
 {% if step.events %}        const char *event_names[] = {
 {% for event in step.events %}            {{ event.path | tojson }},
 {% endfor %}        };
@@ -301,8 +309,8 @@ int main(int argc, char **argv)
 {% endif %}        api_return = 1;
         last_error = NULL;
         for (cycle_iter = 0u; cycle_iter < {{ step.cycle_count }}u; ++cycle_iter) {
-{% if step.events %}            api_return = run_cycle(event_ids, {{ step.events | length }}u);
-{% else %}            api_return = run_cycle(NULL, 0u);
+{% if step.events %}            api_return = run_cycle(event_ids, {{ step.events | length }}u, &inputs);
+{% else %}            api_return = run_cycle(NULL, 0u, &inputs);
 {% endif %}            if (!api_return) {
                 last_error = {{ context.machine_class_name }}_last_error(&machine);
                 break;

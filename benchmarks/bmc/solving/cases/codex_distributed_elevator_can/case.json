@@ -1,0 +1,44 @@
+{
+  "name": "codex_distributed_elevator_can",
+  "source": {
+    "kind": "llm_eval",
+    "path": "llm_eval/outputs/codex/distributed_elevator_can/model.fcstm",
+    "provider": "codex",
+    "scenario": "distributed_elevator_can"
+  },
+  "role": "llm_generated",
+  "why": "LLM-generated model from the evaluation corpus; the population the benchmark is for.",
+  "model": "model.fcstm",
+  "queries": [
+    {
+      "file": "reach.fbmcq",
+      "kind": "reach",
+      "expected": {
+        "status": "sat",
+        "property_satisfied": true,
+        "outcome": "witness_found"
+      },
+      "why": "can the DOWN leaf be reached from any initial values"
+    },
+    {
+      "file": "forbid.fbmcq",
+      "kind": "forbid",
+      "expected": {
+        "status": "unsat",
+        "property_satisfied": true,
+        "outcome": "property_satisfied"
+      },
+      "why": "current_floor must never go negative"
+    },
+    {
+      "file": "invariant.fbmcq",
+      "kind": "invariant",
+      "expected": {
+        "status": "unsat",
+        "property_satisfied": true,
+        "outcome": "property_satisfied"
+      },
+      "why": "does current_floor stay within its relaxed initial range"
+    }
+  ]
+}

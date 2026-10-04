@@ -1,0 +1,31 @@
+title: An evented owner initial keeps waiting for its event and never replaces a restore
+origin:
+  files:
+  - test/model/test_history_lowering.py
+  notes:
+  - Lowering splits the evented initial through a generated gate pseudo state.
+categories:
+- runtime
+- template_alignment
+- history
+steps:
+- cycle: []
+  expect:
+    state: R.Off
+- cycle: R.Off.Fresh
+  expect:
+    state: R.Off
+- cycle:
+  - R.Off.Fresh
+  - R.O.Kick
+  expect:
+    state: R.O.A
+- cycle: R.O.A.Next
+  expect:
+    state: R.O.B
+- cycle: R.O.Stop
+  expect:
+    state: R.Off
+- cycle: R.Off.Resume
+  expect:
+    state: R.O.B

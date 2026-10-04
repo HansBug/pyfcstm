@@ -246,3 +246,115 @@ class TestCRuntimeRendering:
 
         assert "if ((scope->divisor) == 0)" in body
         assert "((double)(scope->counter)) / (scope->divisor)" in body
+
+
+@pytest.mark.unittest
+class TestCRuntimeVariableRoles:
+    @pytest.fixture
+    def role_model(self):
+        return _model_from_dsl("""
+            input int signal;
+            param int gain = 2;
+            control int count = 0;
+            output int result = 0;
+            state Root { state Ready; [*] -> Ready; }
+        """)
+
+    def test_action_reads_input_and_parameter_through_getters(self, role_model):
+        statements = parse_with_grammar_entry(
+            "count = count + 1; result = signal * gain + count;",
+            entry_name="operational_statement_set",
+        )
+        body = render_c_action_body(
+            statements, role_model.defines, "RootMachine", "ROOT_MACHINE"
+        )
+        assert "scope->count = ((scope->count) + (1));" in body
+        assert "scope->result = " in body
+        assert "RootMachine_get_input_signal(machine)" in body
+        assert "RootMachine_get_param_gain(machine)" in body
+        assert "scope->signal" not in body
+        assert "scope->gain" not in body
+
+    def test_guard_and_division_checks_use_frozen_input(self, role_model):
+        expr = parse_with_grammar_entry("gain / signal > count", entry_name="cond_expression")
+        body = render_c_condition_body(
+            expr, role_model.defines, "RootMachine", "ROOT_MACHINE", "guard"
+        )
+        assert "RootMachine_get_input_signal(machine)" in body
+        assert "RootMachine_get_param_gain(machine)" in body
+        assert "scope->count" in body
+        assert "scope->signal" not in body
+        assert "scope->gain" not in body
+
+    def test_persistent_reset_excludes_inputs_and_parameters(self, role_model):
+        body = render_c_reset_vars_body(
+            role_model.defines, "RootMachine", "ROOT_MACHINE"
+        )
+        assert "scope->count = 0;" in body
+        assert "scope->result = 0;" in body
+        assert "signal" not in body
+        assert "gain" not in body
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("parameters", [False, True], ids=["persistent", "parameters"])
+def test_initializer_options_skip_defaults_in_the_selected_storage(parameters):
+    model = _model_from_dsl("""
+        input int signal;
+        param int gain = 2.0;
+        control int count = 1 << 2.0;
+        output float result = 0.5;
+        state Root;
+    """)
+    body = render_c_reset_vars_body(
+        model.defines, "RootMachine", "ROOT_MACHINE",
+        parameters=parameters, initial_options=True,
+    )
+    if parameters:
+        assert "options->parameters_present.gain" in body
+        assert "scope->gain = options->parameters.gain;" in body
+        assert "non-integer float from variable 'gain' initializer" in body
+        assert "scope->count" not in body
+        assert "scope->result" not in body
+    else:
+        assert "options->vars_present.count" in body
+        assert "scope->count = options->vars.count;" in body
+        assert "unsupported operand type(s) for <<" in body
+        assert "scope->result = 0.5;" in body
+        assert "scope->gain" not in body
+    assert "scope->signal" not in body
+    assert body.rstrip().endswith("return ROOT_MACHINE_SUCCESS;")
+
+
+@pytest.mark.unittest
+def test_float_input_writeback_checks_range_before_integer_cast():
+    model = _model_from_dsl("""
+        input float signal;
+        param float gain = 2.0;
+        output int result = 0;
+        state Root;
+    """)
+    statements = parse_with_grammar_entry(
+        "result = signal * gain;", entry_name="operational_statement_set"
+    )
+    body = render_c_action_body(statements, model.defines, "RootMachine", "ROOT_MACHINE")
+    assert "RootMachine_get_input_signal(machine)" in body
+    assert "RootMachine_get_param_gain(machine)" in body
+    assert "outside signed 64-bit range" in body
+    assert body.index("9223372036854775808.0") < body.index("(PYFCSTM_GENERATED_INT64)")
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("name, expected", [
+    ("gain", "gain"),
+    ("a_b", "a_b"),
+    ("a__b", "v_p4_az00005Fz00005Fb"),
+    ("gain_", "v_p5_gainz00005F"),
+    ("_x", "v_p2_z00005Fx"),
+    ("class", "v_p5_class"),
+    ("class_", "class_"),
+    ("v_p5_class", "v_p10_vz00005Fp5z00005Fclass"),
+])
+def test_readonly_value_identifiers_preserve_distinct_dsl_names(name, expected):
+    from pyfcstm.render.c_runtime import readonly_value_identifier
+    assert readonly_value_identifier(name) == expected

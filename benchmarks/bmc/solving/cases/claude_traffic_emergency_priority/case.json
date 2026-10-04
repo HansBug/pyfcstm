@@ -1,0 +1,44 @@
+{
+  "name": "claude_traffic_emergency_priority",
+  "source": {
+    "kind": "llm_eval",
+    "path": "llm_eval/outputs/claude/traffic_emergency_priority/model.fcstm",
+    "provider": "claude",
+    "scenario": "traffic_emergency_priority"
+  },
+  "role": "llm_generated",
+  "why": "LLM-generated model from the evaluation corpus; the population the benchmark is for.",
+  "model": "model.fcstm",
+  "queries": [
+    {
+      "file": "reach.fbmcq",
+      "kind": "reach",
+      "expected": {
+        "status": "sat",
+        "property_satisfied": true,
+        "outcome": "witness_found"
+      },
+      "why": "can the EmergencyWest leaf be reached from any initial values"
+    },
+    {
+      "file": "forbid.fbmcq",
+      "kind": "forbid",
+      "expected": {
+        "status": "unsat",
+        "property_satisfied": true,
+        "outcome": "property_satisfied"
+      },
+      "why": "cars_north must never go negative"
+    },
+    {
+      "file": "invariant.fbmcq",
+      "kind": "invariant",
+      "expected": {
+        "status": "unsat",
+        "property_satisfied": true,
+        "outcome": "property_satisfied"
+      },
+      "why": "does cars_north stay within its relaxed initial range"
+    }
+  ]
+}

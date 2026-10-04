@@ -12,6 +12,7 @@ from pyfcstm.bmc import (
     FrameRef,
     InvalidBmcDomain,
     StepRef,
+    VarDomainEntry,
     build_bmc_domain,
 )
 from pyfcstm.model import load_state_machine_from_text
@@ -1006,3 +1007,31 @@ def test_domain_reports_inconsistent_event_owners_and_missing_input_slots():
         build_bmc_domain(
             load_state_machine_from_text("def int x = 0; state Root;"), bound=1
         ).variable_by_id(999)
+
+
+@pytest.mark.unittest
+def test_var_domain_entry_carries_variable_role() -> None:
+    """Variable entries expose the declared role and reject foreign values."""
+    from pyfcstm.dsl.role import VariableRole
+
+    entry = VarDomainEntry(0, "sensor", "int", VariableRole.INPUT)
+    assert entry.to_canonical()["role"] == "input"
+    with pytest.raises(InvalidBmcDomain):
+        VarDomainEntry(0, "sensor", "int", "input")
+
+
+@pytest.mark.unittest
+def test_domain_role_name_helpers_follow_declaration_order() -> None:
+    """Domain groups inputs, parameters, and persistent variables."""
+    from pyfcstm.model import load_state_machine_from_text
+
+    model = load_state_machine_from_text(
+        "input int sensor; param int gain = 1; def int x = 0; "
+        "output int y = 0; input float level; state Root;"
+    )
+    domain = build_bmc_domain(model, 1)
+    assert domain.input_names == ("sensor", "level")
+    assert domain.parameter_names == ("gain",)
+    assert domain.persistent_variable_names == ("x", "y")
+    assert not hasattr(domain, "dynamic_input_names")
+    assert not hasattr(domain, "static_input_names")

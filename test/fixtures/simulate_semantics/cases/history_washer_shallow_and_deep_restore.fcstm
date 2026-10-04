@@ -1,0 +1,31 @@
+def int program_entries = 0;
+def int fill_entries = 0;
+def int agitate_entries = 0;
+def int wash_initials = 0;
+
+state Washer {
+    state Paused;
+    state Program {
+        enter { program_entries = program_entries + 1; }
+        state Idle;
+        state Wash {
+            state Fill {
+                enter { fill_entries = fill_entries + 1; }
+            }
+            state Agitate {
+                enter { agitate_entries = agitate_entries + 1; }
+            }
+            [*] -> Fill effect { wash_initials = wash_initials + 1; }
+            Fill -> Agitate :: Filled;
+        }
+        [*] -> Idle;
+        [H] -> Idle;
+        [H*] -> Wash.Fill;
+        Idle -> Wash :: Start;
+    }
+    [*] -> Paused;
+    Paused -> Program :: Fresh;
+    Paused -> Program.[H] :: Shallow;
+    Paused -> Program.[H*] :: Deep;
+    !Program -> Paused :: Pause;
+}

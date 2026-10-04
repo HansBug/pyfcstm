@@ -1,0 +1,3054 @@
+{
+  "claude_vtol_mission_supervision": {
+    "queries": {
+      "forbid": {
+        "arms": {
+          "baseline-0cc43647": {
+            "api_total_ms": {
+              "max": 313.8441708870232,
+              "p50": 312.3118029907346,
+              "p95": 313.8441708870232
+            },
+            "build_ms": {
+              "max": 254.81440406292677,
+              "p50": 252.780606970191,
+              "p95": 254.81440406292677
+            },
+            "build_solve_ms": {
+              "max": 272.70843321457505,
+              "p50": 270.79827478155494,
+              "p95": 272.70843321457505
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2047,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 92401664,
+            "pipeline_ms": {
+              "max": 272.70843321457505,
+              "p50": 270.79827478155494,
+              "p95": 272.70843321457505
+            },
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 18.017667811363935,
+              "p50": 17.713765148073435,
+              "p95": 18.017667811363935
+            },
+            "status": "unsat",
+            "suffix_replay_ok": null,
+            "total_elapsed_ms": {
+              "max": 17.526979092508554,
+              "p50": 17.184727359563112,
+              "p95": 17.526979092508554
+            }
+          },
+          "cone_slicing": {
+            "api_total_ms": {
+              "max": 321.94596668705344,
+              "p50": 319.18758200481534,
+              "p95": 321.94596668705344
+            },
+            "build_ms": {
+              "max": 261.966098099947,
+              "p50": 258.04172502830625,
+              "p95": 261.966098099947
+            },
+            "build_solve_ms": {
+              "max": 279.55087274312973,
+              "p50": 276.0207150131464,
+              "p95": 279.55087274312973
+            },
+            "cone_slicing": {
+              "dropped_variables": [],
+              "enabled": true,
+              "fallback": false,
+              "retained_count": 7,
+              "skipped_reason": "no_removable_variables"
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2047,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 92839936,
+            "pipeline_ms": {
+              "max": 279.55087274312973,
+              "p50": 276.0207150131464,
+              "p95": 279.55087274312973
+            },
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 18.392592668533325,
+              "p50": 17.710393760353327,
+              "p95": 18.392592668533325
+            },
+            "solver_logic": [
+              null
+            ],
+            "solver_profile": [
+              "default"
+            ],
+            "solver_statistics": {
+              "added eqs": {
+                "max": 4186,
+                "p50": 4186,
+                "p95": 4186
+              },
+              "arith eq adapter": {
+                "max": 686,
+                "p50": 686,
+                "p95": 686
+              },
+              "arith-bound-propagations-lp": {
+                "max": 463,
+                "p50": 463,
+                "p95": 463
+              },
+              "arith-conflicts": {
+                "max": 13,
+                "p50": 13,
+                "p95": 13
+              },
+              "arith-diseq": {
+                "max": 18,
+                "p50": 18,
+                "p95": 18
+              },
+              "arith-fixed-eqs": {
+                "max": 612,
+                "p50": 612,
+                "p95": 612
+              },
+              "arith-lower": {
+                "max": 876,
+                "p50": 876,
+                "p95": 876
+              },
+              "arith-make-feasible": {
+                "max": 235,
+                "p50": 235,
+                "p95": 235
+              },
+              "arith-max-columns": {
+                "max": 120,
+                "p50": 120,
+                "p95": 120
+              },
+              "arith-max-rows": {
+                "max": 49,
+                "p50": 49,
+                "p95": 49
+              },
+              "arith-upper": {
+                "max": 644,
+                "p50": 644,
+                "p95": 644
+              },
+              "binary propagations": {
+                "max": 4371,
+                "p50": 4371,
+                "p95": 4371
+              },
+              "conflicts": {
+                "max": 81,
+                "p50": 81,
+                "p95": 81
+              },
+              "decisions": {
+                "max": 457,
+                "p50": 457,
+                "p95": 457
+              },
+              "del clause": {
+                "max": 697,
+                "p50": 697,
+                "p95": 697
+              },
+              "max memory": {
+                "max": 18.76,
+                "p50": 18.76,
+                "p95": 18.76
+              },
+              "memory": {
+                "max": 18.76,
+                "p50": 18.76,
+                "p95": 18.76
+              },
+              "minimized lits": {
+                "max": 30,
+                "p50": 30,
+                "p95": 30
+              },
+              "mk bool var": {
+                "max": 2820,
+                "p50": 2820,
+                "p95": 2820
+              },
+              "mk clause": {
+                "max": 1777,
+                "p50": 1777,
+                "p95": 1777
+              },
+              "mk clause binary": {
+                "max": 2044,
+                "p50": 2044,
+                "p95": 2044
+              },
+              "num allocs": {
+                "max": 32199207,
+                "p50": 32197595,
+                "p95": 32199207
+              },
+              "num checks": {
+                "max": 1,
+                "p50": 1,
+                "p95": 1
+              },
+              "propagations": {
+                "max": 6836,
+                "p50": 6836,
+                "p95": 6836
+              },
+              "rlimit count": {
+                "max": 59362,
+                "p50": 59362,
+                "p95": 59362
+              },
+              "time": {
+                "max": 0.007,
+                "p50": 0.006,
+                "p95": 0.007
+              }
+            },
+            "status": "unsat",
+            "suffix_replay_ok": null,
+            "total_elapsed_ms": {
+              "max": 17.90555939078331,
+              "p50": 17.104879952967167,
+              "p95": 17.90555939078331
+            }
+          },
+          "default": {
+            "api_total_ms": {
+              "max": 322.217115201056,
+              "p50": 313.57550574466586,
+              "p95": 322.217115201056
+            },
+            "build_ms": {
+              "max": 258.8785709813237,
+              "p50": 253.4176972694695,
+              "p95": 258.8785709813237
+            },
+            "build_solve_ms": {
+              "max": 277.3167761042714,
+              "p50": 271.8451926484704,
+              "p95": 277.3167761042714
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2047,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 92585984,
+            "pipeline_ms": {
+              "max": 277.3167761042714,
+              "p50": 271.8451926484704,
+              "p95": 277.3167761042714
+            },
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 18.726245034486055,
+              "p50": 17.905761022120714,
+              "p95": 18.726245034486055
+            },
+            "solver_logic": [
+              null
+            ],
+            "solver_profile": [
+              "default"
+            ],
+            "solver_statistics": {
+              "added eqs": {
+                "max": 4186,
+                "p50": 4186,
+                "p95": 4186
+              },
+              "arith eq adapter": {
+                "max": 686,
+                "p50": 686,
+                "p95": 686
+              },
+              "arith-bound-propagations-lp": {
+                "max": 463,
+                "p50": 463,
+                "p95": 463
+              },
+              "arith-conflicts": {
+                "max": 13,
+                "p50": 13,
+                "p95": 13
+              },
+              "arith-diseq": {
+                "max": 18,
+                "p50": 18,
+                "p95": 18
+              },
+              "arith-fixed-eqs": {
+                "max": 612,
+                "p50": 612,
+                "p95": 612
+              },
+              "arith-lower": {
+                "max": 876,
+                "p50": 876,
+                "p95": 876
+              },
+              "arith-make-feasible": {
+                "max": 235,
+                "p50": 235,
+                "p95": 235
+              },
+              "arith-max-columns": {
+                "max": 120,
+                "p50": 120,
+                "p95": 120
+              },
+              "arith-max-rows": {
+                "max": 49,
+                "p50": 49,
+                "p95": 49
+              },
+              "arith-upper": {
+                "max": 644,
+                "p50": 644,
+                "p95": 644
+              },
+              "binary propagations": {
+                "max": 4371,
+                "p50": 4371,
+                "p95": 4371
+              },
+              "conflicts": {
+                "max": 81,
+                "p50": 81,
+                "p95": 81
+              },
+              "decisions": {
+                "max": 457,
+                "p50": 457,
+                "p95": 457
+              },
+              "del clause": {
+                "max": 697,
+                "p50": 697,
+                "p95": 697
+              },
+              "max memory": {
+                "max": 18.76,
+                "p50": 18.76,
+                "p95": 18.76
+              },
+              "memory": {
+                "max": 18.76,
+                "p50": 18.76,
+                "p95": 18.76
+              },
+              "minimized lits": {
+                "max": 30,
+                "p50": 30,
+                "p95": 30
+              },
+              "mk bool var": {
+                "max": 2820,
+                "p50": 2820,
+                "p95": 2820
+              },
+              "mk clause": {
+                "max": 1777,
+                "p50": 1777,
+                "p95": 1777
+              },
+              "mk clause binary": {
+                "max": 2044,
+                "p50": 2044,
+                "p95": 2044
+              },
+              "num allocs": {
+                "max": 32194712,
+                "p50": 32193272,
+                "p95": 32194712
+              },
+              "num checks": {
+                "max": 1,
+                "p50": 1,
+                "p95": 1
+              },
+              "propagations": {
+                "max": 6836,
+                "p50": 6836,
+                "p95": 6836
+              },
+              "rlimit count": {
+                "max": 59362,
+                "p50": 59362,
+                "p95": 59362
+              },
+              "time": {
+                "max": 0.006,
+                "p50": 0.006,
+                "p95": 0.006
+              }
+            },
+            "status": "unsat",
+            "suffix_replay_ok": null,
+            "total_elapsed_ms": {
+              "max": 17.887833062559366,
+              "p50": 17.32585486024618,
+              "p95": 17.887833062559366
+            }
+          },
+          "logic": {
+            "api_total_ms": {
+              "max": 314.0148217789829,
+              "p50": 312.28169426321983,
+              "p95": 314.0148217789829
+            },
+            "build_ms": {
+              "max": 260.3912279009819,
+              "p50": 258.9855450205505,
+              "p95": 260.3912279009819
+            },
+            "build_solve_ms": {
+              "max": 272.70487789064646,
+              "p50": 271.25574136152864,
+              "p95": 272.70487789064646
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2047,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 92475392,
+            "pipeline_ms": {
+              "max": 272.70487789064646,
+              "p50": 271.25574136152864,
+              "p95": 272.70487789064646
+            },
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 12.37985584884882,
+              "p50": 12.270196340978146,
+              "p95": 12.37985584884882
+            },
+            "solver_logic": [
+              "QF_LIA"
+            ],
+            "solver_profile": [
+              "logic"
+            ],
+            "solver_statistics": {
+              "added eqs": {
+                "max": 259,
+                "p50": 259,
+                "p95": 259
+              },
+              "arith-bound-propagations-lp": {
+                "max": 490,
+                "p50": 490,
+                "p95": 490
+              },
+              "arith-conflicts": {
+                "max": 3,
+                "p50": 3,
+                "p95": 3
+              },
+              "arith-fixed-eqs": {
+                "max": 319,
+                "p50": 319,
+                "p95": 319
+              },
+              "arith-lower": {
+                "max": 1217,
+                "p50": 1217,
+                "p95": 1217
+              },
+              "arith-make-feasible": {
+                "max": 198,
+                "p50": 198,
+                "p95": 198
+              },
+              "arith-max-columns": {
+                "max": 162,
+                "p50": 162,
+                "p95": 162
+              },
+              "arith-max-rows": {
+                "max": 70,
+                "p50": 70,
+                "p95": 70
+              },
+              "arith-offset-eqs": {
+                "max": 13,
+                "p50": 13,
+                "p95": 13
+              },
+              "arith-upper": {
+                "max": 1793,
+                "p50": 1793,
+                "p95": 1793
+              },
+              "binary propagations": {
+                "max": 5769,
+                "p50": 5769,
+                "p95": 5769
+              },
+              "conflicts": {
+                "max": 41,
+                "p50": 41,
+                "p95": 41
+              },
+              "decisions": {
+                "max": 117,
+                "p50": 117,
+                "p95": 117
+              },
+              "max memory": {
+                "max": 19.49,
+                "p50": 19.49,
+                "p95": 19.49
+              },
+              "memory": {
+                "max": 19.49,
+                "p50": 19.49,
+                "p95": 19.49
+              },
+              "minimized lits": {
+                "max": 28,
+                "p50": 28,
+                "p95": 28
+              },
+              "mk bool var": {
+                "max": 1334,
+                "p50": 1334,
+                "p95": 1334
+              },
+              "mk clause": {
+                "max": 1266,
+                "p50": 1266,
+                "p95": 1266
+              },
+              "mk clause binary": {
+                "max": 4532,
+                "p50": 4532,
+                "p95": 4532
+              },
+              "num allocs": {
+                "max": 33478187,
+                "p50": 33478062,
+                "p95": 33478187
+              },
+              "num checks": {
+                "max": 1,
+                "p50": 1,
+                "p95": 1
+              },
+              "propagations": {
+                "max": 7943,
+                "p50": 7943,
+                "p95": 7943
+              },
+              "rlimit count": {
+                "max": 57045,
+                "p50": 57045,
+                "p95": 57045
+              },
+              "time": {
+                "max": 0.002,
+                "p50": 0.002,
+                "p95": 0.002
+              }
+            },
+            "status": "unsat",
+            "suffix_replay_ok": null,
+            "total_elapsed_ms": {
+              "max": 11.564924847334623,
+              "p50": 11.195428669452667,
+              "p95": 11.564924847334623
+            }
+          },
+          "slicing-2db08911": {
+            "api_total_ms": {
+              "max": 321.3708749972284,
+              "p50": 319.9538281187415,
+              "p95": 321.3708749972284
+            },
+            "build_ms": {
+              "max": 261.04865223169327,
+              "p50": 259.98358707875013,
+              "p95": 261.04865223169327
+            },
+            "build_solve_ms": {
+              "max": 279.77516083046794,
+              "p50": 277.9132011346519,
+              "p95": 279.77516083046794
+            },
+            "cone_slicing": {
+              "dropped_variables": [],
+              "enabled": true,
+              "fallback": false,
+              "retained_count": 7,
+              "skipped_reason": "no_removable_variables"
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2047,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 92487680,
+            "pipeline_ms": {
+              "max": 279.77516083046794,
+              "p50": 277.9132011346519,
+              "p95": 279.77516083046794
+            },
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 19.033890683203936,
+              "p50": 17.929614055901766,
+              "p95": 19.033890683203936
+            },
+            "solver_logic": [
+              null
+            ],
+            "solver_profile": [
+              "default"
+            ],
+            "solver_statistics": {
+              "added eqs": {
+                "max": 4186,
+                "p50": 4186,
+                "p95": 4186
+              },
+              "arith eq adapter": {
+                "max": 686,
+                "p50": 686,
+                "p95": 686
+              },
+              "arith-bound-propagations-lp": {
+                "max": 463,
+                "p50": 463,
+                "p95": 463
+              },
+              "arith-conflicts": {
+                "max": 13,
+                "p50": 13,
+                "p95": 13
+              },
+              "arith-diseq": {
+                "max": 18,
+                "p50": 18,
+                "p95": 18
+              },
+              "arith-fixed-eqs": {
+                "max": 612,
+                "p50": 612,
+                "p95": 612
+              },
+              "arith-lower": {
+                "max": 876,
+                "p50": 876,
+                "p95": 876
+              },
+              "arith-make-feasible": {
+                "max": 235,
+                "p50": 235,
+                "p95": 235
+              },
+              "arith-max-columns": {
+                "max": 120,
+                "p50": 120,
+                "p95": 120
+              },
+              "arith-max-rows": {
+                "max": 49,
+                "p50": 49,
+                "p95": 49
+              },
+              "arith-upper": {
+                "max": 644,
+                "p50": 644,
+                "p95": 644
+              },
+              "binary propagations": {
+                "max": 4371,
+                "p50": 4371,
+                "p95": 4371
+              },
+              "conflicts": {
+                "max": 81,
+                "p50": 81,
+                "p95": 81
+              },
+              "decisions": {
+                "max": 457,
+                "p50": 457,
+                "p95": 457
+              },
+              "del clause": {
+                "max": 697,
+                "p50": 697,
+                "p95": 697
+              },
+              "max memory": {
+                "max": 18.76,
+                "p50": 18.76,
+                "p95": 18.76
+              },
+              "memory": {
+                "max": 18.76,
+                "p50": 18.76,
+                "p95": 18.76
+              },
+              "minimized lits": {
+                "max": 30,
+                "p50": 30,
+                "p95": 30
+              },
+              "mk bool var": {
+                "max": 2820,
+                "p50": 2820,
+                "p95": 2820
+              },
+              "mk clause": {
+                "max": 1777,
+                "p50": 1777,
+                "p95": 1777
+              },
+              "mk clause binary": {
+                "max": 2044,
+                "p50": 2044,
+                "p95": 2044
+              },
+              "num allocs": {
+                "max": 32193907,
+                "p50": 32193907,
+                "p95": 32193907
+              },
+              "num checks": {
+                "max": 1,
+                "p50": 1,
+                "p95": 1
+              },
+              "propagations": {
+                "max": 6836,
+                "p50": 6836,
+                "p95": 6836
+              },
+              "rlimit count": {
+                "max": 59362,
+                "p50": 59362,
+                "p95": 59362
+              },
+              "time": {
+                "max": 0.007,
+                "p50": 0.006,
+                "p95": 0.007
+              }
+            },
+            "status": "unsat",
+            "suffix_replay_ok": null,
+            "total_elapsed_ms": {
+              "max": 18.55578599497676,
+              "p50": 17.39169517531991,
+              "p95": 18.55578599497676
+            }
+          },
+          "tactic": {
+            "api_total_ms": {
+              "max": 355.4817857220769,
+              "p50": 319.3892212584615,
+              "p95": 355.4817857220769
+            },
+            "build_ms": {
+              "max": 293.0612899363041,
+              "p50": 263.76208662986755,
+              "p95": 293.0612899363041
+            },
+            "build_solve_ms": {
+              "max": 314.2131478525698,
+              "p50": 277.98589086160064,
+              "p95": 314.2131478525698
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2047,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 90877952,
+            "pipeline_ms": {
+              "max": 314.2131478525698,
+              "p50": 277.98589086160064,
+              "p95": 314.2131478525698
+            },
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 21.151857916265726,
+              "p50": 14.519019983708858,
+              "p95": 21.151857916265726
+            },
+            "solver_logic": [
+              null
+            ],
+            "solver_profile": [
+              "tactic"
+            ],
+            "solver_statistics": {
+              "arith assert lower": {
+                "max": 1389,
+                "p50": 1389,
+                "p95": 1389
+              },
+              "arith assert upper": {
+                "max": 927,
+                "p50": 927,
+                "p95": 927
+              },
+              "arith bound prop": {
+                "max": 84,
+                "p50": 84,
+                "p95": 84
+              },
+              "arith conflicts": {
+                "max": 2,
+                "p50": 2,
+                "p95": 2
+              },
+              "arith num rows": {
+                "max": 56,
+                "p50": 56,
+                "p95": 56
+              },
+              "arith pivots": {
+                "max": 25,
+                "p50": 25,
+                "p95": 25
+              },
+              "arith row summations": {
+                "max": 31,
+                "p50": 31,
+                "p95": 31
+              },
+              "arith tableau max columns": {
+                "max": 128,
+                "p50": 128,
+                "p95": 128
+              },
+              "arith tableau max rows": {
+                "max": 56,
+                "p50": 56,
+                "p95": 56
+              },
+              "binary propagations": {
+                "max": 5981,
+                "p50": 5981,
+                "p95": 5981
+              },
+              "conflicts": {
+                "max": 56,
+                "p50": 56,
+                "p95": 56
+              },
+              "decisions": {
+                "max": 201,
+                "p50": 201,
+                "p95": 201
+              },
+              "del clause": {
+                "max": 2,
+                "p50": 2,
+                "p95": 2
+              },
+              "max memory": {
+                "max": 18.07,
+                "p50": 18.07,
+                "p95": 18.07
+              },
+              "memory": {
+                "max": 17.27,
+                "p50": 17.27,
+                "p95": 17.27
+              },
+              "minimized lits": {
+                "max": 56,
+                "p50": 56,
+                "p95": 56
+              },
+              "mk bool var": {
+                "max": 724,
+                "p50": 724,
+                "p95": 724
+              },
+              "mk clause": {
+                "max": 593,
+                "p50": 593,
+                "p95": 593
+              },
+              "mk clause binary": {
+                "max": 2528,
+                "p50": 2528,
+                "p95": 2528
+              },
+              "num allocs": {
+                "max": 32507298,
+                "p50": 32495033,
+                "p95": 32507298
+              },
+              "num checks": {
+                "max": 1,
+                "p50": 1,
+                "p95": 1
+              },
+              "propagations": {
+                "max": 6889,
+                "p50": 6889,
+                "p95": 6889
+              },
+              "rlimit count": {
+                "max": 55898,
+                "p50": 55898,
+                "p95": 55898
+              },
+              "solve-eqs-elim-vars": {
+                "max": 244,
+                "p50": 244,
+                "p95": 244
+              },
+              "solve-eqs-steps": {
+                "max": 1612,
+                "p50": 1612,
+                "p95": 1612
+              },
+              "time": {
+                "max": 0.01,
+                "p50": 0.006,
+                "p95": 0.01
+              }
+            },
+            "status": "unsat",
+            "suffix_replay_ok": null,
+            "total_elapsed_ms": {
+              "max": 21.038006991147995,
+              "p50": 14.419077895581722,
+              "p95": 21.038006991147995
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "forbid"
+      },
+      "invariant": {
+        "arms": {
+          "baseline-0cc43647": {
+            "api_total_ms": {
+              "max": 324.750579893589,
+              "p50": 322.82795011997223,
+              "p95": 324.750579893589
+            },
+            "build_ms": {
+              "max": 262.4972239136696,
+              "p50": 261.3431550562382,
+              "p95": 262.4972239136696
+            },
+            "build_solve_ms": {
+              "max": 281.67451173067093,
+              "p50": 281.1482176184654,
+              "p95": 281.67451173067093
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2059,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 92835840,
+            "pipeline_ms": {
+              "max": 281.67451173067093,
+              "p50": 281.1482176184654,
+              "p95": 281.67451173067093
+            },
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 20.297947339713573,
+              "p50": 19.421076867729425,
+              "p95": 20.297947339713573
+            },
+            "status": "unsat",
+            "suffix_replay_ok": null,
+            "total_elapsed_ms": {
+              "max": 19.814026076346636,
+              "p50": 18.921824172139168,
+              "p95": 19.814026076346636
+            }
+          },
+          "cone_slicing": {
+            "api_total_ms": {
+              "max": 322.6650469005108,
+              "p50": 320.17512805759907,
+              "p95": 322.6650469005108
+            },
+            "build_ms": {
+              "max": 261.1435172148049,
+              "p50": 259.3814181163907,
+              "p95": 261.1435172148049
+            },
+            "build_solve_ms": {
+              "max": 280.8467191644013,
+              "p50": 278.81816774606705,
+              "p95": 280.8467191644013
+            },
+            "cone_slicing": {
+              "dropped_variables": [],
+              "enabled": true,
+              "fallback": false,
+              "retained_count": 7,
+              "skipped_reason": "no_removable_variables"
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2059,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 92999680,
+            "pipeline_ms": {
+              "max": 280.8467191644013,
+              "p50": 278.81816774606705,
+              "p95": 280.8467191644013
+            },
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 19.916231743991375,
+              "p50": 19.703201949596405,
+              "p95": 19.916231743991375
+            },
+            "solver_logic": [
+              null
+            ],
+            "solver_profile": [
+              "default"
+            ],
+            "solver_statistics": {
+              "added eqs": {
+                "max": 6594,
+                "p50": 6594,
+                "p95": 6594
+              },
+              "arith eq adapter": {
+                "max": 1011,
+                "p50": 1011,
+                "p95": 1011
+              },
+              "arith-bound-propagations-lp": {
+                "max": 604,
+                "p50": 604,
+                "p95": 604
+              },
+              "arith-conflicts": {
+                "max": 16,
+                "p50": 16,
+                "p95": 16
+              },
+              "arith-diseq": {
+                "max": 37,
+                "p50": 37,
+                "p95": 37
+              },
+              "arith-fixed-eqs": {
+                "max": 921,
+                "p50": 921,
+                "p95": 921
+              },
+              "arith-lower": {
+                "max": 1371,
+                "p50": 1371,
+                "p95": 1371
+              },
+              "arith-make-feasible": {
+                "max": 358,
+                "p50": 358,
+                "p95": 358
+              },
+              "arith-max-columns": {
+                "max": 122,
+                "p50": 122,
+                "p95": 122
+              },
+              "arith-max-rows": {
+                "max": 50,
+                "p50": 50,
+                "p95": 50
+              },
+              "arith-upper": {
+                "max": 976,
+                "p50": 976,
+                "p95": 976
+              },
+              "binary propagations": {
+                "max": 8115,
+                "p50": 8115,
+                "p95": 8115
+              },
+              "conflicts": {
+                "max": 115,
+                "p50": 115,
+                "p95": 115
+              },
+              "decisions": {
+                "max": 678,
+                "p50": 678,
+                "p95": 678
+              },
+              "del clause": {
+                "max": 978,
+                "p50": 978,
+                "p95": 978
+              },
+              "max memory": {
+                "max": 18.77,
+                "p50": 18.77,
+                "p95": 18.77
+              },
+              "memory": {
+                "max": 18.77,
+                "p50": 18.77,
+                "p95": 18.77
+              },
+              "minimized lits": {
+                "max": 153,
+                "p50": 153,
+                "p95": 153
+              },
+              "mk bool var": {
+                "max": 3786,
+                "p50": 3786,
+                "p95": 3786
+              },
+              "mk clause": {
+                "max": 2273,
+                "p50": 2273,
+                "p95": 2273
+              },
+              "mk clause binary": {
+                "max": 2044,
+                "p50": 2044,
+                "p95": 2044
+              },
+              "num allocs": {
+                "max": 32204966,
+                "p50": 32200504,
+                "p95": 32204966
+              },
+              "num checks": {
+                "max": 1,
+                "p50": 1,
+                "p95": 1
+              },
+              "propagations": {
+                "max": 13231,
+                "p50": 13231,
+                "p95": 13231
+              },
+              "restarts": {
+                "max": 1,
+                "p50": 1,
+                "p95": 1
+              },
+              "rlimit count": {
+                "max": 76804,
+                "p50": 76804,
+                "p95": 76804
+              },
+              "time": {
+                "max": 0.011,
+                "p50": 0.011,
+                "p95": 0.011
+              }
+            },
+            "status": "unsat",
+            "suffix_replay_ok": null,
+            "total_elapsed_ms": {
+              "max": 19.4194121286273,
+              "p50": 18.94980715587735,
+              "p95": 19.4194121286273
+            }
+          },
+          "default": {
+            "api_total_ms": {
+              "max": 323.8655827008188,
+              "p50": 318.1859119795263,
+              "p95": 323.8655827008188
+            },
+            "build_ms": {
+              "max": 263.909881003201,
+              "p50": 257.8304409980774,
+              "p95": 263.909881003201
+            },
+            "build_solve_ms": {
+              "max": 282.63341588899493,
+              "p50": 276.8798950128257,
+              "p95": 282.63341588899493
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2059,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 92651520,
+            "pipeline_ms": {
+              "max": 282.63341588899493,
+              "p50": 276.8798950128257,
+              "p95": 282.63341588899493
+            },
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 19.413043279200792,
+              "p50": 18.866324797272682,
+              "p95": 19.413043279200792
+            },
+            "solver_logic": [
+              null
+            ],
+            "solver_profile": [
+              "default"
+            ],
+            "solver_statistics": {
+              "added eqs": {
+                "max": 6594,
+                "p50": 6594,
+                "p95": 6594
+              },
+              "arith eq adapter": {
+                "max": 1011,
+                "p50": 1011,
+                "p95": 1011
+              },
+              "arith-bound-propagations-lp": {
+                "max": 604,
+                "p50": 604,
+                "p95": 604
+              },
+              "arith-conflicts": {
+                "max": 16,
+                "p50": 16,
+                "p95": 16
+              },
+              "arith-diseq": {
+                "max": 37,
+                "p50": 37,
+                "p95": 37
+              },
+              "arith-fixed-eqs": {
+                "max": 921,
+                "p50": 921,
+                "p95": 921
+              },
+              "arith-lower": {
+                "max": 1371,
+                "p50": 1371,
+                "p95": 1371
+              },
+              "arith-make-feasible": {
+                "max": 358,
+                "p50": 358,
+                "p95": 358
+              },
+              "arith-max-columns": {
+                "max": 122,
+                "p50": 122,
+                "p95": 122
+              },
+              "arith-max-rows": {
+                "max": 50,
+                "p50": 50,
+                "p95": 50
+              },
+              "arith-upper": {
+                "max": 976,
+                "p50": 976,
+                "p95": 976
+              },
+              "binary propagations": {
+                "max": 8115,
+                "p50": 8115,
+                "p95": 8115
+              },
+              "conflicts": {
+                "max": 115,
+                "p50": 115,
+                "p95": 115
+              },
+              "decisions": {
+                "max": 678,
+                "p50": 678,
+                "p95": 678
+              },
+              "del clause": {
+                "max": 978,
+                "p50": 978,
+                "p95": 978
+              },
+              "max memory": {
+                "max": 18.77,
+                "p50": 18.77,
+                "p95": 18.77
+              },
+              "memory": {
+                "max": 18.77,
+                "p50": 18.77,
+                "p95": 18.77
+              },
+              "minimized lits": {
+                "max": 153,
+                "p50": 153,
+                "p95": 153
+              },
+              "mk bool var": {
+                "max": 3786,
+                "p50": 3786,
+                "p95": 3786
+              },
+              "mk clause": {
+                "max": 2273,
+                "p50": 2273,
+                "p95": 2273
+              },
+              "mk clause binary": {
+                "max": 2044,
+                "p50": 2044,
+                "p95": 2044
+              },
+              "num allocs": {
+                "max": 32205846,
+                "p50": 32203632,
+                "p95": 32205846
+              },
+              "num checks": {
+                "max": 1,
+                "p50": 1,
+                "p95": 1
+              },
+              "propagations": {
+                "max": 13231,
+                "p50": 13231,
+                "p95": 13231
+              },
+              "restarts": {
+                "max": 1,
+                "p50": 1,
+                "p95": 1
+              },
+              "rlimit count": {
+                "max": 76804,
+                "p50": 76804,
+                "p95": 76804
+              },
+              "time": {
+                "max": 0.01,
+                "p50": 0.01,
+                "p95": 0.01
+              }
+            },
+            "status": "unsat",
+            "suffix_replay_ok": null,
+            "total_elapsed_ms": {
+              "max": 18.869853112846613,
+              "p50": 18.323730677366257,
+              "p95": 18.869853112846613
+            }
+          },
+          "logic": {
+            "api_total_ms": {
+              "max": 319.38015203922987,
+              "p50": 314.83308877795935,
+              "p95": 319.38015203922987
+            },
+            "build_ms": {
+              "max": 264.073867816478,
+              "p50": 260.9051610343158,
+              "p95": 264.073867816478
+            },
+            "build_solve_ms": {
+              "max": 275.85761388763785,
+              "p50": 272.4164924584329,
+              "p95": 275.85761388763785
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2059,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 93237248,
+            "pipeline_ms": {
+              "max": 275.85761388763785,
+              "p50": 272.4164924584329,
+              "p95": 275.85761388763785
+            },
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 12.42652116343379,
+              "p50": 11.78374607115984,
+              "p95": 12.42652116343379
+            },
+            "solver_logic": [
+              "QF_LIA"
+            ],
+            "solver_profile": [
+              "logic"
+            ],
+            "solver_statistics": {
+              "added eqs": {
+                "max": 234,
+                "p50": 234,
+                "p95": 234
+              },
+              "arith-bound-propagations-lp": {
+                "max": 300,
+                "p50": 300,
+                "p95": 300
+              },
+              "arith-conflicts": {
+                "max": 8,
+                "p50": 8,
+                "p95": 8
+              },
+              "arith-fixed-eqs": {
+                "max": 138,
+                "p50": 138,
+                "p95": 138
+              },
+              "arith-lower": {
+                "max": 938,
+                "p50": 938,
+                "p95": 938
+              },
+              "arith-make-feasible": {
+                "max": 154,
+                "p50": 154,
+                "p95": 154
+              },
+              "arith-max-columns": {
+                "max": 162,
+                "p50": 162,
+                "p95": 162
+              },
+              "arith-max-rows": {
+                "max": 70,
+                "p50": 70,
+                "p95": 70
+              },
+              "arith-offset-eqs": {
+                "max": 104,
+                "p50": 104,
+                "p95": 104
+              },
+              "arith-upper": {
+                "max": 1205,
+                "p50": 1205,
+                "p95": 1205
+              },
+              "binary propagations": {
+                "max": 3904,
+                "p50": 3904,
+                "p95": 3904
+              },
+              "conflicts": {
+                "max": 23,
+                "p50": 23,
+                "p95": 23
+              },
+              "decisions": {
+                "max": 110,
+                "p50": 110,
+                "p95": 110
+              },
+              "max memory": {
+                "max": 19.5,
+                "p50": 19.5,
+                "p95": 19.5
+              },
+              "memory": {
+                "max": 19.5,
+                "p50": 19.5,
+                "p95": 19.5
+              },
+              "minimized lits": {
+                "max": 12,
+                "p50": 12,
+                "p95": 12
+              },
+              "mk bool var": {
+                "max": 1333,
+                "p50": 1333,
+                "p95": 1333
+              },
+              "mk clause": {
+                "max": 1246,
+                "p50": 1246,
+                "p95": 1246
+              },
+              "mk clause binary": {
+                "max": 4532,
+                "p50": 4532,
+                "p95": 4532
+              },
+              "num allocs": {
+                "max": 33480370,
+                "p50": 33479370,
+                "p95": 33480370
+              },
+              "num checks": {
+                "max": 1,
+                "p50": 1,
+                "p95": 1
+              },
+              "propagations": {
+                "max": 5330,
+                "p50": 5330,
+                "p95": 5330
+              },
+              "rlimit count": {
+                "max": 50275,
+                "p50": 50275,
+                "p95": 50275
+              },
+              "time": {
+                "max": 0.001,
+                "p50": 0.001,
+                "p95": 0.001
+              }
+            },
+            "status": "unsat",
+            "suffix_replay_ok": null,
+            "total_elapsed_ms": {
+              "max": 11.760567780584097,
+              "p50": 11.111931875348091,
+              "p95": 11.760567780584097
+            }
+          },
+          "slicing-2db08911": {
+            "api_total_ms": {
+              "max": 322.9468483477831,
+              "p50": 319.0561132505536,
+              "p95": 322.9468483477831
+            },
+            "build_ms": {
+              "max": 263.29758716747165,
+              "p50": 258.07348312810063,
+              "p95": 263.29758716747165
+            },
+            "build_solve_ms": {
+              "max": 282.1313519962132,
+              "p50": 277.2097159177065,
+              "p95": 282.1313519962132
+            },
+            "cone_slicing": {
+              "dropped_variables": [],
+              "enabled": true,
+              "fallback": false,
+              "retained_count": 7,
+              "skipped_reason": "no_removable_variables"
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2059,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 92913664,
+            "pipeline_ms": {
+              "max": 282.1313519962132,
+              "p50": 277.2097159177065,
+              "p95": 282.1313519962132
+            },
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 20.192289724946022,
+              "p50": 18.83376482874155,
+              "p95": 20.192289724946022
+            },
+            "solver_logic": [
+              null
+            ],
+            "solver_profile": [
+              "default"
+            ],
+            "solver_statistics": {
+              "added eqs": {
+                "max": 6594,
+                "p50": 6594,
+                "p95": 6594
+              },
+              "arith eq adapter": {
+                "max": 1011,
+                "p50": 1011,
+                "p95": 1011
+              },
+              "arith-bound-propagations-lp": {
+                "max": 604,
+                "p50": 604,
+                "p95": 604
+              },
+              "arith-conflicts": {
+                "max": 16,
+                "p50": 16,
+                "p95": 16
+              },
+              "arith-diseq": {
+                "max": 37,
+                "p50": 37,
+                "p95": 37
+              },
+              "arith-fixed-eqs": {
+                "max": 921,
+                "p50": 921,
+                "p95": 921
+              },
+              "arith-lower": {
+                "max": 1371,
+                "p50": 1371,
+                "p95": 1371
+              },
+              "arith-make-feasible": {
+                "max": 358,
+                "p50": 358,
+                "p95": 358
+              },
+              "arith-max-columns": {
+                "max": 122,
+                "p50": 122,
+                "p95": 122
+              },
+              "arith-max-rows": {
+                "max": 50,
+                "p50": 50,
+                "p95": 50
+              },
+              "arith-upper": {
+                "max": 976,
+                "p50": 976,
+                "p95": 976
+              },
+              "binary propagations": {
+                "max": 8115,
+                "p50": 8115,
+                "p95": 8115
+              },
+              "conflicts": {
+                "max": 115,
+                "p50": 115,
+                "p95": 115
+              },
+              "decisions": {
+                "max": 678,
+                "p50": 678,
+                "p95": 678
+              },
+              "del clause": {
+                "max": 978,
+                "p50": 978,
+                "p95": 978
+              },
+              "max memory": {
+                "max": 18.77,
+                "p50": 18.77,
+                "p95": 18.77
+              },
+              "memory": {
+                "max": 18.77,
+                "p50": 18.77,
+                "p95": 18.77
+              },
+              "minimized lits": {
+                "max": 153,
+                "p50": 153,
+                "p95": 153
+              },
+              "mk bool var": {
+                "max": 3786,
+                "p50": 3786,
+                "p95": 3786
+              },
+              "mk clause": {
+                "max": 2273,
+                "p50": 2273,
+                "p95": 2273
+              },
+              "mk clause binary": {
+                "max": 2044,
+                "p50": 2044,
+                "p95": 2044
+              },
+              "num allocs": {
+                "max": 32201077,
+                "p50": 32201077,
+                "p95": 32201077
+              },
+              "num checks": {
+                "max": 1,
+                "p50": 1,
+                "p95": 1
+              },
+              "propagations": {
+                "max": 13231,
+                "p50": 13231,
+                "p95": 13231
+              },
+              "restarts": {
+                "max": 1,
+                "p50": 1,
+                "p95": 1
+              },
+              "rlimit count": {
+                "max": 76804,
+                "p50": 76804,
+                "p95": 76804
+              },
+              "time": {
+                "max": 0.011,
+                "p50": 0.01,
+                "p95": 0.011
+              }
+            },
+            "status": "unsat",
+            "suffix_replay_ok": null,
+            "total_elapsed_ms": {
+              "max": 19.705040846019983,
+              "p50": 18.30878620967269,
+              "p95": 19.705040846019983
+            }
+          },
+          "tactic": {
+            "api_total_ms": {
+              "max": 320.2152908779681,
+              "p50": 311.6920031607151,
+              "p95": 320.2152908779681
+            },
+            "build_ms": {
+              "max": 260.16184128820896,
+              "p50": 256.5410272218287,
+              "p95": 260.16184128820896
+            },
+            "build_solve_ms": {
+              "max": 275.2313483506441,
+              "p50": 270.9816680289805,
+              "p95": 275.2313483506441
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2059,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 90742784,
+            "pipeline_ms": {
+              "max": 275.2313483506441,
+              "p50": 270.9816680289805,
+              "p95": 275.2313483506441
+            },
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 15.654572285711765,
+              "p50": 14.440640807151794,
+              "p95": 15.654572285711765
+            },
+            "solver_logic": [
+              null
+            ],
+            "solver_profile": [
+              "tactic"
+            ],
+            "solver_statistics": {
+              "arith assert lower": {
+                "max": 1070,
+                "p50": 1070,
+                "p95": 1070
+              },
+              "arith assert upper": {
+                "max": 701,
+                "p50": 701,
+                "p95": 701
+              },
+              "arith bound prop": {
+                "max": 74,
+                "p50": 74,
+                "p95": 74
+              },
+              "arith conflicts": {
+                "max": 2,
+                "p50": 2,
+                "p95": 2
+              },
+              "arith num rows": {
+                "max": 57,
+                "p50": 57,
+                "p95": 57
+              },
+              "arith pivots": {
+                "max": 31,
+                "p50": 31,
+                "p95": 31
+              },
+              "arith row summations": {
+                "max": 34,
+                "p50": 34,
+                "p95": 34
+              },
+              "arith tableau max columns": {
+                "max": 130,
+                "p50": 130,
+                "p95": 130
+              },
+              "arith tableau max rows": {
+                "max": 57,
+                "p50": 57,
+                "p95": 57
+              },
+              "binary propagations": {
+                "max": 5444,
+                "p50": 5444,
+                "p95": 5444
+              },
+              "conflicts": {
+                "max": 57,
+                "p50": 57,
+                "p95": 57
+              },
+              "decisions": {
+                "max": 181,
+                "p50": 181,
+                "p95": 181
+              },
+              "del clause": {
+                "max": 2,
+                "p50": 2,
+                "p95": 2
+              },
+              "max memory": {
+                "max": 18.03,
+                "p50": 18.03,
+                "p95": 18.03
+              },
+              "memory": {
+                "max": 17.28,
+                "p50": 17.28,
+                "p95": 17.28
+              },
+              "minimized lits": {
+                "max": 36,
+                "p50": 36,
+                "p95": 36
+              },
+              "mk bool var": {
+                "max": 726,
+                "p50": 726,
+                "p95": 726
+              },
+              "mk clause": {
+                "max": 583,
+                "p50": 583,
+                "p95": 583
+              },
+              "mk clause binary": {
+                "max": 2527,
+                "p50": 2527,
+                "p95": 2527
+              },
+              "num allocs": {
+                "max": 32869417,
+                "p50": 32859552,
+                "p95": 32869417
+              },
+              "num checks": {
+                "max": 1,
+                "p50": 1,
+                "p95": 1
+              },
+              "propagations": {
+                "max": 6230,
+                "p50": 6230,
+                "p95": 6230
+              },
+              "rlimit count": {
+                "max": 56784,
+                "p50": 56784,
+                "p95": 56784
+              },
+              "solve-eqs-elim-vars": {
+                "max": 243,
+                "p50": 243,
+                "p95": 243
+              },
+              "solve-eqs-steps": {
+                "max": 1611,
+                "p50": 1611,
+                "p95": 1611
+              },
+              "time": {
+                "max": 0.007,
+                "p50": 0.006,
+                "p95": 0.007
+              }
+            },
+            "status": "unsat",
+            "suffix_replay_ok": null,
+            "total_elapsed_ms": {
+              "max": 15.450008679181337,
+              "p50": 14.33432986959815,
+              "p95": 15.450008679181337
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "invariant"
+      },
+      "reach": {
+        "arms": {
+          "baseline-0cc43647": {
+            "api_total_ms": {
+              "max": 321.1826733313501,
+              "p50": 314.4365190528333,
+              "p95": 321.1826733313501
+            },
+            "build_ms": {
+              "max": 262.73213513195515,
+              "p50": 253.7900200113654,
+              "p95": 262.73213513195515
+            },
+            "build_solve_ms": {
+              "max": 280.1091722212732,
+              "p50": 271.03752410039306,
+              "p95": 280.1091722212732
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2035,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "no_witness",
+            "peak_child_rss_bytes": 92319744,
+            "pipeline_ms": {
+              "max": 280.1091722212732,
+              "p50": 271.03752410039306,
+              "p95": 280.1091722212732
+            },
+            "property_satisfied": false,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 18.26719706878066,
+              "p50": 17.658706288784742,
+              "p95": 18.26719706878066
+            },
+            "status": "unsat",
+            "suffix_replay_ok": null,
+            "total_elapsed_ms": {
+              "max": 17.77226896956563,
+              "p50": 17.178893089294434,
+              "p95": 17.77226896956563
+            }
+          },
+          "cone_slicing": {
+            "api_total_ms": {
+              "max": 322.83178623765707,
+              "p50": 317.96041689813137,
+              "p95": 322.83178623765707
+            },
+            "build_ms": {
+              "max": 262.1500687673688,
+              "p50": 257.7920160256326,
+              "p95": 262.1500687673688
+            },
+            "build_solve_ms": {
+              "max": 280.89047595858574,
+              "p50": 275.2205110155046,
+              "p95": 280.89047595858574
+            },
+            "cone_slicing": {
+              "dropped_variables": [],
+              "enabled": true,
+              "fallback": false,
+              "retained_count": 7,
+              "skipped_reason": "no_removable_variables"
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2035,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "no_witness",
+            "peak_child_rss_bytes": 92585984,
+            "pipeline_ms": {
+              "max": 280.89047595858574,
+              "p50": 275.2205110155046,
+              "p95": 280.89047595858574
+            },
+            "property_satisfied": false,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 19.491152837872505,
+              "p50": 17.848534043878317,
+              "p95": 19.491152837872505
+            },
+            "solver_logic": [
+              null
+            ],
+            "solver_profile": [
+              "default"
+            ],
+            "solver_statistics": {
+              "added eqs": {
+                "max": 7261,
+                "p50": 7261,
+                "p95": 7261
+              },
+              "arith eq adapter": {
+                "max": 923,
+                "p50": 923,
+                "p95": 923
+              },
+              "arith-bound-propagations-lp": {
+                "max": 409,
+                "p50": 409,
+                "p95": 409
+              },
+              "arith-conflicts": {
+                "max": 3,
+                "p50": 3,
+                "p95": 3
+              },
+              "arith-diseq": {
+                "max": 10,
+                "p50": 10,
+                "p95": 10
+              },
+              "arith-fixed-eqs": {
+                "max": 811,
+                "p50": 811,
+                "p95": 811
+              },
+              "arith-lower": {
+                "max": 1172,
+                "p50": 1172,
+                "p95": 1172
+              },
+              "arith-make-feasible": {
+                "max": 321,
+                "p50": 321,
+                "p95": 321
+              },
+              "arith-max-columns": {
+                "max": 101,
+                "p50": 101,
+                "p95": 101
+              },
+              "arith-max-rows": {
+                "max": 40,
+                "p50": 40,
+                "p95": 40
+              },
+              "arith-upper": {
+                "max": 852,
+                "p50": 852,
+                "p95": 852
+              },
+              "binary propagations": {
+                "max": 9308,
+                "p50": 9308,
+                "p95": 9308
+              },
+              "conflicts": {
+                "max": 120,
+                "p50": 120,
+                "p95": 120
+              },
+              "decisions": {
+                "max": 681,
+                "p50": 681,
+                "p95": 681
+              },
+              "del clause": {
+                "max": 920,
+                "p50": 920,
+                "p95": 920
+              },
+              "max memory": {
+                "max": 18.66,
+                "p50": 18.66,
+                "p95": 18.66
+              },
+              "memory": {
+                "max": 18.66,
+                "p50": 18.66,
+                "p95": 18.66
+              },
+              "minimized lits": {
+                "max": 53,
+                "p50": 53,
+                "p95": 53
+              },
+              "mk bool var": {
+                "max": 3416,
+                "p50": 3416,
+                "p95": 3416
+              },
+              "mk clause": {
+                "max": 2167,
+                "p50": 2167,
+                "p95": 2167
+              },
+              "mk clause binary": {
+                "max": 2044,
+                "p50": 2044,
+                "p95": 2044
+              },
+              "num allocs": {
+                "max": 32062277,
+                "p50": 32062277,
+                "p95": 32062277
+              },
+              "num checks": {
+                "max": 1,
+                "p50": 1,
+                "p95": 1
+              },
+              "propagations": {
+                "max": 15546,
+                "p50": 15546,
+                "p95": 15546
+              },
+              "restarts": {
+                "max": 1,
+                "p50": 1,
+                "p95": 1
+              },
+              "rlimit count": {
+                "max": 77641,
+                "p50": 77641,
+                "p95": 77641
+              },
+              "time": {
+                "max": 0.01,
+                "p50": 0.009,
+                "p95": 0.01
+              }
+            },
+            "status": "unsat",
+            "suffix_replay_ok": null,
+            "total_elapsed_ms": {
+              "max": 18.76350212842226,
+              "p50": 17.337037716060877,
+              "p95": 18.76350212842226
+            }
+          },
+          "default": {
+            "api_total_ms": {
+              "max": 318.2884929701686,
+              "p50": 315.1496881619096,
+              "p95": 318.2884929701686
+            },
+            "build_ms": {
+              "max": 257.3782578110695,
+              "p50": 255.6463577784598,
+              "p95": 257.3782578110695
+            },
+            "build_solve_ms": {
+              "max": 276.0478309355676,
+              "p50": 274.0735257975757,
+              "p95": 276.0478309355676
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2035,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "no_witness",
+            "peak_child_rss_bytes": 92700672,
+            "pipeline_ms": {
+              "max": 276.0478309355676,
+              "p50": 274.0735257975757,
+              "p95": 276.0478309355676
+            },
+            "property_satisfied": false,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 18.66957312449813,
+              "p50": 18.355252221226692,
+              "p95": 18.66957312449813
+            },
+            "solver_logic": [
+              null
+            ],
+            "solver_profile": [
+              "default"
+            ],
+            "solver_statistics": {
+              "added eqs": {
+                "max": 7261,
+                "p50": 7261,
+                "p95": 7261
+              },
+              "arith eq adapter": {
+                "max": 923,
+                "p50": 923,
+                "p95": 923
+              },
+              "arith-bound-propagations-lp": {
+                "max": 409,
+                "p50": 409,
+                "p95": 409
+              },
+              "arith-conflicts": {
+                "max": 3,
+                "p50": 3,
+                "p95": 3
+              },
+              "arith-diseq": {
+                "max": 10,
+                "p50": 10,
+                "p95": 10
+              },
+              "arith-fixed-eqs": {
+                "max": 811,
+                "p50": 811,
+                "p95": 811
+              },
+              "arith-lower": {
+                "max": 1172,
+                "p50": 1172,
+                "p95": 1172
+              },
+              "arith-make-feasible": {
+                "max": 321,
+                "p50": 321,
+                "p95": 321
+              },
+              "arith-max-columns": {
+                "max": 101,
+                "p50": 101,
+                "p95": 101
+              },
+              "arith-max-rows": {
+                "max": 40,
+                "p50": 40,
+                "p95": 40
+              },
+              "arith-upper": {
+                "max": 852,
+                "p50": 852,
+                "p95": 852
+              },
+              "binary propagations": {
+                "max": 9308,
+                "p50": 9308,
+                "p95": 9308
+              },
+              "conflicts": {
+                "max": 120,
+                "p50": 120,
+                "p95": 120
+              },
+              "decisions": {
+                "max": 681,
+                "p50": 681,
+                "p95": 681
+              },
+              "del clause": {
+                "max": 920,
+                "p50": 920,
+                "p95": 920
+              },
+              "max memory": {
+                "max": 18.66,
+                "p50": 18.66,
+                "p95": 18.66
+              },
+              "memory": {
+                "max": 18.66,
+                "p50": 18.66,
+                "p95": 18.66
+              },
+              "minimized lits": {
+                "max": 53,
+                "p50": 53,
+                "p95": 53
+              },
+              "mk bool var": {
+                "max": 3416,
+                "p50": 3416,
+                "p95": 3416
+              },
+              "mk clause": {
+                "max": 2167,
+                "p50": 2167,
+                "p95": 2167
+              },
+              "mk clause binary": {
+                "max": 2044,
+                "p50": 2044,
+                "p95": 2044
+              },
+              "num allocs": {
+                "max": 32058118,
+                "p50": 32054678,
+                "p95": 32058118
+              },
+              "num checks": {
+                "max": 1,
+                "p50": 1,
+                "p95": 1
+              },
+              "propagations": {
+                "max": 15546,
+                "p50": 15546,
+                "p95": 15546
+              },
+              "restarts": {
+                "max": 1,
+                "p50": 1,
+                "p95": 1
+              },
+              "rlimit count": {
+                "max": 77641,
+                "p50": 77641,
+                "p95": 77641
+              },
+              "time": {
+                "max": 0.01,
+                "p50": 0.01,
+                "p95": 0.01
+              }
+            },
+            "status": "unsat",
+            "suffix_replay_ok": null,
+            "total_elapsed_ms": {
+              "max": 18.14002776518464,
+              "p50": 17.834464088082314,
+              "p95": 18.14002776518464
+            }
+          },
+          "logic": {
+            "api_total_ms": {
+              "max": 309.94064593687654,
+              "p50": 308.7056721560657,
+              "p95": 309.94064593687654
+            },
+            "build_ms": {
+              "max": 256.32152426987886,
+              "p50": 255.39708836004138,
+              "p95": 256.32152426987886
+            },
+            "build_solve_ms": {
+              "max": 269.57424031570554,
+              "p50": 267.9262896999717,
+              "p95": 269.57424031570554
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2035,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "no_witness",
+            "peak_child_rss_bytes": 92905472,
+            "pipeline_ms": {
+              "max": 269.57424031570554,
+              "p50": 267.9262896999717,
+              "p95": 269.57424031570554
+            },
+            "property_satisfied": false,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 13.252716045826674,
+              "p50": 12.788710184395313,
+              "p95": 13.252716045826674
+            },
+            "solver_logic": [
+              "QF_LIA"
+            ],
+            "solver_profile": [
+              "logic"
+            ],
+            "solver_statistics": {
+              "added eqs": {
+                "max": 238,
+                "p50": 238,
+                "p95": 238
+              },
+              "arith-bound-propagations-lp": {
+                "max": 463,
+                "p50": 463,
+                "p95": 463
+              },
+              "arith-conflicts": {
+                "max": 5,
+                "p50": 5,
+                "p95": 5
+              },
+              "arith-fixed-eqs": {
+                "max": 320,
+                "p50": 320,
+                "p95": 320
+              },
+              "arith-lower": {
+                "max": 1753,
+                "p50": 1753,
+                "p95": 1753
+              },
+              "arith-make-feasible": {
+                "max": 234,
+                "p50": 234,
+                "p95": 234
+              },
+              "arith-max-columns": {
+                "max": 162,
+                "p50": 162,
+                "p95": 162
+              },
+              "arith-max-rows": {
+                "max": 70,
+                "p50": 70,
+                "p95": 70
+              },
+              "arith-offset-eqs": {
+                "max": 87,
+                "p50": 87,
+                "p95": 87
+              },
+              "arith-upper": {
+                "max": 2264,
+                "p50": 2264,
+                "p95": 2264
+              },
+              "binary propagations": {
+                "max": 11267,
+                "p50": 11267,
+                "p95": 11267
+              },
+              "conflicts": {
+                "max": 78,
+                "p50": 78,
+                "p95": 78
+              },
+              "decisions": {
+                "max": 199,
+                "p50": 199,
+                "p95": 199
+              },
+              "del clause": {
+                "max": 3,
+                "p50": 3,
+                "p95": 3
+              },
+              "max memory": {
+                "max": 19.5,
+                "p50": 19.5,
+                "p95": 19.5
+              },
+              "memory": {
+                "max": 19.5,
+                "p50": 19.5,
+                "p95": 19.5
+              },
+              "minimized lits": {
+                "max": 97,
+                "p50": 97,
+                "p95": 97
+              },
+              "mk bool var": {
+                "max": 1325,
+                "p50": 1325,
+                "p95": 1325
+              },
+              "mk clause": {
+                "max": 1310,
+                "p50": 1310,
+                "p95": 1310
+              },
+              "mk clause binary": {
+                "max": 4532,
+                "p50": 4532,
+                "p95": 4532
+              },
+              "num allocs": {
+                "max": 33477291,
+                "p50": 33472678,
+                "p95": 33477291
+              },
+              "num checks": {
+                "max": 1,
+                "p50": 1,
+                "p95": 1
+              },
+              "propagations": {
+                "max": 15222,
+                "p50": 15222,
+                "p95": 15222
+              },
+              "rlimit count": {
+                "max": 67416,
+                "p50": 67416,
+                "p95": 67416
+              },
+              "time": {
+                "max": 0.003,
+                "p50": 0.002,
+                "p95": 0.003
+              }
+            },
+            "status": "unsat",
+            "suffix_replay_ok": null,
+            "total_elapsed_ms": {
+              "max": 12.539231218397617,
+              "p50": 12.076430954039097,
+              "p95": 12.539231218397617
+            }
+          },
+          "slicing-2db08911": {
+            "api_total_ms": {
+              "max": 316.50645611807704,
+              "p50": 314.17818274348974,
+              "p95": 316.50645611807704
+            },
+            "build_ms": {
+              "max": 257.386343088001,
+              "p50": 253.60508589074016,
+              "p95": 257.386343088001
+            },
+            "build_solve_ms": {
+              "max": 275.63774213194847,
+              "p50": 271.65643172338605,
+              "p95": 275.63774213194847
+            },
+            "cone_slicing": {
+              "dropped_variables": [],
+              "enabled": true,
+              "fallback": false,
+              "retained_count": 7,
+              "skipped_reason": "no_removable_variables"
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2035,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "no_witness",
+            "peak_child_rss_bytes": 92708864,
+            "pipeline_ms": {
+              "max": 275.63774213194847,
+              "p50": 271.65643172338605,
+              "p95": 275.63774213194847
+            },
+            "property_satisfied": false,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 18.370196223258972,
+              "p50": 18.25139904394746,
+              "p95": 18.370196223258972
+            },
+            "solver_logic": [
+              null
+            ],
+            "solver_profile": [
+              "default"
+            ],
+            "solver_statistics": {
+              "added eqs": {
+                "max": 7261,
+                "p50": 7261,
+                "p95": 7261
+              },
+              "arith eq adapter": {
+                "max": 923,
+                "p50": 923,
+                "p95": 923
+              },
+              "arith-bound-propagations-lp": {
+                "max": 409,
+                "p50": 409,
+                "p95": 409
+              },
+              "arith-conflicts": {
+                "max": 3,
+                "p50": 3,
+                "p95": 3
+              },
+              "arith-diseq": {
+                "max": 10,
+                "p50": 10,
+                "p95": 10
+              },
+              "arith-fixed-eqs": {
+                "max": 811,
+                "p50": 811,
+                "p95": 811
+              },
+              "arith-lower": {
+                "max": 1172,
+                "p50": 1172,
+                "p95": 1172
+              },
+              "arith-make-feasible": {
+                "max": 321,
+                "p50": 321,
+                "p95": 321
+              },
+              "arith-max-columns": {
+                "max": 101,
+                "p50": 101,
+                "p95": 101
+              },
+              "arith-max-rows": {
+                "max": 40,
+                "p50": 40,
+                "p95": 40
+              },
+              "arith-upper": {
+                "max": 852,
+                "p50": 852,
+                "p95": 852
+              },
+              "binary propagations": {
+                "max": 9308,
+                "p50": 9308,
+                "p95": 9308
+              },
+              "conflicts": {
+                "max": 120,
+                "p50": 120,
+                "p95": 120
+              },
+              "decisions": {
+                "max": 681,
+                "p50": 681,
+                "p95": 681
+              },
+              "del clause": {
+                "max": 920,
+                "p50": 920,
+                "p95": 920
+              },
+              "max memory": {
+                "max": 18.66,
+                "p50": 18.66,
+                "p95": 18.66
+              },
+              "memory": {
+                "max": 18.66,
+                "p50": 18.66,
+                "p95": 18.66
+              },
+              "minimized lits": {
+                "max": 53,
+                "p50": 53,
+                "p95": 53
+              },
+              "mk bool var": {
+                "max": 3416,
+                "p50": 3416,
+                "p95": 3416
+              },
+              "mk clause": {
+                "max": 2167,
+                "p50": 2167,
+                "p95": 2167
+              },
+              "mk clause binary": {
+                "max": 2044,
+                "p50": 2044,
+                "p95": 2044
+              },
+              "num allocs": {
+                "max": 32059132,
+                "p50": 32058912,
+                "p95": 32059132
+              },
+              "num checks": {
+                "max": 1,
+                "p50": 1,
+                "p95": 1
+              },
+              "propagations": {
+                "max": 15546,
+                "p50": 15546,
+                "p95": 15546
+              },
+              "restarts": {
+                "max": 1,
+                "p50": 1,
+                "p95": 1
+              },
+              "rlimit count": {
+                "max": 77641,
+                "p50": 77641,
+                "p95": 77641
+              },
+              "time": {
+                "max": 0.01,
+                "p50": 0.01,
+                "p95": 0.01
+              }
+            },
+            "status": "unsat",
+            "suffix_replay_ok": null,
+            "total_elapsed_ms": {
+              "max": 17.850799951702356,
+              "p50": 17.72266998887062,
+              "p95": 17.850799951702356
+            }
+          },
+          "tactic": {
+            "api_total_ms": {
+              "max": 321.4469803497195,
+              "p50": 313.1880001164973,
+              "p95": 321.4469803497195
+            },
+            "build_ms": {
+              "max": 262.7103831619024,
+              "p50": 257.7574821189046,
+              "p95": 262.7103831619024
+            },
+            "build_solve_ms": {
+              "max": 277.3745362646878,
+              "p50": 271.88726095482707,
+              "p95": 277.3745362646878
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2035,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "no_witness",
+            "peak_child_rss_bytes": 91144192,
+            "pipeline_ms": {
+              "max": 277.3745362646878,
+              "p50": 271.88726095482707,
+              "p95": 277.3745362646878
+            },
+            "property_satisfied": false,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 14.870604034513235,
+              "p50": 14.12977883592248,
+              "p95": 14.870604034513235
+            },
+            "solver_logic": [
+              null
+            ],
+            "solver_profile": [
+              "tactic"
+            ],
+            "solver_statistics": {
+              "arith assert lower": {
+                "max": 1254,
+                "p50": 1254,
+                "p95": 1254
+              },
+              "arith assert upper": {
+                "max": 939,
+                "p50": 939,
+                "p95": 939
+              },
+              "arith bound prop": {
+                "max": 84,
+                "p50": 84,
+                "p95": 84
+              },
+              "arith conflicts": {
+                "max": 1,
+                "p50": 1,
+                "p95": 1
+              },
+              "arith num rows": {
+                "max": 56,
+                "p50": 56,
+                "p95": 56
+              },
+              "arith pivots": {
+                "max": 42,
+                "p50": 42,
+                "p95": 42
+              },
+              "arith row summations": {
+                "max": 43,
+                "p50": 43,
+                "p95": 43
+              },
+              "arith tableau max columns": {
+                "max": 128,
+                "p50": 128,
+                "p95": 128
+              },
+              "arith tableau max rows": {
+                "max": 56,
+                "p50": 56,
+                "p95": 56
+              },
+              "binary propagations": {
+                "max": 5915,
+                "p50": 5915,
+                "p95": 5915
+              },
+              "conflicts": {
+                "max": 53,
+                "p50": 53,
+                "p95": 53
+              },
+              "decisions": {
+                "max": 360,
+                "p50": 360,
+                "p95": 360
+              },
+              "del clause": {
+                "max": 160,
+                "p50": 160,
+                "p95": 160
+              },
+              "max memory": {
+                "max": 18.07,
+                "p50": 18.07,
+                "p95": 18.07
+              },
+              "memory": {
+                "max": 17.27,
+                "p50": 17.27,
+                "p95": 17.27
+              },
+              "minimized lits": {
+                "max": 70,
+                "p50": 70,
+                "p95": 70
+              },
+              "mk bool var": {
+                "max": 715,
+                "p50": 715,
+                "p95": 715
+              },
+              "mk clause": {
+                "max": 581,
+                "p50": 581,
+                "p95": 581
+              },
+              "mk clause binary": {
+                "max": 2531,
+                "p50": 2531,
+                "p95": 2531
+              },
+              "num allocs": {
+                "max": 32747787,
+                "p50": 32744173,
+                "p95": 32747787
+              },
+              "num checks": {
+                "max": 1,
+                "p50": 1,
+                "p95": 1
+              },
+              "propagations": {
+                "max": 6658,
+                "p50": 6658,
+                "p95": 6658
+              },
+              "rlimit count": {
+                "max": 56989,
+                "p50": 56989,
+                "p95": 56989
+              },
+              "solve-eqs-elim-vars": {
+                "max": 244,
+                "p50": 244,
+                "p95": 244
+              },
+              "solve-eqs-steps": {
+                "max": 1612,
+                "p50": 1612,
+                "p95": 1612
+              },
+              "time": {
+                "max": 0.006,
+                "p50": 0.006,
+                "p95": 0.006
+              }
+            },
+            "status": "unsat",
+            "suffix_replay_ok": null,
+            "total_elapsed_ms": {
+              "max": 14.779164921492338,
+              "p50": 14.022541232407093,
+              "p95": 14.779164921492338
+            }
+          }
+        },
+        "expected": {
+          "outcome": "no_witness",
+          "property_satisfied": false,
+          "status": "unsat"
+        },
+        "kind": "reach"
+      }
+    },
+    "role": "llm_generated"
+  }
+}

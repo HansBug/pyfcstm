@@ -24,7 +24,7 @@ CommandResult
 -----------------------------------------------------
 
 .. autoclass:: CommandResult
-    :members: output,should_exit
+    :members: output,should_exit,exit_code
 
 
 CommandProcessor

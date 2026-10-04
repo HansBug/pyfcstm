@@ -1,0 +1,4 @@
+input int command; control int total = 0; output int result = 0;
+state Root { state Ready { enter { total = command; } exit { total = total + command; } }
+state Done { enter { result = result + command; } }
+[*] -> Ready; Ready -> Done : if [command > 2] effect { result = total + command; }; }

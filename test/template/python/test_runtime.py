@@ -497,17 +497,15 @@ class TestPythonBuiltinTemplate:
             assert os.path.isfile(artifacts['readme_file'])
             assert os.path.isfile(artifacts['readme_zh_file'])
             assert '# RootMachine' in readme
-            assert 'class CustomMachine(RootMachine)' in readme
+            assert 'class Device(RootMachine)' in readme
             assert '_abstract_hook_Root_RootInit' in readme
             assert '_abstract_hook_Root_System_A_AEnter' in readme
             assert '| DSL action path | Hook method | Owner state | Stage |' in readme
-            assert 'Abstract hooks are read-only extension points' in readme
-            assert 'do not mutate persistent' in readme
-            assert '可覆写的 Abstract Hook 清单' in readme_zh
+            assert 'writing internal storage from application code is unsupported' in readme
+            assert '| DSL 动作路径 | Hook 方法 | 所属状态 | 阶段 |' in readme_zh
             assert '_abstract_hook_Root_RootInit' in readme_zh
             assert '_abstract_hook_Root_System_A_AEnter' in readme_zh
-            assert 'abstract hook' in readme_zh
-            assert '修改状态机持久变量' in readme_zh
+            assert '应用代码直接修改内部存储属于不支持的用法' in readme_zh
 
     def test_generated_readme_python_code_blocks_are_formatter_friendly(self):
         with _render_python_artifacts(_representative_gate_dsl()) as artifacts:
@@ -518,8 +516,8 @@ class TestPythonBuiltinTemplate:
 
             _assert_python_readme_code_blocks_are_formatter_friendly(readme)
             _assert_python_readme_code_blocks_are_formatter_friendly(readme_zh)
-            assert "CustomMachine" in readme
-            assert "CustomMachine" in readme_zh
+            assert "Device" in readme
+            assert "Device" in readme_zh
             assert "machine.cycle" in readme
             assert "machine.cycle" in readme_zh
 
@@ -582,6 +580,9 @@ class TestPythonBuiltinTemplate:
             pytest.skip('ruff binary is not available in this test environment')
 
         fixture_ids = [
+            'input_calculation',
+            'multiple_inputs_latched_output',
+            'parameter_defaults_with_initial_values',
             'sign_function_updates_during_action',
             'sign_function_handles_all_signs',
             'sign_function_controls_guard_transition',

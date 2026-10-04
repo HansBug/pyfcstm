@@ -11,14 +11,14 @@ steps:
 - cycle: []
   expect:
     state: Root.A
-    vars_exact:
+    vars:
       a: -7
       b: 2
     ended: false
 - cycle: []
   expect:
     state: Root.B
-    vars_exact:
+    vars:
       a: -7
       b: 2
     ended: false

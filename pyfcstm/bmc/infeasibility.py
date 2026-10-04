@@ -82,7 +82,12 @@ from .provenance import (
     SourceDocumentRegistry,
     normalized_fact_for,
 )
-from .solver import _SolveBudget, _check_with_budget
+from .solver import (
+    _SolveBudget,
+    _check_with_budget,
+    _free_symbols,
+    _solver_for_profile,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle guard for annotations only
     from .relation import BmcCoreFormula
@@ -412,7 +417,7 @@ def _activation_solver(
         >>> sorted(literals)
         ['domain', 'environment', 'initial', 'transition']
     """
-    solver = z3.Solver()
+    solver, _ = _solver_for_profile("default")
     literals: Dict[str, z3.BoolRef] = {}
     for name in ("domain", "transition", "initial", "environment"):
         literal = z3.Bool("g_%s" % name)
@@ -720,7 +725,7 @@ def extract_source_core(
             (), "unknown", "scope %r selected no source group" % scope
         )
 
-    solver = z3.Solver()
+    solver, _ = _solver_for_profile("default")
     by_label: Dict[str, BmcTrackedConstraint] = {}
     labels = []
     for group in targets:
@@ -782,7 +787,7 @@ def extract_source_core(
         )
 
     ordered = tuple(sorted(selected, key=lambda group: group.stable_id))
-    verifier = z3.Solver()
+    verifier, _ = _solver_for_profile("default")
     verifier.add(_conjunction(ordered))
     # The recheck is a second solver call of the same extraction step, so it
     # shares the caller's budget rather than running unbounded.
@@ -855,7 +860,7 @@ def _trial_solver(groups: Sequence["BmcTrackedConstraint"]) -> z3.Solver:
         >>> _trial_solver(()).check() == z3.sat
         True
     """
-    solver = z3.Solver()
+    solver, _ = _solver_for_profile("default")
     for group in groups:
         for expression in group.expressions:
             solver.add(expression)
@@ -1217,7 +1222,7 @@ def derive_forced_values(
     # proof.
     for variable, frame in targets:
         symbol = core.symbols.frame_var(frame, variable)
-        solver = z3.Solver()
+        solver, _ = _solver_for_profile("default")
         for expression in expressions:
             solver.add(expression)
         verdict, record = _run_probe(solver, budget, "value_propagation", ())
@@ -1527,7 +1532,7 @@ def check_core_bindings(
             ("group implies fact", z3.And(conjunction, z3.Not(encoded))),
             ("fact implies group", z3.And(encoded, z3.Not(conjunction))),
         ):
-            solver = z3.Solver()
+            solver, _ = _solver_for_profile("default")
             solver.add(claim)
             status, _, reason, _, _ = _check_with_budget(solver, budget)
             if status != "unsat":
@@ -1604,14 +1609,14 @@ def _entailment_prover(members, budget: _SolveBudget):
     # report is the shape of over-design, so this says why instead.
     def entailed(claims: Sequence[Any], target: Any) -> bool:
         """Report whether these claims refute the condition's negation."""
-        solver = z3.Solver()
+        solver, _ = _solver_for_profile("default")
         solver.add(z3.And(z3.And(*claims), z3.Not(target)))
         status, _, _, _, _ = _check_with_budget(solver, budget)
         return status == "unsat"
 
     def consistent(claims: Sequence[Any]) -> bool:
         """Report whether these claims can hold together at all."""
-        solver = z3.Solver()
+        solver, _ = _solver_for_profile("default")
         solver.add(z3.And(*claims))
         status, _, _, _, _ = _check_with_budget(solver, budget)
         return status == "sat"
@@ -1998,7 +2003,7 @@ def _bind_against_one_unit(
             z3.And(unit, z3.Not(encoded)),
             z3.And(encoded, z3.Not(unit)),
         ):
-            solver = z3.Solver()
+            solver, _ = _solver_for_profile("default")
             solver.add(claim)
             status, _, reason, _, _ = _check_with_budget(solver, budget)
             if status == "timeout":
@@ -2104,7 +2109,7 @@ def _binding_symbols(
     :rtype: Dict[Tuple[int, Any], Any]
     """
     indexed: Dict[Tuple[int, Any], Any] = {}
-    for symbol in z3.z3util.get_vars(expression):
+    for symbol in _free_symbols(expression):
         event = _event_identity_of(symbol, event_paths)
         if event is not None:
             # A third kind of key.  An event symbol carries its own step inside its
@@ -2296,14 +2301,14 @@ def _binding_symbol(expression, fact: Mapping[str, object], declared=None):
         # what this branch assumes.
         booleans = [
             symbol
-            for symbol in sorted(z3.z3util.get_vars(expression), key=str)
+            for symbol in sorted(_free_symbols(expression), key=str)
             if z3.is_bool(symbol)
         ]
         return booleans[0] if len(booleans) == 1 else None
     frame = fact.get("frame")
     if frame is None:
         return None
-    symbols = sorted(z3.z3util.get_vars(expression), key=lambda item: str(item))
+    symbols = sorted(_free_symbols(expression), key=lambda item: str(item))
     variable = fact.get("variable")
     if variable is None or fact.get("state_slot"):
         # A state fact speaks about the frame's own state slot rather than about a

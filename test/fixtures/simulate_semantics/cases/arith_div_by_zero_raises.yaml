@@ -13,7 +13,7 @@ steps:
 - cycle: []
   expect:
     state: Root.A
-    vars_exact:
+    vars:
       d: 0
       r: 3.5
     ended: false
@@ -24,7 +24,7 @@ steps:
       match: division by zero
       match_kind: substring
       cause_type: ZeroDivisionError
-    vars_exact:
+    vars:
       d: 0
       r: 3.5
     ended: false

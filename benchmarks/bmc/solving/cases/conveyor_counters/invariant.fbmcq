@@ -1,0 +1,1 @@
+check invariant <= 14: jam == 0 || items >= 1;

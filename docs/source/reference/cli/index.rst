@@ -58,6 +58,9 @@ Click command tree and with the documented human-only boundary facts.
 .. cli-ref-option: command=simulate option=-e
 .. cli-ref-option: command=simulate option=--execute
 .. cli-ref-option: command=simulate option=--no-color
+.. cli-ref-option: command=simulate option=--diagnostics
+.. cli-ref-option: command=simulate option=--diagnostics-format choices=text,jsonl default=text
+.. cli-ref-option: command=simulate option=--param
 .. cli-ref-option: command=simulate option=--help
 .. cli-ref-command: name=visualize
 .. cli-ref-option: command=visualize option=-i
@@ -283,10 +286,7 @@ Output and failure facts:
 * The command has no file side effects unless invoked from shell redirection.
 * Input, parse, and model-validation failures exit non-zero before the
   simulator command layer runs.
-* Simulator command-layer failures in batch mode, such as an unknown batch
-  command or an unresolvable event name, are transcript-level failures today:
-  they are printed to standard output and the batch process still exits with
-  status ``0``.
+* Command failures, such as an unknown batch command or an unresolvable event, print a message, stop subsequent commands and return nonzero.
 * Typical failures are unreadable input, parse errors, model validation errors,
   unknown simulator commands, invalid event names, or invalid hot-start state
   and variable assignments.
@@ -298,6 +298,8 @@ Typical examples:
    pyfcstm simulate -i machine.fcstm
    pyfcstm simulate -i machine.fcstm -e "current; cycle; current"
    pyfcstm simulate -i machine.fcstm -e "init System.Active counter=10; cycle 5"
+
+Diagnostic options: ``--diagnostics`` defaults off; ``--diagnostics-format text|jsonl`` defaults to ``text`` and JSONL requires ``--diagnostics`` plus ``-e``; repeatable ``--param NAME=VALUE`` sets construction parameters. ``cycle --input NAME=VALUE`` supplies each complete input vector; ``decisions`` and ``why <id|label>`` query the latest evidence. See :doc:`../simulation/diagnostics` for exact types, invalid forms and runnable examples. JSONL stdout contains only ANSI-free reports; transcripts and queries go to stderr.
 
 ``inspect``
 -----------
@@ -751,7 +753,7 @@ Evidence rule:
      - Pass the DSL file with -i.
    * - Unknown batch command
      - ``pyfcstm simulate -i machine.fcstm -e "rewind"``
-     - Simulator command layer prints the unknown command in the transcript; batch mode still exits with status ``0``.
+     - The simulator prints the unknown command in the transcript, stops the batch and returns nonzero.
      - Use the simulation command reference.
    * - Invalid hot-start values
      - ``pyfcstm simulate -i machine.fcstm -e "init System.Active counter=oops"``
@@ -1106,6 +1108,14 @@ counterexample, and the evidence that should be inspected after the run.
      - Legal forms
      - Boundary or counterexample
      - Evidence to inspect
+   * - ``--cone-slicing``
+     - Explicitly enable conservative slicing; disabled by default.
+     - Potentially partial arithmetic and dependencies remain; abstract models skip slicing. More variables do not guarantee a removable cone.
+     - Inspect ``result.cone_slicing`` when enabled; witnesses retain all variables, and skips or fallback are reported.
+   * - ``--solver-profile``
+     - ``default`` keeps the generic solver; ``logic`` detects arithmetic fragments; ``tactic`` uses the fixed simplification pipeline. Default: ``default``.
+     - ``--solver-profile fast`` is a usage error (exit ``2``); explanations and proofs always use the default solver.
+     - JSON ``result.solver_profile``, ``result.solver_logic`` and ``result.solver_statistics``; SAT witnesses must pass replay.
    * - ``--explain-infeasibility``
      - ``none`` for the mandatory verdict alone; ``formal`` for the classification and a source core; ``proof`` for a checked step-by-step proof.
      - The depth never changes the verdict, so it cannot turn an inconclusive run into a conclusive one. ``proof`` degrades to ``formal`` when no catalog rule closes the core; a caller that treats a missing ``proof`` key as an error will misread that.
@@ -1191,8 +1201,8 @@ Failure taxonomy
      - Fix semantic issues in the DSL before rendering/generation.
    * - Simulator command layer
      - Unknown batch command or event name after the model has loaded.
-     - Transcript-level failure on standard output; batch mode currently exits with status ``0``.
-     - Fix the simulator command script and do not rely on exit status alone for these failures.
+     - Error transcript in text mode and nonzero batch status; JSONL mode writes errors to stderr.
+     - Fix the simulator command script using the error message; batch exit status now signals failure.
    * - Output path
      - Permission denied, suffix mismatch, or unsafe ``--clear`` target.
      - Non-zero exit before or during file write.

@@ -1,0 +1,1 @@
+check forbid <= 20: ticks > 6;

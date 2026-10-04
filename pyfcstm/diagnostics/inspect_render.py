@@ -74,7 +74,8 @@ _GLOBAL_REPAIR_RULES = (
     "Do not mechanically stack all suggested actions when multiple diagnostics refer to the same region.",
     "Do not delete states or transitions unless the report explicitly says the element is unused and the design intent supports deletion.",
     "A repair should clear all error and warning diagnostics; info diagnostics may remain when the model intent supports them.",
-    "If changing a guard into an event-only transition makes a variable declaration unused, remove that variable or keep a real guard-affecting data-flow path.",
+    "If changing a guard into an event-only transition makes a control variable declaration unused, remove that variable or keep a real guard-affecting data-flow path.",
+    "Respect variable ownership: input/param are read-only environment values supplied per cycle/at construction; output may be consumed externally. Missing model writes to input/param or model reads of output do not justify a repair.",
 )
 _REPAIR_NOTES_BY_CODE = {
     "W_COMBO_DUPLICATE_EVENT": (
@@ -303,6 +304,10 @@ def render_inspect_human(
     )
     lines.append(f"  transitions: {len(report.transitions)}")
     lines.append(f"  variables: {report.metrics.n_variables}")
+    for variable in report.variables:
+        lines.append(
+            f"    {variable.name}: {variable.role}; external supply: {variable.external_supply}"
+        )
     lines.extend(_render_structure_statistics_human(report))
     lines.append(
         "  diagnostics: {error} errors / {warning} warnings / {info} infos".format(

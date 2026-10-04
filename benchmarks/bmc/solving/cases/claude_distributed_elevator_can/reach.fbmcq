@@ -1,0 +1,2 @@
+init cold havoc *;
+check reach <= 10: active("LiftObject.Serving");

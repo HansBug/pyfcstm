@@ -1,0 +1,1 @@
+check forbid <= 10: cars_north < 0;

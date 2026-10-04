@@ -1,0 +1,2 @@
+init cold havoc { count } where count >= 1 && count <= 2;
+check invariant <= 8: total >= 0;

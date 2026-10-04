@@ -1,0 +1,2 @@
+init cold havoc { cars_west } where cars_west >= 0 && cars_west <= 3;
+check invariant <= 10: cars_west <= 3;

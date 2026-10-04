@@ -51,7 +51,7 @@ function buildVariableList(machine: StateMachine): FcstmDiagramVariable[] {
     return Object.values(machine.defines).map(definition => ({
         name: definition.name,
         valueType: definition.type,
-        initializer: definition.init.text || '',
+        initializer: definition.init?.text || '',
     }));
 }
 

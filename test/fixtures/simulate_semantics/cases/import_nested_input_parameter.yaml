@@ -1,0 +1,22 @@
+title: Nested input binding retains intermediate parameter ownership
+origin:
+  files:
+  - test/model/test_import_role_bindings.py
+categories:
+- runtime
+- variable_roles
+parameters:
+  shared: 11
+steps:
+- cycle: []
+  expect:
+    state: Root.Module.Probe
+    outputs:
+      reading: 11
+      last: 0
+- cycle: []
+  expect:
+    state: Root.Module.Probe
+    outputs:
+      reading: 11
+      last: 0

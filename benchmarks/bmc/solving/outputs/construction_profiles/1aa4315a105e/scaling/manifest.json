@@ -1,0 +1,222 @@
+{
+  "commit": "1aa4315a105eba0c4ae9e7998b9b2517b7ef65e4",
+  "dirty": false,
+  "machine": "x86_64",
+  "platform": "Linux-6.8.0-137-generic-x86_64-with-glibc2.39",
+  "processor": "x86_64",
+  "python_hash_seed": "random",
+  "specs": [
+    {
+      "arm": "baseline",
+      "bound": 1,
+      "case": "codex_vtol_mission_supervision",
+      "query": "reach",
+      "repetition": 0
+    },
+    {
+      "arm": "combined_cache",
+      "bound": 1,
+      "case": "codex_vtol_mission_supervision",
+      "query": "reach",
+      "repetition": 0
+    },
+    {
+      "arm": "combined_cache",
+      "bound": 1,
+      "case": "codex_vtol_mission_supervision",
+      "query": "reach",
+      "repetition": 1
+    },
+    {
+      "arm": "baseline",
+      "bound": 1,
+      "case": "codex_vtol_mission_supervision",
+      "query": "reach",
+      "repetition": 1
+    },
+    {
+      "arm": "baseline",
+      "bound": 1,
+      "case": "codex_vtol_mission_supervision",
+      "query": "reach",
+      "repetition": 2
+    },
+    {
+      "arm": "combined_cache",
+      "bound": 1,
+      "case": "codex_vtol_mission_supervision",
+      "query": "reach",
+      "repetition": 2
+    },
+    {
+      "arm": "baseline",
+      "bound": 2,
+      "case": "codex_vtol_mission_supervision",
+      "query": "reach",
+      "repetition": 0
+    },
+    {
+      "arm": "combined_cache",
+      "bound": 2,
+      "case": "codex_vtol_mission_supervision",
+      "query": "reach",
+      "repetition": 0
+    },
+    {
+      "arm": "combined_cache",
+      "bound": 2,
+      "case": "codex_vtol_mission_supervision",
+      "query": "reach",
+      "repetition": 1
+    },
+    {
+      "arm": "baseline",
+      "bound": 2,
+      "case": "codex_vtol_mission_supervision",
+      "query": "reach",
+      "repetition": 1
+    },
+    {
+      "arm": "baseline",
+      "bound": 2,
+      "case": "codex_vtol_mission_supervision",
+      "query": "reach",
+      "repetition": 2
+    },
+    {
+      "arm": "combined_cache",
+      "bound": 2,
+      "case": "codex_vtol_mission_supervision",
+      "query": "reach",
+      "repetition": 2
+    },
+    {
+      "arm": "baseline",
+      "bound": 5,
+      "case": "codex_vtol_mission_supervision",
+      "query": "reach",
+      "repetition": 0
+    },
+    {
+      "arm": "combined_cache",
+      "bound": 5,
+      "case": "codex_vtol_mission_supervision",
+      "query": "reach",
+      "repetition": 0
+    },
+    {
+      "arm": "combined_cache",
+      "bound": 5,
+      "case": "codex_vtol_mission_supervision",
+      "query": "reach",
+      "repetition": 1
+    },
+    {
+      "arm": "baseline",
+      "bound": 5,
+      "case": "codex_vtol_mission_supervision",
+      "query": "reach",
+      "repetition": 1
+    },
+    {
+      "arm": "baseline",
+      "bound": 5,
+      "case": "codex_vtol_mission_supervision",
+      "query": "reach",
+      "repetition": 2
+    },
+    {
+      "arm": "combined_cache",
+      "bound": 5,
+      "case": "codex_vtol_mission_supervision",
+      "query": "reach",
+      "repetition": 2
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_vtol_mission_supervision",
+      "cone_slicing": true,
+      "query": "reach",
+      "repetition": 0
+    },
+    {
+      "arm": "combined_cache",
+      "case": "codex_vtol_mission_supervision",
+      "cone_slicing": true,
+      "query": "reach",
+      "repetition": 0
+    },
+    {
+      "arm": "combined_cache",
+      "case": "codex_vtol_mission_supervision",
+      "cone_slicing": true,
+      "query": "reach",
+      "repetition": 1
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_vtol_mission_supervision",
+      "cone_slicing": true,
+      "query": "reach",
+      "repetition": 1
+    },
+    {
+      "arm": "baseline",
+      "case": "codex_vtol_mission_supervision",
+      "cone_slicing": true,
+      "query": "reach",
+      "repetition": 2
+    },
+    {
+      "arm": "combined_cache",
+      "case": "codex_vtol_mission_supervision",
+      "cone_slicing": true,
+      "query": "reach",
+      "repetition": 2
+    },
+    {
+      "arm": "baseline",
+      "case": "conveyor_counters",
+      "cone_slicing": true,
+      "query": "reach",
+      "repetition": 0
+    },
+    {
+      "arm": "combined_cache",
+      "case": "conveyor_counters",
+      "cone_slicing": true,
+      "query": "reach",
+      "repetition": 0
+    },
+    {
+      "arm": "combined_cache",
+      "case": "conveyor_counters",
+      "cone_slicing": true,
+      "query": "reach",
+      "repetition": 1
+    },
+    {
+      "arm": "baseline",
+      "case": "conveyor_counters",
+      "cone_slicing": true,
+      "query": "reach",
+      "repetition": 1
+    },
+    {
+      "arm": "baseline",
+      "case": "conveyor_counters",
+      "cone_slicing": true,
+      "query": "reach",
+      "repetition": 2
+    },
+    {
+      "arm": "combined_cache",
+      "case": "conveyor_counters",
+      "cone_slicing": true,
+      "query": "reach",
+      "repetition": 2
+    }
+  ],
+  "timing_contract": "Fresh processes; pre-imported dependencies; public file API including serialization. Low-frequency phase observers are shared by all arms; SAT request observers run only with sat_probe. Input preparation and fingerprints excluded. cProfile runs separate from ordinary wall measurements; inclusive function times overlap. Caches exist only for one call, retain object identities, and are experimental. Formula/partition/probe fingerprints must match exactly. Witnesses are retained and their equality recorded separately: a SAT formula can admit multiple valid witnesses, each of which must pass ordinary replay.",
+  "tool_sha256": "bb1d70383a91ee699febc987c519487f85a5d4fb8b9f32d7aa5cf3c408e24639"
+}

@@ -1,0 +1,44 @@
+{
+  "name": "codex_deepseek_vtol_mission_supervision",
+  "source": {
+    "kind": "llm_eval",
+    "path": "llm_eval/outputs/codex-deepseek/vtol_mission_supervision/model.fcstm",
+    "provider": "codex-deepseek",
+    "scenario": "vtol_mission_supervision"
+  },
+  "role": "llm_generated",
+  "why": "LLM-generated model from the evaluation corpus; the population the benchmark is for.",
+  "model": "model.fcstm",
+  "queries": [
+    {
+      "file": "reach.fbmcq",
+      "kind": "reach",
+      "expected": {
+        "status": "sat",
+        "property_satisfied": true,
+        "outcome": "witness_found"
+      },
+      "why": "can the Land leaf be reached from the declared initial values"
+    },
+    {
+      "file": "forbid.fbmcq",
+      "kind": "forbid",
+      "expected": {
+        "status": "unsat",
+        "property_satisfied": true,
+        "outcome": "property_satisfied"
+      },
+      "why": "link_ok must never go negative"
+    },
+    {
+      "file": "invariant.fbmcq",
+      "kind": "invariant",
+      "expected": {
+        "status": "unsat",
+        "property_satisfied": true,
+        "outcome": "property_satisfied"
+      },
+      "why": "does link_ok stay within its relaxed initial range"
+    }
+  ]
+}

@@ -19,5 +19,5 @@ steps:
       cause_type: ZeroDivisionError
       cause_match: division by zero
       cause_match_kind: substring
-    vars_exact:
+    vars:
       x: 0

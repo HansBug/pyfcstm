@@ -15,11 +15,6 @@ steps:
       x: 1
       y: 0
     ended: false
-    vars_keys:
-    - x
-    - y
-    vars_absent:
-    - tmp
 - cycle: Root.A.Go
   expect:
     state: Root.B
@@ -27,8 +22,3 @@ steps:
       x: 11
       y: 12
     ended: false
-    vars_keys:
-    - x
-    - y
-    vars_absent:
-    - tmp

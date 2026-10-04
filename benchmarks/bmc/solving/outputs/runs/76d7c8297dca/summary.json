@@ -1,0 +1,4065 @@
+{
+  "claude_distributed_elevator_can": {
+    "queries": {
+      "forbid": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 400.4450151696801,
+              "p50": 399.0250090137124,
+              "p95": 400.4450151696801
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2036,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 92901376,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 9.286472573876381,
+              "p50": 8.396527729928493,
+              "p95": 9.286472573876381
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 8.814299013465643,
+              "p50": 8.027659729123116,
+              "p95": 8.814299013465643
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 409.1564239934087,
+              "p50": 399.72114795818925,
+              "p95": 409.1564239934087
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2036,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 92770304,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 8.822262287139893,
+              "p50": 8.496693335473537,
+              "p95": 8.822262287139893
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 8.401563856750727,
+              "p50": 8.059796877205372,
+              "p95": 8.401563856750727
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "forbid"
+      },
+      "invariant": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 416.9886130839586,
+              "p50": 405.6747341528535,
+              "p95": 416.9886130839586
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2048,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 92913664,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 9.330824948847294,
+              "p50": 8.799648843705654,
+              "p95": 9.330824948847294
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 8.776696864515543,
+              "p50": 8.38359072804451,
+              "p95": 8.776696864515543
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 419.7072200477123,
+              "p50": 401.0783857665956,
+              "p95": 419.7072200477123
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2048,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 92745728,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 9.190785698592663,
+              "p50": 9.086834266781807,
+              "p95": 9.190785698592663
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 8.75228876248002,
+              "p50": 8.630664087831974,
+              "p95": 8.75228876248002
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "invariant"
+      },
+      "reach": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 411.59809567034245,
+              "p50": 403.63955590873957,
+              "p95": 411.59809567034245
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2015,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "witness_found",
+            "peak_child_rss_bytes": 93216768,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": 9.566821157932281,
+              "p50": 9.173966944217682,
+              "p95": 9.566821157932281
+            },
+            "replay_ok": true,
+            "samples": 5,
+            "solve_ms": {
+              "max": 15.252059791237116,
+              "p50": 13.810166623443365,
+              "p95": 15.252059791237116
+            },
+            "status": "sat",
+            "total_elapsed_ms": {
+              "max": 14.629546087235212,
+              "p50": 13.356307987123728,
+              "p95": 14.629546087235212
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 409.4236004166305,
+              "p50": 397.4407771602273,
+              "p95": 409.4236004166305
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2015,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "witness_found",
+            "peak_child_rss_bytes": 93196288,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": 9.549938142299652,
+              "p50": 9.093258995562792,
+              "p95": 9.549938142299652
+            },
+            "replay_ok": true,
+            "samples": 5,
+            "solve_ms": {
+              "max": 14.275799971073866,
+              "p50": 13.780896086245775,
+              "p95": 14.275799971073866
+            },
+            "status": "sat",
+            "total_elapsed_ms": {
+              "max": 13.714530039578676,
+              "p50": 13.29853804782033,
+              "p95": 13.714530039578676
+            }
+          }
+        },
+        "expected": {
+          "outcome": "witness_found",
+          "property_satisfied": true,
+          "status": "sat"
+        },
+        "kind": "reach"
+      }
+    },
+    "role": "llm_generated"
+  },
+  "claude_platooning_join_protocol": {
+    "queries": {
+      "forbid": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 298.31163259223104,
+              "p50": 283.78138365224004,
+              "p95": 298.31163259223104
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2303,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 92925952,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 20.571640226989985,
+              "p50": 20.39861213415861,
+              "p95": 20.571640226989985
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 20.059084985405207,
+              "p50": 19.876159261912107,
+              "p95": 20.059084985405207
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 289.1660491004586,
+              "p50": 285.56071035563946,
+              "p95": 289.1660491004586
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2303,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 93081600,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 20.76101815328002,
+              "p50": 20.07837826386094,
+              "p95": 20.76101815328002
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 20.240234676748514,
+              "p50": 19.6235291659832,
+              "p95": 20.240234676748514
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "forbid"
+      },
+      "invariant": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 292.89932921528816,
+              "p50": 291.75908118486404,
+              "p95": 292.89932921528816
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2315,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 93188096,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 21.89914369955659,
+              "p50": 21.35246992111206,
+              "p95": 21.89914369955659
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 21.32181590422988,
+              "p50": 20.813880022615194,
+              "p95": 21.32181590422988
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 304.6444319188595,
+              "p50": 294.38445484265685,
+              "p95": 304.6444319188595
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2315,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 93466624,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 22.688310593366623,
+              "p50": 21.67875412851572,
+              "p95": 22.688310593366623
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 22.06998784095049,
+              "p50": 21.114027127623558,
+              "p95": 22.06998784095049
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "invariant"
+      },
+      "reach": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 294.2254599183798,
+              "p50": 288.65917259827256,
+              "p95": 294.2254599183798
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2291,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "no_witness",
+            "peak_child_rss_bytes": 93278208,
+            "property_satisfied": false,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 14.88364115357399,
+              "p50": 13.856883626431227,
+              "p95": 14.88364115357399
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 14.265835750848055,
+              "p50": 13.383904006332159,
+              "p95": 14.265835750848055
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 284.1296079568565,
+              "p50": 283.6449621245265,
+              "p95": 284.1296079568565
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2291,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "no_witness",
+            "peak_child_rss_bytes": 93175808,
+            "property_satisfied": false,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 14.238164760172367,
+              "p50": 14.098853804171085,
+              "p95": 14.238164760172367
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 13.745547737926245,
+              "p50": 13.579798862338066,
+              "p95": 13.745547737926245
+            }
+          }
+        },
+        "expected": {
+          "outcome": "no_witness",
+          "property_satisfied": false,
+          "status": "unsat"
+        },
+        "kind": "reach"
+      }
+    },
+    "role": "llm_generated"
+  },
+  "claude_traffic_emergency_priority": {
+    "queries": {
+      "forbid": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 1059.3773191794753,
+              "p50": 1048.5923760570586,
+              "p95": 1059.3773191794753
+            },
+            "failures": 0,
+            "formula_dag_nodes": 3509,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 95440896,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 13.593670912086964,
+              "p50": 13.268496375530958,
+              "p95": 13.593670912086964
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 12.958023231476545,
+              "p50": 12.697134166955948,
+              "p95": 12.958023231476545
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 1071.4805228635669,
+              "p50": 1053.7196667864919,
+              "p95": 1071.4805228635669
+            },
+            "failures": 0,
+            "formula_dag_nodes": 3509,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 95047680,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 13.776315841823816,
+              "p50": 13.56432493776083,
+              "p95": 13.776315841823816
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 13.081683777272701,
+              "p50": 12.940260116010904,
+              "p95": 13.081683777272701
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "forbid"
+      },
+      "invariant": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 1057.652689050883,
+              "p50": 1035.1050840690732,
+              "p95": 1057.652689050883
+            },
+            "failures": 0,
+            "formula_dag_nodes": 3521,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 95043584,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 12.236755806952715,
+              "p50": 11.307721957564354,
+              "p95": 12.236755806952715
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 11.450062040239573,
+              "p50": 10.708658024668694,
+              "p95": 11.450062040239573
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 1077.9339116998017,
+              "p50": 1035.425084643066,
+              "p95": 1077.9339116998017
+            },
+            "failures": 0,
+            "formula_dag_nodes": 3521,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 95195136,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 11.968861799687147,
+              "p50": 11.323655024170876,
+              "p95": 11.968861799687147
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 11.159216985106468,
+              "p50": 10.762958321720362,
+              "p95": 11.159216985106468
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "invariant"
+      },
+      "reach": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 1052.727044094354,
+              "p50": 1041.0275091417134,
+              "p95": 1052.727044094354
+            },
+            "failures": 0,
+            "formula_dag_nodes": 3486,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "witness_found",
+            "peak_child_rss_bytes": 95375360,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": 12.024570256471634,
+              "p50": 11.77534693852067,
+              "p95": 12.024570256471634
+            },
+            "replay_ok": true,
+            "samples": 5,
+            "solve_ms": {
+              "max": 26.350083760917187,
+              "p50": 25.878611020743847,
+              "p95": 26.350083760917187
+            },
+            "status": "sat",
+            "total_elapsed_ms": {
+              "max": 25.57077305391431,
+              "p50": 25.13417834416032,
+              "p95": 25.57077305391431
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 1051.587819121778,
+              "p50": 1043.7802523374557,
+              "p95": 1051.587819121778
+            },
+            "failures": 0,
+            "formula_dag_nodes": 3486,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "witness_found",
+            "peak_child_rss_bytes": 95215616,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": 13.189438264817,
+              "p50": 12.44235597550869,
+              "p95": 13.189438264817
+            },
+            "replay_ok": true,
+            "samples": 5,
+            "solve_ms": {
+              "max": 27.210744563490152,
+              "p50": 26.256482116878033,
+              "p95": 27.210744563490152
+            },
+            "status": "sat",
+            "total_elapsed_ms": {
+              "max": 25.854894891381264,
+              "p50": 25.528552941977978,
+              "p95": 25.854894891381264
+            }
+          }
+        },
+        "expected": {
+          "outcome": "witness_found",
+          "property_satisfied": true,
+          "status": "sat"
+        },
+        "kind": "reach"
+      }
+    },
+    "role": "llm_generated"
+  },
+  "claude_vtol_mission_supervision": {
+    "queries": {
+      "forbid": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 243.23984002694488,
+              "p50": 235.34386605024338,
+              "p95": 243.23984002694488
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2047,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 92667904,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 15.239378903061152,
+              "p50": 14.745515771210194,
+              "p95": 15.239378903061152
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 14.808010309934616,
+              "p50": 14.306284952908754,
+              "p95": 14.808010309934616
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 241.82280199602246,
+              "p50": 234.9069849587977,
+              "p95": 241.82280199602246
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2047,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 92598272,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 16.320322174578905,
+              "p50": 14.343420043587685,
+              "p95": 16.320322174578905
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 15.897355042397976,
+              "p50": 14.002597890794277,
+              "p95": 15.897355042397976
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "forbid"
+      },
+      "invariant": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 246.1102749221027,
+              "p50": 241.3810663856566,
+              "p95": 246.1102749221027
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2059,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 92688384,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 22.284456063061953,
+              "p50": 21.64120925590396,
+              "p95": 22.284456063061953
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 21.794209256768227,
+              "p50": 21.25907503068447,
+              "p95": 21.794209256768227
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 245.8443809300661,
+              "p50": 240.69454614073038,
+              "p95": 245.8443809300661
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2059,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 92745728,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 25.340985972434282,
+              "p50": 22.241598926484585,
+              "p95": 25.340985972434282
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 24.6839071623981,
+              "p50": 21.735551301389933,
+              "p95": 24.6839071623981
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "invariant"
+      },
+      "reach": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 246.2619487196207,
+              "p50": 241.180632263422,
+              "p95": 246.2619487196207
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2035,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "no_witness",
+            "peak_child_rss_bytes": 92622848,
+            "property_satisfied": false,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 17.379950266331434,
+              "p50": 16.11495530232787,
+              "p95": 17.379950266331434
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 16.88873628154397,
+              "p50": 15.71758696809411,
+              "p95": 16.88873628154397
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 244.31576067581773,
+              "p50": 238.193494733423,
+              "p95": 244.31576067581773
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2035,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "no_witness",
+            "peak_child_rss_bytes": 92618752,
+            "property_satisfied": false,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 17.117195762693882,
+              "p50": 16.07954315841198,
+              "p95": 17.117195762693882
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 16.670773271471262,
+              "p50": 15.65491408109665,
+              "p95": 16.670773271471262
+            }
+          }
+        },
+        "expected": {
+          "outcome": "no_witness",
+          "property_satisfied": false,
+          "status": "unsat"
+        },
+        "kind": "reach"
+      }
+    },
+    "role": "llm_generated"
+  },
+  "codex_deepseek_distributed_elevator_can": {
+    "queries": {
+      "forbid": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 128.10667930170894,
+              "p50": 125.32465299591422,
+              "p95": 128.10667930170894
+            },
+            "failures": 0,
+            "formula_dag_nodes": 1010,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 91299840,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 5.8180419728159904,
+              "p50": 5.504919681698084,
+              "p95": 5.8180419728159904
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 5.542876198887825,
+              "p50": 5.29809994623065,
+              "p95": 5.542876198887825
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 126.6487380489707,
+              "p50": 124.66630013659596,
+              "p95": 126.6487380489707
+            },
+            "failures": 0,
+            "formula_dag_nodes": 1010,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 91299840,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 5.650520790368319,
+              "p50": 5.585947073996067,
+              "p95": 5.650520790368319
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 5.397810135036707,
+              "p50": 5.348998121917248,
+              "p95": 5.397810135036707
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "forbid"
+      },
+      "invariant": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 133.34704795852304,
+              "p50": 129.0319268591702,
+              "p95": 133.34704795852304
+            },
+            "failures": 0,
+            "formula_dag_nodes": 1022,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 91484160,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 6.907953880727291,
+              "p50": 6.531090009957552,
+              "p95": 6.907953880727291
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 6.569891236722469,
+              "p50": 6.293240003287792,
+              "p95": 6.569891236722469
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 134.26550896838307,
+              "p50": 129.28535416722298,
+              "p95": 134.26550896838307
+            },
+            "failures": 0,
+            "formula_dag_nodes": 1022,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 91508736,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 6.829155143350363,
+              "p50": 6.588966120034456,
+              "p95": 6.829155143350363
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 6.5011680126190186,
+              "p50": 6.364128086715937,
+              "p95": 6.5011680126190186
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "invariant"
+      },
+      "reach": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 127.07713386043906,
+              "p50": 125.13711489737034,
+              "p95": 127.07713386043906
+            },
+            "failures": 0,
+            "formula_dag_nodes": 993,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "no_witness",
+            "peak_child_rss_bytes": 91254784,
+            "property_satisfied": false,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 7.595875766128302,
+              "p50": 7.487568072974682,
+              "p95": 7.595875766128302
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 7.297818083316088,
+              "p50": 7.222515996545553,
+              "p95": 7.297818083316088
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 126.95457367226481,
+              "p50": 123.90526523813605,
+              "p95": 126.95457367226481
+            },
+            "failures": 0,
+            "formula_dag_nodes": 993,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "no_witness",
+            "peak_child_rss_bytes": 91328512,
+            "property_satisfied": false,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 7.586359046399593,
+              "p50": 7.4260542169213295,
+              "p95": 7.586359046399593
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 7.317184936255217,
+              "p50": 7.196383085101843,
+              "p95": 7.317184936255217
+            }
+          }
+        },
+        "expected": {
+          "outcome": "no_witness",
+          "property_satisfied": false,
+          "status": "unsat"
+        },
+        "kind": "reach"
+      }
+    },
+    "role": "llm_generated"
+  },
+  "codex_deepseek_platooning_join_protocol": {
+    "queries": {
+      "forbid": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 144.20962473377585,
+              "p50": 143.0856930091977,
+              "p95": 144.20962473377585
+            },
+            "failures": 0,
+            "formula_dag_nodes": 1314,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 91836416,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 12.162232771515846,
+              "p50": 11.756455060094595,
+              "p95": 12.162232771515846
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 11.783963069319725,
+              "p50": 11.414940934628248,
+              "p95": 11.783963069319725
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 147.86649635061622,
+              "p50": 144.36904294416308,
+              "p95": 147.86649635061622
+            },
+            "failures": 0,
+            "formula_dag_nodes": 1314,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 91574272,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 11.803082656115294,
+              "p50": 11.720844078809023,
+              "p95": 11.803082656115294
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 11.508117895573378,
+              "p50": 11.383719276636839,
+              "p95": 11.508117895573378
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "forbid"
+      },
+      "invariant": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 147.9744389653206,
+              "p50": 146.8260041438043,
+              "p95": 147.9744389653206
+            },
+            "failures": 0,
+            "formula_dag_nodes": 1326,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 91701248,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 12.533464003354311,
+              "p50": 12.110588140785694,
+              "p95": 12.533464003354311
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 12.187126092612743,
+              "p50": 11.808610986918211,
+              "p95": 12.187126092612743
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 147.58336916565895,
+              "p50": 145.1833308674395,
+              "p95": 147.58336916565895
+            },
+            "failures": 0,
+            "formula_dag_nodes": 1326,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 91570176,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 12.495385017246008,
+              "p50": 11.855439748615026,
+              "p95": 12.495385017246008
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 12.132803909480572,
+              "p50": 11.52875181287527,
+              "p95": 12.132803909480572
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "invariant"
+      },
+      "reach": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 144.08486988395452,
+              "p50": 142.7442659623921,
+              "p95": 144.08486988395452
+            },
+            "failures": 0,
+            "formula_dag_nodes": 1302,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "no_witness",
+            "peak_child_rss_bytes": 91566080,
+            "property_satisfied": false,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 8.053930941969156,
+              "p50": 7.733733858913183,
+              "p95": 8.053930941969156
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 7.73374130949378,
+              "p50": 7.445966824889183,
+              "p95": 7.73374130949378
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 149.68357095494866,
+              "p50": 143.467980902642,
+              "p95": 149.68357095494866
+            },
+            "failures": 0,
+            "formula_dag_nodes": 1302,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "no_witness",
+            "peak_child_rss_bytes": 91574272,
+            "property_satisfied": false,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 7.94060667976737,
+              "p50": 7.668452803045511,
+              "p95": 7.94060667976737
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 7.603873964399099,
+              "p50": 7.3577119037508965,
+              "p95": 7.603873964399099
+            }
+          }
+        },
+        "expected": {
+          "outcome": "no_witness",
+          "property_satisfied": false,
+          "status": "unsat"
+        },
+        "kind": "reach"
+      }
+    },
+    "role": "llm_generated"
+  },
+  "codex_deepseek_traffic_emergency_priority": {
+    "queries": {
+      "forbid": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 484.0749208815396,
+              "p50": 479.54212687909603,
+              "p95": 484.0749208815396
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2045,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 92676096,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 6.939227692782879,
+              "p50": 6.719376426190138,
+              "p95": 6.939227692782879
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 6.56767887994647,
+              "p50": 6.3485451973974705,
+              "p95": 6.56767887994647
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 502.2323466837406,
+              "p50": 482.1301088668406,
+              "p95": 502.2323466837406
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2045,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 92745728,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 7.541529834270477,
+              "p50": 6.990887224674225,
+              "p95": 7.541529834270477
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 6.961429957300425,
+              "p50": 6.538914050906897,
+              "p95": 6.961429957300425
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "forbid"
+      },
+      "invariant": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 489.4482200033963,
+              "p50": 487.60794289410114,
+              "p95": 489.4482200033963
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2057,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 92831744,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 6.706972606480122,
+              "p50": 6.569976918399334,
+              "p95": 6.706972606480122
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 6.324201822280884,
+              "p50": 6.224676035344601,
+              "p95": 6.324201822280884
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 490.62970001250505,
+              "p50": 478.2923711463809,
+              "p95": 490.62970001250505
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2057,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 92991488,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 6.925595924258232,
+              "p50": 6.647604983299971,
+              "p95": 6.925595924258232
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 6.518357899039984,
+              "p50": 6.312968209385872,
+              "p95": 6.518357899039984
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "invariant"
+      },
+      "reach": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 481.1328398063779,
+              "p50": 479.34856126084924,
+              "p95": 481.1328398063779
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2023,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "witness_found",
+            "peak_child_rss_bytes": 92839936,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": 9.120494592934847,
+              "p50": 8.50642565637827,
+              "p95": 9.120494592934847
+            },
+            "replay_ok": true,
+            "samples": 5,
+            "solve_ms": {
+              "max": 29.0376846678555,
+              "p50": 27.054493315517902,
+              "p95": 29.0376846678555
+            },
+            "status": "sat",
+            "total_elapsed_ms": {
+              "max": 28.481364715844393,
+              "p50": 26.550035923719406,
+              "p95": 28.481364715844393
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 490.34333089366555,
+              "p50": 478.48514979705215,
+              "p95": 490.34333089366555
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2023,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "witness_found",
+            "peak_child_rss_bytes": 93196288,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": 9.451525751501322,
+              "p50": 8.604059927165508,
+              "p95": 9.451525751501322
+            },
+            "replay_ok": true,
+            "samples": 5,
+            "solve_ms": {
+              "max": 27.650143019855022,
+              "p50": 26.914314832538366,
+              "p95": 27.650143019855022
+            },
+            "status": "sat",
+            "total_elapsed_ms": {
+              "max": 27.117079123854637,
+              "p50": 26.33732371032238,
+              "p95": 27.117079123854637
+            }
+          }
+        },
+        "expected": {
+          "outcome": "witness_found",
+          "property_satisfied": true,
+          "status": "sat"
+        },
+        "kind": "reach"
+      }
+    },
+    "role": "llm_generated"
+  },
+  "codex_deepseek_vtol_mission_supervision": {
+    "queries": {
+      "forbid": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 289.507953915745,
+              "p50": 282.2793899103999,
+              "p95": 289.507953915745
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2574,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 92954624,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 17.579443752765656,
+              "p50": 16.248553059995174,
+              "p95": 17.579443752765656
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 17.058025114238262,
+              "p50": 15.766261145472527,
+              "p95": 17.058025114238262
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 296.9095893204212,
+              "p50": 285.4188629426062,
+              "p95": 296.9095893204212
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2574,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 93097984,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 17.83736003562808,
+              "p50": 16.88995212316513,
+              "p95": 17.83736003562808
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 17.333314288407564,
+              "p50": 16.37272397056222,
+              "p95": 17.333314288407564
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "forbid"
+      },
+      "invariant": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 300.7138781249523,
+              "p50": 286.0146928578615,
+              "p95": 300.7138781249523
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2586,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 93208576,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 18.22504587471485,
+              "p50": 17.40605616942048,
+              "p95": 18.22504587471485
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 17.684699967503548,
+              "p50": 16.92921482026577,
+              "p95": 17.684699967503548
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 294.97151635587215,
+              "p50": 290.7276740297675,
+              "p95": 294.97151635587215
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2586,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 92946432,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 18.01170175895095,
+              "p50": 17.788557801395655,
+              "p95": 18.01170175895095
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 17.45836203917861,
+              "p50": 17.29768607765436,
+              "p95": 17.45836203917861
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "invariant"
+      },
+      "reach": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 282.95139223337173,
+              "p50": 276.72101790085435,
+              "p95": 282.95139223337173
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2562,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "witness_found",
+            "peak_child_rss_bytes": 92872704,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": 10.860499925911427,
+              "p50": 9.52773867174983,
+              "p95": 10.860499925911427
+            },
+            "replay_ok": true,
+            "samples": 5,
+            "solve_ms": {
+              "max": 9.266032371670008,
+              "p50": 9.038327261805534,
+              "p95": 9.266032371670008
+            },
+            "status": "sat",
+            "total_elapsed_ms": {
+              "max": 8.810079656541348,
+              "p50": 8.641032967716455,
+              "p95": 8.810079656541348
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 282.28564327582717,
+              "p50": 279.9451989121735,
+              "p95": 282.28564327582717
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2562,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "witness_found",
+            "peak_child_rss_bytes": 93089792,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": 9.973848704248667,
+              "p50": 9.48443403467536,
+              "p95": 9.973848704248667
+            },
+            "replay_ok": true,
+            "samples": 5,
+            "solve_ms": {
+              "max": 9.223412722349167,
+              "p50": 9.04451496899128,
+              "p95": 9.223412722349167
+            },
+            "status": "sat",
+            "total_elapsed_ms": {
+              "max": 8.795575704425573,
+              "p50": 8.672506082803011,
+              "p95": 8.795575704425573
+            }
+          }
+        },
+        "expected": {
+          "outcome": "witness_found",
+          "property_satisfied": true,
+          "status": "sat"
+        },
+        "kind": "reach"
+      }
+    },
+    "role": "llm_generated"
+  },
+  "codex_distributed_elevator_can": {
+    "queries": {
+      "forbid": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 533.4107433445752,
+              "p50": 531.3687077723444,
+              "p95": 533.4107433445752
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2126,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 93745152,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 37.18375414609909,
+              "p50": 36.640343721956015,
+              "p95": 37.18375414609909
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 36.64775099605322,
+              "p50": 35.99882870912552,
+              "p95": 36.64775099605322
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 550.5868582986295,
+              "p50": 535.2771920152009,
+              "p95": 550.5868582986295
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2126,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 93732864,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 37.04256983473897,
+              "p50": 36.337918136268854,
+              "p95": 37.04256983473897
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 36.45216813310981,
+              "p50": 35.71743285283446,
+              "p95": 36.45216813310981
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "forbid"
+      },
+      "invariant": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 534.272835124284,
+              "p50": 531.4383562654257,
+              "p95": 534.272835124284
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2138,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 93868032,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 36.65914200246334,
+              "p50": 35.49687098711729,
+              "p95": 36.65914200246334
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 36.10066417604685,
+              "p50": 34.94101110845804,
+              "p95": 36.10066417604685
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 548.491497989744,
+              "p50": 532.9017620533705,
+              "p95": 548.491497989744
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2138,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 93937664,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 38.104766979813576,
+              "p50": 36.04517178609967,
+              "p95": 38.104766979813576
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 37.53116400912404,
+              "p50": 35.46360321342945,
+              "p95": 37.53116400912404
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "invariant"
+      },
+      "reach": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 531.9443172775209,
+              "p50": 525.2765328623354,
+              "p95": 531.9443172775209
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2102,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "witness_found",
+            "peak_child_rss_bytes": 93605888,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": 11.03950897231698,
+              "p50": 9.908860083669424,
+              "p95": 11.03950897231698
+            },
+            "replay_ok": true,
+            "samples": 5,
+            "solve_ms": {
+              "max": 21.026835311204195,
+              "p50": 19.75565915927291,
+              "p95": 21.026835311204195
+            },
+            "status": "sat",
+            "total_elapsed_ms": {
+              "max": 20.321698859333992,
+              "p50": 19.197648856788874,
+              "p95": 20.321698859333992
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 526.6345092095435,
+              "p50": 522.8151096962392,
+              "p95": 526.6345092095435
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2102,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "witness_found",
+            "peak_child_rss_bytes": 93982720,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": 12.0462398044765,
+              "p50": 10.07016422227025,
+              "p95": 12.0462398044765
+            },
+            "replay_ok": true,
+            "samples": 5,
+            "solve_ms": {
+              "max": 19.931026734411716,
+              "p50": 19.551088102161884,
+              "p95": 19.931026734411716
+            },
+            "status": "sat",
+            "total_elapsed_ms": {
+              "max": 19.376274198293686,
+              "p50": 19.00657592341304,
+              "p95": 19.376274198293686
+            }
+          }
+        },
+        "expected": {
+          "outcome": "witness_found",
+          "property_satisfied": true,
+          "status": "sat"
+        },
+        "kind": "reach"
+      }
+    },
+    "role": "llm_generated"
+  },
+  "codex_platooning_join_protocol": {
+    "queries": {
+      "forbid": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 373.293399810791,
+              "p50": 367.19572683796287,
+              "p95": 373.293399810791
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2572,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 94089216,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 34.251505974680185,
+              "p50": 32.96479815617204,
+              "p95": 34.251505974680185
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 33.01299037411809,
+              "p50": 32.30584505945444,
+              "p95": 33.01299037411809
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 364.4109810702503,
+              "p50": 361.93853011354804,
+              "p95": 364.4109810702503
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2572,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 94253056,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 33.17399835214019,
+              "p50": 32.785914838314056,
+              "p95": 33.17399835214019
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 32.505467999726534,
+              "p50": 32.12349722161889,
+              "p95": 32.505467999726534
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "forbid"
+      },
+      "invariant": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 371.8917421065271,
+              "p50": 367.24040610715747,
+              "p95": 371.8917421065271
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2584,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 94195712,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 30.402699019759893,
+              "p50": 28.31982308998704,
+              "p95": 30.402699019759893
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 29.731773771345615,
+              "p50": 27.66144508495927,
+              "p95": 29.731773771345615
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 374.5457148179412,
+              "p50": 368.1127526797354,
+              "p95": 374.5457148179412
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2584,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 94121984,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 29.51672812923789,
+              "p50": 28.071033768355846,
+              "p95": 29.51672812923789
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 28.84264988824725,
+              "p50": 27.40693185478449,
+              "p95": 28.84264988824725
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "invariant"
+      },
+      "reach": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 369.0772349946201,
+              "p50": 361.9960220530629,
+              "p95": 369.0772349946201
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2560,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "no_witness",
+            "peak_child_rss_bytes": 93958144,
+            "property_satisfied": false,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 29.57482961937785,
+              "p50": 27.875616680830717,
+              "p95": 29.57482961937785
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 28.919788543134928,
+              "p50": 27.250499930232763,
+              "p95": 28.919788543134928
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 374.94785571470857,
+              "p50": 372.16367293149233,
+              "p95": 374.94785571470857
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2560,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "no_witness",
+            "peak_child_rss_bytes": 94060544,
+            "property_satisfied": false,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 28.62393483519554,
+              "p50": 28.326652944087982,
+              "p95": 28.62393483519554
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 27.962184976786375,
+              "p50": 27.709875255823135,
+              "p95": 27.962184976786375
+            }
+          }
+        },
+        "expected": {
+          "outcome": "no_witness",
+          "property_satisfied": false,
+          "status": "unsat"
+        },
+        "kind": "reach"
+      }
+    },
+    "role": "llm_generated"
+  },
+  "codex_traffic_emergency_priority": {
+    "queries": {
+      "forbid": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 1095.2790561132133,
+              "p50": 1080.6285231374204,
+              "p95": 1095.2790561132133
+            },
+            "failures": 0,
+            "formula_dag_nodes": 3456,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 95571968,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 12.576240114867687,
+              "p50": 12.247131206095219,
+              "p95": 12.576240114867687
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 11.963401921093464,
+              "p50": 11.637969873845577,
+              "p95": 11.963401921093464
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 1089.582763146609,
+              "p50": 1077.663138974458,
+              "p95": 1089.582763146609
+            },
+            "failures": 0,
+            "formula_dag_nodes": 3456,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 95576064,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 16.731126233935356,
+              "p50": 13.413568027317524,
+              "p95": 16.731126233935356
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 15.628032851964235,
+              "p50": 12.734467163681984,
+              "p95": 15.628032851964235
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "forbid"
+      },
+      "invariant": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 1096.5291047468781,
+              "p50": 1086.4145499654114,
+              "p95": 1096.5291047468781
+            },
+            "failures": 0,
+            "formula_dag_nodes": 3468,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_violated",
+            "peak_child_rss_bytes": 95793152,
+            "property_satisfied": false,
+            "replay_ms": {
+              "max": 14.435159973800182,
+              "p50": 13.848987873643637,
+              "p95": 14.435159973800182
+            },
+            "replay_ok": true,
+            "samples": 5,
+            "solve_ms": {
+              "max": 10.355826932936907,
+              "p50": 9.601051919162273,
+              "p95": 10.355826932936907
+            },
+            "status": "sat",
+            "total_elapsed_ms": {
+              "max": 9.692423045635223,
+              "p50": 9.057155344635248,
+              "p95": 9.692423045635223
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 1102.8721299953759,
+              "p50": 1095.322229899466,
+              "p95": 1102.8721299953759
+            },
+            "failures": 0,
+            "formula_dag_nodes": 3468,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_violated",
+            "peak_child_rss_bytes": 95965184,
+            "property_satisfied": false,
+            "replay_ms": {
+              "max": 14.192480128258467,
+              "p50": 13.836163096129894,
+              "p95": 14.192480128258467
+            },
+            "replay_ok": true,
+            "samples": 5,
+            "solve_ms": {
+              "max": 9.93063673377037,
+              "p50": 9.592162910848856,
+              "p95": 9.93063673377037
+            },
+            "status": "sat",
+            "total_elapsed_ms": {
+              "max": 9.284589439630508,
+              "p50": 9.043122176080942,
+              "p95": 9.284589439630508
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_violated",
+          "property_satisfied": false,
+          "status": "sat"
+        },
+        "kind": "invariant"
+      },
+      "reach": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 1076.725105755031,
+              "p50": 1064.625816885382,
+              "p95": 1076.725105755031
+            },
+            "failures": 0,
+            "formula_dag_nodes": 3429,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "witness_found",
+            "peak_child_rss_bytes": 95776768,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": 15.649139881134033,
+              "p50": 14.682358596473932,
+              "p95": 15.649139881134033
+            },
+            "replay_ok": true,
+            "samples": 5,
+            "solve_ms": {
+              "max": 19.8053359054029,
+              "p50": 19.14817886427045,
+              "p95": 19.8053359054029
+            },
+            "status": "sat",
+            "total_elapsed_ms": {
+              "max": 19.132304936647415,
+              "p50": 18.45335168763995,
+              "p95": 19.132304936647415
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 1085.780597757548,
+              "p50": 1074.4301248341799,
+              "p95": 1085.780597757548
+            },
+            "failures": 0,
+            "formula_dag_nodes": 3429,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "witness_found",
+            "peak_child_rss_bytes": 95748096,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": 14.510217122733593,
+              "p50": 14.091904740780592,
+              "p95": 14.510217122733593
+            },
+            "replay_ok": true,
+            "samples": 5,
+            "solve_ms": {
+              "max": 19.458679016679525,
+              "p50": 18.939503002911806,
+              "p95": 19.458679016679525
+            },
+            "status": "sat",
+            "total_elapsed_ms": {
+              "max": 18.78692302852869,
+              "p50": 18.366472329944372,
+              "p95": 18.78692302852869
+            }
+          }
+        },
+        "expected": {
+          "outcome": "witness_found",
+          "property_satisfied": true,
+          "status": "sat"
+        },
+        "kind": "reach"
+      }
+    },
+    "role": "llm_generated"
+  },
+  "codex_vtol_mission_supervision": {
+    "queries": {
+      "forbid": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 25670.12874688953,
+              "p50": 25550.974242854863,
+              "p95": 25670.12874688953
+            },
+            "failures": 0,
+            "formula_dag_nodes": 13456,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 117547008,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 69.45307599380612,
+              "p50": 62.79451819136739,
+              "p95": 69.45307599380612
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 67.57761491462588,
+              "p50": 61.12877791747451,
+              "p95": 67.57761491462588
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 25563.42021841556,
+              "p50": 25491.998235229403,
+              "p95": 25563.42021841556
+            },
+            "failures": 0,
+            "formula_dag_nodes": 13456,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 116989952,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 65.42861508205533,
+              "p50": 63.29752830788493,
+              "p95": 65.42861508205533
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 63.7543392367661,
+              "p50": 61.49411108344793,
+              "p95": 63.7543392367661
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "forbid"
+      },
+      "invariant": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 25594.195671845227,
+              "p50": 25589.22283910215,
+              "p95": 25594.195671845227
+            },
+            "failures": 0,
+            "formula_dag_nodes": 13468,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_violated",
+            "peak_child_rss_bytes": 119250944,
+            "property_satisfied": false,
+            "replay_ms": {
+              "max": 28.652363922446966,
+              "p50": 27.66372635960579,
+              "p95": 28.652363922446966
+            },
+            "replay_ok": true,
+            "samples": 5,
+            "solve_ms": {
+              "max": 40.650969836860895,
+              "p50": 39.58635590970516,
+              "p95": 40.650969836860895
+            },
+            "status": "sat",
+            "total_elapsed_ms": {
+              "max": 38.990067318081856,
+              "p50": 37.99257194623351,
+              "p95": 38.990067318081856
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 25523.63417018205,
+              "p50": 25424.964474979788,
+              "p95": 25523.63417018205
+            },
+            "failures": 0,
+            "formula_dag_nodes": 13468,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_violated",
+            "peak_child_rss_bytes": 120774656,
+            "property_satisfied": false,
+            "replay_ms": {
+              "max": 28.576513286679983,
+              "p50": 27.972578071057796,
+              "p95": 28.576513286679983
+            },
+            "replay_ok": true,
+            "samples": 5,
+            "solve_ms": {
+              "max": 43.23672782629728,
+              "p50": 39.946405217051506,
+              "p95": 43.23672782629728
+            },
+            "status": "sat",
+            "total_elapsed_ms": {
+              "max": 41.18731431663036,
+              "p50": 38.32636680454016,
+              "p95": 41.18731431663036
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_violated",
+          "property_satisfied": false,
+          "status": "sat"
+        },
+        "kind": "invariant"
+      },
+      "reach": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 25754.90840477869,
+              "p50": 25562.48403619975,
+              "p95": 25754.90840477869
+            },
+            "failures": 0,
+            "formula_dag_nodes": 13444,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "no_witness",
+            "peak_child_rss_bytes": 117923840,
+            "property_satisfied": false,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 158.04670890793204,
+              "p50": 153.81413279101253,
+              "p95": 158.04670890793204
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 156.29772981628776,
+              "p50": 152.04217797145247,
+              "p95": 156.29772981628776
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 25622.929352335632,
+              "p50": 25569.305376149714,
+              "p95": 25622.929352335632
+            },
+            "failures": 0,
+            "formula_dag_nodes": 13444,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "no_witness",
+            "peak_child_rss_bytes": 117592064,
+            "property_satisfied": false,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 156.38361312448978,
+              "p50": 154.99625820666552,
+              "p95": 156.38361312448978
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 154.69070384278893,
+              "p50": 153.25325913727283,
+              "p95": 154.69070384278893
+            }
+          }
+        },
+        "expected": {
+          "outcome": "no_witness",
+          "property_satisfied": false,
+          "status": "unsat"
+        },
+        "kind": "reach"
+      }
+    },
+    "role": "llm_generated"
+  },
+  "conveyor_counters": {
+    "queries": {
+      "forbid": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 194.0905568189919,
+              "p50": 191.98877923190594,
+              "p95": 194.0905568189919
+            },
+            "failures": 0,
+            "formula_dag_nodes": 1789,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 92999680,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 15.267093200236559,
+              "p50": 14.965830836445093,
+              "p95": 15.267093200236559
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 14.75862693041563,
+              "p50": 14.488126616925001,
+              "p95": 14.75862693041563
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 201.89236709848046,
+              "p50": 196.80793024599552,
+              "p95": 201.89236709848046
+            },
+            "failures": 0,
+            "formula_dag_nodes": 1789,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 92737536,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 17.114453949034214,
+              "p50": 15.375527087599039,
+              "p95": 17.114453949034214
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 16.495110001415014,
+              "p50": 14.8778660222888,
+              "p95": 16.495110001415014
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "forbid"
+      },
+      "invariant": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 198.67049530148506,
+              "p50": 198.05767806246877,
+              "p95": 198.67049530148506
+            },
+            "failures": 0,
+            "formula_dag_nodes": 1819,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 93208576,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 14.958834741264582,
+              "p50": 14.644821174442768,
+              "p95": 14.958834741264582
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 14.401835855096579,
+              "p50": 14.136196114122868,
+              "p95": 14.401835855096579
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 202.79499422758818,
+              "p50": 200.8949089795351,
+              "p95": 202.79499422758818
+            },
+            "failures": 0,
+            "formula_dag_nodes": 1819,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 92975104,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 16.215544193983078,
+              "p50": 14.540717005729675,
+              "p95": 16.215544193983078
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 15.657779760658741,
+              "p50": 13.975354842841625,
+              "p95": 15.657779760658741
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "invariant"
+      },
+      "reach": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 222.02299209311604,
+              "p50": 219.46941316127777,
+              "p95": 222.02299209311604
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2033,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "witness_found",
+            "peak_child_rss_bytes": 93659136,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": 11.033117305487394,
+              "p50": 10.939945001155138,
+              "p95": 11.033117305487394
+            },
+            "replay_ok": true,
+            "samples": 5,
+            "solve_ms": {
+              "max": 15.56404773145914,
+              "p50": 15.321484301239252,
+              "p95": 15.56404773145914
+            },
+            "status": "sat",
+            "total_elapsed_ms": {
+              "max": 14.952771831303835,
+              "p50": 14.736910816282034,
+              "p95": 14.952771831303835
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 226.5955600887537,
+              "p50": 223.41926395893097,
+              "p95": 226.5955600887537
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2033,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "witness_found",
+            "peak_child_rss_bytes": 93478912,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": 11.608136352151632,
+              "p50": 11.397087015211582,
+              "p95": 11.608136352151632
+            },
+            "replay_ok": true,
+            "samples": 5,
+            "solve_ms": {
+              "max": 17.494546715170145,
+              "p50": 15.51010087132454,
+              "p95": 17.494546715170145
+            },
+            "status": "sat",
+            "total_elapsed_ms": {
+              "max": 16.84261392802,
+              "p50": 14.906380325555801,
+              "p95": 16.84261392802
+            }
+          }
+        },
+        "expected": {
+          "outcome": "witness_found",
+          "property_satisfied": true,
+          "status": "sat"
+        },
+        "kind": "reach"
+      }
+    },
+    "role": "slicing_positive"
+  },
+  "heater_logging": {
+    "queries": {
+      "forbid": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 141.99139084666967,
+              "p50": 139.76861303672194,
+              "p95": 141.99139084666967
+            },
+            "failures": 0,
+            "formula_dag_nodes": 1231,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 90181632,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 5.933805834501982,
+              "p50": 5.893684923648834,
+              "p95": 5.933805834501982
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 5.612645763903856,
+              "p50": 5.569152068346739,
+              "p95": 5.612645763903856
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 144.83834896236658,
+              "p50": 143.25283700600266,
+              "p95": 144.83834896236658
+            },
+            "failures": 0,
+            "formula_dag_nodes": 1231,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 90243072,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 6.38374499976635,
+              "p50": 6.1602480709552765,
+              "p95": 6.38374499976635
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 6.007662042975426,
+              "p50": 5.847032181918621,
+              "p95": 6.007662042975426
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "forbid"
+      },
+      "invariant": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 141.26950688660145,
+              "p50": 139.75032465532422,
+              "p95": 141.26950688660145
+            },
+            "failures": 0,
+            "formula_dag_nodes": 1243,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 90349568,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 6.326423957943916,
+              "p50": 6.0408408753573895,
+              "p95": 6.326423957943916
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 5.947643890976906,
+              "p50": 5.730275064706802,
+              "p95": 5.947643890976906
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 143.2319190353155,
+              "p50": 141.81554783135653,
+              "p95": 143.2319190353155
+            },
+            "failures": 0,
+            "formula_dag_nodes": 1243,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 90456064,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 6.233582738786936,
+              "p50": 6.004646886140108,
+              "p95": 6.233582738786936
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 5.879675969481468,
+              "p50": 5.675349850207567,
+              "p95": 5.879675969481468
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "invariant"
+      },
+      "reach": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 141.1738507449627,
+              "p50": 138.40322429314256,
+              "p95": 141.1738507449627
+            },
+            "failures": 0,
+            "formula_dag_nodes": 1216,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "witness_found",
+            "peak_child_rss_bytes": 90705920,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": 8.15971614792943,
+              "p50": 7.875001057982445,
+              "p95": 8.15971614792943
+            },
+            "replay_ok": true,
+            "samples": 5,
+            "solve_ms": {
+              "max": 6.071749143302441,
+              "p50": 5.8885980397462845,
+              "p95": 6.071749143302441
+            },
+            "status": "sat",
+            "total_elapsed_ms": {
+              "max": 5.728026852011681,
+              "p50": 5.572057794779539,
+              "p95": 5.728026852011681
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 142.53833005204797,
+              "p50": 138.9017910696566,
+              "p95": 142.53833005204797
+            },
+            "failures": 0,
+            "formula_dag_nodes": 1216,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "witness_found",
+            "peak_child_rss_bytes": 90521600,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": 8.06288979947567,
+              "p50": 7.854108698666096,
+              "p95": 8.06288979947567
+            },
+            "replay_ok": true,
+            "samples": 5,
+            "solve_ms": {
+              "max": 5.821771919727325,
+              "p50": 5.770944990217686,
+              "p95": 5.821771919727325
+            },
+            "status": "sat",
+            "total_elapsed_ms": {
+              "max": 5.495843011885881,
+              "p50": 5.464883055537939,
+              "p95": 5.495843011885881
+            }
+          }
+        },
+        "expected": {
+          "outcome": "witness_found",
+          "property_satisfied": true,
+          "status": "sat"
+        },
+        "kind": "reach"
+      }
+    },
+    "role": "slicing_positive"
+  },
+  "pump_supervisor_hooks": {
+    "queries": {
+      "forbid": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 108.52396907284856,
+              "p50": 106.13108705729246,
+              "p95": 108.52396907284856
+            },
+            "failures": 0,
+            "formula_dag_nodes": 1056,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 89804800,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 4.601232707500458,
+              "p50": 4.254286177456379,
+              "p95": 4.601232707500458
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 4.302385728806257,
+              "p50": 4.013048019260168,
+              "p95": 4.302385728806257
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 107.54242725670338,
+              "p50": 106.34869104251266,
+              "p95": 107.54242725670338
+            },
+            "failures": 0,
+            "formula_dag_nodes": 1056,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 89804800,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 4.250510595738888,
+              "p50": 4.180011339485645,
+              "p95": 4.250510595738888
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 4.0078070014715195,
+              "p50": 3.9062881842255592,
+              "p95": 4.0078070014715195
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "forbid"
+      },
+      "invariant": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 108.55401679873466,
+              "p50": 106.8842587992549,
+              "p95": 108.55401679873466
+            },
+            "failures": 0,
+            "formula_dag_nodes": 1070,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 89522176,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 4.337420221418142,
+              "p50": 4.166879691183567,
+              "p95": 4.337420221418142
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 4.085985943675041,
+              "p50": 3.9436612278223038,
+              "p95": 4.085985943675041
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 105.47374980524182,
+              "p50": 105.0442480482161,
+              "p95": 105.47374980524182
+            },
+            "failures": 0,
+            "formula_dag_nodes": 1070,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 89485312,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 4.170174710452557,
+              "p50": 4.101799800992012,
+              "p95": 4.170174710452557
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 3.950901795178652,
+              "p50": 3.8631027564406395,
+              "p95": 3.950901795178652
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "invariant"
+      },
+      "reach": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 76.28247188404202,
+              "p50": 72.31715181842446,
+              "p95": 76.28247188404202
+            },
+            "failures": 0,
+            "formula_dag_nodes": 686,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "witness_found",
+            "peak_child_rss_bytes": 89346048,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": 5.504196975380182,
+              "p50": 5.371429957449436,
+              "p95": 5.504196975380182
+            },
+            "replay_ok": true,
+            "samples": 5,
+            "solve_ms": {
+              "max": 3.1163590028882027,
+              "p50": 3.0313092283904552,
+              "p95": 3.1163590028882027
+            },
+            "status": "sat",
+            "total_elapsed_ms": {
+              "max": 2.917374949902296,
+              "p50": 2.856025006622076,
+              "p95": 2.917374949902296
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 74.04656615108252,
+              "p50": 72.70589284598827,
+              "p95": 74.04656615108252
+            },
+            "failures": 0,
+            "formula_dag_nodes": 686,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "witness_found",
+            "peak_child_rss_bytes": 89219072,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": 5.50334295257926,
+              "p50": 5.399197805672884,
+              "p95": 5.50334295257926
+            },
+            "replay_ok": true,
+            "samples": 5,
+            "solve_ms": {
+              "max": 3.241033758968115,
+              "p50": 3.05520324036479,
+              "p95": 3.241033758968115
+            },
+            "status": "sat",
+            "total_elapsed_ms": {
+              "max": 3.0443696305155754,
+              "p50": 2.871439792215824,
+              "p95": 3.0443696305155754
+            }
+          }
+        },
+        "expected": {
+          "outcome": "witness_found",
+          "property_satisfied": true,
+          "status": "sat"
+        },
+        "kind": "reach"
+      }
+    },
+    "role": "abstract_skip"
+  },
+  "ratio_estimator": {
+    "queries": {
+      "forbid": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 76.45771512761712,
+              "p50": 75.29800198972225,
+              "p95": 76.45771512761712
+            },
+            "failures": 0,
+            "formula_dag_nodes": 717,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_violated",
+            "peak_child_rss_bytes": 90714112,
+            "property_satisfied": false,
+            "replay_ms": {
+              "max": 4.785472992807627,
+              "p50": 4.350303206592798,
+              "p95": 4.785472992807627
+            },
+            "replay_ok": true,
+            "samples": 5,
+            "solve_ms": {
+              "max": 7.051215972751379,
+              "p50": 5.852034781128168,
+              "p95": 7.051215972751379
+            },
+            "status": "sat",
+            "total_elapsed_ms": {
+              "max": 6.594446953386068,
+              "p50": 5.560474004596472,
+              "p95": 6.594446953386068
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 78.52479116991162,
+              "p50": 76.03090303018689,
+              "p95": 78.52479116991162
+            },
+            "failures": 0,
+            "formula_dag_nodes": 717,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_violated",
+            "peak_child_rss_bytes": 90382336,
+            "property_satisfied": false,
+            "replay_ms": {
+              "max": 4.429520107805729,
+              "p50": 4.373944830149412,
+              "p95": 4.429520107805729
+            },
+            "replay_ok": true,
+            "samples": 5,
+            "solve_ms": {
+              "max": 6.074003875255585,
+              "p50": 5.779367871582508,
+              "p95": 6.074003875255585
+            },
+            "status": "sat",
+            "total_elapsed_ms": {
+              "max": 5.769541021436453,
+              "p50": 5.460701882839203,
+              "p95": 5.769541021436453
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_violated",
+          "property_satisfied": false,
+          "status": "sat"
+        },
+        "kind": "forbid"
+      },
+      "invariant": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 76.27351116389036,
+              "p50": 75.5874807946384,
+              "p95": 76.27351116389036
+            },
+            "failures": 0,
+            "formula_dag_nodes": 737,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 90120192,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 5.486445967108011,
+              "p50": 4.984114784747362,
+              "p95": 5.486445967108011
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 5.112441256642342,
+              "p50": 4.713231232017279,
+              "p95": 5.112441256642342
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 78.78790469840169,
+              "p50": 77.63807708397508,
+              "p95": 78.78790469840169
+            },
+            "failures": 0,
+            "formula_dag_nodes": 737,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 90169344,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 5.440039094537497,
+              "p50": 5.1376777701079845,
+              "p95": 5.440039094537497
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 5.108856130391359,
+              "p50": 4.856894724071026,
+              "p95": 5.108856130391359
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "invariant"
+      },
+      "reach": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 72.48346600681543,
+              "p50": 71.73348590731621,
+              "p95": 72.48346600681543
+            },
+            "failures": 0,
+            "formula_dag_nodes": 716,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "scenario_infeasible",
+            "peak_child_rss_bytes": 90066944,
+            "property_satisfied": null,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 5.703296046704054,
+              "p50": 5.521920043975115,
+              "p95": 5.703296046704054
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 5.418573040515184,
+              "p50": 5.252148024737835,
+              "p95": 5.418573040515184
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 74.53892566263676,
+              "p50": 72.90042983368039,
+              "p95": 74.53892566263676
+            },
+            "failures": 0,
+            "formula_dag_nodes": 716,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "scenario_infeasible",
+            "peak_child_rss_bytes": 89985024,
+            "property_satisfied": null,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 6.183458026498556,
+              "p50": 5.580745171755552,
+              "p95": 6.183458026498556
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 5.8338819071650505,
+              "p50": 5.302022211253643,
+              "p95": 5.8338819071650505
+            }
+          }
+        },
+        "expected": {
+          "outcome": "scenario_infeasible",
+          "property_satisfied": null,
+          "status": "unsat"
+        },
+        "kind": "reach"
+      }
+    },
+    "role": "definedness_trap"
+  },
+  "telemetry_outputs": {
+    "queries": {
+      "forbid": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 245.7144558429718,
+              "p50": 240.12500094249845,
+              "p95": 245.7144558429718
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2421,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 92426240,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 11.048773769289255,
+              "p50": 10.616824962198734,
+              "p95": 11.048773769289255
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 10.451738256961107,
+              "p50": 10.037422180175781,
+              "p95": 10.451738256961107
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 247.31839960440993,
+              "p50": 239.88939635455608,
+              "p95": 247.31839960440993
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2421,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 92422144,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 12.627258896827698,
+              "p50": 10.727359913289547,
+              "p95": 12.627258896827698
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 11.711122002452612,
+              "p50": 10.198978707194328,
+              "p95": 11.711122002452612
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "forbid"
+      },
+      "invariant": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 237.89641028270125,
+              "p50": 236.95377400144935,
+              "p95": 237.89641028270125
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2442,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 92303360,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 11.27288630232215,
+              "p50": 10.790443047881126,
+              "p95": 11.27288630232215
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 10.681192856281996,
+              "p50": 10.286740958690643,
+              "p95": 10.681192856281996
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 332.36686093732715,
+              "p50": 242.39192018285394,
+              "p95": 332.36686093732715
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2442,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "property_satisfied",
+            "peak_child_rss_bytes": 92545024,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": null,
+              "p50": null,
+              "p95": null
+            },
+            "replay_ok": null,
+            "samples": 5,
+            "solve_ms": {
+              "max": 14.327935874462128,
+              "p50": 11.051679961383343,
+              "p95": 14.327935874462128
+            },
+            "status": "unsat",
+            "total_elapsed_ms": {
+              "max": 13.655477203428745,
+              "p50": 10.524310171604156,
+              "p95": 13.655477203428745
+            }
+          }
+        },
+        "expected": {
+          "outcome": "property_satisfied",
+          "property_satisfied": true,
+          "status": "unsat"
+        },
+        "kind": "invariant"
+      },
+      "reach": {
+        "arms": {
+          "baseline-0cc43647": {
+            "build_ms": {
+              "max": 238.91671281307936,
+              "p50": 236.3543719984591,
+              "p95": 238.91671281307936
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2399,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "witness_found",
+            "peak_child_rss_bytes": 92418048,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": 14.76975716650486,
+              "p50": 14.455864205956459,
+              "p95": 14.76975716650486
+            },
+            "replay_ok": true,
+            "samples": 5,
+            "solve_ms": {
+              "max": 10.522077791392803,
+              "p50": 10.152504779398441,
+              "p95": 10.522077791392803
+            },
+            "status": "sat",
+            "total_elapsed_ms": {
+              "max": 9.954148437827826,
+              "p50": 9.626413695514202,
+              "p95": 9.954148437827826
+            }
+          },
+          "default": {
+            "build_ms": {
+              "max": 239.16084226220846,
+              "p50": 236.77840502932668,
+              "p95": 239.16084226220846
+            },
+            "failures": 0,
+            "formula_dag_nodes": 2399,
+            "h0": {
+              "identical_to_reference": true,
+              "matches_expected": true
+            },
+            "outcome": "witness_found",
+            "peak_child_rss_bytes": 92332032,
+            "property_satisfied": true,
+            "replay_ms": {
+              "max": 15.310525894165039,
+              "p50": 14.996470883488655,
+              "p95": 15.310525894165039
+            },
+            "replay_ok": true,
+            "samples": 5,
+            "solve_ms": {
+              "max": 10.590136051177979,
+              "p50": 10.290252976119518,
+              "p95": 10.590136051177979
+            },
+            "status": "sat",
+            "total_elapsed_ms": {
+              "max": 9.992300998419523,
+              "p50": 9.743968956172466,
+              "p95": 9.992300998419523
+            }
+          }
+        },
+        "expected": {
+          "outcome": "witness_found",
+          "property_satisfied": true,
+          "status": "sat"
+        },
+        "kind": "reach"
+      }
+    },
+    "role": "slicing_positive"
+  }
+}

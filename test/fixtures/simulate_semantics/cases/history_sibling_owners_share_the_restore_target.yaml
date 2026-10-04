@@ -1,0 +1,64 @@
+title: Two sibling owners restore independently through one shared restore target
+origin:
+  files:
+  - test/model/test_history_lowering.py
+categories:
+- runtime
+- template_alignment
+- history
+steps:
+- cycle: []
+  expect:
+    state: R.Off
+    vars:
+      __hist_goto: 0
+- cycle: R.Off.FreshP
+  expect:
+    state: R.P.P1
+    vars:
+      __hist_goto: 0
+- cycle: R.P.P1.Next
+  expect:
+    state: R.P.P2
+    vars:
+      __hist_goto: 0
+- cycle: R.P.Stop
+  expect:
+    state: R.Off
+    vars:
+      __hist_goto: 0
+- cycle: R.Off.FreshQ
+  expect:
+    state: R.Q.Q1
+    vars:
+      __hist_goto: 0
+- cycle: R.Q.Q1.Next
+  expect:
+    state: R.Q.Q2.Q21
+    vars:
+      __hist_goto: 0
+- cycle: R.Q.Q2.Q21.Next
+  expect:
+    state: R.Q.Q2.Q22
+    vars:
+      __hist_goto: 0
+- cycle: R.Q.Stop
+  expect:
+    state: R.Off
+    vars:
+      __hist_goto: 0
+- cycle: R.Off.ResumeP
+  expect:
+    state: R.P.P2
+    vars:
+      __hist_goto: 0
+- cycle: R.P.Stop
+  expect:
+    state: R.Off
+    vars:
+      __hist_goto: 0
+- cycle: R.Off.ResumeQ
+  expect:
+    state: R.Q.Q2.Q22
+    vars:
+      __hist_goto: 0

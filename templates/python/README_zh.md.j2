@@ -1,44 +1,4 @@
-# {{ machine_class_name(model) }}
-
-这里存放 DSL 根状态 `{{ model.root_state.name }}` 对应的 Python 生成运行时。
-
-## 生成文件
-
-- `machine.py`：可执行运行时模块
-- `README.md`：当前状态机的英文使用说明
-- `README_zh.md`：当前状态机的中文使用说明
-
-## Model Text
-
-`{{ machine_class_name(model) }}.DSL_SOURCE` 内嵌的是 canonical model
-export。该文本从已解析 model 重新导出，是 canonical / normalized model
-export，可能不同于用户输入文件中的格式、注释或空行。它适合用于诊断和
-追踪本 generated runtime 对应的模型语义。
-
-canonical export 会包含模型文档块。不要在 FCSTM 文档中写入密码、token、
-私钥或其他秘密，因为这些文本会进入生成物。
-
-{% set canonical_model = model.to_ast_node() | string -%}
-{% set canonical_fence = canonical_model | markdown_fence -%}
-{{ canonical_fence }}fcstm
-{{ canonical_model }}
-{{ canonical_fence }}
-
-## Model Summary
-
-### Variables
-
-{% if model.defines.values() | list -%}
-| 名称 | 类型 | 初始 DSL |
-| --- | --- | --- |
-{% for def_item in model.defines.values() -%}
-| `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ def_item.init.to_ast_node() | string }}` |
-{% endfor %}
-{% else %}
-当前状态机没有定义持久变量。
-{% endif -%}
-
-### Events
+{%- macro example_values(items) -%}{{ '{' }}{% for item in items %}{{ item.name | tojson }}: {{ '1' if item.type == 'int' else '1.0' }}{% if not loop.last %}, {% endif %}{% endfor %}{{ '}' }}{%- endmacro -%}
 
 {% set doc_event_paths = namespace(items=[]) -%}
 {% for state in model.walk_states() -%}
@@ -46,371 +6,6 @@ canonical export 会包含模型文档块。不要在 FCSTM 文档中写入密�
 {% set doc_event_paths.items = doc_event_paths.items + [event.path_name] -%}
 {% endfor -%}
 {% endfor %}
-{% if doc_event_paths.items -%}
-{% for event_path in doc_event_paths.items | unique | list -%}
-- `{{ event_path }}`
-{% endfor %}
-{% else %}
-当前状态机没有声明任何事件。
-{% endif -%}
-
-### Abstract Hooks
-
-{% set doc_action_scan = namespace(items=[]) -%}
-{% for scan_state in model.walk_states() -%}
-{% for scan_group in [
-    scan_state.list_on_enters(with_ids=True),
-    scan_state.list_on_durings(aspect=None, with_ids=True),
-    scan_state.list_on_exits(with_ids=True),
-    scan_state.list_on_durings(aspect='before', with_ids=True),
-    scan_state.list_on_durings(aspect='after', with_ids=True),
-    scan_state.list_on_during_aspects(aspect='before', with_ids=True),
-    scan_state.list_on_during_aspects(aspect='after', with_ids=True),
-] -%}
-{% for _, scan_item in scan_group -%}
-{% set doc_action_scan.items = doc_action_scan.items + [scan_item] -%}
-{% endfor -%}
-{% endfor -%}
-{% endfor -%}
-{% set doc_action_ref_hop_limit = (doc_action_scan.items | length) + 1 -%}
-{% set doc_hook_paths = namespace(items=[]) -%}
-{% for state in model.walk_states() -%}
-{% for group in [
-    state.list_on_enters(with_ids=True),
-    state.list_on_durings(aspect=None, with_ids=True),
-    state.list_on_exits(with_ids=True),
-    state.list_on_durings(aspect='before', with_ids=True),
-    state.list_on_durings(aspect='after', with_ids=True),
-    state.list_on_during_aspects(aspect='before', with_ids=True),
-    state.list_on_during_aspects(aspect='after', with_ids=True),
-] -%}
-{% for _, item in group -%}
-{% set resolved = namespace(item=item, seen=[]) -%}
-{% for _ in range(doc_action_ref_hop_limit) -%}
-{% if resolved.item.ref is not none and resolved.item not in resolved.seen -%}
-{% set resolved.seen = resolved.seen + [resolved.item] -%}
-{% set resolved.item = resolved.item.ref -%}
-{% endif -%}
-{% endfor -%}
-{% if resolved.item.is_abstract and resolved.item.func_name not in doc_hook_paths.items -%}
-{% set doc_hook_paths.items = doc_hook_paths.items + [resolved.item.func_name] -%}
-{% endif -%}
-{% endfor -%}
-{% endfor -%}
-{% endfor %}
-{% if doc_hook_paths.items -%}
-{% for hook_path in doc_hook_paths.items -%}
-- `{{ hook_path }}`
-{% endfor %}
-{% else %}
-当前状态机没有声明 abstract hook。
-{% endif -%}
-
-## 运行时概览
-
-生成出的 `machine.py` 是一个自包含运行时模块，内部包含：
-
-- 状态元数据和状态路径表
-- 事件规范化与转换选择逻辑
-- `enter`、`during`、`exit`、`during before/after`、`>> during before/after`
-  的生命周期执行逻辑
-- 从具体状态路径和完整变量快照恢复的 hot start
-- 面向 DSL abstract action 的受保护子类 hook 扩展点
-
-通常把它当普通 Python 模块直接导入即可。对外可用接口主要包括：
-
-- 生成的异常类
-- 只读执行上下文类
-- 生成的状态机类
-- 生成的 protected hook 方法
-
-## 执行模型
-
-一次 `cycle(...)` 大致会做这些事情：
-
-1. 规范化输入事件。
-2. 如果根状态尚未进入，则先进入根状态并沿初始转换推进。
-3. 在当前活动状态上尝试可用转换。
-4. 如果没有转换触发，则执行当前叶状态的 `during` 流程。
-5. 只有当本轮能够到达有效的 stoppable 状态时，才会真正提交结果。
-
-如果 speculative validation 失败，运行时会回滚本轮执行，而不是提交一半的中间状态。
-
-## 快速开始
-
-```python
-from machine import {{ machine_class_name(model) }}
-
-machine = {{ machine_class_name(model) }}()
-machine.cycle()
-
-print(machine.current_state_path)
-print(machine.current_state_name)
-print(machine.vars)
-```
-
-更常见的事件发送方式是直接传事件路径：
-
-```python
-machine.cycle(["<event-path-1>", "<event-path-2>"])
-```
-
-如果只有一个事件，也可以直接传单个字符串：
-
-```python
-machine.cycle("<event-path>")
-```
-
-## 事件解析规则
-
-`cycle(events=None)` 接受：
-
-- `None`
-- 单个事件字符串
-- 事件字符串组成的 `list`、`tuple`、`set`
-- 带有 `path_name` 属性的事件对象
-
-生成运行时支持：
-
-- 完整绝对事件路径，例如 `Root.Parent.Event`
-- 以 `/` 开头的根相对路径，例如 `/Parent.Event`
-- 以 `.` 开头的父级相对路径，例如 `..Sibling.Event`
-- 在当前状态上下文中可解析的兼容短名称
-
-如果事件无法解析，会抛出 `LookupError` 或 `ValueError`。
-
-`cycle(...)` 只负责执行本轮状态机步骤，完成后返回 `None`。请通过
-`current_state_path`、`current_state_name`、`vars` 和 `is_ended` 观察运行时。
-如果需要可复现的事件输入顺序，建议传入 `list` 或 `tuple`；`set` 输入会遵循
-Python 当次提供的迭代顺序。
-
-## Hot Start
-
-如需从指定状态开始启动，需要同时提供 `initial_state` 和
-`initial_vars`。
-
-约束是：
-
-- `initial_state` 必须位于当前生成运行时的根状态之下
-- `initial_vars` 必须提供全部持久变量
-- `initial_vars` 不能包含未知变量名
-
-例如：
-
-{% set hot_start_var_lines = namespace(items=[]) -%}
-{% for def_item in model.defines.values() -%}
-{% set hot_start_var_lines.items = hot_start_var_lines.items + [
-    '        "' ~ def_item.name ~ '": ' ~ (def_item.init.value | default(0, true) if def_item.init.value is defined else 0) ~ ','
-] -%}
-{% endfor -%}
-
-```python
-from machine import {{ machine_class_name(model) }}
-
-machine = {{ machine_class_name(model) }}(
-    initial_state="{{ model.root_state.name }}",
-    initial_vars={
-{{ hot_start_var_lines.items | join('\n') }}
-    },
-)
-```
-
-## Hook 规则
-
-abstract hook 是只读扩展点。
-
-在生成的 hook 里，应该做的是：
-
-- 读取 `ctx`
-- 观察状态推进
-- 记录日志、指标、trace
-- 与外部系统协作
-
-在 hook 里不要做这些事：
-
-- 不要修改 `self._vars`
-- 不要修改 `self.vars`
-- 不要依赖写入 `ctx.vars`
-- 不要调用私有运行时辅助函数强行改状态
-
-运行时传给 `ctx` 的是一个快照。hook 代码应把它视为只读观察对象。如果确实需要修改持久变量，应在 hook 外部修改，例如在 `cycle(...)` 前后处理，或者调整 DSL 设计，而不是在 hook 内部动手。
-一句话概括：不要在 hook 里修改状态机持久变量。
-
-## 对外 API
-
-### `SimulationRuntimeDfsError`
-
-当 speculative validation 超过生成运行时的安全限制时抛出。大多数用户不需要主动创建它；只有在你希望显式处理异常复杂的运行时结构时，才需要捕获它。
-
-例如：
-
-```python
-from machine import SimulationRuntimeDfsError, {{ machine_class_name(model) }}
-
-machine = {{ machine_class_name(model) }}()
-
-try:
-    machine.cycle()
-except SimulationRuntimeDfsError as err:
-    print(err)
-```
-
-### `SimulationRuntimeExpressionError`
-
-当 DSL guard、action assignment、transition effect 或 `if` block condition
-在计算数值 DSL 表达式时失败，会抛出这个异常。生成运行时把该异常保留在
-`machine.py` 本地；它与 simulation runtime 的错误使用同一个类名，方便
-alignment 测试和用户诊断在不导入 `pyfcstm` 的情况下比较稳定边界。
-
-错误消息会包含 DSL usage，例如
-`operation assignment to 'counter' evaluation failed: division by zero`，原始
-Python 异常会保留在 `__cause__` 上。
-
-例如：
-
-```python
-from machine import SimulationRuntimeExpressionError, {{ machine_class_name(model) }}
-
-machine = {{ machine_class_name(model) }}()
-
-try:
-    machine.cycle()
-except SimulationRuntimeExpressionError as err:
-    print(err)
-    print(type(err.__cause__).__name__)
-```
-
-### `ReadOnlyExecutionContext`
-
-这个对象会在每次 abstract hook 执行时传入。
-
-字段：
-
-- `state_path`：执行该动作的所属状态路径，类型为 `Tuple[str, ...]`。叶状态生命周期动作与祖先 aspect 动作（为后代叶状态的周期执行）拿到的是叶状态；进入或离开复合状态、以及声明在复合状态上的普通 `during` 动作，拿到的是该复合状态自身的路径
-- `vars`：持久变量快照字典
-- `action_name`：解析后的 abstract target 动作路径
-- `action_stage`：生命周期调用点阶段字符串
-- `active_leaf`：动作执行时的运行时状态路径——存在活跃叶状态时为该叶状态，否则为该动作的宿主状态路径。aspect hook 为后代叶状态的周期执行，因此报告该叶状态；进入或离开复合状态时不存在活跃叶状态，报告宿主路径
-- `call_stage`：显式生命周期调用点阶段，等同于 `action_stage`
-- `abstract_target`：解析后的 abstract target 动作路径，对 abstract hook 等同于 `action_name`
-- `named_ref`：命名 ref 的调用点路径；匿名 ref 和 direct abstract action 为 `None`
-
-方法：
-
-- `get_var(name)`：从快照中读取变量
-- `has_var(name)`：判断快照中是否存在变量
-- `get_state_name()`：返回所属状态的短名
-- `get_full_state_path()`：返回以 `.` 拼接的完整状态路径
-
-例如：
-
-```python
-def some_hook(self, ctx):
-    if ctx.has_var("counter"):
-        print(ctx.get_var("counter"))
-    print(ctx.get_state_name())
-    print(ctx.get_full_state_path())
-    print(ctx.action_name, ctx.action_stage)
-```
-
-### `{{ machine_class_name(model) }}`
-
-这是生成出来的状态机运行时类。
-
-#### 类属性
-
-- `DSL_SOURCE`：canonical model export 字符串
-- `STATE_PATHS`：全部状态路径组成的元组
-- `VARIABLE_NAMES`：全部持久变量名组成的元组
-- `ABSTRACT_HOOKS`：从 DSL abstract action 路径到生成 hook 方法名的映射
-- `EVENT_PATHS`：全部事件路径组成的元组
-
-例如：
-
-```python
-from machine import {{ machine_class_name(model) }}
-
-print({{ machine_class_name(model) }}.DSL_SOURCE)
-print({{ machine_class_name(model) }}.STATE_PATHS)
-print({{ machine_class_name(model) }}.VARIABLE_NAMES)
-print({{ machine_class_name(model) }}.ABSTRACT_HOOKS)
-print({{ machine_class_name(model) }}.EVENT_PATHS)
-```
-
-#### 构造函数
-
-`{{ machine_class_name(model) }}(initial_state=None, initial_vars=None)`
-
-用于创建冷启动或 hot start 的状态机实例。
-
-- 冷启动：两个参数都保持 `None`
-- hot start：同时提供 `initial_state` 和 `initial_vars`
-
-例如：
-
-```python
-machine = {{ machine_class_name(model) }}()
-```
-
-#### 属性
-
-- `vars`
-  - 返回当前活动的持久变量字典
-- `is_ended`
-  - 返回运行时是否已结束
-- `last_cycle_was_delta`
-  - 返回最近一次成功周期是否为 Delta 无进展周期
-- `current_state_path`
-  - 返回当前叶状态路径元组，或 `None`
-- `current_state_name`
-  - 返回当前叶状态短名，或 `None`
-
-例如：
-
-```python
-machine = {{ machine_class_name(model) }}()
-machine.cycle()
-
-print(machine.vars)
-print(machine.is_ended)
-print(machine.current_state_path)
-print(machine.current_state_name)
-```
-
-#### 方法
-
-- `cycle(events=None)`
-  - 推进一个 cycle
-- `info()`
-  - 返回摘要字典，包含根状态名、当前状态路径、变量名、状态路径、abstract hook 映射和结束状态
-- `get_abstract_hook_map()`
-  - 类方法，返回 abstract hook 映射表
-
-例如：
-
-```python
-machine = {{ machine_class_name(model) }}()
-
-machine.cycle()
-machine.cycle("<event-path>")
-machine.cycle(["<event-path-1>", "<event-path-2>"])
-
-print(machine.info())
-print({{ machine_class_name(model) }}.get_abstract_hook_map())
-```
-
-## Hook 用法
-
-推荐继承生成类，并覆写下表列出的 protected hook 方法。
-
-```python
-from machine import {{ machine_class_name(model) }}
-
-
-class CustomMachine({{ machine_class_name(model) }}):
-    pass
-```
-
 {%- set action_scan = namespace(items=[]) -%}
 {%- for scan_state in model.walk_states() -%}
 {%- for scan_group in [
@@ -459,146 +54,247 @@ class CustomMachine({{ machine_class_name(model) }}):
 {% endfor -%}
 {% endfor -%}
 {% endfor %}
+# {{ machine_class_name(model) }}
 
-{% if abstract_ns.rows %}
-例如：
+本目录提供自包含的 Python 3.7+ 状态机。将应用代码放在 `app.py` 中；修改 DSL 后重新生成 `machine.py`，不要直接修改生成文件。运行生成代码不需要安装 `pyfcstm`。
 
-```python
-class CustomMachine({{ machine_class_name(model) }}):
-    def {{ abstract_ns.rows[0]['hook_name'] }}(self, ctx):
-        print(ctx.get_full_state_path(), ctx.action_name, ctx.action_stage)
-        print(ctx.vars)
-        return None
-```
+**生成文件：** `machine.py` 是运行时；`README.md` 和 `README_zh.md` 分别是英文和中文使用指南。从下面的示例开始，再阅读[输入与动作接入](#integration)和[初始化与恢复](#initialization)。
 
-### 可覆写的 Abstract Hook 清单
+## 快速开始
 
-| DSL 动作路径 | Hook 方法名 | 所属状态 | 阶段 |
-| --- | --- | --- | --- |
-{% for row in abstract_ns.rows -%}
-| `{{ row['func_name'] }}` | `{{ row['hook_name'] }}` | `{{ row['owner_path'] }}` | `{{ row['stage'] }}{% if row['aspect'] %} {{ row['aspect'] }}{% endif %}` |
-{% endfor %}
-{% else %}
-当前状态机没有声明 abstract action，因此没有需要覆写的受保护 hook。
-{% endif %}
+将下面的完整程序保存为 `app.py`。{% if model.inputs or model.parameters %}示例参数和传感器读数使用 `1`，请替换为适合当前模型的值。{% endif %}示例实现全部 input 读取方法，并挂载全部已声明的抽象动作。第一次 `cycle()` 进入模型，后续调用重新采样输入；调用时机由应用决定，运行时不会自行启动后台调度。
 
-## Minimal Complete Flow
+<!-- example:quick-start -->
 
 ```python
 from machine import {{ machine_class_name(model) }}
 
-{% if abstract_ns.rows -%}
-class CustomMachine({{ machine_class_name(model) }}):
-    def __init__(self):
+class Device({{ machine_class_name(model) }}):
+    def __init__(self, sensors, *, parameters=None, initial_state=None, initial_vars=None):
+        self.sensors = sensors
         self.hook_calls = []
-        super().__init__()
+        super().__init__(
+            initial_state=initial_state,
+            initial_vars=initial_vars,
+            parameters=parameters,
+        )
 
-    def {{ abstract_ns.rows[0]['hook_name'] }}(self, ctx):
-        self.hook_calls.append((ctx.action_name, ctx.get_full_state_path()))
+{% for item in model.inputs.values() %}    def read_{{ item.name }}(self) -> {{ item.type }}:
+        # Replace this lookup with your sensor/driver call.
+        return self.sensors[{{ item.name | tojson }}]
 
+{% endfor %}{% for row in abstract_ns.rows %}    def {{ row['hook_name'] }}(self, ctx):
+        self.hook_calls.append((ctx.action_name, ctx.action_stage))
+        print("action", ctx.action_name, dict(ctx.vars))
 
-machine = CustomMachine()
-{% else -%}
-machine = {{ machine_class_name(model) }}()
-{% endif -%}
+{% endfor %}
+sensor_values = {{ example_values(model.inputs.values()) }}
+machine = Device(sensor_values{% if model.parameters %}, parameters={{ example_values(model.parameters.values()) }}{% endif %})
 machine.cycle()
-{% if doc_event_paths.items -%}
-machine.cycle("{{ doc_event_paths.items[0] }}")
-{% endif -%}
+
 print(machine.current_state_path)
-print(machine.vars)
-{% if abstract_ns.rows -%}
-print(machine.hook_calls)
-{% endif -%}
+{% for item in model.parameters.values() %}print("param {{ item.name }} =", machine.get_param_{{ item.name }}())
+{% endfor %}{% for item in model.persistent_variables.values() %}print("{{ item.role.value }} {{ item.name }} =", machine.vars[{{ item.name | tojson }}])
+{% endfor %}# Send committed outputs to your actuator/driver after normal return.
 ```
 
-## 使用指南
-
-### 冷启动
-
-```python
-machine = {{ machine_class_name(model) }}()
-machine.cycle()
+```bash
+python app.py
 ```
 
-### 读取变量
+重复运行时，更新应用中的传感器数据源，然后对同一个实例再次调用 `machine.cycle()`；`machine.is_ended` 为真时停止。不要每拍重新构造状态机。
 
-```python
-print(machine.vars)
-{% if model.defines.values() | list -%}
-print(machine.vars["{{ (model.defines.values() | list)[0].name }}"])
-{% endif -%}
-```
+<a id="integration"></a>
 
-### 在 Hook 外修改变量
+## 输入、动作与事件
 
-如果你的业务确实需要直接调整持久变量，应在 hook 外部进行：
-
-```python
-{% if model.defines.values() | list -%}
-machine.vars["{{ (model.defines.values() | list)[0].name }}"] = machine.vars["{{ (model.defines.values() | list)[0].name }}"]
-{% else %}
-# 当前状态机没有持久变量。
-pass
-{% endif -%}
-```
-
-### 发送事件
-
-```python
-machine.cycle()
-machine.cycle("<event-path>")
-machine.cycle(["<event-path-1>", "<event-path-2>"])
-```
-
-### 查询状态
-
-```python
-print(machine.current_state_path)
-print(machine.current_state_name)
-print(machine.is_ended)
-```
-
-### 查看元数据
-
-```python
-print(machine.info())
-print({{ machine_class_name(model) }}.DSL_SOURCE)
-print({{ machine_class_name(model) }}.STATE_PATHS)
-print({{ machine_class_name(model) }}.EVENT_PATHS)
-print({{ machine_class_name(model) }}.get_abstract_hook_map())
-```
-
-## 变量
-
-{% if model.defines.values() | list -%}
-| 名称 | 类型 | 初始 DSL |
+| 角色 | 应用负责什么 | 模型运行期间 |
 | --- | --- | --- |
-{% for def_item in model.defines.values() -%}
-| `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ def_item.init.to_ast_node() | string }}` |
+| `input` | 实现下方读取接口，或为当前周期提供显式快照 | 每周期重新获取；模型只读，没有默认保持 |
+| `param` | 构造/初始化时传入；省略项使用 DSL 默认值 | 实例固定，只有 getter，不需要实现回调 |
+| `control`（`def`，通常称 var） | 可在初始化时预设，运行后只读观察 | 模型内部可写；未赋值保持原值 |
+| `output` | 在成功周期之后读结果，并按需交给执行器 | 与 control 共用持久存储；未赋值保持原值 |
+
+`control` 和 `output` 共用持久 `vars` 存储：当周期没有赋值时，两者都保持原值。通过 `vars` 读取结果；应用代码直接修改内部存储属于不支持的用法，可能破坏模型已经验证过的性质。output 不触发外部 setter 或执行器回调。
+
+在构造实例时通过 `parameters` 传入配置。运行时校验并复制这些值，之后修改原始映射不影响实例。冷启动时，省略的参数使用 DSL 默认值；热启动要求完整参数与持久变量值。param 不提供逐周期参数或 setter，通过只读 `parameters` 和生成的 `get_param_*()` 读取。
+
+实现生成的 `read_*()` 方法以接入设备输入。运行时在每个周期读取每个输入一次，包括本次路径未用到的输入；验证执行和正式执行使用同一份冻结快照。 `get_input_*()` 仅在周期执行期间有效，不会再次访问设备。构造实例和已结束状态机的空操作不采样；下一个周期重新采样，input 不会默认保持上一周期值。
+
+`cycle(inputs=...)` 可直接提供指定输入，未提供的输入调用对应读取方法。未知名称和非法值报错。采样或执行失败不提交持久变量和 `last_inputs`；成功周期（包括 Delta 周期）发布新的只读 `last_inputs`，首次成功周期前为 `None`。抽象动作的上下文也提供独立的只读 `inputs` 和 `parameters` 快照。
+
+{% if model.inputs or model.parameters %}
+本模型生成以下集成方法：
+
+| 角色 | DSL 名称 | 方法 |
+| --- | --- | --- |
+{% for item in model.parameters.values() %}| param | `{{ item.name }}` | `get_param_{{ item.name }}()` |
+{% endfor %}{% for item in model.inputs.values() %}| input | `{{ item.name }}` | 实现 `read_{{ item.name }}()`；模型通过 `get_input_{{ item.name }}()` 读取 |
+{% endfor %}
+{% endif %}
+`read_*()` 是需要应用覆写的输入接口，和 `_abstract_hook_*()` 生命周期动作回调是两回事。没有为某个 input 提供快照又没有实现读取方法时，会抛出 `NotImplementedError`。 `int` 输入必须返回 Python `int`（不接受 `bool`）；`float` 输入接受有限 `int`/`float`（不接受 `bool`）。非法输入抛出 `ValueError`，设备读取自身的异常原样传播。 `cycle()` 返回 `None`，正常返回才读取/发送 output；失败不会撤销已经发生的设备读取或外部副作用。
+
+### 回调职责
+
+| 接口 | 调用时机 | 应用职责 |
+| --- | --- | --- |
+| `read_<input>()` | 每个未结束周期一次，显式指定该输入时除外 | 返回符合类型的读数；设备异常向外传播 |
+| `_abstract_hook_*(ctx)` | 执行到声明的生命周期动作时，验证阶段不调用 | 观察上下文或执行应用逻辑；默认实现不做任何操作 |
+| `cycle(events=...)` | 应用调度时 | 提交事件路径，与数值输入采样分别处理 |
+
+接入动作时继续修改上面的 `Device` 类，存在动作时使用下方列出的准确方法名；定义一个无关方法不会注册动作。`ref` 调用会执行最终引用的抽象目标。Hook 可读取 `ctx.vars`、`ctx.inputs` 和 `ctx.parameters`；动作发生时的值从上下文读取，提交后的结果在周期返回后通过 `machine.vars` 读取。
+
+{% if abstract_ns.rows %}
+| DSL 动作路径 | Hook 方法 | 所属状态 | 阶段 |
+| --- | --- | --- | --- |
+{% for row in abstract_ns.rows %}| `{{ row['func_name'] }}` | `{{ row['hook_name'] }}` | `{{ row['owner_path'] }}` | `{{ row['stage'] }}{% if row['aspect'] %} {{ row['aspect'] }}{% endif %}` |
 {% endfor %}
 {% else %}
-当前状态机没有定义持久变量。
-{% endif -%}
+此模型没有需要实现的抽象动作。
 
-## 状态路径
+{% endif %}
+### 显式输入快照
 
-{% for state in model.walk_states() -%}
-- `{{ state | state_path }}`
-{% endfor %}
+测试或使用外部已采样数据时，可将 `app.py` 中的周期调用替换为下面的片段。映射中未提供的输入仍调用读取方法；该参数仅提供本周期输入；参数保持固定，持久变量仍按 DSL 更新。
 
-## 事件路径
+<!-- example:input-snapshot -->
 
-{% set event_rows = namespace(items=[]) -%}
-{% for state in model.walk_states() -%}
-{% for event in state.events.values() -%}
-{% set event_rows.items = event_rows.items + [event.path_name] -%}
-{% endfor -%}
-{% endfor %}
-{% if event_rows.items -%}
-{% for event_path in event_rows.items | unique | list -%}
-- `{{ event_path }}`
+```python
+machine.cycle(inputs={{ example_values(model.inputs.values()) }})
+```
+
+## 事件解析规则
+
+`cycle(events=None, *, inputs=None)` 接受：
+
+- `None`
+- 单个事件字符串
+- 事件字符串组成的 `list`、`tuple`、`set`
+- 包含带 `path_name` 属性事件对象的 `list`、`tuple` 或 `set`（单个对象也须放在集合里）
+
+生成运行时支持：
+
+- 完整绝对事件路径，例如 `Root.Parent.Event`
+- 以 `/` 开头的根相对路径，例如 `/Parent.Event`
+- 以 `.` 开头的父级相对路径，例如 `..Sibling.Event`
+- 在当前状态上下文中可解析的兼容短名称
+
+如果事件无法解析，会抛出 `LookupError` 或 `ValueError`。
+
+`cycle(...)` 只负责执行本轮状态机步骤，完成后返回 `None`。请通过 `current_state_path`、`current_state_name`、`vars` 和 `is_ended` 观察运行时。如果需要可复现的事件输入顺序，建议传入 `list` 或 `tuple`；`set` 输入会遵循 Python 当次提供的迭代顺序。
+
+<a id="initialization"></a>
+
+## 初始化与恢复
+
+冷启动可通过部分 `initial_vars` 预设 control/output，通过独立的 `parameters` 指定参数；缺省项使用 DSL 默认值。两份映射均会复制并校验。构造阶段不执行生命周期动作，也不采样输入；第一次周期调用才执行。
+
+<!-- example:initial-values -->
+
+```python
+machine = Device(
+    sensor_values,
+    initial_vars={{ example_values(model.persistent_variables.values()) }},
+{% if model.parameters %}    parameters={{ example_values(model.parameters.values()) }},
+{% endif %})
+```
+
+### 热启动
+
+下面的片段接在 `app.py` 的成功周期之后。保存同一检查点的状态、全部 control/output 和全部参数，再构造另一个 `Device`。示例恢复仍在运行的叶状态；若指定组合状态，则从其初始转换等待模式开始。热启动不重放进入动作，必须提供完整快照，不能用来修改运行中实例的参数。检查点也不等同于可跨平台保存的二进制格式。
+
+<!-- example:hot-start -->
+
+```python
+state = machine.current_state_path
+if state is None:
+    raise ValueError("Cannot restore a completed machine as a live checkpoint")
+checkpoint_vars = dict(machine.vars)
+checkpoint_parameters = dict(machine.parameters)
+machine = Device(
+    sensor_values,
+    initial_state=state,
+    initial_vars=checkpoint_vars,
+    parameters=checkpoint_parameters,
+)
+```
+
+## 结果、错误与生命周期
+
+`cycle()` 返回 `None`。正常返回后读取 `vars`、`current_state_path`、`is_ended` 和 `last_cycle_was_delta`。Delta 周期是成功的无进展步骤：持久状态保持，但仍消耗本拍输入。`vars` 同时包含 control 和 output，应用应只读；提交会替换该字典，因此每拍重新获取，保存检查点时使用 `dict(machine.vars)`。`last_inputs` 和动作上下文都是独立的只读快照。
+
+输入获取失败、非法数值和表达式错误会阻止周期提交。修正原因后可再次调用 `cycle()`，届时重新采样。设备读取、日志和动作产生的外部副作用无法撤销；如果执行器必须反映已提交状态，应在周期正常返回后发送 output。同一实例的访问应串行执行，不要在 reader 或 Hook 中递归调用 `cycle()`。
+
+## 对外 API
+
+下表列出生成状态机的公开接口。快速开始中的 `Device` 属于应用代码，完整转发构造参数。私有辅助函数和可变内部存储不是接入入口。
+
+| 入口 | 用途 |
+| --- | --- |
+| `{{ machine_class_name(model) }}(initial_state=None, initial_vars=None, *, parameters=None)` | 冷构造或完整热恢复 |
+| `cycle(events=None, *, inputs=None)` | 执行应用调度的一个周期，返回 None |
+| `vars`, `parameters`, `last_inputs` | 持久值观察、固定配置和最近已提交输入 |
+| `current_state_path`, `current_state_name` | 当前路径元组/短名，结束后为 None |
+| `is_ended`, `last_cycle_was_delta`, `cycle_count` | 结束标记、Delta 标记和已完成周期数 |
+| `read_<input>()`, `get_input_<input>()`, `get_param_<param>()` | 实现输入读取方法，使用生成的只读 getter |
+| `get_abstract_hook_map()`, `ABSTRACT_HOOKS` | DSL 抽象动作到覆写方法名的映射 |
+| `STATE_PATHS`, `EVENT_PATHS`, `VARIABLE_NAMES`, `DSL_SOURCE` | 生成模型清单和规范化导出 |
+| `info()` | 诊断摘要字典 |
+
+### `ReadOnlyExecutionContext`
+
+每次动作接收独立的只读观察。下列上下文方法读取该观察，不访问实时可变存储。
+
+| 字段/方法 | 用途 |
+| --- | --- |
+| `vars`, `inputs`, `parameters` | 当前动作的独立只读映射 |
+| `state_path`, `active_leaf` | 执行状态路径；祖先切面报告活动后代叶状态，组合状态进入/退出报告组合状态 |
+| `action_name`, `abstract_target` | 最终抽象目标路径 |
+| `action_stage`, `call_stage` | 生命周期调用位置的阶段 |
+| `named_ref` | 命名 ref 调用位置，直接/匿名调用为 None |
+| `get_var(name)`, `has_var(name)` | 读取/检查持久值快照 |
+| `get_state_name()`, `get_full_state_path()` | 执行状态的短名/完整路径 |
+
+### 错误
+
+| 错误 | 含义 |
+| --- | --- |
+| `NotImplementedError` | 所需输入既无读取实现，也无显式值 |
+| `ValueError` | 未知/缺失名称、非法快照或数值 |
+| `SimulationRuntimeExpressionError` | DSL 表达式求值失败，__cause__ 保留数值异常 |
+| `SimulationRuntimeDfsError` | 验证超过结构性安全上限 |
+
+应用 reader 和动作中的异常向外传播。只捕获应用能够处理的错误，重试前先报告原因。失败周期不增加 `cycle_count`。
+
+## 模型参考
+
+### 变量
+
+{% if model.defines %}
+| 角色 | 名称 | 类型 | DSL 初值 |
+| --- | --- | --- | --- |
+{% for def_item in model.defines.values() %}| `{{ {'input': 'input', 'param': 'param', 'control': 'control (def)', 'output': 'output'}[def_item.role.value] }}` | `{{ def_item.name }}` | `{{ def_item.type }}` | `{{ (def_item.init.to_ast_node() | string) if def_item.init is not none else '-' }}` |
 {% endfor %}
 {% else %}
-当前状态机没有声明任何事件。
-{% endif -%}
+当前模型没有变量声明。
+{% endif %}
+### 状态路径
+
+{% for state in model.walk_states() %}- `{{ state | state_path }}`
+{% endfor %}
+### 事件路径
+
+{% for path in doc_event_paths.items | unique %}- `{{ path }}`
+{% else %}没有声明事件。
+{% endfor %}
+### 规范化模型文本
+
+`{{ machine_class_name(model) }}.DSL_SOURCE` 内嵌规范化模型导出，由已解析模型生成 DSL；格式、注释和空行可能与原始文件不同，用于诊断和追溯生成运行时对应的模型语义。
+
+规范化导出包含模型文档块。不要在 FCSTM 文档中写入密码、token、私钥或其他秘密，因为这些文本会进入生成物。
+
+{% set canonical_model = model.to_ast_node() | string -%}
+{% set canonical_fence = canonical_model | markdown_fence -%}
+{{ canonical_fence }}fcstm
+{{ canonical_model }}
+{{ canonical_fence }}

@@ -1,0 +1,29 @@
+title: Input snapshots with fixed parameters and latched output
+origin:
+  files:
+  - test/simulate/test_runtime_inputs.py
+categories:
+- runtime
+- variable_roles
+- inputs
+steps:
+- cycle: []
+  inputs:
+    pressure: 70.0
+  expect:
+    state: Root.Running
+    vars:
+      samples: 1
+    outputs:
+      reading: 210.0
+- cycle: []
+  cycle_count: 2
+  inputs:
+    pressure: 75.0
+  expect:
+    vars:
+      samples: 3
+    outputs:
+      reading: 225.0
+parameters:
+  gain: 3.0

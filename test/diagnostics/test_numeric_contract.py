@@ -68,7 +68,7 @@ SYNTHETIC_REFS = {
         "runtime_note": "C/C++ deployment profile risk; Python generated runtime has different exception semantics.",
         "context": "transition_effect",
         "statement_kind": "operation_assignment",
-        "expr_text": "input / (1 - 1)",
+        "expr_text": "sensor_value / (1 - 1)",
         "operator": "/",
         "rhs_text": "(1 - 1)",
     },
@@ -147,7 +147,7 @@ def test_numeric_diagnostics_surface_in_build_inspect_json(tmp_path):
     source = dedent(f"""
         def int too_large = {TOO_LARGE_SIGNED_INT64_TEXT};
         def int result = 0;
-        def int input = 1;
+        def int sensor_value = 1;
         def int flags = 1;
         def float gain = 1.5;
         state Root {{
@@ -155,7 +155,7 @@ def test_numeric_diagnostics_surface_in_build_inspect_json(tmp_path):
             state B;
             [*] -> A;
             A -> B : if [(flags << 64) != 0];
-            B -> A effect {{ result = input / (1 - 1); }};
+            B -> A effect {{ result = sensor_value / (1 - 1); }};
         }}
     """)
     path = tmp_path / "numeric_cli.fcstm"
@@ -376,12 +376,12 @@ def test_numeric_literal_range_int64_boundary_emission(
         (
             "guard-division",
             """
-            def int input = 1;
+            def int sensor_value = 1;
             state Root {
                 state A;
                 state B;
                 [*] -> A;
-                A -> B : if [input / (1 - 1) > 0];
+                A -> B : if [sensor_value / (1 - 1) > 0];
             }
             """,
             "W_NUMERIC_CONSTANT_DIVISION_BY_ZERO",
@@ -446,31 +446,31 @@ def test_numeric_division_by_zero_folds_rhs_even_when_lhs_is_dynamic():
     diagnostic = _single_diagnostic(
         """
         def int result = 0;
-        def int input = 1;
+        def int sensor_value = 1;
         state Root {
             state A;
             state B;
             [*] -> A;
-            A -> B effect { result = input / (1 - 1); };
+            A -> B effect { result = sensor_value / (1 - 1); };
         }
         """,
         "W_NUMERIC_CONSTANT_DIVISION_BY_ZERO",
     )
     assert diagnostic.refs["operator"] == "/"
     assert diagnostic.refs["rhs_text"] == "1 - 1"
-    assert diagnostic.refs["expr_text"] == "input / (1 - 1)"
+    assert diagnostic.refs["expr_text"] == "sensor_value / (1 - 1)"
 
 
 def test_numeric_modulo_by_zero_reports_operator_separately():
     diagnostic = _single_diagnostic(
         """
         def int result = 0;
-        def int input = 1;
+        def int sensor_value = 1;
         state Root {
             state A;
             state B;
             [*] -> A;
-            A -> B effect { result = input % (2 - 2); };
+            A -> B effect { result = sensor_value % (2 - 2); };
         }
         """,
         "W_NUMERIC_CONSTANT_DIVISION_BY_ZERO",
@@ -483,13 +483,13 @@ def test_numeric_division_dynamic_rhs_is_not_reported():
     diagnostics = _diagnostics_for(
         """
         def int result = 0;
-        def int input = 1;
+        def int sensor_value = 1;
         def int denom = 0;
         state Root {
             state A;
             state B;
             [*] -> A;
-            A -> B effect { result = input / denom; };
+            A -> B effect { result = sensor_value / denom; };
         }
         """,
         "W_NUMERIC_CONSTANT_DIVISION_BY_ZERO",

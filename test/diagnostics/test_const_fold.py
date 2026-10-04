@@ -196,12 +196,12 @@ def test_during_const_assign_skips_block_local_temporaries():
     from pyfcstm.model import parse_dsl_node_to_state_machine
 
     source = """
-    def int output = 0;
+    def int result_value = 0;
     state Root {
         state Idle {
             during {
                 temp = 5;
-                output = temp + 1;
+                result_value = temp + 1;
             }
         }
         [*] -> Idle;

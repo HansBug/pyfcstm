@@ -78,8 +78,9 @@ class _StateView:
 
 
 class _ObservationRuntime:
-    def __init__(self, observation: Mapping[str, Any]):
+    def __init__(self, observation: Mapping[str, Any], output_names=()):
         self._observation = observation
+        self._output_names = tuple(output_names)
 
     @property
     def vars(self) -> Mapping[str, Any]:
@@ -95,6 +96,10 @@ class _ObservationRuntime:
             {'counter': 1}
         """
         return self._observation["vars"]
+
+    @property
+    def outputs(self):
+        return {name: self.vars[name] for name in self._output_names}
 
     @property
     def is_ended(self) -> bool:
@@ -496,6 +501,7 @@ def assert_observations_match_case(
         )
     )
 
+    output_names = simulate_semantics.build_state_machine_from_case(case).output_variables
     steps = case.data.get("steps") or []
     step_observations = [item for item in observations if item.get("phase") == "step"]
     assert len(step_observations) == len(steps), (
@@ -520,7 +526,7 @@ def assert_observations_match_case(
                 % (case.id, index, observation.get("last_error"))
             )
             _assert_successful_api_return(template_name, case, index, observation)
-        runtime = _ObservationRuntime(observation)
+        runtime = _ObservationRuntime(observation, output_names)
         simulate_semantics._assert_runtime_expectation(
             runtime,
             expect,

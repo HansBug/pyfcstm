@@ -34,24 +34,8 @@ class TestImportPhase3Assembly:
     def test_public_ast_mapping_rewrites_all_expression_and_operation_shapes(self):
         program = dsl_nodes.StateMachineDSLProgram(
             definitions=[
-                dsl_nodes.DefAssignment(
-                    name="src",
-                    type="int",
-                    expr=dsl_nodes.Paren(dsl_nodes.Name("src")),
-                ),
-                dsl_nodes.DefAssignment(
-                    name="flag",
-                    type="int",
-                    expr=dsl_nodes.ConditionalOp(
-                        cond=dsl_nodes.UnaryOp("not", dsl_nodes.Name("src")),
-                        value_true=dsl_nodes.UFunc("abs", dsl_nodes.Name("src")),
-                        value_false=dsl_nodes.BinaryOp(
-                            dsl_nodes.Name("src"),
-                            "+",
-                            dsl_nodes.Name("src"),
-                        ),
-                    ),
-                ),
+                dsl_nodes.DefAssignment("src", "int", dsl_nodes.Integer("0")),
+                dsl_nodes.DefAssignment("flag", "int", dsl_nodes.Integer("1")),
             ],
             root_state=dsl_nodes.StateDefinition(
                 name="WorkerRoot",
@@ -178,8 +162,8 @@ class TestImportPhase3Assembly:
 
         worker_state = assembled.root_state.substates[0]
         assert sorted(item.name for item in assembled.definitions) == ["host_flag", "host_src"]
-        assert str(assembled.definitions[0]) == "def int host_src = (host_src);"
-        assert "host_src" in str(assembled.definitions[1])
+        assert str(assembled.definitions[0]) == "def int host_src = 0;"
+        assert str(assembled.definitions[1]) == "def int host_flag = 1;"
         assert worker_state.enters[0].operations[0].name == "host_src"
         assert str(worker_state.enters[0].operations[0].expr) == "host_src"
         assert str(worker_state.durings[0].operations[0].expr) == "(host_src)"

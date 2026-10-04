@@ -2043,13 +2043,13 @@ class TestInspectModelExtendedCoverage:
     def test_const_fold_guard_true_and_false_and_during_assign(self):
         dsl = """
         def int stable = 0;
-        def int dynamic = 0;
+        def int changing = 0;
         def int wide = 0;
         def float powered = 0.0;
         state Root {
             state Idle {
                 during { stable = (2 + 3) * 4; }
-                during { dynamic = dynamic + 1; }
+                during { changing = changing + 1; }
                 during { wide = 0xFFFFFFFF & 0xFFFFFFFF; }
                 during { powered = 2.0 ** 3; }
             }

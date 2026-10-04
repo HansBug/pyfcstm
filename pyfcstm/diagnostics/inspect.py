@@ -294,6 +294,10 @@ class TransitionInfo:
     :param combo_priority_run_index: Preorder index of the generated combo
         edge inside the projection.
     :type combo_priority_run_index: Optional[int]
+    :param target_history: ``'shallow'`` or ``'deep'`` when the transition
+        enters ``Target.[H]`` or ``Target.[H*]``, otherwise ``None``;
+        ``to_path`` then names the history owner.
+    :type target_history: Optional[str]
     """
 
     from_path: str
@@ -318,6 +322,7 @@ class TransitionInfo:
     # Keep this new optional field after the pre-existing positional fields so
     # callers that pass ``span`` positionally retain their binding.
     source_path: Optional[str] = None
+    target_history: Optional[str] = None
 
 @dataclass(frozen=True)
 class ComboOriginRefInfo:
@@ -450,6 +455,27 @@ class ComboOriginInfo:
 
 
 @dataclass(frozen=True)
+class VariableAccessSite:
+    """A static variable access in an expanded model.
+
+    ``statement_path`` contains zero-based statement and branch indices within
+    the owning action or effect; an empty path identifies a transition guard.
+    ``span`` covers the authored statement, branch block, or transition,
+    rather than claiming a token-level variable position. Missing source metadata
+    remains ``None`` for programmatically constructed models.
+    """
+
+    kind: str
+    state_path: str
+    action: Optional[str]
+    action_index: Optional[int]
+    transition_index: Optional[int]
+    statement_path: Tuple[int, ...]
+    source_path: Optional[str]
+    span: Optional[Span]
+
+
+@dataclass(frozen=True)
 class VariableInfo:
     """
     Structural summary of a variable definition plus guard-affect flags.
@@ -493,6 +519,19 @@ class VariableInfo:
         assignments to this variable from lifecycle actions or transition
         effects.
     :type float_literal_assignments: Tuple[str, ...]
+    :param external_supply: ``cycle`` for inputs, ``construction`` for
+        parameters, or ``none`` for model-owned control/output variables.
+    :type external_supply: str
+    :param diagnostic_policy: Fixed applicability of control-variable unused,
+        unwritten-read, write-only and guard-variable-change diagnostics.
+        These flags do not suppress other validation or expression analysis.
+    :type diagnostic_policy: Dict[str, bool]
+    :param read_sites: Static reads in expanded model traversal order.
+        Repeated occurrences within one expression share a site.
+    :type read_sites: Tuple[VariableAccessSite, ...]
+    :param write_sites: Static assignment destinations, including unreachable
+        statements but excluding declaration initializers.
+    :type write_sites: Tuple[VariableAccessSite, ...]
     """
 
     name: str
@@ -508,6 +547,11 @@ class VariableInfo:
     float_literal_assignments: Tuple[str, ...] = field(default_factory=tuple)
     span: Optional['Span'] = None
     float_literal_assignment_spans: Tuple[Optional['Span'], ...] = field(default_factory=tuple)
+    role: str = 'control'
+    external_supply: str = 'none'
+    diagnostic_policy: Dict[str, bool] = field(default_factory=dict)
+    read_sites: Tuple[VariableAccessSite, ...] = field(default_factory=tuple)
+    write_sites: Tuple[VariableAccessSite, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -829,7 +873,9 @@ class ModelInspect:
     :type structure_statistics: StructureStatistics
     :param reachability_graph: Mapping from every state path to state paths
         reachable through normal transitions and composite initial edges.
-        Guards are ignored; ``[*]`` entry/exit markers are not exposed.
+        Guards are ignored; ``[*]`` entry/exit markers are not exposed. A
+        transition into a history also reaches the states of its default path
+        and what a restore can re-enter.
     :type reachability_graph: Dict[str, Tuple[str, ...]]
     :param event_emission_map: Mapping event qualified name → list of
         source state paths that can emit it.
@@ -1465,6 +1511,7 @@ def _build_transition_infos(machine: 'StateMachine') -> Tuple[TransitionInfo, ..
                 combo_priority_run_index=getattr(
                     transition, 'combo_priority_run_index', None
                 ),
+                target_history=transition.target_history,
             ))
             transition_index += 1
     return tuple(out)
@@ -1494,10 +1541,72 @@ def _collect_action_reads_writes(state: Any) -> Tuple[Dict[str, bool], Dict[str,
     return reads, writes
 
 
+def _variable_access_sites(machine: 'StateMachine') -> Dict[str, Dict[str, List[VariableAccessSite]]]:
+    """Collect static accesses without collapsing distinct imported instances."""
+    from ..model.model import Operation
+
+    sites = {name: {'reads': [], 'writes': []} for name in machine.defines}
+
+    def record(names, mode, site):
+        for name in dict.fromkeys(names):
+            if name in sites:
+                sites[name][mode].append(site)
+
+    def located(owner, node, path):
+        return replace(
+            owner,
+            statement_path=path,
+            source_path=getattr(node, '_source_path', owner.source_path),
+            span=getattr(node, '_span', owner.span),
+        )
+
+    def statements(items, owner, prefix=()):
+        for index, statement in enumerate(items):
+            path = (*prefix, index)
+            site = located(owner, statement, path)
+            if isinstance(statement, Operation):
+                record([statement.var_name], 'writes', site)
+                record(_walk_expr_variables(statement.expr), 'reads', site)
+            else:
+                for branch_index, branch in enumerate(statement.branches):
+                    branch_path = (*path, branch_index)
+                    record(_walk_expr_variables(branch.condition), 'reads',
+                           located(owner, branch, branch_path))
+                    statements(branch.statements, owner, branch_path)
+
+    transition_index = 0
+    action_index = 0
+    for state in machine.walk_states():
+        path = _state_path(state)
+        for collection in (state.on_enters, state.on_durings, state.on_exits, state.on_during_aspects):
+            for action in collection:
+                owner = VariableAccessSite(
+                    kind='action', state_path=path,
+                    action=_function_signature(state, path, action),
+                    action_index=action_index, transition_index=None, statement_path=(),
+                    source_path=getattr(action, '_source_path', machine.source_path),
+                    span=getattr(action, '_span', None),
+                )
+                statements(action.operations, owner)
+                action_index += 1
+        for transition in state.transitions:
+            owner = VariableAccessSite(
+                kind='guard', state_path=path, action=None, action_index=None,
+                transition_index=transition_index, statement_path=(),
+                source_path=getattr(transition, '_source_path', None),
+                span=getattr(transition, '_span', None),
+            )
+            record(_walk_expr_variables(transition.guard), 'reads', owner)
+            statements(transition.effects, replace(owner, kind='effect'))
+            transition_index += 1
+    return sites
+
+
 def _build_variable_infos(
         machine: 'StateMachine',
         states: Tuple[StateInfo, ...],
 ) -> Tuple[VariableInfo, ...]:
+    access_sites = _variable_access_sites(machine)
     var_reads_by_state: Dict[str, List[str]] = {name: [] for name in machine.defines}
     var_writes_by_state: Dict[str, List[str]] = {name: [] for name in machine.defines}
     var_read_guards: Dict[str, List[Tuple[str, str]]] = {name: [] for name in machine.defines}
@@ -1615,6 +1724,14 @@ def _build_variable_infos(
             name=name,
             type=var_define.type,
             init_value=_expr_text(var_define.init) or '',
+            role=var_define.role.value,
+            external_supply={'input': 'cycle', 'param': 'construction'}.get(var_define.role.value, 'none'),
+            diagnostic_policy={
+                rule: var_define.role.value == 'control'
+                for rule in ('unused', 'unwritten', 'write_only', 'constant_guard')
+            },
+            read_sites=tuple(access_sites[name]['reads']),
+            write_sites=tuple(access_sites[name]['writes']),
             read_in_states=read_states,
             written_in_states=written_states,
             read_in_guards=read_guards,
@@ -2498,6 +2615,7 @@ def _build_structure_statistics(
 def _build_reachability_graph(
         states: Tuple[StateInfo, ...],
         transitions: Tuple[TransitionInfo, ...],
+        history_defaults: Optional[Mapping[Tuple[str, str], Sequence[str]]] = None,
 ) -> Dict[str, Tuple[str, ...]]:
     """Return the default inspect reachability graph.
 
@@ -2511,6 +2629,13 @@ def _build_reachability_graph(
     :type states: Tuple[StateInfo, ...]
     :param transitions: Inspect transition records in model order.
     :type transitions: Tuple[TransitionInfo, ...]
+    :param history_defaults: For each ``(owner path, history kind)``, the
+        states from the owner's child down to the declared default, defaults to
+        ``None``. A transition entering that history reaches each of them as an
+        ordinary target, besides the owner itself, and what a restore can
+        re-enter -- an over-approximation of both, so no reachable state is
+        left out.
+    :type history_defaults: Optional[Mapping[Tuple[str, str], Sequence[str]]], optional
     :return: Mapping from every state path to reachable state paths.
     :rtype: Dict[str, Tuple[str, ...]]
 
@@ -2549,6 +2674,22 @@ def _build_reachability_graph(
             continue
         adjacency[transition.from_path].add(transition.to_path)
 
+    history_entries = [
+        transition for transition in transitions
+        if (history_defaults or {}).get((transition.to_path, transition.target_history))
+    ]
+
+    def add_edges(transition: TransitionInfo, targets) -> None:
+        if transition.from_path == _INIT_MARK:
+            initial_edges[transition.to_path.rsplit('.', 1)[0]].update(targets)
+        elif transition.from_path in adjacency:
+            # A source that names no state (a misspelling kept by collect mode)
+            # contributes no edge, as in the loop above.
+            adjacency[transition.from_path].update(targets)
+
+    for transition in history_entries:
+        add_edges(transition, history_defaults[(transition.to_path, transition.target_history)])
+
     for state in states:
         if not (state.is_composite and state.initial_targets):
             continue
@@ -2557,10 +2698,9 @@ def _build_reachability_graph(
             if target != _EXIT_MARK:
                 initial_edges[state.path].add(target)
 
-    graph: Dict[str, Tuple[str, ...]] = {}
-    for state in states:
+    def closure(start: str) -> set:
         seen = set()
-        queue = [state.path]
+        queue = [start]
         while queue:
             current = queue.pop(0)
             next_paths = adjacency.get(current, set()) | initial_edges.get(
@@ -2568,12 +2708,40 @@ def _build_reachability_graph(
                 set(),
             )
             for next_path in sorted(next_paths):
-                if next_path in seen or next_path == state.path:
+                if next_path in seen or next_path == start:
                     continue
                 seen.add(next_path)
                 queue.append(next_path)
-        graph[state.path] = tuple(sorted(seen))
-    return graph
+        return seen
+
+    if history_entries:
+        # A restore re-enters a leaf reached before: for ``[H*]`` any
+        # root-reachable leaf of the owner, for ``[H]`` any direct child with
+        # one. These targets are root-reachable already, so only the rows of
+        # the other states gain them.
+        by_path = {state.path: state for state in states}
+        reached = closure(states[0].path)
+        restores: Dict[Tuple[str, str], List[str]] = {}
+        for transition in history_entries:
+            owner, kind = transition.to_path, transition.target_history
+            if (owner, kind) not in restores:
+                # Only known states: a target naming none (a misspelling kept
+                # by collect mode) can still sit in the reachable set.
+                inside = [
+                    path for path in reached
+                    if path.startswith(owner + '.') and path in by_path
+                ]
+                restores[(owner, kind)] = (
+                    [path for path in inside if by_path[path].is_leaf]
+                    if kind == 'deep'
+                    else [
+                        child for child in by_path[owner].substates
+                        if any(path == child or path.startswith(child + '.') for path in inside)
+                    ]
+                )
+            add_edges(transition, restores[(owner, kind)])
+
+    return {state.path: tuple(sorted(closure(state.path))) for state in states}
 
 
 def _build_event_emission_map(
@@ -4153,7 +4321,7 @@ def inspect_model(
         max_complexity_tier: str = 'structural',
         max_call_count_scaling: str = 'linear_in_transitions',
         smt_timeout_ms: Optional[int] = None,
-        model_diagnostics: Sequence[ModelDiagnostic] = (),
+        model_diagnostics: Optional[Sequence[ModelDiagnostic]] = None,
 ) -> ModelInspect:
     """
     Build a structured inspection report for a state machine model.
@@ -4161,6 +4329,15 @@ def inspect_model(
     The report combines the structural payload, the five derived view
     graphs, and design-health diagnostics that can be computed from the
     inspect surface.
+
+    A machine that uses ``[H]`` / ``[H*]`` history is reported as written:
+    model conversion can also build the model before history lowering, and
+    the report,
+    its findings and the optional verify run describe that model, with each
+    history entry an ordinary transition marked by ``target_history``. The
+    lowered variables, gate states and route initials therefore appear nowhere
+    in the report. For reachability, a history entry also reaches every state on
+    the default path of the kind it names.
 
     :param machine: The state machine model to inspect.
     :type machine: pyfcstm.model.StateMachine
@@ -4196,9 +4373,11 @@ def inspect_model(
         prepended to the analyzer output. Callers that built the model with
         :func:`pyfcstm.model.parse_dsl_node_to_state_machine` in collect mode
         pass the returned diagnostic list here so the report carries the model
-        errors alongside the design-health warnings. Defaults to ``()``, which
-        reproduces the strict-mode report shape.
-    :type model_diagnostics: Sequence[pyfcstm.utils.validate.ModelDiagnostic], optional
+        errors alongside the design-health warnings. Defaults to ``None``,
+        which uses the warnings a strict build of ``machine`` emitted while
+        converting the model, such as ``W_HISTORY_UNUSED``, so a strictly
+        loaded model gets the same report as ``pyfcstm inspect``.
+    :type model_diagnostics: Optional[Sequence[pyfcstm.utils.validate.ModelDiagnostic]], optional
     :return: Structured view of the model.
     :rtype: ModelInspect
 
@@ -4243,6 +4422,12 @@ def inspect_model(
     structure_statistics_policy = _normalize_structure_statistics_policy(
         structure_statistics_policy,
     )
+    if model_diagnostics is None:
+        model_diagnostics = machine._build_warnings
+    # A machine that uses history is judged as written: model conversion keeps
+    # the model before lowering, where a history entry is an ordinary
+    # transition that still carries its ``target_history``.
+    machine = machine._as_written()
     states = _build_state_infos(machine)
     transitions = _build_transition_infos(machine)
     variables = _build_variable_infos(machine, states)
@@ -4252,7 +4437,18 @@ def inspect_model(
     combo_transitions = _build_combo_transition_infos(transitions)
     combo_origins = _build_combo_origin_infos(transitions)
     metrics = _build_metrics(states, transitions, variables, events)
-    reachability_graph = _build_reachability_graph(states, transitions)
+    reachability_graph = _build_reachability_graph(
+        states,
+        transitions,
+        {
+            ('.'.join(owner.owner_path), kind): [
+                '.'.join((*owner.owner_path, *path[:depth]))
+                for depth in range(1, len(path) + 1)
+            ]
+            for owner in machine.history_owners
+            for kind, path in owner.defaults.items()
+        },
+    )
     root_state_path = _state_path(machine.root_state)
     # Model-build diagnostics come first so a report on a model built in collect
     # mode leads with the errors that make it inconsistent, before the warnings
@@ -4440,7 +4636,7 @@ def _to_json_dataclass(obj: Any) -> Any:
         return {
             name: _to_json_dataclass(getattr(obj, name))
             for name in obj.__dataclass_fields__
-            if name not in {
+            if isinstance(obj, VariableAccessSite) or name not in {
                 'span',
                 'effect_spans',
                 'effect_self_assign_spans',
@@ -4454,10 +4650,7 @@ def _to_json_dataclass(obj: Any) -> Any:
         # exclusively, but future payloads may introduce list-typed
         # dataclass fields.
         return [_to_json_dataclass(x) for x in obj]
-    if isinstance(obj, dict):  # pragma: no cover
-        # Same as list: the current ModelInspect keeps every dict field
-        # at the top level, but nested dict payloads should still
-        # serialize predictably if introduced later.
+    if isinstance(obj, dict):
         return {str(k): _to_json_dataclass(v) for k, v in obj.items()}
     return obj
 

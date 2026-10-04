@@ -46,9 +46,22 @@ import io
 import json
 import os
 import weakref
-from dataclasses import dataclass, field, fields, is_dataclass
+from dataclasses import InitVar, dataclass, field, fields, is_dataclass
+from itertools import chain
 from textwrap import indent
-from typing import Any, Optional, Union, List, Dict, Tuple, Iterator, Set
+from types import MappingProxyType
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Optional,
+    Union,
+    List,
+    Dict,
+    Tuple,
+    Iterator,
+    Set,
+    Mapping,
+)
 
 from .base import AstExportable, PlantUMLExportable
 from .expr import Expr, parse_expr_node_to_expr
@@ -59,10 +72,16 @@ from .imports import (
     _mark_generated_combo_pseudo_node,
     _mark_generated_combo_transition_node,
 )
-from .plantuml import PlantUMLOptions, PlantUMLOptionsInput, format_state_name
+from .plantuml import (
+    PlantUMLOptions,
+    PlantUMLOptionsInput,
+    escape_plantuml_creole,
+    format_state_name,
+)
 from ..diagnostics.sink import DiagnosticSink
 from ..diagnostics.sink import _emit as _emit_or_raise
 from ..dsl import node as dsl_nodes, INIT_STATE, EXIT_STATE
+from ..dsl.role import VariableRole
 from ..utils.validate import (
     ModelDiagnostic,
     ModelLookupError,
@@ -82,11 +101,15 @@ __all__ = [
     "OnAspect",
     "State",
     "VarDefine",
+    "VariableRole",
     "StateMachine",
     "parse_dsl_node_to_state_machine",
 ]
 
 from ..utils import aggregate_documentation, sequence_safe, to_identifier
+
+if TYPE_CHECKING:  # pragma: no cover - imported for annotations only.
+    from .history import HistoryOwner
 
 
 def _ast_doc_kwargs(node_type, doc: Optional[str]) -> Dict[str, object]:
@@ -184,6 +207,7 @@ def _attach_model_source_metadata(
     for name, definition in machine.defines.items():
         matched = ast_definitions.get(name)
         attach(definition, getattr(matched, "_source_path", None))
+        definition._source_declarations = getattr(matched, "_source_declarations", ())
 
     def attach_operation(operation: Any, source: Optional[str]) -> None:
         """Give an operation and everything nested inside it the same owner.
@@ -731,8 +755,13 @@ class Transition(AstExportable):
     Represents a transition between states in a state machine.
 
     A transition defines how the state machine moves from one state to another,
-    potentially triggered by an event, guarded by a condition, and with effects
-    that execute when the transition occurs.
+    triggered by either an event or a guard, with effects that execute when the
+    transition occurs. ``event`` and ``guard`` are mutually exclusive: construction
+    or assignment raises :class:`ValueError` if both would be non-``None``.
+    Both may be ``None`` for an unconditional transition. Clear the existing
+    trigger before assigning the other; rejected assignments leave it unchanged.
+    Sequential combo triggers expand into separate edges, not an event and guard
+    on the same edge.
 
     :param from_state: The source state name or special state marker
     :type from_state: Union[str, dsl_nodes._StateSingletonMark]
@@ -772,6 +801,19 @@ class Transition(AstExportable):
     :type combo_priority_run_index: Optional[int]
     :param parent_ref: Weak reference to the parent state
     :type parent_ref: Optional[weakref.ReferenceType]
+    :param target_history: ``'shallow'`` or ``'deep'`` when the transition
+        was written against ``to_state.[H]`` / ``to_state.[H*]``; its effects
+        then end with the assignment that selects the restore target.
+    :type target_history: Optional[str]
+    :param history_role: How history lowering produced or changed this edge:
+        ``'route'`` for a generated restore route, ``'merged'`` for a user
+        initial merged with a route, ``'gated'`` for a user initial that
+        only fires when no restore passes, ``'gate'`` for the edge into a
+        generated gate pseudo state; ``None`` otherwise.
+    :type history_role: Optional[str]
+    :param history_user_guard: The guard the user wrote on a ``'merged'`` or
+        ``'gated'`` initial transition, before lowering extended it.
+    :type history_user_guard: Optional[pyfcstm.model.expr.Expr]
 
     Example::
 
@@ -816,6 +858,16 @@ class Transition(AstExportable):
         default=None, repr=False, compare=False
     )
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
+    target_history: Optional[str] = field(default=None, compare=False)
+    history_role: Optional[str] = field(default=None, compare=False)
+    history_user_guard: Optional[Expr] = field(default=None, compare=False)
+
+    def __setattr__(self, name, value):
+        if name in ("event", "guard") and value is not None:
+            other = "guard" if name == "event" else "event"
+            if getattr(self, other, None) is not None:
+                raise ValueError("event and guard are mutually exclusive")
+        super().__setattr__(name, value)
 
     @property
     def parent(self) -> Optional["State"]:
@@ -1360,6 +1412,9 @@ class State(AstExportable, PlantUMLExportable):
         relay. This is semantic model data and must not be inferred from the
         reserved state-name prefix by renderers.
     :type is_combo_relay: bool
+    :param is_history_gate: Whether this pseudo state was generated by history
+        lowering to gate an evented initial transition.
+    :type is_history_gate: bool
     :param doc: Optional opaque documentation attached to this state.
     :type doc: Optional[str]
 
@@ -1398,6 +1453,7 @@ class State(AstExportable, PlantUMLExportable):
     is_combo_relay: bool = False
     doc: Optional[str] = None
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
+    is_history_gate: bool = False
 
     def __init__(
         self,
@@ -1418,6 +1474,7 @@ class State(AstExportable, PlantUMLExportable):
         _span: Optional[Span] = None,
         is_combo_relay: bool = False,
         doc: Optional[str] = None,
+        is_history_gate: bool = False,
     ) -> None:
         """Initialize a state while preserving the legacy positional order.
 
@@ -1442,6 +1499,7 @@ class State(AstExportable, PlantUMLExportable):
         self.is_combo_relay = is_combo_relay
         self.doc = doc
         self._span = _span
+        self.is_history_gate = is_history_gate
         self.__post_init__()
 
     def __post_init__(self) -> None:
@@ -2219,7 +2277,13 @@ class State(AstExportable, PlantUMLExportable):
                                 print("note on link", file=tf)
                                 print("effect {", file=tf)
                                 for operation in trans.effects:
-                                    print(f"    {operation.to_ast_node()}", file=tf)
+                                    print(
+                                        "    "
+                                        + escape_plantuml_creole(
+                                            str(operation.to_ast_node())
+                                        ),
+                                        file=tf,
+                                    )
                                 print("}", file=tf)
                                 print("end note", file=tf, end="")
                             elif config.transition_effect_mode == "inline":
@@ -2292,7 +2356,7 @@ class State(AstExportable, PlantUMLExportable):
                                 )
                                 print(formatted_text, file=tf)
 
-                    action_text = (
+                    action_text = escape_plantuml_creole(
                         tf.getvalue().rstrip().replace("\r\n", "\n").replace("\r", "\n")
                     )
                     if action_text:  # Only show if there's actual content
@@ -2595,7 +2659,12 @@ class VarDefine(AstExportable):
     :param type: The type of the variable
     :type type: str
     :param init: The initial value expression
-    :type init: Expr
+    :type init: Optional[Expr]
+    :param role: Ownership and lifetime, defaulting to legacy control state.
+    :type role: pyfcstm.dsl.role.VariableRole
+    :raises pyfcstm.utils.validate.ModelValidationError: If an input
+        has an initializer, another role lacks one, or an initializer refers
+        to a model variable.
 
     Example::
 
@@ -2607,9 +2676,39 @@ class VarDefine(AstExportable):
 
     name: str
     type: str
-    init: Expr
+    init: Optional[Expr]
     doc: Optional[str] = None
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
+    role: VariableRole = VariableRole.CONTROL
+    _validation_sink: InitVar[Optional[DiagnosticSink]] = None
+
+    def __post_init__(self, _validation_sink: Optional[DiagnosticSink]) -> None:
+        self.role = VariableRole(self.role)
+        code = None
+        message = None
+        if self.role is VariableRole.INPUT:
+            if self.init is not None:
+                code = "E_INPUT_INITIALIZER"
+                message = "Input must not have an initializer"
+        elif self.init is None:
+            code = "E_VARIABLE_INITIALIZER_REQUIRED"
+            message = (
+                "Control, output and parameter declarations require an initializer"
+            )
+        elif self.init.list_variables():
+            code = "E_INITIALIZER_VARIABLE_REFERENCE"
+            message = "Variable initializers must not reference model variables"
+        if code is not None:
+            _emit_or_raise(
+                _validation_sink,
+                ModelDiagnostic(
+                    code=code,
+                    severity="error",
+                    message=f"{message}: {self.name!r}.",
+                    span=self._span,
+                    refs={"var_name": self.name},
+                ),
+            )
 
     def to_ast_node(self) -> dsl_nodes.DefAssignment:
         """
@@ -2621,7 +2720,9 @@ class VarDefine(AstExportable):
         return dsl_nodes.DefAssignment(
             name=self.name,
             type=self.type,
-            expr=self.init.to_ast_node(),
+            expr=self.init.to_ast_node() if self.init is not None else None,
+            role=self.role,
+            spelling=getattr(self, "_spelling", None),
             **_ast_doc_kwargs(dsl_nodes.DefAssignment, self.doc),
         )
 
@@ -2644,6 +2745,12 @@ class StateMachine(AstExportable, PlantUMLExportable):
     :type defines: Dict[str, VarDefine]
     :param root_state: The root state of the state machine
     :type root_state: State
+    :param history_owners: The composite states whose ``[H]`` / ``[H*]``
+        history is used, in preorder; empty for a machine without history.
+        History is lowered into ordinary variables, exits and initial
+        transitions, and this metadata maps those variables back to
+        source-level records.
+    :type history_owners: Tuple[pyfcstm.model.history.HistoryOwner, ...]
 
     Example::
 
@@ -2690,6 +2797,240 @@ class StateMachine(AstExportable, PlantUMLExportable):
     _source_documents: Dict[str, str] = field(
         default_factory=dict, compare=False, repr=False
     )
+    history_owners: Tuple["HistoryOwner", ...] = field(
+        default_factory=tuple, compare=False, repr=False
+    )
+    # The import-assembled program of a machine that lowered history, and the
+    # model built from it without lowering once ``_as_written`` needs it.
+    _assembled_program: Optional[dsl_nodes.StateMachineDSLProgram] = field(
+        default=None, compare=False, repr=False
+    )
+    _authored_view: Optional["StateMachine"] = field(
+        default=None, compare=False, repr=False
+    )
+    # The warnings and infos a strict build emitted while converting the
+    # model; a collecting build returns them to its caller instead.
+    _build_warnings: Tuple[ModelDiagnostic, ...] = field(
+        default_factory=tuple, compare=False, repr=False
+    )
+
+    _validation_sink: InitVar[Optional[DiagnosticSink]] = None
+
+    def __post_init__(self, _validation_sink: Optional[DiagnosticSink]) -> None:
+        readonly = {
+            name: (
+                "E_INPUT_WRITE"
+                if definition.role is VariableRole.INPUT
+                else "E_PARAM_WRITE"
+            )
+            for name, definition in self.defines.items()
+            if definition.role
+            in (VariableRole.INPUT, VariableRole.PARAM)
+        }
+        diagnostics = []
+
+        def check(statements: List[OperationStatement]) -> None:
+            for statement in statements:
+                if isinstance(statement, IfBlock):
+                    for branch in statement.branches:
+                        check(branch.statements)
+                elif statement.var_name in readonly:
+                    diagnostics.append(
+                        ModelDiagnostic(
+                            code=readonly[statement.var_name],
+                            severity="error",
+                            message=f"Model operations cannot write input {statement.var_name!r}.",
+                            span=statement._span,
+                            refs={"var_name": statement.var_name},
+                        )
+                    )
+
+        for state in self.walk_states():
+            for transition in state.transitions:
+                check(transition.effects)
+            for action in chain(
+                state.on_enters,
+                state.on_durings,
+                state.on_exits,
+                state.on_during_aspects,
+            ):
+                check(action.operations)
+        for diagnostic in diagnostics:
+            _emit_or_raise(_validation_sink, diagnostic)
+
+    def _history_owner(self, owner: str) -> "HistoryOwner":
+        for item in self.history_owners:
+            if ".".join(item.owner_path) == owner:
+                return item
+        raise ValueError("%r is not a history owner of this machine." % (owner,))
+
+    def history_variables(
+        self, records: Optional[Mapping[str, str]] = None
+    ) -> Dict[str, int]:
+        """
+        Return the lowered history variables for a hot start or a snapshot.
+
+        History is lowered into ordinary ``int`` variables, which a hot start
+        must supply like any other persistent variable.  This helper computes
+        them from source-level records: ``records`` maps a history owner's
+        dotted path to the stoppable leaf it should remember, written relative
+        to the owner.  Owners that are not listed start without a record, and
+        no restore is in progress.
+
+        :param records: Owner path to remembered leaf path, defaults to
+            ``None`` (no records)
+        :type records: Optional[Mapping[str, str]], optional
+        :return: Value of every lowered history variable
+        :rtype: Dict[str, int]
+        :raises ValueError: If an owner is not a history owner of this machine,
+            or a leaf is not a stoppable leaf below its owner.
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> machine = load_state_machine_from_text('''
+            ... state R {
+            ...     state Off;
+            ...     state O { state A; state B; [*] -> A; [H] -> A; A -> B :: Go; }
+            ...     [*] -> Off;
+            ...     Off -> O.[H] :: Resume;
+            ...     !O -> Off :: Stop;
+            ... }
+            ... ''')
+            >>> values = machine.history_variables({"R.O": "B"})
+            >>> machine.history_record(values, "R.O")
+            'B'
+        """
+        values: Dict[str, int] = {}
+        for item in self.history_owners:
+            values[item.goto_variable] = 0
+            values[item.record_variable] = 0
+        for owner, leaf in dict(records or {}).items():
+            item = self._history_owner(owner)
+            value = item.record_value(tuple(leaf.split(".")))
+            if value is None:
+                raise ValueError(
+                    "%r is not a stoppable leaf below history owner %r."
+                    % (leaf, owner)
+                )
+            values[item.record_variable] = value
+        return values
+
+    def history_record(
+        self, variables: Mapping[str, object], owner: str
+    ) -> Optional[str]:
+        """
+        Decode the history record of ``owner`` from a variable snapshot.
+
+        A record holds the stoppable leaf the owner was last left from.  It is
+        meaningful while the owner is inactive; while the owner is active the
+        underlying variable follows leaf exits and is not read.
+
+        :param variables: Variable values, such as ``SimulationRuntime.vars``
+        :type variables: Mapping[str, object]
+        :param owner: Dotted path of a history owner
+        :type owner: str
+        :return: Remembered leaf path relative to the owner, or ``None`` when
+            the owner has no record
+        :rtype: Optional[str]
+        :raises ValueError: If ``owner`` is not a history owner of this machine.
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> machine = load_state_machine_from_text('''
+            ... state R {
+            ...     state Off;
+            ...     state O { state A; [*] -> A; [H*] -> A; }
+            ...     [*] -> Off;
+            ...     Off -> O.[H*] :: Resume;
+            ...     !O -> Off :: Stop;
+            ... }
+            ... ''')
+            >>> print(machine.history_record(machine.history_variables(), "R.O"))
+            None
+        """
+        item = self._history_owner(owner)
+        path = item.decode(variables.get(item.record_variable, 0))
+        return None if path is None else ".".join(path)
+
+    def _as_written(self) -> "StateMachine":
+        """
+        Return this model as written, before history lowering.
+
+        Static analyses judge this model (see
+        :func:`pyfcstm.diagnostics.inspect.inspect_model`): a history entry is
+        an ordinary transition that still carries its ``target_history``, and
+        no lowered variable, gate state, route or record-writing exit exists.
+        It is built from the same import-assembled program on first use; its
+        diagnostics repeat those of the original build and are dropped. A
+        machine that lowered no history is its own model as written.
+
+        :return: The model before history lowering
+        :rtype: StateMachine
+        """
+        if self._assembled_program is None:
+            return self
+        if self._authored_view is None:
+            self._authored_view = _build_assembled_state_machine(
+                self._assembled_program, DiagnosticSink(collect=True), lower=False
+            )
+        return self._authored_view
+
+    @property
+    def control_variables(self) -> Mapping[str, VarDefine]:
+        """Read-only control declarations in global declaration order."""
+        return MappingProxyType(
+            {
+                name: value
+                for name, value in self.defines.items()
+                if value.role is VariableRole.CONTROL
+            }
+        )
+
+    @property
+    def inputs(self) -> Mapping[str, VarDefine]:
+        """Read-only environment input declarations in global declaration order."""
+        return MappingProxyType(
+            {
+                name: value
+                for name, value in self.defines.items()
+                if value.role is VariableRole.INPUT
+            }
+        )
+
+    @property
+    def parameters(self) -> Mapping[str, VarDefine]:
+        """Read-only parameter declarations in global declaration order."""
+        return MappingProxyType(
+            {
+                name: value
+                for name, value in self.defines.items()
+                if value.role is VariableRole.PARAM
+            }
+        )
+
+    @property
+    def output_variables(self) -> Mapping[str, VarDefine]:
+        """Read-only output declarations in global declaration order."""
+        return MappingProxyType(
+            {
+                name: value
+                for name, value in self.defines.items()
+                if value.role is VariableRole.OUTPUT
+            }
+        )
+
+    @property
+    def persistent_variables(self) -> Mapping[str, VarDefine]:
+        """Read-only control and output declarations, preserving their interleaving."""
+        return MappingProxyType(
+            {
+                name: value
+                for name, value in self.defines.items()
+                if value.role in (VariableRole.CONTROL, VariableRole.OUTPUT)
+            }
+        )
 
     def to_ast_node(self) -> dsl_nodes.StateMachineDSLProgram:
         """
@@ -2742,8 +3083,10 @@ class StateMachine(AstExportable, PlantUMLExportable):
                         # PlantUML is a semantic display and must not embed
                         # source documentation blocks.
                         print(
-                            f"    def {def_item.type} {def_item.name} = "
-                            f"{def_item.init};",
+                            "    "
+                            + escape_plantuml_creole(
+                                str(def_item.to_ast_node().without_docs())
+                            ),
                             file=sf,
                         )
                     print("}", file=sf)
@@ -2755,8 +3098,14 @@ class StateMachine(AstExportable, PlantUMLExportable):
 
                     # Use configured legend position
                     print(f"legend {config.variable_legend_position}", file=sf)
-                    # Header row
-                    print("|= Variable |= Type |= Initial Value |", file=sf)
+                    show_roles = any(
+                        item.role is not VariableRole.CONTROL
+                        for item in self.defines.values()
+                    )
+                    role_header = "= Role |" if show_roles else ""
+                    print(
+                        f"|= Variable |= Type |= Initial Value |{role_header}", file=sf
+                    )
                     for def_item in self.defines.values():
                         var_name = def_item.name
                         var_type = def_item.type
@@ -2767,7 +3116,9 @@ class StateMachine(AstExportable, PlantUMLExportable):
                         var_init_escaped = escape_plantuml_table_cell(str(var_init))
                         # All columns left-aligned
                         print(
-                            f"| {var_name} | {var_type} | {var_init_escaped} |", file=sf
+                            f"| {escape_plantuml_creole(var_name)} | {var_type} | {var_init_escaped} |"
+                            + (f" {def_item.role.value} |" if show_roles else ""),
+                            file=sf,
                         )
                     print("endlegend", file=sf)
                     print("", file=sf)
@@ -3190,20 +3541,65 @@ def parse_dsl_node_to_state_machine(
     # one -- an empty path names no document -- so the disagreement is a small
     # correction rather than a loss.
     dnode = assemble_state_machine_imports(dnode, path=path, collect_into=sink)
+    machine = _build_assembled_state_machine(dnode, sink, lower=True)
+    if machine.history_owners:
+        # Inspect and verify judge the model as written; keep what is needed
+        # to build it on first use (see ``StateMachine._as_written``).
+        machine._assembled_program = dnode
 
+    if collect:
+        # In collect mode we always return the tuple. ``machine`` is the
+        # best-effort build even when diagnostics were emitted; downstream
+        # callers should consult ``has_errors()`` (or the diagnostics list)
+        # before treating it as valid.
+        return machine, sink.diagnostics
+
+    # Strict mode: sink already raised on any error diagnostic at emit
+    # time, so reaching here means the build is clean. ``finalize_or_raise``
+    # is a no-op for strict mode but kept for symmetry / future-proofing.
+    sink.finalize_or_raise()
+    # The sink recorded every warning before checking for errors; keep them
+    # for strict callers that report them, such as ``pyfcstm inspect``.
+    machine._build_warnings = tuple(sink.diagnostics)
+    return machine
+
+
+def _build_assembled_state_machine(
+    dnode: dsl_nodes.StateMachineDSLProgram,
+    sink: DiagnosticSink,
+    *,
+    lower: bool,
+) -> StateMachine:
+    """
+    Build the model of an import-assembled program.
+
+    :param dnode: Program AST after import assembly
+    :type dnode: pyfcstm.dsl.node.StateMachineDSLProgram
+    :param sink: Sink that receives every diagnostic of the build
+    :type sink: pyfcstm.diagnostics.sink.DiagnosticSink
+    :param lower: Whether to lower history constructs; when ``False`` the
+        history owners are still validated and described
+    :type lower: bool
+    :return: The built machine
+    :rtype: StateMachine
+    """
     d_defines: Dict[str, VarDefine] = {}
     # Track first-declaration spans so duplicate diagnostics can point at
     # the previous definition.
     d_define_spans: Dict[str, Optional[Span]] = {}
     for def_item in dnode.definitions:
         if def_item.name not in d_defines:
-            d_defines[def_item.name] = VarDefine(
+            definition = VarDefine(
                 name=def_item.name,
                 type=def_item.type,
-                init=parse_expr_node_to_expr(def_item.expr),
+                init=parse_expr_node_to_expr(def_item.expr) if def_item.expr is not None else None,
                 doc=getattr(def_item, "doc", None),
                 _span=_node_span(def_item),
+                role=def_item.role,
+                _validation_sink=sink,
             )
+            definition._spelling = def_item.spelling
+            d_defines[def_item.name] = definition
             d_define_spans[def_item.name] = _node_span(def_item)
         else:
             sink.emit(
@@ -4178,6 +4574,7 @@ def parse_dsl_node_to_state_machine(
                     # place share a key.  Asking the declaration directly is exact.
                     getattr(f_transnode, "_source_path", None),
                     getattr(f_transnode, "doc", None),
+                    getattr(f_transnode, "target_history", None),
                 )
             )
 
@@ -4196,6 +4593,7 @@ def parse_dsl_node_to_state_machine(
                 forced_span,
                 forced_source_path,
                 forced_doc,
+                forced_target_history,
             ) in force_transition_tuples_to_inherit:
                 if from_state is dsl_nodes.ALL or from_state == subnode.name:
                     transitions.append(
@@ -4210,6 +4608,7 @@ def parse_dsl_node_to_state_machine(
                             is_forced=True,
                             forced_origin=forced_origin,
                             _span=forced_span,
+                            target_history=forced_target_history,
                         )
                     )
                     if forced_source_path is not None:
@@ -4856,6 +5255,11 @@ def parse_dsl_node_to_state_machine(
                         role="terminal",
                         effects=effects,
                     )
+                    # Only the edge that finally enters the target carries the
+                    # history entry; relay hops before it stay plain.
+                    transitions[-1].target_history = getattr(
+                        alternative.transnode, "target_history", None
+                    )
                     i += 1
                     continue
 
@@ -5017,6 +5421,7 @@ def parse_dsl_node_to_state_machine(
                     else None
                 ),
                 _span=_node_span(transnode),
+                target_history=getattr(transnode, "target_history", None),
             )
 
         def _combo_projection_key(transnode) -> Tuple[object, ...]:
@@ -5223,6 +5628,12 @@ def parse_dsl_node_to_state_machine(
         dnode.root_state, current_state=root_state, current_path=()
     )
 
+    # History is lowered last, once forced and combo transitions are concrete
+    # edges, so every history entry is already attached to its final edge.
+    from .history import lower_history
+
+    history_owners = lower_history(dnode.root_state, root_state, d_defines, sink, apply=lower)
+
     def _iter_lifecycle_actions(state: State) -> Iterator[Union[OnStage, OnAspect]]:
         for func_item in [
             *state.on_enters,
@@ -5269,18 +5680,8 @@ def parse_dsl_node_to_state_machine(
         defines=d_defines,
         root_state=root_state,
         forced_transitions=tuple(forced_transition_declarations),
+        history_owners=history_owners,
+        _validation_sink=sink,
     )
     _attach_model_source_metadata(machine, dnode)
-
-    if collect:
-        # In collect mode we always return the tuple. ``machine`` is the
-        # best-effort build even when diagnostics were emitted; downstream
-        # callers should consult ``has_errors()`` (or the diagnostics list)
-        # before treating it as valid.
-        return machine, sink.diagnostics
-
-    # Strict mode: sink already raised on any error diagnostic at emit
-    # time, so reaching here means the build is clean. ``finalize_or_raise``
-    # is a no-op for strict mode but kept for symmetry / future-proofing.
-    sink.finalize_or_raise()
     return machine

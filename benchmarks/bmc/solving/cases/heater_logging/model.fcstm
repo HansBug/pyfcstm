@@ -1,0 +1,41 @@
+// Slicing-positive corpus model: the log_* variables accumulate in during
+// blocks and read only themselves and kept variables; no guard reads them.
+def int temp = 20;
+def int target = 24;
+def int heater_on = 0;
+def int log_samples = 0;
+def int log_heat_time = 0;
+def int log_max_temp = 0;
+def int log_energy = 0;
+
+state Heater {
+    [*] -> Off;
+
+    state Off {
+        enter {
+            heater_on = 0;
+            log_samples = log_samples + 1;
+        }
+    }
+    state On {
+        enter {
+            heater_on = 1;
+            log_heat_time = log_heat_time + 1;
+            log_energy = log_energy + temp;
+        }
+        during {
+            temp = temp + 1;
+            log_max_temp = temp;
+        }
+    }
+    state Cooling {
+        during {
+            temp = temp - 1;
+            log_samples = log_samples + 1;
+        }
+    }
+
+    Off -> On : if [temp < target];
+    On -> Cooling : if [temp >= target + 2];
+    Cooling -> Off : if [temp <= target];
+}

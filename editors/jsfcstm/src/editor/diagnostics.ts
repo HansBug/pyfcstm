@@ -493,6 +493,15 @@ export async function collectDocumentDiagnosticsByUri(
         diagnostics.push(...localTopologyDiagnostics);
         const localModel = buildStateMachineModel(node.semantic);
         if (localModel) {
+            // History lowering reports its model-build diagnostics, like pyfcstm.
+            diagnostics.push(...localModel.historyDiagnostics.map(item => ({
+                range: item.range,
+                message: item.message,
+                severity: item.severity,
+                source: 'fcstm',
+                code: item.code,
+                data: {...item.refs},
+            })));
             const localInspectDiagnostics = collectInspectModelDiagnostics(
                 document,
                 node.semantic,
@@ -516,6 +525,12 @@ export async function collectDocumentDiagnosticsByUri(
         rootUri,
         diagnostics.filter(diagnostic => !shouldSuppressParseRecoveryDiagnostic(diagnostic, parseDiagnostics)),
     );
+
+    if (node?.bindingDiagnostic) {
+        const {filePath, diagnostic} = node.bindingDiagnostic;
+        const uri = filePath === snapshot.rootFile ? rootUri : pathToFileURL(filePath).href;
+        publications.set(uri, [...(publications.get(uri) || []), diagnostic]);
+    }
 
     // A hydrated root model carries imported paths in the host namespace, so
     // topology must be checked against that assembled model. Use the model's

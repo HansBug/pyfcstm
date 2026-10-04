@@ -15,6 +15,7 @@ export type FcstmPyNodeType =
     | 'EventDefinition'
     | 'TransitionDefinition'
     | 'ForceTransitionDefinition'
+    | 'HistoryDefinition'
     | 'ImportStatement'
     | 'ImportDefExactSelector'
     | 'ImportDefSetSelector'
@@ -22,6 +23,7 @@ export type FcstmPyNodeType =
     | 'ImportDefFallbackSelector'
     | 'ImportDefTargetTemplate'
     | 'ImportDefMapping'
+    | 'ImportVariableMapping'
     | 'ImportEventMapping'
     | 'OperationAssignment'
     | 'OperationIfBranch'
@@ -78,15 +80,33 @@ export interface FcstmAstDocument extends FcstmAstNodeBase {
 /**
  * Variable definition aligned with pyfcstm's ``DefAssignment`` node.
  */
+export type VariableRole = 'control' | 'input' | 'param' | 'output';
+
+/** An authored declaration and its ordered import bindings before flattening. */
+export interface FcstmVariableDeclarationSource {
+    filePath: string;
+    declaration: FcstmAstVariableDefinition;
+    bindings: Array<{
+        filePath: string;
+        sourceName: string;
+        targetName: string;
+        alias: string;
+        range: TextRange;
+    }>;
+}
+
 export interface FcstmAstVariableDefinition extends FcstmAstNodeBase {
     kind: 'variableDefinition';
     pyNodeType: 'DefAssignment';
+    sourceDeclarations?: FcstmVariableDeclarationSource[];
     name: string;
     type: 'int' | 'float';
     valueType: 'int' | 'float';
     deftype: 'int' | 'float';
-    initializer: FcstmAstExpression;
-    expr: FcstmAstExpression;
+    role?: VariableRole;
+    spelling?: string;
+    initializer: FcstmAstExpression | null;
+    expr: FcstmAstExpression | null;
     doc?: string;
 }
 
@@ -117,6 +137,8 @@ export interface FcstmAstStateDefinition extends FcstmAstNodeBase {
     during_aspects: FcstmAstAction[];
     forceTransitions: FcstmAstForcedTransition[];
     force_transitions: FcstmAstForcedTransition[];
+    /** ``[H]`` / ``[H*]`` declarations owned by this state. */
+    histories: FcstmAstHistoryDefinition[];
     /**
      * Absolute path of the file this state's definition was imported
      * from, if it came in through an ``import`` statement in another
@@ -132,9 +154,28 @@ export type FcstmAstStateStatement =
     | FcstmAstStateDefinition
     | FcstmAstTransition
     | FcstmAstForcedTransition
+    | FcstmAstHistoryDefinition
     | FcstmAstAction
     | FcstmAstEventDefinition
     | FcstmAstImportStatement;
+
+export type FcstmHistoryKind = 'shallow' | 'deep';
+
+/**
+ * History declaration aligned with pyfcstm's ``HistoryDefinition`` node:
+ * ``[H] -> Child;`` or ``[H*] -> Child.Leaf;`` inside a composite state.
+ */
+export interface FcstmAstHistoryDefinition extends FcstmAstNodeBase {
+    kind: 'historyDefinition';
+    pyNodeType: 'HistoryDefinition';
+    historyKind: FcstmHistoryKind;
+    history_kind: FcstmHistoryKind;
+    /** Default target path, relative to the owner. */
+    defaultPath: string[];
+    default_path: string[];
+    defaultPathRange: TextRange;
+    doc?: string;
+}
 
 /**
  * Event definition aligned with pyfcstm's ``EventDefinition`` node.
@@ -213,6 +254,9 @@ export interface FcstmAstTransitionBase extends FcstmAstNodeBase {
     targetStateName?: string;
     sourceKind: 'init' | 'state' | 'all';
     targetKind: 'state' | 'exit';
+    /** ``shallow`` / ``deep`` when the target is written ``State.[H]`` / ``State.[H*]``. */
+    targetHistory?: FcstmHistoryKind;
+    target_history?: FcstmHistoryKind;
     trigger?: FcstmAstTrigger;
     comboTrigger?: FcstmAstComboTrigger;
     combo_trigger?: FcstmAstComboTrigger;
@@ -360,14 +404,17 @@ export type FcstmAstImportDefSelector =
     | FcstmAstImportDefPatternSelector
     | FcstmAstImportDefExactSelector;
 
-export interface FcstmAstImportDefMapping extends FcstmAstNodeBase {
+export interface FcstmAstImportVariableMapping extends FcstmAstNodeBase {
     kind: 'importDefMapping';
-    pyNodeType: 'ImportDefMapping';
+    pyNodeType: 'ImportVariableMapping' | 'ImportDefMapping';
+    spelling?: 'var' | 'def';
     selector: FcstmAstImportDefSelector;
     targetTemplate: string;
     targetTemplateNode: FcstmAstImportDefTargetTemplate;
     target_template: FcstmAstImportDefTargetTemplate;
 }
+
+export type FcstmAstImportDefMapping = FcstmAstImportVariableMapping;
 
 export interface FcstmAstImportEventMapping extends FcstmAstNodeBase {
     kind: 'importEventMapping';
@@ -545,6 +592,7 @@ export type TransitionDefinition = FcstmAstTransition;
 export type ForceTransitionDefinition = FcstmAstForcedTransition;
 export type ImportStatement = FcstmAstImportStatement;
 export type ImportDefTargetTemplate = FcstmAstImportDefTargetTemplate;
+export type ImportVariableMapping = FcstmAstImportVariableMapping;
 export type ImportDefMapping = FcstmAstImportDefMapping;
 export type ImportEventMapping = FcstmAstImportEventMapping;
 export type OperationAssignment = FcstmAstAssignmentStatement;

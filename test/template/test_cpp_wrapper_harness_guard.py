@@ -158,3 +158,19 @@ def test_cpp_wrapper_harness_rejects_direct_c_runtime_entrypoints(source):
     """
     with pytest.raises(AssertionError):
         _assert_wrapper_only_harness(source)
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("symbol", [
+    "RootMachineParameters", "RootMachineParametersPresent", "RootMachineInputs",
+    "RootMachineInputProvider", "RootMachineInitOptions", "RootMachineVarsPresent",
+    "RootMachine_init_with_options", "RootMachine_hot_start_with_parameters",
+    "RootMachine_set_input_provider", "RootMachine_cycle_with_inputs",
+    "RootMachine_last_inputs", "RootMachine_get_input_signal", "RootMachine_get_param_gain",
+])
+def test_wrapper_harness_rejects_direct_role_api(symbol):
+    from test.testings.native_toolchain_alignment.harness import _assert_cpp_wrapper_harness_source
+    with pytest.raises(AssertionError):
+        _assert_cpp_wrapper_harness_source('#include "machine.hpp"\n%s value;\n' % symbol)
+    with pytest.raises(AssertionError):
+        _assert_wrapper_only_harness('#include "machine.hpp"\n%s value;\n' % symbol)

@@ -547,6 +547,168 @@ Repeated event terms are legal but suspicious. The checked warning example is:
    :language: fcstm
    :caption: Intentional duplicate-event combo example; expected diagnostics: ``W_COMBO_DUPLICATE_EVENT`` and ``I_TRANSITION_NEVER_EVENT_TRIGGERED``.
 
+.. _dsl-history-task:
+
+Resume a composite state with history
+-------------------------------------
+
+Use history when leaving a composite state and coming back should continue
+where it stopped instead of starting over. The starting point is the washer
+model below: ``Program`` can be paused and later entered fresh, through its
+shallow history, or through its deep history.
+
+If you have not used history before, the guided path in
+:doc:`/tutorials/history/index` builds the same ideas step by step on a charger
+model.
+
+.. literalinclude:: ../../tutorials/dsl/history_washer.fcstm
+   :language: fcstm
+   :caption: Shallow and deep history on ``Program``; expected diagnostics: four ``W_UNREFERENCED_VAR`` warnings for the entry counters.
+
+1. **Declare the history inside the composite state** (the *owner*).
+   ``[H] -> Idle;`` declares shallow history and ``[H*] -> Wash.Fill;`` deep
+   history. The right-hand side is only where history goes while the owner has
+   no record yet: a shallow default is a direct child, a deep default is any
+   descendant path written relative to the owner.
+2. **Enter the history from the owner's parent scope.** Write the owner as the
+   target and append the marker: ``Paused -> Program.[H] :: Shallow;``. Every
+   ordinary transition form accepts a history target: event and guard triggers,
+   combo triggers, ``effect`` blocks, forced ``!State`` and ``!*`` transitions,
+   a parent's initial ``[*] -> Program.[H*];`` and an external self transition
+   ``!Program -> Program.[H*] :: Reenter;``.
+3. **Run the model.** The demo pauses in ``Agitate`` and resumes once through
+   each history:
+
+   .. literalinclude:: ../../tutorials/dsl/history_washer.demo.sh
+      :language: bash
+      :caption: ``history_washer.demo.sh``
+
+   Output, generated from the script:
+
+   .. literalinclude:: ../../tutorials/dsl/history_washer.demo.sh.txt
+      :language: text
+
+   Deep history resumes ``Wash.Agitate`` exactly: ``fill_entries`` stays 1 and
+   ``wash_initials`` stays 1 because the initials on the restored path do not
+   run. Shallow history only remembers the direct child ``Wash``, so it enters
+   ``Wash`` and runs its ordinary initial again (``wash_initials`` becomes 2).
+   The two ``__hist_*`` variables are the lowered history; see step 5.
+4. **Check the model.** Inspect judges the model as written, so history adds
+   no finding of its own:
+
+   .. code-block:: bash
+
+      pyfcstm inspect -i docs/source/tutorials/dsl/history_washer.fcstm --format human --color never
+
+   Expected excerpt (truncated):
+
+   .. code-block:: text
+
+      states: 7 total / 4 leaf
+      transitions: 13
+      variables: 4
+        program_entries: control; external supply: none
+        ...
+      diagnostics: 0 errors / 4 warnings / 0 infos
+
+   The four warnings are the ``W_UNREFERENCED_VAR`` warnings of the counters.
+   The report describes the model before lowering: it lists the four counters
+   but no ``__hist_*`` variable, and ``transitions: 13`` counts only the
+   transitions written in the file (with the forced ``!Program`` exits
+   expanded), not the lowered routes.
+5. **Hot start with a record.** History is lowered into ordinary ``int``
+   variables that the simulator, generated code and BMC see: ``__hist_goto`` (the restore in
+   progress, always ``0`` at a stable point) and one ``__hist_<owner>`` record
+   per owner. A hot start must supply them like any persistent variable. Use
+   :meth:`pyfcstm.model.model.StateMachine.history_variables` to compute them
+   from a source-level record instead of writing ids by hand:
+
+   .. code-block:: python
+
+      from pyfcstm.model import load_state_machine_from_text
+      from pyfcstm.simulate import SimulationRuntime
+
+      machine = load_state_machine_from_text(open("history_washer.fcstm").read())
+      user = {"program_entries": 0, "fill_entries": 0, "agitate_entries": 0, "wash_initials": 0}
+      runtime = SimulationRuntime(
+          machine,
+          initial_state="Washer.Paused",
+          initial_vars={**user, **machine.history_variables({"Washer.Program": "Wash.Agitate"})},
+      )
+      runtime.cycle()
+      runtime.cycle(["Washer.Paused.Deep"])
+      print(".".join(runtime.current_state.path))   # Washer.Program.Wash.Agitate
+      print(machine.history_record(runtime.vars, "Washer.Program"))   # Wash.Agitate
+
+   ``history_record()`` decodes a record back to a leaf path; it is meaningful
+   while the owner is inactive. The simulator rejects a hot start whose
+   ``__hist_goto`` is not ``0`` or whose record names no stoppable leaf of its
+   owner, and its message lists the valid ids with their leaf paths. The
+   ``init`` command of ``pyfcstm simulate`` accepts the same variables, for
+   example ``__hist_goto=0 __hist_Program=7``.
+
+Common mistakes and repairs:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 34 36
+
+   * - Symptom
+     - Cause
+     - Repair
+   * - ``E_HISTORY_TARGET_UNDECLARED``: ``R.O does not declare shallow history``
+     - ``X -> O.[H]`` without ``[H] -> ...;`` inside ``O``. History is never
+       provided implicitly.
+     - Add the declaration to ``O``, or enter ``O`` normally.
+   * - ``E_HISTORY_DECLARATION_INVALID`` with ``reason: default_not_direct_child``
+     - ``[H] -> W.W1;`` -- shallow history remembers a direct child only.
+     - Use ``[H] -> W;`` or declare ``[H*] -> W.W1;``.
+   * - ``E_HISTORY_DECLARATION_INVALID`` with ``default_not_found``, ``default_pseudo``, ``root_owner`` or ``leaf_owner``
+     - The default names a missing or pseudo state, or the root or a leaf declares history.
+     - Point the default at a real state below the owner; declare history in the composite that is left and re-entered.
+   * - ``W_HISTORY_UNUSED``
+     - A declared kind that no ``Owner.[H]`` / ``Owner.[H*]`` target uses.
+     - Add the target where the model resumes, or delete the declaration.
+   * - ``E_HISTORY_RESERVED_PREFIX``
+     - A variable, state or temporary named like ``__hist_x`` or ``_hist_x`` in a model that uses history.
+     - Rename it; target languages collapse underscores, so both collide with the lowered names.
+   * - A resume event is not consumed and the machine stays put
+     - The restore path is blocked, for example the remembered child's initial
+       guard is false. The whole transition is rejected on purpose; it never
+       falls back to an ordinary entry.
+     - Make the remembered path enterable, or add a separate ordinary entry for
+       that situation. See :ref:`dsl-history-semantics`.
+
+Reproduce the first mistake: save this model as ``undeclared.fcstm``, where
+``O`` declares no history,
+
+.. code-block:: fcstm
+
+   state R {
+       state A;
+       state O { state B; [*] -> B; }
+       [*] -> A;
+       A -> O.[H] :: Resume;
+   }
+
+and inspect it with ``--collect-errors``:
+
+.. code-block:: bash
+
+   pyfcstm inspect -i undeclared.fcstm --collect-errors --format human --color never
+
+Expected excerpt:
+
+.. code-block:: text
+
+   [ERROR] E_HISTORY_TARGET_UNDECLARED
+     R.O does not declare shallow history ([H] -> ...;), so it cannot be entered through O.[H].
+     --> undeclared.fcstm:5:5
+
+All forms, diagnostics and lowered names are listed in
+:ref:`dsl-history-reference`; the execution rules and why they hold are in
+:ref:`dsl-history-semantics`.
+
 .. _dsl-import-task:
 
 Assemble imports
@@ -591,19 +753,69 @@ Directory entry import:
 
 Mapping facts:
 
-* ``def speed -> plant_speed;`` maps one imported variable to one host variable.
-* ``def sensor_* -> left_$1;`` captures the wildcard suffix and inserts it into
+* ``var speed -> plant_speed;`` maps one imported variable to one host variable.
+* ``var sensor_* -> left_$1;`` captures the wildcard suffix and inserts it into
   the target template.
-* ``def * -> prefix_$0;`` is a fallback mapping; ``$0`` is the whole imported
+* ``var * -> prefix_$0;`` is a fallback mapping; ``$0`` is the whole imported
   variable name.
 * ``event /Start -> Start;`` maps an imported root event to a host event.
 * Directory projects must import a concrete entry file such as
   ``./import_line/main.fcstm``; a bare directory is not a DSL file.
 
 Common mistakes: a bare directory path is not loaded as DSL source; an out-of-range
-placeholder such as ``$2`` in ``def sensor_* -> left_$2;`` reports an import
+placeholder such as ``$2`` in ``var sensor_* -> left_$2;`` reports an import
 mapping validation error. Use ``$0`` for the whole imported name and ``$1`` /
 ``${1}`` for the first wildcard capture.
+The rendered target must be a valid DSL identifier, not an empty capture,
+a numeric name, or a reserved keyword such as ``input`` or ``param``.
+
+``var`` is the canonical mapping keyword; ``def`` remains an explicit legacy spelling. Numeric types must match. Child ``input`` may bind to all four parent roles; child ``param`` only to parent ``param``; child ``control/output`` only to parent ``control/output``. A permitted binding adopts the parent role; see :ref:`dsl-import-forms` for the complete result matrix.
+
+The parent must explicitly declare a cross-role target. Missing targets retain the child role; implicit same-role sharing requires equal defaults and shared ``input`` requires an explicit declaration. Explicit parent defaults win and multiple legitimate writers introduce no restriction. Reject illegal source read-only writes before mapping. In collect mode a failed variable binding commits neither declarations nor substates from that import; diagnostics retain source files and import locations.
+
+With pyfcstm installed, save ``child.fcstm`` in a working directory:
+
+.. code-block:: fcstm
+
+   input int reading;
+   output int result = 0;
+   state Child { enter { result = reading; } }
+
+Save ``host.fcstm`` beside it, binding the child input to parent control state and internalizing the child output:
+
+.. code-block:: fcstm
+
+   control int cached = 5;
+   control int internal = 0;
+   state Host {
+       import "./child.fcstm" as Child {
+           var reading -> cached;
+           var result -> internal;
+       }
+       [*] -> Child;
+   }
+
+Run this Python code from that directory. It executes in memory and creates no output files:
+
+.. code-block:: python
+
+   from pyfcstm.model import load_state_machine_from_file
+   from pyfcstm.simulate import SimulationRuntime
+
+   model = load_state_machine_from_file("host.fcstm")
+   runtime = SimulationRuntime(model)
+   runtime.cycle()
+   print(runtime.vars["internal"])
+   print(list(model.inputs), list(model.output_variables))
+
+Expected output confirms the value is 5, with no external inputs or system outputs in the final model:
+
+.. code-block:: text
+
+   5
+   [] []
+
+Changing the parent declaration to ``param int internal = 0`` makes the child ``output`` binding fail with ``E_IMPORT_DUPLICATE_MAPPING``; choose a writable parent target. A numeric type mismatch requires correcting the declarations rather than an implicit conversion. Child input bound to mutable parent state reads the latest value in execution order; reverify properties that relied on cycle-frozen child inputs against the assembled model.
 
 Preamble forms such as ``name = value;`` and ``name := value;`` are parser-helper
 entry points used by import assembly tests and helpers. They are not ordinary

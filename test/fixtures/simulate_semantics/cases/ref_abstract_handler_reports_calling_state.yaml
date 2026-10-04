@@ -17,7 +17,7 @@ steps:
 - cycle: []
   expect:
     state: Root.A
-    vars_exact: {}
+    vars: {}
     ended: false
     handler_calls:
     - action: Root.Library.Shared

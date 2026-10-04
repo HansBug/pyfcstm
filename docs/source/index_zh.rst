@@ -97,6 +97,7 @@ pyfcstm 遵循三阶段流水线：
     tutorials/inspect/index_zh
     tutorials/generation/index_zh
     tutorials/visualization/index_zh
+    tutorials/history/index_zh
     tutorials/bmc/index_zh
 
 * :doc:`教程路线图 <tutorials/index_zh>`
@@ -106,6 +107,7 @@ pyfcstm 遵循三阶段流水线：
 * :doc:`tutorials/inspect/index_zh`
 * :doc:`tutorials/generation/index_zh`
 * :doc:`tutorials/visualization/index_zh`
+* :doc:`tutorials/history/index_zh`
 * :doc:`tutorials/bmc/index_zh`
 
 任务指南
@@ -124,6 +126,7 @@ pyfcstm 遵循三阶段流水线：
     how_to/bmc/index_zh
     how_to/dsl/index_zh
     how_to/simulation/index_zh
+    how_to/simulation/diagnostics_zh
     how_to/inspect/index_zh
     how_to/generation/index_zh
     how_to/visualization/index_zh
@@ -192,6 +195,7 @@ pyfcstm 遵循三阶段流水线：
     reference/inspect_report/index_zh
     reference/diagnostics_codes/index_zh
     reference/simulation/index_zh
+    reference/simulation/diagnostics_zh
     reference/visualization_options/index_zh
     reference/template_config/index_zh
     reference/grammar_tooling/index_zh

@@ -1,0 +1,28 @@
+title: Imported writable roles use parent interfaces and initialization
+origin:
+  files:
+  - test/model/test_import_role_bindings.py
+categories:
+- runtime
+- variable_roles
+initial:
+  vars:
+    internal: 99
+  outputs:
+    exported: 30
+  state: Root.Probe
+steps:
+- cycle: []
+  expect:
+    state: Root.Probe
+    vars:
+      internal: 62
+    outputs:
+      exported: 31
+- cycle: []
+  expect:
+    state: Root.Probe
+    vars:
+      internal: 64
+    outputs:
+      exported: 32

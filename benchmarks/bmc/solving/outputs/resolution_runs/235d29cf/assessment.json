@@ -1,0 +1,96 @@
+{
+  "cli_comparisons": [
+    {
+      "call_ms": {
+        "baseline": 1338.04330509156,
+        "candidate": 1303.833122830838,
+        "change_percent": -2.5567320676800454
+      },
+      "case": "codex_traffic_emergency_priority",
+      "process_ms": {
+        "baseline": 2116.9687253423035,
+        "candidate": 2068.4418650344014,
+        "change_percent": -2.292280453980511
+      },
+      "query": "invariant"
+    },
+    {
+      "call_ms": {
+        "baseline": 1359.516684897244,
+        "candidate": 1298.551004845649,
+        "change_percent": -4.4843642397962125
+      },
+      "case": "codex_traffic_emergency_priority",
+      "process_ms": {
+        "baseline": 2135.2031100541353,
+        "candidate": 2057.5209078378975,
+        "change_percent": -3.6381645310674116
+      },
+      "query": "reach"
+    },
+    {
+      "call_ms": {
+        "baseline": 27960.983033291996,
+        "candidate": 7565.323291346431,
+        "change_percent": -72.94328571231307
+      },
+      "case": "codex_vtol_mission_supervision",
+      "process_ms": {
+        "baseline": 28767.695711925626,
+        "candidate": 8371.225454378873,
+        "change_percent": -70.90060483743024
+      },
+      "query": "invariant"
+    },
+    {
+      "call_ms": {
+        "baseline": 28260.56403806433,
+        "candidate": 7708.546437323093,
+        "change_percent": -72.72331002686145
+      },
+      "case": "codex_vtol_mission_supervision",
+      "process_ms": {
+        "baseline": 29067.67350807786,
+        "candidate": 8522.068818099797,
+        "change_percent": -70.6819714493782
+      },
+      "query": "reach"
+    },
+    {
+      "call_ms": {
+        "baseline": 266.5242198854685,
+        "candidate": 265.5878281220794,
+        "change_percent": -0.35133458557405906
+      },
+      "case": "heater_logging",
+      "process_ms": {
+        "baseline": 1031.4086279831827,
+        "candidate": 1032.0395180024207,
+        "change_percent": 0.06116780508920172
+      },
+      "query": "invariant"
+    },
+    {
+      "call_ms": {
+        "baseline": 276.0082851164043,
+        "candidate": 277.6237460784614,
+        "change_percent": 0.5852943730931148
+      },
+      "case": "heater_logging",
+      "process_ms": {
+        "baseline": 1041.3204007782042,
+        "candidate": 1048.6420346423984,
+        "change_percent": 0.7031105756424738
+      },
+      "query": "reach"
+    }
+  ],
+  "formula_and_partition_matches": 51,
+  "input_hashes": {
+    "cli/raw.jsonl": "facd5f56e5463f01bec5357f2aa90241fca84cf68f67e12088b93324b654b992",
+    "semantics-baseline/raw.jsonl": "a6cba7b0ae867811779f06964c471ffd6b606cf63bf25afcd6fb71cace810f2e",
+    "semantics-candidate/raw.jsonl": "44d3779d18012c06a834ff8ed572c2805e1d322f55393ef73de97b8f1544e10a"
+  },
+  "legal_witness_changes": [],
+  "semantic_sat_replays": 26
+}

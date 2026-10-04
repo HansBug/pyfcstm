@@ -50,6 +50,9 @@ lines.
 .. cli-ref-option: command=bmc option=--json
 .. cli-ref-option: command=bmc option=--timeout-ms
 .. cli-ref-option: command=bmc option=--max-bound
+.. cli-ref-option: command=bmc option=--cone-slicing
+
+.. cli-ref-option: command=bmc option=--solver-profile choices=default,logic,tactic default=default
 .. cli-ref-option: command=bmc option=--explain-infeasibility choices=none,formal,proof default=none
 .. cli-ref-option: command=bmc option=--color choices=auto,always,never default=auto
 .. cli-ref-option: command=bmc option=--help
@@ -106,6 +109,17 @@ Both installed entry forms have the same behavior:
      - Creates ``BmcOptions(max_bound=N)``.  A query bound above ``N`` is
        rejected before relation construction as a controlled compile error.
        It does not rewrite or clamp the query bound.
+   * - ``--cone-slicing``
+     - Boolean flag
+     - Disabled
+     - Remove unobserved integer writes whose evaluation is known total;
+       preserve control flow, initial values and dependencies of partial arithmetic.
+   * - ``--solver-profile``
+     - ``default``, ``logic``, or ``tactic``
+     - ``default``
+     - Selects the solver for the main staged checks. Explanation, conflict
+       cores and proof checks always use default. Case-sensitive; unknown
+       values exit ``2``.
    * - ``--explain-infeasibility``
      - ``none``, ``formal``, or ``proof``
      - ``none``
@@ -134,6 +148,75 @@ Zero and negative values for either numeric option are Click usage errors.
 Missing required options and unknown options are also usage errors; all exit
 ``2``.  Paths are passed through as supplied and are also reproduced as
 strings in JSON; the CLI does not canonicalize them to absolute paths.
+
+Solver profiles and fallback
+----------------------------
+
+``default`` uses the generic ``z3.Solver()``, preserving the existing check
+order and default human-readable output. ``logic`` applies Z3 probes in order:
+``is-qflia``, ``is-qflra``, ``is-qflira``, ``is-qfnia``, ``is-qfnra``,
+``is-nira``. Classification includes initialization, environment constraints
+and the response suffix. A match selects ``SolverFor``; no match falls back
+to the generic solver. Integer ``x / 3``, for example, may match no probe.
+
+``tactic`` combines ``simplify``, ``propagate-values``, ``solve-eqs`` and
+``smt``. It can change search order and the witness chosen, which still must
+pass runtime replay. This combination does not supply the assumption cores
+required by this project's explanation path, so all explanation and proof
+checks keep the generic solver.
+
+Python callers use ``solve_bmc_property(formula, solver_profile="logic")``;
+``build_bmc_output`` accepts the same keyword. Invalid values raise
+``BmcBuildError`` in the solve API or ``ClickErrorException`` in the file
+entry point. Profiles do not change property semantics, but strategies can
+have different costs or inconclusive outcomes. For ``unknown`` or ``timeout``,
+inspect the reason and rerun with ``default`` for comparison; an inconclusive
+answer is never a safety proof.
+
+The three additional result fields belong to this release's JSON contract;
+existing verdict, witness and replay fields keep their meaning. Timings and
+statistics must be treated separately when comparing results, rather than
+requiring byte-identical measurements.
+
+Measured comparison
+~~~~~~~~~~~~~~~~~~~
+
+The repository's `recorded solver comparison
+<https://github.com/HansBug/pyfcstm/blob/dev/bmc-solver-profile/benchmarks/bmc/solving/outputs/runs/cd24a68e137b/report.md>`_
+uses Linux x86_64, CPython 3.10.1 and Z3 4.15.4, with 51 queries, four
+arms and five fresh-process repetitions (1,020 samples). Every arm agrees
+on verdicts, with all 260 SAT samples passing replay and no unknown or
+timeout answers. Different strategies may still select different valid
+witnesses.
+
+.. list-table:: Solve-time comparison against default
+   :header-rows: 1
+
+   * - Profile
+     - Median of query p50 times
+     - Median improvement
+     - Worst query regression
+   * - ``default``
+     - 12.036 ms
+     - Reference
+     - Reference
+   * - ``logic``
+     - 11.730 ms
+     - 2.54%
+     - 46.88%
+   * - ``tactic``
+     - 11.105 ms
+     - 7.74%
+     - 409.44%
+
+Neither optional profile meets both pre-registered adoption criteria:
+at least 15% median improvement and at most 10% regression on every query.
+Both remain opt-in; benchmark your own workload before selecting either.
+The worst regressions were ``pump_supervisor_hooks/forbid`` for logic
+(4.245 to 6.235 ms) and ``ratio_estimator/reach`` for tactic
+(5.711 to 29.092 ms). The current default median was 0.72% above the older
+baseline's 11.950 ms. These are observations from one environment, not
+performance guarantees; timings include solver setup and staged checks.
 
 Execution and output transaction
 --------------------------------
@@ -1075,6 +1158,26 @@ is a positive integer for response and null for other kinds.
    * - ``reason``
      - string or null
      - Raw reason only for primary unknown/timeout; null for SAT/UNSAT.
+   * - ``cone_slicing``
+     - Object; present only when slicing was requested
+     - ``enabled`` is true; ``retained_count`` counts retained persistent variables;
+       ``dropped_variables`` lists the attempted removals; ``skipped_reason`` is
+       null, ``abstract_actions`` or ``no_removable_variables``; ``fallback``
+       reports a full-model retry. Skips have no dropped variables. The entire
+       field is absent when slicing is disabled.
+   * - ``solver_profile``
+     - ``default``, ``logic``, or ``tactic``
+     - Requested main solver profile; defaults to ``default``.
+   * - ``solver_logic``
+     - ``QF_LIA``, ``QF_LRA``, ``QF_LIRA``, ``QF_NIA``, ``QF_NRA``, ``NIRA``, or null
+     - Fragment selected by ``logic``. Null means fallback to default when
+       no probe matches; always null for ``default`` and ``tactic``.
+   * - ``solver_statistics``
+     - Object from non-empty string keys to finite non-negative numbers
+     - Z3 statistics immediately after the primary check; empty if it did
+       not start. Keys vary by version/profile; absence is not zero.
+       ``rlimit count`` and ``num allocs`` are context-wide cumulative values,
+       not this query's work. Manual result constructors default to an empty object.
    * - ``elapsed_ms``
      - finite number, ``>= 0``
      - Primary check wall time; inherently nondeterministic.
@@ -1153,6 +1256,19 @@ sets, not by a payload version field.
 Witness fields
 --------------
 
+Role-aware traces keep ``frames[*].vars`` and abstract-call ``snapshot``
+limited to control/output values. ``initial.parameters`` contains the complete
+fixed configuration. Each non-ended step has complete numeric ``inputs`` in
+model declaration order, including unread inputs. Absorb steps have empty
+``inputs`` and ``input_reads``. The latter is a duplicate-free, ordered subset
+of the step inputs covering case/selection-guard and explicit assumption reads;
+it is provenance, not an independently replayed simulator read log.
+
+Replay uses ``ReplayInputPattern`` and validates the complete input and parameter
+name sets before execution. It compares inputs with the cycle result,
+``last_inputs`` and committed history, alongside the existing frame/event/call
+checks. It never fills missing witness inputs with zeros or random samples.
+
 The selected witness trace is present for a primary or suffix model. CLI-emitted
 traces use the role-aware shape with root ``model_role`` and ``verdict`` fields;
 the raw-model ``decode_bmc_witness`` API emits the legacy-compatible shape
@@ -1180,7 +1296,7 @@ below.
      - The role/verdict combination is validated together; suffix replay cannot
        be promoted to a property verdict.
    * - ``witness.initial``
-     - ``mode``, ``state``, ``sentinel``, ``vars``
+     - ``mode``, ``state``, ``sentinel``, ``vars``, ``parameters``
      - Replay initialization metadata.  State may be null; sentinel is
        ``init``, ``terminated``, or null; vars is a JSON-stable map.
    * - ``witness.frames[]``
@@ -1191,7 +1307,8 @@ below.
      - ``index``, ``source_frame``, ``target_frame``, ``case_label``,
        ``case_kind``, ``progress``, ``source_state``, ``target_state``,
        ``delta``, ``gamma``, ``input_events``, ``event_reads``,
-       ``abstract_calls``, ``consumed_events``, ``unconsumed_events``
+       ``abstract_calls``, ``consumed_events``, ``unconsumed_events``,
+       ``inputs``, ``input_reads``
      - One decoded macro-step.  Source/target states may be null for sentinels.
        Event consumption is ordered; unconsumed events equal replay inputs minus
        consumed events.
@@ -1492,3 +1609,114 @@ Consumer rules
 * Do not parse human tables, depend on live elapsed time, expect raw models or
   formulas, infer a response cause, or assume replay proves behavior beyond the
   decoded bounded trace.
+
+.. _sec-bmc-cone-measurements:
+
+Measured slicing costs
+----------------------
+
+For default-policy result decoding, sliced solves retain the complete witness
+already verified before returning. Each decode receives an independent copy;
+explicit event policies decode afresh. The CLI still performs ordinary runtime
+replay of the output witness. This reuse applies to both primary witnesses and
+response incomplete suffixes and does not change the JSON contract.
+
+The initial `five-arm benchmark report <https://github.com/HansBug/pyfcstm/blob/7f8c88d3/benchmarks/bmc/solving/outputs/runs/2db089114bb5/report.md>`_ binds clean commit ``2db08911``
+on Linux x86_64, CPython 3.10.1 and Z3 4.15.4. All 1,275 samples pass H0;
+325 SAT witnesses replay successfully, with zero failures or slicing fallback.
+Of 51 queries, 32 actually slice variables and 19 do not.
+
+.. list-table:: Slicing versus default at the same commit
+   :header-rows: 1
+
+   * - Metric
+     - Default
+     - Slicing
+     - Decision
+   * - Sliced-query formula DAG p50
+     - 2,399 nodes
+     - 2,253 nodes
+     - 6.09% reduction misses the 20% threshold
+   * - Sliced-query solve p50
+     - 15.650 ms
+     - 15.528 ms
+     - 0.78% improvement meets the maximum 5% regression threshold
+   * - Unsliced-query build + solve p50
+     - 263.482 ms
+     - 262.975 ms
+     - 0.19% improvement meets the maximum 5% growth threshold
+
+T3 is not met, so slicing remains disabled by default. These figures use the
+runner's existing discrete p50: sort and select zero-based index
+``round(0.5 * (n - 1))``, which selects the 17th observation for 32 queries.
+Each query's p50 comes from five repetitions before aggregation by actual
+slice partition.
+
+Near-neutral aggregate solve time does not rule out query regressions. The
+largest is ``codex_traffic_emergency_priority/invariant``: 10.178 to 23.586 ms,
+a 131.73% increase. Slicing adds original-runtime verification and witness
+completion; external decode/replay p50 among sliced queries with a witness
+rises from 11.650 to 17.184 ms. Measure your model and the complete call path
+before enabling it. Disabled result JSON omits slicing metadata; the options
+object's ``BmcOptions.to_canonical()`` adds a ``cone_slicing=False`` key.
+
+The subsequent `six-arm run <https://github.com/HansBug/pyfcstm/blob/4d9bd08f/benchmarks/bmc/solving/outputs/runs/9e68e7458e79/report.md>`_
+measures verified-witness reuse at clean commit ``9e68e745``, including the
+initial slicing implementation as a same-round control. All 1,530 samples pass
+H0, with 390 successful SAT replays, zero failures and zero fallback. DAG sizes
+are unchanged by reuse. T3 still fails: sliced DAG p50 falls only 6.09%;
+sliced solve p50 grows 4.47% (within 5%), while unsliced build + solve p50 grows
+6.87% (exceeding 5%). Slicing remains off by default.
+
+.. list-table:: API time from model loading through final replay, query p50 aggregate
+   :header-rows: 1
+
+   * - Group
+     - Default
+     - Initial slicing
+     - Reused witness
+   * - All 51 queries
+     - 431.160 ms
+     - 433.596 ms
+     - 430.809 ms
+   * - 13 SAT queries
+     - 585.459 ms
+     - 617.659 ms
+     - 617.733 ms
+   * - 38 UNSAT queries
+     - 388.716 ms
+     - 390.939 ms
+     - 411.468 ms
+   * - Six actually sliced SAT queries
+     - 322.510 ms
+     - 287.274 ms
+     - 276.408 ms
+
+These API times exclude pre-call imports, interpreter startup and JSON report
+serialization. Within actually sliced SAT queries, external decode/replay p50
+falls from 16.997 to 4.415 ms against the initial implementation, but complete
+API p50 improves only 3.78%; across all queries it improves 0.64%. Independent
+output replay and internal completion/validation remain. The worst solve
+regression against default is still traffic invariant, 10.331 to 24.089 ms
+(+133.18%), even though its complete API time improves from 1,254.490 to
+1,155.686 ms. Construction remains dominant on large models: VTOL reach takes
+26,869 ms building and 126 ms solving.
+
+The worst complete-API regression is an unsliced query,
+``claude_vtol_mission_supervision/reach`` (+5.85% against default, +5.25%
+against initial slicing). It also determines the failing unsliced timing
+median. A `90-sample diagnostic rerun <https://github.com/HansBug/pyfcstm/blob/4d9bd08f/benchmarks/bmc/solving/outputs/runs/9e68e7458e79-unsliced-control/report.md>`_
+did not reproduce the larger regression: build + solve grew 0.42%, complete
+API time 0.89%, against default. This path does not enter witness reuse, and
+construction code is unchanged by reuse. The observation supports timing
+variability but does not establish its environmental cause or override the
+full run's failed gate.
+
+A separate `complete API/CLI profile <https://github.com/HansBug/pyfcstm/blob/4d9bd08f/benchmarks/bmc/solving/outputs/witness_profiles/9e68e7458e79/report.md>`_
+includes report serialization and separates instrumented phase diagnostics
+from uninstrumented timings. Actual sliced SAT calls go from two decodes and
+three replays to one decode and two replays. Enabled SAT CLI changes range
+from a 3.97% improvement to a 1.31% regression in these cases; unchanged
+controls also vary. Reuse retains one complete trace per result and copies
+it for callers. These measurements establish reduced repeated work, not a
+universal speedup; measure the complete path on your own model.

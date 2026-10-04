@@ -1,0 +1,34 @@
+title: A deep restore runs enters and plain during-before on its path but skips the initials it passes
+origin:
+  files:
+  - test/model/test_history_lowering.py
+categories:
+- runtime
+- template_alignment
+- history
+steps:
+- cycle: []
+  expect:
+    state: R.Off
+    vars:
+      trace: 0
+- cycle: R.Off.Fresh
+  expect:
+    state: R.P.A
+    vars:
+      trace: 134
+- cycle: R.P.A.Go
+  expect:
+    state: R.P.W.W1
+    vars:
+      trace: 1345697
+- cycle: R.P.Stop
+  expect:
+    state: R.Off
+    vars:
+      trace: 134569782
+- cycle: R.Off.Resume
+  expect:
+    state: R.P.W.W1
+    vars:
+      trace: 1367

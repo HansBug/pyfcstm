@@ -30,6 +30,12 @@ ALL
 .. autodata:: ALL
 
 
+HISTORY\_KINDS
+-----------------------------------------------------
+
+.. autodata:: HISTORY_KINDS
+
+
 ASTNode
 -----------------------------------------------------
 
@@ -169,7 +175,7 @@ DefAssignment
 -----------------------------------------------------
 
 .. autoclass:: DefAssignment
-    :members: __str__,name,type,expr,doc
+    :members: __str__,name,type,expr,doc,role,spelling
 
 
 OperationalDeprecatedAssignment
@@ -247,11 +253,18 @@ ImportDefTargetTemplate
     :members: __str__,template
 
 
+ImportVariableMapping
+-----------------------------------------------------
+
+.. autoclass:: ImportVariableMapping
+    :members: __post_init__,__str__,selector,target_template,spelling
+
+
 ImportDefMapping
 -----------------------------------------------------
 
 .. autoclass:: ImportDefMapping
-    :members: __str__,selector,target_template
+    :members: spelling
 
 
 ImportEventMapping
@@ -300,21 +313,28 @@ TransitionDefinition
 -----------------------------------------------------
 
 .. autoclass:: TransitionDefinition
-    :members: __str__,from_state,to_state,event_id,condition_expr,post_operations,event_scope,combo_trigger,doc
+    :members: __setattr__,__str__,from_state,to_state,event_id,condition_expr,post_operations,event_scope,combo_trigger,doc,target_history
 
 
 ForceTransitionDefinition
 -----------------------------------------------------
 
 .. autoclass:: ForceTransitionDefinition
-    :members: __str__,from_state,to_state,event_id,condition_expr,event_scope,source_raw,doc
+    :members: __setattr__,__str__,from_state,to_state,event_id,condition_expr,event_scope,source_raw,doc,target_history
+
+
+HistoryDefinition
+-----------------------------------------------------
+
+.. autoclass:: HistoryDefinition
+    :members: __str__,kind,default_path,doc
 
 
 StateDefinition
 -----------------------------------------------------
 
 .. autoclass:: StateDefinition
-    :members: __post_init__,__str__,name,extra_name,events,imports,substates,transitions,enters,durings,exits,during_aspects,force_transitions,is_pseudo,doc
+    :members: __post_init__,__str__,name,extra_name,events,imports,substates,transitions,enters,durings,exits,during_aspects,force_transitions,is_pseudo,doc,histories
 
 
 OperationAssignment

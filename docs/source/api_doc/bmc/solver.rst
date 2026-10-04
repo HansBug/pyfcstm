@@ -12,6 +12,12 @@ BmcSolveStatus
 .. autodata:: BmcSolveStatus
 
 
+SOLVER\_PROFILES
+-----------------------------------------------------
+
+.. autodata:: SOLVER_PROFILES
+
+
 \_\_all\_\_
 -----------------------------------------------------
 

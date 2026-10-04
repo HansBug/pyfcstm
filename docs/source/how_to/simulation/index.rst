@@ -228,3 +228,17 @@ A compact debugging loop is:
 Do not use simulation output as a substitute for target-runtime tests.  It is a
 fast model-level check that should be paired with generated-runtime tests when
 you depend on target-language behavior.
+
+Bind a custom environment source
+--------------------------------
+
+Use ``SimulationRuntime(..., input_source=...)`` for external numeric inputs.
+Inherit ``BaseScalarInputPattern`` and implement ``_sample(step)`` for a scalar,
+or use ``BaseIntegratedInputPattern`` for correlated vectors. See
+:doc:`../../reference/simulation/inputs` for runnable examples and the exact
+sampling, override, exhaustion, and error contracts.
+
+Candidate decision diagnostics
+------------------------------------------------------------
+
+For rejected candidates, captured Python reports, REPL queries, per-cycle inputs and JSONL output, see :doc:`diagnostics`.

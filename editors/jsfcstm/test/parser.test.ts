@@ -209,7 +209,7 @@ describe('jsfcstm parser real grammar coverage', () => {
         {
             name: 'missing equals in variable definition',
             inputText: 'def int counter 0;\nstate Root;',
-            expectedMessage: /equals/i,
+            expectedMessage: /Unexpected token/i,
         },
         {
             name: 'unclosed string literal',

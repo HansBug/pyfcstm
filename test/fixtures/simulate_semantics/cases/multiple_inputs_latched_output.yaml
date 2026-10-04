@@ -1,0 +1,36 @@
+title: multiple inputs latched output
+origin:
+  files:
+  - test/simulate/test_runtime_inputs.py
+categories:
+- runtime
+- variable_roles
+- inputs
+steps:
+- cycle: []
+  inputs:
+    enabled: 1
+    measurement: 2.5
+  expect:
+    vars:
+      samples: 1
+    outputs:
+      reading: 2.5
+- cycle: []
+  inputs:
+    enabled: 0
+    measurement: 99.0
+  expect:
+    vars:
+      samples: 1
+    outputs:
+      reading: 2.5
+- cycle: []
+  inputs:
+    enabled: 1
+    measurement: -3.5
+  expect:
+    vars:
+      samples: 2
+    outputs:
+      reading: -3.5

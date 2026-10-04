@@ -39,7 +39,16 @@ state_machine_dsl
 
 // Top-level variable definitions that appear before the root state.
 def_assignment
-    : leading_doc=MULTILINE_COMMENT? DEF deftype=(INT_TYPE | FLOAT_TYPE) ID ASSIGN init_expression SEMI
+    : leading_doc=MULTILINE_COMMENT? variable_declaration deftype=(INT_TYPE | FLOAT_TYPE) var_name=ID
+      (ASSIGN init_expression)? SEMI
+    ;
+
+variable_declaration
+    : DEF
+    | CONTROL
+    | INPUT
+    | PARAM
+    | OUTPUT
     ;
 
 // State-machine structural rules.
@@ -52,10 +61,10 @@ state_definition
     ;
 
 transition_definition
-    : leading_doc=MULTILINE_COMMENT? INIT_MARKER ARROW to_state=ID entry_combo_transition_trigger?
+    : leading_doc=MULTILINE_COMMENT? INIT_MARKER ARROW to_state=ID (DOT history_marker)? entry_combo_transition_trigger?
       (SEMI | EFFECT LBRACE operational_statement_set RBRACE)
         # entryTransitionDefinition
-    | leading_doc=MULTILINE_COMMENT? from_state=ID ARROW to_state=ID combo_transition_trigger?
+    | leading_doc=MULTILINE_COMMENT? from_state=ID ARROW to_state=ID (DOT history_marker)? combo_transition_trigger?
       (SEMI | EFFECT LBRACE operational_statement_set RBRACE)
         # normalTransitionDefinition
     | leading_doc=MULTILINE_COMMENT? from_state=ID ARROW INIT_MARKER combo_transition_trigger?
@@ -129,7 +138,7 @@ combo_guard_term
     ;
 
 transition_force_definition
-    : leading_doc=MULTILINE_COMMENT? BANG from_state=ID ARROW to_state=ID
+    : leading_doc=MULTILINE_COMMENT? BANG from_state=ID ARROW to_state=ID (DOT history_marker)?
       (COLONCOLON from_id=ID | COLON chain_id | COLON IF LBRACK cond_expression RBRACK)?
       SEMI
         # normalForceTransitionDefinition
@@ -137,7 +146,7 @@ transition_force_definition
       (COLONCOLON from_id=ID | COLON chain_id | COLON IF LBRACK cond_expression RBRACK)?
       SEMI
         # exitForceTransitionDefinition
-    | leading_doc=MULTILINE_COMMENT? BANG STAR ARROW to_state=ID
+    | leading_doc=MULTILINE_COMMENT? BANG STAR ARROW to_state=ID (DOT history_marker)?
       ((COLONCOLON | COLON) chain_id | COLON IF LBRACK cond_expression RBRACK)?
       SEMI
         # normalAllForceTransitionDefinition
@@ -145,6 +154,19 @@ transition_force_definition
       ((COLONCOLON | COLON) chain_id | COLON IF LBRACK cond_expression RBRACK)?
       SEMI
         # exitAllForceTransitionDefinition
+    ;
+
+history_marker
+    : HISTORY_SHALLOW_MARKER
+    | HISTORY_DEEP_MARKER
+    ;
+
+history_definition
+    : leading_doc=MULTILINE_COMMENT? history_marker ARROW history_default_path SEMI
+    ;
+
+history_default_path
+    : ID (DOT ID)*
     ;
 
 enter_definition
@@ -214,13 +236,13 @@ import_statement
     ;
 
 import_mapping_statement
-    : import_def_mapping
+    : import_variable_mapping
     | import_event_mapping
     | SEMI
     ;
 
-import_def_mapping
-    : DEF import_def_selector ARROW import_def_target_template SEMI
+import_variable_mapping
+    : keyword=(VAR | DEF) import_def_selector ARROW import_def_target_template SEMI
     ;
 
 import_def_selector
@@ -273,6 +295,7 @@ state_inner_statement
     : state_definition
     | transition_definition
     | transition_force_definition
+    | history_definition
     | enter_definition
     | during_definition
     | exit_definition

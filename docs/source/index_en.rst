@@ -99,6 +99,7 @@ show the whole learning path directly from this home page.
     tutorials/inspect/index
     tutorials/generation/index
     tutorials/visualization/index
+    tutorials/history/index
     tutorials/bmc/index
 
 * :doc:`Tutorial roadmap <tutorials/index>`
@@ -108,6 +109,7 @@ show the whole learning path directly from this home page.
 * :doc:`tutorials/inspect/index`
 * :doc:`tutorials/generation/index`
 * :doc:`tutorials/visualization/index`
+* :doc:`tutorials/history/index`
 * :doc:`tutorials/bmc/index`
 
 How-to Guides
@@ -128,6 +130,7 @@ extra click through a category page.
     how_to/bmc/index
     how_to/dsl/index
     how_to/simulation/index
+    how_to/simulation/diagnostics
     how_to/inspect/index
     how_to/generation/index
     how_to/visualization/index
@@ -199,6 +202,7 @@ generated API documentation remains the last item in this reference area.
     reference/inspect_report/index
     reference/diagnostics_codes/index
     reference/simulation/index
+    reference/simulation/diagnostics
     reference/visualization_options/index
     reference/template_config/index
     reference/grammar_tooling/index

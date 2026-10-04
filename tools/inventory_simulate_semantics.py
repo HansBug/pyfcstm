@@ -87,11 +87,9 @@ LEGACY_PATH_SHAPES = (
 PUBLIC_EXPECTATION_FIELDS = (
     "state",
     "vars",
-    "vars_exact",
-    "vars_keys",
-    "vars_absent",
     "ended",
     "delta",
+    "outputs",
     "raises",
     "handler_calls",
 )
@@ -560,7 +558,7 @@ def _render_report(
                             | set(unknown_expectation_hits)
                         )
                     ),
-                    "通过：只出现 state、vars、vars_exact、vars_keys、vars_absent、ended、delta、raises 和 handler_calls 公开观察字段；未出现 event accounting 或其他私有观察字段。",
+                    "通过：只出现 state、vars、outputs、ended、delta、raises 和 handler_calls 公开观察字段；未出现 event accounting 或其他私有观察字段。",
                 ),
                 (
                     "长期 Markdown 文件",

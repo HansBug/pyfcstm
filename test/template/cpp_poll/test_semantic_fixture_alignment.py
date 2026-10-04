@@ -12,7 +12,8 @@ from test.testings.simulate_semantics import iter_semantic_cases, load_semantic_
 @pytest.mark.slow
 @pytest.mark.parametrize(
     "case",
-    iter_semantic_cases(),
+    # C-family backends consume the shared generated-runtime fixture subset.
+    iter_semantic_cases(runners=["generated_python_alignment"]),
     ids=lambda case: case.id,
 )
 def test_generated_cpp_poll_alignment_semantic_fixture(case, tmp_path):

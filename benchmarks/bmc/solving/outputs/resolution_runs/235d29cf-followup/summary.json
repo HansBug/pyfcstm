@@ -1,0 +1,41 @@
+{
+  "analysis_provenance": {
+    "analyzer_sha256": "e4d09fa4e3af3d9930f355a73e8bb7fa3ca2d2702392b5707fe5d998119693ea",
+    "manifest_sha256": "76d79564a27129ff7c7b21b910a862c00f41e786b6ec9d1a78fb04bab48c6920",
+    "raw_sha256": "9ce982c12151159ba19664c3d8b3ff47eb5cbe62d54a17ce9808444cda0d8156"
+  },
+  "api_regressions": [],
+  "borderline_queries": [],
+  "comparisons": [
+    {
+      "api_total_ms": {
+        "baseline": 462.19280920922756,
+        "candidate": 463.05825049057603,
+        "change_percent": 0.18724680784825143
+      },
+      "build_ms": {
+        "baseline": 384.063933044672,
+        "candidate": 386.8792694993317,
+        "change_percent": 0.7330384898006637
+      },
+      "case": "codex_platooning_join_protocol",
+      "n": 10,
+      "peak_rss_bytes": {
+        "baseline": 93356032.0,
+        "candidate": 93489152.0,
+        "change_percent": 0.14259389259390076
+      },
+      "query": "forbid",
+      "solve_ms": {
+        "baseline": 28.90997496433556,
+        "candidate": 28.864528983831406,
+        "change_percent": -0.1571982700096397
+      }
+    }
+  ],
+  "correctness_pass": true,
+  "measured_samples": 20,
+  "memory_regressions": [],
+  "sat_replays": 0,
+  "vtol_reach_pass": null
+}

@@ -11,6 +11,8 @@ pyfcstm.simulate
 
     context
     decorators
+    diagnostics
+    inputs
     runtime
     utils
 

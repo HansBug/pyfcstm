@@ -192,6 +192,53 @@ def test_build_bmc_output_public_helper_returns_json_report(bmc_files) -> None:
     assert output.endswith("\n")
 
 
+@pytest.mark.parametrize("profile", ["default", "logic", "tactic"])
+def test_bmc_solver_profile_roundtrips_through_cli_and_schema(bmc_files, profile):
+    """The CLI forwards each choice and publishes schema-valid metadata."""
+    jsonschema = pytest.importorskip("jsonschema")
+    model, query = bmc_files
+    result, payload = _json_result(
+        model, query('check reach <= 1: active("Root");'), "--solver-profile", profile
+    )
+    assert result.exit_code == 0
+    assert payload["result"]["solver_profile"] == profile
+    assert payload["replay"]["ok"] is True
+    schema = json.loads(
+        (
+            Path(__file__).resolve().parents[2]
+            / "docs/source/reference/bmc_results/bmc_cli.schema.json"
+        ).read_text()
+    )
+    validator = jsonschema.Draft202012Validator(schema)
+    validator.validate(payload)
+    for field in ("solver_profile", "solver_logic", "solver_statistics"):
+        mutated = deepcopy(payload)
+        del mutated["result"][field]
+        assert list(validator.iter_errors(mutated)), field
+    for field, value in (
+        ("solver_profile", "fast"),
+        ("solver_logic", "wrong"),
+        ("solver_statistics", {"conflicts": True}),
+        ("solver_statistics", {"conflicts": -1}),
+    ):
+        mutated = deepcopy(payload)
+        mutated["result"][field] = value
+        assert list(validator.iter_errors(mutated)), (field, value)
+
+
+def test_invalid_solver_profile_is_a_controlled_cli_error(bmc_files):
+    from pyfcstm.entry.bmc import build_bmc_output
+
+    model, query = bmc_files
+    path = query('check reach <= 1: active("Root");')
+    assert (
+        _run("-i", str(model), "-q", str(path), "--solver-profile", "fast").exit_code
+        == 2
+    )
+    with pytest.raises(ClickErrorException, match="solver_profile"):
+        build_bmc_output(str(model), str(path), solver_profile="fast")
+
+
 @pytest.mark.parametrize(
     ("option", "value"),
     [
@@ -1479,6 +1526,9 @@ def test_bmc_schema_accepts_legacy_shape_envelope(bmc_files) -> None:
 
     legacy = deepcopy(payload)
     for key in (
+        "solver_profile",
+        "solver_logic",
+        "solver_statistics",
         "incomplete_elapsed_ms",
         "total_elapsed_ms",
         "feasibility",
@@ -3424,3 +3474,206 @@ def test_write_bmc_output_leaves_no_descriptor_or_temporary_file(
     )
     assert report.points_reached > 0
     assert not report.body_windows, report.describe()
+
+
+@pytest.mark.parametrize("cli_args", [(), ("--cone-slicing",)])
+def test_bmc_role_model_json_payload_matches_schema(tmp_path: Path, cli_args) -> None:
+    """A role-aware witness payload carries inputs/reads/parameters and validates."""
+    model_path = tmp_path / "machine.fcstm"
+    model_path.write_text(
+        "input float pressure;\n"
+        "param float gain = 2.0;\n"
+        "def int ticks = 0;\n"
+        "output float altitude = 0.0;\n"
+        "state Root {\n"
+        "    state Flying { during { ticks = ticks + 1; "
+        "altitude = altitude + pressure * gain; } }\n"
+        "    [*] -> Flying;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    query_path = tmp_path / "property.fbmcq"
+    query_path.write_text(
+        "assume always: pressure >= 0.0 && pressure <= 1.0;\n"
+        'check reach <= 2: active("Root.Flying");\n',
+        encoding="utf-8",
+    )
+
+    result, payload = _json_result(model_path, query_path, *cli_args)
+
+    assert result.exit_code == 0
+    schema = json.loads(
+        Path("docs/source/reference/bmc_results/bmc_cli.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    _assert_bmc_schema_instance(schema, payload)
+    assert "schema_version" not in payload
+    witness = payload["witness"]
+    assert witness["initial"]["parameters"] == {"gain": 2.0}
+    for frame in witness["frames"]:
+        assert set(frame["vars"]) == {"ticks", "altitude"}
+    for step in witness["steps"]:
+        assert 0.0 <= step["inputs"]["pressure"] <= 1.0
+        assert step["input_reads"] == ["pressure"]
+    assert payload["replay"]["ok"] is True
+    for runtime_step in payload["replay"]["runtime_trace"]["steps"]:
+        assert set(runtime_step["inputs"]) == {"pressure"}
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        'assume at 1: sensor == 1; check reach <= 1: active("Root");',
+        "assume at 0: sensor == 0; check reach <= 1: sensor == 1;",
+    ],
+)
+def test_bmc_cli_rejects_unobservable_input_references(tmp_path, query):
+    model = tmp_path / "model.fcstm"
+    model.write_text("input int sensor; state Root;", encoding="utf-8")
+    query_path = tmp_path / "query.fbmcq"
+    query_path.write_text(query, encoding="utf-8")
+    result = _run("-i", str(model), "-q", str(query_path), "--json")
+    assert result.exit_code == 1
+    _assert_stderr_only(result, "Failed to compile BMC query")
+
+
+def test_bmc_cli_replays_abstract_action_with_roles(tmp_path):
+    model = tmp_path / "model.fcstm"
+    model.write_text(
+        "input int sensor; param int gain = 2; state Root { enter abstract Observe; }",
+        encoding="utf-8",
+    )
+    query = tmp_path / "query.fbmcq"
+    query.write_text(
+        'assume at 0: sensor == 5; check reach <= 1: active("Root");', encoding="utf-8"
+    )
+    result, payload = _json_result(model, query)
+    assert result.exit_code == 0
+    assert payload["replay"]["ok"]
+    assert payload["witness"]["steps"][0]["abstract_calls"][0]["snapshot"] == {}
+    assert payload["witness"]["steps"][0]["inputs"] == {"sensor": 5}
+
+
+@pytest.mark.parametrize("terminated", [False, True])
+def test_bmc_schema_rejects_invalid_input_read_payload(tmp_path, terminated):
+    import copy
+    import jsonschema
+
+    model = tmp_path / "model.fcstm"
+    model.write_text("input int sensor; state Root;", encoding="utf-8")
+    query = tmp_path / "query.fbmcq"
+    query.write_text(
+        ("init terminated; " if terminated else "assume at 0: sensor == 1; ")
+        + "check reach <= 1: true;",
+        encoding="utf-8",
+    )
+    result, payload = _json_result(model, query)
+    assert result.exit_code == 0
+    schema = json.loads(
+        Path("docs/source/reference/bmc_results/bmc_cli.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    validator = jsonschema.Draft202012Validator(schema)
+    assert not list(validator.iter_errors(payload))
+    forged = copy.deepcopy(payload)
+    step = forged["witness"]["steps"][0]
+    if terminated:
+        step["inputs"] = {"sensor": 1}
+    else:
+        step["input_reads"] = ["sensor", "sensor"]
+    assert list(validator.iter_errors(forged))
+
+
+def test_cone_slicing_cli_and_schema_preserve_complete_witness(bmc_files):
+    jsonschema = pytest.importorskip("jsonschema")
+    model, query = bmc_files
+    model.write_text("def int telemetry = 3; state Root { enter { telemetry = 17; } }")
+    command, payload = _json_result(
+        model, query('check reach <= 1: active("Root");'), "--cone-slicing"
+    )
+    assert command.exit_code == 0, command.output
+    metadata = payload["result"]["cone_slicing"]
+    assert metadata == dict(
+        enabled=True,
+        retained_count=0,
+        dropped_variables=["telemetry"],
+        skipped_reason=None,
+        fallback=False,
+    )
+    assert payload["witness"]["frames"][1]["vars"]["telemetry"] == 17
+    assert payload["replay"]["ok"] is True
+    schema = json.loads(
+        (
+            Path(__file__).resolve().parents[2]
+            / "docs/source/reference/bmc_results/bmc_cli.schema.json"
+        ).read_text()
+    )
+    validator = jsonschema.Draft202012Validator(schema)
+    validator.validate(payload)
+    for field in metadata:
+        bad = deepcopy(payload)
+        del bad["result"]["cone_slicing"][field]
+        assert list(validator.iter_errors(bad)), field
+    for field, value in [
+        ("enabled", False),
+        ("retained_count", -1),
+        ("retained_count", True),
+        ("dropped_variables", ["x", "x"]),
+        ("skipped_reason", "unknown"),
+        ("fallback", 1),
+    ]:
+        bad = deepcopy(payload)
+        bad["result"]["cone_slicing"][field] = value
+        assert list(validator.iter_errors(bad)), (field, value)
+    schema["$defs"]["currentResult"]["properties"]["cone_slicing"]["properties"][
+        "retained_count"
+    ]["type"] = "string"
+    assert list(jsonschema.Draft202012Validator(schema).iter_errors(payload))
+
+
+@pytest.mark.parametrize("value", [None, 0, 1, "true", []])
+def test_cone_slicing_public_report_rejects_non_boolean(bmc_files, value):
+    from pyfcstm.entry.bmc import build_bmc_output
+
+    model, query = bmc_files
+    with pytest.raises(ClickErrorException, match="cone_slicing"):
+        build_bmc_output(
+            str(model), str(query("check reach <= 1: true;")), cone_slicing=value
+        )
+
+
+@pytest.mark.parametrize(
+    "query_text,expected_exit",
+    [
+        ("check reach <= 1: true;", 0),
+        ("check response <= 1: trigger true -> within 2 false;", 3),
+    ],
+)
+def test_cone_cli_reuses_completed_trace_and_still_replays_output(
+    bmc_files, monkeypatch, query_text, expected_exit
+):
+    import pyfcstm.bmc as bmc_api
+    import pyfcstm.bmc.witness as witness_module
+
+    model, query = bmc_files
+    model.write_text("def int telemetry = 3; state Root { enter { telemetry = 17; } }")
+    calls = []
+    original = witness_module.replay_bmc_witness
+
+    def observe(*args, **kwargs):
+        result = original(*args, **kwargs)
+        calls.append(result)
+        return result
+
+    # Resolve the lazy public export before patching its implementation, so
+    # teardown cannot leave the observer cached as the public function.
+    monkeypatch.setattr(bmc_api, "replay_bmc_witness", observe)
+    monkeypatch.setattr(witness_module, "replay_bmc_witness", observe)
+    command, payload = _json_result(model, query(query_text), "--cone-slicing")
+    assert command.exit_code == expected_exit, command.output
+    assert len(calls) == 2  # Internal completion plus independent output replay.
+    assert calls[-1].ok
+    assert payload["replay"]["ok"] is True
+    assert payload["witness"]["frames"][1]["vars"]["telemetry"] == 17

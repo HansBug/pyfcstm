@@ -181,6 +181,40 @@ describe('jsfcstm editor experience helpers', () => {
         });
     });
 
+    it('highlights role declarations and variable mappings without treating names as keywords', async () => {
+        const dir = trackTempDir('jsfcstm-role-tokens-');
+        writeFile(`${dir}/worker.fcstm`, 'input int value; state Worker;');
+        const documentText = [
+            'control int control_count = 0;',
+            'input int input_value;',
+            'param int param_limit = 4;',
+            'output int output_result = 0;',
+            'def int var_count = 0;',
+            'state Root {',
+            '    import "./worker.fcstm" as Worker { var value -> input_value; }',
+            '    [*] -> Worker;',
+            '}',
+            '// control input param output var',
+        ].join('\n');
+        const document = createDocument(documentText, `${dir}/host.fcstm`);
+        const decoded = decodeSemanticTokens(
+            await packageModule.collectSemanticTokens(document),
+            packageModule.getFcstmSemanticTokensLegend()
+        );
+        const keywords = tokenTextsByType(documentText, decoded, 'keyword');
+        const variables = tokenTextsByType(documentText, decoded, 'variable');
+        for (const word of ['control', 'input', 'param', 'output', 'var', 'def']) {
+            assert.ok(keywords.has(word), word);
+            assert.equal(variables.has(word), false, word);
+        }
+        for (const name of ['control_count', 'input_value', 'param_limit', 'output_result', 'var_count']) {
+            assert.ok(variables.has(name), name);
+            assert.equal(keywords.has(name), false, name);
+        }
+        assert.equal(keywords.has('value'), false);
+        assert.equal(decoded.filter(item => item.line === 9 && item.type === 'keyword').length, 0);
+    });
+
     it('collects semantic tokens for lexical constructs and semantic symbol occurrences', async () => {
         const dir = trackTempDir('jsfcstm-semantic-tokens-');
         const filePath = `${dir}/semantic-tokens.fcstm`;

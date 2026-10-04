@@ -106,7 +106,7 @@ these required top-level fields.
        generated combo edges and forced expansions are folded to authored
        transitions. This section does not emit warnings or a health score.
    * - ``reachability_graph``
-     - Default inspect graph: guards ignored, composite initial edges followed.
+     - Default inspect graph: guards ignored, composite initial edges followed. A transition into ``Owner.[H]`` / ``Owner.[H*]`` also reaches the states of the default path and what a restore can re-enter; see :ref:`dsl-history-reference`.
    * - ``event_emission_map``
      - Event name to source states that can emit it.
    * - ``var_dataflow``
@@ -131,9 +131,9 @@ Nested object contracts
    * - Object
      - Required fields and notes
    * - ``StateInfo``
-     - ``path``, ``name``, ``parent_path``, ``is_leaf``, ``is_pseudo``, ``is_composite``, ``substates``, ``initial_targets``, lifecycle action arrays, aspect arrays, and ``has_abstract_action``.
+     - ``path``, ``name``, ``parent_path``, ``is_leaf``, ``is_pseudo``, ``is_composite``, ``substates``, ``initial_targets``, lifecycle action arrays, aspect arrays, and ``has_abstract_action``. A model that uses history is reported as written, before lowering, so no state or initial target is one that lowering generated. See :ref:`dsl-history-reference`.
    * - ``TransitionInfo``
-     - ``from_path``, ``to_path``, ``event``, ``event_scope``, ``guard``, ``effect``, ``effect_self_assigns``, ``is_forced``, ``forced_origin``, ``transition_index``, and combo projection/provenance fields.
+     - ``from_path``, ``to_path``, ``event``, ``event_scope``, ``guard``, ``effect``, ``effect_self_assigns``, ``is_forced``, ``forced_origin``, ``transition_index``, and combo projection/provenance fields. ``target_history`` (``shallow``, ``deep`` or null) marks a transition that enters ``Target.[H]`` / ``Target.[H*]``; its ``to_path`` names the history owner.
    * - ``ComboOriginInfo``
      - ``origin_id``, ``transition_span``, ``trigger_span``, and ordered ``terms``.
    * - ``ComboOriginTermInfo``
@@ -303,3 +303,76 @@ The inspect command first reads, decodes, parses, and validates the DSL. If any
 of those steps fails, the command raises a controlled CLI error instead of
 returning a normal inspect report. Treat this as an input failure, not as a
 ``diagnostics`` array with an ``E_*`` code.
+
+Variable roles and access locations
+-----------------------------------
+
+Each ``VariableInfo`` retains its existing read/write summaries and adds
+``external_supply``, ``diagnostic_policy``, ``read_sites`` and ``write_sites``.
+These fields describe the expanded model, not an execution trace.
+
+.. list-table:: Ownership and diagnostic applicability
+   :header-rows: 1
+   :widths: 22 23 55
+
+   * - ``role``
+     - ``external_supply``
+     - ``diagnostic_policy``
+   * - ``control`` (including legacy ``def``)
+     - ``none``
+     - ``unused``, ``unwritten``, ``write_only`` and ``constant_guard`` are true.
+   * - ``input``
+     - ``cycle``
+     - All four flags are false; the environment supplies each cycle's value.
+   * - ``param``
+     - ``construction``
+     - All four flags are false; the parameter is fixed at construction.
+   * - ``output``
+     - ``none``
+     - All four flags are false; external consumers need not read through the model.
+
+The policy flags document the applicability of the existing control-variable
+unused, unwritten-read, write-only and guard-variable-change diagnostics. They
+are not configurable suppression switches and do not disable other validation
+or constant-expression analysis. In particular, writing an input or parameter
+is a model error. Multiple output writers remain permitted.
+
+Each access site has the following fields:
+
+.. list-table:: VariableAccessSite
+   :header-rows: 1
+   :widths: 25 75
+
+   * - Field
+     - Meaning
+   * - ``kind``
+     - ``action``, ``guard`` or ``effect``. Conditions inside an action/effect keep that container's kind.
+   * - ``state_path``
+     - Expanded owning state path, including the import instance.
+   * - ``action`` / ``action_index``
+     - Action signature and zero-based index into ``actions``; both null for transitions. Inline signatures may repeat; use the index for identity.
+   * - ``transition_index``
+     - Zero-based index into ``transitions`` for guards/effects; null for actions.
+   * - ``statement_path``
+     - Zero-based statement and branch indices within the container. ``[0]`` is its first statement; ``[0, 0]`` is that conditional's first branch condition; ``[0, 0, 1]`` is the second statement in that branch. A transition guard uses ``[]``.
+   * - ``source_path``
+     - Authored source file, distinct from the expanded state path; null when unavailable.
+   * - ``span``
+     - Authored statement, branch block or transition range, using the existing 1-based, end-exclusive ``Span`` contract; null when unavailable. It is not a variable-token range.
+
+Repeated occurrences of a variable in one expression yield one read site;
+different statements, branches and imported instances retain separate sites.
+An assignment that reads its destination has both a read and a write site.
+Initializers are declaration metadata, not action/effect writes. Unreachable
+statements still have sites. Abstract actions contribute no invented accesses;
+action references use the existing ``action_ref_graph``, while their concrete
+bodies have sites at their definitions. Access arrays follow model traversal
+order, with actions before transitions in each state and nested statements in
+source order. Indices are local to a report, not stable identifiers across edits.
+
+Human reports list each variable's role and external supply. LLM repair reports
+include ownership guidance so an empty write list for input/param or an empty
+read list for output is not treated as a request to modify the model. Full
+structured access sites remain in the full JSON report. The public payload does
+not contain a schema or product version marker; validate against the schema
+shipped with the running release.

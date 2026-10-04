@@ -1,0 +1,3 @@
+param int gain = 2; input int sensor;
+control int count = 0; output int reading = 0;
+state Root { enter { count = 999; } state Ready { enter { reading = 999; } during { count = count + 1; reading = sensor * gain; } } [*] -> Ready; }

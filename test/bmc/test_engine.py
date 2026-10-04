@@ -99,7 +99,11 @@ def test_engine_prepares_query_text_with_domain_references(
     ]
     assert canonical["node"] == "prepared_context"
     assert canonical["source_text"] == engine_query_text
-    assert canonical["options"] == {"node": "bmc_options", "max_bound": None}
+    assert canonical["options"] == {
+        "node": "bmc_options",
+        "max_bound": None,
+        "cone_slicing": False,
+    }
     assert canonical["domain"]["bound"] == 1
     json.dumps(canonical, sort_keys=True)
 
@@ -161,10 +165,15 @@ def test_bmc_options_reject_invalid_max_bound(max_bound) -> None:
 @pytest.mark.unittest
 def test_bmc_options_accept_none_and_positive_bounds() -> None:
     """Options keep a JSON-stable canonical shape for valid bounds."""
-    assert BmcOptions().to_canonical() == {"node": "bmc_options", "max_bound": None}
+    assert BmcOptions().to_canonical() == {
+        "node": "bmc_options",
+        "max_bound": None,
+        "cone_slicing": False,
+    }
     assert BmcOptions(max_bound=3).to_canonical() == {
         "node": "bmc_options",
         "max_bound": 3,
+        "cone_slicing": False,
     }
 
 

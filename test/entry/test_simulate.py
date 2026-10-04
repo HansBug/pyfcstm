@@ -578,15 +578,19 @@ class TestCommandProcessor:
         with pytest.raises(RuntimeError, match="Test exception"):
             command_processor.process("current")
 
-    def test_cycle_internal_key_error_propagates(self, command_processor, monkeypatch):
-        """Test cycle command does not report internal KeyError as user input."""
+    def test_cycle_handler_key_error_propagates(self):
+        """Documented abstract handlers may raise application exceptions."""
+        model = parse_dsl_node_to_state_machine(parse_with_grammar_entry(
+            'state Root { enter abstract Read; }', 'state_machine_dsl'))
+        runtime = SimulationRuntime(model)
 
-        def mock_cycle(events=None):
-            raise KeyError("internal missing key")
+        def read(context):
+            raise KeyError("application missing key")
 
-        monkeypatch.setattr(command_processor.runtime, 'cycle', mock_cycle)
-        with pytest.raises(KeyError, match="internal missing key"):
-            command_processor.process("cycle")
+        runtime.register_abstract_handler('Root.Read', read)
+        processor = CommandProcessor(runtime, use_color=False)
+        with pytest.raises(KeyError, match="application missing key"):
+            processor.process("cycle")
 
     def test_handle_cycle_error(self, command_processor):
         """Test cycle with invalid event."""
@@ -594,15 +598,14 @@ class TestCommandProcessor:
         assert "Cycle execution failed" in result.output
         assert "Cannot resolve event path 'InvalidEvent'" in result.output
 
-    def test_handle_cycle_dfs_error(self, command_processor, monkeypatch):
-        """Test cycle with SimulationRuntimeDfsError."""
-        from pyfcstm.simulate import SimulationRuntimeDfsError
-
-        def mock_cycle(events=None):
-            raise SimulationRuntimeDfsError("DFS limit exceeded")
-
-        monkeypatch.setattr(command_processor.runtime, 'cycle', mock_cycle)
-        result = command_processor.process("cycle")
+    def test_handle_cycle_dfs_error(self):
+        """A changing pseudo loop reaches the normal DFS safety limit."""
+        model = parse_dsl_node_to_state_machine(parse_with_grammar_entry(
+            'control int x = 0; state Root { pseudo state P; '
+            '[*] -> P; P -> P effect { x = x + 1; }; }', 'state_machine_dsl'))
+        processor = CommandProcessor(SimulationRuntime(model), use_color=False)
+        result = processor.process("cycle")
+        assert result.exit_code == 1
         assert "unbounded execution chain" in result.output
         assert "stoppable states" in result.output
 
@@ -1506,7 +1509,7 @@ class TestCLIEntry:
             '-e', 'current'
         ])
 
-        assert result.exit_code == 0  # Click doesn't exit with error
+        assert result.exit_code == 1
         assert 'Failed to parse' in result.output or 'No such file' in result.output
 
     def test_simulate_no_color(self, tmp_path):
@@ -1672,7 +1675,7 @@ class TestCLIEntry:
                 ],
             )
 
-        assert result.exit_code == 0
+        assert result.exit_code == 1
         assert "Failed to parse DSL file:" in result.output
         assert "Import source file not found" in result.output
         assert "missing.fcstm" in result.output

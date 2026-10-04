@@ -1,0 +1,3 @@
+input int enabled; input float measurement;
+control int samples = 0; output float reading = 0.0;
+state Root { state Ready { during { if [enabled > 0] { samples = samples + 1; reading = measurement; } } } [*] -> Ready; }

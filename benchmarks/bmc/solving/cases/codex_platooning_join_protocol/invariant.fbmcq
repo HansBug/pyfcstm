@@ -1,0 +1,2 @@
+init cold havoc { platoon_length } where platoon_length >= 0 && platoon_length <= 3;
+check invariant <= 10: platoon_length <= 3;

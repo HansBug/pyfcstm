@@ -14,3 +14,4 @@ pyfcstm.dsl
     listener
     node
     parse
+    role

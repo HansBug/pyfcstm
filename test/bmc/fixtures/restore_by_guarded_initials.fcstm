@@ -1,0 +1,40 @@
+// Hand-written pause/resume model: plain FCSTM, no history syntax.
+// `live` tracks the active leaf, `saved` the leaf left at the last pause, and
+// `mode` how Program is re-entered (0 fresh, 1 shallow, 2 deep), so Program and
+// Wash choose their initial child with guarded initial transitions.
+def int entries = 0;
+def int inits = 0;
+def int allow_pause = 1;
+def int live = 0;
+def int saved = 0;
+def int mode = 0;
+state Washer {
+    event Finish;
+    state Paused;
+    pseudo state PauseGate;
+    state Program {
+        enter { entries = entries + 1; live = 0; }
+        exit { saved = live; }
+        state Idle { enter { live = 1; mode = 0; } }
+        state Wash {
+            state Fill { enter { live = 2; mode = 0; } }
+            state Agitate { enter { live = 3; mode = 0; } }
+            [*] -> Agitate : if [mode == 2 && saved == 3];
+            [*] -> Fill : if [mode == 2 && saved != 3];
+            [*] -> Fill : if [mode != 2] effect { inits = inits + 1; }
+            Fill -> Agitate :: Filled;
+            Agitate -> [*] : /Finish;
+        }
+        [*] -> Idle : if [mode == 0 || (mode == 1 && saved == 0) || (mode != 0 && saved == 1)];
+        [*] -> Wash : if [(mode == 1 && saved >= 2) || (mode == 2 && saved != 1)];
+        Idle -> Wash :: Start;
+        Wash -> Idle : /Finish;
+    }
+    [*] -> Paused;
+    Paused -> Program :: Fresh effect { mode = 0; }
+    Paused -> Program :: Shallow effect { mode = 1; }
+    Paused -> Program :: Deep effect { mode = 2; }
+    Paused -> Paused :: Toggle effect { allow_pause = 1 - allow_pause; }
+    !Program -> PauseGate :: Pause;
+    PauseGate -> Paused : if [allow_pause == 1];
+}

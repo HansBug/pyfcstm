@@ -147,6 +147,8 @@ def _diagnostics_for_expr(
 
 def _iter_expression_contexts(machine: "StateMachine") -> Iterable[_Context]:
     for var_name, var_define in machine.defines.items():
+        if var_define.init is None:
+            continue
         yield _Context(
             var_define.init,
             "var_initializer",

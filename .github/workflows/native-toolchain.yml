@@ -46,7 +46,7 @@ jobs:
         profile: ${{ fromJSON(github.event_name == 'workflow_dispatch' && contains(fromJSON('["linux-gcc-o0","linux-gcc-o2","linux-gcc-o3","linux-gcc-os","linux-clang-o0","linux-clang-o2","linux-clang-o3","linux-clang-os","linux-gcc-m32-o2","linux-gcc-m32-os","linux-aarch64-gcc-o2","linux-aarch64-gcc-os","arm-none-eabi-gcc-o2","arm-none-eabi-gcc-os","linux-clang-asan-ubsan","linux-cppcheck","linux-clang-tidy"]'), inputs.profile) && format('["{0}"]', inputs.profile) || github.event_name == 'workflow_dispatch' && '["linux-gcc-o2"]' || '["linux-gcc-o0","linux-gcc-o2","linux-gcc-o3","linux-gcc-os","linux-clang-o0","linux-clang-o2","linux-clang-o3","linux-clang-os","linux-gcc-m32-o2","linux-gcc-m32-os","linux-aarch64-gcc-o2","linux-aarch64-gcc-os","arm-none-eabi-gcc-o2","arm-none-eabi-gcc-os","linux-clang-asan-ubsan","linux-cppcheck","linux-clang-tidy"]') }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Install native tools
@@ -115,7 +115,7 @@ jobs:
     if: github.event_name != 'workflow_dispatch' || inputs.profile == 'macos-appleclang-o2'
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Install native tools
@@ -158,7 +158,7 @@ jobs:
         profile: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('["{0}"]', inputs.profile) || '["windows-mingw-o2","windows-msvc-o2","windows-clangcl-o2"]') }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - uses: ilammy/msvc-dev-cmd@v1

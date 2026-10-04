@@ -72,7 +72,7 @@ jobs:
         with:
           node-version: '24'
       - name: Set up Python 3.8
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.8'
       - name: Set up python dependences
@@ -153,7 +153,7 @@ jobs:
           : > "$RUNNER_TEMP/java-version.txt"
           : > "$RUNNER_TEMP/plantuml-version.txt"
       - name: Set up Python 3.8
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.8'
       - name: Set up Java runtime
@@ -515,7 +515,7 @@ jobs:
         with:
           node-version: '24'
       - name: Set up python 3.11
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Install docs PDF dependencies
@@ -712,7 +712,7 @@ jobs:
           echo "PKG_CONFIG_PATH=${BREW_PREFIX}/lib/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" >> $GITHUB_ENV
           echo "DYLD_FALLBACK_LIBRARY_PATH=${BREW_PREFIX}/lib${DYLD_FALLBACK_LIBRARY_PATH:+:${DYLD_FALLBACK_LIBRARY_PATH}}" >> $GITHUB_ENV
       - name: Set up python ${{ matrix.python-version }}
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
@@ -1258,7 +1258,7 @@ jobs:
           java-version: '11'
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.8'
 

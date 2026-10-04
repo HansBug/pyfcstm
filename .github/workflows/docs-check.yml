@@ -62,7 +62,7 @@ jobs:
           fetch-depth: 0
           submodules: 'recursive'
       - name: Set up python 3.11
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Detect docs routes
@@ -181,7 +181,7 @@ jobs:
         with:
           node-version: '24'
       - name: Set up python 3.11
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Install docs dependencies
@@ -317,7 +317,7 @@ jobs:
         with:
           node-version: '24'
       - name: Set up python 3.11
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Install docs PDF dependencies
@@ -421,7 +421,7 @@ jobs:
         with:
           node-version: '24'
       - name: Set up python 3.11
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Install docs resource dependencies

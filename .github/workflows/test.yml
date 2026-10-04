@@ -305,7 +305,7 @@ jobs:
           fetch-depth: 0
           submodules: 'recursive'
       - name: Set up Node.js for diagram assets
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
       - name: Set up python 3.11
@@ -389,7 +389,7 @@ jobs:
           fetch-depth: 20
           submodules: 'recursive'
       - name: Set up Node.js for diagram assets
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
       - name: Set up system dependencies
@@ -433,7 +433,7 @@ jobs:
           fetch-depth: 20
           submodules: 'recursive'
       - name: Set up Node.js for diagram assets
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
       - name: Set up system dependencies
@@ -482,7 +482,7 @@ jobs:
           fetch-depth: 20
           submodules: 'recursive'
       - name: Set up Node.js for diagram assets
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
       - name: Set up system dependencies
@@ -787,7 +787,7 @@ jobs:
           fetch-depth: 20
           submodules: 'recursive'
       - name: Set up Node.js for diagram assets
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
       - name: Set up system dependences on Linux
@@ -934,7 +934,7 @@ jobs:
           fetch-depth: 20
           submodules: 'recursive'
       - name: Set up Node.js for diagram assets
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
       - name: Set up system dependencies on Linux
@@ -1503,7 +1503,7 @@ jobs:
           fetch-depth: 20
           submodules: 'recursive'
       - name: Set up Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node-version }}
       - name: Set up Java (ANTLR runtime for JS parser generation)
@@ -1529,7 +1529,7 @@ jobs:
         working-directory: editors/jsfcstm
         run: npm test
       - name: Set up the published package runtime floor
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '16.0.0'
       - name: Check the built public package on Node 16

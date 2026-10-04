@@ -41,7 +41,7 @@ jobs:
         with:
           fetch-depth: 20
       - name: Set up Node.js for diagram assets
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
       - name: Set up python ${{ matrix.python-version }}
@@ -730,7 +730,7 @@ jobs:
           fetch-depth: 20
           submodules: 'recursive'
       - name: Set up Node.js for diagram assets
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
       - name: Set up python 3.11
@@ -881,7 +881,7 @@ jobs:
           fetch-depth: 20
           submodules: 'recursive'
       - name: Set up Node.js for diagram assets
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
       - name: Set up system dependencies on Linux
@@ -1342,7 +1342,7 @@ jobs:
           make antlr
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
 
@@ -1393,7 +1393,7 @@ jobs:
           echo "VSIX_BASENAME=$(basename ${VSIX_FILE})" >> $GITHUB_OUTPUT
 
       - name: Set up the VSCode 1.60 extension host runtime
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '14.16.0'
       - name: Check the built extension on the VSCode runtime floor

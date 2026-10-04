@@ -1528,6 +1528,13 @@ jobs:
         # Same script the unit tests used previously, now with coverage.
         working-directory: editors/jsfcstm
         run: npm test
+      - name: Set up the published package runtime floor
+        uses: actions/setup-node@v4
+        with:
+          node-version: '16.0.0'
+      - name: Check the built public package on Node 16
+        working-directory: editors/jsfcstm
+        run: node scripts/check-runtime.js
       - name: Upload jsfcstm coverage to Codecov
         # Mirror the python matrix: every matrix cell uploads, codecov
         # merges by flag. Avoids dropping coverage if one Node leg fails.

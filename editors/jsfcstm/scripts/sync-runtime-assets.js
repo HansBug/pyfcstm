@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
+const {transformSync} = require('esbuild');
 
 const packageDir = path.resolve(__dirname, '..');
 const sourceDir = path.join(packageDir, 'src', 'dsl', 'grammar');
@@ -49,6 +50,14 @@ function copyTree(sourcePath, targetPath) {
     }
 
     fs.mkdirSync(path.dirname(targetPath), {recursive: true});
+    if (path.extname(sourcePath) === '.js') {
+        // ANTLR emits ESM; published entry points use require() on Node 16.
+        const {code} = transformSync(fs.readFileSync(sourcePath, 'utf8'), {
+            format: 'cjs', target: 'es2015',
+        });
+        fs.writeFileSync(targetPath, code);
+        return;
+    }
     fs.copyFileSync(sourcePath, targetPath);
 }
 

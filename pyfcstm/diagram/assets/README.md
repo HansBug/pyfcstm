@@ -52,7 +52,7 @@ export; Python synchronous headless export remains a later delivery stage.
 - ``host-shim.js``: the minimal host-environment shim required by MiniRacer.
 - ``pdf-writer.js``: the vector-PDF writer for the embedded host. It carries the
   same ``renderVectorPdf`` export core the browser viewer uses, together with the
-  ``@xmldom/xmldom`` 0.8.11 DOM adapter that code needs where there is no
+  ``@xmldom/xmldom`` 0.8.15 DOM adapter that code needs where there is no
   browser, and a leading shim supplying the two host globals jsPDF reads while
   its module body runs. It is evaluated only when a PDF is requested.
 - ``viewer.js``: self-contained Vue browser viewer bundle built from the

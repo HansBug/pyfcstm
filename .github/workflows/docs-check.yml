@@ -179,7 +179,7 @@ jobs:
       - name: Set up Node.js for diagram assets
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
       - name: Set up python 3.11
         uses: actions/setup-python@v6
         with:
@@ -315,7 +315,7 @@ jobs:
       - name: Set up Node.js for diagram assets
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
       - name: Set up python 3.11
         uses: actions/setup-python@v6
         with:
@@ -419,7 +419,7 @@ jobs:
       - name: Set up Node.js for diagram assets
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
       - name: Set up python 3.11
         uses: actions/setup-python@v6
         with:

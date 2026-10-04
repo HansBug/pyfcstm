@@ -1364,6 +1364,9 @@ jobs:
         run: |
           make vscode
           ls -lh editors/vscode/build/
+      - name: Check extension types against the declared VSCode floor
+        working-directory: editors/vscode
+        run: npm run compile:tsc
 
       - name: Require the preview to outline its own drawing
         # The extension asks an installed ``pyfcstm[viz]`` to expand, rather than
@@ -1389,6 +1392,13 @@ jobs:
           echo "VSIX_FILE=${VSIX_FILE}" >> $GITHUB_OUTPUT
           echo "VSIX_BASENAME=$(basename ${VSIX_FILE})" >> $GITHUB_OUTPUT
 
+      - name: Set up the VSCode 1.60 extension host runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: '14.16.0'
+      - name: Check the built extension on the VSCode runtime floor
+        working-directory: editors/vscode
+        run: node scripts/test-e2e.js
       - name: Upload VSCode extension to artifacts
         uses: actions/upload-artifact@v4
         with:

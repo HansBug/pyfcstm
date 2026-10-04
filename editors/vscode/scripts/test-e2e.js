@@ -15,6 +15,9 @@
 
 const fs = require('fs');
 const path = require('path');
+const {pathToFileURL} = require('url');
+const {spawn} = require('child_process');
+const rpc = require('vscode-jsonrpc/node');
 
 // ANSI color codes
 const colors = {
@@ -339,6 +342,49 @@ const tests = [
             const bundleContent = fs.readFileSync(bundlePath, 'utf8');
             if (!bundleContent.includes('syntaxError') && !bundleContent.includes('ErrorListener')) {
                 throw new Error('ANTLR error listener implementation not found in bundle');
+            }
+        }
+    ),
+    new TestCase(
+        'E2E-20',
+        'Bundled server parses documents and resolves event references on the current runtime',
+        async () => {
+            const child = spawn(process.execPath, [path.join(__dirname, '..', 'dist', 'server.js'), '--stdio'], {
+                stdio: ['pipe', 'pipe', 'inherit'],
+            });
+            const connection = rpc.createMessageConnection(
+                new rpc.StreamMessageReader(child.stdout), new rpc.StreamMessageWriter(child.stdin)
+            );
+            let timer;
+            const failed = new Promise((resolve, reject) => {
+                child.once('error', reject);
+                child.once('exit', code => reject(new Error(`Language server exited with ${code}`)));
+                timer = setTimeout(() => reject(new Error('Language server request timed out')), 15000);
+            });
+            connection.listen();
+            try {
+                await Promise.race([failed, (async () => {
+                    const result = await connection.sendRequest('initialize', {
+                        processId: process.pid, rootUri: null, capabilities: {},
+                    });
+                    if (!result.capabilities.referencesProvider) throw new Error('Missing references capability');
+                    connection.sendNotification('initialized', {});
+                    const uri = pathToFileURL(path.join(__dirname, 'runtime-check.fcstm')).href;
+                    connection.sendNotification('textDocument/didOpen', {textDocument: {
+                        uri, languageId: 'fcstm', version: 1,
+                        text: 'state Root {\nevent Next;\nstate A; state B; [*] -> A; A -> B : Next;\n}',
+                    }});
+                    const references = await connection.sendRequest('textDocument/references', {
+                        textDocument: {uri}, position: {line: 1, character: 7}, context: {includeDeclaration: true},
+                    });
+                    if (references.length !== 2) throw new Error('Expected event declaration and transition reference');
+                    await connection.sendRequest('shutdown');
+                    connection.sendNotification('exit');
+                })()]);
+            } finally {
+                clearTimeout(timer);
+                connection.dispose();
+                child.kill();
             }
         }
     ),

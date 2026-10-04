@@ -675,7 +675,7 @@ function addActionDiagnostics(
             continue;
         }
 
-        const refName = action.ref.rawPath.split('.').at(-1) || action.ref.rawPath;
+        const refName = action.ref.rawPath.split('.').pop() || action.ref.rawPath;
         // M2: fill schema-required ``ref_path`` + ``reason``. The
         // jsfcstm resolver does not yet distinguish state-not-found
         // vs named-function-not-found; emit the latter as a

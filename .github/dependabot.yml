@@ -33,6 +33,9 @@ updates:
       # Client 8 already requires VSCode 1.67, above our declared 1.60 floor.
       - dependency-name: vscode-languageclient
         update-types: ["version-update:semver-major"]
+      # Keep Node types compatible with the legacy extension host and compiler.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
       # Keep the type surface on the same minor as engines.vscode.
       - dependency-name: "@types/vscode"
         update-types:

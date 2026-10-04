@@ -29,7 +29,7 @@ jobs:
       selected_suites: ${{ steps.detect.outputs.selected_suites }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           submodules: 'recursive'
@@ -167,7 +167,7 @@ jobs:
       fail_closed: ${{ steps.detect.outputs.fail_closed }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           submodules: 'recursive'
@@ -300,7 +300,7 @@ jobs:
     if: ${{ needs.detect_ci_routes.outputs.run_expensive_code_test == 'true' && !contains(github.event.head_commit.message, 'ci skip') && !contains(github.event.head_commit.message, 'test skip') && !contains(github.event.head_commit.message, '[python skip]') }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           submodules: 'recursive'
@@ -384,7 +384,7 @@ jobs:
     if: ${{ needs.detect_ci_routes.outputs.run_expensive_code_test == 'true' && !contains(github.event.head_commit.message, 'ci skip') && !contains(github.event.head_commit.message, 'test skip') && !contains(github.event.head_commit.message, '[python skip]') }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 20
           submodules: 'recursive'
@@ -428,7 +428,7 @@ jobs:
       matrix: ${{ fromJson(needs.detect_template_suites.outputs.template_matrix) }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 20
           submodules: 'recursive'
@@ -477,7 +477,7 @@ jobs:
           - '3.11'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 20
           submodules: 'recursive'
@@ -782,7 +782,7 @@ jobs:
         run: |
           echo "IS_PYPY=1" >> $GITHUB_ENV
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 20
           submodules: 'recursive'
@@ -929,7 +929,7 @@ jobs:
         run: |
           echo "IS_PYPY=1" >> $GITHUB_ENV
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 20
           submodules: 'recursive'
@@ -1094,11 +1094,11 @@ jobs:
               digest.hexdigest(), os.path.getsize(path), os.path.basename(path)
           ))
           PY
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: pyfcstm-v${{ env.PACKAGE_VERSION }}-${{ env.OS_NAME }}-${{ env.CPU_ARCH }}-${{ env.GIT_COMMIT_ID }}
           path: dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: pyfcstm-cli-${{ matrix.os }}
           if-no-files-found: error
@@ -1130,12 +1130,12 @@ jobs:
           : > "$RUNNER_TEMP/plantuml-version.txt"
       - name: Set up Java runtime
         continue-on-error: true
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
       - name: Download only the built CLI artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: pyfcstm-cli-ubuntu-22.04
           path: ${{ runner.temp }}/pyfcstm-cli-artifact
@@ -1269,7 +1269,7 @@ jobs:
           PY
       - name: Upload clean CLI evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pyfcstm-cli-selfcheck-ubuntu
           if-no-files-found: error
@@ -1308,12 +1308,12 @@ jobs:
           : > "$RUNNER_TEMP/plantuml-service.log"
       - name: Set up Java runtime
         continue-on-error: true
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
       - name: Download only the built CLI artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ${{ matrix.artifact }}
           path: ${{ runner.temp }}/pyfcstm-cli-artifact
@@ -1468,7 +1468,7 @@ jobs:
           PY
       - name: Upload clean CLI evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pyfcstm-cli-selfcheck-${{ matrix.os }}
           if-no-files-found: error
@@ -1498,7 +1498,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 20
           submodules: 'recursive'
@@ -1507,7 +1507,7 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
       - name: Set up Java (ANTLR runtime for JS parser generation)
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -1562,7 +1562,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 20
           submodules: 'recursive'

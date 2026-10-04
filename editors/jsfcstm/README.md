@@ -43,6 +43,9 @@ The ANTLR JavaScript runtime is generated into `src/dsl/grammar/` during build t
 
 ## Commands
 
+The published package supports Node.js 16 and later. Running the development test suite requires Node.js 20.19
+or later in the 20.x line, or Node.js 22.12 or later. CI also checks the built public API on Node.js 16.0.0.
+
 ```bash
 # Install dependencies
 npm install

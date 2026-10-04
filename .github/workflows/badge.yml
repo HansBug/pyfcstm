@@ -32,7 +32,7 @@ jobs:
           echo "CODE_LINES=$(./cloc.sh --loc)" >> $GITHUB_ENV
           echo "COMMENT_LINES=$(./cloc.sh --percentage)%" >> $GITHUB_ENV
       - name: Create Lines-of-Code-Badge
-        uses: schneegans/dynamic-badges-action@v1.0.0
+        uses: schneegans/dynamic-badges-action@v1.9.0
         with:
           auth: ${{ secrets.GIST_SECRET }}
           gistID: ${{ secrets.BADGE_GIST_ID }}
@@ -41,7 +41,7 @@ jobs:
           message: ${{ env.CODE_LINES }}
           color: lightgrey
       - name: Create Comments-Badge
-        uses: schneegans/dynamic-badges-action@v1.0.0
+        uses: schneegans/dynamic-badges-action@v1.9.0
         with:
           auth: ${{ secrets.GIST_SECRET }}
           gistID: ${{ secrets.BADGE_GIST_ID }}

@@ -66,7 +66,7 @@
     "elkjs": "^0.11.1",
     "naive-ui": "^2.38.0",
     "vscode-languageclient": "7.0.0",
-    "vue": "3.5.35"
+    "vue": "3.5.43"
   },
   "devDependencies": {
     "@types/node": "^16.0.0",
@@ -74,24 +74,24 @@
     "@typescript-eslint/eslint-plugin": "^5.0.0",
     "@typescript-eslint/parser": "^5.0.0",
     "@vscode/vsce": "^3.9.2",
-    "@vue/compiler-sfc": "3.5.35",
-    "esbuild": "^0.28.1",
+    "@vue/compiler-sfc": "3.5.43",
+    "esbuild": "^0.28.2",
     "eslint": "^8.0.0",
     "typescript": "^4.5.0",
     "unplugin-vue": "^7.2.0",
     "ws": "^8.22.0"
   },
   "overrides": {
-    "@vue/compiler-core": "3.5.35",
-    "@vue/compiler-dom": "3.5.35",
-    "@vue/compiler-sfc": "3.5.35",
-    "@vue/compiler-ssr": "3.5.35",
-    "@vue/reactivity": "3.5.35",
-    "@vue/runtime-core": "3.5.35",
-    "@vue/runtime-dom": "3.5.35",
-    "@vue/server-renderer": "3.5.35",
-    "@vue/shared": "3.5.35",
-    "vue": "3.5.35"
+    "@vue/compiler-core": "3.5.43",
+    "@vue/compiler-dom": "3.5.43",
+    "@vue/compiler-sfc": "3.5.43",
+    "@vue/compiler-ssr": "3.5.43",
+    "@vue/reactivity": "3.5.43",
+    "@vue/runtime-core": "3.5.43",
+    "@vue/runtime-dom": "3.5.43",
+    "@vue/server-renderer": "3.5.43",
+    "@vue/shared": "3.5.43",
+    "vue": "3.5.43"
   },
   "contributes": {
     "commands": [

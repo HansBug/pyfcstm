@@ -121,7 +121,7 @@
       "treeSha256": "feec04077159fd1c2cee9ba09d51b687d3b011c2886f2e61b761a8f8a930fc77",
       "version": "0.11.1"
     },
-    "esbuildVersion": "0.28.1",
+    "esbuildVersion": "0.28.2",
     "format": "iife",
     "resvgPackage": {
       "bindingPath": "index.min.js",
@@ -161,7 +161,7 @@
       "transitive": true,
       "version": "7.29.7"
     },
-    "esbuildVersion": "0.28.1",
+    "esbuildVersion": "0.28.2",
     "fflate": {
       "integrity": "sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==",
       "license": "MIT",

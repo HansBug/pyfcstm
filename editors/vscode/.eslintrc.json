@@ -11,6 +11,10 @@
     "plugin:@typescript-eslint/recommended"
   ],
   "rules": {
+    "@typescript-eslint/no-require-imports": [
+      "error",
+      { "allow": ["^@fcstm/elk-inline$", "^@fcstm/preview-webview-inline$"] }
+    ],
     "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
     "@typescript-eslint/no-explicit-any": "warn"
   },

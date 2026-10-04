@@ -307,7 +307,7 @@ jobs:
       - name: Set up Node.js for diagram assets
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
       - name: Set up python 3.11
         uses: actions/setup-python@v6
         with:
@@ -391,7 +391,7 @@ jobs:
       - name: Set up Node.js for diagram assets
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
       - name: Set up system dependencies
         shell: bash
         run: |
@@ -435,7 +435,7 @@ jobs:
       - name: Set up Node.js for diagram assets
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
       - name: Set up system dependencies
         shell: bash
         run: |
@@ -484,7 +484,7 @@ jobs:
       - name: Set up Node.js for diagram assets
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
       - name: Set up system dependencies
         shell: bash
         run: |
@@ -789,7 +789,7 @@ jobs:
       - name: Set up Node.js for diagram assets
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
       - name: Set up system dependences on Linux
         if: ${{ env.OS_NAME == 'Linux' }}
         shell: bash
@@ -936,7 +936,7 @@ jobs:
       - name: Set up Node.js for diagram assets
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
       - name: Set up system dependencies on Linux
         if: ${{ env.OS_NAME == 'Linux' }}
         shell: bash
@@ -1493,8 +1493,8 @@ jobs:
       fail-fast: false
       matrix:
         node-version:
-          - '20'
           - '22'
+          - '24'
 
     steps:
       - name: Checkout code
@@ -1560,7 +1560,7 @@ jobs:
           fetch-depth: 20
           submodules: 'recursive'
       - name: Set up Python 3.11
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
       - name: Install lint and runtime dependencies

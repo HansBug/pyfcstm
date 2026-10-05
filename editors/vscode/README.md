@@ -86,7 +86,7 @@ If you want to build the extension from source:
 
 #### Prerequisites
 
-- **Node.js** (v20 or later) and npm
+- **Node.js** (20.x from 20.19, 22.x from 22.13, or 24 and later) and npm
 - **Java** (JDK 11 or later) - required for ANTLR parser generation
 - **Python** (3.8 or later) - required for ANTLR setup
 - **Git** - for cloning the repository

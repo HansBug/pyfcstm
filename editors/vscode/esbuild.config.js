@@ -128,7 +128,7 @@ const extensionOptions = {
   external: ['vscode'],
   format: 'cjs',
   platform: 'node',
-  target: 'es2015',
+  target: ['es2015', 'node14.16'],
   sourcemap: production ? false : 'inline',
   minify: production,
   keepNames: true,

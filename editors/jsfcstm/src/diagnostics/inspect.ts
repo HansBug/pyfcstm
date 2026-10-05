@@ -1954,7 +1954,7 @@ function buildUnreachableTransitionDiagnostics(
                 const payloadTo = typeof toState === 'string' ? `${parent}.${toState}` : null;
                 keys = authored.filter(([, item]) => item.from_path === payloadFrom && (payloadTo === null || item.to_path === payloadTo))
                     .filter(([, item]) => typeof payload.guard !== 'string' || item.guard === payload.guard)
-                    .filter(([, item]) => typeof payload.event !== 'string' || item.event === payload.event || item.event?.split('.').at(-1) === payload.event)
+                    .filter(([, item]) => typeof payload.event !== 'string' || item.event === payload.event || item.event?.split('.').pop() === payload.event)
                     .filter(([, item]) => typeof payload.is_forced !== 'boolean' || item.is_forced === payload.is_forced)
                     .filter(([, item]) => typeof payload.transition_index !== 'number' || item.transition_index === payload.transition_index)
                     .map(([key]) => key);
@@ -2245,7 +2245,7 @@ function buildStructureStatistics(
                 if (typeof payloadEvent === 'string') {
                     keys = keys.filter(key => {
                         const event = authoredEntries.find(([candidate]) => candidate === key)![1].event;
-                        return event === payloadEvent || event?.split('.').at(-1) === payloadEvent;
+                        return event === payloadEvent || event?.split('.').pop() === payloadEvent;
                     });
                 }
                 if (typeof payloadForced === 'boolean') {

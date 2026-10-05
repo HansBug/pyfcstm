@@ -1,0 +1,53 @@
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /editors/jsfcstm
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    labels:
+      - "kind: maintenance"
+      - "area: editor"
+      - dependencies
+    ignore:
+      # Generated parsers and both language runtimes must share ANTLR 4.9.3.
+      - dependency-name: antlr4
+      # Protocol major upgrades need a coordinated client/server review.
+      - dependency-name: vscode-languageserver
+        update-types: ["version-update:semver-major"]
+      # The public package still supports Node 16.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: npm
+    directory: /editors/vscode
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    labels:
+      - "kind: maintenance"
+      - "area: editor"
+      - dependencies
+    ignore:
+      # Client 8 already requires VSCode 1.67, above our declared 1.60 floor.
+      - dependency-name: vscode-languageclient
+        update-types: ["version-update:semver-major"]
+      # Keep Node types compatible with the legacy extension host and compiler.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      # Keep the type surface on the same minor as engines.vscode.
+      - dependency-name: "@types/vscode"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 2
+    labels:
+      - "kind: maintenance"
+      - "area: ci"
+      - dependencies

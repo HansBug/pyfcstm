@@ -773,7 +773,7 @@ function collectNodeOccurrences(
         if (action.ref?.resolved) {
             const target = findActionById(semantic, action.ref.targetActionId);
             if (target) {
-                const refName = target.name || action.ref.rawPath.split('.').at(-1) || action.ref.rawPath;
+                const refName = target.name || action.ref.rawPath.split('.').pop() || action.ref.rawPath;
                 occurrences.push({
                     key: actionOccurrenceKey(target),
                     kind: 'action',
@@ -967,7 +967,7 @@ function collectNodeOccurrences(
         if (transition.trigger?.eventId) {
             const event = findEventById(semantic, transition.trigger.eventId);
             if (event) {
-                const eventName = transition.trigger.normalizedPath.at(-1) || event.name;
+                const eventName = transition.trigger.normalizedPath.slice(-1)[0] || event.name;
                 occurrences.push({
                     key: eventOccurrenceKey(event),
                     kind: 'event',

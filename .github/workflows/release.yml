@@ -30,7 +30,7 @@ jobs:
       full_commit: ${{ steps.resolve.outputs.full_commit }}
     steps:
       - name: Checkout requested release ref
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
           fetch-depth: 0
@@ -62,17 +62,17 @@ jobs:
       tag: ${{ steps.identity.outputs.tag }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve_release_target.outputs.full_commit }}
           fetch-depth: 0
           submodules: 'recursive'
       - name: Set up Node.js for diagram assets
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
       - name: Set up Python 3.8
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.8'
       - name: Set up python dependences
@@ -125,7 +125,7 @@ jobs:
           } > dist/build-identity.txt
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - name: Upload staged Python artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pyfcstm-release-python
           if-no-files-found: error
@@ -153,16 +153,16 @@ jobs:
           : > "$RUNNER_TEMP/java-version.txt"
           : > "$RUNNER_TEMP/plantuml-version.txt"
       - name: Set up Python 3.8
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.8'
       - name: Set up Java runtime
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
       - name: Download staged Python artifacts only
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: pyfcstm-release-python
           path: ${{ runner.temp }}/pyfcstm-release-python
@@ -309,7 +309,7 @@ jobs:
           done
       - name: Upload fresh Python evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pyfcstm-release-python-selfcheck
           if-no-files-found: error
@@ -325,25 +325,25 @@ jobs:
     if: ${{ always() && needs.resolve_release_target.result == 'success' && needs.package_fresh.result == 'success' && needs.release_cli_fresh.result == 'success' && needs.release_cli_controlled_linux.result == 'success' }}
     steps:
       - name: Download the exact staged Python artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: pyfcstm-release-python
           path: ${{ runner.temp }}/pyfcstm-release-gate/python
       - name: Download staged Ubuntu CLI artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: pyfcstm-release-cli-ubuntu-22.04
           path: ${{ runner.temp }}/pyfcstm-release-gate/cli/pyfcstm-release-cli-ubuntu-22.04
       - name: Download staged Windows CLI artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: pyfcstm-release-cli-windows-2022
           path: ${{ runner.temp }}/pyfcstm-release-gate/cli/pyfcstm-release-cli-windows-2022
       - name: Download staged macOS CLI artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
-          name: pyfcstm-release-cli-macos-14
-          path: ${{ runner.temp }}/pyfcstm-release-gate/cli/pyfcstm-release-cli-macos-14
+          name: pyfcstm-release-cli-macos-15
+          path: ${{ runner.temp }}/pyfcstm-release-gate/cli/pyfcstm-release-cli-macos-15
       - name: Confirm fresh results and staged sidecars
         env:
           TARGET_COMMIT: ${{ needs.resolve_release_target.outputs.full_commit }}
@@ -434,7 +434,7 @@ jobs:
           if {path.name for path in cli_directories} != {
               "pyfcstm-release-cli-ubuntu-22.04",
               "pyfcstm-release-cli-windows-2022",
-              "pyfcstm-release-cli-macos-14",
+              "pyfcstm-release-cli-macos-15",
           }:
               raise SystemExit("CLI artifact matrix is incomplete: {}".format(cli_directories))
           for directory in cli_directories:
@@ -452,7 +452,7 @@ jobs:
     if: ${{ needs.resolve_release_target.result == 'success' && needs.package_stage.result == 'success' && needs.release_gate.result == 'success' }}
     steps:
       - name: Download the exact staged artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: pyfcstm-release-python
           path: ${{ runner.temp }}/pyfcstm-release-python
@@ -481,7 +481,7 @@ jobs:
           cp "$RUNNER_TEMP/pyfcstm-release-python"/*.whl "$publish"/
           cp "$RUNNER_TEMP/pyfcstm-release-python"/*.tar.gz "$publish"/
       - name: Publish only verified Python distributions
-        uses: pypa/gh-action-pypi-publish@v1.13.0
+        uses: pypa/gh-action-pypi-publish@v1.14.2
         with:
           password: ${{ secrets.PYPI_PASSWORD }}
           packages-dir: ${{ runner.temp }}/pyfcstm-release-python-publish
@@ -506,16 +506,16 @@ jobs:
           - 18080:8080
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 20
           submodules: 'recursive'
       - name: Set up Node.js for diagram assets
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
       - name: Set up python 3.11
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Install docs PDF dependencies
@@ -617,14 +617,14 @@ jobs:
         os:
           - 'ubuntu-22.04'
           - 'windows-2022'
-          - 'macos-14'
+          - 'macos-15'
         python-version:
           - '3.7'
         exclude:
-          - os: 'macos-14'
+          - os: 'macos-15'
             python-version: '3.7'
         include:
-          - os: 'macos-14'
+          - os: 'macos-15'
             python-version: '3.8'
 
     steps:
@@ -660,15 +660,15 @@ jobs:
         run: |
           echo "IS_PYPY=1" >> $GITHUB_ENV
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.resolve_release_target.outputs.full_commit }}
           fetch-depth: 0
           submodules: 'recursive'
       - name: Set up Node.js for diagram assets
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
       - name: Set up system dependencies on Linux
         if: ${{ env.OS_NAME == 'Linux' }}
         shell: bash
@@ -712,7 +712,7 @@ jobs:
           echo "PKG_CONFIG_PATH=${BREW_PREFIX}/lib/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" >> $GITHUB_ENV
           echo "DYLD_FALLBACK_LIBRARY_PATH=${BREW_PREFIX}/lib${DYLD_FALLBACK_LIBRARY_PATH:+:${DYLD_FALLBACK_LIBRARY_PATH}}" >> $GITHUB_ENV
       - name: Set up python ${{ matrix.python-version }}
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
@@ -835,7 +835,7 @@ jobs:
           ))
           PY
       - name: Upload staged standalone artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pyfcstm-release-cli-${{ matrix.os }}
           if-no-files-found: error
@@ -855,7 +855,7 @@ jobs:
         os:
           - ubuntu-22.04
           - windows-2022
-          - macos-14
+          - macos-15
     timeout-minutes: 25
     steps:
       - name: Prepare self-check evidence directory
@@ -871,12 +871,12 @@ jobs:
           : > "$RUNNER_TEMP/plantuml-service.log"
       - name: Set up Java runtime
         continue-on-error: true
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
       - name: Download only the staged CLI artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: pyfcstm-release-cli-${{ matrix.os }}
           path: ${{ runner.temp }}/pyfcstm-release-cli
@@ -964,7 +964,7 @@ jobs:
           readiness_status=$?
           set -e
           unzip -q "$archive" -d "$root"
-          if [ "${{ matrix.os }}" = "macos-14" ]; then
+          if [ "${{ matrix.os }}" = "macos-15" ]; then
             if xattr -lr "$root" 2>/dev/null | grep -q com.apple.quarantine; then
               xattr -dr com.apple.quarantine "$root"
             fi
@@ -1019,7 +1019,7 @@ jobs:
           PY
       - name: Upload fresh CLI evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pyfcstm-release-cli-selfcheck-${{ matrix.os }}
           if-no-files-found: error
@@ -1052,12 +1052,12 @@ jobs:
           : > "$RUNNER_TEMP/java-version.txt"
           : > "$RUNNER_TEMP/plantuml-version.txt"
       - name: Set up Java runtime
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
       - name: Download only the staged Ubuntu CLI artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: pyfcstm-release-cli-ubuntu-22.04
           path: ${{ runner.temp }}/pyfcstm-release-cli
@@ -1165,7 +1165,7 @@ jobs:
           PY
       - name: Upload controlled CLI evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pyfcstm-release-cli-controlled-ubuntu
           if-no-files-found: error
@@ -1185,10 +1185,10 @@ jobs:
         os:
           - ubuntu-22.04
           - windows-2022
-          - macos-14
+          - macos-15
     steps:
       - name: Download the exact verified CLI artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: pyfcstm-release-cli-${{ matrix.os }}
           path: ${{ runner.temp }}/pyfcstm-release-cli
@@ -1243,22 +1243,22 @@ jobs:
 
   release_vscode_extension:
     name: VSCode Extension Build And Release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: ${{ github.repository == 'hansbug/pyfcstm' && github.event_name == 'release' && github.event.action == 'published' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 20
 
       - name: Set up Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '11'
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.8'
 
@@ -1272,9 +1272,9 @@ jobs:
           make antlr
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install vsce (VSCode Extension Manager)
         run: |

@@ -31,21 +31,21 @@ jobs:
       fail-fast: false
       matrix:
         os:
-          - 'ubuntu-latest'
+          - 'ubuntu-24.04'
         python-version:
           - '3.8'
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 20
       - name: Set up Node.js for diagram assets
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
       - name: Set up python ${{ matrix.python-version }}
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
       - name: Set up python dependences
@@ -69,7 +69,7 @@ jobs:
             echo "full_commit=$GITHUB_SHA"
             echo 'dirty=0'
             echo 'tag='
-            echo 'platform=ubuntu-latest'
+            echo 'platform=ubuntu-24.04'
           } > dist/build-identity.txt
           python - <<'PY' > dist/artifact-sha256.txt
           import hashlib
@@ -87,7 +87,7 @@ jobs:
           PY
           ls -al dist
       - name: Upload packed files to artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: build-artifacts-source-pack
           path: ./dist/*
@@ -114,16 +114,16 @@ jobs:
           : > "$RUNNER_TEMP/java-version.txt"
           : > "$RUNNER_TEMP/plantuml-version.txt"
       - name: Set up Python 3.7
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.7'
       - name: Set up Java runtime
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
       - name: Download only the built wheel artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: build-artifacts-source-pack
           path: ${{ runner.temp }}/pyfcstm-package-artifact
@@ -183,7 +183,7 @@ jobs:
             'schema=pyfcstm-build-identity/v1' \
             'artifact_kind=python-distributions' \
             "full_commit=$GITHUB_SHA" \
-            'dirty=0' 'tag=' 'platform=ubuntu-latest'
+            'dirty=0' 'tag=' 'platform=ubuntu-24.04'
           grep -F "full_commit=$GITHUB_SHA" "$identity"
           wheel_name=$(basename "$wheel")
           actual_digest=$(python - "$wheel" <<'PY'
@@ -267,7 +267,7 @@ jobs:
           PY
       - name: Upload fresh Linux wheel evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pyfcstm-wheel-selfcheck-ubuntu-22.04
           if-no-files-found: error
@@ -287,7 +287,7 @@ jobs:
         include:
           - os: windows-2022
             python-version: '3.7'
-          - os: macos-14
+          - os: macos-15
             python-version: '3.8'
     timeout-minutes: 25
     steps:
@@ -303,17 +303,17 @@ jobs:
           : > "$RUNNER_TEMP/plantuml-readiness.txt"
           : > "$RUNNER_TEMP/plantuml-service.log"
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
       - name: Set up Java runtime
         continue-on-error: true
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
       - name: Download only the built wheel artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: build-artifacts-source-pack
           path: ${{ runner.temp }}/pyfcstm-package-artifact
@@ -392,7 +392,7 @@ jobs:
             'schema=pyfcstm-build-identity/v1' \
             'artifact_kind=python-distributions' \
             "full_commit=$GITHUB_SHA" \
-            'dirty=0' 'tag=' 'platform=ubuntu-latest'
+            'dirty=0' 'tag=' 'platform=ubuntu-24.04'
           grep -F "full_commit=$GITHUB_SHA" "$identity"
           wheel_name=$(basename "$wheel")
           expected_digest=$(awk -v file="$wheel_name" '$3 == "dist/" file || $3 == file {print $1}' "$digest_file")
@@ -476,7 +476,7 @@ jobs:
           PY
       - name: Upload fresh wheel evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pyfcstm-wheel-selfcheck-${{ matrix.os }}
           if-no-files-found: error
@@ -507,16 +507,16 @@ jobs:
           : > "$RUNNER_TEMP/java-version.txt"
           : > "$RUNNER_TEMP/plantuml-version.txt"
       - name: Set up Python 3.7
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.7'
       - name: Set up Java runtime
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
       - name: Download only the built sdist artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: build-artifacts-source-pack
           path: ${{ runner.temp }}/pyfcstm-package-artifact
@@ -576,7 +576,7 @@ jobs:
             'schema=pyfcstm-build-identity/v1' \
             'artifact_kind=python-distributions' \
             "full_commit=$GITHUB_SHA" \
-            'dirty=0' 'tag=' 'platform=ubuntu-latest'
+            'dirty=0' 'tag=' 'platform=ubuntu-24.04'
           grep -F "full_commit=$GITHUB_SHA" "$identity"
           sdist_name=$(basename "$sdist")
           actual_digest=$(python - "$sdist" <<'PY'
@@ -660,7 +660,7 @@ jobs:
           PY
       - name: Upload fresh sdist evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pyfcstm-sdist-selfcheck
           if-no-files-found: error
@@ -681,15 +681,15 @@ jobs:
     needs: source_release
     steps:
       - name: Checkout the export harness
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Download only the built wheel artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: build-artifacts-source-pack
           path: ${{ runner.temp }}/pyfcstm-package-artifact
@@ -725,16 +725,16 @@ jobs:
           - 18080:8080
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 20
           submodules: 'recursive'
       - name: Set up Node.js for diagram assets
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
       - name: Set up python 3.11
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Install docs PDF dependencies
@@ -817,7 +817,7 @@ jobs:
           fi
           sha256sum "${staged_pdfs[@]}"
       - name: Upload bilingual PDFs to artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: build-artifacts-docs-pdf
           if-no-files-found: error
@@ -833,14 +833,14 @@ jobs:
         os:
           - 'ubuntu-22.04'
           - 'windows-2022'
-          - 'macos-14'
+          - 'macos-15'
         python-version:
           - '3.7'
         exclude:
-          - os: 'macos-14'
+          - os: 'macos-15'
             python-version: '3.7'
         include:
-          - os: 'macos-14'
+          - os: 'macos-15'
             python-version: '3.8'
 
     steps:
@@ -876,14 +876,14 @@ jobs:
         run: |
           echo "IS_PYPY=1" >> $GITHUB_ENV
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 20
           submodules: 'recursive'
       - name: Set up Node.js for diagram assets
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
       - name: Set up system dependencies on Linux
         if: ${{ env.OS_NAME == 'Linux' }}
         shell: bash
@@ -927,7 +927,7 @@ jobs:
           echo "PKG_CONFIG_PATH=${BREW_PREFIX}/lib/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" >> $GITHUB_ENV
           echo "DYLD_FALLBACK_LIBRARY_PATH=${BREW_PREFIX}/lib${DYLD_FALLBACK_LIBRARY_PATH:+:${DYLD_FALLBACK_LIBRARY_PATH}}" >> $GITHUB_ENV
       - name: Set up python ${{ matrix.python-version }}
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
@@ -1043,12 +1043,12 @@ jobs:
           ))
           PY
       - name: Upload packed files to artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pyfcstm-v${{ env.PACKAGE_VERSION }}-${{ env.OS_NAME }}-${{ env.CPU_ARCH }}-${{ env.GIT_COMMIT_ID }}
           path: ./dist/*
       - name: Upload exact CLI artifact for fresh verification
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pyfcstm-release-test-cli-${{ matrix.os }}
           if-no-files-found: error
@@ -1068,7 +1068,7 @@ jobs:
         os:
           - ubuntu-22.04
           - windows-2022
-          - macos-14
+          - macos-15
     timeout-minutes: 25
     steps:
       - name: Prepare self-check evidence directory
@@ -1084,12 +1084,12 @@ jobs:
           : > "$RUNNER_TEMP/plantuml-service.log"
       - name: Set up Java runtime
         continue-on-error: true
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
       - name: Download only the built CLI artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: pyfcstm-release-test-cli-${{ matrix.os }}
           path: ${{ runner.temp }}/pyfcstm-release-test-cli
@@ -1183,7 +1183,7 @@ jobs:
           cp "$identity" "$reports/build-identity.txt"
           cp "$digest_file" "$reports/artifact-sha256.txt"
           unzip -q "$archive" -d "$root"
-          if [ "${{ matrix.os }}" = "macos-14" ]; then
+          if [ "${{ matrix.os }}" = "macos-15" ]; then
             xattr -dr com.apple.quarantine "$root" 2>/dev/null || true
           fi
           if find "$root" -type d -name pyfcstm -print -quit | grep -q .; then
@@ -1245,7 +1245,7 @@ jobs:
           PY
       - name: Upload fresh CLI evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pyfcstm-release-test-cli-selfcheck-${{ matrix.os }}
           if-no-files-found: error
@@ -1312,23 +1312,23 @@ jobs:
 
   release_vscode_extension:
     name: VSCode Extension Build And Release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: "!contains(github.event.head_commit.message, 'ci skip')"
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 20
 
       - name: Set up Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '11'
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.8'
 
@@ -1342,9 +1342,9 @@ jobs:
           make antlr
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install vsce (VSCode Extension Manager)
         run: |
@@ -1364,6 +1364,9 @@ jobs:
         run: |
           make vscode
           ls -lh editors/vscode/build/
+      - name: Check extension types against the declared VSCode floor
+        working-directory: editors/vscode
+        run: npm run compile:tsc
 
       - name: Require the preview to outline its own drawing
         # The extension asks an installed ``pyfcstm[viz]`` to expand, rather than
@@ -1389,8 +1392,15 @@ jobs:
           echo "VSIX_FILE=${VSIX_FILE}" >> $GITHUB_OUTPUT
           echo "VSIX_BASENAME=$(basename ${VSIX_FILE})" >> $GITHUB_OUTPUT
 
+      - name: Set up the VSCode 1.60 extension host runtime
+        uses: actions/setup-node@v7
+        with:
+          node-version: '14.16.0'
+      - name: Check the built extension on the VSCode runtime floor
+        working-directory: editors/vscode
+        run: node scripts/test-e2e.js
       - name: Upload VSCode extension to artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vscode-extension-${{ steps.ext_version.outputs.NAME }}-v${{ steps.ext_version.outputs.VERSION }}
           path: ${{ steps.find_vsix.outputs.VSIX_FILE }}

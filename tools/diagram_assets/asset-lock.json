@@ -121,7 +121,7 @@
       "treeSha256": "feec04077159fd1c2cee9ba09d51b687d3b011c2886f2e61b761a8f8a930fc77",
       "version": "0.11.1"
     },
-    "esbuildVersion": "0.28.1",
+    "esbuildVersion": "0.28.2",
     "format": "iife",
     "resvgPackage": {
       "bindingPath": "index.min.js",
@@ -161,7 +161,7 @@
       "transitive": true,
       "version": "7.29.7"
     },
-    "esbuildVersion": "0.28.1",
+    "esbuildVersion": "0.28.2",
     "fflate": {
       "integrity": "sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==",
       "license": "MIT",
@@ -187,11 +187,11 @@
     },
     "target": "es2019",
     "xmldom": {
-      "integrity": "sha512-cQzWCtO6C8TQiYl1ruKNn2U6Ao4o4WBBcbL61yJl84x+j5sOWWFU9X7DpND8XZG3daDppSsigMdfAIl2upQBRw==",
+      "integrity": "sha512-/5NV/vDALVFDXgLmfsy9TRCBlKwO2LNBFzpzvb9iIj+jR+eSc6DLYYvVOdivT/jm7MtU6TebYuRmzEOI7w40UA==",
       "license": "MIT",
       "name": "@xmldom/xmldom",
-      "resolved": "https://registry.npmmirror.com/@xmldom/xmldom/-/xmldom-0.8.11.tgz",
-      "version": "0.8.11"
+      "resolved": "https://registry.npmmirror.com/@xmldom/xmldom/-/xmldom-0.8.15.tgz",
+      "version": "0.8.15"
     }
   }
 }

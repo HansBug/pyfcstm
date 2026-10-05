@@ -29,12 +29,12 @@ jobs:
       selected_suites: ${{ steps.detect.outputs.selected_suites }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           submodules: 'recursive'
       - name: Set up python 3.11
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Detect selected template suites
@@ -167,12 +167,12 @@ jobs:
       fail_closed: ${{ steps.detect.outputs.fail_closed }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           submodules: 'recursive'
       - name: Set up python 3.11
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Detect CI routes
@@ -300,16 +300,16 @@ jobs:
     if: ${{ needs.detect_ci_routes.outputs.run_expensive_code_test == 'true' && !contains(github.event.head_commit.message, 'ci skip') && !contains(github.event.head_commit.message, 'test skip') && !contains(github.event.head_commit.message, '[python skip]') }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           submodules: 'recursive'
       - name: Set up Node.js for diagram assets
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
       - name: Set up python 3.11
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Build diagram assets
@@ -384,21 +384,21 @@ jobs:
     if: ${{ needs.detect_ci_routes.outputs.run_expensive_code_test == 'true' && !contains(github.event.head_commit.message, 'ci skip') && !contains(github.event.head_commit.message, 'test skip') && !contains(github.event.head_commit.message, '[python skip]') }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 20
           submodules: 'recursive'
       - name: Set up Node.js for diagram assets
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
       - name: Set up system dependencies
         shell: bash
         run: |
           sudo apt-get update
           sudo apt-get install -y tree cloc wget curl make zip cmake build-essential clang-format gcc g++ clang
       - name: Set up python 3.11
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Install dependencies
@@ -428,21 +428,21 @@ jobs:
       matrix: ${{ fromJson(needs.detect_template_suites.outputs.template_matrix) }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 20
           submodules: 'recursive'
       - name: Set up Node.js for diagram assets
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
       - name: Set up system dependencies
         shell: bash
         run: |
           sudo apt-get update
           sudo apt-get install -y tree cloc wget curl make zip cmake build-essential clang-format gcc g++ clang
       - name: Set up python 3.11
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Install dependencies
@@ -477,21 +477,21 @@ jobs:
           - '3.11'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 20
           submodules: 'recursive'
       - name: Set up Node.js for diagram assets
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
       - name: Set up system dependencies
         shell: bash
         run: |
           sudo apt-get update
           sudo apt-get install -y make curl tar gzip
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install diagram dependencies
@@ -735,7 +735,7 @@ jobs:
         os:
           - 'ubuntu-22.04'
           - 'windows-2022'
-          - 'macos-14'
+          - 'macos-15'
         python-version:
           - '3.7'
           - '3.8'
@@ -746,7 +746,7 @@ jobs:
           - '3.13'
           - '3.14'
         exclude:
-          - os: 'macos-14'
+          - os: 'macos-15'
             python-version: '3.7'
 
     steps:
@@ -782,14 +782,14 @@ jobs:
         run: |
           echo "IS_PYPY=1" >> $GITHUB_ENV
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 20
           submodules: 'recursive'
       - name: Set up Node.js for diagram assets
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
       - name: Set up system dependences on Linux
         if: ${{ env.OS_NAME == 'Linux' }}
         shell: bash
@@ -815,7 +815,7 @@ jobs:
           brew install tree cloc wget curl make zip
           brew install sevenzip
       - name: Set up python ${{ matrix.python-version }}
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
@@ -886,14 +886,14 @@ jobs:
         os:
           - 'ubuntu-22.04'
           - 'windows-2022'
-          - 'macos-14'
+          - 'macos-15'
         python-version:
           - '3.7'
         exclude:
-          - os: 'macos-14'
+          - os: 'macos-15'
             python-version: '3.7'
         include:
-          - os: 'macos-14'
+          - os: 'macos-15'
             python-version: '3.8'
 
     steps:
@@ -929,14 +929,14 @@ jobs:
         run: |
           echo "IS_PYPY=1" >> $GITHUB_ENV
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 20
           submodules: 'recursive'
       - name: Set up Node.js for diagram assets
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
       - name: Set up system dependencies on Linux
         if: ${{ env.OS_NAME == 'Linux' }}
         shell: bash
@@ -980,7 +980,7 @@ jobs:
           echo "PKG_CONFIG_PATH=${BREW_PREFIX}/lib/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}" >> $GITHUB_ENV
           echo "DYLD_FALLBACK_LIBRARY_PATH=${BREW_PREFIX}/lib${DYLD_FALLBACK_LIBRARY_PATH:+:${DYLD_FALLBACK_LIBRARY_PATH}}" >> $GITHUB_ENV
       - name: Set up python ${{ matrix.python-version }}
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
@@ -1094,11 +1094,11 @@ jobs:
               digest.hexdigest(), os.path.getsize(path), os.path.basename(path)
           ))
           PY
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: pyfcstm-v${{ env.PACKAGE_VERSION }}-${{ env.OS_NAME }}-${{ env.CPU_ARCH }}-${{ env.GIT_COMMIT_ID }}
           path: dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: pyfcstm-cli-${{ matrix.os }}
           if-no-files-found: error
@@ -1130,12 +1130,12 @@ jobs:
           : > "$RUNNER_TEMP/plantuml-version.txt"
       - name: Set up Java runtime
         continue-on-error: true
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
       - name: Download only the built CLI artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: pyfcstm-cli-ubuntu-22.04
           path: ${{ runner.temp }}/pyfcstm-cli-artifact
@@ -1269,7 +1269,7 @@ jobs:
           PY
       - name: Upload clean CLI evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pyfcstm-cli-selfcheck-ubuntu
           if-no-files-found: error
@@ -1290,8 +1290,8 @@ jobs:
           - os: windows-2022
             artifact: pyfcstm-cli-windows-2022
             exe: pyfcstm.exe
-          - os: macos-14
-            artifact: pyfcstm-cli-macos-14
+          - os: macos-15
+            artifact: pyfcstm-cli-macos-15
             exe: pyfcstm
     timeout-minutes: 20
     steps:
@@ -1308,12 +1308,12 @@ jobs:
           : > "$RUNNER_TEMP/plantuml-service.log"
       - name: Set up Java runtime
         continue-on-error: true
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
       - name: Download only the built CLI artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ${{ matrix.artifact }}
           path: ${{ runner.temp }}/pyfcstm-cli-artifact
@@ -1415,7 +1415,7 @@ jobs:
           readiness_status=$?
           set -e
           unzip -q "$archive" -d "$root"
-          if [ "${{ matrix.os }}" = "macos-14" ]; then
+          if [ "${{ matrix.os }}" = "macos-15" ]; then
             xattr -dr com.apple.quarantine "$root" 2>/dev/null || true
           fi
           if find "$root" -type d -name pyfcstm -print -quit | grep -q .; then
@@ -1468,7 +1468,7 @@ jobs:
           PY
       - name: Upload clean CLI evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pyfcstm-cli-selfcheck-${{ matrix.os }}
           if-no-files-found: error
@@ -1493,21 +1493,21 @@ jobs:
       fail-fast: false
       matrix:
         node-version:
-          - '20'
           - '22'
+          - '24'
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 20
           submodules: 'recursive'
       - name: Set up Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node-version }}
       - name: Set up Java (ANTLR runtime for JS parser generation)
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -1528,6 +1528,13 @@ jobs:
         # Same script the unit tests used previously, now with coverage.
         working-directory: editors/jsfcstm
         run: npm test
+      - name: Set up the published package runtime floor
+        uses: actions/setup-node@v7
+        with:
+          node-version: '16.0.0'
+      - name: Check the built public package on Node 16
+        working-directory: editors/jsfcstm
+        run: node scripts/check-runtime.js
       - name: Upload jsfcstm coverage to Codecov
         # Mirror the python matrix: every matrix cell uploads, codecov
         # merges by flag. Avoids dropping coverage if one Node leg fails.
@@ -1555,12 +1562,12 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 20
           submodules: 'recursive'
       - name: Set up Python 3.11
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Install lint and runtime dependencies

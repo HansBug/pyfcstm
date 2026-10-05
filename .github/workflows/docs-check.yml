@@ -57,12 +57,12 @@ jobs:
       fail_closed: ${{ steps.detect.outputs.fail_closed }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           submodules: 'recursive'
       - name: Set up python 3.11
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Detect docs routes
@@ -172,16 +172,16 @@ jobs:
     needs: detect_docs_routes
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 20
           submodules: 'recursive'
       - name: Set up Node.js for diagram assets
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
       - name: Set up python 3.11
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Install docs dependencies
@@ -308,16 +308,16 @@ jobs:
           - 18080:8080
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 20
           submodules: 'recursive'
       - name: Set up Node.js for diagram assets
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
       - name: Set up python 3.11
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Install docs PDF dependencies
@@ -384,7 +384,7 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
       - name: Upload PDF build evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: docs-pdf-evidence
           if-no-files-found: warn
@@ -412,16 +412,16 @@ jobs:
           - 18080:8080
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3.3.0
+        uses: actions/checkout@v7
         with:
           fetch-depth: 20
           submodules: 'recursive'
       - name: Set up Node.js for diagram assets
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
       - name: Set up python 3.11
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Install docs resource dependencies

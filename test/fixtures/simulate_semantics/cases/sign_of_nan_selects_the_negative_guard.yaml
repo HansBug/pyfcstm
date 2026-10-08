@@ -1,0 +1,29 @@
+title: a guard on sign(NaN) takes the negative branch
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/522
+  notes:
+  - >-
+    BMC core exclusion: BMC reasons over real numbers, which have no NaN, so sign(NaN) has no Z3 encoding to check here; the simulator and generated runtimes carry the case.
+  - >-
+    Same ruling as the assignment case: sign(NaN) is -1, so the negative guard
+    is the one that holds and the zero guard does not.
+exclude_runners:
+- bmc_core
+categories:
+- runtime
+- template_alignment
+- lifecycle
+steps:
+- cycle: []
+  expect:
+    state: Root.A
+    vars:
+      marker: 0
+    ended: false
+- cycle: []
+  expect:
+    state: Root.Neg
+    vars:
+      marker: 1
+    ended: false

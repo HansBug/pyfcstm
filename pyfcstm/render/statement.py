@@ -53,7 +53,7 @@ from typing import Any, Dict, Iterable, Mapping, Optional, Set, Tuple, Union
 
 import jinja2
 
-from .expr import create_expr_render_template, fn_expr_render
+from .expr import create_expr_render_template, fn_expr_render, power_result_type
 from ..dsl import node as dsl_nodes
 from ..model import OperationStatement
 from ..utils import add_settings_for_env
@@ -134,7 +134,7 @@ _JAVA_STYLE = {
     'temp_var_target': '{{ name }}',
     'assign': '{{ target }} = {{ expr }};',
     'declare_temp': '{{ temp_type }} {{ name }};',
-    'temp_type_aliases': {'int': 'int', 'float': 'double'},
+    'temp_type_aliases': {'int': 'long', 'float': 'double'},
     'temp_type_fallback': 'double',
     'if': 'if ({{ condition }}) {',
     'elif': '} else if ({{ condition }}) {',
@@ -435,6 +435,8 @@ def _infer_expr_type(node: dsl_nodes.Expr, known_types: Mapping[str, str]) -> Op
         right = _infer_expr_type(node.expr2, known_types)
         if node.op == '/':
             return 'float'
+        if node.op == '**':
+            return power_result_type(left, right, node.expr2)
         return _merge_numeric_types(left, right)
     if isinstance(node, dsl_nodes.ConditionalOp):
         return _merge_numeric_types(

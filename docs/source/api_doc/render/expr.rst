@@ -6,6 +6,12 @@ pyfcstm.render.expr
 .. automodule:: pyfcstm.render.expr
 
 
+power\_result\_type
+-----------------------------------------------------
+
+.. autofunction:: power_result_type
+
+
 fn\_expr\_render
 -----------------------------------------------------
 

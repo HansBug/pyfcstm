@@ -36,7 +36,7 @@ Example::
 import math
 import operator
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Tuple, Type
+from typing import Callable, Dict, List, Optional, Sequence, Tuple, Type
 
 import z3
 
@@ -294,7 +294,11 @@ def lookup(token: str) -> OpSpec:
     return CATALOG[canonical_token(token)]
 
 
-def coarse_result_type(token: str, *operands: Optional[str]) -> Optional[str]:
+def coarse_result_type(
+    token: str,
+    *operands: Optional[str],
+    constants: Sequence[Optional[object]] = (),
+) -> Optional[str]:
     """
     Return the result type of an operation on coarse operand types.
 
@@ -307,6 +311,10 @@ def coarse_result_type(token: str, *operands: Optional[str]) -> Optional[str]:
     :type token: str
     :param operands: Coarse type of each operand, ``None`` when unknown.
     :type operands: Optional[str]
+    :param constants: Literal value of each operand, ``None`` when the operand
+        is not a literal, defaults to ``()``.  Only ``**`` reads it: a literal
+        exponent decides whether an integer power is an int or a float.
+    :type constants: Sequence[Optional[object]], optional
     :return: ``"int"``, ``"float"``, ``"bool"``, or ``None`` when the result
         type depends on operand types that are not known.
     :rtype: Optional[str]
@@ -322,7 +330,10 @@ def coarse_result_type(token: str, *operands: Optional[str]) -> Optional[str]:
         >>> coarse_result_type("abs", None) is None
         True
     """
-    result = lookup(token).typing(tuple(NUMBER if item is None else item for item in operands))
+    result = lookup(token).typing(
+        tuple(NUMBER if item is None else item for item in operands),
+        tuple(constants),
+    )
     return None if result == NUMBER else result
 
 
@@ -355,13 +366,13 @@ def _always(result: str) -> Callable[..., str]:
 
 def _power_type(types, constants=()) -> str:
     # ``int ** int`` is an int for a non-negative exponent and a float for a
-    # negative one, so it is statically an int only when the exponent is a
-    # non-negative literal.
+    # negative one.  A literal exponent decides which; an unknown exponent
+    # leaves the type open.
     if FLOAT in types:
         return FLOAT
     exponent = constants[1] if len(constants) > 1 else None
-    if types == (INT, INT) and exponent is not None and exponent >= 0:
-        return INT
+    if types == (INT, INT) and exponent is not None:
+        return INT if exponent >= 0 else FLOAT
     return NUMBER
 
 

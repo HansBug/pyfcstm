@@ -55,10 +55,11 @@ def _runtime_exception_from_message(message):
             'negative shift count' in cause_text
             or 'math domain error' in cause_text
             or 'fractional power' in cause_text
+            or 'cannot convert float NaN to integer' in cause_text
         ):
             # ValueError is what Python raises for a negative shift count, a
-            # math function outside its domain, and a power whose result
-            # would be complex.
+            # math function outside its domain, a power whose result would be
+            # complex, and a NaN converted to an integer.
             cause = ValueError(cause_text)
         else:
             cause = ArithmeticError(cause_text)
@@ -73,11 +74,16 @@ def _runtime_exception_from_message(message):
         # a chained cause.
         return SimulationRuntimeExpressionError(message), None
     if (
-        'outside signed 64-bit range' in message
-        or 'non-integer float' in message
+        'non-integer float' in message
         or 'must not be bool' in message
         or 'must be int or float' in message
         or 'must be finite' in message
+    ):
+        # Persistent-value rejections are runtime expression errors in every
+        # runtime, including construction, so the class matches the simulator.
+        return SimulationRuntimeExpressionError(message), None
+    if (
+        'outside signed 64-bit range' in message
         or 'cannot reach a stoppable state' in message
     ):
         return ValueError(message), None
@@ -600,22 +606,22 @@ class _CRuntime(NativeRoleSupport):
         for name, value in initial_vars.items():
             source = "initial_vars[{!r}]".format(name)
             if type(value) is bool:
-                raise ValueError('{} must not be bool'.format(source))
+                raise SimulationRuntimeExpressionError('{} must not be bool'.format(source))
             if type(value) not in (int, float):
-                raise ValueError(
+                raise SimulationRuntimeExpressionError(
                     '{} must be int or float, got {}'.format(
                         source, type(value).__name__
                     )
                 )
             if type(value) is float and not math.isfinite(value):
-                raise ValueError(
+                raise SimulationRuntimeExpressionError(
                     '{} for variable {!r} declared {} must be finite, got {!r}'.format(
                         source, name, self._var_types[name], value
                     )
                 )
             if self._var_types[name] == 'int' and type(value) is float:
                 if value != int(value):
-                    raise ValueError(
+                    raise SimulationRuntimeExpressionError(
                         "Variable {!r} is int type, cannot assign float {!r}; "
                         "non-integer float from {}".format(name, value, source)
                     )
@@ -623,7 +629,7 @@ class _CRuntime(NativeRoleSupport):
             elif self._var_types[name] == 'float':
                 value = float(value)
                 if not math.isfinite(value):
-                    raise ValueError(
+                    raise SimulationRuntimeExpressionError(
                         '{} for variable {!r} declared float must be finite, got {!r}'.format(
                             source, name, value
                         )

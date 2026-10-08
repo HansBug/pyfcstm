@@ -237,7 +237,7 @@ def test_bmc_witness_fixture_runner_keeps_policy_counts_auditable() -> None:
         "hard_pass": 205,
         "runtime_error": 19,
         "expected_unsupported": 10,
-        "temporary_exclude": 4
+        "temporary_exclude": 11
         + sum(
             1
             for case in iter_semantic_cases()

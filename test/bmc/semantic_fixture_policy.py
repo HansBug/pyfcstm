@@ -133,10 +133,20 @@ UNENCODED_FUNCTION_CASES = {
 TEMPORARY_BMC_CORE_EXCLUDE_CASES = {
     # Runtime errors raised by bitwise operators, which have no exact Z3
     # encoding yet.
+    "arith_integral_results_shift_as_int",
     "arith_shl_negative_count_in_guard_raises",
     "arith_shl_negative_count_raises",
     "arith_shr_negative_count_raises",
     "expression_type_error_wraps_transition_effect",
+    # NaN and infinities have no encoding over the real numbers BMC reasons
+    # about, and their step-error expectations are not modelled by the BMC
+    # core runner.
+    "arith_floor_of_nan_is_a_math_domain_error",
+    "sign_of_nan_is_negative_one",
+    "sign_of_nan_selects_the_negative_guard",
+    "writeback_negative_infinity_to_int_is_not_finite",
+    "writeback_nan_to_int_is_not_finite",
+    "writeback_positive_infinity_to_int_is_not_finite",
 }
 
 SEARCH_LIMIT_EXCLUDE_CASES = {

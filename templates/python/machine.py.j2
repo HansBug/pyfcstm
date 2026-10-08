@@ -389,20 +389,20 @@ class {{ machine_class_name(model) }}:
             )
         declared_type = self._VALUE_TYPES[name]
         if type(value) is bool:
-            raise ValueError("%s must not be bool" % (source,))
+            raise SimulationRuntimeExpressionError("%s must not be bool" % (source,))
         if type(value) not in (int, float):
-            raise ValueError(
+            raise SimulationRuntimeExpressionError(
                 "%s must be int or float, got %s" % (source, type(value).__name__)
             )
         if type(value) is float and not math.isfinite(value):
-            raise ValueError(
+            raise SimulationRuntimeExpressionError(
                 "%s for variable %r declared %s must be finite, got %r"
                 % (source, name, declared_type, value)
             )
         if declared_type == "int":
             if type(value) is float:
                 if value != int(value):
-                    raise ValueError(
+                    raise SimulationRuntimeExpressionError(
                         "Variable %r is int type, cannot assign float %r; "
                         "non-integer float from %s" % (name, value, source)
                     )
@@ -414,17 +414,17 @@ class {{ machine_class_name(model) }}:
             except OverflowError as err:
                 # OverflowError: ``float(value)`` cannot represent a very
                 # large Python integer as a finite runtime float.
-                raise ValueError(
+                raise SimulationRuntimeExpressionError(
                     "%s for variable %r declared float must be finite; "
                     "integer is outside Python float range" % (source, name)
                 ) from err
             if not math.isfinite(normalized_float):
-                raise ValueError(
+                raise SimulationRuntimeExpressionError(
                     "%s for variable %r declared float must be finite, got %r"
                     % (source, name, normalized_float)
                 )
             return normalized_float
-        raise ValueError(
+        raise SimulationRuntimeExpressionError(
             "Variable %r has unsupported persistent type %r" % (name, declared_type)
         )
 

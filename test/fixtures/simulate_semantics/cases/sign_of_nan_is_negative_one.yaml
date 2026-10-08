@@ -1,0 +1,22 @@
+title: sign of NaN is -1 in the simulator and in every generated runtime
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/522
+  notes:
+  - >-
+    BMC core exclusion: BMC reasons over real numbers, which have no NaN, so sign(NaN) has no Z3 encoding to check here; the simulator and generated runtimes carry the case.
+  - >-
+    NaN is neither zero nor positive, so sign(NaN) is -1 as ruled in #448.
+    Python templates and the C runtimes used to return 0 for it.
+exclude_runners:
+- bmc_core
+categories:
+- runtime
+- template_alignment
+steps:
+- cycle: []
+  expect:
+    state: Root.A
+    vars:
+      s: -1
+    ended: false

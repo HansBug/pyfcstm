@@ -1,0 +1,24 @@
+title: floor of NaN is a math domain error, not a silent int64 writeback
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/455
+  notes:
+  - >-
+    NaN has no integer value.  The simulator rejects floor(NaN) with Python's
+    conversion error, and every generated runtime must report the same text
+    and error class; the C runtimes previously wrote the NaN into the int
+    variable and failed later with a different message.
+exclude_runners:
+- bmc_core
+categories:
+- runtime
+- template_alignment
+steps:
+- cycle: []
+  expect:
+    raises:
+      type: SimulationRuntimeExpressionError
+      match: cannot convert float NaN to integer
+      cause_type: ValueError
+    vars:
+      r: 0

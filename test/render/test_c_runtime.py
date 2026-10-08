@@ -423,3 +423,36 @@ def test_cbrt_uses_the_shared_cube_root_algorithm():
     body = _action_body("r = cbrt(r);", {"r": "float"})
 
     assert "_RootMachine_cbrt_f64(scope->r)" in body
+
+
+@pytest.mark.unittest
+def test_integral_function_of_an_int_argument_is_the_argument_itself():
+    # floor and round of an integer are the integer; no double round-trip, so
+    # no range check can reject a value the DSL holds exactly.
+    body = _action_body("result = floor(n);", {"n": "int", "result": "int"})
+    assert "floor(" not in body
+    assert "outside signed 64-bit range" not in body
+    assert "scope->result = (scope->n);" in body
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "func, rounded",
+    [
+        ("floor", "floor(scope->x)"),
+        ("ceil", "ceil(scope->x)"),
+        ("trunc", "trunc(scope->x)"),
+        ("round", "(nearbyint(scope->x) + 0.0)"),
+    ],
+)
+def test_integral_function_of_a_float_checks_nan_and_range_before_the_cast(func, rounded):
+    body = _action_body(
+        "result = %s(x) << 1;" % func, {"x": "float", "result": "int"}
+    )
+    # NaN is rejected with Python's conversion wording, which the runtime
+    # reports identically, before the value is checked against the int64 range.
+    assert "cannot convert float NaN to integer" in body
+    assert body.index("cannot convert float NaN to integer") < body.index(
+        "outside signed 64-bit range"
+    )
+    assert "((PYFCSTM_GENERATED_INT64) %s)" % rounded in body

@@ -1104,11 +1104,9 @@ class SimulationRuntime:
             )
         except WritebackError as err:
             # WritebackError: a caller-supplied or initializer value is
-            # rejected; construction reports plain ValueError as before, with
-            # the rejection kind attached for callers that classify errors.
-            error = ValueError(str(err))
-            error.kind = err.kind
-            raise error from None
+            # rejected; construction and cycles raise the same runtime error
+            # class with the rejection kind, which is still a ValueError.
+            raise _expression_error(str(err), err.kind) from None
 
     def _state_belongs_to_machine(self, state: State) -> bool:
         """

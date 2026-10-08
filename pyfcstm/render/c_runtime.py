@@ -32,6 +32,7 @@ Example::
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
 from typing import (
     Any,
@@ -43,6 +44,7 @@ from typing import (
     Optional,
     Sequence,
     Tuple,
+    Type,
     Union,
 )
 
@@ -230,6 +232,10 @@ _MATH_FUNC_NAMES = {
 }
 
 
+#: Functions whose DSL result is an integer.  The C value is an int64 cast of the
+#: rounded double, guarded by the checks in :func:`_emit_expr_checks`.
+_INTEGRAL_RESULT_FUNCTIONS = {"floor", "ceil", "round", "trunc"}
+
 _INT_OPERATORS = {"<<", ">>", "&", "^", "|"}
 
 #: C condition, over the argument ``x``, under which a function's argument is
@@ -259,7 +265,9 @@ _INT64_MAX = 2**63 - 1
 _CONSTANT_FOLD_OPERATORS = {"+", "-", "*", "&", "^", "|"}
 
 
-def _host_arithmetic_message(compute: Callable[[], Any]) -> str:
+def _host_arithmetic_message(
+    compute: Callable[[], Any], expected: Type[BaseException] = ZeroDivisionError
+) -> str:
     """
     Return the host CPython diagnostic text for a failing arithmetic operation.
 
@@ -280,6 +288,9 @@ def _host_arithmetic_message(compute: Callable[[], Any]) -> str:
 
     :param compute: Zero-argument callable performing the failing operation.
     :type compute: typing.Callable[[], typing.Any]
+    :param expected: Exception class the operation fails with, defaults to
+        :exc:`ZeroDivisionError`.
+    :type expected: typing.Type[BaseException], optional
     :return: Diagnostic text reported by the host interpreter.
     :rtype: str
     :raises RuntimeError: If the operation unexpectedly succeeds.
@@ -292,9 +303,9 @@ def _host_arithmetic_message(compute: Callable[[], Any]) -> str:
     """
     try:
         compute()
-    except ZeroDivisionError as err:
-        # The only expected failure: every caller passes a division, modulo, or
-        # power operation whose operands make it fail with ZeroDivisionError.
+    except expected as err:
+        # The only expected failure: every caller passes an operation whose
+        # operands make it fail with the class named by ``expected``.
         return str(err)
     # Anything else propagates and surfaces the bug.
     raise RuntimeError("expected arithmetic operation to fail on this interpreter")
@@ -305,6 +316,9 @@ _FLOAT_MODULO_BY_ZERO_MESSAGE = _host_arithmetic_message(lambda: 7.0 % 0.0)
 _DIVISION_BY_ZERO_MESSAGE = _host_arithmetic_message(lambda: 7 / 0)
 _FLOAT_DIVISION_BY_ZERO_MESSAGE = _host_arithmetic_message(lambda: 7.0 / 0.0)
 _ZERO_BASE_NEGATIVE_POWER_MESSAGE = _host_arithmetic_message(lambda: 0**-1)
+_NAN_TO_INTEGER_MESSAGE = _host_arithmetic_message(
+    lambda: math.floor(float("nan")), ValueError
+)
 
 
 def _static_int_literal(expr: dsl_nodes.Expr) -> Optional[int]:
@@ -720,17 +734,19 @@ def _render_expr(
             # libm cbrt is not correctly rounded everywhere; the helper is the
             # simulator's algorithm, exact on perfect cubes.
             text = "%s(%s)" % (names.cbrt_f64, inner.text)
-        elif expr.func == "round":
-            # C's round() breaks ties away from zero regardless of the current
-            # rounding direction, while the simulator uses Python's round(),
-            # which breaks ties toward the even neighbour.  nearbyint() follows
-            # the current rounding direction, whose default (FE_TONEAREST) is
-            # ties-to-even -- the same default every other floating-point
-            # operation in the generated runtime already relies on.
-            # Python's round(-0.5) is the integer 0, which becomes +0.0 when
-            # written to a DSL float. nearbyint(-0.5) is -0.0 instead, so add
-            # a positive zero to retain Python's externally visible zero sign.
-            text = "(nearbyint(%s) + 0.0)" % inner.text
+        elif expr.func in _INTEGRAL_RESULT_FUNCTIONS and inner.value_type == "int":
+            # An integer argument is its own rounding, so no double round-trip
+            # can move it outside the int64 range.
+            text = "(%s)" % inner.text
+        elif expr.func in _INTEGRAL_RESULT_FUNCTIONS:
+            # The DSL result is an integer, so the double is cast after the
+            # checks in _emit_expr_checks have rejected NaN and out-of-range
+            # values.  C's round() would break ties away from zero, which is why
+            # _integral_value_text uses nearbyint() for round.
+            text = "((%s) %s)" % (
+                _c_type("int"),
+                _integral_value_text(expr.func, inner.text),
+            )
         elif expr.func in _MATH_FUNC_NAMES:
             text = "%s(%s)" % (expr.func, inner.text)
         else:
@@ -852,6 +868,18 @@ def _emit_expr_checks(
         domain = _MATH_DOMAIN_CHECKS.get(expr.func)
         if expr.func in _FINITE_ARGUMENT_FUNCTIONS and argument.value_type != "int":
             domain = "(%(x)s) == (%(x)s) && ((%(x)s) - (%(x)s)) != 0"
+        if expr.func in _INTEGRAL_RESULT_FUNCTIONS and argument.value_type != "int":
+            # NaN has no integer value.  The catalog keeps Python's conversion
+            # wording for it, so the generated runtime reports the same text.
+            _line(lines, indent, level, "if ((%s) != (%s)) {" % (argument.text, argument.text))
+            _emit_error(
+                lines,
+                names,
+                indent,
+                level + 1,
+                "%s evaluation failed: %s" % (usage, _NAN_TO_INTEGER_MESSAGE),
+            )
+            _line(lines, indent, level, "}")
         if domain is not None:
             _line(lines, indent, level, "if (%s) {" % (domain % {"x": argument.text}))
             _emit_error(
@@ -862,6 +890,15 @@ def _emit_expr_checks(
                 "%s evaluation failed: %s" % (usage, MATH_DOMAIN_MESSAGE),
             )
             _line(lines, indent, level, "}")
+        if expr.func in _INTEGRAL_RESULT_FUNCTIONS and argument.value_type != "int":
+            _emit_integral_range_check(
+                lines,
+                _integral_value_text(expr.func, argument.text),
+                usage,
+                names,
+                indent,
+                level,
+            )
         return safe
     if isinstance(expr, dsl_nodes.ConditionalOp):
         cond = _render_expr(expr.cond, known_types, names, state_name_set).text
@@ -1125,6 +1162,83 @@ def _c_type(value_type: Optional[str]) -> str:
     return "double"
 
 
+def _integral_value_text(func: str, argument: str) -> str:
+    """
+    Return the C double whose integer value is ``func(argument)``.
+
+    ``round`` breaks ties to even like the simulator, so it uses
+    ``nearbyint``; the ``+ 0.0`` turns Python's zero, which is ``-0.0`` for
+    ``nearbyint(-0.5)``, back into ``+0.0``.
+
+    :param func: Rounding function name.
+    :type func: str
+    :param argument: C text of the double argument.
+    :type argument: str
+    :return: C text of the rounded double.
+    :rtype: str
+    """
+    if func == "round":
+        return "(nearbyint(%s) + 0.0)" % argument
+    return "%s(%s)" % (func, argument)
+
+
+def _emit_integral_range_check(
+    lines: List[str],
+    value: str,
+    usage: str,
+    names: _CNames,
+    indent: str,
+    level: int,
+) -> None:
+    """Reject a rounded double outside the int64 range before the integer cast."""
+    _line(
+        lines,
+        indent,
+        level,
+        "if (!(%s >= -9223372036854775808.0 && %s < 9223372036854775808.0)) {"
+        % (value, value),
+    )
+    _emit_error(
+        lines,
+        names,
+        indent,
+        level + 1,
+        "%s evaluation failed: integer result is outside signed 64-bit range"
+        % usage,
+    )
+    _line(lines, indent, level, "}")
+
+
+def _emit_non_finite_writeback_check(
+    lines: List[str],
+    value: str,
+    variable_name: str,
+    source: str,
+    names: _CNames,
+    indent: str,
+    level: int,
+) -> None:
+    """
+    Reject NaN and infinities before an int writeback, with the simulator's text.
+
+    The simulator reports the value as ``nan``, ``inf`` or ``-inf``, so each
+    case has its own static message; a runtime formatted value could not match
+    the simulator's wording.  NaN is the only value unequal to itself, and
+    ``v - v`` is zero for every finite value and NaN for an infinity.
+    """
+    detail = "%s for variable '%s' declared int must be finite, got %%s" % (
+        source,
+        variable_name,
+    )
+    _line(lines, indent, level, "if (%s != %s) {" % (value, value))
+    _emit_error(lines, names, indent, level + 1, detail % "nan")
+    _line(lines, indent, level, "} else if (%s - %s != 0 && %s > 0) {" % (value, value, value))
+    _emit_error(lines, names, indent, level + 1, detail % "inf")
+    _line(lines, indent, level, "} else if (%s - %s != 0) {" % (value, value))
+    _emit_error(lines, names, indent, level + 1, detail % "-inf")
+    _line(lines, indent, level, "}")
+
+
 def _emit_int64_range_check(
     lines: List[str],
     value: str,
@@ -1196,6 +1310,15 @@ def _render_statement_sequence(
             if state_types.get(statement.name) == "int" and expr.value_type == "float":
                 temp_name = "__pyfcstm_value_%d" % len(lines)
                 _line(lines, indent, level, "double %s = %s;" % (temp_name, expr.text))
+                _emit_non_finite_writeback_check(
+                    lines,
+                    temp_name,
+                    statement.name,
+                    "operation block writeback",
+                    names,
+                    indent,
+                    level,
+                )
                 _emit_int64_range_check(
                     lines, temp_name, statement.name, names, indent, level
                 )
@@ -1422,6 +1545,15 @@ def render_c_reset_vars_body(
             if state_types.get(name) == "int" and expr.value_type == "float":
                 temp_name = "__pyfcstm_init_%d" % len(lines)
                 _line(lines, indent, level, "double %s = %s;" % (temp_name, expr.text))
+                _emit_non_finite_writeback_check(
+                    lines,
+                    temp_name,
+                    name,
+                    "variable '%s' initializer" % name,
+                    names,
+                    indent,
+                    level,
+                )
                 _emit_int64_range_check(lines, temp_name, name, names, indent, level)
                 _line(
                     lines,

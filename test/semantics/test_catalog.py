@@ -363,7 +363,9 @@ class TestTyping:
         ("/", (INT, INT), (None, None), FLOAT),
         ("%", (INT, INT), (None, None), INT),
         ("**", (INT, INT), (None, 2), INT),
-        ("**", (INT, INT), (None, -1), NUMBER),
+        # A negative literal exponent makes int ** int a float whenever the
+        # power is defined, so it is FLOAT rather than unknown.
+        ("**", (INT, INT), (None, -1), FLOAT),
         ("**", (INT, INT), (None, None), NUMBER),
         ("**", (FLOAT, INT), (None, 2), FLOAT),
         ("&", (INT, INT), (None, None), INT),
@@ -411,3 +413,12 @@ class TestTyping:
 )
 def test_coarse_result_type_follows_the_catalog_typing(token, operands, expected):
     assert coarse_result_type(token, *operands) == expected
+
+
+@pytest.mark.unittest
+def test_coarse_result_type_takes_literal_exponents_from_constants():
+    # The exponent literal decides between int and float for int ** int; the
+    # operands alone cannot.
+    assert coarse_result_type("**", "int", "int", constants=(None, 3)) == "int"
+    assert coarse_result_type("**", "int", "int", constants=(None, -1)) == "float"
+    assert coarse_result_type("**", "int", "int") is None

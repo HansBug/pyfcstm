@@ -334,12 +334,12 @@ class TestRenderOperationStatements:
             ),
             (
                 'java',
-                "int tmp;\n"
+                "long tmp;\n"
                 "tmp = scope.counter + 1;\n"
                 "if (tmp > 0) {\n"
                 "    scope.counter = tmp + 1;\n"
                 "} else {\n"
-                "    int fallback;\n"
+                "    long fallback;\n"
                 "    fallback = 0;\n"
                 "    scope.counter = fallback;\n"
                 "}",
@@ -819,6 +819,10 @@ class TestRenderStatementBranches:
             ('t = (1 > 0) ? 1 : 2;', 'int'),
             # Conditional with float arms -> float (merge)
             ('t = (1 > 0) ? 1.0 : 2.0;', 'double'),
+            # Power with a negative literal exponent -> float, as at runtime
+            ('t = 2 ** -1;', 'double'),
+            # Power with a non-negative literal exponent -> int
+            ('t = 2 ** 3;', 'int'),
         ],
     )
     def test_render_stmt_nodes_temp_type_inference(self, src, expected_temp_type):

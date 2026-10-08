@@ -582,3 +582,64 @@ class TestGoStyleTypeInference:
         assert callable(env.globals['expr_infer_type'])
         assert callable(env.globals['go_expr_type'])
         assert callable(env.globals['go_abs_expr'])
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    'expr_text, expected',
+    [
+        # A non-negative integer exponent keeps an integer base an integer.
+        ('2 ** 3', 'int'),
+        ('(2 ** 3)', 'int'),
+        # A negative exponent makes the result a float, as at runtime.
+        ('2 ** -1', 'float'),
+        ('2 ** (1 - 2)', 'float'),
+        # A float exponent or base is float regardless of the exponent sign.
+        ('2 ** 0.5', 'float'),
+        ('2.0 ** 3', 'float'),
+    ],
+)
+def test_infer_expr_type_power_follows_the_literal_exponent(expr_text, expected):
+    from pyfcstm.render.expr import _infer_expr_type
+
+    ast_node = parse_with_grammar_entry(expr_text, entry_name='generic_expression')
+
+    assert _infer_expr_type(ast_node) == expected
+
+
+@pytest.mark.unittest
+def test_infer_expr_type_power_with_variable_exponent_is_unknown():
+    # The exponent is not known until runtime, so the type is left open rather
+    # than guessed; the C templates fall back to double for an open type.
+    from pyfcstm.render.expr import _infer_expr_type
+
+    ast_node = parse_with_grammar_entry('2 ** n', entry_name='generic_expression')
+
+    assert _infer_expr_type(ast_node) is None
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    'expr_text, expected',
+    [
+        # Every integer-valued function casts its double result to a 64-bit
+        # integer, so it can be shifted, assigned to a long and compared as an
+        # integer, as the simulator treats it.
+        ('floor(x)', '((long) Math.floor(x))'),
+        ('ceil(x)', '((long) Math.ceil(x))'),
+        # Math.rint breaks ties to even, as the simulator's round() does;
+        # Math.round would break them upward.
+        ('round(x)', '((long) Math.rint(x))'),
+        # The conditional is parenthesised as a whole, so it keeps its operand
+        # when it sits inside a larger expression.
+        ('trunc(x)', '((x) >= 0 ? (long) Math.floor(x) : (long) Math.ceil(x))'),
+        ('2 * trunc(x)', '2 * ((x) >= 0 ? (long) Math.floor(x) : (long) Math.ceil(x))'),
+        # Math.sign does not exist in Java; the sign is spelled out, and NaN
+        # falls through to -1 as in the simulator.
+        ('sign(x)', '((x) > 0 ? 1L : ((x) == 0 ? 0L : -1L))'),
+    ],
+)
+def test_java_integer_valued_functions_render_as_long(expr_text, expected, new_env):
+    ast_node = parse_with_grammar_entry(expr_text, entry_name='generic_expression')
+
+    assert render_expr_node(ast_node, lang_style='java', env=new_env) == expected

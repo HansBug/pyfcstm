@@ -982,3 +982,55 @@ def test_shift_count_message_separates_its_three_input_shapes(
 
     assert emitted, [diag.code for diag in report.diagnostics]
     assert emitted[0].message.startswith(expected_lead), emitted[0].message
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize("call, warns", [("floor(f)", False), ("trunc(f)", False), ("sqrt(f)", True)])
+def test_float_bitwise_follows_the_function_result_type(call, warns):
+    from pyfcstm.diagnostics.analyzers import collect_numeric_warnings
+    from pyfcstm.model import load_state_machine_from_text
+
+    machine = load_state_machine_from_text(
+        "def float f = 1.5; def int n = 0; "
+        "state Root { state A { during { n = %s & 1; } } [*] -> A; }" % call
+    )
+    codes = [item.code for item in collect_numeric_warnings(machine)]
+
+    assert ("W_NUMERIC_FLOAT_BITWISE" in codes) is warns
+
+
+def test_float_bitwise_sees_a_negative_literal_power_as_float():
+    # ``2 ** -1`` is the float 0.5 at runtime, so bitwise use of it is the
+    # float-operand hazard the code reports.
+    diagnostic = _single_diagnostic(
+        """
+        input int d;
+        def int x = 0;
+        state Root {
+            state A;
+            [*] -> A;
+            A -> A : if [((2 ** -1) & 1) == 0];
+        }
+        """,
+        "W_NUMERIC_FLOAT_BITWISE",
+    )
+    assert diagnostic.refs["operand_types"] == ["float", "int"]
+
+
+def test_float_bitwise_does_not_guess_a_variable_power_is_float():
+    # ``2 ** n`` is an int or a float depending on the runtime value of ``n``,
+    # so the analyzer leaves its type open and reports nothing.
+    diagnostics = _diagnostics_for(
+        """
+        input int d;
+        def int n = 3;
+        def int x = 0;
+        state Root {
+            state A;
+            [*] -> A;
+            A -> A : if [((2 ** n) & 1) == 0];
+        }
+        """,
+        "W_NUMERIC_FLOAT_BITWISE",
+    )
+    assert diagnostics == []

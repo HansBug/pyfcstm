@@ -1,0 +1,15 @@
+def int x = 1;
+def int y = 0;
+def int r = 0;
+def int s = 0;
+
+state Root {
+    state A {
+        during {
+            r = ((x > 0) xor (y > 0)) ? 1 : 2;
+            s = ((x > 0) iff (y > 0)) ? 1 : 2;
+        }
+    }
+
+    [*] -> A;
+}

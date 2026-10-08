@@ -37,7 +37,7 @@ BmcSolveResult
 -----------------------------------------------------
 
 .. autoclass:: BmcSolveResult
-    :members: __post_init__,kind,polarity,incomplete,witness_found,counterexample_found,property_satisfied,outcome,property_verdict,to_canonical,available_model_roles,pretty_print,to_text,__str__,formula,status,model,reason,elapsed_ms,timeout_ms,incomplete_status,incomplete_model,incomplete_reason,diagnostics,incomplete_elapsed_ms,total_elapsed_ms,feasibility,solver_profile,solver_logic,solver_statistics
+    :members: __post_init__,kind,polarity,incomplete,witness_found,counterexample_found,property_satisfied,outcome,property_verdict,to_canonical,available_model_roles,pretty_print,to_text,__str__,formula,status,model,reason,elapsed_ms,timeout_ms,incomplete_status,incomplete_model,incomplete_reason,diagnostics,incomplete_elapsed_ms,total_elapsed_ms,feasibility,solver_profile,solver_logic,solver_statistics,runtime_safety
 
 
 BmcEventDecodePolicy
@@ -114,7 +114,7 @@ BmcReplayResult
 -----------------------------------------------------
 
 .. autoclass:: BmcReplayResult
-    :members: __post_init__,ok,to_canonical,pretty_print,to_text,__str__,witness,runtime_trace,mismatches,model_role
+    :members: __post_init__,ok,to_canonical,pretty_print,to_text,__str__,witness,runtime_trace,mismatches,model_role,runtime_error
 
 
 solve\_bmc\_property

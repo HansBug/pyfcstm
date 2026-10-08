@@ -65,7 +65,9 @@ def test_default_preserves_staged_assertions_and_scopes(monkeypatch):
     [
         ("def int x = 0;", "x > 0", "QF_LIA"),
         ("def int x = 0; def float y = 0.0;", "x + y > 0.0", "QF_LIRA"),
-        ("def int x = 0; def int y = 1;", "x / y == 2", "QF_NIA"),
+        # ``/`` is true division, so dividing two int variables is nonlinear
+        # mixed int/real arithmetic.
+        ("def int x = 0; def int y = 1;", "x / y == 2", "NIRA"),
         ("def int x = 0;", "x / 3 == 2", None),
         ("def float x = 1.0;", "sqrt(x) > 2.0", "NIRA"),
     ],

@@ -51,6 +51,8 @@ lines.
 .. cli-ref-option: command=bmc option=--timeout-ms
 .. cli-ref-option: command=bmc option=--max-bound
 .. cli-ref-option: command=bmc option=--cone-slicing
+.. cli-ref-option: command=bmc option=--runtime-safety
+.. cli-ref-option: command=bmc option=--no-runtime-safety
 
 .. cli-ref-option: command=bmc option=--solver-profile choices=default,logic,tactic default=default
 .. cli-ref-option: command=bmc option=--explain-infeasibility choices=none,formal,proof default=none
@@ -114,6 +116,16 @@ Both installed entry forms have the same behavior:
      - Disabled
      - Remove unobserved integer writes whose evaluation is known total;
        preserve control flow, initial values and dependencies of partial arithmetic.
+   * - ``--runtime-safety / --no-runtime-safety``
+     - Boolean flag
+     - Enabled
+     - Before the property, checks whether a runtime error -- division or
+       modulo by zero, a math domain error, a complex power, or a rejected
+       ``int`` writeback -- is reachable within the bound.  A reachable error is
+       reported as ``runtime_error`` and the property is not evaluated.  The
+       check always runs on the model without cone slicing.
+       ``--no-runtime-safety`` skips it and evaluates the property over the
+       executions that raise no error.
    * - ``--solver-profile``
      - ``default``, ``logic``, or ``tactic``
      - ``default``
@@ -297,8 +309,9 @@ durability guarantee.
 Exit status and verdict matrix
 ------------------------------
 
-Exit priority is replay mismatch ``4`` first, inconclusive ``3`` second, then
-the bounded property verdict ``0`` or ``1``.  A deterministic negative result
+Exit priority is replay mismatch ``4`` first, a reachable runtime error ``5``
+second, inconclusive ``3`` third, then the bounded property verdict ``0`` or
+``1``.  A deterministic negative result
 is not a process/protocol error: it still emits a complete report.
 
 .. list-table:: Process exit status
@@ -325,7 +338,8 @@ is not a process/protocol error: it still emits a complete report.
      - Fix missing/unknown options or require positive integers.
    * - ``3``
      - Solver ``unknown``/``timeout``, feasibility inconclusive, scenario
-       infeasible, or response horizon ``incomplete``.
+       infeasible, response horizon ``incomplete``, or a runtime-safety check
+       that returned ``unknown``/``timeout``.
      - Complete report.  Scenario-infeasible and inconclusive feasibility
        branches have null ``witness``/``replay``; a SAT suffix may have both.
      - Inspect ``result.outcome`` before choosing a larger timeout or bound.
@@ -334,6 +348,11 @@ is not a process/protocol error: it still emits a complete report.
        ``replay.ok == false``.
      - Complete result, witness, replay, and mismatches.
      - Treat the formal/runtime alignment as untrusted and inspect mismatches.
+   * - ``5``
+     - A runtime error is reachable within the bound; the property was not
+       evaluated.  The error prefix decoded and replay reproduced the error.
+     - Complete result, error-prefix witness, and replay.
+     - Fix the failing operation or constrain its inputs, then rerun.
 
 .. list-table:: Complete report-bearing branch matrix
    :header-rows: 1
@@ -406,6 +425,20 @@ is not a process/protocol error: it still emits a complete report.
      - object / object, replay not ok
      - ``4``
      - Replay trust gate overrides the property exit code.
+   * - Runtime-safety check SAT; replay reproduces the error
+     - ``unknown``
+     - ``runtime_error``
+     - object / object, replay ok
+     - ``5``
+     - The ``runtime_error_prefix`` model is the evidence; the property was not
+       evaluated and the primary search did not run.
+   * - Runtime-safety check unknown or timeout
+     - ``unknown``
+     - ``runtime_safety_unknown`` or ``runtime_safety_timeout``
+     - null / null
+     - ``3``
+     - Whether a runtime error is reachable is undecided, so no property
+       verdict is published.
 
 Human report
 ------------
@@ -428,6 +461,9 @@ or an inconclusive check:
    BMC <kind> <= <bound>: SCENARIO FEASIBILITY TIMED OUT; PROPERTY NOT EVALUATED
    BMC <kind> <= <bound>: SCENARIO FEASIBILITY NOT CHECKED; PROPERTY NOT EVALUATED
    BMC <kind> <= <bound>: SCENARIO INFEASIBLE; PROPERTY NOT EVALUATED
+   BMC <kind> <= <bound>: RUNTIME ERROR REACHABLE WITHIN BOUND; PROPERTY NOT EVALUATED
+   BMC <kind> <= <bound>: RUNTIME SAFETY CHECK UNKNOWN; PROPERTY NOT EVALUATED
+   BMC <kind> <= <bound>: RUNTIME SAFETY CHECK TIMED OUT; PROPERTY NOT EVALUATED
    BMC <kind> <= <bound>: EVIDENCE/REPLAY MISMATCH; RESULT UNTRUSTED
 
 The first report block then contains ``Scenario``, ``Property verdict``,
@@ -1153,7 +1189,8 @@ is a positive integer for response and null for other kinds.
      - ``property_satisfied``, ``property_violated``, ``witness_found``,
        ``no_witness``, ``incomplete``, ``timeout``, ``unknown``,
        ``scenario_infeasible``, ``feasibility_timeout``,
-       ``feasibility_unknown``
+       ``feasibility_unknown``, ``runtime_error``, ``runtime_safety_unknown``,
+       ``runtime_safety_timeout``
      - Stable consumer-facing classification; use this with ``exit_code``.
    * - ``reason``
      - string or null
@@ -1209,8 +1246,17 @@ is a positive integer for response and null for other kinds.
        ``unknown``/``timeout`` never becomes ``scenario_infeasible``.
    * - ``available_model_roles``
      - array of closed role strings
-     - ``primary_witness``, ``primary_counterexample`` or
-       ``incomplete_suffix``.
+     - ``primary_witness``, ``primary_counterexample``,
+       ``incomplete_suffix`` or ``runtime_error_prefix``.
+   * - ``runtime_safety``
+     - object or null
+     - Null when the check was switched off.  Otherwise ``status`` is
+       ``safe``, ``violated``, ``unknown``, ``timeout`` or ``not_applicable``
+       (no operation can raise); ``sites`` counts the operations checked;
+       ``elapsed_ms`` is the check's solver time; ``reason`` is set only for
+       ``unknown``/``timeout``; ``error`` is the first failing operation as
+       ``step`` (null for a variable initializer), catalog ``kind`` and
+       ``location``.
    * - ``diagnostics``
      - array of strings
      - Solver/formula diagnostics; may contain nondeterministic
@@ -1252,6 +1298,103 @@ to be ``null``.  This keeps the external envelope from combining evidence from
 different model channels even when each individual object is structurally
 valid.  Current and legacy-compatible objects are distinguished by their field
 sets, not by a payload version field.
+
+Runtime safety and error prefixes
+---------------------------------
+
+The runtime-safety check asks whether some admissible execution reaches an
+operation that the runtime rejects.  Every guard check and action block is an
+evaluation point, taken in the order the simulator evaluates them: the
+lazy, declaration-order choice at the source state, the eager candidate checks
+that speculative validation performs at every nested choice, and blocks on
+paths that later fail and never become a case.  An error at step ``k`` needs
+a valid prefix of ``k`` steps and the assumption instances up to ``k``; nothing
+is assumed about later frames, which the runtime never produces.
+
+When an error is reachable, the result carries ``runtime_error_prefix`` as its
+only model role.  Its witness holds the completed steps before the failing one
+and, in ``verdict.runtime_error``, the failing step's events and inputs next to
+the error site.  Replay runs the prefix, runs one more cycle, and must raise an
+error of the same kind at the same step, from the same kind of operation
+(guard or action); anything else is a replay mismatch with exit ``4``.
+
+.. code-block:: fcstm
+
+   input int d;
+   state Root {
+       [*] -> A;
+       state A;
+       state B;
+       state C;
+       A -> B : if [d == 1];
+       A -> C : if [10 / d > 1];
+   }
+
+With ``check reach <= 2: active("Root.B");`` the second guard divides by
+``d`` whenever the first one fails, so ``d == 0`` is an error:
+
+.. code-block:: text
+
+   BMC reach <= 2: RUNTIME ERROR REACHABLE WITHIN BOUND; PROPERTY NOT EVALUATED
+   ...
+   Evidence:
+     Runtime error: division_by_zero at step 1
+     Runtime error location: guard g1 in transition Root.A::1::A->C
+     Model role: RUNTIME ERROR PREFIX
+     Model evidence: SAT error-prefix model available.
+     Replay: runtime error reproduced: transition guard evaluation failed: division by zero
+
+   Runtime safety check: VIOLATED in <elapsed> ms over 1 operation(s)
+   Solver: NOT RUN
+
+The process exits ``5``.  In JSON the same error appears three times, each
+with its own role (abridged to the fields that carry it):
+
+.. code-block:: json
+
+   {
+     "result": {"outcome": "runtime_error", "runtime_safety": {"status": "violated", "sites": 1,
+       "error": {"kind": "division_by_zero", "location": "guard g1 in transition Root.A::1::A->C", "step": 1}}},
+     "witness": {"model_role": "runtime_error_prefix", "verdict": {"runtime_error": {
+       "events": [], "inputs": {"d": 0}, "kind": "division_by_zero",
+       "location": "guard g1 in transition Root.A::1::A->C", "step": 1}}},
+     "replay": {"runtime_error": {"kind": "division_by_zero",
+       "message": "transition guard evaluation failed: division by zero"}}
+   }
+
+Changing the first guard to ``d == 0`` protects the division: the check
+reports ``safe`` and the property is evaluated as usual.
+
+.. list-table:: Runtime-error examples and boundaries
+   :header-rows: 1
+   :widths: 34 26 40
+
+   * - Model fragment
+     - Query
+     - Report
+   * - ``A -> B : if [d == 1]; A -> C : if [10 / d > 1];``
+     - ``check reach <= 2: active("Root.B");``
+     - Exit ``5``; ``division_by_zero at step 1`` in
+       ``guard g1 in transition Root.A::1::A->C``.
+   * - ``def float x = sqrt(0 - 1); state Root;``
+     - ``check reach <= 1: active("Root");``
+     - Exit ``5``; ``math_domain at initialization`` in ``initializer for x``;
+       the trace line is ``init: RUNTIME ERROR math_domain (initializer for x)``
+       and ``verdict.runtime_error.step`` is null.
+   * - ``def int x = 0;`` and ``enter { x = x / 2; }``, with
+       ``init cold havoc *;`` and ``assume at 0: var("x") == 7;``
+     - ``check reach <= 2: terminated();``
+     - Exit ``5``; ``writeback_non_integral at step 0`` in
+       ``writeback of x after action block state_enter in state Root.A``:
+       ``7 / 2`` is ``3.5``, which an ``int`` rejects.
+   * - The first row with ``d == 0`` in the first guard
+     - The same query
+     - ``runtime_safety.status`` is ``safe``; the division is never evaluated
+       and the property is evaluated as usual.
+   * - The first row with ``--no-runtime-safety``
+     - The same query
+     - ``runtime_safety`` is null and the property is evaluated over the
+       executions that raise no error: exit ``0`` with a witness.
 
 Witness fields
 --------------

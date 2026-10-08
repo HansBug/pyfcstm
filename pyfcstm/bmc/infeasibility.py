@@ -53,6 +53,8 @@ from typing import (
 
 import z3
 
+from pyfcstm.semantics.catalog import lookup
+
 from .errors import BmcBuildError
 from .explanation import (
     BmcConflictNarrative,
@@ -73,6 +75,7 @@ from .explanation import (
     build_conflict_narrative,
     human_text_for_fact,
 )
+from . import proof_rules
 from .provenance import (
     # Private: the binding check has to name a frame symbol the same way the
     # published facts were named from it, and a second reading of the encoding
@@ -2216,19 +2219,20 @@ def _encode_assignment(fact: Mapping[str, Any], symbols) -> Optional[Any]:
     # differently on purpose.  Reading the published name here found nothing and the
     # binding failed with "the fact names something its group does not mention",
     # which points at the symbols rather than at the field it was actually about.
-    combine = {
-        "add": lambda: source + operand,
-        "sub": lambda: source - operand,
-        "mul": lambda: source * operand,
-        "div": lambda: source / operand,
+    operator = fact.get("operator")
+    if operator == "set":
         # ``set`` ignores the source: the requirement it restates is the plain
         # equality the encoder wrote, so re-encoding it any other way would compare
         # the fact against something the group never said.
-        "set": lambda: operand,
-    }.get(fact.get("operator"))
-    if combine is None:
+        return target == operand
+    token = proof_rules.ARITHMETIC_TOKENS.get(operator)
+    if token is None:  # pragma: no cover - provenance names only catalog arithmetic and set.
         return None
-    return target == combine()
+    # The encoder lowered the operator through the catalog, so re-encoding through
+    # the same entry is what makes ``/`` a true division even between integers.
+    if not z3.is_expr(operand):
+        operand = z3.RealVal(operand) if isinstance(operand, float) else z3.IntVal(operand)
+    return target == lookup(token).symbolic(source, operand)
 
 
 def _encode_transition_case(fact: Mapping[str, Any], symbols) -> Optional[Any]:

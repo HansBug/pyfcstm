@@ -1,0 +1,20 @@
+def float big = 1e308;
+def int marker = 0;
+
+state Root {
+    state A;
+    state Neg {
+        enter {
+            marker = 1;
+        }
+    }
+    state Zero {
+        enter {
+            marker = 2;
+        }
+    }
+
+    [*] -> A;
+    A -> Neg : if [sign(big * 10 - big * 10) < 0];
+    A -> Zero : if [sign(big * 10 - big * 10) == 0];
+}

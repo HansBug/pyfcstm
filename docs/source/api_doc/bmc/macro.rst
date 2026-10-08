@@ -47,6 +47,13 @@ ActionBlock
     :members: __post_init__,to_canonical,block_kind,runtime_role,owner_state_id,owner_state_path,operations,action_name,transition_label,is_abstract,active_leaf_path,execution_state_path,named_ref
 
 
+EvaluationPoint
+-----------------------------------------------------
+
+.. autoclass:: EvaluationPoint
+    :members: __post_init__,parent,condition,guard,block
+
+
 CycleCase
 -----------------------------------------------------
 
@@ -65,7 +72,7 @@ MacroStepFormal
 -----------------------------------------------------
 
 .. autoclass:: MacroStepFormal
-    :members: __post_init__,cases,verify_partition,to_canonical,source,success_cases,delta_cases,build_diagnostic_conditions
+    :members: __post_init__,cases,verify_partition,to_canonical,source,success_cases,delta_cases,build_diagnostic_conditions,evaluation_points
 
 
 case\_path\_condition

@@ -93,6 +93,11 @@ polarity）的含义不同。先按用户问题选择查询类别，再按该类
        或未执行。
      - 查看 ``result.incomplete_status``。SAT 时增大边界；``unknown`` 或
        ``timeout`` 时排查求解器或超时设置。
+   * - ``runtime_safety_unknown`` / ``runtime_safety_timeout``
+     - ``result.runtime_safety.status`` 为 ``unknown`` 或 ``timeout``。
+     - 在性质之前运行的检查无法判定是否可达运行时错误，因此性质未评估。
+     - 增大 ``--timeout-ms`` 或减小边界；``sqrt`` 等非线性运算会让检查更难。可达错误
+       见任务 17。
 
 任务卡读法
 ----------
@@ -738,6 +743,58 @@ assumptions_self_conflict``。
 比较，而不是匹配打印出来的短语。
 
 **参考。** JSON 可空性与 schema 见 :doc:`../../reference/bmc_results/index_zh`。
+
+17. 处理模型中的运行时错误
+--------------------------
+
+**起始文件。** 把下面的模型保存为 ``runtime_error.fcstm``\ ：第一个守卫不成立时，第二个
+守卫会除以输入 ``d``。
+
+.. code-block:: fcstm
+
+   input int d;
+   state Root {
+       [*] -> A;
+       state A;
+       state B;
+       state C;
+       A -> B : if [d == 1];
+       A -> C : if [10 / d > 1];
+   }
+
+把 ``check reach <= 2: active("Root.B");`` 保存为 ``runtime_error.fbmcq``。
+
+**CLI。**
+
+.. code-block:: bash
+
+   python -m pyfcstm bmc -i runtime_error.fcstm -q runtime_error.fbmcq
+
+**预期输出。** 退出状态 ``5``。报告给出出错的运算和步骤，重放确认仿真器引发了同一个
+错误：
+
+.. code-block:: text
+
+   BMC reach <= 2: RUNTIME ERROR REACHABLE WITHIN BOUND; PROPERTY NOT EVALUATED
+     Runtime error: division_by_zero at step 1
+     Runtime error location: guard g1 in transition Root.A::1::A->C
+     Replay: runtime error reproduced: transition guard evaluation failed: division by zero
+
+**失败边界。** 性质完全没有评估：到达错误的执行无法继续，因此既不声称“成立”也不声称
+“违反”。重放未能复现该错误时，退出状态改为 ``4``。
+
+**下一步。** 按需求的含义选择：
+
+- 若环境保证 ``d != 0``\ ，就把它写出来。在 ``check`` 行之前加上
+  ``assume always: d != 0;`` 后，运行以 ``0`` 退出，报告
+  ``PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND``。
+- 若 ``d`` 确实可能为零，就是模型有误：保护这次除法，例如写成
+  ``d != 0 && 10 / d > 1``\ ，``&&`` 只在 ``d`` 非零时才求值右侧。
+- 若只想在不触发错误的执行上评估性质，加上 ``--no-runtime-safety``\ ；这次运行同样以
+  ``0`` 退出并给出见证。错误仍然可达，只是报告不再查找它。
+
+**参考。** ``runtime_safety`` 结果、``runtime_error_prefix`` 见证和退出状态 ``5`` 见
+:doc:`../../reference/bmc_results/index_zh`。
 
 选择并比较求解器配置
 --------------------

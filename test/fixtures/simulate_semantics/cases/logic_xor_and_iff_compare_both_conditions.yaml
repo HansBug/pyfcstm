@@ -1,0 +1,28 @@
+title: "Exclusive or and equivalence compare two conditions"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/522
+  notes:
+  - "x > 0 is true and y > 0 is false: xor holds and iff does not."
+categories:
+- runtime
+- template_alignment
+steps:
+- cycle: []
+  expect:
+    state: Root.A
+    vars:
+      x: 1
+      y: 0
+      r: 1
+      s: 2
+    ended: false
+- cycle: []
+  expect:
+    state: Root.A
+    vars:
+      x: 1
+      y: 0
+      r: 1
+      s: 2
+    ended: false

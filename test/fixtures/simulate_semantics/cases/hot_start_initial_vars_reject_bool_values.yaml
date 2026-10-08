@@ -18,7 +18,7 @@ initial:
     temp: 1.0
   expect:
     raises:
-      type: ValueError
+      type: SimulationRuntimeExpressionError
       match: initial_vars['counter'] must not be bool
       match_kind: substring
 steps: []

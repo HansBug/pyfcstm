@@ -45,6 +45,10 @@ from dataclasses import dataclass
 from fractions import Fraction
 from typing import Any, Callable, Dict, Mapping, Tuple
 
+import z3
+
+from pyfcstm.semantics.catalog import lookup
+
 __all__ = [
     "PROOF_RULES",
     "UNREACHABLE_RULE_IDS",
@@ -307,16 +311,12 @@ def _incompatible_equalities(application: RuleApplication) -> bool:
     return premises[0].get("value") != premises[1].get("value")
 
 
-#: The operators whose answer is exact in Z3, keyed by the published operator name.
+#: The catalog token of each published operator name.
 #:
-#: Written as functions so the real and integer paths differ only in what they are
-#: handed -- two ``Fraction`` values or two ``int`` values -- rather than in a second
-#: copy of the operator table.
-_EXACT_OPERATORS = {
-    "add": lambda left, right: left + right,
-    "sub": lambda left, right: left - right,
-    "mul": lambda left, right: left * right,
-}
+#: The encoder lowers every operator through the operator catalog, so the rule
+#: evaluates through the same entries rather than through a second copy of the
+#: arithmetic that can drift from them.
+ARITHMETIC_TOKENS = {"add": "+", "sub": "-", "mul": "*", "div": "/"}
 
 
 def _publishable(exact: Fraction):
@@ -361,115 +361,63 @@ def _evaluate(operator: str, left: Any, right: Any):
     """Apply one arithmetic operator under the model's semantics.
 
     The encoder is the reference, because it is what the reference says a proof is
-    about, and it was for a long time simply not asked.  Division truncated toward
-    zero on the stated grounds that truncation is "what the encoded semantics do";
-    the other three operators used Python's operators on whatever the fact carried.
-    Neither matches.  Z3 adds, subtracts and multiplies reals exactly, and divides
-    two integers Euclidean-style and two reals exactly, so ``0.1 + 0.2`` is ``3/10``
-    where a double reaches ``0.30000000000000004``, and ``-7 / 2`` is ``-4`` where
-    truncation reaches ``-3``.
+    about.  It lowers every operator through the operator catalog: addition,
+    subtraction and multiplication are exact over the reals, and ``/`` is true
+    division in every sort, so ``0.1 + 0.2`` is ``3/10`` where a double reaches
+    ``0.30000000000000004``, and ``-7 / 2`` is ``-7/2`` where Euclidean division
+    reaches ``-4``.  The rule therefore evaluates through the same catalog entries,
+    on exact rationals.
 
-    Reals therefore go through ``Fraction`` and are published only when their decimal
-    form reads back as the same rational; the alternative is a step stating a value
-    the encoding does not hold, which is what the published proof used to do under
-    ``verification_status`` ``verified``.  Two integers add, subtract and multiply
-    exactly in Python already, so those need no detour.
-
-    Division with two integer operands is the one case with no answer here.  The
-    two readings -- Euclidean over the integers, exact over the reals -- part ways
-    on a remainder, and this function does not act on the operand types to choose
-    between them.  Where the readings agree the shared answer is published; where
-    they do not, the step is declined rather than guessed, and the explanation
-    stays at formal depth.
-
-    The refusal is conservative rather than forced.  A published value's type does
-    follow the variable's sort -- integers state integers, reals state floats even
-    for whole values -- so two integer operands do settle which reading applies.
-    Acting on that reaches past this function: the quotient it would then publish
-    has to be the one the encoder holds, and the encoder divides integers the
-    Euclidean way, which is not what a Python ``//`` or a truncation gives for
-    every sign pair.
+    The value it produces is the next value of the variable the step writes, and
+    ``left`` is that variable's current value; a published value's type follows the
+    variable's sort, integers for ``int`` and floats for ``float`` even when whole.
+    The runtime normalizes the variable after the block: an ``int`` variable keeps an
+    integral result as an integer and rejects any other with a writeback error, so a
+    non-integral result for it is no value at all.  A real result is published only
+    when its decimal form reads back as the same rational; the alternative is a step
+    stating a value the encoding does not hold.
 
     :param operator: The operator name carried by the expression fact.
     :type operator: str
-    :param left: Left operand.
+    :param left: Current value of the variable the step writes.
     :param right: Right operand.
-    :return: The value, or ``None`` when the operator is unknown, undefined here,
-        exact but not representable as a published number, or a quotient the integer
-        and the real reading disagree on.
+    :return: The value, or ``None`` when the operator is unknown, undefined here, not
+        a value the variable can hold, or exact but not representable as a
+        published number.
 
     Example::
 
         >>> _evaluate("add", 0.1, 0.2)
         0.3
-        >>> _evaluate("div", 7.5, 2)
+        >>> _evaluate("div", 7.5, 2.0)
         3.75
-        >>> _evaluate("div", 1.0, 3) is None
+        >>> _evaluate("div", 1.0, 3.0) is None
         True
-        >>> _evaluate("div", -7, 2) is None
+        >>> _evaluate("div", 6, 2.0)
+        3
+        >>> _evaluate("div", -7, 2.0) is None
         True
-        >>> _evaluate("div", -8, 2)
-        -4
-    """
-    real = isinstance(left, float) or isinstance(right, float)
-    if operator in _EXACT_OPERATORS:
-        if not real:
-            # Two integers add, subtract and multiply exactly in Python and in Z3
-            # alike, so there is nothing to reconcile.
-            return _EXACT_OPERATORS[operator](left, right)
-        return _publishable(
-            _EXACT_OPERATORS[operator](Fraction(str(left)), Fraction(str(right)))
-        )
-    if operator == "div":
-        if right == 0:
-            # Definedness is a separate rule's subject; this one has no value to
-            # report, and returning a guess would let a step past that check.
-            return None
-        exact = _exact_quotient(left, right)
-        if real:
-            return exact
-        # The two semantics part ways here: Z3 divides two integers
-        # Euclidean-style and two reals exactly.  This function does not act on the
-        # operand types to choose between them, so where the semantics agree the
-        # answer is the same either way and can be published, and where they do not
-        # the rule declines and the explanation stays at formal depth.  Acting on
-        # the types would mean publishing the Euclidean quotient, which has to be
-        # the one the encoder holds -- see this function's docstring for why that
-        # reaches past here.
-        euclidean = left // right if right > 0 else -(left // -right)
-        return euclidean if exact == euclidean else None
-    return None
-
-
-def _exact_quotient(left: Any, right: Any):
-    """Return a real quotient as a published number, or ``None`` when it is not one.
-
-    Z3 divides reals exactly, so the quotient is a rational.  A published fact carries
-    a JSON number, which is a decimal, and most rationals have no finite decimal form.
-    Reporting the nearest one would put a value in the proof that the encoding does
-    not hold -- so the quotient is computed exactly and published only when its
-    decimal form reads back as the same rational.
-
-    :param left: Numerator, as published.
-    :param right: Denominator, as published.
-    :return: The quotient as a float, or ``None`` when no exact decimal represents it.
-
-    Example::
-
-        >>> _exact_quotient(7.5, 2)
-        3.75
-        >>> _exact_quotient(1.0, 3) is None
+        >>> _evaluate("div", 6, 0.0) is None
         True
     """
-    try:
-        return _publishable(Fraction(str(left)) / Fraction(str(right)))
-    except (ValueError, ZeroDivisionError):
-        # ValueError: an operand whose text is not a number, which a fact should not
-        # carry and this refuses rather than guesses at.  ZeroDivisionError: a zero
-        # denominator the caller's own check did not see, such as ``0.0``.  A quotient
-        # too large for a float is refused inside ``_publishable``, which is where
-        # every "no published number represents this" answer now lives.
+    token = ARITHMETIC_TOKENS.get(operator)
+    if token is None:
         return None
+    try:
+        operands = [z3.RealVal(Fraction(str(item))) for item in (left, right)]
+    except ValueError:
+        # ValueError: an operand whose text is not a number, which a fact should not
+        # carry and this refuses rather than guesses at.
+        return None
+    value = z3.simplify(lookup(token).symbolic(*operands))
+    if not z3.is_rational_value(value):
+        # Division by zero has no value in the encoding, which leaves the quotient
+        # an uninterpreted term; definedness is a separate rule's subject.
+        return None
+    exact = Fraction(value.numerator_as_long(), value.denominator_as_long())
+    if isinstance(left, int):
+        return exact.numerator if exact.denominator == 1 else None
+    return _publishable(exact)
 
 
 def _carried_value(value_fact: Mapping[str, Any], expression: Mapping[str, Any]):

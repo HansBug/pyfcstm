@@ -1,0 +1,12 @@
+def float big = 1e308;
+def int r = 0;
+
+state Root {
+    state A {
+        during {
+            r = -big * 10;
+        }
+    }
+
+    [*] -> A;
+}

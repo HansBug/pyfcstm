@@ -398,6 +398,18 @@ safety-oriented properties, an undefined predicate can expose a violation.
 Keep undefined trigger and false trigger distinct in a `response` query. An
 undefined response predicate does not count as a successful response.
 
+The model itself can also fail. Before it evaluates any property, the checker
+asks whether some admissible execution reaches a runtime error in the model:
+division or modulo by zero in a guard or action, an `int` variable assigned a
+non-integral value, a math domain error such as `sqrt` of a negative number, or
+a negative base raised to a fractional power. A reachable error is reported as
+a runtime error and the property is not evaluated at all. If the task states an
+environmental rule that excludes the failing input, write that rule as an
+assumption, for example `assume always: divisor != 0;`. Do not weaken or
+rewrite the property to avoid the error, and do not add an unrequested
+assumption to hide it: an error the task does not exclude is a real finding
+about the model.
+
 ## Response And Incomplete Windows
 
 A response begins at a strict successor of the trigger frame. With

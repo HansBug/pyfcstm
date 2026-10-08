@@ -7,13 +7,11 @@ origin:
 categories:
 - runtime
 - template_alignment
-exclude_runners:
-- bmc_core
 steps:
 - cycle: []
   expect:
     raises:
-      type: ValueError
+      type: SimulationRuntimeExpressionError
       match: non-integer float from operation block writeback
       match_kind: substring
     vars:

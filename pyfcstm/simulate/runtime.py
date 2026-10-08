@@ -103,7 +103,6 @@ Abstract handler registration::
 """
 
 import copy
-import math
 import types
 import warnings
 from collections import Counter
@@ -121,10 +120,8 @@ from ..utils.validate import ModelLookupError, ModelValueError
 from ..dsl import INIT_STATE, EXIT_STATE
 from ..model import (
     Event,
-    IfBlock,
     OnAspect,
     OnStage,
-    Operation,
     OperationStatement,
     State,
     StateMachine,
@@ -133,6 +130,10 @@ from ..model import (
 from .diagnostics import CycleDiagnostics, _DecisionCollector, _transition_label
 from .context import ReadOnlyExecutionContext
 from .inputs import InputSourceSpec, _InputSources, _number
+from ..semantics.adapters import expression_from_model, statements_from_model
+from ..semantics.concrete import CONCRETE, normalize_persistent
+from ..semantics.engine import compile_expression, compile_statements
+from ..semantics.errors import EvaluationError, WritebackError
 
 
 _SAFE_REPR_DIGIT_LIMIT = 80
@@ -544,12 +545,25 @@ class CycleResult:
 
 class SimulationRuntimeExpressionError(ValueError, ArithmeticError):
     """
-    Raised when a DSL guard or action expression fails during execution.
+    Raised when a DSL guard, action expression or writeback fails during execution.
 
     The class keeps legacy ``ValueError`` / ``ArithmeticError`` catch
     compatibility while giving command-line callers a precise exception to
     handle without swallowing abstract-handler or internal runtime defects.
+
+    :ivar kind: Runtime error kind from the operator catalog, such as
+        ``"division_by_zero"`` or ``"writeback_non_integral"``, or ``None``
+        when unknown.
+    :vartype kind: Optional[str]
     """
+
+    kind: Optional[str] = None
+
+
+def _expression_error(message: str, kind: Optional[str]) -> SimulationRuntimeExpressionError:
+    error = SimulationRuntimeExpressionError(message)
+    error.kind = kind
+    return error
 
 
 class SimulationRuntimeActionReferenceError(RuntimeError):
@@ -897,6 +911,10 @@ class SimulationRuntime:
         self.stack: List[_Frame] = []
         self.vars: Dict[str, Union[int, float]] = {}
         self._input_sources = _InputSources(state_machine.inputs, input_source)
+        # Compiled expressions and operation blocks, keyed by the identity of
+        # the model object they were compiled from; the entry keeps the object
+        # alive so the identity cannot be reused.
+        self._compiled: Dict[int, Tuple[object, Callable]] = {}
         self._active_inputs = types.MappingProxyType({})
         self._last_inputs = None
         parameter_values = {} if parameters is None else dict(parameters)
@@ -1080,50 +1098,15 @@ class SimulationRuntime:
                 f"Available variables: {available_vars}"
             )
 
-        define = self.state_machine.defines[name]
-        declared_type = define.type
-        if type(value) is bool:
-            raise ValueError(f"{source} must not be bool")
-        if type(value) not in (int, float):
-            raise ValueError(
-                f"{source} must be int or float, got {type(value).__name__}"
+        try:
+            return normalize_persistent(
+                name, self.state_machine.defines[name].type, value, source
             )
-        if type(value) is float and not math.isfinite(value):
-            raise ValueError(
-                f"{source} for variable '{name}' declared {declared_type} must be "
-                f"finite, got {value!r}"
-            )
-
-        if declared_type == "int":
-            if type(value) is float:
-                if value != int(value):
-                    raise ValueError(
-                        f"Variable '{name}' is int type, cannot assign float {value!r}; "
-                        f"non-integer float from {source}"
-                    )
-                return int(value)
-            return value
-
-        if declared_type == "float":
-            try:
-                normalized_float = float(value)
-            except OverflowError as err:
-                # OverflowError: ``float(value)`` cannot represent a very large
-                # Python integer as a finite runtime float.
-                raise ValueError(
-                    f"{source} for variable '{name}' declared float must be finite; "
-                    "integer is outside Python float range"
-                ) from err
-            if not math.isfinite(normalized_float):
-                raise ValueError(
-                    f"{source} for variable '{name}' declared float must be finite, "
-                    f"got {normalized_float!r}"
-                )
-            return normalized_float
-
-        raise ValueError(
-            f"Variable '{name}' has unsupported persistent type {declared_type!r}"
-        )
+        except WritebackError as err:
+            # WritebackError: a caller-supplied or initializer value is
+            # rejected; construction and cycles raise the same runtime error
+            # class with the rejection kind, which is still a ValueError.
+            raise _expression_error(str(err), err.kind) from None
 
     def _state_belongs_to_machine(self, state: State) -> bool:
         """
@@ -1854,20 +1837,32 @@ class SimulationRuntime:
         else:
             old_vars = {name: vars_[name] for name in global_var_names}
 
-        self._execute_operation_statements(
-            operations,
-            local_scope,
-            is_validation_mode=is_validation_mode,
-        )
+        try:
+            self._compiled_block(operations)(local_scope, None)
+        except EvaluationError as err:
+            # EvaluationError: an assigned expression or branch condition
+            # raised a catalog runtime error.
+            raise _expression_error(
+                f"{self._statement_usage(err)} evaluation failed: {err.error}",
+                err.kind,
+            ) from err.error
 
-        normalized_updates = {
-            name: self._normalize_persistent_value(
-                name,
-                local_scope[name],
-                "operation block writeback",
-            )
-            for name in global_var_names
-        }
+        defines = self.state_machine.defines
+        try:
+            normalized_updates = {
+                name: normalize_persistent(
+                    name,
+                    defines[name].type,
+                    local_scope[name],
+                    "operation block writeback",
+                )
+                for name in global_var_names
+            }
+        except WritebackError as err:
+            # WritebackError: the block left a value its variable's declared
+            # type rejects, such as a non-integral float for an int.  The
+            # message is complete, so no cause is chained, as in generated code.
+            raise _expression_error(str(err), err.kind) from None
         for name, value in normalized_updates.items():
             vars_[name] = value
 
@@ -1876,100 +1871,54 @@ class SimulationRuntime:
             changes = self._format_var_changes(old_vars, new_vars)
             self.logger.info(f"{execute_message}{changes}")
 
-    def _execute_operation_statements(
-        self,
-        statements: List[OperationStatement],
-        scope: Dict[str, Union[int, float]],
-        is_validation_mode: bool = False,
-    ) -> None:
+    def _compiled_block(self, operations: List[OperationStatement]):
         """
-        Execute a sequence of operation statements inside one local scope.
+        Return the compiled form of an operation block, compiling it once.
 
-        Statements run strictly in order. The supplied ``scope`` is mutated in
-        place so later statements can observe values written by earlier ones.
+        Blocks belong to the immutable state machine, so the compiled
+        closures are cached by block identity for the runtime's lifetime.
 
-        :param statements: Statements to execute.
-        :type statements: List[OperationStatement]
-        :param scope: Mutable local scope for the current operation block or branch.
-        :type scope: Dict[str, Union[int, float]]
-        :param is_validation_mode: Whether this is validation mode.
-        :type is_validation_mode: bool
-        :return: ``None``.
-        :rtype: None
+        :param operations: Operation statements of one block.
+        :type operations: List[OperationStatement]
+        :return: Compiled block called as ``run(scope, None)``.
+        :rtype: Callable[[dict, None], None]
         """
-        for statement in statements:
-            self._execute_operation_statement(
-                statement,
-                scope,
-                is_validation_mode=is_validation_mode,
+        key = id(operations)
+        entry = self._compiled.get(key)
+        if entry is None:
+            entry = (
+                operations,
+                compile_statements(statements_from_model(operations), CONCRETE),
             )
-
-    def _execute_operation_statement(
-        self,
-        statement: OperationStatement,
-        scope: Dict[str, Union[int, float]],
-        is_validation_mode: bool = False,
-    ) -> None:
-        """
-        Execute one operation statement inside the supplied local scope.
-
-        Plain assignments update the current scope directly. ``if`` blocks
-        evaluate branch conditions against the current scope, execute the first
-        matching branch in an isolated branch scope, and then only write back
-        names that were already visible before entering that branch.
-
-        :param statement: Statement to execute.
-        :type statement: OperationStatement
-        :param scope: Mutable local scope for the current operation block or branch.
-        :type scope: Dict[str, Union[int, float]]
-        :param is_validation_mode: Whether this is validation mode.
-        :type is_validation_mode: bool
-        :return: ``None``.
-        :rtype: None
-        :raises TypeError: If the statement type is unsupported.
-        """
-        if isinstance(statement, Operation):
-            scope[statement.var_name] = self._evaluate_runtime_expr(
-                statement.expr,
-                scope,
-                usage=f"operation assignment to '{statement.var_name}'",
-            )
-            return
-
-        if isinstance(statement, IfBlock):
-            for branch in statement.branches:
-                if branch.condition is not None and not bool(
-                    self._evaluate_runtime_expr(
-                        branch.condition,
-                        scope,
-                        usage="if-block condition",
-                    )
-                ):
-                    continue
-
-                visible_names = tuple(scope.keys())
-                branch_scope = dict(scope)
-                self._execute_operation_statements(
-                    branch.statements,
-                    branch_scope,
-                    is_validation_mode=is_validation_mode,
-                )
-                for name in visible_names:
-                    scope[name] = branch_scope[name]
-                break
-            return
-
-        raise TypeError(f"Unknown operation statement type {type(statement)!r}.")
+            self._compiled[key] = entry
+        return entry[1]
 
     @staticmethod
+    def _statement_usage(err: EvaluationError) -> str:
+        """
+        Describe where a runtime error happened inside an operation block.
+
+        :param err: Runtime error raised while executing the block.
+        :type err: pyfcstm.semantics.errors.EvaluationError
+        :return: ``"operation assignment to 'x'"`` or ``"if-block condition"``.
+        :rtype: str
+        """
+        if err.role == "test":
+            return "if-block condition"
+        return f"operation assignment to '{err.statement.target}'"
+
     def _evaluate_runtime_expr(
+        self,
         expr,
         scope: Dict[str, Union[int, float]],
         *,
         usage: str,
     ) -> Any:
         """
-        Evaluate a DSL expression and normalize numeric user-data failures.
+        Evaluate a DSL expression and report runtime errors as controlled errors.
+
+        Expressions are compiled once per runtime and evaluated with the
+        concrete semantics of :mod:`pyfcstm.semantics`.
 
         :param expr: Expression object to evaluate.
         :type expr: pyfcstm.model.Expr
@@ -1979,33 +1928,36 @@ class SimulationRuntime:
         :type usage: str
         :return: Expression result.
         :rtype: Any
-        :raises SimulationRuntimeExpressionError: If evaluating ``expr`` raises
-            :class:`ValueError`, :class:`ArithmeticError`, or :class:`TypeError`
-            from user-authored DSL expression semantics.
+        :raises SimulationRuntimeExpressionError: If evaluating ``expr``
+            raises a runtime error such as division by zero, a math domain
+            error or numeric overflow.
 
         Example::
 
-            >>> from pyfcstm.model import Integer, Variable
+            >>> from pyfcstm.dsl import parse_with_grammar_entry
+            >>> from pyfcstm.model import Integer, Variable, parse_dsl_node_to_state_machine
             >>> from pyfcstm.simulate import SimulationRuntime
-            >>> scope = {"x": 2}
-            >>> expr = Integer(10) / Variable("x")
-            >>> SimulationRuntime._evaluate_runtime_expr(
-            ...     expr, scope, usage="example expression"
+            >>> sm = parse_dsl_node_to_state_machine(
+            ...     parse_with_grammar_entry(DEMO_DSL, 'state_machine_dsl')
+            ... )
+            >>> runtime = SimulationRuntime(sm)
+            >>> runtime._evaluate_runtime_expr(
+            ...     Integer(10) / Variable("x"), {"x": 2}, usage="example expression"
             ... )
             5.0
         """
+        key = id(expr)
+        entry = self._compiled.get(key)
+        if entry is None:
+            entry = (expr, compile_expression(expression_from_model(expr), CONCRETE))
+            self._compiled[key] = entry
         try:
-            return expr(**scope)
-        except (ValueError, ArithmeticError, TypeError) as e:
-            # ValueError: math domain errors or invalid numeric operations
-            # raised while evaluating the user's DSL expression.
-            # ArithmeticError: division by zero, overflow, or other numeric
-            # runtime failure while evaluating the user's DSL expression.
-            # TypeError: Python numeric, bitwise, and shift operators reject
-            # runtime operand combinations such as ``float << int``.
-            raise SimulationRuntimeExpressionError(
-                f"{usage} evaluation failed: {e}"
-            ) from e
+            return entry[1](scope, None)
+        except EvaluationError as err:
+            # EvaluationError: an operation raised a catalog runtime error.
+            raise _expression_error(
+                f"{usage} evaluation failed: {err.error}", err.kind
+            ) from err.error
 
     @staticmethod
     def _handler_identity(handler: Callable[[ReadOnlyExecutionContext], None]) -> Tuple:

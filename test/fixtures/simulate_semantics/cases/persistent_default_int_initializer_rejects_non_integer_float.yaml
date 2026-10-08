@@ -7,14 +7,12 @@ origin:
 categories:
 - runtime
 - template_alignment
-exclude_runners:
-- bmc_core
 initial:
   state: null
   vars: null
   expect:
     raises:
-      type: ValueError
+      type: SimulationRuntimeExpressionError
       match: Variable 'count' is int type, cannot assign float 1.5
       match_kind: substring
 steps: []

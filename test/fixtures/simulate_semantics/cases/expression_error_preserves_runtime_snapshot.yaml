@@ -7,8 +7,6 @@ origin:
     assertions.
 categories:
 - runtime
-exclude_runners:
-- bmc_core
 steps:
 - cycle: []
   expect:

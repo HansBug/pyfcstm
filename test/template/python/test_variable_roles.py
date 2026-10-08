@@ -167,15 +167,34 @@ def test_missing_input_hook_and_unknown_input_do_not_advance_machine():
             machine.get_input_pressure()
 
 
-@pytest.mark.parametrize("value", [True, 1.0, "1", None])
-def test_integer_input_requires_an_integer_snapshot(value):
-    source = "input int signal; output int result = 0; state Root { state Ready { during { result = signal; } } [*] -> Ready; }"
-    with _render_python_module(source) as module:
+_INTEGER_INPUT = "input int signal; output int result = 0; state Root { state Ready { during { result = signal; } } [*] -> Ready; }"
+
+
+@pytest.mark.parametrize(
+    "value, message",
+    [
+        (True, "must not be bool"),
+        (1.5, "cannot assign float 1.5"),
+        ("1", "must be int or float, got str"),
+        (None, "must be int or float, got NoneType"),
+    ],
+)
+def test_integer_input_requires_an_integral_number(value, message):
+    with _render_python_module(_INTEGER_INPUT) as module:
         machine = module.RootMachine()
-        with pytest.raises(ValueError, match="Input signal must be int"):
+        with pytest.raises(ValueError, match=message):
             machine.cycle(inputs={"signal": value})
         assert machine.last_inputs is None
         assert machine.vars == {"result": 0}
+
+
+def test_integer_input_accepts_an_integral_float_as_an_int():
+    # Inputs follow the persistent-variable rule, as in the simulator.
+    with _render_python_module(_INTEGER_INPUT) as module:
+        machine = module.RootMachine()
+        machine.cycle(inputs={"signal": 2.0})
+        assert machine.vars == {"result": 2}
+        assert type(machine.last_inputs["signal"]) is int
 
 
 def test_failed_external_read_preserves_previous_committed_snapshot():
@@ -322,3 +341,12 @@ def test_transition_guard_reads_all_four_roles_through_current_getters():
         assert machine.current_state_path == ("Root", "Done")
         assert machine.parameters == {"limit": 4}
         assert machine.vars == {"count": 1, "reading": 3}
+
+
+def test_an_integer_function_of_nan_keeps_the_interpreter_wording():
+    # floor of NaN is rejected with Python's own message, which the simulator
+    # keeps as well; only real-valued functions report "math domain error".
+    source = "input float a; def int k = 0; state Root { [*] -> A; state A { during { k = floor(a * 1e308 - a * 1e308); } } }"
+    with _render_python_module(source) as module:
+        with pytest.raises(module.SimulationRuntimeExpressionError, match="cannot convert float NaN to integer"):
+            module.RootMachine().cycle(inputs={"a": 10.0})

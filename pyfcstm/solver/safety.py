@@ -23,6 +23,7 @@ except ImportError:  # pragma: no cover - Python < 3.8 compatibility
 
 from ..model.expr import BinaryOp, Expr, UFunc, UnaryOp
 from ..model.model import IfBlock, Operation, OperationStatement
+from ..semantics.catalog import CATALOG
 
 SafetyReason = Literal[
     "bitwise",
@@ -32,28 +33,17 @@ SafetyReason = Literal[
     "nonlinear",
 ]
 
-_BITWISE_BINARY_OPERATORS = frozenset({"&", "|", "^", "<<", ">>"})
+# Operators and functions without an exact Z3 encoding come from the shared
+# operator catalog, so this classification cannot drift from the encoder.
+_BITWISE_BINARY_OPERATORS = frozenset(
+    spec.token
+    for spec in CATALOG.values()
+    if spec.kind == "binary" and spec.symbolic is None
+)
 _TRANSCENDENTAL_FUNCTIONS = frozenset(
-    {
-        "sin",
-        "cos",
-        "tan",
-        "asin",
-        "acos",
-        "atan",
-        "sinh",
-        "cosh",
-        "tanh",
-        "asinh",
-        "acosh",
-        "atanh",
-        "exp",
-        "log",
-        "log10",
-        "log2",
-        "log1p",
-        "cbrt",
-    }
+    spec.token
+    for spec in CATALOG.values()
+    if spec.kind == "function" and spec.symbolic is None
 )
 
 

@@ -109,6 +109,13 @@ from .source import (
 from .provenance import BmcTrackedConstraint
 from pyfcstm.dsl.role import VariableRole
 from pyfcstm.model import Expr
+from pyfcstm.semantics import ir
+from pyfcstm.semantics.symbolic import (
+    SymbolicFailure,
+    SymbolicInterpretation,
+    SymbolicSession,
+    translate,
+)
 from pyfcstm.solver.domain import DomainConstraint, DomainSource, translate_expr_domain
 from pyfcstm.solver.operation import execute_operations_domain
 
@@ -1297,6 +1304,59 @@ class BmcTraceSymbols:
 
 
 @dataclass(frozen=True)
+class BmcRuntimeErrorSite:
+    """One place where a runtime error can stop a bounded execution.
+
+    :param step: Index of the macro step evaluating the operation, or ``None``
+        for a variable initializer evaluated before the first step.
+    :type step: Optional[int]
+    :param kind: Catalog error kind, such as ``"division_by_zero"`` or
+        ``"writeback_non_integral"``.
+    :type kind: str
+    :param location: Human-readable location of the operation, such as
+        ``"guard g0 in transition Root.A::0::A->B"``.
+    :type location: str
+    :param condition: Z3 condition under which the runtime evaluates the
+        operation and the operation raises the error; not compared.
+    :type condition: z3.BoolRef
+
+    Example::
+
+        >>> import z3
+        >>> site = BmcRuntimeErrorSite(0, "division_by_zero", "guard g0", z3.Bool("e"))
+        >>> site.to_canonical()
+        {'kind': 'division_by_zero', 'location': 'guard g0', 'step': 0}
+    """
+
+    step: Optional[int]
+    kind: str
+    location: str
+    condition: z3.BoolRef = field(compare=False, repr=False)
+
+    def to_canonical(self) -> _CanonicalDict:
+        """Return a JSON-stable description of the site.
+
+        :return: Step, kind and location.
+        :rtype: Dict[str, object]
+
+        Example::
+
+            >>> import z3
+            >>> BmcRuntimeErrorSite(None, "math_domain", "initializer for x", z3.BoolVal(False)).to_canonical()['step'] is None
+            True
+        """
+        return {"kind": self.kind, "location": self.location, "step": self.step}
+
+
+def _error_site(
+    step: Optional[int], item: DomainConstraint, condition: z3.BoolRef
+) -> BmcRuntimeErrorSite:
+    # Every definedness constraint carries the label of the operation that
+    # produced it and the catalog kind of the error it rules out.
+    return BmcRuntimeErrorSite(step, item.kind, item.source.label, condition)
+
+
+@dataclass(frozen=True)
 class BmcCaseRelation:
     """Lowered relation for one macro-step case.
 
@@ -1469,6 +1529,10 @@ class BmcStepRelation:
     :type gamma_constraint: z3.BoolRef
     :param progress_mutex_constraint: Mutual exclusion of delta and gamma.
     :type progress_mutex_constraint: z3.BoolRef
+    :param runtime_error_sites: Operations of this step that can raise a
+        runtime error, in runtime evaluation order; empty for a core whose
+        cone slice dropped variables; not compared, defaults to ``()``.
+    :type runtime_error_sites: Tuple[BmcRuntimeErrorSite, ...], optional
 
     Example::
 
@@ -1486,6 +1550,9 @@ class BmcStepRelation:
     gamma_constraint: z3.BoolRef = field(default_factory=lambda: z3.BoolVal(True))
     progress_mutex_constraint: z3.BoolRef = field(
         default_factory=lambda: z3.BoolVal(True)
+    )
+    runtime_error_sites: Tuple[BmcRuntimeErrorSite, ...] = field(
+        default=(), compare=False, repr=False
     )
 
     def __post_init__(self) -> None:
@@ -1602,6 +1669,9 @@ class BmcCoreFormula:
     _tracked_case_groups: Tuple[BmcTrackedConstraint, ...] = field(
         default_factory=tuple, repr=False, compare=False
     )
+    _initial_error_sites: Tuple[BmcRuntimeErrorSite, ...] = field(
+        default_factory=tuple, repr=False, compare=False
+    )
 
     def __post_init__(self) -> None:
         _require_context(self.context)
@@ -1674,137 +1744,6 @@ class BmcCoreFormula:
         }
 
 
-def _z3_arith_binary(
-    op: str, left: z3.ArithRef, right: z3.ArithRef, label: str
-) -> _Z3Expr:
-    try:
-        if op == "+":
-            return left + right
-        if op == "-":
-            return left - right
-        if op == "*":
-            return left * right
-        if op == "/":
-            return left / right
-        if op == "%":
-            return left % right
-        if op == "**":
-            return left**right
-        if op == "&":  # pragma: no cover - reserved for future BitVec profile.
-            return left & right
-        if op == "|":  # pragma: no cover - reserved for future BitVec profile.
-            return left | right
-        if op == "^":  # pragma: no cover - reserved for future BitVec profile.
-            return left ^ right
-        if op == "<<":  # pragma: no cover - reserved for future BitVec profile.
-            return left << right
-        if op == ">>":  # pragma: no cover - reserved for future BitVec profile.
-            return left >> right
-    except TypeError as err:
-        # TypeError: Python or Z3 operator overloads reject unsupported operand
-        # sort combinations, such as bitwise operators on Real expressions.
-        raise UnsupportedBmcQuery(
-            "%s is unsupported for operator %s: %s" % (label, op, err)
-        ) from err
-    except (
-        z3.Z3Exception
-    ) as err:  # pragma: no cover - TypeError covers current sort failures.
-        # Z3Exception: Z3 rejects malformed arithmetic expressions or sort
-        # combinations after overload dispatch.
-        raise UnsupportedBmcQuery(
-            "%s is unsupported for operator %s: %s" % (label, op, err)
-        ) from err
-    raise UnsupportedBmcQuery(  # pragma: no cover - AST validates operator names.
-        "%s uses unsupported numeric operator %r." % (label, op)
-    )
-
-
-def _z3_comparison(
-    op: str, left: z3.ArithRef, right: z3.ArithRef, label: str
-) -> z3.BoolRef:
-    try:
-        if op == "<":
-            return left < right
-        if op == "<=":
-            return left <= right
-        if op == ">":
-            return left > right
-        if op == ">=":
-            return left >= right
-        if op == "==":
-            return left == right
-        if op == "!=":
-            return left != right
-    except (
-        TypeError
-    ) as err:  # pragma: no cover - current AST/binder keeps comparisons well typed.
-        # TypeError: Python/Z3 comparison overloads reject unsupported operand
-        # shapes before Z3 creates an expression.
-        raise UnsupportedBmcQuery(
-            "%s comparison %s is unsupported: %s" % (label, op, err)
-        ) from err
-    except (
-        z3.Z3Exception
-    ) as err:  # pragma: no cover - current AST/binder keeps comparisons well typed.
-        # Z3Exception: Z3 rejects malformed comparison sort combinations.
-        raise UnsupportedBmcQuery(
-            "%s comparison %s is unsupported: %s" % (label, op, err)
-        ) from err
-    raise UnsupportedBmcQuery(  # pragma: no cover - AST validates operator names.
-        "%s uses unsupported comparison operator %r." % (label, op)
-    )
-
-
-def _z3_ufunc(func: str, operand: z3.ArithRef, label: str) -> _LoweredValue:
-    constraints = []
-    try:
-        if func == "abs":
-            return _LoweredValue(z3.If(operand >= 0, operand, -operand))
-        if func == "sign":
-            zero = z3.IntVal(0) if z3.is_int(operand) else z3.RealVal(0)
-            one = z3.IntVal(1) if z3.is_int(operand) else z3.RealVal(1)
-            minus_one = z3.IntVal(-1) if z3.is_int(operand) else z3.RealVal(-1)
-            return _LoweredValue(
-                z3.If(operand == zero, zero, z3.If(operand > zero, one, minus_one))
-            )
-        if func == "floor":
-            return _LoweredValue(operand if z3.is_int(operand) else z3.ToInt(operand))
-        if func == "ceil":
-            return _LoweredValue(operand if z3.is_int(operand) else -z3.ToInt(-operand))
-        if func == "trunc":
-            if z3.is_int(operand):
-                return _LoweredValue(operand)
-            return _LoweredValue(
-                z3.If(operand >= 0, z3.ToInt(operand), -z3.ToInt(-operand))
-            )
-        if func == "round":
-            from pyfcstm.solver.expr import python_round_to_z3
-
-            return _LoweredValue(python_round_to_z3(operand))
-        if func == "sqrt":
-            constraints.append(
-                DomainConstraint(
-                    operand >= 0,
-                    DomainSource(label=label, operation="sqrt"),
-                )
-            )
-            root = z3.Sqrt(operand if z3.is_real(operand) else z3.ToReal(operand))
-            return _LoweredValue(root, tuple(constraints))
-    except TypeError as err:  # pragma: no cover - current ufunc calls are arith-sorted.
-        # TypeError: Python/Z3 overloads reject unsupported function operands.
-        raise UnsupportedBmcQuery(
-            "%s function %s is unsupported: %s" % (label, func, err)
-        ) from err
-    except (
-        z3.Z3Exception
-    ) as err:  # pragma: no cover - current ufunc calls are arith-sorted.
-        # Z3Exception: Z3 rejects unsupported function operand sorts.
-        raise UnsupportedBmcQuery(
-            "%s function %s is unsupported: %s" % (label, func, err)
-        ) from err
-    raise UnsupportedBmcQuery("%s uses unsupported function %r." % (label, func))
-
-
 def _resolve_frame(frame_selector: object, current_frame: int, bound: int) -> int:
     if frame_selector == "current":
         return current_frame
@@ -1843,375 +1782,202 @@ def _resolve_step(selector: object, current_step: Optional[int], bound: int) -> 
     )
 
 
+#: Operation label recorded on query definedness constraints, by error kind.
+_QUERY_OPERATIONS = {
+    "division_by_zero": "division",
+    "modulo_by_zero": "division",
+    "zero_negative_power": "power",
+    "complex_result": "power",
+    "math_domain": "sqrt",
+}
+
+
+@dataclass(frozen=True)
+class _QueryScope:
+    symbols: "BmcTraceSymbols"
+    frame_index: int
+    step_index: Optional[int]
+    call_count_lowerer: Optional[_CallCountLowerer]
+
+
+def _query_ir(expr) -> ir.Expr:
+    """Translate an FBMCQ expression into the shared IR; atoms become host atoms."""
+    if isinstance(expr, (IntLiteral, FloatLiteral, BoolLiteral)):
+        return ir.Literal("q", expr, expr.value)
+    if isinstance(expr, (NameRef, FrameVar)):
+        return ir.Symbol("q", expr, expr.name)
+    if isinstance(expr, MathConst):
+        return ir.Literal("q", expr, {"pi": math.pi, "E": math.e, "tau": math.tau}[expr.name])
+    if isinstance(expr, NumUnaryOp):
+        return ir.Unary("q", expr, "unary" + expr.op, _query_ir(expr.operand))
+    if isinstance(expr, CondUnaryOp):
+        return ir.Unary("q", expr, expr.op, _query_ir(expr.operand))
+    if isinstance(expr, (NumBinaryOp, NumericComparison, CondBinaryOp)):
+        return ir.Binary("q", expr, expr.op, _query_ir(expr.left), _query_ir(expr.right))
+    if isinstance(expr, (NumConditionalOp, CondConditionalOp)):
+        return ir.Conditional(
+            "q",
+            expr,
+            _query_ir(expr.condition),
+            _query_ir(expr.if_true),
+            _query_ir(expr.if_false),
+        )
+    if isinstance(expr, UFuncCall):
+        return ir.Call("q", expr, expr.func, (_query_ir(expr.operand),))
+    if isinstance(expr, Called):
+        # ``called(f)`` is ``call_count(f) >= 1``; the comparison keeps its
+        # catalog semantics.
+        count = CallCount(expr.call_filter)
+        return ir.Binary(
+            "q",
+            expr,
+            ">=",
+            ir.HostAtom("q", expr, "fbmcq.call_count", count),
+            ir.Literal("q", expr, 1),
+        )
+    keys = {
+        Cycle: "fbmcq.cycle",
+        CallCount: "fbmcq.call_count",
+        Active: "fbmcq.active",
+        Terminated: "fbmcq.terminated",
+        Event: "fbmcq.event",
+        Case: "fbmcq.case",
+    }
+    return ir.HostAtom("q", expr, keys[type(expr)], expr)
+
+
+class _QueryInterpretation(SymbolicInterpretation):
+    """Symbolic interpretation of FBMCQ expressions over one trace frame."""
+
+    def symbol(self, node, env: _QueryScope, ctx):
+        return env.symbols.resolve_query_value(env.frame_index, env.step_index, node.reference)
+
+    def host_atom(self, node, args, env: _QueryScope, ctx):
+        expr, symbols = node.payload, env.symbols
+        if node.key == "fbmcq.cycle":
+            return z3.IntVal(env.frame_index)
+        if node.key == "fbmcq.call_count":
+            if env.call_count_lowerer is None:
+                raise UnsupportedBmcQuery(
+                    "%s needs property call-record context."
+                    % ("called()" if isinstance(node.origin, Called) else "call_count()")
+                )
+            return env.call_count_lowerer(expr, env.frame_index, env.step_index)
+        if node.key == "fbmcq.active":
+            frame = _resolve_frame(expr.frame, env.frame_index, symbols.domain.bound)
+            return symbols.active_state(frame, expr.state_path)
+        if node.key == "fbmcq.terminated":
+            frame = _resolve_frame(expr.frame, env.frame_index, symbols.domain.bound)
+            return symbols.frame_state(frame) == z3.IntVal(STATE_TERMINATE_ID)
+        if node.key == "fbmcq.event":  # pragma: no cover - environment assumptions lower event atoms separately.
+            step = _resolve_step(expr.selector, env.step_index, symbols.domain.bound)
+            return symbols.event_input(step, symbols.domain.event_by_path(expr.event_path).path)
+        # fbmcq.case; the objective compiler owns case atoms.
+        step = _resolve_step(expr.frame, env.step_index, symbols.domain.bound)  # pragma: no cover
+        return symbols.case_selector(step, expr.label)  # pragma: no cover
+
+    def decide(self, condition, node, ctx, role):
+        # Query lowering runs no solver; literal conditions still select
+        # their branch without building the other one.
+        if z3.is_true(condition) or (z3.is_not(condition) and z3.is_false(condition.arg(0))):
+            return True
+        if z3.is_false(condition) or (z3.is_not(condition) and z3.is_true(condition.arg(0))):
+            return False
+        return None
+
+
+_QUERY = _QueryInterpretation()
+
+
+def _query_label(expr) -> str:
+    kind = "numeric" if isinstance(expr, _NUMERIC_QUERY_NODES) else "condition"
+    return "BMC %s expression %s" % (kind, expr)
+
+
+_NUMERIC_QUERY_NODES = (
+    IntLiteral,
+    FloatLiteral,
+    NameRef,
+    FrameVar,
+    Cycle,
+    CallCount,
+    MathConst,
+    NumUnaryOp,
+    NumBinaryOp,
+    NumConditionalOp,
+    UFuncCall,
+)
+
+
+def _lower_query_expr(
+    expr,
+    symbols: "BmcTraceSymbols",
+    frame_index: int,
+    step_index: Optional[int],
+    call_count_lowerer: Optional[_CallCountLowerer],
+    numeric: bool,
+) -> _LoweredValue:
+    label = _query_label(expr)
+    scope = _QueryScope(symbols, frame_index, step_index, call_count_lowerer)
+    session = SymbolicSession()
+    try:
+        value, _ = translate(_query_ir(expr), scope, session, _QUERY)
+    except SymbolicFailure as err:
+        # SymbolicFailure: the query uses an operation without an exact
+        # encoding, such as a bitwise operator or a transcendental function.
+        raise UnsupportedBmcQuery(_query_failure_message(err)) from err
+    value = _expect_arith(value, label) if numeric else _expect_bool(value, label)
+    return _LoweredValue(
+        value,
+        tuple(
+            DomainConstraint(
+                fact.constraint,
+                DomainSource(
+                    label=_query_label(fact.node.origin),
+                    operation=_QUERY_OPERATIONS.get(fact.kind),
+                ),
+                kind=fact.kind,
+            )
+            for fact in session.definedness
+        ),
+    )
+
+
+def _query_failure_message(err: SymbolicFailure) -> str:
+    node = err.node
+    if isinstance(node, ir.Call):
+        return "%s uses unsupported function %r." % (_query_label(node.origin), node.func)
+    if isinstance(node, ir.Binary):
+        return "%s is unsupported for operator %s: %s" % (
+            _query_label(node.origin),
+            node.op,
+            err.reason,
+        )
+    # The binder rejects every query failure except an unsupported function
+    # or operator before lowering.
+    return "BMC query expression is unsupported: %s" % (err.reason,)  # pragma: no cover
+
+
 def _lower_bmc_num_expr(
     expr: BmcNumExpr,
-    symbols: BmcTraceSymbols,
+    symbols: "BmcTraceSymbols",
     *,
     frame_index: int,
     step_index: Optional[int] = None,
     call_count_lowerer: Optional[_CallCountLowerer] = None,
 ) -> _LoweredValue:
-    label = "BMC numeric expression %s" % expr
-    if isinstance(expr, IntLiteral):
-        return _LoweredValue(z3.IntVal(expr.value))
-    if isinstance(expr, FloatLiteral):
-        return _LoweredValue(z3.RealVal(str(expr.value)))
-    if isinstance(expr, NameRef):
-        return _LoweredValue(
-            symbols.resolve_query_value(frame_index, step_index, expr.name)
-        )
-    if isinstance(expr, FrameVar):
-        return _LoweredValue(
-            symbols.resolve_query_value(frame_index, step_index, expr.name)
-        )
-    if isinstance(expr, Cycle):
-        return _LoweredValue(z3.IntVal(frame_index))
-    if isinstance(expr, CallCount):
-        if call_count_lowerer is None:
-            raise UnsupportedBmcQuery(
-                "call_count() needs property call-record context."
-            )
-        return _LoweredValue(call_count_lowerer(expr, frame_index, step_index))
-    if isinstance(expr, MathConst):
-        constants = {"pi": math.pi, "E": math.e, "tau": math.tau}
-        return _LoweredValue(z3.RealVal(str(constants[expr.name])))
-    if isinstance(expr, NumUnaryOp):
-        operand = _lower_bmc_num_expr(
-            expr.operand,
-            symbols,
-            frame_index=frame_index,
-            step_index=step_index,
-            call_count_lowerer=call_count_lowerer,
-        )
-        value = _expect_arith(operand.expr, label)
-        if expr.op == "+":
-            return _LoweredValue(value, operand.definedness_constraints)
-        if expr.op == "-":
-            return _LoweredValue(-value, operand.definedness_constraints)
-        raise UnsupportedBmcQuery(  # pragma: no cover - AST validates operator names.
-            "%s uses unsupported unary operator %r." % (label, expr.op)
-        )
-    if isinstance(expr, NumBinaryOp):
-        left = _lower_bmc_num_expr(
-            expr.left,
-            symbols,
-            frame_index=frame_index,
-            step_index=step_index,
-            call_count_lowerer=call_count_lowerer,
-        )
-        right = _lower_bmc_num_expr(
-            expr.right,
-            symbols,
-            frame_index=frame_index,
-            step_index=step_index,
-            call_count_lowerer=call_count_lowerer,
-        )
-        left_expr = _expect_arith(left.expr, label)
-        right_expr = _expect_arith(right.expr, label)
-        constraints = [*left.definedness_constraints, *right.definedness_constraints]
-        if expr.op in ("/", "%"):
-            constraints.append(
-                DomainConstraint(
-                    right_expr != 0,
-                    DomainSource(label=label, operation="division"),
-                )
-            )
-        return _LoweredValue(
-            _z3_arith_binary(expr.op, left_expr, right_expr, label),
-            tuple(constraints),
-        )
-    if isinstance(expr, NumConditionalOp):
-        condition = _lower_bmc_cond_expr(
-            expr.condition,
-            symbols,
-            frame_index=frame_index,
-            step_index=step_index,
-            call_count_lowerer=call_count_lowerer,
-        )
-        condition_expr = _expect_bool(condition.expr, label)
-        if z3.is_true(condition_expr):
-            if_true = _lower_bmc_num_expr(
-                expr.if_true,
-                symbols,
-                frame_index=frame_index,
-                step_index=step_index,
-                call_count_lowerer=call_count_lowerer,
-            )
-            return _LoweredValue(
-                _expect_arith(if_true.expr, label),
-                (*condition.definedness_constraints, *if_true.definedness_constraints),
-            )
-        if z3.is_false(condition_expr):
-            if_false = _lower_bmc_num_expr(
-                expr.if_false,
-                symbols,
-                frame_index=frame_index,
-                step_index=step_index,
-                call_count_lowerer=call_count_lowerer,
-            )
-            return _LoweredValue(
-                _expect_arith(if_false.expr, label),
-                (
-                    *condition.definedness_constraints,
-                    *if_false.definedness_constraints,
-                ),
-            )
-        if_true = _lower_bmc_num_expr(
-            expr.if_true,
-            symbols,
-            frame_index=frame_index,
-            step_index=step_index,
-            call_count_lowerer=call_count_lowerer,
-        )
-        if_false = _lower_bmc_num_expr(
-            expr.if_false,
-            symbols,
-            frame_index=frame_index,
-            step_index=step_index,
-            call_count_lowerer=call_count_lowerer,
-        )
-        return _LoweredValue(
-            z3.If(
-                condition_expr,
-                _expect_arith(if_true.expr, label),
-                _expect_arith(if_false.expr, label),
-            ),
-            (
-                *condition.definedness_constraints,
-                *_guarded_domain_constraints(
-                    condition_expr, if_true.definedness_constraints
-                ),
-                *_guarded_domain_constraints(
-                    z3.Not(condition_expr), if_false.definedness_constraints
-                ),
-            ),
-        )
-    if isinstance(expr, UFuncCall):
-        operand = _lower_bmc_num_expr(
-            expr.operand,
-            symbols,
-            frame_index=frame_index,
-            step_index=step_index,
-            call_count_lowerer=call_count_lowerer,
-        )
-        result = _z3_ufunc(expr.func, _expect_arith(operand.expr, label), label)
-        return _LoweredValue(
-            result.expr,
-            (*operand.definedness_constraints, *result.definedness_constraints),
-        )
-    raise UnsupportedBmcQuery(  # pragma: no cover - current AST class set is closed.
-        "Unsupported BMC numeric expression: %s." % type(expr).__name__
-    )
+    return _lower_query_expr(expr, symbols, frame_index, step_index, call_count_lowerer, True)
 
 
 def _lower_bmc_cond_expr(
     expr: BmcCondExpr,
-    symbols: BmcTraceSymbols,
+    symbols: "BmcTraceSymbols",
     *,
     frame_index: int,
     step_index: Optional[int] = None,
     call_count_lowerer: Optional[_CallCountLowerer] = None,
 ) -> _LoweredValue:
-    label = "BMC condition expression %s" % expr
-    if isinstance(expr, BoolLiteral):
-        return _LoweredValue(z3.BoolVal(expr.value))
-    if isinstance(expr, NumericComparison):
-        left = _lower_bmc_num_expr(
-            expr.left,
-            symbols,
-            frame_index=frame_index,
-            step_index=step_index,
-            call_count_lowerer=call_count_lowerer,
-        )
-        right = _lower_bmc_num_expr(
-            expr.right,
-            symbols,
-            frame_index=frame_index,
-            step_index=step_index,
-            call_count_lowerer=call_count_lowerer,
-        )
-        return _LoweredValue(
-            _z3_comparison(
-                expr.op,
-                _expect_arith(left.expr, label),
-                _expect_arith(right.expr, label),
-                label,
-            ),
-            (*left.definedness_constraints, *right.definedness_constraints),
-        )
-    if isinstance(expr, CondUnaryOp):
-        operand = _lower_bmc_cond_expr(
-            expr.operand,
-            symbols,
-            frame_index=frame_index,
-            step_index=step_index,
-            call_count_lowerer=call_count_lowerer,
-        )
-        if expr.op == "!":
-            return _LoweredValue(
-                z3.Not(_expect_bool(operand.expr, label)),
-                operand.definedness_constraints,
-            )
-        raise UnsupportedBmcQuery(  # pragma: no cover - AST validates operator names.
-            "%s uses unsupported condition unary operator %r." % (label, expr.op)
-        )
-    if isinstance(expr, CondBinaryOp):
-        left = _lower_bmc_cond_expr(
-            expr.left,
-            symbols,
-            frame_index=frame_index,
-            step_index=step_index,
-            call_count_lowerer=call_count_lowerer,
-        )
-        left_expr = _expect_bool(left.expr, label)
-        if expr.op == "&&" and z3.is_false(left_expr):
-            return _LoweredValue(z3.BoolVal(False), left.definedness_constraints)
-        if expr.op == "||" and z3.is_true(left_expr):
-            return _LoweredValue(z3.BoolVal(True), left.definedness_constraints)
-        right = _lower_bmc_cond_expr(
-            expr.right,
-            symbols,
-            frame_index=frame_index,
-            step_index=step_index,
-            call_count_lowerer=call_count_lowerer,
-        )
-        right_expr = _expect_bool(right.expr, label)
-        if expr.op == "&&":
-            value = z3.And(left_expr, right_expr)
-            definedness_constraints = (
-                *left.definedness_constraints,
-                *_guarded_domain_constraints(left_expr, right.definedness_constraints),
-            )
-        elif expr.op == "||":
-            value = z3.Or(left_expr, right_expr)
-            definedness_constraints = (
-                *left.definedness_constraints,
-                *_guarded_domain_constraints(
-                    z3.Not(left_expr), right.definedness_constraints
-                ),
-            )
-        elif expr.op == "=>":
-            value = z3.Implies(left_expr, right_expr)
-            definedness_constraints = (
-                *left.definedness_constraints,
-                *right.definedness_constraints,
-            )
-        elif expr.op == "xor":
-            value = z3.Xor(left_expr, right_expr)
-            definedness_constraints = (
-                *left.definedness_constraints,
-                *right.definedness_constraints,
-            )
-        elif expr.op in {"iff", "=="}:
-            value = left_expr == right_expr
-            definedness_constraints = (
-                *left.definedness_constraints,
-                *right.definedness_constraints,
-            )
-        elif expr.op == "!=":
-            value = left_expr != right_expr
-            definedness_constraints = (
-                *left.definedness_constraints,
-                *right.definedness_constraints,
-            )
-        else:
-            raise UnsupportedBmcQuery(  # pragma: no cover - AST validates operator names.
-                "%s uses unsupported condition operator %r." % (label, expr.op)
-            )
-        return _LoweredValue(value, definedness_constraints)
-    if isinstance(expr, CondConditionalOp):
-        condition = _lower_bmc_cond_expr(
-            expr.condition,
-            symbols,
-            frame_index=frame_index,
-            step_index=step_index,
-            call_count_lowerer=call_count_lowerer,
-        )
-        condition_expr = _expect_bool(condition.expr, label)
-        if z3.is_true(condition_expr):
-            if_true = _lower_bmc_cond_expr(
-                expr.if_true,
-                symbols,
-                frame_index=frame_index,
-                step_index=step_index,
-                call_count_lowerer=call_count_lowerer,
-            )
-            return _LoweredValue(
-                _expect_bool(if_true.expr, label),
-                (*condition.definedness_constraints, *if_true.definedness_constraints),
-            )
-        if z3.is_false(condition_expr):
-            if_false = _lower_bmc_cond_expr(
-                expr.if_false,
-                symbols,
-                frame_index=frame_index,
-                step_index=step_index,
-                call_count_lowerer=call_count_lowerer,
-            )
-            return _LoweredValue(
-                _expect_bool(if_false.expr, label),
-                (
-                    *condition.definedness_constraints,
-                    *if_false.definedness_constraints,
-                ),
-            )
-        if_true = _lower_bmc_cond_expr(
-            expr.if_true,
-            symbols,
-            frame_index=frame_index,
-            step_index=step_index,
-            call_count_lowerer=call_count_lowerer,
-        )
-        if_false = _lower_bmc_cond_expr(
-            expr.if_false,
-            symbols,
-            frame_index=frame_index,
-            step_index=step_index,
-            call_count_lowerer=call_count_lowerer,
-        )
-        return _LoweredValue(
-            z3.If(
-                condition_expr,
-                _expect_bool(if_true.expr, label),
-                _expect_bool(if_false.expr, label),
-            ),
-            (
-                *condition.definedness_constraints,
-                *_guarded_domain_constraints(
-                    condition_expr, if_true.definedness_constraints
-                ),
-                *_guarded_domain_constraints(
-                    z3.Not(condition_expr), if_false.definedness_constraints
-                ),
-            ),
-        )
-    if isinstance(expr, Active):
-        frame = _resolve_frame(expr.frame, frame_index, symbols.domain.bound)
-        return _LoweredValue(symbols.active_state(frame, expr.state_path))
-    if isinstance(expr, Terminated):
-        frame = _resolve_frame(expr.frame, frame_index, symbols.domain.bound)
-        return _LoweredValue(
-            symbols.frame_state(frame) == z3.IntVal(STATE_TERMINATE_ID)
-        )
-    if isinstance(
-        expr, Event
-    ):  # pragma: no cover - environment assumptions lower event atoms separately.
-        step = _resolve_step(expr.selector, step_index, symbols.domain.bound)
-        event = symbols.domain.event_by_path(expr.event_path)
-        return _LoweredValue(symbols.event_input(step, event.path))
-    if isinstance(expr, Case):  # pragma: no cover - objective compiler owns case atoms.
-        step = _resolve_step(expr.frame, step_index, symbols.domain.bound)
-        return _LoweredValue(symbols.case_selector(step, expr.label))
-    if isinstance(expr, Called):
-        if call_count_lowerer is None:
-            raise UnsupportedBmcQuery("called() needs property call-record context.")
-        count_expr = call_count_lowerer(
-            CallCount(expr.call_filter), frame_index, step_index
-        )
-        return _LoweredValue(_expect_arith(count_expr, label) >= z3.IntVal(1))
-    raise UnsupportedBmcQuery(  # pragma: no cover - current AST class set is closed.
-        "Unsupported BMC condition expression: %s." % type(expr).__name__
-    )
+    return _lower_query_expr(expr, symbols, frame_index, step_index, call_count_lowerer, False)
 
 
 def _translate_model_expr(expr: Expr, env: Mapping[str, _Z3Expr], label: str):
@@ -2246,7 +2012,7 @@ def _guarded_domain_constraints(
     if z3.is_true(guard):
         return tuple(constraints)
     return tuple(
-        DomainConstraint(z3.Implies(guard, item.constraint), item.source)
+        DomainConstraint(z3.Implies(guard, item.constraint), item.source, item.kind)
         for item in constraints
     )
 
@@ -2263,9 +2029,9 @@ def _lower_guard_requirement(
     guard: GuardRequirement,
     env: Mapping[str, _Z3Expr],
     constraints: Sequence[DomainConstraint],
-    case_label: str,
+    where: str,
 ) -> Tuple[z3.BoolRef, Tuple[DomainConstraint, ...]]:
-    label = "guard %s in case %s" % (guard.requirement_id, case_label)
+    label = "guard %s in %s" % (guard.requirement_id, where)
     result = _translate_model_expr(guard.expr, env, label)
     guard_expr = _expect_bool(result.z3_expr, label)
     if (
@@ -2303,9 +2069,10 @@ def _stage_from_runtime_role(role: str) -> str:
 def _execute_action_block(
     block: ActionBlock,
     env: Mapping[str, _Z3Expr],
-    case_label: str,
+    where: str,
     persistent_names: Sequence[str],
     cone_slice: Optional[ConeSlice] = None,
+    int_names: Sequence[str] = (),
 ) -> Tuple[
     Mapping[str, z3.ArithRef],
     Tuple[DomainConstraint, ...],
@@ -2318,7 +2085,7 @@ def _execute_action_block(
         stage = _stage_from_runtime_role(block.runtime_role)
         snapshot = {
             name: _expect_arith(
-                value, "call snapshot %s in case %s" % (name, case_label)
+                value, "call snapshot %s in %s" % (name, where)
             )
             for name, value in env.items()
             if name in persistent_names
@@ -2342,7 +2109,7 @@ def _execute_action_block(
         ),
         dict(env),
         source=DomainSource(
-            label="action block %s in case %s" % (block.runtime_role, case_label)
+            label="action block %s in %s" % (block.runtime_role, where)
         ),
         prune_unreachable=True,
     )
@@ -2351,10 +2118,29 @@ def _execute_action_block(
         message = _failure_message(
             failure.kind,
             failure.reason,
-            "action block %s in case %s" % (block.runtime_role, case_label),
+            "action block %s in %s" % (block.runtime_role, where),
         )
         raise UnsupportedBmcQuery(message)
-    return dict(execution.env), tuple(execution.definedness_constraints), ()
+    definedness = list(execution.definedness_constraints)
+    for name in int_names:
+        value = execution.env[name]
+        if z3.is_int(value):
+            continue
+        # The runtime normalizes persistent variables after every block; an
+        # int variable rejects a non-integral value with a writeback error.
+        # Once that is ruled out the value equals its integer, so it stays as
+        # computed and the assignment keeps the shape provenance reads.
+        definedness.append(
+            DomainConstraint(
+                z3.IsInt(value),
+                DomainSource(
+                    label="writeback of %s after action block %s in %s"
+                    % (name, block.runtime_role, where)
+                ),
+                kind="writeback_non_integral",
+            )
+        )
+    return dict(execution.env), tuple(definedness), ()
 
 
 def _prepare_case_lowering(
@@ -2362,6 +2148,7 @@ def _prepare_case_lowering(
     pre_env: Mapping[str, _Z3Expr],
     persistent_names: Sequence[str],
     cone_slice: Optional[ConeSlice] = None,
+    int_names: Sequence[str] = (),
 ) -> _CaseLowering:
     guards_by_anchor: Dict[int, List[GuardRequirement]] = {}
     for guard in case.guard_requirements:
@@ -2376,14 +2163,19 @@ def _prepare_case_lowering(
             guards_by_anchor.get(anchor, ()), key=lambda item: item.requirement_id
         ):
             term, new_definedness = _lower_guard_requirement(
-                guard, env, definedness, case.label
+                guard, env, definedness, "case %s" % case.label
             )
             guard_terms[guard.requirement_id] = term
             guard_definedness[guard.requirement_id] = tuple(new_definedness)
             definedness = list(new_definedness)
         if anchor < len(case.action_blocks):
             env, block_definedness, block_call_records = _execute_action_block(
-                case.action_blocks[anchor], env, case.label, persistent_names, cone_slice
+                case.action_blocks[anchor],
+                env,
+                "case %s" % case.label,
+                persistent_names,
+                cone_slice,
+                int_names,
             )
             definedness.extend(block_definedness)
             for record in block_call_records:
@@ -2582,9 +2374,20 @@ def _build_step_relation(
     pre_env = dict(symbols.frame_vars[step_index])
     pre_env.update(symbols.step_inputs[step_index])
     pre_env.update(symbols.parameters)
+    int_names = tuple(
+        name
+        for name in symbols.domain.persistent_variable_names
+        if name in symbols.frame_vars[step_index]
+        and z3.is_int(symbols.frame_vars[step_index][name])
+        and (cone_slice is None or name not in cone_slice.dropped_variables)
+    )
     lowerings = {
         case.label: _prepare_case_lowering(
-            case, pre_env, symbols.domain.persistent_variable_names, cone_slice
+            case,
+            pre_env,
+            symbols.domain.persistent_variable_names,
+            cone_slice,
+            int_names,
         )
         for case in case_list
     }
@@ -2663,6 +2466,25 @@ def _build_step_relation(
         tuple(item.formula for item in relations)
         + (delta_constraint, gamma_constraint, progress_mutex_constraint)
     )
+    # A core whose slice dropped variables also dropped operations, so it
+    # cannot locate runtime errors; the runtime-safety check builds the
+    # unsliced core instead.
+    runtime_error_sites = (
+        ()
+        if cone_slice is not None and cone_slice.dropped_variables
+        else tuple(
+            site
+            for formal in formals
+            for site in _point_error_sites(
+                formal,
+                step_index,
+                symbols,
+                pre_env,
+                int_names,
+                accepted_lookup,
+            )
+        )
+    )
     return BmcStepRelation(
         step_index=step_index,
         formals=tuple(formals),
@@ -2671,7 +2493,63 @@ def _build_step_relation(
         delta_constraint=delta_constraint,
         gamma_constraint=gamma_constraint,
         progress_mutex_constraint=progress_mutex_constraint,
+        runtime_error_sites=runtime_error_sites,
     )
+
+
+def _point_error_sites(
+    formal: MacroStepFormal,
+    step_index: int,
+    symbols: BmcTraceSymbols,
+    pre_env: Mapping[str, _Z3Expr],
+    int_names: Sequence[str],
+    accepted_lookup,
+) -> List[BmcRuntimeErrorSite]:
+    # Each point is lowered once, on top of the values its parent left, so a
+    # path shared by several cases and failed probes is executed only once.
+    source_guard = symbols.frame_state(step_index) == z3.IntVal(
+        formal.source.source_state_id
+    )
+    envs: Dict[int, Mapping[str, _Z3Expr]] = {}
+    terms: Dict[int, Mapping[str, z3.BoolRef]] = {}
+    sites: List[BmcRuntimeErrorSite] = []
+    for point in formal.evaluation_points:
+        env = pre_env if point.parent is None else envs[id(point.parent)]
+        guard_terms = {} if point.parent is None else terms[id(point.parent)]
+        if point.guard is not None:
+            term, own = _lower_guard_requirement(
+                point.guard, env, (), "transition %s" % point.guard.transition_label
+            )
+            guard_terms = dict(guard_terms, **{point.guard.requirement_id: term})
+        else:
+            block = point.block
+            env, own, _calls = _execute_action_block(
+                block,
+                env,
+                "transition %s" % block.transition_label
+                if block.transition_label is not None
+                else "state %s" % block.owner_state_path,
+                symbols.domain.persistent_variable_names,
+                None,
+                int_names,
+            )
+        envs[id(point)] = env
+        terms[id(point)] = guard_terms
+        if not own:
+            continue
+        reached = _lower_bool_template(
+            point.condition,
+            _CaseLowering(None, guard_terms, {key: () for key in guard_terms}, env, ()),
+            accepted_lookup,
+            set(),
+            symbols,
+            step_index,
+        ).expr
+        sites.extend(
+            _error_site(step_index, item, _and((source_guard, reached, z3.Not(item.constraint))))
+            for item in own
+        )
+    return sites
 
 
 def _append_history_domain_constraints(
@@ -2807,6 +2685,7 @@ def _build_initial_formula(
     context: BmcPreparedContext,
     symbols: BmcTraceSymbols,
     groups: List[BmcTrackedConstraint],
+    error_sites: List[BmcRuntimeErrorSite],
 ) -> z3.BoolRef:
     source = _initial_source(context)
     constraints: List[z3.ExprRef] = []
@@ -2840,7 +2719,22 @@ def _build_initial_formula(
         )
         value = _expect_arith(result.z3_expr, "initializer for %s" % var.name)
         define_ref = context._source_registry.model_reference(define)
-        for defined_index, item in enumerate(result.definedness_constraints):
+        initializer_definedness = list(result.definedness_constraints)
+        if z3.is_int(env[var.name]) and not z3.is_int(value):
+            initializer_definedness.append(
+                DomainConstraint(
+                    z3.IsInt(value),
+                    DomainSource(label="initializer for %s" % var.name),
+                    kind="writeback_non_integral",
+                )
+            )
+        # An initializer runs once every earlier initializer succeeded.
+        prefix = tuple(constraints)
+        error_sites.extend(
+            _error_site(None, item, _and((*prefix, z3.Not(item.constraint))))
+            for item in initializer_definedness
+        )
+        for defined_index, item in enumerate(initializer_definedness):
             constraints.append(item.constraint)
             _append_tracked_group(
                 groups,
@@ -3097,7 +2991,8 @@ def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
     domain_formula = _formula_from_groups(groups[domain_start:])
 
     initial_start = len(groups)
-    _build_initial_formula(prepared, symbols, groups)
+    initial_error_sites: List[BmcRuntimeErrorSite] = []
+    _build_initial_formula(prepared, symbols, groups, initial_error_sites)
     initial_formula = _formula_from_groups(groups[initial_start:])
 
     transition_start = len(groups)
@@ -3163,11 +3058,13 @@ def build_bmc_core_formula(context: BmcPreparedContext) -> BmcCoreFormula:
         cone_slice=cone_slice,
         _tracked_groups=tuple(groups),
         _tracked_case_groups=tuple(case_groups),
+        _initial_error_sites=tuple(initial_error_sites),
     )
 
 
 __all__ = [
     "BmcAbstractCallRecord",
+    "BmcRuntimeErrorSite",
     "BmcTraceSymbols",
     "BmcCaseRelation",
     "BmcStepRelation",

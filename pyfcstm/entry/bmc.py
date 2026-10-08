@@ -249,6 +249,7 @@ def _execute_bmc(
     infeasibility_explanation: str = "none",
     solver_profile: str = "default",
     cone_slicing: bool = False,
+    runtime_safety: bool = True,
 ) -> _BmcExecution:
     from ..bmc import BmcBuildError
 
@@ -267,6 +268,8 @@ def _execute_bmc(
             options["infeasibility_explanation"] = infeasibility_explanation
         if solver_profile != "default":
             options["solver_profile"] = solver_profile
+        if runtime_safety is not True:
+            options["runtime_safety"] = runtime_safety
         result = _solve_bmc_property(formula, timeout_ms=timeout_ms, **options)
     except BmcBuildError as err:
         # solve_bmc_property receives validated CLI arguments and a compiled
@@ -275,7 +278,15 @@ def _execute_bmc(
 
     witness = None
     replay = None
-    if result.status == "sat":
+    if result.outcome == "runtime_error":
+        try:
+            witness = _decode_bmc_result_trace(result, source="runtime_error")
+            replay = _replay_bmc_witness(model, witness, abstract_handlers=None)
+        except BmcBuildError as err:
+            # An error-prefix model produced by the runtime-safety formula must
+            # decode and replay like any other SAT model.
+            raise _BmcCliInternalError(str(err)) from err
+    elif result.status == "sat":
         try:
             witness = _decode_bmc_result_trace(result, source="primary")
             replay = _replay_bmc_witness(model, witness, abstract_handlers=None)
@@ -295,6 +306,8 @@ def _execute_bmc(
 
     if replay is not None and not replay.ok:
         exit_code = 4
+    elif result.outcome == "runtime_error":
+        exit_code = 5
     elif result.incomplete or result.property_satisfied is None:
         exit_code = 3
     elif result.property_satisfied:
@@ -342,7 +355,11 @@ def _human_presentation(execution: _BmcExecution) -> _BmcPresentation:
                 and execution.witness.model_role == "incomplete_suffix"
                 else ""
             )
-            if prefix:
+            if replay.runtime_error is not None:
+                evidence.append(
+                    "Replay: runtime error reproduced: %s" % replay.runtime_error["message"]
+                )
+            elif prefix:
                 evidence.append(
                     "Replay: verified %s (%d frames, %d %s)."
                     % (prefix, frames, steps, step_word)
@@ -399,6 +416,11 @@ def _human_trace(execution: _BmcExecution) -> Tuple[str, ...]:
     if witness is None:
         return ()
     lines = ["Trace"]
+    error = (
+        witness.verdict["runtime_error"]
+        if witness.model_role == "runtime_error_prefix"
+        else None
+    )
     for step in witness.steps:
         details = [step.case_kind]
         event_paths = tuple(item.path for item in step.input_events)
@@ -416,12 +438,36 @@ def _human_trace(execution: _BmcExecution) -> Tuple[str, ...]:
                 "; ".join(details),
             )
         )
+    if error is not None:
+        if error["step"] is None:
+            lines.append("  init: RUNTIME ERROR %s (%s)" % (error["kind"], error["location"]))
+        else:
+            details = ["events=%s" % _human_compact_values(tuple(error["events"]))] if error["events"] else []
+            lines.append(
+                "  %d: %s -> RUNTIME ERROR %s%s"
+                % (
+                    error["step"],
+                    _human_frame_label(witness, error["step"]),
+                    error["kind"],
+                    " [%s]" % "; ".join(details) if details else "",
+                )
+            )
     return tuple(lines)
 
 
 def _human_diagnostics(execution: _BmcExecution) -> Tuple[str, ...]:
     result = execution.result
-    lines = ["Solver: %s in %.3f ms" % (result.status.upper(), result.elapsed_ms)]
+    safety = result.runtime_safety
+    if result.outcome in ("runtime_error", "runtime_safety_unknown", "runtime_safety_timeout"):
+        # The property was never handed to the solver; only the
+        # runtime-safety check ran.
+        lines = [
+            "Runtime safety check: %s in %.3f ms over %d operation(s)"
+            % (safety.status.upper(), safety.elapsed_ms, safety.sites),
+            "Solver: NOT RUN",
+        ]
+    else:
+        lines = ["Solver: %s in %.3f ms" % (result.status.upper(), result.elapsed_ms)]
     if result.timeout_ms is not None:
         lines.append(
             "Timeout: %d ms shared by all solver checks in this invocation"
@@ -619,6 +665,7 @@ def build_bmc_output(
     infeasibility_explanation: str = "none",
     solver_profile: str = "default",
     cone_slicing: bool = False,
+    runtime_safety: bool = True,
 ) -> Tuple[str, int]:
     """Run one bounded query and build its complete CLI report.
 
@@ -645,6 +692,10 @@ def build_bmc_output(
     :type solver_profile: str, optional
     :param cone_slicing: Enable conservative cone slicing, defaults to ``False``.
     :type cone_slicing: bool, optional
+    :param runtime_safety: Check whether a runtime error is reachable before
+        evaluating the property, defaults to ``True``.  A reachable error
+        leaves the property unevaluated and exits with status ``5``.
+    :type runtime_safety: bool, optional
     :return: Completed report text and matching process exit status.
     :rtype: Tuple[str, int]
     :raises pyfcstm.entry.base.ClickErrorException: If model/query input is
@@ -668,6 +719,7 @@ def build_bmc_output(
         infeasibility_explanation=infeasibility_explanation,
         solver_profile=solver_profile,
         **({"cone_slicing": cone_slicing} if cone_slicing is not False else {}),
+        **({"runtime_safety": runtime_safety} if runtime_safety is not True else {}),
     )
     return text, exit_code
 
@@ -682,6 +734,7 @@ def _build_bmc_report(
     infeasibility_explanation: str = "none",
     solver_profile: str = "default",
     cone_slicing: bool = False,
+    runtime_safety: bool = True,
 ) -> Tuple[str, int, str]:
     """Build one report and retain presentation severity for terminal color."""
     for option_name, option_value in (
@@ -716,6 +769,8 @@ def _build_bmc_report(
         )
     if not isinstance(cone_slicing, bool):
         raise ClickErrorException("cone_slicing must be bool.")
+    if not isinstance(runtime_safety, bool):
+        raise ClickErrorException("runtime_safety must be bool.")
     execution = _execute_bmc(
         input_code_file,
         query_file,
@@ -724,6 +779,7 @@ def _build_bmc_report(
         infeasibility_explanation,
         solver_profile,
         **({"cone_slicing": cone_slicing} if cone_slicing is not False else {}),
+        **({"runtime_safety": runtime_safety} if runtime_safety is not True else {}),
     )
     if json_output:
         return (
@@ -912,6 +968,7 @@ def _run_bmc_command(
     infeasibility_explanation: str = "none",
     solver_profile: str = "default",
     cone_slicing: bool = False,
+    runtime_safety: bool = True,
 ) -> int:
     """Build and publish one report behind the CLI exception boundary."""
     text, exit_code, severity = _build_bmc_report(
@@ -923,6 +980,7 @@ def _run_bmc_command(
         infeasibility_explanation=infeasibility_explanation,
         solver_profile=solver_profile,
         **({"cone_slicing": cone_slicing} if cone_slicing is not False else {}),
+        **({"runtime_safety": runtime_safety} if runtime_safety is not True else {}),
     )
     if output_file is None:
         color_enabled = _resolve_bmc_color_enabled(
@@ -1014,6 +1072,15 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
         help="Conservatively slice unobserved writes; default is off.",
     )
     @click.option(
+        "--runtime-safety/--no-runtime-safety",
+        default=True,
+        show_default=True,
+        help=(
+            "Check whether a runtime error is reachable before evaluating the "
+            "property; a reachable error exits with status 5."
+        ),
+    )
+    @click.option(
         "--solver-profile",
         type=click.Choice(("default", "logic", "tactic"), case_sensitive=True),
         default="default",
@@ -1052,6 +1119,7 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
         infeasibility_explanation: str,
         solver_profile: str,
         cone_slicing: bool,
+        runtime_safety: bool,
     ) -> None:
         """Run a bounded model checking query.
 
@@ -1080,6 +1148,9 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
         :type solver_profile: str
         :param cone_slicing: Enable conservative query-specific cone slicing.
         :type cone_slicing: bool
+        :param runtime_safety: Check runtime-error reachability before the
+            property.
+        :type runtime_safety: bool
         :return: ``None``.
         :rtype: None
 
@@ -1101,6 +1172,7 @@ def _add_bmc_subcommand(cli: click.Group) -> click.Group:
             infeasibility_explanation=infeasibility_explanation,
             solver_profile=solver_profile,
             **({"cone_slicing": cone_slicing} if cone_slicing is not False else {}),
+            **({"runtime_safety": runtime_safety} if runtime_safety is not True else {}),
         )
         ctx.exit(exit_code)
 

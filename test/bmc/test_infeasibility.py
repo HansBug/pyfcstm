@@ -1113,9 +1113,13 @@ state Root {
         'init state("Root.A") where x == 1 && y == 0; '
         'check reach <= 1: active("Root.A");'
     )
+    formula = compile_bmc_property(build_bmc_core_formula(context))
+    # The guard divides by zero, which the runtime-safety check reports first.
+    assert solve_bmc_property(formula).outcome == "runtime_error"
     result = solve_bmc_property(
-        compile_bmc_property(build_bmc_core_formula(context)),
+        formula,
         infeasibility_explanation="formal",
+        runtime_safety=False,
     )
     explanation = result.feasibility.explanation
 

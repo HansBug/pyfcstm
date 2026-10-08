@@ -236,21 +236,14 @@ def test_arithmetic_evaluation_refuses_the_four_ways_it_can_be_misapplied(
 
 @pytest.mark.unittest
 def test_division_is_checked_against_the_encoder_not_against_a_guess() -> None:
-    """Division was pinned to a semantics the encoder does not have.
+    """Division follows the encoder, which divides through the operator catalog.
 
-    The claim used to be that Python floors while "the encoded semantics truncate
-    toward zero", and the encoder was never asked.  It divides two ways, neither of
-    them truncation: an ``int`` variable lowers onto Z3's integer division, which is
-    Euclidean, and a ``float`` variable lowers onto Z3's reals, which divide exactly.
-
-    This function does not act on the operand types to choose between the two.
-    Where the semantics agree the answer is the same either way and is published;
-    where they part ways, no claimed value is accepted.
-
-    The refusal is conservative rather than forced: a published value's type does
-    follow the variable's sort, so two integer operands do settle which reading
-    applies.  What this test pins is the contract -- agree and publish, differ and
-    decline -- not a claim that the operand types are uninformative.
+    ``/`` is true division in every sort, so ``-7 / 2`` is ``-3.5`` and never the
+    ``-4`` of Euclidean division or the ``-3`` of truncation.  The value is the next
+    value of the variable the step writes, and the runtime normalizes that variable
+    after the block: an ``int`` variable keeps an integral quotient as an integer,
+    and a non-integral one is a writeback error, so no value at all is accepted for
+    it.  A real variable divides exactly.
     """
 
     def application(left, operand, claimed):
@@ -270,15 +263,15 @@ def test_division_is_checked_against_the_encoder_not_against_a_guess() -> None:
             _equality(frame=1, value=claimed),
         )
 
-    # Integer operands whose quotient is the same under both readings: published, and
-    # a neighbour is refused.
-    for left, operand, agreed in ((8, 2, 4), (-8, 2, -4), (6, 3, 2), (-6, -3, 2)):
-        assert check_rule(application(left, operand, agreed)) is True, (left, operand)
-        assert check_rule(application(left, operand, agreed + 1)) is False
+    # An int variable divided without remainder: published, and a neighbour is
+    # refused.  The encoder publishes an integer literal divisor as a real.
+    for left, operand, quotient in ((8, 2.0, 4), (-8, 2.0, -4), (6, 3, 2), (-6, -3.0, 2)):
+        assert check_rule(application(left, operand, quotient)) is True, (left, operand)
+        assert check_rule(application(left, operand, quotient + 1)) is False
 
-    # Integer operands where the readings part ways.  ``-7 / 2`` is ``-4`` for an
-    # integer variable and ``-3.5`` for a real one, so neither is asserted.
-    for left, operand in ((7, 2), (-7, 2), (7, -2), (-7, -2)):
+    # An int variable divided with a remainder fails its writeback, so no claimed
+    # value is a value the variable can hold.
+    for left, operand in ((7, 2.0), (-7, 2), (7, -2.0), (-7, -2)):
         for claimed in (3, -3, 4, -4, 3.5, -3.5):
             assert check_rule(application(left, operand, claimed)) is False, (
                 left,
@@ -286,17 +279,59 @@ def test_division_is_checked_against_the_encoder_not_against_a_guess() -> None:
                 claimed,
             )
 
-    # A float operand names the sort, so reals divide exactly.
+    # A real variable divides exactly.
     assert check_rule(application(7.5, 2, 3.75)) is True
     assert check_rule(application(7.5, 2, 3.0)) is False, "truncation is not the model"
-    assert check_rule(application(-7.0, 2, -3.5)) is True
+    assert check_rule(application(-7.0, 2.0, -3.5)) is True
 
+    # A zero divisor has no value; definedness is a separate rule's subject.
+    assert check_rule(application(6.0, 0.0, 0.0)) is False
     # An exact quotient with no finite decimal form, and one beyond every float, are
     # refused rather than rounded: no published number is the one the encoding holds.
     assert check_rule(application(1.0, 3, 0.3333333333333333)) is False
     assert check_rule(application(1.0, 3, 0.0)) is False
     assert check_rule(application(1e308, 1e-308, 1e308)) is False
     assert check_rule(application(1e308, 1e-308, 0.0)) is False
+
+
+@pytest.mark.unittest
+def test_an_operator_the_catalog_does_not_name_is_not_evaluated() -> None:
+    """Only the published arithmetic names map onto catalog entries."""
+    application = RuleApplication(
+        "arithmetic_evaluation",
+        (
+            _equality(value=6),
+            _fact(
+                "arithmetic_expression",
+                variable="x",
+                frame=0,
+                operator="pow",
+                operand=2,
+                target_frame=1,
+            ),
+        ),
+        _equality(frame=1, value=36),
+    )
+
+    assert check_rule(application) is False
+    # An operand that is not a number is refused rather than guessed at.
+    for left, operand in ((6, "two"), ("six", 2)):
+        bad = RuleApplication(
+            "arithmetic_evaluation",
+            (
+                _equality(value=left),
+                _fact(
+                    "arithmetic_expression",
+                    variable="x",
+                    frame=0,
+                    operator="add",
+                    operand=operand,
+                    target_frame=1,
+                ),
+            ),
+            _equality(frame=1, value=8),
+        )
+        assert check_rule(bad) is False
 
 
 @pytest.mark.unittest

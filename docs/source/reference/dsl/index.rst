@@ -889,6 +889,74 @@ parentheses/literals/functions, unary signs, power, multiplicative, additive,
 shift, bitwise ``&`` / ``^`` / ``|``, comparisons, condition equality/``iff``,
 ``and``, ``xor``, ``or``, implication, and ternary forms.
 
+Evaluation semantics
+~~~~~~~~~~~~~~~~~~~~
+
+Every consumer -- the simulator, the generated runtimes, ``inspect``, the
+verifier and BMC -- evaluates an operation the same way, from one operator
+catalog (:mod:`pyfcstm.semantics.catalog`).  An operation that the runtime
+rejects raises an error of the listed kind, and each consumer handles that
+error in its own way: the simulator and the generated runtimes raise
+``SimulationRuntimeExpressionError``, the verifier treats the operation's
+definedness as a constraint, and ``pyfcstm bmc`` reports a reachable error as
+``runtime_error`` before it evaluates the property.
+
+.. list-table:: Evaluation and runtime errors
+   :header-rows: 1
+   :widths: 22 48 30
+
+   * - Operation
+     - Result
+     - Error kind
+   * - ``a / b``
+     - True division; the result is always a float, so ``7 / 2`` is ``3.5``.
+     - ``division_by_zero`` when ``b`` is zero.
+   * - ``a % b``
+     - Floored modulo: the result takes the sign of ``b``, so ``-7 % 2`` is
+       ``1`` and ``7 % -2`` is ``-1``.
+     - ``modulo_by_zero`` when ``b`` is zero.
+   * - ``a ** b``
+     - An int for an int base and a non-negative int exponent, a float
+       otherwise.  ``-2`` is a signed literal, so ``-2 ** 2`` is ``4``.
+     - ``zero_negative_power`` for zero raised to a negative power;
+       ``complex_result`` for a negative base raised to a non-integral power.
+   * - ``<<``, ``>>``, ``&``, ``^``, ``|``
+     - Integer operations.
+     - ``invalid_operand`` for a float operand; ``negative_shift_count``.
+   * - ``&&``, ``||``, ``=>``
+     - Short-circuit: the right side is evaluated only when it decides the
+       result, so ``d != 0 => 10 / d > 1`` never divides by zero.
+     - Only from the side that is evaluated.
+   * - ``xor``, ``iff``, comparisons
+     - Both sides are evaluated.
+     - From either side.
+   * - ``(c) ? a : b``
+     - Only the selected branch is evaluated.
+     - Only from the condition and the selected branch.
+   * - ``sqrt``, ``log``, ``log10``, ``log2``, ``log1p``, ``asin``, ``acos``,
+       ``acosh``, ``atanh``, ``sin``, ``cos``, ``tan``
+     - Real-valued math functions.
+     - ``math_domain`` outside the function's domain, for example
+       ``sqrt(-1)`` or ``log(0)``.
+   * - ``cbrt``
+     - The real cube root: exact on perfect cubes and sign-preserving, so
+       ``cbrt(1000)`` is ``10.0`` and ``cbrt(-8)`` is ``-2.0``.
+     - --
+   * - ``floor``, ``ceil``, ``trunc``, ``round``, ``sign``
+     - Integers.  ``round`` breaks ties to even (``round(2.5)`` is ``2``);
+       ``sign`` is ``-1``, ``0`` or ``1``, and ``-1`` for NaN.
+     - --
+   * - Writing a variable at the end of a block
+     - An ``int`` variable keeps an integral float as an int (``x = 6 / 2``
+       stores ``3``).
+     - ``writeback_non_integral`` for a non-integral value of an ``int``
+       variable; ``writeback_non_finite`` for an infinite or NaN value.
+
+Inputs and parameters follow the same rule as variables: an ``int`` input or
+parameter accepts an integral float and stores it as an int.  Floats follow the
+host's IEEE 754 double arithmetic; generated runtimes and the generic render
+styles may differ in the last bits of transcendental functions.
+
 .. _dsl-lifecycle-forms:
 
 Lifecycle forms

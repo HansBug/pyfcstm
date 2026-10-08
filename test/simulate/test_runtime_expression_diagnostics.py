@@ -112,3 +112,45 @@ state Root {
     assert runtime.cycle_count == 1
     assert len(runtime.history) == 1
     assert "int<5001 digits>" in caplog.text
+
+
+@pytest.mark.unittest
+@pytest.mark.parametrize(
+    "dsl_code, initial_vars, kind",
+    [
+        (
+            "def int counter = 0;\nstate Root;\n",
+            {"counter": 3.5},
+            "writeback_non_integral",
+        ),
+        (
+            "def float ratio = 0.0;\nstate Root;\n",
+            {"ratio": float("nan")},
+            "writeback_non_finite",
+        ),
+    ],
+)
+def test_construction_writeback_error_uses_the_runtime_error_class(dsl_code, initial_vars, kind):
+    # Construction and cycles reject a value through the same writeback check,
+    # so both report the same class, which still is a ValueError for callers.
+    ast = parse_with_grammar_entry(dsl_code, "state_machine_dsl")
+    machine = parse_dsl_node_to_state_machine(ast)
+
+    with pytest.raises(SimulationRuntimeExpressionError) as exc_info:
+        SimulationRuntime(machine, initial_vars=initial_vars)
+
+    assert exc_info.value.kind == kind
+    assert isinstance(exc_info.value, ValueError)
+
+
+@pytest.mark.unittest
+def test_initializer_writeback_error_uses_the_runtime_error_class():
+    ast = parse_with_grammar_entry(
+        "def int counter = 7 / 2;\nstate Root;\n", "state_machine_dsl"
+    )
+    machine = parse_dsl_node_to_state_machine(ast)
+
+    with pytest.raises(SimulationRuntimeExpressionError) as exc_info:
+        SimulationRuntime(machine)
+
+    assert exc_info.value.kind == "writeback_non_integral"

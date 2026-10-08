@@ -93,6 +93,7 @@ def test_bmc_public_api_exports_exact_names():
         "GuardRequirement",
         "PriorityExclusion",
         "ActionBlock",
+        "EvaluationPoint",
         "CycleCase",
         "PartitionCheckResult",
         "MacroStepFormal",
@@ -113,7 +114,11 @@ def test_bmc_public_api_exports_exact_names():
         "BmcCaseRelation",
         "BmcStepRelation",
         "BmcCoreFormula",
+        "BmcRuntimeErrorSite",
         "build_bmc_core_formula",
+        "BmcRuntimeSafetyResult",
+        "check_runtime_safety",
+        "runtime_error_formula",
         "BmcPropertyFormula",
         "compile_bmc_property",
         "compile_bmc_query",
@@ -192,6 +197,7 @@ def test_bmc_public_api_exports_exact_names():
         "GuardRequirement",
         "PriorityExclusion",
         "ActionBlock",
+        "EvaluationPoint",
         "CycleCase",
         "PartitionCheckResult",
         "MacroStepFormal",
@@ -212,7 +218,11 @@ def test_bmc_public_api_exports_exact_names():
         "BmcCaseRelation",
         "BmcStepRelation",
         "BmcCoreFormula",
+        "BmcRuntimeErrorSite",
         "build_bmc_core_formula",
+        "BmcRuntimeSafetyResult",
+        "check_runtime_safety",
+        "runtime_error_formula",
         "BmcPropertyFormula",
         "compile_bmc_property",
         "compile_bmc_query",
@@ -319,7 +329,13 @@ def test_submodule_all_exports_are_exact():
     properties = importlib.import_module("pyfcstm.bmc.properties")
     pipeline = importlib.import_module("pyfcstm.bmc.pipeline")
     witness = importlib.import_module("pyfcstm.bmc.witness")
+    safety = importlib.import_module("pyfcstm.bmc.safety")
 
+    assert set(safety.__all__) == {
+        "BmcRuntimeSafetyResult",
+        "check_runtime_safety",
+        "runtime_error_formula",
+    }
     assert set(errors.__all__) == {
         "BmcError",
         "BmcQueryParseError",
@@ -413,6 +429,7 @@ def test_submodule_all_exports_are_exact():
         "GuardRequirement",
         "PriorityExclusion",
         "ActionBlock",
+        "EvaluationPoint",
         "CycleCase",
         "PartitionCheckResult",
         "MacroStepFormal",
@@ -439,6 +456,7 @@ def test_submodule_all_exports_are_exact():
         "BmcCaseRelation",
         "BmcStepRelation",
         "BmcCoreFormula",
+        "BmcRuntimeErrorSite",
         "build_bmc_core_formula",
     }
     assert set(properties.__all__) == {

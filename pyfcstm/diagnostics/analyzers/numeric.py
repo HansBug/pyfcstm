@@ -36,7 +36,6 @@ _MIN_SIGNED_INT64_TEXT = str(_MIN_SIGNED_INT64)
 _MAX_SIGNED_INT64_TEXT = str(_MAX_SIGNED_INT64)
 _BITWISE_OPERATORS = {"&", "^", "|", "<<", ">>"}
 _ZERO_OPERATORS = {"/", "%"}
-_C_FAMILY_INTEGER_UFUNCS = {"ceil", "floor", "int", "round", "sign", "trunc"}
 _C_FAMILY_CONDITION_OPERATORS = {
     "&&",
     "||",
@@ -447,7 +446,10 @@ def _infer_numeric_type(
             return inner_type, inner_source
         return "unknown", "local_expression"
     if isinstance(expr, UFunc):
-        if expr.func in _C_FAMILY_INTEGER_UFUNCS:
+        # Imported here because the catalog loads Z3, which model loading avoids.
+        from ...semantics.catalog import coarse_result_type
+
+        if coarse_result_type(expr.func, None) == "int":
             return "int", "local_expression"
         if expr.func == "abs":
             inner_type, _inner_source = _infer_numeric_type(expr.x, var_types)
@@ -462,12 +464,34 @@ def _infer_numeric_type(
             return "float", "local_expression"
         left_type, _left_source = _infer_numeric_type(expr.x, var_types)
         right_type, _right_source = _infer_numeric_type(expr.y, var_types)
+        if expr.op == "**":
+            return _power_numeric_type(expr, left_type, right_type), "local_expression"
         return _merge_numeric_types(left_type, right_type), "local_expression"
     if isinstance(expr, ConditionalOp):
         true_type, _true_source = _infer_numeric_type(expr.if_true, var_types)
         false_type, _false_source = _infer_numeric_type(expr.if_false, var_types)
         return _merge_numeric_types(true_type, false_type), "local_expression"
     return "unknown", "local_expression"
+
+
+def _power_numeric_type(expr: "Expr", left_type: str, right_type: str) -> str:
+    # An integer power is an int only for a non-negative literal exponent, the
+    # rule the operator catalog and the runtime share; the exponent value is
+    # folded here, so ``2 ** -1`` is float, and an unknown exponent is unknown.
+    # Imported here because the catalog loads Z3, which model loading avoids.
+    from ...semantics.catalog import coarse_result_type
+    from .const_fold import fold_numeric_expression
+
+    def known(item: str):
+        return item if item in {"int", "float"} else None
+
+    result = coarse_result_type(
+        "**",
+        known(left_type),
+        known(right_type),
+        constants=(None, fold_numeric_expression(expr.y)),
+    )
+    return "unknown" if result is None else result
 
 
 def _merge_numeric_types(type_a: str, type_b: str) -> str:

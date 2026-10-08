@@ -1,0 +1,14 @@
+def int d = 0;
+def int hits = 0;
+
+state Root {
+    state A;
+    state B {
+        during {
+            hits = hits + 1;
+        }
+    }
+
+    [*] -> A;
+    A -> B : if [d != 0 => 10 / d > 1];
+}

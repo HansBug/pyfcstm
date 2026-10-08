@@ -1,0 +1,19 @@
+def float a = 2.5;
+def float b = 2.7;
+def int x = 0;
+def int y = 0;
+def int z = 0;
+def int w = 0;
+
+state Root {
+    state A {
+        during {
+            x = floor(a) << 1;
+            y = ceil(a) << 1;
+            z = trunc(b) << 1;
+            w = round(a) << 1;
+        }
+    }
+
+    [*] -> A;
+}

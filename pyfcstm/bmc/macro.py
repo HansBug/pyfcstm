@@ -1080,6 +1080,53 @@ def _normalize_accepted_cases(
 
 
 @dataclass(frozen=True)
+class EvaluationPoint:
+    """One guard check or action block the runtime evaluates during a cycle.
+
+    A formal lists its points in the order the runtime evaluates them.  That
+    includes the eager candidate checks of speculative validation and points
+    on paths that later fail, which never become a case.  A point is what can
+    raise a runtime error: ``condition`` says when the runtime reaches it,
+    and the chain of ``parent`` points says which values it sees.
+
+    :param parent: Previous point on the same path, or ``None`` for the first
+        point; not compared.
+    :type parent: Optional[EvaluationPoint]
+    :param condition: Condition under which the runtime evaluates the point.
+    :type condition: BoolTemplate
+    :param guard: Guard checked at this point, defaults to ``None``.
+    :type guard: Optional[GuardRequirement], optional
+    :param block: Action block executed at this point, defaults to ``None``.
+    :type block: Optional[ActionBlock], optional
+    :raises InvalidBmcEncoding: If the fields are inconsistent.
+
+    Example::
+
+        >>> from pyfcstm.model.expr import parse_expr
+        >>> guard = GuardRequirement('g0', 0, 'Root', 'Root -> A', parse_expr('x > 0'), 'positive', 'transition_guard', 0)
+        >>> EvaluationPoint(None, BoolTemplate.true(), guard=guard).guard.requirement_id
+        'g0'
+    """
+
+    parent: Optional["EvaluationPoint"] = field(compare=False, repr=False)
+    condition: BoolTemplate
+    guard: Optional[GuardRequirement] = None
+    block: Optional[ActionBlock] = None
+
+    def __post_init__(self) -> None:
+        if self.parent is not None and not isinstance(self.parent, EvaluationPoint):
+            raise InvalidBmcEncoding("parent must be EvaluationPoint.")
+        if not isinstance(self.condition, BoolTemplate):
+            raise InvalidBmcEncoding("condition must be BoolTemplate.")
+        if (self.guard is None) == (self.block is None):
+            raise InvalidBmcEncoding("an evaluation point is either a guard or a block.")
+        if self.guard is not None and not isinstance(self.guard, GuardRequirement):
+            raise InvalidBmcEncoding("guard must be GuardRequirement.")
+        if self.block is not None and not isinstance(self.block, ActionBlock):
+            raise InvalidBmcEncoding("block must be ActionBlock.")
+
+
+@dataclass(frozen=True)
 class CycleCase:
     """One macro-step relation case before solver lowering.
 
@@ -1419,6 +1466,10 @@ class MacroStepFormal:
     :param build_diagnostic_conditions: Build/encoder diagnostic conditions,
         defaults to ``()``.
     :type build_diagnostic_conditions: Tuple[BoolTemplate, ...], optional
+    :param evaluation_points: Guard checks and action blocks in runtime
+        evaluation order, used to locate runtime errors; not compared,
+        defaults to ``()``.
+    :type evaluation_points: Tuple[EvaluationPoint, ...], optional
 
     Example::
 
@@ -1436,10 +1487,22 @@ class MacroStepFormal:
     success_cases: Tuple[CycleCase, ...]
     delta_cases: Tuple[CycleCase, ...] = ()
     build_diagnostic_conditions: Tuple[BoolTemplate, ...] = ()
+    evaluation_points: Tuple[EvaluationPoint, ...] = field(
+        default=(), compare=False, repr=False
+    )
 
     def __post_init__(self) -> None:
         if not isinstance(self.source, MacroStepSource):
             raise InvalidBmcEncoding("source must be MacroStepSource.")
+        points = tuple(self.evaluation_points)
+        seen: Set[int] = set()
+        for item in points:
+            if not isinstance(item, EvaluationPoint):
+                raise InvalidBmcEncoding("evaluation_points must contain EvaluationPoint objects.")
+            if item.parent is not None and id(item.parent) not in seen:
+                raise InvalidBmcEncoding("an evaluation point must follow its parent.")
+            seen.add(id(item))
+        object.__setattr__(self, "evaluation_points", points)
         if not isinstance(self.success_cases, (list, tuple)):
             raise InvalidBmcEncoding("success_cases must be a sequence.")
         if not isinstance(self.delta_cases, (list, tuple)):
@@ -2505,6 +2568,7 @@ __all__ = [
     "GuardRequirement",
     "PriorityExclusion",
     "ActionBlock",
+    "EvaluationPoint",
     "CycleCase",
     "PartitionCheckResult",
     "MacroStepFormal",

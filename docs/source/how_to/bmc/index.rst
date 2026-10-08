@@ -97,6 +97,12 @@ that is neither ``property_satisfied`` nor ``property_violated``.
        was SAT, ``unknown``, ``timeout``, or not run.
      - Inspect ``result.incomplete_status``.  Increase the bound for SAT;
        diagnose the solver or timeout for ``unknown``/``timeout``.
+   * - ``runtime_safety_unknown`` / ``runtime_safety_timeout``
+     - ``result.runtime_safety.status`` is ``unknown`` or ``timeout``.
+     - The check that runs before the property could not decide whether a
+       runtime error is reachable, so the property was not evaluated.
+     - Raise ``--timeout-ms`` or lower the bound; nonlinear operations such as
+       ``sqrt`` make the check harder.  See task 17 for reachable errors.
 
 How to read the task cards
 --------------------------
@@ -806,6 +812,61 @@ printed phrase.
 
 **Reference.** See :doc:`../../reference/bmc_results/index` for JSON nullability
 and the schema.
+
+17. Handle a runtime error in the model
+---------------------------------------
+
+**Starting files.** Save this model as ``runtime_error.fcstm``: the second
+guard divides by the input ``d`` whenever the first guard fails.
+
+.. code-block:: fcstm
+
+   input int d;
+   state Root {
+       [*] -> A;
+       state A;
+       state B;
+       state C;
+       A -> B : if [d == 1];
+       A -> C : if [10 / d > 1];
+   }
+
+Save ``check reach <= 2: active("Root.B");`` as ``runtime_error.fbmcq``.
+
+**CLI.**
+
+.. code-block:: bash
+
+   python -m pyfcstm bmc -i runtime_error.fcstm -q runtime_error.fbmcq
+
+**Expected output.** Exit ``5``.  The report names the operation and the step,
+and replay confirms the simulator raises the same error:
+
+.. code-block:: text
+
+   BMC reach <= 2: RUNTIME ERROR REACHABLE WITHIN BOUND; PROPERTY NOT EVALUATED
+     Runtime error: division_by_zero at step 1
+     Runtime error location: guard g1 in transition Root.A::1::A->C
+     Replay: runtime error reproduced: transition guard evaluation failed: division by zero
+
+**Failure boundary.** The property was not evaluated at all: no execution that
+reaches the error can continue, so neither "holds" nor "violated" is claimed.
+A replay that does not reproduce the error exits ``4`` instead.
+
+**Next step.** Choose by what the requirement says:
+
+- If the environment guarantees ``d != 0``, state it.  With
+  ``assume always: d != 0;`` before the ``check`` line the run exits ``0`` with
+  ``PROPERTY HOLDS WITHIN BOUND; WITNESS FOUND``.
+- If ``d`` can really be zero, the model is wrong: guard the division, for
+  example ``d != 0 && 10 / d > 1``, which ``&&`` evaluates only when ``d`` is
+  non-zero.
+- To evaluate the property only over executions that raise no error, add
+  ``--no-runtime-safety``; this run also exits ``0`` with a witness.  The error
+  is still reachable; the report just no longer looks for it.
+
+**Reference.** See :doc:`../../reference/bmc_results/index` for the
+``runtime_safety`` result, the ``runtime_error_prefix`` witness and exit ``5``.
 
 Choose and compare a solver profile
 -----------------------------------

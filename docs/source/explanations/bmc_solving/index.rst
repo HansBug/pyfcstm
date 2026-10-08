@@ -87,6 +87,42 @@ Z3's ``unknown`` result is split by ``reason_unknown()``: the exact reason
 ``incomplete_check=disabled`` rather than being treated as a proof that no
 incomplete suffix exists.
 
+Runtime safety runs first
+-------------------------
+
+Before any of these spaces is checked, the solve asks whether the model itself
+can fail.  Every guard check and action block is an evaluation point, recorded
+in the order the simulator evaluates them: the lazy declaration-order choice at
+the source state, the eager candidate checks of speculative validation at every
+nested choice, and blocks on paths that later fail.  Each point contributes
+error sites :math:`s` whose condition :math:`c_s` holds exactly when the runtime
+reaches the operation and the operation raises.  Let :math:`\mathcal{E}_k` be
+the sites of step :math:`k`, :math:`\mathcal{E}_{\mathrm{init}}` those of the
+variable initializers, and :math:`ENV_{\le k}` the assumption instances about
+frames and steps up to :math:`k`:
+
+.. math::
+   :label: bmc-runtime-error-stage
+
+   \mathrm{Err}_{\mathrm{init}} = D_N \land ENV_{\le 0} \land \bigvee_{s \in \mathcal{E}_{\mathrm{init}}} c_s,
+   \qquad
+   \mathrm{Err}_k = D_N \land I_0 \land \bigwedge_{j<k} T_j \land ENV_{\le k} \land \bigvee_{s \in \mathcal{E}_k} c_s.
+
+An error at step :math:`k` needs a valid prefix of :math:`k` steps and nothing
+about later frames, which the runtime never produces.  The stages are checked
+one at a time, initializers first: the first SAT stage holds the earliest
+error, and the reported site is the first one in evaluation order that the
+model raises.  The result is ``runtime_error`` and the property is not
+evaluated.  All stages UNSAT is ``safe`` and the primary query follows; an
+undecided stage leaves ``runtime_safety_unknown`` or ``runtime_safety_timeout``
+unless a later stage is SAT.  The check shares the solve budget and always runs
+on the core built without cone slicing.
+
+Counterexample: with ``A -> B : if [d == 0]; A -> C : if [10 / d > 1];`` the
+division is never evaluated with ``d == 0``, because the runtime takes the first
+transition and stops; its site condition is unsatisfiable and the check is
+``safe``.
+
 Verdicts are polarity-aware
 ---------------------------
 
@@ -490,7 +526,9 @@ variables, not Z3 expression nodes or solver search states.
 Working traces and formula ledger
 ---------------------------------
 
-The five equations can be audited with one minimal model and two queries.  The
+Apart from :eq:`bmc-runtime-error-stage`, which its own counterexample
+exercises, the five equations can be audited with one minimal model and two
+queries.  The
 model is intentionally small so the solver boundary remains visible:
 
 .. code-block:: fcstm
@@ -535,6 +573,16 @@ trace exercises it.
     Covered by ``test_compile_response_strict_successor_and_incomplete_suffix``
     and ``test_solver_unknown_and_timeout_paths_are_structured``.  The response
     query above gives UNSAT on the main objective and SAT on the tail.
+
+:eq:`bmc-runtime-error-stage` -- runtime-error stages
+    ``_record_point`` and ``_probe_candidates`` in ``expand.py``,
+    ``_point_error_sites`` in ``relation.py``, and ``_stages`` and
+    ``_check_runtime_safety`` in ``safety.py``.  Covered by
+    ``test_reachable_errors_replay_at_the_reported_step``,
+    ``test_operations_the_runtime_never_evaluates_are_safe`` and
+    ``test_an_undecided_stage_does_not_hide_a_later_error`` in
+    ``test/bmc/test_runtime_safety.py``.  The counterexample above is one of its
+    safe cases.
 
 :eq:`bmc-verdict-map` -- polarity-aware three-valued verdict
     ``BmcSolveResult.property_satisfied`` and ``outcome``.  The response query

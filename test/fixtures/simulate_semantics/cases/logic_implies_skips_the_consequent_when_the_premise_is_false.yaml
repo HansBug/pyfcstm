@@ -1,0 +1,24 @@
+title: "Implication short-circuits its consequent"
+origin:
+  files:
+  - https://github.com/HansBug/pyfcstm/issues/522
+  notes:
+  - "With d == 0 the premise d != 0 is false, so 10 / d is never evaluated and the guard holds."
+categories:
+- runtime
+- template_alignment
+steps:
+- cycle: []
+  expect:
+    state: Root.A
+    vars:
+      d: 0
+      hits: 0
+    ended: false
+- cycle: []
+  expect:
+    state: Root.B
+    vars:
+      d: 0
+      hits: 1
+    ended: false

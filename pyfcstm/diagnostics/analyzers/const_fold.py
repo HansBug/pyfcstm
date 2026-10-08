@@ -126,6 +126,12 @@ def _fold_numeric_binary(
     left: ConstValue,
     right: ConstValue,
 ) -> Optional[ConstValue]:
+    # The values come from the operator catalog the runtime evaluates with;
+    # what this function adds is the folding policy, which keeps every folded
+    # value JSON-stable so Python and jsfcstm report the same diagnostics.
+    # Imported here because the catalog loads Z3, which model loading avoids.
+    from ...semantics.catalog import lookup
+
     if op in {'<<', '>>', '&', '^', '|'}:
         if not (_is_plain_int(left) and _is_plain_int(right)):
             return None
@@ -133,55 +139,29 @@ def _fold_numeric_binary(
             return None
         if op in {'<<', '>>'} and right > _MAX_FOLD_SHIFT_BITS:
             return None
-        if op == '<<':
-            return left << right
-        if op == '>>':
-            return left >> right
-        if op == '&':
-            return left & right
-        if op == '^':
-            return left ^ right
-        return left | right
-
-    if op in {'+', '-', '*', '/', '**'} and _has_unsafe_integer_operand(left, right):
+        return lookup(op).concrete(left, right)
+    # The remaining numeric operators are + - * / % **.
+    if op != '%' and _has_unsafe_integer_operand(left, right):
         return None
-
-    if op == '+':
-        return _stable_numeric_result(left + right)
-    if op == '-':
-        return _stable_numeric_result(left - right)
-    if op == '*':
-        return _stable_numeric_result(left * right)
-    if op == '/':
-        if right == 0:
-            return None
-        return _stable_numeric_result(left / right)
-    if op == '%':
-        if right == 0:
-            return None
-        if not (_is_plain_int(left) and _is_plain_int(right)) and _has_unsafe_integer_operand(left, right):
-            return None
-        return _stable_numeric_result(left % right)
-    if op == '**':
-        if left == 0 and right < 0:
-            return None
-        if (
-            _is_plain_int(left)
-            and _is_plain_int(right)
-            and right >= 0
-            and _integer_power_exceeds_json_stable_range(left, right)
-        ):
-            return None
-        try:
-            result = left ** right
-        except (OverflowError, ValueError, ZeroDivisionError):
-            # OverflowError: huge float exponent; ValueError: complex result
-            # from fractional powers; ZeroDivisionError: 0 ** negative.
-            return None
-        if isinstance(result, complex):
-            return None
-        return _stable_numeric_result(result)
-    return None
+    if op == '%' and not (_is_plain_int(left) and _is_plain_int(right)) and _has_unsafe_integer_operand(left, right):
+        return None
+    if (
+        op == '**'
+        and _is_plain_int(left)
+        and _is_plain_int(right)
+        and right >= 0
+        and _integer_power_exceeds_json_stable_range(left, right)
+    ):
+        return None
+    try:
+        result = lookup(op).concrete(left, right)
+    except (ArithmeticError, ValueError):
+        # ZeroDivisionError: a zero divisor or zero raised to a negative power;
+        # OverflowError: a float power beyond the double range; ValueError: a
+        # power with a complex result.  The runtime raises on each, so there
+        # is no value to fold.
+        return None
+    return _stable_numeric_result(result)
 
 
 def _fold_comparison(expr) -> Optional[bool]:

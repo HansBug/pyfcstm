@@ -597,6 +597,7 @@ def _path_guard(
         DomainConstraint(
             z3.Implies(guard, item.constraint),
             source=item.source,
+            kind=item.kind,
         )
         for item in domains
     )

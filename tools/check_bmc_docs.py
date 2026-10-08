@@ -51,6 +51,7 @@ _EQUATION_LABELS = (
     "bmc-response-trigger-undefined",
     "bmc-response-incomplete",
     "bmc-solve-formulas",
+    "bmc-runtime-error-stage",
     "bmc-verdict-map",
     "bmc-witness-projection",
     "bmc-replay-agreement",

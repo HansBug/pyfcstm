@@ -23,7 +23,7 @@ DomainConstraint
 -----------------------------------------------------
 
 .. autoclass:: DomainConstraint
-    :members: constraint,source
+    :members: constraint,source,kind
 
 
 TranslationFailure

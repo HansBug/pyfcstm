@@ -132,7 +132,7 @@ For this model, the integration methods are:
 {% endfor %}{% for item in model.inputs.values() %}| input | `{{ item.name }}` | implement `read_{{ item.name }}()`; model reads `get_input_{{ item.name }}()` |
 {% endfor %}
 {% endif %}
-The `read_*()` input interface is separate from the `_abstract_hook_*()` lifecycle action hooks. If an input has neither an explicit value nor an implemented reader, its default reader raises `NotImplementedError`. An `int` input requires a Python `int`; a `float` input accepts finite `int`/`float` values. Neither accepts `bool`. Invalid input values raise `ValueError`; exceptions from your device reader propagate. `cycle()` returns `None`: consume/send outputs only after normal return. Failure does not undo device reads or other external side effects that have already occurred.
+The `read_*()` input interface is separate from the `_abstract_hook_*()` lifecycle action hooks. If an input has neither an explicit value nor an implemented reader, its default reader raises `NotImplementedError`. An `int` input accepts a Python `int` or an integral `float`, which it stores as an `int`; a `float` input accepts finite `int`/`float` values. Neither accepts `bool`. Invalid input values raise `ValueError`; exceptions from your device reader propagate. `cycle()` returns `None`: consume/send outputs only after normal return. Failure does not undo device reads or other external side effects that have already occurred.
 
 ### Callback responsibilities
 

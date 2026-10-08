@@ -37,6 +37,7 @@ import jinja2
 from ..dsl import node as dsl_nodes
 from ..model import Integer, Float, Boolean
 from ..utils import add_settings_for_env
+from .c_runtime import _static_int_literal
 
 _DSL_STYLE = {
     'Float': '{{ node.value | repr }}',
@@ -125,7 +126,14 @@ _JAVA_STYLE = {
     'Boolean': '{{ "true" if node.value else "false" }}',
     'Constant': '{{ "Math.PI" if node.value == "pi" else ("Math.E" if node.value == "e" else ("(2.0 * Math.PI)" if node.value == "tau" else node.value | repr)) }}',
     'UFunc': 'Math.{{ node.func }}({{ node.expr | expr_render }})',
-    'UFunc(trunc)': '({{ node.expr | expr_render }}) >= 0 ? Math.floor({{ node.expr | expr_render }}) : Math.ceil({{ node.expr | expr_render }})',
+    # The integer-valued functions return a 64-bit integer, like the DSL result.
+    # Math.round breaks ties upward, so round uses Math.rint, which breaks them
+    # to even as the simulator does. Math.sign does not exist in Java.
+    'UFunc(floor)': '((long) Math.floor({{ node.expr | expr_render }}))',
+    'UFunc(ceil)': '((long) Math.ceil({{ node.expr | expr_render }}))',
+    'UFunc(round)': '((long) Math.rint({{ node.expr | expr_render }}))',
+    'UFunc(trunc)': '(({{ node.expr | expr_render }}) >= 0 ? (long) Math.floor({{ node.expr | expr_render }}) : (long) Math.ceil({{ node.expr | expr_render }}))',
+    'UFunc(sign)': '(({{ node.expr | expr_render }}) > 0 ? 1L : (({{ node.expr | expr_render }}) == 0 ? 0L : -1L))',
     'BinaryOp(**)': 'Math.pow({{ node.expr1 | expr_render }}, {{ node.expr2 | expr_render }})',
     'ConditionalOp': '{{ node.cond | expr_render }} ? {{ node.value_true | expr_render }} : {{ node.value_false | expr_render }}',
 }
@@ -259,6 +267,44 @@ def _py_condition_operand(expr_text: str, node: dsl_nodes.Expr) -> str:
     return expr_text
 
 
+def power_result_type(
+    base_type: Optional[str],
+    exponent_type: Optional[str],
+    exponent: dsl_nodes.Expr,
+) -> Optional[str]:
+    """
+    Return the coarse result type of ``base ** exponent``.
+
+    An integer power is an integer only for a non-negative literal exponent,
+    the same rule the C emitter and the runtime follow, so the exponent node
+    is needed as well as the operand types.
+
+    :param base_type: Coarse type of the base, ``None`` when unknown.
+    :type base_type: Optional[str]
+    :param exponent_type: Coarse type of the exponent, ``None`` when unknown.
+    :type exponent_type: Optional[str]
+    :param exponent: Exponent expression node.
+    :type exponent: dsl_nodes.Expr
+    :return: ``'int'``, ``'float'``, or ``None`` when the type is not known.
+    :rtype: Optional[str]
+
+    Example::
+
+        >>> from pyfcstm.dsl import node as dsl_nodes
+        >>> power_result_type('int', 'int', dsl_nodes.Integer('-1'))
+        'float'
+    """
+    # Imported here because the catalog loads Z3, which model loading avoids.
+    from ..semantics.catalog import coarse_result_type
+
+    return coarse_result_type(
+        '**',
+        base_type,
+        exponent_type,
+        constants=(None, _static_int_literal(exponent)),
+    )
+
+
 def _infer_expr_type(node: dsl_nodes.Expr) -> Optional[str]:
     """
     Infer a coarse DSL numeric type for one expression node.
@@ -293,11 +339,11 @@ def _infer_expr_type(node: dsl_nodes.Expr) -> Optional[str]:
             return 'int'
         return _infer_expr_type(node.expr)
     if isinstance(node, dsl_nodes.UFunc):
-        if node.func in {'floor', 'ceil', 'round', 'int', 'trunc'}:
-            return 'int'
-        if node.func == 'abs':
-            return _infer_expr_type(node.expr)
-        return 'float'
+        # Function result types come from the operator catalog the runtime
+        # evaluates with; imported here because the catalog loads Z3.
+        from ..semantics.catalog import coarse_result_type
+
+        return coarse_result_type(node.func, _infer_expr_type(node.expr))
     if isinstance(node, dsl_nodes.BinaryOp):
         if node.op in {'<<', '>>', '&', '^', '|'}:
             return 'int'
@@ -311,6 +357,8 @@ def _infer_expr_type(node: dsl_nodes.Expr) -> Optional[str]:
         right = _infer_expr_type(node.expr2)
         if node.op == '/':
             return 'float'
+        if node.op == '**':
+            return power_result_type(left, right, node.expr2)
         return _merge_numeric_types(left, right)
     if isinstance(node, dsl_nodes.ConditionalOp):
         return _merge_numeric_types(

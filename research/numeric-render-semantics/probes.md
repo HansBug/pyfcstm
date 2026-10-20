@@ -1,0 +1,66 @@
+# Probe 设计说明
+
+`tools/numeric_render_probe.py env` 用于输出本地 Python、平台和可用命令清单；`c-smoke` / `cpp-smoke` 用于从 R0 `render_mapping.json` 读取 C-family 渲染路径并编译运行小型 smoke 程序；`python-z3-baseline` 用于从同一 R0 snapshot 记录 Python renderer / Python template / statement override 事实和 Z3 capability matrix；`c-cpp-z3-alignment` 用于生成和校验 C/C++ ↔ Z3 alignment contract。R0 mapping 的契约校验由 `tools/numeric_render_mapping.py --check` 承担。后续语言 smoke 和 exhaustive/shard runner 应继续追加到同一 probe CLI、同一 mapping digest 约定和同一 artifact 目录结构中，而不是重建独立 harness。整个调研系列都不新增 `test/` 路径；任何会调用 native compiler、Node.js、Java、Rust、Go 或 Z3 求解的 probe 都应继续落在 `tools/` / `research/` 与 gitignored `results/local/` 下。
+
+## 当前累计入口
+
+```bash
+python tools/numeric_render_probe.py env \
+  --output research/numeric-render-semantics/results/local/env.json
+python tools/numeric_render_probe.py c-smoke \
+  --mapping research/numeric-render-semantics/results/snapshots/render_mapping.json \
+  --output research/numeric-render-semantics/results/local/c_smoke.json
+python tools/numeric_render_probe.py cpp-smoke \
+  --mapping research/numeric-render-semantics/results/snapshots/render_mapping.json \
+  --output research/numeric-render-semantics/results/local/cpp_smoke.json
+python tools/numeric_render_probe.py python-z3-baseline \
+  --mapping research/numeric-render-semantics/results/snapshots/render_mapping.json \
+  --output research/numeric-render-semantics/results/snapshots/python_z3_baseline.json
+python tools/numeric_render_probe.py python-z3-baseline --check
+python tools/numeric_render_probe.py c-cpp-z3-alignment \
+  --mapping research/numeric-render-semantics/results/snapshots/render_mapping.json \
+  --output research/numeric-render-semantics/results/snapshots/c_cpp_z3_alignment.json
+python tools/numeric_render_probe.py c-cpp-z3-alignment --check
+```
+
+## C/C++ smoke runner
+
+Smoke summary 必须写入 `source_mapping_sha256`，并与所读取 mapping 的 `mapping_sha256` 一致。`cases[]` 至少覆盖 `round`、`abs`、`sign`、`cbrt`、`pow`、带符号 shift、整数 division 和除零风险。每个 case 都应保留可供 PR-6 汇总的 join 字段：`operator`、`fcstm_expression`、`case_id`、`render_path` 和 `render_expression`。跨 C/C++、Python 与 Z3 的语义汇总应优先按 `operator` + `fcstm_expression`（或显式 `semantic_case_id`）聚合；当前 `case_id` 允许保持 render-path scoped，用于区分同一语义表达式在不同 renderer 路径下的具体 smoke case，`render_path` / `render_expression` 则继续记录目标语言渲染差异。缺 compiler、缺 sanitizer flag 或 partial toolchain availability 通过 `toolchain`、`sanitizer`、`status` 和 `reason` 字段结构化记录；编译失败、链接失败、运行失败和 sanitizer failure 都是有效调研结果。
+
+## Python/Z3 baseline runner
+
+`python-z3-baseline` 默认读取 `research/numeric-render-semantics/results/snapshots/render_mapping.json`，避免手写与 renderer 脱节的表达式表；`--check` 会同时校验 committed `python_z3_baseline.json`、专用 schema、semantic invariants、snapshot-vs-live payload，以及 committed R0 mapping 与 live render mapping 的 drift。baseline 的 `alignment_cases[]` 使用与 smoke runner 相同的 join 字段：`case_id`、`operator`、`fcstm_expression`、`render_path` 和 `render_expression`，并额外提供 `semantic_case_id` 方便 PR-6 先按语义表达式聚合，再按 render path 展开。
+
+Python 输出作为 P3 / 无限精度 / 仿真兼容基线使用，不作为后续 solver / verify 的定长默认语义。Z3 capability matrix 记录 `Int` / `Real` / `BitVec` / `FP` 的 `exact`、`approximate`、`uninterpreted` 或 `unsupported` 等级；当前 baseline 避免记录不稳定 solver model 值，只记录可复跑的 capability、render path 和代表性 counterexample。
+
+## C/C++ ↔ Z3 alignment runner
+
+`c-cpp-z3-alignment` 是 PR-6A 的试点入口。它默认读取 committed R0 `render_mapping.json` 和 `python_z3_baseline.json`，再从 C-family render paths 构造小型 deterministic alignment snapshot。该 snapshot 不运行 native compiler，不保存 sanitizer 输出，也不提交 exhaustive 原始数据；live C/C++ 编译事实仍由 `c-smoke` / `cpp-smoke` 写入 gitignored `results/local/`。
+
+每条 contract 至少包含：
+
+- `render_path`：例如 builtin `_C_STYLE`、builtin `_CPP_STYLE` standalone、C template generated path、`templates/cpp*` 中 `base_lang: c` 的 generated path；
+- `operator` / `operator_family` / `fcstm_expression` / `render_expression`；
+- `target_semantics` 和 `definedness`；
+- `z3_sort` / `z3_profile`；
+- `value_expr + obligations + outcome`；
+- `evidence` 与必要 `counterexamples`。
+
+`outcome` 是闭集枚举：`exact`、`exact_with_obligations`、`profile_dependent`、`unsupported`、`compile_failed`、`runtime_trap`、`ub`。BitVec expression 只能作为候选 `value_expr`，不能单独代表 C/C++ signed defined behavior。signed overflow、division by zero、`MIN/-1`、signed shift、math function availability 和 narrowing/writeback 必须进入 obligation、profile-dependent / unsupported / compile_failed outcome 或 counterexample。
+
+稳定 validator 命令：
+
+```bash
+python tools/numeric_render_probe.py c-cpp-z3-alignment --check
+```
+
+该命令校验 committed snapshot、专用 schema、required 字段、outcome enum、C/C++ render path 覆盖、operator 覆盖、shift obligation 粒度，以及 R0 mapping、Python/Z3 baseline、C smoke facts、C++ smoke facts digest 漂移。
+
+## 后续 runner 约束
+
+- runner 必须读取 R0 `render_mapping.json`，不要手写与 renderer 脱节的表达式表。
+- 后续 runner 应保留可跨 artifact join 的 `operator` / `fcstm_expression` 字段，并在需要时补充稳定的 `semantic_case_id`；`case_id` 可继续作为单个 runner 内的 render-path scoped case 标识，避免 PR-6 为 C/C++、Python 和 Z3 再造第三套对齐 case model。
+- 编译失败、链接失败、运行时异常、sanitizer trap 都是结果，不得静默替换为“更合理”的 helper。
+- 每次运行前探测 CPU、内存、磁盘、工具链版本和可承受并行度。
+- Heavy 输出写入 `results/local/`，小型 summary / digest 才能提交。
+- 8-bit exhaustive 可以作为调研阶段强验证；16-bit 必须支持 shard / resume / digest。

@@ -1,0 +1,22 @@
+Query: unknown_rule
+Solver result: UNSAT
+Reading: partial
+
+P1  Unsupported inference
+  Therefore: (not ((x <= 0)) or not ((x >= 1)))
+
+P2  Input
+  Input origins: lower
+  Therefore: (x >= 1)
+
+P3  Input
+  Input origins: upper
+  Therefore: (x <= 0)
+
+P4  Resolve the clauses
+  From: P1, P2, P3
+  Therefore: false
+
+Conclusion: the submitted conjunction is inconsistent.
+Unexplained or invalid evidence:
+  unsupported_rule: th-lemma

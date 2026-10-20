@@ -1,0 +1,966 @@
+{
+  "conclusion": "t212",
+  "terms": [
+    {
+      "term_id": "t41",
+      "kind": "constant",
+      "sort": "Real",
+      "operator": "F_1_x_11f6ad8ec52a2984abaafd7c3b516503785c2072",
+      "arguments": [],
+      "value": "F_1_x_11f6ad8ec52a2984abaafd7c3b516503785c2072",
+      "bindings": [],
+      "operator_kind": "uninterpreted",
+      "parameters": []
+    },
+    {
+      "term_id": "t42",
+      "kind": "constant",
+      "sort": "Real",
+      "operator": "F_0_x_11f6ad8ec52a2984abaafd7c3b516503785c2072",
+      "arguments": [],
+      "value": "F_0_x_11f6ad8ec52a2984abaafd7c3b516503785c2072",
+      "bindings": [],
+      "operator_kind": "uninterpreted",
+      "parameters": []
+    },
+    {
+      "term_id": "t44",
+      "kind": "constant",
+      "sort": "Real",
+      "operator": "F_1_y_95cb0bfd2977c761298d9624e4b4d4c72a39974a",
+      "arguments": [],
+      "value": "F_1_y_95cb0bfd2977c761298d9624e4b4d4c72a39974a",
+      "bindings": [],
+      "operator_kind": "uninterpreted",
+      "parameters": []
+    },
+    {
+      "term_id": "t45",
+      "kind": "constant",
+      "sort": "Real",
+      "operator": "F_0_y_95cb0bfd2977c761298d9624e4b4d4c72a39974a",
+      "arguments": [],
+      "value": "F_0_y_95cb0bfd2977c761298d9624e4b4d4c72a39974a",
+      "bindings": [],
+      "operator_kind": "uninterpreted",
+      "parameters": []
+    },
+    {
+      "term_id": "t47",
+      "kind": "constant",
+      "sort": "Real",
+      "operator": "F_1_r_4dc7c9ec434ed06502767136789763ec11d2c4b7",
+      "arguments": [],
+      "value": "F_1_r_4dc7c9ec434ed06502767136789763ec11d2c4b7",
+      "bindings": [],
+      "operator_kind": "uninterpreted",
+      "parameters": []
+    },
+    {
+      "term_id": "t49",
+      "kind": "constant",
+      "sort": "Real",
+      "operator": "F_1_s_a0f1490a20d0211c997b44bc357e1972deab8ae3",
+      "arguments": [],
+      "value": "F_1_s_a0f1490a20d0211c997b44bc357e1972deab8ae3",
+      "bindings": [],
+      "operator_kind": "uninterpreted",
+      "parameters": []
+    },
+    {
+      "term_id": "t51",
+      "kind": "constant",
+      "sort": "Real",
+      "operator": "F_1_t_8efd86fb78a56a5145ed7739dcb00c78581c5375",
+      "arguments": [],
+      "value": "F_1_t_8efd86fb78a56a5145ed7739dcb00c78581c5375",
+      "bindings": [],
+      "operator_kind": "uninterpreted",
+      "parameters": []
+    },
+    {
+      "term_id": "t58",
+      "kind": "literal",
+      "sort": "Real",
+      "operator": "Real",
+      "arguments": [],
+      "value": "1/2",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t59",
+      "kind": "application",
+      "sort": "Real",
+      "operator": "^",
+      "arguments": [
+        "t42",
+        "t58"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t61",
+      "kind": "application",
+      "sort": "Real",
+      "operator": "^",
+      "arguments": [
+        "t45",
+        "t58"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t66",
+      "kind": "literal",
+      "sort": "Real",
+      "operator": "Real",
+      "arguments": [],
+      "value": "0",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t111",
+      "kind": "application",
+      "sort": "Real",
+      "operator": "*",
+      "arguments": [
+        "t41",
+        "t44"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t112",
+      "kind": "application",
+      "sort": "Real",
+      "operator": "^",
+      "arguments": [
+        "t111",
+        "t58"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t127",
+      "kind": "application",
+      "sort": "Real",
+      "operator": "*",
+      "arguments": [
+        "t47",
+        "t49"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t156",
+      "kind": "literal",
+      "sort": "Real",
+      "operator": "Real",
+      "arguments": [],
+      "value": "-1",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t157",
+      "kind": "application",
+      "sort": "Real",
+      "operator": "*",
+      "arguments": [
+        "t156",
+        "t59"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t158",
+      "kind": "application",
+      "sort": "Real",
+      "operator": "+",
+      "arguments": [
+        "t47",
+        "t157"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t159",
+      "kind": "application",
+      "sort": "Bool",
+      "operator": ">=",
+      "arguments": [
+        "t158",
+        "t66"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t160",
+      "kind": "application",
+      "sort": "Bool",
+      "operator": "not",
+      "arguments": [
+        "t159"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t161",
+      "kind": "application",
+      "sort": "Real",
+      "operator": "*",
+      "arguments": [
+        "t156",
+        "t127"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t162",
+      "kind": "application",
+      "sort": "Real",
+      "operator": "+",
+      "arguments": [
+        "t51",
+        "t161"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t163",
+      "kind": "application",
+      "sort": "Bool",
+      "operator": ">=",
+      "arguments": [
+        "t162",
+        "t66"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t164",
+      "kind": "literal",
+      "sort": "Real",
+      "operator": "Real",
+      "arguments": [],
+      "value": "2",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t165",
+      "kind": "application",
+      "sort": "Real",
+      "operator": "^",
+      "arguments": [
+        "t59",
+        "t164"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t166",
+      "kind": "application",
+      "sort": "Real",
+      "operator": "*",
+      "arguments": [
+        "t156",
+        "t165"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t167",
+      "kind": "application",
+      "sort": "Real",
+      "operator": "+",
+      "arguments": [
+        "t42",
+        "t166"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t168",
+      "kind": "application",
+      "sort": "Bool",
+      "operator": ">=",
+      "arguments": [
+        "t167",
+        "t66"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t169",
+      "kind": "application",
+      "sort": "Bool",
+      "operator": "not",
+      "arguments": [
+        "t168"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t170",
+      "kind": "application",
+      "sort": "Real",
+      "operator": "^",
+      "arguments": [
+        "t112",
+        "t164"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t171",
+      "kind": "application",
+      "sort": "Real",
+      "operator": "*",
+      "arguments": [
+        "t156",
+        "t170"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t172",
+      "kind": "application",
+      "sort": "Real",
+      "operator": "+",
+      "arguments": [
+        "t111",
+        "t171"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t173",
+      "kind": "application",
+      "sort": "Bool",
+      "operator": "<=",
+      "arguments": [
+        "t172",
+        "t66"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t174",
+      "kind": "application",
+      "sort": "Bool",
+      "operator": "not",
+      "arguments": [
+        "t173"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t175",
+      "kind": "application",
+      "sort": "Bool",
+      "operator": ">=",
+      "arguments": [
+        "t49",
+        "t66"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t176",
+      "kind": "application",
+      "sort": "Bool",
+      "operator": "not",
+      "arguments": [
+        "t175"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t177",
+      "kind": "application",
+      "sort": "Real",
+      "operator": "*",
+      "arguments": [
+        "t156",
+        "t44"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t178",
+      "kind": "application",
+      "sort": "Real",
+      "operator": "+",
+      "arguments": [
+        "t45",
+        "t177"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t179",
+      "kind": "application",
+      "sort": "Bool",
+      "operator": "<=",
+      "arguments": [
+        "t178",
+        "t66"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t180",
+      "kind": "application",
+      "sort": "Bool",
+      "operator": "not",
+      "arguments": [
+        "t179"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t181",
+      "kind": "application",
+      "sort": "Real",
+      "operator": "^",
+      "arguments": [
+        "t61",
+        "t164"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t182",
+      "kind": "application",
+      "sort": "Real",
+      "operator": "*",
+      "arguments": [
+        "t156",
+        "t181"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t183",
+      "kind": "application",
+      "sort": "Real",
+      "operator": "+",
+      "arguments": [
+        "t45",
+        "t182"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t184",
+      "kind": "application",
+      "sort": "Bool",
+      "operator": ">=",
+      "arguments": [
+        "t183",
+        "t66"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t185",
+      "kind": "application",
+      "sort": "Bool",
+      "operator": "not",
+      "arguments": [
+        "t184"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t186",
+      "kind": "application",
+      "sort": "Bool",
+      "operator": "<=",
+      "arguments": [
+        "t47",
+        "t66"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t187",
+      "kind": "application",
+      "sort": "Real",
+      "operator": "*",
+      "arguments": [
+        "t156",
+        "t42"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t188",
+      "kind": "application",
+      "sort": "Real",
+      "operator": "+",
+      "arguments": [
+        "t41",
+        "t187"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t189",
+      "kind": "application",
+      "sort": "Bool",
+      "operator": ">=",
+      "arguments": [
+        "t188",
+        "t66"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t190",
+      "kind": "application",
+      "sort": "Bool",
+      "operator": "not",
+      "arguments": [
+        "t189"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t191",
+      "kind": "application",
+      "sort": "Real",
+      "operator": "*",
+      "arguments": [
+        "t156",
+        "t61"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t192",
+      "kind": "application",
+      "sort": "Real",
+      "operator": "+",
+      "arguments": [
+        "t49",
+        "t191"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t193",
+      "kind": "application",
+      "sort": "Bool",
+      "operator": "<=",
+      "arguments": [
+        "t192",
+        "t66"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t194",
+      "kind": "application",
+      "sort": "Bool",
+      "operator": "not",
+      "arguments": [
+        "t193"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t195",
+      "kind": "application",
+      "sort": "Bool",
+      "operator": ">=",
+      "arguments": [
+        "t112",
+        "t66"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t196",
+      "kind": "application",
+      "sort": "Bool",
+      "operator": "not",
+      "arguments": [
+        "t195"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t197",
+      "kind": "application",
+      "sort": "Real",
+      "operator": "*",
+      "arguments": [
+        "t45",
+        "t42"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t198",
+      "kind": "application",
+      "sort": "Real",
+      "operator": "^",
+      "arguments": [
+        "t197",
+        "t58"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t199",
+      "kind": "application",
+      "sort": "Real",
+      "operator": "*",
+      "arguments": [
+        "t156",
+        "t198"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t200",
+      "kind": "application",
+      "sort": "Real",
+      "operator": "+",
+      "arguments": [
+        "t112",
+        "t199"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t201",
+      "kind": "application",
+      "sort": "Bool",
+      "operator": "<=",
+      "arguments": [
+        "t200",
+        "t66"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t202",
+      "kind": "application",
+      "sort": "Bool",
+      "operator": "not",
+      "arguments": [
+        "t201"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t203",
+      "kind": "application",
+      "sort": "Bool",
+      "operator": ">=",
+      "arguments": [
+        "t200",
+        "t66"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t204",
+      "kind": "application",
+      "sort": "Bool",
+      "operator": "not",
+      "arguments": [
+        "t203"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t205",
+      "kind": "application",
+      "sort": "Real",
+      "operator": "+",
+      "arguments": [
+        "t51",
+        "t199"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t206",
+      "kind": "application",
+      "sort": "Bool",
+      "operator": "<=",
+      "arguments": [
+        "t205",
+        "t66"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t207",
+      "kind": "application",
+      "sort": "Bool",
+      "operator": "not",
+      "arguments": [
+        "t206"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t208",
+      "kind": "application",
+      "sort": "Bool",
+      "operator": ">=",
+      "arguments": [
+        "t205",
+        "t66"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t209",
+      "kind": "application",
+      "sort": "Bool",
+      "operator": "not",
+      "arguments": [
+        "t208"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t210",
+      "kind": "application",
+      "sort": "Bool",
+      "operator": "<=",
+      "arguments": [
+        "t158",
+        "t66"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t211",
+      "kind": "application",
+      "sort": "Bool",
+      "operator": "not",
+      "arguments": [
+        "t210"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    },
+    {
+      "term_id": "t212",
+      "kind": "application",
+      "sort": "Bool",
+      "operator": "or",
+      "arguments": [
+        "t160",
+        "t163",
+        "t169",
+        "t174",
+        "t176",
+        "t180",
+        "t185",
+        "t186",
+        "t190",
+        "t194",
+        "t196",
+        "t202",
+        "t204",
+        "t207",
+        "t209",
+        "t211"
+      ],
+      "value": "",
+      "bindings": [],
+      "operator_kind": "builtin",
+      "parameters": []
+    }
+  ]
+}

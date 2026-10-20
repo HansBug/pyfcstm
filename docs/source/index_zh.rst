@@ -99,6 +99,7 @@ pyfcstm 遵循三阶段流水线：
     tutorials/visualization/index_zh
     tutorials/history/index_zh
     tutorials/bmc/index_zh
+    tutorials/unsat_proofs/index_zh
 
 * :doc:`教程路线图 <tutorials/index_zh>`
 * :doc:`tutorials/quick_start/index_zh`
@@ -109,6 +110,7 @@ pyfcstm 遵循三阶段流水线：
 * :doc:`tutorials/visualization/index_zh`
 * :doc:`tutorials/history/index_zh`
 * :doc:`tutorials/bmc/index_zh`
+* :doc:`tutorials/unsat_proofs/index_zh`
 
 任务指南
 --------
@@ -124,6 +126,7 @@ pyfcstm 遵循三阶段流水线：
     how_to/installation/index_zh
     how_to/cli_workflows/index_zh
     how_to/bmc/index_zh
+    how_to/unsat_proofs/index_zh
     how_to/dsl/index_zh
     how_to/simulation/index_zh
     how_to/simulation/diagnostics_zh
@@ -137,6 +140,7 @@ pyfcstm 遵循三阶段流水线：
 * :doc:`how_to/installation/index_zh`
 * :doc:`how_to/cli_workflows/index_zh`
 * :doc:`how_to/bmc/index_zh`
+* :doc:`how_to/unsat_proofs/index_zh`
 * :doc:`how_to/dsl/index_zh`
 * :doc:`how_to/simulation/index_zh`
 * :doc:`how_to/inspect/index_zh`
@@ -160,6 +164,7 @@ pyfcstm 遵循三阶段流水线：
     explanations/dsl_semantics/index_zh
     explanations/execution_semantics/index_zh
     explanations/bmc_semantics/index_zh
+    explanations/unsat_proofs/index_zh
     explanations/bmc_properties/index_zh
     explanations/bmc_solving/index_zh
     explanations/diagnostics/index_zh
@@ -172,6 +177,7 @@ pyfcstm 遵循三阶段流水线：
 * :doc:`explanations/dsl_semantics/index_zh`
 * :doc:`explanations/execution_semantics/index_zh`
 * :doc:`explanations/bmc_semantics/index_zh`
+* :doc:`explanations/unsat_proofs/index_zh`
 * :doc:`explanations/bmc_properties/index_zh`
 * :doc:`explanations/bmc_solving/index_zh`
 * :doc:`explanations/diagnostics/index_zh`
@@ -202,6 +208,7 @@ pyfcstm 遵循三阶段流水线：
     reference/builtin_templates/index_zh
     reference/bmc_query/index_zh
     reference/bmc_results/index_zh
+    reference/unsat_proofs/index_zh
     应用程序接口文档 <api_doc_zh>
 
 * :doc:`参考地图 <reference/index_zh>`
@@ -216,6 +223,7 @@ pyfcstm 遵循三阶段流水线：
 * :doc:`reference/builtin_templates/index_zh`
 * :doc:`reference/bmc_query/index_zh`
 * :doc:`reference/bmc_results/index_zh`
+* :doc:`reference/unsat_proofs/index_zh`
 * :doc:`应用程序接口文档 <api_doc_zh>`
 
 版本说明

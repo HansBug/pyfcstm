@@ -1,0 +1,36 @@
+查询：rounding
+求解结果：UNSAT
+阅读完整度：complete
+
+P1  输入条件
+  输入来源：domain
+  得到：(x >= 0)
+
+P2  输入条件
+  输入来源：goal
+  得到：(to_real(to_int(x)) < 0)
+
+P3  逻辑推导
+  根据：P2
+  得到：not ((to_real(to_int(x)) >= 0))
+
+P4  向下取整与原值相差小于一
+  对任意实数 x，to_int(x) <= x < to_int(x) + 1。
+  得到：(false or not (((x + (-1 * to_real(to_int(x)))) >= 1)))
+
+P5  逻辑推导
+  得到：true
+
+P6  消解子句
+  根据：P4, P5
+  得到：not (((x + (-1 * to_real(to_int(x)))) >= 1))
+
+P7  精确线性组合
+  根据：P1, P3, P6
+  1 * [-1 * x <= 0]
+  1 * [to_int(x) + 1 <= 0]
+  1 * [x + -1 * to_int(x) + -1 < 0]
+  相加得到：0 < 0; 矛盾。
+  得到：false
+
+结论：提交的条件合取不可满足。

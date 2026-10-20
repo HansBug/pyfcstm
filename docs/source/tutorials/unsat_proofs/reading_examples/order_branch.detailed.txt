@@ -1,0 +1,778 @@
+Query: order_sources
+Solver result: UNSAT
+Reading: complete
+
+P1  Internal definition / defining clause
+  Therefore: ((k!1245 or k!1246 or k!1244 or k!1247 or k!1243 or not (((b@0 + (-1 * b@1)) <= 0)) or not (((b@0 + (-1 * b@1)) >= 0)) or not (((c@0 + (-1 * c@1)) <= 0)) or not (((c@0 + (-1 * c@1)) >= 0)) or not (((total@0 + (-1 * total@1)) <= 0)) or not (((total@0 + (-1 * total@1)) >= 0)) or not (((a@0 + (-1 * a@1)) <= 0)) or not (((a@0 + (-1 * a@1)) >= 0)) or not (((reserve@0 + (-1 * reserve@1)) <= 0)) or not (((reserve@0 + (-1 * reserve@1)) >= 0)) or not (((limit@0 + (-1 * limit@1)) <= 0)) or not (((limit@0 + (-1 * limit@1)) >= 0)) or not ((state@1 <= 4)) or not ((state@1 >= 4)) or not (((subtotal@1 + (-1 * z3name!1248)) <= 0)) or not (((subtotal@1 + (-1 * z3name!1248)) >= 0))) or ((c@0 + (-1 * c@1)) >= 0))
+
+P2  Input
+  Input origins: transition.step.0000
+  Therefore: (((case@0:Order.Idle::fallback::Order.Idle::0 = ((2 = state@0) and not (((false or ((2 = state@0) and E_0_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)) or ((2 = state@0) and ((true and E_0_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) and not (((2 = state@0) and E_0_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)))))))) and (((2 = state@0) and not (((false or ((2 = state@0) and E_0_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)) or ((2 = state@0) and ((true and E_0_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) and not (((2 = state@0) and E_0_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80))))))) => ((2 = state@1) and (a@1 = a@0) and (b@1 = b@0) and (c@1 = c@0) and (cap_a@1 = cap_a@0) and (cap_b@1 = cap_b@0) and (cap_c@1 = cap_c@0) and (pool@1 = pool@0) and (budget@1 = budget@0) and (reserve@1 = reserve@0) and (limit@1 = limit@0) and (subtotal@1 = subtotal@0) and (total@1 = total@0)))) and ((case@0:Order.Idle::transition::Order.Quote::0 = ((2 = state@0) and E_0_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)) and (((2 = state@0) and E_0_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) => ((4 = state@1) and (a@1 = a@0) and (b@1 = b@0) and (c@1 = c@0) and (cap_a@1 = cap_a@0) and (cap_b@1 = cap_b@0) and (cap_c@1 = cap_c@0) and (pool@1 = pool@0) and (budget@1 = budget@0) and (reserve@1 = reserve@0) and (limit@1 = limit@0) and (subtotal@1 = (if (0 <= a@0) then (a@0 + b@0) else b@0)) and (total@1 = total@0)))) and ((case@0:Order.Idle::transition::Order.Rejected::1 = ((2 = state@0) and ((true and E_0_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) and not (((2 = state@0) and E_0_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80))))) and (((2 = state@0) and ((true and E_0_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) and not (((2 = state@0) and E_0_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)))) => ((5 = state@1) and (a@1 = a@0) and (b@1 = b@0) and (c@1 = c@0) and (cap_a@1 = cap_a@0) and (cap_b@1 = cap_b@0) and (cap_c@1 = cap_c@0) and (pool@1 = pool@0) and (budget@1 = budget@0) and (reserve@1 = reserve@0) and (limit@1 = limit@0) and (subtotal@1 = subtotal@0) and (total@1 = total@0)))) and (Delta_0 = false) and (Gamma_0 = ((2 = state@0) and not (((false or ((2 = state@0) and E_0_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)) or ((2 = state@0) and ((true and E_0_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) and not (((2 = state@0) and E_0_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)))))))) and not ((Delta_0 and Gamma_0)))
+  Source: transition.step {'step': 0}
+
+P3  Logical consequence
+  From: P2
+  Therefore: ((case@0:Order.Idle::transition::Order.Quote::0 = ((2 = state@0) and E_0_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)) and (((2 = state@0) and E_0_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) => ((4 = state@1) and (a@1 = a@0) and (b@1 = b@0) and (c@1 = c@0) and (cap_a@1 = cap_a@0) and (cap_b@1 = cap_b@0) and (cap_c@1 = cap_c@0) and (pool@1 = pool@0) and (budget@1 = budget@0) and (reserve@1 = reserve@0) and (limit@1 = limit@0) and (subtotal@1 = (if (0 <= a@0) then (a@0 + b@0) else b@0)) and (total@1 = total@0))))
+
+P4  Logical consequence
+  From: P3
+  Therefore: (((2 = state@0) and E_0_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) => ((4 = state@1) and (a@1 = a@0) and (b@1 = b@0) and (c@1 = c@0) and (cap_a@1 = cap_a@0) and (cap_b@1 = cap_b@0) and (cap_c@1 = cap_c@0) and (pool@1 = pool@0) and (budget@1 = budget@0) and (reserve@1 = reserve@0) and (limit@1 = limit@0) and (subtotal@1 = (if (0 <= a@0) then (a@0 + b@0) else b@0)) and (total@1 = total@0)))
+
+P5  Input
+  Input origins: initial.target
+  Therefore: (2 = state@0)
+  Source: initial.target {'frame': 0, 'target': 2} [order_branch.fbmcq]
+
+P6  Logical consequence
+  From: P5
+  Therefore: (state@0 <= 2)
+
+P7  Logical consequence
+  From: P5
+  Therefore: (state@0 >= 2)
+
+P8  Resolve the clauses
+  From: P4, P6, P7
+  Therefore: (not (E_0_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) or not ((k!1245 or k!1246 or k!1244 or k!1247 or k!1243 or not (((b@0 + (-1 * b@1)) <= 0)) or not (((b@0 + (-1 * b@1)) >= 0)) or not (((c@0 + (-1 * c@1)) <= 0)) or not (((c@0 + (-1 * c@1)) >= 0)) or not (((total@0 + (-1 * total@1)) <= 0)) or not (((total@0 + (-1 * total@1)) >= 0)) or not (((a@0 + (-1 * a@1)) <= 0)) or not (((a@0 + (-1 * a@1)) >= 0)) or not (((reserve@0 + (-1 * reserve@1)) <= 0)) or not (((reserve@0 + (-1 * reserve@1)) >= 0)) or not (((limit@0 + (-1 * limit@1)) <= 0)) or not (((limit@0 + (-1 * limit@1)) >= 0)) or not ((state@1 <= 4)) or not ((state@1 >= 4)) or not (((subtotal@1 + (-1 * z3name!1248)) <= 0)) or not (((subtotal@1 + (-1 * z3name!1248)) >= 0)))))
+
+P9  Logical consequence
+  From: P2
+  Therefore: ((case@0:Order.Idle::fallback::Order.Idle::0 = ((2 = state@0) and not (((false or ((2 = state@0) and E_0_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)) or ((2 = state@0) and ((true and E_0_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) and not (((2 = state@0) and E_0_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)))))))) and (((2 = state@0) and not (((false or ((2 = state@0) and E_0_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)) or ((2 = state@0) and ((true and E_0_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) and not (((2 = state@0) and E_0_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80))))))) => ((2 = state@1) and (a@1 = a@0) and (b@1 = b@0) and (c@1 = c@0) and (cap_a@1 = cap_a@0) and (cap_b@1 = cap_b@0) and (cap_c@1 = cap_c@0) and (pool@1 = pool@0) and (budget@1 = budget@0) and (reserve@1 = reserve@0) and (limit@1 = limit@0) and (subtotal@1 = subtotal@0) and (total@1 = total@0))))
+
+P10  Logical consequence
+  From: P9
+  Therefore: (((2 = state@0) and not (((false or ((2 = state@0) and E_0_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)) or ((2 = state@0) and ((true and E_0_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) and not (((2 = state@0) and E_0_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80))))))) => ((2 = state@1) and (a@1 = a@0) and (b@1 = b@0) and (c@1 = c@0) and (cap_a@1 = cap_a@0) and (cap_b@1 = cap_b@0) and (cap_c@1 = cap_c@0) and (pool@1 = pool@0) and (budget@1 = budget@0) and (reserve@1 = reserve@0) and (limit@1 = limit@0) and (subtotal@1 = subtotal@0) and (total@1 = total@0)))
+
+P11  Resolve the clauses
+  From: P10, P6, P7
+  Therefore: (E_0_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80 or not ((k!1245 or k!1246 or k!1213 or k!1244 or k!1247 or not ((state@1 >= 2)) or k!1243 or not ((state@1 <= 2)) or not (((b@0 + (-1 * b@1)) <= 0)) or not (((b@0 + (-1 * b@1)) >= 0)) or not (((c@0 + (-1 * c@1)) <= 0)) or not (((c@0 + (-1 * c@1)) >= 0)) or not (((total@0 + (-1 * total@1)) <= 0)) or not (((total@0 + (-1 * total@1)) >= 0)) or not (((a@0 + (-1 * a@1)) <= 0)) or not (((a@0 + (-1 * a@1)) >= 0)) or not (((reserve@0 + (-1 * reserve@1)) <= 0)) or not (((reserve@0 + (-1 * reserve@1)) >= 0)) or not (((limit@0 + (-1 * limit@1)) <= 0)) or not (((limit@0 + (-1 * limit@1)) >= 0)))))
+
+P12  Input
+  Input origins: transition.step.0002
+  Therefore: (((case@2:__terminate__::absorb::__terminate__::0 = ((-1 = state@2) and true)) and (((-1 = state@2) and true) => ((-1 = state@3) and not (E_2_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) and (a@3 = a@2) and (b@3 = b@2) and (c@3 = c@2) and (cap_a@3 = cap_a@2) and (cap_b@3 = cap_b@2) and (cap_c@3 = cap_c@2) and (pool@3 = pool@2) and (budget@3 = budget@2) and (reserve@3 = reserve@2) and (limit@3 = limit@2) and (subtotal@3 = subtotal@2) and (total@3 = total@2)))) and ((case@2:Order.Done::fallback::Order.Done::0 = ((1 = state@2) and true)) and (((1 = state@2) and true) => ((1 = state@3) and (a@3 = a@2) and (b@3 = b@2) and (c@3 = c@2) and (cap_a@3 = cap_a@2) and (cap_b@3 = cap_b@2) and (cap_c@3 = cap_c@2) and (pool@3 = pool@2) and (budget@3 = budget@2) and (reserve@3 = reserve@2) and (limit@3 = limit@2) and (subtotal@3 = subtotal@2) and (total@3 = total@2)))) and ((case@2:Order.Idle::fallback::Order.Idle::0 = ((2 = state@2) and not (((false or ((2 = state@2) and E_2_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)) or ((2 = state@2) and ((true and E_2_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) and not (((2 = state@2) and E_2_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)))))))) and (((2 = state@2) and not (((false or ((2 = state@2) and E_2_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)) or ((2 = state@2) and ((true and E_2_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) and not (((2 = state@2) and E_2_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80))))))) => ((2 = state@3) and (a@3 = a@2) and (b@3 = b@2) and (c@3 = c@2) and (cap_a@3 = cap_a@2) and (cap_b@3 = cap_b@2) and (cap_c@3 = cap_c@2) and (pool@3 = pool@2) and (budget@3 = budget@2) and (reserve@3 = reserve@2) and (limit@3 = limit@2) and (subtotal@3 = subtotal@2) and (total@3 = total@2)))) and ((case@2:Order.Idle::transition::Order.Quote::0 = ((2 = state@2) and E_2_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)) and (((2 = state@2) and E_2_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) => ((4 = state@3) and (a@3 = a@2) and (b@3 = b@2) and (c@3 = c@2) and (cap_a@3 = cap_a@2) and (cap_b@3 = cap_b@2) and (cap_c@3 = cap_c@2) and (pool@3 = pool@2) and (budget@3 = budget@2) and (reserve@3 = reserve@2) and (limit@3 = limit@2) and (subtotal@3 = (if (0 <= a@2) then (a@2 + b@2) else b@2)) and (total@3 = total@2)))) and ((case@2:Order.Idle::transition::Order.Rejected::1 = ((2 = state@2) and ((true and E_2_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) and not (((2 = state@2) and E_2_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80))))) and (((2 = state@2) and ((true and E_2_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) and not (((2 = state@2) and E_2_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)))) => ((5 = state@3) and (a@3 = a@2) and (b@3 = b@2) and (c@3 = c@2) and (cap_a@3 = cap_a@2) and (cap_b@3 = cap_b@2) and (cap_c@3 = cap_c@2) and (pool@3 = pool@2) and (budget@3 = budget@2) and (reserve@3 = reserve@2) and (limit@3 = limit@2) and (subtotal@3 = subtotal@2) and (total@3 = total@2)))) and ((case@2:Order.Packed::fallback::Order.Packed::0 = ((3 = state@2) and not (((3 = state@2) and true)))) and (((3 = state@2) and not (((3 = state@2) and true))) => ((3 = state@3) and (a@3 = a@2) and (b@3 = b@2) and (c@3 = c@2) and (cap_a@3 = cap_a@2) and (cap_b@3 = cap_b@2) and (cap_c@3 = cap_c@2) and (pool@3 = pool@2) and (budget@3 = budget@2) and (reserve@3 = reserve@2) and (limit@3 = limit@2) and (subtotal@3 = subtotal@2) and (total@3 = total@2)))) and ((case@2:Order.Packed::transition::Order.Done::0 = ((3 = state@2) and true)) and (((3 = state@2) and true) => ((1 = state@3) and (a@3 = a@2) and (b@3 = b@2) and (c@3 = c@2) and (cap_a@3 = cap_a@2) and (cap_b@3 = cap_b@2) and (cap_c@3 = cap_c@2) and (pool@3 = pool@2) and (budget@3 = budget@2) and (reserve@3 = reserve@2) and (limit@3 = limit@2) and (subtotal@3 = subtotal@2) and (total@3 = (subtotal@2 + reserve@2))))) and ((case@2:Order.Quote::fallback::Order.Quote::0 = ((4 = state@2) and not (((4 = state@2) and true)))) and (((4 = state@2) and not (((4 = state@2) and true))) => ((4 = state@3) and (a@3 = a@2) and (b@3 = b@2) and (c@3 = c@2) and (cap_a@3 = cap_a@2) and (cap_b@3 = cap_b@2) and (cap_c@3 = cap_c@2) and (pool@3 = pool@2) and (budget@3 = budget@2) and (reserve@3 = reserve@2) and (limit@3 = limit@2) and (subtotal@3 = subtotal@2) and (total@3 = total@2)))) and ((case@2:Order.Quote::transition::Order.Packed::0 = ((4 = state@2) and true)) and (((4 = state@2) and true) => ((3 = state@3) and (a@3 = a@2) and (b@3 = b@2) and (c@3 = c@2) and (cap_a@3 = cap_a@2) and (cap_b@3 = cap_b@2) and (cap_c@3 = cap_c@2) and (pool@3 = pool@2) and (budget@3 = budget@2) and (reserve@3 = reserve@2) and (limit@3 = limit@2) and (subtotal@3 = (subtotal@2 + c@2)) and (total@3 = total@2)))) and ((case@2:Order.Rejected::fallback::Order.Rejected::0 = ((5 = state@2) and true)) and (((5 = state@2) and true) => ((5 = state@3) and (a@3 = a@2) and (b@3 = b@2) and (c@3 = c@2) and (cap_a@3 = cap_a@2) and (cap_b@3 = cap_b@2) and (cap_c@3 = cap_c@2) and (pool@3 = pool@2) and (budget@3 = budget@2) and (reserve@3 = reserve@2) and (limit@3 = limit@2) and (subtotal@3 = subtotal@2) and (total@3 = total@2)))) and (Delta_2 = false) and (Gamma_2 = (((1 = state@2) and true) or ((2 = state@2) and not (((false or ((2 = state@2) and E_2_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)) or ((2 = state@2) and ((true and E_2_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) and not (((2 = state@2) and E_2_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80))))))) or ((3 = state@2) and not (((3 = state@2) and true))) or ((4 = state@2) and not (((4 = state@2) and true))) or ((5 = state@2) and true))) and not ((Delta_2 and Gamma_2)))
+  Source: transition.step {'step': 2}
+
+P13  Logical consequence
+  From: P12
+  Therefore: ((case@2:Order.Idle::transition::Order.Quote::0 = ((2 = state@2) and E_2_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)) and (((2 = state@2) and E_2_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) => ((4 = state@3) and (a@3 = a@2) and (b@3 = b@2) and (c@3 = c@2) and (cap_a@3 = cap_a@2) and (cap_b@3 = cap_b@2) and (cap_c@3 = cap_c@2) and (pool@3 = pool@2) and (budget@3 = budget@2) and (reserve@3 = reserve@2) and (limit@3 = limit@2) and (subtotal@3 = (if (0 <= a@2) then (a@2 + b@2) else b@2)) and (total@3 = total@2))))
+
+P14  Logical consequence
+  From: P13
+  Therefore: (((2 = state@2) and E_2_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) => ((4 = state@3) and (a@3 = a@2) and (b@3 = b@2) and (c@3 = c@2) and (cap_a@3 = cap_a@2) and (cap_b@3 = cap_b@2) and (cap_c@3 = cap_c@2) and (pool@3 = pool@2) and (budget@3 = budget@2) and (reserve@3 = reserve@2) and (limit@3 = limit@2) and (subtotal@3 = (if (0 <= a@2) then (a@2 + b@2) else b@2)) and (total@3 = total@2)))
+
+P15  Logical consequence
+  From: P12
+  Therefore: ((case@2:Order.Idle::fallback::Order.Idle::0 = ((2 = state@2) and not (((false or ((2 = state@2) and E_2_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)) or ((2 = state@2) and ((true and E_2_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) and not (((2 = state@2) and E_2_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)))))))) and (((2 = state@2) and not (((false or ((2 = state@2) and E_2_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)) or ((2 = state@2) and ((true and E_2_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) and not (((2 = state@2) and E_2_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80))))))) => ((2 = state@3) and (a@3 = a@2) and (b@3 = b@2) and (c@3 = c@2) and (cap_a@3 = cap_a@2) and (cap_b@3 = cap_b@2) and (cap_c@3 = cap_c@2) and (pool@3 = pool@2) and (budget@3 = budget@2) and (reserve@3 = reserve@2) and (limit@3 = limit@2) and (subtotal@3 = subtotal@2) and (total@3 = total@2))))
+
+P16  Logical consequence
+  From: P15
+  Therefore: (((2 = state@2) and not (((false or ((2 = state@2) and E_2_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)) or ((2 = state@2) and ((true and E_2_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) and not (((2 = state@2) and E_2_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80))))))) => ((2 = state@3) and (a@3 = a@2) and (b@3 = b@2) and (c@3 = c@2) and (cap_a@3 = cap_a@2) and (cap_b@3 = cap_b@2) and (cap_c@3 = cap_c@2) and (pool@3 = pool@2) and (budget@3 = budget@2) and (reserve@3 = reserve@2) and (limit@3 = limit@2) and (subtotal@3 = subtotal@2) and (total@3 = total@2)))
+
+P17  Internal definition / defining clause
+  Therefore: ((k!1239 or k!1240 or k!1238 or k!1241 or k!1242 or not (((a@1 + (-1 * a@2)) <= 0)) or not (((a@1 + (-1 * a@2)) >= 0)) or not (((b@1 + (-1 * b@2)) <= 0)) or not (((b@1 + (-1 * b@2)) >= 0)) or not (((total@1 + (-1 * total@2)) <= 0)) or not (((total@1 + (-1 * total@2)) >= 0)) or not (((limit@1 + (-1 * limit@2)) <= 0)) or not (((limit@1 + (-1 * limit@2)) >= 0)) or not (((subtotal@1 + (-1 * subtotal@2)) <= 0)) or not (((subtotal@1 + (-1 * subtotal@2)) >= 0)) or not (((c@1 + (-1 * c@2)) <= 0)) or not (((c@1 + (-1 * c@2)) >= 0)) or not (((reserve@1 + (-1 * reserve@2)) <= 0)) or not (((reserve@1 + (-1 * reserve@2)) >= 0)) or not ((state@2 <= 2)) or not ((state@2 >= 2))) or (state@2 <= 2))
+
+P18  Input
+  Input origins: transition.step.0001
+  Therefore: (((case@1:__terminate__::absorb::__terminate__::0 = ((-1 = state@1) and true)) and (((-1 = state@1) and true) => ((-1 = state@2) and not (E_1_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) and (a@2 = a@1) and (b@2 = b@1) and (c@2 = c@1) and (cap_a@2 = cap_a@1) and (cap_b@2 = cap_b@1) and (cap_c@2 = cap_c@1) and (pool@2 = pool@1) and (budget@2 = budget@1) and (reserve@2 = reserve@1) and (limit@2 = limit@1) and (subtotal@2 = subtotal@1) and (total@2 = total@1)))) and ((case@1:Order.Done::fallback::Order.Done::0 = ((1 = state@1) and true)) and (((1 = state@1) and true) => ((1 = state@2) and (a@2 = a@1) and (b@2 = b@1) and (c@2 = c@1) and (cap_a@2 = cap_a@1) and (cap_b@2 = cap_b@1) and (cap_c@2 = cap_c@1) and (pool@2 = pool@1) and (budget@2 = budget@1) and (reserve@2 = reserve@1) and (limit@2 = limit@1) and (subtotal@2 = subtotal@1) and (total@2 = total@1)))) and ((case@1:Order.Idle::fallback::Order.Idle::0 = ((2 = state@1) and not (((false or ((2 = state@1) and E_1_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)) or ((2 = state@1) and ((true and E_1_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) and not (((2 = state@1) and E_1_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)))))))) and (((2 = state@1) and not (((false or ((2 = state@1) and E_1_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)) or ((2 = state@1) and ((true and E_1_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) and not (((2 = state@1) and E_1_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80))))))) => ((2 = state@2) and (a@2 = a@1) and (b@2 = b@1) and (c@2 = c@1) and (cap_a@2 = cap_a@1) and (cap_b@2 = cap_b@1) and (cap_c@2 = cap_c@1) and (pool@2 = pool@1) and (budget@2 = budget@1) and (reserve@2 = reserve@1) and (limit@2 = limit@1) and (subtotal@2 = subtotal@1) and (total@2 = total@1)))) and ((case@1:Order.Idle::transition::Order.Quote::0 = ((2 = state@1) and E_1_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)) and (((2 = state@1) and E_1_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) => ((4 = state@2) and (a@2 = a@1) and (b@2 = b@1) and (c@2 = c@1) and (cap_a@2 = cap_a@1) and (cap_b@2 = cap_b@1) and (cap_c@2 = cap_c@1) and (pool@2 = pool@1) and (budget@2 = budget@1) and (reserve@2 = reserve@1) and (limit@2 = limit@1) and (subtotal@2 = (if (0 <= a@1) then (a@1 + b@1) else b@1)) and (total@2 = total@1)))) and ((case@1:Order.Idle::transition::Order.Rejected::1 = ((2 = state@1) and ((true and E_1_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) and not (((2 = state@1) and E_1_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80))))) and (((2 = state@1) and ((true and E_1_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) and not (((2 = state@1) and E_1_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)))) => ((5 = state@2) and (a@2 = a@1) and (b@2 = b@1) and (c@2 = c@1) and (cap_a@2 = cap_a@1) and (cap_b@2 = cap_b@1) and (cap_c@2 = cap_c@1) and (pool@2 = pool@1) and (budget@2 = budget@1) and (reserve@2 = reserve@1) and (limit@2 = limit@1) and (subtotal@2 = subtotal@1) and (total@2 = total@1)))) and ((case@1:Order.Packed::fallback::Order.Packed::0 = ((3 = state@1) and not (((3 = state@1) and true)))) and (((3 = state@1) and not (((3 = state@1) and true))) => ((3 = state@2) and (a@2 = a@1) and (b@2 = b@1) and (c@2 = c@1) and (cap_a@2 = cap_a@1) and (cap_b@2 = cap_b@1) and (cap_c@2 = cap_c@1) and (pool@2 = pool@1) and (budget@2 = budget@1) and (reserve@2 = reserve@1) and (limit@2 = limit@1) and (subtotal@2 = subtotal@1) and (total@2 = total@1)))) and ((case@1:Order.Packed::transition::Order.Done::0 = ((3 = state@1) and true)) and (((3 = state@1) and true) => ((1 = state@2) and (a@2 = a@1) and (b@2 = b@1) and (c@2 = c@1) and (cap_a@2 = cap_a@1) and (cap_b@2 = cap_b@1) and (cap_c@2 = cap_c@1) and (pool@2 = pool@1) and (budget@2 = budget@1) and (reserve@2 = reserve@1) and (limit@2 = limit@1) and (subtotal@2 = subtotal@1) and (total@2 = (subtotal@1 + reserve@1))))) and ((case@1:Order.Quote::fallback::Order.Quote::0 = ((4 = state@1) and not (((4 = state@1) and true)))) and (((4 = state@1) and not (((4 = state@1) and true))) => ((4 = state@2) and (a@2 = a@1) and (b@2 = b@1) and (c@2 = c@1) and (cap_a@2 = cap_a@1) and (cap_b@2 = cap_b@1) and (cap_c@2 = cap_c@1) and (pool@2 = pool@1) and (budget@2 = budget@1) and (reserve@2 = reserve@1) and (limit@2 = limit@1) and (subtotal@2 = subtotal@1) and (total@2 = total@1)))) and ((case@1:Order.Quote::transition::Order.Packed::0 = ((4 = state@1) and true)) and (((4 = state@1) and true) => ((3 = state@2) and (a@2 = a@1) and (b@2 = b@1) and (c@2 = c@1) and (cap_a@2 = cap_a@1) and (cap_b@2 = cap_b@1) and (cap_c@2 = cap_c@1) and (pool@2 = pool@1) and (budget@2 = budget@1) and (reserve@2 = reserve@1) and (limit@2 = limit@1) and (subtotal@2 = (subtotal@1 + c@1)) and (total@2 = total@1)))) and ((case@1:Order.Rejected::fallback::Order.Rejected::0 = ((5 = state@1) and true)) and (((5 = state@1) and true) => ((5 = state@2) and (a@2 = a@1) and (b@2 = b@1) and (c@2 = c@1) and (cap_a@2 = cap_a@1) and (cap_b@2 = cap_b@1) and (cap_c@2 = cap_c@1) and (pool@2 = pool@1) and (budget@2 = budget@1) and (reserve@2 = reserve@1) and (limit@2 = limit@1) and (subtotal@2 = subtotal@1) and (total@2 = total@1)))) and (Delta_1 = false) and (Gamma_1 = (((1 = state@1) and true) or ((2 = state@1) and not (((false or ((2 = state@1) and E_1_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)) or ((2 = state@1) and ((true and E_1_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) and not (((2 = state@1) and E_1_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80))))))) or ((3 = state@1) and not (((3 = state@1) and true))) or ((4 = state@1) and not (((4 = state@1) and true))) or ((5 = state@1) and true))) and not ((Delta_1 and Gamma_1)))
+  Source: transition.step {'step': 1}
+
+P19  Logical consequence
+  From: P18
+  Therefore: ((case@1:Order.Idle::fallback::Order.Idle::0 = ((2 = state@1) and not (((false or ((2 = state@1) and E_1_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)) or ((2 = state@1) and ((true and E_1_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) and not (((2 = state@1) and E_1_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)))))))) and (((2 = state@1) and not (((false or ((2 = state@1) and E_1_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)) or ((2 = state@1) and ((true and E_1_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) and not (((2 = state@1) and E_1_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80))))))) => ((2 = state@2) and (a@2 = a@1) and (b@2 = b@1) and (c@2 = c@1) and (cap_a@2 = cap_a@1) and (cap_b@2 = cap_b@1) and (cap_c@2 = cap_c@1) and (pool@2 = pool@1) and (budget@2 = budget@1) and (reserve@2 = reserve@1) and (limit@2 = limit@1) and (subtotal@2 = subtotal@1) and (total@2 = total@1))))
+
+P20  Logical consequence
+  From: P19
+  Therefore: (((2 = state@1) and not (((false or ((2 = state@1) and E_1_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)) or ((2 = state@1) and ((true and E_1_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) and not (((2 = state@1) and E_1_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80))))))) => ((2 = state@2) and (a@2 = a@1) and (b@2 = b@1) and (c@2 = c@1) and (cap_a@2 = cap_a@1) and (cap_b@2 = cap_b@1) and (cap_c@2 = cap_c@1) and (pool@2 = pool@1) and (budget@2 = budget@1) and (reserve@2 = reserve@1) and (limit@2 = limit@1) and (subtotal@2 = subtotal@1) and (total@2 = total@1)))
+
+P21  Logical consequence
+  From: P18
+  Therefore: ((case@1:Order.Idle::transition::Order.Quote::0 = ((2 = state@1) and E_1_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)) and (((2 = state@1) and E_1_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) => ((4 = state@2) and (a@2 = a@1) and (b@2 = b@1) and (c@2 = c@1) and (cap_a@2 = cap_a@1) and (cap_b@2 = cap_b@1) and (cap_c@2 = cap_c@1) and (pool@2 = pool@1) and (budget@2 = budget@1) and (reserve@2 = reserve@1) and (limit@2 = limit@1) and (subtotal@2 = (if (0 <= a@1) then (a@1 + b@1) else b@1)) and (total@2 = total@1))))
+
+P22  Logical consequence
+  From: P21
+  Therefore: (((2 = state@1) and E_1_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80) => ((4 = state@2) and (a@2 = a@1) and (b@2 = b@1) and (c@2 = c@1) and (cap_a@2 = cap_a@1) and (cap_b@2 = cap_b@1) and (cap_c@2 = cap_c@1) and (pool@2 = pool@1) and (budget@2 = budget@1) and (reserve@2 = reserve@1) and (limit@2 = limit@1) and (subtotal@2 = (if (0 <= a@1) then (a@1 + b@1) else b@1)) and (total@2 = total@1)))
+
+P23  Logical consequence
+  From: P12
+  Therefore: ((case@2:Order.Quote::transition::Order.Packed::0 = ((4 = state@2) and true)) and (((4 = state@2) and true) => ((3 = state@3) and (a@3 = a@2) and (b@3 = b@2) and (c@3 = c@2) and (cap_a@3 = cap_a@2) and (cap_b@3 = cap_b@2) and (cap_c@3 = cap_c@2) and (pool@3 = pool@2) and (budget@3 = budget@2) and (reserve@3 = reserve@2) and (limit@3 = limit@2) and (subtotal@3 = (subtotal@2 + c@2)) and (total@3 = total@2))))
+
+P24  Logical consequence
+  From: P23
+  Therefore: (((4 = state@2) and true) => ((3 = state@3) and (a@3 = a@2) and (b@3 = b@2) and (c@3 = c@2) and (cap_a@3 = cap_a@2) and (cap_b@3 = cap_b@2) and (cap_c@3 = cap_c@2) and (pool@3 = pool@2) and (budget@3 = budget@2) and (reserve@3 = reserve@2) and (limit@3 = limit@2) and (subtotal@3 = (subtotal@2 + c@2)) and (total@3 = total@2)))
+
+P25  Internal definition / defining clause
+  Therefore: ((k!1239 or k!1240 or k!1238 or k!1241 or k!1242 or not (((a@1 + (-1 * a@2)) <= 0)) or not (((a@1 + (-1 * a@2)) >= 0)) or not (((b@1 + (-1 * b@2)) <= 0)) or not (((b@1 + (-1 * b@2)) >= 0)) or not (((total@1 + (-1 * total@2)) <= 0)) or not (((total@1 + (-1 * total@2)) >= 0)) or not (((limit@1 + (-1 * limit@2)) <= 0)) or not (((limit@1 + (-1 * limit@2)) >= 0)) or not (((c@1 + (-1 * c@2)) <= 0)) or not (((c@1 + (-1 * c@2)) >= 0)) or not (((reserve@1 + (-1 * reserve@2)) <= 0)) or not (((reserve@1 + (-1 * reserve@2)) >= 0)) or not ((state@2 <= 4)) or not ((state@2 >= 4)) or not (((subtotal@2 + (-1 * z3name!1249)) <= 0)) or not (((subtotal@2 + (-1 * z3name!1249)) >= 0))) or (state@2 >= 4))
+
+P26  Assume
+  Under assumptions: P26
+  Therefore: not ((k!1239 or k!1240 or k!1238 or k!1241 or k!1242 or not (((a@1 + (-1 * a@2)) <= 0)) or not (((a@1 + (-1 * a@2)) >= 0)) or not (((b@1 + (-1 * b@2)) <= 0)) or not (((b@1 + (-1 * b@2)) >= 0)) or not (((total@1 + (-1 * total@2)) <= 0)) or not (((total@1 + (-1 * total@2)) >= 0)) or not (((limit@1 + (-1 * limit@2)) <= 0)) or not (((limit@1 + (-1 * limit@2)) >= 0)) or not (((c@1 + (-1 * c@2)) <= 0)) or not (((c@1 + (-1 * c@2)) >= 0)) or not (((reserve@1 + (-1 * reserve@2)) <= 0)) or not (((reserve@1 + (-1 * reserve@2)) >= 0)) or not ((state@2 <= 4)) or not ((state@2 >= 4)) or not (((subtotal@2 + (-1 * z3name!1249)) <= 0)) or not (((subtotal@2 + (-1 * z3name!1249)) >= 0))))
+
+P27  Resolve the clauses
+  From: P25, P26
+  Under assumptions: P26
+  Therefore: (state@2 >= 4)
+
+P28  Internal definition / defining clause
+  Therefore: ((k!1239 or k!1240 or k!1238 or k!1241 or k!1242 or not (((a@1 + (-1 * a@2)) <= 0)) or not (((a@1 + (-1 * a@2)) >= 0)) or not (((b@1 + (-1 * b@2)) <= 0)) or not (((b@1 + (-1 * b@2)) >= 0)) or not (((total@1 + (-1 * total@2)) <= 0)) or not (((total@1 + (-1 * total@2)) >= 0)) or not (((limit@1 + (-1 * limit@2)) <= 0)) or not (((limit@1 + (-1 * limit@2)) >= 0)) or not (((c@1 + (-1 * c@2)) <= 0)) or not (((c@1 + (-1 * c@2)) >= 0)) or not (((reserve@1 + (-1 * reserve@2)) <= 0)) or not (((reserve@1 + (-1 * reserve@2)) >= 0)) or not ((state@2 <= 4)) or not ((state@2 >= 4)) or not (((subtotal@2 + (-1 * z3name!1249)) <= 0)) or not (((subtotal@2 + (-1 * z3name!1249)) >= 0))) or (state@2 <= 4))
+
+P29  Resolve the clauses
+  From: P28, P26
+  Under assumptions: P26
+  Therefore: (state@2 <= 4)
+
+P30  Assume
+  Under assumptions: P30
+  Therefore: (k!1222 or k!1223 or k!1224 or k!1225 or k!1226 or k!1227 or k!1228 or k!1229 or k!1230 or not (((limit@2 + (-1 * limit@3)) <= 0)) or not (((limit@2 + (-1 * limit@3)) >= 0)) or not (((total@2 + (-1 * total@3)) <= 0)) or not (((total@2 + (-1 * total@3)) >= 0)) or not ((state@3 <= 3)) or not ((state@3 >= 3)) or not (((c@2 + subtotal@2 + (-1 * subtotal@3)) <= 0)) or not (((c@2 + subtotal@2 + (-1 * subtotal@3)) >= 0)))
+
+P31  Resolve the clauses
+  From: P24, P27, P29, P30
+  Under assumptions: P26, P30
+  Therefore: false
+
+P32  Discharge local assumptions
+  From: P31
+  Closed: P26, P30
+  Therefore: ((k!1239 or k!1240 or k!1238 or k!1241 or k!1242 or not (((a@1 + (-1 * a@2)) <= 0)) or not (((a@1 + (-1 * a@2)) >= 0)) or not (((b@1 + (-1 * b@2)) <= 0)) or not (((b@1 + (-1 * b@2)) >= 0)) or not (((total@1 + (-1 * total@2)) <= 0)) or not (((total@1 + (-1 * total@2)) >= 0)) or not (((limit@1 + (-1 * limit@2)) <= 0)) or not (((limit@1 + (-1 * limit@2)) >= 0)) or not (((c@1 + (-1 * c@2)) <= 0)) or not (((c@1 + (-1 * c@2)) >= 0)) or not (((reserve@1 + (-1 * reserve@2)) <= 0)) or not (((reserve@1 + (-1 * reserve@2)) >= 0)) or not ((state@2 <= 4)) or not ((state@2 >= 4)) or not (((subtotal@2 + (-1 * z3name!1249)) <= 0)) or not (((subtotal@2 + (-1 * z3name!1249)) >= 0))) or not ((k!1222 or k!1223 or k!1224 or k!1225 or k!1226 or k!1227 or k!1228 or k!1229 or k!1230 or not (((limit@2 + (-1 * limit@3)) <= 0)) or not (((limit@2 + (-1 * limit@3)) >= 0)) or not (((total@2 + (-1 * total@3)) <= 0)) or not (((total@2 + (-1 * total@3)) >= 0)) or not ((state@3 <= 3)) or not ((state@3 >= 3)) or not (((c@2 + subtotal@2 + (-1 * subtotal@3)) <= 0)) or not (((c@2 + subtotal@2 + (-1 * subtotal@3)) >= 0)))))
+
+P33  Internal definition / defining clause
+  Therefore: ((k!1222 or k!1223 or k!1224 or k!1225 or k!1226 or k!1227 or k!1228 or k!1229 or k!1230 or not (((limit@2 + (-1 * limit@3)) <= 0)) or not (((limit@2 + (-1 * limit@3)) >= 0)) or not (((total@2 + (-1 * total@3)) <= 0)) or not (((total@2 + (-1 * total@3)) >= 0)) or not ((state@3 <= 3)) or not ((state@3 >= 3)) or not (((c@2 + subtotal@2 + (-1 * subtotal@3)) <= 0)) or not (((c@2 + subtotal@2 + (-1 * subtotal@3)) >= 0))) or (state@3 >= 3))
+
+P34  Exact linear combination
+  To refute the negated conclusion, temporarily assume:
+    not ((state@3 >= 2))
+    (state@3 >= 3)
+  1 * [state@3 + -1 <= 0]
+  1 * [-1 * state@3 + 3 <= 0]
+  Sum: 2 <= 0; contradiction.
+  Discharge these temporary assumptions.
+  Therefore: ((state@3 >= 2) or not ((state@3 >= 3)))
+
+P35  Exact linear combination
+  To refute the negated conclusion, temporarily assume:
+    (state@3 <= 1)
+    (state@3 >= 2)
+  1 * [state@3 + -1 <= 0]
+  1 * [-1 * state@3 + 2 <= 0]
+  Sum: 1 <= 0; contradiction.
+  Discharge these temporary assumptions.
+  Therefore: (not ((state@3 <= 1)) or not ((state@3 >= 2)))
+
+P36  Internal definition / defining clause
+  Therefore: ((((limit@3 + (-1 * total@3)) >= 0) or not ((state@3 <= 1)) or not ((state@3 >= 1))) or (state@3 <= 1))
+
+P37  Input
+  Input origins: objective
+  Therefore: ((true and ((1 = state@0) and (total@0 > limit@0))) or (true and ((1 = state@1) and (total@1 > limit@1))) or (true and ((1 = state@2) and (total@2 > limit@2))) or (true and ((1 = state@3) and (total@3 > limit@3))))
+  Source: Reach Done with total > limit [order_branch.fbmcq]
+
+P38  Internal definition / defining clause
+  Therefore: ((((limit@0 + (-1 * total@0)) >= 0) or not ((state@0 <= 1)) or not ((state@0 >= 1))) or (state@0 <= 1))
+
+P39  Exact linear combination
+  To refute the negated conclusion, temporarily assume:
+    (state@0 <= 1)
+    (state@0 >= 2)
+  1 * [state@0 + -1 <= 0]
+  1 * [-1 * state@0 + 2 <= 0]
+  Sum: 1 <= 0; contradiction.
+  Discharge these temporary assumptions.
+  Therefore: (not ((state@0 <= 1)) or not ((state@0 >= 2)))
+
+P40  Resolve the clauses
+  From: P39, P7
+  Therefore: not ((state@0 <= 1))
+
+P41  Resolve the clauses
+  From: P38, P40
+  Therefore: (((limit@0 + (-1 * total@0)) >= 0) or not ((state@0 <= 1)) or not ((state@0 >= 1)))
+
+P42  Resolve the clauses
+  From: P37, P41
+  Therefore: (not ((((limit@1 + (-1 * total@1)) >= 0) or not ((state@1 <= 1)) or not ((state@1 >= 1)))) or not ((((limit@2 + (-1 * total@2)) >= 0) or not ((state@2 <= 1)) or not ((state@2 >= 1)))) or not ((((limit@3 + (-1 * total@3)) >= 0) or not ((state@3 <= 1)) or not ((state@3 >= 1)))))
+
+P43  Internal definition / defining clause
+  Therefore: ((((limit@2 + (-1 * total@2)) >= 0) or not ((state@2 <= 1)) or not ((state@2 >= 1))) or (state@2 <= 1))
+
+P44  Exact linear combination
+  To refute the negated conclusion, temporarily assume:
+    (state@2 <= 1)
+    (state@2 >= 2)
+  1 * [state@2 + -1 <= 0]
+  1 * [-1 * state@2 + 2 <= 0]
+  Sum: 1 <= 0; contradiction.
+  Discharge these temporary assumptions.
+  Therefore: (not ((state@2 <= 1)) or not ((state@2 >= 2)))
+
+P45  Internal definition / defining clause
+  Therefore: ((k!1239 or k!1240 or k!1238 or k!1241 or k!1242 or not (((a@1 + (-1 * a@2)) <= 0)) or not (((a@1 + (-1 * a@2)) >= 0)) or not (((b@1 + (-1 * b@2)) <= 0)) or not (((b@1 + (-1 * b@2)) >= 0)) or not (((total@1 + (-1 * total@2)) <= 0)) or not (((total@1 + (-1 * total@2)) >= 0)) or not (((limit@1 + (-1 * limit@2)) <= 0)) or not (((limit@1 + (-1 * limit@2)) >= 0)) or not (((subtotal@1 + (-1 * subtotal@2)) <= 0)) or not (((subtotal@1 + (-1 * subtotal@2)) >= 0)) or not (((c@1 + (-1 * c@2)) <= 0)) or not (((c@1 + (-1 * c@2)) >= 0)) or not (((reserve@1 + (-1 * reserve@2)) <= 0)) or not (((reserve@1 + (-1 * reserve@2)) >= 0)) or not ((state@2 <= 2)) or not ((state@2 >= 2))) or (state@2 >= 2))
+
+P46  Assume
+  Under assumptions: P46
+  Therefore: not ((state@2 >= 2))
+
+P47  Resolve the clauses
+  From: P45, P46
+  Under assumptions: P46
+  Therefore: (k!1239 or k!1240 or k!1238 or k!1241 or k!1242 or not (((a@1 + (-1 * a@2)) <= 0)) or not (((a@1 + (-1 * a@2)) >= 0)) or not (((b@1 + (-1 * b@2)) <= 0)) or not (((b@1 + (-1 * b@2)) >= 0)) or not (((total@1 + (-1 * total@2)) <= 0)) or not (((total@1 + (-1 * total@2)) >= 0)) or not (((limit@1 + (-1 * limit@2)) <= 0)) or not (((limit@1 + (-1 * limit@2)) >= 0)) or not (((subtotal@1 + (-1 * subtotal@2)) <= 0)) or not (((subtotal@1 + (-1 * subtotal@2)) >= 0)) or not (((c@1 + (-1 * c@2)) <= 0)) or not (((c@1 + (-1 * c@2)) >= 0)) or not (((reserve@1 + (-1 * reserve@2)) <= 0)) or not (((reserve@1 + (-1 * reserve@2)) >= 0)) or not ((state@2 <= 2)) or not ((state@2 >= 2)))
+
+P48  Assume
+  Under assumptions: P48
+  Therefore: (state@1 >= 2)
+
+P49  Assume
+  Under assumptions: P49
+  Therefore: (state@1 <= 2)
+
+P50  Resolve the clauses
+  From: P20, P47, P48, P49
+  Under assumptions: P46, P48, P49
+  Therefore: E_1_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80
+
+P51  Resolve the clauses
+  From: P22, P50, P48, P49
+  Under assumptions: P46, P48, P49
+  Therefore: not ((k!1239 or k!1240 or k!1238 or k!1241 or k!1242 or not (((a@1 + (-1 * a@2)) <= 0)) or not (((a@1 + (-1 * a@2)) >= 0)) or not (((b@1 + (-1 * b@2)) <= 0)) or not (((b@1 + (-1 * b@2)) >= 0)) or not (((total@1 + (-1 * total@2)) <= 0)) or not (((total@1 + (-1 * total@2)) >= 0)) or not (((limit@1 + (-1 * limit@2)) <= 0)) or not (((limit@1 + (-1 * limit@2)) >= 0)) or not (((c@1 + (-1 * c@2)) <= 0)) or not (((c@1 + (-1 * c@2)) >= 0)) or not (((reserve@1 + (-1 * reserve@2)) <= 0)) or not (((reserve@1 + (-1 * reserve@2)) >= 0)) or not ((state@2 <= 4)) or not ((state@2 >= 4)) or not (((subtotal@2 + (-1 * z3name!1249)) <= 0)) or not (((subtotal@2 + (-1 * z3name!1249)) >= 0))))
+
+P52  Exact linear combination
+  To refute the negated conclusion, temporarily assume:
+    not ((state@2 >= 3))
+    (state@2 >= 4)
+  1 * [state@2 + -2 <= 0]
+  1 * [-1 * state@2 + 4 <= 0]
+  Sum: 2 <= 0; contradiction.
+  Discharge these temporary assumptions.
+  Therefore: ((state@2 >= 3) or not ((state@2 >= 4)))
+
+P53  Exact linear combination
+  To refute the negated conclusion, temporarily assume:
+    not ((state@2 >= 2))
+    (state@2 >= 3)
+  1 * [state@2 + -1 <= 0]
+  1 * [-1 * state@2 + 3 <= 0]
+  Sum: 2 <= 0; contradiction.
+  Discharge these temporary assumptions.
+  Therefore: ((state@2 >= 2) or not ((state@2 >= 3)))
+
+P54  Resolve the clauses
+  From: P53, P46
+  Under assumptions: P46
+  Therefore: not ((state@2 >= 3))
+
+P55  Resolve the clauses
+  From: P52, P54
+  Under assumptions: P46
+  Therefore: not ((state@2 >= 4))
+
+P56  Resolve the clauses
+  From: P25, P51, P55
+  Under assumptions: P46, P48, P49
+  Therefore: false
+
+P57  Discharge local assumptions
+  From: P56
+  Closed: P46, P48, P49
+  Therefore: ((state@2 >= 2) or not ((state@1 >= 2)) or not ((state@1 <= 2)))
+
+P58  Internal definition / defining clause
+  Therefore: ((k!1245 or k!1246 or k!1213 or k!1244 or k!1247 or not ((state@1 >= 2)) or k!1243 or not ((state@1 <= 2)) or not (((b@0 + (-1 * b@1)) <= 0)) or not (((b@0 + (-1 * b@1)) >= 0)) or not (((c@0 + (-1 * c@1)) <= 0)) or not (((c@0 + (-1 * c@1)) >= 0)) or not (((total@0 + (-1 * total@1)) <= 0)) or not (((total@0 + (-1 * total@1)) >= 0)) or not (((a@0 + (-1 * a@1)) <= 0)) or not (((a@0 + (-1 * a@1)) >= 0)) or not (((reserve@0 + (-1 * reserve@1)) <= 0)) or not (((reserve@0 + (-1 * reserve@1)) >= 0)) or not (((limit@0 + (-1 * limit@1)) <= 0)) or not (((limit@0 + (-1 * limit@1)) >= 0))) or (state@1 >= 2))
+
+P59  Assume
+  Under assumptions: P59
+  Therefore: not ((k!1245 or k!1246 or k!1213 or k!1244 or k!1247 or not ((state@1 >= 2)) or k!1243 or not ((state@1 <= 2)) or not (((b@0 + (-1 * b@1)) <= 0)) or not (((b@0 + (-1 * b@1)) >= 0)) or not (((c@0 + (-1 * c@1)) <= 0)) or not (((c@0 + (-1 * c@1)) >= 0)) or not (((total@0 + (-1 * total@1)) <= 0)) or not (((total@0 + (-1 * total@1)) >= 0)) or not (((a@0 + (-1 * a@1)) <= 0)) or not (((a@0 + (-1 * a@1)) >= 0)) or not (((reserve@0 + (-1 * reserve@1)) <= 0)) or not (((reserve@0 + (-1 * reserve@1)) >= 0)) or not (((limit@0 + (-1 * limit@1)) <= 0)) or not (((limit@0 + (-1 * limit@1)) >= 0))))
+
+P60  Resolve the clauses
+  From: P58, P59
+  Under assumptions: P59
+  Therefore: (state@1 >= 2)
+
+P61  Internal definition / defining clause
+  Therefore: ((k!1245 or k!1246 or k!1213 or k!1244 or k!1247 or not ((state@1 >= 2)) or k!1243 or not ((state@1 <= 2)) or not (((b@0 + (-1 * b@1)) <= 0)) or not (((b@0 + (-1 * b@1)) >= 0)) or not (((c@0 + (-1 * c@1)) <= 0)) or not (((c@0 + (-1 * c@1)) >= 0)) or not (((total@0 + (-1 * total@1)) <= 0)) or not (((total@0 + (-1 * total@1)) >= 0)) or not (((a@0 + (-1 * a@1)) <= 0)) or not (((a@0 + (-1 * a@1)) >= 0)) or not (((reserve@0 + (-1 * reserve@1)) <= 0)) or not (((reserve@0 + (-1 * reserve@1)) >= 0)) or not (((limit@0 + (-1 * limit@1)) <= 0)) or not (((limit@0 + (-1 * limit@1)) >= 0))) or (state@1 <= 2))
+
+P62  Resolve the clauses
+  From: P61, P59
+  Under assumptions: P59
+  Therefore: (state@1 <= 2)
+
+P63  Resolve the clauses
+  From: P57, P60, P62
+  Under assumptions: P59
+  Therefore: (state@2 >= 2)
+
+P64  Resolve the clauses
+  From: P44, P63
+  Under assumptions: P59
+  Therefore: not ((state@2 <= 1))
+
+P65  Resolve the clauses
+  From: P43, P64
+  Under assumptions: P59
+  Therefore: (((limit@2 + (-1 * total@2)) >= 0) or not ((state@2 <= 1)) or not ((state@2 >= 1)))
+
+P66  Internal definition / defining clause
+  Therefore: ((((limit@1 + (-1 * total@1)) >= 0) or not ((state@1 <= 1)) or not ((state@1 >= 1))) or (state@1 <= 1))
+
+P67  Exact linear combination
+  To refute the negated conclusion, temporarily assume:
+    (state@1 <= 1)
+    (state@1 >= 2)
+  1 * [state@1 + -1 <= 0]
+  1 * [-1 * state@1 + 2 <= 0]
+  Sum: 1 <= 0; contradiction.
+  Discharge these temporary assumptions.
+  Therefore: (not ((state@1 <= 1)) or not ((state@1 >= 2)))
+
+P68  Resolve the clauses
+  From: P67, P60
+  Under assumptions: P59
+  Therefore: not ((state@1 <= 1))
+
+P69  Resolve the clauses
+  From: P66, P68
+  Under assumptions: P59
+  Therefore: (((limit@1 + (-1 * total@1)) >= 0) or not ((state@1 <= 1)) or not ((state@1 >= 1)))
+
+P70  Resolve the clauses
+  From: P42, P65, P69
+  Under assumptions: P59
+  Therefore: not ((((limit@3 + (-1 * total@3)) >= 0) or not ((state@3 <= 1)) or not ((state@3 >= 1))))
+
+P71  Resolve the clauses
+  From: P36, P70
+  Under assumptions: P59
+  Therefore: (state@3 <= 1)
+
+P72  Resolve the clauses
+  From: P35, P71
+  Under assumptions: P59
+  Therefore: not ((state@3 >= 2))
+
+P73  Resolve the clauses
+  From: P34, P72
+  Under assumptions: P59
+  Therefore: not ((state@3 >= 3))
+
+P74  Resolve the clauses
+  From: P33, P73
+  Under assumptions: P59
+  Therefore: (k!1222 or k!1223 or k!1224 or k!1225 or k!1226 or k!1227 or k!1228 or k!1229 or k!1230 or not (((limit@2 + (-1 * limit@3)) <= 0)) or not (((limit@2 + (-1 * limit@3)) >= 0)) or not (((total@2 + (-1 * total@3)) <= 0)) or not (((total@2 + (-1 * total@3)) >= 0)) or not ((state@3 <= 3)) or not ((state@3 >= 3)) or not (((c@2 + subtotal@2 + (-1 * subtotal@3)) <= 0)) or not (((c@2 + subtotal@2 + (-1 * subtotal@3)) >= 0)))
+
+P75  Resolve the clauses
+  From: P32, P74
+  Under assumptions: P59
+  Therefore: (k!1239 or k!1240 or k!1238 or k!1241 or k!1242 or not (((a@1 + (-1 * a@2)) <= 0)) or not (((a@1 + (-1 * a@2)) >= 0)) or not (((b@1 + (-1 * b@2)) <= 0)) or not (((b@1 + (-1 * b@2)) >= 0)) or not (((total@1 + (-1 * total@2)) <= 0)) or not (((total@1 + (-1 * total@2)) >= 0)) or not (((limit@1 + (-1 * limit@2)) <= 0)) or not (((limit@1 + (-1 * limit@2)) >= 0)) or not (((c@1 + (-1 * c@2)) <= 0)) or not (((c@1 + (-1 * c@2)) >= 0)) or not (((reserve@1 + (-1 * reserve@2)) <= 0)) or not (((reserve@1 + (-1 * reserve@2)) >= 0)) or not ((state@2 <= 4)) or not ((state@2 >= 4)) or not (((subtotal@2 + (-1 * z3name!1249)) <= 0)) or not (((subtotal@2 + (-1 * z3name!1249)) >= 0)))
+
+P76  Resolve the clauses
+  From: P22, P75, P60, P62
+  Under assumptions: P59
+  Therefore: not (E_1_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)
+
+P77  Resolve the clauses
+  From: P20, P76, P60, P62
+  Under assumptions: P59
+  Therefore: not ((k!1239 or k!1240 or k!1238 or k!1241 or k!1242 or not (((a@1 + (-1 * a@2)) <= 0)) or not (((a@1 + (-1 * a@2)) >= 0)) or not (((b@1 + (-1 * b@2)) <= 0)) or not (((b@1 + (-1 * b@2)) >= 0)) or not (((total@1 + (-1 * total@2)) <= 0)) or not (((total@1 + (-1 * total@2)) >= 0)) or not (((limit@1 + (-1 * limit@2)) <= 0)) or not (((limit@1 + (-1 * limit@2)) >= 0)) or not (((subtotal@1 + (-1 * subtotal@2)) <= 0)) or not (((subtotal@1 + (-1 * subtotal@2)) >= 0)) or not (((c@1 + (-1 * c@2)) <= 0)) or not (((c@1 + (-1 * c@2)) >= 0)) or not (((reserve@1 + (-1 * reserve@2)) <= 0)) or not (((reserve@1 + (-1 * reserve@2)) >= 0)) or not ((state@2 <= 2)) or not ((state@2 >= 2))))
+
+P78  Resolve the clauses
+  From: P17, P77
+  Under assumptions: P59
+  Therefore: (state@2 <= 2)
+
+P79  Internal definition / defining clause
+  Therefore: ((k!1222 or k!1223 or k!1224 or k!1225 or k!1226 or k!1227 or k!1228 or k!1229 or k!1230 or not (((limit@2 + (-1 * limit@3)) <= 0)) or not (((limit@2 + (-1 * limit@3)) >= 0)) or not (((total@2 + (-1 * total@3)) <= 0)) or not (((total@2 + (-1 * total@3)) >= 0)) or not (((subtotal@2 + (-1 * subtotal@3)) <= 0)) or not (((subtotal@2 + (-1 * subtotal@3)) >= 0)) or not ((state@3 <= 2)) or not ((state@3 >= 2))) or (state@3 >= 2))
+
+P80  Resolve the clauses
+  From: P79, P72
+  Under assumptions: P59
+  Therefore: (k!1222 or k!1223 or k!1224 or k!1225 or k!1226 or k!1227 or k!1228 or k!1229 or k!1230 or not (((limit@2 + (-1 * limit@3)) <= 0)) or not (((limit@2 + (-1 * limit@3)) >= 0)) or not (((total@2 + (-1 * total@3)) <= 0)) or not (((total@2 + (-1 * total@3)) >= 0)) or not (((subtotal@2 + (-1 * subtotal@3)) <= 0)) or not (((subtotal@2 + (-1 * subtotal@3)) >= 0)) or not ((state@3 <= 2)) or not ((state@3 >= 2)))
+
+P81  Resolve the clauses
+  From: P16, P78, P63, P80
+  Under assumptions: P59
+  Therefore: E_2_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80
+
+P82  Internal definition / defining clause
+  Therefore: ((k!1222 or k!1223 or k!1224 or k!1225 or k!1226 or k!1227 or k!1228 or k!1229 or k!1230 or not (((limit@2 + (-1 * limit@3)) <= 0)) or not (((limit@2 + (-1 * limit@3)) >= 0)) or not (((total@2 + (-1 * total@3)) <= 0)) or not (((total@2 + (-1 * total@3)) >= 0)) or not ((state@3 <= 4)) or not ((state@3 >= 4)) or not (((subtotal@3 + (-1 * z3name!1250)) <= 0)) or not (((subtotal@3 + (-1 * z3name!1250)) >= 0))) or (state@3 >= 4))
+
+P83  Exact linear combination
+  To refute the negated conclusion, temporarily assume:
+    not ((state@3 >= 3))
+    (state@3 >= 4)
+  1 * [state@3 + -2 <= 0]
+  1 * [-1 * state@3 + 4 <= 0]
+  Sum: 2 <= 0; contradiction.
+  Discharge these temporary assumptions.
+  Therefore: ((state@3 >= 3) or not ((state@3 >= 4)))
+
+P84  Resolve the clauses
+  From: P83, P73
+  Under assumptions: P59
+  Therefore: not ((state@3 >= 4))
+
+P85  Resolve the clauses
+  From: P82, P84
+  Under assumptions: P59
+  Therefore: (k!1222 or k!1223 or k!1224 or k!1225 or k!1226 or k!1227 or k!1228 or k!1229 or k!1230 or not (((limit@2 + (-1 * limit@3)) <= 0)) or not (((limit@2 + (-1 * limit@3)) >= 0)) or not (((total@2 + (-1 * total@3)) <= 0)) or not (((total@2 + (-1 * total@3)) >= 0)) or not ((state@3 <= 4)) or not ((state@3 >= 4)) or not (((subtotal@3 + (-1 * z3name!1250)) <= 0)) or not (((subtotal@3 + (-1 * z3name!1250)) >= 0)))
+
+P86  Resolve the clauses
+  From: P14, P81, P78, P63, P85
+  Under assumptions: P59
+  Therefore: false
+
+P87  Discharge local assumptions
+  From: P86
+  Closed: P59
+  Therefore: (k!1245 or k!1246 or k!1213 or k!1244 or k!1247 or not ((state@1 >= 2)) or k!1243 or not ((state@1 <= 2)) or not (((b@0 + (-1 * b@1)) <= 0)) or not (((b@0 + (-1 * b@1)) >= 0)) or not (((c@0 + (-1 * c@1)) <= 0)) or not (((c@0 + (-1 * c@1)) >= 0)) or not (((total@0 + (-1 * total@1)) <= 0)) or not (((total@0 + (-1 * total@1)) >= 0)) or not (((a@0 + (-1 * a@1)) <= 0)) or not (((a@0 + (-1 * a@1)) >= 0)) or not (((reserve@0 + (-1 * reserve@1)) <= 0)) or not (((reserve@0 + (-1 * reserve@1)) >= 0)) or not (((limit@0 + (-1 * limit@1)) <= 0)) or not (((limit@0 + (-1 * limit@1)) >= 0)))
+
+P88  Resolve the clauses
+  From: P11, P87
+  Therefore: E_0_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80
+
+P89  Resolve the clauses
+  From: P8, P88
+  Therefore: not ((k!1245 or k!1246 or k!1244 or k!1247 or k!1243 or not (((b@0 + (-1 * b@1)) <= 0)) or not (((b@0 + (-1 * b@1)) >= 0)) or not (((c@0 + (-1 * c@1)) <= 0)) or not (((c@0 + (-1 * c@1)) >= 0)) or not (((total@0 + (-1 * total@1)) <= 0)) or not (((total@0 + (-1 * total@1)) >= 0)) or not (((a@0 + (-1 * a@1)) <= 0)) or not (((a@0 + (-1 * a@1)) >= 0)) or not (((reserve@0 + (-1 * reserve@1)) <= 0)) or not (((reserve@0 + (-1 * reserve@1)) >= 0)) or not (((limit@0 + (-1 * limit@1)) <= 0)) or not (((limit@0 + (-1 * limit@1)) >= 0)) or not ((state@1 <= 4)) or not ((state@1 >= 4)) or not (((subtotal@1 + (-1 * z3name!1248)) <= 0)) or not (((subtotal@1 + (-1 * z3name!1248)) >= 0))))
+
+P90  Resolve the clauses
+  From: P1, P89
+  Therefore: ((c@0 + (-1 * c@1)) >= 0)
+
+P91  Internal definition / defining clause
+  Therefore: ((k!1245 or k!1246 or k!1244 or k!1247 or k!1243 or not (((b@0 + (-1 * b@1)) <= 0)) or not (((b@0 + (-1 * b@1)) >= 0)) or not (((c@0 + (-1 * c@1)) <= 0)) or not (((c@0 + (-1 * c@1)) >= 0)) or not (((total@0 + (-1 * total@1)) <= 0)) or not (((total@0 + (-1 * total@1)) >= 0)) or not (((a@0 + (-1 * a@1)) <= 0)) or not (((a@0 + (-1 * a@1)) >= 0)) or not (((reserve@0 + (-1 * reserve@1)) <= 0)) or not (((reserve@0 + (-1 * reserve@1)) >= 0)) or not (((limit@0 + (-1 * limit@1)) <= 0)) or not (((limit@0 + (-1 * limit@1)) >= 0)) or not ((state@1 <= 4)) or not ((state@1 >= 4)) or not (((subtotal@1 + (-1 * z3name!1248)) <= 0)) or not (((subtotal@1 + (-1 * z3name!1248)) >= 0))) or ((subtotal@1 + (-1 * z3name!1248)) <= 0))
+
+P92  Resolve the clauses
+  From: P91, P89
+  Therefore: ((subtotal@1 + (-1 * z3name!1248)) <= 0)
+
+P93  Internal definition / defining clause
+  Therefore: ((not (((a@0 + b@0 + (-1 * z3name!1248)) <= 0)) or not (((a@0 + b@0 + (-1 * z3name!1248)) >= 0))) or ((a@0 + b@0 + (-1 * z3name!1248)) >= 0))
+
+P94  Internal definition / defining clause
+  Therefore: ((not ((a@0 >= 0)) or (z3name!1248 = (a@0 + b@0))) and ((a@0 >= 0) or (z3name!1248 = b@0)))
+
+P95  Logical consequence
+  From: P94
+  Therefore: (not ((a@0 >= 0)) or not ((not (((a@0 + b@0 + (-1 * z3name!1248)) <= 0)) or not (((a@0 + b@0 + (-1 * z3name!1248)) >= 0)))))
+
+P96  Input
+  Input origins: assumption.0000.frame.0000
+  Therefore: (0 <= a@0)
+  Source: assumption.frame {'assumption': 0, 'frame': 0} [order_branch.fbmcq]
+
+P97  Resolve the clauses
+  From: P95, P96
+  Therefore: not ((not (((a@0 + b@0 + (-1 * z3name!1248)) <= 0)) or not (((a@0 + b@0 + (-1 * z3name!1248)) >= 0))))
+
+P98  Resolve the clauses
+  From: P93, P97
+  Therefore: ((a@0 + b@0 + (-1 * z3name!1248)) >= 0)
+
+P99  Internal definition / defining clause
+  Therefore: ((k!1239 or k!1240 or k!1238 or k!1241 or k!1242 or not (((a@1 + (-1 * a@2)) <= 0)) or not (((a@1 + (-1 * a@2)) >= 0)) or not (((b@1 + (-1 * b@2)) <= 0)) or not (((b@1 + (-1 * b@2)) >= 0)) or not (((total@1 + (-1 * total@2)) <= 0)) or not (((total@1 + (-1 * total@2)) >= 0)) or not (((limit@1 + (-1 * limit@2)) <= 0)) or not (((limit@1 + (-1 * limit@2)) >= 0)) or not (((c@1 + (-1 * c@2)) <= 0)) or not (((c@1 + (-1 * c@2)) >= 0)) or not (((reserve@1 + (-1 * reserve@2)) <= 0)) or not (((reserve@1 + (-1 * reserve@2)) >= 0)) or not ((state@2 <= 3)) or not ((state@2 >= 3)) or not (((c@1 + subtotal@1 + (-1 * subtotal@2)) <= 0)) or not (((c@1 + subtotal@1 + (-1 * subtotal@2)) >= 0))) or ((c@1 + subtotal@1 + (-1 * subtotal@2)) >= 0))
+
+P100  Logical consequence
+  From: P18
+  Therefore: ((case@1:Order.Quote::transition::Order.Packed::0 = ((4 = state@1) and true)) and (((4 = state@1) and true) => ((3 = state@2) and (a@2 = a@1) and (b@2 = b@1) and (c@2 = c@1) and (cap_a@2 = cap_a@1) and (cap_b@2 = cap_b@1) and (cap_c@2 = cap_c@1) and (pool@2 = pool@1) and (budget@2 = budget@1) and (reserve@2 = reserve@1) and (limit@2 = limit@1) and (subtotal@2 = (subtotal@1 + c@1)) and (total@2 = total@1))))
+
+P101  Logical consequence
+  From: P100
+  Therefore: (((4 = state@1) and true) => ((3 = state@2) and (a@2 = a@1) and (b@2 = b@1) and (c@2 = c@1) and (cap_a@2 = cap_a@1) and (cap_b@2 = cap_b@1) and (cap_c@2 = cap_c@1) and (pool@2 = pool@1) and (budget@2 = budget@1) and (reserve@2 = reserve@1) and (limit@2 = limit@1) and (subtotal@2 = (subtotal@1 + c@1)) and (total@2 = total@1)))
+
+P102  Internal definition / defining clause
+  Therefore: ((k!1245 or k!1246 or k!1244 or k!1247 or k!1243 or not (((b@0 + (-1 * b@1)) <= 0)) or not (((b@0 + (-1 * b@1)) >= 0)) or not (((c@0 + (-1 * c@1)) <= 0)) or not (((c@0 + (-1 * c@1)) >= 0)) or not (((total@0 + (-1 * total@1)) <= 0)) or not (((total@0 + (-1 * total@1)) >= 0)) or not (((a@0 + (-1 * a@1)) <= 0)) or not (((a@0 + (-1 * a@1)) >= 0)) or not (((reserve@0 + (-1 * reserve@1)) <= 0)) or not (((reserve@0 + (-1 * reserve@1)) >= 0)) or not (((limit@0 + (-1 * limit@1)) <= 0)) or not (((limit@0 + (-1 * limit@1)) >= 0)) or not ((state@1 <= 4)) or not ((state@1 >= 4)) or not (((subtotal@1 + (-1 * z3name!1248)) <= 0)) or not (((subtotal@1 + (-1 * z3name!1248)) >= 0))) or (state@1 >= 4))
+
+P103  Resolve the clauses
+  From: P102, P89
+  Therefore: (state@1 >= 4)
+
+P104  Internal definition / defining clause
+  Therefore: ((k!1245 or k!1246 or k!1244 or k!1247 or k!1243 or not (((b@0 + (-1 * b@1)) <= 0)) or not (((b@0 + (-1 * b@1)) >= 0)) or not (((c@0 + (-1 * c@1)) <= 0)) or not (((c@0 + (-1 * c@1)) >= 0)) or not (((total@0 + (-1 * total@1)) <= 0)) or not (((total@0 + (-1 * total@1)) >= 0)) or not (((a@0 + (-1 * a@1)) <= 0)) or not (((a@0 + (-1 * a@1)) >= 0)) or not (((reserve@0 + (-1 * reserve@1)) <= 0)) or not (((reserve@0 + (-1 * reserve@1)) >= 0)) or not (((limit@0 + (-1 * limit@1)) <= 0)) or not (((limit@0 + (-1 * limit@1)) >= 0)) or not ((state@1 <= 4)) or not ((state@1 >= 4)) or not (((subtotal@1 + (-1 * z3name!1248)) <= 0)) or not (((subtotal@1 + (-1 * z3name!1248)) >= 0))) or (state@1 <= 4))
+
+P105  Assume
+  Under assumptions: P105
+  Therefore: not ((state@1 <= 4))
+
+P106  Resolve the clauses
+  From: P104, P105
+  Under assumptions: P105
+  Therefore: (k!1245 or k!1246 or k!1244 or k!1247 or k!1243 or not (((b@0 + (-1 * b@1)) <= 0)) or not (((b@0 + (-1 * b@1)) >= 0)) or not (((c@0 + (-1 * c@1)) <= 0)) or not (((c@0 + (-1 * c@1)) >= 0)) or not (((total@0 + (-1 * total@1)) <= 0)) or not (((total@0 + (-1 * total@1)) >= 0)) or not (((a@0 + (-1 * a@1)) <= 0)) or not (((a@0 + (-1 * a@1)) >= 0)) or not (((reserve@0 + (-1 * reserve@1)) <= 0)) or not (((reserve@0 + (-1 * reserve@1)) >= 0)) or not (((limit@0 + (-1 * limit@1)) <= 0)) or not (((limit@0 + (-1 * limit@1)) >= 0)) or not ((state@1 <= 4)) or not ((state@1 >= 4)) or not (((subtotal@1 + (-1 * z3name!1248)) <= 0)) or not (((subtotal@1 + (-1 * z3name!1248)) >= 0)))
+
+P107  Resolve the clauses
+  From: P8, P106
+  Under assumptions: P105
+  Therefore: not (E_0_event_0_Order_Start_da2e4e0a4ad2ddae8bc337e8d41da959058b1a80)
+
+P108  Resolve the clauses
+  From: P11, P107
+  Under assumptions: P105
+  Therefore: not ((k!1245 or k!1246 or k!1213 or k!1244 or k!1247 or not ((state@1 >= 2)) or k!1243 or not ((state@1 <= 2)) or not (((b@0 + (-1 * b@1)) <= 0)) or not (((b@0 + (-1 * b@1)) >= 0)) or not (((c@0 + (-1 * c@1)) <= 0)) or not (((c@0 + (-1 * c@1)) >= 0)) or not (((total@0 + (-1 * total@1)) <= 0)) or not (((total@0 + (-1 * total@1)) >= 0)) or not (((a@0 + (-1 * a@1)) <= 0)) or not (((a@0 + (-1 * a@1)) >= 0)) or not (((reserve@0 + (-1 * reserve@1)) <= 0)) or not (((reserve@0 + (-1 * reserve@1)) >= 0)) or not (((limit@0 + (-1 * limit@1)) <= 0)) or not (((limit@0 + (-1 * limit@1)) >= 0))))
+
+P109  Exact linear combination
+  To refute the negated conclusion, temporarily assume:
+    (state@1 <= 2)
+    not ((state@1 <= 3))
+  1 * [state@1 + -2 <= 0]
+  1 * [-1 * state@1 + 4 <= 0]
+  Sum: 2 <= 0; contradiction.
+  Discharge these temporary assumptions.
+  Therefore: (not ((state@1 <= 2)) or (state@1 <= 3))
+
+P110  Exact linear combination
+  To refute the negated conclusion, temporarily assume:
+    (state@1 <= 3)
+    not ((state@1 <= 4))
+  1 * [state@1 + -3 <= 0]
+  1 * [-1 * state@1 + 5 <= 0]
+  Sum: 2 <= 0; contradiction.
+  Discharge these temporary assumptions.
+  Therefore: (not ((state@1 <= 3)) or (state@1 <= 4))
+
+P111  Resolve the clauses
+  From: P110, P105
+  Under assumptions: P105
+  Therefore: not ((state@1 <= 3))
+
+P112  Resolve the clauses
+  From: P109, P111
+  Under assumptions: P105
+  Therefore: not ((state@1 <= 2))
+
+P113  Resolve the clauses
+  From: P61, P108, P112
+  Under assumptions: P105
+  Therefore: false
+
+P114  Discharge local assumptions
+  From: P113
+  Closed: P105
+  Therefore: (state@1 <= 4)
+
+P115  Resolve the clauses
+  From: P101, P103, P114
+  Therefore: not ((k!1239 or k!1240 or k!1238 or k!1241 or k!1242 or not (((a@1 + (-1 * a@2)) <= 0)) or not (((a@1 + (-1 * a@2)) >= 0)) or not (((b@1 + (-1 * b@2)) <= 0)) or not (((b@1 + (-1 * b@2)) >= 0)) or not (((total@1 + (-1 * total@2)) <= 0)) or not (((total@1 + (-1 * total@2)) >= 0)) or not (((limit@1 + (-1 * limit@2)) <= 0)) or not (((limit@1 + (-1 * limit@2)) >= 0)) or not (((c@1 + (-1 * c@2)) <= 0)) or not (((c@1 + (-1 * c@2)) >= 0)) or not (((reserve@1 + (-1 * reserve@2)) <= 0)) or not (((reserve@1 + (-1 * reserve@2)) >= 0)) or not ((state@2 <= 3)) or not ((state@2 >= 3)) or not (((c@1 + subtotal@1 + (-1 * subtotal@2)) <= 0)) or not (((c@1 + subtotal@1 + (-1 * subtotal@2)) >= 0))))
+
+P116  Resolve the clauses
+  From: P99, P115
+  Therefore: ((c@1 + subtotal@1 + (-1 * subtotal@2)) >= 0)
+
+P117  Internal definition / defining clause
+  Therefore: ((k!1222 or k!1223 or k!1224 or k!1225 or k!1226 or k!1227 or k!1228 or k!1229 or k!1230 or not (((limit@2 + (-1 * limit@3)) <= 0)) or not (((limit@2 + (-1 * limit@3)) >= 0)) or not (((subtotal@2 + (-1 * subtotal@3)) <= 0)) or not (((subtotal@2 + (-1 * subtotal@3)) >= 0)) or not ((state@3 <= 1)) or not ((state@3 >= 1)) or not (((reserve@2 + subtotal@2 + (-1 * total@3)) <= 0)) or not (((reserve@2 + subtotal@2 + (-1 * total@3)) >= 0))) or ((reserve@2 + subtotal@2 + (-1 * total@3)) >= 0))
+
+P118  Logical consequence
+  From: P12
+  Therefore: ((case@2:Order.Packed::transition::Order.Done::0 = ((3 = state@2) and true)) and (((3 = state@2) and true) => ((1 = state@3) and (a@3 = a@2) and (b@3 = b@2) and (c@3 = c@2) and (cap_a@3 = cap_a@2) and (cap_b@3 = cap_b@2) and (cap_c@3 = cap_c@2) and (pool@3 = pool@2) and (budget@3 = budget@2) and (reserve@3 = reserve@2) and (limit@3 = limit@2) and (subtotal@3 = subtotal@2) and (total@3 = (subtotal@2 + reserve@2)))))
+
+P119  Logical consequence
+  From: P118
+  Therefore: (((3 = state@2) and true) => ((1 = state@3) and (a@3 = a@2) and (b@3 = b@2) and (c@3 = c@2) and (cap_a@3 = cap_a@2) and (cap_b@3 = cap_b@2) and (cap_c@3 = cap_c@2) and (pool@3 = pool@2) and (budget@3 = budget@2) and (reserve@3 = reserve@2) and (limit@3 = limit@2) and (subtotal@3 = subtotal@2) and (total@3 = (subtotal@2 + reserve@2))))
+
+P120  Internal definition / defining clause
+  Therefore: ((k!1239 or k!1240 or k!1238 or k!1241 or k!1242 or not (((a@1 + (-1 * a@2)) <= 0)) or not (((a@1 + (-1 * a@2)) >= 0)) or not (((b@1 + (-1 * b@2)) <= 0)) or not (((b@1 + (-1 * b@2)) >= 0)) or not (((total@1 + (-1 * total@2)) <= 0)) or not (((total@1 + (-1 * total@2)) >= 0)) or not (((limit@1 + (-1 * limit@2)) <= 0)) or not (((limit@1 + (-1 * limit@2)) >= 0)) or not (((c@1 + (-1 * c@2)) <= 0)) or not (((c@1 + (-1 * c@2)) >= 0)) or not (((reserve@1 + (-1 * reserve@2)) <= 0)) or not (((reserve@1 + (-1 * reserve@2)) >= 0)) or not ((state@2 <= 3)) or not ((state@2 >= 3)) or not (((c@1 + subtotal@1 + (-1 * subtotal@2)) <= 0)) or not (((c@1 + subtotal@1 + (-1 * subtotal@2)) >= 0))) or (state@2 >= 3))
+
+P121  Resolve the clauses
+  From: P120, P115
+  Therefore: (state@2 >= 3)
+
+P122  Internal definition / defining clause
+  Therefore: ((k!1239 or k!1240 or k!1238 or k!1241 or k!1242 or not (((a@1 + (-1 * a@2)) <= 0)) or not (((a@1 + (-1 * a@2)) >= 0)) or not (((b@1 + (-1 * b@2)) <= 0)) or not (((b@1 + (-1 * b@2)) >= 0)) or not (((total@1 + (-1 * total@2)) <= 0)) or not (((total@1 + (-1 * total@2)) >= 0)) or not (((limit@1 + (-1 * limit@2)) <= 0)) or not (((limit@1 + (-1 * limit@2)) >= 0)) or not (((c@1 + (-1 * c@2)) <= 0)) or not (((c@1 + (-1 * c@2)) >= 0)) or not (((reserve@1 + (-1 * reserve@2)) <= 0)) or not (((reserve@1 + (-1 * reserve@2)) >= 0)) or not ((state@2 <= 3)) or not ((state@2 >= 3)) or not (((c@1 + subtotal@1 + (-1 * subtotal@2)) <= 0)) or not (((c@1 + subtotal@1 + (-1 * subtotal@2)) >= 0))) or (state@2 <= 3))
+
+P123  Resolve the clauses
+  From: P122, P115
+  Therefore: (state@2 <= 3)
+
+P124  Resolve the clauses
+  From: P119, P121, P123
+  Therefore: not ((k!1222 or k!1223 or k!1224 or k!1225 or k!1226 or k!1227 or k!1228 or k!1229 or k!1230 or not (((limit@2 + (-1 * limit@3)) <= 0)) or not (((limit@2 + (-1 * limit@3)) >= 0)) or not (((subtotal@2 + (-1 * subtotal@3)) <= 0)) or not (((subtotal@2 + (-1 * subtotal@3)) >= 0)) or not ((state@3 <= 1)) or not ((state@3 >= 1)) or not (((reserve@2 + subtotal@2 + (-1 * total@3)) <= 0)) or not (((reserve@2 + subtotal@2 + (-1 * total@3)) >= 0))))
+
+P125  Resolve the clauses
+  From: P117, P124
+  Therefore: ((reserve@2 + subtotal@2 + (-1 * total@3)) >= 0)
+
+P126  Internal definition / defining clause
+  Therefore: ((k!1239 or k!1240 or k!1238 or k!1241 or k!1242 or not (((a@1 + (-1 * a@2)) <= 0)) or not (((a@1 + (-1 * a@2)) >= 0)) or not (((b@1 + (-1 * b@2)) <= 0)) or not (((b@1 + (-1 * b@2)) >= 0)) or not (((total@1 + (-1 * total@2)) <= 0)) or not (((total@1 + (-1 * total@2)) >= 0)) or not (((limit@1 + (-1 * limit@2)) <= 0)) or not (((limit@1 + (-1 * limit@2)) >= 0)) or not (((c@1 + (-1 * c@2)) <= 0)) or not (((c@1 + (-1 * c@2)) >= 0)) or not (((reserve@1 + (-1 * reserve@2)) <= 0)) or not (((reserve@1 + (-1 * reserve@2)) >= 0)) or not ((state@2 <= 3)) or not ((state@2 >= 3)) or not (((c@1 + subtotal@1 + (-1 * subtotal@2)) <= 0)) or not (((c@1 + subtotal@1 + (-1 * subtotal@2)) >= 0))) or ((reserve@1 + (-1 * reserve@2)) >= 0))
+
+P127  Resolve the clauses
+  From: P126, P115
+  Therefore: ((reserve@1 + (-1 * reserve@2)) >= 0)
+
+P128  Internal definition / defining clause
+  Therefore: ((k!1245 or k!1246 or k!1244 or k!1247 or k!1243 or not (((b@0 + (-1 * b@1)) <= 0)) or not (((b@0 + (-1 * b@1)) >= 0)) or not (((c@0 + (-1 * c@1)) <= 0)) or not (((c@0 + (-1 * c@1)) >= 0)) or not (((total@0 + (-1 * total@1)) <= 0)) or not (((total@0 + (-1 * total@1)) >= 0)) or not (((a@0 + (-1 * a@1)) <= 0)) or not (((a@0 + (-1 * a@1)) >= 0)) or not (((reserve@0 + (-1 * reserve@1)) <= 0)) or not (((reserve@0 + (-1 * reserve@1)) >= 0)) or not (((limit@0 + (-1 * limit@1)) <= 0)) or not (((limit@0 + (-1 * limit@1)) >= 0)) or not ((state@1 <= 4)) or not ((state@1 >= 4)) or not (((subtotal@1 + (-1 * z3name!1248)) <= 0)) or not (((subtotal@1 + (-1 * z3name!1248)) >= 0))) or ((reserve@0 + (-1 * reserve@1)) >= 0))
+
+P129  Resolve the clauses
+  From: P128, P89
+  Therefore: ((reserve@0 + (-1 * reserve@1)) >= 0)
+
+P130  Input
+  Input origins: assumption.0006.frame.0000
+  Therefore: ((budget@0 + reserve@0) <= limit@0)
+  Source: assumption.frame {'assumption': 6, 'frame': 0} [order_branch.fbmcq]
+
+P131  Logical consequence
+  From: P130
+  Therefore: ((budget@0 + reserve@0 + (-1 * limit@0)) <= 0)
+
+P132  Input
+  Input origins: assumption.0005.frame.0000
+  Therefore: ((pool@0 + cap_c@0) <= budget@0)
+  Source: assumption.frame {'assumption': 5, 'frame': 0} [order_branch.fbmcq]
+
+P133  Logical consequence
+  From: P132
+  Therefore: ((cap_c@0 + pool@0 + (-1 * budget@0)) <= 0)
+
+P134  Input
+  Input origins: assumption.0002.frame.0000
+  Therefore: (b@0 <= cap_b@0)
+  Source: assumption.frame {'assumption': 2, 'frame': 0} [order_branch.fbmcq]
+
+P135  Logical consequence
+  From: P134
+  Therefore: ((b@0 + (-1 * cap_b@0)) <= 0)
+
+P136  Input
+  Input origins: assumption.0004.frame.0000
+  Therefore: ((cap_a@0 + cap_b@0) <= pool@0)
+  Source: assumption.frame {'assumption': 4, 'frame': 0} [order_branch.fbmcq]
+
+P137  Logical consequence
+  From: P136
+  Therefore: ((cap_a@0 + cap_b@0 + (-1 * pool@0)) <= 0)
+
+P138  Input
+  Input origins: assumption.0001.frame.0000
+  Therefore: (a@0 <= cap_a@0)
+  Source: assumption.frame {'assumption': 1, 'frame': 0} [order_branch.fbmcq]
+
+P139  Logical consequence
+  From: P138
+  Therefore: ((a@0 + (-1 * cap_a@0)) <= 0)
+
+P140  Internal definition / defining clause
+  Therefore: ((k!1245 or k!1246 or k!1244 or k!1247 or k!1243 or not (((b@0 + (-1 * b@1)) <= 0)) or not (((b@0 + (-1 * b@1)) >= 0)) or not (((c@0 + (-1 * c@1)) <= 0)) or not (((c@0 + (-1 * c@1)) >= 0)) or not (((total@0 + (-1 * total@1)) <= 0)) or not (((total@0 + (-1 * total@1)) >= 0)) or not (((a@0 + (-1 * a@1)) <= 0)) or not (((a@0 + (-1 * a@1)) >= 0)) or not (((reserve@0 + (-1 * reserve@1)) <= 0)) or not (((reserve@0 + (-1 * reserve@1)) >= 0)) or not (((limit@0 + (-1 * limit@1)) <= 0)) or not (((limit@0 + (-1 * limit@1)) >= 0)) or not ((state@1 <= 4)) or not ((state@1 >= 4)) or not (((subtotal@1 + (-1 * z3name!1248)) <= 0)) or not (((subtotal@1 + (-1 * z3name!1248)) >= 0))) or ((limit@0 + (-1 * limit@1)) <= 0))
+
+P141  Resolve the clauses
+  From: P140, P89
+  Therefore: ((limit@0 + (-1 * limit@1)) <= 0)
+
+P142  Internal definition / defining clause
+  Therefore: ((k!1239 or k!1240 or k!1238 or k!1241 or k!1242 or not (((a@1 + (-1 * a@2)) <= 0)) or not (((a@1 + (-1 * a@2)) >= 0)) or not (((b@1 + (-1 * b@2)) <= 0)) or not (((b@1 + (-1 * b@2)) >= 0)) or not (((total@1 + (-1 * total@2)) <= 0)) or not (((total@1 + (-1 * total@2)) >= 0)) or not (((limit@1 + (-1 * limit@2)) <= 0)) or not (((limit@1 + (-1 * limit@2)) >= 0)) or not (((c@1 + (-1 * c@2)) <= 0)) or not (((c@1 + (-1 * c@2)) >= 0)) or not (((reserve@1 + (-1 * reserve@2)) <= 0)) or not (((reserve@1 + (-1 * reserve@2)) >= 0)) or not ((state@2 <= 3)) or not ((state@2 >= 3)) or not (((c@1 + subtotal@1 + (-1 * subtotal@2)) <= 0)) or not (((c@1 + subtotal@1 + (-1 * subtotal@2)) >= 0))) or ((limit@1 + (-1 * limit@2)) <= 0))
+
+P143  Resolve the clauses
+  From: P142, P115
+  Therefore: ((limit@1 + (-1 * limit@2)) <= 0)
+
+P144  Internal definition / defining clause
+  Therefore: ((k!1222 or k!1223 or k!1224 or k!1225 or k!1226 or k!1227 or k!1228 or k!1229 or k!1230 or not (((limit@2 + (-1 * limit@3)) <= 0)) or not (((limit@2 + (-1 * limit@3)) >= 0)) or not (((subtotal@2 + (-1 * subtotal@3)) <= 0)) or not (((subtotal@2 + (-1 * subtotal@3)) >= 0)) or not ((state@3 <= 1)) or not ((state@3 >= 1)) or not (((reserve@2 + subtotal@2 + (-1 * total@3)) <= 0)) or not (((reserve@2 + subtotal@2 + (-1 * total@3)) >= 0))) or ((limit@2 + (-1 * limit@3)) <= 0))
+
+P145  Resolve the clauses
+  From: P144, P124
+  Therefore: ((limit@2 + (-1 * limit@3)) <= 0)
+
+P146  Internal definition / defining clause
+  Therefore: ((((limit@3 + (-1 * total@3)) >= 0) or not ((state@3 <= 1)) or not ((state@3 >= 1))) or not (((limit@3 + (-1 * total@3)) >= 0)))
+
+P147  Exact linear combination
+  To refute the negated conclusion, temporarily assume:
+    (state@2 <= 1)
+    not ((state@2 <= 2))
+  1 * [state@2 + -1 <= 0]
+  1 * [-1 * state@2 + 3 <= 0]
+  Sum: 2 <= 0; contradiction.
+  Discharge these temporary assumptions.
+  Therefore: (not ((state@2 <= 1)) or (state@2 <= 2))
+
+P148  Exact linear combination
+  To refute the negated conclusion, temporarily assume:
+    (state@2 <= 2)
+    (state@2 >= 3)
+  1 * [state@2 + -2 <= 0]
+  1 * [-1 * state@2 + 3 <= 0]
+  Sum: 1 <= 0; contradiction.
+  Discharge these temporary assumptions.
+  Therefore: (not ((state@2 <= 2)) or not ((state@2 >= 3)))
+
+P149  Resolve the clauses
+  From: P148, P121
+  Therefore: not ((state@2 <= 2))
+
+P150  Resolve the clauses
+  From: P147, P149
+  Therefore: not ((state@2 <= 1))
+
+P151  Resolve the clauses
+  From: P43, P150
+  Therefore: (((limit@2 + (-1 * total@2)) >= 0) or not ((state@2 <= 1)) or not ((state@2 >= 1)))
+
+P152  Exact linear combination
+  To refute the negated conclusion, temporarily assume:
+    not ((state@1 >= 2))
+    not ((state@1 <= 3))
+  1 * [state@1 + -1 <= 0]
+  1 * [-1 * state@1 + 4 <= 0]
+  Sum: 3 <= 0; contradiction.
+  Discharge these temporary assumptions.
+  Therefore: ((state@1 >= 2) or (state@1 <= 3))
+
+P153  Exact linear combination
+  To refute the negated conclusion, temporarily assume:
+    (state@1 <= 3)
+    (state@1 >= 4)
+  1 * [state@1 + -3 <= 0]
+  1 * [-1 * state@1 + 4 <= 0]
+  Sum: 1 <= 0; contradiction.
+  Discharge these temporary assumptions.
+  Therefore: (not ((state@1 <= 3)) or not ((state@1 >= 4)))
+
+P154  Resolve the clauses
+  From: P153, P103
+  Therefore: not ((state@1 <= 3))
+
+P155  Resolve the clauses
+  From: P152, P154
+  Therefore: (state@1 >= 2)
+
+P156  Resolve the clauses
+  From: P67, P155
+  Therefore: not ((state@1 <= 1))
+
+P157  Resolve the clauses
+  From: P66, P156
+  Therefore: (((limit@1 + (-1 * total@1)) >= 0) or not ((state@1 <= 1)) or not ((state@1 >= 1)))
+
+P158  Resolve the clauses
+  From: P42, P151, P157
+  Therefore: not ((((limit@3 + (-1 * total@3)) >= 0) or not ((state@3 <= 1)) or not ((state@3 >= 1))))
+
+P159  Resolve the clauses
+  From: P146, P158
+  Therefore: not (((limit@3 + (-1 * total@3)) >= 0))
+
+P160  Input
+  Input origins: assumption.0003.frame.0000
+  Therefore: (c@0 <= cap_c@0)
+  Source: assumption.frame {'assumption': 3, 'frame': 0} [order_branch.fbmcq]
+
+P161  Logical consequence
+  From: P160
+  Therefore: ((c@0 + (-1 * cap_c@0)) <= 0)
+
+P162  Exact linear combination
+  From: P90, P92, P98, P116, P125, P127, P129, P131, P133, P135, P137, P139, P141, P143, P145, P159, P161
+  1 * [c@1 + -1 * c@0 <= 0]
+  1 * [-1 * z3name!1248 + subtotal@1 <= 0]
+  1 * [-1 * a@0 + -1 * b@0 + z3name!1248 <= 0]
+  1 * [subtotal@2 + -1 * c@1 + -1 * subtotal@1 <= 0]
+  1 * [-1 * reserve@2 + -1 * subtotal@2 + total@3 <= 0]
+  1 * [reserve@2 + -1 * reserve@1 <= 0]
+  1 * [reserve@1 + -1 * reserve@0 <= 0]
+  1 * [budget@0 + reserve@0 + -1 * limit@0 <= 0]
+  1 * [cap_c@0 + pool@0 + -1 * budget@0 <= 0]
+  1 * [b@0 + -1 * cap_b@0 <= 0]
+  1 * [cap_a@0 + cap_b@0 + -1 * pool@0 <= 0]
+  1 * [a@0 + -1 * cap_a@0 <= 0]
+  1 * [-1 * limit@1 + limit@0 <= 0]
+  1 * [-1 * limit@2 + limit@1 <= 0]
+  1 * [limit@2 + -1 * limit@3 <= 0]
+  1 * [limit@3 + -1 * total@3 + 1 <= 0]
+  1 * [c@0 + -1 * cap_c@0 <= 0]
+  Sum: 1 <= 0; contradiction.
+  Therefore: false
+
+Conclusion: the submitted conjunction is inconsistent.

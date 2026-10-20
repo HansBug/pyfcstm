@@ -1,0 +1,148 @@
+Query: expanded_square
+Solver result: UNSAT
+Reading: complete
+
+P1  Exact polynomial deduction
+  Q1: -1 + 6 * x + -10 * x * x + -12 * x * x * y + -4 * x * x * y * y + 6 * x * y + -1 * y * y > 0
+    Normalize local premise: not ((((6 * x) + (6 * (x * y)) + (-4 * (x * x * y * y)) + (-12 * (x * x * y)) + (-10 * (x * x)) + (-1 * (y * y))) <= 1))
+  Q2: x * x + -2 * x * y + y * y >= 0
+    Square is nonnegative: (x + -1 * y)^2
+  Q3: 1/4 + -3/2 * x + 9/4 * x * x + 3 * x * x * y + x * x * y * y + -1 * x * y >= 0
+    Square is nonnegative: (-1/2 + 3/2 * x + x * y)^2
+  Q4: 0 > 0
+    Nonnegative linear combination: 1/6 * Q1 + 1/6 * Q2 + 2/3 * Q3
+  The final constant cannot have this sign; contradiction.
+  Therefore: ((((6 * x) + (6 * (x * y)) + (-4 * (x * x * y * y)) + (-12 * (x * x * y)) + (-10 * (x * x)) + (-1 * (y * y))) <= 1) or (x >= 0) or (x >= -228/289))
+
+P2  Input
+  Input origins: impossible
+  Therefore: ((1 + (-6 * (x * y)) + (-6 * x) + (4 * (x * x * y * y)) + (12 * (x * x * y)) + (10 * (x * x)) + (y * y)) < 0)
+
+P3  Logical consequence
+  From: P2
+  Therefore: not ((((6 * x) + (6 * (x * y)) + (-4 * (x * x * y * y)) + (-12 * (x * x * y)) + (-10 * (x * x)) + (-1 * (y * y))) <= 1))
+
+P4  Exact polynomial deduction
+  Q1: -1 * x * x * y * y > 0
+    Normalize local premise: not (((x * x * y * y) >= 0))
+  Q2: x * x * y * y >= 0
+    Square is nonnegative: (x * y)^2
+  Q3: 0 > 0
+    Nonnegative linear combination: 1 * Q1 + 1 * Q2
+  The final constant cannot have this sign; contradiction.
+  Therefore: ((x * x * y * y) >= 0)
+
+P5  Assume
+  Under assumptions: P5
+  Therefore: (x >= 0)
+
+P6  Assume
+  Under assumptions: P6
+  Therefore: (x <= 0)
+
+P7  Exact interval deduction
+  B1: (y * y) < 0
+    Temporary negation of a conclusion alternative.
+  I1: (y * y) in (-inf, 0); isolate the term; B1
+  I2: (y * y) in [0, +inf); square the same value
+  Incompatible ranges: I1, I2; contradiction.
+  Discharge these temporary assumptions.
+  Therefore: ((y * y) >= 0)
+
+P8  Exact interval deduction
+  From: P4, P5, P6, P7, P3
+  Under assumptions: P6, P5
+  B1: -1 * x <= 0
+  B2: x <= 0
+  B3: -1 * (y * y) <= 0
+  B4: 12 * (x * x * y) + 10 * (x * x) + (y * y) + -6 * x + -6 * (x * y) + 4 * (x * x * y * y) + 1 < 0
+  I1: x in [0, +inf); isolate the term; B1
+  I2: x in (-inf, 0]; isolate the term; B2
+  I3: x in [0, 0]; intersect ranges; I1, I2
+  I4: (y * y) in [0, +inf); isolate the term; B3
+  I5: ((6 * x) + (6 * (x * y)) + (-4 * (x * x * y * y)) + (-12 * (x * x * y)) + (-10 * (x * x)) + (-1 * (y * y))) in (1, +inf); isolate the term; B4
+  I6: (x * y) in [0, 0]; multiply operand ranges; I3
+  I7: (x * x * y * y) in [0, 0]; multiply operand ranges; I3
+  I8: (x * x * y) in [0, 0]; multiply operand ranges; I3
+  I9: (x * x) in [0, 0]; square the same value; I3
+  I10: 6 in [6, 6]; exact constant
+  I11: (6 * x) in [0, 0]; multiply operand ranges; I10, I3
+  I12: (6 * (x * y)) in [0, 0]; multiply operand ranges; I10, I6
+  I13: -4 in [-4, -4]; exact constant
+  I14: (-4 * (x * x * y * y)) in [0, 0]; multiply operand ranges; I13, I7
+  I15: -12 in [-12, -12]; exact constant
+  I16: (-12 * (x * x * y)) in [0, 0]; multiply operand ranges; I15, I8
+  I17: -10 in [-10, -10]; exact constant
+  I18: (-10 * (x * x)) in [0, 0]; multiply operand ranges; I17, I9
+  I19: -1 in [-1, -1]; exact constant
+  I20: (-1 * (y * y)) in (-inf, 0]; multiply operand ranges; I19, I4
+  I21: ((6 * x) + (6 * (x * y)) + (-4 * (x * x * y * y)) + (-12 * (x * x * y)) + (-10 * (x * x)) + (-1 * (y * y))) in (-inf, 0]; add/subtract operand ranges; I11, I12, I14, I16, I18, I20
+  Incompatible ranges: I5, I21; contradiction.
+  Therefore: false
+
+P9  Discharge local assumptions
+  From: P8
+  Closed: P6, P5
+  Therefore: (not ((x <= 0)) or not ((x >= 0)))
+
+P10  Exact polynomial deduction
+  Q1: -1 + 6 * x + -10 * x * x + -12 * x * x * y + -4 * x * x * y * y + 6 * x * y + -1 * y * y > 0
+    Normalize local premise: not ((((6 * x) + (6 * (x * y)) + (-4 * (x * x * y * y)) + (-12 * (x * x * y)) + (-10 * (x * x)) + (-1 * (y * y))) <= 1))
+  Q2: x * x + -2 * x * y + y * y >= 0
+    Square is nonnegative: (x + -1 * y)^2
+  Q3: 1/4 + -3/2 * x + 9/4 * x * x + 3 * x * x * y + x * x * y * y + -1 * x * y >= 0
+    Square is nonnegative: (-1/2 + 3/2 * x + x * y)^2
+  Q4: 0 > 0
+    Nonnegative linear combination: 1/6 * Q1 + 1/6 * Q2 + 2/3 * Q3
+  The final constant cannot have this sign; contradiction.
+  Therefore: ((((6 * x) + (6 * (x * y)) + (-4 * (x * x * y * y)) + (-12 * (x * x * y)) + (-10 * (x * x)) + (-1 * (y * y))) <= 1) or (x <= 0))
+
+P11  Assume
+  Under assumptions: P11
+  Therefore: not ((x <= 0))
+
+P12  Resolve the clauses
+  From: P10, P3, P11
+  Under assumptions: P11
+  Therefore: false
+
+P13  Discharge local assumptions
+  From: P12
+  Closed: P11
+  Therefore: (x <= 0)
+
+P14  Resolve the clauses
+  From: P9, P13
+  Therefore: not ((x >= 0))
+
+P15  Exact polynomial deduction
+  Q1: -1 + 6 * x + -10 * x * x + -12 * x * x * y + -4 * x * x * y * y + 6 * x * y + -1 * y * y > 0
+    Normalize local premise: not ((((6 * x) + (6 * (x * y)) + (-4 * (x * x * y * y)) + (-12 * (x * x * y)) + (-10 * (x * x)) + (-1 * (y * y))) <= 1))
+  Q2: x * x + -2 * x * y + y * y >= 0
+    Square is nonnegative: (x + -1 * y)^2
+  Q3: 1/4 + -3/2 * x + 9/4 * x * x + 3 * x * x * y + x * x * y * y + -1 * x * y >= 0
+    Square is nonnegative: (-1/2 + 3/2 * x + x * y)^2
+  Q4: 0 > 0
+    Nonnegative linear combination: 1/6 * Q1 + 1/6 * Q2 + 2/3 * Q3
+  The final constant cannot have this sign; contradiction.
+  Therefore: ((((6 * x) + (6 * (x * y)) + (-4 * (x * x * y * y)) + (-12 * (x * x * y)) + (-10 * (x * x)) + (-1 * (y * y))) <= 1) or (x >= 0) or not ((x >= -228/289)))
+
+P16  Assume
+  Under assumptions: P16
+  Therefore: (x >= -228/289)
+
+P17  Resolve the clauses
+  From: P15, P3, P14, P16
+  Under assumptions: P16
+  Therefore: false
+
+P18  Discharge local assumptions
+  From: P17
+  Closed: P16
+  Therefore: not ((x >= -228/289))
+
+P19  Resolve the clauses
+  From: P1, P3, P14, P18
+  Therefore: false
+
+Conclusion: the submitted conjunction is inconsistent.

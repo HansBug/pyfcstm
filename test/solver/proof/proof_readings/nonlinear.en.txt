@@ -1,0 +1,140 @@
+Query: nonlinear
+Solver result: UNSAT
+Reading: complete
+
+P1  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not (((x * x) = 2)) or ((x * x) >= 2))
+
+P2  Input
+  Input origins: square
+  Therefore: ((x * x) = 2)
+
+P3  Resolve the clauses
+  From: P1, P2
+  Therefore: ((x * x) >= 2)
+
+P4  Assume
+  Under assumptions: P4
+  Therefore: (x >= -1)
+
+P5  Assume
+  Under assumptions: P5
+  Therefore: not ((x >= 0))
+
+P6  Exact interval deduction
+  From: P3, P4, P5
+  Under assumptions: P4, P5
+  B1: -1 * (x * x) + 2 <= 0
+  B2: -1 * x + -1 <= 0
+  B3: x + 1 <= 0
+  I1: (x * x) in [2, +inf); isolate the term; round integer bounds inward; B1
+  I2: x in [-1, +inf); isolate the term; round integer bounds inward; B2
+  I3: x in (-inf, -1]; isolate the term; round integer bounds inward; B3
+  I4: x in [-1, -1]; intersect ranges; I2, I3
+  I5: (x * x) in [1, 1]; square the same value; I4
+  Incompatible ranges: I1, I5; contradiction.
+  Therefore: false
+
+P7  Discharge local assumptions
+  From: P6
+  Closed: P4, P5
+  Therefore: (not ((x >= -1)) or (x >= 0))
+
+P8  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not (((x * x) = 2)) or ((x * x) <= 2))
+
+P9  Resolve the clauses
+  From: P8, P2
+  Therefore: ((x * x) <= 2)
+
+P10  Assume
+  Under assumptions: P10
+  Therefore: not ((x >= -1))
+
+P11  Exact interval deduction
+  From: P9, P10
+  Under assumptions: P10
+  B1: (x * x) + -2 <= 0
+  B2: x + 2 <= 0
+  I1: (x * x) in (-inf, 2]; isolate the term; round integer bounds inward; B1
+  I2: x in (-inf, -2]; isolate the term; round integer bounds inward; B2
+  I3: (x * x) in [4, +inf); square the same value; I2
+  Incompatible ranges: I1, I3; contradiction.
+  Therefore: false
+
+P12  Discharge local assumptions
+  From: P11
+  Closed: P10
+  Therefore: (x >= -1)
+
+P13  Resolve the clauses
+  From: P7, P12
+  Therefore: (x >= 0)
+
+P14  Assume
+  Under assumptions: P14
+  Therefore: not ((x <= 0))
+
+P15  Assume
+  Under assumptions: P15
+  Therefore: (x <= 1)
+
+P16  Exact interval deduction
+  From: P3, P14, P15
+  Under assumptions: P14, P15
+  B1: -1 * (x * x) + 2 <= 0
+  B2: -1 * x + 1 <= 0
+  B3: x + -1 <= 0
+  I1: (x * x) in [2, +inf); isolate the term; round integer bounds inward; B1
+  I2: x in [1, +inf); isolate the term; round integer bounds inward; B2
+  I3: x in (-inf, 1]; isolate the term; round integer bounds inward; B3
+  I4: x in [1, 1]; intersect ranges; I2, I3
+  I5: (x * x) in [1, 1]; square the same value; I4
+  Incompatible ranges: I1, I5; contradiction.
+  Therefore: false
+
+P17  Discharge local assumptions
+  From: P16
+  Closed: P14, P15
+  Therefore: (not ((x <= 1)) or (x <= 0))
+
+P18  Assume
+  Under assumptions: P18
+  Therefore: not ((x <= 1))
+
+P19  Exact interval deduction
+  From: P9, P18
+  Under assumptions: P18
+  B1: (x * x) + -2 <= 0
+  B2: -1 * x + 2 <= 0
+  I1: (x * x) in (-inf, 2]; isolate the term; round integer bounds inward; B1
+  I2: x in [2, +inf); isolate the term; round integer bounds inward; B2
+  I3: (x * x) in [4, +inf); square the same value; I2
+  Incompatible ranges: I1, I3; contradiction.
+  Therefore: false
+
+P20  Discharge local assumptions
+  From: P19
+  Closed: P18
+  Therefore: (x <= 1)
+
+P21  Resolve the clauses
+  From: P17, P20
+  Therefore: (x <= 0)
+
+P22  Exact interval deduction
+  From: P3, P13, P21
+  B1: -1 * (x * x) + 2 <= 0
+  B2: -1 * x <= 0
+  B3: x <= 0
+  I1: (x * x) in [2, +inf); isolate the term; round integer bounds inward; B1
+  I2: x in [0, +inf); isolate the term; round integer bounds inward; B2
+  I3: x in (-inf, 0]; isolate the term; round integer bounds inward; B3
+  I4: x in [0, 0]; intersect ranges; I2, I3
+  I5: (x * x) in [0, 0]; square the same value; I4
+  Incompatible ranges: I1, I5; contradiction.
+  Therefore: false
+
+Conclusion: the submitted conjunction is inconsistent.

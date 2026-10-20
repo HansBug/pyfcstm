@@ -1,0 +1,56 @@
+Query: sqrt
+Solver result: UNSAT
+Reading: complete
+
+P1  Principal square root is nonnegative
+  For a nonnegative radicand, the principal square root is nonnegative and its square equals the radicand.
+  This deduction uses the nonnegative-radicand condition.
+  Therefore: (not ((x >= 0)) or (^(x, 1/2) >= 0) or not ((x <= 0)) or not (((x + (-1 * ^(^(x, 1/2), 2))) <= 0)) or not (((x + (-1 * ^(^(x, 1/2), 2))) >= 0)))
+
+P2  Input
+  Input origins: impossible
+  Therefore: (x >= 0)
+
+P3  Input
+  Input origins: impossible
+  Therefore: (^(x, 1/2) < 0)
+
+P4  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not ((x = ^(^(x, 1/2), 2))) or ((x + (-1 * ^(^(x, 1/2), 2))) <= 0))
+
+P5  Squaring the principal square root
+  For a nonnegative radicand, the principal square root is nonnegative and its square equals the radicand.
+  This deduction uses the nonnegative-radicand condition.
+  Therefore: (not ((x >= 0)) or (x = ^(^(x, 1/2), 2)))
+
+P6  Resolve the clauses
+  From: P5, P2
+  Therefore: (x = ^(^(x, 1/2), 2))
+
+P7  Resolve the clauses
+  From: P4, P6
+  Therefore: ((x + (-1 * ^(^(x, 1/2), 2))) <= 0)
+
+P8  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not ((x = ^(^(x, 1/2), 2))) or ((x + (-1 * ^(^(x, 1/2), 2))) >= 0))
+
+P9  Resolve the clauses
+  From: P8, P6
+  Therefore: ((x + (-1 * ^(^(x, 1/2), 2))) >= 0)
+
+P10  Principal square root is nonnegative
+  For a nonnegative radicand, the principal square root is nonnegative and its square equals the radicand.
+  This deduction uses the nonnegative-radicand condition.
+  Therefore: ((x <= 0) or (^(x, 1/2) >= 0))
+
+P11  Resolve the clauses
+  From: P10, P3
+  Therefore: (x <= 0)
+
+P12  Resolve the clauses
+  From: P1, P2, P3, P7, P9, P11
+  Therefore: false
+
+Conclusion: the submitted conjunction is inconsistent.

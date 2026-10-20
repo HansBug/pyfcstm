@@ -242,3 +242,10 @@ Leave Explanations when the question becomes operational or factual. If you need
 a command to run, use How-to Guides. If you need a legal form, default value,
 field name, or diagnostic code, use Reference. Explanations are successful when
 they make the next operational or factual page easier to use.
+
+UNSAT proofs
+------------
+
+The standalone solver-proof page in this section is :doc:`unsat_proofs/index`.
+The tutorial provides a first successful proof, the how-to guide covers integration
+tasks, the explanation describes guarantees, and the reference lists the contract.

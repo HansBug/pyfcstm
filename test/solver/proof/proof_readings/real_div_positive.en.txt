@@ -1,0 +1,76 @@
+Query: real_div_positive
+Solver result: UNSAT
+Reading: complete
+
+P1  Input
+  Input origins: guard
+  Therefore: (((to_real(0) < x) and (to_real(0) < y)) and (to_real(0) >= /(x, y)))
+
+P2  Logical consequence
+  From: P1
+  Therefore: ((to_real(0) < x) and (to_real(0) < y))
+
+P3  Logical consequence
+  From: P2
+  Therefore: (to_real(0) < x)
+
+P4  Logical consequence
+  From: P3
+  Therefore: not ((x <= 0))
+
+P5  Equality and order
+  The alternatives cover all three cases: the same arithmetic difference is negative, zero, or positive.
+  Therefore: (not (((x + (-1 * (y * /(x, y)))) = 0)) or ((x + (-1 * (y * /(x, y)))) <= 0))
+
+P6  Real division identity
+  For a nonzero real divisor, dividend = divisor * quotient.
+  The zero-divisor alternative is retained or ruled out by a nonzero literal divisor.
+  Therefore: ((y = 0) or ((x + (-1 * (y * /(x, y)))) = 0))
+
+P7  Input
+  Input origins: domain0
+  Therefore: (((to_real(0) < x) and (to_real(0) < y)) => distinct(y, 0))
+
+P8  Logical consequence
+  From: P2
+  Therefore: (to_real(0) < y)
+
+P9  Logical consequence
+  From: P8
+  Therefore: not ((y <= 0))
+
+P10  Resolve the clauses
+  From: P7, P4, P9
+  Therefore: not ((y = 0))
+
+P11  Resolve the clauses
+  From: P6, P10
+  Therefore: ((x + (-1 * (y * /(x, y)))) = 0)
+
+P12  Resolve the clauses
+  From: P5, P11
+  Therefore: ((x + (-1 * (y * /(x, y)))) <= 0)
+
+P13  Logical consequence
+  From: P1
+  Therefore: (to_real(0) >= /(x, y))
+
+P14  Logical consequence
+  From: P13
+  Therefore: (/(x, y) <= 0)
+
+P15  Exact interval deduction
+  From: P4, P12, P9, P14
+  B1: -1 * x < 0
+  B2: x + -1 * (y * /(x, y)) <= 0
+  B3: -1 * y < 0
+  B4: /(x, y) <= 0
+  I1: x in (0, +inf); isolate the term; B1
+  I2: (y * /(x, y)) in (0, +inf); isolate the term; I1, B2
+  I3: y in (0, +inf); isolate the term; B3
+  I4: /(x, y) in (-inf, 0]; isolate the term; B4
+  I5: (y * /(x, y)) in (-inf, 0]; multiply operand ranges; I3, I4
+  Incompatible ranges: I2, I5; contradiction.
+  Therefore: false
+
+Conclusion: the submitted conjunction is inconsistent.

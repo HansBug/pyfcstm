@@ -1,0 +1,17 @@
+Query: power
+Solver result: UNSAT
+Reading: complete
+
+P1  Even power is nonnegative
+  A positive even integer power of a real value is nonnegative.
+  Therefore: (^(x, 2) >= 0)
+
+P2  Input
+  Input origins: impossible
+  Therefore: (^(x, 2) < 0)
+
+P3  Resolve the clauses
+  From: P1, P2
+  Therefore: false
+
+Conclusion: the submitted conjunction is inconsistent.

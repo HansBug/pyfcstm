@@ -1,0 +1,2736 @@
+{
+  "query_id": "branches",
+  "solver_status": "unsat",
+  "proof_status": "captured",
+  "proof": {
+    "execution_id": "92b4d216ec7c42eea59b098132ea5450",
+    "root_id": "n47",
+    "nodes": [
+      {
+        "node_id": "n0",
+        "rule": "asserted",
+        "parents": [],
+        "conclusion": "t8",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [
+          "i1"
+        ],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "checked",
+        "bindings": [],
+        "inference_kind": "input",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n1",
+        "rule": "rewrite",
+        "parents": [],
+        "conclusion": "t11",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "rewrite",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n2",
+        "rule": "mp",
+        "parents": [
+          "n0",
+          "n1"
+        ],
+        "conclusion": "t10",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "logical",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n3",
+        "rule": "rewrite",
+        "parents": [],
+        "conclusion": "t12",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "rewrite",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n4",
+        "rule": "mp",
+        "parents": [
+          "n2",
+          "n3"
+        ],
+        "conclusion": "t10",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "logical",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n5",
+        "rule": "rewrite",
+        "parents": [],
+        "conclusion": "t15",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "rewrite",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n6",
+        "rule": "mp",
+        "parents": [
+          "n4",
+          "n5"
+        ],
+        "conclusion": "t14",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "logical",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n7",
+        "rule": "asserted",
+        "parents": [],
+        "conclusion": "t7",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [
+          "i0"
+        ],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "checked",
+        "bindings": [],
+        "inference_kind": "input",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n8",
+        "rule": "rewrite",
+        "parents": [],
+        "conclusion": "t19",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "rewrite",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n9",
+        "rule": "mp",
+        "parents": [
+          "n7",
+          "n8"
+        ],
+        "conclusion": "t18",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "logical",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n10",
+        "rule": "rewrite",
+        "parents": [],
+        "conclusion": "t20",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "rewrite",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n11",
+        "rule": "mp",
+        "parents": [
+          "n9",
+          "n10"
+        ],
+        "conclusion": "t18",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "logical",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n12",
+        "rule": "rewrite",
+        "parents": [],
+        "conclusion": "t21",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "rewrite",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n13",
+        "rule": "monotonicity",
+        "parents": [
+          "n12"
+        ],
+        "conclusion": "t20",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "equality",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n14",
+        "rule": "mp",
+        "parents": [
+          "n11",
+          "n13"
+        ],
+        "conclusion": "t18",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "logical",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n15",
+        "rule": "rewrite",
+        "parents": [],
+        "conclusion": "t26",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "rewrite",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n16",
+        "rule": "mp",
+        "parents": [
+          "n14",
+          "n15"
+        ],
+        "conclusion": "t25",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "logical",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n17",
+        "rule": "rewrite",
+        "parents": [],
+        "conclusion": "t30",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "rewrite",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n18",
+        "rule": "rewrite",
+        "parents": [],
+        "conclusion": "t35",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "rewrite",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n19",
+        "rule": "trans",
+        "parents": [
+          "n17",
+          "n18"
+        ],
+        "conclusion": "t36",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "equality",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n20",
+        "rule": "mp",
+        "parents": [
+          "n16",
+          "n19"
+        ],
+        "conclusion": "t34",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "logical",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n21",
+        "rule": "not-or-elim",
+        "parents": [
+          "n20"
+        ],
+        "conclusion": "t28",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "logical",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n22",
+        "rule": "rewrite",
+        "parents": [],
+        "conclusion": "t41",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "rewrite",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n23",
+        "rule": "mp",
+        "parents": [
+          "n21",
+          "n22"
+        ],
+        "conclusion": "t40",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "logical",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n24",
+        "rule": "def-axiom",
+        "parents": [],
+        "conclusion": "t47",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "definition",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n25",
+        "rule": "intro-def",
+        "parents": [],
+        "conclusion": "t53",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "definition",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n26",
+        "rule": "rewrite",
+        "parents": [],
+        "conclusion": "t62",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "rewrite",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n27",
+        "rule": "rewrite",
+        "parents": [],
+        "conclusion": "t64",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "rewrite",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n28",
+        "rule": "rewrite",
+        "parents": [],
+        "conclusion": "t66",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "rewrite",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n29",
+        "rule": "trans",
+        "parents": [
+          "n27",
+          "n28"
+        ],
+        "conclusion": "t67",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "equality",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n30",
+        "rule": "monotonicity",
+        "parents": [
+          "n29"
+        ],
+        "conclusion": "t69",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "equality",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n31",
+        "rule": "rewrite",
+        "parents": [],
+        "conclusion": "t70",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "rewrite",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n32",
+        "rule": "trans",
+        "parents": [
+          "n30",
+          "n31"
+        ],
+        "conclusion": "t69",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "equality",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n33",
+        "rule": "monotonicity",
+        "parents": [
+          "n26",
+          "n32"
+        ],
+        "conclusion": "t72",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "equality",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n34",
+        "rule": "rewrite",
+        "parents": [],
+        "conclusion": "t77",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "rewrite",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n35",
+        "rule": "trans",
+        "parents": [
+          "n33",
+          "n34"
+        ],
+        "conclusion": "t78",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "equality",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n36",
+        "rule": "mp",
+        "parents": [
+          "n25",
+          "n35"
+        ],
+        "conclusion": "t76",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "logical",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n37",
+        "rule": "not-or-elim",
+        "parents": [
+          "n36"
+        ],
+        "conclusion": "t68",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "logical",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n38",
+        "rule": "hypothesis",
+        "parents": [],
+        "conclusion": "t3",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [
+          "n38"
+        ],
+        "discharged_hypotheses": [],
+        "local_check": "checked",
+        "bindings": [],
+        "inference_kind": "assumption",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n39",
+        "rule": "def-axiom",
+        "parents": [],
+        "conclusion": "t79",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "definition",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n40",
+        "rule": "not-or-elim",
+        "parents": [
+          "n36"
+        ],
+        "conclusion": "t61",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "logical",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n41",
+        "rule": "unit-resolution",
+        "parents": [
+          "n40",
+          "n38"
+        ],
+        "conclusion": "t60",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [
+          "n38"
+        ],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "resolution",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n42",
+        "rule": "unit-resolution",
+        "parents": [
+          "n39",
+          "n41"
+        ],
+        "conclusion": "t57",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [
+          "n38"
+        ],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "resolution",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n43",
+        "rule": "th-lemma",
+        "parents": [
+          "n38",
+          "n6",
+          "n23",
+          "n42"
+        ],
+        "conclusion": "t80",
+        "operands": [],
+        "parameters": [
+          {
+            "kind": "symbol",
+            "value": "arith"
+          },
+          {
+            "kind": "symbol",
+            "value": "farkas"
+          },
+          {
+            "kind": "rational",
+            "value": "1"
+          },
+          {
+            "kind": "rational",
+            "value": "1"
+          },
+          {
+            "kind": "rational",
+            "value": "1"
+          },
+          {
+            "kind": "rational",
+            "value": "1"
+          }
+        ],
+        "input_occurrences": [],
+        "open_hypotheses": [
+          "n38"
+        ],
+        "discharged_hypotheses": [],
+        "local_check": "checked",
+        "bindings": [],
+        "inference_kind": "arithmetic",
+        "certificate": {
+          "bounds": [
+            {
+              "term_id": "t3",
+              "negated": false,
+              "coefficients": [
+                [
+                  "t1",
+                  "-1"
+                ]
+              ],
+              "constant": "0",
+              "relation": "le"
+            },
+            {
+              "term_id": "t14",
+              "negated": false,
+              "coefficients": [
+                [
+                  "t0",
+                  "1"
+                ]
+              ],
+              "constant": "1",
+              "relation": "le"
+            },
+            {
+              "term_id": "t40",
+              "negated": false,
+              "coefficients": [
+                [
+                  "t0",
+                  "-1"
+                ],
+                [
+                  "t37",
+                  "1"
+                ]
+              ],
+              "constant": "0",
+              "relation": "le"
+            },
+            {
+              "term_id": "t57",
+              "negated": false,
+              "coefficients": [
+                [
+                  "t1",
+                  "1"
+                ],
+                [
+                  "t37",
+                  "-1"
+                ]
+              ],
+              "constant": "1",
+              "relation": "le"
+            }
+          ],
+          "weights": [
+            "1",
+            "1",
+            "1",
+            "1"
+          ],
+          "constant": "2",
+          "strict": false
+        },
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n44",
+        "rule": "lemma",
+        "parents": [
+          "n43"
+        ],
+        "conclusion": "t48",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [
+          "n38"
+        ],
+        "local_check": "checked",
+        "bindings": [],
+        "inference_kind": "discharge",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n45",
+        "rule": "unit-resolution",
+        "parents": [
+          "n37",
+          "n44"
+        ],
+        "conclusion": "t65",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "resolution",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n46",
+        "rule": "unit-resolution",
+        "parents": [
+          "n24",
+          "n45"
+        ],
+        "conclusion": "t44",
+        "operands": [],
+        "parameters": [],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "trusted",
+        "bindings": [],
+        "inference_kind": "resolution",
+        "certificate": null,
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      },
+      {
+        "node_id": "n47",
+        "rule": "th-lemma",
+        "parents": [
+          "n6",
+          "n23",
+          "n46"
+        ],
+        "conclusion": "t80",
+        "operands": [],
+        "parameters": [
+          {
+            "kind": "symbol",
+            "value": "arith"
+          },
+          {
+            "kind": "symbol",
+            "value": "farkas"
+          },
+          {
+            "kind": "rational",
+            "value": "-1"
+          },
+          {
+            "kind": "rational",
+            "value": "1"
+          },
+          {
+            "kind": "rational",
+            "value": "1"
+          }
+        ],
+        "input_occurrences": [],
+        "open_hypotheses": [],
+        "discharged_hypotheses": [],
+        "local_check": "checked",
+        "bindings": [],
+        "inference_kind": "arithmetic",
+        "certificate": {
+          "bounds": [
+            {
+              "term_id": "t14",
+              "negated": false,
+              "coefficients": [
+                [
+                  "t0",
+                  "1"
+                ]
+              ],
+              "constant": "1",
+              "relation": "le"
+            },
+            {
+              "term_id": "t40",
+              "negated": false,
+              "coefficients": [
+                [
+                  "t0",
+                  "-1"
+                ],
+                [
+                  "t37",
+                  "1"
+                ]
+              ],
+              "constant": "0",
+              "relation": "le"
+            },
+            {
+              "term_id": "t44",
+              "negated": false,
+              "coefficients": [
+                [
+                  "t37",
+                  "-1"
+                ]
+              ],
+              "constant": "0",
+              "relation": "le"
+            }
+          ],
+          "weights": [
+            "1",
+            "1",
+            "1"
+          ],
+          "constant": "1",
+          "strict": false
+        },
+        "cardinality": null,
+        "interval": null,
+        "divisibility": null,
+        "polynomial": null,
+        "linear_equality": null
+      }
+    ],
+    "terms": [
+      {
+        "term_id": "t0",
+        "kind": "constant",
+        "sort": "Int",
+        "operator": "y",
+        "arguments": [],
+        "value": "y",
+        "bindings": [],
+        "operator_kind": "uninterpreted",
+        "parameters": []
+      },
+      {
+        "term_id": "t1",
+        "kind": "constant",
+        "sort": "Int",
+        "operator": "x",
+        "arguments": [],
+        "value": "x",
+        "bindings": [],
+        "operator_kind": "uninterpreted",
+        "parameters": []
+      },
+      {
+        "term_id": "t2",
+        "kind": "literal",
+        "sort": "Int",
+        "operator": "Int",
+        "arguments": [],
+        "value": "0",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t3",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": ">=",
+        "arguments": [
+          "t1",
+          "t2"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t4",
+        "kind": "literal",
+        "sort": "Int",
+        "operator": "Int",
+        "arguments": [],
+        "value": "1",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t5",
+        "kind": "application",
+        "sort": "Int",
+        "operator": "+",
+        "arguments": [
+          "t1",
+          "t4"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t6",
+        "kind": "application",
+        "sort": "Int",
+        "operator": "ite",
+        "arguments": [
+          "t3",
+          "t5",
+          "t2"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t7",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "=",
+        "arguments": [
+          "t0",
+          "t6"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t8",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "<",
+        "arguments": [
+          "t0",
+          "t2"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t9",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "<=",
+        "arguments": [
+          "t2",
+          "t0"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t10",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "not",
+        "arguments": [
+          "t9"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t11",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "=",
+        "arguments": [
+          "t8",
+          "t10"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t12",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "=",
+        "arguments": [
+          "t10",
+          "t10"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t13",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": ">=",
+        "arguments": [
+          "t0",
+          "t2"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t14",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "not",
+        "arguments": [
+          "t13"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t15",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "=",
+        "arguments": [
+          "t10",
+          "t14"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t16",
+        "kind": "application",
+        "sort": "Int",
+        "operator": "+",
+        "arguments": [
+          "t4",
+          "t1"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t17",
+        "kind": "application",
+        "sort": "Int",
+        "operator": "ite",
+        "arguments": [
+          "t3",
+          "t16",
+          "t2"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t18",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "=",
+        "arguments": [
+          "t0",
+          "t17"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t19",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "=",
+        "arguments": [
+          "t7",
+          "t18"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t20",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "=",
+        "arguments": [
+          "t18",
+          "t18"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t21",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "=",
+        "arguments": [
+          "t17",
+          "t17"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t22",
+        "kind": "literal",
+        "sort": "Int",
+        "operator": "Int",
+        "arguments": [],
+        "value": "-1",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t23",
+        "kind": "application",
+        "sort": "Int",
+        "operator": "*",
+        "arguments": [
+          "t22",
+          "t17"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t24",
+        "kind": "application",
+        "sort": "Int",
+        "operator": "+",
+        "arguments": [
+          "t0",
+          "t23"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t25",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "=",
+        "arguments": [
+          "t24",
+          "t2"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t26",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "=",
+        "arguments": [
+          "t18",
+          "t25"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t27",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "<=",
+        "arguments": [
+          "t24",
+          "t2"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t28",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": ">=",
+        "arguments": [
+          "t24",
+          "t2"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t29",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "and",
+        "arguments": [
+          "t27",
+          "t28"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t30",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "=",
+        "arguments": [
+          "t25",
+          "t29"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t31",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "not",
+        "arguments": [
+          "t27"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t32",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "not",
+        "arguments": [
+          "t28"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t33",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "or",
+        "arguments": [
+          "t31",
+          "t32"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t34",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "not",
+        "arguments": [
+          "t33"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t35",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "=",
+        "arguments": [
+          "t29",
+          "t34"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t36",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "=",
+        "arguments": [
+          "t25",
+          "t34"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t37",
+        "kind": "constant",
+        "sort": "Int",
+        "operator": "z3name!0",
+        "arguments": [],
+        "value": "z3name!0",
+        "bindings": [],
+        "operator_kind": "uninterpreted",
+        "parameters": []
+      },
+      {
+        "term_id": "t38",
+        "kind": "application",
+        "sort": "Int",
+        "operator": "*",
+        "arguments": [
+          "t22",
+          "t37"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t39",
+        "kind": "application",
+        "sort": "Int",
+        "operator": "+",
+        "arguments": [
+          "t0",
+          "t38"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t40",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": ">=",
+        "arguments": [
+          "t39",
+          "t2"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t41",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "=",
+        "arguments": [
+          "t28",
+          "t40"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t42",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "<=",
+        "arguments": [
+          "t37",
+          "t2"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t43",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "not",
+        "arguments": [
+          "t42"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t44",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": ">=",
+        "arguments": [
+          "t37",
+          "t2"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t45",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "not",
+        "arguments": [
+          "t44"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t46",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "or",
+        "arguments": [
+          "t43",
+          "t45"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t47",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "or",
+        "arguments": [
+          "t46",
+          "t44"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t48",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "not",
+        "arguments": [
+          "t3"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t49",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "=",
+        "arguments": [
+          "t37",
+          "t16"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t50",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "or",
+        "arguments": [
+          "t48",
+          "t49"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t51",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "=",
+        "arguments": [
+          "t37",
+          "t2"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t52",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "or",
+        "arguments": [
+          "t3",
+          "t51"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t53",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "and",
+        "arguments": [
+          "t50",
+          "t52"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t54",
+        "kind": "application",
+        "sort": "Int",
+        "operator": "+",
+        "arguments": [
+          "t1",
+          "t38"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t55",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": ">=",
+        "arguments": [
+          "t54",
+          "t22"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t56",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "not",
+        "arguments": [
+          "t55"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t57",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "<=",
+        "arguments": [
+          "t54",
+          "t22"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t58",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "not",
+        "arguments": [
+          "t57"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t59",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "or",
+        "arguments": [
+          "t56",
+          "t58"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t60",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "not",
+        "arguments": [
+          "t59"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t61",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "or",
+        "arguments": [
+          "t48",
+          "t60"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t62",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "=",
+        "arguments": [
+          "t50",
+          "t61"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t63",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "and",
+        "arguments": [
+          "t42",
+          "t44"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t64",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "=",
+        "arguments": [
+          "t51",
+          "t63"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t65",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "not",
+        "arguments": [
+          "t46"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t66",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "=",
+        "arguments": [
+          "t63",
+          "t65"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t67",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "=",
+        "arguments": [
+          "t51",
+          "t65"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t68",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "or",
+        "arguments": [
+          "t3",
+          "t65"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t69",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "=",
+        "arguments": [
+          "t52",
+          "t68"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t70",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "=",
+        "arguments": [
+          "t68",
+          "t68"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t71",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "and",
+        "arguments": [
+          "t61",
+          "t68"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t72",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "=",
+        "arguments": [
+          "t53",
+          "t71"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t73",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "not",
+        "arguments": [
+          "t61"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t74",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "not",
+        "arguments": [
+          "t68"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t75",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "or",
+        "arguments": [
+          "t73",
+          "t74"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t76",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "not",
+        "arguments": [
+          "t75"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t77",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "=",
+        "arguments": [
+          "t71",
+          "t76"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t78",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "=",
+        "arguments": [
+          "t53",
+          "t76"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t79",
+        "kind": "application",
+        "sort": "Bool",
+        "operator": "or",
+        "arguments": [
+          "t59",
+          "t57"
+        ],
+        "value": "",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      },
+      {
+        "term_id": "t80",
+        "kind": "literal",
+        "sort": "Bool",
+        "operator": "false",
+        "arguments": [],
+        "value": "false",
+        "bindings": [],
+        "operator_kind": "builtin",
+        "parameters": []
+      }
+    ],
+    "inputs": [
+      {
+        "occurrence_id": "i0",
+        "constraint_id": "update",
+        "expression_index": 0,
+        "term_id": "t7",
+        "background": false
+      },
+      {
+        "occurrence_id": "i1",
+        "constraint_id": "goal",
+        "expression_index": 0,
+        "term_id": "t8",
+        "background": false
+      }
+    ],
+    "source_bindings": []
+  },
+  "input_check": "passed",
+  "stop_reason": null,
+  "scope_check": "passed",
+  "rule_check": "partial",
+  "gaps": [],
+  "reading": {
+    "query_id": "branches",
+    "solver_status": "unsat",
+    "root_id": "p47",
+    "status": "complete",
+    "blocks": [
+      {
+        "block_id": "p0",
+        "kind": "input",
+        "claims": [
+          "t8"
+        ],
+        "premise_block_ids": [],
+        "active_hypotheses": [],
+        "evidence_node_ids": [
+          "n0"
+        ],
+        "source_links": [],
+        "detail_block_ids": [],
+        "title_en": null,
+        "title_zh": null
+      },
+      {
+        "block_id": "p6",
+        "kind": "logical",
+        "claims": [
+          "t14"
+        ],
+        "premise_block_ids": [
+          "p0"
+        ],
+        "active_hypotheses": [],
+        "evidence_node_ids": [
+          "n6",
+          "n4",
+          "n2",
+          "n1",
+          "n3",
+          "n5"
+        ],
+        "source_links": [],
+        "detail_block_ids": [],
+        "title_en": null,
+        "title_zh": null
+      },
+      {
+        "block_id": "p7",
+        "kind": "input",
+        "claims": [
+          "t7"
+        ],
+        "premise_block_ids": [],
+        "active_hypotheses": [],
+        "evidence_node_ids": [
+          "n7"
+        ],
+        "source_links": [],
+        "detail_block_ids": [],
+        "title_en": null,
+        "title_zh": null
+      },
+      {
+        "block_id": "p21",
+        "kind": "logical",
+        "claims": [
+          "t28"
+        ],
+        "premise_block_ids": [
+          "p7"
+        ],
+        "active_hypotheses": [],
+        "evidence_node_ids": [
+          "n21",
+          "n20",
+          "n16",
+          "n14",
+          "n11",
+          "n9",
+          "n8",
+          "n10",
+          "n13",
+          "n12",
+          "n15",
+          "n19",
+          "n17",
+          "n18"
+        ],
+        "source_links": [],
+        "detail_block_ids": [],
+        "title_en": null,
+        "title_zh": null
+      },
+      {
+        "block_id": "p23",
+        "kind": "logical",
+        "claims": [
+          "t40"
+        ],
+        "premise_block_ids": [
+          "p21"
+        ],
+        "active_hypotheses": [],
+        "evidence_node_ids": [
+          "n23",
+          "n22"
+        ],
+        "source_links": [],
+        "detail_block_ids": [],
+        "title_en": null,
+        "title_zh": null
+      },
+      {
+        "block_id": "p24",
+        "kind": "definition",
+        "claims": [
+          "t47"
+        ],
+        "premise_block_ids": [],
+        "active_hypotheses": [],
+        "evidence_node_ids": [
+          "n24"
+        ],
+        "source_links": [],
+        "detail_block_ids": [],
+        "title_en": null,
+        "title_zh": null
+      },
+      {
+        "block_id": "p25",
+        "kind": "definition",
+        "claims": [
+          "t53"
+        ],
+        "premise_block_ids": [],
+        "active_hypotheses": [],
+        "evidence_node_ids": [
+          "n25"
+        ],
+        "source_links": [],
+        "detail_block_ids": [],
+        "title_en": null,
+        "title_zh": null
+      },
+      {
+        "block_id": "p37",
+        "kind": "logical",
+        "claims": [
+          "t68"
+        ],
+        "premise_block_ids": [
+          "p25"
+        ],
+        "active_hypotheses": [],
+        "evidence_node_ids": [
+          "n37",
+          "n36",
+          "n35",
+          "n33",
+          "n26",
+          "n32",
+          "n30",
+          "n29",
+          "n27",
+          "n28",
+          "n31",
+          "n34"
+        ],
+        "source_links": [],
+        "detail_block_ids": [],
+        "title_en": null,
+        "title_zh": null
+      },
+      {
+        "block_id": "p38",
+        "kind": "assumption",
+        "claims": [
+          "t3"
+        ],
+        "premise_block_ids": [],
+        "active_hypotheses": [
+          "n38"
+        ],
+        "evidence_node_ids": [
+          "n38"
+        ],
+        "source_links": [],
+        "detail_block_ids": [],
+        "title_en": null,
+        "title_zh": null
+      },
+      {
+        "block_id": "p39",
+        "kind": "definition",
+        "claims": [
+          "t79"
+        ],
+        "premise_block_ids": [],
+        "active_hypotheses": [],
+        "evidence_node_ids": [
+          "n39"
+        ],
+        "source_links": [],
+        "detail_block_ids": [],
+        "title_en": null,
+        "title_zh": null
+      },
+      {
+        "block_id": "p40",
+        "kind": "logical",
+        "claims": [
+          "t61"
+        ],
+        "premise_block_ids": [
+          "p25"
+        ],
+        "active_hypotheses": [],
+        "evidence_node_ids": [
+          "n40",
+          "n36",
+          "n35",
+          "n33",
+          "n26",
+          "n32",
+          "n30",
+          "n29",
+          "n27",
+          "n28",
+          "n31",
+          "n34"
+        ],
+        "source_links": [],
+        "detail_block_ids": [],
+        "title_en": null,
+        "title_zh": null
+      },
+      {
+        "block_id": "p41",
+        "kind": "resolution",
+        "claims": [
+          "t60"
+        ],
+        "premise_block_ids": [
+          "p40",
+          "p38"
+        ],
+        "active_hypotheses": [
+          "n38"
+        ],
+        "evidence_node_ids": [
+          "n41"
+        ],
+        "source_links": [],
+        "detail_block_ids": [],
+        "title_en": null,
+        "title_zh": null
+      },
+      {
+        "block_id": "p42",
+        "kind": "resolution",
+        "claims": [
+          "t57"
+        ],
+        "premise_block_ids": [
+          "p39",
+          "p41"
+        ],
+        "active_hypotheses": [
+          "n38"
+        ],
+        "evidence_node_ids": [
+          "n42"
+        ],
+        "source_links": [],
+        "detail_block_ids": [],
+        "title_en": null,
+        "title_zh": null
+      },
+      {
+        "block_id": "p43",
+        "kind": "arithmetic",
+        "claims": [
+          "t80"
+        ],
+        "premise_block_ids": [
+          "p38",
+          "p6",
+          "p23",
+          "p42"
+        ],
+        "active_hypotheses": [
+          "n38"
+        ],
+        "evidence_node_ids": [
+          "n43"
+        ],
+        "source_links": [],
+        "detail_block_ids": [],
+        "title_en": null,
+        "title_zh": null
+      },
+      {
+        "block_id": "p44",
+        "kind": "discharge",
+        "claims": [
+          "t48"
+        ],
+        "premise_block_ids": [
+          "p43"
+        ],
+        "active_hypotheses": [],
+        "evidence_node_ids": [
+          "n44"
+        ],
+        "source_links": [],
+        "detail_block_ids": [],
+        "title_en": null,
+        "title_zh": null
+      },
+      {
+        "block_id": "p45",
+        "kind": "resolution",
+        "claims": [
+          "t65"
+        ],
+        "premise_block_ids": [
+          "p37",
+          "p44"
+        ],
+        "active_hypotheses": [],
+        "evidence_node_ids": [
+          "n45"
+        ],
+        "source_links": [],
+        "detail_block_ids": [],
+        "title_en": null,
+        "title_zh": null
+      },
+      {
+        "block_id": "p46",
+        "kind": "resolution",
+        "claims": [
+          "t44"
+        ],
+        "premise_block_ids": [
+          "p24",
+          "p45"
+        ],
+        "active_hypotheses": [],
+        "evidence_node_ids": [
+          "n46"
+        ],
+        "source_links": [],
+        "detail_block_ids": [],
+        "title_en": null,
+        "title_zh": null
+      },
+      {
+        "block_id": "p47",
+        "kind": "arithmetic",
+        "claims": [
+          "t80"
+        ],
+        "premise_block_ids": [
+          "p6",
+          "p23",
+          "p46"
+        ],
+        "active_hypotheses": [],
+        "evidence_node_ids": [
+          "n47"
+        ],
+        "source_links": [],
+        "detail_block_ids": [],
+        "title_en": null,
+        "title_zh": null
+      }
+    ],
+    "sources": [],
+    "gaps": [],
+    "detail_blocks": []
+  },
+  "reading_status": "complete",
+  "source_status": "absent",
+  "proof_scope": "full",
+  "full_proof": null,
+  "core": null
+}

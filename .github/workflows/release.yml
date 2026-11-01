@@ -481,7 +481,7 @@ jobs:
           cp "$RUNNER_TEMP/pyfcstm-release-python"/*.whl "$publish"/
           cp "$RUNNER_TEMP/pyfcstm-release-python"/*.tar.gz "$publish"/
       - name: Publish only verified Python distributions
-        uses: pypa/gh-action-pypi-publish@v1.14.2
+        uses: pypa/gh-action-pypi-publish@v1.14.3
         with:
           password: ${{ secrets.PYPI_PASSWORD }}
           packages-dir: ${{ runner.temp }}/pyfcstm-release-python-publish

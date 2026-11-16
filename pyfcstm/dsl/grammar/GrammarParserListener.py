@@ -61,6 +61,26 @@ class GrammarParserListener(ParseTreeListener):
     ):
         pass
 
+    # Enter a parse tree produced by GrammarParser#region_definition.
+    def enterRegion_definition(self, ctx: GrammarParser.Region_definitionContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#region_definition.
+    def exitRegion_definition(self, ctx: GrammarParser.Region_definitionContext):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#region_inner_statement.
+    def enterRegion_inner_statement(
+        self, ctx: GrammarParser.Region_inner_statementContext
+    ):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#region_inner_statement.
+    def exitRegion_inner_statement(
+        self, ctx: GrammarParser.Region_inner_statementContext
+    ):
+        pass
+
     # Enter a parse tree produced by GrammarParser#entryTransitionDefinition.
     def enterEntryTransitionDefinition(
         self, ctx: GrammarParser.EntryTransitionDefinitionContext
@@ -759,6 +779,14 @@ class GrammarParserListener(ParseTreeListener):
 
     # Exit a parse tree produced by GrammarParser#idExprNum.
     def exitIdExprNum(self, ctx: GrammarParser.IdExprNumContext):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#activeExprCond.
+    def enterActiveExprCond(self, ctx: GrammarParser.ActiveExprCondContext):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#activeExprCond.
+    def exitActiveExprCond(self, ctx: GrammarParser.ActiveExprCondContext):
         pass
 
     # Enter a parse tree produced by GrammarParser#binaryExprFromCondCond.

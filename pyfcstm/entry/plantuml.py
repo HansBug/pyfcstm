@@ -37,6 +37,7 @@ from click.core import ParameterSource
 from .base import CONTEXT_SETTINGS, ClickErrorException
 from ..dsl import parse_with_grammar_entry
 from ..model import parse_dsl_node_to_state_machine
+from ..utils.validate import ModelValidationError
 from ..model.plantuml import PlantUMLOptions
 from ..utils import auto_decode, parse_key_value_pairs
 
@@ -655,7 +656,11 @@ def _add_plantuml_subcommand(cli: click.Group) -> click.Group:
             dedicated_detail_level=dedicated_detail_level,
         )
         _emit_plantuml_warnings(warnings)
-        plantuml_output = _render_plantuml_source(input_code_file, options)
+        try:
+            plantuml_output = _render_plantuml_source(input_code_file, options)
+        except ModelValidationError as err:
+            # Model construction rejects invalid or unsupported DSL features.
+            raise ClickErrorException(str(err)) from err
 
         # Write output
         if output_file is not None:

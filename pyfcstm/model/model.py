@@ -3541,6 +3541,10 @@ def parse_dsl_node_to_state_machine(
     # one -- an empty path names no document -- so the disagreement is a small
     # correction rather than a loss.
     dnode = assemble_state_machine_imports(dnode, path=path, collect_into=sink)
+    if any(item.code == "E_UNSUPPORTED_FEATURE" for item in sink.diagnostics):
+        # Strict mode raises at emission. Collect mode must not expose a model
+        # assembled with unsupported regions or imported subtrees omitted.
+        return None, sink.diagnostics
     machine = _build_assembled_state_machine(dnode, sink, lower=True)
     if machine.history_owners:
         # Inspect and verify judge the model as written; keep what is needed

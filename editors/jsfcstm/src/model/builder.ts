@@ -1,4 +1,5 @@
 import {collectVariableRoleDiagnostics} from '../ast/variable-roles';
+import {collectUnsupportedSyntaxDiagnostics} from '../ast/capabilities';
 import type {
     FcstmAstAction,
     FcstmAstChainPath,
@@ -1648,12 +1649,13 @@ export function buildStateMachineModelFromAst(
         return null;
     }
 
+    if (collectUnsupportedSyntaxDiagnostics(ast).length > 0) return null;
     if (collectVariableRoleDiagnostics(ast).length > 0) return null;
     const machine = new StateMachineModelBuilder(ast).build();
     if (machine && machine.historyOwners.length > 0) {
         // Inspect judges the model as written, as pyfcstm does: keep it too,
         // built from the same AST without lowering.
-        machine.authoredView = new StateMachineModelBuilder(ast, false).build() ?? undefined;
+        machine.authoredView = new StateMachineModelBuilder(ast, false).build()!;
     }
     return machine;
 }

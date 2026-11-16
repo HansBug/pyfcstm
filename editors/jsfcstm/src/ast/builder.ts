@@ -45,6 +45,8 @@ import type {
     FcstmAstOperationStatement,
     FcstmAstParenthesizedExpression,
     FcstmAstStateDefinition,
+    FcstmAstRegionDefinition,
+    FcstmAstRegionStatement,
     FcstmAstStateStatement,
     FcstmAstTransition,
     FcstmAstTrigger,
@@ -100,6 +102,8 @@ const EXPR_PRECEDENCE: Record<string, number> = {
 };
 
 interface ParseTreeContext extends ParseTreeNode {
+    region_id?: { text?: string };
+    state_path?: { text?: string };
     keyword?: { text: 'var' | 'def' };
     var_name?: { text?: string };
     from_state?: { text?: string };
@@ -490,9 +494,13 @@ function unaryPrecedenceKey(op: string): string {
     return canonical === '+' || canonical === '-' ? `unary${canonical}` : canonical;
 }
 
+function canonicalExpressionText(expression: FcstmAstExpression): string;
+function canonicalExpressionText(expression: FcstmAstExpression | undefined): string | null;
 function canonicalExpressionText(expression: FcstmAstExpression | undefined): string | null {
     if (!expression) return null;
     switch (expression.expressionKind) {
+        case 'activeStateQuery':
+            return `active(${JSON.stringify(expression.path)})`;
         case 'literal':
             return expression.valueText.toLowerCase();
         case 'identifier':
@@ -501,17 +509,16 @@ function canonicalExpressionText(expression: FcstmAstExpression | undefined): st
             return expression.name;
         case 'parenthesized': {
             const inner = canonicalExpressionText(expression.expression);
-            return inner === null ? null : `(${inner})`;
+            return `(${inner})`;
         }
         case 'function': {
             const argument = canonicalExpressionText(expression.argument);
-            return argument === null ? null : `${expression.functionName}(${argument})`;
+            return `${expression.functionName}(${argument})`;
         }
         case 'unary': {
             const op = canonicalizeUnaryOperator(expression.op);
             const myPrecedence = EXPR_PRECEDENCE[unaryPrecedenceKey(expression.op)];
             let value = canonicalExpressionText(expression.operand);
-            if (value === null) return null;
             const valuePrecedence = expressionPrecedence(expression.operand);
             if (valuePrecedence !== null && valuePrecedence <= myPrecedence) {
                 value = `(${value})`;
@@ -523,7 +530,6 @@ function canonicalExpressionText(expression: FcstmAstExpression | undefined): st
             const myPrecedence = EXPR_PRECEDENCE[op];
             let left = canonicalExpressionText(expression.left);
             let right = canonicalExpressionText(expression.right);
-            if (left === null || right === null) return null;
             const leftPrecedence = expressionPrecedence(expression.left);
             if (leftPrecedence !== null && leftPrecedence < myPrecedence) {
                 left = `(${left})`;
@@ -539,7 +545,6 @@ function canonicalExpressionText(expression: FcstmAstExpression | undefined): st
             const condition = canonicalExpressionText(expression.condition);
             let whenTrue = canonicalExpressionText(expression.whenTrue);
             let whenFalse = canonicalExpressionText(expression.whenFalse);
-            if (condition === null || whenTrue === null || whenFalse === null) return null;
             const truePrecedence = expressionPrecedence(expression.whenTrue);
             if (truePrecedence !== null && truePrecedence <= myPrecedence) {
                 whenTrue = `(${whenTrue})`;
@@ -599,6 +604,14 @@ function buildExpression(
     const text = nodeText(node);
     const expressionType = buildExpressionType(nodeName);
     const childContexts = contextChildren(node);
+
+    if (nodeName === 'ActiveExprCondContext') {
+        return {
+            kind: 'expression', pyNodeType: 'ActiveStateQuery',
+            expressionKind: 'activeStateQuery', expressionType: 'cond',
+            range, text, path: unquoteText(tokenText(node.state_path)),
+        };
+    }
 
     if (/^Pass.*ExprCondContext$/.test(nodeName)) {
         return buildExpression(childContexts[0], document);
@@ -1551,10 +1564,13 @@ function buildStateStatement(
     document: TextDocumentLike
 ): FcstmAstStateStatement | null {
     const inner = firstContextChild(node) || node;
-    const nodeName = inner.constructor?.name || '';
+    const nodeName = inner.constructor!.name;
 
     if (nodeName === 'LeafStateDefinitionContext' || nodeName === 'CompositeStateDefinitionContext') {
         return buildStateDefinition(inner, document);
+    }
+    if (nodeName === 'Region_definitionContext') {
+        return buildRegionDefinition(inner, document);
     }
     if (nodeName === 'History_definitionContext') {
         return buildHistoryDefinition(inner, document);
@@ -1599,14 +1615,37 @@ function buildEventDefinition(
     };
 }
 
+function buildRegionDefinition(node: ParseTreeContext, document: TextDocumentLike): FcstmAstRegionDefinition {
+    const statements = contextChildren(node)
+        .filter(child => child.constructor!.name === 'Region_inner_statementContext')
+        .map(child => buildStateStatement(child, document))
+        .filter(Boolean) as FcstmAstRegionStatement[];
+    const name = tokenText(node.region_id);
+    const forceTransitions = statements.filter(item => item.kind === 'forcedTransition') as FcstmAstForcedTransition[];
+    const duringAspects = statements.filter(item => item.kind === 'action') as FcstmAstAction[];
+    return {
+        kind: 'regionDefinition', pyNodeType: 'RegionDefinition', name,
+        range: declarationRange(node, document, nodeText(node)),
+        nameRange: makeTokenRange(node.region_id, document)
+            || fallbackRangeFromText(document, document.getText(), name),
+        text: nodeText(node), statements,
+        substates: statements.filter(item => item.kind === 'stateDefinition') as FcstmAstStateDefinition[],
+        transitions: statements.filter(item => item.kind === 'transition') as FcstmAstTransition[],
+        events: statements.filter(item => item.kind === 'eventDefinition') as FcstmAstEventDefinition[],
+        forceTransitions, force_transitions: forceTransitions,
+        duringAspects, during_aspects: duringAspects,
+        doc: nodeDocumentation(node),
+    };
+}
+
 function buildStateDefinition(
     node: ParseTreeContext,
     document: TextDocumentLike
 ): FcstmAstStateDefinition {
-    const hasBraceBody = node.constructor?.name === 'CompositeStateDefinitionContext';
+    const hasBraceBody = node.constructor!.name === 'CompositeStateDefinitionContext';
     const statements = hasBraceBody
         ? contextChildren(node)
-            .filter(child => child.constructor?.name === 'State_inner_statementContext')
+            .filter(child => child.constructor!.name === 'State_inner_statementContext')
             .map(child => buildStateStatement(child, document))
             .filter(Boolean) as FcstmAstStateStatement[]
         : [];
@@ -1614,6 +1653,7 @@ function buildStateDefinition(
     const extraName = unquoteTokenValue(node.extra_name);
     const name = tokenText(node.state_id);
     const substates = statements.filter(item => item.kind === 'stateDefinition') as FcstmAstStateDefinition[];
+    const regions = statements.filter(item => item.kind === 'regionDefinition') as FcstmAstRegionDefinition[];
     const transitions = statements.filter(item => item.kind === 'transition') as FcstmAstTransition[];
     const forceTransitions = statements.filter(item => item.kind === 'forcedTransition') as FcstmAstForcedTransition[];
     const events = statements.filter(item => item.kind === 'eventDefinition') as FcstmAstEventDefinition[];
@@ -1625,7 +1665,7 @@ function buildStateDefinition(
     // substate by the workspace-assembly phase. A ``state X { enter
     // { ... } }`` with neither is semantically a leaf even though the
     // grammar uses the ``{ ... }`` form.
-    const composite = substates.length > 0 || imports.length > 0;
+    const composite = substates.length > 0 || imports.length > 0 || regions.length > 0;
     const enters = statements.filter(item => item.kind === 'action' && item.stage === 'enter') as FcstmAstAction[];
     const durings = statements.filter(
         item => item.kind === 'action' && item.stage === 'during' && !item.isGlobalAspect
@@ -1653,6 +1693,7 @@ function buildStateDefinition(
         events,
         imports,
         substates,
+        regions,
         transitions,
         enters,
         durings,

@@ -40,6 +40,14 @@
     "declarations": {
       "patterns": [
         {
+          "name": "meta.definition.region.fcstm",
+          "match": "\\b(region)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\b(?=\\s*\\{)",
+          "captures": {
+            "1": {"name": "keyword.control.fcstm"},
+            "2": {"name": "entity.name.namespace.region.fcstm"}
+          }
+        },
+        {
           "name": "meta.definition.variable.fcstm",
           "match": "\\b(def)\\s+(int|float)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\b",
           "captures": {
@@ -251,6 +259,10 @@
     },
     "constants": {
       "patterns": [
+        {
+          "name": "support.function.builtin.fcstm",
+          "match": "\\bactive\\b(?=\\s*\\(\\s*['\"])"
+        },
         {
           "name": "constant.language.boolean.fcstm",
           "match": "\\b(True|true|TRUE|False|false|FALSE)\\b"

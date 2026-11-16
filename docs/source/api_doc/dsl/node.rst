@@ -62,6 +62,13 @@ Expr
 .. autoclass:: Expr
 
 
+ActiveStateQuery
+-----------------------------------------------------
+
+.. autoclass:: ActiveStateQuery
+    :members: __str__,path
+
+
 Literal
 -----------------------------------------------------
 
@@ -330,11 +337,18 @@ HistoryDefinition
     :members: __str__,kind,default_path,doc
 
 
+RegionDefinition
+-----------------------------------------------------
+
+.. autoclass:: RegionDefinition
+    :members: __str__,name,substates,transitions,force_transitions,events,during_aspects,doc
+
+
 StateDefinition
 -----------------------------------------------------
 
 .. autoclass:: StateDefinition
-    :members: __post_init__,__str__,name,extra_name,events,imports,substates,transitions,enters,durings,exits,during_aspects,force_transitions,is_pseudo,doc,histories
+    :members: __post_init__,__str__,name,extra_name,events,imports,substates,transitions,enters,durings,exits,during_aspects,force_transitions,is_pseudo,doc,histories,regions
 
 
 OperationAssignment

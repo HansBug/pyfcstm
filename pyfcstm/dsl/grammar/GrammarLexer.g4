@@ -54,6 +54,9 @@ NAMED: 'named';
 
 PSEUDO: 'pseudo';
 STATE: 'state';
+// Contextual words: parser identifier positions accept these tokens too.
+REGION: 'region';
+ACTIVE: 'active';
 ENTER: 'enter';
 EXIT: 'exit';
 DURING: 'during';

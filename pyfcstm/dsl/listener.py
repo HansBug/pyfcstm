@@ -419,6 +419,17 @@ class GrammarParseListener(GrammarListener):
         node = Paren(self.nodes[ctx.cond_expression()])
         self.nodes[ctx] = node
 
+    def exitActiveExprCond(self, ctx: GrammarParser.ActiveExprCondContext) -> None:
+        """Build an active-state query with its decoded path and source span.
+
+        :param ctx: Parse context for an active-state condition.
+        :type ctx: GrammarParser.ActiveExprCondContext
+        """
+        self.nodes[ctx] = ActiveStateQuery(
+            path=_parse_string_literal(ctx.state_path.text),
+            _span=_ctx_span(ctx),
+        )
+
     def exitLiteralExprCond(self, ctx: GrammarParser.LiteralExprCondContext) -> None:
         """
         Bind a boolean literal node to a conditional expression.
@@ -520,7 +531,7 @@ class GrammarParseListener(GrammarListener):
         """
         super().exitInitial_assignment(ctx)
         self.nodes[ctx] = InitialAssignment(
-            name=str(ctx.ID()),
+            name=ctx.var_name.text,
             expr=self.nodes[ctx.init_expression()],
         )
 
@@ -535,7 +546,7 @@ class GrammarParseListener(GrammarListener):
         """
         super().exitConstant_definition(ctx)
         self.nodes[ctx] = ConstantDefinition(
-            name=str(ctx.ID()),
+            name=ctx.var_name.text,
             expr=self.nodes[ctx.init_expression()],
         )
 
@@ -550,7 +561,7 @@ class GrammarParseListener(GrammarListener):
         """
         super().exitOperational_assignment(ctx)
         self.nodes[ctx] = OperationalDeprecatedAssignment(
-            name=str(ctx.ID()),
+            name=ctx.var_name.text,
             expr=self.nodes[ctx.num_expression()],
         )
 
@@ -705,7 +716,7 @@ class GrammarParseListener(GrammarListener):
         """
         super().exitLeafStateDefinition(ctx)
         node = StateDefinition(
-            name=str(ctx.ID()),
+            name=ctx.state_id.text,
             extra_name=_parse_string_literal(ctx.extra_name.text)
             if ctx.extra_name
             else None,
@@ -731,7 +742,7 @@ class GrammarParseListener(GrammarListener):
         """
         super().exitCompositeStateDefinition(ctx)
         node = StateDefinition(
-            name=str(ctx.ID()),
+            name=ctx.state_id.text,
             extra_name=_parse_string_literal(ctx.extra_name.text)
             if ctx.extra_name
             else None,
@@ -749,6 +760,11 @@ class GrammarParseListener(GrammarListener):
                 self.nodes[item]
                 for item in ctx.state_inner_statement()
                 if item in self.nodes and isinstance(self.nodes[item], StateDefinition)
+            ],
+            regions=[
+                self.nodes[item]
+                for item in ctx.state_inner_statement()
+                if item in self.nodes and isinstance(self.nodes[item], RegionDefinition)
             ],
             transitions=[
                 self.nodes[item]
@@ -794,6 +810,35 @@ class GrammarParseListener(GrammarListener):
         )
         node._span = _owner_span(ctx)
         self.nodes[ctx] = node
+
+    def exitRegion_definition(self, ctx: GrammarParser.Region_definitionContext) -> None:
+        """Build a region without treating it as an executable state.
+
+        :param ctx: Parse context for a named region declaration.
+        :type ctx: GrammarParser.Region_definitionContext
+        """
+        statements = [self.nodes[item] for item in ctx.region_inner_statement()
+                      if item in self.nodes]
+        self.nodes[ctx] = RegionDefinition(
+            name=ctx.region_id.text,
+            substates=[item for item in statements if isinstance(item, StateDefinition)],
+            transitions=[item for item in statements if isinstance(item, TransitionDefinition)],
+            force_transitions=[item for item in statements if isinstance(item, ForceTransitionDefinition)],
+            events=[item for item in statements if isinstance(item, EventDefinition)],
+            during_aspects=[item for item in statements if isinstance(item, DuringAspectStatement)],
+            doc=self._documentation(ctx),
+            _span=_owner_span(ctx),
+        )
+
+    def exitRegion_inner_statement(self, ctx: GrammarParser.Region_inner_statementContext) -> None:
+        """Bind a region statement, ignoring optional empty statements.
+
+        :param ctx: Parse context for a statement owned by a region.
+        :type ctx: GrammarParser.Region_inner_statementContext
+        """
+        child = ctx.getChild(0)
+        if child in self.nodes:
+            self.nodes[ctx] = self.nodes[child]
 
     def _first_combo_event_term(self, trigger: ComboTransitionTrigger):
         for term in trigger.terms:
@@ -895,7 +940,7 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.History_default_pathContext
         """
         super().exitHistory_default_path(ctx)
-        self.nodes[ctx] = [item.getText() for item in ctx.ID()]
+        self.nodes[ctx] = [item.text for item in ctx.path_items]
 
     def exitHistory_definition(
         self, ctx: GrammarParser.History_definitionContext
@@ -1169,7 +1214,7 @@ class GrammarParseListener(GrammarListener):
         :type ctx: GrammarParser.Local_combo_event_termContext
         """
         super().exitLocal_combo_event_term(ctx)
-        self.nodes[ctx] = ctx.ID().getText()
+        self.nodes[ctx] = ctx.event_id.text
 
     def exitLocal_combo_trigger_term(
         self, ctx: GrammarParser.Local_combo_trigger_termContext
@@ -1342,7 +1387,7 @@ class GrammarParseListener(GrammarListener):
         """
         super().exitChain_id(ctx)
         self.nodes[ctx] = ChainID(
-            path=list(map(str, ctx.ID())),
+            path=[item.text for item in ctx.path_items],
             is_absolute=bool(ctx.isabs),
         )
 
@@ -1454,6 +1499,8 @@ class GrammarParseListener(GrammarListener):
             self.nodes[ctx] = self.nodes[ctx.event_definition()]
         elif ctx.import_statement():
             self.nodes[ctx] = self.nodes[ctx.import_statement()]
+        elif ctx.region_definition():
+            self.nodes[ctx] = self.nodes[ctx.region_definition()]
 
     def exitOperation_assignment(
         self, ctx: GrammarParser.Operation_assignmentContext
@@ -1466,7 +1513,7 @@ class GrammarParseListener(GrammarListener):
         """
         super().exitOperation_assignment(ctx)
         node = OperationAssignment(
-            name=str(ctx.ID()),
+            name=ctx.var_name.text,
             expr=self.nodes[ctx.num_expression()],
         )
         node._span = _ctx_span(ctx)

@@ -68,6 +68,7 @@ __all__ = [
     "Float",
     "Constant",
     "Name",
+    "ActiveStateQuery",
     "Paren",
     "UnaryOp",
     "BinaryOp",
@@ -101,6 +102,7 @@ __all__ = [
     "HistoryDefinition",
     "HISTORY_KINDS",
     "StateDefinition",
+    "RegionDefinition",
     "OperationalStatement",
     "OperationAssignment",
     "OperationIfBranch",
@@ -276,6 +278,31 @@ class Expr(ASTNode):
     """
 
     pass
+
+
+@dataclass
+class ActiveStateQuery(Expr):
+    """A condition querying whether the state at a string path is active.
+
+    :param path: Decoded state path; resolution belongs to model construction.
+    :type path: str
+
+    Example::
+
+        >>> str(ActiveStateQuery('/Root.Motor.Running'))
+        'active("/Root.Motor.Running")'
+    """
+
+    path: str
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
+
+    def __str__(self) -> str:
+        """Return the condition with its path escaped as a DSL string."""
+        # Preserve non-BMP code points: JSON surrogate pairs decode as two
+        # Python characters in the DSL's Python-literal string decoder.
+        quoted = json.dumps(self.path, ensure_ascii=False)
+        quoted = quoted.encode("utf-8", "backslashreplace").decode("utf-8")
+        return "active(%s)" % quoted
 
 
 @dataclass
@@ -1794,6 +1821,42 @@ class HistoryDefinition(ASTNode):
 
 
 @dataclass
+class RegionDefinition(ASTNode):
+    """A named, ordered region containing states, transitions and aspects.
+
+    A region is a scope within its owning state, not a state itself. The AST
+    preserves declaration order without assigning execution semantics.
+
+    :param name: Region identifier.
+    :param substates: States declared in the region.
+    :param transitions: Initial, ordinary and exit transitions.
+    :param force_transitions: Forced transitions.
+    :param events: Region-local event declarations.
+    :param during_aspects: Before/after during aspects.
+    :param doc: Optional documentation text.
+    """
+
+    name: str
+    substates: List["StateDefinition"] = field(default_factory=list)
+    transitions: List[TransitionDefinition] = field(default_factory=list)
+    force_transitions: List["ForceTransitionDefinition"] = field(default_factory=list)
+    events: List["EventDefinition"] = field(default_factory=list)
+    during_aspects: List["DuringAspectStatement"] = field(default_factory=list)
+    doc: Optional[str] = None
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
+
+    def __str__(self) -> str:
+        """Return canonical DSL, retaining an empty region's braces."""
+        lines = [_render_documentation_prefix(self.doc) + "region %s {" % self.name]
+        for group in (self.during_aspects, self.substates, self.events,
+                      self.force_transitions, self.transitions):
+            for statement in group:
+                lines.append(indent(str(statement), prefix="    "))
+        lines.append("}")
+        return "\n".join(lines)
+
+
+@dataclass
 class StateDefinition(ASTNode):
     """
     Represents a state definition in the state machine DSL.
@@ -1828,6 +1891,8 @@ class StateDefinition(ASTNode):
     :param histories: History declarations (``[H]`` / ``[H*]``) owned by
         this state
     :type histories: List[HistoryDefinition]
+    :param regions: Named regions in declaration order.
+    :type regions: List[RegionDefinition]
 
     :rtype: StateDefinition
 
@@ -1858,12 +1923,14 @@ class StateDefinition(ASTNode):
     doc: Optional[str] = None
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
     histories: List["HistoryDefinition"] = None
+    regions: List[RegionDefinition] = None
 
     def __post_init__(self) -> None:
         """
         Initialize default empty lists for optional parameters.
         """
         self.histories = self.histories or []
+        self.regions = self.regions or []
         self.events = self.events or []
         self.imports = self.imports or []
         self.substates = self.substates or []
@@ -1900,6 +1967,7 @@ class StateDefinition(ASTNode):
                 and not self.exits
                 and not self.during_aspects
                 and not self.histories
+                and not self.regions
             ):
                 print(f";", file=sf, end="")
             else:
@@ -1916,6 +1984,8 @@ class StateDefinition(ASTNode):
                     print(indent(str(import_item), prefix="    "), file=sf)
                 for substate in self.substates:
                     print(indent(str(substate), prefix="    "), file=sf)
+                for region in self.regions:
+                    print(indent(str(region), prefix="    "), file=sf)
                 for event in self.events:
                     print(indent(str(event), prefix="    "), file=sf)
                 for history in self.histories:

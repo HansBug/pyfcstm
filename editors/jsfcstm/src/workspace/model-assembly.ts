@@ -1,4 +1,5 @@
 import {collectVariableRoleDiagnostics, requireVariableRole} from '../ast/variable-roles';
+import {collectUnsupportedSyntaxDiagnostics} from '../ast/capabilities';
 import type {FcstmDiagnostic} from '../utils/text';
 import type {
     FcstmAstAction,
@@ -1247,7 +1248,8 @@ function assembleAstDocumentImports(
 
     const assembleProgramForFile = (filePath: string): FcstmAstDocument | null => {
         if (cache.has(filePath)) {
-            return cloneAstValue(cache.get(filePath) ?? null);
+            // The has() check establishes presence; a cached null is itself the result.
+            return cloneAstValue(cache.get(filePath) as FcstmAstDocument | null);
         }
         if (visiting.has(filePath)) {
             return null;
@@ -1262,6 +1264,10 @@ function assembleAstDocumentImports(
         visiting.add(filePath);
         try {
             const program = cloneAstValue(node.ast);
+            const unsupported = collectUnsupportedSyntaxDiagnostics(program)[0];
+            if (unsupported) {
+                throw new ModelAssemblyError(unsupported.message, {filePath, diagnostic: unsupported});
+            }
             if (filePath !== rootFile) {
                 const names = new Set<string>();
                 for (const definition of program.definitions) {

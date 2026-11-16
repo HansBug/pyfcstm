@@ -27,11 +27,12 @@ from tempfile import TemporaryDirectory
 
 import click
 
-from .base import CONTEXT_SETTINGS
+from .base import CONTEXT_SETTINGS, ClickErrorException
 from ..dsl import parse_with_grammar_entry
 from ..model import parse_dsl_node_to_state_machine
 from ..render import StateMachineCodeRenderer
 from ..utils import auto_decode
+from ..utils.validate import ModelValidationError
 
 
 def _add_generate_subcommand(cli: click.Group) -> click.Group:
@@ -147,7 +148,11 @@ def _add_generate_subcommand(cli: click.Group) -> click.Group:
 
         code = auto_decode(pathlib.Path(input_code_file).read_bytes())
         ast_node = parse_with_grammar_entry(code, entry_name="state_machine_dsl")
-        model = parse_dsl_node_to_state_machine(ast_node, path=input_code_file)
+        try:
+            model = parse_dsl_node_to_state_machine(ast_node, path=input_code_file)
+        except ModelValidationError as err:
+            # Model construction rejects invalid or unsupported DSL features.
+            raise ClickErrorException(str(err)) from err
 
         if template_name:
             with TemporaryDirectory() as td:

@@ -68,6 +68,14 @@ assume always: 'Root.System.A' == 'Root.System.A';
 """
 
 COMPREHENSIVE_TEST_CODE = """
+state Parallel {
+    region Motor { state Idle; [*] -> Idle; }
+    region Sensor { state Ready; [*] -> Ready;
+        Ready -> [*] : if [active("/Parallel.Motor.Idle")];
+    }
+}
+def int region = 0;
+def int active = 1;
 // ============================================================================
 // FCSTM DSL Comprehensive Test - Covers All Grammar Rules
 // ============================================================================
@@ -437,6 +445,20 @@ class SharedExpectation:
 
 
 SHARED_CHECKPOINT_SPECS: List[Dict[str, Any]] = [
+    {
+        'name': 'Contextual Region Syntax',
+        'description': 'region declarations and active queries retain ordinary identifier uses',
+        'items': [
+            SharedExpectation('region', Token.Keyword.Declaration, 'declarations', 'keyword.control.fcstm',
+                              capture_group=1, textmate_sample='region Motor {'),
+            SharedExpectation('Motor', Token.Name, 'declarations', 'entity.name.namespace.region.fcstm',
+                              capture_group=2, textmate_sample='region Motor {'),
+            SharedExpectation('active', Token.Name.Builtin, 'constants', 'support.function.builtin.fcstm',
+                              textmate_sample='active("/Parallel.Motor.Idle")'),
+            SharedExpectation('region', Token.Name, 'identifiers', 'variable.other.fcstm'),
+            SharedExpectation('active', Token.Name, 'identifiers', 'variable.other.fcstm'),
+        ],
+    },
     {
         'name': 'Keywords - Structure',
         'description': 'state, pseudo, named, def, event keywords',

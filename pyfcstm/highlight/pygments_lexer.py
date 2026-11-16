@@ -198,6 +198,10 @@ class FcstmLexer(RegexLexer):
 
             (r'\bimport\b', Keyword.Declaration, 'import-header'),
 
+            # These words remain ordinary identifiers outside their syntax.
+            (r'\bregion\b(?=\s+[A-Za-z_][A-Za-z0-9_]*\s*\{)', Keyword.Declaration),
+            (r'\bactive\b(?=\s*\(\s*[\'\"])', Name.Builtin),
+
             # Keywords - state machine structure
             (words((
                 'state', 'pseudo', 'named', 'def', 'event', 'as',

@@ -314,7 +314,7 @@ function isOwnerDocumentation(tokens: Tok[], index: number): boolean {
     }
     if (previous.some(item => item.kind === 'ident' && item.text === 'abstract')) return true;
     const first = next[0]?.text;
-    if (first === 'def' || first === 'state' || first === 'event'
+    if (first === 'def' || first === 'state' || first === 'region' || first === 'event'
         || first === 'enter' || first === 'exit' || first === 'during'
         || first === '>>' || first === '!') return true;
     if (first === 'pseudo' && next[1]?.text === 'state') return true;
@@ -477,12 +477,10 @@ function separatorBetween(
         return ' ';
     }
     // Function call: no space between a UFUNC name and its ``(``.
-    if (prev.kind === 'ident' && UFUNC_NAMES.has(prev.text)
+    if (prev.kind === 'ident' && (UFUNC_NAMES.has(prev.text) || prev.text === 'active')
         && next.kind === 'punct' && nt === '(') {
         return '';
     }
-    // Dotted paths: no space on either side of ``.``.
-    if (next.kind === 'punct' && nt === '.') return '';
     // ``{`` after any real content (keyword / ident / ``)``) gets one space.
     if (next.kind === 'punct' && nt === '{') return ' ';
     // Binary operators between tokens: one space on each side.

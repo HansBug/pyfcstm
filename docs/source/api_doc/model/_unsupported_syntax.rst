@@ -1,7 +1,7 @@
 :orphan:
-==================================
-pyfcstm.model.\_unsupported_syntax
-==================================
+
+pyfcstm.model.\_unsupported\_syntax
+========================================================
 
 .. currentmodule:: pyfcstm.model._unsupported_syntax
 

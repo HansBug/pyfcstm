@@ -29,6 +29,34 @@ from pyfcstm.dsl.grammar.GrammarParser import GrammarParser
 pytestmark = pytest.mark.unittest
 
 
+@pytest.mark.parametrize('message,symbol,expected', [
+    ("missing '}'", '<EOF>',
+     'Missing closing brace - check for unclosed state definitions or action blocks'),
+    ("missing '}'", 'state', 'Missing closing brace'),
+    ("missing '{'", 'enter', 'Missing opening brace for block'),
+    ("missing '->'", 'Ready', "Missing transition arrow '->'"),
+    ('extraneous input', '<EOF>', 'Unexpected end of file - missing closing brace'),
+    ('extraneous input', 'during',
+     "Unexpected 'during' keyword - missing closing brace before this line"),
+    ("mismatched input '}' expecting ';'", '}', 'Missing semicolon before closing brace'),
+    ('no viable alternative at input', None,
+     'Invalid syntax - check for missing semicolons, braces, or operators'),
+    ('no viable alternative at input', 'stateAstateB',
+     'Missing semicolon between state definitions'),
+    ('no viable alternative at input', 'stateAenter',
+     'Missing opening brace or semicolon before lifecycle action'),
+    ('no viable alternative at input', 'enterabstractWork}',
+     'Missing semicolon after abstract function or reference definition'),
+    ('token recognition error', '"unfinished', 'Unclosed string literal - add closing quote'),
+])
+def test_syntax_error_preserves_raw_message_and_explains_recovery(message, symbol, expected):
+    """ANTLR recovery wording varies; public errors retain details and guidance."""
+    error = SyntaxFailError(7, 3, symbol, message)
+    assert expected in str(error)
+    assert 'line 7, column 3' in str(error)
+    assert error.raw_msg == message
+
+
 class TestSyntaxFailErrorEnhancement:
     """Test enhanced error messages for SyntaxFailError"""
 

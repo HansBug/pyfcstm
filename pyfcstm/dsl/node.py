@@ -36,7 +36,7 @@ Example::
     >>> print(program)
     def int counter = 0;
     state idle {
-        idle -> active :: start;
+        idle -> running :: start;
     }
 
 """
@@ -1603,7 +1603,7 @@ class TransitionDefinition(ASTNode):
         ... )
         >>> op = OperationAssignment("counter", Integer("0"))
         >>> cond_trans = TransitionDefinition(
-        ...     "active", "idle", None,
+        ...     "running", "idle", None,
         ...     BinaryOp(Name("counter"), ">", Integer("10")),
         ...     [op],
         ... )
@@ -2344,11 +2344,11 @@ class ExitOperations(ExitStatement):
 
     Example::
 
-        >>> op = OperationAssignment("active", Boolean("false"))
+        >>> op = OperationAssignment("active_flag", Boolean("false"))
         >>> exit_ops = ExitOperations([op])
         >>> print(str(exit_ops))
         exit {
-            active = False;
+            active_flag = False;
         }
     """
 

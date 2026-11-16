@@ -125,6 +125,25 @@ def test_collect_reports_distinct_unsupported_sites_once():
     assert sorted(item.refs['feature'] for item in diagnostics) == ['active', 'active', 'region']
 
 
+@pytest.mark.parametrize('imported', [False, True])
+def test_collect_reports_shared_guard_alias_once(tmp_path, imported):
+    source = 'state Root { state A; [*] -> A; A -> [*] : [active("A")]; }'
+    if imported:
+        (tmp_path / 'child.fcstm').write_text(source, encoding='utf-8')
+        source = 'state Host { import "child.fcstm" as Child; [*] -> Child; }'
+    program = parse_state_machine_dsl(source)
+    model, diagnostics = parse_dsl_node_to_state_machine(
+        program, path=str(tmp_path / 'host.fcstm'), collect=True,
+    )
+    assert model is None
+    assert [item.code for item in diagnostics] == ['E_UNSUPPORTED_FEATURE']
+    assert diagnostics[0].refs['feature'] == 'active'
+    assert diagnostics[0].span is not None
+    assert diagnostics[0].refs['source_path'] == str(
+        tmp_path / ('child.fcstm' if imported else 'host.fcstm')
+    )
+
+
 @pytest.mark.parametrize('collect', [False, True])
 def test_ordinary_identifier_prefixes_remain_executable(collect):
     program = parse_state_machine_dsl('''def int active_flag = 0;

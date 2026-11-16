@@ -69,6 +69,7 @@ Example::
 from .base import AstExportable, PlantUMLExportable
 from .region import Region
 from .configuration import Configuration
+from .active import ActiveQuery
 from .expr import (
     Expr,
     Integer,
@@ -80,6 +81,7 @@ from .expr import (
     ConditionalOp,
     UFunc,
     Variable,
+    ActiveStateQuery,
     parse_expr_node_to_expr,
     parse_expr_from_string,
     parse_expr,
@@ -142,6 +144,8 @@ __all__ = [
     "State",
     "Region",
     "Configuration",
+    "ActiveQuery",
+    "ActiveStateQuery",
     "VarDefine",
     "VariableRole",
     "StateMachine",

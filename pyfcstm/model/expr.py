@@ -50,8 +50,8 @@ Example::
 
 import math
 import warnings
-from dataclasses import dataclass
-from typing import Iterator, List, Any
+from dataclasses import dataclass, field
+from typing import Iterator, List, Any, Optional
 
 try:
     from typing import Literal
@@ -59,9 +59,8 @@ except ImportError:
     from typing_extensions import Literal
 
 from .base import AstExportable
-from ._unsupported_syntax import reject_unsupported_syntax
-from ..diagnostics.sink import DiagnosticSink
 from ..dsl import node as dsl_nodes
+from ..utils.validate import Span
 
 __all__ = [
     'Expr',
@@ -74,6 +73,7 @@ __all__ = [
     'ConditionalOp',
     'UFunc',
     'Variable',
+    'ActiveStateQuery',
     'parse_expr_node_to_expr',
     'parse_expr_from_string',
     'parse_expr',
@@ -1489,6 +1489,25 @@ class Variable(Expr):
         return dsl_nodes.Name(name=self.name)
 
 
+@dataclass
+class ActiveStateQuery(Expr):
+    """An authored query bound and lowered during model construction.
+
+    :param path: Full State path or a root-relative path beginning with ``/``.
+    :param _span: Source location of the authored query, when available.
+
+    This expression can be inspected or exported before binding. Evaluation
+    requires model lowering; an unbound query is not a runnable expression.
+    """
+
+    path: str
+    _span: Optional[Span] = field(default=None, repr=False, compare=False)
+
+    def to_ast_node(self) -> dsl_nodes.ActiveStateQuery:
+        """Preserve the query spelling and source position in the AST."""
+        return dsl_nodes.ActiveStateQuery(self.path, _span=self._span)
+
+
 def parse_expr_node_to_expr(node: dsl_nodes.Expr) -> Expr:
     """
     Parse an AST expression node into an :class:`Expr` object.
@@ -1545,7 +1564,9 @@ def parse_expr_node_to_expr(node: dsl_nodes.Expr) -> Expr:
             x=parse_expr_node_to_expr(node.expr),
         )
     elif isinstance(node, dsl_nodes.ActiveStateQuery):
-        reject_unsupported_syntax(node, DiagnosticSink())
+        query = ActiveStateQuery(node.path, _span=node._span)
+        query._source_path = getattr(node, '_source_path', None)
+        return query
     else:
         raise TypeError(f'Unknown node type - {node!r}.')  # pragma: no cover
 

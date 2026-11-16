@@ -48,7 +48,6 @@ from ..dsl.role import VariableRole
 from ..utils import auto_decode
 from ..utils.doc import aggregate_documentation
 from ..utils.validate import ModelDiagnostic, ModelValidationError, Span
-from ._unsupported_syntax import reject_unsupported_syntax
 from .region import ast_namespace_children, validate_region_structure
 
 __all__ = [
@@ -440,8 +439,6 @@ def _assemble_program(
     import_stack: List[str],
     sink: DiagnosticSink,
 ) -> None:
-    if reject_unsupported_syntax(program, sink):
-        return
     if program.root_state is not None and validate_region_structure(program.root_state, sink):
         return
     if program.root_state is None:  # pragma: no cover
@@ -598,6 +595,10 @@ def _assemble_state(
                 continue
 
             imported_root = imported_program.root_state
+            _rebase_active_queries(
+                imported_program, imported_root.name,
+                (*current_state_path, import_item.alias),
+            )
             event_mappings = _resolve_import_event_mappings(
                 program=imported_program,
                 import_item=import_item,
@@ -842,6 +843,27 @@ def _validate_imported_readonly_writes(node, readonly, sink: DiagnosticSink) -> 
     elif isinstance(node, list):
         for item in node:
             _validate_imported_readonly_writes(item, readonly, sink)
+
+
+def _rebase_active_queries(node, root_name, instance_path, seen=None):
+    """Rebase every query in one imported program, including nested imports."""
+    if seen is None:
+        seen = set()
+    if isinstance(node, dsl_nodes.ActiveStateQuery):
+        if id(node) in seen:
+            return
+        seen.add(id(node))
+        parts = tuple(node.path.split('.'))
+        if node.path.startswith('/'):
+            node.path = '.'.join((*instance_path, *node.path[1:].split('.')))
+        elif parts[0] == root_name:
+            node.path = '.'.join((*instance_path, *parts[1:]))
+    elif isinstance(node, dsl_nodes.ASTNode):
+        for item in fields(node):
+            _rebase_active_queries(getattr(node, item.name), root_name, instance_path, seen)
+    elif isinstance(node, list):
+        for item in node:
+            _rebase_active_queries(item, root_name, instance_path, seen)
 
 
 def _rewrite_absolute_paths_for_imported_root(

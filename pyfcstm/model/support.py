@@ -13,6 +13,13 @@ def require_supported_model(model, operation: str) -> None:
     :raises ModelValidationError: If the operation cannot preserve the model.
     """
     root = getattr(model, 'root_state', model)
+    if getattr(root, '_active_queries', ()):
+        DiagnosticSink().emit(ModelDiagnostic(
+            code='E_UNSUPPORTED_FEATURE', severity='error',
+            message='%s does not support active queries yet.' % operation,
+            span=root._span,
+            refs={'feature': 'active', 'source_path': getattr(root, '_source_path', None)},
+        ))
     for namespace in walk_namespaces(root):
         if isinstance(namespace, Region):
             DiagnosticSink().emit(ModelDiagnostic(

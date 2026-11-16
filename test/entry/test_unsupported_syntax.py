@@ -30,6 +30,6 @@ def test_cli_refuses_unsupported_model(tmp_path, source, arguments):
     assert result.exitcode != 0
     output = result.stdout + result.stderr
     expected = ('does not support region models yet' if 'region ' in source
-                else 'not supported by model construction')
+                else 'does not support active queries yet')
     assert expected in output
     assert 'Traceback' not in output

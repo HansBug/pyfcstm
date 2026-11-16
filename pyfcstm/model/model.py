@@ -112,6 +112,7 @@ from ..utils import aggregate_documentation, sequence_safe, to_identifier
 
 if TYPE_CHECKING:  # pragma: no cover - imported for annotations only.
     from .history import HistoryOwner
+    from .active import ActiveQuery
 
 
 def _ast_doc_kwargs(node_type, doc: Optional[str]) -> Dict[str, object]:
@@ -2808,7 +2809,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
     history_owners: Tuple["HistoryOwner", ...] = field(
         default_factory=tuple, compare=False, repr=False
     )
-    # The import-assembled program of a machine that lowered history, and the
+    # The import-assembled program of a machine that lowered history/activity, and the
     # model built from it without lowering once ``_as_written`` needs it.
     _assembled_program: Optional[dsl_nodes.StateMachineDSLProgram] = field(
         default=None, compare=False, repr=False
@@ -2823,6 +2824,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
     )
 
     _validation_sink: InitVar[Optional[DiagnosticSink]] = None
+    active_queries: Tuple["ActiveQuery", ...] = field(default_factory=tuple, repr=False, compare=False)
 
     def __post_init__(self, _validation_sink: Optional[DiagnosticSink]) -> None:
         readonly = {
@@ -2957,9 +2959,21 @@ class StateMachine(AstExportable, PlantUMLExportable):
         path = item.decode(variables.get(item.record_variable, 0))
         return None if path is None else ".".join(path)
 
+    def active_variables(self, configuration) -> Dict[str, int]:
+        """Derive hidden activity flags from a configuration of this machine.
+
+        :param configuration: Immutable Configuration bound to this machine.
+        :return: Hidden variable names mapped to integer zero or one.
+        :raises ValueError: If the configuration belongs to another machine.
+        """
+        if configuration._model is not self:
+            raise ValueError('Configuration belongs to a different state machine.')
+        return {item.variable_name: int(configuration.is_active(item.state_path))
+                for item in self.active_queries}
+
     def _as_written(self) -> "StateMachine":
         """
-        Return this model as written, before history lowering.
+        Return this model as written, before history and activity lowering.
 
         Static analyses judge this model (see
         :func:`pyfcstm.diagnostics.inspect.inspect_model`): a history entry is
@@ -2967,9 +2981,12 @@ class StateMachine(AstExportable, PlantUMLExportable):
         no lowered variable, gate state, route or record-writing exit exists.
         It is built from the same import-assembled program on first use; its
         diagnostics repeat those of the original build and are dropped. A
-        machine that lowered no history is its own model as written.
+        machine that lowered neither history nor activity is its own model as written.
 
-        :return: The model before history lowering
+        Activity queries retain their source expressions, and no generated
+        activity flags or lifecycle writes exist in this view.
+
+        :return: The model before history and activity lowering
         :rtype: StateMachine
         """
         if self._assembled_program is None:
@@ -3554,13 +3571,15 @@ def parse_dsl_node_to_state_machine(
     # one -- an empty path names no document -- so the disagreement is a small
     # correction rather than a loss.
     dnode = assemble_state_machine_imports(dnode, path=path, collect_into=sink)
-    if any(item.code in {"E_UNSUPPORTED_FEATURE", "E_REGION_STRUCTURE", "E_DUPLICATE_REGION"}
+    if any(item.code in {"E_REGION_STRUCTURE", "E_DUPLICATE_REGION"}
            for item in sink.diagnostics):
         # Strict mode raises at emission. Collect mode must not expose a model
-        # assembled with unsupported regions or imported subtrees omitted.
+        # assembled with invalid region structure or imported subtrees omitted.
         return None, sink.diagnostics
     machine = _build_assembled_state_machine(dnode, sink, lower=True)
-    if machine.history_owners:
+    if any(item.code == 'E_ACTIVE_QUERY_TARGET' for item in sink.diagnostics):
+        return None, sink.diagnostics
+    if machine.history_owners or machine.active_queries:
         # Inspect and verify judge the model as written; keep what is needed
         # to build it on first use (see ``StateMachine._as_written``).
         machine._assembled_program = dnode
@@ -5690,11 +5709,15 @@ def _build_assembled_state_machine(
 
     _validate_action_ref_cycles()
 
+    from .active import lower_active
+
+    active_queries = lower_active(root_state, d_defines, sink, apply=lower)
     machine = StateMachine(
         defines=d_defines,
         root_state=root_state,
         forced_transitions=tuple(forced_transition_declarations),
         history_owners=history_owners,
+        active_queries=active_queries,
         _validation_sink=sink,
     )
     _attach_model_source_metadata(machine, dnode)

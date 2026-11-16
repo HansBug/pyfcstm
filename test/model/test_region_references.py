@@ -78,4 +78,3 @@ def test_forced_event_and_relative_action_paths_include_regions():
     group = region.substates['Group']
     assert group.on_enters[0].ref is group.substates['On'].on_enters[0]
     assert all(edge.event is region.events['Abort'] for edge in region.transitions if edge.is_forced)
-

@@ -11,12 +11,13 @@ JavaScript 模型前端目前仍在构建阶段拒绝这些功能。
 
 ``State.regions`` 是按声明顺序排列的 ``Region`` 字典。一个 state 的直接子级
 要么是 state，要么是 region，不能混用。region 可以包含普通 state、局部转换和事件、
-导入以及 during aspect；不能直接包含另一个 region，不能拥有 state 生命周期动作，
+以及 during aspect；不能直接包含导入或另一个 region，不能拥有 state 生命周期动作，
 也不能作为转换端点。需要嵌套并行结构时，在 region 的子 state 内声明 region。
 每个 region 必须包含 state，并至少有一条合法的初始转换。
 
-包含 region 的 owner 可以有自己的生命周期动作和 during aspect；转换和导入必须
-放在 region 内，不能直接写在 owner 内。只有一个 region 合法，本身不会产生警告。
+包含 region 的 owner 可以有自己的生命周期动作和 during aspect；转换必须放在
+region 内。导入必须放在普通子 state 内，不能直接写在 region 或其 owner 内。
+只有一个 region 合法，本身不会产生警告。
 region 内的普通 state 子树仍可使用 history；如果 history owner 的子树含 region，
 则拒绝构建，因为单一历史叶子不能表示这种配置。
 

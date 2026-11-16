@@ -79,7 +79,9 @@ def test_ordinary_history_within_region_remains_available_in_model():
 
 
 @pytest.mark.parametrize('source', [SOURCE, 'state Root { during { if [active("Root")] {} } }'])
-@pytest.mark.parametrize('consumer', ['use_def', 'combo_warnings', 'selected_verify'])
+@pytest.mark.parametrize('consumer', [
+    'use_def', 'combo_warnings', 'selected_verify', 'initial_completeness', 'first_during',
+])
 def test_direct_analysis_apis_refuse_unsupported_model(source, consumer):
     model = load_state_machine_from_text(source)
     with pytest.raises(ModelValidationError) as error:
@@ -89,8 +91,15 @@ def test_direct_analysis_apis_refuse_unsupported_model(source, consumer):
         elif consumer == 'combo_warnings':
             from pyfcstm.diagnostics.analyzers.combo import collect_combo_warnings
             collect_combo_warnings(model)
-        else:
+        elif consumer == 'selected_verify':
             from pyfcstm.verify import REGISTRY, run_inspect_algorithms
             run_inspect_algorithms(model, max_complexity_tier='smt_linear',
                                    registry={'dead_guard': REGISTRY['dead_guard']})
+        elif consumer == 'initial_completeness':
+            from pyfcstm.verify import composite_init_guards_incomplete
+            composite_init_guards_incomplete(model, tuple(model.defines.values()))
+        else:
+            from pyfcstm.verify import enter_postcondition_implies_during_precondition
+            leaf = next(state for state in model.walk_states() if state.is_leaf_state)
+            enter_postcondition_implies_during_precondition(leaf, tuple(model.defines.values()))
     assert error.value.diagnostics[0].code == 'E_UNSUPPORTED_FEATURE'

@@ -605,7 +605,7 @@ A valid replacement is region Empty { state Idle; [*] -> Idle; }. One direct reg
 
 .. diagnostics-example E_REGION_STRUCTURE 3 boundary_only
 
-Move local transitions and imports inside regions. History inside an ordinary subtree is permitted; a history owner containing parallel descendants is not.
+Move local transitions inside regions and imports inside ordinary child states. A region cannot directly contain an import. History inside an ordinary subtree is permitted; a history owner containing parallel descendants is not.
 
 .. _diag-code-e-duplicate-region:
 

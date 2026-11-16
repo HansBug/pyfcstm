@@ -1154,31 +1154,12 @@ def _aggregate_declared_import_event_docs(
             owner_state_path=owner_state_path,
             sink=sink,
         )
-        if not _state_path_matches(host_root, mapping.target_state_path, owner_state):
+        if owner_state is None:
             continue
         for event in owner_state.events:
             if event.name == mapping.target_event_name:
                 event.doc = aggregate_documentation((event.doc, mapping.source_doc))
                 break
-
-
-def _state_path_matches(
-    root: dsl_nodes.StateDefinition,
-    state_path: Tuple[str, ...],
-    state: Optional[dsl_nodes.StateDefinition],
-) -> bool:
-    """Distinguish a valid target from collect-mode's diagnostic fallback."""
-    if state is None or not state_path or root.name != state_path[0]:
-        return False
-    current = root
-    for segment in state_path[1:]:
-        current = next(
-            (subnode for subnode in ast_namespace_children(current) if subnode.name == segment),
-            None,
-        )
-        if current is None:
-            return False
-    return current is state
 
 
 def _collect_event_extra_names(

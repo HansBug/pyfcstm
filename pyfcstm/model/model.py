@@ -271,9 +271,7 @@ def _attach_model_source_metadata(
                 # table answers, and when its key is ambiguous it answers with nothing.
                 # A member with no reference is honest; one pointing at a file whose
                 # line at that span belongs to an unrelated statement is not.
-                declared = all_spans.get(transition_key)
-                if declared is not None:
-                    attach(transition, declared)
+                attach(transition)
             # The three tiers above are for the transition alone, and everything
             # below this line takes the host state's file with no tier at all.  That
             # asymmetry is the language's, not an oversight: only a transition can be
@@ -3939,7 +3937,6 @@ def _build_assembled_state_machine(
 
         on_enters = []
         for enter_item in getattr(node, "enters", ()):
-            on_stage = None
             if isinstance(enter_item, dsl_nodes.EnterOperations):
                 enter_operations = _parse_operation_block(
                     enter_item.operations,
@@ -3973,7 +3970,7 @@ def _build_assembled_state_machine(
                     ref_state_path=None,
                     _span=_node_span(enter_item),
                 )
-            elif isinstance(enter_item, dsl_nodes.EnterRefFunction):
+            else:  # The remaining supported action form is a reference.
                 on_stage = OnStage(
                     stage="enter",
                     aspect=None,
@@ -3994,33 +3991,31 @@ def _build_assembled_state_machine(
                     _span=_node_span(enter_item),
                 )
 
-            if on_stage is not None:
-                if on_stage.name:
-                    if on_stage.name in named_functions:
-                        # I1 from PR-110: first-wins tiebreaker — keep the
-                        # initial declaration so collect/strict modes resolve
-                        # ``ref X`` identically (strict raises before the
-                        # overwrite would have happened).
-                        sink.emit(
-                            ModelDiagnostic(
-                                code="E_DUPLICATE_FUNCTION_NAME",
-                                severity="error",
-                                message=(
-                                    f"Duplicate function name {on_stage.name!r} "
-                                    "in state:\n"
-                                    f"{str(node.without_docs())}"
-                                ),
-                                span=getattr(enter_item, "_span", None),
-                                refs={
-                                    "function_name": on_stage.name,
-                                    "state_path": ".".join(current_path),
-                                    "stage": "enter",
-                                },
-                            )
+            if on_stage.name:
+                if on_stage.name in named_functions:
+                    # Keep the first declaration so collect/strict modes resolve
+                    # ``ref X`` identically (strict raises before the
+                    # overwrite would have happened).
+                    sink.emit(
+                        ModelDiagnostic(
+                            code="E_DUPLICATE_FUNCTION_NAME",
+                            severity="error",
+                            message=(
+                                f"Duplicate function name {on_stage.name!r} "
+                                "in state:\n"
+                                f"{str(node.without_docs())}"
+                            ),
+                            span=getattr(enter_item, "_span", None),
+                            refs={
+                                "function_name": on_stage.name,
+                                "state_path": ".".join(current_path),
+                                "stage": "enter",
+                            },
                         )
-                    else:
-                        named_functions[on_stage.name] = on_stage
-                on_enters.append(on_stage)
+                    )
+                else:
+                    named_functions[on_stage.name] = on_stage
+            on_enters.append(on_stage)
 
         on_durings = []
         for during_item in getattr(node, "durings", ()):
@@ -4065,7 +4060,6 @@ def _build_assembled_state_machine(
                     )
                 )
 
-            on_stage = None
             if isinstance(during_item, dsl_nodes.DuringOperations):
                 during_operations = _parse_operation_block(
                     during_item.operations,
@@ -4099,7 +4093,7 @@ def _build_assembled_state_machine(
                     ref_state_path=None,
                     _span=_node_span(during_item),
                 )
-            elif isinstance(during_item, dsl_nodes.DuringRefFunction):
+            else:  # The remaining supported action form is a reference.
                 on_stage = OnStage(
                     stage="during",
                     aspect=during_item.aspect,
@@ -4120,33 +4114,31 @@ def _build_assembled_state_machine(
                     _span=_node_span(during_item),
                 )
 
-            if on_stage is not None:
-                if on_stage.name:
-                    if on_stage.name in named_functions:
-                        sink.emit(
-                            ModelDiagnostic(
-                                code="E_DUPLICATE_FUNCTION_NAME",
-                                severity="error",
-                                message=(
-                                    f"Duplicate function name {on_stage.name!r} "
-                                    "in state:\n"
-                                    f"{str(node.without_docs())}"
-                                ),
-                                span=getattr(during_item, "_span", None),
-                                refs={
-                                    "function_name": on_stage.name,
-                                    "state_path": ".".join(current_path),
-                                    "stage": "during",
-                                },
-                            )
+            if on_stage.name:
+                if on_stage.name in named_functions:
+                    sink.emit(
+                        ModelDiagnostic(
+                            code="E_DUPLICATE_FUNCTION_NAME",
+                            severity="error",
+                            message=(
+                                f"Duplicate function name {on_stage.name!r} "
+                                "in state:\n"
+                                f"{str(node.without_docs())}"
+                            ),
+                            span=getattr(during_item, "_span", None),
+                            refs={
+                                "function_name": on_stage.name,
+                                "state_path": ".".join(current_path),
+                                "stage": "during",
+                            },
                         )
-                    else:
-                        named_functions[on_stage.name] = on_stage
-                on_durings.append(on_stage)
+                    )
+                else:
+                    named_functions[on_stage.name] = on_stage
+            on_durings.append(on_stage)
 
         on_exits = []
         for exit_item in getattr(node, "exits", ()):
-            on_stage = None
             if isinstance(exit_item, dsl_nodes.ExitOperations):
                 exit_operations = _parse_operation_block(
                     exit_item.operations,
@@ -4180,7 +4172,7 @@ def _build_assembled_state_machine(
                     ref_state_path=None,
                     _span=_node_span(exit_item),
                 )
-            elif isinstance(exit_item, dsl_nodes.ExitRefFunction):
+            else:  # The remaining supported action form is a reference.
                 on_stage = OnStage(
                     stage="exit",
                     aspect=None,
@@ -4201,29 +4193,28 @@ def _build_assembled_state_machine(
                     _span=_node_span(exit_item),
                 )
 
-            if on_stage is not None:
-                if on_stage.name:
-                    if on_stage.name in named_functions:
-                        sink.emit(
-                            ModelDiagnostic(
-                                code="E_DUPLICATE_FUNCTION_NAME",
-                                severity="error",
-                                message=(
-                                    f"Duplicate function name {on_stage.name!r} "
-                                    "in state:\n"
-                                    f"{str(node.without_docs())}"
-                                ),
-                                span=getattr(exit_item, "_span", None),
-                                refs={
-                                    "function_name": on_stage.name,
-                                    "state_path": ".".join(current_path),
-                                    "stage": "exit",
-                                },
-                            )
+            if on_stage.name:
+                if on_stage.name in named_functions:
+                    sink.emit(
+                        ModelDiagnostic(
+                            code="E_DUPLICATE_FUNCTION_NAME",
+                            severity="error",
+                            message=(
+                                f"Duplicate function name {on_stage.name!r} "
+                                "in state:\n"
+                                f"{str(node.without_docs())}"
+                            ),
+                            span=getattr(exit_item, "_span", None),
+                            refs={
+                                "function_name": on_stage.name,
+                                "state_path": ".".join(current_path),
+                                "stage": "exit",
+                            },
                         )
-                    else:
-                        named_functions[on_stage.name] = on_stage
-                on_exits.append(on_stage)
+                    )
+                else:
+                    named_functions[on_stage.name] = on_stage
+            on_exits.append(on_stage)
 
         on_during_aspects = []
         for during_aspect_item in node.during_aspects:
@@ -4250,7 +4241,6 @@ def _build_assembled_state_machine(
                         },
                     )
                 )
-            on_aspect = None
             if isinstance(during_aspect_item, dsl_nodes.DuringAspectOperations):
                 during_operations = _parse_operation_block(
                     during_aspect_item.operations,
@@ -4284,7 +4274,7 @@ def _build_assembled_state_machine(
                     ref_state_path=None,
                     _span=_node_span(during_aspect_item),
                 )
-            elif isinstance(during_aspect_item, dsl_nodes.DuringAspectRefFunction):
+            else:  # The remaining supported action form is a reference.
                 on_aspect = OnAspect(
                     stage="during",
                     aspect=during_aspect_item.aspect,
@@ -4305,29 +4295,28 @@ def _build_assembled_state_machine(
                     _span=_node_span(during_aspect_item),
                 )
 
-            if on_aspect is not None:
-                if on_aspect.name:
-                    if on_aspect.name in named_functions:
-                        sink.emit(
-                            ModelDiagnostic(
-                                code="E_DUPLICATE_FUNCTION_NAME",
-                                severity="error",
-                                message=(
-                                    f"Duplicate function name {on_aspect.name!r} "
-                                    "in state:\n"
-                                    f"{str(node.without_docs())}"
-                                ),
-                                span=getattr(during_aspect_item, "_span", None),
-                                refs={
-                                    "function_name": on_aspect.name,
-                                    "state_path": ".".join(current_path),
-                                    "stage": "during_aspect",
-                                },
-                            )
+            if on_aspect.name:
+                if on_aspect.name in named_functions:
+                    sink.emit(
+                        ModelDiagnostic(
+                            code="E_DUPLICATE_FUNCTION_NAME",
+                            severity="error",
+                            message=(
+                                f"Duplicate function name {on_aspect.name!r} "
+                                "in state:\n"
+                                f"{str(node.without_docs())}"
+                            ),
+                            span=getattr(during_aspect_item, "_span", None),
+                            refs={
+                                "function_name": on_aspect.name,
+                                "state_path": ".".join(current_path),
+                                "stage": "during_aspect",
+                            },
                         )
-                    else:
-                        named_functions[on_aspect.name] = on_aspect
-                on_during_aspects.append(on_aspect)
+                    )
+                else:
+                    named_functions[on_aspect.name] = on_aspect
+            on_during_aspects.append(on_aspect)
 
         d_events = {}
         for event in node.events:

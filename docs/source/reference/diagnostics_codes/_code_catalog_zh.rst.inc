@@ -602,7 +602,7 @@ region 为空、混合直接 state/region 子级、owner 包含非法直接声�
 
 .. diagnostics-example E_REGION_STRUCTURE 3 boundary_only
 
-局部转换和导入应放在 region 内。普通子树内仍允许 history；包含并行后代的 history owner 不受支持。
+局部转换应放在 region 内，导入应放在普通子 state 内；region 不能直接包含导入。普通子树内仍允许 history；包含并行后代的 history owner 不受支持。
 
 .. _diag-code-e-duplicate-region-zh:
 

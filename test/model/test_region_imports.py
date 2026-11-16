@@ -117,3 +117,68 @@ state Module { region Worker {
     region = model.root_state.substates['Unit'].regions['Worker']
     events = [edge.event for edge in region.transitions if edge.event is not None]
     assert events and all(event is region.events['Tick'] for event in events)
+
+
+def test_imported_region_preserves_abstract_during_and_exit_actions(tmp_path):
+    (tmp_path / 'module.fcstm').write_text('''def int value = 0;
+state Module { region Worker {
+        state On { during abstract Tick; exit abstract Stop; }
+        [*] -> On;
+    } }''', encoding='utf-8')
+    source = tmp_path / 'host.fcstm'
+    source.write_text('state Host { import "module.fcstm" as Unit; [*] -> Unit; }', encoding='utf-8')
+    model = load_state_machine_from_file(source)
+    assert 'Unit_value' in model.defines
+    leaf = model.root_state.substates['Unit'].regions['Worker'].substates['On']
+    assert leaf.on_durings[0].is_abstract and leaf.on_durings[0].name == 'Tick'
+    assert leaf.on_exits[0].is_abstract and leaf.on_exits[0].name == 'Stop'
+
+
+def test_import_does_not_rebind_query_with_foreign_root(tmp_path):
+    module = tmp_path / 'module.fcstm'
+    module.write_text('state Module { during { if [active("Foreign.Leaf")] {} } }', encoding='utf-8')
+    source = tmp_path / 'host.fcstm'
+    source.write_text('state Host { import "module.fcstm" as Unit; [*] -> Unit; }', encoding='utf-8')
+    model, diagnostics = load_state_machine_from_file(source, collect=True)
+    assert model is None
+    diagnostic = next(item for item in diagnostics if item.code == 'E_ACTIVE_QUERY_TARGET')
+    assert diagnostic.refs == {'state_path': 'Foreign.Leaf', 'reason': 'invalid_path',
+                               'source_path': str(module)}
+
+
+def test_unused_import_event_mapping_to_missing_region_collects_error(tmp_path):
+    (tmp_path / 'module.fcstm').write_text(
+        'state Module { event Tick; state Idle; [*] -> Idle; }', encoding='utf-8')
+    source = tmp_path / 'host.fcstm'
+    source.write_text('''state Host {
+        region Worker {
+            state Container {
+                import "module.fcstm" as Unit { event /Tick -> /Missing.Tick; }
+                [*] -> Unit;
+            }
+            [*] -> Container;
+        }
+    }''', encoding='utf-8')
+    _, diagnostics = load_state_machine_from_file(source, collect=True)
+    assert any(item.code == 'E_IMPORT_MAPPING_INVALID' for item in diagnostics)
+
+
+def test_unused_import_event_docs_match_the_named_region_event(tmp_path):
+    (tmp_path / 'module.fcstm').write_text(
+        'state Module { /* module docs */ event Tick; state Idle; [*] -> Idle; }',
+        encoding='utf-8')
+    source = tmp_path / 'host.fcstm'
+    source.write_text('''state Host { region Worker {
+        event Earlier;
+        /* host docs */ event Shared;
+        state Container {
+            import "module.fcstm" as Unit { event /Tick -> /Worker.Shared; }
+            [*] -> Unit;
+        }
+        [*] -> Container;
+    } }''', encoding='utf-8')
+    model = load_state_machine_from_file(source)
+    events = model.root_state.regions['Worker'].events
+    assert events['Earlier'].doc is None
+    assert 'host docs' in events['Shared'].doc
+    assert 'module docs' in events['Shared'].doc

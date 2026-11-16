@@ -12,13 +12,14 @@ Namespaces and structure
 
 ``State.regions`` is a declaration-ordered dictionary of ``Region`` objects.
 A state owns either direct substates or direct regions, never both. A region
-contains ordinary states, local transitions and events, imports and during
-aspects. It cannot directly contain another region, own state lifecycle actions,
+contains ordinary states, local transitions and events, and during aspects.
+It cannot directly contain imports or another region, own state lifecycle actions,
 or serve as a transition endpoint. Nest parallel structure through a child state.
 Each region must contain a state and at least one valid initial transition.
 
 An owner with regions may have its own lifecycle actions and during aspects;
-transitions and imports belong inside its regions, not directly inside the owner.
+transitions belong inside its regions. Imports belong inside ordinary child
+states, not directly inside a region or its owner.
 One region is valid and is not itself a warning. History may remain inside an
 ordinary state subtree within a region; a history owner whose subtree contains
 regions is rejected because a single saved leaf cannot represent that position.

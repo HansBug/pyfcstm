@@ -202,6 +202,70 @@ def test_ordinary_model_has_no_regions_and_keeps_export():
     assert str(model.to_ast_node()) == 'state Root {\n    state Leaf;\n    [*] -> Leaf;\n}'
 
 
+def test_region_subtree_walk_includes_only_its_own_nested_regions():
+    model = load_state_machine_from_text('''state Root {
+        region Worker {
+            state Group { region Inner { state Leaf; [*] -> Leaf; } }
+            [*] -> Group;
+        }
+        region Monitor { state Idle; [*] -> Idle; }
+    }''')
+    worker = model.root_state.regions['Worker']
+    assert [region.path for region in worker.walk_regions()] == [
+        ('Root', 'Worker'), ('Root', 'Worker', 'Group', 'Inner'),
+    ]
+
+
+@pytest.mark.parametrize('collect', [False, True])
+def test_public_ast_parallel_owner_cannot_keep_local_transitions(collect):
+    program = parse_state_machine_dsl('state Root { state Leaf; [*] -> Leaf; }')
+    children = program.root_state.substates
+    program.root_state.substates = []
+    program.root_state.regions = [RegionDefinition('Worker', substates=children)]
+    if collect:
+        model, diagnostics = parse_dsl_node_to_state_machine(program, collect=True)
+        assert model is None
+    else:
+        with pytest.raises(ModelValidationError) as error:
+            parse_dsl_node_to_state_machine(program)
+        diagnostics = error.value.diagnostics
+    assert diagnostics[0].code == 'E_REGION_STRUCTURE'
+    assert diagnostics[0].refs['reason'] == 'owner_statements'
+
+
+def test_interleaved_combo_alternatives_preserve_both_region_sources():
+    model = load_state_machine_from_text('''state Root { region Worker {
+        state A; state B; state C; state D; [*] -> A;
+        A -> B : First + Second;
+        C -> D : First + Second;
+        A -> B : First + Third;
+        C -> D : First + Third;
+    } }''')
+    region = model.root_state.regions['Worker']
+    assert len([state for state in region.walk_states() if state.is_combo_relay]) == 2
+    assert {edge.from_state for edge in region.transitions if edge.event
+            and edge.event.name == 'First'} == {'A', 'C'}
+    exported = str(model.to_ast_node())
+    assert str(load_state_machine_from_text(exported).to_ast_node()) == exported
+
+
+@pytest.mark.parametrize('collect', [False, True])
+def test_leaf_inside_region_cannot_own_descendant_aspect(collect):
+    source = '''state Root { region Worker {
+        state Leaf { >> during before abstract Observe; }
+        [*] -> Leaf;
+    } }'''
+    if collect:
+        _, diagnostics = load_state_machine_from_text(source, collect=True)
+    else:
+        with pytest.raises(ModelValidationError) as error:
+            load_state_machine_from_text(source)
+        diagnostics = error.value.diagnostics
+    diagnostic = next(item for item in diagnostics if item.code == 'E_DURING_ASPECT_INVALID')
+    assert diagnostic.refs['state_kind'] == 'leaf'
+    assert diagnostic.span is not None
+
+
 @pytest.mark.parametrize('consumer', ['simulate', 'bmc', 'plantuml', 'state_plantuml', 'diagram', 'inspect'])
 def test_unsupported_consumers_refuse_a_valid_region_model(consumer):
     model = load_state_machine_from_text(ORDERED)

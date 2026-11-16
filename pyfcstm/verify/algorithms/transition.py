@@ -437,6 +437,10 @@ def composite_init_guards_incomplete(
         z3,
     )
 
+    from pyfcstm.model.support import require_supported_model
+
+    require_supported_model(machine, 'Initial transition completeness analysis')
+
     diagnostics: List[dict] = []
     first_indeterminate_result: Optional[AlgorithmResult] = None
 

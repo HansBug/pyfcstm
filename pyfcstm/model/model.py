@@ -1384,6 +1384,8 @@ class State(AstExportable, PlantUMLExportable):
     :type path: Tuple[str, ...]
     :param substates: Dictionary mapping substate names to State objects
     :type substates: Dict[str, 'State']
+    :param regions: Ordered region namespaces, mutually exclusive with substates
+    :type regions: Dict[str, Region], optional
     :param events: Dictionary mapping event names to Event objects
     :type events: Dict[str, Event]
     :param transitions: List of transitions between substates
@@ -1398,7 +1400,7 @@ class State(AstExportable, PlantUMLExportable):
     :type on_exits: List[OnStage]
     :param on_during_aspects: List of aspect-oriented actions for the during stage
     :type on_during_aspects: List[OnAspect]
-    :param parent_ref: Weak reference to the parent state
+    :param parent_ref: Weak reference to the immediate parent State or Region
     :type parent_ref: Optional[weakref.ReferenceType]
     :param substate_name_to_id: Dictionary mapping substate names to numeric IDs
     :type substate_name_to_id: Dict[str, int]

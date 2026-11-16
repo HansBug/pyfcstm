@@ -846,6 +846,10 @@ def run_inspect_algorithms(
     _validate_max_complexity_tier(max_complexity_tier)
     _validate_max_call_count_scaling(max_call_count_scaling)
 
+    from ..model.support import require_supported_model
+
+    require_supported_model(machine, 'Inspect algorithm execution')
+
     if registry is None:
         from .registry import REGISTRY
 

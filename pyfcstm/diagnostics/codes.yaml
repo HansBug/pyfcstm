@@ -40,8 +40,11 @@ E_UNSUPPORTED_FEATURE:
   severity: error
   span_object: syntax_construct
   description: >-
-    Syntax is recognized by the parser but has no executable model semantics.
-    Model construction stops rather than silently ignoring the feature.
+    The selected consumer cannot preserve this language feature and refuses
+    the operation rather than producing partial results. Python model building
+    supports regions and activity queries; unsupported execution, analysis and
+    rendering consumers still reject them. Other frontends may reject them
+    during model construction until their semantic support is available.
   refs:
     feature:
       type: str

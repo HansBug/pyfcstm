@@ -192,6 +192,7 @@ pyfcstm 遵循三阶段流水线：
     参考地图 <reference/index_zh>
     reference/cli/index_zh
     reference/dsl/index_zh
+    reference/region_model/index_zh
     reference/inspect_report/index_zh
     reference/diagnostics_codes/index_zh
     reference/simulation/index_zh
@@ -207,6 +208,7 @@ pyfcstm 遵循三阶段流水线：
 * :doc:`参考地图 <reference/index_zh>`
 * :doc:`reference/cli/index_zh`
 * :doc:`reference/dsl/index_zh`
+* :doc:`reference/region_model/index_zh`
 * :doc:`reference/inspect_report/index_zh`
 * :doc:`reference/diagnostics_codes/index_zh`
 * :doc:`reference/simulation/index_zh`

@@ -12,8 +12,9 @@ SOURCE = 'state Root { region Worker { state Idle; [*] -> Idle; } }'
 
 
 @pytest.mark.parametrize('single_file', [False, True])
-def test_renderer_refusal_preserves_existing_output(tmp_path, single_file):
-    model = load_state_machine_from_text(SOURCE)
+@pytest.mark.parametrize('source', [SOURCE, 'state Root { during { if [active("Root")] {} } }'])
+def test_renderer_refusal_preserves_existing_output(tmp_path, single_file, source):
+    model = load_state_machine_from_text(source)
     templates = tmp_path / 'templates'
     templates.mkdir()
     (templates / 'config.yaml').write_text('{}', encoding='utf-8')
@@ -75,3 +76,21 @@ def test_ordinary_history_within_region_remains_available_in_model():
     assert [item.owner_path for item in model.history_owners] == [('Root', 'Worker', 'Group')]
     region = model.root_state.regions['Worker']
     assert region.init_transitions[0].effects[-1].var_name == model.history_owners[0].goto_variable
+
+
+@pytest.mark.parametrize('source', [SOURCE, 'state Root { during { if [active("Root")] {} } }'])
+@pytest.mark.parametrize('consumer', ['use_def', 'combo_warnings', 'selected_verify'])
+def test_direct_analysis_apis_refuse_unsupported_model(source, consumer):
+    model = load_state_machine_from_text(source)
+    with pytest.raises(ModelValidationError) as error:
+        if consumer == 'use_def':
+            from pyfcstm.diagnostics.analyzers.use_def import build_use_def_graph
+            build_use_def_graph(model)
+        elif consumer == 'combo_warnings':
+            from pyfcstm.diagnostics.analyzers.combo import collect_combo_warnings
+            collect_combo_warnings(model)
+        else:
+            from pyfcstm.verify import REGISTRY, run_inspect_algorithms
+            run_inspect_algorithms(model, max_complexity_tier='smt_linear',
+                                   registry={'dead_guard': REGISTRY['dead_guard']})
+    assert error.value.diagnostics[0].code == 'E_UNSUPPORTED_FEATURE'

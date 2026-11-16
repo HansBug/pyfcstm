@@ -105,6 +105,9 @@ def collect_combo_warnings(machine: Optional["StateMachine"]) -> List[ModelDiagn
     """
     if machine is None:
         return []
+    from ...model.support import require_supported_model
+
+    require_supported_model(machine, 'Combo-trigger analysis')
     terms_by_origin = _combo_terms_by_origin(machine)
     diagnostics: List[ModelDiagnostic] = []
     for terms in terms_by_origin.values():

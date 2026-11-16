@@ -6,7 +6,7 @@ from ..utils.validate import ModelDiagnostic
 
 
 def require_supported_model(model, operation: str) -> None:
-    """Reject region models before an unsupported consumer performs work.
+    """Reject region and activity models before an unsupported consumer works.
 
     :param model: State machine or state subtree passed to a public consumer.
     :param operation: Name of the operation whose support is being checked.

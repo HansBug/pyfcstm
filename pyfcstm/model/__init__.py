@@ -34,6 +34,10 @@ The following public components are re-exported here:
 * :class:`State` - Hierarchical state model
 * :class:`VarDefine` - Variable definition model
 * :class:`StateMachine` - Root state-machine model
+* :class:`Region` - Ordered namespace of child states, events and transitions
+* :class:`Configuration` - Immutable recursive active-state position
+* :class:`ActiveStateQuery` - Authored activity-query expression
+* :class:`ActiveQuery` - Bound target and generated activity-flag metadata
 * :func:`parse_dsl_node_to_state_machine` - Build a model from DSL AST
 * :class:`DetailLevelLiteral` - PlantUML detail level literal type
 * :class:`PlantUMLOptionsInput` - Accepted PlantUML option input type

@@ -12,6 +12,26 @@ This catalog is synchronized with ``pyfcstm.diagnostics.codes.CODE_REGISTRY``. T
      - Emit tier
      - Capability
      - Span object
+   * - :ref:`E_UNSUPPORTED_FEATURE <diag-code-e-unsupported-feature>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``syntax_construct``
+   * - :ref:`E_ACTIVE_QUERY_TARGET <diag-code-e-active-query-target>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``expression``
+   * - :ref:`E_REGION_STRUCTURE <diag-code-e-region-structure>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``syntax_construct``
+   * - :ref:`E_DUPLICATE_REGION <diag-code-e-duplicate-region>`
+     - ``error``
+     - ``static_pipeline``
+     - ``pure_static``
+     - ``syntax_construct``
    * - :ref:`E_UNDEFINED_VAR <diag-code-e-undefined-var>`
      - ``error``
      - ``static_pipeline``
@@ -441,6 +461,206 @@ This catalog is synchronized with ``pyfcstm.diagnostics.codes.CODE_REGISTRY``. T
 
 Names, variables, types, and imports
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. _diag-code-e-unsupported-feature:
+
+E_UNSUPPORTED_FEATURE
+^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_UNSUPPORTED_FEATURE severity=error emit_tier=static_pipeline capability=pure_static span_object=syntax_construct
+.. diagnostics-ref E_UNSUPPORTED_FEATURE feature type=str required=true enum=region|active item_enum=- exact_values=-
+.. diagnostics-ref E_UNSUPPORTED_FEATURE source_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+
+.. diagnostics-boundary E_UNSUPPORTED_FEATURE kind=cli_error
+
+The chosen consumer cannot preserve a region model or activity query. Python model construction supports both; execution, rendering and analysis consumers reject them until supported. JavaScript may reject at construction.
+
+.. list-table:: Refs schema
+   :header-rows: 1
+
+   * - Field / 字段
+     - Type / 类型
+     - Required / 必填
+     - Meaning / 含义
+   * - ``feature``
+     - ``str``
+     - yes
+     - Unsupported feature. (``region``, ``active``)
+   * - ``source_path``
+     - ``str_or_null``
+     - no
+     - Originating file, if known.
+
+.. diagnostics-example E_UNSUPPORTED_FEATURE 1 cli_error
+
+Construct this source with load_state_machine_from_text, then pass it to SimulationRuntime: construction succeeds, while the consumer raises ModelValidationError.
+
+.. code-block:: fcstm
+
+   state Root { region Motor { state Idle; [*] -> Idle; } }
+
+.. diagnostics-example E_UNSUPPORTED_FEATURE 2 boundary_only
+
+Inspect Configuration values or model namespaces through supported model APIs. To execute a model now, use syntax supported by that backend; do not silently flatten concurrent regions.
+
+.. diagnostics-example E_UNSUPPORTED_FEATURE 3 boundary_only
+
+Generation refuses the model before clearing or replacing existing output. An ordinary model without regions or activity queries is unaffected.
+
+.. _diag-code-e-active-query-target:
+
+E_ACTIVE_QUERY_TARGET
+^^^^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_ACTIVE_QUERY_TARGET severity=error emit_tier=static_pipeline capability=pure_static span_object=expression
+.. diagnostics-ref E_ACTIVE_QUERY_TARGET state_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_ACTIVE_QUERY_TARGET reason type=str required=true enum=invalid_path|not_found|region|pseudo|initializer item_enum=- exact_values=-
+.. diagnostics-ref E_ACTIVE_QUERY_TARGET source_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+
+.. diagnostics-boundary E_ACTIVE_QUERY_TARGET kind=cli_error
+
+An active query must resolve to a non-pseudo State in the same model. Region targets and persistent initializers are invalid.
+
+.. list-table:: Refs schema
+   :header-rows: 1
+
+   * - Field / 字段
+     - Type / 类型
+     - Required / 必填
+     - Meaning / 含义
+   * - ``state_path``
+     - ``str``
+     - yes
+     - Written target after import rebasing.
+   * - ``reason``
+     - ``str``
+     - yes
+     - Binding failure category. (``invalid_path``, ``not_found``, ``region``, ``pseudo``, ``initializer``)
+   * - ``source_path``
+     - ``str_or_null``
+     - no
+     - Original source file, including imports.
+
+.. diagnostics-example E_ACTIVE_QUERY_TARGET 1 cli_error
+
+Loading this source raises ModelValidationError with reason not_found. The expression span identifies the query.
+
+.. code-block:: fcstm
+
+   state Root { during { if [active("Root.Unknown")] {} } }
+
+.. diagnostics-example E_ACTIVE_QUERY_TARGET 2 boundary_only
+
+Replace Root.Unknown with Root to query the existing root. A root-relative path starts with / and excludes the root name.
+
+.. diagnostics-example E_ACTIVE_QUERY_TARGET 3 boundary_only
+
+Do not turn a Region into a query target or use a pseudo state as a stable activity flag. Persistent initialization has no active configuration to query.
+
+.. _diag-code-e-region-structure:
+
+E_REGION_STRUCTURE
+^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_REGION_STRUCTURE severity=error emit_tier=static_pipeline capability=pure_static span_object=syntax_construct
+.. diagnostics-ref E_REGION_STRUCTURE source_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_REGION_STRUCTURE namespace_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_REGION_STRUCTURE reason type=str required=true enum=empty_region|mixed_children|owner_statements|history_boundary item_enum=- exact_values=-
+
+.. diagnostics-boundary E_REGION_STRUCTURE kind=cli_error
+
+A region is empty, a state mixes direct states and regions, a parallel owner contains forbidden declarations, or history would have to store a parallel configuration.
+
+.. list-table:: Refs schema
+   :header-rows: 1
+
+   * - Field / 字段
+     - Type / 类型
+     - Required / 必填
+     - Meaning / 含义
+   * - ``source_path``
+     - ``str_or_null``
+     - no
+     - Original source file, including imports.
+   * - ``namespace_path``
+     - ``str``
+     - yes
+     - Full path of the invalid namespace.
+   * - ``reason``
+     - ``str``
+     - yes
+     - Violated structural rule. (``empty_region``, ``mixed_children``, ``owner_statements``, ``history_boundary``)
+
+.. diagnostics-example E_REGION_STRUCTURE 1 cli_error
+
+Loading this source fails with reason empty_region. The region must own child states and an initial transition.
+
+.. code-block:: fcstm
+
+   state Root { region Empty {} }
+
+.. diagnostics-example E_REGION_STRUCTURE 2 boundary_only
+
+A valid replacement is region Empty { state Idle; [*] -> Idle; }. One direct region is allowed and does not itself produce a warning.
+
+.. diagnostics-example E_REGION_STRUCTURE 3 boundary_only
+
+Move local transitions and imports inside regions. History inside an ordinary subtree is permitted; a history owner containing parallel descendants is not.
+
+.. _diag-code-e-duplicate-region:
+
+E_DUPLICATE_REGION
+^^^^^^^^^^^^^^^^^^
+
+.. diagnostics-meta E_DUPLICATE_REGION severity=error emit_tier=static_pipeline capability=pure_static span_object=syntax_construct
+.. diagnostics-ref E_DUPLICATE_REGION source_path type=str_or_null required=false enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_DUPLICATE_REGION region_name type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_DUPLICATE_REGION owner_path type=str required=true enum=- item_enum=- exact_values=-
+.. diagnostics-ref E_DUPLICATE_REGION previous_span type=Span required=false enum=- item_enum=- exact_values=-
+
+.. diagnostics-boundary E_DUPLICATE_REGION kind=cli_error
+
+Two direct regions within the same state have the same name, so their namespace paths cannot be distinguished.
+
+.. list-table:: Refs schema
+   :header-rows: 1
+
+   * - Field / 字段
+     - Type / 类型
+     - Required / 必填
+     - Meaning / 含义
+   * - ``source_path``
+     - ``str_or_null``
+     - no
+     - Original source file, including imports.
+   * - ``region_name``
+     - ``str``
+     - yes
+     - Repeated region identifier.
+   * - ``owner_path``
+     - ``str``
+     - yes
+     - Full path of the shared owner state.
+   * - ``previous_span``
+     - ``Span``
+     - no
+     - First declaration position, if known.
+
+.. diagnostics-example E_DUPLICATE_REGION 1 cli_error
+
+Loading this source raises ModelValidationError. The primary span points to the repeated declaration; previous_span points to the first when available.
+
+.. code-block:: fcstm
+
+   state Root { region A { state Idle; [*] -> Idle; } region A { state Idle; [*] -> Idle; } }
+
+.. diagnostics-example E_DUPLICATE_REGION 2 boundary_only
+
+Rename the second region to B and update paths referring to that region. Child states may share names when their region namespaces differ.
+
+.. diagnostics-example E_DUPLICATE_REGION 3 boundary_only
+
+The same region name under different owner states is valid. Validation must not impose global uniqueness on region identifiers.
 
 .. _diag-code-e-undefined-var:
 

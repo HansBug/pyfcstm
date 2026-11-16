@@ -39,7 +39,7 @@ state_machine_dsl
 
 // Top-level variable definitions that appear before the root state.
 def_assignment
-    : leading_doc=MULTILINE_COMMENT? variable_declaration deftype=(INT_TYPE | FLOAT_TYPE) var_name=(ID | REGION | ACTIVE)
+    : leading_doc=MULTILINE_COMMENT? variable_declaration deftype=(INT_TYPE | FLOAT_TYPE) var_name=ID
       (ASSIGN init_expression)? SEMI
     ;
 
@@ -53,16 +53,18 @@ variable_declaration
 
 // State-machine structural rules.
 state_definition
-    : leading_doc=MULTILINE_COMMENT? pseudo=PSEUDO? STATE state_id=(ID | REGION | ACTIVE) (NAMED extra_name=STRING)? SEMI
+    : leading_doc=MULTILINE_COMMENT? pseudo=PSEUDO? STATE state_id=ID (NAMED extra_name=STRING)? SEMI
         # leafStateDefinition
-    | leading_doc=MULTILINE_COMMENT? pseudo=PSEUDO? STATE state_id=(ID | REGION | ACTIVE) (NAMED extra_name=STRING)? LBRACE
-      state_inner_statement* RBRACE
+    | leading_doc=MULTILINE_COMMENT? pseudo=PSEUDO? STATE state_id=ID (NAMED extra_name=STRING)? LBRACE
+      state_owner_statement*
+      (state_child_statement state_inner_statement*
+      | region_definition (state_owner_statement | region_definition)*)? RBRACE
         # compositeStateDefinition
     ;
 
 // Regions own ordered state/transition scopes, not state lifecycle actions.
 region_definition
-    : leading_doc=MULTILINE_COMMENT? REGION region_id=(ID | REGION | ACTIVE)
+    : leading_doc=MULTILINE_COMMENT? REGION region_id=ID
       LBRACE region_inner_statement* RBRACE
     ;
 
@@ -76,13 +78,13 @@ region_inner_statement
     ;
 
 transition_definition
-    : leading_doc=MULTILINE_COMMENT? INIT_MARKER ARROW to_state=(ID | REGION | ACTIVE) (DOT history_marker)? entry_combo_transition_trigger?
+    : leading_doc=MULTILINE_COMMENT? INIT_MARKER ARROW to_state=ID (DOT history_marker)? entry_combo_transition_trigger?
       (SEMI | EFFECT LBRACE operational_statement_set RBRACE)
         # entryTransitionDefinition
-    | leading_doc=MULTILINE_COMMENT? from_state=(ID | REGION | ACTIVE) ARROW to_state=(ID | REGION | ACTIVE) (DOT history_marker)? combo_transition_trigger?
+    | leading_doc=MULTILINE_COMMENT? from_state=ID ARROW to_state=ID (DOT history_marker)? combo_transition_trigger?
       (SEMI | EFFECT LBRACE operational_statement_set RBRACE)
         # normalTransitionDefinition
-    | leading_doc=MULTILINE_COMMENT? from_state=(ID | REGION | ACTIVE) ARROW INIT_MARKER combo_transition_trigger?
+    | leading_doc=MULTILINE_COMMENT? from_state=ID ARROW INIT_MARKER combo_transition_trigger?
       (SEMI | EFFECT LBRACE operational_statement_set RBRACE)
         # exitTransitionDefinition
     ;
@@ -126,7 +128,7 @@ local_combo_trigger_term
     ;
 
 local_combo_event_term
-    : event_id=(ID | REGION | ACTIVE)
+    : event_id=ID
     ;
 
 chain_combo_trigger
@@ -153,15 +155,15 @@ combo_guard_term
     ;
 
 transition_force_definition
-    : leading_doc=MULTILINE_COMMENT? BANG from_state=(ID | REGION | ACTIVE) ARROW to_state=(ID | REGION | ACTIVE) (DOT history_marker)?
-      (COLONCOLON from_id=(ID | REGION | ACTIVE) | COLON chain_id | COLON IF LBRACK cond_expression RBRACK)?
+    : leading_doc=MULTILINE_COMMENT? BANG from_state=ID ARROW to_state=ID (DOT history_marker)?
+      (COLONCOLON from_id=ID | COLON chain_id | COLON IF LBRACK cond_expression RBRACK)?
       SEMI
         # normalForceTransitionDefinition
-    | leading_doc=MULTILINE_COMMENT? BANG from_state=(ID | REGION | ACTIVE) ARROW INIT_MARKER
-      (COLONCOLON from_id=(ID | REGION | ACTIVE) | COLON chain_id | COLON IF LBRACK cond_expression RBRACK)?
+    | leading_doc=MULTILINE_COMMENT? BANG from_state=ID ARROW INIT_MARKER
+      (COLONCOLON from_id=ID | COLON chain_id | COLON IF LBRACK cond_expression RBRACK)?
       SEMI
         # exitForceTransitionDefinition
-    | leading_doc=MULTILINE_COMMENT? BANG STAR ARROW to_state=(ID | REGION | ACTIVE) (DOT history_marker)?
+    | leading_doc=MULTILINE_COMMENT? BANG STAR ARROW to_state=ID (DOT history_marker)?
       ((COLONCOLON | COLON) chain_id | COLON IF LBRACK cond_expression RBRACK)?
       SEMI
         # normalAllForceTransitionDefinition
@@ -181,72 +183,72 @@ history_definition
     ;
 
 history_default_path
-    : path_items+=(ID | REGION | ACTIVE) (DOT path_items+=(ID | REGION | ACTIVE))*
+    : path_items+=ID (DOT path_items+=ID)*
     ;
 
 enter_definition
-    : leading_doc=MULTILINE_COMMENT? ENTER (func_name=(ID | REGION | ACTIVE))? LBRACE operational_statement_set RBRACE
+    : leading_doc=MULTILINE_COMMENT? ENTER (func_name=ID)? LBRACE operational_statement_set RBRACE
         # enterOperations
     // A leading documentation block is the canonical spelling.  Its optional
     // name preserves the existing anonymous-abstract form, while the separate
     // no-document alternative below keeps bare ``enter abstract;`` invalid.
-    | leading_doc=MULTILINE_COMMENT ENTER ABSTRACT (func_name=(ID | REGION | ACTIVE))? SEMI
+    | leading_doc=MULTILINE_COMMENT ENTER ABSTRACT (func_name=ID)? SEMI
         # enterAbstractFunc
-    | ENTER ABSTRACT func_name=(ID | REGION | ACTIVE) SEMI
+    | ENTER ABSTRACT func_name=ID SEMI
         # enterAbstractFunc
-    | leading_doc=MULTILINE_COMMENT? ENTER ABSTRACT (func_name=(ID | REGION | ACTIVE))? raw_doc=MULTILINE_COMMENT
+    | leading_doc=MULTILINE_COMMENT? ENTER ABSTRACT (func_name=ID)? raw_doc=MULTILINE_COMMENT
         # enterAbstractFunc
-    | leading_doc=MULTILINE_COMMENT? ENTER (func_name=(ID | REGION | ACTIVE))? REF chain_id SEMI
+    | leading_doc=MULTILINE_COMMENT? ENTER (func_name=ID)? REF chain_id SEMI
         # enterRefFunc
     ;
 
 exit_definition
-    : leading_doc=MULTILINE_COMMENT? EXIT (func_name=(ID | REGION | ACTIVE))? LBRACE operational_statement_set RBRACE
+    : leading_doc=MULTILINE_COMMENT? EXIT (func_name=ID)? LBRACE operational_statement_set RBRACE
         # exitOperations
-    | leading_doc=MULTILINE_COMMENT EXIT ABSTRACT (func_name=(ID | REGION | ACTIVE))? SEMI
+    | leading_doc=MULTILINE_COMMENT EXIT ABSTRACT (func_name=ID)? SEMI
         # exitAbstractFunc
-    | EXIT ABSTRACT func_name=(ID | REGION | ACTIVE) SEMI
+    | EXIT ABSTRACT func_name=ID SEMI
         # exitAbstractFunc
-    | leading_doc=MULTILINE_COMMENT? EXIT ABSTRACT (func_name=(ID | REGION | ACTIVE))? raw_doc=MULTILINE_COMMENT
+    | leading_doc=MULTILINE_COMMENT? EXIT ABSTRACT (func_name=ID)? raw_doc=MULTILINE_COMMENT
         # exitAbstractFunc
-    | leading_doc=MULTILINE_COMMENT? EXIT (func_name=(ID | REGION | ACTIVE))? REF chain_id SEMI
+    | leading_doc=MULTILINE_COMMENT? EXIT (func_name=ID)? REF chain_id SEMI
         # exitRefFunc
     ;
 
 during_definition
-    : leading_doc=MULTILINE_COMMENT? DURING aspect=(BEFORE | AFTER)? (func_name=(ID | REGION | ACTIVE))? LBRACE operational_statement_set RBRACE
+    : leading_doc=MULTILINE_COMMENT? DURING aspect=(BEFORE | AFTER)? (func_name=ID)? LBRACE operational_statement_set RBRACE
         # duringOperations
-    | leading_doc=MULTILINE_COMMENT DURING aspect=(BEFORE | AFTER)? ABSTRACT (func_name=(ID | REGION | ACTIVE))? SEMI
+    | leading_doc=MULTILINE_COMMENT DURING aspect=(BEFORE | AFTER)? ABSTRACT (func_name=ID)? SEMI
         # duringAbstractFunc
-    | DURING aspect=(BEFORE | AFTER)? ABSTRACT func_name=(ID | REGION | ACTIVE) SEMI
+    | DURING aspect=(BEFORE | AFTER)? ABSTRACT func_name=ID SEMI
         # duringAbstractFunc
-    | leading_doc=MULTILINE_COMMENT? DURING aspect=(BEFORE | AFTER)? ABSTRACT (func_name=(ID | REGION | ACTIVE))? raw_doc=MULTILINE_COMMENT
+    | leading_doc=MULTILINE_COMMENT? DURING aspect=(BEFORE | AFTER)? ABSTRACT (func_name=ID)? raw_doc=MULTILINE_COMMENT
         # duringAbstractFunc
-    | leading_doc=MULTILINE_COMMENT? DURING aspect=(BEFORE | AFTER)? (func_name=(ID | REGION | ACTIVE))? REF chain_id SEMI
+    | leading_doc=MULTILINE_COMMENT? DURING aspect=(BEFORE | AFTER)? (func_name=ID)? REF chain_id SEMI
         # duringRefFunc
     ;
 
 during_aspect_definition
-    : leading_doc=MULTILINE_COMMENT? SHIFT_RIGHT DURING aspect=(BEFORE | AFTER) (func_name=(ID | REGION | ACTIVE))? LBRACE operational_statement_set RBRACE
+    : leading_doc=MULTILINE_COMMENT? SHIFT_RIGHT DURING aspect=(BEFORE | AFTER) (func_name=ID)? LBRACE operational_statement_set RBRACE
         # duringAspectOperations
-    | leading_doc=MULTILINE_COMMENT SHIFT_RIGHT DURING aspect=(BEFORE | AFTER) ABSTRACT (func_name=(ID | REGION | ACTIVE))? SEMI
+    | leading_doc=MULTILINE_COMMENT SHIFT_RIGHT DURING aspect=(BEFORE | AFTER) ABSTRACT (func_name=ID)? SEMI
         # duringAspectAbstractFunc
-    | SHIFT_RIGHT DURING aspect=(BEFORE | AFTER) ABSTRACT func_name=(ID | REGION | ACTIVE) SEMI
+    | SHIFT_RIGHT DURING aspect=(BEFORE | AFTER) ABSTRACT func_name=ID SEMI
         # duringAspectAbstractFunc
-    | leading_doc=MULTILINE_COMMENT? SHIFT_RIGHT DURING aspect=(BEFORE | AFTER) ABSTRACT (func_name=(ID | REGION | ACTIVE))? raw_doc=MULTILINE_COMMENT
+    | leading_doc=MULTILINE_COMMENT? SHIFT_RIGHT DURING aspect=(BEFORE | AFTER) ABSTRACT (func_name=ID)? raw_doc=MULTILINE_COMMENT
         # duringAspectAbstractFunc
-    | leading_doc=MULTILINE_COMMENT? SHIFT_RIGHT DURING aspect=(BEFORE | AFTER) (func_name=(ID | REGION | ACTIVE))? REF chain_id SEMI
+    | leading_doc=MULTILINE_COMMENT? SHIFT_RIGHT DURING aspect=(BEFORE | AFTER) (func_name=ID)? REF chain_id SEMI
         # duringAspectRefFunc
     ;
 
 event_definition
-    : leading_doc=MULTILINE_COMMENT? EVENT event_name=(ID | REGION | ACTIVE) (NAMED extra_name=STRING)? SEMI
+    : leading_doc=MULTILINE_COMMENT? EVENT event_name=ID (NAMED extra_name=STRING)? SEMI
     ;
 
 // Import declarations are legal only inside composite states. The lexer has
 // already enforced the compact selector/template token forms where required.
 import_statement
-    : IMPORT import_path=STRING AS state_alias=(ID | REGION | ACTIVE) (NAMED extra_name=STRING)?
+    : IMPORT import_path=STRING AS state_alias=ID (NAMED extra_name=STRING)?
       (LBRACE import_mapping_statement* RBRACE | SEMI)
     ;
 
@@ -263,16 +265,16 @@ import_variable_mapping
 import_def_selector
     : STAR
         # importDefFallbackSelector
-    | LBRACE selector_items+=(ID | REGION | ACTIVE) (COMMA selector_items+=(ID | REGION | ACTIVE))* RBRACE
+    | LBRACE selector_items+=ID (COMMA selector_items+=ID)* RBRACE
         # importDefSetSelector
     | selector_pattern=IMPORT_DEF_SELECTOR_PATTERN
         # importDefPatternSelector
-    | selector_name=(ID | REGION | ACTIVE)
+    | selector_name=ID
         # importDefExactSelector
     ;
 
 import_def_target_template
-    : target_text=(ID | REGION | ACTIVE)
+    : target_text=ID
     | target_text=IMPORT_DEF_TARGET_TEMPLATE
     | target_text=STAR
     ;
@@ -283,7 +285,7 @@ import_event_mapping
 
 // Operational blocks used by enter/during/exit/effect bodies.
 operation_assignment
-    : var_name=(ID | REGION | ACTIVE) ASSIGN num_expression SEMI
+    : var_name=ID ASSIGN num_expression SEMI
     ;
 
 operation_block
@@ -308,7 +310,6 @@ operational_statement_set
 
 state_inner_statement
     : state_definition
-    | region_definition
     | transition_definition
     | transition_force_definition
     | history_definition
@@ -318,6 +319,27 @@ state_inner_statement
     | during_aspect_definition
     | event_definition
     | import_statement
+    | SEMI
+    ;
+
+// The first child declaration determines the namespace kind. Parse shared
+// owner declarations before this choice, retaining diagnostics inside actions.
+state_child_statement
+    : state_definition
+    | transition_definition
+    | transition_force_definition
+    | history_definition
+    | import_statement
+    ;
+
+// A parallel owner keeps its own lifecycle and event declarations. Its child
+// namespace contains regions only; transitions between owners live in the parent.
+state_owner_statement
+    : enter_definition
+    | during_definition
+    | exit_definition
+    | during_aspect_definition
+    | event_definition
     | SEMI
     ;
 
@@ -336,15 +358,15 @@ preamble_statement
     ;
 
 initial_assignment
-    : var_name=(ID | REGION | ACTIVE) DECLARE_ASSIGN init_expression SEMI
+    : var_name=ID DECLARE_ASSIGN init_expression SEMI
     ;
 
 constant_definition
-    : var_name=(ID | REGION | ACTIVE) ASSIGN init_expression SEMI
+    : var_name=ID ASSIGN init_expression SEMI
     ;
 
 operational_assignment
-    : var_name=(ID | REGION | ACTIVE) DECLARE_ASSIGN num_expression SEMI
+    : var_name=ID DECLARE_ASSIGN num_expression SEMI
     ;
 
 // Shared expression rules reused by conditions, initialization, and runtime
@@ -386,7 +408,7 @@ num_expression
         # parenExprNum
     | num_literal
         # literalExprNum
-    | (ID | REGION | ACTIVE)
+    | ID
         # idExprNum
     | math_const
         # mathConstExprNum
@@ -458,5 +480,5 @@ math_const
 
 // Reusable dotted identifier path helper used by event mappings and refs.
 chain_id
-    : isabs=SLASH? path_items+=(ID | REGION | ACTIVE) (DOT path_items+=(ID | REGION | ACTIVE))*
+    : isabs=SLASH? path_items+=ID (DOT path_items+=ID)*
     ;

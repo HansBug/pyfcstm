@@ -30,7 +30,7 @@ Example::
     ...     StateMachineDSLProgram, DefAssignment, Integer
     ... )
     >>> def_var = DefAssignment("counter", "int", Integer("0"))
-    >>> trans = TransitionDefinition("idle", "active", ChainID(["idle", "start"]), None, [])
+    >>> trans = TransitionDefinition("idle", "running", ChainID(["idle", "start"]), None, [])
     >>> root = StateDefinition("idle", transitions=[trans])
     >>> program = StateMachineDSLProgram([def_var], root)
     >>> print(program)
@@ -1599,7 +1599,7 @@ class TransitionDefinition(ASTNode):
 
         >>> init_trans = TransitionDefinition(INIT_STATE, "idle", None, None, [])
         >>> event_trans = TransitionDefinition(
-        ...     "idle", "active", ChainID(["idle", "start"]), None, []
+        ...     "idle", "running", ChainID(["idle", "start"]), None, []
         ... )
         >>> op = OperationAssignment("counter", Integer("0"))
         >>> cond_trans = TransitionDefinition(
@@ -1903,7 +1903,7 @@ class StateDefinition(ASTNode):
         'state idle;'
 
         >>> trans = TransitionDefinition(
-        ...     "idle", "active", ChainID(["idle", "start"]), None, []
+        ...     "idle", "running", ChainID(["idle", "start"]), None, []
         ... )
         >>> state_with_trans = StateDefinition("idle", transitions=[trans])
     """

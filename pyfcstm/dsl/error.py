@@ -196,6 +196,8 @@ class SyntaxFailError(GrammarItemError):
             return f"Unexpected token '{offending_symbol}'"
 
         elif "mismatched input" in normalized_msg:
+            if offending_symbol == '<EOF>' and "rbrace" in normalized_msg:
+                return "Missing closing brace - check for unclosed state definitions or action blocks"
             if "expecting ';'" in normalized_msg or "expecting semi" in normalized_msg:
                 if offending_symbol == 'state':
                     return "Missing semicolon after previous state definition"

@@ -446,8 +446,8 @@ class SharedExpectation:
 
 SHARED_CHECKPOINT_SPECS: List[Dict[str, Any]] = [
     {
-        'name': 'Contextual Region Syntax',
-        'description': 'region declarations and active queries retain ordinary identifier uses',
+        'name': 'Reserved Region Syntax',
+        'description': 'region and active remain reserved outside declarations and queries',
         'items': [
             SharedExpectation('region', Token.Keyword.Declaration, 'declarations', 'keyword.control.fcstm',
                               capture_group=1, textmate_sample='region Motor {'),
@@ -455,8 +455,8 @@ SHARED_CHECKPOINT_SPECS: List[Dict[str, Any]] = [
                               capture_group=2, textmate_sample='region Motor {'),
             SharedExpectation('active', Token.Name.Builtin, 'constants', 'support.function.builtin.fcstm',
                               textmate_sample='active("/Parallel.Motor.Idle")'),
-            SharedExpectation('region', Token.Name, 'identifiers', 'variable.other.fcstm'),
-            SharedExpectation('active', Token.Name, 'identifiers', 'variable.other.fcstm'),
+            SharedExpectation('region', Token.Keyword.Declaration, 'keywords', 'keyword.control.fcstm'),
+            SharedExpectation('active', Token.Name.Builtin, 'constants', 'support.function.builtin.fcstm'),
         ],
     },
     {

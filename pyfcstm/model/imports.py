@@ -48,7 +48,7 @@ from ..dsl.role import VariableRole
 from ..utils import auto_decode
 from ..utils.doc import aggregate_documentation
 from ..utils.validate import ModelDiagnostic, ModelValidationError, Span
-from ._capabilities import reject_unsupported_syntax
+from ._unsupported_syntax import reject_unsupported_syntax
 
 __all__ = [
     "assemble_state_machine_imports",

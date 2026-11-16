@@ -1,4 +1,10 @@
-"""Reject parsed features that do not yet have executable model semantics."""
+"""Temporarily reject syntax whose model semantics are not implemented.
+
+Remove the region rejection when model construction preserves and validates
+regions, and the active-query rejection when model lowering implements queries.
+Delete this module once neither rejection is needed. Backend support checks
+belong to the respective execution or rendering entry points.
+"""
 
 from dataclasses import fields
 

@@ -1,5 +1,5 @@
 import {collectVariableRoleDiagnostics, requireVariableRole} from '../ast/variable-roles';
-import {collectUnsupportedSyntaxDiagnostics} from '../ast/capabilities';
+import {collectUnsupportedSyntaxDiagnostics} from '../ast/unsupported-syntax';
 import type {FcstmDiagnostic} from '../utils/text';
 import type {
     FcstmAstAction,

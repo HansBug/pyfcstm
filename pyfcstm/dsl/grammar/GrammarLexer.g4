@@ -54,7 +54,7 @@ NAMED: 'named';
 
 PSEUDO: 'pseudo';
 STATE: 'state';
-// Contextual words: parser identifier positions accept these tokens too.
+// Reserved words, including in import identifier positions.
 REGION: 'region';
 ACTIVE: 'active';
 ENTER: 'enter';
@@ -178,6 +178,7 @@ IMPORT_HEADER_STRING
     ;
 IMPORT_HEADER_AS: 'as' -> type(AS);
 IMPORT_HEADER_NAMED: 'named' -> type(NAMED);
+IMPORT_HEADER_RESERVED: RESERVED_WORD;
 IMPORT_HEADER_ID: [a-zA-Z_][a-zA-Z0-9_]* -> type(ID);
 IMPORT_HEADER_LBRACE: '{' -> type(LBRACE), mode(IMPORT_BLOCK_MODE);
 IMPORT_HEADER_SEMI: ';' -> type(SEMI), mode(DEFAULT_MODE);
@@ -203,6 +204,7 @@ IMPORT_BLOCK_SEMI: ';' -> type(SEMI);
 IMPORT_BLOCK_RBRACE: '}' -> type(RBRACE), mode(DEFAULT_MODE);
 IMPORT_BLOCK_DOT: '.' -> type(DOT);
 IMPORT_BLOCK_SLASH: '/' -> type(SLASH);
+IMPORT_BLOCK_RESERVED: RESERVED_WORD;
 IMPORT_BLOCK_ID: [a-zA-Z_][a-zA-Z0-9_]* -> type(ID);
 IMPORT_BLOCK_STRING
     : (
@@ -232,6 +234,7 @@ IMPORT_DEF_SELECTOR_PATTERN
     : [a-zA-Z_][a-zA-Z0-9_]* '*' [a-zA-Z0-9_*]*
     | '*' [a-zA-Z0-9_]+ [a-zA-Z0-9_*]*
     ;
+IMPORT_DEF_SELECTOR_RESERVED: RESERVED_WORD;
 IMPORT_DEF_SELECTOR_ID: [a-zA-Z_][a-zA-Z0-9_]* -> type(ID);
 IMPORT_DEF_SELECTOR_ARROW: '->' -> type(ARROW), mode(IMPORT_DEF_TARGET_MODE);
 
@@ -253,9 +256,21 @@ IMPORT_DEF_TARGET_TEMPLATE
     | '$' [0-9] [a-zA-Z0-9_*${}]*
     | '$' '{' [0-9]+ '}' [a-zA-Z0-9_*${}]*
     ;
+IMPORT_DEF_TARGET_RESERVED: RESERVED_WORD;
 IMPORT_DEF_TARGET_ID: [a-zA-Z_][a-zA-Z0-9_]* -> type(ID);
 IMPORT_DEF_TARGET_STAR: '*' -> type(STAR);
 IMPORT_DEF_TARGET_SEMI: ';' -> type(SEMI), mode(IMPORT_BLOCK_MODE);
+
+// Reuse the default-mode keyword spellings so import modes cannot turn a
+// reserved word into an identifier. Longer wildcard patterns/templates still
+// win by maximal match, and their rendered targets are validated during assembly.
+fragment RESERVED_WORD
+    : IMPORT | VAR | DEF | CONTROL | INPUT | PARAM | OUTPUT | EVENT | AS | NAMED
+    | PSEUDO | STATE | REGION | ACTIVE | ENTER | EXIT | DURING | BEFORE | AFTER
+    | ABSTRACT | REF | EFFECT | IF | ELSE | INT_TYPE | FLOAT_TYPE
+    | PI_CONST | E_CONST | TAU_CONST | AND_KW | OR_KW | NOT_KW | IMPLIES_KW
+    | IFF_KW | XOR_KW | TRUE | FALSE | UFUNC_NAME
+    ;
 
 fragment EscapeSequence
     : '\\' [btnfr"'\\]

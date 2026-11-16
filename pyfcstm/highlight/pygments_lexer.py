@@ -187,7 +187,7 @@ class FcstmLexer(RegexLexer):
         'abstract', 'after', 'as', 'before', 'def', 'during', 'effect', 'enter',
         'else', 'event', 'exit', 'float', 'if', 'import', 'int', 'named',
         'implies', 'iff', 'pseudo', 'ref', 'state', 'xor',
-        'control', 'input', 'param', 'output', 'var',
+        'control', 'input', 'param', 'output', 'var', 'region', 'active',
     ))
     _ANALYSIS_LIFECYCLE_KEYWORDS = frozenset(('enter', 'during', 'exit'))
 
@@ -198,58 +198,7 @@ class FcstmLexer(RegexLexer):
 
             (r'\bimport\b', Keyword.Declaration, 'import-header'),
 
-            # These words remain ordinary identifiers outside their syntax.
-            (r'\bregion\b(?=\s+[A-Za-z_][A-Za-z0-9_]*\s*\{)', Keyword.Declaration),
-            (r'\bactive\b(?=\s*\(\s*[\'\"])', Name.Builtin),
-
-            # Keywords - state machine structure
-            (words((
-                'state', 'pseudo', 'named', 'def', 'event', 'as',
-                'control', 'input', 'param', 'output', 'var',
-            ), suffix=r'\b'), Keyword.Declaration),
-
-            # Keywords - lifecycle actions
-            (words((
-                'enter', 'during', 'exit', 'before', 'after',
-            ), suffix=r'\b'), Keyword.Reserved),
-
-            # Keywords - modifiers
-            (words((
-                'abstract', 'ref', 'effect',
-            ), suffix=r'\b'), Keyword.Namespace),
-
-            # Keywords - types
-            (words((
-                'int', 'float',
-            ), suffix=r'\b'), Keyword.Type),
-
-            # Keywords - control flow
-            (words((
-                'if', 'else',
-            ), suffix=r'\b'), Keyword.Reserved),
-
-            # Keywords - logical operators (word form)
-            (words((
-                'and', 'or', 'not', 'implies', 'xor', 'iff',
-            ), suffix=r'\b'), Operator.Word),
-
-            # Boolean literals
-            (words((
-                'True', 'true', 'TRUE', 'False', 'false', 'FALSE',
-            ), suffix=r'\b'), Keyword.Constant),
-
-            # Math constants
-            (words((
-                'pi', 'E', 'tau',
-            ), suffix=r'\b'), Name.Constant),
-
-            # Built-in functions (from UFUNC_NAME)
-            (words((
-                'sin', 'cos', 'tan', 'asin', 'acos', 'atan',
-                'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh',
-                'sqrt', 'cbrt', 'exp', 'log', 'log10', 'log2', 'log1p',
-                'abs', 'ceil', 'floor', 'round', 'trunc', 'sign',
-            ), suffix=r'\b'), Name.Builtin),
+            include('keywords'),
 
             # Aspect operator
             (r'>>', Operator.Word),
@@ -310,6 +259,58 @@ class FcstmLexer(RegexLexer):
             (r'[a-zA-Z_][a-zA-Z0-9_]*', Name),
         ],
 
+        'keywords': [
+            # Keywords - state machine structure
+            (words((
+                'state', 'region', 'pseudo', 'named', 'def', 'event', 'as', 'import',
+                'control', 'input', 'param', 'output', 'var',
+            ), suffix=r'\b'), Keyword.Declaration),
+
+            # Keywords - lifecycle actions
+            (words((
+                'enter', 'during', 'exit', 'before', 'after',
+            ), suffix=r'\b'), Keyword.Reserved),
+
+            # Keywords - modifiers
+            (words((
+                'abstract', 'ref', 'effect',
+            ), suffix=r'\b'), Keyword.Namespace),
+
+            # Keywords - types
+            (words((
+                'int', 'float',
+            ), suffix=r'\b'), Keyword.Type),
+
+            # Keywords - control flow
+            (words((
+                'if', 'else',
+            ), suffix=r'\b'), Keyword.Reserved),
+
+            # Keywords - logical operators (word form)
+            (words((
+                'and', 'or', 'not', 'implies', 'xor', 'iff',
+            ), suffix=r'\b'), Operator.Word),
+
+            # Boolean literals
+            (words((
+                'True', 'true', 'TRUE', 'False', 'false', 'FALSE',
+            ), suffix=r'\b'), Keyword.Constant),
+
+            # Math constants
+            (words((
+                'pi', 'E', 'tau',
+            ), suffix=r'\b'), Name.Constant),
+
+            # Built-in functions (from UFUNC_NAME)
+            (words((
+                'sin', 'cos', 'tan', 'asin', 'acos', 'atan',
+                'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh',
+                'sqrt', 'cbrt', 'exp', 'log', 'log10', 'log2', 'log1p',
+                'abs', 'ceil', 'floor', 'round', 'trunc', 'sign', 'active',
+            ), suffix=r'\b'), Name.Builtin),
+
+        ],
+
         'import-header': [
             include('whitespace'),
             include('comments'),
@@ -319,6 +320,7 @@ class FcstmLexer(RegexLexer):
             (r"'([^'\\]|\\[btnfr\"'\\]|\\[0-7]{1,3}|\\u[0-9a-fA-F]{4}|\\x[0-9a-fA-F]{2})*'", String.Single),
             (r'\{', Punctuation, ('#pop', 'import-block')),
             (r';', Punctuation, '#pop'),
+            include('keywords'),
             (r'[a-zA-Z_][a-zA-Z0-9_]*', Name),
         ],
 
@@ -339,6 +341,7 @@ class FcstmLexer(RegexLexer):
             (r'\}', Punctuation, '#pop'),
             (r'"([^"\\]|\\[btnfr"\'\\]|\\[0-7]{1,3}|\\u[0-9a-fA-F]{4}|\\x[0-9a-fA-F]{2})*"', String.Double),
             (r"'([^'\\]|\\[btnfr\"'\\]|\\[0-7]{1,3}|\\u[0-9a-fA-F]{4}|\\x[0-9a-fA-F]{2})*'", String.Single),
+            include('keywords'),
             (r'[a-zA-Z_][a-zA-Z0-9_]*', Name),
         ],
 
@@ -351,6 +354,7 @@ class FcstmLexer(RegexLexer):
             (r',', Punctuation),
             (r'[a-zA-Z_][a-zA-Z0-9_]*\*(?:[a-zA-Z0-9_*]*)', Name.Variable),
             (r'\*[a-zA-Z0-9_][a-zA-Z0-9_*]*', Name.Variable),
+            include('keywords'),
             (r'[a-zA-Z_][a-zA-Z0-9_]*', Name),
             (r'\*', Operator),
         ],
@@ -360,9 +364,10 @@ class FcstmLexer(RegexLexer):
             include('comments'),
             (r';', Punctuation, ('#pop', '#pop')),
             (r'\$\{[0-9]+\}|\$[0-9]+', Name.Variable),
-            (r'[a-zA-Z_][a-zA-Z0-9_]*(?:(?:\$\{[0-9]+\}|\$[0-9]+|\*)(?:[a-zA-Z0-9_]*))*', Name.Variable),
+            (r'[a-zA-Z_][a-zA-Z0-9_]*(?:(?:\$\{[0-9]+\}|\$[0-9]+|\*)(?:[a-zA-Z0-9_]*))+', Name.Variable),
+            include('keywords'),
             (r'\*', Operator),
-            (r'[a-zA-Z_][a-zA-Z0-9_]*', Name),
+            (r'[a-zA-Z_][a-zA-Z0-9_]*', Name.Variable),
         ],
 
         'whitespace': [

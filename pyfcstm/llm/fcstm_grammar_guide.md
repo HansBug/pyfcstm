@@ -63,6 +63,16 @@ and should not be used as a second source of model facts. An unterminated
 and non-EOF swallowing in import lexer modes, are outside the supported guide
 contract.
 
+## Reserved Identifiers
+
+Identifiers are case-sensitive. Reserved words, including `region` and `active`,
+cannot be variable, state, region, event, action, import-alias, or path-component
+names. Import modes follow the same rule for exact selectors and targets.
+Use names such as `Active`, `region_count`, or `active_flag` instead and update
+all references. Strings and comments are unaffected. Wildcard selectors and
+target templates may contain keyword text, but an expanded target that equals a
+reserved word is invalid. Do not use `region` or `active` as compatibility names.
+
 ## Variable Roles
 
 All declarations precede the root state. Types are `int` and `float`.

@@ -1,3 +1,8 @@
+/**
+ * Temporary boundary until region model construction and active-query lowering
+ * exist. Remove each rejection with its model implementation, then delete this
+ * module. Execution and rendering support are checked by their own entry points.
+ */
 import type {FcstmAstDocument, FcstmAstNodeBase} from './model';
 import type {FcstmDiagnostic} from '../utils/text';
 

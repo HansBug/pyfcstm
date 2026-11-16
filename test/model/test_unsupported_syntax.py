@@ -3,12 +3,35 @@
 import pytest
 
 from pyfcstm.dsl import parse_condition, parse_state_machine_dsl
+from pyfcstm.dsl.node import RegionDefinition, StateDefinition, StateMachineDSLProgram
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.model.expr import parse_expr, parse_expr_from_string, parse_expr_node_to_expr
 from pyfcstm.model.imports import assemble_state_machine_imports
 from pyfcstm.utils import ModelValidationError
 
 pytestmark = pytest.mark.unittest
+
+
+@pytest.mark.parametrize('collect', [False, True])
+def test_public_ast_construction_cannot_bypass_unsupported_regions(collect):
+    program = StateMachineDSLProgram(
+        definitions=[],
+        root_state=StateDefinition(
+            'Root', substates=[StateDefinition('Child')],
+            regions=[RegionDefinition('Workers')],
+        ),
+    )
+    if collect:
+        model, diagnostics = parse_dsl_node_to_state_machine(program, collect=True)
+        assert model is None
+    else:
+        with pytest.raises(ModelValidationError) as caught:
+            parse_dsl_node_to_state_machine(program)
+        diagnostics = caught.value.diagnostics
+    assert [item.code for item in diagnostics] == ['E_UNSUPPORTED_FEATURE']
+    assert diagnostics[0].refs['feature'] == 'region'
+    assert program.root_state.substates[0].name == 'Child'
+    assert program.root_state.regions[0].name == 'Workers'
 
 SOURCES = [
     ('region', 'state Root { region Motor { state A; [*] -> A; } }'),
@@ -93,10 +116,8 @@ def test_programmatic_expression_rejects_active_query_without_span():
 
 def test_collect_reports_distinct_unsupported_sites_once():
     program = parse_state_machine_dsl('''state Root {
-        state A;
-        [*] -> A;
-        A -> [*] : [active("A")];
-        during { if [active("Root")] {} }
+        enter { if [active("Root")] {} }
+        during before { if [active("Root")] {} }
         region Motor {}
     }''')
     model, diagnostics = parse_dsl_node_to_state_machine(program, collect=True)
@@ -105,13 +126,13 @@ def test_collect_reports_distinct_unsupported_sites_once():
 
 
 @pytest.mark.parametrize('collect', [False, True])
-def test_contextual_identifiers_remain_executable(collect):
-    program = parse_state_machine_dsl('''def int active = 0;
-        state region { state active; [*] -> active;
-            active -> [*] : if [active > 0];
+def test_ordinary_identifier_prefixes_remain_executable(collect):
+    program = parse_state_machine_dsl('''def int active_flag = 0;
+        state Controller { state Running; [*] -> Running;
+            Running -> [*] : if [active_flag > 0];
         }''')
     result = parse_dsl_node_to_state_machine(program, collect=collect)
     if collect:
         result, diagnostics = result
         assert diagnostics == []
-    assert result.root_state.name == 'region'
+    assert result.root_state.name == 'Controller'

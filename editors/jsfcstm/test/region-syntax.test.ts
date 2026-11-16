@@ -41,10 +41,10 @@ describe('ordered region syntax', () => {
         assert.equal(motor.during_aspects, motor.duringAspects);
         assert.equal(motor.force_transitions, motor.forceTransitions);
     });
-    for (const name of ['Only', 'region', 'active']) {
+    for (const name of ['Only', 'Region', 'Active']) {
         it(`parses a single empty region named ${name}`, async () => {
             const ast = await packageModule.parseAstDocument(createDocument(
-                `state active { region ${name} {} }`, '/tmp/empty-region.fcstm'));
+                `state Root { region ${name} {} }`, '/tmp/empty-region.fcstm'));
             const region = ast!.rootState!.regions[0];
             assert.equal(region.name, name);
             assert.deepEqual(region.statements, []);
@@ -59,8 +59,7 @@ describe('ordered region syntax', () => {
             assert.equal(result.success, false);
         });
     }
-    for (const body of ['region R {}', 'state A { region R {} } [*] -> A;',
-        'state A; region R {} [*] -> A;']) {
+    for (const body of ['region R {}', 'state A { region R {} } [*] -> A;']) {
         it(`refuses an executable region model: ${body}`, async () => {
             const document = createDocument(`state Root { ${body} }`, '/tmp/unsupported-region.fcstm');
             const ast = await packageModule.parseAstDocument(document);

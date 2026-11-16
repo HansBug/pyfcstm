@@ -605,6 +605,30 @@ class GrammarParserListener(ParseTreeListener):
     ):
         pass
 
+    # Enter a parse tree produced by GrammarParser#state_child_statement.
+    def enterState_child_statement(
+        self, ctx: GrammarParser.State_child_statementContext
+    ):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#state_child_statement.
+    def exitState_child_statement(
+        self, ctx: GrammarParser.State_child_statementContext
+    ):
+        pass
+
+    # Enter a parse tree produced by GrammarParser#state_owner_statement.
+    def enterState_owner_statement(
+        self, ctx: GrammarParser.State_owner_statementContext
+    ):
+        pass
+
+    # Exit a parse tree produced by GrammarParser#state_owner_statement.
+    def exitState_owner_statement(
+        self, ctx: GrammarParser.State_owner_statementContext
+    ):
+        pass
+
     # Enter a parse tree produced by GrammarParser#operation_program.
     def enterOperation_program(self, ctx: GrammarParser.Operation_programContext):
         pass

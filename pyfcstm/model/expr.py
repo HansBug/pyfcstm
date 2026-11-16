@@ -59,7 +59,7 @@ except ImportError:
     from typing_extensions import Literal
 
 from .base import AstExportable
-from ._capabilities import reject_unsupported_syntax
+from ._unsupported_syntax import reject_unsupported_syntax
 from ..diagnostics.sink import DiagnosticSink
 from ..dsl import node as dsl_nodes
 

@@ -53,8 +53,8 @@ def test_ordered_regions_and_nested_states():
     assert parse_with_grammar_entry(str(stripped), 'state_machine_dsl') == stripped
 
 
-@pytest.mark.parametrize('body', ['', ';', 'state A;', 'region R {}', 'state A; region R {}'])
-def test_region_syntax_does_not_apply_model_structure_rules(body):
+@pytest.mark.parametrize('body', ['', ';', 'state A;', 'region R {}'])
+def test_empty_syntax_defers_model_validity_checks(body):
     program = parse_with_grammar_entry('state Root { %s }' % body, 'state_machine_dsl')
     assert parse_with_grammar_entry(str(program), 'state_machine_dsl') == program
 

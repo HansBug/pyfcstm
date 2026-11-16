@@ -84,11 +84,22 @@ Lexical and comment forms
      - ``/* ... */``, ``// ...``, ``# ...``
      - A multiline block immediately before a supported declaration is its documentation; line comments remain comments.
    * - Keywords
-     - ``def``, ``state``, ``pseudo``, ``event``, ``import``, ``enter``, ``during``, ``exit``, ``abstract``, ``ref``
+     - ``def``, ``state``, ``region``, ``active``, ``pseudo``, ``event``, ``import``, ``enter``, ``during``, ``exit``, ``abstract``, ``ref``
      - Keywords are reserved by lexer rules.
    * - Compact import tokens
      - selector patterns and target templates
      - Compact forms are tokenized in import-specific lexer modes and are whitespace-sensitive.
+
+Identifiers are case-sensitive. Reserved words, including ``region`` and
+``active``, cannot be used as names or path components, including in import
+aliases, exact mapping selectors, and exact mapping targets. For example,
+``Active``, ``region_count``, and ``active_flag`` remain valid names. Rename older
+identifiers that exactly match a reserved word and update their references.
+Strings and comments retain their literal content.
+
+Compact import patterns and target templates may contain keyword text, such as
+``prefix_* -> $1``. The expanded target must still be a valid identifier; an
+expansion to ``active`` or ``region`` is rejected during import assembly.
 
 .. _dsl-documentation-forms:
 

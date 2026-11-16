@@ -748,60 +748,60 @@ class GrammarParseListener(GrammarListener):
             else None,
             events=[
                 self.nodes[item]
-                for item in ctx.state_inner_statement()
+                for item in ctx.getChildren()
                 if item in self.nodes and isinstance(self.nodes[item], EventDefinition)
             ],
             imports=[
                 self.nodes[item]
-                for item in ctx.state_inner_statement()
+                for item in ctx.getChildren()
                 if item in self.nodes and isinstance(self.nodes[item], ImportStatement)
             ],
             substates=[
                 self.nodes[item]
-                for item in ctx.state_inner_statement()
+                for item in ctx.getChildren()
                 if item in self.nodes and isinstance(self.nodes[item], StateDefinition)
             ],
             regions=[
                 self.nodes[item]
-                for item in ctx.state_inner_statement()
+                for item in ctx.getChildren()
                 if item in self.nodes and isinstance(self.nodes[item], RegionDefinition)
             ],
             transitions=[
                 self.nodes[item]
-                for item in ctx.state_inner_statement()
+                for item in ctx.getChildren()
                 if item in self.nodes
                 and isinstance(self.nodes[item], TransitionDefinition)
             ],
             enters=[
                 self.nodes[item]
-                for item in ctx.state_inner_statement()
+                for item in ctx.getChildren()
                 if item in self.nodes and isinstance(self.nodes[item], EnterStatement)
             ],
             durings=[
                 self.nodes[item]
-                for item in ctx.state_inner_statement()
+                for item in ctx.getChildren()
                 if item in self.nodes and isinstance(self.nodes[item], DuringStatement)
             ],
             exits=[
                 self.nodes[item]
-                for item in ctx.state_inner_statement()
+                for item in ctx.getChildren()
                 if item in self.nodes and isinstance(self.nodes[item], ExitStatement)
             ],
             during_aspects=[
                 self.nodes[item]
-                for item in ctx.state_inner_statement()
+                for item in ctx.getChildren()
                 if item in self.nodes
                 and isinstance(self.nodes[item], DuringAspectStatement)
             ],
             force_transitions=[
                 self.nodes[item]
-                for item in ctx.state_inner_statement()
+                for item in ctx.getChildren()
                 if item in self.nodes
                 and isinstance(self.nodes[item], ForceTransitionDefinition)
             ],
             histories=[
                 self.nodes[item]
-                for item in ctx.state_inner_statement()
+                for item in ctx.getChildren()
                 if item in self.nodes
                 and isinstance(self.nodes[item], HistoryDefinition)
             ],
@@ -835,6 +835,24 @@ class GrammarParseListener(GrammarListener):
 
         :param ctx: Parse context for a statement owned by a region.
         :type ctx: GrammarParser.Region_inner_statementContext
+        """
+        child = ctx.getChild(0)
+        if child in self.nodes:
+            self.nodes[ctx] = self.nodes[child]
+
+    def exitState_child_statement(self, ctx: GrammarParser.State_child_statementContext) -> None:
+        """Bind the first declaration selecting an ordinary child namespace.
+
+        :param ctx: Parse context for a child declaration or local transition.
+        :type ctx: GrammarParser.State_child_statementContext
+        """
+        self.nodes[ctx] = self.nodes[ctx.getChild(0)]
+
+    def exitState_owner_statement(self, ctx: GrammarParser.State_owner_statementContext) -> None:
+        """Bind an owner declaration, ignoring empty statements.
+
+        :param ctx: Parse context for a state's own declaration.
+        :type ctx: GrammarParser.State_owner_statementContext
         """
         child = ctx.getChild(0)
         if child in self.nodes:
@@ -1499,8 +1517,6 @@ class GrammarParseListener(GrammarListener):
             self.nodes[ctx] = self.nodes[ctx.event_definition()]
         elif ctx.import_statement():
             self.nodes[ctx] = self.nodes[ctx.import_statement()]
-        elif ctx.region_definition():
-            self.nodes[ctx] = self.nodes[ctx.region_definition()]
 
     def exitOperation_assignment(
         self, ctx: GrammarParser.Operation_assignmentContext

@@ -1,5 +1,5 @@
 import {collectVariableRoleDiagnostics} from '../ast/variable-roles';
-import {collectUnsupportedSyntaxDiagnostics} from '../ast/capabilities';
+import {collectUnsupportedSyntaxDiagnostics} from '../ast/unsupported-syntax';
 import type {
     FcstmAstAction,
     FcstmAstChainPath,

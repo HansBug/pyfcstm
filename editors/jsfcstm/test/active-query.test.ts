@@ -47,11 +47,11 @@ describe('active-state condition syntax', () => {
             assert.equal(result.success, false);
         });
     }
-    for (const word of ['region', 'active']) {
+    for (const word of ['region_count', 'active_flag']) {
         it(`preserves ${word} as an identifier in ordinary executable models`, async () => {
             const ast = await packageModule.parseAstDocument(createDocument(
                 `def int ${word} = 0; state ${word} { state A; [*] -> A; A -> [*] : if [${word} > 0]; }`,
-                '/tmp/contextual.fcstm'));
+                '/tmp/identifier.fcstm'));
             assert.equal(ast!.variables[0].name, word);
             assert.equal(packageModule.buildStateMachineModel(ast)!.rootState.name, word);
         });

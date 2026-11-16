@@ -1645,8 +1645,10 @@ function buildStateDefinition(
     const hasBraceBody = node.constructor!.name === 'CompositeStateDefinitionContext';
     const statements = hasBraceBody
         ? contextChildren(node)
-            .filter(child => child.constructor!.name === 'State_inner_statementContext')
-            .map(child => buildStateStatement(child, document))
+            .filter(child => ['State_inner_statementContext', 'State_child_statementContext', 'State_owner_statementContext',
+                'Region_definitionContext'].includes(child.constructor!.name))
+            .map(child => child.constructor!.name === 'Region_definitionContext'
+                ? buildRegionDefinition(child, document) : buildStateStatement(child, document))
             .filter(Boolean) as FcstmAstStateStatement[]
         : [];
 

@@ -4402,6 +4402,8 @@ def inspect_model(
         >>> len(verify_report.diagnostics) >= len(report.diagnostics)
         True
     """
+    from pyfcstm.model.support import require_supported_model
+    require_supported_model(machine, 'inspect')
     _validate_inspect_verification_policy(
         max_complexity_tier,
         max_call_count_scaling,

@@ -15,9 +15,7 @@ from ..utils.validate import ModelDiagnostic
 
 def _unsupported_nodes(node):
     """Yield unsupported syntax sites, stopping at an unsupported owner."""
-    if isinstance(node, dsl_nodes.RegionDefinition):
-        yield node, "region"
-    elif isinstance(node, dsl_nodes.ActiveStateQuery):
+    if isinstance(node, dsl_nodes.ActiveStateQuery):
         yield node, "active"
     elif isinstance(node, dsl_nodes.ASTNode):
         for item in fields(node):

@@ -519,6 +519,8 @@ def _history_projection(machine: StateMachine) -> Optional[_HistoryProjection]:
     :return: The projection, or ``None``.
     :rtype: Optional[_HistoryProjection]
     """
+    from pyfcstm.model.support import require_supported_model
+    require_supported_model(machine, 'verify')
     if not machine.history_owners:
         return None
     base = _HistoryProjection({".".join(o.owner_path): o for o in machine.history_owners})

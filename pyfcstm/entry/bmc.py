@@ -167,7 +167,10 @@ def _read_query_file(query_file: str) -> str:
 
 def _load_model(input_code_file: str) -> StateMachine:
     try:
-        return load_state_machine_from_file(input_code_file)
+        from pyfcstm.model.support import require_supported_model
+        model = load_state_machine_from_file(input_code_file)
+        require_supported_model(model, 'bmc')
+        return model
     except FileNotFoundError:
         # load_state_machine_from_file raises FileNotFoundError for a missing
         # primary FCSTM input.
@@ -181,7 +184,7 @@ def _load_model(input_code_file: str) -> StateMachine:
         raise ClickErrorException("Failed to parse FCSTM model: %s" % err)
     except ModelValidationError as err:
         # Model construction raises ModelValidationError for semantic model
-        # errors after parsing.
+        # errors after parsing; the support check rejects unsupported BMC features.
         raise ClickErrorException("Invalid FCSTM model: %s" % err)
     except OSError as err:
         # The loader raises OSError subclasses for primary/imported file access

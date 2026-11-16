@@ -67,6 +67,7 @@ Example::
 """
 
 from .base import AstExportable, PlantUMLExportable
+from .region import Region
 from .expr import (
     Expr,
     Integer,
@@ -138,6 +139,7 @@ __all__ = [
     "OnStage",
     "OnAspect",
     "State",
+    "Region",
     "VarDefine",
     "VariableRole",
     "StateMachine",

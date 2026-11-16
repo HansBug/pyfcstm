@@ -141,20 +141,17 @@ class HistoryOwner:
 
 
 def _walk(state: "State") -> Iterator["State"]:
-    yield state
-    for child in state.substates.values():
-        for item in _walk(child):
-            yield item
+    yield from state.walk_states()
 
 
 def _walk_ast(
     node: dsl_nodes.StateDefinition, path: _Path = ()
 ) -> Iterator[Tuple[_Path, dsl_nodes.StateDefinition]]:
     path = (*path, node.name)
-    yield path, node
-    for child in node.substates:
-        for item in _walk_ast(child, path):
-            yield item
+    if isinstance(node, dsl_nodes.StateDefinition):
+        yield path, node
+    for child in [*node.substates, *getattr(node, 'regions', ())]:
+        yield from _walk_ast(child, path)
 
 
 def _operations(statements) -> Iterator:
@@ -299,7 +296,9 @@ class _Lowering:
         """Validate every transition that enters a history."""
         found = []
         reported = set()
-        for scope in self.states.values():
+        from .region import walk_namespaces
+
+        for scope in walk_namespaces(self.root):
             for transition in scope.transitions:
                 kind = transition.target_history
                 if kind is None:

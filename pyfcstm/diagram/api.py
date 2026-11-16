@@ -2365,6 +2365,8 @@ class Diagram:
             without source ranges accept any value.
         :type source_text: str, optional
         """
+        from pyfcstm.model.support import require_supported_model
+        require_supported_model(model, 'diagram')
         self.model = model
         self.options = self._normalize_options(options)
         self.view_state = self._normalize_view_state(view_state)

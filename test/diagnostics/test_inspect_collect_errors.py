@@ -131,7 +131,10 @@ NON_MODEL_BUILD_ERROR_CODES = {
 # Unsupported syntax is fatal even in collecting mode: there is no executable
 # model to inspect. Its diagnostics still have to survive the build boundary.
 FATAL_BUILD_ERROR_CASES = {
-    'E_UNSUPPORTED_FEATURE': 'state Root { region Motor {} }',
+    'E_UNSUPPORTED_FEATURE': 'state Root { during { if [active("Root")] {} } }',
+    'E_REGION_STRUCTURE': 'state Root { region Motor {} }',
+    'E_DUPLICATE_REGION': ('state Root { region A { state Leaf; [*] -> Leaf; } '
+                           'region A { state Leaf; [*] -> Leaf; } }'),
 }
 
 

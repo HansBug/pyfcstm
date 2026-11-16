@@ -29,5 +29,7 @@ def test_cli_refuses_unsupported_model(tmp_path, source, arguments):
     result = simulate_entry(pyfcstmcli, ['pyfcstm', *arguments, '-i', str(path)])
     assert result.exitcode != 0
     output = result.stdout + result.stderr
-    assert 'not supported by model construction' in output
+    expected = ('does not support region models yet' if 'region ' in source
+                else 'not supported by model construction')
+    assert expected in output
     assert 'Traceback' not in output

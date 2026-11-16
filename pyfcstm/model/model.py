@@ -65,6 +65,8 @@ from typing import (
 
 from .base import AstExportable, PlantUMLExportable
 from .expr import Expr, parse_expr_node_to_expr
+from .region import Region, namespace_actions, namespace_children, walk_namespaces
+from .support import require_supported_model
 from .imports import (
     assemble_state_machine_imports,
     _get_trusted_generated_combo_transition_metadata,
@@ -296,19 +298,14 @@ def _attach_model_source_metadata(
                 attach_operation(effect, state_source)
         for event in model_state.events.values():
             attach(event, state_source)
-        for action in [
-            *model_state.on_enters,
-            *model_state.on_durings,
-            *model_state.on_exits,
-            *model_state.on_during_aspects,
-        ]:
+        for action in namespace_actions(model_state):
             attach(action, state_source)
             for operation in getattr(action, "operations", ()):
                 attach_operation(operation, state_source)
         ast_children = {
-            child.name: child for child in getattr(ast_state, "substates", ())
+            child.name: child for child in chain(getattr(ast_state, "substates", ()), getattr(ast_state, "regions", ()))
         }
-        for child in model_state.substates.values():
+        for child in namespace_children(model_state):
             ast_child = ast_children.get(child.name)
             if ast_child is not None:
                 pair_states(ast_child, child)
@@ -1432,6 +1429,7 @@ class State(AstExportable, PlantUMLExportable):
     name: str
     path: Tuple[str, ...]
     substates: Dict[str, "State"]
+    regions: Dict[str, Region] = field(default_factory=dict)
     events: Dict[str, Event] = None
     transitions: List[Transition] = None
     named_functions: Dict[str, Union[OnStage, OnAspect]] = None
@@ -1475,6 +1473,7 @@ class State(AstExportable, PlantUMLExportable):
         is_combo_relay: bool = False,
         doc: Optional[str] = None,
         is_history_gate: bool = False,
+        regions: Optional[Dict[str, Region]] = None,
     ) -> None:
         """Initialize a state while preserving the legacy positional order.
 
@@ -1485,6 +1484,7 @@ class State(AstExportable, PlantUMLExportable):
         self.name = name
         self.path = path
         self.substates = substates
+        self.regions = regions or {}
         self.events = events
         self.transitions = transitions
         self.named_functions = named_functions
@@ -1525,7 +1525,7 @@ class State(AstExportable, PlantUMLExportable):
         :return: True if this is a leaf state, False otherwise
         :rtype: bool
         """
-        return len(self.substates) == 0
+        return not self.substates and not self.regions
 
     @property
     def is_stoppable(self) -> bool:
@@ -2113,6 +2113,7 @@ class State(AstExportable, PlantUMLExportable):
             **_ast_doc_kwargs(dsl_nodes.StateDefinition, self.doc),
             events=[event.to_ast_node() for _, event in self.events.items()],
             substates=substate_nodes,
+            regions=[region.to_ast_node() for region in self.regions.values()],
             transitions=[
                 self.to_transition_ast_node(trans) for trans in self.transitions
             ],
@@ -2146,6 +2147,7 @@ class State(AstExportable, PlantUMLExportable):
         :rtype: str
         """
         # Resolve configuration
+        require_supported_model(self, 'plantuml')
         options = PlantUMLOptions.from_value(options)
         config = options.to_config()
 
@@ -2373,8 +2375,14 @@ class State(AstExportable, PlantUMLExportable):
         :rtype: Iterator['State']
         """
         yield self
-        for _, substate in self.substates.items():
-            yield from substate.walk_states()
+        for child in namespace_children(self):
+            yield from child.walk_states()
+
+    def walk_regions(self) -> Iterator[Region]:
+        """Yield descendant regions in declaration preorder."""
+        for namespace in walk_namespaces(self):
+            if isinstance(namespace, Region):
+                yield namespace
 
     def resolve_event(
         self,
@@ -2845,15 +2853,10 @@ class StateMachine(AstExportable, PlantUMLExportable):
                         )
                     )
 
-        for state in self.walk_states():
+        for state in walk_namespaces(self.root_state):
             for transition in state.transitions:
                 check(transition.effects)
-            for action in chain(
-                state.on_enters,
-                state.on_durings,
-                state.on_exits,
-                state.on_during_aspects,
-            ):
+            for action in namespace_actions(state):
                 check(action.operations)
         for diagnostic in diagnostics:
             _emit_or_raise(_validation_sink, diagnostic)
@@ -3056,6 +3059,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
         :rtype: str
         """
         # Resolve configuration
+        require_supported_model(self, 'plantuml')
         options = PlantUMLOptions.from_value(options)
         config = options.to_config()
 
@@ -3170,6 +3174,15 @@ class StateMachine(AstExportable, PlantUMLExportable):
         :rtype: Iterator[State]
         """
         yield from self.root_state.walk_states()
+
+    @property
+    def has_regions(self) -> bool:
+        """Whether this model declares any region, including nested regions."""
+        return next(self.walk_regions(), None) is not None
+
+    def walk_regions(self) -> Iterator[Region]:
+        """Yield all regions in declaration preorder."""
+        yield from self.root_state.walk_regions()
 
     def diagram(self, options=None, view_state=None, source_text=None, **option_fields):
         """
@@ -3541,7 +3554,8 @@ def parse_dsl_node_to_state_machine(
     # one -- an empty path names no document -- so the disagreement is a small
     # correction rather than a loss.
     dnode = assemble_state_machine_imports(dnode, path=path, collect_into=sink)
-    if any(item.code == "E_UNSUPPORTED_FEATURE" for item in sink.diagnostics):
+    if any(item.code in {"E_UNSUPPORTED_FEATURE", "E_REGION_STRUCTURE", "E_DUPLICATE_REGION"}
+           for item in sink.diagnostics):
         # Strict mode raises at emission. Collect mode must not expose a model
         # assembled with unsupported regions or imported subtrees omitted.
         return None, sink.diagnostics
@@ -3827,11 +3841,15 @@ def _build_assembled_state_machine(
         owner_node: Optional[dsl_nodes.StateDefinition] = None,
     ) -> State:
         current_path = tuple((*current_path, node.name))
-        is_combo_relay_pseudo = _is_exported_combo_pseudo_node(node, owner_node)
-        is_reserved_combo_pseudo = (
-            node.name.startswith(_COMBO_STATE_PREFIX) and node.is_pseudo
+        is_region = isinstance(node, dsl_nodes.RegionDefinition)
+        is_pseudo = bool(getattr(node, "is_pseudo", False))
+        is_combo_relay_pseudo = (
+            not is_region and _is_exported_combo_pseudo_node(node, owner_node)
         )
-        if node.name.startswith(_COMBO_STATE_PREFIX) and not node.is_pseudo:
+        is_reserved_combo_pseudo = (
+            node.name.startswith(_COMBO_STATE_PREFIX) and is_pseudo
+        )
+        if not is_region and node.name.startswith(_COMBO_STATE_PREFIX) and not is_pseudo:
             sink.emit(
                 ModelDiagnostic(
                     code="W_COMBO_RESERVED_PREFIX_STATE_KIND",
@@ -3879,6 +3897,11 @@ def _build_assembled_state_machine(
                     )
                 )
 
+        d_regions = {
+            item.name: _recursive_build_states(item, current_path, node)
+            for item in getattr(node, "regions", ())
+        }
+
         named_functions = {}
 
         def _ast_action_kinds(node: dsl_nodes.StateDefinition) -> List[str]:
@@ -3894,7 +3917,7 @@ def _build_assembled_state_machine(
             return kinds
 
         on_enters = []
-        for enter_item in node.enters:
+        for enter_item in getattr(node, "enters", ()):
             on_stage = None
             if isinstance(enter_item, dsl_nodes.EnterOperations):
                 enter_operations = _parse_operation_block(
@@ -3979,9 +4002,9 @@ def _build_assembled_state_machine(
                 on_enters.append(on_stage)
 
         on_durings = []
-        for during_item in node.durings:
+        for during_item in getattr(node, "durings", ()):
             if (
-                not d_substates
+                not (d_substates or d_regions)
                 and during_item.aspect is not None
                 and not is_reserved_combo_pseudo
             ):
@@ -4002,7 +4025,7 @@ def _build_assembled_state_machine(
                         },
                     )
                 )
-            if d_substates and during_item.aspect is None:
+            if (d_substates or d_regions) and during_item.aspect is None:
                 sink.emit(
                     ModelDiagnostic(
                         code="E_DURING_ASPECT_INVALID",
@@ -4101,7 +4124,7 @@ def _build_assembled_state_machine(
                 on_durings.append(on_stage)
 
         on_exits = []
-        for exit_item in node.exits:
+        for exit_item in getattr(node, "exits", ()):
             on_stage = None
             if isinstance(exit_item, dsl_nodes.ExitOperations):
                 exit_operations = _parse_operation_block(
@@ -4187,7 +4210,7 @@ def _build_assembled_state_machine(
             # only meaningful on a composite state (it fans out to every
             # descendant leaf). On a leaf state there is nothing to fan
             # into, so the aspect is invalid.
-            if not d_substates and not is_reserved_combo_pseudo:
+            if not (d_substates or d_regions) and not is_reserved_combo_pseudo:
                 sink.emit(
                     ModelDiagnostic(
                         code="E_DURING_ASPECT_INVALID",
@@ -4297,22 +4320,20 @@ def _build_assembled_state_machine(
                 _span=_node_span(event),
             )
 
-        my_state = State(
-            name=node.name,
-            extra_name=node.extra_name,
-            doc=getattr(node, "doc", None),
-            events=d_events,
-            path=current_path,
-            substates=d_substates,
-            is_pseudo=bool(node.is_pseudo),
-            is_combo_relay=is_combo_relay_pseudo,
-            on_enters=on_enters,
-            on_durings=on_durings,
-            on_exits=on_exits,
-            on_during_aspects=on_during_aspects,
-            named_functions=named_functions,
+        common = dict(
+            name=node.name, path=current_path, substates=d_substates,
+            events=d_events, doc=getattr(node, "doc", None),
+            on_during_aspects=on_during_aspects, named_functions=named_functions,
             _span=_node_span(node),
         )
+        if is_region:
+            my_state = Region(**common)
+        else:
+            my_state = State(
+                **common, regions=d_regions, extra_name=node.extra_name,
+                is_pseudo=is_pseudo, is_combo_relay=is_combo_relay_pseudo,
+                on_enters=on_enters, on_durings=on_durings, on_exits=on_exits,
+            )
         if is_reserved_combo_pseudo:
             action_kinds = _ast_action_kinds(node)
             if action_kinds:
@@ -4335,7 +4356,7 @@ def _build_assembled_state_machine(
                         },
                     )
                 )
-        if my_state.is_pseudo and not my_state.is_leaf_state:
+        if is_pseudo and not my_state.is_leaf_state:
             sink.emit(
                 ModelDiagnostic(
                     code="E_PSEUDO_NOT_LEAF",
@@ -4351,15 +4372,10 @@ def _build_assembled_state_machine(
                     },
                 )
             )
-        for func_item in [
-            *my_state.on_enters,
-            *my_state.on_durings,
-            *my_state.on_exits,
-            *my_state.on_during_aspects,
-        ]:
+        for func_item in namespace_actions(my_state):
             func_item.parent = my_state
-        for _, substate in d_substates.items():
-            substate.parent = my_state
+        for child in namespace_children(my_state):
+            child.parent = my_state
         return my_state
 
     root_state = _recursive_build_states(dnode.root_state, current_path=())
@@ -4372,7 +4388,7 @@ def _build_assembled_state_machine(
         force_transitions: Optional[List[dsl_nodes.ForceTransitionDefinition]] = None,
     ) -> None:
         current_path = tuple((*current_path, current_state.name))
-        force_transitions = list(force_transitions or [])
+        force_transitions = [] if getattr(current_state, "regions", {}) else list(force_transitions or [])
 
         force_transition_tuples_to_inherit = []
         local_force_ids = {id(item) for item in node.force_transitions}
@@ -4640,6 +4656,11 @@ def _build_assembled_state_machine(
                 current_state=current_state.substates[subnode.name],
                 current_path=current_path,
                 force_transitions=_inner_force_transitions,
+            )
+
+        for region_node in getattr(node, "regions", ()):
+            _recursive_finish_states(
+                region_node, current_state.regions[region_node.name], current_path,
             )
 
         def _emit_dangling_transition_diagnostics(transnode) -> bool:
@@ -5561,12 +5582,7 @@ def _build_assembled_state_machine(
                 )
             )
 
-        for func_item in [
-            *current_state.on_enters,
-            *current_state.on_durings,
-            *current_state.on_exits,
-            *current_state.on_during_aspects,
-        ]:
+        for func_item in namespace_actions(current_state):
             if func_item.ref_state_path is not None:
                 state = root_state
                 walk_failed = False
@@ -5639,14 +5655,8 @@ def _build_assembled_state_machine(
     history_owners = lower_history(dnode.root_state, root_state, d_defines, sink, apply=lower)
 
     def _iter_lifecycle_actions(state: State) -> Iterator[Union[OnStage, OnAspect]]:
-        for func_item in [
-            *state.on_enters,
-            *state.on_durings,
-            *state.on_exits,
-            *state.on_during_aspects,
-        ]:
-            yield func_item
-        for substate in state.substates.values():
+        yield from namespace_actions(state)
+        for substate in namespace_children(state):
             for func_item in _iter_lifecycle_actions(substate):
                 yield func_item
 

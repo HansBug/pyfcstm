@@ -54,6 +54,41 @@ E_UNSUPPORTED_FEATURE:
       description: Absolute originating source file, when known.
   example_dsl: 'state Root { region Motor { state Idle; [*] -> Idle; } }'
 
+E_REGION_STRUCTURE:
+  severity: error
+  span_object: syntax_construct
+  description: A region is empty or a parallel owner mixes incompatible direct declarations.
+  refs:
+    namespace_path:
+      type: str
+      required: true
+      description: Full path of the invalid namespace.
+    reason:
+      type: str
+      required: true
+      enum: ['empty_region', 'mixed_children', 'owner_statements', 'history_boundary']
+      description: Structural rule that was violated.
+  example_dsl: 'state Root { region Empty {} }'
+
+E_DUPLICATE_REGION:
+  severity: error
+  span_object: syntax_construct
+  description: Two regions have the same name within one owner state.
+  refs:
+    region_name:
+      type: str
+      required: true
+      description: Repeated region identifier.
+    owner_path:
+      type: str
+      required: true
+      description: Full path of the owner state.
+    previous_span:
+      type: Span
+      required: false
+      description: Source position of the first declaration, when available.
+  example_dsl: 'state Root { region A { state Leaf; [*] -> Leaf; } region A { state Leaf; [*] -> Leaf; } }'
+
 E_UNDEFINED_VAR:
   severity: error
   span_object: expression

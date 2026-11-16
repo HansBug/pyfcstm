@@ -49,6 +49,7 @@ from ..utils import auto_decode
 from ..utils.doc import aggregate_documentation
 from ..utils.validate import ModelDiagnostic, ModelValidationError, Span
 from ._unsupported_syntax import reject_unsupported_syntax
+from .region import validate_region_structure
 
 __all__ = [
     "assemble_state_machine_imports",
@@ -367,7 +368,7 @@ def _clone_ast_node(node):
             metadata = _get_trusted_generated_combo_transition_metadata(node)
             if metadata is not None:
                 _mark_generated_combo_transition_node(cloned, metadata)
-        if isinstance(node, dsl_nodes.StateDefinition):
+        if isinstance(node, (dsl_nodes.StateDefinition, dsl_nodes.RegionDefinition)):
             for original_substate, cloned_substate in zip(
                 node.substates, cloned.substates
             ):
@@ -441,6 +442,8 @@ def _assemble_program(
 ) -> None:
     if reject_unsupported_syntax(program, sink):
         return
+    if program.root_state is not None and validate_region_structure(program.root_state, sink):
+        return
     if program.root_state is None:  # pragma: no cover
         # Defensive: grammar always emits at least one ``state X { ... }``
         # block, so a parsed program always has a non-None root_state.
@@ -492,12 +495,12 @@ def _assemble_state(
     sink: DiagnosticSink,
 ) -> None:
     occupied_names = []
-    for subnode in node.substates:
+    for subnode in [*node.substates, *getattr(node, "regions", ())]:
         if subnode.name not in occupied_names:
             occupied_names.append(subnode.name)
 
     imported_substates = []
-    for import_item in node.imports:
+    for import_item in getattr(node, "imports", ()):
         if import_item.alias in occupied_names:
             _emit_import_diag(
                 sink,
@@ -646,9 +649,10 @@ def _assemble_state(
         # it will surface as a real bug instead of being silently
         # swallowed.
 
-    node.imports = []
+    if isinstance(node, dsl_nodes.StateDefinition):
+        node.imports = []
 
-    for subnode in node.substates:
+    for subnode in [*node.substates, *getattr(node, "regions", ())]:
         _assemble_state(
             node=subnode,
             current_state_path=(*current_state_path, subnode.name),

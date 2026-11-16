@@ -3,7 +3,6 @@
 import pytest
 
 from pyfcstm.dsl import parse_condition, parse_state_machine_dsl
-from pyfcstm.dsl.node import RegionDefinition, StateDefinition, StateMachineDSLProgram
 from pyfcstm.model import parse_dsl_node_to_state_machine
 from pyfcstm.model.expr import parse_expr, parse_expr_from_string, parse_expr_node_to_expr
 from pyfcstm.model.imports import assemble_state_machine_imports
@@ -12,30 +11,7 @@ from pyfcstm.utils import ModelValidationError
 pytestmark = pytest.mark.unittest
 
 
-@pytest.mark.parametrize('collect', [False, True])
-def test_public_ast_construction_cannot_bypass_unsupported_regions(collect):
-    program = StateMachineDSLProgram(
-        definitions=[],
-        root_state=StateDefinition(
-            'Root', substates=[StateDefinition('Child')],
-            regions=[RegionDefinition('Workers')],
-        ),
-    )
-    if collect:
-        model, diagnostics = parse_dsl_node_to_state_machine(program, collect=True)
-        assert model is None
-    else:
-        with pytest.raises(ModelValidationError) as caught:
-            parse_dsl_node_to_state_machine(program)
-        diagnostics = caught.value.diagnostics
-    assert [item.code for item in diagnostics] == ['E_UNSUPPORTED_FEATURE']
-    assert diagnostics[0].refs['feature'] == 'region'
-    assert program.root_state.substates[0].name == 'Child'
-    assert program.root_state.regions[0].name == 'Workers'
-
 SOURCES = [
-    ('region', 'state Root { region Motor { state A; [*] -> A; } }'),
-    ('region', 'state Root { state Child { region Only {} } [*] -> Child; }'),
     ('active', 'state Root { state A; [*] -> A; A -> [*] : if [active("A")]; }'),
     ('active', 'state Root { during { if [active("Root")] {} } }'),
     ('active', 'def int x = 0; state Root { enter { x = (active("Root")) ? 1 : 0; } }'),
@@ -88,10 +64,12 @@ def test_imported_unsupported_syntax_never_builds_partial_model(tmp_path, featur
     assert diagnostics[0].refs['source_path'] == str(child)
 
 
-def test_import_assembly_also_rejects_region_syntax():
-    with pytest.raises(ModelValidationError) as error:
-        assemble_state_machine_imports(parse_state_machine_dsl(SOURCES[0][1]))
-    assert error.value.diagnostics[0].code == 'E_UNSUPPORTED_FEATURE'
+def test_import_assembly_preserves_region_syntax():
+    program = parse_state_machine_dsl('state Root { region Motor { state A; [*] -> A; } }')
+    assembled = assemble_state_machine_imports(program)
+    assert assembled is not program
+    assert str(assembled) == str(program)
+    assert assembled.root_state.regions[0].substates[0].name == 'A'
 
 
 @pytest.mark.parametrize('convert', [parse_expr, parse_expr_from_string])
@@ -122,7 +100,7 @@ def test_collect_reports_distinct_unsupported_sites_once():
     }''')
     model, diagnostics = parse_dsl_node_to_state_machine(program, collect=True)
     assert model is None
-    assert sorted(item.refs['feature'] for item in diagnostics) == ['active', 'active', 'region']
+    assert sorted(item.refs['feature'] for item in diagnostics) == ['active', 'active']
 
 
 @pytest.mark.parametrize('imported', [False, True])

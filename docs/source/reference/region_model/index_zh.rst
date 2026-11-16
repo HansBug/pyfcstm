@@ -46,7 +46,7 @@ region 内的普通 state 子树仍可使用 history；如果 history owner 的�
 
    * - 模式
      - 接受的位置
-   * - ``stable``（默认）
+   * - ``stable`` （默认）
      - 每条活动分支到达非 pseudo 叶子；每个活动 owner 指定全部 region，且至少一个
        region 仍在工作。每一层都检查这个条件。
    * - ``initialization``

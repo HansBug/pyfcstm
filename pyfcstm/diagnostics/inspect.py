@@ -4403,7 +4403,16 @@ def inspect_model(
         True
     """
     from pyfcstm.model.support import require_supported_model
-    require_supported_model(machine, 'inspect')
+    from pyfcstm.utils.validate import ModelValidationError
+
+    if model_diagnostics is None:
+        model_diagnostics = machine._build_warnings
+    try:
+        require_supported_model(machine, 'inspect')
+    except ModelValidationError as error:
+        # require_supported_model rejects models this analyzer cannot preserve;
+        # retain all earlier build diagnostics alongside that refusal.
+        raise ModelValidationError(diagnostics=[*model_diagnostics, *error.diagnostics]) from error
     _validate_inspect_verification_policy(
         max_complexity_tier,
         max_call_count_scaling,
@@ -4424,8 +4433,6 @@ def inspect_model(
     structure_statistics_policy = _normalize_structure_statistics_policy(
         structure_statistics_policy,
     )
-    if model_diagnostics is None:
-        model_diagnostics = machine._build_warnings
     # A machine that uses history is judged as written: model conversion keeps
     # the model before lowering, where a history entry is an ordinary
     # transition that still carries its ``target_history``.

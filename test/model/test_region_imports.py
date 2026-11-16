@@ -27,6 +27,37 @@ state Module {
 }'''
 
 
+@pytest.mark.parametrize('collect', [False, True])
+@pytest.mark.parametrize('kind', ['H', 'H*'])
+def test_import_cannot_add_parallel_subtree_under_history_owner(tmp_path, collect, kind):
+    (tmp_path / 'parallel.fcstm').write_text(
+        'state Unit { region Worker { state Leaf; [*] -> Leaf; } }', encoding='utf-8')
+    (tmp_path / 'middle.fcstm').write_text(
+        'state Middle { import "parallel.fcstm" as Unit; [*] -> Unit; }', encoding='utf-8')
+    host = tmp_path / 'host.fcstm'
+    host.write_text('''state Root {
+        state Group {
+            import "middle.fcstm" as Middle;
+            [*] -> Middle;
+            [%s] -> Middle;
+        }
+        state Idle;
+        [*] -> Idle;
+        Idle -> Group.[%s];
+    }''' % (kind, kind), encoding='utf-8')
+    if collect:
+        model, diagnostics = load_state_machine_from_file(host, collect=True)
+        assert model is None
+    else:
+        with pytest.raises(ModelValidationError) as error:
+            load_state_machine_from_file(host)
+        diagnostics = error.value.diagnostics
+    assert [item.code for item in diagnostics] == ['E_REGION_STRUCTURE']
+    assert diagnostics[0].refs == {
+        'namespace_path': 'Root.Group', 'reason': 'history_boundary', 'source_path': str(host),
+    }
+
+
 def test_repeated_parallel_imports_rebase_all_owned_references(tmp_path):
     module = tmp_path / 'module.fcstm'
     module.write_text(MODULE, encoding='utf-8')

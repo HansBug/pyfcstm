@@ -18,6 +18,10 @@ def collect_data_flow_warnings(
         variables: Iterable['VariableInfo'],
         machine: Optional['StateMachine'] = None,
 ) -> List[ModelDiagnostic]:
+    from ...model.support import require_supported_model
+
+    if machine is not None:
+        require_supported_model(machine, 'Data-flow analysis')
     diagnostics: List[ModelDiagnostic] = []
     variables = list(variables)
     variable_spans = {variable.name: variable.span for variable in variables}

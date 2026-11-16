@@ -122,6 +122,9 @@ def collect_numeric_warnings(
     """
     if machine is None:
         return []
+    from ...model.support import require_supported_model
+
+    require_supported_model(machine, 'Numeric analysis')
     var_types = {name: var_define.type for name, var_define in machine.defines.items()}
     diagnostics: List[ModelDiagnostic] = []
     for context in _iter_expression_contexts(machine):

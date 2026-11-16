@@ -139,6 +139,48 @@ def test_activity_flag_names_avoid_user_definitions_deterministically():
     assert second.defines[name].init() == 5
 
 
+@pytest.mark.parametrize('body', [
+    'enter Named { __active_Root = 0; __active_Root_2 = 1; }',
+    'exit { __active_Root = 0; __active_Root_2 = 1; }',
+    'state A; [*] -> A; during before { if [1 == 1] { __active_Root = 0; } '
+    'else { __active_Root_2 = 1; } }',
+    'state A; [*] -> A; A -> [*] effect { __active_Root = 0; __active_Root_2 = 1; }',
+    'region Worker { >> during after { __active_Root = 0; } '
+    'state A; [*] -> A effect { __active_Root_2 = 1; } }',
+])
+def test_activity_flags_do_not_capture_block_local_temporaries(body):
+    source = 'state Root { enter Query { if [active("Root")] {} } %s }' % body
+    model = load_state_machine_from_text(source)
+    assert model.active_queries[0].variable_name == '__active_Root_3'
+    assert list(model.defines) == ['__active_Root_3']
+    assert '__active_Root = 0;' in str(model.to_ast_node())
+    assert '__active_Root_2 = 1;' in str(model.to_ast_node())
+    assert '__active_Root_3 != 0' in str(model.to_ast_node())
+
+
+def test_imported_queries_rebase_internal_paths_and_bind_explicit_host_paths(tmp_path):
+    (tmp_path / 'module.fcstm').write_text('''state Module { during {
+        __active_Host_First = 0;
+        if [active("Module") && active("Host.Idle")] {}
+    } }''', encoding='utf-8')
+    host = tmp_path / 'host.fcstm'
+    host.write_text('''state Host {
+        import "module.fcstm" as First;
+        import "module.fcstm" as Second;
+        state Idle;
+        [*] -> Idle;
+    }''', encoding='utf-8')
+    model = load_state_machine_from_file(host)
+    queries = {item.state_path: item.variable_name for item in model.active_queries}
+    assert set(queries) == {('Host', 'Idle'), ('Host', 'First'), ('Host', 'Second')}
+    assert queries[('Host', 'First')] != '__active_Host_First'
+    assert '__active_Host_First' not in model.defines
+    config = Configuration.parse(model, 'Host.Idle')
+    assert model.active_variables(config) == {
+        name: int(path == ('Host', 'Idle')) for path, name in queries.items()
+    }
+
+
 def test_repeated_nested_imports_rebase_activity_paths_and_source(tmp_path):
     child = tmp_path / 'child.fcstm'
     child.write_text('''state Child { region Worker {

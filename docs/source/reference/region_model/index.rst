@@ -33,8 +33,11 @@ inside regions; ``walk_regions()`` visits regions in declaration order.
 Event and named-action paths traverse both kinds of namespace. Relative upward
 steps count the region segment; absolute paths retain their root-relative
 meaning. Resolution does not search ancestors for an accidentally matching
-name. Imports rebase state, event, action-reference and activity-query paths to
-the importing instance. Source diagnostics retain the originating file path.
+name. Imports rebase internal state, event, action-reference and activity-query
+paths to the importing instance. Model nodes retain their originating file and
+source span. Region-structure and activity-target diagnostics carry
+``source_path``; some existing generic build diagnostics, such as a missing
+initial transition, still provide a span without the originating file.
 
 Position values
 ---------------
@@ -126,9 +129,14 @@ cannot query an active position. Invalid targets produce
 ``E_ACTIVE_QUERY_TARGET``. ``parse_expr`` can retain an ``ActiveStateQuery``
 without a model, but evaluating that unbound expression raises ``TypeError``.
 
+Within an imported module, queries starting with that module's root name or
+``/`` are rebased to the instance. An explicitly named host-root path is bound
+against the assembled model; such a module depends on that host path existing.
+
 Model construction binds queries and lowers each distinct target to an integer
 activity flag. ``StateMachine.active_queries`` exposes ``ActiveQuery`` records
-with ``state_path`` and ``variable_name``. Names avoid user-variable collisions;
+with ``state_path`` and ``variable_name``. Names avoid persistent variables and
+block-local temporaries;
 consumers should use the records rather than guess generated names. Anonymous
 enter/exit actions maintain flags without modifying named action bodies.
 ``model.active_variables(config)`` derives the flag values for a configuration

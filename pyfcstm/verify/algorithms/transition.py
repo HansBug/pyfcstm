@@ -151,6 +151,9 @@ def transition_shadowed_by_predecessor(
         z3,
     )
 
+    from pyfcstm.model.support import require_supported_model
+
+    require_supported_model(machine, 'Transition shadowing analysis')
     diagnostics: List[dict] = []
     first_indeterminate_result: Optional[AlgorithmResult] = None
 

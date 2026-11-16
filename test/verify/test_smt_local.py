@@ -2712,9 +2712,11 @@ class TestTransitionShadowedByPredecessor:
 
         assert result == AlgorithmResult(kind="sat")
 
+    @pytest.mark.parametrize('indeterminate_call', [2, 3])
     def test_candidate_trigger_unknown_is_not_reported_as_shadowed(
         self,
         monkeypatch,
+        indeterminate_call,
     ):
         machine = parse_machine(
             """
@@ -2733,7 +2735,7 @@ class TestTransitionShadowedByPredecessor:
 
         def shadow_unsat_then_trigger_unknown(*args, **kwargs):
             calls.append(args)
-            if len(calls) == 1:
+            if len(calls) < indeterminate_call:
                 from pyfcstm.solver.logical import SatResult
 
                 return SatResult(kind="unsat")
@@ -2744,11 +2746,13 @@ class TestTransitionShadowedByPredecessor:
         result = transition_shadowed_by_predecessor(machine, variables(machine))
 
         assert result == AlgorithmResult(kind="unknown")
-        assert len(calls) == 2
+        assert len(calls) == indeterminate_call
 
+    @pytest.mark.parametrize('indeterminate_call', [2, 3])
     def test_candidate_trigger_timeout_is_not_reported_as_shadowed(
         self,
         monkeypatch,
+        indeterminate_call,
     ):
         machine = parse_machine(
             """
@@ -2767,7 +2771,7 @@ class TestTransitionShadowedByPredecessor:
 
         def shadow_unsat_then_trigger_timeout(*args, **kwargs):
             calls.append(args)
-            if len(calls) == 1:
+            if len(calls) < indeterminate_call:
                 from pyfcstm.solver.logical import SatResult
 
                 return SatResult(kind="unsat")
@@ -2778,7 +2782,7 @@ class TestTransitionShadowedByPredecessor:
         result = transition_shadowed_by_predecessor(machine, variables(machine))
 
         assert result == AlgorithmResult(kind="timeout")
-        assert len(calls) == 2
+        assert len(calls) == indeterminate_call
 
     def test_unconditional_predecessor_does_not_force_unknown_candidate_shadow(self, monkeypatch):
         machine = parse_machine(

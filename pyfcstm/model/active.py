@@ -122,6 +122,7 @@ def lower_active(root, defines, sink, *, apply=True):
         return ()
     queried = set(targets.values())
     occupied = set(defines)
+    occupied.update(owner.var_name for owner, _ in slots if isinstance(owner, Operation))
     metadata = []
     for state in root.walk_states():
         if state.path not in queried:

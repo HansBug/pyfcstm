@@ -480,6 +480,11 @@ def _assemble_program(
         host_explicit_def_names=host_explicit_def_names,
         sink=sink,
     )
+    # Import expansion can introduce a parallel descendant below a history
+    # owner. Validate that complete subtree without repeating earlier errors.
+    if not any(item.code in {"E_REGION_STRUCTURE", "E_DUPLICATE_REGION"}
+               for item in sink.diagnostics):
+        validate_region_structure(program.root_state, sink)
 
 
 def _assemble_state(

@@ -48,6 +48,7 @@ from ..dsl.role import VariableRole
 from ..utils import auto_decode
 from ..utils.doc import aggregate_documentation
 from ..utils.validate import ModelDiagnostic, ModelValidationError, Span
+from ._unsupported_syntax import reject_unsupported_syntax
 
 __all__ = [
     "assemble_state_machine_imports",
@@ -438,6 +439,8 @@ def _assemble_program(
     import_stack: List[str],
     sink: DiagnosticSink,
 ) -> None:
+    if reject_unsupported_syntax(program, sink):
+        return
     if program.root_state is None:  # pragma: no cover
         # Defensive: grammar always emits at least one ``state X { ... }``
         # block, so a parsed program always has a non-None root_state.

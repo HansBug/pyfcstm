@@ -56,8 +56,25 @@ state_definition
     : leading_doc=MULTILINE_COMMENT? pseudo=PSEUDO? STATE state_id=ID (NAMED extra_name=STRING)? SEMI
         # leafStateDefinition
     | leading_doc=MULTILINE_COMMENT? pseudo=PSEUDO? STATE state_id=ID (NAMED extra_name=STRING)? LBRACE
-      state_inner_statement* RBRACE
+      state_owner_statement*
+      (state_child_statement state_inner_statement*
+      | region_definition (state_owner_statement | region_definition)*)? RBRACE
         # compositeStateDefinition
+    ;
+
+// Regions own ordered state/transition scopes, not state lifecycle actions.
+region_definition
+    : leading_doc=MULTILINE_COMMENT? REGION region_id=ID
+      LBRACE region_inner_statement* RBRACE
+    ;
+
+region_inner_statement
+    : state_definition
+    | transition_definition
+    | transition_force_definition
+    | during_aspect_definition
+    | event_definition
+    | SEMI
     ;
 
 transition_definition
@@ -111,7 +128,7 @@ local_combo_trigger_term
     ;
 
 local_combo_event_term
-    : ID
+    : event_id=ID
     ;
 
 chain_combo_trigger
@@ -166,7 +183,7 @@ history_definition
     ;
 
 history_default_path
-    : ID (DOT ID)*
+    : path_items+=ID (DOT path_items+=ID)*
     ;
 
 enter_definition
@@ -268,7 +285,7 @@ import_event_mapping
 
 // Operational blocks used by enter/during/exit/effect bodies.
 operation_assignment
-    : ID ASSIGN num_expression SEMI
+    : var_name=ID ASSIGN num_expression SEMI
     ;
 
 operation_block
@@ -305,6 +322,27 @@ state_inner_statement
     | SEMI
     ;
 
+// The first child declaration determines the namespace kind. Parse shared
+// owner declarations before this choice, retaining diagnostics inside actions.
+state_child_statement
+    : state_definition
+    | transition_definition
+    | transition_force_definition
+    | history_definition
+    | import_statement
+    ;
+
+// A parallel owner keeps its own lifecycle and event declarations. Its child
+// namespace contains regions only; transitions between owners live in the parent.
+state_owner_statement
+    : enter_definition
+    | during_definition
+    | exit_definition
+    | during_aspect_definition
+    | event_definition
+    | SEMI
+    ;
+
 // Legacy entry points that remain used by parser helpers and tests.
 operation_program
     : operational_assignment* EOF
@@ -320,15 +358,15 @@ preamble_statement
     ;
 
 initial_assignment
-    : ID DECLARE_ASSIGN init_expression SEMI
+    : var_name=ID DECLARE_ASSIGN init_expression SEMI
     ;
 
 constant_definition
-    : ID ASSIGN init_expression SEMI
+    : var_name=ID ASSIGN init_expression SEMI
     ;
 
 operational_assignment
-    : ID DECLARE_ASSIGN num_expression SEMI
+    : var_name=ID DECLARE_ASSIGN num_expression SEMI
     ;
 
 // Shared expression rules reused by conditions, initialization, and runtime
@@ -397,7 +435,9 @@ num_expression
     ;
 
 cond_expression
-    : LPAREN cond_expression RPAREN
+    : ACTIVE LPAREN state_path=STRING RPAREN
+        # activeExprCond
+    | LPAREN cond_expression RPAREN
         # parenExprCond
     | bool_literal
         # literalExprCond
@@ -440,5 +480,5 @@ math_const
 
 // Reusable dotted identifier path helper used by event mappings and refs.
 chain_id
-    : isabs=SLASH? ID (DOT ID)*
+    : isabs=SLASH? path_items+=ID (DOT path_items+=ID)*
     ;

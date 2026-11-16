@@ -36,6 +36,24 @@
 # the intended trigger shape before the emitting analyzer lands. The loader
 # in `codes.py` verifies the schema at import time.
 
+E_UNSUPPORTED_FEATURE:
+  severity: error
+  span_object: syntax_construct
+  description: >-
+    Syntax is recognized by the parser but has no executable model semantics.
+    Model construction stops rather than silently ignoring the feature.
+  refs:
+    feature:
+      type: str
+      required: true
+      enum: ['region', 'active']
+      description: The unsupported language feature.
+    source_path:
+      type: str_or_null
+      required: false
+      description: Absolute originating source file, when known.
+  example_dsl: 'state Root { region Motor { state Idle; [*] -> Idle; } }'
+
 E_UNDEFINED_VAR:
   severity: error
   span_object: expression

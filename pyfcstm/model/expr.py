@@ -59,6 +59,8 @@ except ImportError:
     from typing_extensions import Literal
 
 from .base import AstExportable
+from ._unsupported_syntax import reject_unsupported_syntax
+from ..diagnostics.sink import DiagnosticSink
 from ..dsl import node as dsl_nodes
 
 __all__ = [
@@ -1542,6 +1544,8 @@ def parse_expr_node_to_expr(node: dsl_nodes.Expr) -> Expr:
             func=node.func,
             x=parse_expr_node_to_expr(node.expr),
         )
+    elif isinstance(node, dsl_nodes.ActiveStateQuery):
+        reject_unsupported_syntax(node, DiagnosticSink())
     else:
         raise TypeError(f'Unknown node type - {node!r}.')  # pragma: no cover
 

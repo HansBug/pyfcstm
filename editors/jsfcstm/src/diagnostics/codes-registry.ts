@@ -43,6 +43,7 @@ export interface SuggestedFixSpec {
 export interface CodeSpec {
     severity: 'error' | 'warning' | 'info';
     span_object?:
+        | 'syntax_construct'
         | 'state_identifier'
         | 'transition'
         | 'guard_expression'

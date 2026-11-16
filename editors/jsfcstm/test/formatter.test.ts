@@ -10,6 +10,20 @@ function format(source: string, options?: Parameters<typeof packageModule.format
 }
 
 describe('jsfcstm formatter', () => {
+    it('formats word negation of an active-state query', () => {
+        const source = 'state Root{during{if[not active ("Ready")] {}}}';
+        const result = format(source);
+        assert.ok(result.includes('if [not active("Ready")]'));
+        assert.equal(format(result), result);
+    });
+
+    it('preserves documentation before an unfinished pseudo-state declaration', () => {
+        const result = format('/* pending documentation */ pseudo');
+        assert.ok(result.includes('pending documentation'));
+        assert.ok(result.endsWith('pseudo'));
+        assert.equal(format(result), result);
+    });
+
     it('normalizes spacing inside `def` statements', () => {
         const input = [
             'def int  counter=0;',

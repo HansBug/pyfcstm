@@ -227,7 +227,15 @@ describe('element documentation contracts', () => {
         assert.ok(diagnostics.some((item: {severity?: string; message: string}) =>
             item.severity === 'error'));
         const ast = await packageModule.parseAstDocument(document);
-        assert.equal('doc' in (ast.rootState!.imports[0] as object), false);
+        // Error recovery may omit the invalid declaration. Any retained import
+        // still has no documentation, and the valid spelling remains available.
+        for (const imported of ast.rootState!.imports) {
+            assert.equal('doc' in imported, false);
+        }
+        const valid = await packageModule.parseAstDocument(createDocument(
+            'state Root { import "./worker.fcstm" as Worker; }', '/tmp/plain-import.fcstm'));
+        assert.equal(valid!.rootState!.imports[0].sourcePath, './worker.fcstm');
+        assert.equal('doc' in valid!.rootState!.imports[0], false);
     });
 
     it('rejects nested documentation delimiters on the AST path', async () => {

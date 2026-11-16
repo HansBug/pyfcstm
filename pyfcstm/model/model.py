@@ -65,7 +65,7 @@ from typing import (
 
 from .base import AstExportable, PlantUMLExportable
 from .expr import Expr, parse_expr_node_to_expr
-from .region import Region, namespace_actions, namespace_children, walk_namespaces
+from .region import Region, namespace_actions, namespace_child, namespace_children, walk_namespaces
 from .support import require_supported_model
 from .imports import (
     assemble_state_machine_imports,
@@ -867,12 +867,12 @@ class Transition(AstExportable):
         super().__setattr__(name, value)
 
     @property
-    def parent(self) -> Optional["State"]:
+    def parent(self) -> Optional[Union["State", Region]]:
         """
         Get the parent state of this transition.
 
         :return: The parent state or None if no parent is set
-        :rtype: Optional['State']
+        :rtype: Optional[Union['State', Region]]
         """
         if self.parent_ref is None:
             return None
@@ -880,12 +880,12 @@ class Transition(AstExportable):
             return self.parent_ref()
 
     @parent.setter
-    def parent(self, new_parent: Optional["State"]) -> None:
+    def parent(self, new_parent: Optional[Union["State", Region]]) -> None:
         """
         Set the parent state of this transition.
 
         :param new_parent: The new parent state or None to clear the parent
-        :type new_parent: Optional['State']
+        :type new_parent: Optional[Union['State', Region]]
         """
         if new_parent is None:
             self.parent_ref = None  # pragma: no cover
@@ -1223,12 +1223,12 @@ class OnAspect(AstExportable):
     _span: Optional[Span] = field(default=None, repr=False, compare=False)
 
     @property
-    def parent(self) -> Optional["State"]:
+    def parent(self) -> Optional[Union["State", Region]]:
         """
         Get the parent state of this aspect action.
 
         :return: The parent state or None if no parent is set
-        :rtype: Optional['State']
+        :rtype: Optional[Union['State', Region]]
         """
         if self.parent_ref is None:
             return None  # pragma: no cover
@@ -1236,12 +1236,12 @@ class OnAspect(AstExportable):
             return self.parent_ref()
 
     @parent.setter
-    def parent(self, new_parent: Optional["State"]) -> None:
+    def parent(self, new_parent: Optional[Union["State", Region]]) -> None:
         """
         Set the parent state of this aspect action.
 
         :param new_parent: The new parent state or None to clear the parent
-        :type new_parent: Optional['State']
+        :type new_parent: Optional[Union['State', Region]]
         """
         if new_parent is None:
             self.parent_ref = None  # pragma: no cover
@@ -1538,12 +1538,12 @@ class State(AstExportable, PlantUMLExportable):
         return self.is_leaf_state and not self.is_pseudo
 
     @property
-    def parent(self) -> Optional["State"]:
+    def parent(self) -> Optional[Union["State", Region]]:
         """
         Get the parent state of this state.
 
         :return: The parent state or None if this is the root state
-        :rtype: Optional['State']
+        :rtype: Optional[Union['State', Region]]
         """
         if self.parent_ref is None:
             return None
@@ -1551,12 +1551,12 @@ class State(AstExportable, PlantUMLExportable):
             return self.parent_ref()
 
     @parent.setter
-    def parent(self, new_parent: Optional["State"]) -> None:
+    def parent(self, new_parent: Optional[Union["State", Region]]) -> None:
         """
         Set the parent state of this state.
 
         :param new_parent: The new parent state or None to clear the parent
-        :type new_parent: Optional['State']
+        :type new_parent: Optional[Union['State', Region]]
         """
         if new_parent is None:
             self.parent_ref = None  # pragma: no cover
@@ -2026,13 +2026,13 @@ class State(AstExportable, PlantUMLExportable):
 
     @classmethod
     def transition_to_ast_node(
-        cls, self: Optional["State"], transition: Transition
+        cls, self: Optional[Union["State", Region]], transition: Transition
     ) -> dsl_nodes.TransitionDefinition:
         """
         Convert a transition to an AST node, considering the context of its parent state.
 
         :param self: The parent state, or None
-        :type self: Optional['State']
+        :type self: Optional[Union['State', Region]]
         :param transition: The transition to convert
         :type transition: Transition
         :return: A transition definition AST node
@@ -2636,14 +2636,14 @@ class State(AstExportable, PlantUMLExportable):
         # Navigate to the target state
         current_state = root_state
         for i, state_name in enumerate(target_state_path[1:], 1):  # Skip root name
-            if state_name not in current_state.substates:
+            if namespace_child(current_state, state_name) is None:
                 _fail_not_found(
                     f"State {'.'.join(target_state_path[: i + 1])!r} not found in hierarchy "
                     f"while resolving event reference {event_ref!r}",
                     searched_from=".".join(self.path),
                 )
                 return None
-            current_state = current_state.substates[state_name]
+            current_state = namespace_child(current_state, state_name)
 
         # Look for the event in the target state
         if event_name not in current_state.events:
@@ -3453,7 +3453,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
 
         # Navigate through the remaining state path
         for i, state_name in enumerate(state_path_parts[1:], 1):
-            if state_name not in current_state.substates:
+            if namespace_child(current_state, state_name) is None:
                 _fail_not_found(
                     f"State '{state_name}' not found in state "
                     f"'{'.'.join(state_path_parts[:i])}' "
@@ -3461,7 +3461,7 @@ class StateMachine(AstExportable, PlantUMLExportable):
                     searched_from=".".join(state_path_parts[:i]),
                 )
                 return None
-            current_state = current_state.substates[state_name]
+            current_state = namespace_child(current_state, state_name)
 
         # Look for the event in the target state
         if event_name not in current_state.events:
@@ -4472,8 +4472,8 @@ def _build_assembled_state_machine(
                 # on (C1 from PR-110 review).
                 path_resolved = True
                 for seg in my_event_id.path[:-1]:
-                    if seg in start_state.substates:
-                        start_state = start_state.substates[seg]
+                    if namespace_child(start_state, seg) is not None:
+                        start_state = namespace_child(start_state, seg)
                     else:
                         sink.emit(
                             ModelDiagnostic(
@@ -4777,8 +4777,8 @@ def _build_assembled_state_machine(
 
             path_resolved = True
             for seg in effective_event_id.path[:-1]:
-                if seg in start_state.substates:
-                    start_state = start_state.substates[seg]
+                if namespace_child(start_state, seg) is not None:
+                    start_state = namespace_child(start_state, seg)
                 else:
                     sink.emit(
                         ModelDiagnostic(
@@ -5587,7 +5587,7 @@ def _build_assembled_state_machine(
                 state = root_state
                 walk_failed = False
                 for i, segment in enumerate(func_item.ref_state_path[1:-1], start=1):
-                    if segment not in state.substates:
+                    if namespace_child(state, segment) is None:
                         # M1 from PR-110 review: the named-function ref AST
                         # nodes don't carry their own spans yet, so fall back
                         # to the owning state's span. State-level anchoring
@@ -5614,7 +5614,7 @@ def _build_assembled_state_machine(
                         )
                         walk_failed = True
                         break
-                    state = state.substates[segment]
+                    state = namespace_child(state, segment)
                 if walk_failed:
                     continue
 

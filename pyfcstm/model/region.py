@@ -19,6 +19,16 @@ def namespace_children(namespace):
     return chain(namespace.substates.values(), getattr(namespace, 'regions', {}).values())
 
 
+def namespace_child(namespace, name):
+    """Look up an immediate state or region without searching ancestors."""
+    return namespace.substates.get(name) or getattr(namespace, 'regions', {}).get(name)
+
+
+def ast_namespace_children(node):
+    """Iterate state and region declarations in an AST namespace."""
+    return chain(node.substates, getattr(node, 'regions', ()))
+
+
 def namespace_actions(namespace):
     """Iterate lifecycle and aspect actions owned by a state or region."""
     return chain(*(getattr(namespace, name, ()) for name in
@@ -59,7 +69,8 @@ def validate_region_structure(node, sink: DiagnosticSink, path=()) -> bool:
         sink.emit(ModelDiagnostic(
             code='E_REGION_STRUCTURE', severity='error',
             message='Invalid region structure at %s (%s).' % ('.'.join(path), reason),
-            span=node._span, refs={'namespace_path': '.'.join(path), 'reason': reason},
+            span=node._span, refs={'namespace_path': '.'.join(path), 'reason': reason,
+                                  'source_path': getattr(node, '_source_path', None)},
         ))
     seen = {}
     for region in regions:
@@ -70,7 +81,8 @@ def validate_region_structure(node, sink: DiagnosticSink, path=()) -> bool:
                 message='Duplicate region %r in %s.' % (region.name, '.'.join(path)),
                 span=region._span,
                 refs={'region_name': region.name, 'owner_path': '.'.join(path),
-                      'previous_span': seen[region.name]},
+                      'previous_span': seen[region.name],
+                      'source_path': getattr(region, '_source_path', None)},
             ))
         seen[region.name] = region._span
     for child in chain(node.substates, regions):
@@ -135,6 +147,17 @@ class Region(AstExportable):
         for namespace in walk_namespaces(self):
             if isinstance(namespace, Region):
                 yield namespace
+
+    def resolve_event(self, event_ref: str, *, collect_into=None):
+        """Resolve an event using relative, parent-relative or root paths.
+
+        :param event_ref: Event path using the same syntax as State.resolve_event.
+        :param collect_into: Optional sink for collecting lookup errors.
+        :return: The resolved event, or None after a collected error.
+        """
+        from .model import State
+
+        return State.resolve_event(self, event_ref, collect_into=collect_into)
 
     def list_on_during_aspects(self, is_abstract=None, aspect=None, with_ids=False):
         """Return region aspects with the same filters as state aspects.

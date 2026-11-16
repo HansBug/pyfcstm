@@ -49,7 +49,7 @@ from ..utils import auto_decode
 from ..utils.doc import aggregate_documentation
 from ..utils.validate import ModelDiagnostic, ModelValidationError, Span
 from ._unsupported_syntax import reject_unsupported_syntax
-from .region import validate_region_structure
+from .region import ast_namespace_children, validate_region_structure
 
 __all__ = [
     "assemble_state_machine_imports",
@@ -495,7 +495,7 @@ def _assemble_state(
     sink: DiagnosticSink,
 ) -> None:
     occupied_names = []
-    for subnode in [*node.substates, *getattr(node, "regions", ())]:
+    for subnode in ast_namespace_children(node):
         if subnode.name not in occupied_names:
             occupied_names.append(subnode.name)
 
@@ -652,7 +652,7 @@ def _assemble_state(
     if isinstance(node, dsl_nodes.StateDefinition):
         node.imports = []
 
-    for subnode in [*node.substates, *getattr(node, "regions", ())]:
+    for subnode in ast_namespace_children(node):
         _assemble_state(
             node=subnode,
             current_state_path=(*current_state_path, subnode.name),
@@ -875,21 +875,21 @@ def _rewrite_absolute_paths_for_imported_root(
         ):
             transition.event_id.path = [*instance_prefix, *transition.event_id.path]
 
-    for enter_item in node.enters:
+    for enter_item in getattr(node, "enters", ()):
         if (
             isinstance(enter_item, dsl_nodes.EnterRefFunction)
             and enter_item.ref.is_absolute
         ):
             enter_item.ref.path = [*instance_prefix, *enter_item.ref.path]
 
-    for during_item in node.durings:
+    for during_item in getattr(node, "durings", ()):
         if (
             isinstance(during_item, dsl_nodes.DuringRefFunction)
             and during_item.ref.is_absolute
         ):
             during_item.ref.path = [*instance_prefix, *during_item.ref.path]
 
-    for exit_item in node.exits:
+    for exit_item in getattr(node, "exits", ()):
         if (
             isinstance(exit_item, dsl_nodes.ExitRefFunction)
             and exit_item.ref.is_absolute
@@ -906,7 +906,7 @@ def _rewrite_absolute_paths_for_imported_root(
                 *during_aspect_item.ref.path,
             ]
 
-    for subnode in node.substates:
+    for subnode in ast_namespace_children(node):
         _rewrite_absolute_paths_for_imported_root(
             node=subnode,
             instance_prefix=instance_prefix,
@@ -1151,7 +1151,7 @@ def _state_path_matches(
     current = root
     for segment in state_path[1:]:
         current = next(
-            (subnode for subnode in current.substates if subnode.name == segment),
+            (subnode for subnode in ast_namespace_children(current) if subnode.name == segment),
             None,
         )
         if current is None:
@@ -1172,7 +1172,7 @@ def _collect_event_extra_names(
         output[(*current_state_path[1:], event.name)] = event.extra_name
         output[(event.name,)] = output.get((event.name,), event.extra_name)
 
-    for subnode in node.substates:
+    for subnode in ast_namespace_children(node):
         _collect_event_extra_names(subnode, current_state_path, output)
 
 
@@ -1192,7 +1192,7 @@ def _collect_event_docs(
         for key in keys:
             output[key] = aggregate_documentation((output.get(key), event.doc))
 
-    for subnode in node.substates:
+    for subnode in ast_namespace_children(node):
         _collect_event_docs(subnode, current_state_path, output)
     return output
 
@@ -1240,7 +1240,7 @@ def _rewrite_imported_state_event_paths(
                 pending_registrations=pending_registrations,
             )
 
-    for subnode in node.substates:
+    for subnode in ast_namespace_children(node):
         _rewrite_imported_state_event_paths(
             node=subnode,
             current_path=current_state_path,
@@ -1284,8 +1284,8 @@ def _rewrite_transition_event_id(
                 source_path=source_path,
             )
         )
-    elif transition.event_id.is_absolute:
-        transition.event_id.path = [*current_scope_path, *transition.event_id.path]
+    # Unmapped absolute paths are relative to the imported module root. The
+    # instance prefix is applied once by _rewrite_absolute_paths_for_imported_root.
 
 
 def _rewrite_combo_transition_event_ids(
@@ -1337,8 +1337,7 @@ def _rewrite_combo_transition_event_ids(
                     source_path=source_path,
                 )
             )
-        elif event_id.is_absolute:
-            event_id.path = [*current_scope_path, *event_id.path]
+        # Keep unmapped absolute paths rooted at the module until rebasing.
 
 
 def _prune_mapped_source_event_definitions(
@@ -1354,7 +1353,7 @@ def _prune_mapped_source_event_definitions(
         if tuple((*current_scope_path, item.name)) not in resolved_event_mappings
     ]
 
-    for subnode in node.substates:
+    for subnode in ast_namespace_children(node):
         _prune_mapped_source_event_definitions(
             node=subnode,
             current_path=current_state_path,
@@ -1513,7 +1512,7 @@ def _ensure_state_path_exists(
     state = root
     for segment in state_path[1:]:
         next_state = None
-        for subnode in state.substates:
+        for subnode in ast_namespace_children(state):
             if subnode.name == segment:
                 next_state = subnode
                 break
@@ -2147,15 +2146,15 @@ def _rewrite_state_variable_references(
             rewrite_effects=False,
         )
 
-    for enter_item in node.enters:
+    for enter_item in getattr(node, "enters", ()):
         if isinstance(enter_item, dsl_nodes.EnterOperations):
             _rewrite_operation_block_variables(enter_item.operations, source_to_target)
 
-    for during_item in node.durings:
+    for during_item in getattr(node, "durings", ()):
         if isinstance(during_item, dsl_nodes.DuringOperations):
             _rewrite_operation_block_variables(during_item.operations, source_to_target)
 
-    for exit_item in node.exits:
+    for exit_item in getattr(node, "exits", ()):
         if isinstance(exit_item, dsl_nodes.ExitOperations):
             _rewrite_operation_block_variables(exit_item.operations, source_to_target)
 
@@ -2166,5 +2165,5 @@ def _rewrite_state_variable_references(
                 source_to_target,
             )
 
-    for subnode in node.substates:
+    for subnode in ast_namespace_children(node):
         _rewrite_state_variable_references(subnode, source_to_target)

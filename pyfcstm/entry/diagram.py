@@ -4,8 +4,9 @@ Expose the standalone Python diagram viewer through the CLI.
 This module wires the ``diagram`` and ``expand-svg`` subcommands into a Click
 command group. ``diagram`` loads one FCSTM file and writes portable JSON, a
 self-contained HTML viewer, or an SVG, PNG or PDF export, choosing the format
-from the output path unless ``--format`` is given; without ``-o`` it prints
-the portable JSON on standard output. ``expand-svg`` converts a canonical
+from the output path unless ``--format`` is given; without ``-o`` or
+``--open`` it prints the portable JSON on standard output, and the other
+formats require ``-o``. ``expand-svg`` converts a canonical
 diagram SVG into a self-contained one.
 
 The module contains:

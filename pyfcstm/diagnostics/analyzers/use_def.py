@@ -100,7 +100,7 @@ def build_use_def_graph(machine: 'StateMachine') -> UseDefGraph:
         scanned.
     :type machine: pyfcstm.model.model.StateMachine
     :return: The dependency graph; it has no edges when no assignment reads a
-        variable.
+        variable, in its expression or in an enclosing ``if`` condition.
     :rtype: UseDefGraph
 
     Example::

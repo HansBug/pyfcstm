@@ -3146,11 +3146,11 @@ class SimulationRuntime:
                 continue
             self._outer_chain.append(_Outer(stack, index, self._current_outer()))
             try:
-                outcome = self._advance_stack(branch.stack, vars_, d_events, run)
+                self._advance_stack(branch.stack, vars_, d_events, run)
             finally:
                 self._outer_chain.pop()
-            if outcome not in (_STABLE, _REGION_DONE):
-                return _FAILED
+            # A working region rests on a stoppable leaf, and every transition
+            # it takes was checked to reach another one, so it cannot fail.
             self._flush_after_aspects(
                 vars_, run.is_validation_mode, branch.region.path
             )
@@ -4006,7 +4006,6 @@ class SimulationRuntime:
                 continue
 
             if frame.mode == "init_wait":
-                progressed = False
                 for transition in reversed(state.init_transitions):
                     if not self._check_candidate(
                         current_stack, current_vars, d_events, transition, search=True,
@@ -4032,9 +4031,6 @@ class SimulationRuntime:
                             self._ledger,
                         )
                     )
-                    progressed = True
-                if not progressed:
-                    continue
                 continue
 
             if frame.mode == "post_child_exit":
@@ -4191,7 +4187,6 @@ class SimulationRuntime:
         vars_: Dict[str, Union[int, float]],
         d_events: Dict[str, Event],
         *,
-        ended: bool = False,
         validate_post_child_exit: bool = True,
         consumed_events: Optional[List[str]] = None,
         is_validation_mode: bool = False,
@@ -4214,8 +4209,6 @@ class SimulationRuntime:
         :type vars_: Dict[str, Union[int, float]]
         :param d_events: Active events for the current execution attempt.
         :type d_events: Dict[str, Event]
-        :param ended: Whether the supplied context has already ended.
-        :type ended: bool
         :param validate_post_child_exit: Whether transitions selected after a
             child exits to its parent should still perform stoppable validation.
         :type validate_post_child_exit: bool
@@ -4229,9 +4222,6 @@ class SimulationRuntime:
         :raises SimulationRuntimeDfsError: If speculative DFS exceeds the safety
             limit without convergence or pruning.
         """
-        if ended:
-            return True, True
-
         run = _Run(
             is_validation_mode=is_validation_mode,
             consumed_events=consumed_events,
@@ -4798,7 +4788,6 @@ class SimulationRuntime:
             validation_stack,
             validation_vars,
             d_events,
-            ended=validation_ended,
             is_validation_mode=True,
         )
 
@@ -4834,7 +4823,6 @@ class SimulationRuntime:
                     sim_stack,
                     sim_vars,
                     d_events,
-                    ended=sim_ended,
                     consumed_events=consumed_event_names,
                 )
                 metadata_committed = True

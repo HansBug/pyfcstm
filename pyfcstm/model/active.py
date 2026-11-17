@@ -2,7 +2,7 @@
 
 import re
 from dataclasses import dataclass, fields, replace
-from typing import Tuple
+from typing import Mapping, Tuple
 
 from .expr import ActiveStateQuery, BinaryOp, Expr, Integer, Variable
 from .region import Region, namespace_actions, namespace_child, walk_namespaces
@@ -155,4 +155,93 @@ def lower_active(root, defines, sink, *, apply=True):
     result = tuple(metadata)
     for state in root.walk_states():
         state._active_queries = result
+    return result
+
+
+def restore_active_expression(expression: Expr, paths: Mapping[str, str]) -> Expr:
+    """Turn lowered activity tests back into the ``active("path")`` they came from.
+
+    :func:`lower_active` replaces every query with ``<flag> != 0``. This is
+    the inverse, used by exporters that show the model as the user wrote it. The
+    input is never modified; subtrees without a lowered test are shared with
+    the returned expression.
+
+    :param expression: Expression of a lowered model.
+    :type expression: pyfcstm.model.expr.Expr
+    :param paths: Hidden flag variable name mapped to the dotted full path of
+        the queried state, as in :attr:`pyfcstm.model.model.StateMachine.active_queries`.
+    :type paths: Mapping[str, str]
+    :return: An equivalent expression whose lowered tests are
+        :class:`pyfcstm.model.expr.ActiveStateQuery` nodes.
+    :rtype: pyfcstm.model.expr.Expr
+
+    Example::
+
+        >>> from pyfcstm.model.active import restore_active_expression
+        >>> from pyfcstm.model.expr import BinaryOp, Integer, Variable
+        >>> lowered = BinaryOp(Variable('__active_Root_On'), '!=', Integer(0))
+        >>> str(restore_active_expression(lowered, {'__active_Root_On': 'Root.On'}).to_ast_node())
+        'active("Root.On")'
+        >>> other = BinaryOp(Variable('x'), '!=', Integer(0))
+        >>> restore_active_expression(other, {'__active_Root_On': 'Root.On'}) is other
+        True
+    """
+    if (isinstance(expression, BinaryOp) and expression.op == '!='
+            and isinstance(expression.x, Variable) and expression.x.name in paths
+            and isinstance(expression.y, Integer) and expression.y.value == 0):
+        return ActiveStateQuery(paths[expression.x.name])
+    updates = {}
+    for item in fields(expression):
+        value = getattr(expression, item.name)
+        if isinstance(value, Expr):
+            restored = restore_active_expression(value, paths)
+            if restored is not value:
+                updates[item.name] = restored
+    return replace(expression, **updates) if updates else expression
+
+
+def restore_active_statements(statements, paths: Mapping[str, str]) -> list:
+    """Restore ``active("path")`` tests inside operation statements.
+
+    Applies :func:`restore_active_expression` to every assignment value and
+    every ``if`` condition, including nested blocks, and returns new statement
+    objects; the model's own statements are left untouched.
+
+    :param statements: Operation statements (assignments and ``if`` blocks).
+    :type statements: Iterable[pyfcstm.model.model.OperationStatement]
+    :param paths: Hidden flag variable name mapped to the dotted state path.
+    :type paths: Mapping[str, str]
+    :return: New statements, in the original order.
+    :rtype: list
+
+    Example::
+
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> from pyfcstm.model.active import restore_active_statements
+        >>> machine = load_state_machine_from_text(
+        ...     'state Root { state A; [*] -> A; A -> [*] effect { if [active("Root.A")] { } } }')
+        >>> paths = {item.variable_name: '.'.join(item.state_path)
+        ...          for item in machine.active_queries}
+        >>> edge = machine.root_state.transitions[1]
+        >>> restored = restore_active_statements(edge.effects, paths)
+        >>> 'active("Root.A")' in str(restored[0].to_ast_node())
+        True
+    """
+    from .model import IfBlock
+
+    result = []
+    for statement in statements:
+        if isinstance(statement, IfBlock):
+            branches = [
+                replace(
+                    branch,
+                    condition=(None if branch.condition is None
+                               else restore_active_expression(branch.condition, paths)),
+                    statements=restore_active_statements(branch.statements, paths),
+                )
+                for branch in statement.branches
+            ]
+            result.append(replace(statement, branches=branches))
+        else:
+            result.append(replace(statement, expr=restore_active_expression(statement.expr, paths)))
     return result

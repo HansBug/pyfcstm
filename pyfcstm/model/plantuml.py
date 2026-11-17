@@ -1112,10 +1112,15 @@ def collect_event_transitions(state_machine: 'StateMachine') -> Dict[str, List[T
     """
     Collect all events and their associated transitions from a state machine.
 
+    Transitions are visited in declaration order through states and regions, so
+    for a transition written directly in a region the first tuple item is the
+    :class:`~pyfcstm.model.region.Region` that owns it, not a state.
+
     :param state_machine: The state machine to analyze
     :type state_machine: StateMachine
-    :return: Dictionary mapping event paths to list of (state, transition) tuples
-    :rtype: Dict[str, List[Tuple[State, Transition]]]
+    :return: Dictionary mapping event paths to list of (owner, transition) tuples,
+        where the owner is a state or a region
+    :rtype: Dict[str, List[Tuple[Union[State, Region], Transition]]]
 
     Example::
 
@@ -1142,12 +1147,11 @@ def collect_event_transitions(state_machine: 'StateMachine') -> Dict[str, List[T
         True
     """
     from collections import defaultdict
-    from .support import require_supported_model
+    from .region import walk_namespaces
 
-    require_supported_model(state_machine, 'Event transition collection')
     event_map = defaultdict(list)
 
-    for state in state_machine.walk_states():
+    for state in walk_namespaces(state_machine.root_state):
         for transition in state.transitions:
             if transition.event is not None:
                 event_path = '.'.join(transition.event.path)

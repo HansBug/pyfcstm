@@ -107,13 +107,12 @@ def test_direct_analysis_apis_refuse_unsupported_model(source, consumer):
 
 @pytest.mark.parametrize('source', [SOURCE, 'state Root { during { if [active("Root")] {} } }'])
 @pytest.mark.parametrize('consumer', [
-    'constant_folding', 'numeric', 'data_flow', 'event_transitions', 'shadowed_transitions',
+    'constant_folding', 'numeric', 'data_flow', 'shadowed_transitions',
 ])
 def test_model_analyzers_refuse_incomplete_namespace_analysis(source, consumer):
     from pyfcstm.diagnostics.analyzers.const_fold import collect_const_fold_warnings
     from pyfcstm.diagnostics.analyzers.data_flow import collect_data_flow_warnings
     from pyfcstm.diagnostics.analyzers.numeric import collect_numeric_warnings
-    from pyfcstm.model import collect_event_transitions
     from pyfcstm.verify import transition_shadowed_by_predecessor
 
     model = load_state_machine_from_text(source)
@@ -121,7 +120,6 @@ def test_model_analyzers_refuse_incomplete_namespace_analysis(source, consumer):
         'constant_folding': lambda: collect_const_fold_warnings(model),
         'numeric': lambda: collect_numeric_warnings(model),
         'data_flow': lambda: collect_data_flow_warnings([], model),
-        'event_transitions': lambda: collect_event_transitions(model),
         'shadowed_transitions': lambda: transition_shadowed_by_predecessor(
             model, tuple(model.defines.values())),
     }

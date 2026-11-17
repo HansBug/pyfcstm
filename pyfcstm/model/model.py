@@ -66,7 +66,6 @@ from typing import (
 from .base import AstExportable, PlantUMLExportable
 from .expr import Expr, parse_expr_node_to_expr
 from .region import Region, namespace_actions, namespace_child, namespace_children, walk_namespaces
-from .support import require_supported_model
 from .imports import (
     assemble_state_machine_imports,
     _get_trusted_generated_combo_transition_metadata,
@@ -1368,6 +1367,273 @@ class OnAspect(AstExportable):
             raise ValueError(f"Unknown aspect - {self.stage!r}.")  # pragma: no cover
 
 
+def _plantuml_active_paths(namespace) -> Dict[str, str]:
+    """
+    Map hidden activity flag names to the dotted state paths they stand for.
+
+    Model construction lowers ``active("path")`` into a hidden variable that is
+    set in ``enter`` and cleared in ``exit``; exporters use this mapping to
+    show the query as written instead. A state machine without activity
+    queries yields an empty mapping.
+
+    :param namespace: A :class:`State` or :class:`~pyfcstm.model.region.Region`
+        of the model being exported.
+    :return: Flag variable name mapped to the dotted full state path.
+    :rtype: Dict[str, str]
+    """
+    owner = namespace if isinstance(namespace, State) else namespace.parent
+    queries = getattr(owner, "_active_queries", ())
+    return {item.variable_name: ".".join(item.state_path) for item in queries}
+
+
+def _plantuml_visible_actions(actions, active_paths: Dict[str, str]) -> list:
+    """
+    Drop the anonymous flag writes that model construction added for ``active()``.
+
+    :param actions: Lifecycle actions of one state.
+    :param active_paths: Mapping from :func:`_plantuml_active_paths`.
+    :return: The actions the user wrote, in their original order.
+    :rtype: list
+    """
+    return [
+        action
+        for action in actions
+        if not (
+            active_paths
+            and action.name is None
+            and len(action.operations) == 1
+            and isinstance(action.operations[0], Operation)
+            and action.operations[0].var_name in active_paths
+        )
+    ]
+
+
+def _write_plantuml_transitions(
+    sf, namespace, name_safe, config, event_colors, active_paths
+) -> None:
+    """
+    Print the transitions owned by a state or region as PlantUML links.
+
+    :param sf: Output stream.
+    :param namespace: Owner whose ``transitions`` are written.
+    :param name_safe: Function turning a child state name (or ``None``) into
+        the PlantUML alias used in this owner's scope.
+    :param config: Resolved :class:`PlantUMLOptions`.
+    :param event_colors: Event path to colour mapping.
+    :param active_paths: Mapping from :func:`_plantuml_active_paths`.
+    :return: ``None``.
+    :rtype: None
+    """
+    from .active import restore_active_expression, restore_active_statements
+
+    for trans in namespace.transitions:
+        with io.StringIO() as tf:
+            print(
+                "[*]"
+                if trans.from_state is dsl_nodes.INIT_STATE
+                else name_safe(trans.from_state),
+                file=tf,
+                end="",
+            )
+
+            # Apply event_visualization_mode colors to arrow
+            arrow_str = " -->"
+            if (
+                config.event_visualization_mode in ("color", "both")
+                and trans.event is not None
+            ):
+                event_path = ".".join(trans.event.path)
+                if event_path in event_colors:
+                    color = event_colors[event_path]
+                    arrow_str = f" -[{color}]->"
+
+            print(arrow_str, file=tf, end=" ")
+            print(
+                "[*]"
+                if trans.to_state is dsl_nodes.EXIT_STATE
+                else name_safe(trans.to_state),
+                file=tf,
+                end="",
+            )
+
+            trans_node: dsl_nodes.TransitionDefinition = trans.to_ast_node()
+
+            # Show event if enabled
+            if config.show_events and trans.event is not None:
+                from .plantuml import format_event_name
+
+                formatted_event = format_event_name(
+                    trans.event,
+                    config.event_name_format,
+                    trans_node=trans_node,
+                )
+                print(f" : {formatted_event}", file=tf, end="")
+            elif config.show_transition_guards and trans.guard is not None:
+                guard = restore_active_expression(trans.guard, active_paths)
+                print(f" : {guard.to_ast_node()}", file=tf, end="")
+
+            # Show transition effects if enabled
+            if config.show_transition_effects and len(trans.effects) > 0:
+                effects = restore_active_statements(trans.effects, active_paths)
+                if config.transition_effect_mode == "note":
+                    print("", file=tf)
+                    print("note on link", file=tf)
+                    print("effect {", file=tf)
+                    for operation in effects:
+                        print(
+                            "    "
+                            + escape_plantuml_creole(str(operation.to_ast_node())),
+                            file=tf,
+                        )
+                    print("}", file=tf)
+                    print("end note", file=tf, end="")
+                elif config.transition_effect_mode == "inline":
+                    # Display effects inline on the transition arrow
+                    effect_strs = [
+                        str(operation.to_ast_node().without_docs())
+                        for operation in effects
+                    ]
+                    effect_text = "; ".join(effect_strs)
+                    # Append to existing label or create new one
+                    print(f" / {effect_text}", file=tf, end="")
+
+            trans_text = tf.getvalue()
+        print(indent(trans_text, prefix="    "), file=sf)
+
+
+def _write_plantuml_actions(
+    sf, alias: str, config, action_groups, active_paths, hide_empty: bool
+) -> None:
+    """
+    Print the action description line of a state or region.
+
+    :param sf: Output stream.
+    :param alias: PlantUML alias of the described element.
+    :param config: Resolved :class:`PlantUMLOptions`.
+    :param action_groups: ``(enters, durings, exits, aspects)`` action lists;
+        regions pass empty lists for the lifecycle groups they cannot have.
+    :param active_paths: Mapping from :func:`_plantuml_active_paths`.
+    :param hide_empty: Whether ``collapse_empty_states`` applies to an element
+        with no user-written action.
+    :return: ``None``.
+    :rtype: None
+    """
+    from .active import restore_active_statements
+    from .plantuml import should_show_action, format_action_text
+    from copy import copy
+
+    enters, durings, exits, aspects = action_groups
+    should_show_actions = not (config.collapse_empty_states and hide_empty) and (
+        (config.show_lifecycle_actions and config.show_enter_actions and enters)
+        or (config.show_lifecycle_actions and config.show_during_actions and durings)
+        or (config.show_lifecycle_actions and config.show_exit_actions and exits)
+        or (config.show_lifecycle_actions and config.show_aspect_actions and aspects)
+    )
+    if not should_show_actions:
+        return
+
+    def _text(item) -> str:
+        if active_paths and item.operations:
+            item = copy(item)
+            item.operations = restore_active_statements(item.operations, active_paths)
+        return format_action_text(item, config)
+
+    print("", file=sf)
+    with io.StringIO() as tf:
+        for enabled, group in (
+            (config.show_enter_actions, enters),
+            (config.show_during_actions, durings),
+            (config.show_exit_actions, exits),
+            (config.show_aspect_actions, aspects),
+        ):
+            if enabled:
+                for item in group:
+                    # Apply abstract/concrete filtering
+                    if should_show_action(item, config):
+                        print(_text(item), file=tf)
+
+        action_text = escape_plantuml_creole(
+            tf.getvalue().rstrip().replace("\r\n", "\n").replace("\r", "\n")
+        )
+        if action_text:  # Only show if there's actual content
+            text = json.dumps(action_text).strip('"')
+            print(f"{alias} : {text}", file=sf, end="")
+
+
+def _region_to_plantuml(
+    region,
+    options: PlantUMLOptionsInput = None,
+    current_depth: int = 0,
+    event_colors: Optional[Dict[str, str]] = None,
+) -> str:
+    """
+    Render one region as a dashed, named PlantUML sub-box.
+
+    The title carries the region's one-based position among its siblings
+    (``region 1: Safety``) because declaration order is execution order. See
+    :meth:`pyfcstm.model.region.Region.to_plantuml` for the public entry point.
+
+    :param region: Region to render.
+    :type region: pyfcstm.model.region.Region
+    :param options: Configuration input for PlantUML generation.
+    :type options: PlantUMLOptionsInput
+    :param current_depth: Depth of the region; it counts as one level for ``max_depth``.
+    :type current_depth: int
+    :param event_colors: Optional mapping of event paths to color codes.
+    :type event_colors: Optional[Dict[str, str]]
+    :return: PlantUML text of the region box and, when it has any, its aspect line.
+    :rtype: str
+    """
+    config = PlantUMLOptions.from_value(options).to_config()
+    options = config
+    if event_colors is None:
+        event_colors = {}
+    active_paths = _plantuml_active_paths(region)
+    alias = sequence_safe(region.path)
+    ordinal = list(region.parent.regions).index(region.name) + 1
+    stereotype = " <<region>>" if config.use_stereotypes else ""
+
+    def _name_safe(sub_state: Optional[str] = None) -> str:
+        path = [*region.path]
+        if sub_state is not None:
+            path.append(sub_state)
+        return sequence_safe(path)
+
+    with io.StringIO() as sf:
+        title = json.dumps("region %d: %s" % (ordinal, region.name), ensure_ascii=False)
+        print(f"state {title} as {alias}{stereotype} #line.dashed {{", file=sf)
+        if config.max_depth is None or current_depth < config.max_depth:
+            for state in region.substates.values():
+                print(
+                    indent(
+                        state.to_plantuml(
+                            options,
+                            current_depth=current_depth + 1,
+                            event_colors=event_colors,
+                        ),
+                        prefix="    ",
+                    ),
+                    file=sf,
+                )
+        else:
+            marker_name = json.dumps(config.collapsed_state_marker, ensure_ascii=False)
+            print(
+                f"    state {marker_name} as {sequence_safe([*region.path, '__collapsed__'])}",
+                file=sf,
+            )
+        _write_plantuml_transitions(sf, region, _name_safe, config, event_colors, active_paths)
+        print("}", file=sf, end="")
+        _write_plantuml_actions(
+            sf,
+            alias,
+            config,
+            ([], [], [], region.on_during_aspects),
+            active_paths,
+            hide_empty=not region.on_during_aspects,
+        )
+        return sf.getvalue()
+
+
 @dataclass
 class State(AstExportable, PlantUMLExportable):
     """
@@ -2138,22 +2404,44 @@ class State(AstExportable, PlantUMLExportable):
         """
         Convert this state to PlantUML notation.
 
+        A state that owns regions is drawn as one box holding one dashed,
+        named sub-box per region, in declaration order, separated by ``--``.
+        Activity queries are shown as written: ``active("...")`` is restored in
+        guards and operations, and the hidden flag writes that model
+        construction added to ``enter`` / ``exit`` are not listed.
+
         :param options: Configuration input for PlantUML generation
         :type options: PlantUMLOptionsInput
-        :param current_depth: Current depth in the state hierarchy (for max_depth support)
+        :param current_depth: Current depth in the state hierarchy; a region counts as one level (for ``max_depth``)
         :type current_depth: int
         :param event_colors: Optional mapping of event paths to color codes
         :type event_colors: Optional[Dict[str, str]]
         :return: PlantUML representation of the state
         :rtype: str
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> machine = load_state_machine_from_text(
+            ...     'state Root { region A { state X; [*] -> X; } region B { state Y; [*] -> Y; } }')
+            >>> print(machine.root_state.to_plantuml('minimal'))
+            state "Root" as root <<composite>> {
+                state "region 1: A" as root__a <<region>> #line.dashed {
+                    state "X" as root__a__x
+                    [*] --> root__a__x
+                }
+                --
+                state "region 2: B" as root__b <<region>> #line.dashed {
+                    state "Y" as root__b__y
+                    [*] --> root__b__y
+                }
+            }
         """
-        # Resolve configuration
-        require_supported_model(self, 'plantuml')
         options = PlantUMLOptions.from_value(options)
         config = options.to_config()
-
         if event_colors is None:
             event_colors = {}
+        active_paths = _plantuml_active_paths(self)
 
         def _name_safe(sub_state: Optional[str] = None) -> str:
             subpath = [*self.path]
@@ -2161,11 +2449,14 @@ class State(AstExportable, PlantUMLExportable):
                 subpath.append(sub_state)
             return sequence_safe(subpath)
 
+        on_enters = _plantuml_visible_actions(self.on_enters, active_paths)
+        on_exits = _plantuml_visible_actions(self.on_exits, active_paths)
+
         # Check if this is an empty state (for collapse_empty_states)
         is_empty_state = (
-            not self.on_enters
+            not on_enters
             and not self.on_durings
-            and not self.on_exits
+            and not on_exits
             and not self.on_during_aspects
         )
 
@@ -2219,6 +2510,20 @@ class State(AstExportable, PlantUMLExportable):
                             ),
                             file=sf,
                         )
+                    for index, region in enumerate(self.regions.values()):
+                        if index:
+                            print("    --", file=sf)
+                        print(
+                            indent(
+                                region.to_plantuml(
+                                    options,
+                                    current_depth=current_depth + 1,
+                                    event_colors=event_colors,
+                                ),
+                                prefix="    ",
+                            ),
+                            file=sf,
+                        )
                 else:
                     # Collapsed: show marker state
                     marker_name = config.collapsed_state_marker
@@ -2228,143 +2533,20 @@ class State(AstExportable, PlantUMLExportable):
                         file=sf,
                     )
 
-                for trans in self.transitions:
-                    with io.StringIO() as tf:
-                        print(
-                            "[*]"
-                            if trans.from_state is dsl_nodes.INIT_STATE
-                            else _name_safe(trans.from_state),
-                            file=tf,
-                            end="",
-                        )
-
-                        # Apply event_visualization_mode colors to arrow
-                        arrow_str = " -->"
-                        if (
-                            config.event_visualization_mode in ("color", "both")
-                            and trans.event is not None
-                        ):
-                            event_path = ".".join(trans.event.path)
-                            if event_path in event_colors:
-                                color = event_colors[event_path]
-                                arrow_str = f" -[{color}]->"
-
-                        print(arrow_str, file=tf, end=" ")
-                        print(
-                            "[*]"
-                            if trans.to_state is dsl_nodes.EXIT_STATE
-                            else _name_safe(trans.to_state),
-                            file=tf,
-                            end="",
-                        )
-
-                        trans_node: dsl_nodes.TransitionDefinition = trans.to_ast_node()
-
-                        # Show event if enabled
-                        if config.show_events and trans.event is not None:
-                            from .plantuml import format_event_name
-
-                            formatted_event = format_event_name(
-                                trans.event,
-                                config.event_name_format,
-                                trans_node=trans_node,
-                            )
-                            print(f" : {formatted_event}", file=tf, end="")
-                        elif config.show_transition_guards and trans.guard is not None:
-                            print(f" : {trans.guard.to_ast_node()}", file=tf, end="")
-
-                        # Show transition effects if enabled
-                        if config.show_transition_effects and len(trans.effects) > 0:
-                            if config.transition_effect_mode == "note":
-                                print("", file=tf)
-                                print("note on link", file=tf)
-                                print("effect {", file=tf)
-                                for operation in trans.effects:
-                                    print(
-                                        "    "
-                                        + escape_plantuml_creole(
-                                            str(operation.to_ast_node())
-                                        ),
-                                        file=tf,
-                                    )
-                                print("}", file=tf)
-                                print("end note", file=tf, end="")
-                            elif config.transition_effect_mode == "inline":
-                                # Display effects inline on the transition arrow
-                                effect_strs = [
-                                    str(operation.to_ast_node().without_docs())
-                                    for operation in trans.effects
-                                ]
-                                effect_text = "; ".join(effect_strs)
-                                # Append to existing label or create new one
-                                print(f" / {effect_text}", file=tf, end="")
-
-                        trans_text = tf.getvalue()
-                    print(indent(trans_text, prefix="    "), file=sf)
+                _write_plantuml_transitions(
+                    sf, self, _name_safe, config, event_colors, active_paths
+                )
 
                 print("}", file=sf, end="")
 
-            # Show lifecycle actions if enabled (skip if collapse_empty_states is True and state is empty)
-            should_show_actions = not (
-                config.collapse_empty_states and is_empty_state
-            ) and (
-                (
-                    config.show_lifecycle_actions
-                    and config.show_enter_actions
-                    and self.on_enters
-                )
-                or (
-                    config.show_lifecycle_actions
-                    and config.show_during_actions
-                    and self.on_durings
-                )
-                or (
-                    config.show_lifecycle_actions
-                    and config.show_exit_actions
-                    and self.on_exits
-                )
-                or (
-                    config.show_lifecycle_actions
-                    and config.show_aspect_actions
-                    and self.on_during_aspects
-                )
+            _write_plantuml_actions(
+                sf,
+                _name_safe(),
+                config,
+                (on_enters, self.on_durings, on_exits, self.on_during_aspects),
+                active_paths,
+                hide_empty=is_empty_state,
             )
-
-            if should_show_actions:
-                from .plantuml import should_show_action, format_action_text
-
-                print("", file=sf)
-                with io.StringIO() as tf:
-                    if config.show_enter_actions:
-                        for enter_item in self.on_enters:
-                            # Apply abstract/concrete filtering
-                            if should_show_action(enter_item, config):
-                                formatted_text = format_action_text(enter_item, config)
-                                print(formatted_text, file=tf)
-                    if config.show_during_actions:
-                        for during_item in self.on_durings:
-                            if should_show_action(during_item, config):
-                                formatted_text = format_action_text(during_item, config)
-                                print(formatted_text, file=tf)
-                    if config.show_exit_actions:
-                        for exit_item in self.on_exits:
-                            if should_show_action(exit_item, config):
-                                formatted_text = format_action_text(exit_item, config)
-                                print(formatted_text, file=tf)
-                    if config.show_aspect_actions:
-                        for during_aspect_item in self.on_during_aspects:
-                            if should_show_action(during_aspect_item, config):
-                                formatted_text = format_action_text(
-                                    during_aspect_item, config
-                                )
-                                print(formatted_text, file=tf)
-
-                    action_text = escape_plantuml_creole(
-                        tf.getvalue().rstrip().replace("\r\n", "\n").replace("\r", "\n")
-                    )
-                    if action_text:  # Only show if there's actual content
-                        text = json.dumps(action_text).strip('"')
-                        print(f"{_name_safe()} : {text}", file=sf, end="")
 
             return sf.getvalue()
 
@@ -3070,15 +3252,46 @@ class StateMachine(AstExportable, PlantUMLExportable):
         """
         Convert this state machine to PlantUML notation.
 
-        :param options: Configuration input for PlantUML generation
-        :type options: PlantUMLOptionsInput
+        The output is a complete ``@startuml`` / ``@enduml`` document: optional
+        variable table, optional event legend, then the state tree. A state with
+        regions is drawn as one box holding a dashed, named sub-box per region
+        in declaration order, separated by ``--``. Activity queries are shown
+        as written (``active("Root.A")``); the hidden flag variables and the
+        flag writes that model construction added are not part of the output.
+        Models without regions and without activity queries are exported
+        exactly as before.
+
+        :param options: Detail level name (``'minimal'``, ``'normal'``,
+            ``'full'``), a :class:`~pyfcstm.model.plantuml.PlantUMLOptions`
+            or ``None`` for the defaults, defaults to ``None``.
+        :type options: PlantUMLOptionsInput, optional
         :return: PlantUML representation of the state machine
         :rtype: str
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> machine = load_state_machine_from_text(
+            ...     'state Root { region A { state X; [*] -> X; } region B { state Y; [*] -> Y; } }')
+            >>> text = machine.to_plantuml('minimal')
+            >>> text.splitlines()[0], text.splitlines()[-1]
+            ('@startuml', '@enduml')
+            >>> 'region 1: A' in text and 'region 2: B' in text
+            True
+            >>> guarded = load_state_machine_from_text(
+            ...     'state Root { state A; state B; [*] -> A; A -> B : if [active("Root.B")]; }')
+            >>> '__active_' in guarded.to_plantuml('full')
+            False
         """
         # Resolve configuration
-        require_supported_model(self, 'plantuml')
         options = PlantUMLOptions.from_value(options)
         config = options.to_config()
+        # Hidden activity flags are an implementation detail of ``active()``.
+        shown_defines = {
+            name: item
+            for name, item in self.defines.items()
+            if name not in {query.variable_name for query in self.active_queries}
+        }
 
         with io.StringIO() as sf:
             print("@startuml", file=sf)
@@ -3096,11 +3309,11 @@ class StateMachine(AstExportable, PlantUMLExportable):
                 print("", file=sf)
 
             # Show variable definitions if enabled
-            if config.show_variable_definitions and self.defines:
+            if config.show_variable_definitions and shown_defines:
                 if config.variable_display_mode == "note":
                     print("note as DefinitionNote", file=sf)
                     print("defines {", file=sf)
-                    for def_item in self.defines.values():
+                    for def_item in shown_defines.values():
                         # PlantUML is a semantic display and must not embed
                         # source documentation blocks.
                         print(
@@ -3121,13 +3334,13 @@ class StateMachine(AstExportable, PlantUMLExportable):
                     print(f"legend {config.variable_legend_position}", file=sf)
                     show_roles = any(
                         item.role is not VariableRole.CONTROL
-                        for item in self.defines.values()
+                        for item in shown_defines.values()
                     )
                     role_header = "= Role |" if show_roles else ""
                     print(
                         f"|= Variable |= Type |= Initial Value |{role_header}", file=sf
                     )
-                    for def_item in self.defines.values():
+                    for def_item in shown_defines.values():
                         var_name = def_item.name
                         var_type = def_item.type
                         var_init = (

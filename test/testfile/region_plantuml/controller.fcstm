@@ -1,0 +1,43 @@
+input int fault;
+input int requested;
+control int permit = 0;
+output int motor = 0;
+
+state Controller {
+    event Start;
+    event Stop;
+    [*] -> Idle;
+    state Idle { during { motor = 0; } }
+
+    state Running {
+        enter { permit = 0; }
+        region Safety {
+            >> during before { permit = 1; }
+            [*] -> Normal;
+            state Normal {
+                during {
+                    if [fault != 0] { permit = 0; }
+                }
+            }
+            state Tripped;
+            Normal -> Tripped : if [fault != 0];
+        }
+        region Motion {
+            event Kick;
+            [*] -> Off;
+            state Off { during { motor = 0; } }
+            state On {
+                during {
+                    if [active("Controller.Running.Safety.Tripped")] { motor = 0; }
+                    else { motor = 1; }
+                }
+            }
+            Off -> On : if [permit != 0 && requested != 0];
+            On -> Off : if [active("/Running.Safety.Tripped")];
+            On -> Off : Kick;
+        }
+    }
+
+    Idle -> Running : /Start;
+    !Running -> Idle : /Stop;
+}

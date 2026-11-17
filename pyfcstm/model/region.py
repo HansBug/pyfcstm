@@ -193,6 +193,41 @@ class Region(AstExportable):
 
         yield from State.iter_on_during_after_aspect_recursively(self, is_abstract, with_ids)
 
+    def to_plantuml(self, options=None, current_depth: int = 0, event_colors=None) -> str:
+        """Convert this region to a dashed, named PlantUML sub-box.
+
+        The title is ``region N: Name`` where ``N`` is the one-based
+        declaration (and therefore execution) position among the owner's
+        regions. Child states, transitions and ``>> during`` aspects are drawn
+        inside the box; ``active("...")`` is shown as written.
+
+        :param options: Detail level name, :class:`~pyfcstm.model.plantuml.PlantUMLOptions`
+            or ``None`` for the defaults, defaults to ``None``.
+        :type options: PlantUMLOptionsInput, optional
+        :param current_depth: Depth of this region; a region counts as one
+            level for ``max_depth``, defaults to ``0``.
+        :type current_depth: int, optional
+        :param event_colors: Event path to colour mapping used by the event
+            colouring modes, defaults to ``None`` (no colours).
+        :type event_colors: Optional[Dict[str, str]], optional
+        :return: PlantUML text of the region box without a trailing newline.
+        :rtype: str
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> machine = load_state_machine_from_text(
+            ...     'state Root { region Motor { state Off; [*] -> Off; } }')
+            >>> print(machine.root_state.regions['Motor'].to_plantuml('minimal'))
+            state "region 1: Motor" as root__motor <<region>> #line.dashed {
+                state "Off" as root__motor__off
+                [*] --> root__motor__off
+            }
+        """
+        from .model import _region_to_plantuml
+
+        return _region_to_plantuml(self, options, current_depth, event_colors)
+
     def to_ast_node(self) -> dsl_nodes.RegionDefinition:
         """Export the namespace as a region declaration, preserving order."""
         from .model import State

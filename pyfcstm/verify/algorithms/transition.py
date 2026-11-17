@@ -5,6 +5,13 @@ single guard or effect.  The algorithms still use local, quantifier-free SMT
 queries; they do not unroll runtime execution over multiple cycles.  Public
 callers should normally import these functions from :mod:`pyfcstm.verify`.
 
+The module contains:
+
+* :func:`transition_shadowed_by_predecessor` - Detect outgoing transitions
+  shadowed by earlier transitions
+* :func:`composite_init_guards_incomplete` - Detect composite states whose
+  initial transitions do not cover all inputs
+
 Algorithm map:
 
 .. list-table::

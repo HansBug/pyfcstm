@@ -6,6 +6,17 @@ The module keeps the portable data contract separate from editor metadata. A
 source ranges. Browser HTML may additionally carry an embedded source sidecar
 so the source and diagram panes can be linked without network access.
 
+The module contains:
+
+* :class:`DiagramData` - Portable, deterministic diagram data without
+  editor-only metadata
+* :class:`DiagramOptions` - Immutable renderer options shared by Python and
+  browser diagram views
+* :class:`DiagramViewState` - Immutable browser state for collapse, zoom, pan
+  and display mode
+* :class:`Diagram` - Immutable snapshot of a state machine, as portable data
+  or a self-contained viewer
+
 Example::
 
     >>> from pyfcstm.model import load_state_machine_from_text
@@ -2364,6 +2375,40 @@ class Diagram:
             match the text the model was parsed from; programmatic models
             without source ranges accept any value.
         :type source_text: str, optional
+        :return: ``None``.
+        :rtype: None
+        :raises TypeError: If ``options`` or ``view_state`` is neither the
+            matching dataclass nor a mapping.
+        :raises ValueError: If a mapping contains an unknown field, a field
+            value is invalid, or ``source_text`` does not match the text the
+            model was parsed from.
+
+        Most callers obtain a snapshot through
+        :meth:`pyfcstm.model.model.StateMachine.diagram` instead of calling
+        the constructor directly.
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> from pyfcstm.diagram.api import Diagram
+            >>> model = load_state_machine_from_text(
+            ...     'state Root { [*] -> A; state A; state B; A -> B :: Go; }'
+            ... )
+            >>> view = Diagram(model, {'direction': 'LR'}, {'zoom': 2})
+            >>> view.options.direction
+            'LR'
+            >>> view.view_state.zoom
+            2.0
+            >>> view.source_text == model.source_text
+            True
+            >>> Diagram(model, options=5)
+            Traceback (most recent call last):
+            ...
+            TypeError: options must be DiagramOptions or a mapping
+            >>> Diagram(model, options={'bogus': 1})
+            Traceback (most recent call last):
+            ...
+            ValueError: unknown DiagramOptions field(s): bogus
         """
         from pyfcstm.model.support import require_supported_model
 

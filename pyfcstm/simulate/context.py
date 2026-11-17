@@ -20,7 +20,7 @@ Example::
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any, Callable, Mapping, Optional, Union, Tuple
+from typing import Any, Callable, Mapping, Optional, Union, Tuple  # noqa: F401 (type comment)
 
 #: Supplies the configuration snapshot of the cycle that is executing, so that
 #: every context built while handlers run carries the position at the moment

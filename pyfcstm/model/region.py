@@ -525,6 +525,24 @@ class Region(AstExportable):
         :type owner: Optional[pyfcstm.model.model.State]
         :return: ``None``.
         :rtype: None
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... state Root {
+            ...     [*] -> Run;
+            ...     state Run { region Motion { [*] -> Stop; state Stop; } region Guard { [*] -> Watch; state Watch; } }
+            ... }
+            ... ''')
+            >>> run = model.root_state.substates['Run']
+            >>> motion = run.regions['Motion']
+            >>> motion.parent = None
+            >>> motion.parent is None
+            True
+            >>> motion.parent = run
+            >>> motion.parent is run
+            True
         """
         self.parent_ref = None if owner is None else weakref.ref(owner)
 

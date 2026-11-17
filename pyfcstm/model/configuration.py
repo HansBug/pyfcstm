@@ -158,6 +158,13 @@ class _TextParser:
     """
 
     def __init__(self, text):
+        """
+        Tokenize ``text`` and position the parser at its first token.
+
+        :param text: Configuration text.
+        :type text: str
+        :raises TypeError: If ``text`` is not a string.
+        """
         if not isinstance(text, str):
             raise TypeError('Configuration text must be a string.')
         self.text = text

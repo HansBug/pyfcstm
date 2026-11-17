@@ -956,6 +956,32 @@ class Transition(AstExportable):
         :type new_parent: Optional[Union['State', Region]]
         :return: ``None``.
         :rtype: None
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion { [*] -> Stop; state Stop; state Move; Stop -> Move :: Go; }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ...     state Off;
+            ...     Run -> Off :: Halt;
+            ... }
+            ... ''')
+            >>> root = model.root_state
+            >>> run = root.substates['Run']
+            >>> edge = root.transitions[1]
+            >>> edge.parent = None
+            >>> edge.parent is None
+            True
+            >>> edge.parent = root
+            >>> edge.parent.name
+            'Root'
         """
         if new_parent is None:
             self.parent_ref = None  # pragma: no cover
@@ -1349,6 +1375,32 @@ class OnAspect(AstExportable):
         :type new_parent: Optional[Union['State', Region]]
         :return: ``None``.
         :rtype: None
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion { [*] -> Stop; state Stop; state Move; Stop -> Move :: Go; }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ...     state Off;
+            ...     Run -> Off :: Halt;
+            ... }
+            ... ''')
+            >>> root = model.root_state
+            >>> run = root.substates['Run']
+            >>> aspect = root.on_during_aspects[0]
+            >>> aspect.parent = None
+            >>> aspect.parent is None
+            True
+            >>> aspect.parent = root
+            >>> aspect.parent.name
+            'Root'
         """
         if new_parent is None:
             self.parent_ref = None  # pragma: no cover
@@ -1797,6 +1849,31 @@ class State(AstExportable, PlantUMLExportable):
         :type new_parent: Optional[Union['State', Region]]
         :return: ``None``.
         :rtype: None
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion { [*] -> Stop; state Stop; state Move; Stop -> Move :: Go; }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ...     state Off;
+            ...     Run -> Off :: Halt;
+            ... }
+            ... ''')
+            >>> root = model.root_state
+            >>> run = root.substates['Run']
+            >>> run.parent = None
+            >>> run.parent is None
+            True
+            >>> run.parent = root
+            >>> run.parent.name
+            'Root'
         """
         if new_parent is None:
             self.parent_ref = None  # pragma: no cover

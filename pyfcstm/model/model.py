@@ -5097,8 +5097,9 @@ def _build_assembled_state_machine(
         region exists. Expands forced transitions (including those inherited
         from enclosing states), resolves transition events against the event
         scope rules, builds :class:`Transition` objects and attaches them, and
-        finally repeats the process for each child. A parallel owner does not
-        pass inherited forced transitions down into its regions.
+        finally repeats the process for each child. A state that owns regions
+        drops the forced transitions it inherited instead of passing them on
+        to its regions.
 
         :param node: Declaration being finished.
         :type node: Union[pyfcstm.dsl.node.StateDefinition, pyfcstm.dsl.node.RegionDefinition]
@@ -5482,7 +5483,8 @@ def _build_assembled_state_machine(
             source_state_name: Optional[str],
         ) -> Tuple[Optional[str], Optional[Event]]:
             """
-            Resolve the event a transition names, creating it when it is local.
+            Resolve the event a transition names, creating it when it is not
+            declared yet.
 
             Determines the effective scope (``local``, ``chain`` or
             ``absolute``) from the written event path, walks the path from the

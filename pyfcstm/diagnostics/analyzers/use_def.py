@@ -101,8 +101,6 @@ def build_use_def_graph(machine: 'StateMachine') -> UseDefGraph:
     :return: The dependency graph; it has no edges when no assignment reads a
         variable.
     :rtype: UseDefGraph
-    :raises pyfcstm.utils.validate.ModelValidationError: If ``machine`` cannot
-        be analyzed.
 
     Example::
 

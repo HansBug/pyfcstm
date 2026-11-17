@@ -179,7 +179,7 @@ def _load_model(input_code_file: str) -> StateMachine:
     Load the FCSTM model for ``pyfcstm bmc``, reporting input failures as CLI errors.
 
     The model is read with
-    :func:`pyfcstm.model.model.load_state_machine_from_file`, which also follows
+    :func:`pyfcstm.model.load.load_state_machine_from_file`, which also follows
     ``import`` statements.  Every expected user-input failure is converted to a
     :class:`pyfcstm.entry.base.ClickErrorException` whose message names the
     failure kind; any other exception propagates.

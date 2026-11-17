@@ -4,8 +4,10 @@ Immutable recursive positions for ordinary and ordered parallel models.
 A :class:`Configuration` answers "where is the machine right now?" as a
 value: one active state path for an ordinary model, and, below every parallel
 owner state, one recursive position per region in declaration order. It is the
-position type returned for models that declare regions, and it can also be
-built for ordinary models, where it degenerates to a single path.
+position type for describing a state of a model that declares regions, and it
+can also be built for ordinary models, where it degenerates to a single path.
+Values are built with :meth:`Configuration.parse` or
+:meth:`Configuration.from_dict`; no runtime produces them by itself.
 
 A configuration only describes a position. It never initializes, steps or
 executes the model, and it never mutates the model it is bound to. Three
@@ -466,7 +468,7 @@ class Configuration:
     declaration order. ``repr(config)`` includes both position and mode for
     debugging; it is not constructor syntax. Text omits mode, so use
     ``Configuration.parse(model, str(config), mode=config.mode)`` to roundtrip.
-    JSON retains omitted pending entries and ``null`` for completed regions.
+    JSON omits pending regions and writes ``null`` for completed ones.
 
     Equality and hashing compare the mode and ordered paths by value. The model
     supplies State objects returned by :attr:`leaves`, but is not part of value

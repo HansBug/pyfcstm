@@ -377,8 +377,7 @@ class Region(AstExportable):
     lifecycle actions and cannot themselves be transition endpoints.
 
     The declaration order of the regions inside one owner is preserved by the
-    model and by every export, because the language defines it as their
-    execution order. Regions are built by
+    model and by every export. Regions are built by
     :func:`~pyfcstm.model.model.parse_dsl_node_to_state_machine` and reached
     through :attr:`pyfcstm.model.model.State.regions`; construct one directly
     only when assembling a model by hand.
@@ -459,8 +458,7 @@ class Region(AstExportable):
         """
         Number child states in declaration order for transition expansion.
 
-        The numbering is stored in :attr:`substate_name_to_id` and is what
-        keeps the order of regions' child states stable across exports.
+        The numbering is stored in :attr:`substate_name_to_id`.
 
         :return: ``None``.
         :rtype: None
@@ -481,30 +479,30 @@ class Region(AstExportable):
 
         Example::
 
-        >>> from pyfcstm.model import load_state_machine_from_text
-        >>> model = load_state_machine_from_text('''
-        ... def int x = 0;
-        ... state Root {
-        ...     >> during before { x = x + 1; }
-        ...     [*] -> Run;
-        ...     state Run {
-        ...         region Motion {
-        ...             >> during after { x = x + 2; }
-        ...             >> during before abstract Sample;
-        ...             event Go;
-        ...             [*] -> Stop;
-        ...             state Stop;
-        ...             state Active {
-        ...                 region Inner { [*] -> A; state A; }
-        ...             }
-        ...             Stop -> Active :: Go;
-        ...         }
-        ...         region Guard { [*] -> Watch; state Watch; }
-        ...     }
-        ... }
-        ... ''')
-        >>> run = model.root_state.substates['Run']
-        >>> motion = run.regions['Motion']
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion {
+            ...             >> during after { x = x + 2; }
+            ...             >> during before abstract Sample;
+            ...             event Go;
+            ...             [*] -> Stop;
+            ...             state Stop;
+            ...             state Active {
+            ...                 region Inner { [*] -> A; state A; }
+            ...             }
+            ...             Stop -> Active :: Go;
+            ...         }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ... }
+            ... ''')
+            >>> run = model.root_state.substates['Run']
+            >>> motion = run.regions['Motion']
             >>> motion.parent.name
             'Run'
             >>> motion.parent = None
@@ -557,30 +555,30 @@ class Region(AstExportable):
 
         Example::
 
-        >>> from pyfcstm.model import load_state_machine_from_text
-        >>> model = load_state_machine_from_text('''
-        ... def int x = 0;
-        ... state Root {
-        ...     >> during before { x = x + 1; }
-        ...     [*] -> Run;
-        ...     state Run {
-        ...         region Motion {
-        ...             >> during after { x = x + 2; }
-        ...             >> during before abstract Sample;
-        ...             event Go;
-        ...             [*] -> Stop;
-        ...             state Stop;
-        ...             state Active {
-        ...                 region Inner { [*] -> A; state A; }
-        ...             }
-        ...             Stop -> Active :: Go;
-        ...         }
-        ...         region Guard { [*] -> Watch; state Watch; }
-        ...     }
-        ... }
-        ... ''')
-        >>> run = model.root_state.substates['Run']
-        >>> motion = run.regions['Motion']
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion {
+            ...             >> during after { x = x + 2; }
+            ...             >> during before abstract Sample;
+            ...             event Go;
+            ...             [*] -> Stop;
+            ...             state Stop;
+            ...             state Active {
+            ...                 region Inner { [*] -> A; state A; }
+            ...             }
+            ...             Stop -> Active :: Go;
+            ...         }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ... }
+            ... ''')
+            >>> run = model.root_state.substates['Run']
+            >>> motion = run.regions['Motion']
             >>> [str(edge.to_state) for edge in motion.init_transitions]
             ['Stop']
             >>> len(motion.transitions)
@@ -601,30 +599,30 @@ class Region(AstExportable):
 
         Example::
 
-        >>> from pyfcstm.model import load_state_machine_from_text
-        >>> model = load_state_machine_from_text('''
-        ... def int x = 0;
-        ... state Root {
-        ...     >> during before { x = x + 1; }
-        ...     [*] -> Run;
-        ...     state Run {
-        ...         region Motion {
-        ...             >> during after { x = x + 2; }
-        ...             >> during before abstract Sample;
-        ...             event Go;
-        ...             [*] -> Stop;
-        ...             state Stop;
-        ...             state Active {
-        ...                 region Inner { [*] -> A; state A; }
-        ...             }
-        ...             Stop -> Active :: Go;
-        ...         }
-        ...         region Guard { [*] -> Watch; state Watch; }
-        ...     }
-        ... }
-        ... ''')
-        >>> run = model.root_state.substates['Run']
-        >>> motion = run.regions['Motion']
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion {
+            ...             >> during after { x = x + 2; }
+            ...             >> during before abstract Sample;
+            ...             event Go;
+            ...             [*] -> Stop;
+            ...             state Stop;
+            ...             state Active {
+            ...                 region Inner { [*] -> A; state A; }
+            ...             }
+            ...             Stop -> Active :: Go;
+            ...         }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ... }
+            ... ''')
+            >>> run = model.root_state.substates['Run']
+            >>> motion = run.regions['Motion']
             >>> [state.name for state in motion.walk_states()]
             ['Stop', 'Active', 'A']
         """
@@ -641,30 +639,30 @@ class Region(AstExportable):
 
         Example::
 
-        >>> from pyfcstm.model import load_state_machine_from_text
-        >>> model = load_state_machine_from_text('''
-        ... def int x = 0;
-        ... state Root {
-        ...     >> during before { x = x + 1; }
-        ...     [*] -> Run;
-        ...     state Run {
-        ...         region Motion {
-        ...             >> during after { x = x + 2; }
-        ...             >> during before abstract Sample;
-        ...             event Go;
-        ...             [*] -> Stop;
-        ...             state Stop;
-        ...             state Active {
-        ...                 region Inner { [*] -> A; state A; }
-        ...             }
-        ...             Stop -> Active :: Go;
-        ...         }
-        ...         region Guard { [*] -> Watch; state Watch; }
-        ...     }
-        ... }
-        ... ''')
-        >>> run = model.root_state.substates['Run']
-        >>> motion = run.regions['Motion']
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion {
+            ...             >> during after { x = x + 2; }
+            ...             >> during before abstract Sample;
+            ...             event Go;
+            ...             [*] -> Stop;
+            ...             state Stop;
+            ...             state Active {
+            ...                 region Inner { [*] -> A; state A; }
+            ...             }
+            ...             Stop -> Active :: Go;
+            ...         }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ... }
+            ... ''')
+            >>> run = model.root_state.substates['Run']
+            >>> motion = run.regions['Motion']
             >>> [region.name for region in motion.walk_regions()]
             ['Motion', 'Inner']
             >>> [region.name for region in run.regions['Guard'].walk_regions()]
@@ -691,33 +689,36 @@ class Region(AstExportable):
         :rtype: Optional[pyfcstm.model.model.Event]
         :raises pyfcstm.utils.validate.ModelLookupError: If the event cannot be
             found and ``collect_into`` is not a collecting sink.
+        :raises pyfcstm.utils.validate.ModelValueError: If ``event_ref`` is not
+            a valid event path (for example an empty string), under the same
+            sink rule.
 
         Example::
 
-        >>> from pyfcstm.model import load_state_machine_from_text
-        >>> model = load_state_machine_from_text('''
-        ... def int x = 0;
-        ... state Root {
-        ...     >> during before { x = x + 1; }
-        ...     [*] -> Run;
-        ...     state Run {
-        ...         region Motion {
-        ...             >> during after { x = x + 2; }
-        ...             >> during before abstract Sample;
-        ...             event Go;
-        ...             [*] -> Stop;
-        ...             state Stop;
-        ...             state Active {
-        ...                 region Inner { [*] -> A; state A; }
-        ...             }
-        ...             Stop -> Active :: Go;
-        ...         }
-        ...         region Guard { [*] -> Watch; state Watch; }
-        ...     }
-        ... }
-        ... ''')
-        >>> run = model.root_state.substates['Run']
-        >>> motion = run.regions['Motion']
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion {
+            ...             >> during after { x = x + 2; }
+            ...             >> during before abstract Sample;
+            ...             event Go;
+            ...             [*] -> Stop;
+            ...             state Stop;
+            ...             state Active {
+            ...                 region Inner { [*] -> A; state A; }
+            ...             }
+            ...             Stop -> Active :: Go;
+            ...         }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ... }
+            ... ''')
+            >>> run = model.root_state.substates['Run']
+            >>> motion = run.regions['Motion']
             >>> motion.resolve_event('Go').path
             ('Root', 'Run', 'Motion', 'Go')
             >>> from pyfcstm.diagnostics.sink import DiagnosticSink
@@ -756,30 +757,30 @@ class Region(AstExportable):
 
         Example::
 
-        >>> from pyfcstm.model import load_state_machine_from_text
-        >>> model = load_state_machine_from_text('''
-        ... def int x = 0;
-        ... state Root {
-        ...     >> during before { x = x + 1; }
-        ...     [*] -> Run;
-        ...     state Run {
-        ...         region Motion {
-        ...             >> during after { x = x + 2; }
-        ...             >> during before abstract Sample;
-        ...             event Go;
-        ...             [*] -> Stop;
-        ...             state Stop;
-        ...             state Active {
-        ...                 region Inner { [*] -> A; state A; }
-        ...             }
-        ...             Stop -> Active :: Go;
-        ...         }
-        ...         region Guard { [*] -> Watch; state Watch; }
-        ...     }
-        ... }
-        ... ''')
-        >>> run = model.root_state.substates['Run']
-        >>> motion = run.regions['Motion']
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion {
+            ...             >> during after { x = x + 2; }
+            ...             >> during before abstract Sample;
+            ...             event Go;
+            ...             [*] -> Stop;
+            ...             state Stop;
+            ...             state Active {
+            ...                 region Inner { [*] -> A; state A; }
+            ...             }
+            ...             Stop -> Active :: Go;
+            ...         }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ... }
+            ... ''')
+            >>> run = model.root_state.substates['Run']
+            >>> motion = run.regions['Motion']
             >>> [(action.aspect, action.is_abstract) for action in motion.list_on_during_aspects()]
             [('after', False), ('before', True)]
             >>> [action.aspect for action in motion.list_on_during_aspects(is_abstract=False)]
@@ -809,30 +810,30 @@ class Region(AstExportable):
 
         Example::
 
-        >>> from pyfcstm.model import load_state_machine_from_text
-        >>> model = load_state_machine_from_text('''
-        ... def int x = 0;
-        ... state Root {
-        ...     >> during before { x = x + 1; }
-        ...     [*] -> Run;
-        ...     state Run {
-        ...         region Motion {
-        ...             >> during after { x = x + 2; }
-        ...             >> during before abstract Sample;
-        ...             event Go;
-        ...             [*] -> Stop;
-        ...             state Stop;
-        ...             state Active {
-        ...                 region Inner { [*] -> A; state A; }
-        ...             }
-        ...             Stop -> Active :: Go;
-        ...         }
-        ...         region Guard { [*] -> Watch; state Watch; }
-        ...     }
-        ... }
-        ... ''')
-        >>> run = model.root_state.substates['Run']
-        >>> motion = run.regions['Motion']
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion {
+            ...             >> during after { x = x + 2; }
+            ...             >> during before abstract Sample;
+            ...             event Go;
+            ...             [*] -> Stop;
+            ...             state Stop;
+            ...             state Active {
+            ...                 region Inner { [*] -> A; state A; }
+            ...             }
+            ...             Stop -> Active :: Go;
+            ...         }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ... }
+            ... ''')
+            >>> run = model.root_state.substates['Run']
+            >>> motion = run.regions['Motion']
             >>> [(owner.name, action.is_abstract) for owner, action in motion.iter_on_during_before_aspect_recursively()]
             [('Root', False), ('Motion', True)]
             >>> [(index, owner.name) for index, owner, action in motion.iter_on_during_before_aspect_recursively(with_ids=True)]
@@ -861,30 +862,30 @@ class Region(AstExportable):
 
         Example::
 
-        >>> from pyfcstm.model import load_state_machine_from_text
-        >>> model = load_state_machine_from_text('''
-        ... def int x = 0;
-        ... state Root {
-        ...     >> during before { x = x + 1; }
-        ...     [*] -> Run;
-        ...     state Run {
-        ...         region Motion {
-        ...             >> during after { x = x + 2; }
-        ...             >> during before abstract Sample;
-        ...             event Go;
-        ...             [*] -> Stop;
-        ...             state Stop;
-        ...             state Active {
-        ...                 region Inner { [*] -> A; state A; }
-        ...             }
-        ...             Stop -> Active :: Go;
-        ...         }
-        ...         region Guard { [*] -> Watch; state Watch; }
-        ...     }
-        ... }
-        ... ''')
-        >>> run = model.root_state.substates['Run']
-        >>> motion = run.regions['Motion']
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text('''
+            ... def int x = 0;
+            ... state Root {
+            ...     >> during before { x = x + 1; }
+            ...     [*] -> Run;
+            ...     state Run {
+            ...         region Motion {
+            ...             >> during after { x = x + 2; }
+            ...             >> during before abstract Sample;
+            ...             event Go;
+            ...             [*] -> Stop;
+            ...             state Stop;
+            ...             state Active {
+            ...                 region Inner { [*] -> A; state A; }
+            ...             }
+            ...             Stop -> Active :: Go;
+            ...         }
+            ...         region Guard { [*] -> Watch; state Watch; }
+            ...     }
+            ... }
+            ... ''')
+            >>> run = model.root_state.substates['Run']
+            >>> motion = run.regions['Motion']
             >>> [(owner.name, action.aspect) for owner, action in motion.iter_on_during_after_aspect_recursively()]
             [('Motion', 'after')]
         """

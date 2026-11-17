@@ -601,21 +601,21 @@ class StateMachineCodeRenderer:
             >>> from pyfcstm.model import load_state_machine_from_text
             >>> from pyfcstm.render.render import StateMachineCodeRenderer
             >>> from pyfcstm.template import extract_template
-            >>> template_dir = extract_template('python', tempfile.mkdtemp())
             >>> machine = load_state_machine_from_text(
             ...     'state Demo { [*] -> Idle; state Idle; }'
             ... )
-            >>> work = tempfile.mkdtemp()
-            >>> template_file = os.path.join(work, 'name.txt.j2')
-            >>> with open(template_file, 'w') as stream:
-            ...     _ = stream.write('{{ model.root_state.name }}')
-            >>> output_file = os.path.join(work, 'sub', 'name.txt')
-            >>> StateMachineCodeRenderer(template_dir).render_one_file(
-            ...     machine, output_file, template_file
-            ... )
-            >>> with open(output_file) as stream:
-            ...     stream.read()
-            'Demo'
+            >>> with tempfile.TemporaryDirectory() as work:
+            ...     template_dir = extract_template('python', os.path.join(work, 'tpl'))
+            ...     template_file = os.path.join(work, 'name.txt.j2')
+            ...     with open(template_file, 'w') as stream:
+            ...         _ = stream.write('{{ model.root_state.name }}')
+            ...     output_file = os.path.join(work, 'sub', 'name.txt')
+            ...     StateMachineCodeRenderer(template_dir).render_one_file(
+            ...         machine, output_file, template_file
+            ...     )
+            ...     with open(output_file) as stream:
+            ...         print(stream.read())
+            Demo
         """
         from pyfcstm.model.support import require_supported_model
         require_supported_model(model, 'generate')

@@ -637,3 +637,70 @@ def test_distinct_reads_of_one_variable_report_once_per_reading_region():
     '''
     found = [d for d in inspect_text(source).diagnostics if d.code == 'I_REGION_BACKWARD_READ']
     assert [(d.refs['target'], d.refs['reader_region']) for d in found] == [('x', 'Root.Reader')]
+
+
+def test_region_whose_only_exit_state_is_unreachable_never_completes():
+    report = inspect_text('''
+    state Plant {
+        [*] -> Run;
+        state Run {
+            region Work {
+                [*] -> A;
+                state A; state B; state Orphan;
+                A -> B; B -> A;
+                Orphan -> [*];
+            }
+        }
+        state Off;
+        Run -> Off;
+    }
+    ''')
+    assert 'Plant.Off' not in report.reachability_graph['Plant']
+    assert [item.refs['reasons'] for item in report.diagnostics
+            if item.code == 'W_UNREACHABLE_TRANSITION'
+            and item.refs['from_path'] == 'Plant.Run'] == [['owner_never_completes']]
+
+
+def test_a_region_cannot_finish_through_an_inner_owner_that_never_completes():
+    report = inspect_text('''
+    state Root {
+        [*] -> Outer;
+        state Outer {
+            region Left {
+                [*] -> Inner;
+                state Inner {
+                    region Deep { [*] -> X; state X; state Y; X -> Y; Y -> X; }
+                }
+                Inner -> [*];
+            }
+        }
+        state After;
+        Outer -> After;
+    }
+    ''')
+    assert 'Root.After' not in report.reachability_graph['Root']
+    owners = sorted(item.refs['from_path'] for item in report.diagnostics
+                    if item.code == 'W_UNREACHABLE_TRANSITION'
+                    and 'owner_never_completes' in item.refs['reasons'])
+    assert owners == ['Root.Outer', 'Root.Outer.Left.Inner']
+
+
+def test_history_entry_inside_a_region_reaches_the_default_path():
+    report = inspect_text('''
+    state Root {
+        region Worker {
+            state Group { [H] -> Idle; [*] -> Idle; state Idle; }
+            [*] -> Group.[H];
+        }
+    }
+    ''')
+    assert {'Root.Worker.Group', 'Root.Worker.Group.Idle'} <= set(report.reachability_graph['Root'])
+    assert 'W_UNREACHABLE_STATE' not in codes(report)
+
+
+@pytest.mark.parametrize('output_format', ['llm-md', 'llm-json'])
+def test_cli_llm_reports_carry_the_region_diagnostics(tmp_path, output_format):
+    result = run_cli(tmp_path, PLANT, '--format', output_format)
+    assert result.exitcode == 0, result.stderr
+    assert 'W_REGION_BLIND_OVERWRITE' in result.stdout
+    assert 'I_REGION_BACKWARD_READ' in result.stdout

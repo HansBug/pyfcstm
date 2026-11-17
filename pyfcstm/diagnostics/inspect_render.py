@@ -466,21 +466,6 @@ def render_inspect_llm_markdown(
                 value = ", ".join(value) or "none"
             lines.append(f"- {key}: `{value if value is not None else 'N/A'}`")
         lines.append("")
-    regions = tuple(getattr(report, "regions", ()))
-    if regions:
-        lines.append("## Regions")
-        lines.append("")
-        lines.append("Regions of one owner run in the listed order within a cycle.")
-        for region in regions:
-            lines.append(
-                "- `{path}`: order {index} in `{owner}`; states: {states}".format(
-                    path=region.path,
-                    index=region.index,
-                    owner=region.owner_path,
-                    states=", ".join(f"`{item}`" for item in region.substates) or "none",
-                )
-            )
-        lines.append("")
     lines.append("## Repair protocol")
     lines.append("")
     for rule in _GLOBAL_REPAIR_RULES:

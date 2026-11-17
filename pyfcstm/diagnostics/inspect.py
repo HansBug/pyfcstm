@@ -2752,8 +2752,8 @@ def _build_reachability_graph(
         transitions: Tuple[TransitionInfo, ...],
         history_defaults: Optional[Mapping[Tuple[str, str], Sequence[str]]] = None,
         regions: Sequence[RegionInfo] = (),
-) -> Dict[str, Tuple[str, ...]]:
-    """Return the default inspect reachability graph.
+) -> Tuple[Dict[str, Tuple[str, ...]], Set[str]]:
+    """Return the default inspect reachability graph and the owners that never complete.
 
     The inspect graph is a guard-agnostic breadth-first closure over normal
     transition endpoints plus composite ``[*]`` initial edges. It is a stable
@@ -2778,8 +2778,10 @@ def _build_reachability_graph(
         every region is done) are followed only when each region can reach
         its ``[*]`` exit; the owner's forced transitions are always followed.
     :type regions: Sequence[RegionInfo], optional
-    :return: Mapping from every state path to reachable state paths.
-    :rtype: Dict[str, Tuple[str, ...]]
+    :return: Mapping from every state path to reachable state paths, and the
+        paths of the states that own regions of which some can never reach
+        ``[*]`` (their ordinary outgoing transitions are never taken).
+    :rtype: Tuple[Dict[str, Tuple[str, ...]], Set[str]]
 
     Examples::
 
@@ -2797,12 +2799,15 @@ def _build_reachability_graph(
         >>> machine = parse_dsl_node_to_state_machine(ast)
         >>> states = _build_state_infos(machine)
         >>> transitions = _build_transition_infos(machine)
-        >>> _build_reachability_graph(states, transitions)['Root']
+        >>> graph, never_completing = _build_reachability_graph(states, transitions)
+        >>> graph['Root']
         ('Root.A', 'Root.B')
-        >>> _build_reachability_graph(states, transitions)['Root.A']
+        >>> graph['Root.A']
         ('Root.B',)
+        >>> never_completing
+        set()
     """
-    return _reachability_with_completion(states, transitions, history_defaults, regions)[0]
+    return _reachability_with_completion(states, transitions, history_defaults, regions)
 
 
 def _reachability_with_completion(
@@ -4698,7 +4703,7 @@ def inspect_model(
     combo_origins = _build_combo_origin_infos(transitions)
     metrics = _build_metrics(states, transitions, variables, events)
     regions = _build_region_infos(machine)
-    reachability_graph, never_completing_owners = _reachability_with_completion(
+    reachability_graph, never_completing_owners = _build_reachability_graph(
         states,
         transitions,
         {

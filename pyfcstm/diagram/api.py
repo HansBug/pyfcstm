@@ -6,6 +6,17 @@ The module keeps the portable data contract separate from editor metadata. A
 source ranges. Browser HTML may additionally carry an embedded source sidecar
 so the source and diagram panes can be linked without network access.
 
+The module contains:
+
+* :class:`DiagramData` - Portable, deterministic diagram data without
+  editor-only metadata
+* :class:`DiagramOptions` - Immutable renderer options shared by Python and
+  browser diagram views
+* :class:`DiagramViewState` - Immutable browser state for collapse, zoom, pan
+  and display mode
+* :class:`Diagram` - Immutable snapshot of a state machine, as portable data
+  or a self-contained viewer
+
 Example::
 
     >>> from pyfcstm.model import load_state_machine_from_text

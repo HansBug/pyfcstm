@@ -5,6 +5,21 @@ automatic inspect runs under a bounded complexity and call-count policy.  It
 also executes eligible algorithms and normalizes their raw results without
 importing diagnostics presentation code.
 
+The module contains:
+
+* :class:`InspectRunResult` - One normalized inspect-adapter result
+* :class:`InspectEligibility` - Inspect admission decision for one registry
+  algorithm
+* :class:`InspectAccessForbiddenError` - Error raised when a forbidden inspect
+  complexity tier is requested
+* :func:`eligible_for_inspect` - Decide whether one metadata entry is allowed
+* :func:`project_inspect_eligibility` - Project every registry entry without
+  executing it
+* :func:`iter_inspect_eligible` - Iterate eligible metadata entries in registry
+  order
+* :func:`run_inspect_algorithms` - Execute eligible algorithms and return
+  normalized results
+
 Examples::
 
     >>> from pyfcstm.dsl import parse_with_grammar_entry

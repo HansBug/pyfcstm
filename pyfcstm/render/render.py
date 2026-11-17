@@ -34,6 +34,11 @@ Expression rendering:
 The module depends on :mod:`jinja2`, :mod:`pyyaml`, and :mod:`pathspec` for
 templating, YAML configuration, and ignore pattern handling.
 
+The module contains:
+
+* :class:`StateMachineCodeRenderer` - Render a state machine model into code
+  files using a template directory
+
 Example::
 
     >>> from pyfcstm.render.render import StateMachineCodeRenderer

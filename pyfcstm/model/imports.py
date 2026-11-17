@@ -28,6 +28,28 @@ The assembler provides:
 Event mappings support module-absolute event promotion into host-relative or
 host-absolute event paths, including display-name propagation and conflict
 checks. Declaration provenance retains authored names and recursive bindings.
+
+The module contains:
+
+* :func:`assemble_state_machine_imports` - Assemble the import statements of a
+  DSL program into one inline AST
+
+Example::
+
+    >>> import os, tempfile
+    >>> from pyfcstm.model import load_state_machine_from_file
+    >>> with tempfile.TemporaryDirectory() as directory:
+    ...     child_path = os.path.join(directory, 'child.fcstm')
+    ...     main_path = os.path.join(directory, 'main.fcstm')
+    ...     with open(child_path, 'w') as handle:
+    ...         _ = handle.write('state Worker { state Idle; [*] -> Idle; }')
+    ...     with open(main_path, 'w') as handle:
+    ...         _ = handle.write(
+    ...             'state Root { import "child.fcstm" as Child; [*] -> Child; }'
+    ...         )
+    ...     machine = load_state_machine_from_file(main_path)
+    >>> ['.'.join(state.path) for state in machine.walk_states()]
+    ['Root', 'Root.Child', 'Root.Child.Idle']
 """
 
 import os

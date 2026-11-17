@@ -16,6 +16,11 @@ to build higher-level representations of:
 * Import statements and import mapping rules
 * Entry/exit/during operation blocks and function references
 
+The module contains:
+
+* :class:`GrammarParseListener` - Listener that builds AST nodes from parse
+  contexts as the parse tree is walked
+
 Example::
 
     >>> from antlr4 import CommonTokenStream, InputStream

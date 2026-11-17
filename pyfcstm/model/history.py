@@ -42,6 +42,30 @@ Static analyses judge the model as written: model conversion can also build
 the machine before lowering (see :func:`pyfcstm.diagnostics.inspect.inspect_model`),
 where a history entry is an ordinary transition that still carries its
 ``target_history``.
+
+Example::
+
+    >>> from pyfcstm.model import load_state_machine_from_text
+    >>> source = '''
+    ... state Root {
+    ...     state Work {
+    ...         [*] -> A;
+    ...         [H] -> A;
+    ...         state A;
+    ...         state B;
+    ...         A -> B :: Next;
+    ...     }
+    ...     state Pause;
+    ...     [*] -> Work;
+    ...     Work -> Pause :: Stop;
+    ...     Pause -> Work.[H] :: Resume;
+    ... }
+    ... '''
+    >>> machine = load_state_machine_from_text(source)
+    >>> list(machine.defines)
+    ['__hist_goto', '__hist_Work']
+    >>> machine.history_owners[0].owner_path
+    ('Root', 'Work')
 """
 
 import re

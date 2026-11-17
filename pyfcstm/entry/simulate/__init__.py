@@ -1,7 +1,24 @@
 """
 CLI entry point for the interactive state machine simulator.
 
-This module provides the simulate subcommand for the pyfcstm CLI tool.
+This module provides the simulate subcommand for the pyfcstm CLI tool. The
+subcommand loads one FCSTM file and either starts an interactive REPL or, with
+``-e``, runs a semicolon-separated list of commands in batch mode. The
+implementation is split across the REPL, command, completer, display, batch
+and logging modules of this sub-package.
+
+The module contains:
+
+* :func:`_add_simulate_subcommand` - Register the ``simulate`` subcommand on a
+  Click group
+
+Example::
+
+    $ pyfcstm simulate -i machine.fcstm
+    $ pyfcstm simulate -i machine.fcstm -e "cycle; cycle Start; current"
+    $ pyfcstm simulate -i machine.fcstm -e "current" --no-color
+    $ pyfcstm simulate -i machine.fcstm --param limit=3 -e "cycle"
+    $ pyfcstm simulate -i machine.fcstm --diagnostics -e "cycle"
 """
 
 import json

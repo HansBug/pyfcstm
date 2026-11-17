@@ -11,6 +11,15 @@ manages multiple subcommands. It exposes the shared PlantUML option resolver
 and source builder used by the ``plantuml`` and ``visualize`` entry points,
 alongside the helper that registers the subcommand.
 
+The module contains:
+
+* :func:`resolve_plantuml_options` - Resolve PlantUML options from generic
+  ``-c`` assignments and the dedicated detail-level option
+* :func:`build_plantuml_output` - Build PlantUML text from a state machine DSL
+  file
+* :func:`_add_plantuml_subcommand` - Register the ``plantuml`` subcommand on a
+  Click group
+
 .. note::
    The CLI entry point relies on :func:`pyfcstm.dsl.parse.parse_with_grammar_entry`
    and :func:`pyfcstm.model.model.parse_dsl_node_to_state_machine` to build the

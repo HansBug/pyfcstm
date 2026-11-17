@@ -11,6 +11,11 @@ Click command groups. It does not expose public helpers; the main integration
 point is the internal :func:`_add_generate_subcommand` used by the package's
 CLI bootstrap code.
 
+The module contains:
+
+* :func:`_add_generate_subcommand` - Register the ``generate`` subcommand on a
+  Click group
+
 Example::
 
     >>> import click

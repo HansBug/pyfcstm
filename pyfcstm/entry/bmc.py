@@ -9,6 +9,15 @@ The normative BMC JSON Schema is published as a download from the
 <https://pyfcstm.readthedocs.io/en/latest/reference/bmc_results/index.html>`_
 rather than shipped as a runtime package resource.
 
+The module contains:
+
+* :func:`build_bmc_output` - Run one model/query pair and return the report
+  text plus its exit status
+* :func:`write_bmc_output` - Atomically replace an output file with a completed
+  report
+* :func:`_add_bmc_subcommand` - Register the ``bmc`` subcommand on a Click
+  group
+
 Module map:
 
 .. list-table::

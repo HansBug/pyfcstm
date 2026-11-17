@@ -1,4 +1,30 @@
-"""Expose the standalone Python diagram viewer through the CLI."""
+"""
+Expose the standalone Python diagram viewer through the CLI.
+
+This module wires the ``diagram`` and ``expand-svg`` subcommands into a Click
+command group. ``diagram`` loads one FCSTM file and writes portable JSON, a
+self-contained HTML viewer, or an SVG, PNG or PDF export, choosing the format
+from the output path unless ``--format`` is given; without ``-o`` it prints
+the portable JSON on standard output. ``expand-svg`` converts a canonical
+diagram SVG into a self-contained one.
+
+The module contains:
+
+* :func:`diagram_command` - The ``diagram`` command: load a model and emit JSON,
+  HTML, SVG, PNG or PDF
+* :func:`expand_svg_command` - The ``expand-svg`` command: convert a canonical
+  diagram SVG into a self-contained one
+* :func:`_add_diagram_subcommand` - Register both commands on a Click group
+
+Example::
+
+    $ pyfcstm diagram -i machine.fcstm
+    $ pyfcstm diagram -i machine.fcstm -o viewer.html
+    $ pyfcstm diagram -i machine.fcstm -o diagram.png --scale 2
+    $ pyfcstm diagram -i machine.fcstm --format svg -o diagram.svg
+    $ pyfcstm diagram -i machine.fcstm --open
+    $ pyfcstm expand-svg -i canonical.svg -o expanded.svg
+"""
 
 from pathlib import Path
 from typing import Optional

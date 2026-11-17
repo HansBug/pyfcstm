@@ -95,16 +95,38 @@ class Region(AstExportable):
     """A named ordered namespace within a parallel owner state.
 
     Regions own transitions, events and during aspects, but do not have state
-    lifecycle actions and cannot themselves be transition endpoints.
+    lifecycle actions and cannot themselves be transition endpoints. Models
+    build regions while converting the AST; use :attr:`State.regions` to reach
+    them, not this constructor.
 
     :param name: Region identifier.
+    :type name: str
     :param path: Full namespace path including this region.
+    :type path: Tuple[str, ...]
     :param substates: Child states in declaration order.
+    :type substates: Dict[str, State]
     :param events: Events belonging to this region.
+    :type events: Dict[str, Event], optional
     :param transitions: Ordered initial, ordinary and forced transitions.
+    :type transitions: List[Transition], optional
     :param named_functions: Named during-aspect declarations.
+    :type named_functions: Dict[str, OnAspect], optional
     :param on_during_aspects: Before/after during aspects.
+    :type on_during_aspects: List[OnAspect], optional
     :param doc: Source documentation.
+    :type doc: Optional[str], optional
+
+    Example::
+
+        >>> from pyfcstm.model import load_state_machine_from_text
+        >>> model = load_state_machine_from_text(
+        ...     'state Root { region Motor { [*] -> Off; state Off; } }'
+        ... )
+        >>> region = model.root_state.regions['Motor']
+        >>> region.path
+        ('Root', 'Motor')
+        >>> list(region.substates)
+        ['Off']
     """
 
     name: str
@@ -138,6 +160,18 @@ class Region(AstExportable):
 
         This lets code that handles states and regions uniformly, such as the
         simulator's transition labels, ask the question without a type check.
+
+        :return: Always ``False``.
+        :rtype: bool
+
+        Example::
+
+            >>> from pyfcstm.model import load_state_machine_from_text
+            >>> model = load_state_machine_from_text(
+            ...     'state Root { region R { [*] -> A; state A; } }'
+            ... )
+            >>> model.root_state.regions['R'].is_root_state
+            False
         """
         return False
 

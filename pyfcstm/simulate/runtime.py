@@ -60,6 +60,26 @@ later cycle to find a stoppable leaf state. Because hot start simulates an
 already-entered boundary, it does not replay plain composite ``during before``
 actions before that delayed child entry.
 
+**Ordered regions**:
+
+A state may own several ordered regions that run in parallel inside one cycle.
+The execution stack then becomes a tree: the frame of the owning state holds one
+branch per region, and every branch is a stack of the same shape as the main
+one, starting with a frame for the region itself. Within a cycle the regions
+advance in declaration order, so a later region reads the values and states an
+earlier one produced in the same cycle. A region whose child exits through
+``[*]`` is done and stays done; when the last region finishes, the owner
+continues through its own outgoing transitions in the same cycle. Forced
+transitions declared on the owner take the whole group away before any region
+runs. Aspects declared on the owner or above run once per cycle around the whole
+group, and aspects declared on a region only around that region. The position of
+a model with regions is a tree, exposed as an immutable
+:class:`pyfcstm.model.configuration.Configuration` through
+:attr:`SimulationRuntime.configuration`.
+
+Hot start, the ``pyfcstm simulate`` command line and position-dependent event
+names with several active leaves do not support regions yet.
+
 Basic usage::
 
     from pyfcstm.simulate import SimulationRuntime
@@ -952,6 +972,9 @@ class SimulationRuntime:
             value cannot be normalized to its declared ``int`` / ``float`` type.
         :raises ValueError: If ``initial_state`` cannot be resolved to a
             state in this machine.
+        :raises pyfcstm.utils.validate.ModelValidationError: If hot start is
+            requested for a model that declares regions or ``active()`` queries,
+            which a cold start already supports.
 
         Example - Default initialization::
 
@@ -4033,32 +4056,32 @@ class SimulationRuntime:
                     )
                 continue
 
-            if frame.mode == "post_child_exit":
-                for transition in reversed(state.transitions_from):
-                    if not self._check_candidate(
-                        current_stack, current_vars, d_events, transition, search=True,
-                    ):
-                        continue
-                    next_stack = self._clone_stack(current_stack)
-                    next_vars = copy.deepcopy(current_vars)
-                    self._ledger = self._copy_ledger(current_ledger)
-                    next_ended = self._execute_transition_on_context(
+            # Every other frame in the search is a parent whose child exited.
+            for transition in reversed(state.transitions_from):
+                if not self._check_candidate(
+                    current_stack, current_vars, d_events, transition, search=True,
+                ):
+                    continue
+                next_stack = self._clone_stack(current_stack)
+                next_vars = copy.deepcopy(current_vars)
+                self._ledger = self._copy_ledger(current_ledger)
+                next_ended = self._execute_transition_on_context(
+                    next_stack,
+                    next_vars,
+                    transition,
+                    d_events,
+                    is_validation_mode=True,
+                )
+                worklist.append(
+                    (
                         next_stack,
                         next_vars,
-                        transition,
-                        d_events,
-                        is_validation_mode=True,
+                        next_ended,
+                        next_trail,
+                        self._ledger,
                     )
-                    worklist.append(
-                        (
-                            next_stack,
-                            next_vars,
-                            next_ended,
-                            next_trail,
-                            self._ledger,
-                        )
-                    )
-                continue
+                )
+            continue
 
         if loop_error is not None:
             raise loop_error
